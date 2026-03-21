@@ -1,0 +1,16 @@
+services:
+  jaghelm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jaghelm
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
