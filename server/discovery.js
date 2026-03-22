@@ -80,8 +80,36 @@ export async function getNodeMetrics(nodeLabel) {
   const memAvail = scalar(memAR);
   const upSec = scalar(upR);
   const temp = scalar(tempR);
-  const diskTotal = scalar(diskTR);
-  const diskFree = scalar(diskFR);
+  let diskTotal = scalar(diskTR);
+  let diskFree = scalar(diskFR);
+
+  // Fallback: if no mountpoint="/" data (e.g. NAS devices), find the largest filesystem
+  if (diskTotal == null) {
+    const [allDiskT, allDiskF] = await Promise.all([
+      promQuery(`node_filesystem_size_bytes{${l},fstype!="tmpfs",fstype!=""}`),
+      promQuery(`node_filesystem_free_bytes{${l},fstype!="tmpfs",fstype!=""}`),
+    ]);
+    // Pick the largest filesystem by total size
+    let maxSize = 0;
+    let bestMount = null;
+    for (const r of allDiskT) {
+      const val = r.value?.[1] ? parseFloat(r.value[1]) : 0;
+      if (val > maxSize) {
+        maxSize = val;
+        bestMount = r.metric?.mountpoint;
+      }
+    }
+    if (bestMount) {
+      diskTotal = maxSize;
+      // Find matching free bytes for the same mountpoint
+      for (const r of allDiskF) {
+        if (r.metric?.mountpoint === bestMount) {
+          diskFree = r.value?.[1] ? parseFloat(r.value[1]) : null;
+          break;
+        }
+      }
+    }
+  }
 
   const memUsed = memTotal && memAvail ? memTotal - memAvail : null;
   const diskUsed = diskTotal && diskFree ? diskTotal - diskFree : null;
