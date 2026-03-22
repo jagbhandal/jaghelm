@@ -68,12 +68,16 @@ export default function NodeCard({ sectionKey, config, setConfig, borderColor, m
 
       {services?.length > 0 && (() => {
         const level = config?.serviceDetailLevel || 'minimal';
+        const cols = config?.serviceColumns || 0; // 0 = auto
+        const gridCols = cols > 0
+          ? `repeat(${cols}, 1fr)`
+          : level === 'minimal'
+            ? 'repeat(auto-fill, minmax(180px, 1fr))'
+            : 'repeat(auto-fill, minmax(200px, 1fr))';
         return (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: level === 'minimal'
-              ? 'repeat(auto-fill, minmax(180px, 1fr))'
-              : 'repeat(auto-fill, minmax(200px, 1fr))',
+            gridTemplateColumns: gridCols,
             gap: 8,
           }}>
             {services.map((s, i) => (
