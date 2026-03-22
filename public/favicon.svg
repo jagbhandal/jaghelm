@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <g transform="translate(2, 6)">
+    <!-- Left wing -->
+    <path d="M18 31 Q13 24 9 15 Q7 9 5 2 Q5 0 6 0 Q8 0 8 2 Q10 8 13 18 Q16 22 17 28" fill="#d97706" opacity="0.5" stroke="#92400e" stroke-width="0.3"/>
+    <path d="M17 30 Q13 22 10 14 Q8 8 6 3 Q6 1 7 1 Q9 1 10 4 Q12 10 14 18 Q16 24 17 27" fill="#fbbf24" opacity="0.55" stroke="#b45309" stroke-width="0.3"/>
+    <ellipse cx="19" cy="31" rx="3" ry="2" fill="#b45309" opacity="0.6"/>
+    <circle cx="19" cy="31" r="1" fill="#d97706"/>
+
+    <!-- Right wing -->
+    <path d="M42 31 Q47 24 51 15 Q53 9 55 2 Q55 0 54 0 Q52 0 52 2 Q50 8 47 18 Q44 22 43 28" fill="#d97706" opacity="0.5" stroke="#92400e" stroke-width="0.3"/>
+    <path d="M43 30 Q47 22 50 14 Q52 8 54 3 Q54 1 53 1 Q51 1 50 4 Q48 10 46 18 Q44 24 43 27" fill="#fbbf24" opacity="0.55" stroke="#b45309" stroke-width="0.3"/>
+    <ellipse cx="41" cy="31" rx="3" ry="2" fill="#b45309" opacity="0.6"/>
+    <circle cx="41" cy="31" r="1" fill="#d97706"/>
+
+    <!-- Helm dome -->
+    <path d="M18 33 Q18 10 30 3 Q42 10 42 33" fill="#6366f1" opacity="0.15"/>
+    <path d="M18 33 Q18 10 30 3 Q42 10 42 33" fill="none" stroke="#6366f1" stroke-width="0.8"/>
+
+    <!-- Center ridge -->
+    <path d="M29 3 L31 3 L31.5 33 L28.5 33 Z" fill="#6366f1" opacity="0.2"/>
+
+    <!-- Rune ᚺ -->
+    <g transform="translate(25, 12)" opacity="0.6">
+      <line x1="0" y1="0" x2="0" y2="14" stroke="#a5b4fc" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="10" y1="0" x2="10" y2="14" stroke="#a5b4fc" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="0" y1="5" x2="10" y2="9" stroke="#a5b4fc" stroke-width="1.5" stroke-linecap="round"/>
+    </g>
+
+    <!-- Brow band -->
+    <path d="M16 33 L44 33" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="30" cy="33" r="1.2" fill="#6366f1" opacity="0.5"/>
+
+    <!-- Rivets -->
+    <circle cx="24" cy="16" r="0.8" fill="#6366f1" opacity="0.35"/>
+    <circle cx="30" cy="12" r="0.8" fill="#6366f1" opacity="0.35"/>
+    <circle cx="36" cy="16" r="0.8" fill="#6366f1" opacity="0.35"/>
+
+    <!-- Eye slits -->
+    <line x1="19" y1="36" x2="28" y2="34.5" stroke="#1e1b4b" stroke-width="0.8" opacity="0.2" stroke-linecap="round"/>
+    <line x1="41" y1="36" x2="32" y2="34.5" stroke="#1e1b4b" stroke-width="0.8" opacity="0.2" stroke-linecap="round"/>
+
+    <!-- Nose guard -->
+    <path d="M29 34 L28.5 42 Q28.5 44 30 44 Q31.5 44 31.5 42 L31 34" fill="#6366f1" opacity="0.12" stroke="#6366f1" stroke-width="0.5"/>
+  </g>
+</svg>
