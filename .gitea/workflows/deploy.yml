@@ -1,4 +1,4 @@
-name: Deploy JagHelm to Production
+name: Build and Deploy JagHelm
 
 on:
   push:
@@ -6,8 +6,28 @@ on:
       - main
 
 jobs:
+  build-and-push:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Gitea Registry
+        run: |
+          echo "${{ secrets.REGISTRY_TOKEN }}" | docker login registry.jagbhandal.com -u jagdeep.bhandal --password-stdin
+
+      - name: Build Docker image
+        run: |
+          docker build -t registry.jagbhandal.com/jagdeep.bhandal/jaghelm:latest -t registry.jagbhandal.com/jagdeep.bhandal/jaghelm:${{ github.sha }} .
+
+      - name: Push to registry
+        run: |
+          docker push registry.jagbhandal.com/jagdeep.bhandal/jaghelm:latest
+          docker push registry.jagbhandal.com/jagdeep.bhandal/jaghelm:${{ github.sha }}
+
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    needs: build-and-push
     steps:
       - name: Setup SSH
         run: |
@@ -16,12 +36,12 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Pull, build, and deploy
+      - name: Pull and deploy
         run: |
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "cd /opt/stacks/jaghelm && git pull origin main && docker compose build && docker compose up -d"
+            "cd /opt/stacks/jaghelm && docker compose pull && docker compose up -d"
 
       - name: Verify deployment
         run: |
