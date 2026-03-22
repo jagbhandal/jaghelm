@@ -1,5 +1,64 @@
-import React from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import ServiceCard from './ServiceCard';
+
+/**
+ * ServiceGrid — Responsive service card grid
+ * 
+ * serviceColumns in config is a MAX, not absolute.
+ * Uses ResizeObserver to measure actual container width and dynamically
+ * adjusts columns: maxCols → maxCols-1 → ... → 1 as the panel shrinks.
+ */
+function ServiceGrid({ services, config }) {
+  const gridRef = useRef(null);
+  const [cols, setCols] = useState(4);
+
+  const showDocker = config?.showDockerStats !== false;
+  const showApp = config?.showAppData !== false;
+  const hasDetails = showDocker || showApp;
+  const maxCols = config?.serviceColumns || 0; // 0 = auto (unlimited)
+  const minColWidth = hasDetails ? 200 : 180;
+  const gap = 8;
+
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+
+    const calc = () => {
+      const w = el.clientWidth;
+      if (w <= 0) return;
+      // How many columns fit at minColWidth with gaps?
+      const fitCols = Math.max(1, Math.floor((w + gap) / (minColWidth + gap)));
+      // Cap at maxCols if set, otherwise use whatever fits
+      setCols(maxCols > 0 ? Math.min(maxCols, fitCols) : fitCols);
+    };
+
+    calc(); // Initial calc
+
+    const ro = new ResizeObserver(calc);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [maxCols, minColWidth, gap]);
+
+  return (
+    <div
+      ref={gridRef}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${cols}, 1fr)`,
+        gap,
+      }}
+    >
+      {services.map((s, i) => (
+        <ServiceCard
+          key={s.container || i}
+          service={s}
+          showDockerStats={showDocker}
+          showAppData={showApp}
+        />
+      ))}
+    </div>
+  );
+}
 
 /**
  * NodeCard v8 — Phase 1
@@ -69,33 +128,9 @@ export default function NodeCard({ sectionKey, config, setConfig, borderColor, m
         </div>
       )}
 
-      {services?.length > 0 && (() => {
-        const showDocker = config?.showDockerStats !== false;
-        const showApp = config?.showAppData !== false;
-        const hasDetails = showDocker || showApp;
-        const cols = config?.serviceColumns || 0; // 0 = auto
-        const gridCols = cols > 0
-          ? `repeat(${cols}, 1fr)`
-          : hasDetails
-            ? 'repeat(auto-fill, minmax(200px, 1fr))'
-            : 'repeat(auto-fill, minmax(180px, 1fr))';
-        return (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: gridCols,
-            gap: 8,
-          }}>
-            {services.map((s, i) => (
-              <ServiceCard
-                key={s.container || i}
-                service={s}
-                showDockerStats={showDocker}
-                showAppData={showApp}
-              />
-            ))}
-          </div>
-        );
-      })()}
+      {services?.length > 0 && (
+        <ServiceGrid services={services} config={config} />
+      )}
 
       {children}
     </div>
