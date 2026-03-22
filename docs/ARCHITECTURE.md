@@ -3,8 +3,8 @@
 **Project:** JagHelm — Real-time infrastructure dashboard for homelabs  
 **Repo:** `jaghelm` (Gitea, future GitHub)  
 **Date:** March 22, 2026 (Updated)  
-**Status:** Phase 2 Complete, Phase 3 In Planning  
-**Version:** 2.0  
+**Status:** Phase 3 Complete, Phase 4 In Progress  
+**Version:** 3.0  
 
 ---
 
@@ -32,24 +32,15 @@ Everything the YAML can do, the Settings UI can do. Everything the Settings UI d
 ### ✅ Phase 2: Settings UI (Complete — March 22, 2026)
 - Full-page SettingsView with sidebar navigation (13 sections)
 - NodesTab, ServicesTab, LinksTab (full CRUD), SecurityTab, TypographyTab
+- IntegrationsTab with preset gallery, custom builder, test/save/delete flow
 - 6 VS Code-inspired themes
 - Typography system (5 font presets, 8 size controls)
 - Server-side display config persistence
 - Auth upgrade (SHA-256 hashing, password change API)
+- Live preview panel in Settings (scaled DashboardView, refreshable)
 - Professional README
 
-### ✅ Bug Fixes (March 22, 2026)
-- Layout persistence (server-side save, mount guard, no more reload)
-- Grid resize from all sides (SE, SW, E, W)
-- Auto-scroll during drag near viewport edges
-- Font contrast improvements
-- Docker stats refresh fix (timestamp cache bust)
-- Quick Launch proper service icons (35+ mappings)
-- Service card badges pinned top-right
-- Default logo in header and login page (120px)
-- Pi service monitor mappings
-
-### 🔧 Phase 3: Integration Engine (In Progress — March 22, 2026)
+### ✅ Phase 3: Integration Engine (Complete — March 22, 2026)
 - Integration engine core: registry.js + handler.js
 - Generic fetch/auth/transform/cache pipeline
 - 6 auth types: none, basic, bearer, header, query, session
@@ -59,25 +50,73 @@ Everything the YAML can do, the Settings UI can do. Everything the Settings UI d
 - API routes: GET/POST /api/integrations, test, save, delete, presets
 - Credential flow: UI form → encrypted secrets.json → $secret:ref in services.yaml
 - DashboardView wired to consume GET /api/integrations for Tier 3 data
-- TODO: IntegrationsTab in Settings UI (preset gallery + custom builder)
-- TODO: Test on staging against live services
+- IntegrationsTab in Settings UI (preset gallery + custom builder)
 
-### 📋 Phase 4: Polish
+### ✅ Bug Fixes & Infrastructure (March 22, 2026)
+
+#### Layout Persistence (4-phase fix)
+1. **Compactor removal** — Removed `verticalCompactor` from RGL; panels stay exactly where users place them
+2. **localStorage-first merge** — Server config merge preserves local `gridLayout`; server is authoritative for everything else (theme, sections, links) but layout is local-first
+3. **User interaction gate** — `userInteractedRef` flag ensures only real drag/resize actions trigger layout saves; compactor and mount fires are ignored
+4. **Async placeholders** — Render placeholder `<div>` elements for node keys in saved layout before `serviceData` loads; prevents RGL from losing saved positions when children appear after API response
+
+#### Responsive Service Columns
+- `ServiceGrid` component with `ResizeObserver` measures actual container width
+- `serviceColumns` setting is now a MAX, not absolute — columns dynamically adjust 4→3→2→1 as panel shrinks
+- Extracted from NodeCard into dedicated component for clean separation
+
+#### Other Fixes
+- Grid resize from all sides (SE, SW, E, W)
+- Auto-scroll during drag near viewport edges
+- Font contrast improvements
+- Docker stats refresh fix (timestamp cache bust)
+- Quick Launch proper service icons (35+ mappings via CDN)
+- Service card badges pinned top-right
+- Default logo in header and login page (120px)
+- Pi service monitor mappings
+
+#### Infrastructure Additions
+- **Proxmox host monitoring** — `node_exporter` installed on PVE host (192.168.68.10), added to Prometheus as `node="pve"`, configured in services.yaml
+- **UGREEN NAS monitoring** — `node_exporter` installed on DH4300 Plus (192.168.68.55), added to Prometheus as `node="nas"`, configured in services.yaml
+- **Smart disk fallback** — `discovery.js` tries `mountpoint="/"` first; if no data (e.g. NAS), queries all non-tmpfs filesystems and picks the largest by total size
+- **Auto-PR workflow** — `.gitea/workflows/auto-pr.yml` creates PR from staging→main on push (checks for existing open PR to avoid duplicates)
+
+### 📋 Phase 4: Polish (In Progress)
+- Dashboard UI beautification
 - Docker label discovery
 - Icon vendoring
 - Responsive mobile layout
+- Proxmox API integration (VM list, storage pools, cluster health)
 - Open-source preparation
 
 ---
 
-## 3. File Layout
+## 3. Monitored Infrastructure
+
+| Node | Label | IP | Exporters | Type |
+|------|-------|----|-----------|------|
+| Production VM | `vm103` | 192.168.68.11 | node-exporter, cAdvisor | Docker host (Minisforum u870) |
+| Staging VM | `vm101` | 192.168.68.12 | node-exporter, cAdvisor | Docker host (Minisforum u870) |
+| Gateway | `pi` | 192.168.68.13 | node-exporter, cAdvisor | Docker host (Raspberry Pi 5) |
+| Proxmox Hypervisor | `pve` | 192.168.68.10 | node-exporter | Bare-metal hypervisor |
+| UGREEN NAS | `nas` | 192.168.68.55 | node-exporter | NAS (DH4300 Plus, 3x8TB RAID5) |
+
+---
+
+## 4. File Layout
 
 ```
 jaghelm/
 ├── .env                          # Bootstrap: DASH_SECRET, PROMETHEUS_URL, KUMA_URL
+├── .gitea/workflows/
+│   ├── deploy.yml                # Push to main → SSH deploy to production
+│   └── auto-pr.yml               # Push to staging → auto-create PR to main
 ├── compose.yaml / Dockerfile
 ├── README.md                     # Professional README
 ├── package.json / vite.config.js / index.html
+├── docs/
+│   ├── ARCHITECTURE.md           # This file
+│   └── PHASE3-INTEGRATIONS.md    # Integration engine design notes
 ├── public/
 │   ├── logo.svg                  # Default logo (Viking helm with ᚺ rune)
 │   └── favicon.svg
@@ -85,34 +124,36 @@ jaghelm/
 │   ├── index.js                  # Express app, all API routes, auth, cache
 │   ├── config.js                 # Config manager (services.yaml)
 │   ├── secrets.js                # AES-256-GCM encryption
-│   ├── discovery.js              # Prometheus node + container discovery
+│   ├── discovery.js              # Prometheus node + container discovery + smart disk fallback
 │   ├── monitors.js               # Uptime Kuma monitor matching
+│   ├── icons.js                  # Icon search index (Dashboard Icons + Selfh.st)
 │   └── integrations/             # Phase 3: Integration Engine
 │       ├── registry.js           # Loads presets, exposes getPreset/listPresets
 │       ├── handler.js            # Generic fetch/auth/transform/cache pipeline
 │       └── presets/              # 42 declarative preset definitions
-│           ├── adguard.js / npm.js / pihole.js
+│           ├── adguard.js / npm.js / pihole.js / proxmox.js
 │           ├── plex.js / jellyfin.js / sonarr.js / radarr.js / ...
 │           └── (one .js file per integration, ~15 lines each)
 ├── data/                         # Docker volume — persists across rebuilds
-│   ├── services.yaml             # Infrastructure config
+│   ├── services.yaml             # Infrastructure config (5 nodes, service overrides)
 │   ├── display-config.json       # UI config (theme, layout, fonts, links)
 │   ├── secrets.json              # Encrypted API credentials
 │   ├── auth.json                 # Password hash override
 │   └── todos.json                # Checklist data
 ├── src/
-│   ├── App.jsx                   # Root: routing, config persistence, font/theme application
+│   ├── App.jsx                   # Root: routing, localStorage-first config, font/theme
 │   ├── views/
-│   │   ├── DashboardView.jsx     # RGL grid, auto-scroll drag, layout persistence
-│   │   ├── SettingsView.jsx      # Full-page settings with sidebar
+│   │   ├── DashboardView.jsx     # RGL grid, interaction-gated layout save, async placeholders
+│   │   ├── SettingsView.jsx      # Full-page settings with sidebar + live preview
 │   │   └── IframeView.jsx        # Embedded tabs
 │   ├── components/
 │   │   ├── NavBar.jsx / NodeCard.jsx / ServiceCard.jsx
 │   │   ├── TodoCard.jsx / Widgets.jsx / LoginPage.jsx
-│   │   └── settings/             # 12 settings tab components
+│   │   ├── IconPicker.jsx        # Icon search (Dashboard Icons + Selfh.st CDN)
+│   │   └── settings/             # 13 settings tab components
 │   │       ├── GeneralTab.jsx / AppearanceTab.jsx / TypographyTab.jsx
 │   │       ├── LayoutTab.jsx / SectionsTab.jsx
-│   │       ├── NodesTab.jsx / ServicesTab.jsx
+│   │       ├── NodesTab.jsx / ServicesTab.jsx / IntegrationsTab.jsx
 │   │       ├── LinksTab.jsx / WidgetsTab.jsx / TabsTab.jsx
 │   │       ├── SecurityTab.jsx / BackupTab.jsx
 │   ├── hooks/useData.js          # API calls, 35+ SERVICE_ICONS, constants
@@ -122,7 +163,7 @@ jaghelm/
 
 ---
 
-## 4. Themes
+## 5. Themes
 
 | Theme | ID | Background | Accent |
 |-------|-----|-----------|--------|
@@ -135,7 +176,7 @@ jaghelm/
 
 ---
 
-## 5. API Endpoints
+## 6. API Endpoints
 
 ### Auth
 - `POST /api/auth/login` · `GET /api/auth/check` · `POST /api/auth/change-password`
@@ -149,6 +190,9 @@ jaghelm/
 ### Phase 2 — Display Config
 - `GET /api/display-config` — UI config (theme, layout, fonts, links)
 - `POST /api/display-config` — Save UI config
+
+### Icons
+- `GET /api/icons?q=search&limit=60` — Search icon index
 
 ### Secrets
 - `GET /api/secrets/keys` · `PUT /api/secrets/:key` · `DELETE /api/secrets/:key`
@@ -168,7 +212,7 @@ jaghelm/
 
 ---
 
-## 6. Config Persistence
+## 7. Config Persistence
 
 **Two stores, two data flows:**
 
@@ -177,24 +221,46 @@ jaghelm/
 | Infrastructure | `data/services.yaml` | Config Manager + hot-reload | Debounced POST to `/api/services/config` |
 | Display | `data/display-config.json` | Display Config API | localStorage (instant) + debounced POST (2s) |
 
-**Boot sequence:** localStorage → render immediately → fetch `/api/display-config` → override if server has data → mark `configLoadedFromServer = true` → future changes save to server.
+**Boot sequence:** localStorage → render immediately → fetch `/api/display-config` → merge server config but **preserve local gridLayout** → mark `configLoadedFromServer = true` → future changes save to server.
+
+**Layout persistence:** localStorage is authoritative for `gridLayout`. Server is authoritative for everything else (theme, sections, links). Layout saves only trigger on user drag/resize (`userInteractedRef` gate). Async node placeholders ensure RGL maintains saved positions before API data loads.
 
 **Priority:** `.env` > `auth.json` > `secrets.json` > `display-config.json` > `services.yaml`
 
 ---
 
-## 7. Carry-Over Notes for Next Session
+## 8. CI/CD Pipeline
+
+```
+Developer pushes to staging
+        ↓
+auto-pr.yml: Creates PR from staging → main (if none open)
+        ↓
+Developer reviews & merges PR in Gitea
+        ↓
+deploy.yml: SSH into production → git pull → docker compose build → up -d
+        ↓
+Verify: docker ps + curl health endpoint
+```
+
+---
+
+## 9. Carry-Over Notes for Next Session
 
 ### What to bring:
 1. This spec (`docs/ARCHITECTURE.md`)
-2. `README.md`
-3. Fresh dashboard screenshot with new themes
-4. Any bugs found during testing
+2. Fresh repo tar from Gitea
+3. Dashboard screenshots showing all 5 nodes
 
-### Phase 3 planning:
-- Study Homepage `widgets/` and Homarr `integrations/` on GitHub
-- Adopt their declarative preset patterns — don't reinvent the wheel
-- Design the integration engine server-side first, then UI tab
+### Phase 4 priorities:
+- Dashboard UI beautification and polish
+- Proxmox API integration preset (VM list, storage pools, cluster health)
+- Responsive mobile layout
+- Open-source preparation (sanitize IPs, generic defaults)
+
+### Known issues:
+- NAS shows 7.3TB — correct for the logical volume, but RAID5 pool has ~14.5TB raw; half is unallocated in UGREEN firmware
+- Proxmox preset (`presets/proxmox.js`) is a skeleton — only fetches node count; needs multi-endpoint support for full VM/storage data
 
 ### Key IPs:
 - Proxmox: 192.168.68.10 · VM 103 (prod): 192.168.68.11 · VM 101 (staging): 192.168.68.12
@@ -202,4 +268,4 @@ jaghelm/
 
 ---
 
-*JagHelm v8 Architecture Specification v2.0 — Phase 2 Complete*
+*JagHelm v8 Architecture Specification v3.0 — Phase 3 Complete*

@@ -47,7 +47,7 @@
   --text-primary: #d6deeb; --text-secondary: #7fdbca; --text-muted: #637777;
   --accent: #82aaff; --accent-light: #c792ea; --accent-glow: rgba(130,170,255,0.12);
   --accent-gradient: linear-gradient(135deg, #82aaff 0%, #c792ea 50%, #7fdbca 100%);
-  --green: #addb67; --green-bg: rgba(173,219,103,0.08); --green-border: rgba(173,219,103,0.25);
+  --green: #22da6e; --green-bg: rgba(34,218,110,0.08); --green-border: rgba(34,218,110,0.25);
   --red: #ef5350; --red-bg: rgba(239,83,80,0.08); --red-border: rgba(239,83,80,0.25);
   --amber: #ffcb6b; --amber-bg: rgba(255,203,107,0.08); --amber-border: rgba(255,203,107,0.25);
   --glass-bg: rgba(1,22,39,0.7); --glass-border: rgba(130,170,255,0.1);
@@ -73,7 +73,7 @@
   --text-primary: #cdd6f4; --text-secondary: #bac2de; --text-muted: #7f849c;
   --accent: #89b4fa; --accent-light: #b4befe; --accent-glow: rgba(137,180,250,0.12);
   --accent-gradient: linear-gradient(135deg, #89b4fa 0%, #cba6f7 50%, #f5c2e7 100%);
-  --green: #a6e3a1; --green-bg: rgba(166,227,161,0.08); --green-border: rgba(166,227,161,0.25);
+  --green: #40d47e; --green-bg: rgba(64,212,126,0.08); --green-border: rgba(64,212,126,0.25);
   --red: #f38ba8; --red-bg: rgba(243,139,168,0.08); --red-border: rgba(243,139,168,0.25);
   --amber: #f9e2af; --amber-bg: rgba(249,226,175,0.08); --amber-border: rgba(249,226,175,0.25);
   --glass-bg: rgba(30,30,46,0.7); --glass-border: rgba(137,180,250,0.1);
@@ -86,7 +86,7 @@
   --text-primary: #eeffff; --text-secondary: #a9b7c6; --text-muted: #607087;
   --accent: #84ffff; --accent-light: #80cbc4; --accent-glow: rgba(132,255,255,0.1);
   --accent-gradient: linear-gradient(135deg, #84ffff 0%, #82aaff 50%, #c792ea 100%);
-  --green: #c3e88d; --green-bg: rgba(195,232,141,0.08); --green-border: rgba(195,232,141,0.25);
+  --green: #5af78e; --green-bg: rgba(90,247,142,0.08); --green-border: rgba(90,247,142,0.25);
   --red: #ff5370; --red-bg: rgba(255,83,112,0.08); --red-border: rgba(255,83,112,0.25);
   --amber: #ffcb6b; --amber-bg: rgba(255,203,107,0.08); --amber-border: rgba(255,203,107,0.25);
   --glass-bg: rgba(15,17,26,0.7); --glass-border: rgba(130,170,255,0.1);
