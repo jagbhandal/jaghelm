@@ -12,6 +12,10 @@
 
 import { getPresetFull } from './registry.js';
 import { resolveCredential, getSecret } from '../secrets.js';
+import { Agent } from 'undici';
+
+// ── TLS-skip agent for self-signed certs (Proxmox, etc.) ──
+const tlsSkipAgent = new Agent({ connect: { rejectUnauthorized: false } });
 
 // ── Simple in-memory cache (shared with server/index.js pattern) ──
 const cache = new Map();
@@ -28,12 +32,14 @@ function setCache(key, data) {
   cache.set(key, { data, ts: Date.now() });
 }
 
-// ── Safe fetch with timeout ──
-async function safeFetch(url, opts = {}) {
+// ── Safe fetch with timeout + optional TLS skip ──
+async function safeFetch(url, opts = {}, skipTls = false) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const res = await fetch(url, { ...opts, signal: controller.signal });
+    const fetchOpts = { ...opts, signal: controller.signal };
+    if (skipTls) fetchOpts.dispatcher = tlsSkipAgent;
+    const res = await fetch(url, fetchOpts);
     return res;
   } finally {
     clearTimeout(timeout);
@@ -69,11 +75,12 @@ function extractValue(data, path) {
     if (!field) return 0;
 
     const numVal = Number(value);
+    const isNumeric = !isNaN(numVal);
     return data.filter(item => {
       const itemVal = item[field];
       if (itemVal == null) return false;
       switch (op) {
-        case '=': return itemVal == numVal; // loose equality for string/number coercion
+        case '=': return isNumeric ? itemVal == numVal : String(itemVal) === value;
         case '>': return itemVal > numVal;
         case '<': return itemVal < numVal;
         case '>=': return itemVal >= numVal;
@@ -230,8 +237,9 @@ function buildAuthHeaders(config) {
     }
     case 'header': {
       const headerName = config.authHeader || 'X-API-Key';
+      const prefix = config.authPrefix || '';
       const token = config._token || '';
-      if (token) headers[headerName] = token;
+      if (token) headers[headerName] = prefix + token;
       break;
     }
     case 'query':
@@ -254,6 +262,7 @@ async function fetchWithSession(config) {
   if (!session) throw new Error('Session config missing');
 
   const baseUrl = config.url.replace(/\/+$/, '');
+  const skipTls = !!config.tlsSkip;
 
   // Step 1: Login
   const loginBody = JSON.stringify(session.loginBody)
@@ -264,7 +273,7 @@ async function fetchWithSession(config) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: loginBody,
-  });
+  }, skipTls);
   const loginData = await loginRes.json();
   const token = extractValue(loginData, session.tokenPath);
   if (!token) throw new Error('Session login failed — no token in response');
@@ -276,7 +285,7 @@ async function fetchWithSession(config) {
   }
   if (config.extraHeaders) Object.assign(headers, config.extraHeaders);
 
-  const res = await safeFetch(`${baseUrl}${config.endpoint}`, { headers });
+  const res = await safeFetch(`${baseUrl}${config.endpoint}`, { headers }, skipTls);
   return res.json();
 }
 
@@ -297,6 +306,7 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
   try {
     let rawData;
     const baseUrl = config.url.replace(/\/+$/, '');
+    const skipTls = !!config.tlsSkip;
 
     if (config.auth === 'session') {
       rawData = await fetchWithSession(config);
@@ -311,7 +321,7 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       }
 
       const headers = buildAuthHeaders(config);
-      const res = await safeFetch(url, { headers });
+      const res = await safeFetch(url, { headers }, skipTls);
       rawData = await res.json();
     }
 
@@ -326,7 +336,13 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       }
     }
 
-    const result = { fields, raw: rawData, error: null };
+    // Custom structured data transform (e.g. Proxmox VM list)
+    let extra = {};
+    if (config.structuredTransform) {
+      extra = config.structuredTransform(rawData);
+    }
+
+    const result = { fields, ...extra, raw: rawData, error: null };
     setCache(cacheKey, result);
     return result;
 
@@ -352,6 +368,7 @@ export async function testIntegration(type, testConfig) {
 
   const baseUrl = config.url.replace(/\/+$/, '');
   const testEndpoint = config.testEndpoint || config.endpoint;
+  const skipTls = !!config.tlsSkip;
 
   try {
     if (config.auth === 'session') {
@@ -367,7 +384,7 @@ export async function testIntegration(type, testConfig) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: loginBody,
-      });
+      }, skipTls);
 
       if (!res.ok) return { ok: false, error: `Login failed: HTTP ${res.status}` };
       const data = await res.json();
@@ -385,7 +402,7 @@ export async function testIntegration(type, testConfig) {
       }
 
       const headers = buildAuthHeaders(config);
-      const res = await safeFetch(url, { headers });
+      const res = await safeFetch(url, { headers }, skipTls);
 
       if (!res.ok) return { ok: false, error: `HTTP ${res.status}: ${res.statusText}` };
       return { ok: true, status: res.status };

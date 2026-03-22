@@ -309,6 +309,9 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           appData: appDataByContainer[s.container] || null,
         }));
 
+      // Proxmox VM cards — show as children inside the PVE node panel
+      const proxmoxVms = (nodeKey === 'pve' && integrationData.proxmox?._vms) || null;
+
       return (
         <div key={gridKey}>
           <NodeCard
@@ -319,11 +322,72 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
             metrics={metrics}
             services={services}
             nodeData={node}
-          />
+          >
+            {proxmoxVms && proxmoxVms.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{
+                  fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)',
+                  letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6, paddingLeft: 2,
+                }}>Virtual Machines</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                  {proxmoxVms.map(vm => {
+                    const isRunning = vm.status === 'running';
+                    const isPaused = vm.status === 'paused';
+                    const statusColor = isRunning ? 'var(--green)' : isPaused ? 'var(--amber)' : 'var(--red)';
+                    return (
+                      <div key={vm.vmid} style={{
+                        background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
+                        borderRadius: 12, padding: '10px 12px',
+                        borderLeft: `3px solid ${statusColor}`,
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{
+                            width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                            background: statusColor, boxShadow: `0 0 6px ${statusColor}`,
+                          }} />
+                          <span style={{
+                            fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
+                            flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>{vm.name}</span>
+                          <span style={{
+                            fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-badge)', padding: '2px 5px',
+                            borderRadius: 4, textTransform: 'uppercase', fontWeight: 500,
+                            background: isRunning ? 'var(--green-bg)' : isPaused ? 'var(--amber-bg)' : 'var(--red-bg)',
+                            color: statusColor,
+                            border: `1px solid ${isRunning ? 'var(--green-border)' : isPaused ? 'var(--amber-border)' : 'var(--red-border)'}`,
+                          }}>{vm.status}</span>
+                        </div>
+                        <div style={{
+                          display: 'flex', gap: 8, marginTop: 6, justifyContent: 'center',
+                        }}>
+                          <div style={{
+                            textAlign: 'center', padding: '4px 8px',
+                            background: 'rgba(255,255,255,0.03)', borderRadius: 6,
+                            border: '1px solid rgba(255,255,255,0.04)', flex: 1,
+                          }}>
+                            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)' }}>{vm.maxcpu}</div>
+                            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>vCPU</div>
+                          </div>
+                          <div style={{
+                            textAlign: 'center', padding: '4px 8px',
+                            background: 'rgba(255,255,255,0.03)', borderRadius: 6,
+                            border: '1px solid rgba(255,255,255,0.04)', flex: 1,
+                          }}>
+                            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)' }}>{vm.vmid}</div>
+                            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>VMID</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </NodeCard>
         </div>
       );
     }).filter(Boolean);
-  }, [serviceData, sc, config, setConfig, appDataByContainer, claimedContainers]);
+  }, [serviceData, sc, config, setConfig, appDataByContainer, claimedContainers, integrationData]);
 
   // Build custom group panel elements
   const customGroupElements = useMemo(() => {
