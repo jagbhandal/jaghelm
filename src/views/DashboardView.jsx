@@ -156,10 +156,8 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   const userInteractedRef = useRef(false);
 
   const handleLayoutChange = useCallback((_, allLayouts) => {
-    console.log('[LAYOUT] onLayoutChange fired, userInteracted:', userInteractedRef.current);
-    if (!userInteractedRef.current) return;
-    userInteractedRef.current = false;
-    console.log('[LAYOUT] SAVING layout');
+    if (!userInteractedRef.current) return; // Ignore compactor/mount fires
+    userInteractedRef.current = false; // Reset flag
     setConfig(p => ({ ...p, gridLayout: allLayouts }));
   }, [setConfig]);
 
@@ -462,6 +460,27 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
         >
           {/* Dynamic node sections */}
           {nodeElements}
+
+          {/* Placeholders for node panels that exist in saved layout but haven't loaded yet.
+              Without these, RGL has no children for those keys on first render,
+              and when serviceData arrives, they get repositioned instead of using saved positions. */}
+          {(() => {
+            const loadedNodeKeys = new Set(Object.keys(serviceData.nodes || {}).map(k => `node-${k}`));
+            const savedKeys = (layouts.lg || layouts.md || []).map(i => i.i).filter(k => k.startsWith('node-'));
+            return savedKeys
+              .filter(k => !loadedNodeKeys.has(k))
+              .map(k => (
+                <div key={k}>
+                  <div className="glass-card node-card" style={{ borderTop: '2px solid var(--accent)', opacity: 0.4 }}>
+                    <div className="section-header">
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)', padding: '12px' }}>
+                        Loading {k.replace('node-', '')}…
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ));
+          })()}
 
           {/* Custom groups */}
           {customGroupElements}
