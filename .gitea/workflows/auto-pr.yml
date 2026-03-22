@@ -13,7 +13,7 @@ jobs:
         run: |
           # Check if an open PR from staging→main already exists
           EXISTING=$(curl -s \
-            -H "Authorization: token ${{ secrets.GITEA_TOKEN }}" \
+            -H "Authorization: token ${{ secrets.PR_TOKEN }}" \
             "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/pulls?state=open&head=staging&base=main" \
           )
 
@@ -27,7 +27,7 @@ jobs:
             COMMIT_MSG=$(echo "${{ github.event.head_commit.message }}" | head -1)
 
             curl -s -X POST \
-              -H "Authorization: token ${{ secrets.GITEA_TOKEN }}" \
+              -H "Authorization: token ${{ secrets.PR_TOKEN }}" \
               -H "Content-Type: application/json" \
               "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/pulls" \
               -d "{
