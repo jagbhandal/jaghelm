@@ -145,7 +145,14 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       : { lg: 12, md: 10, sm: 1 }
   ), [config.gridColumns]);
 
+  const layoutMountedRef = useRef(false);
   const handleLayoutChange = useCallback((_, allLayouts) => {
+    // Skip the initial layout computation that fires on mount — it can clobber saved layouts
+    // before service data has loaded (missing node keys)
+    if (!layoutMountedRef.current) {
+      layoutMountedRef.current = true;
+      return;
+    }
     setConfig(p => ({ ...p, gridLayout: allLayouts }));
   }, [setConfig]);
 
@@ -256,6 +263,26 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     return result;
   }, [layouts, serviceData]);
 
+  // Auto-scroll when dragging near viewport edges
+  const scrollRAF = useRef(null);
+  const handleDrag = useCallback((layout, oldItem, newItem, placeholder, e) => {
+    if (scrollRAF.current) cancelAnimationFrame(scrollRAF.current);
+    const EDGE = 80; // px from edge to start scrolling
+    const SPEED = 15; // px per frame
+    const y = e?.clientY ?? 0;
+    const vh = window.innerHeight;
+    if (y > vh - EDGE) {
+      const doScroll = () => { window.scrollBy(0, SPEED); scrollRAF.current = requestAnimationFrame(doScroll); };
+      scrollRAF.current = requestAnimationFrame(doScroll);
+    } else if (y < EDGE) {
+      const doScroll = () => { window.scrollBy(0, -SPEED); scrollRAF.current = requestAnimationFrame(doScroll); };
+      scrollRAF.current = requestAnimationFrame(doScroll);
+    }
+  }, []);
+  const handleDragStop = useCallback(() => {
+    if (scrollRAF.current) { cancelAnimationFrame(scrollRAF.current); scrollRAF.current = null; }
+  }, []);
+
   return (
     <div className="dashboard-content" ref={containerRef}>
       {mounted && (
@@ -266,6 +293,8 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           breakpoints={{ lg: 1200, md: 768, sm: 480 }}
           compactor={verticalCompactor}
           onLayoutChange={handleLayoutChange}
+          onDrag={handleDrag}
+          onDragStop={handleDragStop}
           gridConfig={{
             cols,
             rowHeight: 36,
@@ -277,6 +306,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           }}
           resizeConfig={{
             enabled: true,
+            handles: ['se', 'sw', 'e', 'w'],
           }}
         >
           {/* Dynamic node sections */}

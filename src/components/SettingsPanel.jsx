@@ -8,7 +8,7 @@ const THEMES = [
   { id: 'light', name: 'Light', preview: '#eef0f8' },
 ];
 
-export default function SettingsPanel({ config, setConfig, theme, setTheme, onClose }) {
+export default function SettingsPanel({ config, setConfig, theme, setTheme, onClose, onApply }) {
   const [tab, setTab] = useState('appearance');
   const [colorTarget, setColorTarget] = useState(null);
   const [colorValue, setColorValue] = useState('#6366f1');
@@ -81,9 +81,9 @@ export default function SettingsPanel({ config, setConfig, theme, setTheme, onCl
 
             <Fld label="Logo">
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {config.logoUrl && <img src={config.logoUrl} style={{ height: 34, borderRadius: 8 }} alt="" />}
+                <img src={config.logoUrl || '/logo.svg'} style={{ height: 34, borderRadius: 8 }} alt="" />
                 <button className="settings-btn" onClick={() => logoRef.current?.click()} style={{ padding: '8px 16px' }}>Upload</button>
-                {config.logoUrl && <button className="settings-btn" onClick={() => update('logoUrl', '')} style={{ padding: '8px 16px' }}>Remove</button>}
+                {config.logoUrl && <button className="settings-btn" onClick={() => update('logoUrl', '')} style={{ padding: '8px 16px' }}>Default</button>}
                 <input ref={logoRef} type="file" accept="image/*" hidden onChange={e => e.target.files[0] && handleUpload(e.target.files[0], 'logo')} />
               </div>
             </Fld>
@@ -109,7 +109,7 @@ export default function SettingsPanel({ config, setConfig, theme, setTheme, onCl
           {tab === 'layout' && (<>
             <Fld label={`Grid Columns: ${config.gridColumns || 12}`}><input type="range" min="4" max="16" step="1" value={config.gridColumns || 12} onChange={e => update('gridColumns', parseInt(e.target.value))} className="settings-range" /></Fld>
             <Fld label={`Refresh Interval: ${config.refreshInterval || 30}s`}><input type="range" min="10" max="120" step="5" value={config.refreshInterval || 30} onChange={e => update('refreshInterval', parseInt(e.target.value))} className="settings-range" /></Fld>
-            <button className="settings-btn" onClick={() => { update('gridLayout', null); location.reload(); }} style={{ marginTop: 12, borderColor: 'var(--red)', color: 'var(--red)' }}>Reset Grid Layout</button>
+            <button className="settings-btn" onClick={() => { update('gridLayout', null); if (onApply) onApply(); }} style={{ marginTop: 12, borderColor: 'var(--red)', color: 'var(--red)' }}>Reset Grid Layout</button>
           </>)}
 
           {tab === 'sections' && (<>
@@ -211,7 +211,7 @@ export default function SettingsPanel({ config, setConfig, theme, setTheme, onCl
         <div className="settings-footer">
           <button className="settings-btn" onClick={exportCfg}>Export</button>
           <label className="settings-btn" style={{ cursor: 'pointer' }}>Import<input type="file" accept=".json" onChange={importCfg} hidden /></label>
-          <button className="settings-btn" onClick={() => { onClose(); window.location.reload(); }}
+          <button className="settings-btn" onClick={() => { onClose(); if (onApply) onApply(); }}
             style={{ background: 'var(--accent)', color: '#fff', border: 'none', fontWeight: 600 }}>Apply Changes</button>
         </div>
       </div>

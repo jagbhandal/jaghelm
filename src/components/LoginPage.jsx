@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function LoginPage({ onLogin }) {
+export default function LoginPage({ onLogin, config }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -26,8 +26,11 @@ export default function LoginPage({ onLogin }) {
   return (
     <div className="login-page">
       <form onSubmit={handleSubmit} className="login-card">
-        <div className="login-title">JAG-NET</div>
-        <div className="login-sub">Infrastructure Dashboard</div>
+        <div style={{ textAlign: 'center', marginBottom: 16 }}>
+          <img src={config?.logoUrl || '/logo.svg'} alt="" style={{ height: 64, marginBottom: 12 }} />
+        </div>
+        <div className="login-title">{config?.title || 'JAG-NET'}</div>
+        <div className="login-sub">{config?.subtitle || 'Infrastructure Dashboard'}</div>
         {error && <div className="login-error">{error}</div>}
         <input className="login-input" type="text" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} autoFocus />
         <input className="login-input" type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />

@@ -46,11 +46,19 @@ export function QuickLaunch({ config, borderColor }) {
         <div className="section-icon" style={{ background: `${borderColor}15`, border: `1px solid ${borderColor}30` }}>{sec.icon || '🚀'}</div>
         <div><div className="section-title">{sec.title || 'Quick Launch'}</div></div>
       </div>
-      <div className="quick-launch-grid">
-        {groups.map(g => <div className="quick-launch-group" key={g.key}>
-          <h4>{g.label}</h4>
-          {(config.links?.[g.key] || []).map((l, i) => <a key={i} href={l.url} target="_blank" rel="noopener noreferrer" className="quick-launch-link"><span style={{ fontSize: 18, width: 22, textAlign: 'center' }}>{l.icon}</span><span>{l.name}</span></a>)}
-        </div>)}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {groups.map(g => {
+          const links = config.links?.[g.key] || [];
+          if (links.length === 0) return null;
+          return (
+            <div key={g.key}>
+              <h4 style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 }}>{g.label}</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+                {links.map((l, i) => <a key={i} href={l.url} target="_blank" rel="noopener noreferrer" className="quick-launch-link"><span style={{ fontSize: 18, width: 22, textAlign: 'center' }}>{l.icon}</span><span>{l.name}</span></a>)}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -136,6 +136,15 @@ export function generateDefaultConfig(discoveredNodes) {
     };
   }
 
+  // Default service overrides — Pi containers use non-obvious names
+  cfg.services = {
+    'adguard-home': { display_name: 'AdGuard', monitor: 'AdGuard Home' },
+    'gateway-npm': { display_name: 'NPM', monitor: 'Nginx Proxy Manager' },
+    'gateway-tunnel': { display_name: 'Cloudflared', monitor: 'Cloudflared' },
+    'tailscale': { display_name: 'Tailscale', monitor: 'Tailscale' },
+    'dockge': { display_name: 'Dockge', monitor: 'Dockge' },
+  };
+
   return cfg;
 }
 
