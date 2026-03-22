@@ -127,8 +127,8 @@ services:
     ports:
       - 3099:3099
     environment:
-      PROMETHEUS_URL: http://192.168.68.11:9090
-      KUMA_URL: http://192.168.68.11:3001
+      PROMETHEUS_URL: http://your-prometheus-host:9090
+      KUMA_URL: http://your-kuma-host:3001
       DASH_SECRET: your-random-secret-here  # openssl rand -hex 32
       DASH_USER: admin
       DASH_PASS: your-password
@@ -187,12 +187,12 @@ DASH_PASS=your-password
 PORT=3099
 
 # Optional integration overrides (these take priority over UI-managed config)
-ADGUARD_URL=http://192.168.68.13:8085
+ADGUARD_URL=http://your-adguard-host:8085
 ADGUARD_USER=admin
 ADGUARD_PASS=secret
 GITEA_URL=http://localhost:3060
 GITEA_TOKEN=your-token
-NPM_URL=http://192.168.68.13:81
+NPM_URL=http://your-npm-host:81
 NPM_USER=admin@example.com
 NPM_PASS=secret
 ```
