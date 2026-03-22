@@ -12,10 +12,6 @@
 
 import { getPresetFull } from './registry.js';
 import { resolveCredential, getSecret } from '../secrets.js';
-import { Agent } from 'undici';
-
-// ── TLS-skip agent for self-signed certs (Proxmox, etc.) ──
-const tlsSkipAgent = new Agent({ connect: { rejectUnauthorized: false } });
 
 // ── Simple in-memory cache (shared with server/index.js pattern) ──
 const cache = new Map();
@@ -32,15 +28,20 @@ function setCache(key, data) {
   cache.set(key, { data, ts: Date.now() });
 }
 
-// ── Safe fetch with timeout + optional TLS skip ──
+// ── Safe fetch with timeout + optional TLS skip for self-signed certs ──
 async function safeFetch(url, opts = {}, skipTls = false) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
     const fetchOpts = { ...opts, signal: controller.signal };
-    if (skipTls) fetchOpts.dispatcher = tlsSkipAgent;
+    // Temporarily disable TLS verification for self-signed certs (e.g. Proxmox)
+    if (skipTls) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
     const res = await fetch(url, fetchOpts);
+    if (skipTls) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '1';
     return res;
+  } catch (err) {
+    if (skipTls) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '1';
+    throw err;
   } finally {
     clearTimeout(timeout);
   }
