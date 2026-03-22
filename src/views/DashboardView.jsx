@@ -3,6 +3,7 @@ import { Responsive, useContainerWidth } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import NodeCard from '../components/NodeCard';
 import TodoCard from '../components/TodoCard';
+import PanelWrapper from '../components/PanelWrapper';
 import { UPSCard, GiteaActivity, QuickLaunch } from '../components/Widgets';
 import { getServices, getUPSStatus, getGiteaActivity, getAllIntegrations } from '../hooks/useData';
 
@@ -86,6 +87,14 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
   // Phase 3: Integration engine data (replaces hardcoded AdGuard/NPM)
   const [integrationData, setIntegrationData] = useState({});
+
+  // ── Content-aware dynamic panel heights ──
+  // Each panel reports its measured content height (in grid rows) via PanelWrapper.
+  // These become the minH constraints so panels can't be resized smaller than their content.
+  const dynamicMinHRef = useRef({});
+  const handleMinH = useCallback((panelKey, minRows) => {
+    dynamicMinHRef.current[panelKey] = minRows;
+  }, []);
 
   const fetchAll = useCallback(async (bust) => {
     const b = bust || false;
@@ -314,80 +323,82 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
       return (
         <div key={gridKey}>
-          <NodeCard
-            sectionKey={nodeKey}
-            config={config}
-            setConfig={setConfig}
-            borderColor={borderColor}
-            metrics={metrics}
-            services={services}
-            nodeData={node}
-          >
-            {proxmoxVms && proxmoxVms.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{
-                  fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)',
-                  letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6, paddingLeft: 2,
-                }}>Virtual Machines</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
-                  {proxmoxVms.map(vm => {
-                    const isRunning = vm.status === 'running';
-                    const isPaused = vm.status === 'paused';
-                    const statusColor = isRunning ? 'var(--green)' : isPaused ? 'var(--amber)' : 'var(--red)';
-                    return (
-                      <div key={vm.vmid} style={{
-                        background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
-                        borderRadius: 12, padding: '10px 12px',
-                        borderLeft: `3px solid ${statusColor}`,
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{
-                            width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                            background: statusColor, boxShadow: `0 0 6px ${statusColor}`,
-                          }} />
-                          <span style={{
-                            fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
-                            flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          }}>{vm.name}</span>
-                          <span style={{
-                            fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-badge)', padding: '2px 5px',
-                            borderRadius: 4, textTransform: 'uppercase', fontWeight: 500,
-                            background: isRunning ? 'var(--green-bg)' : isPaused ? 'var(--amber-bg)' : 'var(--red-bg)',
-                            color: statusColor,
-                            border: `1px solid ${isRunning ? 'var(--green-border)' : isPaused ? 'var(--amber-border)' : 'var(--red-border)'}`,
-                          }}>{vm.status}</span>
-                        </div>
-                        <div style={{
-                          display: 'flex', gap: 8, marginTop: 6, justifyContent: 'center',
+          <PanelWrapper panelKey={gridKey} onMinH={handleMinH}>
+            <NodeCard
+              sectionKey={nodeKey}
+              config={config}
+              setConfig={setConfig}
+              borderColor={borderColor}
+              metrics={metrics}
+              services={services}
+              nodeData={node}
+            >
+              {proxmoxVms && proxmoxVms.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)',
+                    letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6, paddingLeft: 2,
+                  }}>Virtual Machines</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                    {proxmoxVms.map(vm => {
+                      const isRunning = vm.status === 'running';
+                      const isPaused = vm.status === 'paused';
+                      const statusColor = isRunning ? 'var(--green)' : isPaused ? 'var(--amber)' : 'var(--red)';
+                      return (
+                        <div key={vm.vmid} style={{
+                          background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
+                          borderRadius: 12, padding: '10px 12px',
+                          borderLeft: `3px solid ${statusColor}`,
                         }}>
-                          <div style={{
-                            textAlign: 'center', padding: '4px 8px',
-                            background: 'rgba(255,255,255,0.03)', borderRadius: 6,
-                            border: '1px solid rgba(255,255,255,0.04)', flex: 1,
-                          }}>
-                            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)' }}>{vm.maxcpu}</div>
-                            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>vCPU</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{
+                              width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                              background: statusColor, boxShadow: `0 0 6px ${statusColor}`,
+                            }} />
+                            <span style={{
+                              fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
+                              flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>{vm.name}</span>
+                            <span style={{
+                              fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-badge)', padding: '2px 5px',
+                              borderRadius: 4, textTransform: 'uppercase', fontWeight: 500,
+                              background: isRunning ? 'var(--green-bg)' : isPaused ? 'var(--amber-bg)' : 'var(--red-bg)',
+                              color: statusColor,
+                              border: `1px solid ${isRunning ? 'var(--green-border)' : isPaused ? 'var(--amber-border)' : 'var(--red-border)'}`,
+                            }}>{vm.status}</span>
                           </div>
                           <div style={{
-                            textAlign: 'center', padding: '4px 8px',
-                            background: 'rgba(255,255,255,0.03)', borderRadius: 6,
-                            border: '1px solid rgba(255,255,255,0.04)', flex: 1,
+                            display: 'flex', gap: 8, marginTop: 6, justifyContent: 'center',
                           }}>
-                            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)' }}>{vm.vmid}</div>
-                            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>VMID</div>
+                            <div style={{
+                              textAlign: 'center', padding: '4px 8px',
+                              background: 'rgba(255,255,255,0.03)', borderRadius: 6,
+                              border: '1px solid rgba(255,255,255,0.04)', flex: 1,
+                            }}>
+                              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)' }}>{vm.maxcpu}</div>
+                              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>vCPU</div>
+                            </div>
+                            <div style={{
+                              textAlign: 'center', padding: '4px 8px',
+                              background: 'rgba(255,255,255,0.03)', borderRadius: 6,
+                              border: '1px solid rgba(255,255,255,0.04)', flex: 1,
+                            }}>
+                              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)' }}>{vm.vmid}</div>
+                              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>VMID</div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
-          </NodeCard>
+              )}
+            </NodeCard>
+          </PanelWrapper>
         </div>
       );
     }).filter(Boolean);
-  }, [serviceData, sc, config, setConfig, appDataByContainer, claimedContainers, integrationData]);
+  }, [serviceData, sc, config, setConfig, appDataByContainer, claimedContainers, integrationData, handleMinH]);
 
   // Build custom group panel elements
   const customGroupElements = useMemo(() => {
@@ -402,19 +413,21 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
       return (
         <div key={gridKey}>
-          <NodeCard
-            sectionKey={`group-${group.id}`}
-            config={config}
-            setConfig={setConfig}
-            borderColor={borderColor}
-            metrics={null}
-            services={services}
-            nodeData={{ display_name: group.title, icon: group.icon || '📂', subtitle: `${services.length} services` }}
-          />
+          <PanelWrapper panelKey={gridKey} onMinH={handleMinH}>
+            <NodeCard
+              sectionKey={`group-${group.id}`}
+              config={config}
+              setConfig={setConfig}
+              borderColor={borderColor}
+              metrics={null}
+              services={services}
+              nodeData={{ display_name: group.title, icon: group.icon || '📂', subtitle: `${services.length} services` }}
+            />
+          </PanelWrapper>
         </div>
       );
     }).filter(Boolean);
-  }, [customGroups, allServicesFlat, sc, config, setConfig]);
+  }, [customGroups, allServicesFlat, sc, config, setConfig, handleMinH]);
 
   // Ensure layouts have entries for all dynamic node sections + custom groups and enforce min constraints
   // CRITICAL: Use a ref to stabilize the object reference. Only produce a new object when
@@ -422,24 +435,21 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   // 30-second data refresh.
   const prevEffectiveRef = useRef(null);
   const effectiveLayouts = useMemo(() => {
-    // Build constraint map from defaults
-    const constraints = {};
-    for (const item of DEFAULT_LAYOUTS.lg) {
-      constraints[item.i] = { minW: item.minW, minH: item.minH };
-    }
-
     const nodeKeys = Object.keys(serviceData.nodes || {}).map(k => `node-${k}`);
     const groupKeys = customGroups.map(g => `group-${g.id}`);
     const allDynamicKeys = [...nodeKeys, ...groupKeys];
     const result = {};
+
+    // Process lg and md breakpoints from saved/default layouts
     for (const [bp, items] of Object.entries(layouts)) {
-      // Apply min constraints from defaults to saved layout items
+      // Apply dynamic minH from content measurement (falls back to 2 if not yet measured)
       const constrained = items.map(item => {
-        const c = constraints[item.i];
-        if (c) {
-          return { ...item, minW: c.minW, minH: c.minH };
-        }
-        return item;
+        const dynamicMin = dynamicMinHRef.current[item.i];
+        return {
+          ...item,
+          minW: bp === 'sm' ? 1 : (item.minW || 4),
+          minH: dynamicMin || item.minH || 2,
+        };
       });
 
       const existingKeys = new Set(constrained.map(i => i.i));
@@ -447,9 +457,28 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       // Add missing nodes at the bottom
       let maxY = constrained.reduce((max, i) => Math.max(max, i.y + i.h), 0);
       const newItems = missing.map(k => ({
-        i: k, x: 0, y: maxY++, w: bp === 'lg' ? 12 : 10, h: 6, minW: 4, minH: 3,
+        i: k, x: 0, y: maxY++,
+        w: bp === 'lg' ? 12 : bp === 'md' ? 10 : 1,
+        h: dynamicMinHRef.current[k] || 6,
+        minW: bp === 'sm' ? 1 : 4,
+        minH: dynamicMinHRef.current[k] || 2,
       }));
       result[bp] = [...constrained, ...newItems];
+    }
+
+    // ── Auto-generate sm (mobile) breakpoint from lg layout ──
+    // Sort lg items by visual position (top-to-bottom, left-to-right) and stack single-column.
+    // This ensures mobile order matches the desktop arrangement automatically.
+    if (!result.sm) {
+      const lgItems = result.lg || result.md || [];
+      const sorted = [...lgItems].sort((a, b) => a.y !== b.y ? a.y - b.y : a.x - b.x);
+      let smY = 0;
+      result.sm = sorted.map(item => {
+        const h = dynamicMinHRef.current[item.i] || item.h || 4;
+        const entry = { i: item.i, x: 0, y: smY, w: 1, h, minW: 1, minH: dynamicMinHRef.current[item.i] || 2 };
+        smY += h;
+        return entry;
+      });
     }
 
     // Only return a new object if the layout actually changed
@@ -462,7 +491,8 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
         if (!b || a.length !== b.length) return false;
         return a.every((item, idx) =>
           item.i === b[idx].i && item.x === b[idx].x && item.y === b[idx].y &&
-          item.w === b[idx].w && item.h === b[idx].h
+          item.w === b[idx].w && item.h === b[idx].h &&
+          item.minH === b[idx].minH
         );
       });
       if (same) return prev; // Return same reference — RGL won't re-render
@@ -494,6 +524,9 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
   // Welcome message config
   const wm = config.welcomeMessage || {};
+
+  // ── Mobile detection: disable drag/resize on sm breakpoint ──
+  const isMobile = width < 480;
 
   return (
     <div className="dashboard-content" ref={containerRef}>
@@ -541,14 +574,14 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           gridConfig={{
             cols,
             rowHeight: 36,
-            margin: [16, 16],
+            margin: isMobile ? [12, 12] : [16, 16],
           }}
           dragConfig={{
-            enabled: true,
+            enabled: !isMobile,
             handle: '.section-header',
           }}
           resizeConfig={{
-            enabled: true,
+            enabled: !isMobile,
             handles: ['se', 'sw', 'e', 'w'],
           }}
         >
@@ -582,22 +615,30 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           {/* Static sections */}
           {sc.ups?.visible !== false && (
             <div key="ups">
-              <UPSCard upsData={ups} borderColor={sc.ups?.borderColor} config={config} />
+              <PanelWrapper panelKey="ups" onMinH={handleMinH}>
+                <UPSCard upsData={ups} borderColor={sc.ups?.borderColor} config={config} />
+              </PanelWrapper>
             </div>
           )}
           {sc.pipeline?.visible !== false && (
             <div key="pipeline">
-              <GiteaActivity commits={commits} config={config} />
+              <PanelWrapper panelKey="pipeline" onMinH={handleMinH}>
+                <GiteaActivity commits={commits} config={config} />
+              </PanelWrapper>
             </div>
           )}
           {sc.todos?.visible !== false && (
             <div key="todos">
-              <TodoCard borderColor={sc.todos?.borderColor} config={config} setConfig={setConfig} />
+              <PanelWrapper panelKey="todos" onMinH={handleMinH}>
+                <TodoCard borderColor={sc.todos?.borderColor} config={config} setConfig={setConfig} />
+              </PanelWrapper>
             </div>
           )}
           {sc.quicklaunch?.visible !== false && (
             <div key="quicklaunch">
-              <QuickLaunch config={config} borderColor={sc.quicklaunch?.borderColor} />
+              <PanelWrapper panelKey="quicklaunch" onMinH={handleMinH}>
+                <QuickLaunch config={config} borderColor={sc.quicklaunch?.borderColor} />
+              </PanelWrapper>
             </div>
           )}
         </Responsive>

@@ -279,3 +279,12 @@ body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: 
 ::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 3px; }
 @media (max-width: 900px) { .dashboard-content { padding: 14px; } }
 @media (max-width: 600px) { .nav-bar { padding: 8px 12px; flex-wrap: wrap; } .nav-tabs { display: none; } .nav-search-wrap { max-width: 100%; order: 10; } }
+@media (max-width: 480px) {
+  .node-card { padding: 14px 16px; }
+  .section-header { gap: 8px; margin-bottom: 12px; }
+  .node-metrics { gap: 6px; margin-bottom: 10px; }
+  .metric-block { min-width: 70px; padding: 8px 10px; }
+  .ups-grid { gap: 6px; }
+  /* Hide resize handles on mobile */
+  .react-resizable-handle { display: none !important; }
+}
