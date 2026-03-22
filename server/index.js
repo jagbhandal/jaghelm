@@ -563,12 +563,12 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.up
 // ══════════════════════════════════════════════════════════════
 
 // List all available presets (for Settings UI gallery)
-app.get('/api/integrations/presets', requireAuth, (req, res) => {
+app.get('/api/integrations/presets', authMiddleware, (req, res) => {
   res.json(listPresets());
 });
 
 // Fetch data from a configured integration
-app.get('/api/integrations/:type', requireAuth, async (req, res) => {
+app.get('/api/integrations/:type', authMiddleware, async (req, res) => {
   const { type } = req.params;
   const bust = shouldBypassCache(req);
 
@@ -589,7 +589,7 @@ app.get('/api/integrations/:type', requireAuth, async (req, res) => {
 });
 
 // Test connection before saving (credentials come from the request body, not stored yet)
-app.post('/api/integrations/test', requireAuth, async (req, res) => {
+app.post('/api/integrations/test', authMiddleware, async (req, res) => {
   const { type, url, username, password, token } = req.body;
   if (!url) return res.status(400).json({ ok: false, error: 'URL is required' });
 
@@ -599,7 +599,7 @@ app.post('/api/integrations/test', requireAuth, async (req, res) => {
 });
 
 // Save an integration config (encrypts credentials, stores config in services.yaml)
-app.post('/api/integrations/save', requireAuth, async (req, res) => {
+app.post('/api/integrations/save', authMiddleware, async (req, res) => {
   const { type, url, username, password, token, enabled, fields: customFields } = req.body;
   if (!type || !url) return res.status(400).json({ error: 'type and url are required' });
 
@@ -644,7 +644,7 @@ app.post('/api/integrations/save', requireAuth, async (req, res) => {
 });
 
 // Delete an integration config
-app.delete('/api/integrations/:type', requireAuth, async (req, res) => {
+app.delete('/api/integrations/:type', authMiddleware, async (req, res) => {
   const { type } = req.params;
   const config = getConfig() || {};
   if (!config.integrations?.[type]) {
@@ -657,7 +657,7 @@ app.delete('/api/integrations/:type', requireAuth, async (req, res) => {
 });
 
 // Fetch all configured integrations' data in one call (for dashboard)
-app.get('/api/integrations', requireAuth, async (req, res) => {
+app.get('/api/integrations', authMiddleware, async (req, res) => {
   const bust = shouldBypassCache(req);
   const config = getConfig();
   const integrations = config?.integrations || {};
