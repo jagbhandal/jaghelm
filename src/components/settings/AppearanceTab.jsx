@@ -3,9 +3,12 @@ import { HexColorPicker } from 'react-colorful';
 import { uploadFile } from '../../hooks/useData';
 
 const THEMES = [
-  { id: 'dark', name: 'Deep Navy', preview: '#0f1123' },
-  { id: 'dracula', name: 'Dracula', preview: '#282a36' },
-  { id: 'light', name: 'Light', preview: '#eef0f8' },
+  { id: 'dark', name: 'One Dark Pro', preview: '#0f1123', accent: '#6366f1', desc: 'Atom\'s iconic theme' },
+  { id: 'dracula', name: 'Dracula', preview: '#282a36', accent: '#bd93f9', desc: 'Dark with vibrant accents' },
+  { id: 'night-owl', name: 'Night Owl', preview: '#011627', accent: '#82aaff', desc: 'Deep blue, low-light' },
+  { id: 'github-dark', name: 'GitHub Dark', preview: '#0d1117', accent: '#58a6ff', desc: 'Clean & minimal' },
+  { id: 'catppuccin', name: 'Catppuccin Mocha', preview: '#1e1e2e', accent: '#89b4fa', desc: 'Soothing pastels' },
+  { id: 'material', name: 'Material Ocean', preview: '#0f111a', accent: '#84ffff', desc: 'Google Material dark' },
 ];
 
 export default function AppearanceTab({ config, update, theme, setTheme }) {
@@ -25,20 +28,30 @@ export default function AppearanceTab({ config, update, theme, setTheme }) {
   return (
     <div className="settings-section">
       <Card title="Theme">
-        <div style={{ display: 'flex', gap: 12 }}>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>
+          Inspired by the most popular VS Code themes.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
           {THEMES.map(t => (
             <button
               key={t.id}
               onClick={() => setTheme(t.id)}
               className={`settings-theme-btn ${theme === t.id ? 'active' : ''}`}
+              style={{ padding: '14px 10px' }}
             >
               <div style={{
-                width: 40, height: 40, borderRadius: 10,
+                width: 44, height: 44, borderRadius: 10,
                 background: t.preview,
-                border: '1px solid rgba(255,255,255,0.1)',
-                marginBottom: 8,
-              }} />
-              <span>{t.name}</span>
+                border: `2px solid ${theme === t.id ? t.accent : 'rgba(255,255,255,0.08)'}`,
+                marginBottom: 8, position: 'relative', overflow: 'hidden',
+              }}>
+                <div style={{
+                  position: 'absolute', bottom: 0, left: 0, right: 0, height: 3,
+                  background: t.accent,
+                }} />
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 600 }}>{t.name}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{t.desc}</div>
             </button>
           ))}
         </div>

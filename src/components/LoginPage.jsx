@@ -26,11 +26,11 @@ export default function LoginPage({ onLogin, config }) {
   return (
     <div className="login-page">
       <form onSubmit={handleSubmit} className="login-card">
-        <div style={{ textAlign: 'center', marginBottom: 16 }}>
-          <img src={config?.logoUrl || '/logo.svg'} alt="" style={{ height: 64, marginBottom: 12 }} />
+        <div style={{ textAlign: 'center', marginBottom: 20 }}>
+          <img src={config?.logoUrl || '/logo.svg'} alt="" style={{ height: 120, marginBottom: 16 }} />
         </div>
         <div className="login-title">{config?.title || 'JAG-NET'}</div>
-        <div className="login-sub">{config?.subtitle || 'Infrastructure Dashboard'}</div>
+        <div className="login-sub" style={{ fontSize: 16, color: 'var(--text-secondary)', marginBottom: 32 }}>{config?.subtitle || 'Infrastructure Dashboard'}</div>
         {error && <div className="login-error">{error}</div>}
         <input className="login-input" type="text" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} autoFocus />
         <input className="login-input" type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />

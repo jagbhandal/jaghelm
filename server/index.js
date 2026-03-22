@@ -46,12 +46,38 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(uploadsDir));
 
-// ── AUTH (unchanged from v7) ──
+// ── AUTH ──
 const sessions = new Map();
 const AUTH_USER = process.env.DASH_USER || 'admin';
-const AUTH_PASS = process.env.DASH_PASS || '';
+const AUTH_PASS_ENV = process.env.DASH_PASS || '';
+const AUTH_FILE = join(dataDir, 'auth.json');
 
-function authEnabled() { return AUTH_PASS && AUTH_PASS !== 'REPLACE_ME' && AUTH_PASS.length > 0; }
+function loadAuthOverride() {
+  try {
+    if (existsSync(AUTH_FILE)) {
+      const data = JSON.parse(readFileSync(AUTH_FILE, 'utf8'));
+      return data.passwordHash || null;
+    }
+  } catch {}
+  return null;
+}
+
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
+
+let storedPasswordHash = loadAuthOverride();
+
+function authEnabled() {
+  return storedPasswordHash || (AUTH_PASS_ENV && AUTH_PASS_ENV !== 'REPLACE_ME' && AUTH_PASS_ENV.length > 0);
+}
+
+function checkPassword(password) {
+  if (storedPasswordHash) {
+    return hashPassword(password) === storedPasswordHash;
+  }
+  return password === AUTH_PASS_ENV;
+}
 
 function authMiddleware(req, res, next) {
   if (!authEnabled()) return next();
@@ -67,7 +93,7 @@ function authMiddleware(req, res, next) {
 app.post('/api/auth/login', (req, res) => {
   if (!authEnabled()) return res.json({ token: 'noauth', user: 'admin' });
   const { username, password } = req.body;
-  if (username === AUTH_USER && password === AUTH_PASS) {
+  if (username === AUTH_USER && checkPassword(password)) {
     const token = crypto.randomBytes(32).toString('hex');
     sessions.set(token, { user: username, created: Date.now() });
     return res.json({ token, user: username });
@@ -78,8 +104,35 @@ app.post('/api/auth/login', (req, res) => {
 app.get('/api/auth/check', (req, res) => {
   if (!authEnabled()) return res.json({ authenticated: true, authRequired: false });
   const token = req.headers['x-auth-token'];
-  if (token && sessions.has(token)) return res.json({ authenticated: true, authRequired: true });
+  if (token && sessions.has(token)) return res.json({ authenticated: true, authRequired: true, user: AUTH_USER });
   res.json({ authenticated: false, authRequired: true });
+});
+
+app.post('/api/auth/change-password', authMiddleware, (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Missing current or new password' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  }
+  if (!checkPassword(currentPassword)) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+  try {
+    storedPasswordHash = hashPassword(newPassword);
+    writeFileSync(AUTH_FILE, JSON.stringify({ passwordHash: storedPasswordHash, updatedAt: new Date().toISOString() }, null, 2));
+    // Invalidate all sessions except the current one
+    const currentToken = req.headers['x-auth-token'];
+    for (const [token] of sessions) {
+      if (token !== currentToken) sessions.delete(token);
+    }
+    console.log('[auth] Password changed successfully');
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[auth] Failed to save password:', err.message);
+    res.status(500).json({ error: 'Failed to save new password' });
+  }
 });
 
 // ── CACHE ──
@@ -87,7 +140,7 @@ const cache = new Map();
 const CACHE_TTL = 15000;
 function getCached(k) { const e = cache.get(k); return e && Date.now() - e.ts < CACHE_TTL ? e.data : null; }
 function setCache(k, d) { cache.set(k, { data: d, ts: Date.now() }); }
-function shouldBypassCache(req) { return req.query.nocache === '1'; }
+function shouldBypassCache(req) { return !!req.query.nocache; }
 
 async function safeFetch(url, opts = {}) {
   return fetch(url, { ...opts, signal: AbortSignal.timeout(8000) });
@@ -121,7 +174,8 @@ app.use('/api/display-config', authMiddleware);
  * - Config overrides (display names, icons, visibility)
  */
 app.get('/api/services', async (req, res) => {
-  if (!shouldBypassCache(req)) {
+  const bust = shouldBypassCache(req);
+  if (!bust) {
     const cached = getCached('services');
     if (cached) return res.json(cached);
   }
@@ -132,8 +186,8 @@ app.get('/api/services', async (req, res) => {
       return res.json({ nodes: {} });
     }
 
-    // Fetch all monitors once
-    const monitors = await fetchMonitors();
+    // Fetch all monitors once (bust cache if client requested fresh data)
+    const monitors = await fetchMonitors(bust);
 
     // Build response for each node in parallel
     const nodeEntries = await Promise.all(
