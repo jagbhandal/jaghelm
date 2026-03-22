@@ -92,7 +92,7 @@ export default function NavBar({ tabs, activeTab, onTabChange, theme, setTheme, 
         <span className="nav-clock">{clock}</span>
         <span className="nav-updated">Updated {timeSince}</span>
         <button className="icon-btn" onClick={onOpenSettings}>⚙️</button>
-        <button className="icon-btn" onClick={onToggleTheme}>{theme === 'dark' ? '☀️' : theme === 'light' ? '🧛' : '🌙'}</button>
+        <button className="icon-btn" onClick={onToggleTheme} title="Cycle theme">🎨</button>
       </div>
     </nav>
   );

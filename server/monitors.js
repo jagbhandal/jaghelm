@@ -22,10 +22,10 @@ export function initMonitors(url) {
  *   2. /api/status-page/heartbeat/default → heartbeat status, ping, uptime
  * Returns a map of { id: { id, name, status, ping, uptime24 } }
  */
-export async function fetchMonitors() {
+export async function fetchMonitors(bustCache = false) {
   if (!kumaUrl) return {};
 
-  if (cachedMonitors && Date.now() - cacheTime < CACHE_TTL) {
+  if (!bustCache && cachedMonitors && Date.now() - cacheTime < CACHE_TTL) {
     return cachedMonitors;
   }
 

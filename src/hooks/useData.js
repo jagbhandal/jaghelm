@@ -10,7 +10,7 @@ const BASE = '/api';
 function addCacheBust(url, bust) {
   if (!bust) return url;
   const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}nocache=1`;
+  return `${url}${sep}nocache=${Date.now()}`;
 }
 
 async function fetchJson(url, bust) {
@@ -96,20 +96,39 @@ export const SEARCH_ENGINES = [
 
 export const SERVICE_ICONS = {
   'npm': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nginx-proxy-manager.svg',
+  'nginx': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nginx-proxy-manager.svg',
   'adguard': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/adguard-home.svg',
   'photoprism': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/photoprism.svg',
+  'photos': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/photoprism.svg',
   'vaultwarden': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/vaultwarden.svg',
+  'vault': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/vaultwarden.svg',
   'gitea': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/gitea.svg',
   'nextcloud': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nextcloud.svg',
+  'cloud': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nextcloud.svg',
   'grafana': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/grafana.svg',
   'proxmox': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/proxmox.svg',
   'dockge': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/dockge.svg',
   'uptime': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/uptime-kuma.svg',
+  'kuma': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/uptime-kuma.svg',
   'code': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/vscode.svg',
   'vs code': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/vscode.svg',
   'cloudflare': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/cloudflare.svg',
   'tailscale': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/tailscale.svg',
   'prometheus': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/prometheus.svg',
+  'nas': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/synology.svg',
+  'synology': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/synology.svg',
+  'ugreen': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/synology.svg',
+  'ntfy': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/ntfy.svg',
+  'homebridge': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/homebridge.svg',
+  'plex': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/plex.svg',
+  'jellyfin': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/jellyfin.svg',
+  'pihole': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/pi-hole.svg',
+  'sonarr': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/sonarr.svg',
+  'radarr': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/radarr.svg',
+  'portainer': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/portainer.svg',
+  'wireguard': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/wireguard.svg',
+  'backrest': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/backrest.svg',
+  'casaos': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/casaos.svg',
 };
 
 export function getServiceIcon(name) {

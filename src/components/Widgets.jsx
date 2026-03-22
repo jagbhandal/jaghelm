@@ -1,4 +1,5 @@
 import React from 'react';
+import { getServiceIcon } from '../hooks/useData';
 
 export function UPSCard({ upsData, borderColor, config }) {
   const sec = config?.sections?.ups || {};
@@ -54,7 +55,18 @@ export function QuickLaunch({ config, borderColor }) {
             <div key={g.key}>
               <h4 style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 }}>{g.label}</h4>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
-                {links.map((l, i) => <a key={i} href={l.url} target="_blank" rel="noopener noreferrer" className="quick-launch-link"><span style={{ fontSize: 18, width: 22, textAlign: 'center' }}>{l.icon}</span><span>{l.name}</span></a>)}
+                {links.map((l, i) => {
+                  const svgIcon = getServiceIcon(l.name);
+                  return (
+                    <a key={i} href={l.url} target="_blank" rel="noopener noreferrer" className="quick-launch-link">
+                      {svgIcon
+                        ? <img src={svgIcon} alt="" style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0 }} />
+                        : <span style={{ fontSize: 18, width: 22, textAlign: 'center' }}>{l.icon}</span>
+                      }
+                      <span>{l.name}</span>
+                    </a>
+                  );
+                })}
               </div>
             </div>
           );

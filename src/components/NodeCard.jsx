@@ -46,7 +46,7 @@ export default function NodeCard({ sectionKey, config, setConfig, borderColor, m
           {metrics.map((m, i) => (
             <div className="metric-block" key={i}>
               <span className="metric-label">{m.label}</span>
-              <span className="metric-value" style={{ fontSize: m.small ? '18px' : '24px' }}>
+              <span className="metric-value" style={{ fontSize: m.small ? 'var(--fs-metric-value-sm)' : 'var(--fs-metric-value)' }}>
                 {m.value ?? '—'}
                 {m.unit && <span className="metric-unit">{m.unit}</span>}
               </span>

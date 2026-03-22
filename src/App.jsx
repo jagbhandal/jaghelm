@@ -104,7 +104,32 @@ export default function App() {
     root.style.setProperty('--accent-light', hex);
     root.style.setProperty('--bg-opacity', String(config.bgOpacity ?? 0.3));
     root.style.setProperty('--overlay-opacity', String(config.overlayOpacity ?? 0.75));
-  }, [config.accentColor, config.bgOpacity, config.overlayOpacity]);
+
+    // Font family
+    const fonts = config.fontFamily || 'default';
+    const FONT_FAMILIES = {
+      default: { display: "'Outfit', sans-serif", body: "'DM Sans', sans-serif", mono: "'JetBrains Mono', monospace" },
+      clean: { display: "'Inter', sans-serif", body: "'Inter', sans-serif", mono: "'Fira Code', monospace" },
+      rounded: { display: "'Nunito', sans-serif", body: "'Nunito', sans-serif", mono: "'Source Code Pro', monospace" },
+      sharp: { display: "'Rajdhani', sans-serif", body: "'Roboto', sans-serif", mono: "'Roboto Mono', monospace" },
+      system: { display: "system-ui, -apple-system, sans-serif", body: "system-ui, -apple-system, sans-serif", mono: "ui-monospace, 'SF Mono', monospace" },
+    };
+    const ff = FONT_FAMILIES[fonts] || FONT_FAMILIES.default;
+    root.style.setProperty('--font-display', ff.display);
+    root.style.setProperty('--font-body', ff.body);
+    root.style.setProperty('--font-mono', ff.mono);
+
+    // Font sizes
+    const fs = config.fontSizes || {};
+    if (fs.sectionTitle) root.style.setProperty('--fs-section-title', `${fs.sectionTitle}px`);
+    if (fs.sectionSubtitle) root.style.setProperty('--fs-section-subtitle', `${fs.sectionSubtitle}px`);
+    if (fs.metricValue) root.style.setProperty('--fs-metric-value', `${fs.metricValue}px`);
+    if (fs.metricValueSm) root.style.setProperty('--fs-metric-value-sm', `${fs.metricValueSm}px`);
+    if (fs.metricLabel) root.style.setProperty('--fs-metric-label', `${fs.metricLabel}px`);
+    if (fs.serviceName) root.style.setProperty('--fs-service-name', `${fs.serviceName}px`);
+    if (fs.serviceStatValue) root.style.setProperty('--fs-service-stat-value', `${fs.serviceStatValue}px`);
+    if (fs.serviceStatLabel) root.style.setProperty('--fs-service-stat-label', `${fs.serviceStatLabel}px`);
+  }, [config.accentColor, config.bgOpacity, config.overlayOpacity, config.fontFamily, config.fontSizes]);
 
   const intervalMs = (config.refreshInterval || 30) * 1000;
   const doRefresh = useCallback(async () => {
@@ -153,7 +178,10 @@ export default function App() {
       <div className="app-container">
         <NavBar tabs={allTabs} activeTab={activeTab} onTabChange={setActiveTab}
           theme={theme} setTheme={setTheme}
-          onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : t === 'light' ? 'dracula' : 'dark')}
+          onToggleTheme={() => {
+            const order = ['dark', 'dracula', 'night-owl', 'github-dark', 'catppuccin', 'material'];
+            setTheme(t => { const i = order.indexOf(t); return order[(i + 1) % order.length]; });
+          }}
           health={overallHealth} lastUpdated={lastUpdated} config={config}
           onOpenSettings={() => setActiveTab('settings')}
           refreshKey={refreshKey} />

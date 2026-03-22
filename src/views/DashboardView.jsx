@@ -33,7 +33,7 @@ const DEFAULT_LAYOUTS = {
     { i: 'ups', x: 6, y: 14, w: 6, h: 5, minW: 4, minH: 3 },
     { i: 'pipeline', x: 0, y: 20, w: 8, h: 5, minW: 4, minH: 3 },
     { i: 'todos', x: 8, y: 20, w: 4, h: 5, minW: 3, minH: 3 },
-    { i: 'quicklaunch', x: 0, y: 25, w: 12, h: 6, minW: 6, minH: 4 },
+    { i: 'quicklaunch', x: 0, y: 25, w: 12, h: 4, minW: 4, minH: 2 },
   ],
   md: [
     { i: 'node-gateway', x: 0, y: 0, w: 10, h: 7 },
@@ -42,7 +42,7 @@ const DEFAULT_LAYOUTS = {
     { i: 'ups', x: 0, y: 20, w: 10, h: 5 },
     { i: 'pipeline', x: 0, y: 25, w: 10, h: 5 },
     { i: 'todos', x: 0, y: 30, w: 10, h: 5 },
-    { i: 'quicklaunch', x: 0, y: 35, w: 10, h: 6 },
+    { i: 'quicklaunch', x: 0, y: 35, w: 10, h: 4 },
   ],
 };
 

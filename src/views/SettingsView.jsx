@@ -3,16 +3,19 @@ import GeneralTab from '../components/settings/GeneralTab';
 import AppearanceTab from '../components/settings/AppearanceTab';
 import LayoutTab from '../components/settings/LayoutTab';
 import SectionsTab from '../components/settings/SectionsTab';
+import TypographyTab from '../components/settings/TypographyTab';
 import NodesTab from '../components/settings/NodesTab';
 import ServicesTab from '../components/settings/ServicesTab';
 import LinksTab from '../components/settings/LinksTab';
 import WidgetsTab from '../components/settings/WidgetsTab';
 import TabsTab from '../components/settings/TabsTab';
+import SecurityTab from '../components/settings/SecurityTab';
 import BackupTab from '../components/settings/BackupTab';
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: '🏠', desc: 'Title, logo, branding' },
   { id: 'appearance', label: 'Appearance', icon: '🎨', desc: 'Theme, colors, background' },
+  { id: 'typography', label: 'Typography', icon: '🔤', desc: 'Fonts, sizes, readability' },
   { id: 'layout', label: 'Layout', icon: '📐', desc: 'Grid, refresh, card style' },
   { id: 'sections', label: 'Sections', icon: '🧱', desc: 'UPS, Pipeline, Quick Launch, Todos' },
   { id: 'nodes', label: 'Nodes', icon: '🖥', desc: 'Manage infrastructure nodes', divider: true },
@@ -21,7 +24,8 @@ const SECTIONS = [
   { id: 'links', label: 'Links', icon: '🔗', desc: 'Quick Launch bookmarks', divider: true },
   { id: 'widgets', label: 'Widgets', icon: '🧩', desc: 'Search, weather, features' },
   { id: 'tabs', label: 'Tabs', icon: '📑', desc: 'Embedded service tabs' },
-  { id: 'backup', label: 'Backup', icon: '💾', desc: 'Export & import config', divider: true },
+  { id: 'security', label: 'Security', icon: '🔒', desc: 'Password & authentication', divider: true },
+  { id: 'backup', label: 'Backup', icon: '💾', desc: 'Export & import config' },
 ];
 
 export default function SettingsView({ config, setConfig, theme, setTheme }) {
@@ -137,6 +141,9 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
           {activeSection === 'appearance' && (
             <AppearanceTab config={config} update={update} theme={theme} setTheme={setTheme} />
           )}
+          {activeSection === 'typography' && (
+            <TypographyTab config={config} update={update} />
+          )}
           {activeSection === 'layout' && (
             <LayoutTab config={config} update={update} />
           )}
@@ -178,6 +185,9 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
           )}
           {activeSection === 'tabs' && (
             <TabsTab config={config} update={update} />
+          )}
+          {activeSection === 'security' && (
+            <SecurityTab />
           )}
           {activeSection === 'backup' && (
             <BackupTab config={config} setConfig={setConfig} />

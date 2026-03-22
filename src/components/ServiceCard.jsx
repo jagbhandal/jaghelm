@@ -30,36 +30,39 @@ export default function ServiceCard({ service, level }) {
       borderRadius: 12, padding: showStats ? '12px 14px' : '8px 12px',
       transition: 'border-color 0.2s', cursor: 'default',
       borderLeft: `3px solid ${statusColor}`, borderLeftStyle: 'solid',
+      position: 'relative',
     }}>
-      {/* Header row: icon + name + status badge */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: showStats ? 8 : 0 }}>
+      {/* Badges — pinned top right */}
+      <div style={{ position: 'absolute', top: 8, right: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
+        {service.ping != null && service.ping > 0 && (
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-badge)', padding: '2px 5px',
+            borderRadius: 4, background: 'var(--green-bg)', color: 'var(--green)',
+            border: '1px solid var(--green-border)',
+          }}>{service.ping}ms</span>
+        )}
+        <span style={{
+          fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-badge)', padding: '2px 5px',
+          borderRadius: 4, textTransform: 'uppercase', fontWeight: 500,
+          background: isUp ? 'var(--green-bg)' : isDown ? 'var(--red-bg)' : 'var(--amber-bg)',
+          color: statusColor,
+          border: `1px solid ${isUp ? 'var(--green-border)' : isDown ? 'var(--red-border)' : 'var(--amber-border)'}`,
+        }}>{st === 'up' ? 'running' : st}</span>
+      </div>
+
+      {/* Header row: status dot + icon + name */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: showStats ? 8 : 0, paddingRight: 90 }}>
         <div style={{
           width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
           background: statusColor, boxShadow: `0 0 6px ${statusColor}`,
         }} />
         {icon && <img src={icon} alt="" style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0 }} />}
         <span style={{
-          fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 500,
+          fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
           flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
           {service.name}
         </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-          {service.ping != null && service.ping > 0 && level !== 'minimal' && (
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 6px',
-              borderRadius: 4, background: 'var(--green-bg)', color: 'var(--green)',
-              border: '1px solid var(--green-border)',
-            }}>{service.ping}ms</span>
-          )}
-          <span style={{
-            fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 6px',
-            borderRadius: 4, textTransform: 'uppercase', fontWeight: 500,
-            background: isUp ? 'var(--green-bg)' : isDown ? 'var(--red-bg)' : 'var(--amber-bg)',
-            color: statusColor,
-            border: `1px solid ${isUp ? 'var(--green-border)' : isDown ? 'var(--red-border)' : 'var(--amber-border)'}`,
-          }}>{st === 'up' ? 'running' : st}</span>
-        </div>
       </div>
 
       {/* Stats row: CPU, MEM, RX, TX */}
@@ -106,11 +109,11 @@ function StatCell({ label, value }) {
   return (
     <div style={{
       textAlign: 'center', padding: '6px 4px',
-      background: 'rgba(255,255,255,0.02)', borderRadius: 6,
-      border: '1px solid rgba(255,255,255,0.03)',
+      background: 'rgba(255,255,255,0.03)', borderRadius: 6,
+      border: '1px solid rgba(255,255,255,0.04)',
     }}>
-      <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.2 }}>{value}</div>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>{label}</div>
+      <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)', lineHeight: 1.2 }}>{value}</div>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>{label}</div>
     </div>
   );
 }
