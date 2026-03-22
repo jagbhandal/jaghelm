@@ -72,7 +72,7 @@ export default function NodeCard({ sectionKey, config, setConfig, borderColor, m
           <div style={{
             display: 'grid',
             gridTemplateColumns: level === 'minimal'
-              ? 'repeat(auto-fill, minmax(150px, 1fr))'
+              ? 'repeat(auto-fill, minmax(180px, 1fr))'
               : 'repeat(auto-fill, minmax(200px, 1fr))',
             gap: 8,
           }}>

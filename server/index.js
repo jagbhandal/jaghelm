@@ -106,6 +106,7 @@ app.use('/api/adguard', authMiddleware);
 app.use('/api/ups', authMiddleware);
 app.use('/api/npm', authMiddleware);
 app.use('/api/docker', authMiddleware);
+app.use('/api/display-config', authMiddleware);
 
 // ══════════════════════════════════════════════════════════════
 // PHASE 1: Unified /api/services endpoint
@@ -239,6 +240,38 @@ app.put('/api/secrets/:key', (req, res) => {
 app.delete('/api/secrets/:key', (req, res) => {
   const ok = deleteSecret(req.params.key);
   res.json({ ok, key: req.params.key });
+});
+
+// ── Display Config (server-side persistence for UI settings, layout, theme) ──
+const DISPLAY_CONFIG_PATH = join(dataDir, 'display-config.json');
+
+app.get('/api/display-config', (req, res) => {
+  try {
+    if (existsSync(DISPLAY_CONFIG_PATH)) {
+      const raw = readFileSync(DISPLAY_CONFIG_PATH, 'utf8');
+      const data = JSON.parse(raw);
+      return res.json(data);
+    }
+    res.json(null);
+  } catch (err) {
+    console.error('[display-config] Failed to read:', err.message);
+    res.json(null);
+  }
+});
+
+app.post('/api/display-config', (req, res) => {
+  try {
+    const config = req.body;
+    if (!config || typeof config !== 'object') {
+      return res.status(400).json({ error: 'Invalid config' });
+    }
+    writeFileSync(DISPLAY_CONFIG_PATH, JSON.stringify(config, null, 2));
+    console.log('[display-config] Saved (%d keys)', Object.keys(config).length);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[display-config] Failed to save:', err.message);
+    res.status(500).json({ error: 'Failed to save display config', detail: err.message });
+  }
 });
 
 // ══════════════════════════════════════════════════════════════

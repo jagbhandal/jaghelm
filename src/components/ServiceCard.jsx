@@ -45,7 +45,7 @@ export default function ServiceCard({ service, level }) {
           {service.name}
         </span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-          {service.ping != null && service.ping > 0 && (
+          {service.ping != null && service.ping > 0 && level !== 'minimal' && (
             <span style={{
               fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 6px',
               borderRadius: 4, background: 'var(--green-bg)', color: 'var(--green)',

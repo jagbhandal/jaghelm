@@ -59,7 +59,11 @@ export default function NavBar({ tabs, activeTab, onTabChange, theme, setTheme, 
     <nav className="nav-bar">
       <div className="nav-brand">
         <div className="nav-health-dot" style={{ background: hc, boxShadow: `0 0 8px ${hc}` }} />
-        {config?.logoUrl ? <img src={config.logoUrl} alt="" className="nav-logo-img" /> : <span className="nav-logo">{config?.title || 'JAG-NET'}</span>}
+        {config?.logoUrl
+          ? <img src={config.logoUrl} alt="" className="nav-logo-img" />
+          : <img src="/logo.svg" alt="" className="nav-logo-img" />
+        }
+        <span className="nav-logo">{config?.title || 'JAG-NET'}</span>
         <span className="nav-health-label">{hl}</span>
       </div>
       <div className="nav-tabs">

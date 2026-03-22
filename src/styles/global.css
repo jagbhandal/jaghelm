@@ -82,10 +82,10 @@ body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: 
 .dashboard-content { padding: 24px 5%; max-width: 100%; margin: 0 auto; width: 100%; }
 
 /* Cards */
-.glass-card { background: var(--bg-card); backdrop-filter: blur(var(--glass-blur)); border: 1px solid var(--glass-border); border-radius: var(--card-radius); box-shadow: var(--shadow-card); transition: border-color 0.3s; position: relative; overflow: hidden; height: 100%; }
-.glass-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent); }
+.glass-card { background: var(--bg-card); backdrop-filter: blur(var(--glass-blur)); border: 1px solid var(--glass-border); border-radius: var(--card-radius); box-shadow: var(--shadow-card); transition: border-color 0.3s; position: relative; height: 100%; overflow: hidden; }
+.glass-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent); pointer-events: none; z-index: 1; }
 .glass-card:hover { border-color: var(--border-glow); }
-.node-card { padding: 20px 24px; height: 100%; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; }
+.node-card { padding: 20px 24px; height: 100%; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
 .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .section-icon { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 19px; flex-shrink: 0; }
 .section-title { font-family: var(--font-display); font-weight: 700; font-size: 17px; letter-spacing: -0.3px; cursor: default; color: var(--text-primary); }
@@ -131,8 +131,15 @@ body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: 
 .react-grid-layout { position: relative; }
 .react-grid-item { transition: all 200ms ease; }
 .react-grid-item.react-draggable-dragging { z-index: 10; opacity: 0.85; box-shadow: 0 8px 40px rgba(0,0,0,0.4); }
-.react-grid-item > .react-resizable-handle { position: absolute; width: 20px; height: 20px; }
-.react-grid-item > .react-resizable-handle::after { content: ''; position: absolute; right: 5px; bottom: 5px; width: 10px; height: 10px; border-right: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted); opacity: 0.3; }
+.react-grid-item > .react-resizable-handle { position: absolute; width: 20px; height: 20px; z-index: 2; }
+.react-grid-item > .react-resizable-handle-se { bottom: 0; right: 0; cursor: se-resize; }
+.react-grid-item > .react-resizable-handle-sw { bottom: 0; left: 0; cursor: sw-resize; }
+.react-grid-item > .react-resizable-handle-e { right: -4px; top: 50%; transform: translateY(-50%); height: 40px; cursor: e-resize; }
+.react-grid-item > .react-resizable-handle-w { left: -4px; top: 50%; transform: translateY(-50%); height: 40px; cursor: w-resize; }
+.react-grid-item > .react-resizable-handle-se::after { content: ''; position: absolute; right: 5px; bottom: 5px; width: 10px; height: 10px; border-right: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted); opacity: 0.3; }
+.react-grid-item > .react-resizable-handle-sw::after { content: ''; position: absolute; left: 5px; bottom: 5px; width: 10px; height: 10px; border-left: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted); opacity: 0.3; }
+.react-grid-item > .react-resizable-handle-e::after { content: ''; position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 3px; height: 20px; border-right: 2px solid var(--text-muted); opacity: 0.3; }
+.react-grid-item > .react-resizable-handle-w::after { content: ''; position: absolute; left: 2px; top: 50%; transform: translateY(-50%); width: 3px; height: 20px; border-left: 2px solid var(--text-muted); opacity: 0.3; }
 .react-grid-item:hover > .react-resizable-handle::after { opacity: 0.7; }
 .react-grid-placeholder { background: var(--accent-glow) !important; border: 2px dashed var(--accent) !important; border-radius: var(--card-radius) !important; opacity: 0.3; }
 

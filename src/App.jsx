@@ -18,7 +18,7 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [config, setConfig] = useState(() => {
     try {
-      // Migrate from old key if needed
+      // Start with localStorage for instant render, server fetch will override
       const existing = localStorage.getItem('jaghelm-config');
       if (existing) return JSON.parse(existing) || defaultConfig();
       const legacy = localStorage.getItem('jagnet-config');
@@ -30,7 +30,9 @@ export default function App() {
     }
     catch { return defaultConfig(); }
   });
+  const configLoadedFromServer = useRef(false);
   const intervalRef = useRef(null);
+  const saveTimerRef = useRef(null);
 
   // Check auth on mount
   useEffect(() => {
@@ -61,7 +63,38 @@ export default function App() {
   }, [authToken]);
 
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); localStorage.setItem('jaghelm-theme', theme); }, [theme]);
-  useEffect(() => { localStorage.setItem('jaghelm-config', JSON.stringify(config)); }, [config]);
+
+  // Save config: localStorage immediately, server debounced
+  useEffect(() => {
+    localStorage.setItem('jaghelm-config', JSON.stringify(config));
+    // Don't save to server until we've loaded from server first (prevents overwriting server config with defaults)
+    if (!configLoadedFromServer.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      fetch('/api/display-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      }).catch(() => {});
+    }, 2000);
+  }, [config]);
+
+  // Load config from server on successful auth (authoritative source)
+  useEffect(() => {
+    if (!authed) return;
+    fetch('/api/display-config')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+          setConfig(data);
+          localStorage.setItem('jaghelm-config', JSON.stringify(data));
+          if (data.theme) setTheme(data.theme);
+        }
+        // Mark as loaded so future changes will save to server
+        configLoadedFromServer.current = true;
+      })
+      .catch(() => { configLoadedFromServer.current = true; });
+  }, [authed]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -103,7 +136,7 @@ export default function App() {
       <>
         <div className="bg-layer"><div className="bg-overlay" /></div>
         <div className="bg-mesh" />
-        <LoginPage onLogin={handleLogin} />
+        <LoginPage onLogin={handleLogin} config={config} />
       </>
     );
   }
@@ -127,7 +160,7 @@ export default function App() {
         {allTabs.find(t => t.id === activeTab && t.type === 'iframe') && (
           <IframeView url={allTabs.find(t => t.id === activeTab).url} title={allTabs.find(t => t.id === activeTab).label} />
         )}
-        {settingsOpen && <SettingsPanel config={config} setConfig={setConfig} theme={theme} setTheme={setTheme} onClose={() => setSettingsOpen(false)} />}
+        {settingsOpen && <SettingsPanel config={config} setConfig={setConfig} theme={theme} setTheme={setTheme} onClose={() => setSettingsOpen(false)} onApply={() => setRefreshKey(k => k + 1)} />}
       </div>
     </>
   );
