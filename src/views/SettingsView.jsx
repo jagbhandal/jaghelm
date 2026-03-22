@@ -12,6 +12,7 @@ import TabsTab from '../components/settings/TabsTab';
 import SecurityTab from '../components/settings/SecurityTab';
 import BackupTab from '../components/settings/BackupTab';
 import IntegrationsTab from '../components/settings/IntegrationsTab';
+import DashboardView from './DashboardView';
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: '🏠', desc: 'Title, logo, branding' },
@@ -31,6 +32,7 @@ const SECTIONS = [
 
 export default function SettingsView({ config, setConfig, theme, setTheme }) {
   const [activeSection, setActiveSection] = useState('general');
+  const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
 
   // ── Server-side config (services.yaml) for Nodes/Services ──
   const [serverConfig, setServerConfig] = useState(null);
@@ -124,73 +126,130 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
         </div>
       </nav>
 
-      {/* Content */}
-      <main className="settings-main">
-        <div className="settings-main-header">
-          <h1 className="settings-main-title">
-            {SECTIONS.find(s => s.id === activeSection)?.icon}{' '}
-            {SECTIONS.find(s => s.id === activeSection)?.label}
-          </h1>
-          <p className="settings-main-desc">
-            {SECTIONS.find(s => s.id === activeSection)?.desc}
-          </p>
-        </div>
-        <div className="settings-main-content">
-          {activeSection === 'general' && (
-            <GeneralTab config={config} update={update} />
-          )}
-          {activeSection === 'appearance' && (
-            <AppearanceTab config={config} update={update} theme={theme} setTheme={setTheme} />
-          )}
-          {activeSection === 'typography' && (
-            <TypographyTab config={config} update={update} />
-          )}
-          {activeSection === 'layout' && (
-            <LayoutTab config={config} update={update} />
-          )}
-          {activeSection === 'sections' && (
-            <SectionsTab config={config} update={update} />
-          )}
-          {activeSection === 'nodes' && (
-            serverConfig ? (
-              <NodesTab serverConfig={serverConfig} onSave={saveServerConfig} saving={serverSaving} />
-            ) : (
-              <LoadingState />
-            )
-          )}
-          {activeSection === 'services' && (
-            serverConfig && liveServices ? (
-              <ServicesTab
-                serverConfig={serverConfig}
-                liveServices={liveServices}
-                monitorNames={monitorNames}
-                onSave={saveServerConfig}
-                saving={serverSaving}
+      {/* Settings content + Live Preview split */}
+      <div style={{ display: 'flex', flex: 1, minWidth: 0, overflow: 'hidden' }}>
+        {/* Settings form */}
+        <main className="settings-main" style={{ maxWidth: '50%', flex: '0 0 50%' }}>
+          <div className="settings-main-header">
+            <h1 className="settings-main-title">
+              {SECTIONS.find(s => s.id === activeSection)?.icon}{' '}
+              {SECTIONS.find(s => s.id === activeSection)?.label}
+            </h1>
+            <p className="settings-main-desc">
+              {SECTIONS.find(s => s.id === activeSection)?.desc}
+            </p>
+          </div>
+          <div className="settings-main-content">
+            {activeSection === 'general' && (
+              <GeneralTab config={config} update={update} />
+            )}
+            {activeSection === 'appearance' && (
+              <AppearanceTab config={config} update={update} theme={theme} setTheme={setTheme} />
+            )}
+            {activeSection === 'typography' && (
+              <TypographyTab config={config} update={update} />
+            )}
+            {activeSection === 'layout' && (
+              <LayoutTab config={config} update={update} />
+            )}
+            {activeSection === 'sections' && (
+              <SectionsTab config={config} update={update} />
+            )}
+            {activeSection === 'nodes' && (
+              serverConfig ? (
+                <NodesTab serverConfig={serverConfig} onSave={saveServerConfig} saving={serverSaving} />
+              ) : (
+                <LoadingState />
+              )
+            )}
+            {activeSection === 'services' && (
+              serverConfig && liveServices ? (
+                <ServicesTab
+                  serverConfig={serverConfig}
+                  liveServices={liveServices}
+                  monitorNames={monitorNames}
+                  onSave={saveServerConfig}
+                  saving={serverSaving}
+                />
+              ) : (
+                <LoadingState />
+              )
+            )}
+            {activeSection === 'integrations' && (
+              <IntegrationsTab />
+            )}
+            {activeSection === 'links' && (
+              <LinksTab config={config} update={update} setConfig={setConfig} />
+            )}
+            {activeSection === 'widgets' && (
+              <WidgetsTab config={config} update={update} />
+            )}
+            {activeSection === 'tabs' && (
+              <TabsTab config={config} update={update} />
+            )}
+            {activeSection === 'security' && (
+              <SecurityTab />
+            )}
+            {activeSection === 'backup' && (
+              <BackupTab config={config} setConfig={setConfig} />
+            )}
+          </div>
+        </main>
+
+        {/* Live Preview Panel — always visible */}
+        <div style={{
+          flex: '0 0 50%', maxWidth: '50%',
+          borderLeft: '1px solid var(--glass-border)',
+          overflow: 'hidden', position: 'relative',
+          background: 'var(--bg-primary)',
+        }}>
+          {/* Preview header bar */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '8px 16px',
+            borderBottom: '1px solid var(--glass-border)',
+            background: 'var(--bg-secondary)',
+          }}>
+            <span style={{
+              fontFamily: 'var(--font-mono)', fontSize: 11,
+              color: 'var(--text-secondary)', letterSpacing: 0.5,
+            }}>
+              LIVE PREVIEW
+            </span>
+            <button
+              onClick={() => setPreviewRefreshKey(k => k + 1)}
+              style={{
+                background: 'none', border: '1px solid var(--border-color)',
+                borderRadius: 6, padding: '3px 8px', cursor: 'pointer',
+                fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)',
+              }}
+            >
+              ↻ Refresh Data
+            </button>
+          </div>
+
+          {/* Scaled dashboard preview */}
+          <div style={{
+            overflow: 'auto',
+            height: 'calc(100vh - 60px - 40px)',
+            position: 'relative',
+          }}>
+            <div style={{
+              transform: 'scale(0.55)',
+              transformOrigin: 'top left',
+              width: '182%',
+              minHeight: '182%',
+              pointerEvents: 'none',
+            }}>
+              <DashboardView
+                config={config}
+                setConfig={setConfig}
+                refreshKey={previewRefreshKey}
               />
-            ) : (
-              <LoadingState />
-            )
-          )}
-          {activeSection === 'integrations' && (
-            <IntegrationsTab />
-          )}
-          {activeSection === 'links' && (
-            <LinksTab config={config} update={update} setConfig={setConfig} />
-          )}
-          {activeSection === 'widgets' && (
-            <WidgetsTab config={config} update={update} />
-          )}
-          {activeSection === 'tabs' && (
-            <TabsTab config={config} update={update} />
-          )}
-          {activeSection === 'security' && (
-            <SecurityTab />
-          )}
-          {activeSection === 'backup' && (
-            <BackupTab config={config} setConfig={setConfig} />
-          )}
+            </div>
+          </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
