@@ -261,6 +261,99 @@ Docker label discovery, vendored icon sets, config export/import wizard, respons
 
 ---
 
+## Acknowledgments & Credits
+
+JagHelm stands on the shoulders of outstanding open-source projects, icon collections, and infrastructure tools. We believe in giving credit where it's due.
+
+### Core Dependencies
+
+| Package | Author(s) | Used For | License |
+|---------|-----------|----------|---------|
+| [React](https://react.dev) | Meta / Facebook | UI framework | MIT |
+| [Vite](https://vitejs.dev) | Evan You & contributors | Build tool & dev server | MIT |
+| [Express](https://expressjs.com) | TJ Holowaychuk & community | API server | MIT |
+| [React Grid Layout](https://github.com/react-grid-layout/react-grid-layout) | Samuel Reed (STRML) | Drag-and-drop dashboard grid | MIT |
+| [react-colorful](https://github.com/omgovich/react-colorful) | Vlad Shilov | Color picker in settings | MIT |
+| [js-yaml](https://github.com/nodeca/js-yaml) | Nodeca | YAML config parsing | MIT |
+| [multer](https://github.com/expressjs/multer) | Express community | File upload handling | MIT |
+| [dotenv](https://github.com/motdotla/dotenv) | Scott Motte | Environment variable management | BSD-2-Clause |
+| [concurrently](https://github.com/open-cli-tools/concurrently) | Kimmo Brunfeldt | Parallel dev server startup | MIT |
+
+### Icon Collections
+
+JagHelm's searchable icon picker draws from three outstanding community-maintained collections:
+
+| Collection | Maintainers | Icons | Used For |
+|------------|-------------|-------|----------|
+| [Dashboard Icons](https://github.com/homarr-labs/dashboard-icons) | Homarr Labs team & contributors | 1,800+ | Service icons, section icons, Quick Launch icons |
+| [selfh.st Icons](https://github.com/selfhst/icons) | Ethan Sholly (selfh.st) | 200+ | Additional self-hosted app icons |
+| [Simple Icons](https://github.com/simple-icons/simple-icons) | Simple Icons contributors | 2,500+ | Brand and technology icons |
+
+Icons are served via [jsDelivr CDN](https://www.jsdelivr.com) — thank you to jsDelivr for providing free, fast, and reliable open-source CDN infrastructure.
+
+### Infrastructure Integrations
+
+JagHelm integrates with these services for data collection and monitoring:
+
+| Service | Used For |
+|---------|----------|
+| [Prometheus](https://prometheus.io) | Node metrics (CPU, RAM, disk, temperature, uptime) |
+| [cAdvisor](https://github.com/google/cadvisor) (Google) | Per-container resource stats (CPU, MEM, network) |
+| [Uptime Kuma](https://github.com/louislam/uptime-kuma) by Louis Lam | Service health monitoring, ping latency, uptime tracking |
+| [NUT (Network UPS Tools)](https://github.com/networkupstools/nut) | UPS battery monitoring via Prometheus exporter |
+| [Gitea](https://github.com/go-gitea/gitea) | Pipeline activity feed and CI/CD integration |
+| [Open-Meteo](https://open-meteo.com) | Weather data API (free, no API key required) |
+
+### Design Inspiration
+
+| Project | What We Learned |
+|---------|-----------------|
+| [Homepage](https://gethomepage.dev) by Ben Phelps & contributors | Layout settings architecture, nested group concept, settings structure |
+| [Homarr](https://homarr.dev) by Homarr Labs | Searchable icon picker from multiple repositories, integration preset patterns |
+| [VS Code](https://code.visualstudio.com) by Microsoft | Dark theme color palettes — our 6 themes are inspired by popular VS Code themes |
+
+The VS Code-inspired theme palettes draw from color schemes by these creators:
+
+| Theme | Original Creator | Repository |
+|-------|-----------------|------------|
+| One Dark Pro | Binaryify | [GitHub](https://github.com/Binaryify/OneDark-Pro) |
+| Dracula | Zeno Rocha | [GitHub](https://github.com/dracula/dracula-theme) |
+| Night Owl | Sarah Drasner | [GitHub](https://github.com/sdras/night-owl-vscode-theme) |
+| GitHub Dark | Primer team (GitHub) | [GitHub](https://github.com/primer/github-vscode-theme) |
+| Catppuccin Mocha | Catppuccin community | [GitHub](https://github.com/catppuccin/catppuccin) |
+| Material Ocean | Mattia Astorino (Equinusocio) | [GitHub](https://github.com/equinusocio/vsc-material-theme) |
+
+### Fonts
+
+Typography is provided by [Google Fonts](https://fonts.google.com):
+
+| Font | Designer | Used For |
+|------|----------|----------|
+| [Outfit](https://fonts.google.com/specimen/Outfit) | Rodrigo Fuenzalida | Display headings (default) |
+| [DM Sans](https://fonts.google.com/specimen/DM+Sans) | Colophon Foundry | Body text (default) |
+| [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) | JetBrains | Monospace / code (default) |
+| [Inter](https://github.com/rsms/inter) | Rasmus Andersson | Clean preset |
+| [Fira Code](https://github.com/tonsky/FiraCode) | Nikita Prokopov | Clean preset monospace |
+| [Nunito](https://fonts.google.com/specimen/Nunito) | Vernon Adams | Rounded preset |
+| [Source Code Pro](https://github.com/adobe-fonts/source-code-pro) | Adobe | Rounded preset monospace |
+| [Rajdhani](https://fonts.google.com/specimen/Rajdhani) | Indian Type Foundry | Sharp preset |
+| [Roboto](https://fonts.google.com/specimen/Roboto) | Christian Robertson (Google) | Sharp preset body |
+| [Roboto Mono](https://fonts.google.com/specimen/Roboto+Mono) | Christian Robertson (Google) | Sharp preset monospace |
+
+### Security
+
+JagHelm uses Node.js built-in `crypto` module for AES-256-GCM encryption of stored credentials. No external cryptography libraries are used.
+
+### Development
+
+JagHelm was developed with assistance from **Claude AI** by [Anthropic](https://anthropic.com). Claude contributed to architecture design, code generation, debugging, and documentation across all development phases.
+
+### Community
+
+Thank you to the self-hosted and homelab community — especially the communities around [r/selfhosted](https://reddit.com/r/selfhosted) and [r/homelab](https://reddit.com/r/homelab) — for building and maintaining the incredible ecosystem of tools that JagHelm monitors and integrates with.
+
+---
+
 ## Contributing
 
 Contributions are welcome. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
@@ -285,5 +378,6 @@ MIT License. See [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  <sub>Built with ☕ and late nights for the self-hosted community.</sub>
+  <sub>Built with ☕ and late nights for the self-hosted community.</sub><br>
+  <sub>Developed with assistance from <a href="https://anthropic.com">Claude AI</a> by Anthropic.</sub>
 </p>

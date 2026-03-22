@@ -24,11 +24,12 @@ dotenv.config();
 import { loadConfig, saveConfig, getConfig, generateDefaultConfig, startConfigWatcher } from './config.js';
 import { initSecrets, resolveCredential, setSecret, deleteSecret, listSecretKeys } from './secrets.js';
 import { initDiscovery, discoverNodes, getNodeMetrics, discoverContainers } from './discovery.js';
-import { initMonitors, fetchMonitors, getMonitorNames, matchMonitor } from './monitors.js';
+import { initMonitors, fetchMonitors, getMonitorNames, matchMonitor, markMonitorLogDone } from './monitors.js';
 
 // Phase 3 modules
 import { initRegistry, getPreset, listPresets } from './integrations/registry.js';
 import { fetchIntegration, testIntegration } from './integrations/handler.js';
+import { initIconIndex, searchIcons, getIconCount } from './icons.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -219,11 +220,18 @@ app.get('/api/services', async (req, res) => {
           const explicitMonitor = override.monitor || null;
           const monitor = matchMonitor(c.container, explicitMonitor, monitors);
 
+          // Status priority:
+          // 1. Kuma monitor status (up/down) — most authoritative
+          // 2. Docker running state from cAdvisor — container exists and is running
+          // 3. 'unknown' — should never happen since cAdvisor only reports live containers
+          const status = monitor?.status || c.status || 'unknown';
+
           return {
             container: c.container,
             display_name: displayName,
             icon: override.icon || null,
-            status: monitor?.status || 'unknown',
+            status,
+            monitored: !!monitor, // true if Kuma is tracking this service
             ping: monitor?.ping || null,
             uptime24: monitor?.uptime24 || null,
             docker: c.docker,
@@ -247,6 +255,7 @@ app.get('/api/services', async (req, res) => {
     const nodes = Object.fromEntries(nodeEntries.filter(Boolean));
     const result = { nodes };
     setCache('services', result);
+    markMonitorLogDone(); // Stop logging unmatched containers after first build
     res.json(result);
   } catch (err) {
     console.error('[services] Error building service data:', err);
@@ -559,6 +568,17 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime(), version: '8.0.0-alpha.1' }));
 
 // ══════════════════════════════════════════════════════════════
+// ICON SEARCH
+// ══════════════════════════════════════════════════════════════
+
+app.get('/api/icons', authMiddleware, (req, res) => {
+  const q = (req.query.q || '').trim();
+  const limit = Math.min(parseInt(req.query.limit) || 60, 200);
+  const results = searchIcons(q, limit);
+  res.json({ count: getIconCount(), results });
+});
+
+// ══════════════════════════════════════════════════════════════
 // PHASE 3: INTEGRATION ENGINE
 // ══════════════════════════════════════════════════════════════
 
@@ -692,6 +712,9 @@ async function boot() {
   initDiscovery(promUrl);
   initMonitors(kumaUrl);
   await initRegistry();
+
+  // Load icon index in background (non-blocking — search works once ready)
+  initIconIndex().catch(err => console.warn('[icons] Background init failed:', err.message));
 
   // Load or generate config
   let config = loadConfig();

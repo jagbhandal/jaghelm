@@ -15,7 +15,7 @@ export default function ServiceCard({ service, showDockerStats = true, showAppDa
     : getServiceIcon(service.name);
 
   const st = service.status || 'unknown';
-  const isUp = st === 'up';
+  const isUp = st === 'up' || st === 'running';
   const isDown = st === 'down';
   const statusColor = isUp ? 'var(--green)' : isDown ? 'var(--red)' : 'var(--amber)';
 

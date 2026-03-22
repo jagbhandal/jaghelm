@@ -76,6 +76,45 @@ export default function GeneralTab({ config, update }) {
           </div>
         </div>
       </Card>
+
+      <Card title="Welcome Message">
+        <Field label="Show Welcome Message" hint="Displays a greeting banner below the navigation bar">
+          <label className="settings-toggle">
+            <input
+              type="checkbox"
+              checked={config.welcomeMessage?.enabled || false}
+              onChange={e => update('welcomeMessage.enabled', e.target.checked)}
+            />
+            <span>Enabled</span>
+          </label>
+        </Field>
+        <Field label="Message Text">
+          <input
+            className="settings-input"
+            value={config.welcomeMessage?.text || ''}
+            onChange={e => update('welcomeMessage.text', e.target.value)}
+            placeholder="Welcome to JagHelm"
+          />
+        </Field>
+        <Field label="Description" hint="Optional secondary line below the message">
+          <input
+            className="settings-input"
+            value={config.welcomeMessage?.description || ''}
+            onChange={e => update('welcomeMessage.description', e.target.value)}
+            placeholder="Your infrastructure at a glance"
+          />
+        </Field>
+        <Field label={`Font Size: ${config.welcomeMessage?.fontSize || 20}px`}>
+          <input
+            className="settings-range"
+            type="range"
+            min="14"
+            max="40"
+            value={config.welcomeMessage?.fontSize || 20}
+            onChange={e => update('welcomeMessage.fontSize', Number(e.target.value))}
+          />
+        </Field>
+      </Card>
     </div>
   );
 }
