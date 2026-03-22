@@ -97,11 +97,16 @@ export async function getMonitorNames() {
 /**
  * Match a container to an Uptime Kuma monitor.
  *
- * Strategy:
+ * Strategy (in priority order):
  * 1. Explicit mapping from services.yaml → exact name match
- * 2. Normalized name match → strip non-alphanumeric, containment check
- * 3. No match → return null
+ * 2. Exact normalized match → strip non-alphanumeric, compare
+ * 3. URL-aware match → extract hostname from URL-based monitor names
+ * 4. Containment match → either name contains the other
+ * 5. Word-boundary match → split on spaces/hyphens, check overlap
+ * 6. No match → return null
  */
+let loggedOnce = false;
+
 export function matchMonitor(containerName, explicitMonitor, monitors) {
   const monitorList = Object.values(monitors);
 
@@ -114,19 +119,39 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
     console.warn('[monitors] Explicit monitor "%s" not found for container "%s"', explicitMonitor, containerName);
   }
 
-  // Strategy 2: Normalized name matching
+  // Normalize: lowercase, strip non-alphanumeric
   const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const cn = normalize(containerName);
   if (!cn) return null;
 
+  // Strategy 2: Exact normalized match
+  for (const m of monitorList) {
+    if (normalize(m.name) === cn) return m;
+  }
+
+  // Strategy 3: URL-aware match — extract hostname part from monitor names that look like URLs
+  for (const m of monitorList) {
+    const name = m.name || '';
+    // If monitor name contains a dot (likely a URL or hostname)
+    if (name.includes('.')) {
+      // Extract the first segment before the first dot: "grafana.jagbhandal.com" → "grafana"
+      const urlMatch = name.match(/(?:https?:\/\/)?([a-z0-9-]+)\./i);
+      if (urlMatch) {
+        const extracted = urlMatch[1].toLowerCase();
+        if (extracted === cn || cn.includes(extracted) || extracted.includes(cn)) {
+          return m;
+        }
+      }
+    }
+  }
+
+  // Strategy 4: Containment match with scoring
   let best = null;
   let bestScore = 0;
 
   for (const m of monitorList) {
     const mn = normalize(m.name);
     if (!mn) continue;
-
-    if (cn === mn) return m;
 
     if (mn.includes(cn) || cn.includes(mn)) {
       const score = Math.min(cn.length, mn.length);
@@ -137,5 +162,33 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
     }
   }
 
-  return best;
+  if (best) return best;
+
+  // Strategy 5: Word overlap — split both names into words, check if any match
+  const containerWords = containerName.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(w => w.length >= 3);
+  for (const m of monitorList) {
+    const monitorWords = m.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(w => w.length >= 3);
+    for (const cw of containerWords) {
+      for (const mw of monitorWords) {
+        if (cw === mw && cw.length >= 4) {
+          return m;
+        }
+      }
+    }
+  }
+
+  // Log unmatched containers once at startup to help debug
+  if (!loggedOnce) {
+    console.log('[monitors] No match for container "%s" among monitors: %s',
+      containerName,
+      monitorList.map(m => m.name).join(', ')
+    );
+  }
+
+  return null;
+}
+
+// Call after first full service build to suppress repeat logs
+export function markMonitorLogDone() {
+  loggedOnce = true;
 }

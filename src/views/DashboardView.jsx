@@ -148,28 +148,58 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       : { lg: 12, md: 10, sm: 1 }
   ), [config.gridColumns]);
 
-  const layoutMountedRef = useRef(false);
-  const serviceDataLoadedRef = useRef(false);
+  // ── Layout persistence fix ──
+  // ONLY save layout on explicit user interaction (drag stop / resize stop).
+  // Never save from onLayoutChange — RGL fires it on mount, on prop changes,
+  // on serviceData refresh, etc. and each of those would clobber saved layouts.
+  const userInteractingRef = useRef(false);
+  const configReadyRef = useRef(false);
 
-  // Track when service data first arrives so we know layout keys are complete
+  // Track when both server config AND service data have loaded
   useEffect(() => {
-    if (Object.keys(serviceData.nodes || {}).length > 0) {
-      serviceDataLoadedRef.current = true;
+    if (Object.keys(serviceData.nodes || {}).length > 0 && config.gridLayout !== undefined) {
+      // Small delay to let RGL finish its initial layout computation
+      const t = setTimeout(() => { configReadyRef.current = true; }, 500);
+      return () => clearTimeout(t);
     }
-  }, [serviceData]);
+  }, [serviceData, config.gridLayout]);
 
-  const handleLayoutChange = useCallback((_, allLayouts) => {
-    // Skip layout saves until:
-    // 1. The initial mount layout computation has fired (RGL always fires once on mount)
-    // 2. Service data has loaded (so all node keys exist — otherwise RGL computes
-    //    a layout with missing keys and clobbers the saved layout)
-    if (!layoutMountedRef.current) {
-      layoutMountedRef.current = true;
-      return;
+  // onLayoutChange: guarded — only persists when a user drag/resize just finished
+  // (see handleLayoutChangeGuarded below, wired into onDragStop/onResizeStop flow)
+
+  // ── Custom Groups: containers assigned to user-created groups ──
+  const customGroups = config.customGroups || [];
+
+  // Build set of containers claimed by custom groups
+  const claimedContainers = useMemo(() => {
+    const set = new Set();
+    for (const group of customGroups) {
+      for (const c of (group.containers || [])) {
+        set.add(c);
+      }
     }
-    if (!serviceDataLoadedRef.current) return;
-    setConfig(p => ({ ...p, gridLayout: allLayouts }));
-  }, [setConfig]);
+    return set;
+  }, [customGroups]);
+
+  // Build a flat lookup of all discovered services (for custom groups to reference)
+  const allServicesFlat = useMemo(() => {
+    const map = {};
+    for (const node of Object.values(serviceData.nodes || {})) {
+      for (const s of (node.services || [])) {
+        map[s.container] = {
+          name: s.display_name,
+          container: s.container,
+          status: s.status,
+          uptime: s.uptime24,
+          ping: s.ping,
+          icon: s.icon,
+          docker: s.docker,
+          appData: appDataByContainer[s.container] || null,
+        };
+      }
+    }
+    return map;
+  }, [serviceData, appDataByContainer]);
 
   // Build node section elements dynamically from service data
   const nodeElements = useMemo(() => {
@@ -233,17 +263,19 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
       metrics.push({ label: 'Uptime', value: m.uptime, small: true });
 
-      // Transform services for NodeCard/ServiceCard
-      const services = (node.services || []).map(s => ({
-        name: s.display_name,
-        container: s.container,
-        status: s.status,
-        uptime: s.uptime24,
-        ping: s.ping,
-        icon: s.icon,
-        docker: s.docker,
-        appData: appDataByContainer[s.container] || null,
-      }));
+      // Transform services for NodeCard/ServiceCard — exclude containers claimed by custom groups
+      const services = (node.services || [])
+        .filter(s => !claimedContainers.has(s.container))
+        .map(s => ({
+          name: s.display_name,
+          container: s.container,
+          status: s.status,
+          uptime: s.uptime24,
+          ping: s.ping,
+          icon: s.icon,
+          docker: s.docker,
+          appData: appDataByContainer[s.container] || null,
+        }));
 
       return (
         <div key={gridKey}>
@@ -259,9 +291,36 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
         </div>
       );
     }).filter(Boolean);
-  }, [serviceData, sc, config, setConfig, appDataByContainer]);
+  }, [serviceData, sc, config, setConfig, appDataByContainer, claimedContainers]);
 
-  // Ensure layouts have entries for all dynamic node sections and enforce min constraints
+  // Build custom group panel elements
+  const customGroupElements = useMemo(() => {
+    return customGroups.map(group => {
+      const groupCfg = sc[`group-${group.id}`] || {};
+      if (groupCfg.visible === false) return null;
+      const gridKey = `group-${group.id}`;
+      const borderColor = group.borderColor || 'var(--accent)';
+      const services = (group.containers || [])
+        .map(c => allServicesFlat[c])
+        .filter(Boolean);
+
+      return (
+        <div key={gridKey}>
+          <NodeCard
+            sectionKey={`group-${group.id}`}
+            config={config}
+            setConfig={setConfig}
+            borderColor={borderColor}
+            metrics={null}
+            services={services}
+            nodeData={{ display_name: group.title, icon: group.icon || '📂', subtitle: `${services.length} services` }}
+          />
+        </div>
+      );
+    }).filter(Boolean);
+  }, [customGroups, allServicesFlat, sc, config, setConfig]);
+
+  // Ensure layouts have entries for all dynamic node sections + custom groups and enforce min constraints
   const effectiveLayouts = useMemo(() => {
     // Build constraint map from defaults
     const constraints = {};
@@ -270,6 +329,8 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     }
 
     const nodeKeys = Object.keys(serviceData.nodes || {}).map(k => `node-${k}`);
+    const groupKeys = customGroups.map(g => `group-${g.id}`);
+    const allDynamicKeys = [...nodeKeys, ...groupKeys];
     const result = {};
     for (const [bp, items] of Object.entries(layouts)) {
       // Apply min constraints from defaults to saved layout items
@@ -282,7 +343,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       });
 
       const existingKeys = new Set(constrained.map(i => i.i));
-      const missing = nodeKeys.filter(k => !existingKeys.has(k));
+      const missing = allDynamicKeys.filter(k => !existingKeys.has(k));
       // Add missing nodes at the bottom
       let maxY = constrained.reduce((max, i) => Math.max(max, i.y + i.h), 0);
       const newItems = missing.map(k => ({
@@ -291,7 +352,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       result[bp] = [...constrained, ...newItems];
     }
     return result;
-  }, [layouts, serviceData]);
+  }, [layouts, serviceData, customGroups]);
 
   // Auto-scroll when dragging near viewport edges
   const scrollRAF = useRef(null);
@@ -309,12 +370,64 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       scrollRAF.current = requestAnimationFrame(doScroll);
     }
   }, []);
-  const handleDragStop = useCallback(() => {
+  const handleDragStop = useCallback((layout, oldItem, newItem, placeholder, e, element) => {
     if (scrollRAF.current) { cancelAnimationFrame(scrollRAF.current); scrollRAF.current = null; }
+    // Save layout after user drag
+    if (!configReadyRef.current) return;
+    // We need all breakpoints, but RGL onDragStop only gives current layout.
+    // Use onLayoutChange to capture the full allLayouts, but only save it when
+    // we know a user interaction just happened.
+    userInteractingRef.current = true;
   }, []);
+
+  // We need a second handler that captures allLayouts from onLayoutChange
+  // but only persists when userInteractingRef is true (user just dragged/resized)
+  const handleLayoutChangeGuarded = useCallback((_, allLayouts) => {
+    if (!userInteractingRef.current) return;
+    if (!configReadyRef.current) return;
+    userInteractingRef.current = false;
+    setConfig(p => ({ ...p, gridLayout: allLayouts }));
+  }, [setConfig]);
+
+  const handleResizeStop = useCallback(() => {
+    if (!configReadyRef.current) return;
+    userInteractingRef.current = true;
+  }, []);
+
+  // Welcome message config
+  const wm = config.welcomeMessage || {};
 
   return (
     <div className="dashboard-content" ref={containerRef}>
+      {/* Welcome message banner */}
+      {wm.enabled && wm.text && (
+        <div style={{
+          textAlign: 'center',
+          padding: '12px 20px 4px',
+          maxWidth: 900,
+          margin: '0 auto',
+        }}>
+          <div style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 600,
+            fontSize: wm.fontSize || 20,
+            color: 'var(--text-primary)',
+            lineHeight: 1.3,
+          }}>
+            {wm.text}
+          </div>
+          {wm.description && (
+            <div style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: Math.max((wm.fontSize || 20) * 0.6, 12),
+              color: 'var(--text-secondary)',
+              marginTop: 4,
+            }}>
+              {wm.description}
+            </div>
+          )}
+        </div>
+      )}
       {mounted && (
         <Responsive
           className="layout"
@@ -322,9 +435,10 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           layouts={effectiveLayouts}
           breakpoints={{ lg: 1200, md: 768, sm: 480 }}
           compactor={verticalCompactor}
-          onLayoutChange={handleLayoutChange}
+          onLayoutChange={handleLayoutChangeGuarded}
           onDrag={handleDrag}
           onDragStop={handleDragStop}
+          onResizeStop={handleResizeStop}
           gridConfig={{
             cols,
             rowHeight: 36,
@@ -341,6 +455,9 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
         >
           {/* Dynamic node sections */}
           {nodeElements}
+
+          {/* Custom groups */}
+          {customGroupElements}
 
           {/* Static sections */}
           {sc.ups?.visible !== false && (

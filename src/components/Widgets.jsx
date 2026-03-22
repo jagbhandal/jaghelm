@@ -1,6 +1,15 @@
 import React from 'react';
 import { getServiceIcon } from '../hooks/useData';
 
+// Shared: render icon (URL or emoji)
+function renderIcon(icon) {
+  if (!icon) return null;
+  if (icon.startsWith('http') || icon.startsWith('/')) {
+    return <img src={icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} />;
+  }
+  return icon;
+}
+
 // Shared: compute background style from section config
 function sectionBgStyle(sec) {
   if (sec?.bgColor && (sec.bgOpacity ?? 0) > 0) {
@@ -20,7 +29,7 @@ export function UPSCard({ upsData, borderColor, config }) {
   return (
     <div className="glass-card node-card" style={{ borderTop: `2px solid ${borderColor || 'var(--green)'}`, ...sectionBgStyle(sec) }}>
       <div className="section-header" style={{ cursor: 'grab' }}>
-        <div className="section-icon" style={{ background: `${borderColor}15`, border: `1px solid ${borderColor}30` }}>{sec.icon || '⚡'}</div>
+        <div className="section-icon" style={{ background: `${borderColor}15`, border: `1px solid ${borderColor}30` }}>{renderIcon(sec.icon || '⚡')}</div>
         <div><div className="section-title">{sec.title || 'UPS Power'}</div><div className="section-subtitle">{sec.subtitle || 'APC Back-UPS ES 600M1'}</div></div>
       </div>
       <div className="ups-grid">
@@ -39,7 +48,7 @@ export function GiteaActivity({ commits, config }) {
   return (
     <div className="glass-card node-card" style={{ borderTop: '2px solid var(--accent)', ...sectionBgStyle(sec) }}>
       <div className="section-header" style={{ cursor: 'grab' }}>
-        <div className="section-icon" style={{ background: 'var(--accent-glow)', border: '1px solid rgba(99,102,241,0.2)' }}>{sec.icon || '🔄'}</div>
+        <div className="section-icon" style={{ background: 'var(--accent-glow)', border: '1px solid rgba(99,102,241,0.2)' }}>{renderIcon(sec.icon || '🔄')}</div>
         <div><div className="section-title">{sec.title || 'Pipeline Activity'}</div><div className="section-subtitle">{sec.subtitle || 'homelab-infra'}</div></div>
       </div>
       {(commits || []).slice(0, 5).map((c, i) => <div className="commit-row" key={i}><span className="commit-sha">{c.sha}</span><span className="commit-msg">{c.message}</span><span className="commit-time">{ago(c.date)}</span></div>)}
@@ -48,13 +57,36 @@ export function GiteaActivity({ commits, config }) {
   );
 }
 
+const CDN_BASE = 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg';
+
+// Check if a string looks like an emoji (starts with non-ASCII)
+function isEmoji(str) {
+  if (!str) return false;
+  return /^[\u{1F000}-\u{1FFFF}]|^[\u{2600}-\u{27BF}]|^[\u{FE00}-\u{FEFF}]|^[\u00A0-\u00FF]|^[\u2000-\u3300]/u.test(str);
+}
+
+// Resolve best icon URL for a quick launch link
+function resolveQuickLinkIcon(link) {
+  // 1. If link has an icon field that looks like a CDN slug (not emoji), use it directly
+  if (link.icon && !isEmoji(link.icon) && /^[a-z0-9-]+$/i.test(link.icon)) {
+    return `${CDN_BASE}/${link.icon.toLowerCase()}.svg`;
+  }
+  // 2. Try getServiceIcon by name (uses SERVICE_ICONS mapping)
+  const mapped = getServiceIcon(link.name);
+  if (mapped) return mapped;
+  // 3. Try the link name directly as a CDN slug
+  const slug = (link.name || '').toLowerCase().replace(/\s+/g, '-');
+  if (slug) return `${CDN_BASE}/${slug}.svg`;
+  return null;
+}
+
 export function QuickLaunch({ config, borderColor }) {
   const sec = config?.sections?.quicklaunch || {};
   const groups = [{ key: 'personal', label: 'Personal' }, { key: 'management', label: 'Management' }, { key: 'devops', label: 'Dev & Monitoring' }];
   return (
     <div className="glass-card node-card" style={{ borderTop: `2px solid ${borderColor || 'var(--blue)'}`, ...sectionBgStyle(sec) }}>
       <div className="section-header" style={{ cursor: 'grab' }}>
-        <div className="section-icon" style={{ background: `${borderColor}15`, border: `1px solid ${borderColor}30` }}>{sec.icon || '🚀'}</div>
+        <div className="section-icon" style={{ background: `${borderColor}15`, border: `1px solid ${borderColor}30` }}>{renderIcon(sec.icon || '🚀')}</div>
         <div><div className="section-title">{sec.title || 'Quick Launch'}</div></div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -66,13 +98,25 @@ export function QuickLaunch({ config, borderColor }) {
               <h4 style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-secondary)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6 }}>{g.label}</h4>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {links.map((l, i) => {
-                  const svgIcon = getServiceIcon(l.name);
+                  const iconUrl = resolveQuickLinkIcon(l);
                   return (
-                    <a key={i} href={l.url} target="_blank" rel="noopener noreferrer" className="quick-launch-link">
-                      {svgIcon
-                        ? <img src={svgIcon} alt="" style={{ width: 18, height: 18, borderRadius: 3, flexShrink: 0 }} />
-                        : <span style={{ fontSize: 16, width: 20, textAlign: 'center' }}>{l.icon}</span>
-                      }
+                    <a key={i} href={l.url} target={config.linkTarget || '_blank'} rel="noopener noreferrer" className="quick-launch-link">
+                      <img
+                        src={iconUrl}
+                        alt=""
+                        style={{ width: 18, height: 18, borderRadius: 3, flexShrink: 0 }}
+                        onError={e => {
+                          // If CDN slug fails, hide the broken image
+                          e.target.style.display = 'none';
+                          // Insert emoji fallback if link has one
+                          if (l.icon && isEmoji(l.icon)) {
+                            const span = document.createElement('span');
+                            span.textContent = l.icon;
+                            span.style.cssText = 'font-size:16px;width:20px;text-align:center;flex-shrink:0';
+                            e.target.parentNode.insertBefore(span, e.target);
+                          }
+                        }}
+                      />
                       <span>{l.name}</span>
                     </a>
                   );

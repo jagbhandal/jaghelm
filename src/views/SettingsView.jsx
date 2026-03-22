@@ -11,6 +11,7 @@ import WidgetsTab from '../components/settings/WidgetsTab';
 import TabsTab from '../components/settings/TabsTab';
 import SecurityTab from '../components/settings/SecurityTab';
 import BackupTab from '../components/settings/BackupTab';
+import IntegrationsTab from '../components/settings/IntegrationsTab';
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: '🏠', desc: 'Title, logo, branding' },
@@ -20,7 +21,7 @@ const SECTIONS = [
   { id: 'sections', label: 'Sections', icon: '🧱', desc: 'UPS, Pipeline, Quick Launch, Todos' },
   { id: 'nodes', label: 'Nodes', icon: '🖥', desc: 'Manage infrastructure nodes', divider: true },
   { id: 'services', label: 'Services', icon: '📦', desc: 'Container overrides & monitors' },
-  { id: 'integrations', label: 'Integrations', icon: '🔌', desc: 'App API connections', disabled: true },
+  { id: 'integrations', label: 'Integrations', icon: '🔌', desc: 'App API connections' },
   { id: 'links', label: 'Links', icon: '🔗', desc: 'Quick Launch bookmarks', divider: true },
   { id: 'widgets', label: 'Widgets', icon: '🧩', desc: 'Search, weather, features' },
   { id: 'tabs', label: 'Tabs', icon: '📑', desc: 'Embedded service tabs' },
@@ -171,11 +172,7 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
             )
           )}
           {activeSection === 'integrations' && (
-            <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
-              <span style={{ fontSize: 48, display: 'block', marginBottom: 16 }}>🔌</span>
-              <p style={{ fontSize: 15, marginBottom: 8 }}>Integration Engine coming in Phase 3</p>
-              <p style={{ fontSize: 13 }}>App-specific API stats (PhotoPrism, Nextcloud, etc.) will be configurable here.</p>
-            </div>
+            <IntegrationsTab />
           )}
           {activeSection === 'links' && (
             <LinksTab config={config} update={update} setConfig={setConfig} />

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import IconPicker from '../IconPicker';
 
 const DEFAULT_GROUPS = ['personal', 'management', 'devops'];
 
@@ -90,13 +91,11 @@ export default function LinksTab({ config, update, setConfig }) {
                   {isEditing ? (
                     /* Edit mode */
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <input
-                          className="settings-input"
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <IconPicker
+                          compact
                           value={link.icon}
-                          onChange={e => updateLink(group, i, 'icon', e.target.value)}
-                          placeholder="🔗"
-                          style={{ width: 50, textAlign: 'center', fontSize: 18 }}
+                          onChange={url => updateLink(group, i, 'icon', url)}
                         />
                         <input
                           className="settings-input"
@@ -130,7 +129,12 @@ export default function LinksTab({ config, update, setConfig }) {
                       style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
                       onClick={() => setEditingLink({ group, index: i })}
                     >
-                      <span style={{ fontSize: 18, width: 24, textAlign: 'center' }}>{link.icon}</span>
+                      <span style={{ fontSize: 18, width: 24, textAlign: 'center', flexShrink: 0 }}>
+                        {link.icon && (link.icon.startsWith('http') || link.icon.startsWith('/'))
+                          ? <img src={link.icon} alt="" style={{ width: 20, height: 20, borderRadius: 3 }} />
+                          : (link.icon || '🔗')
+                        }
+                      </span>
                       <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{link.name}</span>
                       <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
                         {link.url.replace('https://', '').replace('http://', '')}
@@ -148,13 +152,11 @@ export default function LinksTab({ config, update, setConfig }) {
               marginTop: 8, padding: '12px 14px', borderRadius: 10,
               background: 'var(--bg-card-inner)', border: '1px dashed var(--accent)',
             }}>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <input
-                  className="settings-input"
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                <IconPicker
+                  compact
                   value={newLink.icon}
-                  onChange={e => setNewLink(p => ({ ...p, icon: e.target.value }))}
-                  placeholder="🔗"
-                  style={{ width: 50, textAlign: 'center', fontSize: 18 }}
+                  onChange={url => setNewLink(p => ({ ...p, icon: url }))}
                 />
                 <input
                   className="settings-input"

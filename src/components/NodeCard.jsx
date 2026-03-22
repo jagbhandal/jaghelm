@@ -32,7 +32,10 @@ export default function NodeCard({ sectionKey, config, setConfig, borderColor, m
             background: `${borderColor || 'var(--accent)'}15`,
             border: `1px solid ${borderColor || 'var(--accent)'}30`,
           }}>
-            {icon}
+            {icon.startsWith('http') || icon.startsWith('/')
+              ? <img src={icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} />
+              : icon
+            }
           </div>
         )}
         <div style={{ flex: 1, minWidth: 0 }}>

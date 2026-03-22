@@ -131,6 +131,17 @@ export default function App() {
     if (fs.serviceStatLabel) root.style.setProperty('--fs-service-stat-label', `${fs.serviceStatLabel}px`);
   }, [config.accentColor, config.bgOpacity, config.overlayOpacity, config.fontFamily, config.fontSizes]);
 
+  // Card blur override
+  useEffect(() => {
+    const root = document.documentElement;
+    const blur = config.cardBlur;
+    if (blur && blur !== 'none') {
+      const blurMap = { sm: '4px', md: '12px', lg: '24px' };
+      root.style.setProperty('--glass-blur', blurMap[blur] || '24px');
+    }
+    // When 'none' or unset, don't override — let theme default handle it
+  }, [config.cardBlur]);
+
   const intervalMs = (config.refreshInterval || 30) * 1000;
   const doRefresh = useCallback(async () => {
     try {

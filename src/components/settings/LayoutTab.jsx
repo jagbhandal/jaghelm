@@ -90,6 +90,87 @@ export default function LayoutTab({ config, update }) {
             <strong>2–6:</strong> Fixed columns — each card takes equal width of the panel
           </div>
         </Field>
+
+        <Field label="Status Style">
+          <div style={{ display: 'flex', gap: 6 }}>
+            {['dot', 'badge', 'minimal'].map(style => (
+              <button
+                key={style}
+                onClick={() => update('statusStyle', style)}
+                className={`settings-choice-btn ${(config.statusStyle || 'dot') === style ? 'active' : ''}`}
+              >
+                {style}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+            How container status is displayed on service cards
+          </div>
+        </Field>
+      </Card>
+
+      <Card title="Behavior">
+        <Field label="Link Target">
+          <div style={{ display: 'flex', gap: 6 }}>
+            {['_blank', '_self'].map(target => (
+              <button
+                key={target}
+                onClick={() => update('linkTarget', target)}
+                className={`settings-choice-btn ${(config.linkTarget || '_blank') === target ? 'active' : ''}`}
+              >
+                {target === '_blank' ? 'New Tab' : 'Same Tab'}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+            Where Quick Launch links and service links open
+          </div>
+        </Field>
+
+        <Field label="Temperature Unit">
+          <div style={{ display: 'flex', gap: 6 }}>
+            {['F', 'C'].map(unit => (
+              <button
+                key={unit}
+                onClick={() => update('tempUnit', unit)}
+                className={`settings-choice-btn ${(config.tempUnit || 'F') === unit ? 'active' : ''}`}
+              >
+                °{unit}
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        <Field label="Collapsible Sections">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={config.collapsibleSections || false}
+              onChange={e => update('collapsibleSections', e.target.checked)}
+              style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
+            />
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Allow clicking section headers to collapse/expand</span>
+          </label>
+        </Field>
+      </Card>
+
+      <Card title="Visual">
+        <Field label={`Card Blur: ${config.cardBlur || 'none'}`}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {['none', 'sm', 'md', 'lg'].map(blur => (
+              <button
+                key={blur}
+                onClick={() => update('cardBlur', blur)}
+                className={`settings-choice-btn ${(config.cardBlur || 'none') === blur ? 'active' : ''}`}
+              >
+                {blur}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+            Backdrop blur effect on cards (requires a background image to be visible)
+          </div>
+        </Field>
       </Card>
     </div>
   );

@@ -122,7 +122,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                 const isEditing = editService === containerName;
                 const hidden = isHidden(nodeKey, containerName);
                 const hasOverride = Object.keys(override).length > 0;
-                const monitorMatch = svc.status !== 'unknown';
+                const monitorMatch = svc.monitored === true || svc.status === 'up';
 
                 return (
                   <div key={containerName} style={{
