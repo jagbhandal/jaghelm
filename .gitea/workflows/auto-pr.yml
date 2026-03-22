@@ -1,0 +1,41 @@
+name: Auto PR from Staging
+
+on:
+  push:
+    branches:
+      - staging
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create or update PR
+        run: |
+          # Check if an open PR from staging→main already exists
+          EXISTING=$(curl -s \
+            -H "Authorization: token ${{ secrets.GITEA_TOKEN }}" \
+            "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/pulls?state=open&head=staging&base=main" \
+          )
+
+          PR_COUNT=$(echo "$EXISTING" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+
+          if [ "$PR_COUNT" != "0" ]; then
+            echo "Open PR already exists — skipping"
+            echo "$EXISTING" | python3 -c "import sys,json; pr=json.load(sys.stdin)[0]; print(f'PR #{pr[\"number\"]}: {pr[\"title\"]}')"
+          else
+            # Get the commit message for the PR title
+            COMMIT_MSG=$(echo "${{ github.event.head_commit.message }}" | head -1)
+
+            curl -s -X POST \
+              -H "Authorization: token ${{ secrets.GITEA_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/pulls" \
+              -d "{
+                \"title\": \"${COMMIT_MSG}\",
+                \"head\": \"staging\",
+                \"base\": \"main\",
+                \"body\": \"Auto-created from push to staging.\n\nCommit: ${{ github.sha }}\"
+              }"
+
+            echo "PR created: ${COMMIT_MSG}"
+          fi
