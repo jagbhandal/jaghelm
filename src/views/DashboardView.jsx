@@ -148,24 +148,18 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       : { lg: 12, md: 10, sm: 1 }
   ), [config.gridColumns]);
 
-  // ── Layout persistence fix ──
-  // ONLY save layout on explicit user interaction (drag stop / resize stop).
-  // Never save from onLayoutChange — RGL fires it on mount, on prop changes,
-  // on serviceData refresh, etc. and each of those would clobber saved layouts.
-  const userInteractingRef = useRef(false);
-  const configReadyRef = useRef(false);
+  // ── Layout persistence — SIMPLE approach ──
+  // RGL fires onLayoutChange on mount and on prop changes.
+  // We skip the first few fires (mount noise), then save immediately.
+  const layoutChangeCount = useRef(0);
 
-  // Track when both server config AND service data have loaded
-  useEffect(() => {
-    if (Object.keys(serviceData.nodes || {}).length > 0 && config.gridLayout !== undefined) {
-      // Small delay to let RGL finish its initial layout computation
-      const t = setTimeout(() => { configReadyRef.current = true; }, 500);
-      return () => clearTimeout(t);
-    }
-  }, [serviceData, config.gridLayout]);
-
-  // onLayoutChange: guarded — only persists when a user drag/resize just finished
-  // (see handleLayoutChangeGuarded below, wired into onDragStop/onResizeStop flow)
+  const handleLayoutChange = useCallback((_, allLayouts) => {
+    layoutChangeCount.current += 1;
+    // Skip initial mount fires — RGL fires 1-3 times during init
+    if (layoutChangeCount.current <= 3) return;
+    // Save immediately
+    setConfig(p => ({ ...p, gridLayout: allLayouts }));
+  }, [setConfig]);
 
   // ── Custom Groups: containers assigned to user-created groups ──
   const customGroups = config.customGroups || [];
@@ -321,6 +315,10 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   }, [customGroups, allServicesFlat, sc, config, setConfig]);
 
   // Ensure layouts have entries for all dynamic node sections + custom groups and enforce min constraints
+  // CRITICAL: Use a ref to stabilize the object reference. Only produce a new object when
+  // layout content actually changes. This prevents RGL's compactor from rearranging on every
+  // 30-second data refresh.
+  const prevEffectiveRef = useRef(null);
   const effectiveLayouts = useMemo(() => {
     // Build constraint map from defaults
     const constraints = {};
@@ -351,6 +349,24 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       }));
       result[bp] = [...constrained, ...newItems];
     }
+
+    // Only return a new object if the layout actually changed
+    // This prevents RGL from re-running compactor on every data refresh
+    if (prevEffectiveRef.current) {
+      const prev = prevEffectiveRef.current;
+      const same = Object.keys(result).every(bp => {
+        const a = result[bp];
+        const b = prev[bp];
+        if (!b || a.length !== b.length) return false;
+        return a.every((item, idx) =>
+          item.i === b[idx].i && item.x === b[idx].x && item.y === b[idx].y &&
+          item.w === b[idx].w && item.h === b[idx].h
+        );
+      });
+      if (same) return prev; // Return same reference — RGL won't re-render
+    }
+
+    prevEffectiveRef.current = result;
     return result;
   }, [layouts, serviceData, customGroups]);
 
@@ -370,28 +386,8 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       scrollRAF.current = requestAnimationFrame(doScroll);
     }
   }, []);
-  const handleDragStop = useCallback((layout, oldItem, newItem, placeholder, e, element) => {
+  const handleDragStop = useCallback(() => {
     if (scrollRAF.current) { cancelAnimationFrame(scrollRAF.current); scrollRAF.current = null; }
-    // Save layout after user drag
-    if (!configReadyRef.current) return;
-    // We need all breakpoints, but RGL onDragStop only gives current layout.
-    // Use onLayoutChange to capture the full allLayouts, but only save it when
-    // we know a user interaction just happened.
-    userInteractingRef.current = true;
-  }, []);
-
-  // We need a second handler that captures allLayouts from onLayoutChange
-  // but only persists when userInteractingRef is true (user just dragged/resized)
-  const handleLayoutChangeGuarded = useCallback((_, allLayouts) => {
-    if (!userInteractingRef.current) return;
-    if (!configReadyRef.current) return;
-    userInteractingRef.current = false;
-    setConfig(p => ({ ...p, gridLayout: allLayouts }));
-  }, [setConfig]);
-
-  const handleResizeStop = useCallback(() => {
-    if (!configReadyRef.current) return;
-    userInteractingRef.current = true;
   }, []);
 
   // Welcome message config
@@ -435,10 +431,9 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           layouts={effectiveLayouts}
           breakpoints={{ lg: 1200, md: 768, sm: 480 }}
           compactor={verticalCompactor}
-          onLayoutChange={handleLayoutChangeGuarded}
+          onLayoutChange={handleLayoutChange}
           onDrag={handleDrag}
           onDragStop={handleDragStop}
-          onResizeStop={handleResizeStop}
           gridConfig={{
             cols,
             rowHeight: 36,
