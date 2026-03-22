@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { HexColorPicker } from 'react-colorful';
+import IconPicker from '../IconPicker';
 
 /**
  * NodesTab — Phase 2 Settings
@@ -142,13 +143,12 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
                   placeholder="e.g. Raspberry Pi 5"
                 />
               </FieldRow>
-              <FieldRow label="Icon (emoji)">
-                <input
-                  className="settings-input"
+              <FieldRow label="Icon">
+                <IconPicker
+                  compact
                   value={node.icon || ''}
-                  onChange={e => updateNode(key, 'icon', e.target.value)}
-                  placeholder="🖥"
-                  style={{ width: 80 }}
+                  onChange={url => updateNode(key, 'icon', url)}
+                  onClear={() => updateNode(key, 'icon', '')}
                 />
               </FieldRow>
               <FieldRow label="Prometheus Node Label">

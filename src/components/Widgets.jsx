@@ -1,13 +1,15 @@
 import React from 'react';
 import { getServiceIcon } from '../hooks/useData';
 
-// Shared: render icon (URL or emoji)
+// Shared: render icon (URL or slug — no more emoji)
 function renderIcon(icon) {
   if (!icon) return null;
   if (icon.startsWith('http') || icon.startsWith('/')) {
     return <img src={icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} />;
   }
-  return icon;
+  // Treat as a Dashboard Icons slug
+  const url = `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`;
+  return <img src={url} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />;
 }
 
 // Shared: compute background style from section config
@@ -59,22 +61,20 @@ export function GiteaActivity({ commits, config }) {
 
 const CDN_BASE = 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg';
 
-// Check if a string looks like an emoji (starts with non-ASCII)
-function isEmoji(str) {
-  if (!str) return false;
-  return /^[\u{1F000}-\u{1FFFF}]|^[\u{2600}-\u{27BF}]|^[\u{FE00}-\u{FEFF}]|^[\u00A0-\u00FF]|^[\u2000-\u3300]/u.test(str);
-}
-
 // Resolve best icon URL for a quick launch link
 function resolveQuickLinkIcon(link) {
-  // 1. If link has an icon field that looks like a CDN slug (not emoji), use it directly
-  if (link.icon && !isEmoji(link.icon) && /^[a-z0-9-]+$/i.test(link.icon)) {
+  // 1. If link has an icon field that looks like a CDN slug, use it directly
+  if (link.icon && /^[a-z0-9-]+$/i.test(link.icon)) {
     return `${CDN_BASE}/${link.icon.toLowerCase()}.svg`;
   }
-  // 2. Try getServiceIcon by name (uses SERVICE_ICONS mapping)
+  // 2. If link.icon is a full URL, use it as-is
+  if (link.icon && (link.icon.startsWith('http') || link.icon.startsWith('/'))) {
+    return link.icon;
+  }
+  // 3. Try getServiceIcon by name (uses SERVICE_ICONS mapping)
   const mapped = getServiceIcon(link.name);
   if (mapped) return mapped;
-  // 3. Try the link name directly as a CDN slug
+  // 4. Try the link name directly as a CDN slug
   const slug = (link.name || '').toLowerCase().replace(/\s+/g, '-');
   if (slug) return `${CDN_BASE}/${slug}.svg`;
   return null;
@@ -105,17 +105,7 @@ export function QuickLaunch({ config, borderColor }) {
                         src={iconUrl}
                         alt=""
                         style={{ width: 18, height: 18, borderRadius: 3, flexShrink: 0 }}
-                        onError={e => {
-                          // If CDN slug fails, hide the broken image
-                          e.target.style.display = 'none';
-                          // Insert emoji fallback if link has one
-                          if (l.icon && isEmoji(l.icon)) {
-                            const span = document.createElement('span');
-                            span.textContent = l.icon;
-                            span.style.cssText = 'font-size:16px;width:20px;text-align:center;flex-shrink:0';
-                            e.target.parentNode.insertBefore(span, e.target);
-                          }
-                        }}
+                        onError={e => { e.target.style.display = 'none'; }}
                       />
                       <span>{l.name}</span>
                     </a>

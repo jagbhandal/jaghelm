@@ -1,19 +1,15 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 
 /**
- * PanelWrapper — Wraps any dashboard panel to measure its content height
- * and report the required minH (in grid rows) back to DashboardView.
+ * PanelWrapper — Measures actual content height inside a panel and reports
+ * the minimum grid rows needed back to DashboardView.
  * 
- * Measurement strategy: We look at the first child element (the glass-card)
- * and measure its scrollHeight — this is the full content height even when
- * the card has overflow:hidden/auto. We convert this to grid rows.
- * 
- * Props:
- *   panelKey   — the grid layout key (e.g. 'node-gateway', 'ups', 'todos')
- *   onMinH     — callback: (panelKey, minRows) => void
- *   rowHeight  — RGL rowHeight (default 36)
- *   margin     — RGL margin (default 16)
- *   children   — the actual panel content
+ * Measurement strategy:
+ * The .node-card is a flexbox column with height:100% (stretched by RGL).
+ * Its scrollHeight equals the container height, NOT the content height.
+ * So we sum the offsetHeight of each direct child of .node-card plus
+ * the card's padding and gaps. This gives the true natural content height
+ * regardless of how tall RGL makes the container.
  */
 export default function PanelWrapper({ panelKey, onMinH, rowHeight = 36, margin = 16, children }) {
   const wrapperRef = useRef(null);
@@ -22,21 +18,40 @@ export default function PanelWrapper({ panelKey, onMinH, rowHeight = 36, margin 
   const calculate = useCallback(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
-    // Find the inner content container — the node-card div that has the actual content
-    // node-card uses flexbox column layout, so we need to measure the combined height
-    // of all its children to know the true content height
+
     const card = wrapper.querySelector('.node-card');
-    if (card) {
-      const contentPx = card.scrollHeight;
-      if (contentPx <= 0) return;
-      // Convert pixel height to grid rows
-      // Grid item height = (rowHeight * h) + (margin * (h - 1))
-      // Solving for h: h = ceil((contentPx + margin) / (rowHeight + margin))
-      const rows = Math.ceil((contentPx + margin) / (rowHeight + margin));
-      const clamped = Math.max(2, rows);
-      if (clamped !== minRows) {
-        setMinRows(clamped);
-      }
+    if (!card) return;
+
+    // Sum the heights of all direct children of the card
+    let contentPx = 0;
+    const children = card.children;
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      // offsetHeight includes the element's border and padding but not margin
+      const style = window.getComputedStyle(child);
+      const marginTop = parseFloat(style.marginTop) || 0;
+      const marginBottom = parseFloat(style.marginBottom) || 0;
+      contentPx += child.offsetHeight + marginTop + marginBottom;
+    }
+
+    // Add card padding (top + bottom)
+    const cardStyle = window.getComputedStyle(card);
+    const paddingTop = parseFloat(cardStyle.paddingTop) || 0;
+    const paddingBottom = parseFloat(cardStyle.paddingBottom) || 0;
+    contentPx += paddingTop + paddingBottom;
+
+    // Add border from the glass-card parent (top border is 2px accent)
+    contentPx += 4; // 2px top border + 2px safety
+
+    if (contentPx <= 0) return;
+
+    // Convert pixel height to grid rows
+    // Grid item height = (rowHeight * h) + (margin * (h - 1))
+    // Solving for h: h = ceil((contentPx + margin) / (rowHeight + margin))
+    const rows = Math.ceil((contentPx + margin) / (rowHeight + margin));
+    const clamped = Math.max(2, rows);
+    if (clamped !== minRows) {
+      setMinRows(clamped);
     }
   }, [rowHeight, margin, minRows]);
 
@@ -51,15 +66,15 @@ export default function PanelWrapper({ panelKey, onMinH, rowHeight = 36, margin 
     if (!wrapper) return;
 
     // Initial measurement after content renders
-    const timer = setTimeout(calculate, 150);
+    const timer = setTimeout(calculate, 200);
 
-    // Watch the wrapper for size changes (card reflow when panel is resized)
+    // Re-measure when the wrapper resizes (panel width change causes card reflow)
     const ro = new ResizeObserver(() => {
       calculate();
     });
     ro.observe(wrapper);
 
-    // Also observe the inner card if it exists (content changes)
+    // Also observe the inner card for content changes
     const card = wrapper.querySelector('.node-card');
     if (card) {
       ro.observe(card);

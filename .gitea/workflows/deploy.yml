@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-and-push:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -29,24 +29,11 @@ jobs:
     runs-on: self-hosted
     needs: build-and-push
     steps:
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
-
       - name: Pull and deploy
         run: |
-          ssh -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=no \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "cd /opt/stacks/jaghelm && docker compose pull && docker compose up -d"
+          cd /opt/stacks/jaghelm && docker compose pull && docker compose up -d
 
       - name: Verify deployment
         run: |
           sleep 10
-          ssh -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=no \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "docker ps | grep jaghelm && curl -s http://localhost:3099/api/health"
+          docker ps | grep jaghelm && /usr/bin/curl -s http://localhost:3099/api/health

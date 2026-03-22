@@ -1,14 +1,14 @@
 import React, { useRef, useState, useEffect } from 'react';
-import ServiceCard from './ServiceCard';
+import DraggableServiceCard from './DraggableServiceCard';
 
 /**
- * ServiceGrid — Responsive service card grid
+ * ServiceGrid — Responsive service card grid with draggable cards
  * 
  * serviceColumns in config is a MAX, not absolute.
  * Uses ResizeObserver to measure actual container width and dynamically
  * adjusts columns: maxCols → maxCols-1 → ... → 1 as the panel shrinks.
  */
-function ServiceGrid({ services, config }) {
+function ServiceGrid({ services, config, panelId, dragDisabled }) {
   const gridRef = useRef(null);
   const [cols, setCols] = useState(4);
 
@@ -26,13 +26,11 @@ function ServiceGrid({ services, config }) {
     const calc = () => {
       const w = el.clientWidth;
       if (w <= 0) return;
-      // How many columns fit at minColWidth with gaps?
       const fitCols = Math.max(1, Math.floor((w + gap) / (minColWidth + gap)));
-      // Cap at maxCols if set, otherwise use whatever fits
       setCols(maxCols > 0 ? Math.min(maxCols, fitCols) : fitCols);
     };
 
-    calc(); // Initial calc
+    calc();
 
     const ro = new ResizeObserver(calc);
     ro.observe(el);
@@ -49,11 +47,13 @@ function ServiceGrid({ services, config }) {
       }}
     >
       {services.map((s, i) => (
-        <ServiceCard
+        <DraggableServiceCard
           key={s.container || i}
           service={s}
+          sourcePanel={panelId}
           showDockerStats={showDocker}
           showAppData={showApp}
+          disabled={dragDisabled}
         />
       ))}
     </div>
@@ -61,21 +61,18 @@ function ServiceGrid({ services, config }) {
 }
 
 /**
- * NodeCard v8 — Phase 1
+ * NodeCard v8 — Phase 4
  * 
- * Key change: services now arrive pre-merged from the server.
- * Each service object has: name, container, status, uptime, ping, icon, docker, appData
- * No more client-side fuzzy matching or docker data lookups.
+ * Now accepts panelId and dragDisabled props for drag-and-drop support.
+ * Service cards are draggable between panels when dragDisabled is false.
  */
-export default function NodeCard({ sectionKey, config, setConfig, borderColor, metrics, services, nodeData, children }) {
+export default function NodeCard({ sectionKey, config, setConfig, borderColor, metrics, services, nodeData, children, panelId, dragDisabled }) {
   const sec = config?.sections?.[sectionKey] || {};
 
-  // Use node data from API for title/subtitle if available, fall back to section config
   const title = nodeData?.display_name || sec.title || sectionKey;
   const subtitle = nodeData?.subtitle || sec.subtitle || '';
   const icon = nodeData?.icon || sec.icon;
 
-  // Per-section background
   const bgStyle = {};
   if (sec.bgColor && sec.bgOpacity > 0) {
     const hex = sec.bgColor;
@@ -92,8 +89,8 @@ export default function NodeCard({ sectionKey, config, setConfig, borderColor, m
             border: `1px solid ${borderColor || 'var(--accent)'}30`,
           }}>
             {icon.startsWith('http') || icon.startsWith('/')
-              ? <img src={icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} />
-              : icon
+              ? <img src={icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
+              : <img src={`https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
             }
           </div>
         )}
@@ -129,7 +126,7 @@ export default function NodeCard({ sectionKey, config, setConfig, borderColor, m
       )}
 
       {services?.length > 0 && (
-        <ServiceGrid services={services} config={config} />
+        <ServiceGrid services={services} config={config} panelId={panelId || sectionKey} dragDisabled={dragDisabled} />
       )}
 
       {children}
