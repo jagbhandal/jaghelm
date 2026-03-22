@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Create or update PR
         run: |
-          EXISTING=$(curl -sf \
+          EXISTING=$(/usr/bin/curl -sf \
             -H "Authorization: token ${{ secrets.PR_TOKEN }}" \
             "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/pulls?state=open&head=staging&base=main")
 
@@ -20,7 +20,7 @@ jobs:
           else
             COMMIT_MSG=$(echo "${{ github.event.head_commit.message }}" | head -1)
 
-            curl -sf -X POST \
+            /usr/bin/curl -sf -X POST \
               -H "Authorization: token ${{ secrets.PR_TOKEN }}" \
               -H "Content-Type: application/json" \
               "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/pulls" \
