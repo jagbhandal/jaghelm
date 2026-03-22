@@ -24,9 +24,9 @@ export default function PanelWrapper({ panelKey, onMinH, rowHeight = 36, margin 
 
     // Sum the heights of all direct children of the card
     let contentPx = 0;
-    const children = card.children;
-    for (let i = 0; i < children.length; i++) {
-      const child = children[i];
+    const cardChildren = card.children;
+    for (let i = 0; i < cardChildren.length; i++) {
+      const child = cardChildren[i];
       // offsetHeight includes the element's border and padding but not margin
       const style = window.getComputedStyle(child);
       const marginTop = parseFloat(style.marginTop) || 0;
