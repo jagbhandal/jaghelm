@@ -80,6 +80,7 @@ function migrateLayouts(layouts) {
 
 export default function DashboardView({ config, setConfig, refreshKey }) {
   const { width, containerRef, mounted } = useContainerWidth({ initialWidth: 1200 });
+  const isMobile = width < 480;
 
   // Unified service data from /api/services
   const [serviceData, setServiceData] = useState({ nodes: {} });
@@ -591,9 +592,8 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   // Welcome message config
   const wm = config.welcomeMessage || {};
 
-  // ── Mobile detection: disable drag/resize on sm breakpoint ──
-  const isMobile = width < 480;
 
+  
   return (
     <div className="dashboard-content" ref={containerRef}>
       {/* Welcome message banner */}
