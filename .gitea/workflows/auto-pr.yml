@@ -7,26 +7,20 @@ on:
 
 jobs:
   create-pr:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Create or update PR
         run: |
-          # Check if an open PR from staging→main already exists
-          EXISTING=$(curl -s \
+          EXISTING=$(curl -sf \
             -H "Authorization: token ${{ secrets.PR_TOKEN }}" \
-            "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/pulls?state=open&head=staging&base=main" \
-          )
+            "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/pulls?state=open&head=staging&base=main")
 
-          PR_COUNT=$(echo "$EXISTING" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-
-          if [ "$PR_COUNT" != "0" ]; then
+          if echo "$EXISTING" | grep -q '"number"'; then
             echo "Open PR already exists — skipping"
-            echo "$EXISTING" | python3 -c "import sys,json; pr=json.load(sys.stdin)[0]; print(f'PR #{pr[\"number\"]}: {pr[\"title\"]}')"
           else
-            # Get the commit message for the PR title
             COMMIT_MSG=$(echo "${{ github.event.head_commit.message }}" | head -1)
 
-            curl -s -X POST \
+            curl -sf -X POST \
               -H "Authorization: token ${{ secrets.PR_TOKEN }}" \
               -H "Content-Type: application/json" \
               "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/pulls" \
