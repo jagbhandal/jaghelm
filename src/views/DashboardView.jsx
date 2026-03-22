@@ -148,18 +148,26 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       : { lg: 12, md: 10, sm: 1 }
   ), [config.gridColumns]);
 
-  // ── Layout persistence — SIMPLE approach ──
-  // RGL fires onLayoutChange on mount and on prop changes.
-  // We skip the first few fires (mount noise), then save immediately.
-  const layoutChangeCount = useRef(0);
+  // ── Layout persistence — User-interaction gated ──
+  // RGL fires onLayoutChange on mount, prop changes, AND after user drag/resize.
+  // The compactor also fires it when rearranging panels.
+  // We ONLY save when the user actually dragged or resized something.
+  // This prevents compactor noise from overwriting the saved layout.
+  const userInteractedRef = useRef(false);
 
   const handleLayoutChange = useCallback((_, allLayouts) => {
-    layoutChangeCount.current += 1;
-    // Skip initial mount fires — RGL fires 1-3 times during init
-    if (layoutChangeCount.current <= 3) return;
-    // Save immediately
+    if (!userInteractedRef.current) return; // Ignore compactor/mount fires
+    userInteractedRef.current = false; // Reset flag
     setConfig(p => ({ ...p, gridLayout: allLayouts }));
   }, [setConfig]);
+
+  // Set the flag when user starts dragging or resizing
+  const handleDragStart = useCallback(() => {
+    userInteractedRef.current = true;
+  }, []);
+  const handleResizeStart = useCallback(() => {
+    userInteractedRef.current = true;
+  }, []);
 
   // ── Custom Groups: containers assigned to user-created groups ──
   const customGroups = config.customGroups || [];
@@ -432,8 +440,10 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           breakpoints={{ lg: 1200, md: 768, sm: 480 }}
           compactor={verticalCompactor}
           onLayoutChange={handleLayoutChange}
+          onDragStart={handleDragStart}
           onDrag={handleDrag}
           onDragStop={handleDragStop}
+          onResizeStart={handleResizeStart}
           gridConfig={{
             cols,
             rowHeight: 36,
