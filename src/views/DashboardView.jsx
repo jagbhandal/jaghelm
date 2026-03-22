@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Responsive, useContainerWidth } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import NodeCard from '../components/NodeCard';
 import TodoCard from '../components/TodoCard';
 import PanelWrapper from '../components/PanelWrapper';
+import DroppablePanel from '../components/DroppablePanel';
+import ServiceDragOverlay from '../components/ServiceDragOverlay';
 import { UPSCard, GiteaActivity, QuickLaunch } from '../components/Widgets';
 import { getServices, getUPSStatus, getGiteaActivity, getAllIntegrations } from '../hooks/useData';
 
@@ -94,6 +97,61 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   const dynamicMinHRef = useRef({});
   const handleMinH = useCallback((panelKey, minRows) => {
     dynamicMinHRef.current[panelKey] = minRows;
+  }, []);
+
+  // ── Drag-and-drop service cards between panels ──
+  // PointerSensor with 8px activation distance prevents accidental drags when clicking
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
+  const [activeDrag, setActiveDrag] = useState(null);
+
+  const handleDragStart = useCallback((event) => {
+    const { active } = event;
+    if (active?.data?.current?.service) {
+      setActiveDrag(active.data.current.service);
+    }
+  }, []);
+
+  const handleDragEnd = useCallback((event) => {
+    setActiveDrag(null);
+    const { active, over } = event;
+    if (!active || !over) return;
+
+    const container = active.data?.current?.container;
+    const sourcePanel = active.data?.current?.sourcePanel;
+    const targetPanelId = over.data?.current?.panelId;
+
+    if (!container || !targetPanelId || sourcePanel === targetPanelId) return;
+
+    const customGroups = config.customGroups || [];
+
+    // Case 1: Dropping into a custom group panel
+    if (targetPanelId.startsWith('group-')) {
+      const targetGroupId = targetPanelId.replace('group-', '');
+      const updatedGroups = customGroups.map(g => {
+        // Remove from any existing custom group first
+        const filtered = (g.containers || []).filter(c => c !== container);
+        // Add to target group
+        if (g.id === targetGroupId) {
+          return { ...g, containers: [...filtered, container] };
+        }
+        return { ...g, containers: filtered };
+      });
+      setConfig(p => ({ ...p, customGroups: updatedGroups }));
+    }
+    // Case 2: Dropping back onto a node panel — release from custom group
+    else if (targetPanelId.startsWith('node-')) {
+      const updatedGroups = customGroups.map(g => ({
+        ...g,
+        containers: (g.containers || []).filter(c => c !== container),
+      }));
+      setConfig(p => ({ ...p, customGroups: updatedGroups }));
+    }
+  }, [config, setConfig]);
+
+  const handleDragCancel = useCallback(() => {
+    setActiveDrag(null);
   }, []);
 
   const fetchAll = useCallback(async (bust) => {
@@ -200,11 +258,11 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     setConfig(p => ({ ...p, gridLayout: allLayouts }));
   }, [setConfig]);
 
-  // Set the flag when user starts dragging or resizing
-  const handleDragStart = useCallback(() => {
+  // Set the flag when user starts dragging or resizing a PANEL (RGL)
+  const handleRglDragStart = useCallback(() => {
     userInteractedRef.current = true;
   }, []);
-  const handleResizeStart = useCallback(() => {
+  const handleRglResizeStart = useCallback(() => {
     userInteractedRef.current = true;
   }, []);
 
@@ -324,81 +382,85 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       return (
         <div key={gridKey}>
           <PanelWrapper panelKey={gridKey} onMinH={handleMinH}>
-            <NodeCard
-              sectionKey={nodeKey}
-              config={config}
-              setConfig={setConfig}
-              borderColor={borderColor}
-              metrics={metrics}
-              services={services}
-              nodeData={node}
-            >
-              {proxmoxVms && proxmoxVms.length > 0 && (
-                <div style={{ marginTop: 8 }}>
-                  <div style={{
-                    fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)',
-                    letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6, paddingLeft: 2,
-                  }}>Virtual Machines</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
-                    {proxmoxVms.map(vm => {
-                      const isRunning = vm.status === 'running';
-                      const isPaused = vm.status === 'paused';
-                      const statusColor = isRunning ? 'var(--green)' : isPaused ? 'var(--amber)' : 'var(--red)';
-                      return (
-                        <div key={vm.vmid} style={{
-                          background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
-                          borderRadius: 12, padding: '10px 12px',
-                          borderLeft: `3px solid ${statusColor}`,
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div style={{
-                              width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                              background: statusColor, boxShadow: `0 0 6px ${statusColor}`,
-                            }} />
-                            <span style={{
-                              fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
-                              flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                            }}>{vm.name}</span>
-                            <span style={{
-                              fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-badge)', padding: '2px 5px',
-                              borderRadius: 4, textTransform: 'uppercase', fontWeight: 500,
-                              background: isRunning ? 'var(--green-bg)' : isPaused ? 'var(--amber-bg)' : 'var(--red-bg)',
-                              color: statusColor,
-                              border: `1px solid ${isRunning ? 'var(--green-border)' : isPaused ? 'var(--amber-border)' : 'var(--red-border)'}`,
-                            }}>{vm.status}</span>
-                          </div>
-                          <div style={{
-                            display: 'flex', gap: 8, marginTop: 6, justifyContent: 'center',
+            <DroppablePanel panelId={gridKey} disabled={isMobile}>
+              <NodeCard
+                sectionKey={nodeKey}
+                config={config}
+                setConfig={setConfig}
+                borderColor={borderColor}
+                metrics={metrics}
+                services={services}
+                nodeData={node}
+                panelId={gridKey}
+                dragDisabled={isMobile}
+              >
+                {proxmoxVms && proxmoxVms.length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{
+                      fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)',
+                      letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6, paddingLeft: 2,
+                    }}>Virtual Machines</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                      {proxmoxVms.map(vm => {
+                        const isRunning = vm.status === 'running';
+                        const isPaused = vm.status === 'paused';
+                        const statusColor = isRunning ? 'var(--green)' : isPaused ? 'var(--amber)' : 'var(--red)';
+                        return (
+                          <div key={vm.vmid} style={{
+                            background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
+                            borderRadius: 12, padding: '10px 12px',
+                            borderLeft: `3px solid ${statusColor}`,
                           }}>
-                            <div style={{
-                              textAlign: 'center', padding: '4px 8px',
-                              background: 'rgba(255,255,255,0.03)', borderRadius: 6,
-                              border: '1px solid rgba(255,255,255,0.04)', flex: 1,
-                            }}>
-                              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)' }}>{vm.maxcpu}</div>
-                              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>vCPU</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{
+                                width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                                background: statusColor, boxShadow: `0 0 6px ${statusColor}`,
+                              }} />
+                              <span style={{
+                                fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
+                                flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              }}>{vm.name}</span>
+                              <span style={{
+                                fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-badge)', padding: '2px 5px',
+                                borderRadius: 4, textTransform: 'uppercase', fontWeight: 500,
+                                background: isRunning ? 'var(--green-bg)' : isPaused ? 'var(--amber-bg)' : 'var(--red-bg)',
+                                color: statusColor,
+                                border: `1px solid ${isRunning ? 'var(--green-border)' : isPaused ? 'var(--amber-border)' : 'var(--red-border)'}`,
+                              }}>{vm.status}</span>
                             </div>
                             <div style={{
-                              textAlign: 'center', padding: '4px 8px',
-                              background: 'rgba(255,255,255,0.03)', borderRadius: 6,
-                              border: '1px solid rgba(255,255,255,0.04)', flex: 1,
+                              display: 'flex', gap: 8, marginTop: 6, justifyContent: 'center',
                             }}>
-                              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)' }}>{vm.vmid}</div>
-                              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>VMID</div>
+                              <div style={{
+                                textAlign: 'center', padding: '4px 8px',
+                                background: 'rgba(255,255,255,0.03)', borderRadius: 6,
+                                border: '1px solid rgba(255,255,255,0.04)', flex: 1,
+                              }}>
+                                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)' }}>{vm.maxcpu}</div>
+                                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>vCPU</div>
+                              </div>
+                              <div style={{
+                                textAlign: 'center', padding: '4px 8px',
+                                background: 'rgba(255,255,255,0.03)', borderRadius: 6,
+                                border: '1px solid rgba(255,255,255,0.04)', flex: 1,
+                              }}>
+                                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)' }}>{vm.vmid}</div>
+                                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>VMID</div>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
-            </NodeCard>
+                )}
+              </NodeCard>
+            </DroppablePanel>
           </PanelWrapper>
         </div>
       );
     }).filter(Boolean);
-  }, [serviceData, sc, config, setConfig, appDataByContainer, claimedContainers, integrationData, handleMinH]);
+  }, [serviceData, sc, config, setConfig, appDataByContainer, claimedContainers, integrationData, handleMinH, isMobile]);
 
   // Build custom group panel elements
   const customGroupElements = useMemo(() => {
@@ -414,20 +476,24 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       return (
         <div key={gridKey}>
           <PanelWrapper panelKey={gridKey} onMinH={handleMinH}>
-            <NodeCard
-              sectionKey={`group-${group.id}`}
-              config={config}
-              setConfig={setConfig}
-              borderColor={borderColor}
-              metrics={null}
-              services={services}
-              nodeData={{ display_name: group.title, icon: group.icon || '📂', subtitle: `${services.length} services` }}
-            />
+            <DroppablePanel panelId={gridKey} disabled={isMobile}>
+              <NodeCard
+                sectionKey={`group-${group.id}`}
+                config={config}
+                setConfig={setConfig}
+                borderColor={borderColor}
+                metrics={null}
+                services={services}
+                nodeData={{ display_name: group.title, icon: group.icon || 'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/folder_special/outline.svg', subtitle: `${services.length} services` }}
+                panelId={gridKey}
+                dragDisabled={isMobile}
+              />
+            </DroppablePanel>
           </PanelWrapper>
         </div>
       );
     }).filter(Boolean);
-  }, [customGroups, allServicesFlat, sc, config, setConfig, handleMinH]);
+  }, [customGroups, allServicesFlat, sc, config, setConfig, handleMinH, isMobile]);
 
   // Ensure layouts have entries for all dynamic node sections + custom groups and enforce min constraints
   // CRITICAL: Use a ref to stabilize the object reference. Only produce a new object when
@@ -502,12 +568,12 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     return result;
   }, [layouts, serviceData, customGroups]);
 
-  // Auto-scroll when dragging near viewport edges
+  // Auto-scroll when dragging panels near viewport edges (RGL)
   const scrollRAF = useRef(null);
-  const handleDrag = useCallback((layout, oldItem, newItem, placeholder, e) => {
+  const handlePanelDrag = useCallback((layout, oldItem, newItem, placeholder, e) => {
     if (scrollRAF.current) cancelAnimationFrame(scrollRAF.current);
-    const EDGE = 80; // px from edge to start scrolling
-    const SPEED = 15; // px per frame
+    const EDGE = 80;
+    const SPEED = 15;
     const y = e?.clientY ?? 0;
     const vh = window.innerHeight;
     if (y > vh - EDGE) {
@@ -518,7 +584,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       scrollRAF.current = requestAnimationFrame(doScroll);
     }
   }, []);
-  const handleDragStop = useCallback(() => {
+  const handlePanelDragStop = useCallback(() => {
     if (scrollRAF.current) { cancelAnimationFrame(scrollRAF.current); scrollRAF.current = null; }
   }, []);
 
@@ -560,6 +626,12 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
         </div>
       )}
       {mounted && (
+        <DndContext
+          sensors={sensors}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
+        >
         <Responsive
           className="layout"
           width={width}
@@ -567,10 +639,10 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           breakpoints={{ lg: 1200, md: 768, sm: 480 }}
           // No compactor — panels stay exactly where the user places them
           onLayoutChange={handleLayoutChange}
-          onDragStart={handleDragStart}
-          onDrag={handleDrag}
-          onDragStop={handleDragStop}
-          onResizeStart={handleResizeStart}
+          onDragStart={handleRglDragStart}
+          onDrag={handlePanelDrag}
+          onDragStop={handlePanelDragStop}
+          onResizeStart={handleRglResizeStart}
           gridConfig={{
             cols,
             rowHeight: 36,
@@ -642,6 +714,10 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
             </div>
           )}
         </Responsive>
+        <DragOverlay dropAnimation={null}>
+          {activeDrag ? <ServiceDragOverlay service={activeDrag} /> : null}
+        </DragOverlay>
+        </DndContext>
       )}
     </div>
   );
