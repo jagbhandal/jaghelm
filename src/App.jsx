@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import NavBar from './components/NavBar';
-import SettingsPanel from './components/SettingsPanel';
 import LoginPage from './components/LoginPage';
 import DashboardView from './views/DashboardView';
 import IframeView from './views/IframeView';
+import SettingsView from './views/SettingsView';
 import { getMonitors } from './hooks/useData';
 
 export default function App() {
@@ -11,7 +11,6 @@ export default function App() {
   const [authRequired, setAuthRequired] = useState(null);
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('jaghelm-token') || '');
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('jaghelm-theme') || 'dark');
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [overallHealth, setOverallHealth] = useState('up');
@@ -150,17 +149,19 @@ export default function App() {
         <div className="bg-overlay" />
       </div>
       <div className="bg-mesh" />
-      {config.showDots && <div className="dot-grid" />}
+      {config.showDots && activeTab !== 'settings' && <div className="dot-grid" />}
       <div className="app-container">
         <NavBar tabs={allTabs} activeTab={activeTab} onTabChange={setActiveTab}
           theme={theme} setTheme={setTheme}
           onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : t === 'light' ? 'dracula' : 'dark')}
-          health={overallHealth} lastUpdated={lastUpdated} config={config} onOpenSettings={() => setSettingsOpen(true)} refreshKey={refreshKey} />
+          health={overallHealth} lastUpdated={lastUpdated} config={config}
+          onOpenSettings={() => setActiveTab('settings')}
+          refreshKey={refreshKey} />
         {activeTab === 'dashboard' && <DashboardView config={config} setConfig={setConfig} refreshKey={refreshKey} />}
+        {activeTab === 'settings' && <SettingsView config={config} setConfig={setConfig} theme={theme} setTheme={setTheme} />}
         {allTabs.find(t => t.id === activeTab && t.type === 'iframe') && (
           <IframeView url={allTabs.find(t => t.id === activeTab).url} title={allTabs.find(t => t.id === activeTab).label} />
         )}
-        {settingsOpen && <SettingsPanel config={config} setConfig={setConfig} theme={theme} setTheme={setTheme} onClose={() => setSettingsOpen(false)} onApply={() => setRefreshKey(k => k + 1)} />}
       </div>
     </>
   );
