@@ -17,6 +17,7 @@ const ICON_REPOS = [
     id: 'dashboard-icons',
     label: 'Dashboard Icons',
     repo: 'homarr-labs/dashboard-icons',
+    branch: 'main',
     treePath: 'svg/',
     cdnBase: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg',
     ext: '.svg',
@@ -25,6 +26,7 @@ const ICON_REPOS = [
     id: 'selfhst',
     label: 'selfh.st Icons',
     repo: 'selfhst/icons',
+    branch: 'main',
     treePath: 'svg/',
     cdnBase: 'https://cdn.jsdelivr.net/gh/selfhst/icons@latest/svg',
     ext: '.svg',
@@ -33,6 +35,7 @@ const ICON_REPOS = [
     id: 'simple-icons',
     label: 'Simple Icons',
     repo: 'simple-icons/simple-icons',
+    branch: 'develop',
     treePath: 'icons/',
     cdnBase: 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons',
     ext: '.svg',
@@ -48,13 +51,13 @@ let indexReady = false;
  * Returns array of { name, slug, url, repo }
  */
 async function fetchRepoIcons(repoConfig) {
-  const { id, label, repo, treePath, cdnBase, ext } = repoConfig;
+  const { id, label, repo, branch, treePath, cdnBase, ext } = repoConfig;
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
     const res = await fetch(
-      `https://api.github.com/repos/${repo}/git/trees/main?recursive=true`,
+      `https://api.github.com/repos/${repo}/git/trees/${branch || 'main'}?recursive=true`,
       {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
