@@ -65,9 +65,9 @@ export default function ServiceCard({ service, level }) {
         </span>
       </div>
 
-      {/* Stats row: CPU, MEM, RX, TX */}
+      {/* Stats row: CPU, MEM, RX, TX — equal columns fill full card width */}
       {showStats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(60px, 1fr))', gap: 6, marginTop: 4 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginTop: 4 }}>
           <StatCell label="CPU" value={docker.cpu != null ? `${docker.cpu}%` : '—'} />
           <StatCell label="MEM" value={docker.memMB != null ? `${docker.memMB} MB` : '—'} />
           <StatCell label="RX" value={docker.rxMB != null ? `${docker.rxMB} MB` : '—'} />
@@ -75,14 +75,17 @@ export default function ServiceCard({ service, level }) {
         </div>
       )}
 
-      {/* App-specific stats (Tier 3) */}
-      {showApp && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))', gap: 6, marginTop: 6 }}>
-          {Object.entries(appData).map(([label, value]) => (
-            <StatCell key={label} label={label} value={String(value)} />
-          ))}
-        </div>
-      )}
+      {/* App-specific stats (Tier 3) — equal columns fill full card width */}
+      {showApp && (() => {
+        const entries = Object.entries(appData);
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${entries.length}, 1fr)`, gap: 6, marginTop: 6 }}>
+            {entries.map(([label, value]) => (
+              <StatCell key={label} label={label} value={String(value)} />
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Uptime bar */}
       {service.uptime != null && showStats && (
