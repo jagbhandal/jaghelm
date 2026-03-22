@@ -67,6 +67,24 @@ export default function LayoutTab({ config, update }) {
             <strong>Full:</strong> + app-specific API data (queries, hosts, etc.)
           </div>
         </Field>
+
+        <Field label={`Service Columns per Row: ${config.serviceColumns || 'Auto'}`}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[0, 2, 3, 4, 5, 6].map(n => (
+              <button
+                key={n}
+                onClick={() => update('serviceColumns', n)}
+                className={`settings-choice-btn ${(config.serviceColumns || 0) === n ? 'active' : ''}`}
+              >
+                {n === 0 ? 'Auto' : n}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.6 }}>
+            <strong>Auto:</strong> Cards fill available space responsively<br />
+            <strong>2–6:</strong> Fixed columns — each card takes equal width of the panel
+          </div>
+        </Field>
       </Card>
     </div>
   );

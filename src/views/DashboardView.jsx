@@ -246,19 +246,34 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     }).filter(Boolean);
   }, [serviceData, sc, config, setConfig, appDataByContainer]);
 
-  // Ensure layouts have entries for all dynamic node sections
+  // Ensure layouts have entries for all dynamic node sections and enforce min constraints
   const effectiveLayouts = useMemo(() => {
+    // Build constraint map from defaults
+    const constraints = {};
+    for (const item of DEFAULT_LAYOUTS.lg) {
+      constraints[item.i] = { minW: item.minW, minH: item.minH };
+    }
+
     const nodeKeys = Object.keys(serviceData.nodes || {}).map(k => `node-${k}`);
     const result = {};
     for (const [bp, items] of Object.entries(layouts)) {
-      const existingKeys = new Set(items.map(i => i.i));
+      // Apply min constraints from defaults to saved layout items
+      const constrained = items.map(item => {
+        const c = constraints[item.i];
+        if (c) {
+          return { ...item, minW: c.minW, minH: c.minH };
+        }
+        return item;
+      });
+
+      const existingKeys = new Set(constrained.map(i => i.i));
       const missing = nodeKeys.filter(k => !existingKeys.has(k));
       // Add missing nodes at the bottom
-      let maxY = items.reduce((max, i) => Math.max(max, i.y + i.h), 0);
+      let maxY = constrained.reduce((max, i) => Math.max(max, i.y + i.h), 0);
       const newItems = missing.map(k => ({
         i: k, x: 0, y: maxY++, w: bp === 'lg' ? 12 : 10, h: 6, minW: 4, minH: 3,
       }));
-      result[bp] = [...items, ...newItems];
+      result[bp] = [...constrained, ...newItems];
     }
     return result;
   }, [layouts, serviceData]);
