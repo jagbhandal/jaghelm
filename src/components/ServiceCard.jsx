@@ -2,13 +2,13 @@ import React from 'react';
 import { getServiceIcon } from '../hooks/useData';
 
 /**
- * ServiceCard v8 — Phase 1
+ * ServiceCard v8 — Phase 3
  * 
- * Key change: service object now arrives fully merged from the server.
- * Props shape: { name, container, status, uptime, ping, icon, docker: { cpu, memMB, rxMB, txMB }, appData: { ... } | null }
- * No more client-side fuzzy matching of docker data or app data.
+ * Props: { service, showDockerStats, showAppData }
+ * showDockerStats and showAppData are independent toggles from Settings > Layout.
+ * Users can show any combination: simple only, docker only, app only, both, or all.
  */
-export default function ServiceCard({ service, level }) {
+export default function ServiceCard({ service, showDockerStats = true, showAppData = true }) {
   // Icon: use server-provided icon key, fall back to name-based icon lookup
   const icon = service.icon
     ? getServiceIcon(service.icon) || getServiceIcon(service.name)
@@ -20,14 +20,15 @@ export default function ServiceCard({ service, level }) {
   const statusColor = isUp ? 'var(--green)' : isDown ? 'var(--red)' : 'var(--amber)';
 
   const docker = service.docker || {};
-  const showStats = level === 'stats' || level === 'full';
+  const showStats = showDockerStats;
   const appData = service.appData;
-  const showApp = level === 'full' && appData && Object.keys(appData).length > 0;
+  const showApp = showAppData && appData && Object.keys(appData).length > 0;
+  const hasDetails = showStats || showApp;
 
   return (
     <div style={{
       background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
-      borderRadius: 12, padding: showStats ? '12px 14px' : '8px 12px',
+      borderRadius: 12, padding: hasDetails ? '12px 14px' : '8px 12px',
       transition: 'border-color 0.2s', cursor: 'default',
       borderLeft: `3px solid ${statusColor}`, borderLeftStyle: 'solid',
       position: 'relative',
@@ -51,7 +52,7 @@ export default function ServiceCard({ service, level }) {
       </div>
 
       {/* Header row: status dot + icon + name */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: showStats ? 8 : 0, paddingRight: 90 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: hasDetails ? 8 : 0, paddingRight: 90 }}>
         <div style={{
           width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
           background: statusColor, boxShadow: `0 0 6px ${statusColor}`,

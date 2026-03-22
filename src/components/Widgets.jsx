@@ -1,6 +1,16 @@
 import React from 'react';
 import { getServiceIcon } from '../hooks/useData';
 
+// Shared: compute background style from section config
+function sectionBgStyle(sec) {
+  if (sec?.bgColor && (sec.bgOpacity ?? 0) > 0) {
+    const hex = sec.bgColor;
+    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    return { background: `rgba(${r},${g},${b},${sec.bgOpacity})` };
+  }
+  return {};
+}
+
 export function UPSCard({ upsData, borderColor, config }) {
   const sec = config?.sections?.ups || {};
   // nut_status values: 0=Unknown, 1=Online (OL), 2=On Battery (OB), 3=Low Battery (LB)
@@ -8,7 +18,7 @@ export function UPSCard({ upsData, borderColor, config }) {
   const sC = (v) => v === 1 ? 'var(--green)' : v === 2 ? 'var(--amber)' : v === 3 ? 'var(--red)' : 'var(--text-muted)';
   const rt = upsData?.runtime ? Math.floor(upsData.runtime / 60) : null;
   return (
-    <div className="glass-card node-card" style={{ borderTop: `2px solid ${borderColor || 'var(--green)'}` }}>
+    <div className="glass-card node-card" style={{ borderTop: `2px solid ${borderColor || 'var(--green)'}`, ...sectionBgStyle(sec) }}>
       <div className="section-header" style={{ cursor: 'grab' }}>
         <div className="section-icon" style={{ background: `${borderColor}15`, border: `1px solid ${borderColor}30` }}>{sec.icon || '⚡'}</div>
         <div><div className="section-title">{sec.title || 'UPS Power'}</div><div className="section-subtitle">{sec.subtitle || 'APC Back-UPS ES 600M1'}</div></div>
@@ -27,7 +37,7 @@ export function GiteaActivity({ commits, config }) {
   const sec = config?.sections?.pipeline || {};
   const ago = (d) => { if (!d) return ''; const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000); return s < 60 ? 'now' : s < 3600 ? `${Math.floor(s/60)}m` : s < 86400 ? `${Math.floor(s/3600)}h` : `${Math.floor(s/86400)}d`; };
   return (
-    <div className="glass-card node-card" style={{ borderTop: '2px solid var(--accent)' }}>
+    <div className="glass-card node-card" style={{ borderTop: '2px solid var(--accent)', ...sectionBgStyle(sec) }}>
       <div className="section-header" style={{ cursor: 'grab' }}>
         <div className="section-icon" style={{ background: 'var(--accent-glow)', border: '1px solid rgba(99,102,241,0.2)' }}>{sec.icon || '🔄'}</div>
         <div><div className="section-title">{sec.title || 'Pipeline Activity'}</div><div className="section-subtitle">{sec.subtitle || 'homelab-infra'}</div></div>
@@ -42,26 +52,26 @@ export function QuickLaunch({ config, borderColor }) {
   const sec = config?.sections?.quicklaunch || {};
   const groups = [{ key: 'personal', label: 'Personal' }, { key: 'management', label: 'Management' }, { key: 'devops', label: 'Dev & Monitoring' }];
   return (
-    <div className="glass-card node-card" style={{ borderTop: `2px solid ${borderColor || 'var(--blue)'}` }}>
+    <div className="glass-card node-card" style={{ borderTop: `2px solid ${borderColor || 'var(--blue)'}`, ...sectionBgStyle(sec) }}>
       <div className="section-header" style={{ cursor: 'grab' }}>
         <div className="section-icon" style={{ background: `${borderColor}15`, border: `1px solid ${borderColor}30` }}>{sec.icon || '🚀'}</div>
         <div><div className="section-title">{sec.title || 'Quick Launch'}</div></div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {groups.map(g => {
           const links = config.links?.[g.key] || [];
           if (links.length === 0) return null;
           return (
             <div key={g.key}>
-              <h4 style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 }}>{g.label}</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+              <h4 style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-secondary)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6 }}>{g.label}</h4>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {links.map((l, i) => {
                   const svgIcon = getServiceIcon(l.name);
                   return (
                     <a key={i} href={l.url} target="_blank" rel="noopener noreferrer" className="quick-launch-link">
                       {svgIcon
-                        ? <img src={svgIcon} alt="" style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0 }} />
-                        : <span style={{ fontSize: 18, width: 22, textAlign: 'center' }}>{l.icon}</span>
+                        ? <img src={svgIcon} alt="" style={{ width: 18, height: 18, borderRadius: 3, flexShrink: 0 }} />
+                        : <span style={{ fontSize: 16, width: 20, textAlign: 'center' }}>{l.icon}</span>
                       }
                       <span>{l.name}</span>
                     </a>

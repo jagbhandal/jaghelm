@@ -49,11 +49,18 @@ Everything the YAML can do, the Settings UI can do. Everything the Settings UI d
 - Default logo in header and login page (120px)
 - Pi service monitor mappings
 
-### 🔧 Phase 3: Integration Engine (In Planning)
-- Study Homepage/Homarr integration patterns
-- Declarative presets for common self-hosted apps
-- Custom integration builder
-- Test-before-save connections
+### 🔧 Phase 3: Integration Engine (In Progress — March 22, 2026)
+- Integration engine core: registry.js + handler.js
+- Generic fetch/auth/transform/cache pipeline
+- 6 auth types: none, basic, bearer, header, query, session
+- 7 field formats: number, decimal, percent, ms, bytes, duration, string
+- 3 compute types: percent_of, subtract, sum
+- 42 presets across 10 categories (DNS, proxy, media, arr stack, downloads, infra, files, security, dev, home automation)
+- API routes: GET/POST /api/integrations, test, save, delete, presets
+- Credential flow: UI form → encrypted secrets.json → $secret:ref in services.yaml
+- DashboardView wired to consume GET /api/integrations for Tier 3 data
+- TODO: IntegrationsTab in Settings UI (preset gallery + custom builder)
+- TODO: Test on staging against live services
 
 ### 📋 Phase 4: Polish
 - Docker label discovery
@@ -79,7 +86,14 @@ jaghelm/
 │   ├── config.js                 # Config manager (services.yaml)
 │   ├── secrets.js                # AES-256-GCM encryption
 │   ├── discovery.js              # Prometheus node + container discovery
-│   └── monitors.js               # Uptime Kuma monitor matching
+│   ├── monitors.js               # Uptime Kuma monitor matching
+│   └── integrations/             # Phase 3: Integration Engine
+│       ├── registry.js           # Loads presets, exposes getPreset/listPresets
+│       ├── handler.js            # Generic fetch/auth/transform/cache pipeline
+│       └── presets/              # 42 declarative preset definitions
+│           ├── adguard.js / npm.js / pihole.js
+│           ├── plex.js / jellyfin.js / sonarr.js / radarr.js / ...
+│           └── (one .js file per integration, ~15 lines each)
 ├── data/                         # Docker volume — persists across rebuilds
 │   ├── services.yaml             # Infrastructure config
 │   ├── display-config.json       # UI config (theme, layout, fonts, links)
@@ -138,6 +152,14 @@ jaghelm/
 
 ### Secrets
 - `GET /api/secrets/keys` · `PUT /api/secrets/:key` · `DELETE /api/secrets/:key`
+
+### Phase 3 — Integration Engine
+- `GET /api/integrations/presets` — List all available presets (for Settings UI gallery)
+- `GET /api/integrations` — Fetch all configured integrations' data (dashboard refresh)
+- `GET /api/integrations/:type` — Fetch one integration's data
+- `POST /api/integrations/test` — Test connection (URL + creds from form, not saved)
+- `POST /api/integrations/save` — Encrypt creds → secrets.json, config → services.yaml
+- `DELETE /api/integrations/:type` — Remove integration config
 
 ### Legacy (backward compat)
 - `/api/uptime/monitors` · `/api/prometheus/query` · `/api/adguard/stats`
