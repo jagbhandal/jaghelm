@@ -111,32 +111,62 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     }
   }, [fetchAll, refreshKey]);
 
-  // Build Tier 3 app data map from integration engine + container name matching
-  // Integration keys (e.g. 'adguard') map to container names via services.yaml config
-  // For now, use a simple name-based lookup: integration type → common container names
+  // Build Tier 3 app data map from integration engine + fuzzy container matching
+  // For each integration type, scan all discovered services and match by checking if
+  // the container name or display name contains any of the integration's keywords.
+  // This handles renamed containers, display name overrides, and compose prefixes.
   const appDataByContainer = useMemo(() => {
     const map = {};
-    // Map integration type keys to their likely container names
-    // This mapping will eventually come from services.yaml per-service integration config
-    const containerMap = {
-      adguard: ['adguardhome', 'adguard-home', 'adguard'],
-      npm: ['nginx-proxy-manager', 'npm'],
-      plex: ['plex', 'plex-media-server'],
+
+    // Keywords that identify which container belongs to which integration.
+    // The integration type key itself is always included as a keyword.
+    const integrationKeywords = {
+      adguard: ['adguard'],
+      npm: ['nginx-proxy-manager', 'npm', 'nginxproxymanager'],
+      plex: ['plex'],
       sonarr: ['sonarr'],
       radarr: ['radarr'],
       pihole: ['pihole', 'pi-hole'],
       jellyfin: ['jellyfin'],
       portainer: ['portainer'],
+      grafana: ['grafana'],
+      gitea: ['gitea'],
+      nextcloud: ['nextcloud'],
+      vaultwarden: ['vaultwarden'],
+      homeassistant: ['homeassistant', 'home-assistant', 'hass'],
+      immich: ['immich'],
+      paperless: ['paperless'],
+      photoprism: ['photoprism'],
     };
 
+    // Collect all discovered containers (name + display_name) for matching
+    const allContainers = [];
+    for (const node of Object.values(serviceData.nodes || {})) {
+      for (const s of (node.services || [])) {
+        allContainers.push(s);
+      }
+    }
+
     for (const [intType, fields] of Object.entries(integrationData)) {
-      const containerNames = containerMap[intType] || [intType];
-      for (const name of containerNames) {
-        map[name] = fields;
+      const keywords = integrationKeywords[intType] || [intType];
+
+      for (const svc of allContainers) {
+        // Check container name and display name (case-insensitive partial match)
+        const containerLower = (svc.container || '').toLowerCase();
+        const displayLower = (svc.display_name || '').toLowerCase();
+
+        const matched = keywords.some(kw => {
+          const kwLower = kw.toLowerCase();
+          return containerLower.includes(kwLower) || displayLower.includes(kwLower);
+        });
+
+        if (matched && !map[svc.container]) {
+          map[svc.container] = fields;
+        }
       }
     }
     return map;
-  }, [integrationData]);
+  }, [integrationData, serviceData]);
 
   const sc = config.sections || {};
   const rawLayouts = config.gridLayout || DEFAULT_LAYOUTS;
