@@ -40,6 +40,22 @@ export async function getGiteaActivity(bust) { return fetchJson(`${BASE}/gitea/a
 export async function getAdGuardStats(bust) { return fetchJson(`${BASE}/adguard/stats`, bust); }
 export async function getNpmStats(bust) { return fetchJson(`${BASE}/npm/stats`, bust); }
 
+// Phase 3: Integration Engine
+export async function getAllIntegrations(bust) { return fetchJson(`${BASE}/integrations`, bust); }
+export async function getIntegrationPresets() { return fetchJson(`${BASE}/integrations/presets`); }
+export async function testIntegration(data) {
+  const r = await fetch(`${BASE}/integrations/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  return r.json();
+}
+export async function saveIntegration(data) {
+  const r = await fetch(`${BASE}/integrations/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  return r.json();
+}
+export async function deleteIntegration(type) {
+  const r = await fetch(`${BASE}/integrations/${type}`, { method: 'DELETE' });
+  return r.json();
+}
+
 // ══════════════════════════════════════════════════════════════
 // Legacy functions (still used by dedicated sections, Widgets, Settings)
 // ══════════════════════════════════════════════════════════════

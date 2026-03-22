@@ -49,23 +49,28 @@ export default function LayoutTab({ config, update }) {
       </Card>
 
       <Card title="Service Cards">
-        <Field label="Detail Level">
-          <div style={{ display: 'flex', gap: 8 }}>
-            {['minimal', 'stats', 'full'].map(lv => (
-              <button
-                key={lv}
-                onClick={() => update('serviceDetailLevel', lv)}
-                className={`settings-choice-btn ${(config.serviceDetailLevel || 'minimal') === lv ? 'active' : ''}`}
-              >
-                {lv}
-              </button>
-            ))}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.6 }}>
-            <strong>Minimal:</strong> Status + latency badge<br />
-            <strong>Stats:</strong> + CPU, MEM, RX, TX per container<br />
-            <strong>Full:</strong> + app-specific API data (queries, hosts, etc.)
-          </div>
+        <Field label="Docker Metrics (CPU, MEM, RX, TX)">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={config.showDockerStats !== false}
+              onChange={e => update('showDockerStats', e.target.checked)}
+              style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
+            />
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Show per-container CPU, memory, and network stats</span>
+          </label>
+        </Field>
+
+        <Field label="App Integration Data">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={config.showAppData !== false}
+              onChange={e => update('showAppData', e.target.checked)}
+              style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
+            />
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Show app-specific API data (queries blocked, streams, etc.)</span>
+          </label>
         </Field>
 
         <Field label={`Service Columns per Row: ${config.serviceColumns || 'Auto'}`}>

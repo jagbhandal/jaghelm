@@ -67,13 +67,15 @@ export default function NodeCard({ sectionKey, config, setConfig, borderColor, m
       )}
 
       {services?.length > 0 && (() => {
-        const level = config?.serviceDetailLevel || 'minimal';
+        const showDocker = config?.showDockerStats !== false;
+        const showApp = config?.showAppData !== false;
+        const hasDetails = showDocker || showApp;
         const cols = config?.serviceColumns || 0; // 0 = auto
         const gridCols = cols > 0
           ? `repeat(${cols}, 1fr)`
-          : level === 'minimal'
-            ? 'repeat(auto-fill, minmax(180px, 1fr))'
-            : 'repeat(auto-fill, minmax(200px, 1fr))';
+          : hasDetails
+            ? 'repeat(auto-fill, minmax(200px, 1fr))'
+            : 'repeat(auto-fill, minmax(180px, 1fr))';
         return (
           <div style={{
             display: 'grid',
@@ -84,7 +86,8 @@ export default function NodeCard({ sectionKey, config, setConfig, borderColor, m
               <ServiceCard
                 key={s.container || i}
                 service={s}
-                level={level}
+                showDockerStats={showDocker}
+                showAppData={showApp}
               />
             ))}
           </div>

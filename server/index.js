@@ -26,6 +26,10 @@ import { initSecrets, resolveCredential, setSecret, deleteSecret, listSecretKeys
 import { initDiscovery, discoverNodes, getNodeMetrics, discoverContainers } from './discovery.js';
 import { initMonitors, fetchMonitors, getMonitorNames, matchMonitor } from './monitors.js';
 
+// Phase 3 modules
+import { initRegistry, getPreset, listPresets } from './integrations/registry.js';
+import { fetchIntegration, testIntegration } from './integrations/handler.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const app = express();
@@ -554,6 +558,122 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime(), version: '8.0.0-alpha.1' }));
 
+// ══════════════════════════════════════════════════════════════
+// PHASE 3: INTEGRATION ENGINE
+// ══════════════════════════════════════════════════════════════
+
+// List all available presets (for Settings UI gallery)
+app.get('/api/integrations/presets', requireAuth, (req, res) => {
+  res.json(listPresets());
+});
+
+// Fetch data from a configured integration
+app.get('/api/integrations/:type', requireAuth, async (req, res) => {
+  const { type } = req.params;
+  const bust = shouldBypassCache(req);
+
+  // Get integration config from services.yaml
+  const config = getConfig();
+  const integrations = config?.integrations || {};
+  const yamlConfig = integrations[type];
+
+  if (!yamlConfig && !getPreset(type)) {
+    return res.status(404).json({ error: `Integration '${type}' not found` });
+  }
+
+  const result = await fetchIntegration(type, yamlConfig || {}, bust);
+  if (result.error) {
+    return res.status(502).json({ error: result.error, fields: result.fields });
+  }
+  res.json(result);
+});
+
+// Test connection before saving (credentials come from the request body, not stored yet)
+app.post('/api/integrations/test', requireAuth, async (req, res) => {
+  const { type, url, username, password, token } = req.body;
+  if (!url) return res.status(400).json({ ok: false, error: 'URL is required' });
+
+  const testConfig = { url, username, password, token };
+  const result = await testIntegration(type || '_custom', testConfig);
+  res.json(result);
+});
+
+// Save an integration config (encrypts credentials, stores config in services.yaml)
+app.post('/api/integrations/save', requireAuth, async (req, res) => {
+  const { type, url, username, password, token, enabled, fields: customFields } = req.body;
+  if (!type || !url) return res.status(400).json({ error: 'type and url are required' });
+
+  try {
+    // Encrypt credentials into secrets.json
+    if (password) {
+      setSecret(`integration_${type}_password`, password);
+    }
+    if (token) {
+      setSecret(`integration_${type}_token`, token);
+    }
+
+    // Build the config entry (credentials stored as $secret: refs)
+    const entry = {
+      url,
+      enabled: enabled !== false,
+    };
+
+    // Only store preset type if it's a known preset
+    if (getPreset(type)) {
+      entry.preset = type;
+    }
+
+    // Credential references (never plaintext)
+    if (username) entry.username = username; // usernames aren't secret
+    if (password) entry.password = `$secret:integration_${type}_password`;
+    if (token) entry.token = `$secret:integration_${type}_token`;
+
+    // Custom fields (only for non-preset integrations)
+    if (customFields) entry.fields = customFields;
+
+    // Save to services.yaml under integrations section
+    const config = getConfig() || {};
+    if (!config.integrations) config.integrations = {};
+    config.integrations[type] = entry;
+    saveConfig(config);
+
+    res.json({ ok: true, type });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete an integration config
+app.delete('/api/integrations/:type', requireAuth, async (req, res) => {
+  const { type } = req.params;
+  const config = getConfig() || {};
+  if (!config.integrations?.[type]) {
+    return res.status(404).json({ error: `Integration '${type}' not configured` });
+  }
+
+  delete config.integrations[type];
+  saveConfig(config);
+  res.json({ ok: true });
+});
+
+// Fetch all configured integrations' data in one call (for dashboard)
+app.get('/api/integrations', requireAuth, async (req, res) => {
+  const bust = shouldBypassCache(req);
+  const config = getConfig();
+  const integrations = config?.integrations || {};
+
+  const results = {};
+  const promises = Object.entries(integrations)
+    .filter(([, cfg]) => cfg.enabled !== false)
+    .map(async ([type, cfg]) => {
+      const result = await fetchIntegration(type, cfg, bust);
+      results[type] = result.fields || {};
+    });
+
+  await Promise.allSettled(promises);
+  res.json(results);
+});
+
 // ── Static + SPA fallback ──
 const distPath = join(__dirname, '..', 'dist');
 app.use(express.static(distPath));
@@ -571,6 +691,7 @@ async function boot() {
   initSecrets();
   initDiscovery(promUrl);
   initMonitors(kumaUrl);
+  await initRegistry();
 
   // Load or generate config
   let config = loadConfig();

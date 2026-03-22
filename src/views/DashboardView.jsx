@@ -4,23 +4,27 @@ import 'react-grid-layout/css/styles.css';
 import NodeCard from '../components/NodeCard';
 import TodoCard from '../components/TodoCard';
 import { UPSCard, GiteaActivity, QuickLaunch } from '../components/Widgets';
-import { getServices, getUPSStatus, getGiteaActivity, getAdGuardStats, getNpmStats } from '../hooks/useData';
+import { getServices, getUPSStatus, getGiteaActivity, getAllIntegrations } from '../hooks/useData';
 
 /**
- * DashboardView v8 — Phase 1
+ * DashboardView v8 — Phase 3
  * 
- * Key change: Node sections are now driven by /api/services instead of
- * hardcoded service lists and 11 separate API calls.
+ * Key changes from Phase 1:
+ * - Node sections driven by /api/services (unified API)
+ * - Tier 3 app data now comes from the Integration Engine via GET /api/integrations
+ *   instead of hardcoded AdGuard/NPM calls with manual field mapping
  * 
  * What /api/services gives us per node:
  * - Node metrics (CPU, RAM, disk, temp, uptime)
  * - Services array with: container name, display name, icon, status, ping, uptime24, docker stats
  * 
- * What still uses dedicated endpoints (until Phase 3 Integration Engine):
+ * What /api/integrations gives us:
+ * - Per-integration field data (e.g. { adguard: { Queries: "3,508", Blocked: "282" } })
+ * - Matched to containers by name for Tier 3 service card display
+ * 
+ * What still uses dedicated endpoints:
  * - UPS data (dedicated section, not a service card)
- * - Gitea activity (dedicated section, commit list)
- * - AdGuard stats (Tier 3 app data on the service card)
- * - NPM stats (Tier 3 app data on the service card)
+ * - Gitea activity (dedicated section, commit list — will move to integration engine later)
  */
 
 const DEFAULT_LAYOUTS = {
@@ -79,8 +83,9 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   // Dedicated section data (not yet in /api/services)
   const [ups, setUps] = useState(null);
   const [commits, setCommits] = useState([]);
-  const [adguardStats, setAdguardStats] = useState(null);
-  const [npmStats, setNpmStats] = useState(null);
+
+  // Phase 3: Integration engine data (replaces hardcoded AdGuard/NPM)
+  const [integrationData, setIntegrationData] = useState({});
 
   const fetchAll = useCallback(async (bust) => {
     const b = bust || false;
@@ -88,14 +93,12 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       getServices(b),
       getUPSStatus(b),
       getGiteaActivity(b),
-      getAdGuardStats(b),
-      getNpmStats(b),
+      getAllIntegrations(b),
     ]);
     if (r[0].status === 'fulfilled') setServiceData(r[0].value || { nodes: {} });
     if (r[1].status === 'fulfilled') setUps(r[1].value);
     if (r[2].status === 'fulfilled') setCommits(r[2].value || []);
-    if (r[3].status === 'fulfilled') setAdguardStats(r[3].value);
-    if (r[4].status === 'fulfilled') setNpmStats(r[4].value);
+    if (r[3].status === 'fulfilled') setIntegrationData(r[3].value || {});
   }, []);
 
   const isInitialRef = useRef(true);
@@ -108,32 +111,32 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     }
   }, [fetchAll, refreshKey]);
 
-  // Build Tier 3 app data maps (until Phase 3 moves this server-side)
+  // Build Tier 3 app data map from integration engine + container name matching
+  // Integration keys (e.g. 'adguard') map to container names via services.yaml config
+  // For now, use a simple name-based lookup: integration type → common container names
   const appDataByContainer = useMemo(() => {
     const map = {};
-    if (adguardStats) {
-      const dnsQ = adguardStats.num_dns_queries || 0;
-      const dnsB = adguardStats.num_blocked_filtering || 0;
-      const bP = dnsQ > 0 ? ((dnsB / dnsQ) * 100).toFixed(1) : '0';
-      // Match by container name — the server tells us the actual container name
-      map['adguardhome'] = {
-        Queries: dnsQ?.toLocaleString(),
-        Blocked: dnsB?.toLocaleString(),
-        'Block %': `${bP}%`,
-        Latency: adguardStats.avg_processing_time
-          ? `${Math.round(adguardStats.avg_processing_time * 1000)}ms`
-          : '—',
-      };
-    }
-    if (npmStats) {
-      map['nginx-proxy-manager'] = {
-        Hosts: npmStats.hosts,
-        Online: npmStats.online,
-        Certs: npmStats.certs,
-      };
+    // Map integration type keys to their likely container names
+    // This mapping will eventually come from services.yaml per-service integration config
+    const containerMap = {
+      adguard: ['adguardhome', 'adguard-home', 'adguard'],
+      npm: ['nginx-proxy-manager', 'npm'],
+      plex: ['plex', 'plex-media-server'],
+      sonarr: ['sonarr'],
+      radarr: ['radarr'],
+      pihole: ['pihole', 'pi-hole'],
+      jellyfin: ['jellyfin'],
+      portainer: ['portainer'],
+    };
+
+    for (const [intType, fields] of Object.entries(integrationData)) {
+      const containerNames = containerMap[intType] || [intType];
+      for (const name of containerNames) {
+        map[name] = fields;
+      }
     }
     return map;
-  }, [adguardStats, npmStats]);
+  }, [integrationData]);
 
   const sc = config.sections || {};
   const rawLayouts = config.gridLayout || DEFAULT_LAYOUTS;
@@ -146,13 +149,25 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   ), [config.gridColumns]);
 
   const layoutMountedRef = useRef(false);
+  const serviceDataLoadedRef = useRef(false);
+
+  // Track when service data first arrives so we know layout keys are complete
+  useEffect(() => {
+    if (Object.keys(serviceData.nodes || {}).length > 0) {
+      serviceDataLoadedRef.current = true;
+    }
+  }, [serviceData]);
+
   const handleLayoutChange = useCallback((_, allLayouts) => {
-    // Skip the initial layout computation that fires on mount — it can clobber saved layouts
-    // before service data has loaded (missing node keys)
+    // Skip layout saves until:
+    // 1. The initial mount layout computation has fired (RGL always fires once on mount)
+    // 2. Service data has loaded (so all node keys exist — otherwise RGL computes
+    //    a layout with missing keys and clobbers the saved layout)
     if (!layoutMountedRef.current) {
       layoutMountedRef.current = true;
       return;
     }
+    if (!serviceDataLoadedRef.current) return;
     setConfig(p => ({ ...p, gridLayout: allLayouts }));
   }, [setConfig]);
 
