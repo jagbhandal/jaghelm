@@ -687,7 +687,11 @@ app.get('/api/integrations', authMiddleware, async (req, res) => {
     .filter(([, cfg]) => cfg.enabled !== false)
     .map(async ([type, cfg]) => {
       const result = await fetchIntegration(type, cfg, bust);
-      results[type] = result.fields || {};
+      // Include flat fields + any structured extra data (e.g. vms list)
+      const entry = { ...(result.fields || {}) };
+      // Pass through known structured keys
+      if (result.vms) entry._vms = result.vms;
+      results[type] = entry;
     });
 
   await Promise.allSettled(promises);
