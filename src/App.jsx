@@ -79,17 +79,30 @@ export default function App() {
   }, [config]);
 
   // Load config from server on successful auth (authoritative source)
-  useEffect(() => {
+  // Exception: gridLayout is preserved from localStorage if it exists,
+  // because the local layout is always the most recent user arrangement.
+  // The server layout may be stale from a previous deploy or compactor bug.
+   useEffect(() => {
     if (!authed) return;
     fetch('/api/display-config')
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data && typeof data === 'object' && Object.keys(data).length > 0) {
-          setConfig(data);
-          localStorage.setItem('jaghelm-config', JSON.stringify(data));
-          if (data.theme) setTheme(data.theme);
+          setConfig(prev => {
+            console.log('[CONFIG] localStorage gridLayout:', JSON.stringify(prev.gridLayout?.lg?.map(i => i.i + ':' + i.x + ',' + i.y)));
+            console.log('[CONFIG] server gridLayout:', JSON.stringify(data.gridLayout?.lg?.map(i => i.i + ':' + i.x + ',' + i.y)));
+            const merged = { ...data };
+            if (prev.gridLayout) {
+              merged.gridLayout = prev.gridLayout;
+              console.log('[CONFIG] KEEPING local layout');
+            } else {
+              console.log('[CONFIG] NO local layout, using server');
+            }
+            localStorage.setItem('jaghelm-config', JSON.stringify(merged));
+            if (data.theme) setTheme(data.theme);
+            return merged;
+          });
         }
-        // Mark as loaded so future changes will save to server
         configLoadedFromServer.current = true;
       })
       .catch(() => { configLoadedFromServer.current = true; });

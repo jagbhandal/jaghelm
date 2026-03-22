@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Responsive, useContainerWidth, verticalCompactor } from 'react-grid-layout';
+import { Responsive, useContainerWidth } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import NodeCard from '../components/NodeCard';
 import TodoCard from '../components/TodoCard';
@@ -156,8 +156,10 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   const userInteractedRef = useRef(false);
 
   const handleLayoutChange = useCallback((_, allLayouts) => {
-    if (!userInteractedRef.current) return; // Ignore compactor/mount fires
-    userInteractedRef.current = false; // Reset flag
+    console.log('[LAYOUT] onLayoutChange fired, userInteracted:', userInteractedRef.current);
+    if (!userInteractedRef.current) return;
+    userInteractedRef.current = false;
+    console.log('[LAYOUT] SAVING layout');
     setConfig(p => ({ ...p, gridLayout: allLayouts }));
   }, [setConfig]);
 
@@ -438,7 +440,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           width={width}
           layouts={effectiveLayouts}
           breakpoints={{ lg: 1200, md: 768, sm: 480 }}
-          compactor={verticalCompactor}
+          // No compactor — panels stay exactly where the user places them
           onLayoutChange={handleLayoutChange}
           onDragStart={handleDragStart}
           onDrag={handleDrag}
