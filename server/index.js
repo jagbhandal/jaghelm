@@ -294,28 +294,35 @@ app.get('/api/ups', async (req, res) => {
   }
   try {
     const url = process.env.PROMETHEUS_URL || 'http://localhost:9090';
-    const metricSets = [
-      { status: 'network_ups_tools_ups_status', charge: 'network_ups_tools_battery_charge', runtime: 'network_ups_tools_battery_runtime_seconds', load: 'network_ups_tools_ups_load' },
-      { status: 'nut_status', charge: 'nut_battery_charge', runtime: 'nut_battery_runtime_seconds', load: 'nut_load' },
-      { status: 'nut_ups_status', charge: 'nut_battery_charge_percent', runtime: 'nut_battery_runtime_seconds', load: 'nut_ups_load_percent' },
-    ];
-    for (const qs of metricSets) {
-      const results = {};
-      let found = false;
-      for (const [k, query] of Object.entries(qs)) {
-        try {
-          const r = await safeFetch(`${url}/api/v1/query?query=${encodeURIComponent(query)}`);
-          const d = await r.json();
-          const val = d?.data?.result?.[0]?.value?.[1] ? parseFloat(d.data.result[0].value[1]) : null;
-          results[k] = val;
-          if (val !== null) found = true;
-        } catch { results[k] = null; }
-      }
-      if (found) { setCache('ups', results); return res.json(results); }
+    const queries = {
+      status: 'nut_status{ups="apcups"}',
+      charge: 'nut_battery_charge{ups="apcups"}',
+      runtime: 'nut_battery_runtime_seconds{ups="apcups"}',
+      load: 'nut_load{ups="apcups"}',
+    };
+    const results = {};
+    let found = false;
+    for (const [k, query] of Object.entries(queries)) {
+      try {
+        const r = await safeFetch(`${url}/api/v1/query?query=${encodeURIComponent(query)}`);
+        const d = await r.json();
+        let val = d?.data?.result?.[0]?.value?.[1] ? parseFloat(d.data.result[0].value[1]) : null;
+        if (val !== null) {
+          found = true;
+          // nut_battery_charge and nut_load are 0-1 scale, convert to 0-100
+          if (k === 'charge' || k === 'load') val = val * 100;
+        }
+        results[k] = val;
+      } catch { results[k] = null; }
     }
-    const empty = { status: null, charge: null, runtime: null, load: null };
-    setCache('ups', empty);
-    res.json(empty);
+    if (!found) {
+      results.status = null;
+      results.charge = null;
+      results.runtime = null;
+      results.load = null;
+    }
+    setCache('ups', results);
+    res.json(results);
   } catch (e) { res.status(502).json({ error: 'UPS unreachable', detail: e.message }); }
 });
 

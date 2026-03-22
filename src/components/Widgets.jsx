@@ -2,8 +2,9 @@ import React from 'react';
 
 export function UPSCard({ upsData, borderColor, config }) {
   const sec = config?.sections?.ups || {};
-  const sL = (v) => v == null ? 'Unknown' : v === 2 ? 'Online' : v === 3 ? 'On Battery' : v === 5 ? 'Low Battery' : `Status ${v}`;
-  const sC = (v) => v === 2 ? 'var(--green)' : v === 3 ? 'var(--amber)' : 'var(--red)';
+  // nut_status values: 0=Unknown, 1=Online (OL), 2=On Battery (OB), 3=Low Battery (LB)
+  const sL = (v) => v == null ? 'Unknown' : v === 1 ? 'Online' : v === 2 ? 'On Battery' : v === 3 ? 'Low Battery' : v === 0 ? 'Unknown' : `Status ${v}`;
+  const sC = (v) => v === 1 ? 'var(--green)' : v === 2 ? 'var(--amber)' : v === 3 ? 'var(--red)' : 'var(--text-muted)';
   const rt = upsData?.runtime ? Math.floor(upsData.runtime / 60) : null;
   return (
     <div className="glass-card node-card" style={{ borderTop: `2px solid ${borderColor || 'var(--green)'}` }}>

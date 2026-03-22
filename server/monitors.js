@@ -1,7 +1,6 @@
 /**
  * JagHelm Monitor Matcher
  * Fetches monitors from Uptime Kuma and matches them to discovered containers.
- * Replaces the broken frontend fuzzy matcher with server-side matching.
  */
 
 const KUMA_TIMEOUT = 8000;
@@ -17,42 +16,67 @@ export function initMonitors(url) {
 }
 
 /**
- * Fetch all monitors from Uptime Kuma's status page API.
+ * Fetch all monitors from Uptime Kuma.
+ * Two API calls:
+ *   1. /api/status-page/default → monitor names + IDs from publicGroupList
+ *   2. /api/status-page/heartbeat/default → heartbeat status, ping, uptime
  * Returns a map of { id: { id, name, status, ping, uptime24 } }
  */
 export async function fetchMonitors() {
   if (!kumaUrl) return {};
 
-  // Return cached if fresh
   if (cachedMonitors && Date.now() - cacheTime < CACHE_TTL) {
     return cachedMonitors;
   }
 
   try {
-    const r = await fetch(`${kumaUrl}/api/status-page/default`, {
+    // Fetch monitor names
+    const pageR = await fetch(`${kumaUrl}/api/status-page/default`, {
       signal: AbortSignal.timeout(KUMA_TIMEOUT),
     });
-    if (!r.ok) return cachedMonitors || {};
-    const data = await r.json();
+    if (!pageR.ok) return cachedMonitors || {};
+    const pageData = await pageR.json();
 
-    const monitors = {};
-    if (data?.heartbeatList) {
-      for (const [id, beats] of Object.entries(data.heartbeatList)) {
-        const latest = beats[beats.length - 1];
-        const pub = data.publicGroupList
-          ?.flatMap(g => g.monitorList)
-          ?.find(m => m.id === parseInt(id));
-
-        monitors[id] = {
-          id: parseInt(id),
-          name: pub?.name || `Monitor ${id}`,
-          status: latest?.status === 1 ? 'up' : latest?.status === 0 ? 'down' : 'unknown',
-          ping: latest?.ping || 0,
-          uptime24: data.uptimeList?.[`${id}_24`] || 0,
-        };
-      }
+    const monitorList = (pageData.publicGroupList || []).flatMap(g => g.monitorList || []);
+    if (monitorList.length === 0) {
+      console.warn('[monitors] No monitors found in status page');
+      return cachedMonitors || {};
     }
 
+    // Fetch heartbeat data (separate endpoint in newer Kuma versions)
+    let heartbeatList = pageData.heartbeatList || {};
+    let uptimeList = pageData.uptimeList || {};
+
+    if (Object.keys(heartbeatList).length === 0) {
+      try {
+        const hbR = await fetch(`${kumaUrl}/api/status-page/heartbeat/default`, {
+          signal: AbortSignal.timeout(KUMA_TIMEOUT),
+        });
+        if (hbR.ok) {
+          const hbData = await hbR.json();
+          heartbeatList = hbData.heartbeatList || {};
+          uptimeList = hbData.uptimeList || {};
+        }
+      } catch {}
+    }
+
+    // Merge monitor names with heartbeat data
+    const monitors = {};
+    for (const pub of monitorList) {
+      const id = pub.id;
+      const beats = heartbeatList[id] || [];
+      const latest = beats[beats.length - 1];
+
+      monitors[id] = {
+        id,
+        name: pub.name,
+        status: latest?.status === 1 ? 'up' : latest?.status === 0 ? 'down' : 'unknown',
+        ping: latest?.ping || 0,
+        uptime24: uptimeList[`${id}_24`] || 0,
+      };
+    }
+
+    console.log('[monitors] Loaded %d monitors from Kuma', Object.keys(monitors).length);
     cachedMonitors = monitors;
     cacheTime = Date.now();
     return monitors;
@@ -72,16 +96,11 @@ export async function getMonitorNames() {
 
 /**
  * Match a container to an Uptime Kuma monitor.
- * 
- * Matching strategy (in priority order):
- * 1. Explicit mapping from services.yaml: services[container].monitor = "Exact Name"
- * 2. Normalized name match: strip non-alphanumeric, check if one contains the other
- * 3. No match: return null
  *
- * @param containerName - Docker container name (e.g. "nginx-proxy-manager")
- * @param explicitMonitor - Explicit monitor name from config (optional)
- * @param monitors - Map of monitors from fetchMonitors()
- * @returns Monitor data or null
+ * Strategy:
+ * 1. Explicit mapping from services.yaml → exact name match
+ * 2. Normalized name match → strip non-alphanumeric, containment check
+ * 3. No match → return null
  */
 export function matchMonitor(containerName, explicitMonitor, monitors) {
   const monitorList = Object.values(monitors);
@@ -92,7 +111,6 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
       m => m.name.toLowerCase() === explicitMonitor.toLowerCase()
     );
     if (exact) return exact;
-    // Explicit name didn't match any monitor — log warning, fall through to fuzzy
     console.warn('[monitors] Explicit monitor "%s" not found for container "%s"', explicitMonitor, containerName);
   }
 
@@ -101,7 +119,6 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
   const cn = normalize(containerName);
   if (!cn) return null;
 
-  // Try exact normalized match first, then containment
   let best = null;
   let bestScore = 0;
 
@@ -109,10 +126,8 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
     const mn = normalize(m.name);
     if (!mn) continue;
 
-    // Exact normalized match — highest confidence
     if (cn === mn) return m;
 
-    // Containment match — prefer longer overlap
     if (mn.includes(cn) || cn.includes(mn)) {
       const score = Math.min(cn.length, mn.length);
       if (score > bestScore) {
