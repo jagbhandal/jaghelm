@@ -174,25 +174,28 @@ export function resolveIntegrationConfig(type, yamlConfig) {
   const config = preset ? { ...preset, ...yamlConfig } : yamlConfig;
   if (!config) return null;
 
+  // Use storage key for secret resolution (e.g. adguard_secondary instead of adguard)
+  const secretKey = yamlConfig?._storageKey || type;
+
   // Resolve credentials
   const resolved = { ...config };
 
   if (preset?.envKeys) {
     // URL: .env > yaml > null
     if (preset.envKeys.url) {
-      resolved.url = resolveCredential(preset.envKeys.url, `integration_${type}_url`) || config.url;
+      resolved.url = resolveCredential(preset.envKeys.url, `integration_${secretKey}_url`) || config.url;
     }
     // Username: .env > yaml > null
     if (preset.envKeys.username) {
-      resolved._username = resolveCredential(preset.envKeys.username, `integration_${type}_username`) || config.username;
+      resolved._username = resolveCredential(preset.envKeys.username, `integration_${secretKey}_username`) || config.username;
     }
     // Password: .env > yaml ($secret:ref) > null
     if (preset.envKeys.password) {
-      resolved._password = resolveCredential(preset.envKeys.password, `integration_${type}_password`) || resolveSecretRef(config.password);
+      resolved._password = resolveCredential(preset.envKeys.password, `integration_${secretKey}_password`) || resolveSecretRef(config.password);
     }
     // Token: .env > yaml ($secret:ref) > null
     if (preset.envKeys.token) {
-      resolved._token = resolveCredential(preset.envKeys.token, `integration_${type}_token`) || resolveSecretRef(config.token);
+      resolved._token = resolveCredential(preset.envKeys.token, `integration_${secretKey}_token`) || resolveSecretRef(config.token);
     }
   } else {
     // Custom integration — resolve $secret: refs in credentials
