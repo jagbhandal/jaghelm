@@ -13,11 +13,19 @@ export default {
   endpoint: '/api/nginx/proxy-hosts',
   testEndpoint: '/api/tokens',
   transform: 'npm',
-  fields: [
-    { key: 'hosts', label: 'Hosts', path: '_length', format: 'number' },
-    { key: 'online', label: 'Online', path: '_filter:enabled=1', format: 'number' },
-    { key: 'certs', label: 'Certs', path: '_filter:certificate_id>0', format: 'number' },
-  ],
+  fields: [],
+  structuredTransform: (raw) => {
+    const hosts = Array.isArray(raw) ? raw : [];
+    const online = hosts.filter(h => h.enabled && h.meta?.nginx_online).length;
+    const offline = hosts.filter(h => !h.enabled || !h.meta?.nginx_online).length;
+    const withCert = hosts.filter(h => h.certificate_id > 0).length;
+    const fields = {
+      'Online': String(online),
+      'Offline': String(offline),
+      'Certs': String(withCert),
+    };
+    return { fields };
+  },
   envKeys: {
     url: 'NPM_URL',
     username: 'NPM_USER',
