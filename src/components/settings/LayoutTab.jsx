@@ -94,13 +94,34 @@ export default function LayoutTab({ config, update }) {
           </div>
         </Field>
 
+        <Field label="Card Layout">
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[
+              { id: 'list', label: 'List' },
+              { id: 'row', label: 'Row' },
+              { id: 'grid', label: 'Grid' },
+            ].map(mode => (
+              <button
+                key={mode.id}
+                onClick={() => update('cardLayout', mode.id)}
+                className={`settings-choice-btn ${(config.cardLayout || 'row') === mode.id ? 'active' : ''}`}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+            List: clean rows, no backgrounds. Row: subtle card per service (default). Grid: compact card boxes.
+          </div>
+        </Field>
+
         <Field label="Status Style">
           <div style={{ display: 'flex', gap: 6 }}>
             {['dot', 'badge', 'minimal'].map(style => (
               <button
                 key={style}
                 onClick={() => update('statusStyle', style)}
-                className={`settings-choice-btn ${(config.statusStyle || 'dot') === style ? 'active' : ''}`}
+                className={`settings-choice-btn ${(config.statusStyle || 'badge') === style ? 'active' : ''}`}
               >
                 {style}
               </button>
