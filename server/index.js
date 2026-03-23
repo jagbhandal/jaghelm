@@ -23,7 +23,7 @@ dotenv.config();
 // Phase 1 modules
 import { loadConfig, saveConfig, getConfig, generateDefaultConfig, startConfigWatcher } from './config.js';
 import { initSecrets, resolveCredential, setSecret, deleteSecret, listSecretKeys } from './secrets.js';
-import { initDiscovery, discoverNodes, getNodeMetrics, discoverContainers } from './discovery.js';
+import { initDiscovery, discoverNodes, getNodeMetrics, discoverContainers, getNodeData } from './discovery.js';
 import { initMonitors, fetchMonitors, getMonitorNames, matchMonitor, markMonitorLogDone } from './monitors.js';
 
 // Phase 3 modules
@@ -174,7 +174,7 @@ app.post('/api/auth/change-password', authMiddleware, (req, res) => {
 
 // ── CACHE ──
 const cache = new Map();
-const CACHE_TTL = 15000;
+const CACHE_TTL = 25000;
 function getCached(k) { const e = cache.get(k); return e && Date.now() - e.ts < CACHE_TTL ? e.data : null; }
 function setCache(k, d) { cache.set(k, { data: d, ts: Date.now() }); }
 function shouldBypassCache(req) { return !!req.query.nocache; }
@@ -233,11 +233,10 @@ app.get('/api/services', async (req, res) => {
 
         const promLabel = nodeCfg.prometheus_node || nodeKey;
 
-        // Get node-level metrics
-        const metrics = await getNodeMetrics(promLabel);
-
-        // Discover containers on this node
-        let containers = await discoverContainers(promLabel);
+        // Get node metrics + containers in a single parallel batch (12 queries at once)
+        const nodeData = await getNodeData(promLabel);
+        const metrics = nodeData.metrics;
+        let containers = nodeData.containers;
 
         // Filter out hidden containers
         const hideList = (nodeCfg.hide || []).map(h => h.toLowerCase());

@@ -31,27 +31,6 @@ const ICON_REPOS = [
     cdnBase: 'https://cdn.jsdelivr.net/gh/selfhst/icons@latest/svg',
     ext: '.svg',
   },
-  {
-    id: 'simple-icons',
-    label: 'Simple Icons',
-    repo: 'simple-icons/simple-icons',
-    branch: 'develop',
-    treePath: 'icons/',
-    cdnBase: 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons',
-    ext: '.svg',
-  },
-  {
-    id: 'material-symbols',
-    label: 'Material Symbols',
-    repo: 'marella/material-design-icons',
-    branch: 'main',
-    treePath: 'svg/',
-    // Each icon is in svg/{name}/outline.svg — we use the outline variant
-    cdnBase: 'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg',
-    ext: '',           // special handling — we look for directories, not files
-    isNested: true,    // flag for nested directory structure
-    nestedFile: 'outline.svg', // which file inside each directory to use
-  },
 ];
 
 // In-memory icon index: [{ name, slug, url, repo }]

@@ -2,6 +2,9 @@
  * JagHelm Discovery Engine
  * Discovers nodes and containers from Prometheus + cAdvisor.
  * Returns merged data with config overrides applied.
+ * 
+ * Performance: getNodeData() fires all node metrics + container queries
+ * in a single Promise.all (12 queries) instead of two sequential batches.
  */
 
 const PROM_TIMEOUT = 8000;
@@ -61,11 +64,21 @@ export async function discoverNodes() {
 }
 
 /**
- * Get node-level metrics for a single node.
+ * Get node metrics AND container data in a single parallel batch.
+ * Fires all 12 Prometheus queries simultaneously instead of two sequential batches.
+ * Returns { metrics, containers }
  */
-export async function getNodeMetrics(nodeLabel) {
+export async function getNodeData(nodeLabel) {
   const l = `node="${nodeLabel}"`;
-  const [cpuR, memTR, memAR, upR, tempR, diskTR, diskFR] = await Promise.all([
+
+  // Fire ALL queries in one Promise.all — node metrics (7) + container stats (5) = 12 parallel
+  const [
+    // Node metrics
+    cpuR, memTR, memAR, upR, tempR, diskTR, diskFR,
+    // Container stats
+    namesR, cCpuR, cMemR, cRxR, cTxR,
+  ] = await Promise.all([
+    // Node metrics queries
     promQuery(`100 - (avg by(instance)(irate(node_cpu_seconds_total{${l},mode="idle"}[5m])) * 100)`),
     promQuery(`node_memory_MemTotal_bytes{${l}}`),
     promQuery(`node_memory_MemAvailable_bytes{${l}}`),
@@ -73,8 +86,15 @@ export async function getNodeMetrics(nodeLabel) {
     promQuery(`node_hwmon_temp_celsius{${l}}`),
     promQuery(`node_filesystem_size_bytes{${l},mountpoint="/",fstype!="tmpfs"}`),
     promQuery(`node_filesystem_free_bytes{${l},mountpoint="/",fstype!="tmpfs"}`),
+    // Container stats queries
+    promQuery(`container_last_seen{${l},name!=""}`),
+    promQuery(`rate(container_cpu_usage_seconds_total{${l},name!=""}[5m]) * 100`),
+    promQuery(`container_memory_usage_bytes{${l},name!=""}`),
+    promQuery(`container_network_receive_bytes_total{${l},name!=""}`),
+    promQuery(`container_network_transmit_bytes_total{${l},name!=""}`),
   ]);
 
+  // ── Build node metrics ──
   const cpu = scalar(cpuR);
   const memTotal = scalar(memTR);
   const memAvail = scalar(memAR);
@@ -114,41 +134,38 @@ export async function getNodeMetrics(nodeLabel) {
   const memUsed = memTotal && memAvail ? memTotal - memAvail : null;
   const diskUsed = diskTotal && diskFree ? diskTotal - diskFree : null;
 
-  return {
+  // Disk: use TB when total exceeds 1000 GB
+  const diskTotalGB = diskTotal ? diskTotal / 1073741824 : null;
+  const diskUsedGB = diskUsed ? diskUsed / 1073741824 : null;
+  let diskUnit = 'GB';
+  let diskTotalDisplay = diskTotalGB ? diskTotalGB.toFixed(1) : null;
+  let diskUsedDisplay = diskUsedGB ? diskUsedGB.toFixed(1) : null;
+  if (diskTotalGB && diskTotalGB > 1000) {
+    diskUnit = 'TB';
+    diskTotalDisplay = (diskTotalGB / 1024).toFixed(1);
+    diskUsedDisplay = diskUsedGB ? (diskUsedGB / 1024).toFixed(1) : null;
+  }
+
+  const metrics = {
     cpu: cpu != null ? cpu.toFixed(1) : null,
     memUsedGB: memUsed ? (memUsed / 1073741824).toFixed(1) : null,
     memTotalGB: memTotal ? (memTotal / 1073741824).toFixed(1) : null,
     memPercent: memTotal && memUsed ? ((memUsed / memTotal) * 100).toFixed(1) : null,
     uptime: upSec ? formatUptime(upSec) : null,
     temp: temp != null ? temp.toFixed(1) : null,
-    diskUsedGB: diskUsed ? (diskUsed / 1073741824).toFixed(1) : null,
-    diskTotalGB: diskTotal ? (diskTotal / 1073741824).toFixed(1) : null,
+    diskUsed: diskUsedDisplay,
+    diskTotal: diskTotalDisplay,
+    diskUnit,
     diskPercent: diskTotal && diskUsed ? ((diskUsed / diskTotal) * 100).toFixed(1) : null,
   };
-}
 
-/**
- * Discover containers for a given Prometheus node label.
- * Returns array of container objects with CPU, MEM, RX, TX stats.
- */
-export async function discoverContainers(nodeLabel) {
-  const l = `node="${nodeLabel}"`;
-
-  const [namesR, cpuR, memR, rxR, txR] = await Promise.all([
-    promQuery(`container_last_seen{${l},name!=""}`),
-    promQuery(`rate(container_cpu_usage_seconds_total{${l},name!=""}[5m]) * 100`),
-    promQuery(`container_memory_usage_bytes{${l},name!=""}`),
-    promQuery(`container_network_receive_bytes_total{${l},name!=""}`),
-    promQuery(`container_network_transmit_bytes_total{${l},name!=""}`),
-  ]);
-
-  // Build container map from all results
-  const containers = new Map();
-  const allResults = [...namesR, ...cpuR, ...memR, ...rxR, ...txR];
+  // ── Build container list ──
+  const containerMap = new Map();
+  const allResults = [...namesR, ...cCpuR, ...cMemR, ...cRxR, ...cTxR];
   for (const r of allResults) {
     const name = r.metric?.name;
-    if (name && !containers.has(name)) {
-      containers.set(name, {
+    if (name && !containerMap.has(name)) {
+      containerMap.set(name, {
         container: name,
         status: 'running',
         docker: { cpu: null, memMB: null, rxMB: null, txMB: null },
@@ -157,31 +174,44 @@ export async function discoverContainers(nodeLabel) {
   }
 
   // Fill CPU
-  for (const r of cpuR) {
+  for (const r of cCpuR) {
     const name = r.metric?.name;
-    const c = containers.get(name);
+    const c = containerMap.get(name);
     if (c && r.value?.[1]) c.docker.cpu = parseFloat(parseFloat(r.value[1]).toFixed(1));
   }
   // Fill MEM
-  for (const r of memR) {
+  for (const r of cMemR) {
     const name = r.metric?.name;
-    const c = containers.get(name);
+    const c = containerMap.get(name);
     if (c && r.value?.[1]) c.docker.memMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
   }
   // Fill RX
-  for (const r of rxR) {
+  for (const r of cRxR) {
     const name = r.metric?.name;
-    const c = containers.get(name);
+    const c = containerMap.get(name);
     if (c && r.value?.[1]) c.docker.rxMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
   }
   // Fill TX
-  for (const r of txR) {
+  for (const r of cTxR) {
     const name = r.metric?.name;
-    const c = containers.get(name);
+    const c = containerMap.get(name);
     if (c && r.value?.[1]) c.docker.txMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
   }
 
-  return Array.from(containers.values());
+  const containers = Array.from(containerMap.values());
+
+  return { metrics, containers };
+}
+
+// ── Keep legacy exports for backward compat (used by /api/docker/containers) ──
+export async function getNodeMetrics(nodeLabel) {
+  const { metrics } = await getNodeData(nodeLabel);
+  return metrics;
+}
+
+export async function discoverContainers(nodeLabel) {
+  const { containers } = await getNodeData(nodeLabel);
+  return containers;
 }
 
 function formatUptime(s) {
