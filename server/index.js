@@ -642,7 +642,7 @@ app.get('/api/integrations/:type', authMiddleware, async (req, res) => {
 
 // Test connection before saving (credentials come from the request body, not stored yet)
 app.post('/api/integrations/test', authMiddleware, async (req, res) => {
-  const { type, url, username, password, token } = req.body;
+  const { type, url, username, password, token, params } = req.body;
   if (!url) return res.status(400).json({ ok: false, error: 'URL is required' });
 
   // Auto-prepend protocol if missing
@@ -651,7 +651,7 @@ app.post('/api/integrations/test', authMiddleware, async (req, res) => {
     cleanUrl = `http://${cleanUrl}`;
   }
 
-  const testConfig = { url: cleanUrl, username, password, token };
+  const testConfig = { url: cleanUrl, username, password, token, ...params };
   const result = await testIntegration(type || '_custom', testConfig);
   res.json(result);
 });
@@ -702,6 +702,11 @@ app.post('/api/integrations/save', authMiddleware, async (req, res) => {
     if (username) entry.username = username;
     if (password) entry.password = `$secret:integration_${storageKey}_password`;
     if (token) entry.token = `$secret:integration_${storageKey}_token`;
+
+    // URL params (e.g. account_id for Cloudflare)
+    if (req.body.params) {
+      Object.assign(entry, req.body.params);
+    }
 
     // Custom fields (only for non-preset integrations)
     if (customFields) entry.fields = customFields;

@@ -78,6 +78,7 @@ export default function IntegrationsTab() {
   const [formPassword, setFormPassword] = useState('');
   const [formToken, setFormToken] = useState('');
   const [formEnabled, setFormEnabled] = useState(true);
+  const [formParams, setFormParams] = useState({});
   const [formInstance, setFormInstance] = useState(''); // e.g. "primary", "secondary"
   const [formTarget, setFormTarget] = useState(''); // container UID e.g. "pi:adguard-home"
   const [allContainers, setAllContainers] = useState([]); // for target dropdown
@@ -153,6 +154,12 @@ export default function IntegrationsTab() {
     setFormEnabled(existingConfig?.enabled !== false);
     setFormInstance(existingConfig?.instance || '');
     setFormTarget(existingConfig?.target || '');
+    // Load URL params from existing config
+    const params = {};
+    for (const p of (preset?.urlParams || [])) {
+      params[p.key] = existingConfig?.[p.key] || '';
+    }
+    setFormParams(params);
     setTestStatus(null);
     setSaveStatus(null);
     setView('config');
@@ -180,6 +187,7 @@ export default function IntegrationsTab() {
       if (formUsername) body.username = formUsername;
       if (formPassword) body.password = formPassword;
       if (formToken) body.token = formToken;
+      if (Object.keys(formParams).length > 0) body.params = formParams;
 
       const res = await fetch('/api/integrations/test', {
         method: 'POST',
@@ -207,6 +215,7 @@ export default function IntegrationsTab() {
       if (formUsername) body.username = formUsername;
       if (formPassword) body.password = formPassword;
       if (formToken) body.token = formToken;
+      if (Object.keys(formParams).length > 0) body.params = formParams;
       // When editing, send the original storage key so server can remove it if the key changed
       if (editingType) body.editingKey = editingType;
 
@@ -637,6 +646,19 @@ export default function IntegrationsTab() {
               />
             </FieldGroup>
           )}
+
+          {/* URL Params (e.g. Cloudflare Account ID) */}
+          {selectedPreset?.urlParams?.map(p => (
+            <FieldGroup key={p.key} label={p.label}>
+              <input
+                className="settings-input"
+                value={formParams[p.key] || ''}
+                onChange={e => setFormParams(prev => ({ ...prev, [p.key]: e.target.value }))}
+                placeholder={p.placeholder || p.label}
+                style={{ fontFamily: 'var(--font-mono)' }}
+              />
+            </FieldGroup>
+          ))}
 
           {/* No auth needed message */}
           {authType === 'none' && (
