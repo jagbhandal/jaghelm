@@ -6,7 +6,7 @@ export default {
   endpoint: '/api/v1/config',
   testEndpoint: '/api/v1/status',
   fields: [
-    { key: 'photos', label: 'Photos', path: 'count.all', format: 'number' },
+    { key: 'photos', label: 'Photos', path: 'count.photos', format: 'number' },
     { key: 'videos', label: 'Videos', path: 'count.videos', format: 'number' },
     { key: 'albums', label: 'Albums', path: 'count.albums', format: 'number' },
   ],

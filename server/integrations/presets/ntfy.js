@@ -7,7 +7,7 @@ export default {
   testEndpoint: '/v1/health',
   fields: [
     { key: 'messages', label: 'Messages', path: 'messages', format: 'number' },
-    { key: 'topics', label: 'Topics', path: 'topics', format: 'number' },
+    { key: 'rate', label: 'Rate', path: 'messages_rate', format: 'decimal' },
   ],
   envKeys: {
     url: 'NTFY_URL',
