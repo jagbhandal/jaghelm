@@ -47,6 +47,15 @@ async function safeFetch(url, opts = {}, skipTls = false) {
   }
 }
 
+// ── Replace {placeholder} tokens in endpoint URLs with config values ──
+// Used by presets that require dynamic URL segments (e.g. Cloudflare account_id).
+// Looks up the key in config directly, then falls back to _prefixed version.
+function resolveEndpointParams(endpoint, config) {
+  return endpoint.replace(/\{(\w+)\}/g, (match, key) => {
+    return config[key] || config[`_${key}`] || match;
+  });
+}
+
 // ── Deep value extraction from JSON using dot-notation path ──
 // Supports: 'foo.bar.baz', 'foo.0.bar' (array index), '_length' (array length)
 function extractValue(data, path) {
@@ -289,7 +298,7 @@ async function fetchWithSession(config) {
   }
   if (config.extraHeaders) Object.assign(headers, config.extraHeaders);
 
-  const res = await safeFetch(`${baseUrl}${config.endpoint}`, { headers }, skipTls);
+  const res = await safeFetch(`${baseUrl}${resolveEndpointParams(config.endpoint, config)}`, { headers }, skipTls);
   return res.json();
 }
 
@@ -315,7 +324,7 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
     if (config.auth === 'session') {
       rawData = await fetchWithSession(config);
     } else {
-      let url = `${baseUrl}${config.endpoint}`;
+      let url = `${baseUrl}${resolveEndpointParams(config.endpoint, config)}`;
 
       // Query param auth
       if (config.auth === 'query' && config._token) {
@@ -397,7 +406,7 @@ export async function testIntegration(type, testConfig) {
       return { ok: true, status: res.status };
 
     } else {
-      let url = `${baseUrl}${testEndpoint}`;
+      let url = `${baseUrl}${resolveEndpointParams(testEndpoint, config)}`;
 
       if (config.auth === 'query' && config._token) {
         const paramName = config.queryParam || 'apikey';
