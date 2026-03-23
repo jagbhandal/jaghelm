@@ -15,6 +15,7 @@ jobs:
 
       - name: Build and push
         run: |
+          git config --global --add safe.directory /opt/stacks/jaghelm
           cd /opt/stacks/jaghelm && git pull origin main
           docker build -t registry.jagbhandal.com/jagdeep.bhandal/jaghelm:latest .
           docker push registry.jagbhandal.com/jagdeep.bhandal/jaghelm:latest
