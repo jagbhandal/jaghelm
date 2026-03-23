@@ -46,15 +46,68 @@ export function UPSCard({ upsData, borderColor, config }) {
 
 export function GiteaActivity({ commits, config }) {
   const sec = config?.sections?.pipeline || {};
-  const ago = (d) => { if (!d) return ''; const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000); return s < 60 ? 'now' : s < 3600 ? `${Math.floor(s/60)}m` : s < 86400 ? `${Math.floor(s/3600)}h` : `${Math.floor(s/86400)}d`; };
+  const ago = (d) => {
+    if (!d) return '';
+    const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
+    return s < 60 ? 'now' : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`;
+  };
+
+  // Support both old format (flat array of commits) and new format (array of { repo, commits })
+  const isMultiRepo = Array.isArray(commits) && commits.length > 0 && commits[0]?.repo;
+  const repoGroups = isMultiRepo ? commits : [];
+  const flatCommits = !isMultiRepo ? (commits || []) : [];
+
   return (
     <div className="glass-card node-card" style={{ borderTop: '2px solid var(--accent)', ...sectionBgStyle(sec) }}>
       <div className="section-header" style={{ cursor: 'grab' }}>
-        <div className="section-icon" style={{ background: 'var(--accent-glow)', border: '1px solid rgba(99,102,241,0.2)' }}>{renderIcon(sec.icon || '🔄')}</div>
-        <div><div className="section-title">{sec.title || 'Pipeline Activity'}</div><div className="section-subtitle">{sec.subtitle || 'homelab-infra'}</div></div>
+        <div className="section-icon" style={{ background: 'var(--accent-glow)', border: '1px solid rgba(99,102,241,0.2)' }}>{renderIcon(sec.icon || 'gitea')}</div>
+        <div>
+          <div className="section-title">{sec.title || 'Pipeline Activity'}</div>
+          {!isMultiRepo && <div className="section-subtitle">{sec.subtitle || ''}</div>}
+        </div>
       </div>
-      {(commits || []).slice(0, 5).map((c, i) => <div className="commit-row" key={i}><span className="commit-sha">{c.sha}</span><span className="commit-msg">{c.message}</span><span className="commit-time">{ago(c.date)}</span></div>)}
-      {(!commits || !commits.length) && <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: 8 }}>No recent commits</div>}
+
+      {/* Multi-repo layout */}
+      {isMultiRepo && repoGroups.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {repoGroups.map((group, gi) => (
+            <div key={group.repo || gi}>
+              <div style={{
+                fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--accent)',
+                letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6, paddingLeft: 2,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <span style={{
+                  width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)',
+                  display: 'inline-block', flexShrink: 0,
+                }} />
+                {group.repo}
+              </div>
+              {group.commits.slice(0, 5).map((c, i) => (
+                <div className="commit-row" key={`${gi}-${i}`}>
+                  <span className="commit-sha">{c.sha}</span>
+                  <span className="commit-msg">{c.message}</span>
+                  <span className="commit-time">{ago(c.date)}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Legacy flat layout (backward compat) */}
+      {!isMultiRepo && flatCommits.length > 0 && flatCommits.slice(0, 5).map((c, i) => (
+        <div className="commit-row" key={i}>
+          <span className="commit-sha">{c.sha}</span>
+          <span className="commit-msg">{c.message}</span>
+          <span className="commit-time">{ago(c.date)}</span>
+        </div>
+      ))}
+
+      {/* Empty state */}
+      {(isMultiRepo ? repoGroups.length === 0 : flatCommits.length === 0) && (
+        <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: 8 }}>No recent commits</div>
+      )}
     </div>
   );
 }
