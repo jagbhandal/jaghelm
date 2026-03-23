@@ -9,14 +9,36 @@ jobs:
   deploy:
     runs-on: self-hosted
     steps:
-      - name: Pull and build
+      - name: Pull latest code
         run: |
           export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /root/.ssh/gitea_vm103"
           git config --global --add safe.directory /opt/stacks/jaghelm
-          cd /opt/stacks/jaghelm && git pull origin main && docker compose up -d --build
+          cd /opt/stacks/jaghelm && git pull origin main
+
+      - name: Detect changes and deploy
+        run: |
+          cd /opt/stacks/jaghelm
+          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          if echo "$CHANGED" | grep -qE "^(package\.json|package-lock\.json|Dockerfile|compose\.yaml)"; then
+            echo ">>> Full rebuild required"
+            docker compose up -d --build --force-recreate
+          else
+            echo ">>> Fast deploy — code only"
+            docker exec jaghelm sh -c "cd /app && rm -rf dist server"
+            docker cp server/. jaghelm:/app/server/
+            NEEDS_BUILD=$(echo "$CHANGED" | grep -qE "^(src/|index\.html|vite\.config)" && echo "yes" || echo "no")
+            if [ "$NEEDS_BUILD" = "yes" ]; then
+              echo ">>> Frontend changed — rebuilding dist"
+              docker exec jaghelm sh -c "npm run build 2>/dev/null || true"
+            fi
+            docker restart jaghelm
+          fi
 
       - name: Verify
         run: |
-          sleep 10
+          sleep 5
           docker ps | grep jaghelm
           curl -s http://localhost:3099/api/health
