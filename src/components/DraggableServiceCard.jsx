@@ -29,7 +29,7 @@ export default function DraggableServiceCard({ service, sourcePanel, showDockerS
   const style = {
     transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
     opacity: isDragging ? 0.4 : 1,
-    cursor: disabled ? 'default' : 'grab',
+    cursor: disabled ? 'default' : isDragging ? 'grabbing' : 'grab',
     position: 'relative',
     zIndex: isDragging ? 1000 : 'auto',
     touchAction: 'none',

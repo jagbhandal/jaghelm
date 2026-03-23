@@ -4,7 +4,6 @@ import 'react-grid-layout/css/styles.css';
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import NodeCard from '../components/NodeCard';
 import TodoCard from '../components/TodoCard';
-import PanelWrapper from '../components/PanelWrapper';
 import DroppablePanel from '../components/DroppablePanel';
 import ServiceDragOverlay from '../components/ServiceDragOverlay';
 import { UPSCard, GiteaActivity, QuickLaunch } from '../components/Widgets';
@@ -33,24 +32,24 @@ import { getServices, getUPSStatus, getGiteaActivity, getAllIntegrations } from 
 
 const DEFAULT_LAYOUTS = {
   lg: [
-    // Node sections are generated dynamically, but we need default positions
-    // for known nodes + the static sections
-    { i: 'node-gateway', x: 0, y: 0, w: 12, h: 7, minW: 4, minH: 3 },
-    { i: 'node-production', x: 0, y: 7, w: 12, h: 7, minW: 4, minH: 3 },
-    { i: 'node-staging', x: 0, y: 14, w: 6, h: 6, minW: 4, minH: 3 },
-    { i: 'ups', x: 6, y: 14, w: 6, h: 5, minW: 4, minH: 3 },
-    { i: 'pipeline', x: 0, y: 20, w: 8, h: 5, minW: 4, minH: 3 },
-    { i: 'todos', x: 8, y: 20, w: 4, h: 5, minW: 3, minH: 3 },
-    { i: 'quicklaunch', x: 0, y: 25, w: 12, h: 4, minW: 4, minH: 2 },
+    // 24-column grid — minW:4 = narrowest panel is ~17% of screen (fits 6 across)
+    // minH:3 = safety floor, user can resize down to 3 rows (~156px)
+    { i: 'node-gateway', x: 0, y: 0, w: 24, h: 7, minW: 4, minH: 3 },
+    { i: 'node-production', x: 0, y: 7, w: 24, h: 7, minW: 4, minH: 3 },
+    { i: 'node-staging', x: 0, y: 14, w: 12, h: 6, minW: 4, minH: 3 },
+    { i: 'ups', x: 12, y: 14, w: 12, h: 5, minW: 4, minH: 3 },
+    { i: 'pipeline', x: 0, y: 20, w: 16, h: 5, minW: 4, minH: 3 },
+    { i: 'todos', x: 16, y: 20, w: 8, h: 5, minW: 4, minH: 3 },
+    { i: 'quicklaunch', x: 0, y: 25, w: 24, h: 4, minW: 4, minH: 2 },
   ],
   md: [
-    { i: 'node-gateway', x: 0, y: 0, w: 10, h: 7 },
-    { i: 'node-production', x: 0, y: 7, w: 10, h: 7 },
-    { i: 'node-staging', x: 0, y: 14, w: 10, h: 6 },
-    { i: 'ups', x: 0, y: 20, w: 10, h: 5 },
-    { i: 'pipeline', x: 0, y: 25, w: 10, h: 5 },
-    { i: 'todos', x: 0, y: 30, w: 10, h: 5 },
-    { i: 'quicklaunch', x: 0, y: 35, w: 10, h: 4 },
+    { i: 'node-gateway', x: 0, y: 0, w: 20, h: 7 },
+    { i: 'node-production', x: 0, y: 7, w: 20, h: 7 },
+    { i: 'node-staging', x: 0, y: 14, w: 20, h: 6 },
+    { i: 'ups', x: 0, y: 20, w: 20, h: 5 },
+    { i: 'pipeline', x: 0, y: 25, w: 20, h: 5 },
+    { i: 'todos', x: 0, y: 30, w: 20, h: 5 },
+    { i: 'quicklaunch', x: 0, y: 35, w: 20, h: 4 },
   ],
 };
 
@@ -91,14 +90,6 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
   // Phase 3: Integration engine data (replaces hardcoded AdGuard/NPM)
   const [integrationData, setIntegrationData] = useState({});
-
-  // ── Content-aware dynamic panel heights ──
-  // Each panel reports its measured content height (in grid rows) via PanelWrapper.
-  // These become the minH constraints so panels can't be resized smaller than their content.
-  const dynamicMinHRef = useRef({});
-  const handleMinH = useCallback((panelKey, minRows) => {
-    dynamicMinHRef.current[panelKey] = minRows;
-  }, []);
 
   // ── Drag-and-drop service cards between panels ──
   // PointerSensor with 8px activation distance prevents accidental drags when clicking
@@ -240,11 +231,10 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   const rawLayouts = config.gridLayout || DEFAULT_LAYOUTS;
   const layouts = useMemo(() => migrateLayouts(rawLayouts) || DEFAULT_LAYOUTS, [rawLayouts]);
 
-  const cols = useMemo(() => (
-    config.gridColumns
-      ? { lg: config.gridColumns, md: Math.min(config.gridColumns, 10), sm: 1 }
-      : { lg: 12, md: 10, sm: 1 }
-  ), [config.gridColumns]);
+  const cols = useMemo(() => {
+    const lg = config.gridColumns || 24;
+    return { lg, md: Math.min(lg, 20), sm: 1 };
+  }, [config.gridColumns]);
 
   // ── Layout persistence — User-interaction gated ──
   // RGL fires onLayoutChange on mount, prop changes, AND after user drag/resize.
@@ -382,18 +372,17 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
       return (
         <div key={gridKey}>
-          <PanelWrapper panelKey={gridKey} onMinH={handleMinH}>
-            <DroppablePanel panelId={gridKey} disabled={isMobile}>
-              <NodeCard
-                sectionKey={nodeKey}
-                config={config}
-                setConfig={setConfig}
-                borderColor={borderColor}
-                metrics={metrics}
-                services={services}
-                nodeData={node}
-                panelId={gridKey}
-                dragDisabled={isMobile}
+          <DroppablePanel panelId={gridKey} disabled={isMobile}>
+            <NodeCard
+              sectionKey={nodeKey}
+              config={config}
+              setConfig={setConfig}
+              borderColor={borderColor}
+              metrics={metrics}
+              services={services}
+              nodeData={node}
+              panelId={gridKey}
+              dragDisabled={isMobile}
               >
                 {proxmoxVms && proxmoxVms.length > 0 && (
                   <div style={{ marginTop: 8 }}>
@@ -455,13 +444,12 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
                     </div>
                   </div>
                 )}
-              </NodeCard>
-            </DroppablePanel>
-          </PanelWrapper>
+            </NodeCard>
+          </DroppablePanel>
         </div>
       );
     }).filter(Boolean);
-  }, [serviceData, sc, config, setConfig, appDataByContainer, claimedContainers, integrationData, handleMinH, isMobile]);
+  }, [serviceData, sc, config, setConfig, appDataByContainer, claimedContainers, integrationData, isMobile]);
 
   // Build custom group panel elements
   const customGroupElements = useMemo(() => {
@@ -476,25 +464,23 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
       return (
         <div key={gridKey}>
-          <PanelWrapper panelKey={gridKey} onMinH={handleMinH}>
-            <DroppablePanel panelId={gridKey} disabled={isMobile}>
-              <NodeCard
-                sectionKey={`group-${group.id}`}
-                config={config}
-                setConfig={setConfig}
-                borderColor={borderColor}
-                metrics={null}
-                services={services}
-                nodeData={{ display_name: group.title, icon: group.icon || 'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/folder_special/outline.svg', subtitle: `${services.length} services` }}
-                panelId={gridKey}
-                dragDisabled={isMobile}
-              />
-            </DroppablePanel>
-          </PanelWrapper>
+          <DroppablePanel panelId={gridKey} disabled={isMobile}>
+            <NodeCard
+              sectionKey={`group-${group.id}`}
+              config={config}
+              setConfig={setConfig}
+              borderColor={borderColor}
+              metrics={null}
+              services={services}
+              nodeData={{ display_name: group.title, icon: group.icon || 'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/folder_special/outline.svg', subtitle: `${services.length} services` }}
+              panelId={gridKey}
+              dragDisabled={isMobile}
+            />
+          </DroppablePanel>
         </div>
       );
     }).filter(Boolean);
-  }, [customGroups, allServicesFlat, sc, config, setConfig, handleMinH, isMobile]);
+  }, [customGroups, allServicesFlat, sc, config, setConfig, isMobile]);
 
   // Ensure layouts have entries for all dynamic node sections + custom groups and enforce min constraints
   // CRITICAL: Use a ref to stabilize the object reference. Only produce a new object when
@@ -506,18 +492,15 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     const groupKeys = customGroups.map(g => `group-${g.id}`);
     const allDynamicKeys = [...nodeKeys, ...groupKeys];
     const result = {};
+    const lgCols = config.gridColumns || 24;
 
     // Process lg and md breakpoints from saved/default layouts
     for (const [bp, items] of Object.entries(layouts)) {
-      // Apply dynamic minH from content measurement (falls back to 2 if not yet measured)
-      const constrained = items.map(item => {
-        const dynamicMin = dynamicMinHRef.current[item.i];
-        return {
-          ...item,
-          minW: bp === 'sm' ? 1 : (item.minW || 4),
-          minH: dynamicMin || item.minH || 2,
-        };
-      });
+      const constrained = items.map(item => ({
+        ...item,
+        minW: bp === 'sm' ? 1 : (item.minW || 4),
+        minH: item.minH || 3,
+      }));
 
       const existingKeys = new Set(constrained.map(i => i.i));
       const missing = allDynamicKeys.filter(k => !existingKeys.has(k));
@@ -525,31 +508,28 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       let maxY = constrained.reduce((max, i) => Math.max(max, i.y + i.h), 0);
       const newItems = missing.map(k => ({
         i: k, x: 0, y: maxY++,
-        w: bp === 'lg' ? 12 : bp === 'md' ? 10 : 1,
-        h: dynamicMinHRef.current[k] || 6,
+        w: bp === 'lg' ? lgCols : bp === 'md' ? Math.min(lgCols, 20) : 1,
+        h: 6,
         minW: bp === 'sm' ? 1 : 4,
-        minH: dynamicMinHRef.current[k] || 2,
+        minH: 3,
       }));
       result[bp] = [...constrained, ...newItems];
     }
 
     // ── Auto-generate sm (mobile) breakpoint from lg layout ──
-    // Sort lg items by visual position (top-to-bottom, left-to-right) and stack single-column.
-    // This ensures mobile order matches the desktop arrangement automatically.
     if (!result.sm) {
       const lgItems = result.lg || result.md || [];
       const sorted = [...lgItems].sort((a, b) => a.y !== b.y ? a.y - b.y : a.x - b.x);
       let smY = 0;
       result.sm = sorted.map(item => {
-        const h = dynamicMinHRef.current[item.i] || item.h || 4;
-        const entry = { i: item.i, x: 0, y: smY, w: 1, h, minW: 1, minH: dynamicMinHRef.current[item.i] || 2 };
+        const h = item.h || 4;
+        const entry = { i: item.i, x: 0, y: smY, w: 1, h, minW: 1, minH: 3 };
         smY += h;
         return entry;
       });
     }
 
     // Only return a new object if the layout actually changed
-    // This prevents RGL from re-running compactor on every data refresh
     if (prevEffectiveRef.current) {
       const prev = prevEffectiveRef.current;
       const same = Object.keys(result).every(bp => {
@@ -562,12 +542,12 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           item.minH === b[idx].minH
         );
       });
-      if (same) return prev; // Return same reference — RGL won't re-render
+      if (same) return prev;
     }
 
     prevEffectiveRef.current = result;
     return result;
-  }, [layouts, serviceData, customGroups]);
+  }, [layouts, serviceData, customGroups, config.gridColumns]);
 
   // Auto-scroll when dragging panels near viewport edges (RGL)
   const scrollRAF = useRef(null);
@@ -637,6 +617,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           width={width}
           layouts={effectiveLayouts}
           breakpoints={{ lg: 1200, md: 768, sm: 480 }}
+          cols={cols}
           // No compactor — panels stay exactly where the user places them
           onLayoutChange={handleLayoutChange}
           onDragStart={handleRglDragStart}
@@ -644,7 +625,6 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           onDragStop={handlePanelDragStop}
           onResizeStart={handleRglResizeStart}
           gridConfig={{
-            cols,
             rowHeight: 36,
             margin: isMobile ? [12, 12] : [16, 16],
           }}
@@ -687,30 +667,22 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           {/* Static sections */}
           {sc.ups?.visible !== false && (
             <div key="ups">
-              <PanelWrapper panelKey="ups" onMinH={handleMinH}>
-                <UPSCard upsData={ups} borderColor={sc.ups?.borderColor} config={config} />
-              </PanelWrapper>
+              <UPSCard upsData={ups} borderColor={sc.ups?.borderColor} config={config} />
             </div>
           )}
           {sc.pipeline?.visible !== false && (
             <div key="pipeline">
-              <PanelWrapper panelKey="pipeline" onMinH={handleMinH}>
-                <GiteaActivity commits={commits} config={config} />
-              </PanelWrapper>
+              <GiteaActivity commits={commits} config={config} />
             </div>
           )}
           {sc.todos?.visible !== false && (
             <div key="todos">
-              <PanelWrapper panelKey="todos" onMinH={handleMinH}>
-                <TodoCard borderColor={sc.todos?.borderColor} config={config} setConfig={setConfig} />
-              </PanelWrapper>
+              <TodoCard borderColor={sc.todos?.borderColor} config={config} setConfig={setConfig} />
             </div>
           )}
           {sc.quicklaunch?.visible !== false && (
             <div key="quicklaunch">
-              <PanelWrapper panelKey="quicklaunch" onMinH={handleMinH}>
-                <QuickLaunch config={config} borderColor={sc.quicklaunch?.borderColor} />
-              </PanelWrapper>
+              <QuickLaunch config={config} borderColor={sc.quicklaunch?.borderColor} />
             </div>
           )}
         </Responsive>

@@ -239,7 +239,7 @@ function defaultConfig() {
       quicklaunch: { title: 'Quick Launch', subtitle: '', icon: 'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/rocket_launch/outline.svg', borderColor: '#60a5fa', visible: true },
       todos: { title: 'Checklist', subtitle: '', icon: 'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/checklist/outline.svg', borderColor: '#f59e0b', visible: true },
     },
-    gridLayout: null, gridColumns: 12,
+    gridLayout: null, gridColumns: 24,
     links: {
       personal: [
         { name: 'Photos', icon: 'photoprism', url: 'https://photos.jagbhandal.com' },

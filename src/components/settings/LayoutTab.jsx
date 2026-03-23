@@ -4,17 +4,21 @@ export default function LayoutTab({ config, update }) {
   return (
     <div className="settings-section">
       <Card title="Grid">
-        <Field label={`Grid Columns: ${config.gridColumns || 12}`}>
+        <Field label={`Grid Columns: ${config.gridColumns || 24}`}>
           <input
-            type="range" min="4" max="16" step="1"
-            value={config.gridColumns || 12}
+            type="range" min="6" max="24" step="2"
+            value={config.gridColumns || 24}
             onChange={e => update('gridColumns', parseInt(e.target.value))}
             className="settings-range"
           />
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: 4 }}>
-            <span>4 (compact)</span>
+            <span>6 (compact)</span>
             <span>12 (default)</span>
-            <span>16 (wide)</span>
+            <span>24 (fine grid)</span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.6 }}>
+            More columns = finer positioning and narrower panels possible.
+            Changing this resets panel positions.
           </div>
         </Field>
 
@@ -42,7 +46,6 @@ export default function LayoutTab({ config, update }) {
           />
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: 4 }}>
             <span>10s (fast)</span>
-            <span>30s</span>
             <span>120s (slow)</span>
           </div>
         </Field>
@@ -87,7 +90,7 @@ export default function LayoutTab({ config, update }) {
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.6 }}>
             <strong>Auto:</strong> Cards fill available space responsively<br />
-            <strong>2–6:</strong> Fixed columns — each card takes equal width of the panel
+            <strong>2–6:</strong> Maximum columns — cards reflow to fewer columns as the panel narrows
           </div>
         </Field>
 

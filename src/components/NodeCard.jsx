@@ -16,7 +16,7 @@ function ServiceGrid({ services, config, panelId, dragDisabled }) {
   const showApp = config?.showAppData !== false;
   const hasDetails = showDocker || showApp;
   const maxCols = config?.serviceColumns || 0; // 0 = auto (unlimited)
-  const minColWidth = hasDetails ? 200 : 180;
+  const minColWidth = hasDetails ? 160 : 140;
   const gap = 8;
 
   useEffect(() => {
@@ -42,8 +42,9 @@ function ServiceGrid({ services, config, panelId, dragDisabled }) {
       ref={gridRef}
       style={{
         display: 'grid',
-        gridTemplateColumns: `repeat(${cols}, 1fr)`,
+        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
         gap,
+        minWidth: 0,
       }}
     >
       {services.map((s, i) => (
