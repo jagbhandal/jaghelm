@@ -72,27 +72,45 @@ export default function IntegrationsTab() {
 
   // Config form state
   const [selectedPreset, setSelectedPreset] = useState(null); // null = custom builder
-  const [editingType, setEditingType] = useState(null); // set when editing existing
+  const [editingType, setEditingType] = useState(null); // set when editing existing (storage key)
   const [formUrl, setFormUrl] = useState('');
   const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [formToken, setFormToken] = useState('');
   const [formEnabled, setFormEnabled] = useState(true);
-  const [testStatus, setTestStatus] = useState(null); // null | 'testing' | { ok, error }
-  const [saveStatus, setSaveStatus] = useState(null); // null | 'saving' | 'saved' | { error }
+  const [formInstance, setFormInstance] = useState(''); // e.g. "primary", "secondary"
+  const [formTarget, setFormTarget] = useState(''); // container UID e.g. "pi:adguard-home"
+  const [allContainers, setAllContainers] = useState([]); // for target dropdown
+  const [testStatus, setTestStatus] = useState(null);
+  const [saveStatus, setSaveStatus] = useState(null);
 
   // ── Fetch presets + configured integrations ──
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [presetsRes, configRes] = await Promise.all([
+      const [presetsRes, configRes, servicesRes] = await Promise.all([
         fetch('/api/integrations/presets').then(r => r.ok ? r.json() : []),
         fetch('/api/services/config').then(r => r.ok ? r.json() : {}),
+        fetch('/api/services').then(r => r.ok ? r.json() : {}),
       ]);
       setPresets(presetsRes);
       setConfigured(configRes?.integrations || {});
+
+      // Build flat list of containers with UIDs for the target dropdown
+      const containers = [];
+      for (const [nodeKey, node] of Object.entries(servicesRes.nodes || {})) {
+        for (const svc of (node.services || [])) {
+          containers.push({
+            uid: svc.uid || `${nodeKey}:${svc.container}`,
+            name: svc.name || svc.container,
+            node: node.display_name || nodeKey,
+          });
+        }
+      }
+      containers.sort((a, b) => a.name.localeCompare(b.name));
+      setAllContainers(containers);
     } catch {
-      // Silently fail — the UI will show empty states
+      // Silently fail
     }
     setLoading(false);
   }, []);
@@ -125,14 +143,16 @@ export default function IntegrationsTab() {
     setCategory('all');
   };
 
-  const openConfig = (preset, existingConfig = null) => {
+  const openConfig = (preset, existingConfig = null, existingKey = null) => {
     setSelectedPreset(preset);
-    setEditingType(existingConfig ? (preset?.type || null) : null);
+    setEditingType(existingKey || (existingConfig ? (preset?.type || null) : null));
     setFormUrl(existingConfig?.url || '');
     setFormUsername(existingConfig?.username || '');
     setFormPassword(''); // Never prefill passwords
     setFormToken(''); // Never prefill tokens
     setFormEnabled(existingConfig?.enabled !== false);
+    setFormInstance(existingConfig?.instance || '');
+    setFormTarget(existingConfig?.target || '');
     setTestStatus(null);
     setSaveStatus(null);
     setView('config');
@@ -182,9 +202,13 @@ export default function IntegrationsTab() {
         url: formUrl,
         enabled: formEnabled,
       };
+      if (formInstance.trim()) body.instance = formInstance.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+      if (formTarget) body.target = formTarget;
       if (formUsername) body.username = formUsername;
       if (formPassword) body.password = formPassword;
       if (formToken) body.token = formToken;
+      // When editing, send the original storage key so server can remove it if the key changed
+      if (editingType) body.editingKey = editingType;
 
       const res = await fetch('/api/integrations/save', {
         method: 'POST',
@@ -282,12 +306,17 @@ export default function IntegrationsTab() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {configEntries.map(([type, cfg]) => {
-              const preset = presets.find(p => p.type === type);
+            {configEntries.map(([storageKey, cfg]) => {
+              // Find the preset by checking the preset field or the base type
+              const presetType = cfg.preset || (storageKey.includes('_') ? storageKey.split('_')[0] : storageKey);
+              const preset = presets.find(p => p.type === presetType);
               const isEnabled = cfg.enabled !== false;
+              const displayName = cfg.instance
+                ? `${preset?.name || presetType} (${cfg.instance})`
+                : preset?.name || storageKey;
 
               return (
-                <div key={type} style={{
+                <div key={storageKey} style={{
                   display: 'flex', alignItems: 'center', gap: 12,
                   padding: '12px 16px', borderRadius: 12,
                   background: 'var(--bg-card-inner)',
@@ -297,7 +326,7 @@ export default function IntegrationsTab() {
                 }}>
                   {/* Icon */}
                   <img
-                    src={`https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${preset?.icon || type}.svg`}
+                    src={`https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${preset?.icon || presetType}.svg`}
                     alt=""
                     style={{ width: 28, height: 28, borderRadius: 6 }}
                     onError={e => { e.target.style.display = 'none'; }}
@@ -306,10 +335,11 @@ export default function IntegrationsTab() {
                   {/* Info */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: 500 }}>
-                      {preset?.name || type}
+                      {displayName}
                     </div>
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {cfg.url}
+                      {cfg.target && <span style={{ marginLeft: 8, color: 'var(--accent)' }}>→ {cfg.target}</span>}
                     </div>
                   </div>
 
@@ -327,7 +357,7 @@ export default function IntegrationsTab() {
                   {/* Toggle */}
                   <button
                     className="settings-btn-sm"
-                    onClick={() => handleToggle(type, cfg)}
+                    onClick={() => handleToggle(storageKey, cfg)}
                     style={{ padding: '4px 10px', fontSize: 11, color: isEnabled ? 'var(--amber)' : 'var(--green)' }}
                   >
                     {isEnabled ? 'Disable' : 'Enable'}
@@ -336,7 +366,7 @@ export default function IntegrationsTab() {
                   {/* Edit */}
                   <button
                     className="settings-btn-sm"
-                    onClick={() => openConfig(preset || null, cfg)}
+                    onClick={() => openConfig(preset || null, cfg, storageKey)}
                     style={{ padding: '4px 10px', fontSize: 11 }}
                   >
                     Edit
@@ -345,7 +375,7 @@ export default function IntegrationsTab() {
                   {/* Delete */}
                   <button
                     className="settings-btn-sm"
-                    onClick={() => handleDelete(type)}
+                    onClick={() => handleDelete(storageKey)}
                     style={{ padding: '4px 10px', fontSize: 11, color: 'var(--red)', borderColor: 'var(--red-border)' }}
                   >
                     ✕
@@ -525,7 +555,7 @@ export default function IntegrationsTab() {
         {/* Form */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* URL */}
-          <FieldGroup label="Base URL" hint="Include protocol, e.g. http://192.168.68.13:3000">
+          <FieldGroup label="Base URL" hint="Protocol is auto-added if missing (e.g. adguard.local:3000 → http://adguard.local:3000)">
             <input
               className="settings-input"
               value={formUrl}
@@ -533,6 +563,34 @@ export default function IntegrationsTab() {
               placeholder={isPreset ? `e.g. http://your-server:port` : 'https://service.example.com'}
               style={{ fontFamily: 'var(--font-mono)' }}
             />
+          </FieldGroup>
+
+          {/* Instance Name — for multiple instances of the same app */}
+          {isPreset && (
+            <FieldGroup label="Instance Name" hint="Optional. Use when running multiple instances (e.g. primary, secondary). Leave blank for single instances.">
+              <input
+                className="settings-input"
+                value={formInstance}
+                onChange={e => setFormInstance(e.target.value)}
+                placeholder="e.g. primary"
+                style={{ fontFamily: 'var(--font-mono)' }}
+              />
+            </FieldGroup>
+          )}
+
+          {/* Target Container — scope stats to a specific container */}
+          <FieldGroup label="Target Container" hint="Optional. When set, stats only show on this specific container. When blank, stats match any container with a similar name.">
+            <select
+              className="settings-input"
+              value={formTarget}
+              onChange={e => setFormTarget(e.target.value)}
+              style={{ fontFamily: 'var(--font-mono)', cursor: 'pointer' }}
+            >
+              <option value="">Auto-match (by name)</option>
+              {allContainers.map(c => (
+                <option key={c.uid} value={c.uid}>{c.name} — {c.node}</option>
+              ))}
+            </select>
           </FieldGroup>
 
           {/* Username (if needed) */}

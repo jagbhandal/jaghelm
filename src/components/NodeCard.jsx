@@ -15,9 +15,11 @@ function ServiceGrid({ services, config, panelId, dragDisabled }) {
   const showDocker = config?.showDockerStats !== false;
   const showApp = config?.showAppData !== false;
   const statusStyle = config?.statusStyle || 'badge';
+  const cardLayout = config?.cardLayout || 'row';
   const maxCols = config?.serviceColumns || 0; // 0 = auto
-  const minColWidth = 260; // Horizontal cards need more width than grid cells
-  const gap = 8;
+  // Different minimum widths per layout mode
+  const minColWidth = cardLayout === 'grid' ? 180 : cardLayout === 'list' ? 240 : 280;
+  const gap = cardLayout === 'list' ? 0 : 8;
 
   useEffect(() => {
     const el = gridRef.current;
@@ -55,6 +57,7 @@ function ServiceGrid({ services, config, panelId, dragDisabled }) {
           showDockerStats={showDocker}
           showAppData={showApp}
           statusStyle={statusStyle}
+          cardLayout={cardLayout}
           disabled={dragDisabled}
         />
       ))}
