@@ -388,8 +388,10 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           appData: appDataByContainer[s.container] || null,
         }));
 
-      // Proxmox VM cards — show as children inside the PVE node panel
+      // Proxmox data — show as children inside the PVE node panel
       const proxmoxVms = (nodeKey === 'pve' && integrationData.proxmox?._vms) || null;
+      const proxmoxStorage = (nodeKey === 'pve' && integrationData.proxmox?._storagePools) || null;
+      const proxmoxBackup = (nodeKey === 'pve' && integrationData.proxmox?._lastBackup) || null;
 
       return (
         <div key={gridKey}>
@@ -405,17 +407,21 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
               panelId={gridKey}
               dragDisabled={isMobile}
               >
+                {/* ── Proxmox: Virtual Machines ── */}
                 {proxmoxVms && proxmoxVms.length > 0 && (
                   <div style={{ marginTop: 8 }}>
                     <div style={{
                       fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)',
                       letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6, paddingLeft: 2,
                     }}>Virtual Machines</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
                       {proxmoxVms.map(vm => {
                         const isRunning = vm.status === 'running';
                         const isPaused = vm.status === 'paused';
                         const statusColor = isRunning ? 'var(--green)' : isPaused ? 'var(--amber)' : 'var(--red)';
+                        const memPercent = vm.memTotalGB && parseFloat(vm.memTotalGB) > 0
+                          ? ((parseFloat(vm.memUsedGB) / parseFloat(vm.memTotalGB)) * 100)
+                          : 0;
                         return (
                           <div key={vm.vmid} style={{
                             background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
@@ -459,9 +465,108 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
                                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>VMID</div>
                               </div>
                             </div>
+                            {/* RAM usage per VM */}
+                            {vm.memUsedGB && vm.memTotalGB && (
+                              <div style={{ marginTop: 6, padding: '0 2px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
+                                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase' }}>RAM</span>
+                                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-secondary)' }}>{vm.memUsedGB}/{vm.memTotalGB} GB</span>
+                                </div>
+                                <div style={{
+                                  height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.06)', overflow: 'hidden',
+                                }}>
+                                  <div style={{
+                                    height: '100%', borderRadius: 2,
+                                    width: `${Math.min(memPercent, 100)}%`,
+                                    background: memPercent > 90 ? 'var(--red)' : memPercent > 70 ? 'var(--amber)' : borderColor || 'var(--accent)',
+                                    transition: 'width 0.3s ease',
+                                  }} />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Proxmox: Storage Pools ── */}
+                {proxmoxStorage && proxmoxStorage.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{
+                      fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)',
+                      letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6, paddingLeft: 2,
+                    }}>Storage Pools</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {proxmoxStorage.map(pool => (
+                        <div key={pool.name} style={{
+                          background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
+                          borderRadius: 10, padding: '8px 12px',
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 500 }}>{pool.name}</span>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{pool.type}</span>
+                            </div>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-secondary)' }}>
+                              {pool.usedGB}/{pool.totalGB} GB
+                            </span>
+                          </div>
+                          <div style={{
+                            height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.06)', overflow: 'hidden',
+                          }}>
+                            <div style={{
+                              height: '100%', borderRadius: 3,
+                              width: `${Math.min(pool.percent, 100)}%`,
+                              background: pool.percent > 90 ? 'var(--red)' : pool.percent > 70 ? 'var(--amber)' : borderColor || 'var(--accent)',
+                              transition: 'width 0.3s ease',
+                            }} />
+                          </div>
+                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', marginTop: 3, textAlign: 'right' }}>
+                            {pool.percent}%
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Proxmox: Backup Status ── */}
+                {proxmoxBackup && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{
+                      fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)',
+                      letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6, paddingLeft: 2,
+                    }}>Backups</div>
+                    <div style={{
+                      background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
+                      borderRadius: 10, padding: '10px 14px',
+                      display: 'flex', alignItems: 'center', gap: 10,
+                    }}>
+                      <span style={{
+                        fontSize: 16,
+                        filter: proxmoxBackup.ok ? 'none' : 'grayscale(1)',
+                      }}>
+                        {proxmoxBackup.ok ? '✓' : '✕'}
+                      </span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>
+                          Last backup: {proxmoxBackup.ago || 'unknown'}
+                        </div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
+                          {proxmoxBackup.vmCount > 0 ? `${proxmoxBackup.vmCount} VM${proxmoxBackup.vmCount > 1 ? 's' : ''} backed up` : 'No VMs in batch'}
+                        </div>
+                      </div>
+                      <span style={{
+                        fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 8px',
+                        borderRadius: 4, fontWeight: 500,
+                        background: proxmoxBackup.ok ? 'var(--green-bg)' : 'var(--red-bg)',
+                        color: proxmoxBackup.ok ? 'var(--green)' : 'var(--red)',
+                        border: `1px solid ${proxmoxBackup.ok ? 'var(--green-border)' : 'var(--red-border)'}`,
+                      }}>
+                        {proxmoxBackup.ok ? 'OK' : proxmoxBackup.status || 'FAILED'}
+                      </span>
                     </div>
                   </div>
                 )}

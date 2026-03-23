@@ -83,6 +83,9 @@ export default {
   auth: 'bearer',
   endpoint: '/client/v4/accounts/{account_id}/cfd_tunnel?is_deleted=false',
   testEndpoint: '/client/v4/user/tokens/verify',
+  urlParams: [
+    { key: 'account_id', label: 'Account ID', placeholder: 'Your Cloudflare Account ID' },
+  ],
   fields: [],
   structuredTransform: (raw) => {
     const tunnels = raw?.result || [];

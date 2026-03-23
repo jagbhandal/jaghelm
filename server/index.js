@@ -756,8 +756,10 @@ app.get('/api/integrations', authMiddleware, async (req, res) => {
       const handlerType = cfg.preset || key;
       // Pass the storage key so credential resolution uses the correct secret
       const result = await fetchIntegration(handlerType, { ...cfg, _storageKey: key }, bust);
-      const entry = { ...(result.fields || {}) };
+       const entry = { ...(result.fields || {}) };
       if (result.vms) entry._vms = result.vms;
+      if (result.storagePools) entry._storagePools = result.storagePools;
+      if (result.lastBackup) entry._lastBackup = result.lastBackup;
       // Include target so frontend knows which container to match
       if (cfg.target) entry._target = cfg.target;
       if (cfg.instance) entry._instance = cfg.instance;
