@@ -15,7 +15,7 @@ import ServiceCard from './ServiceCard';
  *   showAppData     — pass through to ServiceCard
  *   disabled        — if true, card is not draggable (e.g. on mobile)
  */
-export default function DraggableServiceCard({ service, sourcePanel, showDockerStats, showAppData, disabled }) {
+export default function DraggableServiceCard({ service, sourcePanel, showDockerStats, showAppData, statusStyle, disabled }) {
   const uid = service.uid || service.container;
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `svc-${uid}`,
@@ -43,6 +43,7 @@ export default function DraggableServiceCard({ service, sourcePanel, showDockerS
         service={service}
         showDockerStats={showDockerStats}
         showAppData={showAppData}
+        statusStyle={statusStyle}
       />
     </div>
   );

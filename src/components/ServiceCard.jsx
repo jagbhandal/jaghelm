@@ -2,14 +2,19 @@ import React from 'react';
 import { getServiceIcon } from '../hooks/useData';
 
 /**
- * ServiceCard v8 — Phase 3
- * 
- * Props: { service, showDockerStats, showAppData }
- * showDockerStats and showAppData are independent toggles from Settings > Layout.
- * Users can show any combination: simple only, docker only, app only, both, or all.
+ * ServiceCard v9 — Horizontal row design
+ *
+ * Inspired by Homepage's spacious horizontal layout, styled with JagHelm's
+ * glass card aesthetic and accent system.
+ *
+ * Three status styles (configurable in Settings > Layout):
+ *   dot     — colored left border + status dot (default)
+ *   badge   — colored left border + ping/status badges right-aligned
+ *   minimal — icon + name only, no status indicators
+ *
+ * Docker stats and app data appear as additional rows when enabled in settings.
  */
-export default function ServiceCard({ service, showDockerStats = true, showAppData = true }) {
-  // Icon: use server-provided icon key, fall back to name-based icon lookup
+export default function ServiceCard({ service, showDockerStats = true, showAppData = true, statusStyle = 'badge' }) {
   const icon = service.icon
     ? getServiceIcon(service.icon) || getServiceIcon(service.name)
     : getServiceIcon(service.name);
@@ -20,104 +25,143 @@ export default function ServiceCard({ service, showDockerStats = true, showAppDa
   const statusColor = isUp ? 'var(--green)' : isDown ? 'var(--red)' : 'var(--amber)';
 
   const docker = service.docker || {};
-  const showStats = showDockerStats;
+  const showStats = showDockerStats && (docker.cpu != null || docker.memMB != null);
   const appData = service.appData;
   const showApp = showAppData && appData && Object.keys(appData).length > 0;
-  const hasDetails = showStats || showApp;
+  const showBorder = statusStyle !== 'minimal';
 
   return (
     <div style={{
-      background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
-      borderRadius: 12, padding: hasDetails ? '12px 14px' : '8px 12px',
-      transition: 'border-color 0.2s', cursor: 'default',
-      borderLeft: `3px solid ${statusColor}`, borderLeftStyle: 'solid',
-      position: 'relative', overflow: 'hidden', minWidth: 0,
+      background: 'var(--bg-card-inner)',
+      border: '1px solid var(--border-color)',
+      borderRadius: 10,
+      borderLeft: showBorder ? `3px solid ${statusColor}` : '1px solid var(--border-color)',
+      padding: '10px 14px',
+      transition: 'border-color 0.2s, background 0.2s',
+      overflow: 'hidden',
+      minWidth: 0,
     }}>
-      {/* Badges — pinned top right */}
-      <div style={{ position: 'absolute', top: 8, right: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
-        {service.ping != null && service.ping > 0 && (
-          <span style={{
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-badge)', padding: '2px 5px',
-            borderRadius: 4, background: 'var(--green-bg)', color: 'var(--green)',
-            border: '1px solid var(--green-border)',
-          }}>{service.ping}ms</span>
+      {/* ── Primary row: icon + name + badges ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Status dot (only in dot mode) */}
+        {statusStyle === 'dot' && (
+          <div style={{
+            width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+            background: statusColor, boxShadow: `0 0 6px ${statusColor}`,
+          }} />
         )}
-        <span style={{
-          fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-badge)', padding: '2px 5px',
-          borderRadius: 4, textTransform: 'uppercase', fontWeight: 500,
-          background: isUp ? 'var(--green-bg)' : isDown ? 'var(--red-bg)' : 'var(--amber-bg)',
-          color: statusColor,
-          border: `1px solid ${isUp ? 'var(--green-border)' : isDown ? 'var(--red-border)' : 'var(--amber-border)'}`,
-        }}>{st === 'up' ? 'running' : st}</span>
-      </div>
 
-      {/* Header row: status dot + icon + name */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: hasDetails ? 8 : 0, paddingRight: 90 }}>
-        <div style={{
-          width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-          background: statusColor, boxShadow: `0 0 6px ${statusColor}`,
-        }} />
-        {icon && <img src={icon} alt="" style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0 }} />}
+        {/* Service icon */}
+        {icon && (
+          <img
+            src={icon} alt=""
+            style={{ width: 24, height: 24, borderRadius: 6, flexShrink: 0 }}
+            onError={e => { e.target.style.display = 'none'; }}
+          />
+        )}
+
+        {/* Service name */}
         <span style={{
-          fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
-          flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          fontFamily: 'var(--font-body)',
+          fontSize: 'var(--fs-service-name)',
+          fontWeight: 500,
+          color: 'var(--text-primary)',
+          flex: 1,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}>
           {service.name}
         </span>
+
+        {/* Right side: ping + status badges (badge mode) */}
+        {statusStyle === 'badge' && (
+          <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexShrink: 0 }}>
+            {service.ping != null && service.ping > 0 && (
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 6px',
+                borderRadius: 4, background: 'var(--green-bg)', color: 'var(--green)',
+                border: '1px solid var(--green-border)', whiteSpace: 'nowrap',
+              }}>{service.ping}ms</span>
+            )}
+            <span style={{
+              fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 6px',
+              borderRadius: 4, textTransform: 'uppercase', fontWeight: 500, whiteSpace: 'nowrap',
+              background: isUp ? 'var(--green-bg)' : isDown ? 'var(--red-bg)' : 'var(--amber-bg)',
+              color: statusColor,
+              border: `1px solid ${isUp ? 'var(--green-border)' : isDown ? 'var(--red-border)' : 'var(--amber-border)'}`,
+            }}>{st === 'up' ? 'running' : st}</span>
+          </div>
+        )}
+
+        {/* Right side: just a dot (dot mode) — the dot is on the left, ping on right */}
+        {statusStyle === 'dot' && service.ping != null && service.ping > 0 && (
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 6px',
+            borderRadius: 4, background: 'var(--green-bg)', color: 'var(--green)',
+            border: '1px solid var(--green-border)', flexShrink: 0, whiteSpace: 'nowrap',
+          }}>{service.ping}ms</span>
+        )}
       </div>
 
-      {/* Stats row: CPU, MEM, RX, TX — equal columns fill full card width */}
+      {/* ── Docker stats row ── */}
       {showStats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginTop: 4 }}>
-          <StatCell label="CPU" value={docker.cpu != null ? `${docker.cpu}%` : '—'} />
-          <StatCell label="MEM" value={docker.memMB != null ? `${docker.memMB} MB` : '—'} />
-          <StatCell label="RX" value={docker.rxMB != null ? `${docker.rxMB} MB` : '—'} />
-          <StatCell label="TX" value={docker.txMB != null ? `${docker.txMB} MB` : '—'} />
+        <div style={{
+          display: 'flex', gap: 12, marginTop: 8, paddingTop: 8,
+          borderTop: '1px solid rgba(255,255,255,0.04)',
+          flexWrap: 'wrap',
+        }}>
+          <InlineStat label="CPU" value={docker.cpu != null ? `${docker.cpu}%` : null} />
+          <InlineStat label="MEM" value={docker.memMB != null ? formatMem(docker.memMB) : null} />
+          <InlineStat label="RX" value={docker.rxMB != null ? formatMem(docker.rxMB) : null} />
+          <InlineStat label="TX" value={docker.txMB != null ? formatMem(docker.txMB) : null} />
+          {service.uptime != null && (
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)', letterSpacing: 0.5 }}>24H</span>
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 500,
+                color: service.uptime > 0.99 ? 'var(--green)' : service.uptime > 0.95 ? 'var(--amber)' : 'var(--red)',
+              }}>{(service.uptime * 100).toFixed(1)}%</span>
+            </div>
+          )}
         </div>
       )}
 
-      {/* App-specific stats (Tier 3) — equal columns fill full card width */}
-      {showApp && (() => {
-        const entries = Object.entries(appData);
-        return (
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${entries.length}, 1fr)`, gap: 6, marginTop: 6 }}>
-            {entries.map(([label, value]) => (
-              <StatCell key={label} label={label} value={String(value)} />
-            ))}
-          </div>
-        );
-      })()}
-
-      {/* Uptime bar */}
-      {service.uptime != null && showStats && (
-        <div style={{ marginTop: 6 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)', letterSpacing: 0.5 }}>UPTIME 24H</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--green)' }}>{(service.uptime * 100).toFixed(1)}%</span>
-          </div>
-          <div style={{ width: '100%', height: 3, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', borderRadius: 2,
-              width: `${Math.min(service.uptime * 100, 100)}%`,
-              background: service.uptime > 0.99 ? 'var(--green)' : service.uptime > 0.95 ? 'var(--amber)' : 'var(--red)',
-              transition: 'width 1s ease',
-            }} />
-          </div>
+      {/* ── App integration data row ── */}
+      {showApp && (
+        <div style={{
+          display: 'flex', gap: 12, marginTop: 8, paddingTop: 8,
+          borderTop: '1px solid rgba(255,255,255,0.04)',
+          flexWrap: 'wrap',
+        }}>
+          {Object.entries(appData).map(([label, value]) => (
+            <InlineStat key={label} label={label} value={String(value)} />
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-function StatCell({ label, value }) {
+/** Inline stat — label:value pair, compact horizontal display */
+function InlineStat({ label, value }) {
+  if (value == null) return null;
   return (
-    <div style={{
-      textAlign: 'center', padding: '6px 4px',
-      background: 'rgba(255,255,255,0.03)', borderRadius: 6,
-      border: '1px solid rgba(255,255,255,0.04)',
-    }}>
-      <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)', lineHeight: 1.2 }}>{value}</div>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>{label}</div>
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+      <span style={{
+        fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)',
+        letterSpacing: 0.5, textTransform: 'uppercase',
+      }}>{label}</span>
+      <span style={{
+        fontFamily: 'var(--font-display)', fontSize: 12, fontWeight: 600,
+        color: 'var(--text-primary)',
+      }}>{value}</span>
     </div>
   );
+}
+
+/** Format memory — show MB below 1000, GB above */
+function formatMem(mb) {
+  if (mb >= 1000) return `${(mb / 1024).toFixed(1)} GB`;
+  return `${mb} MB`;
 }

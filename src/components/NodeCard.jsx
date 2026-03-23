@@ -10,13 +10,13 @@ import DraggableServiceCard from './DraggableServiceCard';
  */
 function ServiceGrid({ services, config, panelId, dragDisabled }) {
   const gridRef = useRef(null);
-  const [cols, setCols] = useState(4);
+  const [cols, setCols] = useState(2);
 
   const showDocker = config?.showDockerStats !== false;
   const showApp = config?.showAppData !== false;
-  const hasDetails = showDocker || showApp;
-  const maxCols = config?.serviceColumns || 0; // 0 = auto (unlimited)
-  const minColWidth = hasDetails ? 160 : 140;
+  const statusStyle = config?.statusStyle || 'badge';
+  const maxCols = config?.serviceColumns || 0; // 0 = auto
+  const minColWidth = 260; // Horizontal cards need more width than grid cells
   const gap = 8;
 
   useEffect(() => {
@@ -54,6 +54,7 @@ function ServiceGrid({ services, config, panelId, dragDisabled }) {
           sourcePanel={panelId}
           showDockerStats={showDocker}
           showAppData={showApp}
+          statusStyle={statusStyle}
           disabled={dragDisabled}
         />
       ))}
