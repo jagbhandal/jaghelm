@@ -7,9 +7,9 @@ export default {
   endpoint: '/ocs/v2.php/apps/serverinfo/api/v1/info?format=json',
   testEndpoint: '/ocs/v2.php/cloud/capabilities?format=json',
   fields: [
-    { key: 'users', label: 'Users', path: 'ocs.data.activeUsers.last5minutes', format: 'number' },
     { key: 'files', label: 'Files', path: 'ocs.data.nextcloud.storage.num_files', format: 'number' },
-    { key: 'storage', label: 'Storage', path: 'ocs.data.nextcloud.storage.num_storages_local', format: 'number' },
+    { key: 'users', label: 'Users', path: 'ocs.data.nextcloud.storage.num_users', format: 'number' },
+    { key: 'storage', label: 'Storage', path: 'ocs.data.nextcloud.system.freespace', format: 'bytes' },
   ],
   envKeys: {
     url: 'NEXTCLOUD_URL',

@@ -15,7 +15,7 @@ export default {
     const totalIssues = repos.reduce((sum, r) => sum + (r.open_issues_count || 0), 0);
     const fields = {
       'Repos': String(repoCount),
-      'Open Issues': String(totalIssues),
+      'Issues': String(totalIssues),
       'Stars': String(totalStars),
     };
     return { fields };
