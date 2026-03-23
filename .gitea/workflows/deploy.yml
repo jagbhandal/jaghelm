@@ -6,34 +6,25 @@ on:
       - main
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
+  build-and-deploy:
+    runs-on: self-hosted
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Login to Gitea Registry
+      - name: Login to registry
         run: |
           echo "${{ secrets.REGISTRY_TOKEN }}" | docker login registry.jagbhandal.com -u jagdeep.bhandal --password-stdin
 
-      - name: Build Docker image
+      - name: Build and push
         run: |
-          docker build -t registry.jagbhandal.com/jagdeep.bhandal/jaghelm:latest -t registry.jagbhandal.com/jagdeep.bhandal/jaghelm:${{ github.sha }} .
-
-      - name: Push to registry
-        run: |
+          cd /opt/stacks/jaghelm && git pull origin main
+          docker build -t registry.jagbhandal.com/jagdeep.bhandal/jaghelm:latest .
           docker push registry.jagbhandal.com/jagdeep.bhandal/jaghelm:latest
-          docker push registry.jagbhandal.com/jagdeep.bhandal/jaghelm:${{ github.sha }}
 
-  deploy:
-    runs-on: self-hosted
-    needs: build-and-push
-    steps:
-      - name: Pull and deploy
+      - name: Deploy
         run: |
-          cd /opt/stacks/jaghelm && docker compose pull && docker compose up -d
+          cd /opt/stacks/jaghelm && docker compose up -d --force-recreate
 
-      - name: Verify deployment
+      - name: Verify
         run: |
           sleep 10
-          docker ps | grep jaghelm && /usr/bin/curl -s http://localhost:3099/api/health
+          docker ps | grep jaghelm
+          curl -s http://localhost:3099/api/health
