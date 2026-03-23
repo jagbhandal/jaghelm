@@ -749,7 +749,8 @@ app.get('/api/integrations', authMiddleware, async (req, res) => {
     .map(async ([key, cfg]) => {
       // Use the preset type for the handler, not the storage key
       const handlerType = cfg.preset || key;
-      const result = await fetchIntegration(handlerType, cfg, bust);
+      // Pass the storage key so credential resolution uses the correct secret
+      const result = await fetchIntegration(handlerType, { ...cfg, _storageKey: key }, bust);
       const entry = { ...(result.fields || {}) };
       if (result.vms) entry._vms = result.vms;
       // Include target so frontend knows which container to match
