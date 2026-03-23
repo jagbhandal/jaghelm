@@ -546,7 +546,7 @@ app.get('/api/docker/containers', async (req, res) => {
   } catch { res.json([]); }
 });
 
-// ── Gitea Activity (stays as dedicated endpoint per spec) ──
+// ── Gitea Activity — Auto-discovers all repos, fetches recent commits per repo ──
 app.get('/api/gitea/activity', async (req, res) => {
   if (!shouldBypassCache(req)) {
     const cached = getCached('gitea');
@@ -555,15 +555,51 @@ app.get('/api/gitea/activity', async (req, res) => {
   try {
     const url = process.env.GITEA_URL || 'http://localhost:3060';
     const token = process.env.GITEA_TOKEN || '';
-    const repo = process.env.GITEA_REPO || 'jagdeep.bhandal/homelab-infra';
-    const r = await safeFetch(`${url}/api/v1/repos/${repo}/commits?limit=5${token ? '&token=' + token : ''}`);
-    const data = await r.json();
-    const commits = Array.isArray(data) ? data.map(c => ({
-      sha: c.sha?.substring(0, 7), message: c.commit?.message?.split('\n')[0] || '',
-      date: c.commit?.author?.date || '', author: c.commit?.author?.name || '',
-    })) : [];
-    setCache('gitea', commits);
-    res.json(commits);
+    const authParam = token ? `token=${token}` : '';
+    const authSep = (u) => u.includes('?') ? '&' : '?';
+
+    // Step 1: Discover all repos for the authenticated user
+    const reposRes = await safeFetch(`${url}/api/v1/repos/search?limit=20${authParam ? '&' + authParam : ''}`);
+    const reposData = await reposRes.json();
+    const repos = (reposData?.data || reposData || [])
+      .filter(r => !r.fork && !r.mirror && !r.archived)
+      .map(r => ({ name: r.name, fullName: r.full_name }));
+
+    if (repos.length === 0) {
+      setCache('gitea', []);
+      return res.json([]);
+    }
+
+    // Step 2: Fetch 5 most recent commits per repo in parallel
+    const repoCommits = await Promise.allSettled(
+      repos.map(async (repo) => {
+        const commitsRes = await safeFetch(
+          `${url}/api/v1/repos/${repo.fullName}/commits?limit=5&sha=main${authParam ? '&' + authParam : ''}`
+        );
+        const data = await commitsRes.json();
+        const commits = Array.isArray(data) ? data.map(c => ({
+          sha: c.sha?.substring(0, 7),
+          message: c.commit?.message?.split('\n')[0] || '',
+          date: c.commit?.author?.date || '',
+          author: c.commit?.author?.name || '',
+        })) : [];
+        return { repo: repo.name, fullName: repo.fullName, commits };
+      })
+    );
+
+    // Step 3: Build result — array of { repo, fullName, commits }
+    const result = repoCommits
+      .filter(r => r.status === 'fulfilled' && r.value.commits.length > 0)
+      .map(r => r.value)
+      .sort((a, b) => {
+        // Sort repos by most recent commit date
+        const aDate = a.commits[0]?.date || '';
+        const bDate = b.commits[0]?.date || '';
+        return new Date(bDate) - new Date(aDate);
+      });
+
+    setCache('gitea', result);
+    res.json(result);
   } catch (e) { res.status(502).json({ error: 'Gitea unreachable', detail: e.message }); }
 });
 
