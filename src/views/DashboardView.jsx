@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Responsive, useContainerWidth } from 'react-grid-layout';
-import 'react-grid-layout/css/styles.css';
+import HelmGrid from '../components/HelmGrid';
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import NodeCard from '../components/NodeCard';
 import TodoCard from '../components/TodoCard';
@@ -78,8 +77,17 @@ function migrateLayouts(layouts) {
 }
 
 export default function DashboardView({ config, setConfig, refreshKey }) {
-  const { width, containerRef, mounted } = useContainerWidth({ initialWidth: 1200 });
-  const isMobile = width < 480;
+  // HelmGrid manages its own container width internally.
+  // We just need isMobile for disabling service card drag on small screens.
+  const mobileRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const el = mobileRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setIsMobile(el.clientWidth < 480));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Unified service data from /api/services
   const [serviceData, setServiceData] = useState({ nodes: {} });
@@ -110,11 +118,11 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     const { active, over } = event;
     if (!active || !over) return;
 
-    const container = active.data?.current?.container;
+    const uid = active.data?.current?.uid;
     const sourcePanel = active.data?.current?.sourcePanel;
     const targetPanelId = over.data?.current?.panelId;
 
-    if (!container || !targetPanelId || sourcePanel === targetPanelId) return;
+    if (!uid || !targetPanelId || sourcePanel === targetPanelId) return;
 
     const customGroups = config.customGroups || [];
 
@@ -123,10 +131,10 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       const targetGroupId = targetPanelId.replace('group-', '');
       const updatedGroups = customGroups.map(g => {
         // Remove from any existing custom group first
-        const filtered = (g.containers || []).filter(c => c !== container);
+        const filtered = (g.containers || []).filter(c => c !== uid);
         // Add to target group
         if (g.id === targetGroupId) {
-          return { ...g, containers: [...filtered, container] };
+          return { ...g, containers: [...filtered, uid] };
         }
         return { ...g, containers: filtered };
       });
@@ -136,7 +144,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     else if (targetPanelId.startsWith('node-')) {
       const updatedGroups = customGroups.map(g => ({
         ...g,
-        containers: (g.containers || []).filter(c => c !== container),
+        containers: (g.containers || []).filter(c => c !== uid),
       }));
       setConfig(p => ({ ...p, customGroups: updatedGroups }));
     }
@@ -236,31 +244,17 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     return { lg, md: Math.min(lg, 20), sm: 1 };
   }, [config.gridColumns]);
 
-  // ── Layout persistence — User-interaction gated ──
-  // RGL fires onLayoutChange on mount, prop changes, AND after user drag/resize.
-  // The compactor also fires it when rearranging panels.
-  // We ONLY save when the user actually dragged or resized something.
-  // This prevents compactor noise from overwriting the saved layout.
-  const userInteractedRef = useRef(false);
-
+  // ── Layout persistence ──
+  // HelmGrid only fires onLayoutChange after drag/resize completes — no mid-interaction saves.
   const handleLayoutChange = useCallback((_, allLayouts) => {
-    if (!userInteractedRef.current) return; // Ignore compactor/mount fires
-    userInteractedRef.current = false; // Reset flag
     setConfig(p => ({ ...p, gridLayout: allLayouts }));
   }, [setConfig]);
-
-  // Set the flag when user starts dragging or resizing a PANEL (RGL)
-  const handleRglDragStart = useCallback(() => {
-    userInteractedRef.current = true;
-  }, []);
-  const handleRglResizeStart = useCallback(() => {
-    userInteractedRef.current = true;
-  }, []);
 
   // ── Custom Groups: containers assigned to user-created groups ──
   const customGroups = config.customGroups || [];
 
   // Build set of containers claimed by custom groups
+  // claimedContainers now stores UIDs like "vm103:tailscale"
   const claimedContainers = useMemo(() => {
     const set = new Set();
     for (const group of customGroups) {
@@ -272,13 +266,17 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   }, [customGroups]);
 
   // Build a flat lookup of all discovered services (for custom groups to reference)
+  // Key is nodeKey:container (e.g. "vm103:tailscale") to handle duplicate container names across nodes
   const allServicesFlat = useMemo(() => {
     const map = {};
-    for (const node of Object.values(serviceData.nodes || {})) {
+    for (const [nodeKey, node] of Object.entries(serviceData.nodes || {})) {
       for (const s of (node.services || [])) {
-        map[s.container] = {
+        const uid = `${nodeKey}:${s.container}`;
+        map[uid] = {
           name: s.display_name,
           container: s.container,
+          uid,
+          node: nodeKey,
           status: s.status,
           uptime: s.uptime24,
           ping: s.ping,
@@ -355,10 +353,12 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
       // Transform services for NodeCard/ServiceCard — exclude containers claimed by custom groups
       const services = (node.services || [])
-        .filter(s => !claimedContainers.has(s.container))
+        .filter(s => !claimedContainers.has(`${nodeKey}:${s.container}`))
         .map(s => ({
           name: s.display_name,
           container: s.container,
+          uid: `${nodeKey}:${s.container}`,
+          node: nodeKey,
           status: s.status,
           uptime: s.uptime24,
           ping: s.ping,
@@ -568,6 +568,9 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   const handlePanelDragStop = useCallback(() => {
     if (scrollRAF.current) { cancelAnimationFrame(scrollRAF.current); scrollRAF.current = null; }
   }, []);
+  const handlePanelResizeStop = useCallback(() => {
+    // HelmGrid handles layout save via onLayoutChange — nothing extra needed here
+  }, []);
 
   // Welcome message config
   const wm = config.welcomeMessage || {};
@@ -575,7 +578,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
   
   return (
-    <div className="dashboard-content" ref={containerRef}>
+    <div className="dashboard-content" ref={mobileRef}>
       {/* Welcome message banner */}
       {wm.enabled && wm.text && (
         <div style={{
@@ -605,44 +608,32 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           )}
         </div>
       )}
-      {mounted && (
-        <DndContext
-          sensors={sensors}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
-        >
-        <Responsive
+      {/* HelmGrid handles its own width measurement and mount state */}
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        <HelmGrid
           className="layout"
-          width={width}
           layouts={effectiveLayouts}
           breakpoints={{ lg: 1200, md: 768, sm: 480 }}
           cols={cols}
-          // No compactor — panels stay exactly where the user places them
+          rowHeight={36}
+          margin={isMobile ? [12, 12] : [16, 16]}
+          draggable={!isMobile}
+          dragHandle=".section-header"
+          resizable={!isMobile}
           onLayoutChange={handleLayoutChange}
-          onDragStart={handleRglDragStart}
           onDrag={handlePanelDrag}
           onDragStop={handlePanelDragStop}
-          onResizeStart={handleRglResizeStart}
-          gridConfig={{
-            rowHeight: 36,
-            margin: isMobile ? [12, 12] : [16, 16],
-          }}
-          dragConfig={{
-            enabled: !isMobile,
-            handle: '.section-header',
-          }}
-          resizeConfig={{
-            enabled: !isMobile,
-            handles: ['se', 'sw', 'e', 'w'],
-          }}
+          onResizeStop={handlePanelResizeStop}
         >
           {/* Dynamic node sections */}
           {nodeElements}
 
-          {/* Placeholders for node panels that exist in saved layout but haven't loaded yet.
-              Without these, RGL has no children for those keys on first render,
-              and when serviceData arrives, they get repositioned instead of using saved positions. */}
+          {/* Placeholders for node panels that exist in saved layout but haven't loaded yet */}
           {(() => {
             const loadedNodeKeys = new Set(Object.keys(serviceData.nodes || {}).map(k => `node-${k}`));
             const savedKeys = (layouts.lg || layouts.md || []).map(i => i.i).filter(k => k.startsWith('node-'));
@@ -685,12 +676,11 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
               <QuickLaunch config={config} borderColor={sc.quicklaunch?.borderColor} />
             </div>
           )}
-        </Responsive>
+        </HelmGrid>
         <DragOverlay dropAnimation={null}>
           {activeDrag ? <ServiceDragOverlay service={activeDrag} /> : null}
         </DragOverlay>
-        </DndContext>
-      )}
+      </DndContext>
     </div>
   );
 }

@@ -49,7 +49,7 @@ function ServiceGrid({ services, config, panelId, dragDisabled }) {
     >
       {services.map((s, i) => (
         <DraggableServiceCard
-          key={s.container || i}
+          key={s.uid || s.container || i}
           service={s}
           sourcePanel={panelId}
           showDockerStats={showDocker}

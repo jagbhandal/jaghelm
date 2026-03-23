@@ -53,7 +53,7 @@ export default function App() {
       const origFetch = window._origFetch || window.fetch;
       if (!window._origFetch) window._origFetch = window.fetch;
       window.fetch = (url, opts = {}) => {
-        if (typeof url === 'string' && url.startsWith('/api') && !url.includes('/auth/')) {
+        if (typeof url === 'string' && url.startsWith('/api') && !url.includes('/auth/login')) {
           opts.headers = { ...opts.headers, 'x-auth-token': authToken };
         }
         return origFetch(url, opts);
@@ -169,12 +169,25 @@ export default function App() {
     setRefreshKey(k => k + 1);
   }, []);
 
+  // Initial fetch on auth
+  const didInitialFetch = useRef(false);
+  useEffect(() => {
+    if (!authed || didInitialFetch.current) return;
+    didInitialFetch.current = true;
+    doRefresh();
+  }, [authed, doRefresh]);
+
+  // Set up refresh interval — debounced so slider dragging doesn't spam intervals
   useEffect(() => {
     if (!authed) return;
-    doRefresh();
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(doRefresh, intervalMs);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    const timer = setTimeout(() => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = setInterval(doRefresh, intervalMs);
+    }, 500); // Wait 500ms after last intervalMs change before setting interval
+    return () => {
+      clearTimeout(timer);
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, [doRefresh, intervalMs, authed]);
 
   // Show login if auth required and not authenticated
@@ -207,7 +220,7 @@ export default function App() {
             setTheme(t => { const i = order.indexOf(t); return order[(i + 1) % order.length]; });
           }}
           health={overallHealth} lastUpdated={lastUpdated} config={config}
-          onOpenSettings={() => setActiveTab('settings')}
+          onOpenSettings={() => setActiveTab(t => t === 'settings' ? 'dashboard' : 'settings')}
           refreshKey={refreshKey} />
         {activeTab === 'dashboard' && <DashboardView config={config} setConfig={setConfig} refreshKey={refreshKey} />}
         {activeTab === 'settings' && <SettingsView config={config} setConfig={setConfig} theme={theme} setTheme={setTheme} />}

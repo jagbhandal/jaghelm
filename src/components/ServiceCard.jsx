@@ -31,7 +31,7 @@ export default function ServiceCard({ service, showDockerStats = true, showAppDa
       borderRadius: 12, padding: hasDetails ? '12px 14px' : '8px 12px',
       transition: 'border-color 0.2s', cursor: 'default',
       borderLeft: `3px solid ${statusColor}`, borderLeftStyle: 'solid',
-      position: 'relative',
+      position: 'relative', overflow: 'hidden', minWidth: 0,
     }}>
       {/* Badges — pinned top right */}
       <div style={{ position: 'absolute', top: 8, right: 10, display: 'flex', gap: 4, alignItems: 'center' }}>

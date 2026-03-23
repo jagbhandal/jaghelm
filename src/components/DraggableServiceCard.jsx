@@ -16,10 +16,12 @@ import ServiceCard from './ServiceCard';
  *   disabled        — if true, card is not draggable (e.g. on mobile)
  */
 export default function DraggableServiceCard({ service, sourcePanel, showDockerStats, showAppData, disabled }) {
+  const uid = service.uid || service.container;
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `svc-${service.container}`,
+    id: `svc-${uid}`,
     data: {
       container: service.container,
+      uid,
       sourcePanel,
       service,
     },
