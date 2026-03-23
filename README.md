@@ -30,7 +30,9 @@ Homepage and Homarr are link launchers with widget sidecars. **JagHelm is a real
 | UPS power monitoring | Widget only | ❌ | ✅ Dedicated section via NUT |
 | Uptime Kuma deep integration | Widget only | Widget only | ✅ Per-service health, ping, uptime bars |
 | Three-tier service cards | ❌ | ❌ | ✅ Health → Container stats → App API |
-| Drag-and-drop grid layout | ❌ | ✅ | ✅ React Grid Layout v2 |
+| Embedded service tabs | ❌ | ❌ | ✅ Uptime Kuma, Grafana, etc. as native tabs |
+| Content-aware grid layout | ❌ | ✅ | ✅ HelmGrid — panels auto-fit content |
+| Drag service cards between panels | ❌ | ❌ | ✅ Custom groups with drag-and-drop |
 | UI-first configuration | ❌ (YAML only) | ✅ | ✅ Full settings page + YAML escape hatch |
 | Server-side config persistence | ❌ | ✅ | ✅ Survives container rebuilds |
 | Built-in authentication | ❌ | ✅ | ✅ With password change from UI |
@@ -47,6 +49,20 @@ Real-time metrics from Prometheus for every node in your homelab. CPU, RAM, disk
 ### 📦 Per-Container Resource Stats
 CPU, memory, network RX/TX for every Docker container via cAdvisor. See exactly which containers are consuming resources across all your nodes.
 
+### 🔗 Embedded Service Tabs — Your Tools, One Dashboard
+JagHelm embeds your existing monitoring tools as native tabs in the navigation bar. Uptime Kuma, Grafana, Portainer — they render inside JagHelm's UI as seamless iframe views, not external links that open new windows.
+
+**How it works:** Go to Settings > Tabs, add a new tab with the URL of any web-based service in your homelab. It appears in the top navigation alongside the Dashboard tab. Click it and the service loads inline — same window, same session, same dashboard. Click Dashboard to come back. It feels like one integrated application.
+
+**Why this matters:** Other dashboards open your tools in new browser tabs. You end up with 8 tabs competing for attention. JagHelm keeps everything in one place — your monitoring dashboard, your Uptime Kuma status page, your Grafana panels, all accessible without leaving the JagHelm window.
+
+**Works great with:**
+- **Uptime Kuma** — status page and monitor management
+- **Grafana** — detailed metric dashboards and alerting
+- **Portainer/Dockge** — container management
+- **Proxmox** — hypervisor management
+- Any web UI accessible on your network
+
 ### ⚡ UPS Power Monitoring
 Dedicated UPS section showing battery status, charge level, runtime, and load via NUT/Prometheus. Automated graceful shutdown support.
 
@@ -58,7 +74,19 @@ Every service card shows live health status, ping latency, and 24-hour uptime pe
 - **Tier 2 — Container Stats:** CPU, MEM, RX, TX per container from cAdvisor
 - **Tier 3 — App API Data:** Integration-specific metrics (queries blocked, hosts proxied, etc.)
 
-Service card detail level is configurable: minimal, stats, or full.
+Service card detail level is configurable: minimal, stats, or full. Drag service cards between node panels and custom groups to organize your view.
+
+### 📐 HelmGrid — Custom Layout Engine
+JagHelm uses **HelmGrid**, a purpose-built grid layout engine designed specifically for infrastructure dashboards.
+
+- **Content-aware panels** — panels automatically grow to fit their content. No clipping, no scrollbars. You can make panels taller but never shorter than their content.
+- **Snap-to-grid** drag and resize with visual placeholders
+- **Auto-fit on drop** — drag a full-width panel to a half-width spot and it shrinks to fit
+- **SE/SW resize handles** with hover indicators
+- **Column slider** (6–24 columns) — panels automatically reposition and resize when you change the grid density
+- **No overlap** — panels push each other down, never stack on top
+
+HelmGrid was built from scratch to replace react-grid-layout after encountering persistent resize bugs in RGL's internal layout calculation. Every line is purpose-written for JagHelm's use case — no black-box abstractions, no unexpected behaviors.
 
 ### 🎨 6 VS Code-Inspired Themes
 Choose from the most popular developer themes, adapted for dashboard use:
@@ -78,33 +106,34 @@ Choose from the most popular developer themes, adapted for dashboard use:
 - Contrast-optimized defaults for readability on dark backgrounds
 
 ### ⚙️ Full-Page Settings UI
-Professional settings experience — no cramped drawers. Full-page layout with sidebar navigation across 12 sections:
+Professional settings experience — no cramped drawers. Full-page layout with sidebar navigation across 13 sections:
 
 - **General** — Title, subtitle, logo upload/restore
 - **Appearance** — Theme picker, accent color, background image, opacity
 - **Typography** — Font family presets, per-element size sliders
-- **Layout** — Grid columns, refresh interval, card detail level
+- **Layout** — Grid columns (6–24), refresh interval, card detail level
 - **Sections** — Per-section visibility, colors, titles for UPS/Pipeline/Quick Launch/Todos
 - **Nodes** — Per-node display name, subtitle, icon, border color, auto-discover, hide list
 - **Services** — Per-container display name, icon, Kuma monitor dropdown, visibility
+- **Integrations** — Preset gallery (42 apps) + custom integration builder with test-before-save
 - **Links** — Full CRUD for Quick Launch bookmarks with drag reordering
 - **Widgets** — Search engine, weather, feature toggles
 - **Tabs** — Iframe tab management (embed Grafana, Kuma, etc.)
-- **Security** — Password change from UI (SHA-256 hashed, persisted server-side)
+- **Security** — Password change from UI (scrypt hashed, persisted server-side)
 - **Backup** — Export/import config JSON
 
+Settings includes a live preview panel — see your changes take effect in real time without switching back to the dashboard.
+
 ### 🔐 Security
-- Optional password authentication with SHA-256 hashing
+- Optional password authentication with **scrypt hashing** (Node.js built-in, timing-safe comparison)
 - Password changeable from the Settings UI (no SSH required)
-- AES-256-GCM encrypted secrets for API credentials
+- AES-256-GCM encrypted secrets for API credentials (PBKDF2 key derivation, 100k iterations)
 - Session management with 24-hour expiry
 - All API requests proxied through the backend — no credentials exposed to the browser
+- Frontend fetch timeouts prevent UI hangs when backend services are down
 
 ### 🚀 Quick Launch
 Organized bookmark groups with proper service icons (auto-matched from 35+ self-hosted app icons). Full CRUD — add, edit, delete, reorder links and groups from the Settings UI.
-
-### 📐 Drag-and-Drop Grid Layout
-Powered by React Grid Layout v2 with vertical compaction. Resize panels from all sides (SE, SW, E, W handles). Layout persists server-side across sessions and devices. Auto-scroll during drag near viewport edges.
 
 ### 🔄 Real-Time Updates
 Configurable refresh interval (10s–120s). All data sources refresh in parallel. Server-side caching with proper cache busting. Live health indicator in the navigation bar.
@@ -190,7 +219,7 @@ PORT=3099
 ADGUARD_URL=http://your-adguard-host:8085
 ADGUARD_USER=admin
 ADGUARD_PASS=secret
-GITEA_URL=http://localhost:3060
+GITEA_URL=http://your-gitea:3001
 GITEA_TOKEN=your-token
 NPM_URL=http://your-npm-host:81
 NPM_USER=admin@example.com
@@ -212,9 +241,9 @@ NPM_PASS=secret
 │                                                      │
 │  ┌──────────┐  ┌───────────┐  ┌──────────────────┐  │
 │  │ Config   │  │ Discovery │  │ Integration      │  │
-│  │ Manager  │  │ Engine    │  │ Engine (Phase 3) │  │
+│  │ Manager  │  │ Engine    │  │ Engine           │  │
 │  │          │  │           │  │                  │  │
-│  │services. │  │Prometheus │  │Loads presets +   │  │
+│  │services. │  │Prometheus │  │42 presets +      │  │
 │  │yaml      │  │cAdvisor   │  │custom configs    │  │
 │  │(r/w)     │  │Docker     │  │Calls APIs with   │  │
 │  │          │  │Kuma       │  │encrypted creds   │  │
@@ -236,12 +265,12 @@ NPM_PASS=secret
 
 ### Tech Stack
 
-- **Frontend:** React 19, Vite 8 (Rolldown), React Grid Layout v2, react-colorful
-- **Backend:** Express.js, js-yaml, node-fetch
+- **Frontend:** React 19, Vite 8 (Rolldown), HelmGrid (custom layout engine), @dnd-kit, react-colorful
+- **Backend:** Express.js, js-yaml
 - **Monitoring:** Prometheus, cAdvisor, node_exporter, NUT exporter
 - **Health:** Uptime Kuma API integration
-- **Security:** AES-256-GCM (PBKDF2 key derivation), SHA-256 password hashing
-- **Icons:** Dashboard Icons (walkxcode) — 500+ self-hosted app SVGs
+- **Security:** AES-256-GCM (PBKDF2 key derivation), scrypt password hashing
+- **Icons:** Dashboard Icons (walkxcode) + selfh.st — 2,000+ self-hosted app SVGs
 
 ---
 
@@ -253,11 +282,11 @@ Config manager, secrets manager, discovery engine, monitor matching, unified `/a
 ### ✅ Phase 2: Settings UI (Complete)
 Full-page settings with sidebar navigation. Nodes tab, Services tab, Links CRUD, Security tab, Typography system. Server-side display config persistence.
 
-### 🔧 Phase 3: Integration Engine (In Progress)
-Declarative integration presets for common self-hosted apps. Custom integration builder. Test-before-save for connections.
+### ✅ Phase 3: Integration Engine (Complete)
+42 declarative integration presets for common self-hosted apps. Custom integration builder. Test-before-save for connections. Encrypted credential storage.
 
-### 📋 Phase 4: Polish
-Docker label discovery, vendored icon sets, config export/import wizard, responsive mobile layout, open-source preparation.
+### 🔧 Phase 4: Polish (In Progress)
+HelmGrid custom layout engine, security hardening (scrypt, fetch timeouts), content-aware panel sizing, node-scoped service card UIDs, auto-fit on drop, column clamping. Next: Docker label discovery, responsive mobile layout, open-source preparation.
 
 ---
 
@@ -272,7 +301,7 @@ JagHelm stands on the shoulders of outstanding open-source projects, icon collec
 | [React](https://react.dev) | Meta / Facebook | UI framework | MIT |
 | [Vite](https://vitejs.dev) | Evan You & contributors | Build tool & dev server | MIT |
 | [Express](https://expressjs.com) | TJ Holowaychuk & community | API server | MIT |
-| [React Grid Layout](https://github.com/react-grid-layout/react-grid-layout) | Samuel Reed (STRML) | Drag-and-drop dashboard grid | MIT |
+| [@dnd-kit](https://dndkit.com) | Claudéric Demers | Service card drag-and-drop | MIT |
 | [react-colorful](https://github.com/omgovich/react-colorful) | Vlad Shilov | Color picker in settings | MIT |
 | [js-yaml](https://github.com/nodeca/js-yaml) | Nodeca | YAML config parsing | MIT |
 | [multer](https://github.com/expressjs/multer) | Express community | File upload handling | MIT |
@@ -342,7 +371,7 @@ Typography is provided by [Google Fonts](https://fonts.google.com):
 
 ### Security
 
-JagHelm uses Node.js built-in `crypto` module for AES-256-GCM encryption of stored credentials. No external cryptography libraries are used.
+JagHelm uses Node.js built-in `crypto` module for all cryptography — scrypt password hashing, AES-256-GCM secrets encryption, and cryptographically secure random token generation. No external cryptography libraries are used.
 
 ### Development
 

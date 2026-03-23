@@ -2,9 +2,9 @@
 
 **Project:** JagHelm — Real-time infrastructure dashboard for homelabs  
 **Repo:** `jaghelm` (Gitea, future GitHub)  
-**Date:** March 22, 2026 (Updated)  
-**Status:** Phase 3 Complete, Phase 4 In Progress  
-**Version:** 3.0  
+**Date:** March 23, 2026 (Updated)  
+**Status:** Phase 4 In Progress  
+**Version:** 4.0  
 
 ---
 
@@ -15,6 +15,8 @@
 A new user deploys the container, points it at Prometheus and Uptime Kuma via `.env`, and gets a working infrastructure dashboard with auto-discovered nodes, services, and health status. No YAML editing. No code changes. No rebuilds.
 
 Everything the YAML can do, the Settings UI can do. Everything the Settings UI does is persisted server-side. Both paths are equivalent — the UI is the friendly face, the files are the power-user escape hatch.
+
+**Smooth UX before anything.** JagHelm is purpose-built for ease of use and a polished user experience. Every design decision prioritizes how things feel to the user.
 
 ---
 
@@ -36,9 +38,9 @@ Everything the YAML can do, the Settings UI can do. Everything the Settings UI d
 - 6 VS Code-inspired themes
 - Typography system (5 font presets, 8 size controls)
 - Server-side display config persistence
-- Auth upgrade (SHA-256 hashing, password change API)
+- Auth with scrypt password hashing + password change API
 - Live preview panel in Settings (scaled DashboardView, refreshable)
-- Professional README
+- Gear icon toggles between dashboard and settings
 
 ### ✅ Phase 3: Integration Engine (Complete — March 22, 2026)
 - Integration engine core: registry.js + handler.js
@@ -52,54 +54,67 @@ Everything the YAML can do, the Settings UI can do. Everything the Settings UI d
 - DashboardView wired to consume GET /api/integrations for Tier 3 data
 - IntegrationsTab in Settings UI (preset gallery + custom builder)
 
-### ✅ Bug Fixes & Infrastructure (March 22, 2026)
+### ✅ Phase 4a: HelmGrid + Bug Fixes + Security (March 23, 2026)
 
-#### Layout Persistence (4-phase fix)
-1. **Compactor removal** — Removed `verticalCompactor` from RGL; panels stay exactly where users place them
-2. **localStorage-first merge** — Server config merge preserves local `gridLayout`; server is authoritative for everything else (theme, sections, links) but layout is local-first
-3. **User interaction gate** — `userInteractedRef` flag ensures only real drag/resize actions trigger layout saves; compactor and mount fires are ignored
-4. **Async placeholders** — Render placeholder `<div>` elements for node keys in saved layout before `serviceData` loads; prevents RGL from losing saved positions when children appear after API response
+#### HelmGrid — Custom Layout Engine (replaces react-grid-layout)
+- **Full RGL replacement** — `react-grid-layout` removed from dependencies entirely
+- `src/components/HelmGrid.jsx` — purpose-built grid layout engine (~500 lines)
+- Grid-based panel positioning with snap-to-grid drag and resize
+- Content-aware panel heights — panels auto-grow to fit content, can't shrink below content edge
+- Auto-fit on drop — dragging a wide panel to a narrow spot shrinks it to fit
+- Column clamping — reducing grid columns via Settings slider auto-shrinks and repositions panels
+- Overlap resolution — panels push down when colliding, never overlap
+- Responsive breakpoints (lg/md/sm) with layout switching
+- SE/SW resize handles with visual affordance (purple tint, hover state)
+- Backward-compatible layout format (`{ i, x, y, w, h, minW, minH }`)
+- No mid-interaction state saves — layout only persists after drag/resize completes
 
-#### Responsive Service Columns
-- `ServiceGrid` component with `ResizeObserver` measures actual container width
-- `serviceColumns` setting is now a MAX, not absolute — columns dynamically adjust 4→3→2→1 as panel shrinks
-- Extracted from NodeCard into dedicated component for clean separation
+#### Service Card Drag — Node-Scoped UIDs
+- Service cards now identified by `nodeKey:containerName` (e.g. `vm103:tailscale`)
+- Fixes ghost drag bug when duplicate container names exist across nodes
+- Custom groups store and reference UIDs instead of bare container names
+- React keys on service cards use UIDs for correct reconciliation
+
+#### Security Hardening
+- **Password hashing upgraded to scrypt** — `crypto.scryptSync` with random 16-byte salt, 64-byte hash
+- Automatic migration: existing SHA-256 hashes seamlessly upgrade to scrypt on next successful login
+- Hash format: `scrypt:salt:hash` (hex encoded), easily distinguishable from legacy 64-char SHA-256
+- Timing-safe comparison via `crypto.timingSafeEqual` prevents timing attacks
+- **Auth token injection fix** — `/api/auth/change-password` now receives auth token (was being skipped by the global fetch interceptor)
+- **Upload limit reduced** — 50MB → 5MB (logo and background images don't need more)
+- **Frontend fetch timeouts** — all API calls timeout after 12 seconds (server outbound timeout is 8s)
+
+#### Performance
+- **Removed unused dependencies** — `react-grid-layout` and `@dnd-kit/sortable` removed from package.json
+- **UPS queries parallelized** — 4 Prometheus queries now run via `Promise.all` instead of sequential loop (4x faster)
+- **Refresh interval debounced** — changing the Settings slider no longer creates/destroys dozens of intervals; 500ms debounce waits for slider to settle
 
 #### Other Fixes
-- Grid resize from all sides (SE, SW, E, W)
-- Auto-scroll during drag near viewport edges
-- Font contrast improvements
-- Docker stats refresh fix (timestamp cache bust)
-- Quick Launch proper service icons (35+ mappings via CDN)
-- Service card badges pinned top-right
-- Default logo in header and login page (120px)
-- Pi service monitor mappings
+- Gear icon toggles settings on/off (was one-way only)
+- Service card overflow fixed (`overflow: hidden`, `minWidth: 0`)
+- Panel content fills wrapper correctly via flex layout (fixes resize handle positioning)
+- Grid columns slider clamps panels with overlap resolution
+- Layout sync uses position-only comparison (ignores minW/minH additions from effectiveLayouts)
 
-#### Infrastructure Additions
-- **Proxmox host monitoring** — `node_exporter` installed on PVE host (192.168.68.10), added to Prometheus as `node="pve"`, configured in services.yaml
-- **UGREEN NAS monitoring** — `node_exporter` installed on DH4300 Plus (192.168.68.55), added to Prometheus as `node="nas"`, configured in services.yaml
-- **Smart disk fallback** — `discovery.js` tries `mountpoint="/"` first; if no data (e.g. NAS), queries all non-tmpfs filesystems and picks the largest by total size
-- **Auto-PR workflow** — `.gitea/workflows/auto-pr.yml` creates PR from staging→main on push (checks for existing open PR to avoid duplicates)
-
-### 📋 Phase 4: Polish (In Progress)
+### 📋 Phase 4b: Polish (In Progress)
 - Dashboard UI beautification
 - Docker label discovery
 - Icon vendoring
 - Responsive mobile layout
 - Proxmox API integration (VM list, storage pools, cluster health)
-- Open-source preparation
+- Open-source preparation (sanitize IPs, generic defaults, setup guide)
 
 ---
 
 ## 3. Monitored Infrastructure
 
-| Node | Label | IP | Exporters | Type |
-|------|-------|----|-----------|------|
-| Production VM | `vm103` | 192.168.68.11 | node-exporter, cAdvisor | Docker host (Minisforum u870) |
-| Staging VM | `vm101` | 192.168.68.12 | node-exporter, cAdvisor | Docker host (Minisforum u870) |
-| Gateway | `pi` | 192.168.68.13 | node-exporter, cAdvisor | Docker host (Raspberry Pi 5) |
-| Proxmox Hypervisor | `pve` | 192.168.68.10 | node-exporter | Bare-metal hypervisor |
-| UGREEN NAS | `nas` | 192.168.68.55 | node-exporter | NAS (DH4300 Plus, 3x8TB RAID5) |
+| Node | Label | Exporters | Type |
+|------|-------|-----------|------|
+| Production VM | `vm103` | node-exporter, cAdvisor | Docker host (Minisforum u870) |
+| Staging VM | `vm101` | node-exporter, cAdvisor | Docker host (Minisforum u870) |
+| Gateway | `pi` | node-exporter, cAdvisor | Docker host (Raspberry Pi 5) |
+| Proxmox Hypervisor | `pve` | node-exporter | Bare-metal hypervisor |
+| UGREEN NAS | `nas` | node-exporter | NAS (DH4300 Plus, 3x8TB RAID5) |
 
 ---
 
@@ -112,7 +127,7 @@ jaghelm/
 │   ├── deploy.yml                # Push to main → SSH deploy to production
 │   └── auto-pr.yml               # Push to staging → auto-create PR to main
 ├── compose.yaml / Dockerfile
-├── README.md                     # Professional README
+├── README.md
 ├── package.json / vite.config.js / index.html
 ├── docs/
 │   ├── ARCHITECTURE.md           # This file
@@ -131,39 +146,62 @@ jaghelm/
 │       ├── registry.js           # Loads presets, exposes getPreset/listPresets
 │       ├── handler.js            # Generic fetch/auth/transform/cache pipeline
 │       └── presets/              # 42 declarative preset definitions
-│           ├── adguard.js / npm.js / pihole.js / proxmox.js
-│           ├── plex.js / jellyfin.js / sonarr.js / radarr.js / ...
-│           └── (one .js file per integration, ~15 lines each)
 ├── data/                         # Docker volume — persists across rebuilds
 │   ├── services.yaml             # Infrastructure config (5 nodes, service overrides)
 │   ├── display-config.json       # UI config (theme, layout, fonts, links)
 │   ├── secrets.json              # Encrypted API credentials
-│   ├── auth.json                 # Password hash override
+│   ├── auth.json                 # Password hash (scrypt format)
 │   └── todos.json                # Checklist data
 ├── src/
 │   ├── App.jsx                   # Root: routing, localStorage-first config, font/theme
 │   ├── views/
-│   │   ├── DashboardView.jsx     # RGL grid, interaction-gated layout save, async placeholders
+│   │   ├── DashboardView.jsx     # HelmGrid layout, service data, drag-and-drop
 │   │   ├── SettingsView.jsx      # Full-page settings with sidebar + live preview
-│   │   └── IframeView.jsx        # Embedded tabs
+│   │   └── IframeView.jsx        # Embedded service tabs (Uptime Kuma, Grafana, etc.)
 │   ├── components/
+│   │   ├── HelmGrid.jsx          # Custom grid layout engine (replaced react-grid-layout)
 │   │   ├── NavBar.jsx / NodeCard.jsx / ServiceCard.jsx
+│   │   ├── DraggableServiceCard.jsx / DroppablePanel.jsx / ServiceDragOverlay.jsx
 │   │   ├── TodoCard.jsx / Widgets.jsx / LoginPage.jsx
 │   │   ├── IconPicker.jsx        # Icon search (Dashboard Icons + Selfh.st CDN)
 │   │   └── settings/             # 13 settings tab components
-│   │       ├── GeneralTab.jsx / AppearanceTab.jsx / TypographyTab.jsx
-│   │       ├── LayoutTab.jsx / SectionsTab.jsx
-│   │       ├── NodesTab.jsx / ServicesTab.jsx / IntegrationsTab.jsx
-│   │       ├── LinksTab.jsx / WidgetsTab.jsx / TabsTab.jsx
-│   │       ├── SecurityTab.jsx / BackupTab.jsx
-│   ├── hooks/useData.js          # API calls, 35+ SERVICE_ICONS, constants
-│   └── styles/global.css         # All styles, 6 themes, settings layout
+│   ├── hooks/useData.js          # API calls (with 12s timeout), SERVICE_ICONS, constants
+│   └── styles/global.css         # All styles, 6 themes, HelmGrid layout
 └── uploads/                      # User uploads (bg, logo)
 ```
 
 ---
 
-## 5. Themes
+## 5. HelmGrid — Custom Layout Engine
+
+HelmGrid is JagHelm's purpose-built panel layout engine, replacing `react-grid-layout`. Built from scratch in a single session after 5 sessions of fighting RGL's resize bugs.
+
+### Why we built it
+- RGL's height resize had a fundamental bug — panels snapped to huge heights mid-resize due to internal layout recalculation during interaction
+- RGL's `transition: all 200ms` on grid items created feedback loops during resize
+- RGL's compactor, layout change callbacks, and state management were a black box that fought our save/restore logic
+- Every fix for one RGL issue created another
+
+### What HelmGrid does
+- Grid-based positioning: converts `{ x, y, w, h }` to pixel positions using configurable `cols`, `rowHeight`, and `margin`
+- **Content-aware heights**: panels auto-expand to fit their content via ResizeObserver measurement. User can make panels taller but never shorter than content.
+- **Snap-to-grid**: drag and resize snap to grid units on release
+- **Auto-fit on drop**: dragging a wide panel to a narrow spot auto-shrinks its width
+- **Column clamping**: changing the grid columns slider auto-repositions and resizes panels with overlap resolution
+- **No mid-interaction saves**: layout only persists to config after mouse release. Zero feedback loops.
+- **Pointer-event driven**: uses native `pointerdown`/`pointermove`/`pointerup` with refs for fresh state
+
+### Architecture
+- Single file: `src/components/HelmGrid.jsx` (~500 lines)
+- Grid math functions: `gridToPixel`, `pixelToGrid`, `pixelSizeToGrid`, `pxToRows`, `calcCellWidth`
+- `GridItem` sub-component: measures content height via ResizeObserver, renders resize handles
+- `resolveOverlaps`: sort-based collision resolver that pushes panels down
+- `layoutsEqual`: position-only comparison (ignores constraint fields)
+- Zero external dependencies — pure React + DOM APIs
+
+---
+
+## 6. Themes
 
 | Theme | ID | Background | Accent |
 |-------|-----|-----------|--------|
@@ -176,7 +214,7 @@ jaghelm/
 
 ---
 
-## 6. API Endpoints
+## 7. API Endpoints
 
 ### Auth
 - `POST /api/auth/login` · `GET /api/auth/check` · `POST /api/auth/change-password`
@@ -198,10 +236,10 @@ jaghelm/
 - `GET /api/secrets/keys` · `PUT /api/secrets/:key` · `DELETE /api/secrets/:key`
 
 ### Phase 3 — Integration Engine
-- `GET /api/integrations/presets` — List all available presets (for Settings UI gallery)
-- `GET /api/integrations` — Fetch all configured integrations' data (dashboard refresh)
+- `GET /api/integrations/presets` — List all available presets
+- `GET /api/integrations` — Fetch all configured integrations' data
 - `GET /api/integrations/:type` — Fetch one integration's data
-- `POST /api/integrations/test` — Test connection (URL + creds from form, not saved)
+- `POST /api/integrations/test` — Test connection
 - `POST /api/integrations/save` — Encrypt creds → secrets.json, config → services.yaml
 - `DELETE /api/integrations/:type` — Remove integration config
 
@@ -212,7 +250,7 @@ jaghelm/
 
 ---
 
-## 7. Config Persistence
+## 8. Config Persistence
 
 **Two stores, two data flows:**
 
@@ -223,13 +261,38 @@ jaghelm/
 
 **Boot sequence:** localStorage → render immediately → fetch `/api/display-config` → merge server config but **preserve local gridLayout** → mark `configLoadedFromServer = true` → future changes save to server.
 
-**Layout persistence:** localStorage is authoritative for `gridLayout`. Server is authoritative for everything else (theme, sections, links). Layout saves only trigger on user drag/resize (`userInteractedRef` gate). Async node placeholders ensure RGL maintains saved positions before API data loads.
+**Layout persistence:** localStorage is authoritative for `gridLayout`. Server is authoritative for everything else (theme, sections, links). HelmGrid only saves layout after drag/resize completes (no mid-interaction saves). Async node placeholders ensure saved positions are maintained before API data loads.
 
 **Priority:** `.env` > `auth.json` > `secrets.json` > `display-config.json` > `services.yaml`
 
 ---
 
-## 8. CI/CD Pipeline
+## 9. Security Model
+
+### Password Hashing
+- **scrypt** via Node.js `crypto.scryptSync` — 16-byte random salt, 64-byte derived key
+- Hash format: `scrypt:<salt_hex>:<hash_hex>`
+- Timing-safe comparison via `crypto.timingSafeEqual`
+- Automatic migration from legacy SHA-256 hashes on next successful login
+
+### Session Management
+- 32-byte random tokens via `crypto.randomBytes`
+- 24-hour expiry, stored in-memory `Map`
+- Password change invalidates all sessions except current
+
+### Secrets Encryption
+- AES-256-GCM with PBKDF2-derived key (100,000 iterations) from `DASH_SECRET`
+- Random 12-byte IV per encryption
+- Stored in `data/secrets.json`, never in YAML or env files
+
+### Known Tradeoffs
+- `NODE_TLS_REJECT_UNAUTHORIZED=0` in compose.yaml — disables TLS cert validation for all outbound requests. Required for self-signed certs on internal services (Proxmox). Scoped bypass planned.
+- No login rate limiting yet — planned
+- CORS allows all origins — acceptable for homelab behind Tailscale/Cloudflare
+
+---
+
+## 10. CI/CD Pipeline
 
 ```
 Developer pushes to staging
@@ -245,27 +308,24 @@ Verify: docker ps + curl health endpoint
 
 ---
 
-## 9. Carry-Over Notes for Next Session
+## 11. Carry-Over Notes
 
-### What to bring:
-1. This spec (`docs/ARCHITECTURE.md`)
-2. Fresh repo tar from Gitea
-3. Dashboard screenshots showing all 5 nodes
-
-### Phase 4 priorities:
+### Phase 4b priorities:
 - Dashboard UI beautification and polish
 - Proxmox API integration preset (VM list, storage pools, cluster health)
 - Responsive mobile layout
-- Open-source preparation (sanitize IPs, generic defaults)
+- Open-source preparation (sanitize IPs, generic defaults, setup guide)
+- Error boundaries in React (prevent white-screen crashes)
+- Split server/index.js into route modules
+- Remove dead code (unused legacy fetch functions in useData.js)
+- Remove hardcoded IPs from server fallback defaults
 
 ### Known issues:
-- NAS shows 7.3TB — correct for the logical volume, but RAID5 pool has ~14.5TB raw; half is unallocated in UGREEN firmware
-- Proxmox preset (`presets/proxmox.js`) is a skeleton — only fetches node count; needs multi-endpoint support for full VM/storage data
-
-### Key IPs:
-- Proxmox: 192.168.68.10 · VM 103 (prod): 192.168.68.11 · VM 101 (staging): 192.168.68.12
-- Pi: 192.168.68.13 · NAS: 192.168.68.55
+- NAS shows 7.3TB — correct for logical volume, RAID5 pool has ~14.5TB raw; half unallocated in UGREEN firmware
+- Proxmox preset is a skeleton — only fetches node count; needs multi-endpoint support
+- `SERVICE_ICONS` constant has 35+ hardcoded CDN URLs in useData.js — should move to config
+- Legacy `/api/docker/containers` endpoint duplicates discovery.js logic — candidate for removal
 
 ---
 
-*JagHelm v8 Architecture Specification v3.0 — Phase 3 Complete*
+*JagHelm v8 Architecture Specification v4.0 — Phase 4a Complete*
