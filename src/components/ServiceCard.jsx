@@ -96,14 +96,16 @@ export default function ServiceCard({ service, showDockerStats = true, showAppDa
           </div>
         )}
 
-        {/* App data row */}
+        {/* App data row — centered grid with label on top, value below */}
         {showApp && (
           <div style={{
-            display: 'flex', gap: 12, marginTop: 8, paddingTop: 8,
-            borderTop: '1px solid rgba(255,255,255,0.04)', flexWrap: 'wrap',
+            display: 'grid',
+            gridTemplateColumns: `repeat(${Math.min(Object.keys(appData).length, 4)}, 1fr)`,
+            gap: 6, marginTop: 8, paddingTop: 8,
+            borderTop: '1px solid rgba(255,255,255,0.04)',
           }}>
             {Object.entries(appData).map(([label, value]) => (
-              <InlineStat key={label} label={label} value={String(value)} />
+              <GridStat key={label} label={label} value={String(value)} />
             ))}
           </div>
         )}
@@ -256,8 +258,8 @@ function GridStat({ label, value }) {
       background: 'rgba(255,255,255,0.03)', borderRadius: 6,
       border: '1px solid rgba(255,255,255,0.04)',
     }}>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>{label}</div>
       <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)', lineHeight: 1.2 }}>{value}</div>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>{label}</div>
     </div>
   );
 }
