@@ -183,16 +183,17 @@ body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: 
 .iframe-container iframe { width: 100%; height: calc(100vh - 60px); border: none; }
 
 /* Grid */
-.react-grid-layout { position: relative; }
-.react-grid-item { transition: all 200ms ease; }
-.react-grid-item.react-draggable-dragging { z-index: 10; opacity: 0.85; box-shadow: 0 8px 40px rgba(0,0,0,0.4); }
-.react-grid-item > .react-resizable-handle { position: absolute; width: 20px; height: 20px; z-index: 2; }
-.react-grid-item > .react-resizable-handle-se { bottom: 0; right: 0; cursor: se-resize; }
-.react-grid-item > .react-resizable-handle-sw { bottom: 0; left: 0; cursor: sw-resize; }
-.react-grid-item > .react-resizable-handle-e { right: -4px; top: 50%; transform: translateY(-50%); height: 40px; cursor: e-resize; }
-.react-grid-item > .react-resizable-handle-w { left: -4px; top: 50%; transform: translateY(-50%); height: 40px; cursor: w-resize; }
-.react-grid-item > .react-resizable-handle::after { display: none; }
-.react-grid-placeholder { background: var(--accent-glow) !important; border: 2px dashed var(--accent) !important; border-radius: var(--card-radius) !important; opacity: 0.3; }
+/* ── HelmGrid ── */
+.helmgrid { position: relative; }
+.helmgrid-item { display: flex; flex-direction: column; transition: left 200ms ease, top 200ms ease, width 200ms ease, height 200ms ease; }
+.helmgrid-item > *:not(.helmgrid-resize-handle) { flex: 1; min-height: 0; }
+.helmgrid-item.helmgrid-dragging { z-index: 10; opacity: 0.85; box-shadow: 0 8px 40px rgba(0,0,0,0.4); transition: none; }
+.helmgrid-item.helmgrid-resizing { transition: none; }
+.helmgrid-resize-handle { position: absolute; width: 24px; height: 24px; z-index: 20; touch-action: none; background: rgba(99, 102, 241, 0.15); border-radius: 4px; }
+.helmgrid-resize-handle:hover { background: rgba(99, 102, 241, 0.4); }
+.helmgrid-resize-handle-se { bottom: 2px; right: 2px; cursor: se-resize; }
+.helmgrid-resize-handle-sw { bottom: 2px; left: 2px; cursor: sw-resize; }
+.helmgrid-placeholder { background: var(--accent-glow); border: 2px dashed var(--accent); border-radius: var(--card-radius); opacity: 0.3; pointer-events: none; z-index: 1; }
 
 /* Todo */
 .todo-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
@@ -286,5 +287,5 @@ body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: 
   .metric-block { min-width: 70px; padding: 8px 10px; }
   .ups-grid { gap: 6px; }
   /* Hide resize handles on mobile */
-  .react-resizable-handle { display: none !important; }
+  .helmgrid-resize-handle { display: none !important; }
 }
