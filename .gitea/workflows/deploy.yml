@@ -1,4 +1,4 @@
-name: Build and Deploy JagHelm
+name: Deploy JagHelm
 
 on:
   push:
@@ -6,24 +6,14 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: self-hosted
     steps:
-      - name: Login to registry
-        run: |
-          echo "${{ secrets.REGISTRY_TOKEN }}" | docker login registry.jagbhandal.com -u jagdeep.bhandal --password-stdin
-
-      - name: Build and push
+      - name: Pull and build
         run: |
           export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /root/.ssh/gitea_vm103"
           git config --global --add safe.directory /opt/stacks/jaghelm
-          cd /opt/stacks/jaghelm && git pull origin main
-          docker build -t registry.jagbhandal.com/jagdeep.bhandal/jaghelm:latest .
-          docker push registry.jagbhandal.com/jagdeep.bhandal/jaghelm:latest
-
-      - name: Deploy
-        run: |
-          cd /opt/stacks/jaghelm && docker compose up -d --force-recreate
+          cd /opt/stacks/jaghelm && git pull origin main && docker compose up -d --build
 
       - name: Verify
         run: |
