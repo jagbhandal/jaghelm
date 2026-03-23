@@ -14,7 +14,7 @@ function addCacheBust(url, bust) {
 }
 
 async function fetchJson(url, bust) {
-  const r = await fetch(addCacheBust(url, bust));
+  const r = await fetch(addCacheBust(url, bust), { signal: AbortSignal.timeout(12000) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }

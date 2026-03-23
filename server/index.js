@@ -45,7 +45,7 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => cb(null, `${req.query.type === 'logo' ? 'logo' : 'bg'}${extname(file.originalname) || '.png'}`),
 });
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 app.use(cors());
 app.use(express.json());
@@ -67,8 +67,29 @@ function loadAuthOverride() {
   return null;
 }
 
+// ── Password hashing: scrypt (Node.js built-in, no dependencies) ──
+// Format: scrypt:salt:hash (all hex). Salt is 16 random bytes, hash is 64 bytes.
+// Legacy SHA-256 hashes (64 hex chars, no colons) are auto-migrated on next login.
+
 function hashPassword(password) {
-  return crypto.createHash('sha256').update(password).digest('hex');
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `scrypt:${salt}:${hash}`;
+}
+
+function verifyPassword(password, stored) {
+  // New scrypt format: "scrypt:salt:hash"
+  if (stored.startsWith('scrypt:')) {
+    const [, salt, hash] = stored.split(':');
+    const derived = crypto.scryptSync(password, salt, 64).toString('hex');
+    return crypto.timingSafeEqual(Buffer.from(derived, 'hex'), Buffer.from(hash, 'hex'));
+  }
+  // Legacy SHA-256 format: 64-char hex string
+  if (stored.length === 64 && !stored.includes(':')) {
+    const sha = crypto.createHash('sha256').update(password).digest('hex');
+    return sha === stored;
+  }
+  return false;
 }
 
 let storedPasswordHash = loadAuthOverride();
@@ -79,7 +100,18 @@ function authEnabled() {
 
 function checkPassword(password) {
   if (storedPasswordHash) {
-    return hashPassword(password) === storedPasswordHash;
+    const match = verifyPassword(password, storedPasswordHash);
+    // Auto-migrate legacy SHA-256 hash to scrypt on successful login
+    if (match && !storedPasswordHash.startsWith('scrypt:')) {
+      console.log('[auth] Migrating password hash from SHA-256 to scrypt');
+      storedPasswordHash = hashPassword(password);
+      try {
+        writeFileSync(AUTH_FILE, JSON.stringify({ passwordHash: storedPasswordHash, updatedAt: new Date().toISOString() }, null, 2));
+      } catch (err) {
+        console.error('[auth] Failed to save migrated hash:', err.message);
+      }
+    }
+    return match;
   }
   return password === AUTH_PASS_ENV;
 }
@@ -394,33 +426,32 @@ app.get('/api/ups', async (req, res) => {
   }
   try {
     const url = process.env.PROMETHEUS_URL || 'http://localhost:9090';
-    const queries = {
+    const queryMap = {
       status: 'nut_status{ups="apcups"}',
       charge: 'nut_battery_charge{ups="apcups"}',
       runtime: 'nut_battery_runtime_seconds{ups="apcups"}',
       load: 'nut_load{ups="apcups"}',
     };
+    const keys = Object.keys(queryMap);
+    const responses = await Promise.all(
+      keys.map(k =>
+        safeFetch(`${url}/api/v1/query?query=${encodeURIComponent(queryMap[k])}`)
+          .then(r => r.json())
+          .then(d => d?.data?.result?.[0]?.value?.[1] ? parseFloat(d.data.result[0].value[1]) : null)
+          .catch(() => null)
+      )
+    );
     const results = {};
     let found = false;
-    for (const [k, query] of Object.entries(queries)) {
-      try {
-        const r = await safeFetch(`${url}/api/v1/query?query=${encodeURIComponent(query)}`);
-        const d = await r.json();
-        let val = d?.data?.result?.[0]?.value?.[1] ? parseFloat(d.data.result[0].value[1]) : null;
-        if (val !== null) {
-          found = true;
-          // nut_battery_charge and nut_load are 0-1 scale, convert to 0-100
-          if (k === 'charge' || k === 'load') val = val * 100;
-        }
-        results[k] = val;
-      } catch { results[k] = null; }
-    }
-    if (!found) {
-      results.status = null;
-      results.charge = null;
-      results.runtime = null;
-      results.load = null;
-    }
+    keys.forEach((k, i) => {
+      let val = responses[i];
+      if (val !== null) {
+        found = true;
+        if (k === 'charge' || k === 'load') val = val * 100;
+      }
+      results[k] = val;
+    });
+    if (!found) { results.status = null; results.charge = null; results.runtime = null; results.load = null; }
     setCache('ups', results);
     res.json(results);
   } catch (e) { res.status(502).json({ error: 'UPS unreachable', detail: e.message }); }
