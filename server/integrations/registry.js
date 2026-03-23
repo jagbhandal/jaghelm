@@ -74,6 +74,7 @@ export function listPresets() {
     description: p.description || '',
     auth: p.auth,
     fields: (p.fields || []).map(f => ({ key: f.key, label: f.label })),
+    urlParams: p.urlParams || undefined,
   }));
 }
 
