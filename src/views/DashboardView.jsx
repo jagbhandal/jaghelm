@@ -178,15 +178,14 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     }
   }, [fetchAll, refreshKey]);
 
-  // Build Tier 3 app data map from integration engine + fuzzy container matching
-  // For each integration type, scan all discovered services and match by checking if
-  // the container name or display name contains any of the integration's keywords.
-  // This handles renamed containers, display name overrides, and compose prefixes.
+  // Build Tier 3 app data map from integration engine + container matching
+  // Two matching modes:
+  //   1. Target-scoped: integration has _target field (e.g. "pi:adguard-home") → exact match only
+  //   2. Fuzzy: no target → scan all containers for keyword match (original behavior)
   const appDataByContainer = useMemo(() => {
     const map = {};
 
-    // Keywords that identify which container belongs to which integration.
-    // The integration type key itself is always included as a keyword.
+    // Keywords for fuzzy matching (used when no _target is set)
     const integrationKeywords = {
       adguard: ['adguard'],
       npm: ['nginx-proxy-manager', 'npm', 'nginxproxymanager'],
@@ -206,19 +205,41 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       photoprism: ['photoprism'],
     };
 
-    // Collect all discovered containers (name + display_name) for matching
+    // Collect all discovered containers with their UIDs for matching
     const allContainers = [];
-    for (const node of Object.values(serviceData.nodes || {})) {
+    for (const [nodeKey, node] of Object.entries(serviceData.nodes || {})) {
       for (const s of (node.services || [])) {
-        allContainers.push(s);
+        allContainers.push({ ...s, _nodeKey: nodeKey });
       }
     }
 
-    for (const [intType, fields] of Object.entries(integrationData)) {
-      const keywords = integrationKeywords[intType] || [intType];
+    for (const [intKey, fields] of Object.entries(integrationData)) {
+      // Strip internal metadata fields for display
+      const displayFields = {};
+      for (const [k, v] of Object.entries(fields)) {
+        if (!k.startsWith('_')) displayFields[k] = v;
+      }
+      if (Object.keys(displayFields).length === 0) continue;
+
+      // Mode 1: Target-scoped — exact UID match
+      if (fields._target) {
+        const targetUid = fields._target;
+        for (const svc of allContainers) {
+          const uid = svc.uid || `${svc._nodeKey}:${svc.container}`;
+          if (uid === targetUid) {
+            map[svc.container] = displayFields;
+            break;
+          }
+        }
+        continue;
+      }
+
+      // Mode 2: Fuzzy keyword match — extract base preset type from storage key
+      // e.g. "adguard_primary" → base type "adguard"
+      const baseType = intKey.includes('_') ? intKey.split('_')[0] : intKey;
+      const keywords = integrationKeywords[baseType] || [baseType];
 
       for (const svc of allContainers) {
-        // Check container name and display name (case-insensitive partial match)
         const containerLower = (svc.container || '').toLowerCase();
         const displayLower = (svc.display_name || '').toLowerCase();
 
@@ -228,7 +249,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
         });
 
         if (matched && !map[svc.container]) {
-          map[svc.container] = fields;
+          map[svc.container] = displayFields;
         }
       }
     }
@@ -338,12 +359,12 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
         metrics.push({ label: 'Temp', value: tempVal, unit: `°${tempUnit}` });
       }
 
-      // Disk (only if reported)
-      if (m.diskTotalGB != null) {
+      // Disk (only if reported) — uses TB when total exceeds 1000 GB
+      if (m.diskTotal != null) {
         metrics.push({
           label: 'Disk',
-          value: `${m.diskUsedGB || '—'}/${m.diskTotalGB || '—'}`,
-          unit: 'GB',
+          value: `${m.diskUsed || '—'}/${m.diskTotal || '—'}`,
+          unit: m.diskUnit || 'GB',
           percent: parseFloat(m.diskPercent),
           small: true,
         });

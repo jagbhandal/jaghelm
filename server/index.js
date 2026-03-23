@@ -644,40 +644,63 @@ app.post('/api/integrations/test', authMiddleware, async (req, res) => {
   const { type, url, username, password, token } = req.body;
   if (!url) return res.status(400).json({ ok: false, error: 'URL is required' });
 
-  const testConfig = { url, username, password, token };
+  // Auto-prepend protocol if missing
+  let cleanUrl = url.trim();
+  if (cleanUrl && !cleanUrl.match(/^https?:\/\//i)) {
+    cleanUrl = `http://${cleanUrl}`;
+  }
+
+  const testConfig = { url: cleanUrl, username, password, token };
   const result = await testIntegration(type || '_custom', testConfig);
   res.json(result);
 });
 
 // Save an integration config (encrypts credentials, stores config in services.yaml)
+// Supports multiple instances of the same preset via the `instance` field.
+// e.g. type=adguard, instance=primary → stored as adguard_primary
 app.post('/api/integrations/save', authMiddleware, async (req, res) => {
-  const { type, url, username, password, token, enabled, fields: customFields } = req.body;
+  const { type, instance, url, username, password, token, enabled, target, fields: customFields } = req.body;
   if (!type || !url) return res.status(400).json({ error: 'type and url are required' });
+
+  // Auto-prepend protocol if missing
+  let cleanUrl = url.trim();
+  if (cleanUrl && !cleanUrl.match(/^https?:\/\//i)) {
+    cleanUrl = `http://${cleanUrl}`;
+  }
+
+  // Build storage key — append instance name if provided (e.g. adguard_primary)
+  const storageKey = instance ? `${type}_${instance}` : type;
 
   try {
     // Encrypt credentials into secrets.json
     if (password) {
-      setSecret(`integration_${type}_password`, password);
+      setSecret(`integration_${storageKey}_password`, password);
     }
     if (token) {
-      setSecret(`integration_${type}_token`, token);
+      setSecret(`integration_${storageKey}_token`, token);
     }
 
     // Build the config entry (credentials stored as $secret: refs)
     const entry = {
-      url,
+      url: cleanUrl,
       enabled: enabled !== false,
     };
 
-    // Only store preset type if it's a known preset
+    // Store the preset type so the handler knows which preset to use
     if (getPreset(type)) {
       entry.preset = type;
     }
 
+    // Instance label (for display in UI)
+    if (instance) entry.instance = instance;
+
+    // Target container UID (e.g. "pi:adguard-home") — for scoped matching
+    if (target) entry.target = target;
+
     // Credential references (never plaintext)
-    if (username) entry.username = username; // usernames aren't secret
-    if (password) entry.password = `$secret:integration_${type}_password`;
-    if (token) entry.token = `$secret:integration_${type}_token`;
+    if (username) entry.username = username;
+    if (password) entry.password = `$secret:integration_${storageKey}_password`;
+    if (token) entry.token = `$secret:integration_${storageKey}_token`;
 
     // Custom fields (only for non-preset integrations)
     if (customFields) entry.fields = customFields;
@@ -685,10 +708,10 @@ app.post('/api/integrations/save', authMiddleware, async (req, res) => {
     // Save to services.yaml under integrations section
     const config = getConfig() || {};
     if (!config.integrations) config.integrations = {};
-    config.integrations[type] = entry;
+    config.integrations[storageKey] = entry;
     saveConfig(config);
 
-    res.json({ ok: true, type });
+    res.json({ ok: true, type: storageKey });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -716,13 +739,16 @@ app.get('/api/integrations', authMiddleware, async (req, res) => {
   const results = {};
   const promises = Object.entries(integrations)
     .filter(([, cfg]) => cfg.enabled !== false)
-    .map(async ([type, cfg]) => {
-      const result = await fetchIntegration(type, cfg, bust);
-      // Include flat fields + any structured extra data (e.g. vms list)
+    .map(async ([key, cfg]) => {
+      // Use the preset type for the handler, not the storage key
+      const handlerType = cfg.preset || key;
+      const result = await fetchIntegration(handlerType, cfg, bust);
       const entry = { ...(result.fields || {}) };
-      // Pass through known structured keys
       if (result.vms) entry._vms = result.vms;
-      results[type] = entry;
+      // Include target so frontend knows which container to match
+      if (cfg.target) entry._target = cfg.target;
+      if (cfg.instance) entry._instance = cfg.instance;
+      results[key] = entry;
     });
 
   await Promise.allSettled(promises);
