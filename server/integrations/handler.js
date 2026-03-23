@@ -338,6 +338,32 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       rawData = await res.json();
     }
 
+    // Multi-endpoint support: if preset defines extraEndpoints, fetch them in parallel.
+    // extraEndpoints can be an array or a function(rawData) that returns an array.
+    // This allows dynamic endpoints that depend on primary response data
+    // (e.g. Proxmox extracts node name from VMs, then fetches /nodes/{node}/tasks).
+    // Results are attached to rawData._extra = { key1: data1, key2: data2 }
+    const extraEpDef = config.extraEndpoints;
+    const extraEps = typeof extraEpDef === 'function' ? extraEpDef(rawData) :
+                     Array.isArray(extraEpDef) ? extraEpDef : null;
+    if (extraEps && extraEps.length > 0) {
+      const headers = buildAuthHeaders(config);
+      const extraResults = await Promise.allSettled(
+        extraEps.map(async (ep) => {
+          const resolvedEp = resolveEndpointParams(ep.endpoint, config);
+          const epUrl = `${baseUrl}${resolvedEp}`;
+          const epRes = await safeFetch(epUrl, { headers }, skipTls);
+          return { key: ep.key, data: await epRes.json() };
+        })
+      );
+      rawData._extra = {};
+      for (const r of extraResults) {
+        if (r.status === 'fulfilled' && r.value) {
+          rawData._extra[r.value.key] = r.value.data;
+        }
+      }
+    }
+
     // Transform fields
     const fields = {};
     for (const field of (config.fields || [])) {
