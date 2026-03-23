@@ -189,10 +189,12 @@ body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: 
 .helmgrid-item > *:not(.helmgrid-resize-handle) { flex: 1; min-height: 0; }
 .helmgrid-item.helmgrid-dragging { z-index: 10; opacity: 0.85; box-shadow: 0 8px 40px rgba(0,0,0,0.4); transition: none; }
 .helmgrid-item.helmgrid-resizing { transition: none; }
-.helmgrid-resize-handle { position: absolute; width: 24px; height: 24px; z-index: 20; touch-action: none; background: rgba(99, 102, 241, 0.15); border-radius: 4px; }
-.helmgrid-resize-handle:hover { background: rgba(99, 102, 241, 0.4); }
+.helmgrid-resize-handle { position: absolute; width: 20px; height: 20px; z-index: 20; touch-action: none; background: transparent; border-radius: 4px; opacity: 0; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; }
+.helmgrid-resize-handle::after { content: '⤡'; font-size: 14px; color: var(--text-muted); opacity: 0.6; }
+.helmgrid-item:hover .helmgrid-resize-handle { opacity: 1; }
+.helmgrid-item:hover .helmgrid-resize-handle:hover::after { color: var(--accent); opacity: 1; }
 .helmgrid-resize-handle-se { bottom: 2px; right: 2px; cursor: se-resize; }
-.helmgrid-resize-handle-sw { bottom: 2px; left: 2px; cursor: sw-resize; }
+.helmgrid-resize-handle-sw { bottom: 2px; left: 2px; cursor: sw-resize; transform: scaleX(-1); }
 .helmgrid-placeholder { background: var(--accent-glow); border: 2px dashed var(--accent); border-radius: var(--card-radius); opacity: 0.3; pointer-events: none; z-index: 1; }
 
 /* Todo */
