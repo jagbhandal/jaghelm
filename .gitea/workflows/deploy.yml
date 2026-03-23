@@ -15,6 +15,7 @@ jobs:
 
       - name: Build and push
         run: |
+          export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /root/.ssh/gitea_vm103"
           git config --global --add safe.directory /opt/stacks/jaghelm
           cd /opt/stacks/jaghelm && git pull origin main
           docker build -t registry.jagbhandal.com/jagdeep.bhandal/jaghelm:latest .
