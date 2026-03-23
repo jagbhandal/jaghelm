@@ -260,14 +260,15 @@ app.get('/api/services', async (req, res) => {
 
           return {
             container: c.container,
+            uid: `${nodeKey}:${c.container}`,
             display_name: displayName,
             icon: override.icon || null,
             status,
-            monitored: !!monitor, // true if Kuma is tracking this service
+            monitored: !!monitor,
             ping: monitor?.ping || null,
             uptime24: monitor?.uptime24 || null,
             docker: c.docker,
-            integration: null, // Phase 3
+            integration: null,
           };
         });
 
@@ -659,7 +660,7 @@ app.post('/api/integrations/test', authMiddleware, async (req, res) => {
 // Supports multiple instances of the same preset via the `instance` field.
 // e.g. type=adguard, instance=primary → stored as adguard_primary
 app.post('/api/integrations/save', authMiddleware, async (req, res) => {
-  const { type, instance, url, username, password, token, enabled, target, fields: customFields } = req.body;
+  const { type, instance, url, username, password, token, enabled, target, editingKey, fields: customFields } = req.body;
   if (!type || !url) return res.status(400).json({ error: 'type and url are required' });
 
   // Auto-prepend protocol if missing
@@ -708,6 +709,12 @@ app.post('/api/integrations/save', authMiddleware, async (req, res) => {
     // Save to services.yaml under integrations section
     const config = getConfig() || {};
     if (!config.integrations) config.integrations = {};
+
+    // If editing and the key changed (e.g. adguard → adguard_primary), remove the old entry
+    if (editingKey && editingKey !== storageKey) {
+      delete config.integrations[editingKey];
+    }
+
     config.integrations[storageKey] = entry;
     saveConfig(config);
 
