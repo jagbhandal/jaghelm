@@ -207,6 +207,8 @@ export default function IntegrationsTab() {
       if (formUsername) body.username = formUsername;
       if (formPassword) body.password = formPassword;
       if (formToken) body.token = formToken;
+      // When editing, send the original storage key so server can remove it if the key changed
+      if (editingType) body.editingKey = editingType;
 
       const res = await fetch('/api/integrations/save', {
         method: 'POST',
