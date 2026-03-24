@@ -7,7 +7,7 @@ export default function TodoCard({ borderColor, config, setConfig }) {
   const [newDate, setNewDate] = useState('');
   const sec = config?.sections?.todos || {};
 
-  useEffect(() => { getTodos().then(setTodos).catch(() => {}); }, []);
+  useEffect(() => { getTodos().then(d => { if (Array.isArray(d)) setTodos(d); }).catch(() => {}); }, []);
 
   const save = (updated) => { setTodos(updated); saveTodos(updated); };
 

@@ -50,6 +50,7 @@ const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 app.use(cors());
 app.use(express.json());
+app.disable('etag'); // Disable Express auto-ETag — we manage ETags manually via jsonWithEtag
 app.use('/uploads', express.static(uploadsDir));
 
 // ── AUTH ──
