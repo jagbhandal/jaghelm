@@ -224,66 +224,70 @@ app.get('/api/services', async (req, res) => {
       return res.json({ nodes: {} });
     }
 
-    // Fetch all monitors once (bust cache if client requested fresh data)
-    const monitors = await fetchMonitors(bust);
+    // Fire monitors AND all node data in parallel — don't wait for Kuma before starting Prometheus
+    const monitorsPromise = fetchMonitors(bust);
+    const nodeDataPromises = Object.entries(config.nodes).map(async ([nodeKey, nodeCfg]) => {
+      if (nodeCfg.visible === false) return null;
+      const promLabel = nodeCfg.prometheus_node || nodeKey;
+      const nodeData = await getNodeData(promLabel);
+      return [nodeKey, nodeCfg, nodeData];
+    });
 
-    // Build response for each node in parallel
-    const nodeEntries = await Promise.all(
-      Object.entries(config.nodes).map(async ([nodeKey, nodeCfg]) => {
-        if (nodeCfg.visible === false) return null;
+    // Wait for both to complete
+    const [monitors, ...nodeResults] = await Promise.all([
+      monitorsPromise,
+      ...nodeDataPromises,
+    ]);
 
-        const promLabel = nodeCfg.prometheus_node || nodeKey;
+    // Build response for each node using the now-available monitors
+    const nodeEntries = nodeResults.filter(Boolean).map(([nodeKey, nodeCfg, nodeData]) => {
+      const metrics = nodeData.metrics;
+      let containers = nodeData.containers;
 
-        // Get node metrics + containers in a single parallel batch (12 queries at once)
-        const nodeData = await getNodeData(promLabel);
-        const metrics = nodeData.metrics;
-        let containers = nodeData.containers;
+      // Filter out hidden containers
+      const hideList = (nodeCfg.hide || []).map(h => h.toLowerCase());
+      containers = containers.filter(
+        c => !hideList.some(h => c.container.toLowerCase().includes(h))
+      );
 
-        // Filter out hidden containers
-        const hideList = (nodeCfg.hide || []).map(h => h.toLowerCase());
-        containers = containers.filter(
-          c => !hideList.some(h => c.container.toLowerCase().includes(h))
-        );
+      // Apply config overrides + monitor matching
+      const services = containers.map(c => {
+        const override = config.services?.[c.container] || {};
+        const displayName = override.display_name || formatContainerName(c.container);
+        const explicitMonitor = override.monitor || null;
+        const monitor = matchMonitor(c.container, explicitMonitor, monitors);
 
-        // Apply config overrides + monitor matching
-        const services = containers.map(c => {
-          const override = config.services?.[c.container] || {};
-          const displayName = override.display_name || formatContainerName(c.container);
-          const explicitMonitor = override.monitor || null;
-          const monitor = matchMonitor(c.container, explicitMonitor, monitors);
+        // Status priority:
+        // 1. Kuma monitor status (up/down) — most authoritative
+        // 2. Docker running state from cAdvisor — container exists and is running
+        // 3. 'unknown' — should never happen since cAdvisor only reports live containers
+        const status = monitor?.status || c.status || 'unknown';
 
-          // Status priority:
-          // 1. Kuma monitor status (up/down) — most authoritative
-          // 2. Docker running state from cAdvisor — container exists and is running
-          // 3. 'unknown' — should never happen since cAdvisor only reports live containers
-          const status = monitor?.status || c.status || 'unknown';
+        return {
+          container: c.container,
+          uid: `${nodeKey}:${c.container}`,
+          display_name: displayName,
+          icon: override.icon || null,
+          status,
+          monitored: !!monitor,
+          ping: monitor?.ping || null,
+          uptime24: monitor?.uptime24 || null,
+          docker: c.docker,
+          integration: null,
+        };
+      });
 
-          return {
-            container: c.container,
-            uid: `${nodeKey}:${c.container}`,
-            display_name: displayName,
-            icon: override.icon || null,
-            status,
-            monitored: !!monitor,
-            ping: monitor?.ping || null,
-            uptime24: monitor?.uptime24 || null,
-            docker: c.docker,
-            integration: null,
-          };
-        });
+      services.sort((a, b) => a.display_name.localeCompare(b.display_name));
 
-        services.sort((a, b) => a.display_name.localeCompare(b.display_name));
-
-        return [nodeKey, {
-          display_name: nodeCfg.display_name || nodeKey,
-          subtitle: nodeCfg.subtitle || '',
-          icon: nodeCfg.icon || '🖥',
-          border_color: nodeCfg.border_color || '#6366f1',
-          metrics,
-          services,
-        }];
-      })
-    );
+      return [nodeKey, {
+        display_name: nodeCfg.display_name || nodeKey,
+        subtitle: nodeCfg.subtitle || '',
+        icon: nodeCfg.icon || '🖥',
+        border_color: nodeCfg.border_color || '#6366f1',
+        metrics,
+        services,
+      }];
+    });
 
     const nodes = Object.fromEntries(nodeEntries.filter(Boolean));
     const result = { nodes };
