@@ -6,10 +6,24 @@ import IframeView from './views/IframeView';
 import SettingsView from './views/SettingsView';
 import { getMonitors } from './hooks/useData';
 
+// ── Auth token interceptor ──
+// Set up ONCE, synchronously, before any component renders.
+// Uses a mutable ref so the token value updates without re-patching fetch.
+const _authTokenRef = { current: localStorage.getItem('jaghelm-token') || '' };
+if (!window._origFetch) {
+  window._origFetch = window.fetch;
+  window.fetch = (url, opts = {}) => {
+    if (typeof url === 'string' && url.startsWith('/api') && !url.includes('/auth/login') && _authTokenRef.current) {
+      opts.headers = { ...opts.headers, 'x-auth-token': _authTokenRef.current };
+    }
+    return window._origFetch(url, opts);
+  };
+}
+
 export default function App() {
   const [authed, setAuthed] = useState(false);
   const [authRequired, setAuthRequired] = useState(null);
-  const [authToken, setAuthToken] = useState(() => localStorage.getItem('jaghelm-token') || '');
+  const [authToken, setAuthToken] = useState(() => _authTokenRef.current);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [theme, setTheme] = useState(() => localStorage.getItem('jaghelm-theme') || 'dark');
   const [lastUpdated, setLastUpdated] = useState(new Date());
@@ -35,7 +49,7 @@ export default function App() {
 
   // Check auth on mount
   useEffect(() => {
-    fetch('/api/auth/check', { headers: { 'x-auth-token': authToken } })
+    fetch('/api/auth/check')
       .then(r => r.json())
       .then(d => { setAuthRequired(d.authRequired); setAuthed(d.authenticated); })
       .catch(() => { setAuthRequired(false); setAuthed(true); });
@@ -43,23 +57,10 @@ export default function App() {
 
   const handleLogin = (token) => {
     localStorage.setItem('jaghelm-token', token);
+    _authTokenRef.current = token; // Update interceptor immediately
     setAuthToken(token);
     setAuthed(true);
   };
-
-  // Inject token into all fetch calls
-  useEffect(() => {
-    if (authToken) {
-      const origFetch = window._origFetch || window.fetch;
-      if (!window._origFetch) window._origFetch = window.fetch;
-      window.fetch = (url, opts = {}) => {
-        if (typeof url === 'string' && url.startsWith('/api') && !url.includes('/auth/login')) {
-          opts.headers = { ...opts.headers, 'x-auth-token': authToken };
-        }
-        return origFetch(url, opts);
-      };
-    }
-  }, [authToken]);
 
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); localStorage.setItem('jaghelm-theme', theme); }, [theme]);
 
