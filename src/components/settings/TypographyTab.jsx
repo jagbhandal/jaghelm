@@ -34,10 +34,10 @@ export default function TypographyTab({ config, update }) {
   return (
     <div className="settings-section">
       <Card title="Font Family">
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>
+        <p className="settings-desc">
           Choose a font pairing for the dashboard. Each preset includes display, body, and monospace fonts.
         </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="settings-stack-sm">
           {FONT_PRESETS.map(f => (
             <button
               key={f.id}
@@ -66,7 +66,7 @@ export default function TypographyTab({ config, update }) {
       </Card>
 
       <Card title="Font Sizes">
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>
+        <p className="settings-desc">
           Fine-tune the size of specific dashboard elements. Drag a slider or click Reset to restore defaults.
         </p>
 
@@ -74,7 +74,7 @@ export default function TypographyTab({ config, update }) {
           const value = fontSizes[ctrl.key] || ctrl.default;
           return (
             <div key={ctrl.key} style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+              <div className="settings-row-spread" style={{ marginBottom: 4 }}>
                 <div>
                   <span style={{ fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>
                     {ctrl.label}
@@ -109,7 +109,7 @@ export default function TypographyTab({ config, update }) {
                 onChange={e => updateSize(ctrl.key, parseInt(e.target.value))}
                 className="settings-range"
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: 2 }}>
+              <div className="settings-range-labels">
                 <span>{ctrl.min}px</span>
                 <span>{ctrl.default}px (default)</span>
                 <span>{ctrl.max}px</span>
@@ -120,9 +120,8 @@ export default function TypographyTab({ config, update }) {
 
         <div style={{ marginTop: 8, paddingTop: 16, borderTop: '1px solid var(--border-color)' }}>
           <button
-            className="settings-btn-sm"
+            className="settings-btn-danger"
             onClick={resetSizes}
-            style={{ color: 'var(--red)', borderColor: 'var(--red-border)' }}
           >
             Reset All Sizes to Defaults
           </button>

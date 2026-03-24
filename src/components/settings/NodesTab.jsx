@@ -60,12 +60,12 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
 
   return (
     <div>
-      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+      <p className="settings-desc" style={{ marginBottom: 16 }}>
         Nodes are auto-discovered from Prometheus. Customize how each node appears on the dashboard.
       </p>
 
       {saving && (
-        <div style={{ fontSize: 12, color: 'var(--accent)', marginBottom: 12, fontFamily: 'var(--font-mono)' }}>
+        <div className="settings-saving" style={{ marginBottom: 12 }}>
           Saving...
         </div>
       )}
@@ -73,14 +73,14 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
       {colorPicking && (
         <div style={{ marginBottom: 20, padding: 16, background: 'var(--bg-card-inner)', borderRadius: 14, border: '1px solid var(--border-color)' }}>
           <HexColorPicker color={colorValue} onChange={setColorValue} style={{ width: '100%', height: 150 }} />
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <div className="settings-actions">
             <input
-              style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-card-inner)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 13 }}
+              className="settings-input mono flex-1"
               value={colorValue}
               onChange={e => setColorValue(e.target.value)}
             />
-            <button className="settings-btn" onClick={applyColor} style={{ flex: 0, padding: '8px 20px', background: colorValue, color: '#fff', border: 'none' }}>Apply</button>
-            <button className="settings-btn" onClick={() => setColorPicking(null)} style={{ flex: 0, padding: '8px 14px' }}>Cancel</button>
+            <button className="settings-btn-primary" onClick={applyColor} style={{ background: colorValue }}>Apply</button>
+            <button className="settings-btn-sm" onClick={() => setColorPicking(null)}>Cancel</button>
           </div>
         </div>
       )}
@@ -99,23 +99,24 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
               type="checkbox"
               checked={node.visible !== false}
               onChange={e => updateNode(key, 'visible', e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
+              className="settings-checkbox"
             />
             <span style={{ fontSize: 22, display: 'inline-flex', alignItems: 'center' }}>
               {(node.icon && (node.icon.startsWith('http') || node.icon.startsWith('/')))
                 ? <img src={node.icon} alt="" style={{ width: 24, height: 24, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
                 : (node.icon || '🖥')}
             </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15 }}>
+            <div className="flex-1">
+              <div className="settings-item-title" style={{ fontSize: 15 }}>
                 {node.display_name || key}
               </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
+              <div className="settings-item-subtitle">
                 {node.subtitle || ''} · prometheus: {node.prometheus_node || key}
               </div>
             </div>
             <div
-              style={{ width: 26, height: 26, borderRadius: 6, background: node.border_color || '#6366f1', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.1)', flexShrink: 0 }}
+              className="settings-color-swatch"
+              style={{ width: 26, height: 26, borderRadius: 6, background: node.border_color || '#6366f1' }}
               onClick={() => openColor(key)}
               title="Border color"
             />
@@ -130,7 +131,7 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
 
           {/* Expanded edit form */}
           {editNode === key && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="settings-stack" style={{ gap: 10 }}>
               <FieldRow label="Display Name">
                 <input
                   className="settings-input"
@@ -157,29 +158,29 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
               </FieldRow>
               <FieldRow label="Prometheus Node Label">
                 <input
-                  className="settings-input"
+                  className="settings-input mono"
                   value={node.prometheus_node || ''}
                   onChange={e => updateNode(key, 'prometheus_node', e.target.value)}
                   placeholder={key}
-                  style={{ fontFamily: 'var(--font-mono)' }}
                 />
               </FieldRow>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <label className="settings-checkbox-label" style={{ gap: 12 }}>
                 <input
                   type="checkbox"
                   checked={node.auto_discover !== false}
                   onChange={e => updateNode(key, 'auto_discover', e.target.checked)}
-                  style={{ width: 16, height: 16, accentColor: 'var(--accent)' }}
+                  className="settings-checkbox"
+                  style={{ width: 16, height: 16 }}
                 />
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)' }}>
+                <span className="settings-checkbox-text" style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
                   Auto-discover new containers
                 </span>
-              </div>
+              </label>
 
               {/* Hide list */}
               <div>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', letterSpacing: 0.5 }}>
+                <span className="settings-item-subtitle" style={{ letterSpacing: 0.5 }}>
                   HIDDEN CONTAINERS
                 </span>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
@@ -207,7 +208,7 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
       ))}
 
       {Object.keys(nodes).length === 0 && (
-        <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+        <div className="settings-loading" style={{ justifyContent: 'center', fontSize: 13 }}>
           No nodes discovered yet. Make sure Prometheus is configured and reachable.
         </div>
       )}
@@ -217,8 +218,8 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
 
 function FieldRow({ label, children }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', letterSpacing: 0.5 }}>{label}</span>
+    <div className="settings-stack-xs">
+      <span className="settings-item-subtitle" style={{ letterSpacing: 0.5 }}>{label}</span>
       {children}
     </div>
   );

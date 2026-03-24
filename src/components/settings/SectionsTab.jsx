@@ -108,21 +108,20 @@ export default function SectionsTab({ config, update }) {
 
   return (
     <div className="settings-section">
-      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+      <p className="settings-desc" style={{ marginBottom: 16 }}>
         Customize the appearance of dashboard sections. Node sections (Gateway, Production, Staging) are managed in the Nodes tab.
       </p>
 
       {colorTarget && (
         <div className="settings-card" style={{ borderColor: 'var(--accent)' }}>
           <HexColorPicker color={colorValue} onChange={setColorValue} style={{ width: '100%', maxWidth: 300, height: 150 }} />
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <div className="settings-actions">
             <input
-              className="settings-input"
+              className="settings-input mono flex-1"
               value={colorValue}
               onChange={e => setColorValue(e.target.value)}
-              style={{ flex: 1, fontFamily: 'var(--font-mono)' }}
             />
-            <button className="settings-btn-sm" onClick={applyColor} style={{ background: colorValue, color: '#fff', border: 'none' }}>Apply</button>
+            <button className="settings-btn-primary" onClick={applyColor} style={{ background: colorValue }}>Apply</button>
             <button className="settings-btn-sm" onClick={() => setColorTarget(null)}>Cancel</button>
           </div>
         </div>
@@ -137,7 +136,7 @@ export default function SectionsTab({ config, update }) {
                 type="checkbox"
                 checked={s.visible !== false}
                 onChange={e => update(`sections.${key}.visible`, e.target.checked)}
-                style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
+                className="settings-checkbox"
               />
               <span style={{ fontSize: 22 }}>
                 {(s.icon || defaultIcon)?.startsWith('http') || (s.icon || defaultIcon)?.startsWith('/')
@@ -145,10 +144,10 @@ export default function SectionsTab({ config, update }) {
                   : (s.icon || defaultIcon)
                 }
               </span>
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, flex: 1 }}>
+              <span className="settings-item-title" style={{ fontSize: 15, flex: 1 }}>
                 {s.title || defaultTitle}
               </span>
-              <div style={{ display: 'flex', gap: 6 }}>
+              <div className="settings-row" style={{ gap: 6 }}>
                 <div
                   title="Border color"
                   style={{
@@ -170,7 +169,7 @@ export default function SectionsTab({ config, update }) {
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="settings-stack" style={{ gap: 10 }}>
               <Field label="Title">
                 <input
                   className="settings-input"
@@ -194,7 +193,7 @@ export default function SectionsTab({ config, update }) {
                   onClear={() => update(`sections.${key}.icon`, '')}
                 />
               </Field>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+              <div className="settings-row text-mono text-muted" style={{ fontSize: 11 }}>
                 <span>Background Opacity: {((s.bgOpacity ?? 0) * 100).toFixed(0)}%</span>
                 <input
                   type="range" min="0" max="1" step="0.05"
@@ -212,15 +211,14 @@ export default function SectionsTab({ config, update }) {
           CUSTOM GROUPS
           ═══════════════════════════════════════════ */}
       <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border-color)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div className="settings-row-spread" style={{ marginBottom: 16 }}>
           <div>
             <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, margin: 0 }}>Custom Groups</h3>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '4px 0 0' }}>
+            <p className="settings-hint-block" style={{ margin: '4px 0 0' }}>
               Create custom panels and assign containers from any node.
             </p>
           </div>
-          <button className="settings-btn-sm" onClick={addGroup}
-            style={{ background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }}>
+          <button className="settings-btn-primary" onClick={addGroup}>
             + New Group
           </button>
         </div>
@@ -251,10 +249,10 @@ export default function SectionsTab({ config, update }) {
                     : (group.icon || '📂')
                   }
                 </span>
-                <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, flex: 1 }}>
+                <span className="settings-item-title" style={{ fontSize: 15, flex: 1 }}>
                   {group.title}
                 </span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
+                <span className="settings-item-subtitle">
                   {(group.containers || []).length} services
                 </span>
                 <button
@@ -265,9 +263,8 @@ export default function SectionsTab({ config, update }) {
                   {isEditing ? 'Done' : 'Edit'}
                 </button>
                 <button
-                  className="settings-btn-sm"
+                  className="settings-btn-danger settings-btn-compact"
                   onClick={() => deleteGroup(group.id)}
-                  style={{ padding: '4px 10px', fontSize: 11, color: 'var(--red)', borderColor: 'var(--red-border)' }}
                 >
                   ✕
                 </button>
@@ -275,8 +272,8 @@ export default function SectionsTab({ config, update }) {
 
               {/* Expanded edit form */}
               {isEditing && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 12, borderTop: '1px solid var(--border-color)' }}>
-                  <div style={{ display: 'flex', gap: 12 }}>
+                <div className="settings-stack" style={{ gap: 12, paddingTop: 12, borderTop: '1px solid var(--border-color)' }}>
+                  <div className="settings-row" style={{ gap: 12 }}>
                     <div style={{ flex: 1 }}>
                       <Field label="Group Title">
                         <input
@@ -314,11 +311,11 @@ export default function SectionsTab({ config, update }) {
                   {colorTarget === `__group_color_${group.id}` && (
                     <div>
                       <HexColorPicker color={colorValue} onChange={setColorValue} style={{ width: '100%', maxWidth: 280, height: 130 }} />
-                      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                        <button className="settings-btn-sm" onClick={() => {
+                      <div className="settings-actions" style={{ marginTop: 8 }}>
+                        <button className="settings-btn-primary" onClick={() => {
                           updateGroup(group.id, 'borderColor', colorValue);
                           setColorTarget(null);
-                        }} style={{ background: colorValue, color: '#fff', border: 'none' }}>Apply</button>
+                        }} style={{ background: colorValue }}>Apply</button>
                         <button className="settings-btn-sm" onClick={() => setColorTarget(null)}>Cancel</button>
                       </div>
                     </div>
@@ -326,7 +323,7 @@ export default function SectionsTab({ config, update }) {
 
                   {/* Container assignment */}
                   <div>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', letterSpacing: 0.5 }}>
+                    <span className="settings-item-subtitle" style={{ letterSpacing: 0.5 }}>
                       Assigned Containers (click to remove)
                     </span>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, minHeight: 32 }}>
@@ -356,7 +353,7 @@ export default function SectionsTab({ config, update }) {
                   </div>
 
                   <div>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', letterSpacing: 0.5 }}>
+                    <span className="settings-item-subtitle" style={{ letterSpacing: 0.5 }}>
                       Available Containers (click to add)
                     </span>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>

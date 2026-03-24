@@ -35,32 +35,26 @@ export default function GeneralTab({ config, update }) {
       </Card>
 
       <Card title="Logo">
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-          <div style={{
-            width: 64, height: 64, borderRadius: 12,
-            background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            overflow: 'hidden', flexShrink: 0,
-          }}>
+        <div className="settings-row" style={{ gap: 16 }}>
+          <div className="settings-logo-preview">
             <img
               src={config.logoUrl || '/logo.svg'}
               alt="Logo"
               style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
             />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+          <div className="settings-stack-sm">
+            <p className="settings-desc" style={{ margin: 0 }}>
               {config.logoUrl ? 'Custom logo uploaded' : 'Using default JagHelm logo'}
             </p>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="settings-row">
               <button className="settings-btn-sm" onClick={() => logoRef.current?.click()}>
                 Upload New
               </button>
               {config.logoUrl && (
                 <button
-                  className="settings-btn-sm"
+                  className="settings-btn-sm text-muted"
                   onClick={() => update('logoUrl', '')}
-                  style={{ color: 'var(--text-muted)' }}
                 >
                   Restore Default
                 </button>

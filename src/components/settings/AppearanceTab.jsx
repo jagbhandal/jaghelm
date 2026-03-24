@@ -28,10 +28,10 @@ export default function AppearanceTab({ config, update, theme, setTheme }) {
   return (
     <div className="settings-section">
       <Card title="Theme">
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>
+        <p className="settings-desc">
           Inspired by the most popular VS Code themes.
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+        <div className="settings-grid-3">
           {THEMES.map(t => (
             <button
               key={t.id}
@@ -61,12 +61,11 @@ export default function AppearanceTab({ config, update, theme, setTheme }) {
         {colorPicking ? (
           <div>
             <HexColorPicker color={colorValue} onChange={setColorValue} style={{ width: '100%', maxWidth: 300, height: 160 }} />
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <div className="settings-actions">
               <input
-                className="settings-input"
+                className="settings-input mono flex-1"
                 value={colorValue}
                 onChange={e => setColorValue(e.target.value)}
-                style={{ flex: 1, fontFamily: 'var(--font-mono)' }}
               />
               <button
                 className="settings-btn-sm"
@@ -81,21 +80,17 @@ export default function AppearanceTab({ config, update, theme, setTheme }) {
             </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="settings-row" style={{ gap: 12 }}>
             <div
-              style={{
-                width: 44, height: 44, borderRadius: 12,
-                background: config.accentColor || '#6366f1',
-                cursor: 'pointer', border: '2px solid var(--border-glow)',
-                transition: 'transform 0.15s',
-              }}
+              className="settings-color-swatch-lg"
+              style={{ background: config.accentColor || '#6366f1' }}
               onClick={() => { setColorValue(config.accentColor || '#6366f1'); setColorPicking(true); }}
             />
             <div>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--text-primary)' }}>
+              <span className="text-mono" style={{ fontSize: 14, color: 'var(--text-primary)' }}>
                 {config.accentColor || '#6366f1'}
               </span>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              <div className="text-muted" style={{ fontSize: 12, marginTop: 2 }}>
                 Click swatch to change
               </div>
             </div>
@@ -104,22 +99,19 @@ export default function AppearanceTab({ config, update, theme, setTheme }) {
       </Card>
 
       <Card title="Background">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="settings-stack">
+          <div className="settings-row" style={{ gap: 12 }}>
             {config.bgImage && (
-              <div style={{
-                width: 80, height: 50, borderRadius: 8, overflow: 'hidden',
-                border: '1px solid var(--border-color)', flexShrink: 0,
-              }}>
+              <div className="settings-bg-preview">
                 <img src={config.bgImage} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
             )}
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="settings-row">
               <button className="settings-btn-sm" onClick={() => bgRef.current?.click()}>
                 {config.bgImage ? 'Change Image' : 'Upload Image'}
               </button>
               {config.bgImage && (
-                <button className="settings-btn-sm" onClick={() => update('bgImage', '')} style={{ color: 'var(--red)' }}>
+                <button className="settings-btn-sm text-muted" onClick={() => update('bgImage', '')} style={{ color: 'var(--red)' }}>
                   Remove
                 </button>
               )}

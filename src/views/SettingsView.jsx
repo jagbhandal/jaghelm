@@ -114,11 +114,7 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
                   <span className="settings-sidebar-desc">{s.desc}</span>
                 </div>
                 {s.disabled && (
-                  <span style={{
-                    fontFamily: 'var(--font-mono)', fontSize: 9, padding: '2px 6px',
-                    borderRadius: 4, background: 'var(--amber-bg)', color: 'var(--amber)',
-                    border: '1px solid var(--amber-border)', flexShrink: 0,
-                  }}>SOON</span>
+                  <span className="settings-saving" style={{ flexShrink: 0 }}>SOON</span>
                 )}
               </button>
             </React.Fragment>
@@ -256,9 +252,9 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
 
 function LoadingState() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 32, color: 'var(--text-muted)' }}>
+    <div className="settings-loading">
       <div className="skeleton" style={{ width: 20, height: 20, borderRadius: '50%' }} />
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>Loading server config...</span>
+      <span className="text-mono" style={{ fontSize: 13 }}>Loading server config...</span>
     </div>
   );
 }

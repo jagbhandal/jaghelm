@@ -46,9 +46,9 @@ export default function SecurityTab() {
   return (
     <div className="settings-section">
       <Card title="Change Password">
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-          Update your dashboard login password. This overrides the password set in the <code style={{
-            fontFamily: 'var(--font-mono)', fontSize: 12, background: 'var(--bg-card-inner)',
+        <p className="settings-desc" style={{ marginBottom: 16 }}>
+          Update your dashboard login password. This overrides the password set in the <code className="settings-mono" style={{
+            fontSize: 12, background: 'var(--bg-card-inner)',
             padding: '2px 6px', borderRadius: 4,
           }}>.env</code> file.
         </p>
@@ -96,17 +96,16 @@ export default function SecurityTab() {
         )}
 
         <button
-          className="settings-btn-sm"
+          className="settings-btn-primary"
           onClick={handleChangePassword}
           disabled={saving}
-          style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
         >
           {saving ? 'Changing...' : 'Change Password'}
         </button>
       </Card>
 
       <Card title="Session Info">
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+        <p className="settings-desc">
           Sessions expire after 24 hours. Changing your password will invalidate all other active sessions.
         </p>
       </Card>
