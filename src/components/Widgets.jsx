@@ -1,11 +1,18 @@
 import React from 'react';
 import { getServiceIcon } from '../hooks/useData';
 
-// Shared: render icon (URL or slug — no more emoji)
+// Shared: render icon (URL, slug, or emoji)
+function isEmoji(str) {
+  return str && !str.startsWith('http') && !str.startsWith('/') && /^[\p{Emoji}\u200d\ufe0f]+$/u.test(str);
+}
+
 function renderIcon(icon) {
   if (!icon) return null;
   if (icon.startsWith('http') || icon.startsWith('/')) {
     return <img src={icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} />;
+  }
+  if (isEmoji(icon)) {
+    return <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>;
   }
   // Treat as a Dashboard Icons slug
   const url = `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`;
