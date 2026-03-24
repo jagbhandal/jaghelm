@@ -156,36 +156,41 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
   // ── Independent data fetches — each updates state immediately when it resolves ──
   // No more Promise.allSettled barrier. Fast data renders instantly.
-  // Returns null from fetchJson mean 304 Not Modified — skip setState, no re-render.
+  // Returns null from fetchJson means 304 Not Modified — skip setState, no re-render.
+  // First fetch after mount skips ETags to ensure fresh instances always get data.
+  const hasLoadedRef = useRef(false);
 
-  const fetchServices = useCallback(async () => {
+  const fetchServices = useCallback(async (skipEtag) => {
     try {
-      const data = await getServices();
+      const data = await getServices(skipEtag);
       if (data !== null) setServiceData(data || { nodes: {} });
     } catch (err) { console.warn('[dashboard] Services fetch failed:', err.message); }
   }, []);
 
-  const fetchSections = useCallback(async () => {
+  const fetchSections = useCallback(async (skipEtag) => {
     try {
-      const [upsData, giteaData] = await Promise.allSettled([getUPSStatus(), getGiteaActivity()]);
+      const [upsData, giteaData] = await Promise.allSettled([getUPSStatus(skipEtag), getGiteaActivity(skipEtag)]);
       if (upsData.status === 'fulfilled' && upsData.value !== null) setUps(upsData.value);
       if (giteaData.status === 'fulfilled' && giteaData.value !== null) setCommits(giteaData.value || []);
     } catch (err) { console.warn('[dashboard] Sections fetch failed:', err.message); }
   }, []);
 
-  const fetchIntegrations = useCallback(async () => {
+  const fetchIntegrations = useCallback(async (skipEtag) => {
     try {
-      const data = await getAllIntegrations();
+      const data = await getAllIntegrations(skipEtag);
       if (data !== null) setIntegrationData(data || {});
     } catch (err) { console.warn('[dashboard] Integrations fetch failed:', err.message); }
   }, []);
 
   // Fetch on mount and on every refreshKey change.
-  // All three fire independently — no barriers between them.
+  // First fetch skips ETags (state is empty, need full data).
+  // Subsequent refreshes use ETags (skip render if nothing changed).
   useEffect(() => {
-    fetchServices();
-    fetchSections();
-    fetchIntegrations();
+    const skip = !hasLoadedRef.current;
+    hasLoadedRef.current = true;
+    fetchServices(skip);
+    fetchSections(skip);
+    fetchIntegrations(skip);
   }, [fetchServices, fetchSections, fetchIntegrations, refreshKey]);
 
   // Build Tier 3 app data map from integration engine + container matching

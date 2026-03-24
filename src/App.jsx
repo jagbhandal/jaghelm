@@ -226,7 +226,9 @@ export default function App() {
           health={overallHealth} lastUpdated={lastUpdated} config={config}
           onOpenSettings={() => setActiveTab(t => t === 'settings' ? 'dashboard' : 'settings')}
           refreshKey={refreshKey} />
-        {activeTab === 'dashboard' && <DashboardView config={config} setConfig={setConfig} refreshKey={refreshKey} />}
+        <div style={activeTab === 'dashboard' ? undefined : { visibility: 'hidden', height: 0, overflow: 'hidden' }}>
+          <DashboardView config={config} setConfig={setConfig} refreshKey={refreshKey} />
+        </div>
         {activeTab === 'settings' && <SettingsView config={config} setConfig={setConfig} theme={theme} setTheme={setTheme} />}
         {allTabs.find(t => t.id === activeTab && t.type === 'iframe') && (
           <IframeView url={allTabs.find(t => t.id === activeTab).url} title={allTabs.find(t => t.id === activeTab).label} />

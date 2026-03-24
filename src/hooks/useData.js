@@ -19,11 +19,14 @@ const etagStore = new Map();
  * - Sends If-None-Match header if we have a cached ETag for this URL.
  * - Returns null if server responds 304 (data unchanged).
  * - Returns parsed JSON otherwise.
+ * - Pass skipEtag=true to force a full fetch (used on first load when state is empty).
  */
-async function fetchJson(url) {
+async function fetchJson(url, skipEtag = false) {
   const headers = {};
   const storedEtag = etagStore.get(url);
-  if (storedEtag) headers['If-None-Match'] = storedEtag;
+  if (storedEtag && !skipEtag) {
+    headers['If-None-Match'] = storedEtag;
+  }
 
   const r = await fetch(url, { headers, signal: AbortSignal.timeout(12000) });
 
@@ -48,19 +51,19 @@ async function fetchJson(url) {
  * Returns null if data unchanged (304), otherwise:
  * { nodes: { [key]: { display_name, subtitle, icon, border_color, metrics, services } } }
  */
-export async function getServices() {
-  return fetchJson(`${BASE}/services`);
+export async function getServices(skipEtag) {
+  return fetchJson(`${BASE}/services`, skipEtag);
 }
 
 // ══════════════════════════════════════════════════════════════
 // Dedicated section data (not covered by /api/services or /api/integrations)
 // ══════════════════════════════════════════════════════════════
 
-export async function getUPSStatus() { return fetchJson(`${BASE}/ups`); }
-export async function getGiteaActivity() { return fetchJson(`${BASE}/gitea/activity`); }
+export async function getUPSStatus(skipEtag) { return fetchJson(`${BASE}/ups`, skipEtag); }
+export async function getGiteaActivity(skipEtag) { return fetchJson(`${BASE}/gitea/activity`, skipEtag); }
 
 // Phase 3: Integration Engine
-export async function getAllIntegrations() { return fetchJson(`${BASE}/integrations`); }
+export async function getAllIntegrations(skipEtag) { return fetchJson(`${BASE}/integrations`, skipEtag); }
 export async function getIntegrationPresets() { return fetchJson(`${BASE}/integrations/presets`); }
 export async function testIntegration(data) {
   const r = await fetch(`${BASE}/integrations/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });

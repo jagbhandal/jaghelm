@@ -13,5 +13,6 @@ services:
       - ./data:/app/data
     environment:
       - NODE_ENV=production
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
 networks: {}
- 
