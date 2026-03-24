@@ -154,33 +154,39 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     setActiveDrag(null);
   }, []);
 
-  const fetchAll = useCallback(async (bust) => {
-    const b = bust || false;
-    const r = await Promise.allSettled([
-      getServices(b),
-      getUPSStatus(b),
-      getGiteaActivity(b),
-      getAllIntegrations(b),
-    ]);
-    if (r[0].status === 'fulfilled') setServiceData(r[0].value || { nodes: {} });
-    if (r[1].status === 'fulfilled') setUps(r[1].value);
-    if (r[2].status === 'fulfilled') setCommits(r[2].value || []);
-    if (r[3].status === 'fulfilled') setIntegrationData(r[3].value || {});
+  // ── Independent data fetches — each updates state immediately when it resolves ──
+  // No more Promise.allSettled barrier. Fast data renders instantly.
+  // Returns null from fetchJson mean 304 Not Modified — skip setState, no re-render.
+
+  const fetchServices = useCallback(async () => {
+    try {
+      const data = await getServices();
+      if (data !== null) setServiceData(data || { nodes: {} });
+    } catch (err) { console.warn('[dashboard] Services fetch failed:', err.message); }
   }, []);
 
-  // Fetch on mount using server cache (fast/instant if warm), then bust cache
-  // on every subsequent refreshKey change from App.jsx's refresh cycle.
-  // This replaces the old mountedRef skip gate that blocked the initial fetch
-  // until App.jsx's sequential Kuma call completed — causing 5-6s delays.
-  const isInitialRef = useRef(true);
+  const fetchSections = useCallback(async () => {
+    try {
+      const [upsData, giteaData] = await Promise.allSettled([getUPSStatus(), getGiteaActivity()]);
+      if (upsData.status === 'fulfilled' && upsData.value !== null) setUps(upsData.value);
+      if (giteaData.status === 'fulfilled' && giteaData.value !== null) setCommits(giteaData.value || []);
+    } catch (err) { console.warn('[dashboard] Sections fetch failed:', err.message); }
+  }, []);
+
+  const fetchIntegrations = useCallback(async () => {
+    try {
+      const data = await getAllIntegrations();
+      if (data !== null) setIntegrationData(data || {});
+    } catch (err) { console.warn('[dashboard] Integrations fetch failed:', err.message); }
+  }, []);
+
+  // Fetch on mount and on every refreshKey change.
+  // All three fire independently — no barriers between them.
   useEffect(() => {
-    if (isInitialRef.current) {
-      isInitialRef.current = false;
-      fetchAll(false); // Use server cache — instant render if warm
-    } else {
-      fetchAll(true);  // Bust cache — get fresh data
-    }
-  }, [fetchAll, refreshKey]);
+    fetchServices();
+    fetchSections();
+    fetchIntegrations();
+  }, [fetchServices, fetchSections, fetchIntegrations, refreshKey]);
 
   // Build Tier 3 app data map from integration engine + container matching
   // Two matching modes:

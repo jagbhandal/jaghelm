@@ -161,8 +161,9 @@ export default function App() {
     setRefreshKey(k => k + 1);
 
     // Navbar health indicator — fire and forget, non-blocking
-    getMonitors(true)
+    getMonitors()
       .then(m => {
+        if (m === null) return; // 304 — no change, keep current health status
         if (m && typeof m === 'object') {
           const v = Object.values(m);
           if (v.length === 0) { setOverallHealth('unknown'); }

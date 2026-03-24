@@ -176,11 +176,29 @@ app.post('/api/auth/change-password', authMiddleware, (req, res) => {
 });
 
 // ── CACHE ──
+// TTL is a safety net — the background refresh loop keeps data warm.
+// 120s ensures data survives even if a refresh cycle is slow.
 const cache = new Map();
-const CACHE_TTL = 25000;
+const CACHE_TTL = 120_000;
 function getCached(k) { const e = cache.get(k); return e && Date.now() - e.ts < CACHE_TTL ? e.data : null; }
 function setCache(k, d) { cache.set(k, { data: d, ts: Date.now() }); }
-function shouldBypassCache(req) { return !!req.query.nocache; }
+
+// ── ETag support — fast hash of JSON for 304 Not Modified ──
+const etagCache = new Map(); // key → { hash, json }
+function jsonWithEtag(res, req, cacheKey, data) {
+  const json = JSON.stringify(data);
+  const hash = crypto.createHash('md5').update(json).digest('hex');
+  const etag = `"${hash}"`;
+  etagCache.set(cacheKey, { hash, json });
+  // Check If-None-Match from client
+  const clientEtag = req.headers['if-none-match'];
+  if (clientEtag === etag) {
+    return res.status(304).end();
+  }
+  res.set('ETag', etag);
+  res.set('Content-Type', 'application/json');
+  res.send(json);
+}
 
 async function safeFetch(url, opts = {}) {
   return fetch(url, { ...opts, signal: AbortSignal.timeout(8000) });
@@ -212,22 +230,22 @@ app.use('/api/display-config', authMiddleware);
  * - Container stats (CPU, MEM, RX, TX) from cAdvisor
  * - Uptime Kuma health status per service
  * - Config overrides (display names, icons, visibility)
+ * 
+ * Data is kept warm by the background refresh loop.
+ * Route reads from cache; falls back to on-demand fetch on cache miss (cold start).
  */
-app.get('/api/services', async (req, res) => {
-  const bust = shouldBypassCache(req);
-  if (!bust) {
-    const cached = getCached('services');
-    if (cached) return res.json(cached);
-  }
 
+// Standalone refresh function — called by background loop and as cold-start fallback
+async function refreshServices() {
   try {
     const config = getConfig();
     if (!config || !config.nodes || Object.keys(config.nodes).length === 0) {
-      return res.json({ nodes: {} });
+      setCache('services', { nodes: {} });
+      return { nodes: {} };
     }
 
-    // Fire monitors AND all node data in parallel — don't wait for Kuma before starting Prometheus
-    const monitorsPromise = fetchMonitors(bust);
+    // Fire monitors AND all node data in parallel
+    const monitorsPromise = fetchMonitors(true);
     const nodeDataPromises = Object.entries(config.nodes).map(async ([nodeKey, nodeCfg]) => {
       if (nodeCfg.visible === false) return null;
       const promLabel = nodeCfg.prometheus_node || nodeKey;
@@ -235,34 +253,25 @@ app.get('/api/services', async (req, res) => {
       return [nodeKey, nodeCfg, nodeData];
     });
 
-    // Wait for both to complete
     const [monitors, ...nodeResults] = await Promise.all([
       monitorsPromise,
       ...nodeDataPromises,
     ]);
 
-    // Build response for each node using the now-available monitors
     const nodeEntries = nodeResults.filter(Boolean).map(([nodeKey, nodeCfg, nodeData]) => {
       const metrics = nodeData.metrics;
       let containers = nodeData.containers;
 
-      // Filter out hidden containers
       const hideList = (nodeCfg.hide || []).map(h => h.toLowerCase());
       containers = containers.filter(
         c => !hideList.some(h => c.container.toLowerCase().includes(h))
       );
 
-      // Apply config overrides + monitor matching
       const services = containers.map(c => {
         const override = config.services?.[c.container] || {};
         const displayName = override.display_name || formatContainerName(c.container);
         const explicitMonitor = override.monitor || null;
         const monitor = matchMonitor(c.container, explicitMonitor, monitors);
-
-        // Status priority:
-        // 1. Kuma monitor status (up/down) — most authoritative
-        // 2. Docker running state from cAdvisor — container exists and is running
-        // 3. 'unknown' — should never happen since cAdvisor only reports live containers
         const status = monitor?.status || c.status || 'unknown';
 
         return {
@@ -294,12 +303,21 @@ app.get('/api/services', async (req, res) => {
     const nodes = Object.fromEntries(nodeEntries.filter(Boolean));
     const result = { nodes };
     setCache('services', result);
-    markMonitorLogDone(); // Stop logging unmatched containers after first build
-    res.json(result);
+    markMonitorLogDone();
+    return result;
   } catch (err) {
-    console.error('[services] Error building service data:', err);
-    res.status(500).json({ error: 'Failed to build service data', detail: err.message });
+    console.error('[refresh] Services error:', err.message);
+    return null;
   }
+}
+
+app.get('/api/services', async (req, res) => {
+  const cached = getCached('services');
+  if (cached) return jsonWithEtag(res, req, 'services', cached);
+  // Cold start fallback — fetch on demand
+  const data = await refreshServices();
+  if (data) return jsonWithEtag(res, req, 'services', data);
+  res.status(503).json({ error: 'Service data not yet available' });
 });
 
 function formatContainerName(name) {
@@ -351,6 +369,61 @@ app.delete('/api/secrets/:key', (req, res) => {
 // ── Display Config (server-side persistence for UI settings, layout, theme) ──
 const DISPLAY_CONFIG_PATH = join(dataDir, 'display-config.json');
 
+// ── Background Refresh Loop ──
+// Keeps all dashboard data warm in cache. Runs on the user's configured refresh interval.
+// API routes become pure cache reads — instant response, no external calls.
+let bgRefreshTimer = null;
+let bgRefreshRunning = false;
+
+function getRefreshInterval() {
+  try {
+    if (existsSync(DISPLAY_CONFIG_PATH)) {
+      const raw = readFileSync(DISPLAY_CONFIG_PATH, 'utf8');
+      const data = JSON.parse(raw);
+      const seconds = data?.refreshInterval;
+      if (typeof seconds === 'number' && seconds >= 10) return seconds * 1000;
+    }
+  } catch { /* ignore */ }
+  return 30_000; // Default 30 seconds
+}
+
+async function runBackgroundRefresh() {
+  if (bgRefreshRunning) return; // Prevent overlapping cycles
+  bgRefreshRunning = true;
+  const start = Date.now();
+  try {
+    // Fire all refreshes in parallel — each is independent
+    await Promise.allSettled([
+      refreshServices(),
+      refreshUPS(),
+      refreshGitea(),
+      refreshIntegrations(),
+    ]);
+    const elapsed = Date.now() - start;
+    console.log('[refresh] Background cycle complete in %dms', elapsed);
+  } catch (err) {
+    console.error('[refresh] Background cycle error:', err.message);
+  } finally {
+    bgRefreshRunning = false;
+  }
+}
+
+function startBackgroundRefresh() {
+  const intervalMs = getRefreshInterval();
+  if (bgRefreshTimer) clearInterval(bgRefreshTimer);
+  bgRefreshTimer = setInterval(runBackgroundRefresh, intervalMs);
+  console.log('[refresh] Background loop started — interval %ds', intervalMs / 1000);
+  // Run immediately on start to warm the cache
+  runBackgroundRefresh();
+}
+
+function restartBackgroundRefresh() {
+  const intervalMs = getRefreshInterval();
+  if (bgRefreshTimer) clearInterval(bgRefreshTimer);
+  bgRefreshTimer = setInterval(runBackgroundRefresh, intervalMs);
+  console.log('[refresh] Background loop restarted — interval %ds', intervalMs / 1000);
+}
+
 app.get('/api/display-config', (req, res) => {
   try {
     if (existsSync(DISPLAY_CONFIG_PATH)) {
@@ -375,7 +448,18 @@ app.post('/api/display-config', (req, res) => {
     if (serialized.length > 1_048_576) {
       return res.status(413).json({ error: 'Config too large (max 1MB)' });
     }
+    // Check if refresh interval changed — restart background loop if so
+    let intervalChanged = false;
+    try {
+      if (existsSync(DISPLAY_CONFIG_PATH)) {
+        const old = JSON.parse(readFileSync(DISPLAY_CONFIG_PATH, 'utf8'));
+        if (old?.refreshInterval !== config?.refreshInterval) intervalChanged = true;
+      } else {
+        intervalChanged = true;
+      }
+    } catch { intervalChanged = true; }
     writeFileSync(DISPLAY_CONFIG_PATH, serialized);
+    if (intervalChanged) restartBackgroundRefresh();
     res.json({ ok: true });
   } catch (err) {
     console.error('[display-config] Failed to save:', err.message);
@@ -398,10 +482,8 @@ app.get('/api/prometheus/query', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.status(400).json({ error: 'Missing q' });
   const ck = `prom-${q}`;
-  if (!shouldBypassCache(req)) {
-    const cached = getCached(ck);
-    if (cached) return res.json(cached);
-  }
+  const cached = getCached(ck);
+  if (cached) return res.json(cached);
   try {
     const url = process.env.PROMETHEUS_URL || 'http://localhost:9090';
     const r = await safeFetch(`${url}/api/v1/query?query=${encodeURIComponent(q)}`);
@@ -412,10 +494,8 @@ app.get('/api/prometheus/query', async (req, res) => {
 });
 
 app.get('/api/adguard/stats', async (req, res) => {
-  if (!shouldBypassCache(req)) {
-    const cached = getCached('adguard');
-    if (cached) return res.json(cached);
-  }
+  const cached = getCached('adguard');
+  if (cached) return res.json(cached);
   try {
     const url = process.env.ADGUARD_URL || 'http://192.168.68.13:8085';
     const u = process.env.ADGUARD_USER || '';
@@ -429,11 +509,8 @@ app.get('/api/adguard/stats', async (req, res) => {
   } catch (e) { res.status(502).json({ error: 'AdGuard unreachable', detail: e.message }); }
 });
 
-app.get('/api/ups', async (req, res) => {
-  if (!shouldBypassCache(req)) {
-    const cached = getCached('ups');
-    if (cached) return res.json(cached);
-  }
+// Standalone UPS refresh — called by background loop and as cold-start fallback
+async function refreshUPS() {
   try {
     const url = process.env.PROMETHEUS_URL || 'http://localhost:9090';
     const queryMap = {
@@ -463,15 +540,24 @@ app.get('/api/ups', async (req, res) => {
     });
     if (!found) { results.status = null; results.charge = null; results.runtime = null; results.load = null; }
     setCache('ups', results);
-    res.json(results);
-  } catch (e) { res.status(502).json({ error: 'UPS unreachable', detail: e.message }); }
+    return results;
+  } catch (err) {
+    console.error('[refresh] UPS error:', err.message);
+    return null;
+  }
+}
+
+app.get('/api/ups', async (req, res) => {
+  const cached = getCached('ups');
+  if (cached) return jsonWithEtag(res, req, 'ups', cached);
+  const data = await refreshUPS();
+  if (data) return jsonWithEtag(res, req, 'ups', data);
+  res.status(502).json({ error: 'UPS data not yet available' });
 });
 
 app.get('/api/npm/stats', async (req, res) => {
-  if (!shouldBypassCache(req)) {
-    const cached = getCached('npm-stats');
-    if (cached) return res.json(cached);
-  }
+  const cached = getCached('npm-stats');
+  if (cached) return res.json(cached);
   try {
     const url = process.env.NPM_URL || 'http://192.168.68.13:81';
     const npmUser = process.env.NPM_USER || 'admin@example.com';
@@ -509,10 +595,8 @@ app.get('/api/npm/stats', async (req, res) => {
 });
 
 app.get('/api/docker/containers', async (req, res) => {
-  if (!shouldBypassCache(req)) {
-    const cached = getCached('docker-containers');
-    if (cached) return res.json(cached);
-  }
+  const cached = getCached('docker-containers');
+  if (cached) return res.json(cached);
   const promUrl = process.env.PROMETHEUS_URL || 'http://localhost:9090';
   try {
     const [namesR, cpuR, memR] = await Promise.all([
@@ -563,18 +647,15 @@ app.get('/api/docker/containers', async (req, res) => {
 });
 
 // ── Gitea Activity — Auto-discovers all repos, fetches recent commits per repo ──
-app.get('/api/gitea/activity', async (req, res) => {
-  if (!shouldBypassCache(req)) {
-    const cached = getCached('gitea');
-    if (cached) return res.json(cached);
-  }
+
+// Standalone Gitea refresh — called by background loop and as cold-start fallback
+async function refreshGitea() {
   try {
     const url = process.env.GITEA_URL || 'http://localhost:3060';
     const token = process.env.GITEA_TOKEN || '';
     const authParam = token ? `token=${token}` : '';
     const authSep = (u) => u.includes('?') ? '&' : '?';
 
-    // Step 1: Discover all repos for the authenticated user
     const reposRes = await safeFetch(`${url}/api/v1/repos/search?limit=20${authParam ? '&' + authParam : ''}`);
     const reposData = await reposRes.json();
     const repos = (reposData?.data || reposData || [])
@@ -583,10 +664,9 @@ app.get('/api/gitea/activity', async (req, res) => {
 
     if (repos.length === 0) {
       setCache('gitea', []);
-      return res.json([]);
+      return [];
     }
 
-    // Step 2: Fetch 5 most recent commits per repo in parallel
     const repoCommits = await Promise.allSettled(
       repos.map(async (repo) => {
         const commitsRes = await safeFetch(
@@ -603,20 +683,29 @@ app.get('/api/gitea/activity', async (req, res) => {
       })
     );
 
-    // Step 3: Build result — array of { repo, fullName, commits }
     const result = repoCommits
       .filter(r => r.status === 'fulfilled' && r.value.commits.length > 0)
       .map(r => r.value)
       .sort((a, b) => {
-        // Sort repos by most recent commit date
         const aDate = a.commits[0]?.date || '';
         const bDate = b.commits[0]?.date || '';
         return new Date(bDate) - new Date(aDate);
       });
 
     setCache('gitea', result);
-    res.json(result);
-  } catch (e) { res.status(502).json({ error: 'Gitea unreachable', detail: e.message }); }
+    return result;
+  } catch (err) {
+    console.error('[refresh] Gitea error:', err.message);
+    return null;
+  }
+}
+
+app.get('/api/gitea/activity', async (req, res) => {
+  const cached = getCached('gitea');
+  if (cached) return jsonWithEtag(res, req, 'gitea', cached);
+  const data = await refreshGitea();
+  if (data) return jsonWithEtag(res, req, 'gitea', data);
+  res.status(502).json({ error: 'Gitea data not yet available' });
 });
 
 // ── Weather + Todos (unchanged) ──
@@ -685,7 +774,6 @@ app.get('/api/integrations/presets', authMiddleware, (req, res) => {
 // Fetch data from a configured integration
 app.get('/api/integrations/:type', authMiddleware, async (req, res) => {
   const { type } = req.params;
-  const bust = shouldBypassCache(req);
 
   // Get integration config from services.yaml
   const config = getConfig();
@@ -696,7 +784,7 @@ app.get('/api/integrations/:type', authMiddleware, async (req, res) => {
     return res.status(404).json({ error: `Integration '${type}' not found` });
   }
 
-  const result = await fetchIntegration(type, yamlConfig || {}, bust);
+  const result = await fetchIntegration(type, yamlConfig || {}, false);
   if (result.error) {
     return res.status(502).json({ error: result.error, fields: result.fields });
   }
@@ -806,31 +894,43 @@ app.delete('/api/integrations/:type', authMiddleware, async (req, res) => {
 });
 
 // Fetch all configured integrations' data in one call (for dashboard)
+
+// Standalone integrations refresh — called by background loop and as cold-start fallback
+async function refreshIntegrations() {
+  try {
+    const config = getConfig();
+    const integrations = config?.integrations || {};
+
+    const results = {};
+    const promises = Object.entries(integrations)
+      .filter(([, cfg]) => cfg.enabled !== false)
+      .map(async ([key, cfg]) => {
+        const handlerType = cfg.preset || key;
+        const result = await fetchIntegration(handlerType, { ...cfg, _storageKey: key }, true);
+        const entry = { ...(result.fields || {}) };
+        if (result.vms) entry._vms = result.vms;
+        if (result.storagePools) entry._storagePools = result.storagePools;
+        if (result.lastBackup) entry._lastBackup = result.lastBackup;
+        if (cfg.target) entry._target = cfg.target;
+        if (cfg.instance) entry._instance = cfg.instance;
+        results[key] = entry;
+      });
+
+    await Promise.allSettled(promises);
+    setCache('integrations', results);
+    return results;
+  } catch (err) {
+    console.error('[refresh] Integrations error:', err.message);
+    return null;
+  }
+}
+
 app.get('/api/integrations', authMiddleware, async (req, res) => {
-  const bust = shouldBypassCache(req);
-  const config = getConfig();
-  const integrations = config?.integrations || {};
-
-  const results = {};
-  const promises = Object.entries(integrations)
-    .filter(([, cfg]) => cfg.enabled !== false)
-    .map(async ([key, cfg]) => {
-      // Use the preset type for the handler, not the storage key
-      const handlerType = cfg.preset || key;
-      // Pass the storage key so credential resolution uses the correct secret
-      const result = await fetchIntegration(handlerType, { ...cfg, _storageKey: key }, bust);
-       const entry = { ...(result.fields || {}) };
-      if (result.vms) entry._vms = result.vms;
-      if (result.storagePools) entry._storagePools = result.storagePools;
-      if (result.lastBackup) entry._lastBackup = result.lastBackup;
-      // Include target so frontend knows which container to match
-      if (cfg.target) entry._target = cfg.target;
-      if (cfg.instance) entry._instance = cfg.instance;
-      results[key] = entry;
-    });
-
-  await Promise.allSettled(promises);
-  res.json(results);
+  const cached = getCached('integrations');
+  if (cached) return jsonWithEtag(res, req, 'integrations', cached);
+  const data = await refreshIntegrations();
+  if (data) return jsonWithEtag(res, req, 'integrations', data);
+  res.json({});
 });
 
 // ── Static + SPA fallback ──
@@ -868,6 +968,9 @@ async function boot() {
 
   // Start watching for external config changes
   startConfigWatcher();
+
+  // Start background data refresh loop (keeps dashboard data warm in cache)
+  startBackgroundRefresh();
 
   // Start server
   app.listen(PORT, '0.0.0.0', () => {

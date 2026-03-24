@@ -1,21 +1,41 @@
 /**
- * JagHelm Data Hooks — v8 Phase 1
+ * JagHelm Data Hooks — v8 Phase 4 Performance
  * 
  * Primary: getServices() — fetches unified /api/services endpoint
  * Legacy: Individual fetch functions kept for dedicated sections (UPS, Gitea, etc.)
+ * 
+ * ETag support: Each endpoint tracks its last ETag. If the server returns
+ * 304 Not Modified, the fetch returns null — signaling "no change, skip setState".
+ * This eliminates unnecessary React render cascades on every refresh cycle.
  */
 
 const BASE = '/api';
 
-function addCacheBust(url, bust) {
-  if (!bust) return url;
-  const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}nocache=${Date.now()}`;
-}
+// ETag tracking per endpoint — persists across fetch calls
+const etagStore = new Map();
 
-async function fetchJson(url, bust) {
-  const r = await fetch(addCacheBust(url, bust), { signal: AbortSignal.timeout(12000) });
+/**
+ * Fetch JSON with ETag support.
+ * - Sends If-None-Match header if we have a cached ETag for this URL.
+ * - Returns null if server responds 304 (data unchanged).
+ * - Returns parsed JSON otherwise.
+ */
+async function fetchJson(url) {
+  const headers = {};
+  const storedEtag = etagStore.get(url);
+  if (storedEtag) headers['If-None-Match'] = storedEtag;
+
+  const r = await fetch(url, { headers, signal: AbortSignal.timeout(12000) });
+
+  // 304 Not Modified — data hasn't changed since last fetch
+  if (r.status === 304) return null;
+
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
+
+  // Store the new ETag for next request
+  const newEtag = r.headers.get('ETag');
+  if (newEtag) etagStore.set(url, newEtag);
+
   return r.json();
 }
 
@@ -25,21 +45,22 @@ async function fetchJson(url, bust) {
 
 /**
  * Fetch all node + service data in one call.
- * Returns: { nodes: { [key]: { display_name, subtitle, icon, border_color, metrics, services } } }
+ * Returns null if data unchanged (304), otherwise:
+ * { nodes: { [key]: { display_name, subtitle, icon, border_color, metrics, services } } }
  */
-export async function getServices(bust) {
-  return fetchJson(`${BASE}/services`, bust);
+export async function getServices() {
+  return fetchJson(`${BASE}/services`);
 }
 
 // ══════════════════════════════════════════════════════════════
 // Dedicated section data (not covered by /api/services or /api/integrations)
 // ══════════════════════════════════════════════════════════════
 
-export async function getUPSStatus(bust) { return fetchJson(`${BASE}/ups`, bust); }
-export async function getGiteaActivity(bust) { return fetchJson(`${BASE}/gitea/activity`, bust); }
+export async function getUPSStatus() { return fetchJson(`${BASE}/ups`); }
+export async function getGiteaActivity() { return fetchJson(`${BASE}/gitea/activity`); }
 
 // Phase 3: Integration Engine
-export async function getAllIntegrations(bust) { return fetchJson(`${BASE}/integrations`, bust); }
+export async function getAllIntegrations() { return fetchJson(`${BASE}/integrations`); }
 export async function getIntegrationPresets() { return fetchJson(`${BASE}/integrations/presets`); }
 export async function testIntegration(data) {
   const r = await fetch(`${BASE}/integrations/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
@@ -58,7 +79,7 @@ export async function deleteIntegration(type) {
 // Legacy functions (kept: getMonitors used by App.jsx health check)
 // ══════════════════════════════════════════════════════════════
 
-export async function getMonitors(bust) { return fetchJson(`${BASE}/uptime/monitors`, bust); }
+export async function getMonitors() { return fetchJson(`${BASE}/uptime/monitors`); }
 
 export async function getWeather(lat, lon) {
   return fetchJson(`${BASE}/weather?lat=${lat}&lon=${lon}`);
