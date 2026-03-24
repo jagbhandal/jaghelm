@@ -29,20 +29,23 @@ function setCache(key, data) {
 }
 
 // ── Safe fetch with timeout + optional TLS skip for self-signed certs ──
+// SECURITY NOTE: TLS skip uses process.env.NODE_TLS_REJECT_UNAUTHORIZED which is
+// process-global. Node 22's built-in fetch (undici) does not expose a per-request
+// dispatcher for custom TLS settings without adding undici as an explicit dependency.
+// This is acceptable because: (1) only Proxmox uses tlsSkip, (2) it's toggled
+// on/off synchronously around the await, and (3) the window is limited to the
+// single fetch call duration. A future Node version or explicit undici dependency
+// would allow a proper per-request dispatcher.
 async function safeFetch(url, opts = {}, skipTls = false) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
     const fetchOpts = { ...opts, signal: controller.signal };
-    // Temporarily disable TLS verification for self-signed certs (e.g. Proxmox)
     if (skipTls) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
     const res = await fetch(url, fetchOpts);
-    if (skipTls) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '1';
     return res;
-  } catch (err) {
-    if (skipTls) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '1';
-    throw err;
   } finally {
+    if (skipTls) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '1';
     clearTimeout(timeout);
   }
 }

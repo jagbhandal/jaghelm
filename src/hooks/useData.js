@@ -32,13 +32,11 @@ export async function getServices(bust) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// Dedicated section data (not yet in /api/services)
+// Dedicated section data (not covered by /api/services or /api/integrations)
 // ══════════════════════════════════════════════════════════════
 
 export async function getUPSStatus(bust) { return fetchJson(`${BASE}/ups`, bust); }
 export async function getGiteaActivity(bust) { return fetchJson(`${BASE}/gitea/activity`, bust); }
-export async function getAdGuardStats(bust) { return fetchJson(`${BASE}/adguard/stats`, bust); }
-export async function getNpmStats(bust) { return fetchJson(`${BASE}/npm/stats`, bust); }
 
 // Phase 3: Integration Engine
 export async function getAllIntegrations(bust) { return fetchJson(`${BASE}/integrations`, bust); }
@@ -57,16 +55,10 @@ export async function deleteIntegration(type) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// Legacy functions (still used by dedicated sections, Widgets, Settings)
+// Legacy functions (kept: getMonitors used by App.jsx health check)
 // ══════════════════════════════════════════════════════════════
 
-export async function queryPrometheus(query, bust) {
-  const d = await fetchJson(`${BASE}/prometheus/query?q=${encodeURIComponent(query)}`, bust);
-  return d?.data?.result || [];
-}
-
 export async function getMonitors(bust) { return fetchJson(`${BASE}/uptime/monitors`, bust); }
-export async function getDockerContainers(bust) { return fetchJson(`${BASE}/docker/containers`, bust); }
 
 export async function getWeather(lat, lon) {
   return fetchJson(`${BASE}/weather?lat=${lat}&lon=${lon}`);

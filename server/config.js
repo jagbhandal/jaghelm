@@ -162,7 +162,9 @@ export function startConfigWatcher() {
         loadConfig();
         changeListeners.forEach(fn => fn(config));
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[config] Watcher error:', err.message);
+    }
   }, 5000);
 }
 

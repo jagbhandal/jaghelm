@@ -90,14 +90,10 @@ export default function App() {
       .then(data => {
         if (data && typeof data === 'object' && Object.keys(data).length > 0) {
           setConfig(prev => {
-            console.log('[CONFIG] localStorage gridLayout:', JSON.stringify(prev.gridLayout?.lg?.map(i => i.i + ':' + i.x + ',' + i.y)));
-            console.log('[CONFIG] server gridLayout:', JSON.stringify(data.gridLayout?.lg?.map(i => i.i + ':' + i.x + ',' + i.y)));
             const merged = { ...data };
+            // localStorage layout is authoritative — server may be stale from a previous deploy
             if (prev.gridLayout) {
               merged.gridLayout = prev.gridLayout;
-              console.log('[CONFIG] KEEPING local layout');
-            } else {
-              console.log('[CONFIG] NO local layout, using server');
             }
             localStorage.setItem('jaghelm-config', JSON.stringify(merged));
             if (data.theme) setTheme(data.theme);

@@ -64,7 +64,9 @@ function loadAuthOverride() {
       const data = JSON.parse(readFileSync(AUTH_FILE, 'utf8'));
       return data.passwordHash || null;
     }
-  } catch {}
+  } catch (err) {
+    console.warn('[auth] Failed to load auth override:', err.message);
+  }
   return null;
 }
 
@@ -369,8 +371,11 @@ app.post('/api/display-config', (req, res) => {
     if (!config || typeof config !== 'object') {
       return res.status(400).json({ error: 'Invalid config' });
     }
-    writeFileSync(DISPLAY_CONFIG_PATH, JSON.stringify(config, null, 2));
-    console.log('[display-config] Saved (%d keys)', Object.keys(config).length);
+    const serialized = JSON.stringify(config, null, 2);
+    if (serialized.length > 1_048_576) {
+      return res.status(413).json({ error: 'Config too large (max 1MB)' });
+    }
+    writeFileSync(DISPLAY_CONFIG_PATH, serialized);
     res.json({ ok: true });
   } catch (err) {
     console.error('[display-config] Failed to save:', err.message);
@@ -480,7 +485,9 @@ app.get('/api/npm/stats', async (req, res) => {
         });
         const authD = await authR.json();
         token = authD?.token || '';
-      } catch {}
+      } catch (err) {
+        console.warn('[npm] Auth failed:', err.message);
+      }
     }
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
     let hosts = 0, online = 0, certs = 0;
@@ -492,7 +499,9 @@ app.get('/api/npm/stats', async (req, res) => {
         online = data.filter(h => h.enabled === 1).length;
         certs = data.filter(h => h.certificate_id > 0).length;
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[npm] Failed to fetch proxy hosts:', err.message);
+    }
     const result = { hosts, online, certs };
     setCache('npm-stats', result);
     res.json(result);
@@ -530,7 +539,9 @@ app.get('/api/docker/containers', async (req, res) => {
       setCache('docker-containers', result);
       return res.json(result);
     }
-  } catch {}
+  } catch (err) {
+    console.warn('[docker] Prometheus container query failed, trying Docker socket:', err.message);
+  }
   try {
     const data = await new Promise((resolve, reject) => {
       const rq = http.get({ socketPath: '/var/run/docker.sock', path: '/containers/json' }, (resp) => {
@@ -625,10 +636,17 @@ app.get('/api/weather', async (req, res) => {
 
 app.get('/api/todos', (req, res) => {
   try { res.json(JSON.parse(readFileSync(join(dataDir, 'todos.json'), 'utf8'))); }
-  catch { res.json([]); }
+  catch (err) { res.json([]); }
 });
 app.post('/api/todos', (req, res) => {
-  writeFileSync(join(dataDir, 'todos.json'), JSON.stringify(req.body, null, 2));
+  if (!Array.isArray(req.body)) {
+    return res.status(400).json({ error: 'Todos must be an array' });
+  }
+  const serialized = JSON.stringify(req.body, null, 2);
+  if (serialized.length > 512_000) {
+    return res.status(413).json({ error: 'Todos payload too large' });
+  }
+  writeFileSync(join(dataDir, 'todos.json'), serialized);
   res.json({ ok: true });
 });
 
