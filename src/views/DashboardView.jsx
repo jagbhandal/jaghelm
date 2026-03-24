@@ -168,17 +168,18 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     if (r[3].status === 'fulfilled') setIntegrationData(r[3].value || {});
   }, []);
 
-  const mountedRef = useRef(false);
+  // Fetch on mount using server cache (fast/instant if warm), then bust cache
+  // on every subsequent refreshKey change from App.jsx's refresh cycle.
+  // This replaces the old mountedRef skip gate that blocked the initial fetch
+  // until App.jsx's sequential Kuma call completed — causing 5-6s delays.
+  const isInitialRef = useRef(true);
   useEffect(() => {
-    // Skip the mount render — App.jsx's doRefresh() will increment refreshKey
-    // from 0 to 1 within milliseconds, which triggers our first real fetch.
-    // Without this gate, we'd fire 4 API calls on mount AND 4 more when
-    // refreshKey bumps to 1 — 8 calls instead of 4.
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
+    if (isInitialRef.current) {
+      isInitialRef.current = false;
+      fetchAll(false); // Use server cache — instant render if warm
+    } else {
+      fetchAll(true);  // Bust cache — get fresh data
     }
-    fetchAll(true);
   }, [fetchAll, refreshKey]);
 
   // Build Tier 3 app data map from integration engine + container matching
