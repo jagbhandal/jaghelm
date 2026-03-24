@@ -57,7 +57,9 @@ export async function fetchMonitors(bustCache = false) {
           heartbeatList = hbData.heartbeatList || {};
           uptimeList = hbData.uptimeList || {};
         }
-      } catch {}
+      } catch (err) {
+        console.warn('[monitors] Heartbeat endpoint unavailable:', err.message);
+      }
     }
 
     // Merge monitor names with heartbeat data
