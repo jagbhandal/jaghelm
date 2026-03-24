@@ -180,7 +180,7 @@ body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: 
 
 /* ── HelmGrid ── */
 .helmgrid { position: relative; }
-.helmgrid-item { display: flex; flex-direction: column; transition: left 200ms ease, top 200ms ease, width 200ms ease, height 200ms ease; }
+.helmgrid-item { display: flex; flex-direction: column; transition: left 150ms ease, top 150ms ease, width 150ms ease, height 150ms ease; }
 .helmgrid-item > *:not(.helmgrid-resize-handle) { flex: 1; min-height: 0; }
 .helmgrid-item.helmgrid-dragging { z-index: 10; opacity: 0.85; box-shadow: 0 8px 40px rgba(0,0,0,0.4); transition: none; }
 .helmgrid-item.helmgrid-resizing { transition: none; }

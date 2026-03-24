@@ -84,15 +84,17 @@ function layoutsEqual(a, b) {
 
 // ─── GridItem — measures content and reports height ──────────────────────────
 
-function GridItem({ itemId, style, className, dragHandle, draggable, resizable, isDragging, isResizing, onDragStart, onResizeStart, onContentHeight, children }) {
+const GridItem = React.memo(function GridItem({ itemId, style, className, dragHandle, draggable, resizable, isDragging, isResizing, onDragStart, onResizeStart, onContentHeight, children }) {
   const ref = useRef(null);
   const onContentHeightRef = useRef(onContentHeight);
   onContentHeightRef.current = onContentHeight;
+  const isResizingRef = useRef(false);
+  isResizingRef.current = isResizing;
 
   // Measure the natural content height (without flex stretch)
   // NOTE: deps intentionally exclude children — ResizeObserver handles content changes.
-  // Including children caused the entire effect (including RO setup) to re-run on every
-  // data refresh, which cascaded into setContentHeights → re-render → RO fires again.
+  // Skips measurement while this item is actively being resized — the user is controlling
+  // height directly, and measuring mid-resize creates expensive reflow cascades.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -100,6 +102,7 @@ function GridItem({ itemId, style, className, dragHandle, draggable, resizable, 
     let rafId = null;
 
     const measure = () => {
+      if (isResizingRef.current) return; // Skip during active resize
       const savedHeight = el.style.height;
       el.style.height = 'auto';
       const natural = el.scrollHeight;
@@ -153,7 +156,7 @@ function GridItem({ itemId, style, className, dragHandle, draggable, resizable, 
       )}
     </div>
   );
-}
+});
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
@@ -327,34 +330,43 @@ export default function HelmGrid({
       placeholder: { x: item.x, y: item.y, w: item.w, h: item.h },
     });
 
+    let dragRAF = null;
     const onMove = (me) => {
       const s = interactionRef.current;
       if (!s || s.type !== 'drag') return;
-      const g = gridRef.current;
+      // Throttle to animation frame — at most one React update per screen refresh
+      if (dragRAF) return;
+      dragRAF = requestAnimationFrame(() => {
+        dragRAF = null;
+        const s = interactionRef.current;
+        if (!s || s.type !== 'drag') return;
+        const g = gridRef.current;
 
-      const left = s.startPxX + (me.clientX - s.startMouseX);
-      const top = s.startPxY + (me.clientY - s.startMouseY) + (window.scrollY - s.startScrollY);
+        const left = s.startPxX + (me.clientX - s.startMouseX);
+        const top = s.startPxY + (me.clientY - s.startMouseY) + (window.scrollY - s.startScrollY);
 
-      const snap = pixelToGrid(left, top, g.cellWidth, g.rowHeight, g.margin, g.activeCols);
-      let pw = s.item.w;
-      const maxW = g.activeCols - Math.max(0, Math.min(snap.x, g.activeCols - 1));
-      if (pw > maxW) pw = Math.max(s.item.minW || 2, maxW);
+        const snap = pixelToGrid(left, top, g.cellWidth, g.rowHeight, g.margin, g.activeCols);
+        let pw = s.item.w;
+        const maxW = g.activeCols - Math.max(0, Math.min(snap.x, g.activeCols - 1));
+        if (pw > maxW) pw = Math.max(s.item.minW || 2, maxW);
 
-      const cx = Math.max(0, Math.min(snap.x, g.activeCols - pw));
-      const cy = Math.max(0, snap.y);
+        const cx = Math.max(0, Math.min(snap.x, g.activeCols - pw));
+        const cy = Math.max(0, snap.y);
 
-      setInteraction({
-        type: 'drag', itemId: s.itemId,
-        pixelPos: { left, top },
-        placeholder: { x: cx, y: cy, w: pw, h: s.item.h },
+        setInteraction({
+          type: 'drag', itemId: s.itemId,
+          pixelPos: { left, top },
+          placeholder: { x: cx, y: cy, w: pw, h: s.item.h },
+        });
+
+        if (onDrag) onDrag(layoutRef.current, s.item, { ...s.item, x: cx, y: cy }, null, me);
       });
-
-      if (onDrag) onDrag(layoutRef.current, s.item, { ...s.item, x: cx, y: cy }, null, me);
     };
 
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      if (dragRAF) { cancelAnimationFrame(dragRAF); dragRAF = null; }
       const s = interactionRef.current;
       if (!s || s.type !== 'drag') return;
       interactionRef.current = null;
@@ -396,48 +408,56 @@ export default function HelmGrid({
       placeholder: { x: item.x, y: item.y, w: item.w, h: item.h },
     });
 
+    let resizeRAF = null;
     const onMove = (me) => {
       const s = interactionRef.current;
       if (!s || s.type !== 'resize') return;
-      const g = gridRef.current;
+      if (resizeRAF) return;
+      resizeRAF = requestAnimationFrame(() => {
+        resizeRAF = null;
+        const s = interactionRef.current;
+        if (!s || s.type !== 'resize') return;
+        const g = gridRef.current;
 
-      const dx = me.clientX - s.startMouseX;
-      const dy = me.clientY - s.startMouseY;
+        const dx = me.clientX - s.startMouseX;
+        const dy = me.clientY - s.startMouseY;
 
-      let w = s.startW, h = s.startH + dy, left = s.startLeft;
-      if (s.handle === 'se') w = s.startW + dx;
-      else if (s.handle === 'sw') { w = s.startW - dx; left = s.startLeft + dx; }
+        let w = s.startW, h = s.startH + dy, left = s.startLeft;
+        if (s.handle === 'se') w = s.startW + dx;
+        else if (s.handle === 'sw') { w = s.startW - dx; left = s.startLeft + dx; }
 
-      // Pixel minimums — use content-aware minH
-      const contentMinH = getContentMinH(s.itemId);
-      const minWpx = (s.item.minW || 2) * (g.cellWidth + g.margin[0]) - g.margin[0];
-      const minHpx = contentMinH * (g.rowHeight + g.margin[1]) - g.margin[1];
-      w = Math.max(w, minWpx);
-      h = Math.max(h, minHpx);
+        // Pixel minimums — use content-aware minH
+        const contentMinH = getContentMinH(s.itemId);
+        const minWpx = (s.item.minW || 2) * (g.cellWidth + g.margin[0]) - g.margin[0];
+        const minHpx = contentMinH * (g.rowHeight + g.margin[1]) - g.margin[1];
+        w = Math.max(w, minWpx);
+        h = Math.max(h, minHpx);
 
-      // Snap
-      const snap = pixelSizeToGrid(w, h, g.cellWidth, g.rowHeight, g.margin);
-      let nx = s.item.x;
-      if (s.handle === 'sw') {
-        const posSnap = pixelToGrid(left, 0, g.cellWidth, g.rowHeight, g.margin, g.activeCols);
-        nx = Math.max(0, posSnap.x);
-        snap.w = (s.item.x + s.item.w) - nx;
-        if (snap.w < (s.item.minW || 2)) { snap.w = s.item.minW || 2; nx = s.item.x + s.item.w - snap.w; }
-      }
-      snap.w = Math.min(snap.w, g.activeCols - nx);
-      snap.w = Math.max(snap.w, s.item.minW || 2);
-      snap.h = Math.max(snap.h, contentMinH);
+        // Snap
+        const snap = pixelSizeToGrid(w, h, g.cellWidth, g.rowHeight, g.margin);
+        let nx = s.item.x;
+        if (s.handle === 'sw') {
+          const posSnap = pixelToGrid(left, 0, g.cellWidth, g.rowHeight, g.margin, g.activeCols);
+          nx = Math.max(0, posSnap.x);
+          snap.w = (s.item.x + s.item.w) - nx;
+          if (snap.w < (s.item.minW || 2)) { snap.w = s.item.minW || 2; nx = s.item.x + s.item.w - snap.w; }
+        }
+        snap.w = Math.min(snap.w, g.activeCols - nx);
+        snap.w = Math.max(snap.w, s.item.minW || 2);
+        snap.h = Math.max(snap.h, contentMinH);
 
-      setInteraction({
-        type: 'resize', itemId: s.itemId, handle: s.handle,
-        pixelSize: { width: w, height: h, left },
-        placeholder: { x: nx, y: s.item.y, w: snap.w, h: snap.h },
+        setInteraction({
+          type: 'resize', itemId: s.itemId, handle: s.handle,
+          pixelSize: { width: w, height: h, left },
+          placeholder: { x: nx, y: s.item.y, w: snap.w, h: snap.h },
+        });
       });
     };
 
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      if (resizeRAF) { cancelAnimationFrame(resizeRAF); resizeRAF = null; }
       const s = interactionRef.current;
       if (!s || s.type !== 'resize') return;
       interactionRef.current = null;
@@ -464,6 +484,10 @@ export default function HelmGrid({
     return getBottom(effectiveLayout) * (rowHeight + margin[1]) + margin[1];
   }, [effectiveLayout, rowHeight, margin]);
 
+  // Cache styles for non-interacting items so React.memo can skip re-renders.
+  // Only the actively dragged/resized item gets a new style object each frame.
+  const styleCache = useRef({});
+
   if (!mounted || width === 0) {
     return <div ref={containerRef} className={`helmgrid ${className}`} />;
   }
@@ -483,31 +507,46 @@ export default function HelmGrid({
 
         const isDragging = dragId === item.i;
         const isResizing = resizeId === item.i;
-        const pos = gridToPixel(item.x, item.y, item.w, item.h, cellWidth, rowHeight, margin);
 
-        const style = {
-          position: 'absolute',
-          left: pos.left, top: pos.top, width: pos.width, height: pos.height,
-          transition: (isDragging || isResizing)
-            ? 'none'
-            : 'left 200ms ease, top 200ms ease, width 200ms ease, height 200ms ease',
-        };
-
+        let style;
         if (isDragging && interaction.pixelPos) {
-          Object.assign(style, {
+          // Active drag — fresh style every frame (not cached)
+          const pos = gridToPixel(item.x, item.y, item.w, item.h, cellWidth, rowHeight, margin);
+          style = {
+            position: 'absolute',
             left: interaction.pixelPos.left,
             top: interaction.pixelPos.top,
+            width: pos.width, height: pos.height,
+            transition: 'none',
             zIndex: 10, opacity: 0.85,
             boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
             cursor: 'grabbing', pointerEvents: 'none',
-          });
-        }
-
-        if (isResizing && interaction.pixelSize) {
-          style.width = interaction.pixelSize.width;
-          style.height = interaction.pixelSize.height;
-          if (interaction.handle === 'sw') style.left = interaction.pixelSize.left;
-          style.zIndex = 10;
+          };
+        } else if (isResizing && interaction.pixelSize) {
+          // Active resize — fresh style every frame
+          const pos = gridToPixel(item.x, item.y, item.w, item.h, cellWidth, rowHeight, margin);
+          style = {
+            position: 'absolute',
+            left: interaction.handle === 'sw' ? interaction.pixelSize.left : pos.left,
+            top: pos.top,
+            width: interaction.pixelSize.width,
+            height: interaction.pixelSize.height,
+            transition: 'none',
+            zIndex: 10,
+          };
+        } else {
+          // Static item — use cached style if position unchanged
+          const pos = gridToPixel(item.x, item.y, item.w, item.h, cellWidth, rowHeight, margin);
+          const key = `${item.i}-${pos.left}-${pos.top}-${pos.width}-${pos.height}`;
+          if (!styleCache.current[item.i] || styleCache.current[item.i]._key !== key) {
+            styleCache.current[item.i] = {
+              _key: key,
+              position: 'absolute',
+              left: pos.left, top: pos.top, width: pos.width, height: pos.height,
+              transition: 'left 150ms ease, top 150ms ease, width 150ms ease, height 150ms ease',
+            };
+          }
+          style = styleCache.current[item.i];
         }
 
         return (
