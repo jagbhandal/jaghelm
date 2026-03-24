@@ -78,6 +78,9 @@ export default React.memo(function NodeCard({ sectionKey, config, setConfig, bor
   const subtitle = nodeData?.subtitle || sec.subtitle || '';
   const icon = nodeData?.icon || sec.icon;
 
+  // Check if icon is an emoji (not a URL or slug)
+  const isEmoji = (str) => str && !str.startsWith('http') && !str.startsWith('/') && /^[\p{Emoji}\u200d\ufe0f]+$/u.test(str);
+
   const bgStyle = {};
   if (sec.bgColor && sec.bgOpacity > 0) {
     const hex = sec.bgColor;
@@ -95,7 +98,9 @@ export default React.memo(function NodeCard({ sectionKey, config, setConfig, bor
           }}>
             {icon.startsWith('http') || icon.startsWith('/')
               ? <img src={icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
-              : <img src={`https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
+              : isEmoji(icon)
+                ? <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>
+                : <img src={`https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
             }
           </div>
         )}

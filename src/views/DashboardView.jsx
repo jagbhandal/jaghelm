@@ -168,14 +168,17 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     if (r[3].status === 'fulfilled') setIntegrationData(r[3].value || {});
   }, []);
 
-  const isInitialRef = useRef(true);
+  const mountedRef = useRef(false);
   useEffect(() => {
-    if (isInitialRef.current) {
-      isInitialRef.current = false;
-      fetchAll(false);
-    } else {
-      fetchAll(true);
+    // Skip the mount render — App.jsx's doRefresh() will increment refreshKey
+    // from 0 to 1 within milliseconds, which triggers our first real fetch.
+    // Without this gate, we'd fire 4 API calls on mount AND 4 more when
+    // refreshKey bumps to 1 — 8 calls instead of 4.
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
     }
+    fetchAll(true);
   }, [fetchAll, refreshKey]);
 
   // Build Tier 3 app data map from integration engine + container matching
