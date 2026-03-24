@@ -157,17 +157,23 @@ export default function App() {
   }, [config.cardBlur]);
 
   const intervalMs = (config.refreshInterval || 30) * 1000;
-  const doRefresh = useCallback(async () => {
-    try {
-      const m = await getMonitors(true);
-      if (m && typeof m === 'object') {
-        const v = Object.values(m);
-        if (v.length === 0) { setOverallHealth('unknown'); }
-        else { setOverallHealth(v.some(x => x.status === 'down') ? 'down' : v.some(x => x.status === 'unknown') ? 'degraded' : 'up'); }
-      } else { setOverallHealth('unknown'); }
-    } catch { setOverallHealth('unknown'); }
+  const doRefresh = useCallback(() => {
+    // Bump refreshKey IMMEDIATELY so DashboardView starts fetching right away.
+    // The Kuma health check runs in parallel — it updates the navbar health dot
+    // but does NOT block the dashboard data load.
     setLastUpdated(new Date());
     setRefreshKey(k => k + 1);
+
+    // Navbar health indicator — fire and forget, non-blocking
+    getMonitors(true)
+      .then(m => {
+        if (m && typeof m === 'object') {
+          const v = Object.values(m);
+          if (v.length === 0) { setOverallHealth('unknown'); }
+          else { setOverallHealth(v.some(x => x.status === 'down') ? 'down' : v.some(x => x.status === 'unknown') ? 'degraded' : 'up'); }
+        } else { setOverallHealth('unknown'); }
+      })
+      .catch(() => setOverallHealth('unknown'));
   }, []);
 
   // Initial fetch on auth
