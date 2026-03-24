@@ -25,7 +25,7 @@ export default function TodoCard({ borderColor, config, setConfig }) {
 
   return (
     <div className="glass-card node-card" style={{ borderTop: `2px solid ${borderColor || 'var(--amber)'}` }}>
-      <div className="section-header" style={{ cursor: 'grab' }}>
+      <div className="section-header grab-handle">
         <div className="section-icon" style={{ background: `${borderColor || 'var(--amber)'}15`, border: `1px solid ${borderColor || 'var(--amber)'}30` }}>
           {sec.icon || '✅'}
         </div>
@@ -50,7 +50,7 @@ export default function TodoCard({ borderColor, config, setConfig }) {
             <button onClick={() => remove(t.id)} className="todo-remove">×</button>
           </div>
         ))}
-        {todos.length === 0 && <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '8px', textAlign: 'center' }}>No tasks yet</div>}
+        {todos.length === 0 && <div className="text-muted" style={{ fontSize: '12px', padding: '8px', textAlign: 'center' }}>No tasks yet</div>}
       </div>
     </div>
   );

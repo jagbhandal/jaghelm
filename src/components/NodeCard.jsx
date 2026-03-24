@@ -91,21 +91,21 @@ export default React.memo(function NodeCard({ sectionKey, config, setConfig, bor
 
   return (
     <div className="glass-card node-card" style={{ borderTop: `2px solid ${borderColor || 'var(--accent)'}`, ...bgStyle }}>
-      <div className="section-header" style={{ cursor: 'grab' }}>
+      <div className="section-header grab-handle">
         {icon && (
           <div className="section-icon" style={{
             background: `${borderColor || 'var(--accent)'}15`,
             border: `1px solid ${borderColor || 'var(--accent)'}30`,
           }}>
             {icon.startsWith('http') || icon.startsWith('/')
-              ? <img src={cachedIconUrl(icon) || icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
+              ? <img src={cachedIconUrl(icon) || icon} alt="" className="icon-img" onError={e => { e.target.style.display = 'none'; }} />
               : isEmoji(icon)
                 ? <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>
-                : <img src={cachedIconUrl(`https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`)} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
+                : <img src={cachedIconUrl(`https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`)} alt="" className="icon-img" onError={e => { e.target.style.display = 'none'; }} />
             }
           </div>
         )}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="flex-1">
           <div className="section-title">{title}</div>
           {subtitle && <div className="section-subtitle">{subtitle}</div>}
         </div>

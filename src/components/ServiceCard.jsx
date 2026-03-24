@@ -233,8 +233,8 @@ function InlineStat({ label, value }) {
   if (value == null) return null;
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)', letterSpacing: 0.5, textTransform: 'uppercase' }}>{label}</span>
-      <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{value}</span>
+      <span className="stat-label" style={{ fontSize: 9 }}>{label}</span>
+      <span className="stat-value" style={{ fontSize: 12 }}>{value}</span>
     </div>
   );
 }
@@ -245,21 +245,15 @@ function CompactStats({ docker }) {
   if (docker.memMB != null) parts.push(formatMem(docker.memMB));
   if (!parts.length) return null;
   return (
-    <span style={{
-      fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', flexShrink: 0,
-    }}>{parts.join(' · ')}</span>
+    <span className="text-mono text-muted" style={{ fontSize: 10, flexShrink: 0 }}>{parts.join(' · ')}</span>
   );
 }
 
 function GridStat({ label, value }) {
   return (
-    <div style={{
-      textAlign: 'center', padding: '5px 3px',
-      background: 'rgba(255,255,255,0.03)', borderRadius: 6,
-      border: '1px solid rgba(255,255,255,0.04)',
-    }}>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)', lineHeight: 1.2 }}>{value}</div>
+    <div className="stat-box" style={{ padding: '5px 3px' }}>
+      <div className="stat-label" style={{ marginBottom: 2 }}>{label}</div>
+      <div className="stat-value">{value}</div>
     </div>
   );
 }

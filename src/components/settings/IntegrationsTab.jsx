@@ -275,9 +275,9 @@ export default function IntegrationsTab() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 32, color: 'var(--text-muted)' }}>
+      <div className="settings-loading">
         <div className="skeleton" style={{ width: 20, height: 20, borderRadius: '50%' }} />
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>Loading integrations...</span>
+        <span className="text-mono" style={{ fontSize: 13 }}>Loading integrations...</span>
       </div>
     );
   }
@@ -288,14 +288,13 @@ export default function IntegrationsTab() {
 
     return (
       <div>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+        <p className="settings-desc" style={{ marginBottom: 20 }}>
           Connect app APIs to show live stats on service cards. Credentials are encrypted with AES-256-GCM.
         </p>
 
         {/* Add buttons */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
-          <button className="settings-btn-sm" onClick={openGallery}
-            style={{ background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }}>
+        <div className="settings-row" style={{ marginBottom: 24 }}>
+          <button className="settings-btn-primary" onClick={openGallery}>
             + Add from Presets
           </button>
           <button className="settings-btn-sm" onClick={openCustomBuilder}>
@@ -315,7 +314,7 @@ export default function IntegrationsTab() {
             <p style={{ fontSize: 12 }}>Add a preset or create a custom integration to get started.</p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="settings-stack-sm" style={{ gap: 6 }}>
             {configEntries.map(([storageKey, cfg]) => {
               // Find the preset by checking the preset field or the base type
               const presetType = cfg.preset || (storageKey.includes('_') ? storageKey.split('_')[0] : storageKey);
@@ -454,11 +453,7 @@ export default function IntegrationsTab() {
         </div>
 
         {/* Preset grid */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-          gap: 10,
-        }}>
+        <div className="settings-preset-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
           {filteredPresets.map(p => {
             const isConfigured = !!configured[p.type];
             return (
@@ -513,7 +508,7 @@ export default function IntegrationsTab() {
         </div>
 
         {filteredPresets.length === 0 && (
-          <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+          <div className="settings-loading" style={{ justifyContent: 'center', fontSize: 13 }}>
             No presets match your search.
           </div>
         )}
@@ -541,7 +536,7 @@ export default function IntegrationsTab() {
         </button>
 
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
+        <div className="settings-row" style={{ gap: 14, marginBottom: 24 }}>
           {isPreset && (
             <img
               src={cachedIconUrl(`https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${selectedPreset.icon}.svg`)}
@@ -555,7 +550,7 @@ export default function IntegrationsTab() {
               {isEditing ? `Edit ${presetName}` : `Configure ${presetName}`}
             </div>
             {isPreset && (
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+              <div className="settings-item-subtitle" style={{ marginTop: 2 }}>
                 {selectedPreset.description} · Auth: {AUTH_LABELS[authType]}
               </div>
             )}
@@ -563,15 +558,14 @@ export default function IntegrationsTab() {
         </div>
 
         {/* Form */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="settings-stack">
           {/* URL */}
           <FieldGroup label="Base URL" hint="Protocol is auto-added if missing (e.g. adguard.local:3000 → http://adguard.local:3000)">
             <input
-              className="settings-input"
+              className="settings-input mono"
               value={formUrl}
               onChange={e => setFormUrl(e.target.value)}
               placeholder={isPreset ? `e.g. http://your-server:port` : 'https://service.example.com'}
-              style={{ fontFamily: 'var(--font-mono)' }}
             />
           </FieldGroup>
 
@@ -579,11 +573,10 @@ export default function IntegrationsTab() {
           {isPreset && (
             <FieldGroup label="Instance Name" hint="Optional. Use when running multiple instances (e.g. primary, secondary). Leave blank for single instances.">
               <input
-                className="settings-input"
+                className="settings-input mono"
                 value={formInstance}
                 onChange={e => setFormInstance(e.target.value)}
                 placeholder="e.g. primary"
-                style={{ fontFamily: 'var(--font-mono)' }}
               />
             </FieldGroup>
           )}
@@ -591,10 +584,10 @@ export default function IntegrationsTab() {
           {/* Target Container — scope stats to a specific container */}
           <FieldGroup label="Target Container" hint="Optional. When set, stats only show on this specific container. When blank, stats match any container with a similar name.">
             <select
-              className="settings-input"
+              className="settings-input mono"
               value={formTarget}
               onChange={e => setFormTarget(e.target.value)}
-              style={{ fontFamily: 'var(--font-mono)', cursor: 'pointer' }}
+              style={{ cursor: 'pointer' }}
             >
               <option value="">Auto-match (by name)</option>
               {allContainers.map(c => (
@@ -637,13 +630,12 @@ export default function IntegrationsTab() {
               hint={isEditing ? 'Leave blank to keep existing' : undefined}
             >
               <input
-                className="settings-input"
+                className="settings-input mono"
                 type="password"
                 value={formToken}
                 onChange={e => setFormToken(e.target.value)}
                 placeholder={isEditing ? '••••••••' : 'Enter API key or token'}
                 autoComplete="new-password"
-                style={{ fontFamily: 'var(--font-mono)' }}
               />
             </FieldGroup>
           )}
@@ -652,11 +644,10 @@ export default function IntegrationsTab() {
           {selectedPreset?.urlParams?.map(p => (
             <FieldGroup key={p.key} label={p.label}>
               <input
-                className="settings-input"
+                className="settings-input mono"
                 value={formParams[p.key] || ''}
                 onChange={e => setFormParams(prev => ({ ...prev, [p.key]: e.target.value }))}
                 placeholder={p.placeholder || p.label}
-                style={{ fontFamily: 'var(--font-mono)' }}
               />
             </FieldGroup>
           ))}
@@ -702,7 +693,7 @@ export default function IntegrationsTab() {
           </label>
 
           {/* Action buttons */}
-          <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div className="settings-row" style={{ gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
             {/* Test */}
             <button
               className="settings-btn-sm"
@@ -719,12 +710,11 @@ export default function IntegrationsTab() {
 
             {/* Save */}
             <button
-              className="settings-btn-sm"
+              className="settings-btn-primary"
               onClick={handleSave}
               disabled={!formUrl || saveStatus === 'saving'}
               style={{
                 padding: '8px 20px',
-                background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)',
                 opacity: !formUrl ? 0.5 : 1,
                 cursor: !formUrl ? 'not-allowed' : 'pointer',
               }}
@@ -735,9 +725,9 @@ export default function IntegrationsTab() {
             {/* Delete (only when editing) */}
             {isEditing && (
               <button
-                className="settings-btn-sm"
+                className="settings-btn-danger"
                 onClick={() => { handleDelete(editingType); goHome(); }}
-                style={{ padding: '8px 20px', color: 'var(--red)', borderColor: 'var(--red-border)', marginLeft: 'auto' }}
+                style={{ padding: '8px 20px', marginLeft: 'auto' }}
               >
                 🗑 Delete
               </button>
@@ -780,13 +770,13 @@ export default function IntegrationsTab() {
 
 function FieldGroup({ label, hint, children }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', letterSpacing: 0.5 }}>
+    <div className="settings-stack-sm" style={{ gap: 6 }}>
+      <span className="settings-item-subtitle" style={{ letterSpacing: 0.5 }}>
         {label}
       </span>
       {children}
       {hint && (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', opacity: 0.7 }}>
+        <span className="settings-item-subtitle" style={{ fontSize: 10, opacity: 0.7 }}>
           {hint}
         </span>
       )}

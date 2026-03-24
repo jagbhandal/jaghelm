@@ -11,12 +11,12 @@ export default function LayoutTab({ config, update }) {
             onChange={e => update('gridColumns', parseInt(e.target.value))}
             className="settings-range"
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: 4 }}>
+          <div className="settings-range-labels">
             <span>6 (compact)</span>
             <span>12 (default)</span>
             <span>24 (fine grid)</span>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.6 }}>
+          <div className="settings-hint-block" style={{ marginTop: 8 }}>
             More columns = finer positioning and narrower panels possible.
             Changing this resets panel positions.
           </div>
@@ -24,13 +24,12 @@ export default function LayoutTab({ config, update }) {
 
         <div style={{ marginTop: 16 }}>
           <button
-            className="settings-btn-sm"
+            className="settings-btn-danger"
             onClick={() => update('gridLayout', null)}
-            style={{ color: 'var(--red)', borderColor: 'var(--red-border)' }}
           >
             Reset Grid Layout
           </button>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+          <p className="settings-hint-block" style={{ marginTop: 6 }}>
             Resets all panel positions and sizes to defaults.
           </p>
         </div>
@@ -44,7 +43,7 @@ export default function LayoutTab({ config, update }) {
             onChange={e => update('refreshInterval', parseInt(e.target.value))}
             className="settings-range"
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: 4 }}>
+          <div className="settings-range-labels">
             <span>10s (fast)</span>
             <span>120s (slow)</span>
           </div>
@@ -53,31 +52,31 @@ export default function LayoutTab({ config, update }) {
 
       <Card title="Service Cards">
         <Field label="Docker Metrics (CPU, MEM, RX, TX)">
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+          <label className="settings-checkbox-label">
             <input
               type="checkbox"
               checked={config.showDockerStats !== false}
               onChange={e => update('showDockerStats', e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
+              className="settings-checkbox"
             />
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Show per-container CPU, memory, and network stats</span>
+            <span className="settings-checkbox-text">Show per-container CPU, memory, and network stats</span>
           </label>
         </Field>
 
         <Field label="App Integration Data">
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+          <label className="settings-checkbox-label">
             <input
               type="checkbox"
               checked={config.showAppData !== false}
               onChange={e => update('showAppData', e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
+              className="settings-checkbox"
             />
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Show app-specific API data (queries blocked, streams, etc.)</span>
+            <span className="settings-checkbox-text">Show app-specific API data (queries blocked, streams, etc.)</span>
           </label>
         </Field>
 
         <Field label={`Service Columns per Row: ${config.serviceColumns || 'Auto'}`}>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="settings-choice-group">
             {[0, 2, 3, 4, 5, 6].map(n => (
               <button
                 key={n}
@@ -88,14 +87,14 @@ export default function LayoutTab({ config, update }) {
               </button>
             ))}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.6 }}>
+          <div className="settings-hint-block" style={{ marginTop: 8 }}>
             <strong>Auto:</strong> Cards fill available space responsively<br />
             <strong>2–6:</strong> Maximum columns — cards reflow to fewer columns as the panel narrows
           </div>
         </Field>
 
         <Field label="Card Layout">
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="settings-choice-group">
             {[
               { id: 'list', label: 'List' },
               { id: 'row', label: 'Row' },
@@ -110,13 +109,13 @@ export default function LayoutTab({ config, update }) {
               </button>
             ))}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+          <div className="settings-hint-block">
             List: clean rows, no backgrounds. Row: subtle card per service (default). Grid: compact card boxes.
           </div>
         </Field>
 
         <Field label="Status Style">
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="settings-choice-group">
             {['dot', 'badge', 'minimal'].map(style => (
               <button
                 key={style}
@@ -127,7 +126,7 @@ export default function LayoutTab({ config, update }) {
               </button>
             ))}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+          <div className="settings-hint-block">
             How container status is displayed on service cards
           </div>
         </Field>
@@ -135,7 +134,7 @@ export default function LayoutTab({ config, update }) {
 
       <Card title="Behavior">
         <Field label="Link Target">
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="settings-choice-group">
             {['_blank', '_self'].map(target => (
               <button
                 key={target}
@@ -146,13 +145,13 @@ export default function LayoutTab({ config, update }) {
               </button>
             ))}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+          <div className="settings-hint-block">
             Where Quick Launch links and service links open
           </div>
         </Field>
 
         <Field label="Temperature Unit">
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="settings-choice-group">
             {['F', 'C'].map(unit => (
               <button
                 key={unit}
@@ -166,21 +165,21 @@ export default function LayoutTab({ config, update }) {
         </Field>
 
         <Field label="Collapsible Sections">
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+          <label className="settings-checkbox-label">
             <input
               type="checkbox"
               checked={config.collapsibleSections || false}
               onChange={e => update('collapsibleSections', e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
+              className="settings-checkbox"
             />
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Allow clicking section headers to collapse/expand</span>
+            <span className="settings-checkbox-text">Allow clicking section headers to collapse/expand</span>
           </label>
         </Field>
       </Card>
 
       <Card title="Visual">
         <Field label={`Card Blur: ${config.cardBlur || 'none'}`}>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="settings-choice-group">
             {['none', 'sm', 'md', 'lg'].map(blur => (
               <button
                 key={blur}
@@ -191,7 +190,7 @@ export default function LayoutTab({ config, update }) {
               </button>
             ))}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+          <div className="settings-hint-block">
             Backdrop blur effect on cards (requires a background image to be visible)
           </div>
         </Field>

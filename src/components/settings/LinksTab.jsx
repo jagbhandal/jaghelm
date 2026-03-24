@@ -69,15 +69,15 @@ export default function LinksTab({ config, update, setConfig }) {
     <div className="settings-section">
       {Object.entries(links).map(([group, groupLinks]) => (
         <Card key={group} title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="settings-row-spread">
             <span style={{ flex: 1, textTransform: 'capitalize' }}>{group.replace(/_/g, ' ')}</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>
+            <span className="settings-item-subtitle" style={{ fontWeight: 400 }}>
               {groupLinks.length} link{groupLinks.length !== 1 ? 's' : ''}
             </span>
           </div>
         }>
           {/* Link list */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div className="settings-stack-xs">
             {groupLinks.map((link, i) => {
               const isEditing = editingLink?.group === group && editingLink?.index === i;
 
@@ -90,35 +90,34 @@ export default function LinksTab({ config, update, setConfig }) {
                 }}>
                   {isEditing ? (
                     /* Edit mode */
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <div className="settings-stack-sm">
+                      <div className="settings-row">
                         <IconPicker
                           compact
                           value={link.icon}
                           onChange={url => updateLink(group, i, 'icon', url)}
                         />
                         <input
-                          className="settings-input"
+                          className="settings-input flex-1"
                           value={link.name}
                           onChange={e => updateLink(group, i, 'name', e.target.value)}
                           placeholder="Name"
-                          style={{ flex: 1 }}
                         />
                       </div>
                       <input
-                        className="settings-input"
+                        className="settings-input mono"
                         value={link.url}
                         onChange={e => updateLink(group, i, 'url', e.target.value)}
                         placeholder="https://..."
-                        style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}
+                        style={{ fontSize: 13 }}
                       />
-                      <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', gap: 4 }}>
+                      <div className="settings-row-spread">
+                        <div className="settings-row" style={{ gap: 4 }}>
                           <button className="settings-btn-sm" onClick={() => moveLink(group, i, -1)} disabled={i === 0} style={{ opacity: i === 0 ? 0.3 : 1 }}>↑</button>
                           <button className="settings-btn-sm" onClick={() => moveLink(group, i, 1)} disabled={i === groupLinks.length - 1} style={{ opacity: i === groupLinks.length - 1 ? 0.3 : 1 }}>↓</button>
                         </div>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <button className="settings-btn-sm" onClick={() => removeLink(group, i)} style={{ color: 'var(--red)', borderColor: 'var(--red-border)' }}>Delete</button>
+                        <div className="settings-row">
+                          <button className="settings-btn-danger settings-btn-compact" onClick={() => removeLink(group, i)}>Delete</button>
                           <button className="settings-btn-sm" onClick={() => setEditingLink(null)}>Done</button>
                         </div>
                       </div>
@@ -126,17 +125,18 @@ export default function LinksTab({ config, update, setConfig }) {
                   ) : (
                     /* Display mode */
                     <div
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
+                      className="settings-row"
+                      style={{ gap: 10, cursor: 'pointer' }}
                       onClick={() => setEditingLink({ group, index: i })}
                     >
                       <span style={{ fontSize: 18, width: 24, textAlign: 'center', flexShrink: 0 }}>
                         {link.icon && (link.icon.startsWith('http') || link.icon.startsWith('/'))
-                          ? <img src={link.icon} alt="" style={{ width: 20, height: 20, borderRadius: 3 }} />
+                          ? <img src={link.icon} alt="" className="icon-img-sm" style={{ width: 20, height: 20 }} />
                           : (link.icon || '🔗')
                         }
                       </span>
-                      <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{link.name}</span>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
+                      <span className="flex-1" style={{ fontSize: 14, fontWeight: 500 }}>{link.name}</span>
+                      <span className="settings-item-subtitle">
                         {link.url.replace('https://', '').replace('http://', '')}
                       </span>
                     </div>
@@ -152,36 +152,35 @@ export default function LinksTab({ config, update, setConfig }) {
               marginTop: 8, padding: '12px 14px', borderRadius: 10,
               background: 'var(--bg-card-inner)', border: '1px dashed var(--accent)',
             }}>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+              <div className="settings-row" style={{ marginBottom: 8 }}>
                 <IconPicker
                   compact
                   value={newLink.icon}
                   onChange={url => setNewLink(p => ({ ...p, icon: url }))}
                 />
                 <input
-                  className="settings-input"
+                  className="settings-input flex-1"
                   value={newLink.name}
                   onChange={e => setNewLink(p => ({ ...p, name: e.target.value }))}
                   placeholder="Name"
-                  style={{ flex: 1 }}
                   autoFocus
                 />
               </div>
               <input
-                className="settings-input"
+                className="settings-input mono"
                 value={newLink.url}
                 onChange={e => setNewLink(p => ({ ...p, url: e.target.value }))}
                 placeholder="https://..."
-                style={{ fontFamily: 'var(--font-mono)', fontSize: 13, marginBottom: 8 }}
+                style={{ fontSize: 13, marginBottom: 8 }}
                 onKeyDown={e => e.key === 'Enter' && addLink(group)}
               />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="settings-btn-sm" onClick={() => addLink(group)} style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}>Add</button>
+              <div className="settings-row">
+                <button className="settings-btn-primary" onClick={() => addLink(group)}>Add</button>
                 <button className="settings-btn-sm" onClick={() => { setAddingTo(null); setNewLink({ name: '', icon: '', url: '' }); }}>Cancel</button>
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <div className="settings-row" style={{ marginTop: 8 }}>
               <button
                 className="settings-btn-sm"
                 onClick={() => { setAddingTo(group); setNewLink({ name: '', icon: '', url: '' }); }}
@@ -190,9 +189,8 @@ export default function LinksTab({ config, update, setConfig }) {
               </button>
               {!DEFAULT_GROUPS.includes(group) && (
                 <button
-                  className="settings-btn-sm"
+                  className="settings-btn-danger settings-btn-compact"
                   onClick={() => removeGroup(group)}
-                  style={{ color: 'var(--red)', borderColor: 'var(--red-border)' }}
                 >
                   Remove Group
                 </button>
@@ -205,17 +203,16 @@ export default function LinksTab({ config, update, setConfig }) {
       {/* Add group */}
       <Card>
         {addingGroup ? (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="settings-row">
             <input
-              className="settings-input"
+              className="settings-input flex-1"
               value={newGroupName}
               onChange={e => setNewGroupName(e.target.value)}
               placeholder="Group name (e.g. media, tools)"
               autoFocus
               onKeyDown={e => e.key === 'Enter' && addGroup()}
-              style={{ flex: 1 }}
             />
-            <button className="settings-btn-sm" onClick={addGroup} style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}>Create</button>
+            <button className="settings-btn-primary" onClick={addGroup}>Create</button>
             <button className="settings-btn-sm" onClick={() => { setAddingGroup(false); setNewGroupName(''); }}>Cancel</button>
           </div>
         ) : (

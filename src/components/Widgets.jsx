@@ -9,14 +9,14 @@ function isEmoji(str) {
 function renderIcon(icon) {
   if (!icon) return null;
   if (icon.startsWith('http') || icon.startsWith('/')) {
-    return <img src={cachedIconUrl(icon) || icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} />;
+    return <img src={cachedIconUrl(icon) || icon} alt="" className="icon-img" />;
   }
   if (isEmoji(icon)) {
     return <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>;
   }
   // Treat as a Dashboard Icons slug
   const url = cachedIconUrl(`https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`);
-  return <img src={url} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />;
+  return <img src={url} alt="" className="icon-img" onError={e => { e.target.style.display = 'none'; }} />;
 }
 
 // Shared: compute background style from section config
@@ -37,7 +37,7 @@ export const UPSCard = React.memo(function UPSCard({ upsData, borderColor, confi
   const rt = upsData?.runtime ? Math.floor(upsData.runtime / 60) : null;
   return (
     <div className="glass-card node-card" style={{ borderTop: `2px solid ${borderColor || 'var(--green)'}`, ...sectionBgStyle(sec) }}>
-      <div className="section-header" style={{ cursor: 'grab' }}>
+      <div className="section-header grab-handle">
         <div className="section-icon" style={{ background: `${borderColor}15`, border: `1px solid ${borderColor}30` }}>{renderIcon(sec.icon || '⚡')}</div>
         <div><div className="section-title">{sec.title || 'UPS Power'}</div><div className="section-subtitle">{sec.subtitle || 'APC Back-UPS ES 600M1'}</div></div>
       </div>
@@ -66,7 +66,7 @@ export const GiteaActivity = React.memo(function GiteaActivity({ commits, config
 
   return (
     <div className="glass-card node-card" style={{ borderTop: '2px solid var(--accent)', ...sectionBgStyle(sec) }}>
-      <div className="section-header" style={{ cursor: 'grab' }}>
+      <div className="section-header grab-handle">
         <div className="section-icon" style={{ background: 'var(--accent-glow)', border: '1px solid rgba(99,102,241,0.2)' }}>{renderIcon(sec.icon || 'gitea')}</div>
         <div>
           <div className="section-title">{sec.title || 'Pipeline Activity'}</div>
@@ -145,11 +145,11 @@ export const QuickLaunch = React.memo(function QuickLaunch({ config, borderColor
   const groups = [{ key: 'personal', label: 'Personal' }, { key: 'management', label: 'Management' }, { key: 'devops', label: 'Dev & Monitoring' }];
   return (
     <div className="glass-card node-card" style={{ borderTop: `2px solid ${borderColor || 'var(--blue)'}`, ...sectionBgStyle(sec) }}>
-      <div className="section-header" style={{ cursor: 'grab' }}>
+      <div className="section-header grab-handle">
         <div className="section-icon" style={{ background: `${borderColor}15`, border: `1px solid ${borderColor}30` }}>{renderIcon(sec.icon || '🚀')}</div>
         <div><div className="section-title">{sec.title || 'Quick Launch'}</div></div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="settings-stack" style={{ gap: 12 }}>
         {groups.map(g => {
           const links = config.links?.[g.key] || [];
           if (links.length === 0) return null;
@@ -164,7 +164,7 @@ export const QuickLaunch = React.memo(function QuickLaunch({ config, borderColor
                       <img
                         src={iconUrl}
                         alt=""
-                        style={{ width: 18, height: 18, borderRadius: 3, flexShrink: 0 }}
+                        className="icon-img-sm"
                         onError={e => { e.target.style.display = 'none'; }}
                       />
                       <span>{l.name}</span>

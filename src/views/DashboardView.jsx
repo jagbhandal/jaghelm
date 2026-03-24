@@ -414,11 +414,8 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
                 {/* ── Proxmox: Virtual Machines ── */}
                 {proxmoxVms && proxmoxVms.length > 0 && (
                   <div style={{ marginTop: 8 }}>
-                    <div style={{
-                      fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)',
-                      letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6, paddingLeft: 2,
-                    }}>Virtual Machines</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
+                    <div className="stat-label" style={{ marginBottom: 6, paddingLeft: 2, fontSize: 9 }}>Virtual Machines</div>
+                    <div className="pve-vm-grid">
                       {proxmoxVms.map(vm => {
                         const isRunning = vm.status === 'running';
                         const isPaused = vm.status === 'paused';
@@ -452,29 +449,21 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
                             <div style={{
                               display: 'flex', gap: 8, marginTop: 6, justifyContent: 'center',
                             }}>
-                              <div style={{
-                                textAlign: 'center', padding: '4px 8px',
-                                background: 'rgba(255,255,255,0.03)', borderRadius: 6,
-                                border: '1px solid rgba(255,255,255,0.04)', flex: 1,
-                              }}>
-                                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)' }}>{vm.maxcpu}</div>
-                                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>vCPU</div>
+                              <div className="stat-box" style={{ padding: '4px 8px' }}>
+                                <div className="stat-value">{vm.maxcpu}</div>
+                                <div className="stat-label" style={{ marginTop: 1 }}>vCPU</div>
                               </div>
-                              <div style={{
-                                textAlign: 'center', padding: '4px 8px',
-                                background: 'rgba(255,255,255,0.03)', borderRadius: 6,
-                                border: '1px solid rgba(255,255,255,0.04)', flex: 1,
-                              }}>
-                                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-service-stat-value)', color: 'var(--text-primary)' }}>{vm.vmid}</div>
-                                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 1 }}>VMID</div>
+                              <div className="stat-box" style={{ padding: '4px 8px' }}>
+                                <div className="stat-value">{vm.vmid}</div>
+                                <div className="stat-label" style={{ marginTop: 1 }}>VMID</div>
                               </div>
                             </div>
                             {/* RAM usage per VM */}
                             {vm.memUsedGB && vm.memTotalGB && (
                               <div style={{ marginTop: 6, padding: '0 2px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
-                                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-service-stat-label)', color: 'var(--text-secondary)', letterSpacing: 1, textTransform: 'uppercase' }}>RAM</span>
-                                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-secondary)' }}>{vm.memUsedGB}/{vm.memTotalGB} GB</span>
+                                  <span className="stat-label">RAM</span>
+                                  <span className="text-mono text-secondary" style={{ fontSize: 10 }}>{vm.memUsedGB}/{vm.memTotalGB} GB</span>
                                 </div>
                                 <div style={{
                                   height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.06)', overflow: 'hidden',
@@ -711,27 +700,13 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     <div className="dashboard-content" ref={mobileRef}>
       {/* Welcome message banner */}
       {wm.enabled && wm.text && (
-        <div style={{
-          textAlign: 'center',
-          padding: '12px 20px 4px',
-          maxWidth: 900,
-          margin: '0 auto',
-        }}>
-          <div style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 600,
-            fontSize: wm.fontSize || 20,
-            color: 'var(--text-primary)',
-            lineHeight: 1.3,
-          }}>
+        <div className="welcome-banner">
+          <div className="welcome-text" style={{ fontSize: wm.fontSize || 20 }}>
             {wm.text}
           </div>
           {wm.description && (
-            <div style={{
-              fontFamily: 'var(--font-body)',
+            <div className="welcome-desc" style={{
               fontSize: Math.max((wm.fontSize || 20) * 0.6, 12),
-              color: 'var(--text-secondary)',
-              marginTop: 4,
             }}>
               {wm.description}
             </div>
@@ -771,9 +746,9 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
               .filter(k => !loadedNodeKeys.has(k))
               .map(k => (
                 <div key={k}>
-                  <div className="glass-card node-card" style={{ borderTop: '2px solid var(--accent)', opacity: 0.4 }}>
+                  <div className="glass-card node-card node-placeholder">
                     <div className="section-header">
-                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)', padding: '12px' }}>
+                      <div className="node-placeholder-text">
                         Loading {k.replace('node-', '')}…
                       </div>
                     </div>

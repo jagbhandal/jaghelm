@@ -28,7 +28,7 @@ export default function WidgetsTab({ config, update }) {
           onChange={v => update('showWeather', v)}
         />
         <Field label="Temperature Unit">
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="settings-choice-group">
             {['F', 'C'].map(u => (
               <button
                 key={u}
@@ -40,23 +40,21 @@ export default function WidgetsTab({ config, update }) {
             ))}
           </div>
         </Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="settings-grid-2">
           <Field label="Latitude">
             <input
-              className="settings-input"
+              className="settings-input mono"
               value={config.weatherLat || ''}
               onChange={e => update('weatherLat', e.target.value)}
               placeholder="39.88"
-              style={{ fontFamily: 'var(--font-mono)' }}
             />
           </Field>
           <Field label="Longitude">
             <input
-              className="settings-input"
+              className="settings-input mono"
               value={config.weatherLon || ''}
               onChange={e => update('weatherLon', e.target.value)}
               placeholder="-83.09"
-              style={{ fontFamily: 'var(--font-mono)' }}
             />
           </Field>
         </div>

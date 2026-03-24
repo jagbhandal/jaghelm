@@ -78,12 +78,12 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
 
   return (
     <div>
-      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+      <p className="settings-desc" style={{ marginBottom: 16 }}>
         Services are auto-discovered from Prometheus/cAdvisor. Override display names, icons, and monitor mappings here.
       </p>
 
       {saving && (
-        <div style={{ fontSize: 12, color: 'var(--accent)', marginBottom: 12, fontFamily: 'var(--font-mono)' }}>
+        <div className="settings-saving" style={{ marginBottom: 12 }}>
           Saving...
         </div>
       )}
@@ -119,7 +119,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
 
           {/* Services list */}
           {expandedNode === nodeKey && (
-            <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div className="settings-stack-xs" style={{ marginTop: 6 }}>
               {(node.services || []).map(svc => {
                 const containerName = svc.container;
                 const override = overrides[containerName] || {};
@@ -187,7 +187,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
 
                     {/* Expanded edit form */}
                     {isEditing && (
-                      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 10, borderTop: '1px solid var(--border-color)' }}>
+                      <div className="settings-stack" style={{ marginTop: 12, gap: 10, paddingTop: 10, borderTop: '1px solid var(--border-color)' }}>
                         <FieldRow label="Display Name">
                           <input
                             className="settings-input"
@@ -199,17 +199,16 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
 
                         <FieldRow label="Icon Key">
                           <input
-                            className="settings-input"
+                            className="settings-input mono"
                             value={override.icon || ''}
                             onChange={e => updateOverride(containerName, 'icon', e.target.value)}
                             placeholder="auto (e.g. npm, adguard, photoprism)"
-                            style={{ fontFamily: 'var(--font-mono)' }}
                           />
                         </FieldRow>
 
                         <FieldRow label="Uptime Kuma Monitor">
                           <select
-                            className="settings-input"
+                            className="settings-input mono"
                             value={override.monitor || ''}
                             onChange={e => {
                               if (e.target.value === '') {
@@ -218,7 +217,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                                 updateOverride(containerName, 'monitor', e.target.value);
                               }
                             }}
-                            style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}
+                            style={{ fontSize: 13 }}
                           >
                             <option value="">Auto-match</option>
                             {(monitorNames || []).map(name => (
@@ -229,14 +228,14 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
 
                         {hasOverride && (
                           <button
-                            className="settings-btn"
+                            className="settings-btn-danger settings-btn-compact"
                             onClick={() => {
                               const updatedServices = { ...serverConfig.services };
                               delete updatedServices[containerName];
                               onSave({ ...serverConfig, services: updatedServices });
                               setEditService(null);
                             }}
-                            style={{ alignSelf: 'flex-start', padding: '6px 14px', fontSize: 11, color: 'var(--red)', borderColor: 'var(--red-border)' }}
+                            style={{ alignSelf: 'flex-start' }}
                           >
                             Remove All Overrides
                           </button>
@@ -252,7 +251,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
       ))}
 
       {Object.keys(nodes).length === 0 && (
-        <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+        <div className="settings-loading" style={{ justifyContent: 'center', fontSize: 13 }}>
           No services discovered yet. Check that Prometheus and cAdvisor are running.
         </div>
       )}
@@ -262,8 +261,8 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
 
 function FieldRow({ label, children }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', letterSpacing: 0.5 }}>{label}</span>
+    <div className="settings-stack-xs">
+      <span className="settings-item-subtitle" style={{ letterSpacing: 0.5 }}>{label}</span>
       {children}
     </div>
   );

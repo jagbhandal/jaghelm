@@ -34,16 +34,16 @@ export default function BackupTab({ config, setConfig }) {
   return (
     <div className="settings-section">
       <Card title="Export">
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+        <p className="settings-desc" style={{ marginBottom: 12 }}>
           Download your full display configuration as a JSON file. This includes theme, layout, sections, links, tabs, and all UI settings.
         </p>
-        <button className="settings-btn-sm" onClick={exportConfig} style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}>
+        <button className="settings-btn-primary" onClick={exportConfig}>
           Export Config
         </button>
       </Card>
 
       <Card title="Import">
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+        <p className="settings-desc" style={{ marginBottom: 12 }}>
           Restore a previously exported configuration file. This will replace all current display settings.
         </p>
         <label className="settings-btn-sm" style={{ cursor: 'pointer', display: 'inline-block' }}>
@@ -63,15 +63,15 @@ export default function BackupTab({ config, setConfig }) {
       </Card>
 
       <Card title="Server Config">
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
-          Infrastructure config (nodes, services, integrations) is stored server-side in <code style={{
-            fontFamily: 'var(--font-mono)', fontSize: 12, background: 'var(--bg-card-inner)',
+        <p className="settings-desc" style={{ marginBottom: 12 }}>
+          Infrastructure config (nodes, services, integrations) is stored server-side in <code className="settings-mono" style={{
+            fontSize: 12, background: 'var(--bg-card-inner)',
             padding: '2px 6px', borderRadius: 4,
           }}>data/services.yaml</code> and persists across container rebuilds via the data volume.
         </p>
-        <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          Display config is saved to <code style={{
-            fontFamily: 'var(--font-mono)', fontSize: 11, background: 'var(--bg-card-inner)',
+        <p className="settings-hint-block">
+          Display config is saved to <code className="settings-mono" style={{
+            fontSize: 11, background: 'var(--bg-card-inner)',
             padding: '2px 4px', borderRadius: 3,
           }}>data/display-config.json</code> automatically. All changes save in real-time.
         </p>
