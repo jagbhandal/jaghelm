@@ -101,7 +101,11 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
               onChange={e => updateNode(key, 'visible', e.target.checked)}
               style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
             />
-            <span style={{ fontSize: 22 }}>{node.icon || '🖥'}</span>
+            <span style={{ fontSize: 22, display: 'inline-flex', alignItems: 'center' }}>
+              {(node.icon && (node.icon.startsWith('http') || node.icon.startsWith('/')))
+                ? <img src={node.icon} alt="" style={{ width: 24, height: 24, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
+                : (node.icon || '🖥')}
+            </span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15 }}>
                 {node.display_name || key}

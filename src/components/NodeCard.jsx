@@ -71,7 +71,7 @@ function ServiceGrid({ services, config, panelId, dragDisabled }) {
  * Now accepts panelId and dragDisabled props for drag-and-drop support.
  * Service cards are draggable between panels when dragDisabled is false.
  */
-export default function NodeCard({ sectionKey, config, setConfig, borderColor, metrics, services, nodeData, children, panelId, dragDisabled }) {
+export default React.memo(function NodeCard({ sectionKey, config, setConfig, borderColor, metrics, services, nodeData, children, panelId, dragDisabled }) {
   const sec = config?.sections?.[sectionKey] || {};
 
   const title = nodeData?.display_name || sec.title || sectionKey;
@@ -137,4 +137,4 @@ export default function NodeCard({ sectionKey, config, setConfig, borderColor, m
       {children}
     </div>
   );
-}
+});

@@ -101,7 +101,11 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
               borderLeft: `3px solid ${node.border_color || 'var(--accent)'}`,
             }}
           >
-            <span style={{ fontSize: 18 }}>{node.icon || '🖥'}</span>
+            <span style={{ fontSize: 18, display: 'inline-flex', alignItems: 'center' }}>
+              {(node.icon && (node.icon.startsWith('http') || node.icon.startsWith('/')))
+                ? <img src={node.icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
+                : (node.icon || '🖥')}
+            </span>
             <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 14, flex: 1 }}>
               {node.display_name || nodeKey}
             </span>

@@ -22,7 +22,7 @@ function sectionBgStyle(sec) {
   return {};
 }
 
-export function UPSCard({ upsData, borderColor, config }) {
+export const UPSCard = React.memo(function UPSCard({ upsData, borderColor, config }) {
   const sec = config?.sections?.ups || {};
   // nut_status values: 0=Unknown, 1=Online (OL), 2=On Battery (OB), 3=Low Battery (LB)
   const sL = (v) => v == null ? 'Unknown' : v === 1 ? 'Online' : v === 2 ? 'On Battery' : v === 3 ? 'Low Battery' : v === 0 ? 'Unknown' : `Status ${v}`;
@@ -42,9 +42,9 @@ export function UPSCard({ upsData, borderColor, config }) {
       </div>
     </div>
   );
-}
+});
 
-export function GiteaActivity({ commits, config }) {
+export const GiteaActivity = React.memo(function GiteaActivity({ commits, config }) {
   const sec = config?.sections?.pipeline || {};
   const ago = (d) => {
     if (!d) return '';
@@ -110,7 +110,7 @@ export function GiteaActivity({ commits, config }) {
       )}
     </div>
   );
-}
+});
 
 const CDN_BASE = 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg';
 
@@ -133,7 +133,7 @@ function resolveQuickLinkIcon(link) {
   return null;
 }
 
-export function QuickLaunch({ config, borderColor }) {
+export const QuickLaunch = React.memo(function QuickLaunch({ config, borderColor }) {
   const sec = config?.sections?.quicklaunch || {};
   const groups = [{ key: 'personal', label: 'Personal' }, { key: 'management', label: 'Management' }, { key: 'devops', label: 'Dev & Monitoring' }];
   return (
@@ -171,4 +171,4 @@ export function QuickLaunch({ config, borderColor }) {
       </div>
     </div>
   );
-}
+});

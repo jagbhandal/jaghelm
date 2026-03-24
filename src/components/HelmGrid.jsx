@@ -86,31 +86,45 @@ function layoutsEqual(a, b) {
 
 function GridItem({ itemId, style, className, dragHandle, draggable, resizable, isDragging, isResizing, onDragStart, onResizeStart, onContentHeight, children }) {
   const ref = useRef(null);
+  const onContentHeightRef = useRef(onContentHeight);
+  onContentHeightRef.current = onContentHeight;
 
   // Measure the natural content height (without flex stretch)
+  // NOTE: deps intentionally exclude children — ResizeObserver handles content changes.
+  // Including children caused the entire effect (including RO setup) to re-run on every
+  // data refresh, which cascaded into setContentHeights → re-render → RO fires again.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
+    let rafId = null;
+
     const measure = () => {
-      // Save current height, set to auto to get natural content height
       const savedHeight = el.style.height;
       el.style.height = 'auto';
       const natural = el.scrollHeight;
       el.style.height = savedHeight;
-      if (natural > 0) onContentHeight(itemId, natural);
+      if (natural > 0) onContentHeightRef.current(itemId, natural);
     };
 
-    // Measure after paint so content has rendered
-    requestAnimationFrame(measure);
+    const debouncedMeasure = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(measure);
+    };
+
+    // Initial measure after paint
+    rafId = requestAnimationFrame(measure);
 
     // Re-measure when children resize (e.g. service cards load, data refreshes)
-    const ro = new ResizeObserver(() => requestAnimationFrame(measure));
-    // Observe the first child (the actual card), not the wrapper
+    const ro = new ResizeObserver(debouncedMeasure);
     const content = el.firstElementChild;
     if (content) ro.observe(content);
-    return () => ro.disconnect();
-  }, [itemId, onContentHeight, children]);
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      ro.disconnect();
+    };
+  }, [itemId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
@@ -198,11 +212,24 @@ export default function HelmGrid({
   // ── Content heights — measured by GridItem, used for auto-grow ──
   const [contentHeights, setContentHeights] = useState({}); // itemId → pixels
   const contentHeightsRef = useRef({});
+  const pendingHeightsRef = useRef(null); // batched updates
 
   const handleContentHeight = useCallback((itemId, px) => {
     if (contentHeightsRef.current[itemId] === px) return; // No change
     contentHeightsRef.current[itemId] = px;
-    setContentHeights(prev => ({ ...prev, [itemId]: px }));
+
+    // Batch: collect all height updates, flush in one microtask
+    if (!pendingHeightsRef.current) {
+      pendingHeightsRef.current = {};
+      Promise.resolve().then(() => {
+        const batch = pendingHeightsRef.current;
+        pendingHeightsRef.current = null;
+        if (batch && Object.keys(batch).length > 0) {
+          setContentHeights(prev => ({ ...prev, ...batch }));
+        }
+      });
+    }
+    pendingHeightsRef.current[itemId] = px;
   }, []);
 
   // Sync from props with column clamping and overlap resolution

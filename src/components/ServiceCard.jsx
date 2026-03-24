@@ -16,7 +16,7 @@ import { getServiceIcon } from '../hooks/useData';
  *
  * Docker stats and app data appear as additional content when enabled.
  */
-export default function ServiceCard({ service, showDockerStats = true, showAppData = true, statusStyle = 'badge', cardLayout = 'row' }) {
+export default React.memo(function ServiceCard({ service, showDockerStats = true, showAppData = true, statusStyle = 'badge', cardLayout = 'row' }) {
   const icon = service.icon
     ? getServiceIcon(service.icon) || getServiceIcon(service.name)
     : getServiceIcon(service.name);
@@ -170,7 +170,7 @@ export default function ServiceCard({ service, showDockerStats = true, showAppDa
       )}
     </div>
   );
-}
+});
 
 // ─── Shared sub-components ───────────────────────────────────────────────────
 

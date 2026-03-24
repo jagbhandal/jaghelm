@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getWeather, WEATHER_CODES, SEARCH_ENGINES } from '../hooks/useData';
 
-export default function NavBar({ tabs, activeTab, onTabChange, theme, setTheme, onToggleTheme, health, lastUpdated, config, onOpenSettings, refreshKey }) {
+export default React.memo(function NavBar({ tabs, activeTab, onTabChange, theme, setTheme, onToggleTheme, health, lastUpdated, config, onOpenSettings, refreshKey }) {
   const [timeSince, setTimeSince] = useState('just now');
   const [clock, setClock] = useState('');
   const [weather, setWeather] = useState(null);
@@ -96,4 +96,4 @@ export default function NavBar({ tabs, activeTab, onTabChange, theme, setTheme, 
       </div>
     </nav>
   );
-}
+});
