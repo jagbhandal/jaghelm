@@ -30,6 +30,7 @@ import { initMonitors, fetchMonitors, getMonitorNames, matchMonitor, markMonitor
 import { initRegistry, getPreset, listPresets } from './integrations/registry.js';
 import { fetchIntegration, testIntegration } from './integrations/handler.js';
 import { initIconIndex, searchIcons, getIconCount } from './icons.js';
+import { initIconCache, handleCachedIcon } from './icon-cache.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -645,6 +646,11 @@ app.get('/api/icons', authMiddleware, (req, res) => {
   res.json({ count: getIconCount(), results });
 });
 
+// Icon cache — serves CDN icons from local disk after first fetch
+// No auth required — icons are public content, and requiring auth
+// would break <img> tags that can't set headers
+app.get('/api/icons/cached', handleCachedIcon);
+
 // ══════════════════════════════════════════════════════════════
 // PHASE 3: INTEGRATION ENGINE
 // ══════════════════════════════════════════════════════════════
@@ -822,6 +828,7 @@ async function boot() {
   initSecrets();
   initDiscovery(promUrl);
   initMonitors(kumaUrl);
+  initIconCache(dataDir);
   await initRegistry();
 
   // Load icon index in background (non-blocking — search works once ready)

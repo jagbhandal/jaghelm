@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import DraggableServiceCard from './DraggableServiceCard';
+import { cachedIconUrl } from '../hooks/useData';
 
 /**
  * ServiceGrid — Responsive service card grid with draggable cards
@@ -97,10 +98,10 @@ export default React.memo(function NodeCard({ sectionKey, config, setConfig, bor
             border: `1px solid ${borderColor || 'var(--accent)'}30`,
           }}>
             {icon.startsWith('http') || icon.startsWith('/')
-              ? <img src={icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
+              ? <img src={cachedIconUrl(icon) || icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
               : isEmoji(icon)
                 ? <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>
-                : <img src={`https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
+                : <img src={cachedIconUrl(`https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`)} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
             }
           </div>
         )}

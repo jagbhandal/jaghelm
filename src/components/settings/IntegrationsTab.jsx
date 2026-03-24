@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { cachedIconUrl } from '../../hooks/useData';
 
 /**
  * IntegrationsTab — Phase 3 Settings
@@ -335,7 +336,7 @@ export default function IntegrationsTab() {
                 }}>
                   {/* Icon */}
                   <img
-                    src={`https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${preset?.icon || presetType}.svg`}
+                    src={cachedIconUrl(`https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${preset?.icon || presetType}.svg`)}
                     alt=""
                     style={{ width: 28, height: 28, borderRadius: 6 }}
                     onError={e => { e.target.style.display = 'none'; }}
@@ -486,7 +487,7 @@ export default function IntegrationsTab() {
                   </span>
                 )}
                 <img
-                  src={`https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${p.icon}.svg`}
+                  src={cachedIconUrl(`https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${p.icon}.svg`)}
                   alt=""
                   style={{ width: 36, height: 36, borderRadius: 8 }}
                   onError={e => { e.target.style.display = 'none'; }}
@@ -543,7 +544,7 @@ export default function IntegrationsTab() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
           {isPreset && (
             <img
-              src={`https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${selectedPreset.icon}.svg`}
+              src={cachedIconUrl(`https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${selectedPreset.icon}.svg`)}
               alt=""
               style={{ width: 40, height: 40, borderRadius: 10 }}
               onError={e => { e.target.style.display = 'none'; }}

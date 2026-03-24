@@ -6,7 +6,7 @@ import TodoCard from '../components/TodoCard';
 import DroppablePanel from '../components/DroppablePanel';
 import ServiceDragOverlay from '../components/ServiceDragOverlay';
 import { UPSCard, GiteaActivity, QuickLaunch } from '../components/Widgets';
-import { getServices, getUPSStatus, getGiteaActivity, getAllIntegrations } from '../hooks/useData';
+import { getServices, getUPSStatus, getGiteaActivity, getAllIntegrations, cachedIconUrl } from '../hooks/useData';
 
 /**
  * DashboardView v8 — Phase 3
@@ -601,7 +601,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
               borderColor={borderColor}
               metrics={null}
               services={services}
-              nodeData={{ display_name: group.title, icon: group.icon || 'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/folder_special/outline.svg', subtitle: `${services.length} services` }}
+              nodeData={{ display_name: group.title, icon: group.icon || cachedIconUrl('https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/folder_special/outline.svg'), subtitle: `${services.length} services` }}
               panelId={gridKey}
               dragDisabled={isMobile}
             />

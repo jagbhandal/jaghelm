@@ -86,6 +86,29 @@ export async function uploadFile(file, type) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// Icon URL helper — routes external CDN URLs through local cache
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * Convert an external CDN icon URL to a locally-cached URL.
+ * Icons are fetched from the CDN once, saved to data/icon-cache/,
+ * and served locally on all subsequent loads. Eliminates 20-30
+ * cross-origin CDN round-trips on every cold page load.
+ * 
+ * Non-CDN URLs (local paths, data URIs) pass through unchanged.
+ * Emojis and empty strings return null.
+ */
+export function cachedIconUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  // Only proxy external CDN URLs
+  if (url.startsWith('https://cdn.jsdelivr.net/') || url.startsWith('https://raw.githubusercontent.com/')) {
+    return `/api/icons/cached?url=${encodeURIComponent(url)}`;
+  }
+  // Local paths, data URIs, etc. — pass through
+  return url;
+}
+
+// ══════════════════════════════════════════════════════════════
 // Constants (icons, weather codes, search engines)
 // ══════════════════════════════════════════════════════════════
 
@@ -150,7 +173,7 @@ export const SERVICE_ICONS = {
 export function getServiceIcon(name) {
   const lower = (name || '').toLowerCase();
   for (const [key, url] of Object.entries(SERVICE_ICONS)) {
-    if (lower.includes(key)) return url;
+    if (lower.includes(key)) return cachedIconUrl(url);
   }
   return null;
 }
