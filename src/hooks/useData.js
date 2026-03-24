@@ -85,10 +85,16 @@ export async function deleteIntegration(type) {
 export async function getMonitors() { return fetchJson(`${BASE}/uptime/monitors`); }
 
 export async function getWeather(lat, lon) {
-  return fetchJson(`${BASE}/weather?lat=${lat}&lon=${lon}`);
+  const r = await fetch(`${BASE}/weather?lat=${lat}&lon=${lon}`, { signal: AbortSignal.timeout(12000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
 }
 
-export async function getTodos() { return fetchJson(`${BASE}/todos`); }
+export async function getTodos() {
+  const r = await fetch(`${BASE}/todos`, { signal: AbortSignal.timeout(12000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
 export async function saveTodos(todos) {
   await fetch(`${BASE}/todos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(todos) });
 }
