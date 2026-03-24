@@ -1,5 +1,5 @@
 import React from 'react';
-import { getServiceIcon } from '../hooks/useData';
+import { getServiceIcon, cachedIconUrl } from '../hooks/useData';
 
 // Shared: render icon (URL, slug, or emoji)
 function isEmoji(str) {
@@ -9,13 +9,13 @@ function isEmoji(str) {
 function renderIcon(icon) {
   if (!icon) return null;
   if (icon.startsWith('http') || icon.startsWith('/')) {
-    return <img src={icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} />;
+    return <img src={cachedIconUrl(icon) || icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} />;
   }
   if (isEmoji(icon)) {
     return <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>;
   }
   // Treat as a Dashboard Icons slug
-  const url = `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`;
+  const url = cachedIconUrl(`https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`);
   return <img src={url} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />;
 }
 
@@ -125,18 +125,18 @@ const CDN_BASE = 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg';
 function resolveQuickLinkIcon(link) {
   // 1. If link has an icon field that looks like a CDN slug, use it directly
   if (link.icon && /^[a-z0-9-]+$/i.test(link.icon)) {
-    return `${CDN_BASE}/${link.icon.toLowerCase()}.svg`;
+    return cachedIconUrl(`${CDN_BASE}/${link.icon.toLowerCase()}.svg`);
   }
-  // 2. If link.icon is a full URL, use it as-is
+  // 2. If link.icon is a full URL, route through cache
   if (link.icon && (link.icon.startsWith('http') || link.icon.startsWith('/'))) {
-    return link.icon;
+    return cachedIconUrl(link.icon) || link.icon;
   }
-  // 3. Try getServiceIcon by name (uses SERVICE_ICONS mapping)
+  // 3. Try getServiceIcon by name (already routes through cache)
   const mapped = getServiceIcon(link.name);
   if (mapped) return mapped;
   // 4. Try the link name directly as a CDN slug
   const slug = (link.name || '').toLowerCase().replace(/\s+/g, '-');
-  if (slug) return `${CDN_BASE}/${slug}.svg`;
+  if (slug) return cachedIconUrl(`${CDN_BASE}/${slug}.svg`);
   return null;
 }
 
