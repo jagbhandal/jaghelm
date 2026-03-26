@@ -370,9 +370,8 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       // Stacked bar: solid = real app usage, striped = cache/buffers
       if (m.memTotalGB && parseFloat(m.memTotalGB) > 4) {
         metrics.push({
-          label: 'RAM',
+          label: `RAM (GB)`,
           value: `${m.memUsedGB || '—'}/${m.memTotalGB || '—'}`,
-          unit: 'GB',
           percent: parseFloat(m.memPercent),
           withCachePercent: parseFloat(m.memWithCachePercent) || null,
           cacheGB: m.memCacheGB || null,
@@ -398,10 +397,10 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
       // Disk (only if reported) — uses TB when total exceeds 1000 GB
       if (m.diskTotal != null) {
+        const diskUnit = m.diskUnit || 'GB';
         metrics.push({
-          label: 'Disk',
+          label: `Disk (${diskUnit})`,
           value: `${m.diskUsed || '—'}/${m.diskTotal || '—'}`,
-          unit: m.diskUnit || 'GB',
           percent: parseFloat(m.diskPercent),
           small: true,
         });

@@ -15,20 +15,32 @@
   <path d="M100 16 L166 42 Q170 44 170 48 L170 108 Q170 148 100 178 Q30 148 30 108 L30 48 Q30 44 34 42 Z" 
         fill="none" stroke="#818cf8" stroke-width="4" stroke-linejoin="round"/>
 
-  <!-- Ship's wheel - simplified for small sizes -->
+  <!-- Ship's wheel - amber/gold -->
   <g filter="url(#glow)">
-    <circle cx="100" cy="92" r="42" fill="none" stroke="#f59e0b" stroke-width="6"/>
-    <circle cx="100" cy="92" r="14" fill="#f59e0b"/>
-    <circle cx="100" cy="92" r="8" fill="#fbbf24"/>
-    <!-- Cardinal spokes only -->
-    <line x1="100" y1="78" x2="100" y2="50" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
-    <line x1="100" y1="106" x2="100" y2="134" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
-    <line x1="86" y1="92" x2="58" y2="92" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
-    <line x1="114" y1="92" x2="142" y2="92" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="100" cy="92" r="42" fill="none" stroke="#f59e0b" stroke-width="5"/>
+    <circle cx="100" cy="92" r="26" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.35"/>
+    <circle cx="100" cy="92" r="12" fill="#f59e0b"/>
+    <circle cx="100" cy="92" r="7" fill="#fbbf24"/>
+    <circle cx="100" cy="92" r="3" fill="#fde68a"/>
+    <!-- Cardinal spokes -->
+    <line x1="100" y1="80" x2="100" y2="50" stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round"/>
+    <line x1="100" y1="104" x2="100" y2="134" stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round"/>
+    <line x1="88" y1="92" x2="58" y2="92" stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round"/>
+    <line x1="112" y1="92" x2="142" y2="92" stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round"/>
+    <!-- Diagonal spokes -->
+    <line x1="91.5" y1="83.5" x2="70.3" y2="62.3" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+    <line x1="108.5" y1="83.5" x2="129.7" y2="62.3" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+    <line x1="91.5" y1="100.5" x2="70.3" y2="121.7" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+    <line x1="108.5" y1="100.5" x2="129.7" y2="121.7" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
     <!-- Cardinal pegs -->
-    <circle cx="100" cy="48" r="8" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
-    <circle cx="100" cy="136" r="8" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
-    <circle cx="56" cy="92" r="8" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
-    <circle cx="144" cy="92" r="8" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <circle cx="100" cy="48" r="7" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <circle cx="100" cy="136" r="7" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <circle cx="56" cy="92" r="7" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <circle cx="144" cy="92" r="7" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <!-- Diagonal pegs -->
+    <circle cx="69" cy="61" r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+    <circle cx="131" cy="61" r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+    <circle cx="69" cy="123" r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+    <circle cx="131" cy="123" r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
   </g>
 </svg>
