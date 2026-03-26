@@ -71,10 +71,10 @@ export async function discoverNodes() {
 export async function getNodeData(nodeLabel) {
   const l = `node="${nodeLabel}"`;
 
-  // Fire ALL queries in one Promise.all — node metrics (9) + container stats (5) = 14 parallel
+  // Fire ALL queries in one Promise.all — node metrics (8) + container stats (5) = 13 parallel
   const [
     // Node metrics
-    cpuR, memTR, memAR, memCachedR, memBuffersR, upR, tempR, diskTR, diskFR,
+    cpuR, memTR, memAR, memFreeR, upR, tempR, diskTR, diskFR,
     // Container stats
     namesR, cCpuR, cMemR, cRxR, cTxR,
   ] = await Promise.all([
@@ -82,8 +82,7 @@ export async function getNodeData(nodeLabel) {
     promQuery(`100 - (avg by(instance)(irate(node_cpu_seconds_total{${l},mode="idle"}[5m])) * 100)`),
     promQuery(`node_memory_MemTotal_bytes{${l}}`),
     promQuery(`node_memory_MemAvailable_bytes{${l}}`),
-    promQuery(`node_memory_Cached_bytes{${l}}`),
-    promQuery(`node_memory_Buffers_bytes{${l}}`),
+    promQuery(`node_memory_MemFree_bytes{${l}}`),
     promQuery(`node_time_seconds{${l}} - node_boot_time_seconds{${l}}`),
     promQuery(`node_hwmon_temp_celsius{${l}}`),
     promQuery(`node_filesystem_size_bytes{${l},mountpoint="/",fstype!="tmpfs"}`),
@@ -100,8 +99,7 @@ export async function getNodeData(nodeLabel) {
   const cpu = scalar(cpuR);
   const memTotal = scalar(memTR);
   const memAvail = scalar(memAR);
-  const memCached = scalar(memCachedR);
-  const memBuffers = scalar(memBuffersR);
+  const memFree = scalar(memFreeR);
   const upSec = scalar(upR);
   const temp = scalar(tempR);
   let diskTotal = scalar(diskTR);
@@ -135,10 +133,14 @@ export async function getNodeData(nodeLabel) {
     }
   }
 
+  // Memory breakdown:
+  // memUsed     = Total - Available  (real app usage — what the kernel says is "in use")
+  // memWithCache = Total - Free      (everything not completely free, including cache/buffers)
+  // memCache    = memWithCache - memUsed  (cache/buffers that the OS can reclaim if needed)
+  // The bar shows: [solid: memUsed] [striped: memCache] [empty: free]
   const memUsed = memTotal && memAvail ? memTotal - memAvail : null;
-  const memCache = (memCached || 0) + (memBuffers || 0);
-  // Actual usage = total used minus cache/buffers (what apps actually need)
-  const memActual = memUsed && memCache ? memUsed - memCache : memUsed;
+  const memWithCache = memTotal && memFree ? memTotal - memFree : null;
+  const memCache = memWithCache && memUsed ? Math.max(0, memWithCache - memUsed) : null;
   const diskUsed = diskTotal && diskFree ? diskTotal - diskFree : null;
 
   // Disk: use TB when total exceeds 1000 GB
@@ -158,8 +160,7 @@ export async function getNodeData(nodeLabel) {
     memUsedGB: memUsed ? (memUsed / 1073741824).toFixed(1) : null,
     memTotalGB: memTotal ? (memTotal / 1073741824).toFixed(1) : null,
     memPercent: memTotal && memUsed ? ((memUsed / memTotal) * 100).toFixed(1) : null,
-    memActualGB: memActual ? (memActual / 1073741824).toFixed(1) : null,
-    memActualPercent: memTotal && memActual ? ((memActual / memTotal) * 100).toFixed(1) : null,
+    memWithCachePercent: memTotal && memWithCache ? ((memWithCache / memTotal) * 100).toFixed(1) : null,
     memCacheGB: memCache ? (memCache / 1073741824).toFixed(1) : null,
     uptime: upSec ? formatUptime(upSec) : null,
     temp: temp != null ? temp.toFixed(1) : null,

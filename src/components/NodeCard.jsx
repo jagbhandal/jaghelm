@@ -123,27 +123,34 @@ export default React.memo(function NodeCard({ sectionKey, config, setConfig, bor
               </span>
               {m.percent != null && !isNaN(m.percent) && (
                 <div className="metric-bar">
-                  {m.actualPercent != null && !isNaN(m.actualPercent) ? (
+                  {m.withCachePercent != null && !isNaN(m.withCachePercent) && m.withCachePercent > m.percent ? (
                     <>
-                      {/* Stacked bar: actual usage (solid) + cache (semi-transparent) */}
+                      {/* Stacked bar: actual usage (solid) + cache (striped) */}
                       <div
-                        className="metric-bar-fill"
                         style={{
-                          width: `${Math.min(m.actualPercent, 100)}%`,
-                          background: m.percent > 90 ? 'var(--red)' : m.percent > 70 ? 'var(--amber)' : borderColor || 'var(--accent)',
+                          width: `${Math.min(m.percent, 100)}%`,
+                          background: m.withCachePercent > 90 ? 'var(--red)' : m.withCachePercent > 70 ? 'var(--amber)' : borderColor || 'var(--accent)',
                           borderRadius: '2px 0 0 2px',
                           position: 'absolute',
                           left: 0, top: 0, height: '100%',
+                          transition: 'width 1s ease',
                         }}
                       />
                       <div
                         style={{
-                          width: `${Math.min(m.percent - m.actualPercent, 100 - m.actualPercent)}%`,
-                          background: m.percent > 90 ? 'var(--red)' : m.percent > 70 ? 'var(--amber)' : borderColor || 'var(--accent)',
-                          opacity: 0.3,
+                          width: `${Math.min(m.withCachePercent - m.percent, 100 - m.percent)}%`,
+                          background: `repeating-linear-gradient(
+                            90deg,
+                            ${m.withCachePercent > 90 ? 'var(--red)' : m.withCachePercent > 70 ? 'var(--amber)' : borderColor || 'var(--accent)'} 0px,
+                            ${m.withCachePercent > 90 ? 'var(--red)' : m.withCachePercent > 70 ? 'var(--amber)' : borderColor || 'var(--accent)'} 2px,
+                            transparent 2px,
+                            transparent 4px
+                          )`,
+                          opacity: 0.5,
                           borderRadius: '0 2px 2px 0',
                           position: 'absolute',
-                          left: `${m.actualPercent}%`, top: 0, height: '100%',
+                          left: `${m.percent}%`, top: 0, height: '100%',
+                          transition: 'width 1s ease, left 1s ease',
                         }}
                       />
                     </>
