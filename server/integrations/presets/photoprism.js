@@ -2,9 +2,15 @@ export default {
   name: 'PhotoPrism',
   icon: 'photoprism',
   description: 'AI-powered photo management',
-  auth: 'header',
-  authHeader: 'X-Auth-Token',
-  authPrefix: '',
+  auth: 'session',
+  session: {
+    loginEndpoint: '/api/v1/oauth/token',
+    loginContentType: 'application/x-www-form-urlencoded',
+    loginBody: 'grant_type=client_credentials&client_id={username}&client_secret={password}',
+    tokenPath: 'access_token',
+    tokenHeader: 'Authorization',
+    tokenPrefix: 'Bearer ',
+  },
   endpoint: '/api/v1/config',
   testEndpoint: '/api/v1/config',
   fields: [
@@ -14,6 +20,7 @@ export default {
   ],
   envKeys: {
     url: 'PHOTOPRISM_URL',
-    token: 'PHOTOPRISM_TOKEN',
+    username: 'PHOTOPRISM_CLIENT_ID',
+    password: 'PHOTOPRISM_CLIENT_SECRET',
   },
 };

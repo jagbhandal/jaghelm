@@ -281,13 +281,23 @@ async function fetchWithSession(config) {
   const skipTls = !!config.tlsSkip;
 
   // Step 1: Login
-  const loginBody = JSON.stringify(session.loginBody)
-    .replace('{username}', config._username || '')
-    .replace('{password}', config._password || '');
+  const contentType = session.loginContentType || 'application/json';
+  let loginBody;
+  if (contentType === 'application/x-www-form-urlencoded') {
+    // URL-encoded form body (e.g. OAuth2 client_credentials)
+    loginBody = session.loginBody
+      .replace('{username}', encodeURIComponent(config._username || ''))
+      .replace('{password}', encodeURIComponent(config._password || ''));
+  } else {
+    // JSON body
+    loginBody = JSON.stringify(session.loginBody)
+      .replace('{username}', config._username || '')
+      .replace('{password}', config._password || '');
+  }
 
   const loginRes = await safeFetch(`${baseUrl}${session.loginEndpoint}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': contentType },
     body: loginBody,
   }, skipTls);
   const loginData = await loginRes.json();
