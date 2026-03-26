@@ -38,7 +38,8 @@ Homepage and Homarr are link launchers with widget sidecars. **JagHelm is a real
 | Server-side config persistence | ❌ | ✅ | ✅ Survives container rebuilds |
 | Built-in authentication | ❌ | ✅ | ✅ With password change from UI |
 | Encrypted secrets management | ❌ | ✅ | ✅ AES-256-GCM |
-| VS Code-inspired themes | ❌ | ❌ | ✅ 6 themes |
+| VS Code-inspired themes | ❌ | ❌ | ✅ 10 themes (6 dark + 4 light) |
+| PWA / installable on mobile | ❌ | ❌ | ✅ Add to home screen, full-screen app |
 
 ---
 
@@ -89,17 +90,21 @@ JagHelm uses **HelmGrid**, a purpose-built grid layout engine designed specifica
 
 HelmGrid was built from scratch to replace react-grid-layout after encountering persistent resize bugs in RGL's internal layout calculation. Every line is purpose-written for JagHelm's use case — no black-box abstractions, no unexpected behaviors.
 
-### 🎨 6 VS Code-Inspired Themes
+### 🎨 10 VS Code-Inspired Themes
 Choose from the most popular developer themes, adapted for dashboard use:
 
-| Theme | Description |
-|-------|-------------|
-| **One Dark Pro** | Atom's iconic dark theme (default) |
-| **Dracula** | Dark with vibrant purple accents |
-| **Night Owl** | Deep blue, optimized for low-light |
-| **GitHub Dark** | Clean and minimal |
-| **Catppuccin Mocha** | Warm, soothing pastels |
-| **Material Ocean** | Google Material's darkest variant |
+| Theme | Type | Description |
+|-------|------|-------------|
+| **One Dark Pro** | Dark | Atom's iconic dark theme (default) |
+| **Dracula** | Dark | Vibrant purple accents |
+| **Night Owl** | Dark | Deep blue, optimized for low-light |
+| **GitHub Dark** | Dark | Clean and minimal |
+| **Catppuccin Mocha** | Dark | Warm, soothing pastels |
+| **Material Ocean** | Dark | Google Material's darkest variant |
+| **GitHub Light** | Light | Clean white, corporate feel |
+| **Catppuccin Latte** | Light | Warm cream, pastel accents |
+| **Solarized Light** | Light | Iconic warm ivory with teal |
+| **Atom One Light** | Light | Crisp white, bold red accent |
 
 ### 🔤 Full Typography System
 - **5 font family presets:** Default (Outfit), Clean (Inter), Rounded (Nunito), Sharp (Rajdhani), System
@@ -128,8 +133,11 @@ Settings includes a live preview panel — see your changes take effect in real 
 ### 🔐 Security
 - Optional password authentication with **scrypt hashing** (Node.js built-in, timing-safe comparison)
 - Password changeable from the Settings UI (no SSH required)
+- **Login rate limiting** — 5 attempts per IP per 15 minutes to prevent brute-force attacks
 - AES-256-GCM encrypted secrets for API credentials (PBKDF2 key derivation, 100k iterations)
-- Session management with 24-hour expiry
+- Session management with 24-hour expiry and automatic cleanup
+- **Logout from the UI** — session cleared from browser and server
+- **File upload validation** — MIME type whitelist (images only)
 - All API requests proxied through the backend — no credentials exposed to the browser
 - Frontend fetch timeouts prevent UI hangs when backend services are down
 
@@ -342,7 +350,7 @@ JagHelm integrates with these services for data collection and monitoring:
 |---------|-----------------|
 | [Homepage](https://gethomepage.dev) by Ben Phelps & contributors | Layout settings architecture, nested group concept, settings structure |
 | [Homarr](https://homarr.dev) by Homarr Labs | Searchable icon picker from multiple repositories, integration preset patterns |
-| [VS Code](https://code.visualstudio.com) by Microsoft | Dark theme color palettes — our 6 themes are inspired by popular VS Code themes |
+| [VS Code](https://code.visualstudio.com) by Microsoft | Theme color palettes — our 10 themes are inspired by popular VS Code themes |
 
 The VS Code-inspired theme palettes draw from color schemes by these creators:
 
@@ -351,9 +359,11 @@ The VS Code-inspired theme palettes draw from color schemes by these creators:
 | One Dark Pro | Binaryify | [GitHub](https://github.com/Binaryify/OneDark-Pro) |
 | Dracula | Zeno Rocha | [GitHub](https://github.com/dracula/dracula-theme) |
 | Night Owl | Sarah Drasner | [GitHub](https://github.com/sdras/night-owl-vscode-theme) |
-| GitHub Dark | Primer team (GitHub) | [GitHub](https://github.com/primer/github-vscode-theme) |
-| Catppuccin Mocha | Catppuccin community | [GitHub](https://github.com/catppuccin/catppuccin) |
+| GitHub Dark / Light | Primer team (GitHub) | [GitHub](https://github.com/primer/github-vscode-theme) |
+| Catppuccin Mocha / Latte | Catppuccin community | [GitHub](https://github.com/catppuccin/catppuccin) |
 | Material Ocean | Mattia Astorino (Equinusocio) | [GitHub](https://github.com/equinusocio/vsc-material-theme) |
+| Solarized Light | Ethan Schoonover | [GitHub](https://github.com/altercation/solarized) |
+| Atom One Light | Atom community | [GitHub](https://github.com/atom/atom) |
 
 ### Fonts
 
@@ -383,23 +393,6 @@ JagHelm was developed with assistance from **Claude AI** by [Anthropic](https://
 ### Community
 
 Thank you to the self-hosted and homelab community — especially the communities around [r/selfhosted](https://reddit.com/r/selfhosted) and [r/homelab](https://reddit.com/r/homelab) — for building and maintaining the incredible ecosystem of tools that JagHelm monitors and integrates with.
-
----
-
-## Contributing
-
-Contributions are welcome. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### Development Setup
-
-```bash
-git clone https://github.com/your-org/jaghelm.git
-cd jaghelm
-npm install
-npm run dev     # Vite dev server with HMR
-```
-
-The Express server runs on port 3099. The Vite dev server proxies API requests.
 
 ---
 
