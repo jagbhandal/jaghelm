@@ -61,7 +61,7 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
         borderRadius: 10,
         borderLeft: showBorder ? `3px solid ${statusColor}` : '1px solid var(--border-color)',
         padding: '10px 14px',
-        overflow: 'hidden', minWidth: 0,
+        overflow: 'hidden', minWidth: 0, minHeight: 105,
       }}>
         {/* Primary row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -76,17 +76,19 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
 
         {/* Docker stats row */}
         {showStats && (
-          <div style={{
-            display: 'flex', gap: 12, marginTop: 8, paddingTop: 8,
-            borderTop: '1px solid rgba(255,255,255,0.04)', flexWrap: 'wrap',
-            justifyContent: 'center',
-          }}>
-            <InlineStat label="CPU" value={docker.cpu != null ? `${docker.cpu}%` : null} />
-            <InlineStat label="MEM" value={docker.memMB != null ? formatMem(docker.memMB) : null} />
-            <InlineStat label="RX" value={docker.rxMB != null ? formatMem(docker.rxMB) : null} />
-            <InlineStat label="TX" value={docker.txMB != null ? formatMem(docker.txMB) : null} />
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: 6,
+            }}>
+              <GridStat label="CPU" value={docker.cpu != null ? `${docker.cpu}%` : '—'} />
+              <GridStat label="MEM" value={docker.memMB != null ? formatMem(docker.memMB) : '—'} />
+              <GridStat label="RX" value={docker.rxMB != null ? formatMem(docker.rxMB) : '—'} />
+              <GridStat label="TX" value={docker.txMB != null ? formatMem(docker.txMB) : '—'} />
+            </div>
             {service.uptime != null && (
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6, marginTop: 6 }}>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)', letterSpacing: 0.5 }}>24H</span>
                 <span style={{
                   fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 500,
@@ -121,7 +123,7 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
       borderRadius: 10,
       borderLeft: showBorder ? `3px solid ${statusColor}` : '1px solid var(--border-color)',
       padding: showStats || showApp ? '12px 14px' : '10px 12px',
-      overflow: 'hidden', minWidth: 0,
+      overflow: 'hidden', minWidth: 0, minHeight: 105,
     }}>
       {/* Header: icon + name + badges */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: showStats || showApp ? 8 : 0 }}>
@@ -136,7 +138,7 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
 
       {/* Stats grid */}
       {showStats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(60px, 1fr))', gap: 4 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
           <GridStat label="CPU" value={docker.cpu != null ? `${docker.cpu}%` : '—'} />
           <GridStat label="MEM" value={docker.memMB != null ? formatMem(docker.memMB) : '—'} />
           <GridStat label="RX" value={docker.rxMB != null ? formatMem(docker.rxMB) : '—'} />
