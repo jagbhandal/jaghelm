@@ -3,7 +3,16 @@ export default {
   icon: 'photoprism',
   description: 'AI-powered photo management',
   auth: 'session',
+  authFallback: 'oauth2',
   session: {
+    loginEndpoint: '/api/v1/session',
+    loginContentType: 'application/json',
+    loginBody: { username: '{username}', password: '{password}' },
+    tokenPath: 'id',
+    tokenHeader: 'X-Auth-Token',
+    tokenPrefix: '',
+  },
+  oauth2: {
     loginEndpoint: '/api/v1/oauth/token',
     loginContentType: 'application/x-www-form-urlencoded',
     loginBody: 'grant_type=client_credentials&client_id={username}&client_secret={password}',
@@ -11,6 +20,7 @@ export default {
     tokenHeader: 'Authorization',
     tokenPrefix: 'Bearer ',
   },
+  oauth2Instructions: 'If you have 2FA enabled, run this command inside your PhotoPrism container to generate OAuth2 credentials:\n\ndocker exec -it photoprism photoprism clients add --name "JagHelm" --scope "*"\n\nThen enter the Client ID as Username and Client Secret as Password.',
   endpoint: '/api/v1/config',
   testEndpoint: '/api/v1/config',
   fields: [
@@ -20,7 +30,7 @@ export default {
   ],
   envKeys: {
     url: 'PHOTOPRISM_URL',
-    username: 'PHOTOPRISM_CLIENT_ID',
-    password: 'PHOTOPRISM_CLIENT_SECRET',
+    username: 'PHOTOPRISM_USER',
+    password: 'PHOTOPRISM_PASS',
   },
 };
