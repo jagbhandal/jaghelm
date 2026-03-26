@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/logo.svg" height="120" alt="JagHelm">
+  <img src="public/logo-login.svg" height="140" alt="JagHelm">
 </p>
 
 <h1 align="center">JagHelm</h1>

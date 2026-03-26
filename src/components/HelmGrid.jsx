@@ -240,22 +240,27 @@ export default function HelmGrid({
   useEffect(() => {
     const hasOwnLayout = !!layouts?.[breakpoint];
     const bpLayout = layouts?.[breakpoint] || layouts?.lg || [];
+    const forceStack = breakpoint === 'sm' || (breakpoint === 'md' && !hasOwnLayout);
 
-    const clamped = bpLayout.map(item => {
-      let { x, w } = item;
-      // For sm (mobile): always single column, full width
-      if (breakpoint === 'sm') {
-        return { ...item, x: 0, w: activeCols };
-      }
-      // For md without its own layout: force full width to stack panels
-      if (breakpoint === 'md' && !hasOwnLayout) {
-        return { ...item, x: 0, w: activeCols };
-      }
-      // Normal clamping for lg or md with its own layout
-      if (w > activeCols) w = activeCols;
-      if (x + w > activeCols) x = Math.max(0, activeCols - w);
-      return (x !== item.x || w !== item.w) ? { ...item, x, w } : item;
-    });
+    let clamped;
+    if (forceStack) {
+      // Sort by original position (top-to-bottom, left-to-right) then stack sequentially
+      const sorted = [...bpLayout].sort((a, b) => a.y !== b.y ? a.y - b.y : a.x - b.x);
+      let stackY = 0;
+      clamped = sorted.map(item => {
+        const entry = { ...item, x: 0, w: activeCols, y: stackY };
+        stackY += item.h;
+        return entry;
+      });
+    } else {
+      clamped = bpLayout.map(item => {
+        let { x, w } = item;
+        if (w > activeCols) w = activeCols;
+        if (x + w > activeCols) x = Math.max(0, activeCols - w);
+        return (x !== item.x || w !== item.w) ? { ...item, x, w } : item;
+      });
+    }
+
     const resolved = resolveOverlaps(clamped);
     if (!layoutsEqual(resolved, lastSyncedLayout.current)) {
       lastSyncedLayout.current = resolved;
@@ -279,9 +284,9 @@ export default function HelmGrid({
     return map;
   }, [children]);
 
-  // ── Effective layout — expand h to fit content where needed ──
+  // ── Effective layout — expand h to fit content where needed, then resolve overlaps ──
   const effectiveLayout = useMemo(() => {
-    return workingLayout.map(item => {
+    const expanded = workingLayout.map(item => {
       const contentPx = contentHeights[item.i];
       if (!contentPx) return item;
       const contentRows = pxToRows(contentPx, rowHeight, margin);
@@ -290,6 +295,8 @@ export default function HelmGrid({
       }
       return item;
     });
+    // Re-resolve overlaps after height expansion to prevent panels from overlapping
+    return resolveOverlaps(expanded);
   }, [workingLayout, contentHeights, rowHeight, margin]);
 
   // Effective layout ref for handlers
