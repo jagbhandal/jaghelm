@@ -226,6 +226,13 @@ export default function App() {
           }}
           health={overallHealth} lastUpdated={lastUpdated} config={config}
           onOpenSettings={() => setActiveTab(t => t === 'settings' ? 'dashboard' : 'settings')}
+          onLogout={authRequired ? () => {
+            localStorage.removeItem('jaghelm-token');
+            _authTokenRef.current = '';
+            setAuthToken('');
+            setAuthed(false);
+            setActiveTab('dashboard');
+          } : null}
           refreshKey={refreshKey} />
         <div style={activeTab === 'dashboard' ? undefined : { visibility: 'hidden', height: 0, overflow: 'hidden' }}>
           <DashboardView config={config} setConfig={setConfig} refreshKey={refreshKey} />
@@ -241,44 +248,14 @@ export default function App() {
 
 function defaultConfig() {
   return {
-    title: 'JAG-NET', subtitle: 'Infrastructure Dashboard',
+    title: 'JAGHELM', subtitle: 'Infrastructure Dashboard',
     logoUrl: '', bgImage: '', bgOpacity: 0.3, overlayOpacity: 0.75, showDots: true,
     accentColor: '#6366f1', refreshInterval: 30, searchEngine: 'google', showSearch: true,
-    weatherLat: '39.88', weatherLon: '-83.09', showWeather: true, weatherCity: 'Grove City',
+    weatherLat: '', weatherLon: '', showWeather: false, weatherCity: '',
     showDockerStats: false, showTodos: true,
-    tabs: [
-      { id: 'uptime', label: 'Uptime Kuma', type: 'iframe', url: 'https://kuma.jagbhandal.com' },
-      { id: 'grafana', label: 'Grafana', type: 'iframe', url: 'https://grafana.jagbhandal.com' },
-    ],
-    sections: {
-      gateway: { title: 'Gateway', subtitle: 'Raspberry Pi 5 · 192.XXX.XX.13', icon: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/raspberry-pi.svg', borderColor: '#a78bfa', visible: true },
-      production: { title: 'Production · VM 103', subtitle: 'Minisforum U870 · 192.XXX.XX.11', icon: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/docker.svg', borderColor: '#6366f1', visible: true },
-      staging: { title: 'Staging · VM 101', subtitle: 'The Tinker · 192.168.68.12', icon: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/docker.svg', borderColor: '#fbbf24', visible: true },
-      ups: { title: 'UPS Power', subtitle: 'APC Back-UPS ES 600M1', icon: 'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/battery_charging_full/outline.svg', borderColor: '#34d399', visible: true },
-      pipeline: { title: 'Pipeline Activity', subtitle: 'homelab-infra', icon: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/gitea.svg', borderColor: '#818cf8', visible: true },
-      quicklaunch: { title: 'Quick Launch', subtitle: '', icon: 'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/rocket_launch/outline.svg', borderColor: '#60a5fa', visible: true },
-      todos: { title: 'Checklist', subtitle: '', icon: 'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/checklist/outline.svg', borderColor: '#f59e0b', visible: true },
-    },
+    tabs: [],
+    sections: {},
     gridLayout: null, gridColumns: 24,
-    links: {
-      personal: [
-        { name: 'Photos', icon: 'photoprism', url: 'https://photos.jagbhandal.com' },
-        { name: 'Vault', icon: 'vaultwarden', url: 'https://vault.jagbhandal.com' },
-        { name: 'Cloud', icon: 'nextcloud', url: 'https://cloud.jagbhandal.com' },
-      ],
-      management: [
-        { name: 'NPM', icon: 'nginx-proxy-manager', url: 'https://npmpi.jagbhandal.com' },
-        { name: 'AdGuard', icon: 'adguard-home', url: 'https://adguardpi.jagbhandal.com' },
-        { name: 'Proxmox', icon: 'proxmox', url: 'https://proxmox.jagbhandal.com' },
-        { name: 'NAS', icon: 'synology', url: 'https://nas.jagbhandal.com' },
-      ],
-      devops: [
-        { name: 'VS Code', icon: 'visual-studio-code', url: 'https://code.jagbhandal.com' },
-        { name: 'Gitea', icon: 'gitea', url: 'https://git.jagbhandal.com' },
-        { name: 'Dockge', icon: 'dockge', url: 'https://dockge.jagbhandal.com' },
-        { name: 'Grafana', icon: 'grafana', url: 'https://grafana.jagbhandal.com' },
-        { name: 'Kuma', icon: 'uptime-kuma', url: 'https://kuma.jagbhandal.com' },
-      ],
-    },
+    links: {},
   };
 }

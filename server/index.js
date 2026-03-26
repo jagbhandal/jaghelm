@@ -42,11 +42,22 @@ const dataDir = join(__dirname, '..', 'data');
 if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
 if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
 
+const ALLOWED_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => cb(null, `${req.query.type === 'logo' ? 'logo' : 'bg'}${extname(file.originalname) || '.png'}`),
 });
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_UPLOAD_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type not allowed: ${file.mimetype}. Accepted: PNG, JPEG, GIF, WebP, SVG`));
+    }
+  },
+});
 
 app.use(cors());
 app.use(express.json());
@@ -55,6 +66,15 @@ app.use('/uploads', express.static(uploadsDir));
 
 // ── AUTH ──
 const sessions = new Map();
+const SESSION_MAX_AGE = 86400000; // 24 hours
+
+// Clean up expired sessions every hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, s] of sessions) {
+    if (now - s.created > SESSION_MAX_AGE) sessions.delete(token);
+  }
+}, 3600000);
 const AUTH_USER = process.env.DASH_USER || 'admin';
 const AUTH_PASS_ENV = process.env.DASH_PASS || '';
 const AUTH_FILE = join(dataDir, 'auth.json');
@@ -125,16 +145,51 @@ function authMiddleware(req, res, next) {
   const token = req.headers['x-auth-token'] || req.query.token;
   if (token && sessions.has(token)) {
     const s = sessions.get(token);
-    if (Date.now() - s.created < 86400000) return next();
+    if (Date.now() - s.created < SESSION_MAX_AGE) return next();
     sessions.delete(token);
   }
   return res.status(401).json({ error: 'Unauthorized' });
 }
 
+// ── Login rate limiting — 5 attempts per IP per 15 minutes ──
+const loginAttempts = new Map(); // ip → { count, firstAttempt }
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+function checkLoginRate(ip) {
+  const now = Date.now();
+  const record = loginAttempts.get(ip);
+  if (!record || now - record.firstAttempt > LOGIN_WINDOW_MS) {
+    loginAttempts.set(ip, { count: 1, firstAttempt: now });
+    return true;
+  }
+  record.count++;
+  return record.count <= MAX_LOGIN_ATTEMPTS;
+}
+
+function resetLoginRate(ip) {
+  loginAttempts.delete(ip);
+}
+
+// Clean up stale rate limit entries every 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of loginAttempts) {
+    if (now - record.firstAttempt > LOGIN_WINDOW_MS) loginAttempts.delete(ip);
+  }
+}, 30 * 60 * 1000);
+
 app.post('/api/auth/login', (req, res) => {
   if (!authEnabled()) return res.json({ token: 'noauth', user: 'admin' });
+
+  const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+  if (!checkLoginRate(ip)) {
+    return res.status(429).json({ error: 'Too many login attempts. Try again in 15 minutes.' });
+  }
+
   const { username, password } = req.body;
   if (username === AUTH_USER && checkPassword(password)) {
+    resetLoginRate(ip);
     const token = crypto.randomBytes(32).toString('hex');
     sessions.set(token, { user: username, created: Date.now() });
     return res.json({ token, user: username });
@@ -740,9 +795,12 @@ app.post('/api/todos', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/upload', upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file' });
-  res.json({ url: `/uploads/${req.file.filename}`, filename: req.file.filename });
+app.post('/api/upload', (req, res) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file) return res.status(400).json({ error: 'No file' });
+    res.json({ url: `/uploads/${req.file.filename}`, filename: req.file.filename });
+  });
 });
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime(), version: '8.0.0-alpha.1' }));
@@ -937,6 +995,7 @@ app.get('/api/integrations', authMiddleware, async (req, res) => {
 // ── Static + SPA fallback ──
 const distPath = join(__dirname, '..', 'dist');
 app.use(express.static(distPath));
+app.all('/api/*', (req, res) => res.status(404).json({ error: 'Endpoint not found' }));
 app.get('*', (req, res) => res.sendFile(join(distPath, 'index.html')));
 
 // ══════════════════════════════════════════════════════════════
