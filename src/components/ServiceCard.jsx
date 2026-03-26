@@ -38,7 +38,7 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10,
         padding: '8px 4px',
-        borderBottom: '1px solid rgba(255,255,255,0.04)',
+        borderBottom: '1px solid var(--border-color)',
         minWidth: 0,
       }}>
         {statusStyle === 'dot' && <StatusDot color={statusColor} />}
@@ -76,7 +76,7 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
 
         {/* Docker stats row */}
         {showStats && (
-          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-color)' }}>
             <div style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(4, 1fr)',
@@ -103,9 +103,9 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
         {showApp && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))',
+            gridTemplateColumns: `repeat(${Object.keys(appData).length}, 1fr)`,
             gap: 6, marginTop: 8, paddingTop: 8,
-            borderTop: '1px solid rgba(255,255,255,0.04)',
+            borderTop: '1px solid var(--border-color)',
           }}>
             {Object.entries(appData).map(([label, value]) => (
               <GridStat key={label} label={label} value={String(value)} />
@@ -148,7 +148,7 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
 
       {/* App data grid */}
       {showApp && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))', gap: 4, marginTop: showStats ? 4 : 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Object.keys(appData).length}, 1fr)`, gap: 4, marginTop: showStats ? 4 : 0 }}>
           {Object.entries(appData).map(([label, value]) => (
             <GridStat key={label} label={label} value={String(value)} />
           ))}
@@ -162,7 +162,7 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)', letterSpacing: 0.5 }}>UPTIME 24H</span>
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: service.uptime > 0.99 ? 'var(--green)' : 'var(--amber)' }}>{(service.uptime * 100).toFixed(1)}%</span>
           </div>
-          <div style={{ width: '100%', height: 3, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{ width: '100%', height: 3, background: 'var(--border-color)', borderRadius: 2, overflow: 'hidden' }}>
             <div style={{
               height: '100%', borderRadius: 2,
               width: `${Math.min(service.uptime * 100, 100)}%`,

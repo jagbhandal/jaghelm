@@ -272,6 +272,11 @@ function buildAuthHeaders(config) {
   return headers;
 }
 
+// ── Session token cache — avoids re-authenticating on every refresh cycle ──
+// Key: baseUrl + loginEndpoint, Value: { token, header, prefix, expires }
+const sessionTokenCache = new Map();
+const SESSION_TOKEN_TTL = 3600000; // 1 hour default (most tokens last 24h)
+
 // ── Session-based auth: login first, then fetch ──
 async function fetchWithSession(config) {
   const session = config.session;
@@ -280,37 +285,52 @@ async function fetchWithSession(config) {
   const baseUrl = config.url.replace(/\/+$/, '');
   const skipTls = !!config.tlsSkip;
 
-  // Try primary session auth first
-  try {
-    const data = await doSessionFetch(config, session, baseUrl, skipTls);
-    return data;
-  } catch (primaryErr) {
-    console.warn(`[integrations] Primary session auth failed: ${primaryErr.message}`);
-    // If a fallback auth method is defined, try it
-    const fallbackKey = config.authFallback;
-    const fallbackSession = fallbackKey && config[fallbackKey];
-    if (fallbackSession) {
+  // Determine which session configs to try (primary, then fallback)
+  const fallbackKey = config.authFallback;
+  const fallbackSession = fallbackKey && config[fallbackKey];
+  const sessionConfigs = [
+    { key: 'primary', session },
+    ...(fallbackSession ? [{ key: fallbackKey, session: fallbackSession }] : []),
+  ];
+
+  for (const { key, session: sess } of sessionConfigs) {
+    const cacheKey = `${baseUrl}:${sess.loginEndpoint}`;
+    const cached = sessionTokenCache.get(cacheKey);
+
+    // Try cached token first
+    if (cached && Date.now() < cached.expires) {
       try {
-        console.log(`[integrations] Trying ${fallbackKey} fallback auth...`);
-        return await doSessionFetch(config, fallbackSession, baseUrl, skipTls);
-      } catch (fallbackErr) {
-        console.error(`[integrations] Fallback auth also failed: ${fallbackErr.message}`);
-        // Both failed — throw with instructions if available
-        const instructions = config.oauth2Instructions || '';
-        throw new Error(
-          instructions
-            ? `Authentication failed. ${instructions}`
-            : `Session auth failed: ${primaryErr.message}. Fallback also failed: ${fallbackErr.message}`
-        );
+        const data = await fetchWithToken(cached, config, baseUrl, skipTls);
+        return data;
+      } catch (fetchErr) {
+        // Token might be expired server-side — clear cache and re-auth
+        sessionTokenCache.delete(cacheKey);
       }
     }
-    throw primaryErr;
+
+    // Authenticate and cache the token
+    try {
+      const tokenInfo = await doSessionLogin(config, sess, baseUrl, skipTls);
+      sessionTokenCache.set(cacheKey, tokenInfo);
+      const data = await fetchWithToken(tokenInfo, config, baseUrl, skipTls);
+      return data;
+    } catch (err) {
+      console.warn(`[integrations] ${key} session auth failed: ${err.message}`);
+      continue;
+    }
   }
+
+  // All auth methods failed
+  const instructions = config.oauth2Instructions || '';
+  throw new Error(
+    instructions
+      ? `Authentication failed. ${instructions}`
+      : 'All session auth methods failed'
+  );
 }
 
-// ── Perform a single session auth + fetch cycle ──
-async function doSessionFetch(config, session, baseUrl, skipTls) {
-  // Step 1: Login
+// ── Login and return token info (without fetching data) ──
+async function doSessionLogin(config, session, baseUrl, skipTls) {
   const contentType = session.loginContentType || 'application/json';
   let loginBody;
   if (contentType === 'application/x-www-form-urlencoded') {
@@ -333,18 +353,35 @@ async function doSessionFetch(config, session, baseUrl, skipTls) {
     throw new Error(`Login returned HTTP ${loginRes.status}`);
   }
 
-  const loginData = await loginRes.json();
+  let loginData;
+  try {
+    const text = await loginRes.text();
+    loginData = JSON.parse(text);
+  } catch (parseErr) {
+    throw new Error('Login response is not valid JSON');
+  }
+
   const token = extractValue(loginData, session.tokenPath);
   if (!token) throw new Error('Login succeeded but no token in response');
 
-  // Step 2: Fetch with session token
+  return {
+    token,
+    header: session.tokenHeader,
+    prefix: session.tokenPrefix || '',
+    expires: Date.now() + SESSION_TOKEN_TTL,
+  };
+}
+
+// ── Fetch data using a cached token ──
+async function fetchWithToken(tokenInfo, config, baseUrl, skipTls) {
   const headers = {};
-  if (session.tokenHeader) {
-    headers[session.tokenHeader] = (session.tokenPrefix || '') + token;
+  if (tokenInfo.header) {
+    headers[tokenInfo.header] = tokenInfo.prefix + tokenInfo.token;
   }
   if (config.extraHeaders) Object.assign(headers, config.extraHeaders);
 
   const res = await safeFetch(`${baseUrl}${resolveEndpointParams(config.endpoint, config)}`, { headers }, skipTls);
+  if (!res.ok) throw new Error(`Data fetch returned HTTP ${res.status}`);
   return res.json();
 }
 
