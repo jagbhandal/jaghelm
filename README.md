@@ -18,7 +18,12 @@
   <img src="https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
 </p>
 
----
+<p align="center">
+  <img src="public/dashboard.jpg"  alt="JagHelm Dashboard">
+</p>
+<p align="center">
+  <img src="public/settings.jpg"  alt="JagHelm Dashboard Settings">
+</p>
 
 ## What Makes JagHelm Different
 
