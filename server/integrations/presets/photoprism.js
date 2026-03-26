@@ -2,9 +2,11 @@ export default {
   name: 'PhotoPrism',
   icon: 'photoprism',
   description: 'AI-powered photo management',
-  auth: 'bearer',
+  auth: 'header',
+  authHeader: 'X-Auth-Token',
+  authPrefix: '',
   endpoint: '/api/v1/config',
-  testEndpoint: '/api/v1/status',
+  testEndpoint: '/api/v1/config',
   fields: [
     { key: 'photos', label: 'Photos', path: 'count.photos', format: 'number' },
     { key: 'videos', label: 'Videos', path: 'count.videos', format: 'number' },
