@@ -251,20 +251,37 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
       // Mode 2: Fuzzy keyword match — extract base preset type from storage key
       // e.g. "adguard_primary" → base type "adguard"
+      // Prefer exact match (container name === keyword) over partial (container name contains keyword)
       const baseType = intKey.includes('_') ? intKey.split('_')[0] : intKey;
       const keywords = integrationKeywords[baseType] || [baseType];
 
+      // First pass: look for exact container name match
+      let exactMatch = null;
       for (const svc of allContainers) {
         const containerLower = (svc.container || '').toLowerCase();
-        const displayLower = (svc.display_name || '').toLowerCase();
+        if (keywords.some(kw => containerLower === kw.toLowerCase()) && !map[svc.container]) {
+          exactMatch = svc;
+          break;
+        }
+      }
 
-        const matched = keywords.some(kw => {
-          const kwLower = kw.toLowerCase();
-          return containerLower.includes(kwLower) || displayLower.includes(kwLower);
-        });
+      if (exactMatch) {
+        map[exactMatch.container] = displayFields;
+      } else {
+        // Second pass: fall back to partial/fuzzy match
+        for (const svc of allContainers) {
+          const containerLower = (svc.container || '').toLowerCase();
+          const displayLower = (svc.display_name || '').toLowerCase();
 
-        if (matched && !map[svc.container]) {
-          map[svc.container] = displayFields;
+          const matched = keywords.some(kw => {
+            const kwLower = kw.toLowerCase();
+            return containerLower.includes(kwLower) || displayLower.includes(kwLower);
+          });
+
+          if (matched && !map[svc.container]) {
+            map[svc.container] = displayFields;
+            break;  // Only assign to the first fuzzy match, not all
+          }
         }
       }
     }
