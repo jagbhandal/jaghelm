@@ -48,6 +48,7 @@ function ServiceGrid({ services, config, panelId, dragDisabled }) {
         gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
         gap,
         minWidth: 0,
+        alignItems: 'start',
       }}
     >
       {services.map((s, i) => (
