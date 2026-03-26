@@ -1,43 +1,34 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <g transform="translate(2, 4) scale(0.182)">
-    <!-- LEFT WING -->
-    <ellipse cx="95" cy="153" rx="14" ry="10" fill="#b45309" opacity="0.6"/>
-    <circle cx="95" cy="153" r="5" fill="#d97706"/>
-    <path d="M88 146 Q68 118 50 75 Q40 45 30 10 Q28 2 33 0 Q38 0 40 6 Q50 38 60 68 Q74 105 85 138" fill="#92400e" opacity="0.4"/>
-    <path d="M86 143 Q68 112 54 70 Q46 42 38 14 Q36 8 40 6 Q44 6 46 12 Q54 40 64 70 Q76 105 85 135" fill="#b45309" opacity="0.45"/>
-    <path d="M86 140 Q70 108 58 68 Q52 44 46 20 Q44 14 48 12 Q52 12 54 18 Q60 44 68 70 Q78 104 86 130" fill="#d97706" opacity="0.5"/>
-    <path d="M88 132 Q76 102 68 70 Q64 50 60 34 Q59 28 62 27 Q66 27 67 32 Q70 50 76 72 Q82 102 88 120" fill="#fbbf24" opacity="0.55"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
 
-    <!-- RIGHT WING -->
-    <ellipse cx="255" cy="153" rx="14" ry="10" fill="#b45309" opacity="0.6"/>
-    <circle cx="255" cy="153" r="5" fill="#d97706"/>
-    <path d="M262 146 Q282 118 300 75 Q310 45 320 10 Q322 2 317 0 Q312 0 310 6 Q300 38 290 68 Q276 105 265 138" fill="#92400e" opacity="0.4"/>
-    <path d="M264 143 Q282 112 296 70 Q304 42 312 14 Q314 8 310 6 Q306 6 304 12 Q296 40 286 70 Q274 105 265 135" fill="#b45309" opacity="0.45"/>
-    <path d="M264 140 Q280 108 292 68 Q298 44 304 20 Q306 14 302 12 Q298 12 296 18 Q290 44 282 70 Q272 104 264 130" fill="#d97706" opacity="0.5"/>
-    <path d="M262 132 Q274 102 282 70 Q286 50 290 34 Q291 28 288 27 Q284 27 283 32 Q280 50 274 72 Q268 102 262 120" fill="#fbbf24" opacity="0.55"/>
+  <!-- Shield - solid indigo fill with bold outline -->
+  <path d="M100 16 L166 42 Q170 44 170 48 L170 108 Q170 148 100 178 Q30 148 30 108 L30 48 Q30 44 34 42 Z" 
+        fill="#6366f1"/>
+  <path d="M100 16 L166 42 Q170 44 170 48 L170 108 Q170 148 100 178 Q30 148 30 108 L30 48 Q30 44 34 42 Z" 
+        fill="none" stroke="#818cf8" stroke-width="4" stroke-linejoin="round"/>
 
-    <!-- Helm dome -->
-    <path d="M92 158 Q92 55 175 12 Q258 55 258 158" fill="#6366f1" opacity="0.15" stroke="#6366f1" stroke-width="2"/>
-
-    <!-- Center ridge -->
-    <path d="M170 14 L180 14 L182 158 L168 158 Z" fill="#6366f1" opacity="0.2"/>
-
-    <!-- Rune -->
-    <g transform="translate(140, 55)" opacity="0.6">
-      <line x1="0" y1="0" x2="0" y2="60" stroke="#a5b4fc" stroke-width="5" stroke-linecap="round"/>
-      <line x1="40" y1="0" x2="40" y2="60" stroke="#a5b4fc" stroke-width="5" stroke-linecap="round"/>
-      <line x1="0" y1="22" x2="40" y2="38" stroke="#a5b4fc" stroke-width="5" stroke-linecap="round"/>
-    </g>
-
-    <!-- Brow band -->
-    <path d="M82 160 L268 160" stroke="#6366f1" stroke-width="9" stroke-linecap="round"/>
-    <circle cx="175" cy="160" r="5" fill="#6366f1" opacity="0.4"/>
-
-    <!-- Eye slits -->
-    <line x1="92" y1="173" x2="159" y2="168" stroke="#1e1b4b" stroke-width="2.5" opacity="0.18" stroke-linecap="round"/>
-    <line x1="258" y1="173" x2="191" y2="168" stroke="#1e1b4b" stroke-width="2.5" opacity="0.18" stroke-linecap="round"/>
-
-    <!-- Nose guard -->
-    <path d="M170 164 L168 204 Q168 212 175 214 Q182 212 182 204 L180 164" fill="#6366f1" opacity="0.1" stroke="#6366f1" stroke-width="1.2"/>
+  <!-- Ship's wheel - simplified for small sizes -->
+  <g filter="url(#glow)">
+    <circle cx="100" cy="92" r="42" fill="none" stroke="#f59e0b" stroke-width="6"/>
+    <circle cx="100" cy="92" r="14" fill="#f59e0b"/>
+    <circle cx="100" cy="92" r="8" fill="#fbbf24"/>
+    <!-- Cardinal spokes only -->
+    <line x1="100" y1="78" x2="100" y2="50" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+    <line x1="100" y1="106" x2="100" y2="134" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+    <line x1="86" y1="92" x2="58" y2="92" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+    <line x1="114" y1="92" x2="142" y2="92" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+    <!-- Cardinal pegs -->
+    <circle cx="100" cy="48" r="8" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <circle cx="100" cy="136" r="8" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <circle cx="56" cy="92" r="8" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <circle cx="144" cy="92" r="8" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
   </g>
 </svg>

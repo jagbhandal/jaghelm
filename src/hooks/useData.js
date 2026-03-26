@@ -174,6 +174,7 @@ export const SERVICE_ICONS = {
   'code': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/vscode.svg',
   'vs code': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/vscode.svg',
   'cloudflare': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/cloudflare.svg',
+  'tunnel': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/cloudflare.svg',
   'tailscale': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/tailscale.svg',
   'prometheus': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/prometheus.svg',
   'nas': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nas.svg',
@@ -190,6 +191,11 @@ export const SERVICE_ICONS = {
   'wireguard': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/wireguard.svg',
   'backrest': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/backrest.svg',
   'casaos': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/casaos.svg',
+  'collabora': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/collabora-online.svg',
+  'watchtower': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/watchtower.svg',
+  'nut': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/nut.svg',
+  'homepage': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/homepage.svg',
+  'jaghelm': '/logo.svg',
 };
 
 export function getServiceIcon(name) {

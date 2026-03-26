@@ -5,7 +5,8 @@
 <h1 align="center">JagHelm</h1>
 
 <p align="center">
-  <strong>A real-time multi-node infrastructure monitoring dashboard for homelabs.</strong><br>
+  <strong>Infrastructure Dashboard</strong><br>
+  A real-time multi-node monitoring dashboard for homelabs.<br>
   Not just a link launcher — a live operations center for your self-hosted stack.
 </p>
 
