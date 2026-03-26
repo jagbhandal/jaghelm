@@ -403,6 +403,5 @@ MIT License. See [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  <sub>Built with ☕ and late nights for the self-hosted community.</sub><br>
-  <sub>Developed with assistance from <a href="https://anthropic.com">Claude AI</a> by Anthropic.</sub>
+  <sub>Built by Jagdeep Bhandal. AI-assisted development with Claude by Anthropic. Built with ☕ and late nights for the self-hosted community.</sub><br>
 </p>
