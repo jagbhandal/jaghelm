@@ -105,8 +105,8 @@ export default {
     return { fields };
   },
   envKeys: {
-    url: 'CLOUDFLARE_URL',
-    token: 'CLOUDFLARE_TOKEN',
+    url: 'JAGHELM_CLOUDFLARE_URL',
+    token: 'JAGHELM_CLOUDFLARE_TOKEN',
   },
   defaultUrl: 'https://api.cloudflare.com',
 };
