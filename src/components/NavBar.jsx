@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getWeather, WEATHER_CODES, SEARCH_ENGINES } from '../hooks/useData';
 
-export default React.memo(function NavBar({ tabs, activeTab, onTabChange, theme, setTheme, onToggleTheme, health, lastUpdated, config, onOpenSettings, refreshKey }) {
+export default React.memo(function NavBar({ tabs, activeTab, onTabChange, theme, setTheme, onToggleTheme, health, lastUpdated, config, onOpenSettings, onLogout, refreshKey }) {
   const [timeSince, setTimeSince] = useState('just now');
   const [clock, setClock] = useState('');
   const [weather, setWeather] = useState(null);
@@ -93,6 +93,7 @@ export default React.memo(function NavBar({ tabs, activeTab, onTabChange, theme,
         <span className="nav-updated">Updated {timeSince}</span>
         <button className="icon-btn" onClick={onOpenSettings}>⚙️</button>
         <button className="icon-btn" onClick={onToggleTheme} title="Cycle theme">🎨</button>
+        {onLogout && <button className="icon-btn" onClick={onLogout} title="Log out">🚪</button>}
       </div>
     </nav>
   );
