@@ -10,6 +10,7 @@ export default {
     { key: 'files', label: 'Files', path: 'ocs.data.nextcloud.storage.num_files', format: 'number' },
     { key: 'users', label: 'Users', path: 'ocs.data.nextcloud.storage.num_users', format: 'number' },
     { key: 'storage', label: 'Storage', path: 'ocs.data.nextcloud.system.freespace', format: 'bytes' },
+    { key: 'appdata', label: 'App Data', path: 'ocs.data.nextcloud.storage.size_appdata_storage', format: 'bytes' },
   ],
   envKeys: {
     url: 'NEXTCLOUD_URL',
