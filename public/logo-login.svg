@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 270">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Logo mark centered at top -->
+  <g transform="translate(150, 100) scale(0.85)">
+    <!-- Shield - solid indigo fill with bold outline -->
+    <path d="M0-84 L66-58 Q70-56 70-52 L70 8 Q70 48 0 78 Q-70 48 -70 8 L-70-52 Q-70-56 -66-58 Z" 
+          fill="#6366f1"/>
+    <path d="M0-84 L66-58 Q70-56 70-52 L70 8 Q70 48 0 78 Q-70 48 -70 8 L-70-52 Q-70-56 -66-58 Z" 
+          fill="none" stroke="#818cf8" stroke-width="4" stroke-linejoin="round"/>
+
+    <!-- Ship's wheel - amber/gold -->
+    <g filter="url(#glow)">
+      <circle cx="0" cy="-8" r="42" fill="none" stroke="#f59e0b" stroke-width="5"/>
+      <circle cx="0" cy="-8" r="26" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.35"/>
+      <circle cx="0" cy="-8" r="12" fill="#f59e0b"/>
+      <circle cx="0" cy="-8" r="7" fill="#fbbf24"/>
+      <circle cx="0" cy="-8" r="3" fill="#fde68a"/>
+      <!-- Cardinal spokes -->
+      <line x1="0" y1="-20" x2="0" y2="-50" stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round"/>
+      <line x1="0" y1="4" x2="0" y2="34" stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round"/>
+      <line x1="-12" y1="-8" x2="-42" y2="-8" stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round"/>
+      <line x1="12" y1="-8" x2="42" y2="-8" stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round"/>
+      <!-- Diagonal spokes -->
+      <line x1="-8.5" y1="-16.5" x2="-29.7" y2="-37.7" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+      <line x1="8.5" y1="-16.5" x2="29.7" y2="-37.7" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+      <line x1="-8.5" y1="0.5" x2="-29.7" y2="21.7" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+      <line x1="8.5" y1="0.5" x2="29.7" y2="21.7" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+      <!-- Cardinal pegs -->
+      <circle cx="0" cy="-52" r="7" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+      <circle cx="0" cy="36" r="7" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+      <circle cx="-44" cy="-8" r="7" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+      <circle cx="44" cy="-8" r="7" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+      <!-- Diagonal pegs -->
+      <circle cx="-31" cy="-39" r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+      <circle cx="31" cy="-39" r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+      <circle cx="-31" cy="23" r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+      <circle cx="31" cy="23" r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+    </g>
+  </g>
+
+  <!-- Wordmark: JAG (light) + HELM (bold) - centered under logo -->
+  <text x="150" y="215" text-anchor="middle" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="36" letter-spacing="4">
+    <tspan font-weight="300" fill="#818cf8">JAG</tspan><tspan font-weight="700" fill="#f59e0b">HELM</tspan>
+  </text>
+
+  <!-- Tagline -->
+  <text x="150" y="242" text-anchor="middle" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="11" font-weight="400" letter-spacing="4" fill="#818cf8" opacity="0.6">INFRASTRUCTURE DASHBOARD</text>
+</svg>

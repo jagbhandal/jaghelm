@@ -27,7 +27,7 @@ export default function LoginPage({ onLogin, config }) {
     <div className="login-page">
       <form onSubmit={handleSubmit} className="login-card">
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <img src={config?.logoUrl || '/logo.svg'} alt="" style={{ height: 156, marginBottom: 16 }} />
+          <img src={config?.logoUrl || '/logo-login.svg'} alt="" style={{ height: 156, marginBottom: 16 }} />
         </div>
         <div className="login-title">{config?.title || 'JAG-NET'}</div>
         <div className="login-sub" style={{ fontSize: 16, color: 'var(--text-secondary)', marginBottom: 32 }}>{config?.subtitle || 'Infrastructure Dashboard'}</div>
