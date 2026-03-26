@@ -5,6 +5,7 @@ import DashboardView from './views/DashboardView';
 import IframeView from './views/IframeView';
 import SettingsView from './views/SettingsView';
 import { getMonitors } from './hooks/useData';
+import { THEMES } from './components/settings/AppearanceTab';
 
 // ── Auth token interceptor ──
 // Set up ONCE, synchronously, before any component renders.
@@ -220,7 +221,7 @@ export default function App() {
         <NavBar tabs={allTabs} activeTab={activeTab} onTabChange={setActiveTab}
           theme={theme} setTheme={setTheme}
           onToggleTheme={() => {
-            const order = ['dark', 'dracula', 'night-owl', 'github-dark', 'catppuccin', 'material'];
+            const order = THEMES.map(t => t.id);
             setTheme(t => { const i = order.indexOf(t); return order[(i + 1) % order.length]; });
           }}
           health={overallHealth} lastUpdated={lastUpdated} config={config}

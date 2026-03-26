@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { HexColorPicker } from 'react-colorful';
 import { uploadFile } from '../../hooks/useData';
 
-const THEMES = [
+export const THEMES = [
   { id: 'dark', name: 'One Dark Pro', preview: '#282c34', accent: '#6366f1', desc: 'Warm charcoal, indigo accent' },
   { id: 'dracula', name: 'Dracula', preview: '#282a36', accent: '#bd93f9', desc: 'Vibrant purple & pink' },
   { id: 'night-owl', name: 'Night Owl', preview: '#011627', accent: '#7e57c2', desc: 'Deep navy, violet accent' },

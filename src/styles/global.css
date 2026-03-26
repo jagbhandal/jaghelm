@@ -8,9 +8,9 @@
   --text-primary: #abb2bf; --text-secondary: #848b98; --text-muted: #5c6370;
   --accent: #6366f1; --accent-light: #818cf8; --accent-glow: rgba(99,102,241,0.12);
   --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a78bfa 100%);
-  --green: #98c379; --green-bg: rgba(152,195,121,0.08); --green-border: rgba(152,195,121,0.2);
-  --red: #e06c75; --red-bg: rgba(224,108,117,0.08); --red-border: rgba(224,108,117,0.2);
-  --amber: #e5c07b; --amber-bg: rgba(229,192,123,0.08); --amber-border: rgba(229,192,123,0.2);
+  --green: #34d399; --green-bg: rgba(52,211,153,0.08); --green-border: rgba(52,211,153,0.2);
+  --red: #f87171; --red-bg: rgba(248,113,113,0.08); --red-border: rgba(248,113,113,0.2);
+  --amber: #fbbf24; --amber-bg: rgba(251,191,36,0.08); --amber-border: rgba(251,191,36,0.2);
   --glass-bg: rgba(40,44,52,0.7); --glass-border: rgba(99,102,241,0.1); --glass-blur: 24px;
   --card-radius: 20px; --card-radius-sm: 12px;
   --font-display: 'Outfit', sans-serif; --font-body: 'DM Sans', sans-serif; --font-mono: 'JetBrains Mono', monospace;
@@ -49,9 +49,9 @@
   --text-primary: #d6deeb; --text-secondary: #637777; --text-muted: #4b6478;
   --accent: #7e57c2; --accent-light: #c792ea; --accent-glow: rgba(126,87,194,0.12);
   --accent-gradient: linear-gradient(135deg, #7e57c2 0%, #82aaff 50%, #22da6e 100%);
-  --green: #addb67; --green-bg: rgba(173,219,103,0.08); --green-border: rgba(173,219,103,0.25);
+  --green: #22da6e; --green-bg: rgba(34,218,110,0.08); --green-border: rgba(34,218,110,0.25);
   --red: #ef5350; --red-bg: rgba(239,83,80,0.08); --red-border: rgba(239,83,80,0.25);
-  --amber: #ffcb6b; --amber-bg: rgba(255,203,107,0.08); --amber-border: rgba(255,203,107,0.25);
+  --amber: #fbbf24; --amber-bg: rgba(251,191,36,0.08); --amber-border: rgba(251,191,36,0.25);
   --glass-bg: rgba(1,22,39,0.7); --glass-border: rgba(126,87,194,0.12);
   --shadow-card: 0 4px 24px rgba(0,0,0,0.5); --overlay-opacity: 0.88;
 }
@@ -77,7 +77,7 @@
   --text-primary: #cdd6f4; --text-secondary: #a6adc8; --text-muted: #585b70;
   --accent: #cba6f7; --accent-light: #f5c2e7; --accent-glow: rgba(203,166,247,0.12);
   --accent-gradient: linear-gradient(135deg, #cba6f7 0%, #f5c2e7 50%, #f38ba8 100%);
-  --green: #a6e3a1; --green-bg: rgba(166,227,161,0.08); --green-border: rgba(166,227,161,0.2);
+  --green: #40d47e; --green-bg: rgba(64,212,126,0.08); --green-border: rgba(64,212,126,0.2);
   --red: #f38ba8; --red-bg: rgba(243,139,168,0.08); --red-border: rgba(243,139,168,0.25);
   --amber: #f9e2af; --amber-bg: rgba(249,226,175,0.08); --amber-border: rgba(249,226,175,0.2);
   --glass-bg: rgba(30,30,46,0.7); --glass-border: rgba(180,190,254,0.1);
@@ -91,9 +91,9 @@
   --text-primary: #eeffff; --text-secondary: #676E95; --text-muted: #464B5D;
   --accent: #84ffff; --accent-light: #80cbc4; --accent-glow: rgba(132,255,255,0.1);
   --accent-gradient: linear-gradient(135deg, #84ffff 0%, #82aaff 50%, #c792ea 100%);
-  --green: #c3e88d; --green-bg: rgba(195,232,141,0.08); --green-border: rgba(195,232,141,0.2);
+  --green: #5af78e; --green-bg: rgba(90,247,142,0.08); --green-border: rgba(90,247,142,0.2);
   --red: #ff5370; --red-bg: rgba(255,83,112,0.08); --red-border: rgba(255,83,112,0.25);
-  --amber: #ffcb6b; --amber-bg: rgba(255,203,107,0.08); --amber-border: rgba(255,203,107,0.2);
+  --amber: #fbbf24; --amber-bg: rgba(251,191,36,0.08); --amber-border: rgba(251,191,36,0.2);
   --glass-bg: rgba(15,17,26,0.7); --glass-border: rgba(137,221,255,0.1);
   --shadow-card: 0 4px 24px rgba(0,0,0,0.5); --overlay-opacity: 0.9;
 }
@@ -410,7 +410,7 @@ body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: 
 /* Login */
 .login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; position: relative; z-index: 1; }
 .login-card { background: var(--bg-card); backdrop-filter: blur(24px); border: 1px solid var(--glass-border); border-radius: 24px; padding: 44px; width: 420px; max-width: 90vw; box-shadow: 0 8px 40px rgba(0,0,0,0.4); }
-.login-title { font-family: var(--font-display); font-weight: 800; font-size: 32px; background: var(--accent-gradient); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; text-align: center; }
+.login-title { font-family: var(--font-display); font-weight: 800; font-size: 32px; background: var(--accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; text-align: center; }
 .login-sub { font-size: 15px; color: var(--text-secondary); text-align: center; margin-bottom: 28px; }
 .login-input { width: 100%; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--border-color); background: var(--bg-card-inner); color: var(--text-primary); font-size: 15px; outline: none; margin-bottom: 14px; font-family: var(--font-body); }
 .login-input:focus { border-color: var(--accent); }

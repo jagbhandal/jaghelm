@@ -2,9 +2,9 @@
 
 **Project:** JagHelm — Real-time infrastructure dashboard for homelabs  
 **Repo:** `jaghelm` (Gitea, future GitHub)  
-**Date:** March 24, 2026 (Updated)  
-**Status:** Phase 4 In Progress  
-**Version:** 5.0  
+**Date:** March 26, 2026 (Updated)  
+**Status:** Phase 4d In Progress  
+**Version:** 6.0  
 
 ---
 
@@ -153,7 +153,45 @@ Dashboard load time reduced from ~4 seconds to <300ms.
 - Prevents 304 from Express auto-ETag on user-interactive endpoints
 - `TodoCard` null guard added: `Array.isArray(d)` check before `setTodos()`
 
-### 📋 Phase 4d: Polish (In Progress)
+### ✅ Phase 4d: UI Polish + Brand (March 26, 2026)
+
+#### Brand Redesign
+- **New logo** — shield (indigo `#6366f1`) + ship's wheel (amber/gold `#f59e0b`), replacing Viking helmet
+- "Helm" = steering/control, not helmet — shield + wheel communicates "infrastructure command center"
+- Three logo variants: icon (`logo.svg`), simplified favicon (`favicon.svg`), full brand lockup with wordmark + tagline (`logo-login.svg`)
+- Login page uses brand lockup: JAGHELM wordmark (JAG light indigo / HELM bold amber) + "INFRASTRUCTURE DASHBOARD" tagline
+- Colors work on both dark and light backgrounds
+
+#### RAM Cache Visualization
+- Stacked progress bar on RAM metric: solid = real app usage, striped = cache/buffers
+- Server queries `node_memory_MemFree_bytes` in addition to MemTotal and MemAvailable
+- Calculation: `memUsed = Total - Available` (actual), `memWithCache = Total - Free` (includes cache)
+- Bar color thresholds based on total (including cache): >90% red, >70% amber, else accent
+
+#### Responsive Panel Stacking
+- HelmGrid forces single-column layout at `sm` breakpoint and `md` without saved layout
+- Panels sorted by original position and stacked sequentially with recalculated `y` values
+- **Critical fix**: `effectiveLayout` now runs `resolveOverlaps()` AFTER expanding panel heights for content — prevents panels from overlapping when content causes height growth
+
+#### Service Card Improvements
+- Docker stats (CPU/MEM/RX/TX) use fixed `repeat(4, 1fr)` grid spanning full card width
+- App data metrics use `repeat(auto-fill, minmax(70px, 1fr))` for responsive wrapping
+- Minimum card height of 105px (name + badge + one metric row) for visual consistency
+- Docker stats separated from uptime badge — stats in centered grid, uptime right-aligned below
+
+#### Service Icons Added
+- `collabora` → Collabora Online (homarr-labs CDN)
+- `tunnel` → Cloudflare (matches `gateway-tunnel` container)
+- `watchtower` → Watchtower (homarr-labs CDN)
+- `nut` → NUT/Network UPS Tools (homarr-labs CDN)
+- `homepage` → Homepage (homarr-labs CDN)
+- `jaghelm` → local `/logo.svg`
+
+#### Integration Fixes
+- PhotoPrism preset: `auth: 'bearer'` → `auth: 'header'` with `authHeader: 'X-Auth-Token'`, `authPrefix: ''`
+- PhotoPrism `testEndpoint` aligned to `/api/v1/config` (same as data endpoint)
+
+### 📋 Phase 4e: Polish (In Progress)
 - Dashboard UI beautification
 - Docker label discovery
 - Responsive mobile layout
@@ -192,13 +230,14 @@ jaghelm/
 │   ├── PHASE3-INTEGRATIONS.md    # Integration engine design notes
 │   └── PERFORMANCE-OVERHAUL.md   # Performance redesign document
 ├── public/
-│   ├── logo.svg                  # Default logo (Viking helm with ᚺ rune)
-│   └── favicon.svg
+│   ├── logo.svg                  # Brand icon (indigo shield + amber wheel)
+│   ├── logo-login.svg            # Full brand lockup (icon + JAGHELM wordmark + tagline)
+│   └── favicon.svg               # Simplified icon for browser tab (4-spoke, thicker lines)
 ├── server/
 │   ├── index.js                  # Express app, API routes, auth, background refresh, ETag cache
 │   ├── config.js                 # Config manager (services.yaml)
 │   ├── secrets.js                # AES-256-GCM encryption
-│   ├── discovery.js              # Prometheus node + container discovery + smart disk fallback
+│   ├── discovery.js              # Prometheus node + container discovery + smart disk fallback + RAM cache breakdown
 │   ├── monitors.js               # Uptime Kuma monitor matching
 │   ├── icons.js                  # Icon search index (Dashboard Icons + Selfh.st)
 │   ├── icon-cache.js             # Local disk cache for CDN icons
@@ -255,11 +294,12 @@ HelmGrid is JagHelm's purpose-built panel layout engine, replacing `react-grid-l
 - **Pointer-event driven**: uses native `pointerdown`/`pointermove`/`pointerup` with refs for fresh state
 
 ### Architecture
-- Single file: `src/components/HelmGrid.jsx` (~550 lines)
+- Single file: `src/components/HelmGrid.jsx` (~600 lines)
 - Grid math functions: `gridToPixel`, `pixelToGrid`, `pixelSizeToGrid`, `pxToRows`, `calcCellWidth`
 - `GridItem` sub-component: measures content height via ResizeObserver, renders resize handles
-- `resolveOverlaps`: sort-based collision resolver that pushes panels down
+- `resolveOverlaps`: sort-based collision resolver that pushes panels down — runs twice: after sync AND after content-aware height expansion
 - `layoutsEqual`: position-only comparison (ignores constraint fields)
+- Responsive stacking: sm/md breakpoints sort panels by position and stack sequentially with recalculated y values
 - Zero external dependencies — pure React + DOM APIs
 
 ---
@@ -274,7 +314,7 @@ Server boot
 startBackgroundRefresh() fires immediately
     ↓
 Every N seconds (matches user's refresh interval setting):
-    refreshServices()      → Prometheus (5 nodes × 12 queries) + Kuma (2 calls)
+    refreshServices()      → Prometheus (5 nodes × 13 queries) + Kuma (2 calls)
     refreshUPS()           → Prometheus (4 NUT queries)
     refreshGitea()         → Gitea API (repo discovery + commit fetch)
     refreshIntegrations()  → 16 integrations × 1-3 HTTP calls each
@@ -412,7 +452,101 @@ Switching back to Dashboard: style removed → instant appearance, data intact
 
 ---
 
-## 11. CI/CD Pipeline
+## 11. Monitoring Architecture
+
+JagHelm sits at the top of a three-layer monitoring stack. Each layer has a single responsibility: collectors gather raw metrics, Prometheus stores them as time-series data, and visualization tools (JagHelm + Grafana) query Prometheus to render dashboards.
+
+### Layer 1: Collectors
+
+Two types of collectors run across the infrastructure:
+
+**node-exporter** runs on every node (Pi, VM 103, VM 101, Proxmox host, NAS). It reads system-level metrics — CPU, RAM, disk, temperature, network — directly from the Linux kernel via `/proc` and `/sys`, and exposes them as a text endpoint on port `9100`. node-exporter stores nothing and pushes nothing. It serves metrics on demand when scraped.
+
+**cAdvisor** runs on nodes with Docker containers (Pi, VM 103, VM 101). It reads per-container resource usage — CPU, memory, network I/O, disk I/O — via the Docker socket and exposes them on port `8080`. Same passive model as node-exporter, but scoped to containers instead of the host OS.
+
+**nut-exporter** runs on VM 103 (port `9199`) and exposes UPS metrics — battery charge, runtime, load, and status — by querying the NUT server on the Proxmox host.
+
+### Layer 2: Prometheus (Time-Series Database)
+
+Prometheus runs on VM 103 at port `9090`. On a configurable scrape interval (default 15 seconds), it reaches out to every collector endpoint, pulls the current metrics, timestamps them, and stores them in its local time-series database with 30-day retention.
+
+The `prometheus.yml` configuration defines scrape targets with job names and node labels:
+
+| Job Name | Target | Port | Node Label |
+|----------|--------|------|------------|
+| `node-exporter-vm103` | 192.168.68.11 | 9100 | `vm103` |
+| `node-exporter-vm101` | 192.168.68.12 | 9100 | `vm101` |
+| `node-exporter-pi` | 192.168.68.13 | 9100 | `pi` |
+| `node-exporter-pve` | 192.168.68.10 | 9100 | `pve` |
+| `node-exporter-nas` | 192.168.68.55 | 9100 | `nas` |
+| `cadvisor-vm103` | 192.168.68.11 | 8080 | `vm103` |
+| `cadvisor-vm101` | 192.168.68.12 | 8080 | `vm101` |
+| `cadvisor-pi` | 192.168.68.13 | 8080 | `pi` |
+| `nut-ups` | 192.168.68.11 | 9199 | — |
+
+**Key design principle:** Prometheus pulls; collectors do not push. Collectors have no awareness of Prometheus. Prometheus decides when and how often to collect.
+
+### Layer 3: Visualization
+
+**JagHelm** queries Prometheus via `http://localhost:9090/api/v1/query` for current-moment snapshots — "what is the CPU right now?" — and displays them as the numbers on dashboard node cards. JagHelm also queries Uptime Kuma for service health status and the integration engine queries individual service APIs (AdGuard stats, NPM proxy count, Proxmox VMs, etc.) for Tier 3 data. JagHelm is the "glance" layer — current state, not historical trends.
+
+**Grafana** connects to Prometheus as a data source and executes PromQL range queries for historical trend visualization — "show CPU usage over the last 7 days." Two provisioned dashboards are deployed: Infrastructure Trends (CPU, RAM, disk, temperature, network, UPS across all 5 nodes) and Container Deep Dive (top resource consumers, memory leak detection, restart counts, container uptime). Grafana is the "analyst" layer — trends, patterns, and capacity planning.
+
+**Uptime Kuma** monitors service availability independently of Prometheus. It performs HTTP/TCP health checks against each service endpoint and tracks uptime percentages, response times, and sends push notifications via ntfy when services go down. Uptime Kuma is the "alerter" layer — real-time health checks and notifications.
+
+### Data Flow Example
+
+When JagHelm displays "Pi CPU: 12%":
+
+```
+node-exporter (Pi :9100) reads /proc/stat
+        ↓ scraped every 15s
+Prometheus (VM 103 :9090) stores timestamped data points
+        ↓ PromQL query
+JagHelm (VM 103 :3099) calculates rate, displays "12%"
+```
+
+When Grafana renders a 7-day CPU trend line:
+
+```
+Prometheus returns ~2,016 data points (7d × 24h × 12/hr)
+        ↓ range query
+Grafana (VM 103 :3100) draws the line chart
+```
+
+### Monitoring Topology
+
+```
+Pi (.13)
+├── node-exporter :9100    → host metrics
+├── cAdvisor :8080         → container metrics
+└── Watchtower :8080       → image update checks (daily)
+
+VM 103 (.11)
+├── node-exporter :9100    → host metrics
+├── cAdvisor :8080         → container metrics
+├── nut-exporter :9199     → UPS metrics
+├── Prometheus :9090       → time-series database (30-day retention)
+├── Grafana :3100          → trend visualization
+├── JagHelm :3099          → real-time dashboard
+├── Uptime Kuma :3001      → health checks + alerts
+├── Watchtower :8083       → image update checks (daily)
+└── ntfy :8090             → push notifications
+
+VM 101 (.12)
+├── node-exporter :9100    → host metrics
+└── cAdvisor :8080         → container metrics
+
+Proxmox Host (.10)
+└── node-exporter :9100    → host metrics
+
+NAS (.55)
+└── node-exporter :9100    → host metrics
+```
+
+---
+
+## 12. CI/CD Pipeline
 
 ```
 Developer pushes to staging
@@ -428,22 +562,33 @@ Verify: docker ps + curl health endpoint
 
 ---
 
-## 12. Carry-Over Notes
+## 13. Carry-Over Notes
 
-### Phase 4d priorities:
-- Dashboard UI beautification and polish
+### Phase 4e priorities:
+- Docker label discovery
 - Per-node render boundaries (only re-render panels whose data actually changed)
-- Responsive mobile layout
 - Open-source preparation (sanitize IPs, generic defaults, setup guide)
 - Error boundaries in React (prevent white-screen crashes)
 - Split server/index.js into route modules
 
 ### Known issues:
 - NAS shows 7.3TB — correct for logical volume, RAID5 pool has ~14.5TB raw; half unallocated in UGREEN firmware
-- `SERVICE_ICONS` constant has 35+ hardcoded CDN URLs in useData.js — should move to config
+- `SERVICE_ICONS` constant has 40+ hardcoded CDN URLs in useData.js — should move to config
 - Legacy `/api/docker/containers` endpoint duplicates discovery.js logic — candidate for removal
 - Settings live preview DashboardView creates a second instance with its own state and fetch cycle
+- Proxmox backup error: `jagNAS storage not online` — NAS backup target needs investigation
+- PhotoPrism integration preset fixed (auth header) — user needs to re-save in Settings to verify metrics appear
+- Nextcloud integration showing dashes for FILES/USERS/STORAGE — may need auth or endpoint investigation
+
+### Completed this session (March 26, 2026):
+- RAM cache visualization (stacked bar with striped cache segment)
+- Responsive panel stacking fix (sequential y-values + post-expansion overlap resolution)
+- Service card UI: centering, min-height, full-width docker stats grid, auto-fill app data
+- 6 new service icons (Collabora, Cloudflare tunnel, Watchtower, NUT, Homepage, JagHelm)
+- PhotoPrism integration auth fix (X-Auth-Token header)
+- Brand redesign: indigo shield + amber wheel logo, favicon, login page brand lockup
+- CI/CD performance: VM storage moved from NAS to local — deploy time 10-12min → 30s
 
 ---
 
-*JagHelm v8 Architecture Specification v5.0 — Phase 4c Complete*
+*JagHelm v8 Architecture Specification v6.0 — Phase 4d Complete*
