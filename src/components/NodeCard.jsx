@@ -114,10 +114,13 @@ export default React.memo(function NodeCard({ sectionKey, config, setConfig, bor
 
       {metrics && (
         <div className="node-metrics">
-          {metrics.map((m, i) => (
+          {metrics.map((m, i) => {
+            const valStr = `${m.value ?? '—'}${m.unit || ''}`;
+            const autoShrink = valStr.length > 8;
+            return (
             <div className="metric-block" key={i}>
               <span className="metric-label">{m.label}</span>
-              <span className="metric-value" style={{ fontSize: m.small ? 'var(--fs-metric-value-sm)' : 'var(--fs-metric-value)' }}>
+              <span className="metric-value" style={{ fontSize: autoShrink ? 'var(--fs-metric-value-sm)' : m.small ? 'var(--fs-metric-value-sm)' : 'var(--fs-metric-value)' }}>
                 {m.value ?? '—'}
                 {m.unit && <span className="metric-unit">{m.unit}</span>}
               </span>
@@ -166,7 +169,8 @@ export default React.memo(function NodeCard({ sectionKey, config, setConfig, bor
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
