@@ -12,8 +12,8 @@ export default {
     { key: 'latency', label: 'Latency', path: 'avg_processing_time', format: 'ms' },
   ],
   envKeys: {
-    url: 'ADGUARD_URL',
-    username: 'ADGUARD_USER',
-    password: 'ADGUARD_PASS',
+    url: 'JAGHELM_ADGUARD_URL',
+    username: 'JAGHELM_ADGUARD_USER',
+    password: 'JAGHELM_ADGUARD_PASS',
   },
 };

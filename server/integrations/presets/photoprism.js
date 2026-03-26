@@ -29,8 +29,8 @@ export default {
     { key: 'albums', label: 'Albums', path: 'count.albums', format: 'number' },
   ],
   envKeys: {
-    url: 'PHOTOPRISM_URL',
-    username: 'PHOTOPRISM_USER',
-    password: 'PHOTOPRISM_PASS',
+    url: 'JAGHELM_PHOTOPRISM_URL',
+    username: 'JAGHELM_PHOTOPRISM_USER',
+    password: 'JAGHELM_PHOTOPRISM_PASS',
   },
 };
