@@ -79,6 +79,7 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
           <div style={{
             display: 'flex', gap: 12, marginTop: 8, paddingTop: 8,
             borderTop: '1px solid rgba(255,255,255,0.04)', flexWrap: 'wrap',
+            justifyContent: 'center',
           }}>
             <InlineStat label="CPU" value={docker.cpu != null ? `${docker.cpu}%` : null} />
             <InlineStat label="MEM" value={docker.memMB != null ? formatMem(docker.memMB) : null} />
@@ -100,7 +101,7 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
         {showApp && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: `repeat(${Math.min(Object.keys(appData).length, 4)}, 1fr)`,
+            gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))',
             gap: 6, marginTop: 8, paddingTop: 8,
             borderTop: '1px solid rgba(255,255,255,0.04)',
           }}>
@@ -135,7 +136,7 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
 
       {/* Stats grid */}
       {showStats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(60px, 1fr))', gap: 4 }}>
           <GridStat label="CPU" value={docker.cpu != null ? `${docker.cpu}%` : '—'} />
           <GridStat label="MEM" value={docker.memMB != null ? formatMem(docker.memMB) : '—'} />
           <GridStat label="RX" value={docker.rxMB != null ? formatMem(docker.rxMB) : '—'} />
@@ -145,7 +146,7 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
 
       {/* App data grid */}
       {showApp && (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(Object.keys(appData).length, 4)}, 1fr)`, gap: 4, marginTop: showStats ? 4 : 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))', gap: 4, marginTop: showStats ? 4 : 0 }}>
           {Object.entries(appData).map(([label, value]) => (
             <GridStat key={label} label={label} value={String(value)} />
           ))}
