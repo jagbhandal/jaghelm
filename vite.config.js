@@ -2,6 +2,6 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
-  build: { outDir: 'dist', assetsDir: 'assets', minify: 'esbuild' },
+  build: { outDir: 'dist', assetsDir: 'assets', minify: true },
   server: { port: 5173, proxy: { '/api': 'http://localhost:3099', '/uploads': 'http://localhost:3099' } },
 });
