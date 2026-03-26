@@ -747,6 +747,15 @@ export default function IntegrationsTab() {
                 ? `✓ Connection successful (HTTP ${testStatus.status})`
                 : `✕ Connection failed: ${testStatus.error}`
               }
+              {testStatus.instructions && (
+                <pre style={{
+                  marginTop: 10, padding: '10px 12px', borderRadius: 8,
+                  background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
+                  color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.6,
+                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  fontFamily: 'var(--font-mono)',
+                }}>{testStatus.instructions}</pre>
+              )}
             </div>
           )}
 

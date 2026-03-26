@@ -280,16 +280,41 @@ async function fetchWithSession(config) {
   const baseUrl = config.url.replace(/\/+$/, '');
   const skipTls = !!config.tlsSkip;
 
+  // Try primary session auth first
+  try {
+    const data = await doSessionFetch(config, session, baseUrl, skipTls);
+    return data;
+  } catch (primaryErr) {
+    // If a fallback auth method is defined, try it
+    const fallbackKey = config.authFallback;
+    const fallbackSession = fallbackKey && config[fallbackKey];
+    if (fallbackSession) {
+      try {
+        return await doSessionFetch(config, fallbackSession, baseUrl, skipTls);
+      } catch (fallbackErr) {
+        // Both failed — throw with instructions if available
+        const instructions = config.oauth2Instructions || '';
+        throw new Error(
+          instructions
+            ? `Authentication failed. ${instructions}`
+            : `Session auth failed: ${primaryErr.message}. Fallback also failed: ${fallbackErr.message}`
+        );
+      }
+    }
+    throw primaryErr;
+  }
+}
+
+// ── Perform a single session auth + fetch cycle ──
+async function doSessionFetch(config, session, baseUrl, skipTls) {
   // Step 1: Login
   const contentType = session.loginContentType || 'application/json';
   let loginBody;
   if (contentType === 'application/x-www-form-urlencoded') {
-    // URL-encoded form body (e.g. OAuth2 client_credentials)
-    loginBody = session.loginBody
+    loginBody = (typeof session.loginBody === 'string' ? session.loginBody : '')
       .replace('{username}', encodeURIComponent(config._username || ''))
       .replace('{password}', encodeURIComponent(config._password || ''));
   } else {
-    // JSON body
     loginBody = JSON.stringify(session.loginBody)
       .replace('{username}', config._username || '')
       .replace('{password}', config._password || '');
@@ -300,9 +325,14 @@ async function fetchWithSession(config) {
     headers: { 'Content-Type': contentType },
     body: loginBody,
   }, skipTls);
+
+  if (!loginRes.ok) {
+    throw new Error(`Login returned HTTP ${loginRes.status}`);
+  }
+
   const loginData = await loginRes.json();
   const token = extractValue(loginData, session.tokenPath);
-  if (!token) throw new Error('Session login failed — no token in response');
+  if (!token) throw new Error('Login succeeded but no token in response');
 
   // Step 2: Fetch with session token
   const headers = {};
@@ -424,38 +454,41 @@ export async function testIntegration(type, testConfig) {
 
   try {
     if (config.auth === 'session') {
-      // For session auth, just try to login
+      // Try primary session auth
       const session = config.session;
       if (!session) return { ok: false, error: 'Session config missing in preset' };
 
-      const loginBody = JSON.stringify(session.loginBody)
-        .replace('{username}', config._username || '')
-        .replace('{password}', config._password || '');
+      const primaryResult = await testSessionAuth(config, session, baseUrl, skipTls);
+      if (primaryResult.ok) return primaryResult;
 
-      const res = await safeFetch(`${baseUrl}${session.loginEndpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: loginBody,
-      }, skipTls);
+      // If primary failed and there's a fallback, try it
+      const fallbackKey = config.authFallback;
+      const fallbackSession = fallbackKey && config[fallbackKey];
+      if (fallbackSession) {
+        const fallbackResult = await testSessionAuth(config, fallbackSession, baseUrl, skipTls);
+        if (fallbackResult.ok) return fallbackResult;
+      }
 
-      if (!res.ok) return { ok: false, error: `Login failed: HTTP ${res.status}` };
-      const data = await res.json();
-      const token = extractValue(data, session.tokenPath);
-      if (!token) return { ok: false, error: 'Login succeeded but no token in response' };
-      return { ok: true, status: res.status };
+      // Both failed — return error with instructions if available
+      const instructions = config.oauth2Instructions || '';
+      return {
+        ok: false,
+        error: instructions
+          ? `Login failed — 2FA may be enabled.`
+          : primaryResult.error,
+        instructions: instructions || undefined,
+      };
 
     } else {
-      let url = `${baseUrl}${resolveEndpointParams(testEndpoint, config)}`;
-
+      // Non-session auth (basic, bearer, header, query)
+      let url = `${baseUrl}${testEndpoint}`;
       if (config.auth === 'query' && config._token) {
         const paramName = config.queryParam || 'apikey';
         const separator = url.includes('?') ? '&' : '?';
         url = `${url}${separator}${paramName}=${config._token}`;
       }
-
       const headers = buildAuthHeaders(config);
       const res = await safeFetch(url, { headers }, skipTls);
-
       if (!res.ok) return { ok: false, error: `HTTP ${res.status}: ${res.statusText}` };
       return { ok: true, status: res.status };
     }
@@ -463,3 +496,35 @@ export async function testIntegration(type, testConfig) {
     return { ok: false, error: err.message };
   }
 }
+
+// ── Test a single session auth attempt ──
+async function testSessionAuth(config, session, baseUrl, skipTls) {
+  try {
+    const contentType = session.loginContentType || 'application/json';
+    let loginBody;
+    if (contentType === 'application/x-www-form-urlencoded') {
+      loginBody = (typeof session.loginBody === 'string' ? session.loginBody : '')
+        .replace('{username}', encodeURIComponent(config._username || ''))
+        .replace('{password}', encodeURIComponent(config._password || ''));
+    } else {
+      loginBody = JSON.stringify(session.loginBody)
+        .replace('{username}', config._username || '')
+        .replace('{password}', config._password || '');
+    }
+
+    const res = await safeFetch(`${baseUrl}${session.loginEndpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body: loginBody,
+    }, skipTls);
+
+    if (!res.ok) return { ok: false, error: `Login failed: HTTP ${res.status}` };
+    const data = await res.json();
+    const token = extractValue(data, session.tokenPath);
+    if (!token) return { ok: false, error: 'Login succeeded but no token in response' };
+    return { ok: true, status: res.status };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
