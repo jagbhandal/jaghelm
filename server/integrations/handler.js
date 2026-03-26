@@ -285,13 +285,16 @@ async function fetchWithSession(config) {
     const data = await doSessionFetch(config, session, baseUrl, skipTls);
     return data;
   } catch (primaryErr) {
+    console.warn(`[integrations] Primary session auth failed: ${primaryErr.message}`);
     // If a fallback auth method is defined, try it
     const fallbackKey = config.authFallback;
     const fallbackSession = fallbackKey && config[fallbackKey];
     if (fallbackSession) {
       try {
+        console.log(`[integrations] Trying ${fallbackKey} fallback auth...`);
         return await doSessionFetch(config, fallbackSession, baseUrl, skipTls);
       } catch (fallbackErr) {
+        console.error(`[integrations] Fallback auth also failed: ${fallbackErr.message}`);
         // Both failed — throw with instructions if available
         const instructions = config.oauth2Instructions || '';
         throw new Error(
@@ -429,6 +432,7 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
     return result;
 
   } catch (err) {
+    console.error(`[integrations] ${type} fetch error:`, err.message);
     return { error: err.message, fields: {} };
   }
 }
