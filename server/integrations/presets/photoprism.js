@@ -27,6 +27,7 @@ export default {
     { key: 'photos', label: 'Photos', path: 'count.photos', format: 'number' },
     { key: 'videos', label: 'Videos', path: 'count.videos', format: 'number' },
     { key: 'albums', label: 'Albums', path: 'count.albums', format: 'number' },
+    { key: 'people', label: 'People', path: 'count.people', format: 'number' },
   ],
   envKeys: {
     url: 'JAGHELM_PHOTOPRISM_URL',
