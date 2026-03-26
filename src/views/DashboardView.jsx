@@ -350,12 +350,15 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       });
 
       // RAM: show as used/total for nodes with enough RAM, just percent for Pi
+      // Includes cache breakdown for stacked progress bar
       if (m.memTotalGB && parseFloat(m.memTotalGB) > 4) {
         metrics.push({
           label: 'RAM',
           value: `${m.memUsedGB || '—'}/${m.memTotalGB || '—'}`,
           unit: 'GB',
           percent: parseFloat(m.memPercent),
+          actualPercent: parseFloat(m.memActualPercent) || null,
+          cacheGB: m.memCacheGB || null,
           small: true,
         });
       } else {
@@ -364,6 +367,8 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           value: m.memPercent,
           unit: '%',
           percent: parseFloat(m.memPercent),
+          actualPercent: parseFloat(m.memActualPercent) || null,
+          cacheGB: m.memCacheGB || null,
         });
       }
 
