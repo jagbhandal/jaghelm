@@ -238,9 +238,20 @@ export default function HelmGrid({
   // Sync from props with column clamping and overlap resolution
   const lastSyncedLayout = useRef(null);
   useEffect(() => {
+    const hasOwnLayout = !!layouts?.[breakpoint];
     const bpLayout = layouts?.[breakpoint] || layouts?.lg || [];
+
     const clamped = bpLayout.map(item => {
       let { x, w } = item;
+      // For sm (mobile): always single column, full width
+      if (breakpoint === 'sm') {
+        return { ...item, x: 0, w: activeCols };
+      }
+      // For md without its own layout: force full width to stack panels
+      if (breakpoint === 'md' && !hasOwnLayout) {
+        return { ...item, x: 0, w: activeCols };
+      }
+      // Normal clamping for lg or md with its own layout
       if (w > activeCols) w = activeCols;
       if (x + w > activeCols) x = Math.max(0, activeCols - w);
       return (x !== item.x || w !== item.w) ? { ...item, x, w } : item;
