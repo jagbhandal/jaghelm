@@ -1,6 +1,6 @@
 {
   "name": "jaghelm",
-  "version": "8.0.0-alpha.1",
+  "version": "1.0.0",
   "description": "JagHelm — Real-time infrastructure dashboard for homelabs",
   "private": true,
   "type": "module",
