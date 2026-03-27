@@ -11,11 +11,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-8.0-6366f1?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.0.0-6366f1?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/node-20+-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/react-19-61dafb?style=flat-square&logo=react&logoColor=white" alt="React">
   <img src="https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/ghcr.io-jagbhandal%2Fjaghelm-blue?style=flat-square&logo=github" alt="GHCR">
 </p>
 
 <p align="center">
@@ -27,24 +28,26 @@
 
 ## What Makes JagHelm Different
 
-Homepage and Homarr are link launchers with widget sidecars. **JagHelm is a real-time multi-node infrastructure monitoring dashboard** that also happens to have service cards, bookmarks, and app integrations.
+Homepage and Homarr are excellent dashboards — well-maintained, widely used, and great at what they do. JagHelm solves a different problem. **JagHelm is a real-time multi-node infrastructure monitoring dashboard** built around Prometheus, not a link launcher with widget sidecars.
+
+> ⚠️ = Partial support via a separate tool or widget add-on
 
 | Feature | Homepage | Homarr | JagHelm |
 |---------|----------|--------|---------|
-| Multi-node monitoring (CPU/RAM/Disk/Temp) | ❌ | ❌ | ✅ Per-node from Prometheus |
-| Per-container resource stats (CPU/MEM/RX/TX) | ❌ | ❌ | ✅ Via cAdvisor |
-| UPS power monitoring | Widget only | ❌ | ✅ Dedicated section via NUT |
-| Uptime Kuma deep integration | Widget only | Widget only | ✅ Per-service health, ping, uptime bars |
+| Multi-node monitoring (CPU/RAM/Disk/Temp) | ⚠️ Via Glances/Beszel widgets | ⚠️ Via Dash./Glances widgets | ✅ Native — per-node panels from Prometheus |
+| Per-container resource stats (CPU/MEM/RX/TX) | ⚠️ Basic via Docker socket | ⚠️ Via Docker integration | ✅ Full CPU/MEM/RX/TX via cAdvisor |
+| UPS power monitoring | ⚠️ APC UPS widget | ❌ | ✅ Dedicated section via NUT exporter |
+| Uptime Kuma deep integration | ⚠️ Widget only | ⚠️ Widget only | ✅ Per-service health, ping, uptime bars |
 | Three-tier service cards | ❌ | ❌ | ✅ Health → Container stats → App API |
-| Embedded service tabs | ❌ | ❌ | ✅ Uptime Kuma, Grafana, etc. as native tabs |
+| Embedded service tabs | ⚠️ iFrame widget | ❌ | ✅ Native nav tabs — Grafana, Kuma, etc. |
 | Content-aware grid layout | ❌ | ✅ | ✅ HelmGrid — panels auto-fit content |
 | Drag service cards between panels | ❌ | ❌ | ✅ Custom groups with drag-and-drop |
-| UI-first configuration | ❌ (YAML only) | ✅ | ✅ Full settings page + YAML escape hatch |
+| UI-first configuration | ❌ YAML only | ✅ | ✅ Full settings page + YAML escape hatch |
 | Server-side config persistence | ❌ | ✅ | ✅ Survives container rebuilds |
 | Built-in authentication | ❌ | ✅ | ✅ With password change from UI |
 | Encrypted secrets management | ❌ | ✅ | ✅ AES-256-GCM |
 | VS Code-inspired themes | ❌ | ❌ | ✅ 10 themes (6 dark + 4 light) |
-| PWA / installable on mobile | ❌ | ❌ | ✅ Add to home screen, full-screen app |
+| PWA / installable on mobile | ✅ | ❌ | ✅ Add to home screen, full-screen app |
 
 ---
 
@@ -163,23 +166,38 @@ All display settings (theme, layout, sections, links, etc.) save to `data/displa
 
 ### Docker Compose (Recommended)
 
+Create a directory and `.env` file:
+
+```bash
+mkdir -p /opt/stacks/jaghelm && cd /opt/stacks/jaghelm
+```
+
+```env
+# .env
+PROMETHEUS_URL=http://your-prometheus-host:9090
+KUMA_URL=http://your-kuma-host:3001
+DASH_SECRET=your-random-secret-here   # openssl rand -hex 32
+DASH_USER=admin
+DASH_PASS=your-password
+```
+
+Create `compose.yaml`:
+
 ```yaml
 services:
   jaghelm:
-    build: .
+    image: ghcr.io/jagbhandal/jaghelm:latest
     container_name: jaghelm
     restart: unless-stopped
     ports:
       - 3099:3099
-    environment:
-      PROMETHEUS_URL: http://your-prometheus-host:9090
-      KUMA_URL: http://your-kuma-host:3001
-      DASH_SECRET: your-random-secret-here  # openssl rand -hex 32
-      DASH_USER: admin
-      DASH_PASS: your-password
+    env_file:
+      - .env
     volumes:
       - ./data:/app/data        # Config + secrets persist here
       - ./uploads:/app/uploads  # Logo + background images
+    environment:
+      - NODE_ENV=production
 ```
 
 ```bash

@@ -6,18 +6,18 @@ A complete walkthrough for setting up JagHelm to monitor your homelab infrastruc
 
 ## Table of Contents
 
-1. [[What You Need]]
-2. [[Step 1: Set Up Prometheus and Node Exporter]]
-3. [[Step 2: Set Up cAdvisor for Container Metrics]]
-4. [[Step 3: Deploy JagHelm]]
-5. [[Step 4: First Boot — What to Expect]]
-6. [[Step 5: Add Uptime Kuma (Optional)]]
-7. [[Step 6: Add UPS Monitoring (Optional)]]
-8. [[Step 7: Configure Integrations]]
-9. [[Step 8: Embed Services as Tabs]]
-10. [[Step 9: Customize Your Dashboard]]
-11. [[Troubleshooting]]
-12. [[Architecture Overview]]
+1. [What You Need](#1-what-you-need)
+2. [Step 1: Set Up Prometheus and Node Exporter](#2-step-1-set-up-prometheus-and-node-exporter)
+3. [Step 2: Set Up cAdvisor for Container Metrics](#3-step-2-set-up-cadvisor-for-container-metrics)
+4. [Step 3: Deploy JagHelm](#4-step-3-deploy-jaghelm)
+5. [Step 4: First Boot — What to Expect](#5-step-4-first-boot--what-to-expect)
+6. [Step 5: Add Uptime Kuma (Optional)](#6-step-5-add-uptime-kuma-optional)
+7. [Step 6: Add UPS Monitoring (Optional)](#7-step-6-add-ups-monitoring-optional)
+8. [Step 7: Configure Integrations](#8-step-7-configure-integrations)
+9. [Step 8: Embed Services as Tabs](#9-step-8-embed-services-as-tabs)
+10. [Step 9: Customize Your Dashboard](#10-step-9-customize-your-dashboard)
+11. [Troubleshooting](#11-troubleshooting)
+12. [Architecture Overview](#12-architecture-overview)
 
 ---
 
@@ -29,10 +29,10 @@ A complete walkthrough for setting up JagHelm to monitor your homelab infrastruc
 - 5 minutes for a basic setup, 30 minutes for the full experience
 
 **Optional (but recommended):**
-- [[Uptime Kuma](https://github.com/louislam/uptime-kuma)](https://github.com/louislam/uptime-kuma) — adds health monitoring, ping latency, and uptime tracking to each service card
+- [Uptime Kuma](https://github.com/louislam/uptime-kuma) — adds health monitoring, ping latency, and uptime tracking to each service card
 - A UPS with NUT (Network UPS Tools) — for power monitoring on the dashboard
 
-**JagHelm gets its data from Prometheus.** If you don't already have Prometheus running, this guide will help you set it up. If you already have Prometheus with node_exporter and cAdvisor, skip to [[Step 3: Deploy JagHelm](https://claude.ai/chat/1d8e18ca-537f-42e1-866a-3aa83ade84fa#4-step-3-deploy-jaghelm)](#4-step-3-deploy-jaghelm).
+**JagHelm gets its data from Prometheus.** If you don't already have Prometheus running, this guide will help you set it up. If you already have Prometheus with node_exporter and cAdvisor, skip to [Step 3: Deploy JagHelm](#4-step-3-deploy-jaghelm).
 
 ---
 
@@ -185,7 +185,7 @@ docker compose restart prometheus
 
 ## 4. Step 3: Deploy JagHelm
 
-Now deploy JagHelm itself. It can run on any machine that has network access to Prometheus (and optionally Uptime Kuma).
+JagHelm is distributed as a pre-built Docker image on GitHub Container Registry. No build step required — just pull and run.
 
 Create a directory:
 
@@ -219,7 +219,7 @@ Create `compose.yaml`:
 ```yaml
 services:
   jaghelm:
-    build: .
+    image: ghcr.io/jagbhandal/jaghelm:latest
     container_name: jaghelm
     restart: unless-stopped
     ports:
@@ -233,14 +233,21 @@ services:
       - NODE_ENV=production
 ```
 
-Clone the repository and build:
+Pull and start:
 
 ```bash
-git clone https://github.com/your-org/jaghelm.git .
-docker compose up -d --build
+docker compose up -d
 ```
 
-The first build takes 1-2 minutes. Subsequent builds are faster thanks to Docker layer caching.
+Docker will pull the image from GHCR automatically on first run. No cloning or building required.
+
+To pin to a specific version instead of always getting the latest:
+
+```yaml
+    image: ghcr.io/jagbhandal/jaghelm:1.0.0
+```
+
+Available versions are listed on the [GitHub Releases](https://github.com/jagbhandal/jaghelm/releases) page.
 
 ---
 
@@ -378,7 +385,7 @@ JagHelm is designed to be customized entirely from the UI. Here's what you can d
 Drag panels by their header to reposition them. Resize from the bottom-right or bottom-left corners. Panels snap to the grid and auto-save their positions.
 
 ### Change the theme
-Settings > Appearance — choose from 6 developer-inspired dark themes.
+Settings > Appearance — choose from 10 developer-inspired themes (6 dark, 4 light).
 
 ### Adjust the grid
 Settings > Layout > Grid Columns — slide from 6 (compact, fewer wider panels) to 24 (fine grid, more panel placement options).
@@ -431,7 +438,7 @@ JagHelm matches Kuma monitors to containers by checking if the monitor name cont
 
 ### Embedded tab shows "Embedding Blocked"
 
-The service is sending `X-Frame-Options` or `Content-Security-Policy` headers that prevent iframe embedding. Each service has its own setting to allow this — see the tips in [[Step 8](https://claude.ai/chat/1d8e18ca-537f-42e1-866a-3aa83ade84fa#9-step-8-embed-services-as-tabs)](#9-step-8-embed-services-as-tabs).
+The service is sending `X-Frame-Options` or `Content-Security-Policy` headers that prevent iframe embedding. Each service has its own setting to allow this — see the tips in [Step 8](#9-step-8-embed-services-as-tabs).
 
 ### JagHelm container won't start
 
@@ -443,6 +450,19 @@ docker logs jaghelm
 Common issues:
 - `DASH_SECRET` not set — required for the secrets manager. Generate one with `openssl rand -hex 32`.
 - Prometheus URL wrong — JagHelm logs the URL it's trying to connect to on startup.
+
+### Updating JagHelm
+
+To pull the latest image:
+
+```bash
+# Run on the machine hosting JagHelm
+cd /opt/stacks/jaghelm
+docker compose pull
+docker compose up -d
+```
+
+To pin to a specific version, update the `image:` tag in your `compose.yaml` to a version from the [GitHub Releases](https://github.com/jagbhandal/jaghelm/releases) page and re-run `docker compose up -d`.
 
 ---
 
@@ -473,7 +493,7 @@ Common issues:
          └──────┘ └───────┘ └───────────┘
 ```
 
-For detailed architecture documentation, see [[ARCHITECTURE.md]](docs/ARCHITECTURE.md).
+For detailed architecture documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
