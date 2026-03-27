@@ -9,18 +9,21 @@ jobs:
   deploy:
     runs-on: self-hosted
     steps:
+      - name: Wait for GitHub image build
+        run: sleep 300
+
       - name: Deploy to production
         run: |
           SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /root/.ssh/runner_deploy jagbhandal@192.168.68.11"
-          
-          echo ">>> Pulling latest code"
-          $SSH_CMD "cd /opt/stacks/jaghelm && git pull origin main"
-          
-          echo ">>> Building and deploying"
-          $SSH_CMD "cd /opt/stacks/jaghelm && docker compose up -d --build --force-recreate"
+
+          echo ">>> Pulling latest image"
+          $SSH_CMD "cd /opt/stacks/jaghelm && docker compose pull"
+
+          echo ">>> Deploying"
+          $SSH_CMD "cd /opt/stacks/jaghelm && docker compose up -d --force-recreate"
 
       - name: Verify
         run: |
           SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /root/.ssh/runner_deploy jagbhandal@192.168.68.11"
-          sleep 5
+          sleep 10
           $SSH_CMD "docker ps | grep jaghelm && curl -s http://localhost:3099/api/health"
