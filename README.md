@@ -159,7 +159,7 @@ All display settings (theme, layout, sections, links, etc.) save to `data/displa
 
 ## Quick Start
 
-> **New to JagHelm?** Check out the [Getting Started Guide](docs/GET-STARTED.md.md) for a complete walkthrough — from installing Prometheus to a fully configured dashboard.
+> **New to JagHelm?** Check out the [Getting Started Guide](docs/GET-STARTED.md) for a complete walkthrough — from installing Prometheus to a fully configured dashboard.
 
 ### Docker Compose (Recommended)
 
