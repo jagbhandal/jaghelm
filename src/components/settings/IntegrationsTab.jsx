@@ -48,6 +48,7 @@ const AUTH_LABELS = {
   header: 'API Key (Custom Header)',
   query: 'API Key (Query Parameter)',
   session: 'Session Login (Username + Password)',
+  oauth2: 'OAuth2 (Client ID + Secret)',
 };
 
 // What credential fields each auth type needs
@@ -58,6 +59,7 @@ const AUTH_FIELDS = {
   header: ['token'],
   query: ['token'],
   session: ['username', 'password'],
+  oauth2: ['username', 'password'],
 };
 
 export default function IntegrationsTab() {
@@ -598,12 +600,12 @@ export default function IntegrationsTab() {
 
           {/* Username (if needed) */}
           {neededFields.includes('username') && (
-            <FieldGroup label="Username">
+            <FieldGroup label={authType === 'oauth2' ? 'Client ID' : 'Username'}>
               <input
                 className="settings-input"
                 value={formUsername}
                 onChange={e => setFormUsername(e.target.value)}
-                placeholder="admin"
+                placeholder={authType === 'oauth2' ? 'OAuth2 Client ID' : 'admin'}
                 autoComplete="off"
               />
             </FieldGroup>
@@ -611,13 +613,13 @@ export default function IntegrationsTab() {
 
           {/* Password (if needed) */}
           {neededFields.includes('password') && (
-            <FieldGroup label="Password" hint={isEditing ? 'Leave blank to keep existing' : undefined}>
+            <FieldGroup label={authType === 'oauth2' ? 'Client Secret' : 'Password'} hint={isEditing ? 'Leave blank to keep existing' : undefined}>
               <input
                 className="settings-input"
                 type="password"
                 value={formPassword}
                 onChange={e => setFormPassword(e.target.value)}
-                placeholder={isEditing ? '••••••••' : 'Enter password'}
+                placeholder={isEditing ? '••••••••' : authType === 'oauth2' ? 'OAuth2 Client Secret' : 'Enter password'}
                 autoComplete="new-password"
               />
             </FieldGroup>
