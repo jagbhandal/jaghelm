@@ -2,8 +2,8 @@ export default {
   name: 'PhotoPrism',
   icon: 'photoprism',
   description: 'AI-powered photo management',
-  auth: 'session',
-  authFallback: 'oauth2',
+  auth: 'oauth2',
+  authFallback: 'session',
   session: {
     loginEndpoint: '/api/v1/session',
     loginContentType: 'application/json',
