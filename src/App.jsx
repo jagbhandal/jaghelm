@@ -97,7 +97,7 @@ export default function App() {
               merged.gridLayout = prev.gridLayout;
             }
             localStorage.setItem('jaghelm-config', JSON.stringify(merged));
-            if (data.theme) setTheme(data.theme);
+            if (data.theme && !localStorage.getItem('jaghelm-theme')) setTheme(data.theme);
             return merged;
           });
         }
