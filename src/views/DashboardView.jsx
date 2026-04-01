@@ -667,14 +667,38 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
       result[bp] = [...constrained, ...newItems];
     }
 
-    // ── Auto-generate sm (mobile) breakpoint from lg layout ──
+    // ── Auto-generate sm (mobile) breakpoint — explicit fixed order ──
+// Order: quicklaunch → gateway → production → staging → pve → nas → ups → pipeline → todos → custom groups → anything else
     if (!result.sm) {
       const lgItems = result.lg || result.md || [];
-      const sorted = [...lgItems].sort((a, b) => a.y !== b.y ? a.y - b.y : a.x - b.x);
+      const allKeys = lgItems.map(i => i.i);
+
+      const MOBILE_ORDER = [
+        'quicklaunch',
+        'node-pi',
+        'node-vm103',
+        'node-vm101',
+        'node-pve',
+        'node-nas',
+        'ups',
+        'pipeline',
+        'todos',
+      ];
+
+      // Build ordered list: explicit order first, then any remaining keys (custom groups, unknown nodes) appended at end
+      const orderedKeys = [
+        ...MOBILE_ORDER.filter(k => allKeys.includes(k)),
+        ...allKeys.filter(k => !MOBILE_ORDER.includes(k)),
+      ];
+
+      // Build a lookup of h values from the lg layout so panels keep their desktop height
+      const hByKey = {};
+      for (const item of lgItems) hByKey[item.i] = item.h || 4;
+
       let smY = 0;
-      result.sm = sorted.map(item => {
-        const h = item.h || 4;
-        const entry = { i: item.i, x: 0, y: smY, w: 1, h, minW: 1, minH: 3 };
+      result.sm = orderedKeys.map(k => {
+        const h = hByKey[k] || 4;
+        const entry = { i: k, x: 0, y: smY, w: 1, h, minW: 1, minH: 3 };
         smY += h;
         return entry;
       });
