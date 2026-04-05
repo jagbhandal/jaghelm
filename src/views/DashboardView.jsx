@@ -675,8 +675,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
       const MOBILE_ORDER = [
         'quicklaunch',
-        'node-pi1',
-        'node-pi2',
+        'node-pi',
         'node-vm103',
         'node-vm101',
         'node-pve',
@@ -795,9 +794,13 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           {/* Dynamic node sections */}
           {nodeElements}
 
-          {/* Placeholders for node panels that exist in saved layout but haven't loaded yet */}
+          {/* Placeholders for node panels that exist in saved layout but haven't loaded yet.
+              Only show a placeholder if serviceData hasn't loaded yet (nodes is empty).
+              Once serviceData is populated, stale node keys are silently ignored — no ghost panels. */}
           {(() => {
             const loadedNodeKeys = new Set(Object.keys(serviceData.nodes || {}).map(k => `node-${k}`));
+            const dataHasLoaded = loadedNodeKeys.size > 0;
+            if (dataHasLoaded) return null;
             const savedKeys = (layouts.lg || layouts.md || []).map(i => i.i).filter(k => k.startsWith('node-'));
             return savedKeys
               .filter(k => !loadedNodeKeys.has(k))
