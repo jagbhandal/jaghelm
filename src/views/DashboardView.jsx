@@ -63,6 +63,8 @@ const LEGACY_KEY_MAP = {
 
 function migrateLayouts(layouts) {
   if (!layouts) return null;
+  // Keys that should be stripped from saved layouts (retired/renamed nodes)
+  const STRIP_KEYS = new Set(['node-pi']);
   const migrated = {};
   let changed = false;
   for (const [bp, items] of Object.entries(layouts)) {
@@ -73,6 +75,9 @@ function migrateLayouts(layouts) {
         return { ...item, i: newKey };
       }
       return item;
+    }).filter(item => {
+      if (STRIP_KEYS.has(item.i)) { changed = true; return false; }
+      return true;
     });
   }
   return changed ? migrated : layouts;
@@ -659,12 +664,15 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
       const existingKeys = new Set(constrained.map(i => i.i));
       const missing = allDynamicKeys.filter(k => !existingKeys.has(k));
+      // Also add any static panels missing from saved layout (e.g. newly added panels like cron-jobs)
+      const STATIC_PANELS = ['ups', 'pipeline', 'todos', 'cron-jobs', 'quicklaunch'];
+      const missingStatic = STATIC_PANELS.filter(k => !existingKeys.has(k));
       // Add missing nodes at the bottom
       let maxY = constrained.reduce((max, i) => Math.max(max, i.y + i.h), 0);
-      const newItems = missing.map(k => ({
+      const newItems = [...missing, ...missingStatic].map(k => ({
         i: k, x: 0, y: maxY++,
         w: bp === 'lg' ? lgCols : bp === 'md' ? Math.min(lgCols, 20) : 1,
-        h: 6,
+        h: k === 'cron-jobs' ? 7 : 5,
         minW: bp === 'sm' ? 1 : 4,
         minH: 3,
       }));
