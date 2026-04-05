@@ -252,7 +252,7 @@ function defaultConfig() {
     logoUrl: '', bgImage: '', bgOpacity: 0.3, overlayOpacity: 0.75, showDots: true,
     accentColor: '#6366f1', refreshInterval: 30, searchEngine: 'google', showSearch: true,
     weatherLat: '', weatherLon: '', showWeather: false, weatherCity: '',
-    showDockerStats: false, showTodos: true,
+    showDockerStats: false, showTodos: true, showCronJobs: true,
     tabs: [],
     sections: {},
     gridLayout: null, gridColumns: 24,
