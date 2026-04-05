@@ -115,7 +115,8 @@ export function generateDefaultConfig(discoveredNodes) {
   
   // Map discovered Prometheus nodes to config entries
   const nodeDefaults = {
-    pi: { display_name: 'Gateway Services', subtitle: 'Raspberry Pi 5', icon: '🛡', border_color: '#a78bfa' },
+    pi1: { display_name: 'Gateway — Pi 1', subtitle: 'jagnet-pi-gateway · 192.168.68.13', icon: '🛡', border_color: '#a78bfa' },
+    pi2: { display_name: 'Gateway — Pi 2', subtitle: 'jagnet-pi-failover · 192.168.68.14', icon: '🔄', border_color: '#22d3ee' },
     vm103: { display_name: 'Production', subtitle: 'VM 103', icon: '🚀', border_color: '#6366f1' },
     vm101: { display_name: 'Staging', subtitle: 'VM 101', icon: '🔬', border_color: '#fbbf24' },
   };

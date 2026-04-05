@@ -675,7 +675,8 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
       const MOBILE_ORDER = [
         'quicklaunch',
-        'node-pi',
+        'node-pi1',
+        'node-pi2',
         'node-vm103',
         'node-vm101',
         'node-pve',
