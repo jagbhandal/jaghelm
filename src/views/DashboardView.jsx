@@ -5,8 +5,8 @@ import NodeCard from '../components/NodeCard';
 import TodoCard from '../components/TodoCard';
 import DroppablePanel from '../components/DroppablePanel';
 import ServiceDragOverlay from '../components/ServiceDragOverlay';
-import { UPSCard, GiteaActivity, QuickLaunch } from '../components/Widgets';
-import { getServices, getUPSStatus, getGiteaActivity, getAllIntegrations, cachedIconUrl } from '../hooks/useData';
+import { UPSCard, GiteaActivity, QuickLaunch, CronJobs } from '../components/Widgets';
+import { getServices, getUPSStatus, getGiteaActivity, getCronStatus, getAllIntegrations, cachedIconUrl } from '../hooks/useData';
 
 /**
  * DashboardView v8 — Phase 3
@@ -39,7 +39,8 @@ const DEFAULT_LAYOUTS = {
     { i: 'ups', x: 12, y: 14, w: 12, h: 5, minW: 4, minH: 3 },
     { i: 'pipeline', x: 0, y: 20, w: 16, h: 5, minW: 4, minH: 3 },
     { i: 'todos', x: 16, y: 20, w: 8, h: 5, minW: 4, minH: 3 },
-    { i: 'quicklaunch', x: 0, y: 25, w: 24, h: 4, minW: 4, minH: 2 },
+    { i: 'cron-jobs', x: 0, y: 25, w: 24, h: 7, minW: 4, minH: 3 },
+    { i: 'quicklaunch', x: 0, y: 32, w: 24, h: 4, minW: 4, minH: 2 },
   ],
   md: [
     { i: 'node-gateway', x: 0, y: 0, w: 20, h: 7 },
@@ -48,7 +49,8 @@ const DEFAULT_LAYOUTS = {
     { i: 'ups', x: 0, y: 20, w: 20, h: 5 },
     { i: 'pipeline', x: 0, y: 25, w: 20, h: 5 },
     { i: 'todos', x: 0, y: 30, w: 20, h: 5 },
-    { i: 'quicklaunch', x: 0, y: 35, w: 20, h: 4 },
+    { i: 'cron-jobs', x: 0, y: 35, w: 20, h: 7 },
+    { i: 'quicklaunch', x: 0, y: 42, w: 20, h: 4 },
   ],
 };
 
@@ -95,6 +97,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   // Dedicated section data (not yet in /api/services)
   const [ups, setUps] = useState(null);
   const [commits, setCommits] = useState([]);
+  const [cronJobs, setCronJobs] = useState([]);
 
   // Phase 3: Integration engine data (replaces hardcoded AdGuard/NPM)
   const [integrationData, setIntegrationData] = useState({});
@@ -169,9 +172,10 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
   const fetchSections = useCallback(async (skipEtag) => {
     try {
-      const [upsData, giteaData] = await Promise.allSettled([getUPSStatus(skipEtag), getGiteaActivity(skipEtag)]);
+      const [upsData, giteaData, cronData] = await Promise.allSettled([getUPSStatus(skipEtag), getGiteaActivity(skipEtag), getCronStatus(skipEtag)]);
       if (upsData.status === 'fulfilled' && upsData.value !== null) setUps(upsData.value);
       if (giteaData.status === 'fulfilled' && giteaData.value !== null) setCommits(giteaData.value || []);
+      if (cronData.status === 'fulfilled' && cronData.value !== null) setCronJobs(cronData.value || []);
     } catch (err) { console.warn('[dashboard] Sections fetch failed:', err.message); }
   }, []);
 
@@ -683,6 +687,8 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
         'ups',
         'pipeline',
         'todos',
+        'cron-jobs',
+        'cron-jobs',
       ];
 
       // Build ordered list: explicit order first, then any remaining keys (custom groups, unknown nodes) appended at end
@@ -794,13 +800,9 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           {/* Dynamic node sections */}
           {nodeElements}
 
-          {/* Placeholders for node panels that exist in saved layout but haven't loaded yet.
-              Only show a placeholder if serviceData hasn't loaded yet (nodes is empty).
-              Once serviceData is populated, stale node keys are silently ignored — no ghost panels. */}
+          {/* Placeholders for node panels that exist in saved layout but haven't loaded yet */}
           {(() => {
             const loadedNodeKeys = new Set(Object.keys(serviceData.nodes || {}).map(k => `node-${k}`));
-            const dataHasLoaded = loadedNodeKeys.size > 0;
-            if (dataHasLoaded) return null;
             const savedKeys = (layouts.lg || layouts.md || []).map(i => i.i).filter(k => k.startsWith('node-'));
             return savedKeys
               .filter(k => !loadedNodeKeys.has(k))
@@ -834,6 +836,11 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           {sc.todos?.visible !== false && (
             <div key="todos">
               <TodoCard borderColor={sc.todos?.borderColor} config={config} setConfig={setConfig} />
+            </div>
+          )}
+          {config.showCronJobs !== false && (
+            <div key="cron-jobs">
+              <CronJobs nodes={cronJobs} config={config} />
             </div>
           )}
           {sc.quicklaunch?.visible !== false && (
