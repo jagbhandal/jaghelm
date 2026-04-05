@@ -61,6 +61,7 @@ export async function getServices(skipEtag) {
 
 export async function getUPSStatus(skipEtag) { return fetchJson(`${BASE}/ups`, skipEtag); }
 export async function getGiteaActivity(skipEtag) { return fetchJson(`${BASE}/gitea/activity`, skipEtag); }
+export async function getCronStatus(skipEtag) { return fetchJson(`${BASE}/cron/status`, skipEtag); }
 
 // Phase 3: Integration Engine
 export async function getAllIntegrations(skipEtag) { return fetchJson(`${BASE}/integrations`, skipEtag); }

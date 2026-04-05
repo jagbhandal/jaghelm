@@ -74,6 +74,11 @@ export default function WidgetsTab({ config, update }) {
           checked={config.showTodos !== false}
           onChange={v => update('showTodos', v)}
         />
+        <Chk
+          label="Show scheduled jobs panel on dashboard"
+          checked={config.showCronJobs !== false}
+          onChange={v => update('showCronJobs', v)}
+        />
       </Card>
     </div>
   );

@@ -119,6 +119,131 @@ export const GiteaActivity = React.memo(function GiteaActivity({ commits, config
   );
 });
 
+export const CronJobs = React.memo(function CronJobs({ nodes, config }) {
+  const sec = config?.sections?.cronJobs || {};
+
+  const fmtTime = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const fmtDuration = (s) => {
+    if (s == null) return null;
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+  };
+
+  const isEmpty = !nodes || nodes.length === 0;
+
+  return (
+    <div className="glass-card node-card" style={{ borderTop: '2px solid var(--teal)', ...sectionBgStyle(sec) }}>
+      <div className="section-header grab-handle">
+        <div className="section-icon" style={{ background: 'rgba(23,146,153,0.1)', border: '1px solid rgba(23,146,153,0.2)' }}>
+          {renderIcon(sec.icon || '⏱')}
+        </div>
+        <div>
+          <div className="section-title">{sec.title || 'Scheduled Jobs'}</div>
+          <div className="section-subtitle">{sec.subtitle || 'Cron job execution log'}</div>
+        </div>
+      </div>
+
+      {isEmpty && (
+        <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: 8 }}>
+          No job reports yet. Configure cron scripts to report to JagHelm.
+        </div>
+      )}
+
+      {!isEmpty && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {nodes.map((nodeEntry) => (
+            <div key={nodeEntry.node}>
+              {/* Node subsection header */}
+              <div style={{
+                fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--teal)',
+                letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8, paddingLeft: 2,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <span style={{
+                  width: 6, height: 6, borderRadius: '50%', background: 'var(--teal)',
+                  display: 'inline-block', flexShrink: 0,
+                }} />
+                {nodeEntry.node}
+              </div>
+
+              {/* Jobs table */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {nodeEntry.jobs.map((jobEntry) => {
+                  const lastRun = jobEntry.runs[0];
+                  const isSuccess = lastRun?.status === 'success';
+                  const statusColor = isSuccess ? 'var(--green)' : 'var(--red)';
+
+                  return (
+                    <div key={jobEntry.job} style={{
+                      background: 'rgba(255,255,255,0.03)', borderRadius: 6,
+                      padding: '8px 10px', border: '1px solid rgba(255,255,255,0.06)',
+                    }}>
+                      {/* Job name + last status */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-primary)', fontWeight: 500 }}>
+                          {jobEntry.job}
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {lastRun?.schedule && (
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lastRun.schedule}</span>
+                          )}
+                          {lastRun && (
+                            <span style={{
+                              fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600,
+                              color: statusColor, textTransform: 'uppercase', letterSpacing: 0.5,
+                            }}>
+                              {lastRun.status}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Run history rows */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {jobEntry.runs.map((run, i) => (
+                          <div key={i} style={{
+                            display: 'flex', alignItems: 'center', gap: 8,
+                            fontSize: 11, color: i === 0 ? 'var(--text-secondary)' : 'var(--text-muted)',
+                          }}>
+                            <span style={{
+                              width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                              background: run.status === 'success' ? 'var(--green)' : 'var(--red)',
+                            }} />
+                            <span style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 10 }}>
+                              {fmtTime(run.timestamp)}
+                            </span>
+                            {run.duration_seconds != null && (
+                              <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
+                                {fmtDuration(run.duration_seconds)}
+                              </span>
+                            )}
+                            {run.status === 'failure' && run.error && (
+                              <span style={{
+                                color: 'var(--red)', fontSize: 10, fontFamily: 'var(--font-mono)',
+                                maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              }} title={run.error}>
+                                {run.error}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
 const CDN_BASE = 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg';
 
 // Resolve best icon URL for a quick launch link

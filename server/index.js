@@ -31,6 +31,7 @@ import { initRegistry, getPreset, listPresets } from './integrations/registry.js
 import { fetchIntegration, testIntegration } from './integrations/handler.js';
 import { initIconIndex, searchIcons, getIconCount } from './icons.js';
 import { initIconCache, handleCachedIcon } from './icon-cache.js';
+import { recordRun, getAllStatuses } from './cron-store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -762,6 +763,28 @@ app.get('/api/gitea/activity', async (req, res) => {
   const data = await refreshGitea();
   if (data) return jsonWithEtag(res, req, 'gitea', data);
   res.status(502).json({ error: 'Gitea data not yet available' });
+});
+
+// ── Cron Job Reporting ──
+
+// POST /api/cron/report — receives execution reports from cron jobs on any node.
+// Protected by JAGHELM_CRON_SECRET — no session auth needed (called from scripts).
+app.post('/api/cron/report', express.json(), (req, res) => {
+  const secret = process.env.JAGHELM_CRON_SECRET || '';
+  if (!secret || req.body?.secret !== secret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const { job, node, status, duration_seconds, schedule, error } = req.body;
+  if (!job || !node || !['success', 'failure'].includes(status)) {
+    return res.status(400).json({ error: 'Missing required fields: job, node, status' });
+  }
+  recordRun({ job, node, status, duration_seconds, schedule, error });
+  res.json({ ok: true });
+});
+
+// GET /api/cron/status — returns all job statuses grouped by node.
+app.get('/api/cron/status', authMiddleware, (req, res) => {
+  res.json(getAllStatuses());
 });
 
 // ── Weather + Todos (unchanged) ──
