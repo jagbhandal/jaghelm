@@ -24,6 +24,7 @@
 
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';      
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
@@ -91,6 +92,10 @@ const trustProxy = (process.env.TRUST_PROXY || '')
 if (trustProxy.length > 0) {
   app.set('trust proxy', trustProxy);
 }
+
+app.use(helmet({
+  contentSecurityPolicy: false,
+}));
 
 const upload = createUploadMiddleware(uploadsDir);
 
