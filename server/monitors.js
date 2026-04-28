@@ -108,6 +108,10 @@ export async function getMonitorNames() {
  * 6. No match → return null
  */
 let loggedOnce = false;
+// Tracks (container, monitor) pairs that have already logged an "explicit miss"
+// warning. Process-lifetime — clears on container restart. Prevents log spam
+// every refresh cycle when services.yaml references stale monitor names.
+const explicitMissWarned = new Set();
 
 export function matchMonitor(containerName, explicitMonitor, monitors) {
   const monitorList = Object.values(monitors);
@@ -118,7 +122,16 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
       m => m.name.toLowerCase() === explicitMonitor.toLowerCase()
     );
     if (exact) return exact;
-    console.warn('[monitors] Explicit monitor "%s" not found for container "%s"', explicitMonitor, containerName);
+    // Log once per unique (container, monitor) pair, then stay silent.
+    const key = `${containerName}::${explicitMonitor}`;
+    if (!explicitMissWarned.has(key)) {
+      console.warn(
+        '[monitors] Explicit monitor "%s" not found for container "%s" — falling back to fuzzy match (this warning logs once per pair)',
+        explicitMonitor,
+        containerName
+      );
+      explicitMissWarned.add(key);
+    }
   }
 
   // Normalize: lowercase, strip non-alphanumeric

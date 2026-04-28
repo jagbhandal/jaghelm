@@ -113,10 +113,11 @@ export function getConfig() {
  */
 export function generateDefaultConfig(discoveredNodes) {
   const cfg = structuredClone(DEFAULT_CONFIG);
-  
+
   // Map discovered Prometheus nodes to config entries
   const nodeDefaults = {
-    pi: { display_name: 'Gateway Services', subtitle: 'Raspberry Pi 5', icon: '🛡', border_color: '#a78bfa' },
+    pi1: { display_name: 'Gateway Primary', subtitle: 'Raspberry Pi 5', icon: '🛡', border_color: '#a78bfa' },
+    pi2: { display_name: 'Gateway Secondary', subtitle: 'Raspberry Pi 5', icon: '🛡', border_color: '#a78bfa' },
     vm103: { display_name: 'Production', subtitle: 'VM 103', icon: '🚀', border_color: '#6366f1' },
     vm101: { display_name: 'Staging', subtitle: 'VM 101', icon: '🔬', border_color: '#fbbf24' },
   };
@@ -137,14 +138,11 @@ export function generateDefaultConfig(discoveredNodes) {
     };
   }
 
-  // Default service overrides — Pi containers use non-obvious names
-  cfg.services = {
-    'adguard-home': { display_name: 'AdGuard', monitor: 'AdGuard Home' },
-    'gateway-npm': { display_name: 'NPM', monitor: 'Nginx Proxy Manager' },
-    'gateway-tunnel': { display_name: 'Cloudflared', monitor: 'Cloudflared' },
-    'tailscale': { display_name: 'Tailscale', monitor: 'Tailscale' },
-    'dockge': { display_name: 'Dockge', monitor: 'Dockge' },
-  };
+  // No hardcoded service defaults — let auto-matching handle naming.
+  // Users with multi-instance containers (same container name on multiple nodes)
+  // can configure per-node monitor mapping via the Settings UI, which writes
+  // `monitor_per_node:` blocks to services.yaml.
+  cfg.services = {};
 
   return cfg;
 }
