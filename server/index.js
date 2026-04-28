@@ -11,11 +11,10 @@
 
 import express from 'express';
 import cors from 'cors';
-import multer from 'multer';
 import crypto from 'crypto';
 import http from 'http';
 import { fileURLToPath } from 'url';
-import { dirname, join, extname } from 'path';
+import { dirname, join } from 'path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -33,6 +32,11 @@ import { initIconIndex, searchIcons, getIconCount } from './icons.js';
 import { initIconCache, handleCachedIcon } from './icon-cache.js';
 import { recordRun, getAllStatuses } from './cron-store.js';
 
+// Refactored shared modules
+import { getCached, setCache, jsonWithEtag } from './cache.js';
+import { apiError } from './errors.js';
+import { createUploadMiddleware } from './upload.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const app = express();
@@ -43,22 +47,7 @@ const dataDir = join(__dirname, '..', 'data');
 if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
 if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
 
-const ALLOWED_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => cb(null, `${req.query.type === 'logo' ? 'logo' : 'bg'}${extname(file.originalname) || '.png'}`),
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (ALLOWED_UPLOAD_TYPES.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error(`File type not allowed: ${file.mimetype}. Accepted: PNG, JPEG, GIF, WebP, SVG`));
-    }
-  },
-});
+const upload = createUploadMiddleware(uploadsDir);
 
 app.use(cors());
 app.use(express.json());
@@ -66,197 +55,14 @@ app.disable('etag'); // Disable Express auto-ETag — we manage ETags manually v
 app.use('/uploads', express.static(uploadsDir));
 
 // ── AUTH ──
-const sessions = new Map();
-const SESSION_MAX_AGE = 86400000; // 24 hours
+// Sessions, password hashing, rate limiting, and the /api/auth/* routes
+// live in ./auth/. Middleware is imported here for use on protected routes
+// further down the file.
+import { authMiddleware } from './auth/middleware.js';
+import { authRoutes } from './auth/routes.js';
+app.use('/api/auth', authRoutes);
 
-// Clean up expired sessions every hour
-setInterval(() => {
-  const now = Date.now();
-  for (const [token, s] of sessions) {
-    if (now - s.created > SESSION_MAX_AGE) sessions.delete(token);
-  }
-}, 3600000);
-const AUTH_USER = process.env.DASH_USER || 'admin';
-const AUTH_PASS_ENV = process.env.DASH_PASS || '';
-const AUTH_FILE = join(dataDir, 'auth.json');
-
-function loadAuthOverride() {
-  try {
-    if (existsSync(AUTH_FILE)) {
-      const data = JSON.parse(readFileSync(AUTH_FILE, 'utf8'));
-      return data.passwordHash || null;
-    }
-  } catch (err) {
-    console.warn('[auth] Failed to load auth override:', err.message);
-  }
-  return null;
-}
-
-// ── Password hashing: scrypt (Node.js built-in, no dependencies) ──
-// Format: scrypt:salt:hash (all hex). Salt is 16 random bytes, hash is 64 bytes.
-// Legacy SHA-256 hashes (64 hex chars, no colons) are auto-migrated on next login.
-
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
-  return `scrypt:${salt}:${hash}`;
-}
-
-function verifyPassword(password, stored) {
-  // New scrypt format: "scrypt:salt:hash"
-  if (stored.startsWith('scrypt:')) {
-    const [, salt, hash] = stored.split(':');
-    const derived = crypto.scryptSync(password, salt, 64).toString('hex');
-    return crypto.timingSafeEqual(Buffer.from(derived, 'hex'), Buffer.from(hash, 'hex'));
-  }
-  // Legacy SHA-256 format: 64-char hex string
-  if (stored.length === 64 && !stored.includes(':')) {
-    const sha = crypto.createHash('sha256').update(password).digest('hex');
-    return sha === stored;
-  }
-  return false;
-}
-
-let storedPasswordHash = loadAuthOverride();
-
-function authEnabled() {
-  return storedPasswordHash || (AUTH_PASS_ENV && AUTH_PASS_ENV !== 'REPLACE_ME' && AUTH_PASS_ENV.length > 0);
-}
-
-function checkPassword(password) {
-  if (storedPasswordHash) {
-    const match = verifyPassword(password, storedPasswordHash);
-    // Auto-migrate legacy SHA-256 hash to scrypt on successful login
-    if (match && !storedPasswordHash.startsWith('scrypt:')) {
-      console.log('[auth] Migrating password hash from SHA-256 to scrypt');
-      storedPasswordHash = hashPassword(password);
-      try {
-        writeFileSync(AUTH_FILE, JSON.stringify({ passwordHash: storedPasswordHash, updatedAt: new Date().toISOString() }, null, 2));
-      } catch (err) {
-        console.error('[auth] Failed to save migrated hash:', err.message);
-      }
-    }
-    return match;
-  }
-  return password === AUTH_PASS_ENV;
-}
-
-function authMiddleware(req, res, next) {
-  if (!authEnabled()) return next();
-  const token = req.headers['x-auth-token'] || req.query.token;
-  if (token && sessions.has(token)) {
-    const s = sessions.get(token);
-    if (Date.now() - s.created < SESSION_MAX_AGE) return next();
-    sessions.delete(token);
-  }
-  return res.status(401).json({ error: 'Unauthorized' });
-}
-
-// ── Login rate limiting — 5 attempts per IP per 15 minutes ──
-const loginAttempts = new Map(); // ip → { count, firstAttempt }
-const MAX_LOGIN_ATTEMPTS = 5;
-const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-
-function checkLoginRate(ip) {
-  const now = Date.now();
-  const record = loginAttempts.get(ip);
-  if (!record || now - record.firstAttempt > LOGIN_WINDOW_MS) {
-    loginAttempts.set(ip, { count: 1, firstAttempt: now });
-    return true;
-  }
-  record.count++;
-  return record.count <= MAX_LOGIN_ATTEMPTS;
-}
-
-function resetLoginRate(ip) {
-  loginAttempts.delete(ip);
-}
-
-// Clean up stale rate limit entries every 30 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, record] of loginAttempts) {
-    if (now - record.firstAttempt > LOGIN_WINDOW_MS) loginAttempts.delete(ip);
-  }
-}, 30 * 60 * 1000);
-
-app.post('/api/auth/login', (req, res) => {
-  if (!authEnabled()) return res.json({ token: 'noauth', user: 'admin' });
-
-  const ip = req.ip || req.connection?.remoteAddress || 'unknown';
-  if (!checkLoginRate(ip)) {
-    return res.status(429).json({ error: 'Too many login attempts. Try again in 15 minutes.' });
-  }
-
-  const { username, password } = req.body;
-  if (username === AUTH_USER && checkPassword(password)) {
-    resetLoginRate(ip);
-    const token = crypto.randomBytes(32).toString('hex');
-    sessions.set(token, { user: username, created: Date.now() });
-    return res.json({ token, user: username });
-  }
-  res.status(401).json({ error: 'Invalid credentials' });
-});
-
-app.get('/api/auth/check', (req, res) => {
-  if (!authEnabled()) return res.json({ authenticated: true, authRequired: false });
-  const token = req.headers['x-auth-token'];
-  if (token && sessions.has(token)) return res.json({ authenticated: true, authRequired: true, user: AUTH_USER });
-  res.json({ authenticated: false, authRequired: true });
-});
-
-app.post('/api/auth/change-password', authMiddleware, (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-  if (!currentPassword || !newPassword) {
-    return res.status(400).json({ error: 'Missing current or new password' });
-  }
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: 'New password must be at least 6 characters' });
-  }
-  if (!checkPassword(currentPassword)) {
-    return res.status(401).json({ error: 'Current password is incorrect' });
-  }
-  try {
-    storedPasswordHash = hashPassword(newPassword);
-    writeFileSync(AUTH_FILE, JSON.stringify({ passwordHash: storedPasswordHash, updatedAt: new Date().toISOString() }, null, 2));
-    // Invalidate all sessions except the current one
-    const currentToken = req.headers['x-auth-token'];
-    for (const [token] of sessions) {
-      if (token !== currentToken) sessions.delete(token);
-    }
-    console.log('[auth] Password changed successfully');
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('[auth] Failed to save password:', err.message);
-    res.status(500).json({ error: 'Failed to save new password' });
-  }
-});
-
-// ── CACHE ──
-// TTL is a safety net — the background refresh loop keeps data warm.
-// 120s ensures data survives even if a refresh cycle is slow.
-const cache = new Map();
-const CACHE_TTL = 120_000;
-function getCached(k) { const e = cache.get(k); return e && Date.now() - e.ts < CACHE_TTL ? e.data : null; }
-function setCache(k, d) { cache.set(k, { data: d, ts: Date.now() }); }
-
-// ── ETag support — fast hash of JSON for 304 Not Modified ──
-const etagCache = new Map(); // key → { hash, json }
-function jsonWithEtag(res, req, cacheKey, data) {
-  const json = JSON.stringify(data);
-  const hash = crypto.createHash('md5').update(json).digest('hex');
-  const etag = `"${hash}"`;
-  etagCache.set(cacheKey, { hash, json });
-  // Check If-None-Match from client
-  const clientEtag = req.headers['if-none-match'];
-  if (clientEtag === etag) {
-    return res.status(304).end();
-  }
-  res.set('ETag', etag);
-  res.set('Content-Type', 'application/json');
-  res.send(json);
-}
-
+// ── HTTP fetch helper (used by legacy endpoints below) ──
 async function safeFetch(url, opts = {}) {
   return fetch(url, { ...opts, signal: AbortSignal.timeout(8000) });
 }
@@ -327,14 +133,7 @@ async function refreshServices() {
       const services = containers.map(c => {
         const override = config.services?.[c.container] || {};
         const displayName = override.display_name || formatContainerName(c.container);
-        // Resolution order: per-node mapping → global mapping → null (auto-match fallback).
-        // monitor_per_node lets a single container name (e.g. "dockge") map to different
-        // Kuma monitors depending on which node it's running on (e.g. vm101 → "Dockge (Staging)",
-        // vm103 → "Dockge (Prod)").
-        const explicitMonitor =
-          override.monitor_per_node?.[nodeKey] ||
-          override.monitor ||
-          null;
+        const explicitMonitor = override.monitor || null;
         const monitor = matchMonitor(c.container, explicitMonitor, monitors);
         const status = monitor?.status || c.status || 'unknown';
 
