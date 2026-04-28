@@ -336,6 +336,21 @@ async function refreshServices() {
           override.monitor ||
           null;
         const monitor = matchMonitor(c.container, explicitMonitor, monitors);
+        const status = monitor?.status || c.status || 'unknown';
+
+        return {
+          container: c.container,
+          uid: `${nodeKey}:${c.container}`,
+          display_name: displayName,
+          icon: override.icon || null,
+          status,
+          monitored: !!monitor,
+          ping: monitor?.ping || null,
+          uptime24: monitor?.uptime24 || null,
+          docker: c.docker,
+          integration: null,
+        };
+      });
 
       services.sort((a, b) => a.display_name.localeCompare(b.display_name));
 
