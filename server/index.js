@@ -73,6 +73,25 @@ if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
 // ── App + middleware ──────────────────────────────────────────────────────
 
 const app = express();
+// ── Trust proxy ───────────────────────────────────────────────────────────
+// Behind a reverse proxy, X-Forwarded-For determines req.ip — which the
+// login rate limiter buckets by. Trust ONLY specific upstream IPs/ranges
+// listed in TRUST_PROXY (comma-separated). Never use `true` — that lets
+// any client spoof their IP via X-Forwarded-For and bypass rate limiting.
+//
+// Examples:
+//   TRUST_PROXY=192.168.1.10                    (single proxy)
+//   TRUST_PROXY=192.168.1.10,192.168.1.11       (primary + failover)
+//   TRUST_PROXY=loopback,linklocal,uniquelocal  (Express built-in: trust private nets)
+//   TRUST_PROXY=                                 (unset/blank: don't trust any proxy)
+const trustProxy = (process.env.TRUST_PROXY || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+if (trustProxy.length > 0) {
+  app.set('trust proxy', trustProxy);
+}
+
 const upload = createUploadMiddleware(uploadsDir);
 
 app.use(cors());
