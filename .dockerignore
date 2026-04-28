@@ -1,6 +1,40 @@
+# Dependencies — reinstalled by npm ci in the image
 node_modules
+
+# Local environment files — secrets must NEVER reach the image
+# (env.example does NOT match these patterns and is intentionally included)
+.env
+.env.*
+.npmrc
+
+# Git + CI config — not needed at runtime
 .git
+.gitignore
+.github
+.gitea
+
+# Editor / IDE
+.vscode
+.idea
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts — rebuilt by `npm run build` in the image
+dist
+
+# Persistent data — mounted as volumes
 data
 uploads
-dist
+
+# Documentation — not needed at runtime
+README.md
+LICENSE
+docs
+
+# Archives
 *.tar.gz
