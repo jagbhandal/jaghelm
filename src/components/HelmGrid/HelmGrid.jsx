@@ -1,4 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import GridItem from './GridItem.jsx';
+import {
+  gridToPixel,
+  pixelToGrid,
+  pixelSizeToGrid,
+  pxToRows,
+  calcCellWidth,
+  resolveOverlaps,
+  getBottom,
+  autoFitWidth,
+  layoutsEqual,
+} from './gridMath.js';
 
 /**
  * HelmGrid v4 — Custom grid layout engine for JagHelm
@@ -8,158 +20,13 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
  * Drag-to-reorder with snap-to-grid. Resize from SE/SW handles.
  *
  * Layout format: { lg: [{ i, x, y, w, h, minW, minH }], md: [...], sm: [...] }
+ *
+ * Architecture:
+ *   - Pure grid math lives in ./gridMath.js
+ *   - Per-item rendering + content-height measurement lives in ./GridItem.jsx
+ *   - This file owns the lifecycle: container measurement, breakpoint resolution,
+ *     working/effective layout state, drag and resize interactions, and render.
  */
-
-// ─── Grid Math ───────────────────────────────────────────────────────────────
-
-function gridToPixel(x, y, w, h, cellW, rowH, gap) {
-  return {
-    left:   Math.round(x * (cellW + gap[0]) + gap[0]),
-    top:    Math.round(y * (rowH  + gap[1]) + gap[1]),
-    width:  Math.round(w * (cellW + gap[0]) - gap[0]),
-    height: Math.round(h * (rowH  + gap[1]) - gap[1]),
-  };
-}
-
-function pixelToGrid(px, py, cellW, rowH, gap, cols) {
-  return {
-    x: Math.max(0, Math.min(Math.round((px - gap[0]) / (cellW + gap[0])), cols - 1)),
-    y: Math.max(0, Math.round((py - gap[1]) / (rowH + gap[1]))),
-  };
-}
-
-function pixelSizeToGrid(pw, ph, cellW, rowH, gap) {
-  return {
-    w: Math.max(1, Math.round((pw + gap[0]) / (cellW + gap[0]))),
-    h: Math.max(1, Math.round((ph + gap[1]) / (rowH + gap[1]))),
-  };
-}
-
-/** Convert pixel height to grid rows (round UP so content isn't clipped) */
-function pxToRows(px, rowH, gap) {
-  return Math.ceil((px + gap[1]) / (rowH + gap[1]));
-}
-
-function calcCellWidth(containerWidth, cols, gap) {
-  return (containerWidth - gap[0] * (cols + 1)) / cols;
-}
-
-function collides(a, b) {
-  if (a.i === b.i) return false;
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-}
-
-function resolveOverlaps(layout) {
-  const sorted = [...layout].sort((a, b) => a.y !== b.y ? a.y - b.y : a.x - b.x);
-  for (let i = 0; i < sorted.length; i++) {
-    for (let j = i + 1; j < sorted.length; j++) {
-      if (collides(sorted[i], sorted[j])) {
-        sorted[j] = { ...sorted[j], y: sorted[i].y + sorted[i].h };
-      }
-    }
-  }
-  return sorted;
-}
-
-function getBottom(layout) {
-  if (!layout || !layout.length) return 0;
-  return Math.max(...layout.map(it => it.y + it.h));
-}
-
-function autoFitWidth(item, cols) {
-  if (item.x + item.w > cols) {
-    return { ...item, w: Math.max(item.minW || 2, cols - item.x) };
-  }
-  return item;
-}
-
-function layoutsEqual(a, b) {
-  if (!a || !b || a.length !== b.length) return false;
-  const sA = [...a].sort((x, y) => x.i.localeCompare(y.i));
-  const sB = [...b].sort((x, y) => x.i.localeCompare(y.i));
-  return sA.every((it, i) =>
-    it.i === sB[i].i && it.x === sB[i].x && it.y === sB[i].y && it.w === sB[i].w && it.h === sB[i].h
-  );
-}
-
-// ─── GridItem — measures content and reports height ──────────────────────────
-
-const GridItem = React.memo(function GridItem({ itemId, style, className, dragHandle, draggable, resizable, isDragging, isResizing, onDragStart, onResizeStart, onContentHeight, children }) {
-  const ref = useRef(null);
-  const onContentHeightRef = useRef(onContentHeight);
-  onContentHeightRef.current = onContentHeight;
-  const isResizingRef = useRef(false);
-  isResizingRef.current = isResizing;
-
-  // Measure the natural content height (without flex stretch)
-  // NOTE: deps intentionally exclude children — ResizeObserver handles content changes.
-  // Skips measurement while this item is actively being resized — the user is controlling
-  // height directly, and measuring mid-resize creates expensive reflow cascades.
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    let rafId = null;
-
-    const measure = () => {
-      if (isResizingRef.current) return; // Skip during active resize
-      const savedHeight = el.style.height;
-      el.style.height = 'auto';
-      const natural = el.scrollHeight;
-      el.style.height = savedHeight;
-      if (natural > 0) onContentHeightRef.current(itemId, natural);
-    };
-
-    const debouncedMeasure = () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(measure);
-    };
-
-    // Initial measure after paint
-    rafId = requestAnimationFrame(measure);
-
-    // Re-measure when children resize (e.g. service cards load, data refreshes)
-    const ro = new ResizeObserver(debouncedMeasure);
-    const content = el.firstElementChild;
-    if (content) ro.observe(content);
-
-    return () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      ro.disconnect();
-    };
-  }, [itemId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return (
-    <div
-      ref={ref}
-      className={className}
-      style={style}
-      onPointerDown={(e) => {
-        if (!draggable) return;
-        if (!e.target.closest(dragHandle)) return;
-        e.preventDefault();
-        onDragStart(e, itemId);
-      }}
-    >
-      {children}
-      {resizable && !isDragging && (
-        <>
-          <div
-            className="helmgrid-resize-handle helmgrid-resize-handle-se"
-            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onResizeStart(e, itemId, 'se'); }}
-          />
-          <div
-            className="helmgrid-resize-handle helmgrid-resize-handle-sw"
-            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onResizeStart(e, itemId, 'sw'); }}
-          />
-        </>
-      )}
-    </div>
-  );
-});
-
-// ─── Main Component ──────────────────────────────────────────────────────────
-
 export default function HelmGrid({
   children,
   layouts,
