@@ -1,3 +1,14 @@
+// TODO(integrations): Deluge's JSON-RPC API needs POST-with-body + cookie-jar
+// session handling. handler.js issues GET on session-auth endpoints, and
+// lib/session.js extracts a token from the JSON login response — Deluge's
+// /json login returns `{result: true, id: 1}` (no token field) and sets a
+// session cookie. With tokenPath:null, lib/session.js throws "Login succeeded
+// but no token in response" — a loud, predictable failure mode that's been
+// left in place intentionally. Previously the preset also declared top-level
+// `method: 'POST'`, `body: '...JSON-RPC...'`, `extraHeaders: {Content-Type}`,
+// and a session-block `useCookie: true` marker — none read by handler/lib;
+// stripped in the preset-hygiene pass. Restore alongside real cookie-session
+// support if Deluge is wanted.
 export default {
   name: 'Deluge',
   icon: 'deluge',
@@ -7,13 +18,9 @@ export default {
     loginEndpoint: '/json',
     loginBody: { method: 'auth.login', params: ['{password}'], id: 1 },
     tokenPath: null,
-    useCookie: true,
   },
   endpoint: '/json',
-  method: 'POST',
-  body: JSON.stringify({ method: 'web.update_ui', params: [['download_rate', 'upload_rate', 'num_torrents'], {}], id: 2 }),
   testEndpoint: '/json',
-  extraHeaders: { 'Content-Type': 'application/json' },
   fields: [
     { key: 'torrents', label: 'Torrents', path: 'result.stats.num_torrents', format: 'number' },
     { key: 'dl_speed', label: 'DL Speed', path: 'result.stats.download_rate', format: 'bytes' },

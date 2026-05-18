@@ -12,7 +12,6 @@ export default {
   },
   endpoint: '/api/nginx/proxy-hosts',
   testEndpoint: '/api/tokens',
-  transform: 'npm',
   fields: [],
   structuredTransform: (raw) => {
     const hosts = Array.isArray(raw) ? raw : [];

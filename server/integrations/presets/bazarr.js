@@ -3,7 +3,7 @@ export default {
   icon: 'bazarr',
   description: 'Subtitle management for Sonarr and Radarr',
   auth: 'header',
-  authHeader: 'X-API-KEY',
+  authHeader: 'X-Api-Key',
   endpoint: '/api/system/status',
   testEndpoint: '/api/system/health',
   fields: [
