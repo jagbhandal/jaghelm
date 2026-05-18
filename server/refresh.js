@@ -27,6 +27,7 @@ import { fetchMonitors, matchMonitor, markMonitorLogDone } from './monitors.js';
 import { fetchIntegration } from './integrations/handler.js';
 import { setCache } from './cache.js';
 import { safeFetch } from './httpClient.js';
+import { dedupe } from './util/dedupe.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DISPLAY_CONFIG_PATH = join(__dirname, '..', 'data', 'display-config.json');
@@ -42,19 +43,32 @@ function formatContainerName(name) {
   return name.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// Cache the parsed refresh interval. The background loop reads it every tick
+// (and again on every restart), so re-running readFileSync + JSON.parse each
+// time was pure waste. Cache is invalidated by the displayConfig POST route
+// after it writes a new value.
+let cachedIntervalMs = null;
+
+export function invalidateRefreshIntervalCache() {
+  cachedIntervalMs = null;
+}
+
 function getRefreshIntervalMs() {
+  if (cachedIntervalMs !== null) return cachedIntervalMs;
   try {
     if (existsSync(DISPLAY_CONFIG_PATH)) {
       const data = JSON.parse(readFileSync(DISPLAY_CONFIG_PATH, 'utf8'));
       const seconds = data?.refreshInterval;
       if (typeof seconds === 'number' && seconds >= MIN_INTERVAL_SECONDS) {
-        return seconds * 1000;
+        cachedIntervalMs = seconds * 1000;
+        return cachedIntervalMs;
       }
     }
   } catch {
     // Ignore — fall through to default
   }
-  return DEFAULT_INTERVAL_MS;
+  cachedIntervalMs = DEFAULT_INTERVAL_MS;
+  return cachedIntervalMs;
 }
 
 // ── Domain refresh functions ─────────────────────────────────────────────
@@ -64,6 +78,10 @@ function getRefreshIntervalMs() {
  * Kuma monitor health, and config overrides — merged into one structure.
  */
 export async function refreshServices() {
+  return dedupe('services', _refreshServices);
+}
+
+async function _refreshServices() {
   try {
     const config = getConfig();
     if (!config || !config.nodes || Object.keys(config.nodes).length === 0) {
@@ -71,7 +89,11 @@ export async function refreshServices() {
       return { nodes: {} };
     }
 
-    const monitorsPromise = fetchMonitors(true);
+    // Monitors are best-effort; if Kuma is down we still want node data.
+    const monitorsSettled = fetchMonitors(true).catch((err) => {
+      console.warn('[refresh] monitors fetch failed:', err.message);
+      return [];
+    });
     const nodeDataPromises = Object.entries(config.nodes).map(async ([nodeKey, nodeCfg]) => {
       if (nodeCfg.visible === false) return null;
       const promLabel = nodeCfg.prometheus_node || nodeKey;
@@ -79,7 +101,28 @@ export async function refreshServices() {
       return [nodeKey, nodeCfg, nodeData];
     });
 
-    const [monitors, ...nodeResults] = await Promise.all([monitorsPromise, ...nodeDataPromises]);
+    // allSettled (not all) so one unreachable node doesn't sink the whole
+    // dashboard. Rejected node results are logged and dropped; the surviving
+    // nodes still render.
+    const [monitors, ...nodeOutcomes] = await Promise.all([
+      monitorsSettled,
+      ...nodeDataPromises.map((p) =>
+        p.then(
+          (val) => ({ status: 'fulfilled', value: val }),
+          (reason) => ({ status: 'rejected', reason })
+        )
+      ),
+    ]);
+
+    const nodeResults = [];
+    for (const outcome of nodeOutcomes) {
+      if (outcome.status === 'fulfilled') {
+        nodeResults.push(outcome.value);
+      } else {
+        const msg = outcome.reason?.message || String(outcome.reason);
+        console.warn('[refresh] node refresh failed:', msg);
+      }
+    }
 
     const nodeEntries = nodeResults.filter(Boolean).map(([nodeKey, nodeCfg, nodeData]) => {
       const metrics = nodeData.metrics;
@@ -139,6 +182,10 @@ export async function refreshServices() {
 
 /** UPS battery, charge, runtime, load — sourced from NUT via Prometheus. */
 export async function refreshUPS() {
+  return dedupe('ups', _refreshUPS);
+}
+
+async function _refreshUPS() {
   try {
     const url = process.env.PROMETHEUS_URL || 'http://localhost:9090';
     const queryMap = {
@@ -185,6 +232,10 @@ export async function refreshUPS() {
 
 /** Recent commits across all Gitea repos (auto-discovers via /api/v1/repos/search). */
 export async function refreshGitea() {
+  return dedupe('gitea', _refreshGitea);
+}
+
+async function _refreshGitea() {
   try {
     const url = process.env.GITEA_URL || 'http://localhost:3060';
     const token = process.env.GITEA_TOKEN || '';
@@ -240,6 +291,10 @@ export async function refreshGitea() {
 
 /** Aggregate data from every configured integration (presets + custom). */
 export async function refreshIntegrations() {
+  return dedupe('integrations', _refreshIntegrations);
+}
+
+async function _refreshIntegrations() {
   try {
     const config = getConfig();
     const integrations = config?.integrations || {};
@@ -299,6 +354,9 @@ export function startBackgroundRefresh() {
 }
 
 export function restartBackgroundRefresh() {
+  // The cached interval is stale by definition when this is called (the route
+  // that triggers a restart just wrote a new value).
+  invalidateRefreshIntervalCache();
   const intervalMs = getRefreshIntervalMs();
   if (bgRefreshTimer) clearInterval(bgRefreshTimer);
   bgRefreshTimer = setInterval(runBackgroundRefresh, intervalMs);
