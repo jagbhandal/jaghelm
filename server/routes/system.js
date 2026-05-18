@@ -11,6 +11,7 @@ import { authMiddleware } from '../auth/middleware.js';
 import { getCached, setCache } from '../cache.js';
 import { apiError } from '../errors.js';
 import { safeFetch } from '../httpClient.js';
+import { asyncHandler } from '../util/asyncHandler.js';
 
 const router = Router();
 
@@ -18,7 +19,7 @@ router.get('/health', (req, res) => {
   res.json({ status: 'ok', uptime: process.uptime(), version: '8.0.0-alpha.1' });
 });
 
-router.get('/weather', authMiddleware, async (req, res) => {
+router.get('/weather', authMiddleware, asyncHandler(async (req, res) => {
   const { lat, lon } = req.query;
   if (!lat || !lon) return apiError(res, 400, 'Missing lat/lon');
 
@@ -38,6 +39,6 @@ router.get('/weather', authMiddleware, async (req, res) => {
   } catch (err) {
     apiError(res, 502, 'Weather unreachable', err);
   }
-});
+}));
 
 export { router as systemRoutes };

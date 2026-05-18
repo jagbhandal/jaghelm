@@ -18,10 +18,11 @@ import { getMonitorNames } from '../monitors.js';
 import { refreshServices } from '../refresh.js';
 import { getCached, jsonWithEtag } from '../cache.js';
 import { apiError } from '../errors.js';
+import { asyncHandler } from '../util/asyncHandler.js';
 
 const router = Router();
 
-router.get('/', async (req, res) => {
+router.get('/', asyncHandler(async (req, res) => {
   const cached = getCached('services');
   if (cached) return jsonWithEtag(res, req, 'services', cached);
 
@@ -30,7 +31,7 @@ router.get('/', async (req, res) => {
   if (data) return jsonWithEtag(res, req, 'services', data);
 
   return apiError(res, 503, 'Service data not yet available');
-});
+}));
 
 router.get('/config', (req, res) => {
   res.json(getConfig() || {});
@@ -45,9 +46,9 @@ router.post('/config', (req, res) => {
   res.json({ ok });
 });
 
-router.get('/monitors', async (req, res) => {
+router.get('/monitors', asyncHandler(async (req, res) => {
   const names = await getMonitorNames();
   res.json(names);
-});
+}));
 
 export { router as servicesRoutes };
