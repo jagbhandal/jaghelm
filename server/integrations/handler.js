@@ -36,22 +36,26 @@ import { resolveIntegrationConfig } from './lib/config.js';
 export { resolveIntegrationConfig };
 
 // ── SSRF guard ────────────────────────────────────────────────────────────
-// Block obvious SSRF targets before handing a URL to safeFetch. Catches:
+// JagHelm is a homelab dashboard — private/loopback hosts ARE the legitimate
+// integration targets (192.168/16 Proxmox, 10/8 NAS, localhost services, etc.).
+// So by default we only block the things that have no legitimate use case:
 //   - non-http(s) schemes (file:, gopher:, ftp:, data:, …)
-//   - literal-IP hosts in private/loopback/link-local ranges (v4 + v6)
-//   - the string "localhost"
+//   - cloud-instance metadata endpoint 169.254.169.254 (AWS/GCP/Azure)
+//   - 0.0.0.0 (this-network)
+//
+// Strict mode (multi-tenant deployments): set JAGHELM_BLOCK_PRIVATE_NETWORKS=true
+// to additionally block all RFC1918 + loopback + link-local + ULA ranges.
 //
 // Residual risk: DNS rebinding — a public hostname can resolve to a private
 // IP at fetch time. Mitigating that requires re-resolving and pinning the
 // socket, which Node's global fetch doesn't expose cleanly. Acceptable for
-// a homelab dashboard where operator-supplied URLs are the trust boundary.
+// homelab use; revisit if deploying with untrusted-user integration configs.
 const PRIVATE_V4_RANGES = [
   /^127\./,                              // 127/8 loopback
   /^10\./,                               // 10/8
   /^192\.168\./,                         // 192.168/16
   /^169\.254\./,                         // 169.254/16 link-local
   /^172\.(1[6-9]|2[0-9]|3[0-1])\./,      // 172.16/12
-  /^0\./,                                // 0/8 "this network"
 ];
 
 function isPrivateV4(ip) {
@@ -82,6 +86,10 @@ function isPrivateV6(ip) {
   return false;
 }
 
+function strictMode() {
+  return String(process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS || '').toLowerCase() === 'true';
+}
+
 export function assertSafeUrl(rawUrl) {
   let parsed;
   try {
@@ -97,17 +105,27 @@ export function assertSafeUrl(rawUrl) {
   if (host.startsWith('[') && host.endsWith(']')) {
     host = host.slice(1, -1);
   }
-  if (host === 'localhost' || host === '' || host.endsWith('.localhost')) {
-    throw new Error(`Blocked host: ${host || '(empty)'}`);
+  if (host === '') {
+    throw new Error('Blocked host: (empty)');
   }
-  // IPv4 literal — four dotted decimals.
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+  const isIPv4 = /^\d+\.\d+\.\d+\.\d+$/.test(host);
+  // Always block cloud-metadata IP and 0/8 "this network" (no legitimate use).
+  if (host === '169.254.169.254' || (isIPv4 && /^0\./.test(host))) {
+    throw new Error(`Blocked host: ${host}`);
+  }
+  if (!strictMode()) {
+    return;
+  }
+  // Strict mode: block all private/loopback/link-local/ULA.
+  if (host === 'localhost' || host.endsWith('.localhost')) {
+    throw new Error(`Blocked host: ${host}`);
+  }
+  if (isIPv4) {
     if (isPrivateV4(host)) {
       throw new Error(`Blocked private IPv4 host: ${host}`);
     }
     return;
   }
-  // IPv6 literal — contains a colon (only IPs survive URL hostname parsing as colon-bearing strings).
   if (host.includes(':')) {
     if (isPrivateV6(host)) {
       throw new Error(`Blocked private IPv6 host: ${host}`);
