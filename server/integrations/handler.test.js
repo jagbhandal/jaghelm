@@ -20,52 +20,55 @@ test('assertSafeUrl: rejects non-http schemes', () => {
   assert.throws(() => assertSafeUrl('data:text/plain,hello'), /Blocked URL scheme/);
 });
 
-test('assertSafeUrl: rejects literal localhost', () => {
-  assert.throws(() => assertSafeUrl('http://localhost/'), /Blocked host/);
-  assert.throws(() => assertSafeUrl('https://localhost:8080/'), /Blocked host/);
-  assert.throws(() => assertSafeUrl('http://api.localhost/'), /Blocked host/);
+test('assertSafeUrl: always blocks cloud-metadata IP and 0.0.0.0', () => {
+  assert.throws(() => assertSafeUrl('http://169.254.169.254/latest/meta-data/'), /Blocked host/);
+  assert.throws(() => assertSafeUrl('http://0.0.0.0/'), /Blocked host/);
 });
 
-test('assertSafeUrl: rejects private IPv4 ranges', () => {
-  assert.throws(() => assertSafeUrl('http://127.0.0.1/'), /private IPv4/);
-  assert.throws(() => assertSafeUrl('http://10.0.0.1/'), /private IPv4/);
-  assert.throws(() => assertSafeUrl('http://10.255.255.255/'), /private IPv4/);
-  assert.throws(() => assertSafeUrl('http://192.168.1.1/'), /private IPv4/);
-  assert.throws(() => assertSafeUrl('http://169.254.169.254/'), /private IPv4/);
-  assert.throws(() => assertSafeUrl('http://172.16.0.1/'), /private IPv4/);
-  assert.throws(() => assertSafeUrl('http://172.31.255.255/'), /private IPv4/);
-  assert.throws(() => assertSafeUrl('http://0.0.0.0/'), /private IPv4/);
+test('assertSafeUrl: default (permissive) allows private/loopback hosts — homelab use case', () => {
+  // No JAGHELM_BLOCK_PRIVATE_NETWORKS env → permissive.
+  assert.doesNotThrow(() => assertSafeUrl('http://localhost/'));
+  assert.doesNotThrow(() => assertSafeUrl('http://127.0.0.1/'));
+  assert.doesNotThrow(() => assertSafeUrl('http://10.0.0.1/'));
+  assert.doesNotThrow(() => assertSafeUrl('http://192.168.68.10/api2/json/'));   // Proxmox
+  assert.doesNotThrow(() => assertSafeUrl('http://172.16.0.1/'));
+  assert.doesNotThrow(() => assertSafeUrl('http://[::1]/'));
+  assert.doesNotThrow(() => assertSafeUrl('http://[fc00::1]/'));
 });
 
-test('assertSafeUrl: allows public IPv4', () => {
+test('assertSafeUrl: default allows public hosts', () => {
   assert.doesNotThrow(() => assertSafeUrl('http://8.8.8.8/'));
   assert.doesNotThrow(() => assertSafeUrl('https://1.1.1.1/'));
-  // Boundary check: 172.32 is OUTSIDE the 172.16/12 range.
-  assert.doesNotThrow(() => assertSafeUrl('http://172.32.0.1/'));
-  assert.doesNotThrow(() => assertSafeUrl('http://172.15.0.1/'));
-});
-
-test('assertSafeUrl: rejects private IPv6 ranges', () => {
-  assert.throws(() => assertSafeUrl('http://[::1]/'), /private IPv6/);
-  assert.throws(() => assertSafeUrl('http://[fc00::1]/'), /private IPv6/);
-  assert.throws(() => assertSafeUrl('http://[fd12:3456:789a::1]/'), /private IPv6/);
-  assert.throws(() => assertSafeUrl('http://[fe80::1]/'), /private IPv6/);
-  // IPv4-mapped IPv6 form of a private v4 address.
-  assert.throws(() => assertSafeUrl('http://[::ffff:127.0.0.1]/'), /private IPv6/);
-});
-
-test('assertSafeUrl: allows public IPv6', () => {
-  assert.doesNotThrow(() => assertSafeUrl('http://[2606:4700:4700::1111]/'));
-});
-
-test('assertSafeUrl: allows bare hostnames (DNS-resolved at fetch time)', () => {
-  assert.doesNotThrow(() => assertSafeUrl('https://example.com/'));
   assert.doesNotThrow(() => assertSafeUrl('https://api.example.com:8443/path'));
 });
 
 test('assertSafeUrl: rejects malformed URLs', () => {
   assert.throws(() => assertSafeUrl('not a url'), /Invalid URL/);
   assert.throws(() => assertSafeUrl(''), /Invalid URL/);
+});
+
+test('assertSafeUrl: strict mode (JAGHELM_BLOCK_PRIVATE_NETWORKS=true) blocks private ranges', (t) => {
+  const original = process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS;
+  process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS = 'true';
+  t.after(() => {
+    if (original === undefined) delete process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS;
+    else process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS = original;
+  });
+
+  assert.throws(() => assertSafeUrl('http://localhost/'), /Blocked host/);
+  assert.throws(() => assertSafeUrl('http://127.0.0.1/'), /private IPv4/);
+  assert.throws(() => assertSafeUrl('http://10.0.0.1/'), /private IPv4/);
+  assert.throws(() => assertSafeUrl('http://192.168.1.1/'), /private IPv4/);
+  assert.throws(() => assertSafeUrl('http://172.16.0.1/'), /private IPv4/);
+  assert.throws(() => assertSafeUrl('http://[::1]/'), /private IPv6/);
+  assert.throws(() => assertSafeUrl('http://[fc00::1]/'), /private IPv6/);
+  assert.throws(() => assertSafeUrl('http://[::ffff:127.0.0.1]/'), /private IPv6/);
+
+  // Public targets still allowed in strict mode.
+  assert.doesNotThrow(() => assertSafeUrl('http://8.8.8.8/'));
+  // Boundary: 172.32 is outside 172.16/12.
+  assert.doesNotThrow(() => assertSafeUrl('http://172.32.0.1/'));
+  assert.doesNotThrow(() => assertSafeUrl('http://172.15.0.1/'));
 });
 
 // ── res.ok handling ───────────────────────────────────────────────────────
