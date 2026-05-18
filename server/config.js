@@ -4,10 +4,12 @@
  * Generates a default config from discovery results on first boot.
  */
 
-import { readFileSync, writeFileSync, existsSync, watchFile, statSync } from 'fs';
+import { readFileSync, existsSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
+
+import { atomicWriteFileSync } from './util/atomicWrite.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
@@ -79,10 +81,23 @@ export function loadConfig() {
 
 /**
  * Save config to disk as YAML.
+ *
+ * Serialization: this function is synchronous (writeFileSync) and is called
+ * from sync POST handlers, so we can't truly serialize the JS bodies — the
+ * event loop already isolates them. What we DO guard against is reentrancy
+ * from inside the same call stack (e.g. a config-change listener that ends
+ * up calling saveConfig again): a true mutex on a sync function would
+ * deadlock, so we fail fast and let the caller surface the bug.
  */
+let saveInProgress = false;
+
 export function saveConfig(newConfig) {
+  if (saveInProgress) {
+    console.error('[config] saveConfig reentered while a save was in progress — refusing');
+    return false;
+  }
+  saveInProgress = true;
   try {
-    config = newConfig;
     const yamlStr = yaml.dump(newConfig, {
       indent: 2,
       lineWidth: 120,
@@ -90,13 +105,18 @@ export function saveConfig(newConfig) {
       sortKeys: false,
     });
     const header = '# JagHelm Configuration\n# This file is managed by the dashboard. Edit here or in Settings UI — both are equivalent.\n\n';
-    writeFileSync(CONFIG_PATH, header + yamlStr, 'utf8');
+    // Atomic write: temp file → fsync → rename. A reader can never observe a
+    // half-written services.yaml, even if the process crashes mid-write.
+    atomicWriteFileSync(CONFIG_PATH, header + yamlStr);
+    config = newConfig;
     lastModified = statSync(CONFIG_PATH).mtimeMs;
     console.log('[config] Saved services.yaml');
     return true;
   } catch (err) {
     console.error('[config] Failed to save services.yaml:', err.message);
     return false;
+  } finally {
+    saveInProgress = false;
   }
 }
 
@@ -150,16 +170,27 @@ export function generateDefaultConfig(discoveredNodes) {
 /**
  * Watch for external file changes (5s poll).
  * If the file is modified outside the app, reload it.
+ *
+ * Reloads are debounced 250ms so a burst of writes (or an atomic write that
+ * happens to land during a poll) doesn't read the file mid-mutation. With
+ * atomic writes (temp → rename) this is mostly defence in depth, but it also
+ * coalesces rapid edits from an external YAML editor.
  */
+let reloadDebounceTimer = null;
+
 export function startConfigWatcher() {
   setInterval(() => {
     try {
       if (!existsSync(CONFIG_PATH)) return;
       const mtime = statSync(CONFIG_PATH).mtimeMs;
       if (mtime > lastModified) {
-        console.log('[config] External change detected, reloading services.yaml');
-        loadConfig();
-        changeListeners.forEach(fn => fn(config));
+        if (reloadDebounceTimer) clearTimeout(reloadDebounceTimer);
+        reloadDebounceTimer = setTimeout(() => {
+          reloadDebounceTimer = null;
+          console.log('[config] External change detected, reloading services.yaml');
+          loadConfig();
+          changeListeners.forEach(fn => fn(config));
+        }, 250);
       }
     } catch (err) {
       console.warn('[config] Watcher error:', err.message);
