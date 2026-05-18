@@ -15,11 +15,38 @@ import { extractValue, resolveEndpointParams } from './extract.js';
  */
 
 // Token cache — key: baseUrl + loginEndpoint, value: { token, header, prefix, expires }
+// Capped at SESSION_CACHE_MAX entries with simple LRU eviction (Map preserves
+// insertion order; on access we delete + re-set to bump the entry to the tail).
+// Without this cap, a misconfigured caller that varies the cache key (e.g.
+// rotating loginEndpoint paths) could grow the Map unbounded.
 const sessionTokenCache = new Map();
+const SESSION_CACHE_MAX = 100;
+
+function cacheGet(key) {
+  const entry = sessionTokenCache.get(key);
+  if (!entry) return undefined;
+  // Bump to MRU position.
+  sessionTokenCache.delete(key);
+  sessionTokenCache.set(key, entry);
+  return entry;
+}
+
+function cacheSet(key, value) {
+  if (sessionTokenCache.has(key)) {
+    sessionTokenCache.delete(key);
+  } else if (sessionTokenCache.size >= SESSION_CACHE_MAX) {
+    const oldest = sessionTokenCache.keys().next().value;
+    if (oldest !== undefined) sessionTokenCache.delete(oldest);
+  }
+  sessionTokenCache.set(key, value);
+}
 
 // Conservative default — most APIs hand out tokens that last at least an hour.
 // Per-preset override via session.tokenTtl (milliseconds).
 const SESSION_TOKEN_TTL_DEFAULT = 3_600_000;
+
+// Exported only for tests.
+export const __test = { sessionTokenCache, cacheGet, cacheSet, SESSION_CACHE_MAX };
 
 /**
  * Run a fetch using session-based auth.
@@ -44,7 +71,7 @@ export async function fetchWithSession(config) {
 
   for (const { key, session: sess } of sessionConfigs) {
     const cacheKey = `${baseUrl}:${sess.loginEndpoint}`;
-    const cached = sessionTokenCache.get(cacheKey);
+    const cached = cacheGet(cacheKey);
 
     // Try cached token first
     if (cached && Date.now() < cached.expires) {
@@ -63,7 +90,7 @@ export async function fetchWithSession(config) {
     // Authenticate and cache the token
     try {
       const tokenInfo = await doSessionLogin(config, sess, baseUrl, skipTls);
-      sessionTokenCache.set(cacheKey, tokenInfo);
+      cacheSet(cacheKey, tokenInfo);
       const data = await fetchWithToken(tokenInfo, config, baseUrl, skipTls);
       return data;
     } catch (err) {
