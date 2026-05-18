@@ -72,6 +72,25 @@ export default function IframeView({ url, title }) {
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)' }}>Loading {title || url}…</span>
         </div>
       )}
+      {/*
+        Sandbox trade-off: `allow-popups` is retained intentionally.
+
+        Risk: a compromised framed app can spawn pop-up phishing windows.
+        Reason kept: the typical embed targets in this dashboard (Grafana,
+        Portainer, Gitea, Uptime Kuma, Dockge, Proxmox web UI) all rely on
+        target="_blank" / window.open for normal operator workflows — share
+        links, log views, "open in new tab", external doc links. Without
+        allow-popups those silently no-op, producing dead clicks that look
+        like app bugs.
+
+        Mitigation in place: `allow-popups-to-escape-sandbox` is NOT granted,
+        so any spawned window still inherits the sandbox (no allow-scripts
+        unless we add it). Framed apps must be trusted operator tools, which
+        matches the homelab threat model.
+
+        Revisit if we ever expose this view to untrusted users or third-party
+        URLs.
+      */}
       <iframe ref={iframeRef} src={url} title={title || 'Embedded'} onLoad={handleLoad} onError={() => setStatus('blocked')}
         style={{ display: status === 'ok' ? 'block' : 'none' }}
         sandbox="allow-same-origin allow-scripts allow-forms allow-popups" />

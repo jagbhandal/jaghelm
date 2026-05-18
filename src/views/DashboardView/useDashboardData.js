@@ -12,8 +12,14 @@ import {
  *
  * Each fetch is independent — slow endpoints don't block fast ones from
  * rendering. The first fetch after mount skips ETags so a fresh tab always
- * gets a full payload; subsequent refreshes use ETags and skip setState
- * when the server returns 304.
+ * gets a full payload; subsequent refreshes use ETags.
+ *
+ * 304-stable-identity contract (see hooks/useData.js):
+ *   - On 304, fetchJson returns the SAME reference it returned for the prior 200.
+ *   - Calling setState(sameRef) is bailed by React via Object.is — no re-render.
+ *   - The `data !== null` guards below are defensive only (cold-start 304 edge).
+ * Net: a 30s tick that produces all-304 responses triggers zero re-renders
+ * in the DashboardView subtree.
  *
  * `refreshKey` is bumped by the parent on every interval tick.
  */

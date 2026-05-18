@@ -13,7 +13,10 @@ export default function TodoCard({ borderColor, config, setConfig }) {
 
   const add = () => {
     if (!newText.trim()) return;
-    save([...todos, { id: Date.now(), text: newText.trim(), done: false, due: newDate || null, created: new Date().toISOString() }]);
+    // crypto.randomUUID is universal in modern browsers (Vite/React 19 target,
+    // all evergreen browsers + secure contexts). Avoids collisions from
+    // Date.now() when multiple todos are added in the same millisecond.
+    save([...todos, { id: crypto.randomUUID(), text: newText.trim(), done: false, due: newDate || null, created: new Date().toISOString() }]);
     setNewText(''); setNewDate('');
   };
 

@@ -97,7 +97,12 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   );
 
   // ── Layout state ──
-  const sc = config.sections || {};
+  // Use useMemo for the `|| {}` / `|| []` fallbacks so a missing section/group
+  // doesn't allocate a fresh empty object/array on every render — that would
+  // invalidate downstream memos (nodeElements, customGroupElements) every tick
+  // and defeat the 304-stable-identity contract from useDashboardData.
+  const sc = useMemo(() => config.sections || {}, [config.sections]);
+  const customGroups = useMemo(() => config.customGroups || [], [config.customGroups]);
   const rawLayouts = config.gridLayout || DEFAULT_LAYOUTS;
   const layouts = useMemo(() => migrateLayouts(rawLayouts) || DEFAULT_LAYOUTS, [rawLayouts]);
   const cols = useMemo(() => {
@@ -105,7 +110,6 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     return { lg, md: Math.min(lg, 20), sm: 1 };
   }, [config.gridColumns]);
 
-  const customGroups = config.customGroups || [];
   const effectiveLayouts = useEffectiveLayouts(layouts, serviceData, customGroups, config.gridColumns);
 
   const handleLayoutChange = useCallback(

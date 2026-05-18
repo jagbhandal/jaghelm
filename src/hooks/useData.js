@@ -1,12 +1,17 @@
 /**
  * JagHelm Data Hooks — v8 Phase 4 Performance
- * 
+ *
  * Primary: getServices() — fetches unified /api/services endpoint
  * Legacy: Individual fetch functions kept for dedicated sections (UPS, Gitea, etc.)
- * 
+ *
  * ETag support: Each endpoint tracks its last ETag. If the server returns
- * 304 Not Modified, the fetch returns null — signaling "no change, skip setState".
- * This eliminates unnecessary React render cascades on every refresh cycle.
+ * 304 Not Modified, fetchJson returns the *same reference* it returned for the
+ * prior 200 — so downstream useState(ref) bails on Object.is equality and no
+ * subtree re-renders. This is the 304-stable-identity contract.
+ *
+ * If there is no prior 200 cached (cold start, first request) and the server
+ * somehow answers 304 — which it shouldn't, since we don't send If-None-Match
+ * without a stored etag — we return null and consumers leave their state alone.
  */
 
 const BASE = '/api';
@@ -14,10 +19,18 @@ const BASE = '/api';
 // ETag tracking per endpoint — persists across fetch calls
 const etagStore = new Map();
 
+// Last successful response body per endpoint. On a 304, fetchJson returns the
+// stored reference instead of re-parsing/re-allocating. This is the load-bearing
+// piece of the 304-stable-identity contract — without it every 30s refresh
+// would still allocate a new object even when nothing changed on the server.
+const resultStore = new Map();
+
 /**
  * Fetch JSON with ETag support.
  * - Sends If-None-Match header if we have a cached ETag for this URL.
- * - Returns null if server responds 304 (data unchanged).
+ * - On 304: returns the previously-cached body (same reference) so consumers
+ *   can call setState() and React will bail via Object.is. Returns null only
+ *   if we have never had a successful 200 for this URL.
  * - Returns parsed JSON otherwise.
  * - Pass skipEtag=true to force a full fetch (used on first load when state is empty).
  */
@@ -30,8 +43,11 @@ async function fetchJson(url, skipEtag = false) {
 
   const r = await fetch(url, { headers, signal: AbortSignal.timeout(12000) });
 
-  // 304 Not Modified — data hasn't changed since last fetch
-  if (r.status === 304) return null;
+  // 304 Not Modified — return the prior result reference (stable identity).
+  // Fall back to null only if we somehow got 304 with no cached body.
+  if (r.status === 304) {
+    return resultStore.has(url) ? resultStore.get(url) : null;
+  }
 
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
 
@@ -39,7 +55,9 @@ async function fetchJson(url, skipEtag = false) {
   const newEtag = r.headers.get('ETag');
   if (newEtag) etagStore.set(url, newEtag);
 
-  return r.json();
+  const body = await r.json();
+  resultStore.set(url, body);
+  return body;
 }
 
 // ══════════════════════════════════════════════════════════════

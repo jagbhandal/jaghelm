@@ -18,8 +18,11 @@ export default function LoginPage({ onLogin, config }) {
       });
       const data = await r.json();
       if (r.ok && data.token) { onLogin(data.token); }
-      else { setError(data.error || 'Login failed'); }
-    } catch { setError('Connection failed'); }
+      // Collapse auth-rejection to a single constant so backend-specific
+      // error strings (e.g. "user not found" vs "bad password") don't leak
+      // username-enumeration signal to the client.
+      else { setError('Invalid credentials'); }
+    } catch { setError('Login failed — try again'); }
     setLoading(false);
   };
 
