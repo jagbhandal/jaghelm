@@ -6,11 +6,12 @@
  */
 
 import { Router } from 'express';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 import { apiError } from '../errors.js';
+import { atomicWriteFileSync } from '../util/atomicWrite.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TODOS_PATH = join(__dirname, '..', '..', 'data', 'todos.json');
@@ -34,7 +35,7 @@ router.post('/', (req, res) => {
   if (serialized.length > MAX_PAYLOAD_BYTES) {
     return apiError(res, 413, 'Todos payload too large');
   }
-  writeFileSync(TODOS_PATH, serialized);
+  atomicWriteFileSync(TODOS_PATH, serialized);
   res.json({ ok: true });
 });
 

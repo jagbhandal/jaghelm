@@ -22,23 +22,24 @@ import { refreshUPS, refreshGitea } from '../refresh.js';
 import { getCached, setCache, jsonWithEtag } from '../cache.js';
 import { apiError } from '../errors.js';
 import { safeFetch } from '../httpClient.js';
+import { asyncHandler } from '../util/asyncHandler.js';
 
 const router = Router();
 
 // ── Uptime Kuma passthrough ──────────────────────────────────────────────
 
-router.get('/uptime/monitors', async (req, res) => {
+router.get('/uptime/monitors', asyncHandler(async (req, res) => {
   try {
     const monitors = await fetchMonitors();
     res.json(monitors);
   } catch (err) {
     apiError(res, 502, 'Uptime Kuma unreachable', err);
   }
-});
+}));
 
 // ── Prometheus ad-hoc query ──────────────────────────────────────────────
 
-router.get('/prometheus/query', async (req, res) => {
+router.get('/prometheus/query', asyncHandler(async (req, res) => {
   const { q } = req.query;
   if (!q) return apiError(res, 400, 'Missing q');
 
@@ -55,11 +56,11 @@ router.get('/prometheus/query', async (req, res) => {
   } catch (err) {
     apiError(res, 502, 'Prometheus unreachable', err);
   }
-});
+}));
 
 // ── AdGuard Home stats ───────────────────────────────────────────────────
 
-router.get('/adguard/stats', async (req, res) => {
+router.get('/adguard/stats', asyncHandler(async (req, res) => {
   const cached = getCached('adguard');
   if (cached) return res.json(cached);
 
@@ -78,11 +79,11 @@ router.get('/adguard/stats', async (req, res) => {
   } catch (err) {
     apiError(res, 502, 'AdGuard unreachable', err);
   }
-});
+}));
 
 // ── UPS (warm-cached) ────────────────────────────────────────────────────
 
-router.get('/ups', async (req, res) => {
+router.get('/ups', asyncHandler(async (req, res) => {
   const cached = getCached('ups');
   if (cached) return jsonWithEtag(res, req, 'ups', cached);
 
@@ -90,11 +91,11 @@ router.get('/ups', async (req, res) => {
   if (data) return jsonWithEtag(res, req, 'ups', data);
 
   apiError(res, 502, 'UPS data not yet available');
-});
+}));
 
 // ── Nginx Proxy Manager stats ────────────────────────────────────────────
 
-router.get('/npm/stats', async (req, res) => {
+router.get('/npm/stats', asyncHandler(async (req, res) => {
   const cached = getCached('npm-stats');
   if (cached) return res.json(cached);
 
@@ -141,11 +142,11 @@ router.get('/npm/stats', async (req, res) => {
   } catch (err) {
     apiError(res, 502, 'NPM unreachable', err);
   }
-});
+}));
 
 // ── Docker containers (Prometheus first, Docker socket fallback) ─────────
 
-router.get('/docker/containers', async (req, res) => {
+router.get('/docker/containers', asyncHandler(async (req, res) => {
   const cached = getCached('docker-containers');
   if (cached) return res.json(cached);
 
@@ -243,11 +244,11 @@ router.get('/docker/containers', async (req, res) => {
   } catch {
     res.json([]);
   }
-});
+}));
 
 // ── Gitea recent commits (warm-cached) ───────────────────────────────────
 
-router.get('/gitea/activity', async (req, res) => {
+router.get('/gitea/activity', asyncHandler(async (req, res) => {
   const cached = getCached('gitea');
   if (cached) return jsonWithEtag(res, req, 'gitea', cached);
 
@@ -255,6 +256,6 @@ router.get('/gitea/activity', async (req, res) => {
   if (data) return jsonWithEtag(res, req, 'gitea', data);
 
   apiError(res, 502, 'Gitea data not yet available');
-});
+}));
 
 export { router as infrastructureRoutes };

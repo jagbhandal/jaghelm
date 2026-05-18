@@ -22,6 +22,7 @@ import { fetchIntegration, testIntegration } from '../integrations/handler.js';
 import { refreshIntegrations } from '../refresh.js';
 import { getCached, jsonWithEtag } from '../cache.js';
 import { apiError } from '../errors.js';
+import { asyncHandler } from '../util/asyncHandler.js';
 
 const router = Router();
 
@@ -40,7 +41,7 @@ router.get('/presets', (req, res) => {
 
 // ── Aggregate live data for the dashboard ────────────────────────────────
 
-router.get('/', async (req, res) => {
+router.get('/', asyncHandler(async (req, res) => {
   const cached = getCached('integrations');
   if (cached) return jsonWithEtag(res, req, 'integrations', cached);
 
@@ -48,11 +49,11 @@ router.get('/', async (req, res) => {
   if (data) return jsonWithEtag(res, req, 'integrations', data);
 
   res.json({});
-});
+}));
 
 // ── Test connection (creds in body, not stored) ──────────────────────────
 
-router.post('/test', async (req, res) => {
+router.post('/test', asyncHandler(async (req, res) => {
   const { type, url, username, password, token, params } = req.body || {};
   if (!url) return res.status(400).json({ ok: false, error: 'URL is required' });
 
@@ -60,7 +61,7 @@ router.post('/test', async (req, res) => {
   const testConfig = { url: cleanUrl, username, password, token, ...params };
   const result = await testIntegration(type || '_custom', testConfig);
   res.json(result);
-});
+}));
 
 // ── Save (encrypts secrets into secrets.json, config into services.yaml) ──
 
@@ -139,7 +140,7 @@ router.delete('/:type', (req, res) => {
 // ── Fetch one integration's data on demand ───────────────────────────────
 // Note: this is the catch-all GET; declared LAST so /presets and / stay distinct.
 
-router.get('/:type', async (req, res) => {
+router.get('/:type', asyncHandler(async (req, res) => {
   const { type } = req.params;
   const config = getConfig();
   const integrations = config?.integrations || {};
@@ -154,6 +155,6 @@ router.get('/:type', async (req, res) => {
     return res.status(502).json({ error: result.error, fields: result.fields });
   }
   res.json(result);
-});
+}));
 
 export { router as integrationRoutes };
