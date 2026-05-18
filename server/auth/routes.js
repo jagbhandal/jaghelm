@@ -7,6 +7,7 @@
  *   POST /api/auth/change-password
  */
 
+import crypto from 'crypto';
 import { Router } from 'express';
 
 import { authMiddleware } from './middleware.js';
@@ -16,6 +17,25 @@ import { checkLoginRate, resetLoginRate } from './rateLimit.js';
 import { apiError } from '../errors.js';
 
 const router = Router();
+
+/**
+ * Constant-time string compare that doesn't leak length information by
+ * short-circuiting. Equal-length buffers are compared via timingSafeEqual;
+ * unequal-length inputs still run the compare (against a same-length dummy)
+ * before returning false, so the call duration is independent of where the
+ * mismatch is.
+ */
+function constantTimeEqual(a, b) {
+  const ab = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  if (ab.length !== bb.length) {
+    // Run a dummy compare so timing stays roughly flat across the
+    // length-mismatch and equal-length-mismatch cases.
+    crypto.timingSafeEqual(ab, Buffer.alloc(ab.length));
+    return false;
+  }
+  return crypto.timingSafeEqual(ab, bb);
+}
 
 router.post('/login', (req, res) => {
   if (!authEnabled()) {
@@ -28,7 +48,14 @@ router.post('/login', (req, res) => {
   }
 
   const { username, password } = req.body || {};
-  if (username === getAuthUser() && checkPassword(password)) {
+  // Verify both username and password before branching, so a username-mismatch
+  // path can't be distinguished from a password-mismatch path by timing. Note
+  // that scrypt itself dominates the timing budget, so this matters more as a
+  // hygiene measure than as a defence against remote timing attacks over WAN.
+  const userOk = constantTimeEqual(username || '', getAuthUser());
+  const passOk = checkPassword(password || '');
+
+  if (userOk && passOk) {
     resetLoginRate(ip);
     const token = createSession(username);
     return res.json({ token, user: username });

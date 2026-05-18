@@ -93,14 +93,32 @@ if (trustProxy.length > 0) {
   app.set('trust proxy', trustProxy);
 }
 
+// CSP stays off until the frontend is audited for a nonce/hash strategy
+// (currently relies on inline styles + dynamic theme injection). Everything
+// else is explicitly enabled so future helmet defaults can't quietly regress.
 app.use(helmet({
   contentSecurityPolicy: false,
+  frameguard: { action: 'deny' },
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+  noSniff: true,
+  referrerPolicy: { policy: 'no-referrer' },
 }));
 
 const upload = createUploadMiddleware(uploadsDir);
 
-app.use(cors());
-app.use(express.json());
+// ── CORS lock-down ────────────────────────────────────────────────────────
+// Allow-list driven by CORS_ORIGIN env (comma-separated). When unset, cross-
+// origin requests are blocked entirely — JagHelm serves its own SPA from
+// the same origin, so this is the safe default for homelab deployments.
+const corsOriginEnv = (process.env.CORS_ORIGIN || '').trim();
+const corsOrigins = corsOriginEnv
+  ? corsOriginEnv.split(',').map(s => s.trim()).filter(Boolean)
+  : false;
+app.use(cors({ origin: corsOrigins }));
+
+// 1 MB request bodies are plenty for JSON config + small uploads (binary
+// uploads go through multer, which has its own limits in upload.js).
+app.use(express.json({ limit: '1mb' }));
 app.disable('etag'); // We manage ETags manually via cache.jsonWithEtag
 app.use('/uploads', express.static(uploadsDir));
 
@@ -156,10 +174,37 @@ async function boot() {
   startConfigWatcher();
   startBackgroundRefresh();
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log('[jaghelm] v8.0.0-alpha.1 on port %d', PORT);
     console.log('[jaghelm] Nodes: %s', Object.keys(config.nodes || {}).join(', ') || '(none)');
   });
+
+  // ── Graceful shutdown ───────────────────────────────────────────────────
+  // Stop accepting connections, let in-flight requests drain, then exit.
+  // TODO: coordinate with refresh.js to cancel the background refresh timer
+  // so we don't log "Cannot set headers after they are sent" during drain —
+  // server/refresh.js doesn't currently export a stop hook.
+  let shuttingDown = false;
+  function shutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[jaghelm] ${signal} received, shutting down...`);
+    const forceExit = setTimeout(() => {
+      console.warn('[jaghelm] Forced exit after 10s drain timeout');
+      process.exit(1);
+    }, 10_000);
+    forceExit.unref();
+    server.close((err) => {
+      if (err) {
+        console.error('[jaghelm] Error during shutdown:', err);
+        process.exit(1);
+      }
+      console.log('[jaghelm] HTTP server closed cleanly');
+      process.exit(0);
+    });
+  }
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 boot().catch((err) => {

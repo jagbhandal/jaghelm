@@ -57,10 +57,14 @@ function verifyPassword(password, stored) {
     const derived = crypto.scryptSync(password, salt, 64).toString('hex');
     return crypto.timingSafeEqual(Buffer.from(derived, 'hex'), Buffer.from(hash, 'hex'));
   }
-  // Legacy SHA-256 (no salt, plain hex) — kept for migration only
+  // Legacy SHA-256 (no salt, plain hex) — kept for migration only.
+  // Buffers are 32 bytes (SHA-256 digest), always equal length, so
+  // timingSafeEqual is safe to call directly without padding.
   if (stored.length === 64 && !stored.includes(':')) {
-    const sha = crypto.createHash('sha256').update(password).digest('hex');
-    return sha === stored;
+    const sha = crypto.createHash('sha256').update(password).digest();
+    const storedBuf = Buffer.from(stored, 'hex');
+    if (storedBuf.length !== sha.length) return false;
+    return crypto.timingSafeEqual(sha, storedBuf);
   }
   return false;
 }

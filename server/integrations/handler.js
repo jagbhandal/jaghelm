@@ -35,6 +35,88 @@ import { resolveIntegrationConfig } from './lib/config.js';
 // Re-export so the public API of handler.js is unchanged.
 export { resolveIntegrationConfig };
 
+// ── SSRF guard ────────────────────────────────────────────────────────────
+// Block obvious SSRF targets before handing a URL to safeFetch. Catches:
+//   - non-http(s) schemes (file:, gopher:, ftp:, data:, …)
+//   - literal-IP hosts in private/loopback/link-local ranges (v4 + v6)
+//   - the string "localhost"
+//
+// Residual risk: DNS rebinding — a public hostname can resolve to a private
+// IP at fetch time. Mitigating that requires re-resolving and pinning the
+// socket, which Node's global fetch doesn't expose cleanly. Acceptable for
+// a homelab dashboard where operator-supplied URLs are the trust boundary.
+const PRIVATE_V4_RANGES = [
+  /^127\./,                              // 127/8 loopback
+  /^10\./,                               // 10/8
+  /^192\.168\./,                         // 192.168/16
+  /^169\.254\./,                         // 169.254/16 link-local
+  /^172\.(1[6-9]|2[0-9]|3[0-1])\./,      // 172.16/12
+  /^0\./,                                // 0/8 "this network"
+];
+
+function isPrivateV4(ip) {
+  return PRIVATE_V4_RANGES.some(re => re.test(ip));
+}
+
+function isPrivateV6(ip) {
+  const lower = ip.toLowerCase();
+  if (lower === '::1' || lower === '::') return true;
+  // fc00::/7 unique-local + fe80::/10 link-local
+  if (/^f[cd][0-9a-f]{2}:/i.test(lower)) return true;
+  if (/^fe[89ab][0-9a-f]:/i.test(lower)) return true;
+  // IPv4-mapped IPv6 — both forms:
+  //   - dotted-quad: "::ffff:127.0.0.1"
+  //   - hex-normalized (what WHATWG URL emits): "::ffff:7f00:1"
+  const dottedMapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (dottedMapped && isPrivateV4(dottedMapped[1])) return true;
+  const hexMapped = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hexMapped) {
+    const high = parseInt(hexMapped[1], 16);
+    const low = parseInt(hexMapped[2], 16);
+    const a = (high >> 8) & 0xff;
+    const b = high & 0xff;
+    const c = (low >> 8) & 0xff;
+    const d = low & 0xff;
+    if (isPrivateV4(`${a}.${b}.${c}.${d}`)) return true;
+  }
+  return false;
+}
+
+export function assertSafeUrl(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(`Invalid URL: ${rawUrl}`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`Blocked URL scheme: ${parsed.protocol}`);
+  }
+  // Strip the brackets URL parsing leaves on v6 literals (e.g. "[::1]" → "::1").
+  let host = parsed.hostname.toLowerCase();
+  if (host.startsWith('[') && host.endsWith(']')) {
+    host = host.slice(1, -1);
+  }
+  if (host === 'localhost' || host === '' || host.endsWith('.localhost')) {
+    throw new Error(`Blocked host: ${host || '(empty)'}`);
+  }
+  // IPv4 literal — four dotted decimals.
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+    if (isPrivateV4(host)) {
+      throw new Error(`Blocked private IPv4 host: ${host}`);
+    }
+    return;
+  }
+  // IPv6 literal — contains a colon (only IPs survive URL hostname parsing as colon-bearing strings).
+  if (host.includes(':')) {
+    if (isPrivateV6(host)) {
+      throw new Error(`Blocked private IPv6 host: ${host}`);
+    }
+    return;
+  }
+  // Bare hostname — left to DNS at fetch time (see residual-risk note above).
+}
+
 // ── Main fetch function for any integration ──
 export async function fetchIntegration(type, yamlConfig, bustCache = false) {
   const cacheKey = `integration:${type}`;
@@ -67,7 +149,11 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       }
 
       const headers = buildAuthHeaders(config);
+      assertSafeUrl(url);
       const res = await safeFetch(url, { headers }, skipTls);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ${res.statusText || ''}`.trim());
+      }
       rawData = await res.json();
     }
 
@@ -85,7 +171,11 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
         extraEps.map(async (ep) => {
           const resolvedEp = resolveEndpointParams(ep.endpoint, config);
           const epUrl = `${baseUrl}${resolvedEp}`;
+          assertSafeUrl(epUrl);
           const epRes = await safeFetch(epUrl, { headers }, skipTls);
+          if (!epRes.ok) {
+            throw new Error(`HTTP ${epRes.status} ${epRes.statusText || ''}`.trim());
+          }
           return { key: ep.key, data: await epRes.json() };
         })
       );
@@ -179,6 +269,7 @@ export async function testIntegration(type, testConfig) {
         url = `${url}${separator}${paramName}=${config._token}`;
       }
       const headers = buildAuthHeaders(config);
+      assertSafeUrl(url);
       const res = await safeFetch(url, { headers }, skipTls);
       if (!res.ok) return { ok: false, error: `HTTP ${res.status}: ${res.statusText}` };
       return { ok: true, status: res.status };
