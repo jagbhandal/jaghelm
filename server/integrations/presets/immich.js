@@ -3,7 +3,7 @@ export default {
   icon: 'immich',
   description: 'Self-hosted photo and video backup',
   auth: 'header',
-  authHeader: 'x-api-key',
+  authHeader: 'X-Api-Key',
   endpoint: '/api/server/statistics',
   testEndpoint: '/api/server/ping',
   fields: [
