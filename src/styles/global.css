@@ -586,3 +586,13 @@ body { font-family: var(--font-body); font-size: var(--text-lg); line-height: 1.
 /* Glance-context sparkline behind a metric value (src/components/Sparkline.jsx).
    Sits between the value and the usage bar; stretches to the tile width. */
 .metric-sparkline { display: block; width: 100%; height: 16px; margin-top: 2px; }
+
+/* "Why is this dashed?" integration doctor (src/components/ServiceCard.jsx).
+   A native <details> — collapsed, keyboard + SR accessible. The ⚠ glyph carries
+   the warning colour; the label stays in --text-secondary for contrast. */
+.svc-doctor { margin-top: 6px; }
+.svc-doctor-summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-secondary); padding: 2px 0; }
+.svc-doctor-summary::-webkit-details-marker { display: none; }
+.svc-doctor-summary:hover { color: var(--text-primary); }
+.svc-doctor-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.svc-doctor-detail { font-family: var(--font-mono); font-size: var(--text-2xs); line-height: 1.4; color: var(--text-muted); margin-top: 4px; padding: 6px 8px; background: var(--amber-bg); border: 1px solid var(--amber-border); border-radius: 6px; word-break: break-word; }

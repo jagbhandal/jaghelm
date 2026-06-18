@@ -91,12 +91,17 @@ export function useAppDataMatching(integrationData, serviceData) {
 
     for (const [intKey, fields] of Object.entries(integrationData)) {
       const displayFields = stripInternalFields(fields);
-      if (Object.keys(displayFields).length === 0) continue;
+      // Carry the last redacted fetch error so the card can answer "why is this
+      // dashed?" — an errored integration has only `_`-fields (empty display),
+      // so without this it was skipped and the error was dropped on the floor.
+      const doctor = fields._error ? { error: fields._error } : null;
+      if (Object.keys(displayFields).length === 0 && !doctor) continue;
+      const appEntry = doctor ? { ...displayFields, _doctor: doctor } : displayFields;
 
       // Mode 1: target-scoped
       if (fields._target) {
         const svc = findByTarget(allContainers, fields._target);
-        if (svc) map[svc.container] = displayFields;
+        if (svc) map[svc.container] = appEntry;
         continue;
       }
 
@@ -106,7 +111,7 @@ export function useAppDataMatching(integrationData, serviceData) {
       const keywords = INTEGRATION_KEYWORDS[baseType] || [baseType];
 
       const match = findByKeywords(allContainers, keywords, map);
-      if (match) map[match.container] = displayFields;
+      if (match) map[match.container] = appEntry;
     }
 
     return map;
