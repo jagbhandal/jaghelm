@@ -22,6 +22,7 @@ import { join } from 'path';
 
 import { getConfig } from './config.js';
 import { getNodeData } from './discovery.js';
+import { recordSamples } from './history.js';
 import { fetchMonitors, matchMonitor, markMonitorLogDone } from './monitors.js';
 import { fetchIntegration } from './integrations/handler.js';
 import { setCache } from './cache.js';
@@ -177,6 +178,19 @@ async function _refreshServices() {
     const nodes = Object.fromEntries(nodeEntries.filter(Boolean));
     const result = { nodes };
     setCache('services', result);
+
+    // Record this cycle's usage into the ring buffer so the UI can draw a
+    // glance-context sparkline. Only the bounded usage percents (CPU/RAM/disk);
+    // non-finite values are skipped inside history.js.
+    for (const [nodeKey, node] of Object.entries(nodes)) {
+      const m = node.metrics || {};
+      recordSamples({
+        [`${nodeKey}:cpu`]: m.cpu,
+        [`${nodeKey}:mem`]: m.memPercent,
+        [`${nodeKey}:disk`]: m.diskPercent,
+      });
+    }
+
     markMonitorLogDone();
     return result;
   } catch (err) {

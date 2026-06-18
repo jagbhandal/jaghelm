@@ -5,6 +5,7 @@ import {
   getGiteaActivity,
   getCronStatus,
   getAllIntegrations,
+  getMetricHistory,
   NOT_MODIFIED_NO_BODY,
 } from '../../hooks/useData';
 
@@ -48,6 +49,11 @@ export function useDashboardData(refreshKey) {
   const [commits, setCommits] = useState([]);
   const [cronJobs, setCronJobs] = useState([]);
   const [integrationData, setIntegrationData] = useState({});
+  // Metric history for the node-card sparklines. UNLIKE the sources above this is
+  // intentionally NOT 304-stable — it changes every cycle (that's the trend), so
+  // it re-renders the node cards each tick. Scoped to the cards: `sources`/banners
+  // memos don't depend on it, so the rest of the board keeps the 304 contract.
+  const [history, setHistory] = useState({});
   // True once the first /api/services request has settled (success or failure),
   // so the view can tell "no nodes yet, still loading" from "genuinely empty".
   const [servicesLoaded, setServicesLoaded] = useState(false);
@@ -186,6 +192,17 @@ export function useDashboardData(refreshKey) {
     [recordSuccess, recordError]
   );
 
+  // History fetch is best-effort and decorative — a failure just leaves the
+  // sparklines as-is; it is never surfaced as a source error.
+  const fetchHistory = useCallback(async () => {
+    try {
+      const data = await getMetricHistory();
+      if (data && data !== NOT_MODIFIED_NO_BODY && typeof data === 'object') setHistory(data);
+    } catch {
+      /* sparklines are non-essential; ignore */
+    }
+  }, []);
+
   useEffect(() => {
     // Skip ETags on the very first load (empty state needs a full body) OR when
     // a retry was explicitly requested (force a fresh fetch past any stale 304).
@@ -195,7 +212,8 @@ export function useDashboardData(refreshKey) {
     fetchServices(skip);
     fetchSections(skip);
     fetchIntegrations(skip);
-  }, [fetchServices, fetchSections, fetchIntegrations, refreshKey, retryNonce]);
+    fetchHistory();
+  }, [fetchServices, fetchSections, fetchIntegrations, fetchHistory, refreshKey, retryNonce]);
 
   // Assemble per-source health. error comes from state (flips only); lastSuccessMs
   // is read from the ref. Memoize on [sourceErrors, healthBucket] so `sources`
@@ -214,5 +232,15 @@ export function useDashboardData(refreshKey) {
     [sourceErrors, healthBucket]
   );
 
-  return { serviceData, ups, commits, cronJobs, integrationData, servicesLoaded, sources, retry };
+  return {
+    serviceData,
+    ups,
+    commits,
+    cronJobs,
+    integrationData,
+    history,
+    servicesLoaded,
+    sources,
+    retry,
+  };
 }
