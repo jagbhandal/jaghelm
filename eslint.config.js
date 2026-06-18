@@ -28,7 +28,7 @@ export default [
   },
   // Backend + tooling — Node
   {
-    files: ['server/**/*.js', 'vite.config.js', 'eslint.config.js'],
+    files: ['server/**/*.js', 'scripts/**/*.mjs', 'vite.config.js', 'eslint.config.js'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',

@@ -278,6 +278,28 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
   const isEmpty =
     servicesLoaded && nodeCount === 0 && customGroups.length === 0 && !savedNodePlaceholders;
 
+  // First-paint loading state: the initial /api/services request hasn't resolved
+  // yet AND we have nothing real to show (no live nodes, no custom groups, no
+  // saved node placeholders to stand in). Render skeleton cards instead of a
+  // blank/placeholder-text first paint. Once data arrives, servicesLoaded flips
+  // and either the grid (nodes/groups) or the empty-state CTA takes over.
+  const isFirstLoading =
+    !servicesLoaded && nodeCount === 0 && customGroups.length === 0 && !savedNodePlaceholders;
+
+  // A few node-card-shaped shimmer blocks. Count is fixed (we don't yet know how
+  // many nodes will report) — three reads as "loading a grid" without guessing.
+  const skeletonElements = useMemo(
+    () =>
+      Array.from({ length: 3 }).map((_, i) => (
+        <div
+          key={`skeleton-${i}`}
+          className="glass-card node-card skeleton-card skeleton"
+          aria-hidden="true"
+        />
+      )),
+    []
+  );
+
   // Saved-but-not-yet-loaded node placeholders. Prevents the grid from collapsing
   // while /api/services is still in flight.
   const nodePlaceholders = useMemo(() => {
@@ -316,7 +338,20 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
         </div>
       )}
 
-      {isEmpty ? (
+      {isFirstLoading ? (
+        <div
+          role="status"
+          aria-busy="true"
+          aria-label="Loading dashboard"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            gap: 16,
+          }}
+        >
+          {skeletonElements}
+        </div>
+      ) : isEmpty ? (
         <DashboardEmptyState onOpenSettings={onOpenSettings} />
       ) : (
         <DndContext

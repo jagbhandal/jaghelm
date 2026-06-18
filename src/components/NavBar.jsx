@@ -110,14 +110,20 @@ export default React.memo(function NavBar({
   return (
     <nav className="nav-bar">
       <div className="nav-brand">
-        <div className="nav-health-dot" style={{ background: hc, boxShadow: `0 0 8px ${hc}` }} />
+        <div
+          className="nav-health-dot"
+          style={{ background: hc, boxShadow: `0 0 8px ${hc}` }}
+          aria-hidden="true"
+        />
         {config?.logoUrl ? (
           <img src={config.logoUrl} alt="" className="nav-logo-img" />
         ) : (
           <img src="/logo.svg" alt="" className="nav-logo-img" />
         )}
         <span className="nav-logo">{config?.title || 'JAG-NET'}</span>
-        <span className="nav-health-label">{hl}</span>
+        <span className="nav-health-label" role="status" aria-live="polite">
+          {hl}
+        </span>
       </div>
       <div className="nav-tabs" role="tablist" aria-label="Dashboard views">
         {tabs.map((t) => {

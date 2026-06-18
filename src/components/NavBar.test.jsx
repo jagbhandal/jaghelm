@@ -102,6 +102,15 @@ describe('NavBar', () => {
     expect(screen.getByText('Service Disruption')).toBeInTheDocument();
   });
 
+  it('exposes the health label as a polite live region so status flips are announced', () => {
+    renderNav({}, baseConfig());
+    // The health label must be a role="status" aria-live="polite" region; otherwise
+    // a screen-reader user gets no notice when overall health flips up/down/degraded.
+    const region = screen.getByRole('status');
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region).toHaveTextContent('All Systems Operational');
+  });
+
   it('renders weather temp once weather loads when showWeather is enabled', async () => {
     vi.stubGlobal(
       'fetch',
