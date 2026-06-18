@@ -222,8 +222,7 @@ services:
     image: ghcr.io/jagbhandal/jaghelm:latest
     container_name: jaghelm
     restart: unless-stopped
-    ports:
-      - 3099:3099
+    network_mode: host        # binds 3099 on the host; reaches LAN services directly
     env_file:
       - .env
     volumes:
@@ -231,6 +230,17 @@ services:
       - ./uploads:/app/uploads
     environment:
       - NODE_ENV=production
+```
+
+This matches the `compose.yaml` shipped in the repo. `network_mode: host` lets
+JagHelm reach your exporters and LAN services without per-target Docker
+networking, which is why it's the default. If you'd rather keep JagHelm on an
+isolated bridge network, remove the `network_mode: host` line and publish the
+port instead:
+
+```yaml
+    # ports:
+    #   - 3099:3099
 ```
 
 Pull and start:
