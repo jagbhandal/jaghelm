@@ -16,8 +16,22 @@
   <img src="https://img.shields.io/badge/ghcr.io-jagbhandal%2Fjaghelm-blue?style=flat-square&logo=github" alt="GHCR">
 </p>
 <p align="center">
-  <img src="public/dashboard.jpg" alt="JagHelm dashboard">
+  <img src="public/dashboard.jpg" alt="JagHelm — live homelab dashboard with real Prometheus metrics and 42 service integrations on a drag-and-resize grid">
 </p>
+
+## Try it in 10 seconds — no Prometheus needed
+
+JagHelm ships a **self-contained read-only demo** (canned data, every write
+refused — no backend, no config). Kick the tyres before wiring up your stack:
+
+```bash
+docker run --rm -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:latest
+```
+
+Then open **http://localhost:3099**, drag a panel around, flip a theme. Like it?
+**⭐ Star the repo** and [point it at your real stack](#quick-start).
+
+> Built in the open · MIT · signed container images · 256 automated tests · 0 known vulnerabilities.
 
 ## Why JagHelm
 
