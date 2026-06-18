@@ -1,10 +1,11 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   getServices,
   getUPSStatus,
   getGiteaActivity,
   getCronStatus,
   getAllIntegrations,
+  NOT_MODIFIED_NO_BODY,
 } from '../../hooks/useData';
 
 /**
@@ -21,8 +22,26 @@ import {
  * Net: a 30s tick that produces all-304 responses triggers zero re-renders
  * in the DashboardView subtree.
  *
+ * Per-source health is tracked WITHOUT violating that contract:
+ *   - `error` is per-source useState, but setState fires ONLY when the error
+ *     status FLIPS (null→string or string→null). An unchanged success — 200 or
+ *     304 — never touches error state, so an all-304 tick stays render-free.
+ *   - `lastSuccessMs` lives in a useRef (refs don't re-render). It's bumped on
+ *     every successful fetch (200 OR 304) and read at call time, so the freshest
+ *     value is always returned without provoking a render.
+ *
  * `refreshKey` is bumped by the parent on every interval tick.
+ *
+ * Retry affordance:
+ *   - `retry()` (returned) forces an immediate full re-fetch of all sources.
+ *     It's user-triggered (a click on a degraded banner), NOT per-tick, so the
+ *     extra setState it does is fine — it never fires on an idle 304 tick. The
+ *     forced fetch SKIPS ETags so a wedged endpoint that's since recovered comes
+ *     back with a fresh 200 body rather than a 304 against a stale cache.
  */
+
+const SOURCE_KEYS = ['services', 'ups', 'commits', 'cron', 'integrations'];
+
 export function useDashboardData(refreshKey) {
   const [serviceData, setServiceData] = useState({ nodes: {} });
   const [ups, setUps] = useState(null);
@@ -35,52 +54,165 @@ export function useDashboardData(refreshKey) {
 
   const hasLoadedRef = useRef(false);
 
-  const fetchServices = useCallback(async (skipEtag) => {
-    try {
-      const data = await getServices(skipEtag);
-      if (data !== null) setServiceData(data || { nodes: {} });
-    } catch (err) {
-      console.warn('[dashboard] Services fetch failed:', err.message);
-    } finally {
-      setServicesLoaded(true);
+  // User-triggered retry. Bumping this re-runs the fetch effect immediately,
+  // independent of the parent's interval-driven refreshKey. `forceFullRef`
+  // signals the next fetch to skip ETags so a recovered endpoint returns a
+  // fresh 200 instead of a 304 against a stale cache.
+  const [retryNonce, setRetryNonce] = useState(0);
+  const forceFullRef = useRef(false);
+  const retry = useCallback(() => {
+    forceFullRef.current = true;
+    setRetryNonce((n) => n + 1);
+  }, []);
+
+  // Per-source error STATE — short string or null. Setting this re-renders, so
+  // we only ever set it on a status FLIP (see recordSuccess/recordError below).
+  const [sourceErrors, setSourceErrors] = useState(() =>
+    SOURCE_KEYS.reduce((acc, k) => {
+      acc[k] = null;
+      return acc;
+    }, {})
+  );
+  // Mirror of sourceErrors that updates synchronously, so back-to-back outcomes
+  // within one tick decide "did the status flip?" against the latest value
+  // rather than a possibly-stale render snapshot. Never read for rendering.
+  const errorRef = useRef(sourceErrors);
+
+  // Per-source last-success timestamp — REF, not state (refs don't re-render).
+  // Updated on every successful fetch (200 or 304); read at call time.
+  const lastSuccessRef = useRef(
+    SOURCE_KEYS.reduce((acc, k) => {
+      acc[k] = null;
+      return acc;
+    }, {})
+  );
+
+  // Record a successful fetch for `source` (a 200 OR a 304 — both mean the
+  // round-trip worked and the data is current). Always bumps lastSuccessMs in
+  // the ref (no render). Clears the error ONLY if one was set (error→null flip),
+  // so an unchanged success never calls setState and the 304 tick stays inert.
+  const recordSuccess = useCallback((source) => {
+    lastSuccessRef.current[source] = Date.now();
+    if (errorRef.current[source] !== null) {
+      errorRef.current = { ...errorRef.current, [source]: null };
+      setSourceErrors(errorRef.current);
     }
   }, []);
 
-  const fetchSections = useCallback(async (skipEtag) => {
-    try {
+  // Record a failed fetch for `source`. Sets the error ONLY if it was previously
+  // clear (null→error flip), so repeated failures across ticks don't re-render.
+  const recordError = useCallback((source, message) => {
+    const msg = message || 'Fetch failed';
+    if (errorRef.current[source] !== msg) {
+      errorRef.current = { ...errorRef.current, [source]: msg };
+      setSourceErrors(errorRef.current);
+    }
+  }, []);
+
+  const fetchServices = useCallback(
+    async (skipEtag) => {
+      try {
+        const data = await getServices(skipEtag);
+        recordSuccess('services');
+        // NOT_MODIFIED_NO_BODY (cold-start 304) and `null` carry no body to
+        // apply — leave state alone but keep it a success.
+        if (data !== null && data !== NOT_MODIFIED_NO_BODY) {
+          setServiceData(data || { nodes: {} });
+        }
+      } catch (err) {
+        recordError('services', err.message);
+        console.warn('[dashboard] Services fetch failed:', err.message);
+      } finally {
+        setServicesLoaded(true);
+      }
+    },
+    [recordSuccess, recordError]
+  );
+
+  const fetchSections = useCallback(
+    async (skipEtag) => {
       const [upsData, giteaData, cronData] = await Promise.allSettled([
         getUPSStatus(skipEtag),
         getGiteaActivity(skipEtag),
         getCronStatus(skipEtag),
       ]);
-      if (upsData.status === 'fulfilled' && upsData.value !== null) setUps(upsData.value);
-      if (giteaData.status === 'fulfilled' && giteaData.value !== null) {
-        setCommits(giteaData.value || []);
-      }
-      if (cronData.status === 'fulfilled' && cronData.value !== null) {
-        setCronJobs(cronData.value || []);
-      }
-    } catch (err) {
-      console.warn('[dashboard] Sections fetch failed:', err.message);
-    }
-  }, []);
 
-  const fetchIntegrations = useCallback(async (skipEtag) => {
-    try {
-      const data = await getAllIntegrations(skipEtag);
-      if (data !== null) setIntegrationData(data || {});
-    } catch (err) {
-      console.warn('[dashboard] Integrations fetch failed:', err.message);
-    }
-  }, []);
+      if (upsData.status === 'fulfilled') {
+        recordSuccess('ups');
+        if (upsData.value !== null && upsData.value !== NOT_MODIFIED_NO_BODY) {
+          setUps(upsData.value);
+        }
+      } else {
+        recordError('ups', upsData.reason?.message);
+        console.warn('[dashboard] UPS fetch failed:', upsData.reason?.message);
+      }
+
+      if (giteaData.status === 'fulfilled') {
+        recordSuccess('commits');
+        if (giteaData.value !== null && giteaData.value !== NOT_MODIFIED_NO_BODY) {
+          setCommits(giteaData.value || []);
+        }
+      } else {
+        recordError('commits', giteaData.reason?.message);
+        console.warn('[dashboard] Gitea fetch failed:', giteaData.reason?.message);
+      }
+
+      if (cronData.status === 'fulfilled') {
+        recordSuccess('cron');
+        if (cronData.value !== null && cronData.value !== NOT_MODIFIED_NO_BODY) {
+          setCronJobs(cronData.value || []);
+        }
+      } else {
+        recordError('cron', cronData.reason?.message);
+        console.warn('[dashboard] Cron fetch failed:', cronData.reason?.message);
+      }
+    },
+    [recordSuccess, recordError]
+  );
+
+  const fetchIntegrations = useCallback(
+    async (skipEtag) => {
+      try {
+        const data = await getAllIntegrations(skipEtag);
+        recordSuccess('integrations');
+        if (data !== null && data !== NOT_MODIFIED_NO_BODY) {
+          setIntegrationData(data || {});
+        }
+      } catch (err) {
+        recordError('integrations', err.message);
+        console.warn('[dashboard] Integrations fetch failed:', err.message);
+      }
+    },
+    [recordSuccess, recordError]
+  );
 
   useEffect(() => {
-    const skip = !hasLoadedRef.current;
+    // Skip ETags on the very first load (empty state needs a full body) OR when
+    // a retry was explicitly requested (force a fresh fetch past any stale 304).
+    const skip = !hasLoadedRef.current || forceFullRef.current;
     hasLoadedRef.current = true;
+    forceFullRef.current = false;
     fetchServices(skip);
     fetchSections(skip);
     fetchIntegrations(skip);
-  }, [fetchServices, fetchSections, fetchIntegrations, refreshKey]);
+  }, [fetchServices, fetchSections, fetchIntegrations, refreshKey, retryNonce]);
 
-  return { serviceData, ups, commits, cronJobs, integrationData, servicesLoaded };
+  // Assemble per-source health. error comes from state (flips only); lastSuccessMs
+  // is read from the ref. Memoize on [sourceErrors, healthBucket] so `sources`
+  // keeps a STABLE identity across unrelated re-renders (e.g. a drag tick) — only
+  // rebuilding when an error flips or the coarse staleness clock advances. Without
+  // this, a fresh `sources` object every render defeats the downstream banner +
+  // panel memos. (Doesn't affect the 304 contract — no new render is triggered.)
+  const healthBucket = Math.floor(Date.now() / 15000);
+  const sources = useMemo(
+    () =>
+      SOURCE_KEYS.reduce((acc, k) => {
+        acc[k] = { error: sourceErrors[k], lastSuccessMs: lastSuccessRef.current[k] };
+        return acc;
+      }, {}),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- healthBucket re-reads the live ref by design
+    [sourceErrors, healthBucket]
+  );
+
+  return { serviceData, ups, commits, cronJobs, integrationData, servicesLoaded, sources, retry };
 }

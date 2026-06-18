@@ -7,6 +7,7 @@ import TodoCard from '../../components/TodoCard';
 import DroppablePanel from '../../components/DroppablePanel';
 import ServiceDragOverlay from '../../components/ServiceDragOverlay';
 import ErrorBoundary from '../../components/ErrorBoundary';
+import DegradedBanner from '../../components/DegradedBanner';
 import { UPSCard, GiteaActivity, QuickLaunch, CronJobs } from '../../components/Widgets';
 import { cachedIconUrl } from '../../hooks/useData';
 
@@ -16,6 +17,7 @@ import { DEFAULT_LAYOUTS, migrateLayouts } from './layouts';
 import { useDashboardData } from './useDashboardData';
 import { useAppDataMatching } from './useAppDataMatching';
 import { useEffectiveLayouts } from './useEffectiveLayouts';
+import { sourceBanner } from './sourceHealth';
 
 /**
  * DashboardView — the main grid of node panels, dedicated section panels
@@ -43,8 +45,57 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
   }, []);
 
   // Data — fetch loop encapsulated in the hook
-  const { serviceData, ups, commits, cronJobs, integrationData, servicesLoaded } =
+  const { serviceData, ups, commits, cronJobs, integrationData, servicesLoaded, sources, retry } =
     useDashboardData(refreshKey);
+
+  // Per-panel degraded/stale banners are computed AT RENDER from `sources`
+  // (per-source { error, lastSuccessMs }) and a live clock — no per-tick state,
+  // so an all-304 refresh that doesn't flip any error stays render-free and the
+  // 304-stable-identity contract holds. The render that surfaces a NEW error
+  // (or recovery) is the error-flip setState in the hook; staleness is read off
+  // the live clock on whatever render happens to occur.
+  //
+  // `now` is bucketed to half the refresh interval before it feeds the memo, so
+  // back-to-back renders within the same bucket recompute IDENTICAL banner
+  // content and the node/group element memos keep their referential identity
+  // (a render triggered by something unrelated doesn't needlessly rebuild every
+  // panel). The bucket is far finer than the ~2-interval staleness threshold, so
+  // the "updated Nm ago" note still flips promptly once it crosses.
+  const refreshIntervalMs = (config.refreshInterval || 30) * 1000;
+  const nowBucket = Math.floor(Date.now() / Math.max(refreshIntervalMs / 2, 1000));
+  const banners = useMemo(() => {
+    const now = nowBucket * Math.max(refreshIntervalMs / 2, 1000);
+    const out = {};
+    for (const key of Object.keys(sources)) {
+      out[key] = sourceBanner(sources[key], key, refreshIntervalMs, now);
+    }
+    return out;
+  }, [sources, refreshIntervalMs, nowBucket]);
+
+  // One page-level announcement for all DISTINCT active source errors, so a
+  // global outage (e.g. Prometheus down) is announced once — not once per panel
+  // (the per-panel DegradedBanner is visual-only / not a live region).
+  const liveErrors = useMemo(
+    () =>
+      [
+        ...new Set(
+          Object.values(banners)
+            .map((b) => b && b.message)
+            .filter(Boolean)
+        ),
+      ].join('. '),
+    [banners]
+  );
+
+  // Render a DegradedBanner element for a source's banner descriptor, or null
+  // when the source is healthy (so the happy path renders nothing extra).
+  const bannerEl = useCallback(
+    (b) =>
+      b && (b.message || b.staleNote) ? (
+        <DegradedBanner message={b.message} staleNote={b.staleNote} onRetry={retry} />
+      ) : null,
+    [retry]
+  );
 
   // Tier 3 app data per container (preset metrics: queries, blocked, etc.)
   const appDataByContainer = useAppDataMatching(integrationData, serviceData);
@@ -159,7 +210,14 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
     return map;
   }, [serviceData, appDataByContainer]);
 
-  // Node panels — one per discovered node
+  // Node panels — one per discovered node. Node metrics + service status come
+  // from the `services` source; their Tier-3 tiles come from `integrations`.
+  // Prefer the live-metrics banner whenever services has anything to say
+  // (error OR staleness); fall back to the integrations banner only when
+  // services is fully healthy, so "app metrics missing" is still surfaced
+  // without ever stacking two banners on one card.
+  const servicesB = banners.services;
+  const nodeBanner = servicesB?.message || servicesB?.staleNote ? servicesB : banners.integrations;
   const nodeElements = useMemo(
     () =>
       Object.entries(serviceData.nodes || {})
@@ -178,15 +236,35 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
                 claimedContainers={claimedContainers}
                 integrationData={integrationData}
                 isMobile={isMobile}
+                banner={
+                  nodeBanner?.message || nodeBanner?.staleNote ? (
+                    <DegradedBanner
+                      message={nodeBanner.message}
+                      staleNote={nodeBanner.staleNote}
+                      onRetry={retry}
+                    />
+                  ) : null
+                }
               />
             </ErrorBoundary>
           </div>
         ))
         .filter(Boolean),
-    [serviceData, sc, appDataByContainer, claimedContainers, integrationData, isMobile]
+    [
+      serviceData,
+      sc,
+      appDataByContainer,
+      claimedContainers,
+      integrationData,
+      isMobile,
+      nodeBanner,
+      retry,
+    ]
   );
 
-  // Custom group panels — user-defined groupings of containers
+  // Custom group panels — user-defined groupings of containers. Their service
+  // cards come from the `services` source, so they carry the same banner.
+  const groupBanner = banners.services;
   const customGroupElements = useMemo(
     () =>
       customGroups
@@ -221,6 +299,15 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
                     }}
                     panelId={gridKey}
                     dragDisabled={isMobile}
+                    banner={
+                      groupBanner?.message || groupBanner?.staleNote ? (
+                        <DegradedBanner
+                          message={groupBanner.message}
+                          staleNote={groupBanner.staleNote}
+                          onRetry={retry}
+                        />
+                      ) : null
+                    }
                   />
                 </DroppablePanel>
               </ErrorBoundary>
@@ -228,7 +315,7 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
           );
         })
         .filter(Boolean),
-    [customGroups, allServicesFlat, sc, isMobile]
+    [customGroups, allServicesFlat, sc, isMobile, groupBanner, retry]
   );
 
   // ── Auto-scroll while dragging panels near viewport edges ──
@@ -322,6 +409,9 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
 
   return (
     <div className="dashboard-content" ref={mobileRef}>
+      <div className="sr-only" role="status" aria-live="polite">
+        {liveErrors}
+      </div>
       {wm.enabled && wm.text && (
         <div className="welcome-banner">
           <div className="welcome-text" style={{ fontSize: wm.fontSize || 20 }}>
@@ -382,14 +472,18 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
             {sc.ups?.visible !== false && (
               <div key="ups">
                 <ErrorBoundary inline itemId="ups" label="UPS panel failed to render">
-                  <UPSCard upsData={ups} borderColor={sc.ups?.borderColor} />
+                  <UPSCard
+                    upsData={ups}
+                    borderColor={sc.ups?.borderColor}
+                    banner={bannerEl(banners.ups)}
+                  />
                 </ErrorBoundary>
               </div>
             )}
             {sc.pipeline?.visible !== false && (
               <div key="pipeline">
                 <ErrorBoundary inline itemId="pipeline" label="Pipeline panel failed to render">
-                  <GiteaActivity commits={commits} />
+                  <GiteaActivity commits={commits} banner={bannerEl(banners.commits)} />
                 </ErrorBoundary>
               </div>
             )}
@@ -407,7 +501,7 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
             {config.showCronJobs !== false && (
               <div key="cron-jobs">
                 <ErrorBoundary inline itemId="cron-jobs" label="Cron Jobs panel failed to render">
-                  <CronJobs nodes={cronJobs} />
+                  <CronJobs nodes={cronJobs} banner={bannerEl(banners.cron)} />
                 </ErrorBoundary>
               </div>
             )}

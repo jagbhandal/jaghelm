@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import NavBar from './NavBar';
 import { ConfigProvider } from '../context/ConfigContext.jsx';
@@ -142,5 +143,64 @@ describe('NavBar', () => {
     renderNav({}, baseConfig({ showWeather: false, weatherLat: '39.88', weatherLon: '-83.09' }));
     // No weather city/temp markup. fetch for weather should not be the path that renders it.
     expect(screen.queryByText(/°F/)).not.toBeInTheDocument();
+  });
+
+  // Mobile nav: .nav-tabs is hidden under 600px, so a hamburger menu is the only
+  // way to switch tab on a phone. These tests lock in the menu existing, being
+  // accessible, listing every tab, switching tab on tap, and closing correctly.
+  describe('mobile nav menu', () => {
+    it('renders a collapsed, accessible disclosure trigger', () => {
+      renderNav();
+      const btn = screen.getByRole('button', { name: /open navigation menu/i });
+      expect(btn).toHaveAttribute('aria-haspopup', 'true');
+      expect(btn).toHaveAttribute('aria-expanded', 'false');
+      // Closed by default: the dropdown isn't rendered.
+      expect(document.getElementById('nav-menu-dropdown')).toBeNull();
+    });
+
+    it('opens on click and lists one button per tab, marking the active one', async () => {
+      const user = userEvent.setup();
+      renderNav();
+      const btn = screen.getByRole('button', { name: /open navigation menu/i });
+      await user.click(btn);
+      // Same node, label now reflects the "close" action.
+      expect(btn).toHaveAttribute('aria-expanded', 'true');
+      const dropdown = document.getElementById('nav-menu-dropdown');
+      const items = within(dropdown).getAllByRole('button');
+      expect(items).toHaveLength(2);
+      expect(within(dropdown).getByRole('button', { name: 'Dashboard' })).toHaveAttribute(
+        'aria-current',
+        'page'
+      );
+      expect(within(dropdown).getByRole('button', { name: 'Media' })).not.toHaveAttribute(
+        'aria-current'
+      );
+    });
+
+    it('switches tab and closes the menu when an item is tapped', async () => {
+      const user = userEvent.setup();
+      const onTabChange = vi.fn();
+      renderNav({ onTabChange });
+      await user.click(screen.getByRole('button', { name: /open navigation menu/i }));
+      const dropdown = document.getElementById('nav-menu-dropdown');
+      await user.click(within(dropdown).getByRole('button', { name: 'Media' }));
+      expect(onTabChange).toHaveBeenCalledWith('media');
+      // Menu closes on selection.
+      expect(document.getElementById('nav-menu-dropdown')).toBeNull();
+    });
+
+    it('flips its label, closes on Escape, and returns focus to the trigger', async () => {
+      const user = userEvent.setup();
+      renderNav();
+      const btn = screen.getByRole('button', { name: /open navigation menu/i });
+      await user.click(btn);
+      expect(document.getElementById('nav-menu-dropdown')).not.toBeNull();
+      // Label is state-aware: it advertises "Close" while open.
+      expect(btn).toHaveAccessibleName(/close navigation menu/i);
+      await user.keyboard('{Escape}');
+      expect(document.getElementById('nav-menu-dropdown')).toBeNull();
+      expect(btn).toHaveAttribute('aria-expanded', 'false');
+      expect(btn).toHaveFocus();
+    });
   });
 });

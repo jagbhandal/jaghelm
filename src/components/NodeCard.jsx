@@ -83,6 +83,7 @@ export default React.memo(function NodeCard({
   children,
   panelId,
   dragDisabled,
+  banner,
 }) {
   const { config } = useConfig();
   const sec = config?.sections?.[sectionKey] || {};
@@ -155,6 +156,11 @@ export default React.memo(function NodeCard({
           {subtitle && <div className="section-subtitle">{subtitle}</div>}
         </div>
       </div>
+
+      {/* Per-panel degraded/stale notice — sits between the header and the
+          metrics so it can't be confused with a service row. Null when healthy,
+          keeping the happy path visually unchanged. */}
+      {banner}
 
       {metrics && (
         <div className="node-metrics">

@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useDashboardData } from './useDashboardData';
 
@@ -82,5 +82,89 @@ describe('useDashboardData — 304 stable identity', () => {
     // The reference must be identical — Object.is(firstRef, current) === true.
     // This is the load-bearing guarantee the refactor must not break.
     expect(result.current.serviceData).toBe(firstRef);
+  });
+});
+
+describe('useDashboardData — per-source health + retry', () => {
+  beforeEach(() => {
+    if (!AbortSignal.timeout) {
+      AbortSignal.timeout = () => new AbortController().signal;
+    }
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('exposes a sources health map with an entry per source', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(jsonResponse({}, {})))
+    );
+    const { result } = renderHook(() => useDashboardData(0));
+
+    await waitFor(() => {
+      expect(result.current.servicesLoaded).toBe(true);
+    });
+
+    for (const key of ['services', 'ups', 'commits', 'cron', 'integrations']) {
+      expect(result.current.sources).toHaveProperty(key);
+      expect(result.current.sources[key]).toHaveProperty('error');
+      expect(result.current.sources[key]).toHaveProperty('lastSuccessMs');
+    }
+  });
+
+  it('records a per-source error when /api/services fails (naming carries the cause upstream)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        const u = String(url);
+        if (u.includes('/api/services') && !u.includes('/api/services/')) {
+          return Promise.reject(new Error('Network down'));
+        }
+        return Promise.resolve(jsonResponse({}, {}));
+      })
+    );
+
+    const { result } = renderHook(() => useDashboardData(0));
+
+    await waitFor(() => {
+      expect(result.current.sources.services.error).toBeTruthy();
+    });
+    // Other sources stay healthy — failure is isolated to the source that failed.
+    expect(result.current.sources.ups.error).toBeNull();
+  });
+
+  it('retry() forces a full re-fetch (skips ETags) and is a stable callback', async () => {
+    const headers = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url, opts) => {
+        const u = String(url);
+        if (u.includes('/api/services') && !u.includes('/api/services/')) {
+          headers.push(opts?.headers?.['If-None-Match'] ?? null);
+          return Promise.resolve(jsonResponse({ nodes: {} }, { etag: 'W/"v1"' }));
+        }
+        return Promise.resolve(jsonResponse({}, {}));
+      })
+    );
+
+    const { result } = renderHook(() => useDashboardData(0));
+
+    await waitFor(() => expect(result.current.servicesLoaded).toBe(true));
+    const firstRetry = result.current.retry;
+    const callsBefore = headers.length;
+
+    // Trigger a user retry.
+    act(() => {
+      result.current.retry();
+    });
+
+    await waitFor(() => expect(headers.length).toBeGreaterThan(callsBefore));
+
+    // The retry-driven fetch must NOT carry If-None-Match — it's a forced full fetch.
+    expect(headers[headers.length - 1]).toBeNull();
+    // retry identity is stable across renders (safe to use in deps / memo lists).
+    expect(result.current.retry).toBe(firstRetry);
   });
 });
