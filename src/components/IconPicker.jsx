@@ -133,37 +133,48 @@ export default function IconPicker({ value, onChange, onClear, label, compact = 
         </span>
       )}
 
-      {/* Current icon + trigger */}
-      <div
-        onClick={() => setOpen(!open)}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          padding: '8px 12px', borderRadius: 10, cursor: 'pointer',
-          border: `1px solid ${open ? 'var(--accent)' : 'var(--border-color)'}`,
-          background: 'var(--bg-card-inner)',
-          transition: 'border-color 0.15s',
-        }}
-      >
-        {hasIcon ? (
-          <img src={currentIconUrl} alt="" style={{ width: 24, height: 24, borderRadius: 4, flexShrink: 0 }} />
-        ) : isEmojiVal ? (
-          <span style={{ fontSize: 20, flexShrink: 0 }}>{currentIconUrl}</span>
-        ) : (
-          <span style={{ fontSize: 18, opacity: 0.4, flexShrink: 0 }}>🔍</span>
-        )}
-        <span style={{
-          fontFamily: 'var(--font-body)', fontSize: 13, color: value ? 'var(--text-primary)' : 'var(--text-muted)',
-          flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {hasIcon ? extractSlug(currentIconUrl) : isEmojiVal ? 'Emoji icon' : 'Choose an icon...'}
-        </span>
+      {/* Current icon + trigger — a real <button> for keyboard/AT access.
+          The clear control is a sibling (not nested) so we never put a
+          button inside a button. */}
+      <div style={{ position: 'relative' }}>
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label={label ? `${label}: choose icon` : 'Choose icon'}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+            padding: '8px 12px', borderRadius: 10, cursor: 'pointer',
+            border: `1px solid ${open ? 'var(--accent)' : 'var(--border-color)'}`,
+            background: 'var(--bg-card-inner)',
+            paddingRight: value ? 34 : 12,
+            transition: 'border-color 0.15s',
+          }}
+        >
+          {hasIcon ? (
+            <img src={currentIconUrl} alt="" style={{ width: 24, height: 24, borderRadius: 4, flexShrink: 0 }} />
+          ) : isEmojiVal ? (
+            <span style={{ fontSize: 20, flexShrink: 0 }}>{currentIconUrl}</span>
+          ) : (
+            <span style={{ fontSize: 18, opacity: 0.4, flexShrink: 0 }}>🔍</span>
+          )}
+          <span style={{
+            fontFamily: 'var(--font-body)', fontSize: 13, color: value ? 'var(--text-primary)' : 'var(--text-muted)',
+            flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {hasIcon ? extractSlug(currentIconUrl) : isEmojiVal ? 'Emoji icon' : 'Choose an icon...'}
+          </span>
+        </button>
         {value && (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); handleClear(); }}
+            aria-label="Clear icon"
             style={{
+              position: 'absolute', top: '50%', right: 8, transform: 'translateY(-50%)',
               background: 'none', border: 'none', cursor: 'pointer', padding: 2,
-              color: 'var(--text-muted)', fontSize: 14, flexShrink: 0,
+              color: 'var(--text-muted)', fontSize: 14, flexShrink: 0, lineHeight: 1,
             }}
           >
             ✕

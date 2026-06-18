@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { uploadFile } from '../../hooks/useData';
+import Field from './Field';
 
 export default function GeneralTab({ config, update }) {
   const logoRef = useRef();
@@ -118,16 +119,6 @@ function Card({ title, children }) {
     <div className="settings-card">
       {title && <h3 className="settings-card-title">{title}</h3>}
       {children}
-    </div>
-  );
-}
-
-function Field({ label, children, hint }) {
-  return (
-    <div className="settings-field">
-      <label className="settings-label">{label}</label>
-      {children}
-      {hint && <span className="settings-hint">{hint}</span>}
     </div>
   );
 }

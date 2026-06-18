@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { HexColorPicker } from 'react-colorful';
 import IconPicker from '../IconPicker';
+import Field from './Field';
 
 /**
  * NodesTab — Phase 2 Settings
@@ -216,13 +217,9 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
   );
 }
 
+// Row-style field; delegates to the shared Field for the label/htmlFor wiring.
 function FieldRow({ label, children }) {
-  return (
-    <div className="settings-stack-xs">
-      <span className="settings-item-subtitle" style={{ letterSpacing: 0.5 }}>{label}</span>
-      {children}
-    </div>
-  );
+  return <Field layout="row" label={label}>{children}</Field>;
 }
 
 function AddChip({ onAdd, placeholder }) {

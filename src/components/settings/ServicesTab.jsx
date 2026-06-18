@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Field from './Field';
 
 /**
  * ServicesTab — Phase 2 Settings
@@ -259,11 +260,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
   );
 }
 
+// Row-style field; delegates to the shared Field for the label/htmlFor wiring.
 function FieldRow({ label, children }) {
-  return (
-    <div className="settings-stack-xs">
-      <span className="settings-item-subtitle" style={{ letterSpacing: 0.5 }}>{label}</span>
-      {children}
-    </div>
-  );
+  return <Field layout="row" label={label}>{children}</Field>;
 }

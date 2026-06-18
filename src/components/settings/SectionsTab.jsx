@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { HexColorPicker } from 'react-colorful';
 import IconPicker from '../IconPicker';
+import Field from './Field';
 
 /**
  * SectionsTab — Phase 2 Settings + Phase 3 Custom Groups
@@ -388,15 +389,6 @@ export default function SectionsTab({ config, update }) {
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <div className="settings-field">
-      <label className="settings-label">{label}</label>
-      {children}
     </div>
   );
 }
