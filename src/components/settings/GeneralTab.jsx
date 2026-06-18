@@ -3,6 +3,7 @@ import { uploadFile } from '../../hooks/useData';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import Field from './Field';
 import InlineError from './InlineError';
+import { Card, Toggle } from './primitives.jsx';
 
 export default function GeneralTab() {
   const { config, update } = useConfig();
@@ -83,14 +84,11 @@ export default function GeneralTab() {
           label="Show Welcome Message"
           hint="Displays a greeting banner below the navigation bar"
         >
-          <label className="settings-toggle">
-            <input
-              type="checkbox"
-              checked={config.welcomeMessage?.enabled || false}
-              onChange={(e) => update('welcomeMessage.enabled', e.target.checked)}
-            />
-            <span>Enabled</span>
-          </label>
+          <Toggle
+            label="Enabled"
+            checked={config.welcomeMessage?.enabled || false}
+            onChange={(v) => update('welcomeMessage.enabled', v)}
+          />
         </Field>
         <Field label="Message Text">
           <input
@@ -119,15 +117,6 @@ export default function GeneralTab() {
           />
         </Field>
       </Card>
-    </div>
-  );
-}
-
-function Card({ title, children }) {
-  return (
-    <div className="settings-card">
-      {title && <h3 className="settings-card-title">{title}</h3>}
-      {children}
     </div>
   );
 }

@@ -533,3 +533,8 @@ body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: 
 @media (prefers-reduced-motion: reduce) {
   .nav-theme-popover { animation: none; }
 }
+
+/* Shared settings empty-state (src/components/settings/primitives.jsx EmptyState) */
+.settings-empty-state { padding: 32px; text-align: center; color: var(--text-muted); background: var(--bg-card-inner); border-radius: 16px; border: 1px dashed var(--border-color); }
+.settings-empty-state-icon { font-size: 28px; display: block; margin-bottom: 8px; }
+.settings-empty-state-text { font-size: 13px; margin: 0; }

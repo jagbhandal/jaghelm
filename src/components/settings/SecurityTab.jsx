@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Field from './Field';
 import { apiFetch } from '../../api/client.js';
+import { Card } from './primitives.jsx';
 
 export default function SecurityTab() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -111,15 +112,6 @@ export default function SecurityTab() {
           Sessions expire after 24 hours. Changing your password will invalidate all other active sessions.
         </p>
       </Card>
-    </div>
-  );
-}
-
-function Card({ title, children }) {
-  return (
-    <div className="settings-card">
-      {title && <h3 className="settings-card-title">{title}</h3>}
-      {children}
     </div>
   );
 }

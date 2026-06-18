@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { SEARCH_ENGINES } from '../../hooks/useData';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import Field from './Field';
+import { Card, Toggle, ChoiceGroup } from './primitives.jsx';
 
 // Returns an error string if `raw` is a non-empty value outside [min, max] or
 // not a finite number; null when empty (cleared) or valid. Empty is allowed so
@@ -37,7 +38,7 @@ export default function WidgetsTab() {
   return (
     <div className="settings-section">
       <Card title="Search">
-        <Chk
+        <Toggle
           label="Show search bar in navigation"
           checked={config.showSearch !== false}
           onChange={(v) => update('showSearch', v)}
@@ -58,23 +59,21 @@ export default function WidgetsTab() {
       </Card>
 
       <Card title="Weather">
-        <Chk
+        <Toggle
           label="Show weather in navigation"
           checked={config.showWeather !== false}
           onChange={(v) => update('showWeather', v)}
         />
         <Field label="Temperature Unit">
-          <div className="settings-choice-group">
-            {['F', 'C'].map((u) => (
-              <button
-                key={u}
-                onClick={() => update('tempUnit', u)}
-                className={`settings-choice-btn ${(config.tempUnit || 'F') === u ? 'active' : ''}`}
-              >
-                °{u}
-              </button>
-            ))}
-          </div>
+          <ChoiceGroup
+            value={config.tempUnit || 'F'}
+            options={[
+              { value: 'F', label: '°F' },
+              { value: 'C', label: '°C' },
+            ]}
+            onChange={(v) => update('tempUnit', v)}
+            ariaLabel="Temperature Unit"
+          />
         </Field>
         <div className="settings-grid-2">
           <Field label="Latitude" error={latError}>
@@ -105,35 +104,17 @@ export default function WidgetsTab() {
       </Card>
 
       <Card title="Features">
-        <Chk
+        <Toggle
           label="Show checklist panel on dashboard"
           checked={config.showTodos !== false}
           onChange={(v) => update('showTodos', v)}
         />
-        <Chk
+        <Toggle
           label="Show scheduled jobs panel on dashboard"
           checked={config.showCronJobs !== false}
           onChange={(v) => update('showCronJobs', v)}
         />
       </Card>
     </div>
-  );
-}
-
-function Card({ title, children }) {
-  return (
-    <div className="settings-card">
-      {title && <h3 className="settings-card-title">{title}</h3>}
-      {children}
-    </div>
-  );
-}
-
-function Chk({ label, checked, onChange }) {
-  return (
-    <label className="settings-toggle">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span>{label}</span>
-    </label>
   );
 }

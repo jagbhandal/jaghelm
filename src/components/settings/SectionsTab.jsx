@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { HexColorPicker } from 'react-colorful';
 import IconPicker from '../IconPicker';
 import Field from './Field';
+import { EmptyState } from './primitives.jsx';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { useConfirm } from '../../context/OverlayContext.jsx';
 import { apiFetch } from '../../api/client.js';
@@ -280,21 +281,9 @@ export default function SectionsTab() {
         </div>
 
         {customGroups.length === 0 && (
-          <div
-            style={{
-              padding: 32,
-              textAlign: 'center',
-              color: 'var(--text-muted)',
-              background: 'var(--bg-card-inner)',
-              borderRadius: 16,
-              border: '1px dashed var(--border-color)',
-            }}
-          >
-            <span style={{ fontSize: 28, display: 'block', marginBottom: 8 }}>📂</span>
-            <p style={{ fontSize: 13, margin: 0 }}>
-              No custom groups yet. Create one to organize containers your way.
-            </p>
-          </div>
+          <EmptyState icon="📂">
+            No custom groups yet. Create one to organize containers your way.
+          </EmptyState>
         )}
 
         {customGroups.map((group) => {
