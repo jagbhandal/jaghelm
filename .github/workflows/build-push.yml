@@ -35,20 +35,38 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # id-token: write   # uncomment to enable keyless cosign signing (see TODO below)
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Extract version tag
+      - name: Compute image tags
         id: version
         run: |
+          # Short commit SHA → an IMMUTABLE tag that never moves, so a rollback
+          # target always exists ("redeploy ghcr.io/...:sha-<short>"). :latest is
+          # mutable and is NOT a rollback target.
+          SHORT_SHA="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          REPO="ghcr.io/jagbhandal/jaghelm"
+
+          # Always publish :latest and the immutable :sha-<short> tag.
+          TAGS="${REPO}:latest,${REPO}:sha-${SHORT_SHA}"
+
+          # On a tag/release build, also publish the semver tag.
+          VERSION=""
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            VERSION=${GITHUB_REF_NAME#v}
-            echo "tags=ghcr.io/jagbhandal/jaghelm:latest,ghcr.io/jagbhandal/jaghelm:${VERSION}" >> $GITHUB_OUTPUT
+            VERSION="${GITHUB_REF_NAME#v}"
+            TAGS="${TAGS},${REPO}:${VERSION}"
           else
-            echo "tags=ghcr.io/jagbhandal/jaghelm:latest" >> $GITHUB_OUTPUT
+            # Untagged push to main → label the image with the short SHA as its
+            # version so `docker inspect` reflects exactly what shipped.
+            VERSION="sha-${SHORT_SHA}"
           fi
+
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+          echo "image_version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -58,8 +76,56 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: ${{ steps.version.outputs.tags }}
+          # Feed provenance into the OCI labels the Dockerfile declares so the
+          # running image is self-describing / auditable for rollback.
+          build-args: |
+            IMAGE_VERSION=${{ steps.version.outputs.image_version }}
+            IMAGE_REVISION=${{ github.sha }}
+            IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
+          # Native SBOM + provenance attestations (supply-chain table-stakes).
+          # These are produced by buildkit and pushed alongside the image; safe
+          # to enable and do not require extra secrets.
+          sbom: true
+          provenance: mode=max
+
+      # ── Image vulnerability scan (Trivy) ──────────────────────────────────
+      # Scans the image we just pushed for known CVEs. Non-blocking for now
+      # (exit-code 0) to avoid breaking deploys on a freshly-disclosed CVE; flip
+      # exit-code to 1 once a triage/allowlist process exists. Always uploads a
+      # SARIF report as an artifact-style scan result for review.
+      - name: Scan image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@v0.28.0
+        with:
+          image-ref: ghcr.io/jagbhandal/jaghelm:sha-${{ steps.version.outputs.short_sha }}
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+          exit-code: '0' # report-only; set to '1' to gate the build on HIGH/CRITICAL
+
+      # ── TODO: cosign keyless signing (ready to enable) ────────────────────
+      # Keyless signing via the GitHub OIDC token proves these bytes came from
+      # this workflow. To enable:
+      #   1. Add `id-token: write` to the job `permissions` block above.
+      #   2. Uncomment the two steps below.
+      #   3. Verify on the host before deploy with:
+      #        cosign verify ghcr.io/jagbhandal/jaghelm:sha-<short> \
+      #          --certificate-identity-regexp 'https://github.com/jagbhandal/jaghelm/.*' \
+      #          --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      # Left disabled (not half-wired) because it needs the id-token permission
+      # and a matching host-side verification step to be meaningful.
+      #
+      # - name: Install cosign
+      #   uses: sigstore/cosign-installer@v3
+      #
+      # - name: Sign the published image (keyless)
+      #   env:
+      #     COSIGN_EXPERIMENTAL: "1"
+      #     DIGEST: ${{ steps.build.outputs.digest }}
+      #   run: |
+      #     cosign sign --yes "ghcr.io/jagbhandal/jaghelm@${DIGEST}"
