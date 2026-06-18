@@ -24,8 +24,8 @@
 
 import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';      
-import { fileURLToPath } from 'url';
+import helmet from 'helmet';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import dotenv from 'dotenv';
@@ -90,7 +90,7 @@ const app = express();
 //   TRUST_PROXY=                                 (unset/blank: don't trust any proxy)
 const trustProxy = (process.env.TRUST_PROXY || '')
   .split(',')
-  .map(s => s.trim())
+  .map((s) => s.trim())
   .filter(Boolean);
 if (trustProxy.length > 0) {
   app.set('trust proxy', trustProxy);
@@ -99,13 +99,15 @@ if (trustProxy.length > 0) {
 // CSP stays off until the frontend is audited for a nonce/hash strategy
 // (currently relies on inline styles + dynamic theme injection). Everything
 // else is explicitly enabled so future helmet defaults can't quietly regress.
-app.use(helmet({
-  contentSecurityPolicy: false,
-  frameguard: { action: 'deny' },
-  hsts: { maxAge: 31536000, includeSubDomains: true },
-  noSniff: true,
-  referrerPolicy: { policy: 'no-referrer' },
-}));
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    frameguard: { action: 'deny' },
+    hsts: { maxAge: 31536000, includeSubDomains: true },
+    noSniff: true,
+    referrerPolicy: { policy: 'no-referrer' },
+  })
+);
 
 const upload = createUploadMiddleware(uploadsDir);
 
@@ -115,7 +117,10 @@ const upload = createUploadMiddleware(uploadsDir);
 // the same origin, so this is the safe default for homelab deployments.
 const corsOriginEnv = (process.env.CORS_ORIGIN || '').trim();
 const corsOrigins = corsOriginEnv
-  ? corsOriginEnv.split(',').map(s => s.trim()).filter(Boolean)
+  ? corsOriginEnv
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
   : false;
 app.use(cors({ origin: corsOrigins }));
 
@@ -237,7 +242,14 @@ async function boot() {
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-boot().catch((err) => {
-  console.error('[jaghelm] Fatal boot error:', err);
-  process.exit(1);
-});
+// Only boot (subsystem init + listen) when run directly. When imported (route
+// tests), the app is fully route-mounted but doesn't bind a port or start loops.
+const isMain = import.meta.url === pathToFileURL(process.argv[1] || '').href;
+if (isMain) {
+  boot().catch((err) => {
+    console.error('[jaghelm] Fatal boot error:', err);
+    process.exit(1);
+  });
+}
+
+export { app };

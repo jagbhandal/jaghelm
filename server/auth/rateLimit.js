@@ -16,6 +16,8 @@ const CLEANUP_INTERVAL_MS = 30 * 60 * 1000;
 
 const attempts = new Map(); // key → { count, firstAttempt }
 
+// .unref() so this housekeeping timer never keeps the process alive on its own
+// (lets the process — and route tests that import the app — exit cleanly).
 setInterval(() => {
   const now = Date.now();
   for (const [key, record] of attempts) {
@@ -23,7 +25,7 @@ setInterval(() => {
       attempts.delete(key);
     }
   }
-}, CLEANUP_INTERVAL_MS);
+}, CLEANUP_INTERVAL_MS).unref();
 
 /**
  * Record an attempt against `key` and return true if it's allowed.
