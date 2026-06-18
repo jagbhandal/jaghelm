@@ -10,26 +10,35 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Create or update PR
+        env:
+          # Pass untrusted inputs through env (never interpolate ${{ }} directly
+          # into the shell script — that is a command-injection vector).
+          PR_TOKEN: ${{ secrets.PR_TOKEN }}
+          HEAD_COMMIT_MSG: ${{ github.event.head_commit.message }}
+          GH_SHA: ${{ github.sha }}
+          API_BASE: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
         run: |
+          set -euo pipefail
+
           EXISTING=$(/usr/bin/curl -sf \
-            -H "Authorization: token ${{ secrets.PR_TOKEN }}" \
-            "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/pulls?state=open&head=staging&base=main")
+            -H "Authorization: token ${PR_TOKEN}" \
+            "${API_BASE}/pulls?state=open&head=staging&base=main" || true)
 
           if echo "$EXISTING" | grep -q '"number"'; then
             echo "Open PR already exists — skipping"
-          else
-            COMMIT_MSG=$(echo "${{ github.event.head_commit.message }}" | head -1)
-
-            /usr/bin/curl -sf -X POST \
-              -H "Authorization: token ${{ secrets.PR_TOKEN }}" \
-              -H "Content-Type: application/json" \
-              "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/pulls" \
-              -d "{
-                \"title\": \"${COMMIT_MSG}\",
-                \"head\": \"staging\",
-                \"base\": \"main\",
-                \"body\": \"Auto-created from push to staging.\n\nCommit: ${{ github.sha }}\"
-              }"
-
-            echo "PR created: ${COMMIT_MSG}"
+            exit 0
           fi
+
+          TITLE=$(printf '%s' "$HEAD_COMMIT_MSG" | head -1)
+          BODY=$(printf 'Auto-created from push to staging.\n\nCommit: %s' "$GH_SHA")
+
+          # jq builds correctly-escaped JSON — a quote or ${...} in the commit
+          # message can no longer break the body or inject fields.
+          jq -n --arg title "$TITLE" --arg head staging --arg base main --arg body "$BODY" \
+            '{title: $title, head: $head, base: $base, body: $body}' \
+          | /usr/bin/curl -sf -X POST \
+              -H "Authorization: token ${PR_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "${API_BASE}/pulls" --data @-
+
+          echo "PR created: ${TITLE}"
