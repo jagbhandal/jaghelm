@@ -28,6 +28,10 @@ import { setCache } from './cache.js';
 import { safeFetch } from './httpClient.js';
 import { dedupe } from './util/dedupe.js';
 import { DATA_DIR } from './util/dataDir.js';
+import { createLogger } from './util/logger.js';
+import { recordRefreshCycle } from './metrics.js';
+
+const log = createLogger('refresh');
 
 // Same display-config.json the displayConfig route writes — honor JAGHELM_DATA_DIR.
 const DISPLAY_CONFIG_PATH = join(DATA_DIR, 'display-config.json');
@@ -92,7 +96,7 @@ async function _refreshServices() {
 
     // Monitors are best-effort; if Kuma is down we still want node data.
     const monitorsSettled = fetchMonitors(true).catch((err) => {
-      console.warn('[refresh] monitors fetch failed:', err.message);
+      log.warn({ err }, 'monitors fetch failed');
       return [];
     });
     const nodeDataPromises = Object.entries(config.nodes).map(async ([nodeKey, nodeCfg]) => {
@@ -121,7 +125,7 @@ async function _refreshServices() {
         nodeResults.push(outcome.value);
       } else {
         const msg = outcome.reason?.message || String(outcome.reason);
-        console.warn('[refresh] node refresh failed:', msg);
+        log.warn({ err: msg }, 'node refresh failed');
       }
     }
 
@@ -176,7 +180,7 @@ async function _refreshServices() {
     markMonitorLogDone();
     return result;
   } catch (err) {
-    console.error('[refresh] Services error:', err.message);
+    log.error({ err }, 'services refresh error');
     return null;
   }
 }
@@ -226,7 +230,7 @@ async function _refreshUPS() {
     setCache('ups', results);
     return results;
   } catch (err) {
-    console.error('[refresh] UPS error:', err.message);
+    log.error({ err }, 'UPS refresh error');
     return null;
   }
 }
@@ -285,7 +289,7 @@ async function _refreshGitea() {
     setCache('gitea', result);
     return result;
   } catch (err) {
-    console.error('[refresh] Gitea error:', err.message);
+    log.error({ err }, 'Gitea refresh error');
     return null;
   }
 }
@@ -322,7 +326,7 @@ async function _refreshIntegrations() {
     setCache('integrations', results);
     return results;
   } catch (err) {
-    console.error('[refresh] Integrations error:', err.message);
+    log.error({ err }, 'integrations refresh error');
     return null;
   }
 }
@@ -333,6 +337,7 @@ async function runBackgroundRefresh() {
   if (bgRefreshRunning) return; // Skip if previous cycle hasn't finished
   bgRefreshRunning = true;
   const start = Date.now();
+  let ok = true;
   try {
     await Promise.allSettled([
       refreshServices(),
@@ -340,12 +345,14 @@ async function runBackgroundRefresh() {
       refreshGitea(),
       refreshIntegrations(),
     ]);
-    console.log('[refresh] Background cycle complete in %dms', Date.now() - start);
+    log.info({ ms: Date.now() - start }, 'background cycle complete');
   } catch (err) {
-    console.error('[refresh] Background cycle error:', err.message);
+    ok = false;
+    log.error({ err }, 'background cycle error');
   } finally {
     bgRefreshRunning = false;
     lastRefreshComplete = Date.now();
+    recordRefreshCycle(Date.now() - start, ok);
   }
 }
 
@@ -366,7 +373,7 @@ export function startBackgroundRefresh() {
   const intervalMs = getRefreshIntervalMs();
   if (bgRefreshTimer) clearInterval(bgRefreshTimer);
   bgRefreshTimer = setInterval(runBackgroundRefresh, intervalMs);
-  console.log('[refresh] Background loop started — interval %ds', intervalMs / 1000);
+  log.info({ intervalSec: intervalMs / 1000 }, 'background loop started');
   // Warm the cache immediately so the first dashboard load isn't a cold miss
   runBackgroundRefresh();
 }
@@ -378,7 +385,7 @@ export function restartBackgroundRefresh() {
   const intervalMs = getRefreshIntervalMs();
   if (bgRefreshTimer) clearInterval(bgRefreshTimer);
   bgRefreshTimer = setInterval(runBackgroundRefresh, intervalMs);
-  console.log('[refresh] Background loop restarted — interval %ds', intervalMs / 1000);
+  log.info({ intervalSec: intervalMs / 1000 }, 'background loop restarted');
 }
 
 /** Stop the background loop. Called on shutdown so the timer doesn't fire mid-drain. */

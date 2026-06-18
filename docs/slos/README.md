@@ -25,6 +25,12 @@ external systems it does not control — Prometheus, Uptime Kuma, and 42 third-p
 app APIs. A target the app can't sustain when an *upstream* is down would just be
 alert noise. See each SLO's "Why this target" section.
 
+> **Wiring status (2026-06):** these SLIs are now emitted by the app itself.
+> `GET /metrics` exposes `http_requests_total`, `http_request_duration_seconds_bucket`
+> (with an `le="0.3"` bucket for the latency SLO), and `jaghelm_cache_age_seconds`
+> in Prometheus format; `GET /api/readyz` reports backend reachability. Point a
+> Prometheus scrape at `/metrics` and the queries in each SLO doc resolve as written.
+
 ## SLO catalogue
 
 | SLO | SLI type | Target / window | Error budget | What it protects |

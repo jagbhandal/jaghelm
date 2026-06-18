@@ -32,6 +32,28 @@ router.get('/health', (req, res) => {
   });
 });
 
+router.get(
+  '/readyz',
+  asyncHandler(async (req, res) => {
+    // Readiness = can the dashboard serve live data? That depends on the
+    // operator-configured backends. Prometheus is the hard dependency; Kuma is
+    // best-effort, so we report it but don't gate readiness on it.
+    const promUrl = (process.env.PROMETHEUS_URL || 'http://localhost:9090').replace(/\/+$/, '');
+    const kumaUrl = (process.env.KUMA_URL || 'http://localhost:3001').replace(/\/+$/, '');
+    const ping = async (url) => {
+      try {
+        const r = await safeFetch(url, { timeoutMs: 2000 });
+        return r.status < 500; // reachable + not erroring
+      } catch {
+        return false;
+      }
+    };
+    const [prometheus, kuma] = await Promise.all([ping(`${promUrl}/-/healthy`), ping(`${kumaUrl}/`)]);
+    const ready = prometheus;
+    res.status(ready ? 200 : 503).json({ ready, checks: { prometheus, kuma } });
+  })
+);
+
 router.get('/weather', authMiddleware, asyncHandler(async (req, res) => {
   // Validate to a real coordinate: keeps the (bounded) cache keyed to a finite
   // space and stops arbitrary strings flowing into the upstream request.

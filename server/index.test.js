@@ -14,6 +14,9 @@ import request from 'supertest';
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-routes-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
 delete process.env.DASH_PASS; // auth disabled
+// Point readiness checks at a guaranteed-refused port so /readyz is deterministic.
+process.env.PROMETHEUS_URL = 'http://127.0.0.1:1';
+process.env.KUMA_URL = 'http://127.0.0.1:1';
 
 const { app } = await import('./index.js');
 const { stopBackgroundRefresh } = await import('./refresh.js');
@@ -86,4 +89,20 @@ test('POST /api/display-config → 200 on a valid config (data-dir isolated)', a
     .send({ theme: 'github-dark', refreshInterval: 30 });
   assert.equal(r.status, 200);
   assert.equal(r.body.ok, true);
+});
+
+test('GET /metrics → 200 Prometheus exposition including http_requests_total', async () => {
+  await request(app).get('/api/health'); // generate at least one counted request
+  const r = await request(app).get('/metrics');
+  assert.equal(r.status, 200);
+  assert.match(r.headers['content-type'], /text\/plain/);
+  assert.match(r.text, /http_requests_total/);
+});
+
+test('GET /api/readyz → 503 when Prometheus is unreachable, with a checks shape', async () => {
+  const r = await request(app).get('/api/readyz');
+  assert.equal(r.status, 503);
+  assert.equal(r.body.ready, false);
+  assert.equal(typeof r.body.checks.prometheus, 'boolean');
+  assert.equal(typeof r.body.checks.kuma, 'boolean');
 });
