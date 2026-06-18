@@ -88,11 +88,13 @@ jobs:
             IMAGE_VERSION=${{ steps.version.outputs.image_version }}
             IMAGE_REVISION=${{ github.sha }}
             IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
-          # Native SBOM + provenance attestations (supply-chain table-stakes).
-          # These are produced by buildkit and pushed alongside the image; safe
-          # to enable and do not require extra secrets.
-          sbom: true
-          provenance: mode=max
+          # NOTE: SBOM + provenance attestations are intentionally NOT set here.
+          # build-push-action runs on the runner's default `docker` driver, which
+          # rejects attestations ("Attestation is not supported for the docker
+          # driver") and fails the whole job. Enabling them requires a buildx
+          # container driver — add a `docker/setup-buildx-action@v3` step before
+          # this one, then re-add `sbom: true` + `provenance: mode=max`. Tracked
+          # as a follow-up; the OCI labels above already make the image auditable.
 
       # ── TODO: image vulnerability scan (Trivy) — disabled, ready to re-enable ──
       # aquasecurity/trivy-action@v0.28.0 transitively pinned a yanked
