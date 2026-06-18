@@ -1,10 +1,39 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { SEARCH_ENGINES } from '../../hooks/useData';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import Field from './Field';
 
+// Returns an error string if `raw` is a non-empty value outside [min, max] or
+// not a finite number; null when empty (cleared) or valid. Empty is allowed so
+// the user can clear the field — geolocation simply falls back.
+function coordError(raw, min, max, label) {
+  if (raw == null || raw.trim() === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return `${label} must be a number.`;
+  if (n < min || n > max) return `${label} must be between ${min} and ${max}.`;
+  return null;
+}
+
 export default function WidgetsTab() {
   const { config, update } = useConfig();
+
+  // Local drafts for the coordinate inputs: typing always updates the draft so
+  // we never block input, but we only persist (via update) a valid value. The
+  // draft seeds from the persisted config and is the source of truth while the
+  // user edits — letting us show an error for garbage without committing it.
+  const [latDraft, setLatDraft] = useState(config.weatherLat || '');
+  const [lonDraft, setLonDraft] = useState(config.weatherLon || '');
+  const latError = coordError(latDraft, -90, 90, 'Latitude');
+  const lonError = coordError(lonDraft, -180, 180, 'Longitude');
+
+  // Update the draft on every keystroke (never blocking input); persist to
+  // config only when the new value validates clean (in-range/finite, or empty).
+  const onCoord = (key, setDraft, min, max, label) => (e) => {
+    const raw = e.target.value;
+    setDraft(raw);
+    if (coordError(raw, min, max, label) === null) update(key, raw);
+  };
+
   return (
     <div className="settings-section">
       <Card title="Search">
@@ -48,19 +77,19 @@ export default function WidgetsTab() {
           </div>
         </Field>
         <div className="settings-grid-2">
-          <Field label="Latitude">
+          <Field label="Latitude" error={latError}>
             <input
               className="settings-input mono"
-              value={config.weatherLat || ''}
-              onChange={(e) => update('weatherLat', e.target.value)}
+              value={latDraft}
+              onChange={onCoord('weatherLat', setLatDraft, -90, 90, 'Latitude')}
               placeholder="39.88"
             />
           </Field>
-          <Field label="Longitude">
+          <Field label="Longitude" error={lonError}>
             <input
               className="settings-input mono"
-              value={config.weatherLon || ''}
-              onChange={(e) => update('weatherLon', e.target.value)}
+              value={lonDraft}
+              onChange={onCoord('weatherLon', setLonDraft, -180, 180, 'Longitude')}
               placeholder="-83.09"
             />
           </Field>

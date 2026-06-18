@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getWeather, WEATHER_CODES, SEARCH_ENGINES } from '../hooks/useData';
 import { useConfig } from '../context/ConfigContext.jsx';
+import { THEMES } from './settings/themes.js';
 
 export default React.memo(function NavBar({
   tabs,
@@ -8,7 +9,6 @@ export default React.memo(function NavBar({
   onTabChange,
   theme,
   setTheme,
-  onToggleTheme,
   health,
   lastUpdated,
   onOpenSettings,
@@ -23,9 +23,12 @@ export default React.memo(function NavBar({
   const [searchResults, setSearchResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
   const searchRef = useRef(null);
   const menuRef = useRef(null);
   const menuBtnRef = useRef(null);
+  const themeRef = useRef(null);
+  const themeBtnRef = useRef(null);
 
   useEffect(() => {
     const u = () => {
@@ -106,6 +109,33 @@ export default React.memo(function NavBar({
     };
   }, [menuOpen]);
 
+  // Theme picker popover: close on outside tap and on Escape, returning focus to
+  // the trigger so keyboard users aren't dropped at the top of the document.
+  useEffect(() => {
+    if (!themeOpen) return;
+    const onPointer = (e) => {
+      if (themeRef.current && !themeRef.current.contains(e.target)) setThemeOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setThemeOpen(false);
+        themeBtnRef.current?.focus();
+      }
+    };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [themeOpen]);
+
+  const selectTheme = (id) => {
+    setTheme(id);
+    setThemeOpen(false);
+    themeBtnRef.current?.focus();
+  };
+
   const selectTab = (id) => {
     onTabChange(id);
     setMenuOpen(false);
@@ -180,7 +210,7 @@ export default React.memo(function NavBar({
           className="icon-btn nav-menu-btn"
           aria-haspopup="true"
           aria-expanded={menuOpen}
-          aria-controls="nav-menu-dropdown"
+          aria-controls={menuOpen ? 'nav-menu-dropdown' : undefined}
           aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
           title="Menu"
           onClick={() => setMenuOpen((o) => !o)}
@@ -266,14 +296,61 @@ export default React.memo(function NavBar({
         >
           ⚙️
         </button>
-        <button
-          className="icon-btn"
-          onClick={onToggleTheme}
-          aria-label="Cycle theme"
-          title="Cycle theme"
-        >
-          🎨
-        </button>
+        {/* Theme picker: 🎨 opens a popover of swatches so a specific theme is one
+            click away (the old button blind-cycled all 10). Disclosure pattern —
+            plain buttons, Escape/outside-tap close and return focus to the trigger. */}
+        <div className="nav-theme" ref={themeRef}>
+          <button
+            ref={themeBtnRef}
+            type="button"
+            className="icon-btn"
+            aria-haspopup="true"
+            aria-expanded={themeOpen}
+            aria-controls={themeOpen ? 'nav-theme-popover' : undefined}
+            aria-label={
+              themeOpen
+                ? 'Close theme picker'
+                : `Theme picker, current: ${THEMES.find((t) => t.id === theme)?.name || theme}`
+            }
+            title="Theme"
+            onClick={() => setThemeOpen((o) => !o)}
+          >
+            🎨
+          </button>
+          {themeOpen && (
+            <div
+              id="nav-theme-popover"
+              className="nav-theme-popover"
+              role="group"
+              aria-label="Choose theme"
+            >
+              <div className="nav-theme-grid">
+                {THEMES.map((t) => {
+                  const selected = theme === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className={`nav-theme-swatch ${selected ? 'active' : ''}`}
+                      aria-current={selected ? 'true' : undefined}
+                      title={t.name}
+                      onClick={() => selectTheme(t.id)}
+                    >
+                      <span
+                        className="nav-theme-chip"
+                        style={{ background: t.preview, borderColor: t.accent }}
+                        aria-hidden="true"
+                      >
+                        <span className="nav-theme-chip-bar" style={{ background: t.accent }} />
+                      </span>
+                      <span className="nav-theme-name">{t.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
         {onLogout && (
           <button className="icon-btn" onClick={onLogout} aria-label="Log out" title="Log out">
             🚪
