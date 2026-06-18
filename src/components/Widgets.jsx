@@ -310,7 +310,7 @@ export const CronJobs = React.memo(function CronJobs({ nodes }) {
                 style={{
                   fontFamily: 'var(--font-mono)',
                   fontSize: 10,
-                  color: 'var(--teal)',
+                  color: 'var(--text-secondary)',
                   letterSpacing: 1,
                   textTransform: 'uppercase',
                   marginBottom: 8,

@@ -176,6 +176,33 @@ export default function App() {
     config.fontSizes,
   ]);
 
+  // Dynamic webfont loading.
+  // global.css no longer eagerly @imports every alternate family (that pulled
+  // all 11 webfonts on first paint). The 3 DEFAULT families (Outfit / DM Sans /
+  // JetBrains Mono) ship via the index.html <link>. Here we lazily inject a
+  // Google Fonts stylesheet for the selected non-default family — once, and only
+  // when it's actually chosen — so the Typography setting still works.
+  // 'default' and 'system' need nothing ('system' uses native system-ui stacks).
+  // The family list/weights mirror the FONT_FAMILIES map above.
+  useEffect(() => {
+    const fonts = config.fontFamily || 'default';
+    const FONT_WEBFONTS = {
+      clean: 'family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500',
+      rounded: 'family=Nunito:wght@300;400;500;600;700;800&family=Source+Code+Pro:wght@400;500',
+      sharp:
+        'family=Rajdhani:wght@400;500;600;700&family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500',
+    };
+    const spec = FONT_WEBFONTS[fonts];
+    if (!spec) return; // 'default' (preloaded) and 'system' (no webfont) need nothing
+    const id = `jaghelm-font-${fonts}`;
+    if (document.getElementById(id)) return; // idempotent — inject each family once
+    const link = document.createElement('link');
+    link.id = id;
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?${spec}&display=swap`;
+    document.head.appendChild(link);
+  }, [config.fontFamily]);
+
   // Card blur override
   useEffect(() => {
     const root = document.documentElement;

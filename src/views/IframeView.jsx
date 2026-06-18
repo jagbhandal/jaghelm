@@ -4,6 +4,10 @@ export default function IframeView({ url, title }) {
   const [status, setStatus] = useState('loading'); // loading | ok | blocked
   const iframeRef = useRef(null);
   const timerRef = useRef(null);
+  // Mirror the latest status into a ref so the timeout callback below reads the
+  // current value rather than the (stale) `status` captured when the effect ran.
+  const statusRef = useRef(status);
+  statusRef.current = status;
 
   useEffect(() => {
     setStatus('loading');
@@ -12,7 +16,9 @@ export default function IframeView({ url, title }) {
     // 1. Try to read iframe.contentWindow — cross-origin blocked iframes throw on access
     // 2. Timeout fallback — if after 8s we still can't confirm it loaded, show the fallback
     timerRef.current = setTimeout(() => {
-      if (status === 'loading') setStatus('blocked');
+      // Read the live status via the ref — a slow-but-fine iframe that has
+      // already resolved to 'ok' must NOT be flipped to 'blocked' by this timer.
+      if (statusRef.current === 'loading') setStatus('blocked');
     }, 8000);
 
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
