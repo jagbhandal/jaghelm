@@ -538,3 +538,7 @@ body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: 
 .settings-empty-state { padding: 32px; text-align: center; color: var(--text-muted); background: var(--bg-card-inner); border-radius: 16px; border: 1px dashed var(--border-color); }
 .settings-empty-state-icon { font-size: 28px; display: block; margin-bottom: 8px; }
 .settings-empty-state-text { font-size: 13px; margin: 0; }
+
+/* Keyboard move/resize handle (src/components/HelmGrid/GridItem.jsx): visually hidden until focused — mouse users drag the section header instead, so it adds no chrome. */
+.helmgrid-move-handle { position: absolute; top: 4px; right: 4px; width: 1px; height: 1px; padding: 0; margin: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); border: 0; background: transparent; color: var(--text-secondary); cursor: grab; z-index: 21; }
+.helmgrid-move-handle:focus { width: 26px; height: 26px; clip: auto; clip-path: none; display: flex; align-items: center; justify-content: center; background: var(--bg-card-inner); border: 1px solid var(--accent); border-radius: 6px; outline: 2px solid var(--accent); outline-offset: 1px; font-size: 13px; line-height: 1; }

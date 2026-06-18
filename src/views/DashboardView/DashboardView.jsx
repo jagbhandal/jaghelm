@@ -318,6 +318,26 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
     [customGroups, allServicesFlat, sc, isMobile, groupBanner, retry]
   );
 
+  // Human-readable panel names for the grid's keyboard move/resize handle — the
+  // raw grid id (e.g. "node-pve1") is a developer key, not something to read to
+  // a screen-reader user. Mirrors the visible section titles.
+  const gridLabels = useMemo(() => {
+    const map = {
+      ups: sc.ups?.title || 'UPS Power',
+      pipeline: sc.pipeline?.title || 'Pipeline Activity',
+      todos: sc.todos?.title || 'Checklist',
+      'cron-jobs': 'Scheduled Jobs',
+      quicklaunch: sc.quicklaunch?.title || 'Quick Launch',
+    };
+    for (const [nodeKey, node] of Object.entries(serviceData.nodes || {})) {
+      map[`node-${nodeKey}`] = node?.display_name || nodeKey;
+    }
+    for (const group of customGroups) {
+      map[`group-${group.id}`] = group.title || group.id;
+    }
+    return map;
+  }, [sc, serviceData, customGroups]);
+
   // ── Auto-scroll while dragging panels near viewport edges ──
   const scrollRAF = useRef(null);
   const handlePanelDrag = useCallback((layout, oldItem, newItem, placeholder, e) => {
@@ -464,6 +484,7 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
             onDrag={handlePanelDrag}
             onDragStop={handlePanelDragStop}
             onResizeStop={handlePanelResizeStop}
+            labels={gridLabels}
           >
             {nodeElements}
             {nodePlaceholders}
