@@ -43,7 +43,11 @@ export { assertSafeUrl };
 
 // ── Main fetch function for any integration ──
 export async function fetchIntegration(type, yamlConfig, bustCache = false) {
-  const cacheKey = `integration:${type}`;
+  // Key by the unique storage key, not the preset type — otherwise two
+  // instances of one preset (adguard_primary / adguard_secondary) share a key
+  // and serve each other's data. refresh.js threads _storageKey through; the
+  // GET /:type route passes the storage key as `type` directly.
+  const cacheKey = `integration:${yamlConfig?._storageKey || type}`;
 
   if (!bustCache) {
     const cached = getCached(cacheKey);

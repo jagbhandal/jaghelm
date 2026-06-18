@@ -45,8 +45,11 @@ import { startBackgroundRefresh } from './refresh.js';
 import { createUploadMiddleware } from './upload.js';
 
 // Auth
-import { authMiddleware } from './auth/middleware.js';
+import { authMiddleware, requireAuthEnabled } from './auth/middleware.js';
+import { authEnabled } from './auth/passwords.js';
 import { authRoutes } from './auth/routes.js';
+import { errorHandler } from './errors.js';
+import { VERSION } from './version.js';
 
 // Domain routes
 import { servicesRoutes } from './routes/services.js';
@@ -133,7 +136,9 @@ app.use('/api', systemRoutes); // /health public; /weather authed inside
 
 app.use('/api/services', authMiddleware, servicesRoutes);
 app.use('/api/integrations', authMiddleware, integrationRoutes);
-app.use('/api/secrets', authMiddleware, secretsRoutes);
+// Standalone secrets API is fail-closed: refuses to serve (enumerate/overwrite/
+// delete credentials) until a password is set. Does not affect integration save.
+app.use('/api/secrets', requireAuthEnabled, authMiddleware, secretsRoutes);
 app.use('/api/display-config', authMiddleware, displayConfigRoutes);
 app.use('/api/todos', authMiddleware, todosRoutes);
 app.use('/api/upload', authMiddleware, createUploadRoutes(upload));
@@ -145,6 +150,10 @@ const distPath = join(__dirname, '..', 'dist');
 app.use(express.static(distPath));
 app.all('/api/*', (req, res) => res.status(404).json({ error: 'Endpoint not found' }));
 app.get('*', (req, res) => res.sendFile(join(distPath, 'index.html')));
+
+// Global error handler — keeps the JSON error contract for async route
+// rejections (asyncHandler forwards them here) instead of an HTML 500.
+app.use(errorHandler);
 
 // ── Boot sequence ─────────────────────────────────────────────────────────
 
@@ -175,8 +184,16 @@ async function boot() {
   startBackgroundRefresh();
 
   const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log('[jaghelm] v8.0.0-alpha.1 on port %d', PORT);
+    console.log('[jaghelm] v%s on port %d', VERSION, PORT);
     console.log('[jaghelm] Nodes: %s', Object.keys(config.nodes || {}).join(', ') || '(none)');
+    if (!authEnabled()) {
+      console.warn(
+        '[jaghelm] ⚠ NO PASSWORD SET — the dashboard is unauthenticated. Anyone who can reach ' +
+          'port %d can read your config and metrics. Set DASH_PASS (or a password in Settings) ' +
+          'and avoid exposing this port beyond a trusted LAN.',
+        PORT
+      );
+    }
   });
 
   // ── Graceful shutdown ───────────────────────────────────────────────────

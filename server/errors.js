@@ -9,20 +9,24 @@
  *   apiError(res, 502, 'Upstream unreachable', err);      // server error w/ logging
  */
 
+import { redactSecrets } from './util/redact.js';
+
 export function apiError(res, status, publicMessage, err = null) {
   if (err) {
-    const detail = err.message || String(err);
+    // Redact: a bubbled-up integration error can carry a URL with ?apikey=…
+    const detail = redactSecrets(err.message || String(err));
     console.error(`[api] ${status} ${publicMessage}: ${detail}`);
   }
   return res.status(status).json({ error: publicMessage });
 }
 
-// TODO(jaghelm): server/index.js is missing a 4-arg Express error-handler
-// middleware. Async route handlers wrapped with util/asyncHandler.js forward
-// rejections to `next(err)`, which Express then routes to its built-in
-// finalhandler — that responds with an HTML 500 page, not the JSON shape the
-// dashboard expects. Add this to index.js (right before the SPA fallback):
-//
-//   app.use((err, req, res, _next) => apiError(res, 500, err.message || 'Internal error', err));
-//
-// Owned by another agent; do not edit index.js from this slice.
+/**
+ * Express 4-arg error-handler middleware. Async route rejections forwarded via
+ * util/asyncHandler.js's next(err) land here and get the JSON error shape the
+ * dashboard expects, instead of Express's default HTML 500 page. Register it
+ * last in index.js.
+ */
+export function errorHandler(err, req, res, _next) {
+  if (res.headersSent) return _next(err);
+  return apiError(res, 500, 'Internal server error', err);
+}

@@ -12,9 +12,22 @@
 import crypto from 'crypto';
 
 const CACHE_TTL_MS = 120_000;
+// Hard cap on distinct keys. Cache keys include user-influenced strings
+// (`prom-<q>`, `weather-<lat>-<lon>`), so an unbounded Map is a trivial
+// memory-exhaustion DoS for an authenticated user. Map preserves insertion
+// order, so evicting the first key is a simple FIFO bound.
+const MAX_ENTRIES = 500;
 
 const cache = new Map();
 const etagCache = new Map();
+
+function boundedSet(map, key, value) {
+  if (!map.has(key) && map.size >= MAX_ENTRIES) {
+    const oldest = map.keys().next().value;
+    map.delete(oldest);
+  }
+  map.set(key, value);
+}
 
 /** Get a cached value or null if expired/absent. */
 export function getCached(key) {
@@ -26,7 +39,7 @@ export function getCached(key) {
 
 /** Store a value in the cache with the current timestamp. */
 export function setCache(key, data) {
-  cache.set(key, { data, ts: Date.now() });
+  boundedSet(cache, key, { data, ts: Date.now() });
 }
 
 /**
@@ -39,7 +52,7 @@ export function jsonWithEtag(res, req, cacheKey, data) {
   const json = JSON.stringify(data);
   const hash = crypto.createHash('md5').update(json).digest('hex');
   const etag = `"${hash}"`;
-  etagCache.set(cacheKey, { hash, json });
+  boundedSet(etagCache, cacheKey, { hash, json });
 
   const clientEtag = req.headers['if-none-match'];
   if (clientEtag === etag) {
