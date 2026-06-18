@@ -23,8 +23,15 @@ import { refreshIntegrations } from '../refresh.js';
 import { getCached, jsonWithEtag } from '../cache.js';
 import { apiError } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
+import { createRateLimiter } from '../util/rateLimiter.js';
+import { createLogger } from '../util/logger.js';
 
+const log = createLogger('integrations');
 const router = Router();
+
+// The connection test fetches a user-supplied URL, so it's a reachability/
+// port-scan oracle (even with the SSRF guard). Throttle per-IP and audit it.
+const testLimiter = createRateLimiter({ max: 10, windowMs: 60_000 });
 
 /** Auto-prepend http:// when the user types a bare host. */
 function normalizeUrl(raw) {
@@ -41,27 +48,48 @@ router.get('/presets', (req, res) => {
 
 // ── Aggregate live data for the dashboard ────────────────────────────────
 
-router.get('/', asyncHandler(async (req, res) => {
-  const cached = getCached('integrations');
-  if (cached) return jsonWithEtag(res, req, 'integrations', cached);
+router.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    const cached = getCached('integrations');
+    if (cached) return jsonWithEtag(res, req, 'integrations', cached);
 
-  const data = await refreshIntegrations();
-  if (data) return jsonWithEtag(res, req, 'integrations', data);
+    const data = await refreshIntegrations();
+    if (data) return jsonWithEtag(res, req, 'integrations', data);
 
-  res.json({});
-}));
+    res.json({});
+  })
+);
 
 // ── Test connection (creds in body, not stored) ──────────────────────────
 
-router.post('/test', asyncHandler(async (req, res) => {
-  const { type, url, username, password, token, params } = req.body || {};
-  if (!url) return res.status(400).json({ ok: false, error: 'URL is required' });
+router.post(
+  '/test',
+  asyncHandler(async (req, res) => {
+    const ip = req.ip || 'unknown';
+    if (!testLimiter(ip)) {
+      log.warn({ ip }, 'integration test rate-limited');
+      return apiError(res, 429, 'Too many connection tests — slow down.');
+    }
 
-  const cleanUrl = normalizeUrl(url);
-  const testConfig = { url: cleanUrl, username, password, token, ...params };
-  const result = await testIntegration(type || '_custom', testConfig);
-  res.json(result);
-}));
+    const { type, url, username, password, token, params } = req.body || {};
+    if (!url) return res.status(400).json({ ok: false, error: 'URL is required' });
+
+    const cleanUrl = normalizeUrl(url);
+    // Audit the probe target (host only, never the credentials in the body).
+    let host = cleanUrl;
+    try {
+      host = new URL(cleanUrl).host;
+    } catch {
+      /* keep the raw string if it doesn't parse */
+    }
+
+    const testConfig = { url: cleanUrl, username, password, token, ...params };
+    const result = await testIntegration(type || '_custom', testConfig);
+    log.info({ ip, type: type || '_custom', host, ok: !!result.ok }, 'integration connection test');
+    res.json(result);
+  })
+);
 
 // ── Save (encrypts secrets into secrets.json, config into services.yaml) ──
 
@@ -140,21 +168,24 @@ router.delete('/:type', (req, res) => {
 // ── Fetch one integration's data on demand ───────────────────────────────
 // Note: this is the catch-all GET; declared LAST so /presets and / stay distinct.
 
-router.get('/:type', asyncHandler(async (req, res) => {
-  const { type } = req.params;
-  const config = getConfig();
-  const integrations = config?.integrations || {};
-  const yamlConfig = integrations[type];
+router.get(
+  '/:type',
+  asyncHandler(async (req, res) => {
+    const { type } = req.params;
+    const config = getConfig();
+    const integrations = config?.integrations || {};
+    const yamlConfig = integrations[type];
 
-  if (!yamlConfig && !getPreset(type)) {
-    return apiError(res, 404, `Integration '${type}' not found`);
-  }
+    if (!yamlConfig && !getPreset(type)) {
+      return apiError(res, 404, `Integration '${type}' not found`);
+    }
 
-  const result = await fetchIntegration(type, yamlConfig || {}, false);
-  if (result.error) {
-    return res.status(502).json({ error: result.error, fields: result.fields });
-  }
-  res.json(result);
-}));
+    const result = await fetchIntegration(type, yamlConfig || {}, false);
+    if (result.error) {
+      return res.status(502).json({ error: result.error, fields: result.fields });
+    }
+    res.json(result);
+  })
+);
 
 export { router as integrationRoutes };
