@@ -118,12 +118,45 @@ app.use((req, res, next) => {
   next();
 });
 
-// CSP stays off until the frontend is audited for a nonce/hash strategy
-// (currently relies on inline styles + dynamic theme injection). Everything
-// else is explicitly enabled so future helmet defaults can't quietly regress.
+// Content-Security-Policy. The frontend uses React inline styles + dynamic
+// theme CSS-var injection (style ATTRIBUTES, which can't be nonced), Google
+// Fonts, and CDN dashboard-icons, and embeds operator-configured service URLs
+// via the iframe view — so style-src must keep 'unsafe-inline'. The meaningful
+// protection here is the strict script-src ('self' only): Vite bundles all JS
+// to hashed files and the SW-registration inline script was externalized to
+// /register-sw.js, so no inline/eval script is allowed. object-src/base-uri are
+// locked down to kill the classic injection vectors. Ships REPORT-ONLY by
+// default (surfaces violations without breaking the UI); set CSP_ENFORCE=true to
+// switch the header to enforcing once a deploy has confirmed no real violations.
+const cspDirectives = {
+  defaultSrc: ["'self'"],
+  scriptSrc: ["'self'"],
+  styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+  fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+  imgSrc: [
+    "'self'",
+    'data:',
+    'blob:',
+    'https://cdn.jsdelivr.net',
+    'https://raw.githubusercontent.com',
+  ],
+  connectSrc: ["'self'", 'https://cdn.jsdelivr.net', 'https://raw.githubusercontent.com'],
+  // The iframe view embeds operator-configured service URLs (often http on LAN).
+  frameSrc: ["'self'", 'https:', 'http:'],
+  workerSrc: ["'self'"],
+  manifestSrc: ["'self'"],
+  objectSrc: ["'none'"],
+  baseUri: ["'self'"],
+  formAction: ["'self'"],
+  frameAncestors: ["'none'"], // nobody may embed JagHelm (matches frameguard deny)
+};
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      useDefaults: false, // avoid helmet's default upgrade-insecure-requests — breaks http LAN backends
+      directives: cspDirectives,
+      reportOnly: process.env.CSP_ENFORCE !== 'true',
+    },
     frameguard: { action: 'deny' },
     hsts: { maxAge: 31536000, includeSubDomains: true },
     noSniff: true,
