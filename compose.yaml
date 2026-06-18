@@ -1,16 +1,76 @@
 services:
   jaghelm:
-    image: ghcr.io/jagbhandal/jaghelm:latest
+    # Pin to an immutable reference for real rollback. Two ways to roll back:
+    #   1. Tag rollback  — set this to a previous :sha-<short> tag (every CI
+    #      build publishes one alongside :latest), then `docker compose up -d`.
+    #   2. Digest rollback (strongest) — pin by digest so the bytes can never
+    #      drift even if a tag is re-pushed, e.g.
+    #        image: ghcr.io/jagbhandal/jaghelm@sha256:<digest>
+    #
+    # `:latest` is convenient for auto-deploy but is NOT a rollback target (it
+    # moves). The deploy workflow records the SHA tag it shipped; pin that here
+    # to roll back. Replace the <REPLACE_WITH_SHA_OR_DIGEST> placeholder when
+    # pinning for production.
+    image: ghcr.io/jagbhandal/jaghelm:latest # rollback: pin :sha-<short> or @sha256:<digest>
     container_name: jaghelm
     restart: unless-stopped
-    network_mode: host
+
+    # ── Networking ──────────────────────────────────────────────────────────
+    # DEFAULT: bridge network, publish only the app port. Safer surface — the
+    # container is not on the host network namespace.
+    ports:
+      - "3099:3099"
+    #
+    # OPT-IN: host networking. Uncomment the `network_mode: host` line below
+    # (and comment out the `ports:` block above) ONLY if JagHelm needs to reach
+    # LAN exporters/services that the bridge cannot route to (e.g. mDNS, or
+    # exporters bound to host-only interfaces). Tradeoff: host mode removes
+    # network isolation and ignores `ports:` — the app binds directly on the
+    # host. Prefer the bridge default unless a missing-exporter symptom forces
+    # host mode.
+    # network_mode: host
+
     env_file:
       - .env
+    environment:
+      - NODE_ENV=production
+
+    # ── Persistence ─────────────────────────────────────────────────────────
+    # These MUST stay writable under the read-only root filesystem below — the
+    # app persists config/state to data/ and user uploads to uploads/. Keep
+    # them as mounts; do NOT fold them into the read-only rootfs.
     volumes:
       - ./uploads:/app/uploads
       - ./data:/app/data
-    environment:
-      - NODE_ENV=production
+
+    # ── Runtime hardening ───────────────────────────────────────────────────
+    # Read-only root filesystem: the image's own files cannot be modified at
+    # runtime. The only writable paths are the data/uploads mounts above plus
+    # the small tmpfs scratch below.
+    read_only: true
+    tmpfs:
+      # Node and libc may need a little scratch space; nothing of value is
+      # written here, so it is fine to lose on restart. Capped + noexec/nosuid.
+      - /tmp:rw,noexec,nosuid,size=64m
+
+    # Run as the unprivileged `node` user (UID/GID 1000 in node:alpine). The
+    # image already drops to this user, but stating it here is explicit and
+    # survives a future base-image change. The data/uploads host dirs must be
+    # writable by UID 1000 (see Dockerfile note).
+    user: "1000:1000"
+
+    # Drop ALL Linux capabilities — a Node web app needs none of them.
+    cap_drop:
+      - ALL
+
+    # Block privilege escalation (setuid binaries, etc).
+    security_opt:
+      - no-new-privileges:true
+
+    # Resource caps so a leak/runaway can't take down the host.
+    mem_limit: 512m
+    pids_limit: 256
+
     labels:
       - com.centurylinklabs.watchtower.enable=false
 networks: {}
