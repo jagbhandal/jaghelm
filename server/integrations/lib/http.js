@@ -1,4 +1,5 @@
 import { Agent } from 'undici';
+import { assertSafeUrl } from '../../util/ssrf.js';
 
 /**
  * Safe fetch wrapper with timeout + optional per-request TLS skip.
@@ -23,6 +24,11 @@ const tlsSkipAgent = new Agent({ connect: { rejectUnauthorized: false } });
 const FETCH_TIMEOUT_MS = 8000;
 
 export async function safeFetch(url, opts = {}, skipTls = false) {
+  // SSRF chokepoint: every integration AND session-auth request flows through
+  // here, so the guard runs by construction — no call site can forget it.
+  // trusted=false: these are user-supplied integration URLs (full guard,
+  // respects JAGHELM_BLOCK_PRIVATE_NETWORKS).
+  assertSafeUrl(url);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
