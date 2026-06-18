@@ -37,9 +37,37 @@ const SECTIONS = [
   { id: 'backup', label: 'Backup', icon: '💾', desc: 'Export & import config' },
 ];
 
+// Overline labels for the implied sidebar groups. The leading group (before the
+// first divider) is always DISPLAY; every section flagged `divider: true` opens a
+// new group whose label is keyed by that section's id. Group boundaries are still
+// DERIVED from the SECTIONS `divider` flags below — this only names them.
+const LEADING_GROUP_LABEL = 'DISPLAY';
+const GROUP_LABELS = {
+  nodes: 'INFRASTRUCTURE',
+  links: 'DATA',
+  security: 'SYSTEM',
+};
+
+// Viewport width at/above which the live preview is shown by default. Below it the
+// settings form would be too cramped next to the 50% preview, so it starts hidden.
+const PREVIEW_BREAKPOINT = '(min-width: 1100px)';
+
+// Whether the live preview should default to visible. Guards for no `window`
+// (SSR / tests without a DOM) and a missing `matchMedia` (older jsdom).
+function previewDefaultVisible() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  return window.matchMedia(PREVIEW_BREAKPOINT).matches;
+}
+
 export default function SettingsView({ theme, setTheme }) {
   const [activeSection, setActiveSection] = useState('general');
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
+  // Live preview visibility. Defaults to the viewport-derived value (hidden on
+  // ~laptop widths so the form gets full width) and, once the user toggles it,
+  // their explicit choice sticks for the rest of the session.
+  const [showPreview, setShowPreview] = useState(previewDefaultVisible);
 
   // ── Server-side config (services.yaml) for Nodes/Services ──
   const [serverConfig, setServerConfig] = useState(null);
@@ -96,43 +124,110 @@ export default function SettingsView({ theme, setTheme }) {
           </span>
         </div>
         <div className="settings-sidebar-nav">
-          {SECTIONS.map((s, i) => (
-            <React.Fragment key={s.id}>
-              {s.divider && i > 0 && <div className="settings-sidebar-divider" />}
-              <button
-                className={`settings-sidebar-item ${activeSection === s.id ? 'active' : ''} ${s.disabled ? 'disabled' : ''}`}
-                onClick={() => !s.disabled && setActiveSection(s.id)}
-                disabled={s.disabled}
-                aria-current={activeSection === s.id ? 'page' : undefined}
-              >
-                <span className="settings-sidebar-icon">{s.icon}</span>
-                <div className="settings-sidebar-text">
-                  <span className="settings-sidebar-label">{s.label}</span>
-                  <span className="settings-sidebar-desc">{s.desc}</span>
-                </div>
-                {s.disabled && (
-                  <span className="settings-saving" style={{ flexShrink: 0 }}>
-                    SOON
-                  </span>
+          {SECTIONS.map((s, i) => {
+            // A new named group starts at the very first item (leading DISPLAY
+            // group) and at every section flagged with a divider. The label is
+            // derived from the divider flags + the GROUP_LABELS lookup.
+            const startsGroup = i === 0 || (s.divider && i > 0);
+            const groupLabel =
+              i === 0
+                ? LEADING_GROUP_LABEL
+                : startsGroup
+                  ? (GROUP_LABELS[s.id] ?? s.label.toUpperCase())
+                  : undefined;
+            return (
+              <React.Fragment key={s.id}>
+                {s.divider && i > 0 && <div className="settings-sidebar-divider" />}
+                {groupLabel && (
+                  <div
+                    className="settings-sidebar-group-label"
+                    role="presentation"
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: 1.5,
+                      textTransform: 'uppercase',
+                      color: 'var(--text-muted)',
+                      padding: '0 12px',
+                      margin: i === 0 ? '2px 0 6px' : '4px 0 6px',
+                    }}
+                  >
+                    {groupLabel}
+                  </div>
                 )}
-              </button>
-            </React.Fragment>
-          ))}
+                <button
+                  className={`settings-sidebar-item ${activeSection === s.id ? 'active' : ''} ${s.disabled ? 'disabled' : ''}`}
+                  onClick={() => !s.disabled && setActiveSection(s.id)}
+                  disabled={s.disabled}
+                  aria-current={activeSection === s.id ? 'page' : undefined}
+                >
+                  <span className="settings-sidebar-icon">{s.icon}</span>
+                  <div className="settings-sidebar-text">
+                    <span className="settings-sidebar-label">{s.label}</span>
+                    <span className="settings-sidebar-desc">{s.desc}</span>
+                  </div>
+                  {s.disabled && (
+                    <span className="settings-saving" style={{ flexShrink: 0 }}>
+                      SOON
+                    </span>
+                  )}
+                </button>
+              </React.Fragment>
+            );
+          })}
         </div>
       </nav>
 
       {/* Settings content + Live Preview split */}
       <div style={{ display: 'flex', flex: 1, minWidth: 0, overflow: 'hidden' }}>
-        {/* Settings form */}
-        <main className="settings-main" style={{ maxWidth: '50%', flex: '0 0 50%' }}>
-          <div className="settings-main-header">
-            <h1 className="settings-main-title">
-              {SECTIONS.find((s) => s.id === activeSection)?.icon}{' '}
-              {SECTIONS.find((s) => s.id === activeSection)?.label}
-            </h1>
-            <p className="settings-main-desc">
-              {SECTIONS.find((s) => s.id === activeSection)?.desc}
-            </p>
+        {/* Settings form — claims full width when the preview is hidden, so the
+            form isn't cramped on narrower (~laptop) viewports. */}
+        <main
+          className="settings-main"
+          style={showPreview ? { maxWidth: '50%', flex: '0 0 50%' } : { flex: 1, minWidth: 0 }}
+        >
+          <div
+            className="settings-main-header"
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 16,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <h1 className="settings-main-title">
+                {SECTIONS.find((s) => s.id === activeSection)?.icon}{' '}
+                {SECTIONS.find((s) => s.id === activeSection)?.label}
+              </h1>
+              <p className="settings-main-desc">
+                {SECTIONS.find((s) => s.id === activeSection)?.desc}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPreview((v) => !v)}
+              aria-pressed={showPreview}
+              title={
+                showPreview ? 'Hide the live dashboard preview' : 'Show the live dashboard preview'
+              }
+              style={{
+                flexShrink: 0,
+                background: 'none',
+                border: '1px solid var(--border-color)',
+                borderRadius: 6,
+                padding: '5px 10px',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                letterSpacing: 0.5,
+                color: 'var(--text-secondary)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {showPreview ? '⇥ Hide Preview' : '⇤ Show Preview'}
+            </button>
           </div>
           <div className="settings-main-content">
             {activeSection === 'general' && <GeneralTab />}
@@ -171,76 +266,79 @@ export default function SettingsView({ theme, setTheme }) {
           </div>
         </main>
 
-        {/* Live Preview Panel — always visible */}
-        <div
-          style={{
-            flex: '0 0 50%',
-            maxWidth: '50%',
-            borderLeft: '1px solid var(--glass-border)',
-            overflow: 'hidden',
-            position: 'relative',
-            background: 'var(--bg-primary)',
-          }}
-        >
-          {/* Preview header bar */}
+        {/* Live Preview Panel — toggled via the header button; hidden by default
+            on narrow viewports so the form can use the full width. */}
+        {showPreview && (
           <div
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '8px 16px',
-              borderBottom: '1px solid var(--glass-border)',
-              background: 'var(--bg-secondary)',
-            }}
-          >
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11,
-                color: 'var(--text-secondary)',
-                letterSpacing: 0.5,
-              }}
-            >
-              LIVE PREVIEW
-            </span>
-            <button
-              onClick={() => setPreviewRefreshKey((k) => k + 1)}
-              style={{
-                background: 'none',
-                border: '1px solid var(--border-color)',
-                borderRadius: 6,
-                padding: '3px 8px',
-                cursor: 'pointer',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                color: 'var(--text-muted)',
-              }}
-            >
-              ↻ Refresh Data
-            </button>
-          </div>
-
-          {/* Scaled dashboard preview */}
-          <div
-            style={{
-              overflow: 'auto',
-              height: 'calc(100vh - 60px - 40px)',
+              flex: '0 0 50%',
+              maxWidth: '50%',
+              borderLeft: '1px solid var(--glass-border)',
+              overflow: 'hidden',
               position: 'relative',
+              background: 'var(--bg-primary)',
             }}
           >
+            {/* Preview header bar */}
             <div
               style={{
-                transform: 'scale(0.55)',
-                transformOrigin: 'top left',
-                width: '182%',
-                minHeight: '182%',
-                pointerEvents: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 16px',
+                borderBottom: '1px solid var(--glass-border)',
+                background: 'var(--bg-secondary)',
               }}
             >
-              <DashboardView refreshKey={previewRefreshKey} />
+              <span
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11,
+                  color: 'var(--text-secondary)',
+                  letterSpacing: 0.5,
+                }}
+              >
+                LIVE PREVIEW
+              </span>
+              <button
+                onClick={() => setPreviewRefreshKey((k) => k + 1)}
+                style={{
+                  background: 'none',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 6,
+                  padding: '3px 8px',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  color: 'var(--text-muted)',
+                }}
+              >
+                ↻ Refresh Data
+              </button>
+            </div>
+
+            {/* Scaled dashboard preview */}
+            <div
+              style={{
+                overflow: 'auto',
+                height: 'calc(100vh - 60px - 40px)',
+                position: 'relative',
+              }}
+            >
+              <div
+                style={{
+                  transform: 'scale(0.55)',
+                  transformOrigin: 'top left',
+                  width: '182%',
+                  minHeight: '182%',
+                  pointerEvents: 'none',
+                }}
+              >
+                <DashboardView refreshKey={previewRefreshKey} />
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

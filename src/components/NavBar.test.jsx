@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import NavBar from './NavBar';
+import { THEMES } from './settings/themes.js';
 import { ConfigProvider } from '../context/ConfigContext.jsx';
 
 // NavBar is config-driven: the title, the tab list, and feature toggles
@@ -199,6 +200,74 @@ describe('NavBar', () => {
       expect(btn).toHaveAccessibleName(/close navigation menu/i);
       await user.keyboard('{Escape}');
       expect(document.getElementById('nav-menu-dropdown')).toBeNull();
+      expect(btn).toHaveAttribute('aria-expanded', 'false');
+      expect(btn).toHaveFocus();
+    });
+  });
+
+  // Theme picker: the 🎨 button no longer blind-cycles themes — it opens a
+  // popover of swatches so a specific theme is one click away. These tests lock
+  // in the disclosure semantics, that every theme is offered, that the active
+  // theme is marked, that picking one sets it directly (not by cycling), and
+  // that Escape/outside-tap close it and return focus to the trigger.
+  describe('theme picker', () => {
+    it('renders a collapsed, accessible disclosure trigger', () => {
+      renderNav();
+      const btn = screen.getByRole('button', { name: /theme picker/i });
+      expect(btn).toHaveAttribute('aria-haspopup', 'true');
+      expect(btn).toHaveAttribute('aria-expanded', 'false');
+      // Closed by default: the popover isn't rendered.
+      expect(document.getElementById('nav-theme-popover')).toBeNull();
+    });
+
+    it('opens on click and offers one swatch per theme, marking the active one', async () => {
+      const user = userEvent.setup();
+      renderNav({ theme: 'dracula' });
+      const btn = screen.getByRole('button', { name: /theme picker/i });
+      await user.click(btn);
+      // Same node, label now reflects the "close" action.
+      expect(btn).toHaveAttribute('aria-expanded', 'true');
+      expect(btn).toHaveAccessibleName(/close theme picker/i);
+      const popover = document.getElementById('nav-theme-popover');
+      const swatches = within(popover).getAllByRole('button');
+      expect(swatches).toHaveLength(THEMES.length);
+      // Each swatch's accessible name is the theme name.
+      const dracula = THEMES.find((t) => t.id === 'dracula');
+      expect(within(popover).getByRole('button', { name: dracula.name })).toHaveAttribute(
+        'aria-current',
+        'true'
+      );
+      // Non-active swatches don't claim aria-current.
+      const other = THEMES.find((t) => t.id !== 'dracula');
+      expect(within(popover).getByRole('button', { name: other.name })).not.toHaveAttribute(
+        'aria-current'
+      );
+    });
+
+    it('sets the chosen theme directly (by id, not by cycling) and closes', async () => {
+      const user = userEvent.setup();
+      const setTheme = vi.fn();
+      // Start far from the target so a cycling impl couldn't reach it in one click.
+      const target = THEMES[THEMES.length - 1];
+      renderNav({ theme: THEMES[0].id, setTheme });
+      await user.click(screen.getByRole('button', { name: /theme picker/i }));
+      const popover = document.getElementById('nav-theme-popover');
+      await user.click(within(popover).getByRole('button', { name: target.name }));
+      // Direct set: called once with the target id (not an updater fn, not cycling).
+      expect(setTheme).toHaveBeenCalledTimes(1);
+      expect(setTheme).toHaveBeenCalledWith(target.id);
+      // Popover closes on selection.
+      expect(document.getElementById('nav-theme-popover')).toBeNull();
+    });
+
+    it('flips its label, closes on Escape, and returns focus to the trigger', async () => {
+      const user = userEvent.setup();
+      renderNav();
+      const btn = screen.getByRole('button', { name: /theme picker/i });
+      await user.click(btn);
+      expect(document.getElementById('nav-theme-popover')).not.toBeNull();
+      await user.keyboard('{Escape}');
+      expect(document.getElementById('nav-theme-popover')).toBeNull();
       expect(btn).toHaveAttribute('aria-expanded', 'false');
       expect(btn).toHaveFocus();
     });

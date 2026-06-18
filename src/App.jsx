@@ -11,7 +11,6 @@ import { getAuthToken } from './api/client.js';
 // dashboard render — code-split them so they don't weigh down the initial bundle.
 const IframeView = lazy(() => import('./views/IframeView'));
 const SettingsView = lazy(() => import('./views/SettingsView'));
-import { THEMES } from './components/settings/themes.js';
 import { apiFetch, setAuthToken as setApiAuthToken } from './api/client.js';
 
 /**
@@ -399,13 +398,6 @@ function AppMain({ authRequired, onLogout }) {
           onTabChange={setActiveTab}
           theme={theme}
           setTheme={setTheme}
-          onToggleTheme={() => {
-            const order = THEMES.map((t) => t.id);
-            setTheme((t) => {
-              const i = order.indexOf(t);
-              return order[(i + 1) % order.length];
-            });
-          }}
           health={overallHealth}
           lastUpdated={lastUpdated}
           onOpenSettings={() => setActiveTab((t) => (t === 'settings' ? 'dashboard' : 'settings'))}
