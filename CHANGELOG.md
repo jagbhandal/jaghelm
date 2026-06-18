@@ -4,6 +4,104 @@ All notable changes to JagHelm are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] — 2026-06-18
+
+Where 1.1.0 hardened the foundation, 1.2.0 builds on it: the planned improvement
+program (observability, frontend architecture, deeper security, growth, and
+deploy hardening) lands in full, alongside a comprehensive accessibility & UX
+overhaul driven by a dedicated design audit. **195 automated tests (up from 83);
+0 known vulnerabilities.**
+
+### ⚠️ Upgrade notes — read before deploying
+
+- **A Content-Security-Policy is sent in report-only mode.** It does not block
+  anything yet — it only reports violations — so custom inline scripts keep
+  working while the policy is observed. Enforcement is a later opt-in.
+- **New optional env:** `DEMO_MODE=true` serves a read-only sample dashboard
+  (for screenshots / the public demo) and refuses writes. Off by default.
+
+### Observability
+
+- Structured request/error logging with redaction (no secrets in logs) replacing
+  ad-hoc `console.log`.
+- Prometheus metrics at `/metrics` (request rate, latency histograms,
+  refresh-loop health) via `prom-client`.
+- A real readiness probe at `/api/readyz` (distinct from liveness `/api/health`)
+  so orchestrators don't route traffic before the first refresh completes.
+
+### Security
+
+- **Content-Security-Policy** (via Helmet, report-only) plus the standard
+  security-header set; the service-worker registration was moved out of an inline
+  `<script>` so the eventual enforcing policy needs no `unsafe-inline`.
+- **Rate limiting** — the auth login limiter was hardened against brute-force, and
+  a reusable `createRateLimiter` utility now throttles the abuse-prone integration
+  connection-test endpoint (10/min per key).
+- **Tighter input bounds** on the cron, secrets, and integration routes.
+- **Threat model & runbook** — a STRIDE threat model and an incident-response
+  runbook added under `docs/security/` so the posture is written down, not folklore.
+
+### Reliability & correctness
+
+- **Schema-validated config** — the display config is validated (Zod) on read, so
+  a malformed or partially-written `config.yaml` is rejected with a clear error
+  instead of crashing a render deep in the UI.
+- **Persistence coordination** — config is now copied-on-read and written
+  atomically, with a kill-test (`SIGKILL` mid-write) proving a crash can't leave a
+  half-written or interleaved config on disk.
+- **Route tests** — the Express API routes gained direct coverage (the bulk of the
+  jump from 83 → 195 tests), catching contract regressions before they ship.
+
+### Frontend architecture
+
+- **ConfigContext** — the display config flows through a context instead of being
+  prop-drilled through every view and all 13 settings tabs; memo-friendly so
+  unrelated subtrees stop re-rendering on every change.
+- **Explicit `apiFetch`** replaces a global `window.fetch` monkey-patch for
+  auth-token injection — no more action-at-a-distance on third-party fetches.
+- **`setIn`** — an immutable structural-sharing deep-set powers config edits, so
+  untouched branches keep their identity (memo-friendly) and edits never mutate.
+- **Route-level code-splitting** trims the initial bundle; **Vitest + React
+  Testing Library** add a real component-test net (10 suites, 70 cases).
+
+### Accessibility & UX
+
+A four-batch overhaul from a senior front-end / design audit
+(`docs/UI-UX-ANALYSIS.md`):
+
+- **Feedback loop** — non-blocking toast notifications (`role=status`/`alert`) and
+  themed confirm modals (focus-trap, `Escape`, focus restore, reduced-motion)
+  replace native `alert()`/`confirm()`; a save-state indicator plus a
+  flush-on-unload (`sendBeacon`/`keepalive`) so edits aren't lost on a fast close.
+- **Per-source health** — each data source shows its own error / stale / retry
+  state with a one-click retry, instead of an all-or-nothing board — without
+  breaking the 304-stable render path (an all-unchanged poll still triggers zero
+  re-renders).
+- **Theme picker popover** — the 🎨 control opens a swatch popover (pick any of the
+  10 themes directly) instead of blind-cycling; full keyboard + screen-reader
+  semantics.
+- **Skeleton loaders, live regions, accessible mobile nav** (disclosure pattern),
+  a collapsible settings live-preview with grouped sidebar labels, and
+  **field-level validation** (e.g. weather coordinates) with
+  `aria-invalid`/`aria-describedby`.
+- **Real CSS fixes** — defined the previously-undefined `--teal`/`--blue` tokens,
+  gave each theme its own glass background, and dropped a render-blocking 11-family
+  webfont `@import` in favour of an on-demand loader.
+
+### Growth
+
+- **Demo mode** (`DEMO_MODE=true`) serves a read-only sample dashboard for the
+  public demo / screenshots without exposing a writable instance.
+- **schema.org JSON-LD** structured data for richer search/social presentation.
+
+### Deploy & supply-chain
+
+- **Cosign keyless signing is enabled** — release images are signed and verifiable
+  (`cosign verify ghcr.io/jagbhandal/jaghelm:1.2.0`).
+- The **deploy pipeline pins images by digest** (not a mutable tag), with ADRs
+  (`docs/adr/`) recording the deploy/signing decisions and a CI asset-integrity
+  check (`scripts/check-assets.mjs`).
+
 ## [1.1.0] — 2026-06-17
 
 A large hardening release from a full multi-agent audit of the codebase: every
@@ -119,5 +217,6 @@ vulnerabilities; 83 automated tests (up from 33).**
   integration engine (42 presets); Settings UI; 10 themes; AES-256-GCM secrets;
   scrypt auth.
 
+[1.2.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.2.0
 [1.1.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.0.0
