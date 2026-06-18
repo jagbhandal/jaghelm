@@ -6,7 +6,7 @@
 // PRECACHE_ASSETS is filled with the content-hashed first-paint bundles the built
 // index.html references. In dev (unbuilt) they stay at the fallbacks below, which
 // is fine — the dev server doesn't rely on the worker.
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const PRECACHE_ASSETS = [];
 const CACHE_NAME = `jaghelm-v${APP_VERSION}`;
 

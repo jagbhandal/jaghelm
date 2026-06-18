@@ -4,6 +4,80 @@ All notable changes to JagHelm are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-06-18
+
+The **glance layer gets smart.** Where 1.2.0 hardened and polished, 1.3.0 makes
+the board *tell you things at a glance* — trends, trouble, and the "why" behind a
+blank panel — plus a command palette, a keyboard-operable grid, offline PWA, and
+a real mobile pass. **256 automated tests (up from 195); 0 known vulnerabilities.**
+
+### Glance & insight
+
+- **Sparklines.** The refresh loop now keeps a ~1h ring buffer of every node's
+  CPU/RAM/disk usage (persisted to `data/history.json`, served from a new authed
+  `/api/history`) and draws an inline trend line behind each metric — "94% **and
+  climbing**." It's a fixed window, not a time-series database.
+- **Pre-attentive tinting.** A metric value turns **red** when it crosses
+  critical and the whole card gets a colored **halo**, so trouble jumps off the
+  board before you read it — instead of hiding in a 4px bar. (Non-color cue too:
+  an SR-only severity label; amber is kept off large text for contrast.)
+- **"Why is this dashed?" integration doctor.** When an integration's last fetch
+  failed, the card now shows a collapsible **⚠ No data — why?** with the
+  redacted error (e.g. `HTTP 401`) instead of mystery blanks — the error was
+  already captured server-side; we just stopped throwing it away.
+- **⌘K command palette.** Fuzzy-jump to any tab, theme, or configured link and
+  run actions (Settings, Log out) from anywhere — keyboard-first (combobox/listbox
+  semantics), no backend.
+- **Grid "Auto-arrange."** One button (Settings → Layout) packs every panel into
+  a gapless grid in priority order — nodes, then widgets, then groups.
+
+### Accessibility
+
+- **Keyboard-operable dashboard grid.** Each panel gains a focus-revealed handle:
+  arrow keys move it a cell, Shift+arrow resizes, with a polite live-region
+  announcement and boundary feedback — the grid was previously pointer-only.
+
+### Offline / PWA
+
+- The service worker now **precaches the hashed first-paint bundles** (injected at
+  build) so the app boots offline, serves immutable `/assets/` cache-first, and
+  **single-sources its version** from `package.json` (no more manual SW edit).
+
+### Mobile
+
+- A real responsive pass: the nav declutters on phones (drops the clock/"updated"
+  stamp), side-by-side settings fields stack, and the settings sidebar reflows —
+  closing the gaps behind the old "no mobile layout" caveat.
+
+### Fixes
+
+- **Panel resize is now in sync with its guideline.** The panel followed the
+  mouse smoothly while the dotted guideline snapped to the grid, so the guideline
+  (and the resize handle) could run past the panel and the size snapped back on
+  release. The live panel now renders at the exact snapped rectangle the guideline
+  draws — one shape, snapping together cell-by-cell — and is bounded to the grid
+  edge so it can't be dragged past the panel.
+
+### Internal & quality
+
+- **Shared settings primitives** (`Card`/`Toggle`/`ChoiceGroup`/`EmptyState`)
+  replace ~120 lines duplicated across the 13 settings tabs.
+- **Spacing & type scale tokens** (`--space-*`, `--text-*`) with 100+ exact-match
+  migrations (provably render-identical), alongside the existing semantic `--fs-*`.
+- **Regenerated `docs/ARCHITECTURE.md`** to reflect reality, with 5 Mermaid
+  diagrams (topology, refresh/cache, integration engine, frontend tree, CI/CD).
+
+### Deploy
+
+- **Event-driven build→deploy trigger** ([ADR 0005](docs/adr/0005-event-driven-deploy.md)):
+  the GitHub build can now dispatch the Gitea deploy when the image is ready,
+  replacing a registry poll. Opt-in and fallback-preserving — off until configured.
+
+### Notes
+
+- A new `data/history.json` is created automatically for the sparkline ring buffer
+  (bounded, best-effort, non-essential — safe to delete; it refills).
+
 ## [1.2.0] — 2026-06-18
 
 Where 1.1.0 hardened the foundation, 1.2.0 builds on it: the planned improvement
@@ -217,6 +291,7 @@ vulnerabilities; 83 automated tests (up from 33).**
   integration engine (42 presets); Settings UI; 10 themes; AES-256-GCM secrets;
   scrypt auth.
 
+[1.3.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.3.0
 [1.2.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.2.0
 [1.1.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.0.0

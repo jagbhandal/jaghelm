@@ -473,15 +473,27 @@ export default function HelmGrid({
             boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
             cursor: 'grabbing', pointerEvents: 'none',
           };
-        } else if (isResizing && interaction.pixelSize) {
-          // Active resize — fresh style every frame
-          const pos = gridToPixel(item.x, item.y, item.w, item.h, cellWidth, rowHeight, margin);
+        } else if (isResizing && interaction.placeholder) {
+          // Render the live panel at the SNAPPED placeholder rect — the exact
+          // same rectangle the dotted guideline draws — so the card, its resize
+          // handle, and the guideline are always one shape and snap together
+          // cell-by-cell. (Rendering the raw mouse-driven pixel size instead let
+          // the guideline run past the panel.)
+          const ph = gridToPixel(
+            interaction.placeholder.x,
+            interaction.placeholder.y,
+            interaction.placeholder.w,
+            interaction.placeholder.h,
+            cellWidth,
+            rowHeight,
+            margin
+          );
           style = {
             position: 'absolute',
-            left: interaction.handle === 'sw' ? interaction.pixelSize.left : pos.left,
-            top: pos.top,
-            width: interaction.pixelSize.width,
-            height: interaction.pixelSize.height,
+            left: ph.left,
+            top: ph.top,
+            width: ph.width,
+            height: ph.height,
             transition: 'none',
             zIndex: 10,
           };
