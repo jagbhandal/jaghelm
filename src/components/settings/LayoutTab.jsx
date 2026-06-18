@@ -2,6 +2,7 @@ import React from 'react';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { useConfirm } from '../../context/OverlayContext.jsx';
 import Field from './Field';
+import { Card, ChoiceGroup } from './primitives.jsx';
 
 export default function LayoutTab() {
   const { config, update } = useConfig();
@@ -99,17 +100,12 @@ export default function LayoutTab() {
         </Field>
 
         <Field label={`Service Columns per Row: ${config.serviceColumns || 'Auto'}`}>
-          <div className="settings-choice-group">
-            {[0, 2, 3, 4, 5, 6].map((n) => (
-              <button
-                key={n}
-                onClick={() => update('serviceColumns', n)}
-                className={`settings-choice-btn ${(config.serviceColumns || 0) === n ? 'active' : ''}`}
-              >
-                {n === 0 ? 'Auto' : n}
-              </button>
-            ))}
-          </div>
+          <ChoiceGroup
+            ariaLabel="Service Columns per Row"
+            value={config.serviceColumns || 0}
+            options={[0, 2, 3, 4, 5, 6].map((n) => ({ value: n, label: n === 0 ? 'Auto' : n }))}
+            onChange={(value) => update('serviceColumns', value)}
+          />
           <div className="settings-hint-block" style={{ marginTop: 8 }}>
             <strong>Auto:</strong> Cards fill available space responsively
             <br />
@@ -119,21 +115,16 @@ export default function LayoutTab() {
         </Field>
 
         <Field label="Card Layout">
-          <div className="settings-choice-group">
-            {[
-              { id: 'list', label: 'List' },
-              { id: 'row', label: 'Row' },
-              { id: 'grid', label: 'Grid' },
-            ].map((mode) => (
-              <button
-                key={mode.id}
-                onClick={() => update('cardLayout', mode.id)}
-                className={`settings-choice-btn ${(config.cardLayout || 'row') === mode.id ? 'active' : ''}`}
-              >
-                {mode.label}
-              </button>
-            ))}
-          </div>
+          <ChoiceGroup
+            ariaLabel="Card Layout"
+            value={config.cardLayout || 'row'}
+            options={[
+              { value: 'list', label: 'List' },
+              { value: 'row', label: 'Row' },
+              { value: 'grid', label: 'Grid' },
+            ]}
+            onChange={(value) => update('cardLayout', value)}
+          />
           <div className="settings-hint-block">
             List: clean rows, no backgrounds. Row: subtle card per service (default). Grid: compact
             card boxes.
@@ -141,17 +132,12 @@ export default function LayoutTab() {
         </Field>
 
         <Field label="Status Style">
-          <div className="settings-choice-group">
-            {['dot', 'badge', 'minimal'].map((style) => (
-              <button
-                key={style}
-                onClick={() => update('statusStyle', style)}
-                className={`settings-choice-btn ${(config.statusStyle || 'badge') === style ? 'active' : ''}`}
-              >
-                {style}
-              </button>
-            ))}
-          </div>
+          <ChoiceGroup
+            ariaLabel="Status Style"
+            value={config.statusStyle || 'badge'}
+            options={['dot', 'badge', 'minimal']}
+            onChange={(value) => update('statusStyle', value)}
+          />
           <div className="settings-hint-block">
             How container status is displayed on service cards
           </div>
@@ -160,32 +146,28 @@ export default function LayoutTab() {
 
       <Card title="Behavior">
         <Field label="Link Target">
-          <div className="settings-choice-group">
-            {['_blank', '_self'].map((target) => (
-              <button
-                key={target}
-                onClick={() => update('linkTarget', target)}
-                className={`settings-choice-btn ${(config.linkTarget || '_blank') === target ? 'active' : ''}`}
-              >
-                {target === '_blank' ? 'New Tab' : 'Same Tab'}
-              </button>
-            ))}
-          </div>
+          <ChoiceGroup
+            ariaLabel="Link Target"
+            value={config.linkTarget || '_blank'}
+            options={[
+              { value: '_blank', label: 'New Tab' },
+              { value: '_self', label: 'Same Tab' },
+            ]}
+            onChange={(value) => update('linkTarget', value)}
+          />
           <div className="settings-hint-block">Where Quick Launch links and service links open</div>
         </Field>
 
         <Field label="Temperature Unit">
-          <div className="settings-choice-group">
-            {['F', 'C'].map((unit) => (
-              <button
-                key={unit}
-                onClick={() => update('tempUnit', unit)}
-                className={`settings-choice-btn ${(config.tempUnit || 'F') === unit ? 'active' : ''}`}
-              >
-                °{unit}
-              </button>
-            ))}
-          </div>
+          <ChoiceGroup
+            ariaLabel="Temperature Unit"
+            value={config.tempUnit || 'F'}
+            options={[
+              { value: 'F', label: '°F' },
+              { value: 'C', label: '°C' },
+            ]}
+            onChange={(value) => update('tempUnit', value)}
+          />
         </Field>
 
         <Field label="Collapsible Sections">
@@ -205,31 +187,17 @@ export default function LayoutTab() {
 
       <Card title="Visual">
         <Field label={`Card Blur: ${config.cardBlur || 'none'}`}>
-          <div className="settings-choice-group">
-            {['none', 'sm', 'md', 'lg'].map((blur) => (
-              <button
-                key={blur}
-                onClick={() => update('cardBlur', blur)}
-                className={`settings-choice-btn ${(config.cardBlur || 'none') === blur ? 'active' : ''}`}
-              >
-                {blur}
-              </button>
-            ))}
-          </div>
+          <ChoiceGroup
+            ariaLabel="Card Blur"
+            value={config.cardBlur || 'none'}
+            options={['none', 'sm', 'md', 'lg']}
+            onChange={(value) => update('cardBlur', value)}
+          />
           <div className="settings-hint-block">
             Backdrop blur effect on cards (requires a background image to be visible)
           </div>
         </Field>
       </Card>
-    </div>
-  );
-}
-
-function Card({ title, children }) {
-  return (
-    <div className="settings-card">
-      {title && <h3 className="settings-card-title">{title}</h3>}
-      {children}
     </div>
   );
 }

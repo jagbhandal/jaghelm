@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { useConfirm, useToast } from '../../context/OverlayContext.jsx';
+import { Card } from './primitives.jsx';
 
 // Top-level keys that must never be carried in from an imported file — assigning
 // to these can poison the prototype chain. A valid config never contains them.
@@ -144,15 +145,6 @@ export default function BackupTab() {
           automatically. All changes save in real-time.
         </p>
       </Card>
-    </div>
-  );
-}
-
-function Card({ title, children }) {
-  return (
-    <div className="settings-card">
-      {title && <h3 className="settings-card-title">{title}</h3>}
-      {children}
     </div>
   );
 }

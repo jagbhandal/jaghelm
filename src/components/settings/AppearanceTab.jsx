@@ -4,6 +4,7 @@ import { uploadFile } from '../../hooks/useData';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import Field from './Field';
 import InlineError from './InlineError';
+import { Card, Toggle } from './primitives.jsx';
 import { THEMES } from './themes.js';
 
 // Re-export so existing importers of THEMES from this module keep working.
@@ -182,30 +183,12 @@ export default function AppearanceTab({ theme, setTheme }) {
       </Card>
 
       <Card title="Effects">
-        <Chk
+        <Toggle
           label="Show dot grid background"
           checked={config.showDots !== false}
           onChange={(v) => update('showDots', v)}
         />
       </Card>
     </div>
-  );
-}
-
-function Card({ title, children }) {
-  return (
-    <div className="settings-card">
-      {title && <h3 className="settings-card-title">{title}</h3>}
-      {children}
-    </div>
-  );
-}
-
-function Chk({ label, checked, onChange }) {
-  return (
-    <label className="settings-toggle">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span>{label}</span>
-    </label>
   );
 }

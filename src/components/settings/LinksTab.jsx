@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import IconPicker from '../IconPicker';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { useConfirm } from '../../context/OverlayContext.jsx';
+import { Card } from './primitives.jsx';
 
 const DEFAULT_GROUPS = ['personal', 'management', 'devops'];
 
@@ -305,17 +306,6 @@ export default function LinksTab() {
           </button>
         )}
       </Card>
-    </div>
-  );
-}
-
-function Card({ title, children }) {
-  return (
-    <div className="settings-card">
-      {title && (
-        <h3 className="settings-card-title">{typeof title === 'string' ? title : title}</h3>
-      )}
-      {children}
     </div>
   );
 }

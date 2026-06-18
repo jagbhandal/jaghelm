@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { useConfirm } from '../../context/OverlayContext.jsx';
 import Field from './Field';
+import { Card } from './primitives.jsx';
 
 export default function TabsTab() {
   const { config, update } = useConfig();
@@ -138,8 +139,4 @@ export default function TabsTab() {
       </button>
     </div>
   );
-}
-
-function Card({ children }) {
-  return <div className="settings-card">{children}</div>;
 }
