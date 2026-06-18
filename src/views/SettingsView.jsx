@@ -14,6 +14,7 @@ import BackupTab from '../components/settings/BackupTab';
 import IntegrationsTab from '../components/settings/IntegrationsTab';
 import DashboardView from './DashboardView';
 import { setIn } from '../utils/setIn.js';
+import { apiFetch } from '../api/client.js';
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: '🏠', desc: 'Title, logo, branding' },
@@ -51,9 +52,9 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
   // Fetch server config on mount and when switching to relevant tabs
   const fetchServerData = useCallback(() => {
     Promise.all([
-      fetch('/api/services/config').then((r) => (r.ok ? r.json() : null)),
-      fetch('/api/services').then((r) => (r.ok ? r.json() : null)),
-      fetch('/api/services/monitors').then((r) => (r.ok ? r.json() : null)),
+      apiFetch('/api/services/config').then((r) => (r.ok ? r.json() : null)),
+      apiFetch('/api/services').then((r) => (r.ok ? r.json() : null)),
+      apiFetch('/api/services/monitors').then((r) => (r.ok ? r.json() : null)),
     ])
       .then(([cfg, svc, mon]) => {
         if (cfg) setServerConfig(cfg);
@@ -75,7 +76,7 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
     setServerSaving(true);
     if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
     serverSaveTimer.current = setTimeout(() => {
-      fetch('/api/services/config', {
+      apiFetch('/api/services/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newConfig),

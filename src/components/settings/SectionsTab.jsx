@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { HexColorPicker } from 'react-colorful';
 import IconPicker from '../IconPicker';
 import Field from './Field';
+import { apiFetch } from '../../api/client.js';
 
 /**
  * SectionsTab — Phase 2 Settings + Phase 3 Custom Groups
@@ -33,7 +34,7 @@ export default function SectionsTab({ config, update }) {
 
   // Fetch all containers for the assignment UI
   useEffect(() => {
-    fetch('/api/services')
+    apiFetch('/api/services')
       .then(r => r.ok ? r.json() : { nodes: {} })
       .then(data => {
         const containers = [];

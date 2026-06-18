@@ -14,6 +14,8 @@
  * without a stored etag — we return null and consumers leave their state alone.
  */
 
+import { apiFetch } from '../api/client.js';
+
 const BASE = '/api';
 
 // ETag tracking per endpoint — persists across fetch calls
@@ -41,7 +43,7 @@ async function fetchJson(url, skipEtag = false) {
     headers['If-None-Match'] = storedEtag;
   }
 
-  const r = await fetch(url, { headers, signal: AbortSignal.timeout(12000) });
+  const r = await apiFetch(url, { headers, signal: AbortSignal.timeout(12000) });
 
   // 304 Not Modified — return the prior result reference (stable identity).
   // Fall back to null only if we somehow got 304 with no cached body.
@@ -85,15 +87,15 @@ export async function getCronStatus(skipEtag) { return fetchJson(`${BASE}/cron/s
 export async function getAllIntegrations(skipEtag) { return fetchJson(`${BASE}/integrations`, skipEtag); }
 export async function getIntegrationPresets() { return fetchJson(`${BASE}/integrations/presets`); }
 export async function testIntegration(data) {
-  const r = await fetch(`${BASE}/integrations/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const r = await apiFetch(`${BASE}/integrations/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   return r.json();
 }
 export async function saveIntegration(data) {
-  const r = await fetch(`${BASE}/integrations/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const r = await apiFetch(`${BASE}/integrations/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   return r.json();
 }
 export async function deleteIntegration(type) {
-  const r = await fetch(`${BASE}/integrations/${type}`, { method: 'DELETE' });
+  const r = await apiFetch(`${BASE}/integrations/${type}`, { method: 'DELETE' });
   return r.json();
 }
 
@@ -104,24 +106,24 @@ export async function deleteIntegration(type) {
 export async function getMonitors() { return fetchJson(`${BASE}/uptime/monitors`); }
 
 export async function getWeather(lat, lon) {
-  const r = await fetch(`${BASE}/weather?lat=${lat}&lon=${lon}`, { signal: AbortSignal.timeout(12000) });
+  const r = await apiFetch(`${BASE}/weather?lat=${lat}&lon=${lon}`, { signal: AbortSignal.timeout(12000) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
 
 export async function getTodos() {
-  const r = await fetch(`${BASE}/todos`, { signal: AbortSignal.timeout(12000) });
+  const r = await apiFetch(`${BASE}/todos`, { signal: AbortSignal.timeout(12000) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
 export async function saveTodos(todos) {
-  await fetch(`${BASE}/todos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(todos) });
+  await apiFetch(`${BASE}/todos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(todos) });
 }
 
 export async function uploadFile(file, type) {
   const form = new FormData();
   form.append('file', file);
-  const r = await fetch(`/api/upload?type=${type}`, { method: 'POST', body: form });
+  const r = await apiFetch(`/api/upload?type=${type}`, { method: 'POST', body: form });
   if (!r.ok) throw new Error('Upload failed');
   return r.json();
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { apiFetch } from '../api/client.js';
 
 /**
  * IconPicker — Reusable icon search & selection component
@@ -41,7 +42,7 @@ export default function IconPicker({ value, onChange, onClear, label, compact = 
       const params = new URLSearchParams();
       if (q) params.set('q', q);
       params.set('limit', '60');
-      const res = await fetch(`/api/icons?${params}`);
+      const res = await apiFetch(`/api/icons?${params}`);
       if (res.ok) {
         const data = await res.json();
         setResults(data.results || []);

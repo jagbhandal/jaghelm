@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '../../../api/client.js';
 
 /**
  * useIntegrationsData — fetches presets, configured integrations, and the flat
@@ -15,9 +16,9 @@ export function useIntegrationsData() {
     setLoading(true);
     try {
       const [presetsRes, configRes, servicesRes] = await Promise.all([
-        fetch('/api/integrations/presets').then(r => r.ok ? r.json() : []),
-        fetch('/api/services/config').then(r => r.ok ? r.json() : {}),
-        fetch('/api/services').then(r => r.ok ? r.json() : {}),
+        apiFetch('/api/integrations/presets').then(r => r.ok ? r.json() : []),
+        apiFetch('/api/services/config').then(r => r.ok ? r.json() : {}),
+        apiFetch('/api/services').then(r => r.ok ? r.json() : {}),
       ]);
       setPresets(presetsRes);
       setConfigured(configRes?.integrations || {});

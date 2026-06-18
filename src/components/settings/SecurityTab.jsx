@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import Field from './Field';
+import { apiFetch } from '../../api/client.js';
 
 export default function SecurityTab() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -24,7 +25,7 @@ export default function SecurityTab() {
     }
     setSaving(true);
     try {
-      const r = await fetch('/api/auth/change-password', {
+      const r = await apiFetch('/api/auth/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentPassword, newPassword }),
