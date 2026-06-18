@@ -1,5 +1,6 @@
 import { Agent } from 'undici';
 import { assertSafeUrl } from '../../util/ssrf.js';
+import { redactSecrets } from '../../util/redact.js';
 
 /**
  * Safe fetch wrapper with timeout + optional per-request TLS skip.
@@ -24,18 +25,25 @@ const tlsSkipAgent = new Agent({ connect: { rejectUnauthorized: false } });
 const FETCH_TIMEOUT_MS = 8000;
 
 export async function safeFetch(url, opts = {}, skipTls = false) {
-  // SSRF chokepoint: every integration AND session-auth request flows through
-  // here, so the guard runs by construction — no call site can forget it.
-  // trusted=false: these are user-supplied integration URLs (full guard,
-  // respects JAGHELM_BLOCK_PRIVATE_NETWORKS).
-  assertSafeUrl(url);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const fetchOpts = { ...opts, signal: controller.signal };
-    if (skipTls) fetchOpts.dispatcher = tlsSkipAgent;
-    return await fetch(url, fetchOpts);
-  } finally {
-    clearTimeout(timeout);
+    // SSRF guard at the chokepoint for every integration AND session-auth
+    // request (trusted=false: user-supplied URLs, full guard).
+    assertSafeUrl(url);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const fetchOpts = { ...opts, signal: controller.signal };
+      if (skipTls) fetchOpts.dispatcher = tlsSkipAgent;
+      return await fetch(url, fetchOpts);
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch (err) {
+    // Redact at the egress point: query-auth presets put the API key in the URL
+    // and fetch/assertSafeUrl errors echo it. Stripping it here means no
+    // downstream catch (handler, session) can leak it even if it forgets to.
+    const safe = new Error(redactSecrets(err.message || String(err)));
+    if (err && err.code) safe.code = err.code;
+    throw safe;
   }
 }

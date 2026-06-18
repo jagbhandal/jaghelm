@@ -1,5 +1,10 @@
 /**
- * SSRF guard — the single place outbound URLs are vetted.
+ * SSRF guard — vetting for outbound URLs, called at the fetch chokepoints
+ * (server/integrations/lib/http.js and server/httpClient.js), which cover all
+ * integration, session-auth, and infra-proxy requests. A few internal calls
+ * still use raw fetch to hardcoded/operator-configured endpoints (Prometheus
+ * discovery, Kuma monitors, the icon CDN index); folding those into one shared
+ * client is a tracked follow-up (see docs/IMPROVEMENT-PLAN.md).
  *
  * JagHelm is a homelab dashboard, so private/loopback hosts ARE legitimate
  * integration targets (192.168/16 Proxmox, 10/8 NAS, localhost services). By

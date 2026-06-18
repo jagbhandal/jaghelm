@@ -13,12 +13,11 @@
 
 import crypto from 'crypto';
 import { existsSync, readFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
+import { DATA_DIR } from '../util/dataDir.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const AUTH_FILE = join(__dirname, '..', '..', 'data', 'auth.json');
+const AUTH_FILE = join(DATA_DIR, 'auth.json');
 
 const AUTH_USER = process.env.DASH_USER || 'admin';
 const AUTH_PASS_ENV = process.env.DASH_PASS || '';

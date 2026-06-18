@@ -7,12 +7,10 @@
  */
 
 import { readFileSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { atomicWriteFileSync } from './util/atomicWrite.js';
+import { DATA_DIR } from './util/dataDir.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__dirname, '..', 'data');
 const STORE_PATH = join(DATA_DIR, 'cron-jobs.json');
 const MAX_RUNS = 3;
 

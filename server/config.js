@@ -5,14 +5,12 @@
  */
 
 import { readFileSync, existsSync, statSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import yaml from 'js-yaml';
 
 import { atomicWriteFileSync } from './util/atomicWrite.js';
+import { DATA_DIR } from './util/dataDir.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__dirname, '..', 'data');
 const CONFIG_PATH = join(DATA_DIR, 'services.yaml');
 
 // In-memory config state

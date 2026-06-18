@@ -7,14 +7,10 @@
 
 import crypto from 'crypto';
 import { readFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { atomicWriteFileSync } from './util/atomicWrite.js';
+import { DATA_DIR } from './util/dataDir.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-// Data dir is overridable so tests can run against a temp dir instead of the
-// live store (and so a containerized deploy can relocate state if needed).
-const DATA_DIR = process.env.JAGHELM_DATA_DIR || join(__dirname, '..', 'data');
 const SECRETS_PATH = join(DATA_DIR, 'secrets.json');
 const SALT_PATH = join(DATA_DIR, '.secrets-salt');
 // Salt used by installs created before per-install salts existed. Kept so their

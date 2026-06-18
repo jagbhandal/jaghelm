@@ -77,7 +77,6 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       }
 
       const headers = buildAuthHeaders(config);
-      assertSafeUrl(url);
       const res = await safeFetch(url, { headers }, skipTls);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status} ${res.statusText || ''}`.trim());
@@ -99,7 +98,6 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
         extraEps.map(async (ep) => {
           const resolvedEp = resolveEndpointParams(ep.endpoint, config);
           const epUrl = `${baseUrl}${resolvedEp}`;
-          assertSafeUrl(epUrl);
           const epRes = await safeFetch(epUrl, { headers }, skipTls);
           if (!epRes.ok) {
             throw new Error(`HTTP ${epRes.status} ${epRes.statusText || ''}`.trim());
@@ -200,7 +198,6 @@ export async function testIntegration(type, testConfig) {
         url = `${url}${separator}${paramName}=${config._token}`;
       }
       const headers = buildAuthHeaders(config);
-      assertSafeUrl(url);
       const res = await safeFetch(url, { headers }, skipTls);
       if (!res.ok) return { ok: false, error: `HTTP ${res.status}: ${res.statusText}` };
       return { ok: true, status: res.status };
