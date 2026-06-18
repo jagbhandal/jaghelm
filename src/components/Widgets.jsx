@@ -1,9 +1,12 @@
 import React from 'react';
 import { getServiceIcon, cachedIconUrl } from '../hooks/useData';
 
-// Shared: render icon (URL, slug, or emoji)
+// Shared: render icon (URL, slug, or emoji).
+// Alternation (not a character class) so ZWJ (\u200d) and variation selector
+// (\ufe0f) read as repeatable join tokens rather than combining marks on a
+// base char \u2014 what no-misleading-character-class flags. Same matches as before.
 function isEmoji(str) {
-  return str && !str.startsWith('http') && !str.startsWith('/') && /^[\p{Emoji}\u200d\ufe0f]+$/u.test(str);
+  return str && !str.startsWith('http') && !str.startsWith('/') && /^(?:\p{Emoji}|\u200d|\ufe0f)+$/u.test(str);
 }
 
 function renderIcon(icon) {

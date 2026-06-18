@@ -80,8 +80,12 @@ export default React.memo(function NodeCard({ sectionKey, config, setConfig, bor
   const subtitle = nodeData?.subtitle || sec.subtitle || '';
   const icon = nodeData?.icon || sec.icon;
 
-  // Check if icon is an emoji (not a URL or slug)
-  const isEmoji = (str) => str && !str.startsWith('http') && !str.startsWith('/') && /^[\p{Emoji}\u200d\ufe0f]+$/u.test(str);
+  // Check if icon is an emoji (not a URL or slug).
+  // Alternation (not a character class) so ZWJ (\u200d) and variation selector
+  // (\ufe0f) read as repeatable join tokens, not as combining marks on a base
+  // char \u2014 which is what no-misleading-character-class flags. Behaviour is
+  // identical to the prior class form; this just makes the intent explicit.
+  const isEmoji = (str) => str && !str.startsWith('http') && !str.startsWith('/') && /^(?:\p{Emoji}|\u200d|\ufe0f)+$/u.test(str);
 
   const bgStyle = {};
   if (sec.bgColor && sec.bgOpacity > 0) {
