@@ -235,7 +235,12 @@ export default function App() {
           } : null}
           refreshKey={refreshKey} />
         <div style={activeTab === 'dashboard' ? undefined : { visibility: 'hidden', height: 0, overflow: 'hidden' }}>
-          <DashboardView config={config} setConfig={setConfig} refreshKey={refreshKey} />
+          <DashboardView
+            config={config}
+            setConfig={setConfig}
+            refreshKey={refreshKey}
+            onOpenSettings={() => setActiveTab('settings')}
+          />
         </div>
         {activeTab === 'settings' && <SettingsView config={config} setConfig={setConfig} theme={theme} setTheme={setTheme} />}
         {allTabs.find(t => t.id === activeTab && t.type === 'iframe') && (

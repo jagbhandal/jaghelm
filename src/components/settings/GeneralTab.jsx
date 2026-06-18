@@ -1,21 +1,25 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { uploadFile } from '../../hooks/useData';
 import Field from './Field';
+import InlineError from './InlineError';
 
 export default function GeneralTab({ config, update }) {
   const logoRef = useRef();
+  const [uploadError, setUploadError] = useState('');
 
   const handleUpload = async (file) => {
+    setUploadError('');
     try {
       const r = await uploadFile(file, 'logo');
       update('logoUrl', r.url);
     } catch (e) {
-      alert('Upload failed: ' + e.message);
+      setUploadError('Logo upload failed: ' + e.message);
     }
   };
 
   return (
     <div className="settings-section">
+      <InlineError message={uploadError} onDismiss={() => setUploadError('')} />
       <Card title="Branding">
         <Field label="Dashboard Title">
           <input

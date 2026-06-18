@@ -28,7 +28,7 @@ import { useEffectiveLayouts } from './useEffectiveLayouts';
  *   - HelmGrid              → drag/resize-aware responsive grid
  *   - DndContext            → service-card drag between panels
  */
-export default function DashboardView({ config, setConfig, refreshKey }) {
+export default function DashboardView({ config, setConfig, refreshKey, onOpenSettings }) {
   // Mobile detection — used to disable drag/resize on small screens
   const mobileRef = useRef(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -41,7 +41,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   }, []);
 
   // Data — fetch loop encapsulated in the hook
-  const { serviceData, ups, commits, cronJobs, integrationData } = useDashboardData(refreshKey);
+  const { serviceData, ups, commits, cronJobs, integrationData, servicesLoaded } = useDashboardData(refreshKey);
 
   // Tier 3 app data per container (preset metrics: queries, blocked, etc.)
   const appDataByContainer = useAppDataMatching(integrationData, serviceData);
@@ -256,6 +256,16 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   // Welcome banner config
   const wm = config.welcomeMessage || {};
 
+  // First-run empty state: services have loaded, but no nodes were discovered
+  // and the user hasn't created any custom groups. Show a friendly CTA instead
+  // of an empty/Loading grid.
+  const nodeCount = Object.keys(serviceData.nodes || {}).length;
+  const savedNodePlaceholders = (layouts.lg || layouts.md || []).some(
+    (i) => typeof i.i === 'string' && i.i.startsWith('node-')
+  );
+  const isEmpty =
+    servicesLoaded && nodeCount === 0 && customGroups.length === 0 && !savedNodePlaceholders;
+
   // Saved-but-not-yet-loaded node placeholders. Prevents the grid from collapsing
   // while /api/services is still in flight.
   const nodePlaceholders = useMemo(() => {
@@ -294,6 +304,9 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
         </div>
       )}
 
+      {isEmpty ? (
+        <DashboardEmptyState onOpenSettings={onOpenSettings} />
+      ) : (
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
@@ -360,6 +373,44 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           {activeDrag ? <ServiceDragOverlay service={activeDrag} /> : null}
         </DragOverlay>
       </DndContext>
+      )}
+    </div>
+  );
+}
+
+/**
+ * First-run empty state shown when no nodes are discovered. Guides the user to
+ * Settings to connect their first node instead of staring at an empty grid.
+ */
+function DashboardEmptyState({ onOpenSettings }) {
+  return (
+    <div
+      className="glass-card"
+      style={{
+        maxWidth: 560, margin: '48px auto', padding: '40px 32px',
+        textAlign: 'center', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', gap: 12,
+      }}
+    >
+      <div style={{ fontSize: 44, lineHeight: 1 }} aria-hidden="true">🛰️</div>
+      <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 22, color: 'var(--text-primary)', margin: 0 }}>
+        Connect your first node
+      </h2>
+      <p style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--text-secondary)', maxWidth: 420, margin: 0, lineHeight: 1.6 }}>
+        No infrastructure nodes have reported in yet. Add a Prometheus target or
+        a node in Settings, and live metrics will start streaming onto your
+        dashboard here.
+      </p>
+      {onOpenSettings && (
+        <button
+          type="button"
+          className="settings-btn-primary"
+          onClick={onOpenSettings}
+          style={{ marginTop: 8, padding: '10px 20px', fontSize: 14 }}
+        >
+          Open Settings
+        </button>
+      )}
     </div>
   );
 }
