@@ -11,16 +11,17 @@
 
 import { Router } from 'express';
 import { existsSync, readFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 
 import { restartBackgroundRefresh, invalidateRefreshIntervalCache } from '../refresh.js';
 import { apiError } from '../errors.js';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
+import { validateConfig, displayConfigSchema } from '../util/configSchema.js';
+import { DATA_DIR } from '../util/dataDir.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DISPLAY_CONFIG_PATH = join(__dirname, '..', '..', 'data', 'display-config.json');
-const MAX_BYTES = 1_048_576;
+// Honor JAGHELM_DATA_DIR like every other store (secrets/auth/services.yaml)
+// so tests stay isolated and a containerized deploy can relocate state.
+const DISPLAY_CONFIG_PATH = join(DATA_DIR, 'display-config.json');
 
 const router = Router();
 
@@ -39,14 +40,10 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   try {
-    const config = req.body;
-    if (!config || typeof config !== 'object') {
-      return apiError(res, 400, 'Invalid config');
-    }
+    const v = validateConfig(displayConfigSchema, req.body);
+    if (!v.ok) return apiError(res, v.status, v.error);
+    const config = v.data;
     const serialized = JSON.stringify(config, null, 2);
-    if (serialized.length > MAX_BYTES) {
-      return apiError(res, 413, 'Config too large (max 1MB)');
-    }
 
     // Did the refresh interval change? If so, restart the loop after writing.
     let intervalChanged = false;

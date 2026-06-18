@@ -18,8 +18,7 @@
  */
 
 import { existsSync, readFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 
 import { getConfig } from './config.js';
 import { getNodeData } from './discovery.js';
@@ -28,9 +27,10 @@ import { fetchIntegration } from './integrations/handler.js';
 import { setCache } from './cache.js';
 import { safeFetch } from './httpClient.js';
 import { dedupe } from './util/dedupe.js';
+import { DATA_DIR } from './util/dataDir.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DISPLAY_CONFIG_PATH = join(__dirname, '..', 'data', 'display-config.json');
+// Same display-config.json the displayConfig route writes — honor JAGHELM_DATA_DIR.
+const DISPLAY_CONFIG_PATH = join(DATA_DIR, 'display-config.json');
 const DEFAULT_INTERVAL_MS = 30_000;
 const MIN_INTERVAL_SECONDS = 10;
 

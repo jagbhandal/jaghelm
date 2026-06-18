@@ -28,5 +28,19 @@ export function apiError(res, status, publicMessage, err = null) {
  */
 export function errorHandler(err, req, res, _next) {
   if (res.headersSent) return _next(err);
+  // Honor a client-error status set by upstream middleware. body-parser tags
+  // malformed JSON as `status:400 type:'entity.parse.failed'` and an oversized
+  // body as `413 'entity.too.large'`; surfacing those as 5xx would blame the
+  // server for a bad request. Only genuinely unhandled errors are a true 500.
+  const status = Number(err.status || err.statusCode) || 500;
+  if (status >= 400 && status < 500) {
+    const message =
+      err.type === 'entity.parse.failed'
+        ? 'Invalid JSON body'
+        : err.type === 'entity.too.large'
+          ? 'Request body too large'
+          : 'Bad request';
+    return apiError(res, status, message, err);
+  }
   return apiError(res, 500, 'Internal server error', err);
 }
