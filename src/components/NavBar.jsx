@@ -66,8 +66,22 @@ export default React.memo(function NavBar({ tabs, activeTab, onTabChange, theme,
         <span className="nav-logo">{config?.title || 'JAG-NET'}</span>
         <span className="nav-health-label">{hl}</span>
       </div>
-      <div className="nav-tabs">
-        {tabs.map(t => <button key={t.id} className={`nav-tab ${activeTab === t.id ? 'active' : ''}`} onClick={() => onTabChange(t.id)}>{t.label}</button>)}
+      <div className="nav-tabs" role="tablist" aria-label="Dashboard views">
+        {tabs.map(t => {
+          const selected = activeTab === t.id;
+          return (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={selected}
+              aria-current={selected ? 'page' : undefined}
+              className={`nav-tab ${selected ? 'active' : ''}`}
+              onClick={() => onTabChange(t.id)}
+            >
+              {t.label}
+            </button>
+          );
+        })}
       </div>
       {config?.showSearch !== false && (
         <div className="nav-search-wrap" ref={searchRef}>

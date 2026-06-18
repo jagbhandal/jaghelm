@@ -95,7 +95,7 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
   return (
     <div className="settings-page">
       {/* Sidebar */}
-      <nav className="settings-sidebar">
+      <nav className="settings-sidebar" aria-label="Settings sections">
         <div className="settings-sidebar-header">
           <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18 }}>Settings</span>
         </div>
@@ -107,6 +107,7 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
                 className={`settings-sidebar-item ${activeSection === s.id ? 'active' : ''} ${s.disabled ? 'disabled' : ''}`}
                 onClick={() => !s.disabled && setActiveSection(s.id)}
                 disabled={s.disabled}
+                aria-current={activeSection === s.id ? 'page' : undefined}
               >
                 <span className="settings-sidebar-icon">{s.icon}</span>
                 <div className="settings-sidebar-text">
