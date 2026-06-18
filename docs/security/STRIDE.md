@@ -37,5 +37,11 @@ run on a **trusted LAN**; several defaults assume that (see KNOWN-ISSUES.md).
   (you have to be able to test a connection before saving it).
 - **`/metrics`** is public by convention so Prometheus can scrape it; it exposes
   request counts/timings and refresh health, never secrets or config values.
+- **Global login lock = a small lockout-DoS surface**: an attacker who can reach
+  `/login` can deliberately trip the global failure lock (50/15min) to deny the
+  real admin for the window. For a single-user app this is the right tradeoff —
+  far better than letting an IP-rotating brute force through — and it self-clears
+  in 15 min, but on an internet-exposed instance prefer a reverse-proxy WAF/IP
+  allowlist in front of `/login`.
 
 See `docs/security/INCIDENT-RUNBOOK.md` for what to do if a secret is exposed.

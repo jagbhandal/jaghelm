@@ -33,6 +33,9 @@ const router = Router();
 // port-scan oracle (even with the SSRF guard). Throttle per-IP and audit it.
 const testLimiter = createRateLimiter({ max: 10, windowMs: 60_000 });
 
+// Preset type + instance become part of the secret key / config key, so bound them.
+const SAFE_ID = /^[\w-]{1,64}$/;
+
 /** Auto-prepend http:// when the user types a bare host. */
 function normalizeUrl(raw) {
   const trimmed = (raw || '').trim();
@@ -108,6 +111,9 @@ router.post('/save', (req, res) => {
   } = req.body || {};
 
   if (!type || !url) return apiError(res, 400, 'type and url are required');
+  if (!SAFE_ID.test(type) || (instance && !SAFE_ID.test(instance))) {
+    return apiError(res, 400, 'Invalid type or instance (letters, digits, _ - only; max 64)');
+  }
 
   const cleanUrl = normalizeUrl(url);
   const storageKey = instance ? `${type}_${instance}` : type;

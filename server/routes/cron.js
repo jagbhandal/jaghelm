@@ -51,8 +51,9 @@ router.post('/report', (req, res) => {
     node,
     status,
     duration_seconds: Number.isFinite(dur) ? dur : 0,
-    schedule,
-    error,
+    // Only persist string fields as strings — a non-string can't slip the cap.
+    schedule: typeof schedule === 'string' ? schedule : undefined,
+    error: typeof error === 'string' ? error : undefined,
   });
   res.json({ ok: true });
 });
