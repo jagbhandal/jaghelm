@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import DraggableServiceCard from './DraggableServiceCard';
 import { cachedIconUrl } from '../hooks/useData';
 import { useConfig } from '../context/ConfigContext.jsx';
+import { usageSeverity, cardSeverity, severityColor, severityLabel } from '../utils/thresholds.js';
 
 /**
  * ServiceGrid — Responsive service card grid with draggable cards
@@ -92,6 +93,10 @@ export default React.memo(function NodeCard({
   const subtitle = nodeData?.subtitle || sec.subtitle || '';
   const icon = nodeData?.icon || sec.icon;
 
+  // Pre-attentive emphasis: if any metric's real usage is elevated/critical,
+  // halo the whole card so trouble jumps off the board before you read it.
+  const halo = cardSeverity(metrics);
+
   // Check if icon is an emoji (not a URL or slug).
   // Alternation (not a character class) so ZWJ (\u200d) and variation selector
   // (\ufe0f) read as repeatable join tokens, not as combining marks on a base
@@ -114,7 +119,7 @@ export default React.memo(function NodeCard({
 
   return (
     <div
-      className="glass-card node-card"
+      className={`glass-card node-card${halo ? ` node-card--${halo}` : ''}`}
       style={{ borderTop: `2px solid ${borderColor || 'var(--accent)'}`, ...bgStyle }}
     >
       <div className="section-header grab-handle">
@@ -167,6 +172,13 @@ export default React.memo(function NodeCard({
           {metrics.map((m, i) => {
             const valStr = `${m.value ?? '—'}${m.unit || ''}`;
             const autoShrink = valStr.length > 8;
+            // Tint the value itself (not just the bar) by real usage, with an
+            // SR-only label so the cue is never color-only (WCAG 1.4.1).
+            const sev = usageSeverity(m.percent);
+            const sevLabel = severityLabel(sev);
+            const accent = borderColor || 'var(--accent)';
+            const barColor = severityColor(sev, accent); // non-cache bar (real usage)
+            const cacheColor = severityColor(usageSeverity(m.withCachePercent), accent); // stacked bar
             return (
               <div className="metric-block" key={i}>
                 <span className="metric-label">{m.label}</span>
@@ -178,10 +190,16 @@ export default React.memo(function NodeCard({
                       : m.small
                         ? 'var(--fs-metric-value-sm)'
                         : 'var(--fs-metric-value)',
+                    // Tint the VALUE only for critical (red passes contrast on
+                    // every theme). Amber as large value-text fails the 3:1
+                    // large-text floor on light themes — warn still reads via the
+                    // bar, the card halo, and the SR label below.
+                    color: sev === 'critical' ? 'var(--red)' : undefined,
                   }}
                 >
                   {m.value ?? '—'}
                   {m.unit && <span className="metric-unit">{m.unit}</span>}
+                  {sevLabel && <span className="sr-only"> ({sevLabel})</span>}
                 </span>
                 {m.percent != null && !isNaN(m.percent) && (
                   <div className="metric-bar">
@@ -193,12 +211,7 @@ export default React.memo(function NodeCard({
                         <div
                           style={{
                             width: `${Math.min(m.percent, 100)}%`,
-                            background:
-                              m.withCachePercent > 90
-                                ? 'var(--red)'
-                                : m.withCachePercent > 70
-                                  ? 'var(--amber)'
-                                  : borderColor || 'var(--accent)',
+                            background: cacheColor,
                             borderRadius: '2px 0 0 2px',
                             position: 'absolute',
                             left: 0,
@@ -212,8 +225,8 @@ export default React.memo(function NodeCard({
                             width: `${Math.min(m.withCachePercent - m.percent, 100 - m.percent)}%`,
                             background: `repeating-linear-gradient(
                             90deg,
-                            ${m.withCachePercent > 90 ? 'var(--red)' : m.withCachePercent > 70 ? 'var(--amber)' : borderColor || 'var(--accent)'} 0px,
-                            ${m.withCachePercent > 90 ? 'var(--red)' : m.withCachePercent > 70 ? 'var(--amber)' : borderColor || 'var(--accent)'} 2px,
+                            ${cacheColor} 0px,
+                            ${cacheColor} 2px,
                             transparent 2px,
                             transparent 4px
                           )`,
@@ -232,12 +245,7 @@ export default React.memo(function NodeCard({
                         className="metric-bar-fill"
                         style={{
                           width: `${Math.min(m.percent, 100)}%`,
-                          background:
-                            m.percent > 90
-                              ? 'var(--red)'
-                              : m.percent > 70
-                                ? 'var(--amber)'
-                                : borderColor || 'var(--accent)',
+                          background: barColor,
                         }}
                       />
                     )}
