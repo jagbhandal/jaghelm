@@ -38,8 +38,22 @@ router.post('/report', (req, res) => {
   if (!job || !node || !['success', 'failure'].includes(status)) {
     return apiError(res, 400, 'Missing required fields: job, node, status');
   }
+  // Bound the stored string fields so the cron history can't be bloated, and
+  // coerce duration to a finite number (it flows into stored stats).
+  const over = (v, n) => typeof v === 'string' && v.length > n;
+  if (over(job, 256) || over(node, 256) || over(schedule, 256) || over(error, 2048)) {
+    return apiError(res, 413, 'Field too long');
+  }
+  const dur = Number(duration_seconds);
 
-  recordRun({ job, node, status, duration_seconds, schedule, error });
+  recordRun({
+    job,
+    node,
+    status,
+    duration_seconds: Number.isFinite(dur) ? dur : 0,
+    schedule,
+    error,
+  });
   res.json({ ok: true });
 });
 
