@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import NavBar from './components/NavBar';
 import LoginPage from './components/LoginPage';
 import DashboardView from './views/DashboardView';
-import IframeView from './views/IframeView';
-import SettingsView from './views/SettingsView';
 import { getMonitors } from './hooks/useData';
-import { THEMES } from './components/settings/AppearanceTab';
+
+// Settings (13-tab tree) and the iframe view aren't needed for the default
+// dashboard render — code-split them so they don't weigh down the initial bundle.
+const IframeView = lazy(() => import('./views/IframeView'));
+const SettingsView = lazy(() => import('./views/SettingsView'));
+import { THEMES } from './components/settings/themes.js';
 
 // ── Auth token interceptor ──
 // Set up ONCE, synchronously, before any component renders.
@@ -14,7 +17,12 @@ const _authTokenRef = { current: localStorage.getItem('jaghelm-token') || '' };
 if (!window._origFetch) {
   window._origFetch = window.fetch;
   window.fetch = (url, opts = {}) => {
-    if (typeof url === 'string' && url.startsWith('/api') && !url.includes('/auth/login') && _authTokenRef.current) {
+    if (
+      typeof url === 'string' &&
+      url.startsWith('/api') &&
+      !url.includes('/auth/login') &&
+      _authTokenRef.current
+    ) {
       // Build a new opts object — don't mutate the caller's.
       return window._origFetch(url, {
         ...opts,
@@ -45,8 +53,9 @@ export default function App() {
         return JSON.parse(legacy) || defaultConfig();
       }
       return defaultConfig();
+    } catch {
+      return defaultConfig();
     }
-    catch { return defaultConfig(); }
   });
   const configLoadedFromServer = useRef(false);
   const intervalRef = useRef(null);
@@ -55,9 +64,15 @@ export default function App() {
   // Check auth on mount
   useEffect(() => {
     fetch('/api/auth/check')
-      .then(r => r.json())
-      .then(d => { setAuthRequired(d.authRequired); setAuthed(d.authenticated); })
-      .catch(() => { setAuthRequired(false); setAuthed(true); });
+      .then((r) => r.json())
+      .then((d) => {
+        setAuthRequired(d.authRequired);
+        setAuthed(d.authenticated);
+      })
+      .catch(() => {
+        setAuthRequired(false);
+        setAuthed(true);
+      });
   }, [authToken]);
 
   const handleLogin = (token) => {
@@ -67,7 +82,10 @@ export default function App() {
     setAuthed(true);
   };
 
-  useEffect(() => { document.documentElement.setAttribute('data-theme', theme); localStorage.setItem('jaghelm-theme', theme); }, [theme]);
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('jaghelm-theme', theme);
+  }, [theme]);
 
   // Save config: localStorage immediately, server debounced
   useEffect(() => {
@@ -88,13 +106,13 @@ export default function App() {
   // Exception: gridLayout is preserved from localStorage if it exists,
   // because the local layout is always the most recent user arrangement.
   // The server layout may be stale from a previous deploy or compactor bug.
-   useEffect(() => {
+  useEffect(() => {
     if (!authed) return;
     fetch('/api/display-config')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
         if (data && typeof data === 'object' && Object.keys(data).length > 0) {
-          setConfig(prev => {
+          setConfig((prev) => {
             const merged = { ...data };
             // localStorage layout is authoritative — server may be stale from a previous deploy
             if (prev.gridLayout) {
@@ -107,14 +125,18 @@ export default function App() {
         }
         configLoadedFromServer.current = true;
       })
-      .catch(() => { configLoadedFromServer.current = true; });
+      .catch(() => {
+        configLoadedFromServer.current = true;
+      });
   }, [authed]);
 
   useEffect(() => {
     const root = document.documentElement;
     const hex = config.accentColor || '#6366f1';
     root.style.setProperty('--accent', hex);
-    const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+    const r = parseInt(hex.slice(1, 3), 16),
+      g = parseInt(hex.slice(3, 5), 16),
+      b = parseInt(hex.slice(5, 7), 16);
     root.style.setProperty('--accent-glow', `rgba(${r},${g},${b},0.12)`);
     root.style.setProperty('--accent-light', hex);
     root.style.setProperty('--bg-opacity', String(config.bgOpacity ?? 0.3));
@@ -123,11 +145,31 @@ export default function App() {
     // Font family
     const fonts = config.fontFamily || 'default';
     const FONT_FAMILIES = {
-      default: { display: "'Outfit', sans-serif", body: "'DM Sans', sans-serif", mono: "'JetBrains Mono', monospace" },
-      clean: { display: "'Inter', sans-serif", body: "'Inter', sans-serif", mono: "'Fira Code', monospace" },
-      rounded: { display: "'Nunito', sans-serif", body: "'Nunito', sans-serif", mono: "'Source Code Pro', monospace" },
-      sharp: { display: "'Rajdhani', sans-serif", body: "'Roboto', sans-serif", mono: "'Roboto Mono', monospace" },
-      system: { display: "system-ui, -apple-system, sans-serif", body: "system-ui, -apple-system, sans-serif", mono: "ui-monospace, 'SF Mono', monospace" },
+      default: {
+        display: "'Outfit', sans-serif",
+        body: "'DM Sans', sans-serif",
+        mono: "'JetBrains Mono', monospace",
+      },
+      clean: {
+        display: "'Inter', sans-serif",
+        body: "'Inter', sans-serif",
+        mono: "'Fira Code', monospace",
+      },
+      rounded: {
+        display: "'Nunito', sans-serif",
+        body: "'Nunito', sans-serif",
+        mono: "'Source Code Pro', monospace",
+      },
+      sharp: {
+        display: "'Rajdhani', sans-serif",
+        body: "'Roboto', sans-serif",
+        mono: "'Roboto Mono', monospace",
+      },
+      system: {
+        display: 'system-ui, -apple-system, sans-serif',
+        body: 'system-ui, -apple-system, sans-serif',
+        mono: "ui-monospace, 'SF Mono', monospace",
+      },
     };
     const ff = FONT_FAMILIES[fonts] || FONT_FAMILIES.default;
     root.style.setProperty('--font-display', ff.display);
@@ -137,14 +179,23 @@ export default function App() {
     // Font sizes
     const fs = config.fontSizes || {};
     if (fs.sectionTitle) root.style.setProperty('--fs-section-title', `${fs.sectionTitle}px`);
-    if (fs.sectionSubtitle) root.style.setProperty('--fs-section-subtitle', `${fs.sectionSubtitle}px`);
+    if (fs.sectionSubtitle)
+      root.style.setProperty('--fs-section-subtitle', `${fs.sectionSubtitle}px`);
     if (fs.metricValue) root.style.setProperty('--fs-metric-value', `${fs.metricValue}px`);
     if (fs.metricValueSm) root.style.setProperty('--fs-metric-value-sm', `${fs.metricValueSm}px`);
     if (fs.metricLabel) root.style.setProperty('--fs-metric-label', `${fs.metricLabel}px`);
     if (fs.serviceName) root.style.setProperty('--fs-service-name', `${fs.serviceName}px`);
-    if (fs.serviceStatValue) root.style.setProperty('--fs-service-stat-value', `${fs.serviceStatValue}px`);
-    if (fs.serviceStatLabel) root.style.setProperty('--fs-service-stat-label', `${fs.serviceStatLabel}px`);
-  }, [config.accentColor, config.bgOpacity, config.overlayOpacity, config.fontFamily, config.fontSizes]);
+    if (fs.serviceStatValue)
+      root.style.setProperty('--fs-service-stat-value', `${fs.serviceStatValue}px`);
+    if (fs.serviceStatLabel)
+      root.style.setProperty('--fs-service-stat-label', `${fs.serviceStatLabel}px`);
+  }, [
+    config.accentColor,
+    config.bgOpacity,
+    config.overlayOpacity,
+    config.fontFamily,
+    config.fontSizes,
+  ]);
 
   // Card blur override
   useEffect(() => {
@@ -163,17 +214,28 @@ export default function App() {
     // The Kuma health check runs in parallel — it updates the navbar health dot
     // but does NOT block the dashboard data load.
     setLastUpdated(new Date());
-    setRefreshKey(k => k + 1);
+    setRefreshKey((k) => k + 1);
 
     // Navbar health indicator — fire and forget, non-blocking
     getMonitors()
-      .then(m => {
+      .then((m) => {
         if (m === null) return; // 304 — no change, keep current health status
         if (m && typeof m === 'object') {
           const v = Object.values(m);
-          if (v.length === 0) { setOverallHealth('unknown'); }
-          else { setOverallHealth(v.some(x => x.status === 'down') ? 'down' : v.some(x => x.status === 'unknown') ? 'degraded' : 'up'); }
-        } else { setOverallHealth('unknown'); }
+          if (v.length === 0) {
+            setOverallHealth('unknown');
+          } else {
+            setOverallHealth(
+              v.some((x) => x.status === 'down')
+                ? 'down'
+                : v.some((x) => x.status === 'unknown')
+                  ? 'degraded'
+                  : 'up'
+            );
+          }
+        } else {
+          setOverallHealth('unknown');
+        }
       })
       .catch(() => setOverallHealth('unknown'));
   }, []);
@@ -204,41 +266,68 @@ export default function App() {
   if (authRequired && !authed) {
     return (
       <>
-        <div className="bg-layer"><div className="bg-overlay" /></div>
+        <div className="bg-layer">
+          <div className="bg-overlay" />
+        </div>
         <div className="bg-mesh" />
         <LoginPage onLogin={handleLogin} config={config} />
       </>
     );
   }
 
-  const allTabs = [{ id: 'dashboard', label: 'Dashboard', type: 'dashboard' }, ...(config.tabs || [])];
+  const allTabs = [
+    { id: 'dashboard', label: 'Dashboard', type: 'dashboard' },
+    ...(config.tabs || []),
+  ];
 
   return (
     <>
       <div className="bg-layer">
-        {config.bgImage && <div className="bg-image" style={{ backgroundImage: `url(${config.bgImage})` }} />}
+        {config.bgImage && (
+          <div className="bg-image" style={{ backgroundImage: `url(${config.bgImage})` }} />
+        )}
         <div className="bg-overlay" />
       </div>
       <div className="bg-mesh" />
       {config.showDots && activeTab !== 'settings' && <div className="dot-grid" />}
       <div className="app-container">
-        <NavBar tabs={allTabs} activeTab={activeTab} onTabChange={setActiveTab}
-          theme={theme} setTheme={setTheme}
+        <NavBar
+          tabs={allTabs}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          theme={theme}
+          setTheme={setTheme}
           onToggleTheme={() => {
-            const order = THEMES.map(t => t.id);
-            setTheme(t => { const i = order.indexOf(t); return order[(i + 1) % order.length]; });
+            const order = THEMES.map((t) => t.id);
+            setTheme((t) => {
+              const i = order.indexOf(t);
+              return order[(i + 1) % order.length];
+            });
           }}
-          health={overallHealth} lastUpdated={lastUpdated} config={config}
-          onOpenSettings={() => setActiveTab(t => t === 'settings' ? 'dashboard' : 'settings')}
-          onLogout={authRequired ? () => {
-            localStorage.removeItem('jaghelm-token');
-            _authTokenRef.current = '';
-            setAuthToken('');
-            setAuthed(false);
-            setActiveTab('dashboard');
-          } : null}
-          refreshKey={refreshKey} />
-        <div style={activeTab === 'dashboard' ? undefined : { visibility: 'hidden', height: 0, overflow: 'hidden' }}>
+          health={overallHealth}
+          lastUpdated={lastUpdated}
+          config={config}
+          onOpenSettings={() => setActiveTab((t) => (t === 'settings' ? 'dashboard' : 'settings'))}
+          onLogout={
+            authRequired
+              ? () => {
+                  localStorage.removeItem('jaghelm-token');
+                  _authTokenRef.current = '';
+                  setAuthToken('');
+                  setAuthed(false);
+                  setActiveTab('dashboard');
+                }
+              : null
+          }
+          refreshKey={refreshKey}
+        />
+        <div
+          style={
+            activeTab === 'dashboard'
+              ? undefined
+              : { visibility: 'hidden', height: 0, overflow: 'hidden' }
+          }
+        >
           <DashboardView
             config={config}
             setConfig={setConfig}
@@ -246,10 +335,26 @@ export default function App() {
             onOpenSettings={() => setActiveTab('settings')}
           />
         </div>
-        {activeTab === 'settings' && <SettingsView config={config} setConfig={setConfig} theme={theme} setTheme={setTheme} />}
-        {allTabs.find(t => t.id === activeTab && t.type === 'iframe') && (
-          <IframeView url={allTabs.find(t => t.id === activeTab).url} title={allTabs.find(t => t.id === activeTab).label} />
-        )}
+        <Suspense
+          fallback={
+            <div
+              className="lazy-fallback"
+              style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}
+            >
+              Loading…
+            </div>
+          }
+        >
+          {activeTab === 'settings' && (
+            <SettingsView config={config} setConfig={setConfig} theme={theme} setTheme={setTheme} />
+          )}
+          {allTabs.find((t) => t.id === activeTab && t.type === 'iframe') && (
+            <IframeView
+              url={allTabs.find((t) => t.id === activeTab).url}
+              title={allTabs.find((t) => t.id === activeTab).label}
+            />
+          )}
+        </Suspense>
       </div>
     </>
   );
@@ -257,14 +362,28 @@ export default function App() {
 
 function defaultConfig() {
   return {
-    title: 'JAGHELM', subtitle: 'Infrastructure Dashboard',
-    logoUrl: '', bgImage: '', bgOpacity: 0.3, overlayOpacity: 0.75, showDots: true,
-    accentColor: '#6366f1', refreshInterval: 30, searchEngine: 'google', showSearch: true,
-    weatherLat: '', weatherLon: '', showWeather: false, weatherCity: '',
-    showDockerStats: false, showTodos: true, showCronJobs: true,
+    title: 'JAGHELM',
+    subtitle: 'Infrastructure Dashboard',
+    logoUrl: '',
+    bgImage: '',
+    bgOpacity: 0.3,
+    overlayOpacity: 0.75,
+    showDots: true,
+    accentColor: '#6366f1',
+    refreshInterval: 30,
+    searchEngine: 'google',
+    showSearch: true,
+    weatherLat: '',
+    weatherLon: '',
+    showWeather: false,
+    weatherCity: '',
+    showDockerStats: false,
+    showTodos: true,
+    showCronJobs: true,
     tabs: [],
     sections: {},
-    gridLayout: null, gridColumns: 24,
+    gridLayout: null,
+    gridColumns: 24,
     links: {},
   };
 }

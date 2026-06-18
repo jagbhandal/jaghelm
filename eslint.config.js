@@ -38,9 +38,25 @@ export default [
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
     },
   },
-  // Tests — node:test globals
+  // Tests — node:test (backend) + Vitest (frontend, globals:true) globals
   {
-    files: ['**/*.test.js', '**/*.test.jsx'],
-    languageOptions: { globals: { ...globals.node } },
+    files: ['**/*.test.js', '**/*.test.jsx', 'src/testing/**/*.js'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        // Vitest globals (vite.config.js test.globals = true) — no imports needed.
+        describe: 'readonly',
+        it: 'readonly',
+        test: 'readonly',
+        expect: 'readonly',
+        vi: 'readonly',
+        suite: 'readonly',
+        beforeAll: 'readonly',
+        afterAll: 'readonly',
+        beforeEach: 'readonly',
+        afterEach: 'readonly',
+      },
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
   },
 ];
