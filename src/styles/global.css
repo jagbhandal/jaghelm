@@ -542,3 +542,26 @@ body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: 
 /* Keyboard move/resize handle (src/components/HelmGrid/GridItem.jsx): visually hidden until focused — mouse users drag the section header instead, so it adds no chrome. */
 .helmgrid-move-handle { position: absolute; top: 4px; right: 4px; width: 1px; height: 1px; padding: 0; margin: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); border: 0; background: transparent; color: var(--text-secondary); cursor: grab; z-index: 21; }
 .helmgrid-move-handle:focus { width: 26px; height: 26px; clip: auto; clip-path: none; display: flex; align-items: center; justify-content: center; background: var(--bg-card-inner); border: 1px solid var(--accent); border-radius: 6px; outline: 2px solid var(--accent); outline-offset: 1px; font-size: 13px; line-height: 1; }
+
+/* ── Mobile layout pass (appended) ──────────────────────────────────────────
+   The app is already broadly responsive (hamburger nav, stacked grid, 44px hit
+   areas). These close the remaining phone gaps: a less-crowded nav, the
+   horizontal settings sidebar's group overlines starting their own row, and
+   side-by-side settings fields stacking. */
+@media (max-width: 768px) {
+  /* In the wrapped (horizontal) sidebar a group overline should start its own
+     row; the vertical divider between groups is then redundant. */
+  .settings-sidebar-group-label { flex-basis: 100%; }
+  .settings-sidebar-divider { display: none; }
+}
+@media (max-width: 600px) {
+  /* The phone has its own clock and the nav is tight when wrapped — drop the
+     clock and the "Updated Xs" stamp (the health dot still signals liveness). */
+  .nav-clock, .nav-updated { display: none; }
+  /* Two/three-up settings fields are too narrow on a phone — stack them. */
+  .settings-grid-2, .settings-grid-3 { grid-template-columns: 1fr; }
+}
+@media (max-width: 420px) {
+  /* Keep the temperature glance, drop the city label to save the row. */
+  .nav-weather-city { display: none; }
+}
