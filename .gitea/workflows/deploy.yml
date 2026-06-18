@@ -4,23 +4,35 @@ on:
   push:
     branches:
       - main
+  # Event-driven path: the GitHub build (.github/workflows/build-push.yml)
+  # dispatches this workflow AFTER the image is built, pushed, and signed — so the
+  # image is guaranteed ready and the GHCR poll below becomes an instant no-op
+  # instead of a timing guess. Opt-in; see docs/adr/0005-event-driven-deploy.md.
+  # The push trigger above stays as a fallback until the dispatch is verified in
+  # production, then it should be removed (ADR 0005, Phase 2).
+  workflow_dispatch:
+
+# Serialize deploys. During rollout BOTH triggers can fire for a single merge
+# (the push on mirror-sync + the build's dispatch), so this prevents two deploys
+# racing against the host; the second simply redeploys the same image.
+concurrency:
+  group: deploy-jaghelm-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: self-hosted
     steps:
-      # ── Build→deploy coupling (KNOWN WEAKNESS) ────────────────────────────
-      # This job runs on push to main, but the image it pulls is built by a
-      # SEPARATE workflow (.github/workflows/build-push.yml). There is no real
-      # ordering between them — the `sleep` below is a guess that the GHCR image
-      # has finished building and pushing :latest.
-      #
-      # PROPER FIX (not done here to keep this change conservative): trigger this
-      # deploy from the build's completion — a `workflow_run`/`repository_dispatch`
-      # from the GitHub build, or a registry webhook — and pass the exact image
-      # SHA/digest to pin. Until then we (a) wait a bounded time and (b) poll the
-      # registry for the freshly-built :sha-<short> tag so we fail fast instead of
-      # deploying a stale image. The health gate at the end is the real backstop.
+      # ── Build→deploy coupling ─────────────────────────────────────────────
+      # The image this job pulls is built by a SEPARATE workflow
+      # (.github/workflows/build-push.yml). Two trigger paths reach here:
+      #   • workflow_dispatch — fired by the build AFTER the image is pushed, so
+      #     the poll below succeeds on the first try (the proper, event-driven
+      #     path; opt-in, see docs/adr/0005-event-driven-deploy.md).
+      #   • push to main (fallback) — fires on mirror-sync before the build has
+      #     finished, so the poll waits (bounded) for the :sha-<short> tag.
+      # Either way we pin to this commit's immutable :sha-<short> image (not the
+      # racing :latest), and the health gate at the end is the real backstop.
       - name: Wait for the freshly-built image to be available
         run: |
           set -euo pipefail
