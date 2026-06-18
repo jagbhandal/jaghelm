@@ -13,7 +13,12 @@ import { Router } from 'express';
 import { authMiddleware } from './middleware.js';
 import { authEnabled, checkPassword, getAuthUser, setPassword } from './passwords.js';
 import { createSession, deleteAllSessionsExcept, getSession } from './sessions.js';
-import { checkLoginRate, resetLoginRate } from './rateLimit.js';
+import {
+  checkLoginRate,
+  resetLoginRate,
+  registerLoginFailure,
+  loginFailureDelay,
+} from './rateLimit.js';
 import { apiError } from '../errors.js';
 import { recordAuthFailure } from '../metrics.js';
 import { createLogger } from '../util/logger.js';
@@ -40,7 +45,7 @@ function constantTimeEqual(a, b) {
   return crypto.timingSafeEqual(ab, bb);
 }
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   if (!authEnabled()) {
     return res.json({ token: 'noauth', user: 'admin' });
   }
@@ -64,7 +69,9 @@ router.post('/login', (req, res) => {
     return res.json({ token, user: username });
   }
 
-  recordAuthFailure();
+  registerLoginFailure(); // feeds the global brute-force counter
+  recordAuthFailure(); // metric
+  await loginFailureDelay(); // throttle + dull the timing oracle
   return apiError(res, 401, 'Invalid credentials');
 });
 
