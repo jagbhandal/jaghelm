@@ -5,11 +5,11 @@ import SettingsView from './SettingsView';
 
 // SettingsView's `update(path, value)` helper is THE thing the upcoming refactor
 // changes: today it deep-sets immutably via JSON.parse(JSON.stringify(prev)), and
-// that clone is to be replaced with immer. These tests pin the OBSERVABLE
+// that clone is to be replaced with setIn. These tests pin the OBSERVABLE
 // contract of `update`, driven through the real UI:
 //   1. a nested path is set to the new value (correct deep-set), and
 //   2. the previous config object is NOT mutated (immutability) — the property
-//      that immer must also preserve.
+//      that setIn must also preserve.
 // We render the General tab (simplest field-driven tab) which receives the real
 // `update` callback SettingsView builds. SettingsView also renders a scaled
 // DashboardView preview that fetches data, so we stub fetch to inert responses.
@@ -61,7 +61,7 @@ const makeConfig = (overrides = {}) => ({
   ...overrides,
 });
 
-describe('SettingsView update() contract (guards the immer swap)', () => {
+describe('SettingsView update() contract (guards the setIn swap)', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn(inertFetch));
   });
@@ -96,7 +96,7 @@ describe('SettingsView update() contract (guards the immer swap)', () => {
     // New object identity...
     expect(next).not.toBe(prev);
     // ...and the previous reference is untouched (this is the property the
-    // JSON.parse(JSON.stringify) clone provides today and immer must preserve).
+    // setIn clone provides today and setIn must preserve).
     expect(prev.title).toBe('Original');
     expect(next.title).toBe('Changed');
   });

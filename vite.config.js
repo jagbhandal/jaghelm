@@ -12,11 +12,14 @@ export default defineConfig({
         // doesn't bust the (rarely-changing) library bundles.
         manualChunks(id) {
           if (id.includes('node_modules')) {
+            // Only split the EAGER vendors (loaded on first paint) into stable,
+            // cacheable chunks. React + dnd-kit are used by the dashboard itself.
             if (id.includes('react-dom') || id.includes('/react/') || id.includes('/scheduler/'))
               return 'vendor-react';
             if (id.includes('@dnd-kit')) return 'vendor-dnd';
-            if (id.includes('react-colorful')) return 'vendor-color';
-            return 'vendor';
+            // Everything else (e.g. react-colorful, used only by the lazy Settings
+            // tabs) is left to default chunking so it lands in the async chunk
+            // that imports it — and isn't modulepreloaded on first paint.
           }
         },
       },
@@ -31,6 +34,8 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    // Undo vi.stubGlobal between tests so a stubbed fetch can't leak across files.
+    unstubGlobals: true,
     setupFiles: ['./src/testing/setup.js'],
     include: ['src/**/*.test.{js,jsx}'],
     // gridMath.test.js is a pure node:test suite; it runs under `npm test`, not vitest.

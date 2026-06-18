@@ -8,7 +8,7 @@ import { getMonitors } from './hooks/useData';
 // dashboard render — code-split them so they don't weigh down the initial bundle.
 const IframeView = lazy(() => import('./views/IframeView'));
 const SettingsView = lazy(() => import('./views/SettingsView'));
-import { THEMES } from './components/settings/AppearanceTab';
+import { THEMES } from './components/settings/themes.js';
 
 // ── Auth token interceptor ──
 // Set up ONCE, synchronously, before any component renders.

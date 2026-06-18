@@ -3,11 +3,11 @@ import { useState, useRef } from 'react';
 import { describe, it, expect } from 'vitest';
 import LinksTab from './LinksTab';
 
-// LinksTab does link CRUD. Each edit clones with JSON.parse(JSON.stringify) (L16)
+// LinksTab does link CRUD. Each edit clones with setIn (L16)
 // then routes through the `update(path, value)` deep-setter and `setConfig`.
 // These tests lock in that add/edit produce the right config AND don't mutate the
 // previous config object — the immutability the JSON.parse clone provides today
-// and the immer refactor must preserve.
+// and the setIn refactor must preserve.
 
 // Mirror of SettingsView's real update(): immutable deep-set by dotted path.
 function deepSet(prev, path, value) {
