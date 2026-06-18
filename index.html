@@ -31,6 +31,22 @@
     />
     <meta name="twitter:image" content="/og-image.png" />
 
+    <!-- schema.org SoftwareApplication (rich result / SEO). ld+json is a data
+         block, not executable script, so it isn't subject to CSP script-src. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "JagHelm",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Docker, Linux",
+        "description": "A self-hosted homelab dashboard with live data — real Prometheus/cAdvisor metrics, service health, and 42 app integrations behind a drag-resize grid.",
+        "url": "https://github.com/jagbhandal/jaghelm",
+        "softwareHelp": "https://github.com/jagbhandal/jaghelm#readme",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    </script>
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
