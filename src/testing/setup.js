@@ -17,6 +17,12 @@ if (!globalThis.ResizeObserver) {
   };
 }
 
+// jsdom's Element.prototype.scrollIntoView throws "Not implemented"; the command
+// palette calls it to keep the active option in view. Make it an inert no-op.
+if (typeof window !== 'undefined' && window.Element) {
+  window.Element.prototype.scrollIntoView = function scrollIntoView() {};
+}
+
 if (!window.matchMedia) {
   window.matchMedia = (query) => ({
     matches: false,
