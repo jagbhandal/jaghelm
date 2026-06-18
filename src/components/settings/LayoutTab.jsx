@@ -1,9 +1,22 @@
 import React from 'react';
 import { useConfig } from '../../context/ConfigContext.jsx';
+import { useConfirm } from '../../context/OverlayContext.jsx';
 import Field from './Field';
 
 export default function LayoutTab() {
   const { config, update } = useConfig();
+  const confirm = useConfirm();
+
+  const resetGridLayout = async () => {
+    const ok = await confirm({
+      title: 'Reset grid layout?',
+      body: 'This resets all panel positions and sizes to their defaults. This cannot be undone.',
+      confirmLabel: 'Reset Layout',
+      danger: true,
+    });
+    if (ok) update('gridLayout', null);
+  };
+
   return (
     <div className="settings-section">
       <Card title="Grid">
@@ -29,7 +42,7 @@ export default function LayoutTab() {
         </Field>
 
         <div style={{ marginTop: 16 }}>
-          <button className="settings-btn-danger" onClick={() => update('gridLayout', null)}>
+          <button className="settings-btn-danger" onClick={resetGridLayout}>
             Reset Grid Layout
           </button>
           <p className="settings-hint-block" style={{ marginTop: 6 }}>

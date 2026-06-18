@@ -3,7 +3,9 @@ import NavBar from './components/NavBar';
 import LoginPage from './components/LoginPage';
 import DashboardView from './views/DashboardView';
 import { ConfigProvider } from './context/ConfigContext.jsx';
+import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
 import { getMonitors } from './hooks/useData';
+import { getAuthToken } from './api/client.js';
 
 // Settings (13-tab tree) and the iframe view aren't needed for the default
 // dashboard render — code-split them so they don't weigh down the initial bundle.
@@ -12,33 +14,27 @@ const SettingsView = lazy(() => import('./views/SettingsView'));
 import { THEMES } from './components/settings/themes.js';
 import { apiFetch, setAuthToken as setApiAuthToken } from './api/client.js';
 
+/**
+ * App — outer shell. Owns auth resolution and the (unauthenticated) login
+ * screen. The login screen renders OUTSIDE <OverlayProvider> (it has no need
+ * for toasts/confirms). Once authenticated, the whole authenticated experience
+ * — dashboard, settings, and the save machinery — is mounted inside
+ * <OverlayProvider> so any of it can useToast()/useConfirm(). AppMain is split
+ * out precisely so it can sit under that provider and call the hooks itself.
+ */
 export default function App() {
   const [authed, setAuthed] = useState(false);
   const [authRequired, setAuthRequired] = useState(null);
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('jaghelm-token') || '');
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [theme, setTheme] = useState(() => localStorage.getItem('jaghelm-theme') || 'dark');
-  const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [overallHealth, setOverallHealth] = useState('up');
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [config, setConfig] = useState(() => {
-    try {
-      // Start with localStorage for instant render, server fetch will override
-      const existing = localStorage.getItem('jaghelm-config');
-      if (existing) return JSON.parse(existing) || defaultConfig();
-      const legacy = localStorage.getItem('jagnet-config');
-      if (legacy) {
-        localStorage.setItem('jaghelm-config', legacy);
-        return JSON.parse(legacy) || defaultConfig();
-      }
-      return defaultConfig();
-    } catch {
-      return defaultConfig();
-    }
-  });
-  const configLoadedFromServer = useRef(false);
-  const intervalRef = useRef(null);
-  const saveTimerRef = useRef(null);
+
+  // Apply the persisted theme to the document before login resolves, so the
+  // login screen renders in the user's chosen theme (matching prior behaviour
+  // where App's theme effect ran regardless of auth state). AppMain owns the
+  // live theme afterwards.
+  useEffect(() => {
+    const stored = localStorage.getItem('jaghelm-theme');
+    if (stored) document.documentElement.setAttribute('data-theme', stored);
+  }, []);
 
   // Check auth on mount
   useEffect(() => {
@@ -61,6 +57,54 @@ export default function App() {
     setAuthed(true);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('jaghelm-token');
+    setApiAuthToken(''); // Clear apiFetch's in-memory token
+    setAuthToken('');
+    setAuthed(false);
+  };
+
+  // Show login if auth required and not authenticated
+  if (authRequired === null) return null; // Loading
+  if (authRequired && !authed) {
+    return (
+      <>
+        <div className="bg-layer">
+          <div className="bg-overlay" />
+        </div>
+        <div className="bg-mesh" />
+        <LoginPage onLogin={handleLogin} config={readStoredConfig()} />
+      </>
+    );
+  }
+
+  // Authenticated tree lives inside OverlayProvider so the dashboard and
+  // settings (and the save effects in AppMain) can useToast()/useConfirm().
+  return (
+    <OverlayProvider>
+      <AppMain authRequired={authRequired} onLogout={handleLogout} />
+    </OverlayProvider>
+  );
+}
+
+function AppMain({ authRequired, onLogout }) {
+  const toast = useToast();
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [theme, setTheme] = useState(() => localStorage.getItem('jaghelm-theme') || 'dark');
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [overallHealth, setOverallHealth] = useState('up');
+  const [refreshKey, setRefreshKey] = useState(0);
+  // Start with localStorage for instant render; the server fetch overrides it.
+  // `migrate` upgrades the legacy `jagnet-config` key to the current one.
+  const [config, setConfig] = useState(() => readStoredConfig({ migrate: true }));
+  const configLoadedFromServer = useRef(false);
+  const intervalRef = useRef(null);
+  const saveTimerRef = useRef(null);
+  // Latest config + whether a debounced server save is still pending, so the
+  // flush-on-unload handler can write the most recent edit synchronously.
+  const pendingConfigRef = useRef(config);
+  const savePendingRef = useRef(false);
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('jaghelm-theme', theme);
@@ -69,24 +113,91 @@ export default function App() {
   // Save config: localStorage immediately, server debounced
   useEffect(() => {
     localStorage.setItem('jaghelm-config', JSON.stringify(config));
+    // Keep the latest config available to the unload flush handler.
+    pendingConfigRef.current = config;
     // Don't save to server until we've loaded from server first (prevents overwriting server config with defaults)
     if (!configLoadedFromServer.current) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    // From here a server write is owed; the flush handler may send it early.
+    savePendingRef.current = true;
     saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      savePendingRef.current = false;
       apiFetch('/api/display-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
-      }).catch(() => {});
+        // keepalive so a save that fires just before an unload still completes
+        // (closes the narrow race the visibilitychange flush doesn't cover).
+        keepalive: true,
+      })
+        .then((r) => {
+          // A non-2xx response is a failed save just as much as a thrown error.
+          if (!r.ok) throw new Error(`save failed (${r.status})`);
+        })
+        .catch(() => {
+          // The debounced effect re-arms on the next edit, and localStorage
+          // already holds the value — surface the failure so the user knows
+          // their settings aren't yet persisted server-side.
+          toast("Couldn't save settings — will retry", 'error');
+        });
     }, 2000);
-  }, [config]);
+  }, [config, toast]);
 
-  // Load config from server on successful auth (authoritative source)
+  // Flush a pending (debounced-but-unsent) server save immediately when the tab
+  // is hidden or about to unload. Without this, an edit made <2s before the user
+  // closes/navigates is lost server-side (localStorage survives, but other
+  // devices never see it). sendBeacon can't carry the x-auth-token header (the
+  // server rejects query/cookie tokens), so when authed we use fetch+keepalive
+  // which can; we only fall back to sendBeacon when no token is needed.
+  useEffect(() => {
+    const flushSave = () => {
+      if (!savePendingRef.current) return;
+      // Cancel the debounce and consume the pending state so we send exactly once.
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+      savePendingRef.current = false;
+      const body = JSON.stringify(pendingConfigRef.current);
+      const token = getAuthToken();
+      // No token → auth disabled → sendBeacon works (no custom header needed).
+      if (!token && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+        try {
+          navigator.sendBeacon(
+            '/api/display-config',
+            new Blob([body], { type: 'application/json' })
+          );
+          return;
+        } catch {
+          // fall through to keepalive fetch
+        }
+      }
+      // keepalive lets the request outlive the page, and unlike sendBeacon it
+      // can carry the x-auth-token header (via apiFetch) on authed instances.
+      apiFetch('/api/display-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      }).catch(() => {});
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flushSave();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('beforeunload', flushSave);
+    window.addEventListener('pagehide', flushSave);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('beforeunload', flushSave);
+      window.removeEventListener('pagehide', flushSave);
+    };
+  }, []);
+
+  // Load config from server on mount (authoritative source)
   // Exception: gridLayout is preserved from localStorage if it exists,
   // because the local layout is always the most recent user arrangement.
   // The server layout may be stale from a previous deploy or compactor bug.
   useEffect(() => {
-    if (!authed) return;
     apiFetch('/api/display-config')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -107,7 +218,7 @@ export default function App() {
       .catch(() => {
         configLoadedFromServer.current = true;
       });
-  }, [authed]);
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -246,17 +357,16 @@ export default function App() {
       .catch(() => setOverallHealth('unknown'));
   }, []);
 
-  // Initial fetch on auth
+  // Initial fetch on mount
   const didInitialFetch = useRef(false);
   useEffect(() => {
-    if (!authed || didInitialFetch.current) return;
+    if (didInitialFetch.current) return;
     didInitialFetch.current = true;
     doRefresh();
-  }, [authed, doRefresh]);
+  }, [doRefresh]);
 
   // Set up refresh interval — debounced so slider dragging doesn't spam intervals
   useEffect(() => {
-    if (!authed) return;
     const timer = setTimeout(() => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = setInterval(doRefresh, intervalMs);
@@ -265,21 +375,7 @@ export default function App() {
       clearTimeout(timer);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [doRefresh, intervalMs, authed]);
-
-  // Show login if auth required and not authenticated
-  if (authRequired === null) return null; // Loading
-  if (authRequired && !authed) {
-    return (
-      <>
-        <div className="bg-layer">
-          <div className="bg-overlay" />
-        </div>
-        <div className="bg-mesh" />
-        <LoginPage onLogin={handleLogin} config={config} />
-      </>
-    );
-  }
+  }, [doRefresh, intervalMs]);
 
   const allTabs = [
     { id: 'dashboard', label: 'Dashboard', type: 'dashboard' },
@@ -316,10 +412,7 @@ export default function App() {
           onLogout={
             authRequired
               ? () => {
-                  localStorage.removeItem('jaghelm-token');
-                  setApiAuthToken(''); // Clear apiFetch's in-memory token
-                  setAuthToken('');
-                  setAuthed(false);
+                  onLogout();
                   setActiveTab('dashboard');
                 }
               : null
@@ -356,6 +449,24 @@ export default function App() {
       </div>
     </ConfigProvider>
   );
+}
+
+// Read the last-persisted config from localStorage, falling back to defaults.
+// Used both for AppMain's instant-render seed (with `migrate` to upgrade the
+// legacy `jagnet-config` key) and for the login screen's branding.
+function readStoredConfig({ migrate = false } = {}) {
+  try {
+    const existing = localStorage.getItem('jaghelm-config');
+    if (existing) return JSON.parse(existing) || defaultConfig();
+    const legacy = localStorage.getItem('jagnet-config');
+    if (legacy) {
+      if (migrate) localStorage.setItem('jaghelm-config', legacy);
+      return JSON.parse(legacy) || defaultConfig();
+    }
+  } catch {
+    // fall through to defaults
+  }
+  return defaultConfig();
 }
 
 function defaultConfig() {

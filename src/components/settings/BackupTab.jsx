@@ -1,8 +1,26 @@
 import React, { useState } from 'react';
 import { useConfig } from '../../context/ConfigContext.jsx';
+import { useConfirm, useToast } from '../../context/OverlayContext.jsx';
+
+// Top-level keys that must never be carried in from an imported file — assigning
+// to these can poison the prototype chain. A valid config never contains them.
+const FORBIDDEN_KEYS = ['__proto__', 'constructor', 'prototype'];
+
+// Sanity-check a parsed import: it must be a plain, non-null, non-array object
+// and must not try to set a dangerous top-level key. Unknown keys are tolerated
+// (the config shape evolves), so this is a guard, not a strict schema.
+function isPlausibleConfig(parsed) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+  for (const key of FORBIDDEN_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(parsed, key)) return false;
+  }
+  return true;
+}
 
 export default function BackupTab() {
   const { config, setConfig } = useConfig();
+  const confirm = useConfirm();
+  const toast = useToast();
   const [importStatus, setImportStatus] = useState(null);
 
   const exportConfig = () => {
@@ -20,14 +38,37 @@ export default function BackupTab() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
+      let parsed;
       try {
-        const parsed = JSON.parse(ev.target.result);
-        if (!parsed || typeof parsed !== 'object') throw new Error('Invalid format');
+        parsed = JSON.parse(ev.target.result);
+      } catch {
+        const msg = 'Import failed: file is not valid JSON.';
+        setImportStatus({ ok: false, msg });
+        toast(msg, 'error');
+        return;
+      }
+      if (!isPlausibleConfig(parsed)) {
+        const msg = "Import failed: file isn't a valid configuration object.";
+        setImportStatus({ ok: false, msg });
+        toast(msg, 'error');
+        return;
+      }
+      // Destructive: this overwrites every current setting. Confirm first, then
+      // apply. The handler is async but we don't await it — the FileReader
+      // callback can't be async and there's nothing after this to sequence.
+      confirm({
+        title: 'Replace your entire configuration?',
+        body: 'This overwrites all current settings.',
+        confirmLabel: 'Replace Config',
+        danger: true,
+      }).then((ok) => {
+        if (!ok) {
+          setImportStatus(null);
+          return;
+        }
         setConfig(parsed);
         setImportStatus({ ok: true, msg: 'Config imported successfully.' });
-      } catch (err) {
-        setImportStatus({ ok: false, msg: `Import failed: ${err.message}` });
-      }
+      });
     };
     reader.readAsText(file);
     e.target.value = '';

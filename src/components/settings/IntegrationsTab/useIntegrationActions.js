@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { apiFetch } from '../../../api/client.js';
+import { useConfirm } from '../../../context/OverlayContext.jsx';
 
 /**
  * useIntegrationActions — wraps the four API-touching handlers (test, save,
@@ -13,6 +14,7 @@ import { apiFetch } from '../../../api/client.js';
  *   onAfterSave     — called on successful save (typically goHome())
  */
 export function useIntegrationActions({ selectedPreset, editingType, form, refetch, onAfterSave }) {
+  const confirm = useConfirm();
   const [testStatus, setTestStatus] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null);
 
@@ -50,7 +52,11 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
         url: form.url,
         enabled: form.enabled,
       };
-      if (form.instance.trim()) body.instance = form.instance.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+      if (form.instance.trim())
+        body.instance = form.instance
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9-]/g, '');
       if (form.target) body.target = form.target;
       if (form.username) body.username = form.username;
       if (form.password) body.password = form.password;
@@ -67,7 +73,9 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
       const data = await res.json();
       if (data.ok) {
         setSaveStatus('saved');
-        setTimeout(() => { onAfterSave?.(); }, 800);
+        setTimeout(() => {
+          onAfterSave?.();
+        }, 800);
       } else {
         setSaveStatus({ error: data.error || 'Save failed' });
       }
@@ -78,7 +86,13 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
 
   // ── Delete integration ──
   const handleDelete = async (type) => {
-    if (!confirm(`Remove ${type} integration? This will delete stored credentials.`)) return;
+    const ok = await confirm({
+      title: `Remove the ${type} integration?`,
+      body: 'This deletes the stored credentials for this integration. This cannot be undone.',
+      confirmLabel: 'Remove Integration',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await apiFetch(`/api/integrations/${type}`, { method: 'DELETE' });
       refetch();
@@ -109,8 +123,13 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
   };
 
   return {
-    testStatus, setTestStatus,
-    saveStatus, setSaveStatus,
-    handleTest, handleSave, handleDelete, handleToggle,
+    testStatus,
+    setTestStatus,
+    saveStatus,
+    setSaveStatus,
+    handleTest,
+    handleSave,
+    handleDelete,
+    handleToggle,
   };
 }
