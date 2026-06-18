@@ -79,6 +79,7 @@ export default function NodePanel({
   claimedContainers,
   integrationData,
   isMobile,
+  banner,
 }) {
   const { config } = useConfig();
   if (sectionCfg.visible === false) return null;
@@ -119,6 +120,7 @@ export default function NodePanel({
           nodeData={node}
           panelId={gridKey}
           dragDisabled={isMobile}
+          banner={banner}
         >
           <ProxmoxVMList vms={proxmoxVms} borderColor={borderColor} />
           <ProxmoxStoragePools pools={proxmoxStorage} borderColor={borderColor} />

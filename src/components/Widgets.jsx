@@ -51,7 +51,7 @@ function sectionBgStyle(sec) {
   return {};
 }
 
-export const UPSCard = React.memo(function UPSCard({ upsData, borderColor }) {
+export const UPSCard = React.memo(function UPSCard({ upsData, borderColor, banner }) {
   const { config } = useConfig();
   const sec = config?.sections?.ups || {};
   // nut_status values: 0=Unknown, 1=Online (OL), 2=On Battery (OB), 3=Low Battery (LB)
@@ -93,6 +93,7 @@ export const UPSCard = React.memo(function UPSCard({ upsData, borderColor }) {
           <div className="section-subtitle">{sec.subtitle || 'APC Back-UPS ES 600M1'}</div>
         </div>
       </div>
+      {banner}
       <div className="ups-grid">
         <div className="metric-block">
           <span className="metric-label">Status</span>
@@ -153,7 +154,7 @@ export const UPSCard = React.memo(function UPSCard({ upsData, borderColor }) {
   );
 });
 
-export const GiteaActivity = React.memo(function GiteaActivity({ commits }) {
+export const GiteaActivity = React.memo(function GiteaActivity({ commits, banner }) {
   const { config } = useConfig();
   const sec = config?.sections?.pipeline || {};
   const ago = (d) => {
@@ -190,6 +191,8 @@ export const GiteaActivity = React.memo(function GiteaActivity({ commits }) {
           {!isMultiRepo && <div className="section-subtitle">{sec.subtitle || ''}</div>}
         </div>
       </div>
+
+      {banner}
 
       {/* Multi-repo layout */}
       {isMultiRepo && repoGroups.length > 0 && (
@@ -255,7 +258,7 @@ export const GiteaActivity = React.memo(function GiteaActivity({ commits }) {
   );
 });
 
-export const CronJobs = React.memo(function CronJobs({ nodes }) {
+export const CronJobs = React.memo(function CronJobs({ nodes, banner }) {
   const { config } = useConfig();
   const sec = config?.sections?.cronJobs || {};
 
@@ -294,6 +297,8 @@ export const CronJobs = React.memo(function CronJobs({ nodes }) {
           <div className="section-subtitle">{sec.subtitle || 'Cron job execution log'}</div>
         </div>
       </div>
+
+      {banner}
 
       {isEmpty && (
         <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: 8 }}>

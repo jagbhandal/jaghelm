@@ -11,7 +11,9 @@
  *
  * If there is no prior 200 cached (cold start, first request) and the server
  * somehow answers 304 — which it shouldn't, since we don't send If-None-Match
- * without a stored etag — we return null and consumers leave their state alone.
+ * without a stored etag — we return the NOT_MODIFIED_NO_BODY sentinel (a
+ * success with no body to apply, distinct from a thrown failure) and consumers
+ * leave their data state alone.
  */
 
 import { apiFetch } from '../api/client.js';
@@ -28,12 +30,35 @@ const etagStore = new Map();
 const resultStore = new Map();
 
 /**
+ * Sentinel returned by fetchJson on a 304 cold-start edge: the server answered
+ * 304 but we have no cached 200 body to return. Distinct from a real fetch
+ * failure (which throws) AND from a legitimate `null` payload that an endpoint
+ * might actually return as its 200 body. Consumers MUST treat NOT_MODIFIED_NO_BODY
+ * as a *success* (the server confirmed nothing changed) but leave their data
+ * state untouched — there is simply no body to apply yet.
+ *
+ * Identity is module-frozen so callers can compare by reference (===).
+ */
+export const NOT_MODIFIED_NO_BODY = Object.freeze({ __jaghelm304NoBody: true });
+
+/**
  * Fetch JSON with ETag support.
+ *
+ * Outcome contract — three mutually-distinguishable results so callers can
+ * track per-source health without conflating "unchanged" with "failed":
+ *   1. SUCCESS (200): returns the freshly-parsed body (new reference).
+ *   2. SUCCESS (304, have prior body): returns the previously-cached body — the
+ *      SAME reference returned for the prior 200, so downstream useState(ref)
+ *      bails on Object.is and the subtree does NOT re-render. (Load-bearing
+ *      304-stable-identity contract.)
+ *   3. SUCCESS (304, cold-start, no prior body): returns the NOT_MODIFIED_NO_BODY
+ *      sentinel. Still a success — the network round-trip worked — but there is
+ *      no body to apply.
+ *   FAILURE (network error / non-2xx / non-304): THROWS. This is the only path
+ *      a caller should read as a source error; an unchanged 304 must never look
+ *      like a failure.
+ *
  * - Sends If-None-Match header if we have a cached ETag for this URL.
- * - On 304: returns the previously-cached body (same reference) so consumers
- *   can call setState() and React will bail via Object.is. Returns null only
- *   if we have never had a successful 200 for this URL.
- * - Returns parsed JSON otherwise.
  * - Pass skipEtag=true to force a full fetch (used on first load when state is empty).
  */
 async function fetchJson(url, skipEtag = false) {
@@ -46,9 +71,11 @@ async function fetchJson(url, skipEtag = false) {
   const r = await apiFetch(url, { headers, signal: AbortSignal.timeout(12000) });
 
   // 304 Not Modified — return the prior result reference (stable identity).
-  // Fall back to null only if we somehow got 304 with no cached body.
+  // If we somehow got 304 with no cached body, return the sentinel (still a
+  // success, just nothing to apply) rather than null/throw, so callers can tell
+  // it apart from a real failure and from an endpoint's genuine null payload.
   if (r.status === 304) {
-    return resultStore.has(url) ? resultStore.get(url) : null;
+    return resultStore.has(url) ? resultStore.get(url) : NOT_MODIFIED_NO_BODY;
   }
 
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -79,19 +106,37 @@ export async function getServices(skipEtag) {
 // Dedicated section data (not covered by /api/services or /api/integrations)
 // ══════════════════════════════════════════════════════════════
 
-export async function getUPSStatus(skipEtag) { return fetchJson(`${BASE}/ups`, skipEtag); }
-export async function getGiteaActivity(skipEtag) { return fetchJson(`${BASE}/gitea/activity`, skipEtag); }
-export async function getCronStatus(skipEtag) { return fetchJson(`${BASE}/cron/status`, skipEtag); }
+export async function getUPSStatus(skipEtag) {
+  return fetchJson(`${BASE}/ups`, skipEtag);
+}
+export async function getGiteaActivity(skipEtag) {
+  return fetchJson(`${BASE}/gitea/activity`, skipEtag);
+}
+export async function getCronStatus(skipEtag) {
+  return fetchJson(`${BASE}/cron/status`, skipEtag);
+}
 
 // Phase 3: Integration Engine
-export async function getAllIntegrations(skipEtag) { return fetchJson(`${BASE}/integrations`, skipEtag); }
-export async function getIntegrationPresets() { return fetchJson(`${BASE}/integrations/presets`); }
+export async function getAllIntegrations(skipEtag) {
+  return fetchJson(`${BASE}/integrations`, skipEtag);
+}
+export async function getIntegrationPresets() {
+  return fetchJson(`${BASE}/integrations/presets`);
+}
 export async function testIntegration(data) {
-  const r = await apiFetch(`${BASE}/integrations/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const r = await apiFetch(`${BASE}/integrations/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
   return r.json();
 }
 export async function saveIntegration(data) {
-  const r = await apiFetch(`${BASE}/integrations/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const r = await apiFetch(`${BASE}/integrations/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
   return r.json();
 }
 export async function deleteIntegration(type) {
@@ -103,10 +148,14 @@ export async function deleteIntegration(type) {
 // Legacy functions (kept: getMonitors used by App.jsx health check)
 // ══════════════════════════════════════════════════════════════
 
-export async function getMonitors() { return fetchJson(`${BASE}/uptime/monitors`); }
+export async function getMonitors() {
+  return fetchJson(`${BASE}/uptime/monitors`);
+}
 
 export async function getWeather(lat, lon) {
-  const r = await apiFetch(`${BASE}/weather?lat=${lat}&lon=${lon}`, { signal: AbortSignal.timeout(12000) });
+  const r = await apiFetch(`${BASE}/weather?lat=${lat}&lon=${lon}`, {
+    signal: AbortSignal.timeout(12000),
+  });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -117,7 +166,11 @@ export async function getTodos() {
   return r.json();
 }
 export async function saveTodos(todos) {
-  await apiFetch(`${BASE}/todos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(todos) });
+  await apiFetch(`${BASE}/todos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(todos),
+  });
 }
 
 export async function uploadFile(file, type) {
@@ -137,14 +190,17 @@ export async function uploadFile(file, type) {
  * Icons are fetched from the CDN once, saved to data/icon-cache/,
  * and served locally on all subsequent loads. Eliminates 20-30
  * cross-origin CDN round-trips on every cold page load.
- * 
+ *
  * Non-CDN URLs (local paths, data URIs) pass through unchanged.
  * Emojis and empty strings return null.
  */
 export function cachedIconUrl(url) {
   if (!url || typeof url !== 'string') return null;
   // Only proxy external CDN URLs
-  if (url.startsWith('https://cdn.jsdelivr.net/') || url.startsWith('https://raw.githubusercontent.com/')) {
+  if (
+    url.startsWith('https://cdn.jsdelivr.net/') ||
+    url.startsWith('https://raw.githubusercontent.com/')
+  ) {
     return `/api/icons/cached?url=${encodeURIComponent(url)}`;
   }
   // Local paths, data URIs, etc. — pass through
@@ -156,15 +212,24 @@ export function cachedIconUrl(url) {
 // ══════════════════════════════════════════════════════════════
 
 export const WEATHER_CODES = {
-  0: { icon: '☀️', label: 'Clear' }, 1: { icon: '🌤', label: 'Mostly Clear' },
-  2: { icon: '⛅', label: 'Partly Cloudy' }, 3: { icon: '☁️', label: 'Overcast' },
-  45: { icon: '🌫', label: 'Foggy' }, 48: { icon: '🌫', label: 'Rime Fog' },
-  51: { icon: '🌦', label: 'Light Drizzle' }, 53: { icon: '🌦', label: 'Drizzle' },
-  55: { icon: '🌧', label: 'Heavy Drizzle' }, 61: { icon: '🌧', label: 'Light Rain' },
-  63: { icon: '🌧', label: 'Rain' }, 65: { icon: '🌧', label: 'Heavy Rain' },
-  71: { icon: '🌨', label: 'Light Snow' }, 73: { icon: '🌨', label: 'Snow' },
-  75: { icon: '❄️', label: 'Heavy Snow' }, 80: { icon: '🌦', label: 'Showers' },
-  81: { icon: '🌧', label: 'Heavy Showers' }, 95: { icon: '⛈', label: 'Thunderstorm' },
+  0: { icon: '☀️', label: 'Clear' },
+  1: { icon: '🌤', label: 'Mostly Clear' },
+  2: { icon: '⛅', label: 'Partly Cloudy' },
+  3: { icon: '☁️', label: 'Overcast' },
+  45: { icon: '🌫', label: 'Foggy' },
+  48: { icon: '🌫', label: 'Rime Fog' },
+  51: { icon: '🌦', label: 'Light Drizzle' },
+  53: { icon: '🌦', label: 'Drizzle' },
+  55: { icon: '🌧', label: 'Heavy Drizzle' },
+  61: { icon: '🌧', label: 'Light Rain' },
+  63: { icon: '🌧', label: 'Rain' },
+  65: { icon: '🌧', label: 'Heavy Rain' },
+  71: { icon: '🌨', label: 'Light Snow' },
+  73: { icon: '🌨', label: 'Snow' },
+  75: { icon: '❄️', label: 'Heavy Snow' },
+  80: { icon: '🌦', label: 'Showers' },
+  81: { icon: '🌧', label: 'Heavy Showers' },
+  95: { icon: '⛈', label: 'Thunderstorm' },
 };
 
 export const SEARCH_ENGINES = [
@@ -177,46 +242,47 @@ export const SEARCH_ENGINES = [
 ];
 
 export const SERVICE_ICONS = {
-  'npm': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nginx-proxy-manager.svg',
-  'nginx': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nginx-proxy-manager.svg',
-  'adguard': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/adguard-home.svg',
-  'photoprism': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/photoprism.svg',
-  'photos': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/photoprism.svg',
-  'vaultwarden': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/vaultwarden.svg',
-  'vault': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/vaultwarden.svg',
-  'gitea': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/gitea.svg',
-  'nextcloud': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nextcloud.svg',
-  'cloud': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nextcloud.svg',
-  'grafana': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/grafana.svg',
-  'proxmox': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/proxmox.svg',
-  'dockge': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/dockge.svg',
-  'uptime': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/uptime-kuma.svg',
-  'kuma': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/uptime-kuma.svg',
-  'code': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/vscode.svg',
+  npm: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nginx-proxy-manager.svg',
+  nginx: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nginx-proxy-manager.svg',
+  adguard: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/adguard-home.svg',
+  photoprism: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/photoprism.svg',
+  photos: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/photoprism.svg',
+  vaultwarden: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/vaultwarden.svg',
+  vault: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/vaultwarden.svg',
+  gitea: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/gitea.svg',
+  nextcloud: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nextcloud.svg',
+  cloud: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nextcloud.svg',
+  grafana: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/grafana.svg',
+  proxmox: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/proxmox.svg',
+  dockge: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/dockge.svg',
+  uptime: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/uptime-kuma.svg',
+  kuma: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/uptime-kuma.svg',
+  code: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/vscode.svg',
   'vs code': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/vscode.svg',
-  'cloudflare': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/cloudflare.svg',
-  'tunnel': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/cloudflare.svg',
-  'tailscale': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/tailscale.svg',
-  'prometheus': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/prometheus.svg',
-  'nas': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nas.svg',
-  'synology': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/synology.svg',
-  'ugreen': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nas.svg',
-  'ntfy': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/ntfy.svg',
-  'homebridge': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/homebridge.svg',
-  'plex': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/plex.svg',
-  'jellyfin': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/jellyfin.svg',
-  'pihole': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/pi-hole.svg',
-  'sonarr': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/sonarr.svg',
-  'radarr': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/radarr.svg',
-  'portainer': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/portainer.svg',
-  'wireguard': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/wireguard.svg',
-  'backrest': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/backrest.svg',
-  'casaos': 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/casaos.svg',
-  'collabora': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/collabora-online.svg',
-  'watchtower': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/watchtower.svg',
-  'nut': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/nut.svg',
-  'homepage': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/homepage.svg',
-  'jaghelm': '/logo.svg',
+  cloudflare: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/cloudflare.svg',
+  tunnel: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/cloudflare.svg',
+  tailscale: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/tailscale.svg',
+  prometheus: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/prometheus.svg',
+  nas: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nas.svg',
+  synology: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/synology.svg',
+  ugreen: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/nas.svg',
+  ntfy: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/ntfy.svg',
+  homebridge: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/homebridge.svg',
+  plex: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/plex.svg',
+  jellyfin: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/jellyfin.svg',
+  pihole: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/pi-hole.svg',
+  sonarr: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/sonarr.svg',
+  radarr: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/radarr.svg',
+  portainer: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/portainer.svg',
+  wireguard: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/wireguard.svg',
+  backrest: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/backrest.svg',
+  casaos: 'https://cdn.jsdelivr.net/gh/walkxcode/Dashboard-Icons/svg/casaos.svg',
+  collabora:
+    'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/collabora-online.svg',
+  watchtower: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/watchtower.svg',
+  nut: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/nut.svg',
+  homepage: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/homepage.svg',
+  jaghelm: '/logo.svg',
 };
 
 export function getServiceIcon(name) {

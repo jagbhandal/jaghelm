@@ -22,7 +22,10 @@ export default React.memo(function NavBar({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const searchRef = useRef(null);
+  const menuRef = useRef(null);
+  const menuBtnRef = useRef(null);
 
   useEffect(() => {
     const u = () => {
@@ -81,6 +84,32 @@ export default React.memo(function NavBar({
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
+
+  // Mobile nav menu: close on outside tap, and on Escape (returning focus to the
+  // trigger so keyboard users aren't dropped at the top of the document).
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointer = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setMenuOpen(false);
+        menuBtnRef.current?.focus();
+      }
+    };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
+  const selectTab = (id) => {
+    onTabChange(id);
+    setMenuOpen(false);
+  };
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -141,6 +170,43 @@ export default React.memo(function NavBar({
             </button>
           );
         })}
+      </div>
+      {/* Mobile-only tab switcher: .nav-tabs is hidden under 600px, so this
+          menu is the only way to change tab on a phone. Hidden on desktop via CSS. */}
+      <div className="nav-menu" ref={menuRef}>
+        <button
+          ref={menuBtnRef}
+          type="button"
+          className="icon-btn nav-menu-btn"
+          aria-haspopup="true"
+          aria-expanded={menuOpen}
+          aria-controls="nav-menu-dropdown"
+          aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          title="Menu"
+          onClick={() => setMenuOpen((o) => !o)}
+        >
+          ☰
+        </button>
+        {menuOpen && (
+          // Disclosure pattern (not role=menu): plain buttons Tab navigates;
+          // Escape/outside-tap close and return focus. No arrow-key menu semantics.
+          <div id="nav-menu-dropdown" className="nav-menu-dropdown" aria-label="Dashboard views">
+            {tabs.map((t) => {
+              const selected = activeTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  aria-current={selected ? 'page' : undefined}
+                  className={`nav-menu-item ${selected ? 'active' : ''}`}
+                  onClick={() => selectTab(t.id)}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
       {config?.showSearch !== false && (
         <div className="nav-search-wrap" ref={searchRef}>

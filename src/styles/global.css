@@ -485,3 +485,30 @@ body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: 
 }
 
 .skeleton-card { min-height: 180px; border-radius: var(--card-radius); }
+
+/* ── Mobile nav menu (appended) ──
+   .nav-tabs is hidden under 600px, so this hamburger menu is the only tab
+   switcher on a phone. Hidden on desktop; shown + 44px hit areas under 600px. */
+.nav-menu { display: none; position: relative; flex-shrink: 0; }
+.nav-menu-dropdown { position: absolute; top: calc(100% + 6px); right: 0; min-width: 180px; background: var(--bg-secondary); border: 1px solid var(--glass-border); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); overflow: hidden; z-index: 150; padding: 4px; display: flex; flex-direction: column; gap: 2px; }
+.nav-menu-item { display: block; width: 100%; text-align: left; padding: 12px 14px; min-height: 44px; border: none; border-radius: 8px; background: transparent; color: var(--text-primary); font-family: var(--font-body); font-size: 15px; font-weight: 500; cursor: pointer; transition: background 0.15s; }
+.nav-menu-item:hover { background: var(--accent-glow); }
+.nav-menu-item.active { background: var(--accent); color: #fff; }
+@media (max-width: 600px) {
+  .nav-menu { display: block; margin-left: auto; }
+  .icon-btn { width: 44px; height: 44px; }
+}
+
+/* ── Per-panel degraded / stale banner (appended) ──
+   Compact in-card notice shown when a data source errors or goes stale. Sits
+   between a panel's header and body; theme-aware via the red and amber tokens.
+   .is-error = upstream unreachable (louder, red); .is-stale = data aging (amber). */
+.degraded-banner { border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; font-family: var(--font-body); }
+.degraded-banner.is-error { background: var(--red-bg); border: 1px solid var(--red-border); border-left: 3px solid var(--red); }
+.degraded-banner.is-stale { background: var(--amber-bg); border: 1px solid var(--amber-border); border-left: 3px solid var(--amber); }
+.degraded-banner-row { display: flex; align-items: center; gap: 8px; }
+.degraded-banner-icon { font-size: 14px; line-height: 1; flex-shrink: 0; }
+.degraded-banner-text { flex: 1; min-width: 0; }
+.degraded-banner-message { font-size: 12px; font-weight: 600; color: var(--text-primary); line-height: 1.35; }
+.degraded-banner-stale { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; }
+.degraded-banner-retry { flex-shrink: 0; padding: 4px 12px; font-size: 12px; }
