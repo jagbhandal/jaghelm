@@ -13,6 +13,7 @@ import SecurityTab from '../components/settings/SecurityTab';
 import BackupTab from '../components/settings/BackupTab';
 import IntegrationsTab from '../components/settings/IntegrationsTab';
 import DashboardView from './DashboardView';
+import { setIn } from '../utils/setIn.js';
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: '🏠', desc: 'Title, logo, branding' },
@@ -26,7 +27,13 @@ const SECTIONS = [
   { id: 'links', label: 'Links', icon: '🔗', desc: 'Quick Launch bookmarks', divider: true },
   { id: 'widgets', label: 'Widgets', icon: '🧩', desc: 'Search, weather, features' },
   { id: 'tabs', label: 'Tabs', icon: '📑', desc: 'Embedded service tabs' },
-  { id: 'security', label: 'Security', icon: '🔒', desc: 'Password & authentication', divider: true },
+  {
+    id: 'security',
+    label: 'Security',
+    icon: '🔒',
+    desc: 'Password & authentication',
+    divider: true,
+  },
   { id: 'backup', label: 'Backup', icon: '💾', desc: 'Export & import config' },
 ];
 
@@ -44,14 +51,16 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
   // Fetch server config on mount and when switching to relevant tabs
   const fetchServerData = useCallback(() => {
     Promise.all([
-      fetch('/api/services/config').then(r => r.ok ? r.json() : null),
-      fetch('/api/services').then(r => r.ok ? r.json() : null),
-      fetch('/api/services/monitors').then(r => r.ok ? r.json() : null),
-    ]).then(([cfg, svc, mon]) => {
-      if (cfg) setServerConfig(cfg);
-      if (svc) setLiveServices(svc);
-      if (Array.isArray(mon)) setMonitorNames(mon);
-    }).catch(() => {});
+      fetch('/api/services/config').then((r) => (r.ok ? r.json() : null)),
+      fetch('/api/services').then((r) => (r.ok ? r.json() : null)),
+      fetch('/api/services/monitors').then((r) => (r.ok ? r.json() : null)),
+    ])
+      .then(([cfg, svc, mon]) => {
+        if (cfg) setServerConfig(cfg);
+        if (svc) setLiveServices(svc);
+        if (Array.isArray(mon)) setMonitorNames(mon);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -71,33 +80,31 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newConfig),
       })
-        .then(r => r.json())
+        .then((r) => r.json())
         .then(() => setServerSaving(false))
         .catch(() => setServerSaving(false));
     }, 1500);
   }, []);
 
-  // ── Display config helpers (same pattern as old SettingsPanel) ──
-  const update = useCallback((path, value) => {
-    setConfig(prev => {
-      const next = JSON.parse(JSON.stringify(prev));
-      const keys = path.split('.');
-      let obj = next;
-      for (let i = 0; i < keys.length - 1; i++) {
-        if (!obj[keys[i]]) obj[keys[i]] = {};
-        obj = obj[keys[i]];
-      }
-      obj[keys[keys.length - 1]] = value;
-      return next;
-    });
-  }, [setConfig]);
+  // ── Display config helpers ──
+  // Immutable deep-set via setIn: clones only the path (structural sharing) so
+  // untouched config branches keep their identity — cheaper than the previous
+  // whole-config JSON deep-clone, and memo-friendly.
+  const update = useCallback(
+    (path, value) => {
+      setConfig((prev) => setIn(prev, path, value));
+    },
+    [setConfig]
+  );
 
   return (
     <div className="settings-page">
       {/* Sidebar */}
       <nav className="settings-sidebar" aria-label="Settings sections">
         <div className="settings-sidebar-header">
-          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18 }}>Settings</span>
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18 }}>
+            Settings
+          </span>
         </div>
         <div className="settings-sidebar-nav">
           {SECTIONS.map((s, i) => (
@@ -115,7 +122,9 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
                   <span className="settings-sidebar-desc">{s.desc}</span>
                 </div>
                 {s.disabled && (
-                  <span className="settings-saving" style={{ flexShrink: 0 }}>SOON</span>
+                  <span className="settings-saving" style={{ flexShrink: 0 }}>
+                    SOON
+                  </span>
                 )}
               </button>
             </React.Fragment>
@@ -129,38 +138,33 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
         <main className="settings-main" style={{ maxWidth: '50%', flex: '0 0 50%' }}>
           <div className="settings-main-header">
             <h1 className="settings-main-title">
-              {SECTIONS.find(s => s.id === activeSection)?.icon}{' '}
-              {SECTIONS.find(s => s.id === activeSection)?.label}
+              {SECTIONS.find((s) => s.id === activeSection)?.icon}{' '}
+              {SECTIONS.find((s) => s.id === activeSection)?.label}
             </h1>
             <p className="settings-main-desc">
-              {SECTIONS.find(s => s.id === activeSection)?.desc}
+              {SECTIONS.find((s) => s.id === activeSection)?.desc}
             </p>
           </div>
           <div className="settings-main-content">
-            {activeSection === 'general' && (
-              <GeneralTab config={config} update={update} />
-            )}
+            {activeSection === 'general' && <GeneralTab config={config} update={update} />}
             {activeSection === 'appearance' && (
               <AppearanceTab config={config} update={update} theme={theme} setTheme={setTheme} />
             )}
-            {activeSection === 'typography' && (
-              <TypographyTab config={config} update={update} />
-            )}
-            {activeSection === 'layout' && (
-              <LayoutTab config={config} update={update} />
-            )}
-            {activeSection === 'sections' && (
-              <SectionsTab config={config} update={update} />
-            )}
-            {activeSection === 'nodes' && (
-              serverConfig ? (
-                <NodesTab serverConfig={serverConfig} onSave={saveServerConfig} saving={serverSaving} />
+            {activeSection === 'typography' && <TypographyTab config={config} update={update} />}
+            {activeSection === 'layout' && <LayoutTab config={config} update={update} />}
+            {activeSection === 'sections' && <SectionsTab config={config} update={update} />}
+            {activeSection === 'nodes' &&
+              (serverConfig ? (
+                <NodesTab
+                  serverConfig={serverConfig}
+                  onSave={saveServerConfig}
+                  saving={serverSaving}
+                />
               ) : (
                 <LoadingState />
-              )
-            )}
-            {activeSection === 'services' && (
-              serverConfig && liveServices ? (
+              ))}
+            {activeSection === 'services' &&
+              (serverConfig && liveServices ? (
                 <ServicesTab
                   serverConfig={serverConfig}
                   liveServices={liveServices}
@@ -170,55 +174,61 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
                 />
               ) : (
                 <LoadingState />
-              )
-            )}
-            {activeSection === 'integrations' && (
-              <IntegrationsTab />
-            )}
+              ))}
+            {activeSection === 'integrations' && <IntegrationsTab />}
             {activeSection === 'links' && (
               <LinksTab config={config} update={update} setConfig={setConfig} />
             )}
-            {activeSection === 'widgets' && (
-              <WidgetsTab config={config} update={update} />
-            )}
-            {activeSection === 'tabs' && (
-              <TabsTab config={config} update={update} />
-            )}
-            {activeSection === 'security' && (
-              <SecurityTab />
-            )}
-            {activeSection === 'backup' && (
-              <BackupTab config={config} setConfig={setConfig} />
-            )}
+            {activeSection === 'widgets' && <WidgetsTab config={config} update={update} />}
+            {activeSection === 'tabs' && <TabsTab config={config} update={update} />}
+            {activeSection === 'security' && <SecurityTab />}
+            {activeSection === 'backup' && <BackupTab config={config} setConfig={setConfig} />}
           </div>
         </main>
 
         {/* Live Preview Panel — always visible */}
-        <div style={{
-          flex: '0 0 50%', maxWidth: '50%',
-          borderLeft: '1px solid var(--glass-border)',
-          overflow: 'hidden', position: 'relative',
-          background: 'var(--bg-primary)',
-        }}>
+        <div
+          style={{
+            flex: '0 0 50%',
+            maxWidth: '50%',
+            borderLeft: '1px solid var(--glass-border)',
+            overflow: 'hidden',
+            position: 'relative',
+            background: 'var(--bg-primary)',
+          }}
+        >
           {/* Preview header bar */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '8px 16px',
-            borderBottom: '1px solid var(--glass-border)',
-            background: 'var(--bg-secondary)',
-          }}>
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 11,
-              color: 'var(--text-secondary)', letterSpacing: 0.5,
-            }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '8px 16px',
+              borderBottom: '1px solid var(--glass-border)',
+              background: 'var(--bg-secondary)',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                color: 'var(--text-secondary)',
+                letterSpacing: 0.5,
+              }}
+            >
               LIVE PREVIEW
             </span>
             <button
-              onClick={() => setPreviewRefreshKey(k => k + 1)}
+              onClick={() => setPreviewRefreshKey((k) => k + 1)}
               style={{
-                background: 'none', border: '1px solid var(--border-color)',
-                borderRadius: 6, padding: '3px 8px', cursor: 'pointer',
-                fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)',
+                background: 'none',
+                border: '1px solid var(--border-color)',
+                borderRadius: 6,
+                padding: '3px 8px',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                color: 'var(--text-muted)',
               }}
             >
               ↻ Refresh Data
@@ -226,23 +236,23 @@ export default function SettingsView({ config, setConfig, theme, setTheme }) {
           </div>
 
           {/* Scaled dashboard preview */}
-          <div style={{
-            overflow: 'auto',
-            height: 'calc(100vh - 60px - 40px)',
-            position: 'relative',
-          }}>
-            <div style={{
-              transform: 'scale(0.55)',
-              transformOrigin: 'top left',
-              width: '182%',
-              minHeight: '182%',
-              pointerEvents: 'none',
-            }}>
-              <DashboardView
-                config={config}
-                setConfig={setConfig}
-                refreshKey={previewRefreshKey}
-              />
+          <div
+            style={{
+              overflow: 'auto',
+              height: 'calc(100vh - 60px - 40px)',
+              position: 'relative',
+            }}
+          >
+            <div
+              style={{
+                transform: 'scale(0.55)',
+                transformOrigin: 'top left',
+                width: '182%',
+                minHeight: '182%',
+                pointerEvents: 'none',
+              }}
+            >
+              <DashboardView config={config} setConfig={setConfig} refreshKey={previewRefreshKey} />
             </div>
           </div>
         </div>
@@ -255,7 +265,9 @@ function LoadingState() {
   return (
     <div className="settings-loading">
       <div className="skeleton" style={{ width: 20, height: 20, borderRadius: '50%' }} />
-      <span className="text-mono" style={{ fontSize: 13 }}>Loading server config...</span>
+      <span className="text-mono" style={{ fontSize: 13 }}>
+        Loading server config...
+      </span>
     </div>
   );
 }
