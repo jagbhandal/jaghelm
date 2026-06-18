@@ -101,7 +101,8 @@
   --bg-primary: #ffffff; --bg-secondary: #f6f8fa; --bg-card: rgba(255,255,255,0.95);
   --bg-card-hover: rgba(246,248,250,1); --bg-card-inner: rgba(246,248,250,0.8);
   --border-color: rgba(208,215,222,0.6); --border-glow: rgba(9,105,218,0.15);
-  --text-primary: #1f2328; --text-secondary: #656d76; --text-muted: #8b949e;
+  /* text-secondary/muted darkened for WCAG AA 4.5:1 on light surfaces (were #656d76 / #8b949e ≈ 3.1:1) */
+  --text-primary: #1f2328; --text-secondary: #5b6470; --text-muted: #5f6772;
   --accent: #0969da; --accent-light: #218bff; --accent-glow: rgba(9,105,218,0.08);
   --accent-gradient: linear-gradient(135deg, #0969da 0%, #8250df 50%, #bf3989 100%);
   --green: #1a7f37; --green-bg: rgba(26,127,55,0.08); --green-border: rgba(26,127,55,0.2);
@@ -114,7 +115,8 @@
   --bg-primary: #eff1f5; --bg-secondary: #e6e9ef; --bg-card: rgba(220,224,232,0.6);
   --bg-card-hover: rgba(204,208,218,0.7); --bg-card-inner: rgba(188,192,204,0.4);
   --border-color: rgba(172,176,190,0.5); --border-glow: rgba(136,57,239,0.15);
-  --text-primary: #4c4f69; --text-secondary: #6c6f85; --text-muted: #9ca0b0;
+  /* text-secondary/muted darkened for WCAG AA 4.5:1 on light surfaces (muted was #9ca0b0 ≈ 2.3:1) */
+  --text-primary: #4c4f69; --text-secondary: #5c5f72; --text-muted: #5c5f72;
   --accent: #8839ef; --accent-light: #ea76cb; --accent-glow: rgba(136,57,239,0.1);
   --accent-gradient: linear-gradient(135deg, #8839ef 0%, #ea76cb 50%, #dc8a78 100%);
   --green: #40a02b; --green-bg: rgba(64,160,43,0.1); --green-border: rgba(64,160,43,0.25);
@@ -127,7 +129,8 @@
   --bg-primary: #fdf6e3; --bg-secondary: #eee8d5; --bg-card: rgba(238,232,213,0.7);
   --bg-card-hover: rgba(238,232,213,1); --bg-card-inner: rgba(238,232,213,0.5);
   --border-color: rgba(147,161,161,0.35); --border-glow: rgba(42,161,152,0.2);
-  --text-primary: #586e75; --text-secondary: #657b83; --text-muted: #93a1a1;
+  /* text-secondary/muted darkened for WCAG AA 4.5:1 on light surfaces (muted was #93a1a1 ≈ 2.5:1) */
+  --text-primary: #586e75; --text-secondary: #54696f; --text-muted: #5c6a6a;
   --accent: #2aa198; --accent-light: #268bd2; --accent-glow: rgba(42,161,152,0.1);
   --accent-gradient: linear-gradient(135deg, #2aa198 0%, #268bd2 50%, #6c71c4 100%);
   --green: #859900; --green-bg: rgba(133,153,0,0.1); --green-border: rgba(133,153,0,0.25);
@@ -140,7 +143,8 @@
   --bg-primary: #fafafa; --bg-secondary: #f0f0f0; --bg-card: rgba(232,232,232,0.6);
   --bg-card-hover: rgba(224,224,224,0.8); --bg-card-inner: rgba(216,216,216,0.4);
   --border-color: rgba(160,170,180,0.4); --border-glow: rgba(228,86,73,0.15);
-  --text-primary: #383a42; --text-secondary: #696c77; --text-muted: #a0a1a7;
+  /* text-secondary/muted darkened for WCAG AA 4.5:1 on light surfaces (muted was #a0a1a7 ≈ 2.5:1) */
+  --text-primary: #383a42; --text-secondary: #62656f; --text-muted: #62656f;
   --accent: #e45649; --accent-light: #c18401; --accent-glow: rgba(228,86,73,0.08);
   --accent-gradient: linear-gradient(135deg, #e45649 0%, #c18401 50%, #50a14f 100%);
   --green: #50a14f; --green-bg: rgba(80,161,79,0.08); --green-border: rgba(80,161,79,0.2);
@@ -150,6 +154,17 @@
   --shadow-card: 0 1px 3px rgba(56,58,66,0.06), 0 0 0 1px rgba(160,170,180,0.3); --overlay-opacity: 0.1;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Visually-hidden but exposed to assistive tech (screen readers). */
+.sr-only {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: var(--text-primary); background: var(--bg-primary); min-height: 100vh; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
 
 .bg-layer { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
@@ -420,6 +435,42 @@ body { font-family: var(--font-body); font-size: 15px; line-height: 1.6; color: 
 
 .skeleton { background: linear-gradient(90deg, var(--bg-card-inner) 25%, rgba(99,102,241,0.05) 50%, var(--bg-card-inner) 75%); background-size: 200% 100%; animation: sh 1.5s infinite; border-radius: 8px; }
 @keyframes sh { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ══════════════════════════════════════════════════════════════
+   Accessibility — keyboard focus & reduced motion
+   ══════════════════════════════════════════════════════════════ */
+
+/* Global keyboard focus ring keyed to the theme accent (WCAG 2.4.7).
+   :focus-visible only shows for keyboard/AT users, never on mouse click.
+   :where() keeps specificity at 0 so component styles still win on color,
+   and the offset+halo read clearly on every theme's accent token. */
+:where(a, button, input, select, textarea, [tabindex], [role="button"], [role="tab"], summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 4px var(--accent-glow);
+}
+/* Drop the default UA outline only when we render our own focus-visible ring,
+   so non-focus-visible (e.g. legacy :focus) still has the UA fallback. */
+:where(a, button, input, select, textarea, [tabindex], [role="button"], [role="tab"], summary):focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Honor OS "reduce motion": neutralize infinite/decorative animation and the
+   1s metric transitions (WCAG 2.3.3). A static down-state cue is preserved so
+   status meaning is never lost — the pulse just stops at its bright keyframe. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Keep the "down" dot visibly emphasized even though the pulse is stopped. */
+  .status-dot.down { box-shadow: 0 0 12px var(--red); }
+  /* Skeleton shimmer would freeze mid-gradient; show a calm solid placeholder. */
+  .skeleton { background: var(--bg-card-inner); }
+}
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 3px; }

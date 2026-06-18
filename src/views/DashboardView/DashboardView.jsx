@@ -6,6 +6,7 @@ import NodeCard from '../../components/NodeCard';
 import TodoCard from '../../components/TodoCard';
 import DroppablePanel from '../../components/DroppablePanel';
 import ServiceDragOverlay from '../../components/ServiceDragOverlay';
+import ErrorBoundary from '../../components/ErrorBoundary';
 import { UPSCard, GiteaActivity, QuickLaunch, CronJobs } from '../../components/Widgets';
 import { cachedIconUrl } from '../../hooks/useData';
 
@@ -27,7 +28,7 @@ import { useEffectiveLayouts } from './useEffectiveLayouts';
  *   - HelmGrid              → drag/resize-aware responsive grid
  *   - DndContext            → service-card drag between panels
  */
-export default function DashboardView({ config, setConfig, refreshKey }) {
+export default function DashboardView({ config, setConfig, refreshKey, onOpenSettings }) {
   // Mobile detection — used to disable drag/resize on small screens
   const mobileRef = useRef(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -40,7 +41,7 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   }, []);
 
   // Data — fetch loop encapsulated in the hook
-  const { serviceData, ups, commits, cronJobs, integrationData } = useDashboardData(refreshKey);
+  const { serviceData, ups, commits, cronJobs, integrationData, servicesLoaded } = useDashboardData(refreshKey);
 
   // Tier 3 app data per container (preset metrics: queries, blocked, etc.)
   const appDataByContainer = useAppDataMatching(integrationData, serviceData);
@@ -155,18 +156,21 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     () =>
       Object.entries(serviceData.nodes || {})
         .map(([nodeKey, node]) => (
-          <NodePanel
-            key={`node-${nodeKey}`}
-            nodeKey={nodeKey}
-            node={node}
-            sectionCfg={sc[nodeKey] || {}}
-            config={config}
-            setConfig={setConfig}
-            appDataByContainer={appDataByContainer}
-            claimedContainers={claimedContainers}
-            integrationData={integrationData}
-            isMobile={isMobile}
-          />
+          <div key={`node-${nodeKey}`}>
+            <ErrorBoundary inline itemId={`node-${nodeKey}`} label={`Node "${nodeKey}" failed to render`}>
+              <NodePanel
+                nodeKey={nodeKey}
+                node={node}
+                sectionCfg={sc[nodeKey] || {}}
+                config={config}
+                setConfig={setConfig}
+                appDataByContainer={appDataByContainer}
+                claimedContainers={claimedContainers}
+                integrationData={integrationData}
+                isMobile={isMobile}
+              />
+            </ErrorBoundary>
+          </div>
         ))
         .filter(Boolean),
     [serviceData, sc, config, setConfig, appDataByContainer, claimedContainers, integrationData, isMobile]
@@ -185,27 +189,29 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
           return (
             <div key={gridKey}>
-              <DroppablePanel panelId={gridKey} disabled={isMobile}>
-                <NodeCard
-                  sectionKey={`group-${group.id}`}
-                  config={config}
-                  setConfig={setConfig}
-                  borderColor={borderColor}
-                  metrics={null}
-                  services={services}
-                  nodeData={{
-                    display_name: group.title,
-                    icon:
-                      group.icon ||
-                      cachedIconUrl(
-                        'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/folder_special/outline.svg'
-                      ),
-                    subtitle: `${services.length} services`,
-                  }}
-                  panelId={gridKey}
-                  dragDisabled={isMobile}
-                />
-              </DroppablePanel>
+              <ErrorBoundary inline itemId={gridKey} label={`Group "${group.title || group.id}" failed to render`}>
+                <DroppablePanel panelId={gridKey} disabled={isMobile}>
+                  <NodeCard
+                    sectionKey={`group-${group.id}`}
+                    config={config}
+                    setConfig={setConfig}
+                    borderColor={borderColor}
+                    metrics={null}
+                    services={services}
+                    nodeData={{
+                      display_name: group.title,
+                      icon:
+                        group.icon ||
+                        cachedIconUrl(
+                          'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/folder_special/outline.svg'
+                        ),
+                      subtitle: `${services.length} services`,
+                    }}
+                    panelId={gridKey}
+                    dragDisabled={isMobile}
+                  />
+                </DroppablePanel>
+              </ErrorBoundary>
             </div>
           );
         })
@@ -250,6 +256,16 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
   // Welcome banner config
   const wm = config.welcomeMessage || {};
 
+  // First-run empty state: services have loaded, but no nodes were discovered
+  // and the user hasn't created any custom groups. Show a friendly CTA instead
+  // of an empty/Loading grid.
+  const nodeCount = Object.keys(serviceData.nodes || {}).length;
+  const savedNodePlaceholders = (layouts.lg || layouts.md || []).some(
+    (i) => typeof i.i === 'string' && i.i.startsWith('node-')
+  );
+  const isEmpty =
+    servicesLoaded && nodeCount === 0 && customGroups.length === 0 && !savedNodePlaceholders;
+
   // Saved-but-not-yet-loaded node placeholders. Prevents the grid from collapsing
   // while /api/services is still in flight.
   const nodePlaceholders = useMemo(() => {
@@ -288,6 +304,9 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
         </div>
       )}
 
+      {isEmpty ? (
+        <DashboardEmptyState onOpenSettings={onOpenSettings} />
+      ) : (
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
@@ -315,27 +334,37 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
           {sc.ups?.visible !== false && (
             <div key="ups">
-              <UPSCard upsData={ups} borderColor={sc.ups?.borderColor} config={config} />
+              <ErrorBoundary inline itemId="ups" label="UPS panel failed to render">
+                <UPSCard upsData={ups} borderColor={sc.ups?.borderColor} config={config} />
+              </ErrorBoundary>
             </div>
           )}
           {sc.pipeline?.visible !== false && (
             <div key="pipeline">
-              <GiteaActivity commits={commits} config={config} />
+              <ErrorBoundary inline itemId="pipeline" label="Pipeline panel failed to render">
+                <GiteaActivity commits={commits} config={config} />
+              </ErrorBoundary>
             </div>
           )}
           {sc.todos?.visible !== false && (
             <div key="todos">
-              <TodoCard borderColor={sc.todos?.borderColor} config={config} setConfig={setConfig} />
+              <ErrorBoundary inline itemId="todos" label="Todos panel failed to render">
+                <TodoCard borderColor={sc.todos?.borderColor} config={config} setConfig={setConfig} />
+              </ErrorBoundary>
             </div>
           )}
           {config.showCronJobs !== false && (
             <div key="cron-jobs">
-              <CronJobs nodes={cronJobs} config={config} />
+              <ErrorBoundary inline itemId="cron-jobs" label="Cron Jobs panel failed to render">
+                <CronJobs nodes={cronJobs} config={config} />
+              </ErrorBoundary>
             </div>
           )}
           {sc.quicklaunch?.visible !== false && (
             <div key="quicklaunch">
-              <QuickLaunch config={config} borderColor={sc.quicklaunch?.borderColor} />
+              <ErrorBoundary inline itemId="quicklaunch" label="Quick Launch panel failed to render">
+                <QuickLaunch config={config} borderColor={sc.quicklaunch?.borderColor} />
+              </ErrorBoundary>
             </div>
           )}
         </HelmGrid>
@@ -344,6 +373,44 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
           {activeDrag ? <ServiceDragOverlay service={activeDrag} /> : null}
         </DragOverlay>
       </DndContext>
+      )}
+    </div>
+  );
+}
+
+/**
+ * First-run empty state shown when no nodes are discovered. Guides the user to
+ * Settings to connect their first node instead of staring at an empty grid.
+ */
+function DashboardEmptyState({ onOpenSettings }) {
+  return (
+    <div
+      className="glass-card"
+      style={{
+        maxWidth: 560, margin: '48px auto', padding: '40px 32px',
+        textAlign: 'center', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', gap: 12,
+      }}
+    >
+      <div style={{ fontSize: 44, lineHeight: 1 }} aria-hidden="true">🛰️</div>
+      <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 22, color: 'var(--text-primary)', margin: 0 }}>
+        Connect your first node
+      </h2>
+      <p style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--text-secondary)', maxWidth: 420, margin: 0, lineHeight: 1.6 }}>
+        No infrastructure nodes have reported in yet. Add a Prometheus target or
+        a node in Settings, and live metrics will start streaming onto your
+        dashboard here.
+      </p>
+      {onOpenSettings && (
+        <button
+          type="button"
+          className="settings-btn-primary"
+          onClick={onOpenSettings}
+          style={{ marginTop: 8, padding: '10px 20px', fontSize: 14 }}
+        >
+          Open Settings
+        </button>
+      )}
     </div>
   );
 }

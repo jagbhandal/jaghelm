@@ -1,5 +1,6 @@
 import React from 'react';
 import { SEARCH_ENGINES } from '../../hooks/useData';
+import Field from './Field';
 
 export default function WidgetsTab({ config, update }) {
   return (
@@ -88,15 +89,6 @@ function Card({ title, children }) {
   return (
     <div className="settings-card">
       {title && <h3 className="settings-card-title">{title}</h3>}
-      {children}
-    </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <div className="settings-field">
-      <label className="settings-label">{label}</label>
       {children}
     </div>
   );

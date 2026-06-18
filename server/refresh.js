@@ -36,6 +36,7 @@ const MIN_INTERVAL_SECONDS = 10;
 
 let bgRefreshTimer = null;
 let bgRefreshRunning = false;
+let lastRefreshComplete = 0; // ms epoch of the last finished cycle (0 = never)
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -306,6 +307,9 @@ async function _refreshIntegrations() {
         const handlerType = cfg.preset || key;
         const result = await fetchIntegration(handlerType, { ...cfg, _storageKey: key }, true);
         const entry = { ...(result.fields || {}) };
+        // Surface fetch/auth failures instead of dropping them — otherwise a
+        // down integration renders as silent zeros, not an error state.
+        if (result.error) entry._error = result.error;
         if (result.vms) entry._vms = result.vms;
         if (result.storagePools) entry._storagePools = result.storagePools;
         if (result.lastBackup) entry._lastBackup = result.lastBackup;
@@ -341,7 +345,21 @@ async function runBackgroundRefresh() {
     console.error('[refresh] Background cycle error:', err.message);
   } finally {
     bgRefreshRunning = false;
+    lastRefreshComplete = Date.now();
   }
+}
+
+/**
+ * Liveness of the background refresh loop, for /api/health (which the Docker
+ * HEALTHCHECK + deploy verify gate trust). 'starting' before the first cycle,
+ * 'stale' once the loop has missed ~3 expected cycles (wedged), else 'ok'.
+ */
+export function getRefreshHealth() {
+  if (lastRefreshComplete === 0) return { state: 'starting', ageMs: null };
+  const ageMs = Date.now() - lastRefreshComplete;
+  const intervalMs = getRefreshIntervalMs();
+  const state = ageMs > Math.max(3 * intervalMs, 90_000) ? 'stale' : 'ok';
+  return { state, ageMs };
 }
 
 export function startBackgroundRefresh() {
@@ -361,4 +379,12 @@ export function restartBackgroundRefresh() {
   if (bgRefreshTimer) clearInterval(bgRefreshTimer);
   bgRefreshTimer = setInterval(runBackgroundRefresh, intervalMs);
   console.log('[refresh] Background loop restarted — interval %ds', intervalMs / 1000);
+}
+
+/** Stop the background loop. Called on shutdown so the timer doesn't fire mid-drain. */
+export function stopBackgroundRefresh() {
+  if (bgRefreshTimer) {
+    clearInterval(bgRefreshTimer);
+    bgRefreshTimer = null;
+  }
 }

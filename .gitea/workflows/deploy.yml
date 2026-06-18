@@ -9,12 +9,48 @@ jobs:
   deploy:
     runs-on: self-hosted
     steps:
-      - name: Wait for GitHub image build
-        run: sleep 120
+      # ── Build→deploy coupling (KNOWN WEAKNESS) ────────────────────────────
+      # This job runs on push to main, but the image it pulls is built by a
+      # SEPARATE workflow (.github/workflows/build-push.yml). There is no real
+      # ordering between them — the `sleep` below is a guess that the GHCR image
+      # has finished building and pushing :latest.
+      #
+      # PROPER FIX (not done here to keep this change conservative): trigger this
+      # deploy from the build's completion — a `workflow_run`/`repository_dispatch`
+      # from the GitHub build, or a registry webhook — and pass the exact image
+      # SHA/digest to pin. Until then we (a) wait a bounded time and (b) poll the
+      # registry for the freshly-built :sha-<short> tag so we fail fast instead of
+      # deploying a stale image. The health gate at the end is the real backstop.
+      - name: Wait for the freshly-built image to be available
+        run: |
+          set -euo pipefail
+          REPO="ghcr.io/jagbhandal/jaghelm"
+          SHORT_SHA="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          TAG="sha-${SHORT_SHA}"
+          echo ">>> Waiting for ${REPO}:${TAG} to be pushed (built by the GitHub workflow)"
+
+          DEADLINE=$(( $(date +%s) + 360 ))   # up to 6 min
+          until docker manifest inspect "${REPO}:${TAG}" >/dev/null 2>&1; do
+            if [ "$(date +%s)" -ge "${DEADLINE}" ]; then
+              echo "WARNING: ${REPO}:${TAG} not visible after timeout — falling back to :latest."
+              echo "         (The health gate below will still catch a bad deploy.)"
+              break
+            fi
+            echo "    not yet available, retrying in 15s..."
+            sleep 15
+          done
 
       - name: Deploy to production
         run: |
+          set -euo pipefail
           SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /root/.ssh/runner_deploy jagbhandal@192.168.68.11"
+
+          # Record the image currently running so we can roll back to it if the
+          # new one fails its health gate. Empty string if nothing is running yet.
+          echo ">>> Recording current image for rollback"
+          PREV_IMAGE="$($SSH_CMD "docker inspect --format '{{.Config.Image}}' jaghelm 2>/dev/null || true")"
+          echo "    previous image: ${PREV_IMAGE:-<none>}"
+          echo "PREV_IMAGE=${PREV_IMAGE}" >> "$GITHUB_ENV"
 
           echo ">>> Pulling latest image"
           $SSH_CMD "cd /opt/stacks/jaghelm && docker compose pull"
@@ -22,8 +58,64 @@ jobs:
           echo ">>> Deploying"
           $SSH_CMD "cd /opt/stacks/jaghelm && docker compose up -d --force-recreate"
 
-      - name: Verify
+      # ── Real health gate ──────────────────────────────────────────────────
+      # Unlike the old grep+curl (which could not fail), this asserts:
+      #   1. the container reports Health.Status == healthy (Docker HEALTHCHECK),
+      #   2. /api/health returns HTTP 200 AND a body containing "status":"ok".
+      # On failure it attempts a rollback to the previously-running image and
+      # exits non-zero so the deploy is marked failed.
+      - name: Verify deployment (gate + rollback on failure)
         run: |
+          set -euo pipefail
           SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /root/.ssh/runner_deploy jagbhandal@192.168.68.11"
-          sleep 10
-          $SSH_CMD "docker ps | grep jaghelm && curl -s http://localhost:3099/api/health"
+
+          echo ">>> Polling container health (timeout 120s)"
+          # Poll Docker's own HEALTHCHECK status. Healthy → pass; unhealthy or
+          # timeout → fail. `starting` keeps polling within the deadline.
+          HEALTH_OK=0
+          DEADLINE=$(( $(date +%s) + 120 ))
+          while [ "$(date +%s)" -lt "${DEADLINE}" ]; do
+            STATUS="$($SSH_CMD "docker inspect --format '{{.State.Health.Status}}' jaghelm 2>/dev/null || echo missing")"
+            echo "    health=${STATUS}"
+            if [ "${STATUS}" = "healthy" ]; then
+              HEALTH_OK=1
+              break
+            fi
+            if [ "${STATUS}" = "unhealthy" ]; then
+              echo "    container reported unhealthy"
+              break
+            fi
+            sleep 5
+          done
+
+          # Assert the public health endpoint independently of the HEALTHCHECK.
+          # -f makes curl exit non-zero on HTTP >=400; we also require the ok body.
+          echo ">>> Asserting /api/health returns status:ok"
+          ENDPOINT_OK=0
+          if $SSH_CMD "curl -fsS --max-time 10 http://localhost:3099/api/health" | grep -q '\"status\":\"ok\"'; then
+            ENDPOINT_OK=1
+          fi
+          echo "    endpoint_ok=${ENDPOINT_OK} health_ok=${HEALTH_OK}"
+
+          if [ "${HEALTH_OK}" -eq 1 ] && [ "${ENDPOINT_OK}" -eq 1 ]; then
+            echo ">>> Deploy verified healthy."
+            exit 0
+          fi
+
+          echo "!!! Deploy failed health gate."
+          if [ -n "${PREV_IMAGE:-}" ]; then
+            echo ">>> Rolling back to previous image: ${PREV_IMAGE}"
+            # Minimal, dependency-free rollback: stop the bad container, re-point
+            # compose's :latest tag at the image that was running before this
+            # deploy, then recreate with the same compose config (ports, mounts,
+            # hardening all preserved). We retag locally rather than editing the
+            # compose file so the host's compose.yaml is never mutated in place.
+            $SSH_CMD "set -e; \
+              docker tag '${PREV_IMAGE}' ghcr.io/jagbhandal/jaghelm:latest; \
+              cd /opt/stacks/jaghelm && docker compose up -d --force-recreate" \
+              && echo ">>> Rollback applied — verify the service manually." \
+              || echo ">>> Rollback command FAILED — manual intervention required."
+          else
+            echo ">>> No previous image recorded — cannot auto-rollback. Manual intervention required."
+          fi
+          exit 1

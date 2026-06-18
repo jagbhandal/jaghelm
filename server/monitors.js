@@ -9,6 +9,15 @@ let kumaUrl = null;
 let cachedMonitors = null;
 let cacheTime = 0;
 const CACHE_TTL = 15000;
+// Ceiling on how long we'll keep serving the last-known statuses while Kuma is
+// unreachable. Past this, a sustained Kuma outage would otherwise freeze the
+// board on stale "up" statuses; we return empty (unknown) instead.
+const STALE_CEILING_MS = 5 * 60 * 1000;
+
+function staleOrEmpty() {
+  if (cachedMonitors && Date.now() - cacheTime < STALE_CEILING_MS) return cachedMonitors;
+  return {};
+}
 
 export function initMonitors(url) {
   kumaUrl = url;
@@ -40,7 +49,7 @@ export async function fetchMonitors(bustCache = false) {
     const monitorList = (pageData.publicGroupList || []).flatMap(g => g.monitorList || []);
     if (monitorList.length === 0) {
       console.warn('[monitors] No monitors found in status page');
-      return cachedMonitors || {};
+      return staleOrEmpty();
     }
 
     // Fetch heartbeat data (separate endpoint in newer Kuma versions)
@@ -84,7 +93,7 @@ export async function fetchMonitors(bustCache = false) {
     return monitors;
   } catch (err) {
     console.error('[monitors] Failed to fetch Kuma monitors:', err.message);
-    return cachedMonitors || {};
+    return staleOrEmpty();
   }
 }
 

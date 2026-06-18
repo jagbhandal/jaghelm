@@ -29,6 +29,9 @@ export function useDashboardData(refreshKey) {
   const [commits, setCommits] = useState([]);
   const [cronJobs, setCronJobs] = useState([]);
   const [integrationData, setIntegrationData] = useState({});
+  // True once the first /api/services request has settled (success or failure),
+  // so the view can tell "no nodes yet, still loading" from "genuinely empty".
+  const [servicesLoaded, setServicesLoaded] = useState(false);
 
   const hasLoadedRef = useRef(false);
 
@@ -38,6 +41,8 @@ export function useDashboardData(refreshKey) {
       if (data !== null) setServiceData(data || { nodes: {} });
     } catch (err) {
       console.warn('[dashboard] Services fetch failed:', err.message);
+    } finally {
+      setServicesLoaded(true);
     }
   }, []);
 
@@ -77,5 +82,5 @@ export function useDashboardData(refreshKey) {
     fetchIntegrations(skip);
   }, [fetchServices, fetchSections, fetchIntegrations, refreshKey]);
 
-  return { serviceData, ups, commits, cronJobs, integrationData };
+  return { serviceData, ups, commits, cronJobs, integrationData, servicesLoaded };
 }

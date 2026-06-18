@@ -4,8 +4,9 @@
 <h1 align="center">JagHelm</h1>
  
 <p align="center">
-  A self-hosted dashboard for homelabs — live infrastructure metrics,<br>
-  service health, and 42 app integrations behind a drag-resize layout.
+  <b>Live data, not just links.</b><br>
+  A self-hosted homelab dashboard that reads real Prometheus &amp; cAdvisor metrics,
+  service health, and<br>42 app integrations that call your services — behind a layout you drag and resize yourself.
 </p>
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -17,6 +18,46 @@
 <p align="center">
   <img src="public/dashboard.jpg" alt="JagHelm dashboard">
 </p>
+
+## Why JagHelm
+
+Most self-hosted dashboards are **link launchers** — a grid of bookmarks with a
+status dot. JagHelm starts from the other end: it pulls **live numbers** off your
+existing monitoring stack and the apps themselves, then lets you arrange that
+data however you like.
+
+- **Real metrics, not pings.** CPU, RAM, disk, temperature and uptime per node
+  come straight from Prometheus + node_exporter; per-container CPU/MEM/network
+  comes from cAdvisor. These are the same time-series your Grafana reads — not a
+  reachability check.
+- **42 integrations that call your services.** AdGuard queries blocked, Sonarr
+  queue, Proxmox node load, NPM proxy count, and 38 more — each preset knows the
+  endpoint, auth shape, and formatting, so a card shows the actual number, not a
+  link to go find it.
+- **A grid you actually arrange.** A custom drag-resize layout engine (HelmGrid)
+  — panels snap, auto-grow to fit content, and push each other on overlap.
+
+### JagHelm vs Homepage vs Dashy
+
+A rough comparison of where JagHelm sits. Homepage and Dashy are excellent, more
+mature projects with bigger communities — if JagHelm doesn't fit, one of them
+probably will. The point of this table is *positioning*, not a scoreboard.
+
+| | **JagHelm** | **Homepage** | **Dashy** |
+|---|---|---|---|
+| Primary model | Live infra **metrics** + integrations | Links + widgets | Links + status |
+| Node metrics (CPU/RAM/disk/temp) | ✅ via Prometheus + node_exporter | Partial (widgets) | ❌ |
+| Per-container stats (cAdvisor) | ✅ | ❌ | ❌ |
+| App integrations | 42 presets + custom builder | Many widgets | Status checks + some widgets |
+| Layout | Drag-resize grid (snap/auto-grow) | Config-defined columns | Config-defined sections |
+| Config | UI **and** YAML/JSON on disk | YAML files | YAML / UI editor |
+| Auth | Single-user (built-in or proxy) | Proxy-oriented | Multiple options |
+| Maturity | Single-maintainer hobby project | Large, mature | Large, mature |
+
+JagHelm's trade-off is explicit: it leans on a **Prometheus** stack you already
+run (a real dependency, see [`KNOWN-ISSUES.md`](KNOWN-ISSUES.md)) in exchange for
+genuinely live data rather than bookmarks.
+
 ## What it is
  
 JagHelm is a single-page dashboard you point at your homelab. It reads metrics from Prometheus, container stats from cAdvisor, and health checks from Uptime Kuma, then renders them as draggable cards in a layout you arrange yourself. Settings live in the UI — themes, layouts, integrations, secrets — backed by YAML on disk so nothing gets lost on a container rebuild.
@@ -76,8 +117,7 @@ services:
     image: ghcr.io/jagbhandal/jaghelm:latest
     container_name: jaghelm
     restart: unless-stopped
-    ports:
-      - 3099:3099
+    network_mode: host        # binds 3099 on the host; reaches LAN services directly
     env_file:
       - .env
     volumes:
@@ -85,6 +125,15 @@ services:
       - ./uploads:/app/uploads  # logo + background images
     environment:
       - NODE_ENV=production
+```
+ 
+This is the shipped default: `network_mode: host` lets JagHelm reach your
+exporters and LAN apps directly. **Prefer an isolated bridge network?** Drop
+`network_mode: host` and publish the port instead:
+ 
+```yaml
+    # ports:
+    #   - 3099:3099
 ```
  
 ### 3. Pull and start

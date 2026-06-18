@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Field from './Field';
 
 export default function TabsTab({ config, update }) {
   const tabs = config.tabs || [];
@@ -103,13 +104,4 @@ export default function TabsTab({ config, update }) {
 
 function Card({ children }) {
   return <div className="settings-card">{children}</div>;
-}
-
-function Field({ label, children }) {
-  return (
-    <div className="settings-field">
-      <label className="settings-label">{label}</label>
-      {children}
-    </div>
-  );
 }

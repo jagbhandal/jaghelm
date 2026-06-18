@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { HexColorPicker } from 'react-colorful';
 import { uploadFile } from '../../hooks/useData';
+import Field from './Field';
+import InlineError from './InlineError';
 
 export const THEMES = [
   { id: 'dark', name: 'One Dark Pro', preview: '#282c34', accent: '#6366f1', desc: 'Warm charcoal, indigo accent' },
@@ -18,19 +20,22 @@ export const THEMES = [
 export default function AppearanceTab({ config, update, theme, setTheme }) {
   const [colorPicking, setColorPicking] = useState(false);
   const [colorValue, setColorValue] = useState(config.accentColor || '#6366f1');
+  const [uploadError, setUploadError] = useState('');
   const bgRef = useRef();
 
   const handleBgUpload = async (file) => {
+    setUploadError('');
     try {
       const r = await uploadFile(file, 'bg');
       update('bgImage', r.url);
     } catch (e) {
-      alert('Upload failed: ' + e.message);
+      setUploadError('Background upload failed: ' + e.message);
     }
   };
 
   return (
     <div className="settings-section">
+      <InlineError message={uploadError} onDismiss={() => setUploadError('')} />
       <Card title="Theme">
         <p className="settings-desc">
           Inspired by the most popular VS Code themes.
@@ -158,15 +163,6 @@ function Card({ title, children }) {
   return (
     <div className="settings-card">
       {title && <h3 className="settings-card-title">{title}</h3>}
-      {children}
-    </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <div className="settings-field">
-      <label className="settings-label">{label}</label>
       {children}
     </div>
   );

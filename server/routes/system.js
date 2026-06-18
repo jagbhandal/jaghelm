@@ -12,16 +12,37 @@ import { getCached, setCache } from '../cache.js';
 import { apiError } from '../errors.js';
 import { safeFetch } from '../httpClient.js';
 import { asyncHandler } from '../util/asyncHandler.js';
+import { VERSION } from '../version.js';
+import { getRefreshHealth } from '../refresh.js';
 
 const router = Router();
 
 router.get('/health', (req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime(), version: '8.0.0-alpha.1' });
+  // Reflect real liveness: the Docker HEALTHCHECK + deploy verify gate read this,
+  // so a static 'ok' would let a wedged refresh loop (stale data) pass as healthy.
+  // 'starting' (pre-first-cycle) still reports ok so a booting container isn't killed.
+  const refresh = getRefreshHealth();
+  const healthy = refresh.state !== 'stale';
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : 'degraded',
+    refresh: refresh.state,
+    refreshAgeMs: refresh.ageMs,
+    uptime: process.uptime(),
+    version: VERSION,
+  });
 });
 
 router.get('/weather', authMiddleware, asyncHandler(async (req, res) => {
-  const { lat, lon } = req.query;
-  if (!lat || !lon) return apiError(res, 400, 'Missing lat/lon');
+  // Validate to a real coordinate: keeps the (bounded) cache keyed to a finite
+  // space and stops arbitrary strings flowing into the upstream request.
+  const lat = Number(req.query.lat);
+  const lon = Number(req.query.lon);
+  if (
+    !Number.isFinite(lat) || !Number.isFinite(lon) ||
+    lat < -90 || lat > 90 || lon < -180 || lon > 180
+  ) {
+    return apiError(res, 400, 'Invalid lat/lon');
+  }
 
   const cacheKey = `weather-${lat}-${lon}`;
   const cached = getCached(cacheKey);

@@ -42,6 +42,13 @@ router.get('/uptime/monitors', asyncHandler(async (req, res) => {
 router.get('/prometheus/query', asyncHandler(async (req, res) => {
   const { q } = req.query;
   if (!q) return apiError(res, 400, 'Missing q');
+  // Cap the query: bounds the (bounded) cache key and stops an oversized/
+  // pathological PromQL string being proxied to the upstream. NOTE: this is a
+  // raw passthrough — in no-auth mode it exposes the full metrics backend; a
+  // query allowlist is the proper follow-up (see docs/IMPROVEMENT-PLAN.md P2).
+  if (typeof q !== 'string' || q.length > 2048) {
+    return apiError(res, 400, 'Invalid or oversized query');
+  }
 
   const cacheKey = `prom-${q}`;
   const cached = getCached(cacheKey);
@@ -65,7 +72,10 @@ router.get('/adguard/stats', asyncHandler(async (req, res) => {
   if (cached) return res.json(cached);
 
   try {
-    const url = process.env.ADGUARD_URL || 'http://192.168.68.13:8085';
+    // No hardcoded LAN-IP default: a baked-in 192.168.x address is a specific
+    // person's box on someone else's deployment. Require explicit config.
+    const url = process.env.ADGUARD_URL;
+    if (!url) return res.json({ configured: false });
     const u = process.env.ADGUARD_USER || '';
     const p = process.env.ADGUARD_PASS || '';
     const headers = {};
@@ -100,8 +110,9 @@ router.get('/npm/stats', asyncHandler(async (req, res) => {
   if (cached) return res.json(cached);
 
   try {
-    const url = process.env.NPM_URL || 'http://192.168.68.13:81';
-    const npmUser = process.env.NPM_USER || 'admin@example.com';
+    const url = process.env.NPM_URL;
+    if (!url) return res.json({ configured: false });
+    const npmUser = process.env.NPM_USER || '';
     const npmPass = process.env.NPM_PASS || '';
 
     let token = '';

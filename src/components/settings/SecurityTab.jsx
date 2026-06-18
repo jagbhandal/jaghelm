@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Field from './Field';
 
 export default function SecurityTab() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -117,15 +118,6 @@ function Card({ title, children }) {
   return (
     <div className="settings-card">
       {title && <h3 className="settings-card-title">{title}</h3>}
-      {children}
-    </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <div className="settings-field">
-      <label className="settings-label">{label}</label>
       {children}
     </div>
   );

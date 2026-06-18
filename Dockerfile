@@ -14,6 +14,13 @@ RUN npm run build
 FROM node:22-alpine
 WORKDIR /app
 
+# Build-time provenance args. The CI build passes these (see
+# .github/workflows/build-push.yml); they default to "dev" for local builds so
+# `docker build` never fails on an unset arg.
+ARG IMAGE_VERSION=dev
+ARG IMAGE_SOURCE=https://github.com/jagbhandal/jaghelm
+ARG IMAGE_REVISION=unknown
+
 # Bring in built artifacts + server source + lock file (needed for npm ci).
 # --chown ensures files belong to the unprivileged `node` user from the start.
 COPY --from=builder --chown=node:node /app/dist ./dist
@@ -21,7 +28,10 @@ COPY --from=builder --chown=node:node /app/server ./server
 COPY --from=builder --chown=node:node /app/package.json /app/package-lock.json ./
 
 # Install production deps only, reproducible from the lock file.
-RUN npm ci --omit=dev && npm cache clean --force
+# --ignore-scripts blocks any postinstall lifecycle script from a dependency
+# running during the image build (supply-chain hardening; the runtime deps here
+# do not require build scripts).
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 # Pre-create mount points so the container has them even when running without
 # bind mounts. chown so the unprivileged user can write.
@@ -39,3 +49,14 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 EXPOSE 3099
 CMD ["node", "server/index.js"]
+
+# OCI image metadata — kept last so changing labels never busts earlier layers.
+# These let `docker inspect` / registries resolve exactly what source + version
+# produced this image, which makes rollback ("redeploy the SHA that worked")
+# auditable.
+LABEL org.opencontainers.image.title="JagHelm" \
+      org.opencontainers.image.description="Self-hosted homelab dashboard with live data" \
+      org.opencontainers.image.version="${IMAGE_VERSION}" \
+      org.opencontainers.image.revision="${IMAGE_REVISION}" \
+      org.opencontainers.image.source="${IMAGE_SOURCE}" \
+      org.opencontainers.image.licenses="MIT"

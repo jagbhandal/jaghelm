@@ -15,7 +15,11 @@ if (!window._origFetch) {
   window._origFetch = window.fetch;
   window.fetch = (url, opts = {}) => {
     if (typeof url === 'string' && url.startsWith('/api') && !url.includes('/auth/login') && _authTokenRef.current) {
-      opts.headers = { ...opts.headers, 'x-auth-token': _authTokenRef.current };
+      // Build a new opts object — don't mutate the caller's.
+      return window._origFetch(url, {
+        ...opts,
+        headers: { ...opts.headers, 'x-auth-token': _authTokenRef.current },
+      });
     }
     return window._origFetch(url, opts);
   };
@@ -235,7 +239,12 @@ export default function App() {
           } : null}
           refreshKey={refreshKey} />
         <div style={activeTab === 'dashboard' ? undefined : { visibility: 'hidden', height: 0, overflow: 'hidden' }}>
-          <DashboardView config={config} setConfig={setConfig} refreshKey={refreshKey} />
+          <DashboardView
+            config={config}
+            setConfig={setConfig}
+            refreshKey={refreshKey}
+            onOpenSettings={() => setActiveTab('settings')}
+          />
         </div>
         {activeTab === 'settings' && <SettingsView config={config} setConfig={setConfig} theme={theme} setTheme={setTheme} />}
         {allTabs.find(t => t.id === activeTab && t.type === 'iframe') && (

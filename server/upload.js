@@ -34,20 +34,37 @@ const MIME_TO_EXT = {
 
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
+/** True if the MIME type is on the upload allowlist. */
+export function isAllowedMime(mime) {
+  return Object.prototype.hasOwnProperty.call(MIME_TO_EXT, mime);
+}
+
+/** Server-derived extension for an allowed MIME type, or null. */
+export function extForMime(mime) {
+  return MIME_TO_EXT[mime] || null;
+}
+
+/** Filename written to disk, derived from the validated MIME (never the client name). */
+export function uploadFilename(type, mime) {
+  const prefix = type === 'logo' ? 'logo' : 'bg';
+  const ext = extForMime(mime);
+  if (!ext) return null;
+  return `${prefix}${ext}`;
+}
+
 /** Build the multer middleware instance. Call once, mount on the upload route. */
 export function createUploadMiddleware(uploadsDir) {
   const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadsDir),
     filename: (req, file, cb) => {
-      const prefix = req.query.type === 'logo' ? 'logo' : 'bg';
       // Extension is server-derived from the MIME type, never from the client.
-      // fileFilter has already rejected anything not in the map, so this lookup
-      // is guaranteed to hit — the fallback is defensive only.
-      const ext = MIME_TO_EXT[file.mimetype];
-      if (!ext) {
+      // fileFilter has already rejected anything not in the map, so this is
+      // guaranteed to hit — the null branch is defensive only.
+      const name = uploadFilename(req.query.type, file.mimetype);
+      if (!name) {
         return cb(new Error(`Unexpected mimetype in filename callback: ${file.mimetype}`));
       }
-      cb(null, `${prefix}${ext}`);
+      cb(null, name);
     },
   });
 
@@ -55,11 +72,11 @@ export function createUploadMiddleware(uploadsDir) {
     storage,
     limits: { fileSize: MAX_SIZE_BYTES },
     fileFilter: (req, file, cb) => {
-      if (MIME_TO_EXT[file.mimetype]) {
+      if (isAllowedMime(file.mimetype)) {
         cb(null, true);
       } else {
         const accepted = Object.keys(MIME_TO_EXT)
-          .map(m => m.split('/')[1].toUpperCase())
+          .map((m) => m.split('/')[1].toUpperCase())
           .join(', ');
         cb(new Error(`File type not allowed: ${file.mimetype}. Accepted: ${accepted}`));
       }
