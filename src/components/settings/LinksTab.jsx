@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import IconPicker from '../IconPicker';
 import { useConfig } from '../../context/ConfigContext.jsx';
+import { useConfirm } from '../../context/OverlayContext.jsx';
 
 const DEFAULT_GROUPS = ['personal', 'management', 'devops'];
 
 export default function LinksTab() {
   const { config, update, setConfig } = useConfig();
+  const confirm = useConfirm();
   const [editingLink, setEditingLink] = useState(null); // { group, index } or null
   const [addingTo, setAddingTo] = useState(null); // group key or null
   const [newLink, setNewLink] = useState({ name: '', icon: '', url: '' });
@@ -67,8 +69,14 @@ export default function LinksTab() {
     setAddingGroup(false);
   };
 
-  const removeGroup = (group) => {
-    if (!confirm(`Remove the "${group}" link group and all its links?`)) return;
+  const removeGroup = async (group) => {
+    const ok = await confirm({
+      title: `Remove the "${group.replace(/_/g, ' ')}" link group?`,
+      body: 'This deletes the group and all of its links. This cannot be undone.',
+      confirmLabel: 'Remove Group',
+      danger: true,
+    });
+    if (!ok) return;
     const newLinks = { ...links };
     delete newLinks[group];
     setConfig((prev) => ({ ...prev, links: newLinks }));

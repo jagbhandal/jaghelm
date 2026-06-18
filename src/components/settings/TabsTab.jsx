@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useConfig } from '../../context/ConfigContext.jsx';
+import { useConfirm } from '../../context/OverlayContext.jsx';
 import Field from './Field';
 
 export default function TabsTab() {
   const { config, update } = useConfig();
+  const confirm = useConfirm();
   const tabs = config.tabs || [];
   const [editingIndex, setEditingIndex] = useState(null);
 
@@ -21,7 +23,14 @@ export default function TabsTab() {
     setEditingIndex(newTabs.length - 1);
   };
 
-  const removeTab = (index) => {
+  const removeTab = async (index) => {
+    const ok = await confirm({
+      title: `Delete the "${tabs[index]?.label || 'this'}" tab?`,
+      body: 'This removes the embedded tab from your navigation bar. This cannot be undone.',
+      confirmLabel: 'Delete Tab',
+      danger: true,
+    });
+    if (!ok) return;
     const t = [...tabs];
     t.splice(index, 1);
     update('tabs', t);

@@ -3,6 +3,7 @@ import { useState, useRef } from 'react';
 import { describe, it, expect } from 'vitest';
 import LinksTab from './LinksTab';
 import { ConfigProvider } from '../../context/ConfigContext.jsx';
+import { OverlayProvider } from '../../context/OverlayContext.jsx';
 
 // LinksTab does link CRUD. It now reads `config`, `update`, and `setConfig` from
 // ConfigContext. The `update(path, value)` deep-setter is computed by the
@@ -26,9 +27,11 @@ function Harness({ initialConfig, onCommit }) {
     });
   };
   return (
-    <ConfigProvider config={config} setConfig={setConfig}>
-      <LinksTab />
-    </ConfigProvider>
+    <OverlayProvider>
+      <ConfigProvider config={config} setConfig={setConfig}>
+        <LinksTab />
+      </ConfigProvider>
+    </OverlayProvider>
   );
 }
 

@@ -1,27 +1,43 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Field from './Field';
+import { useConfirm } from '../../context/OverlayContext.jsx';
 
 /**
  * ServicesTab — Phase 2 Settings
- * 
+ *
  * Shows all discovered containers grouped by node.
  * For each service, the user can:
  * - Edit display name
  * - Set icon key
  * - Map to an Uptime Kuma monitor (dropdown)
  * - Hide/show
- * 
+ *
  * Data sources:
  * - serverConfig (services.yaml) — the overrides
  * - liveServices (/api/services response) — currently discovered containers
  * - monitorNames (/api/services/monitors) — available Kuma monitors
  */
 export default function ServicesTab({ serverConfig, liveServices, monitorNames, onSave, saving }) {
+  const confirm = useConfirm();
   const [expandedNode, setExpandedNode] = useState(null);
   const [editService, setEditService] = useState(null);
 
   const nodes = liveServices?.nodes || {};
   const overrides = serverConfig?.services || {};
+
+  const removeAllOverrides = async (containerName, displayName) => {
+    const ok = await confirm({
+      title: `Remove all overrides for "${displayName || containerName}"?`,
+      body: 'This clears the display name, icon, and monitor mapping for this service, restoring its auto-discovered defaults. This cannot be undone.',
+      confirmLabel: 'Remove Overrides',
+      danger: true,
+    });
+    if (!ok) return;
+    const updatedServices = { ...serverConfig.services };
+    delete updatedServices[containerName];
+    onSave({ ...serverConfig, services: updatedServices });
+    setEditService(null);
+  };
 
   const updateOverride = (containerName, field, value) => {
     const existing = overrides[containerName] || {};
@@ -56,10 +72,10 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
     const node = serverConfig.nodes?.[nodeKey];
     if (!node) return;
     const hideList = node.hide || [];
-    const isHidden = hideList.some(h => containerName.toLowerCase().includes(h.toLowerCase()));
+    const isHidden = hideList.some((h) => containerName.toLowerCase().includes(h.toLowerCase()));
     let updated;
     if (isHidden) {
-      updated = hideList.filter(h => !containerName.toLowerCase().includes(h.toLowerCase()));
+      updated = hideList.filter((h) => !containerName.toLowerCase().includes(h.toLowerCase()));
     } else {
       updated = [...hideList, containerName];
     }
@@ -74,13 +90,14 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
 
   const isHidden = (nodeKey, containerName) => {
     const hideList = serverConfig.nodes?.[nodeKey]?.hide || [];
-    return hideList.some(h => containerName.toLowerCase().includes(h.toLowerCase()));
+    return hideList.some((h) => containerName.toLowerCase().includes(h.toLowerCase()));
   };
 
   return (
     <div>
       <p className="settings-desc" style={{ marginBottom: 16 }}>
-        Services are auto-discovered from Prometheus/cAdvisor. Override display names, icons, and monitor mappings here.
+        Services are auto-discovered from Prometheus/cAdvisor. Override display names, icons, and
+        monitor mappings here.
       </p>
 
       {saving && (
@@ -95,25 +112,49 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
           <div
             onClick={() => setExpandedNode(expandedNode === nodeKey ? null : nodeKey)}
             style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '10px 14px', cursor: 'pointer',
-              background: 'var(--bg-card-inner)', borderRadius: 10,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '10px 14px',
+              cursor: 'pointer',
+              background: 'var(--bg-card-inner)',
+              borderRadius: 10,
               border: '1px solid var(--border-color)',
               borderLeft: `3px solid ${node.border_color || 'var(--accent)'}`,
             }}
           >
             <span style={{ fontSize: 18, display: 'inline-flex', alignItems: 'center' }}>
-              {(node.icon && (node.icon.startsWith('http') || node.icon.startsWith('/')))
-                ? <img src={node.icon} alt="" style={{ width: 22, height: 22, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
-                : (node.icon || '🖥')}
+              {node.icon && (node.icon.startsWith('http') || node.icon.startsWith('/')) ? (
+                <img
+                  src={node.icon}
+                  alt=""
+                  style={{ width: 22, height: 22, borderRadius: 4 }}
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                  }}
+                />
+              ) : (
+                node.icon || '🖥'
+              )}
             </span>
-            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 14, flex: 1 }}>
+            <span
+              style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 14, flex: 1 }}
+            >
               {node.display_name || nodeKey}
             </span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
+            <span
+              style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}
+            >
               {(node.services || []).length} services
             </span>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)', transform: expandedNode === nodeKey ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
+            <span
+              style={{
+                fontSize: 12,
+                color: 'var(--text-muted)',
+                transform: expandedNode === nodeKey ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s',
+              }}
+            >
               ▼
             </span>
           </div>
@@ -121,7 +162,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
           {/* Services list */}
           {expandedNode === nodeKey && (
             <div className="settings-stack-xs" style={{ marginTop: 6 }}>
-              {(node.services || []).map(svc => {
+              {(node.services || []).map((svc) => {
                 const containerName = svc.container;
                 const override = overrides[containerName] || {};
                 const isEditing = editService === containerName;
@@ -130,42 +171,71 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                 const monitorMatch = svc.monitored === true || svc.status === 'up';
 
                 return (
-                  <div key={containerName} style={{
-                    padding: '10px 14px',
-                    background: hidden ? 'rgba(255,255,255,0.01)' : 'var(--bg-card-inner)',
-                    borderRadius: 10,
-                    border: `1px solid ${isEditing ? 'var(--accent)' : 'var(--border-color)'}`,
-                    opacity: hidden ? 0.5 : 1,
-                    transition: 'all 0.2s',
-                  }}>
+                  <div
+                    key={containerName}
+                    style={{
+                      padding: '10px 14px',
+                      background: hidden ? 'rgba(255,255,255,0.01)' : 'var(--bg-card-inner)',
+                      borderRadius: 10,
+                      border: `1px solid ${isEditing ? 'var(--accent)' : 'var(--border-color)'}`,
+                      opacity: hidden ? 0.5 : 1,
+                      transition: 'all 0.2s',
+                    }}
+                  >
                     {/* Service row */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       {/* Status dot */}
-                      <div style={{
-                        width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                        background: svc.status === 'up' ? 'var(--green)' : svc.status === 'down' ? 'var(--red)' : 'var(--amber)',
-                        boxShadow: `0 0 6px ${svc.status === 'up' ? 'var(--green)' : svc.status === 'down' ? 'var(--red)' : 'var(--amber)'}`,
-                      }} />
+                      <div
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: '50%',
+                          flexShrink: 0,
+                          background:
+                            svc.status === 'up'
+                              ? 'var(--green)'
+                              : svc.status === 'down'
+                                ? 'var(--red)'
+                                : 'var(--amber)',
+                          boxShadow: `0 0 6px ${svc.status === 'up' ? 'var(--green)' : svc.status === 'down' ? 'var(--red)' : 'var(--amber)'}`,
+                        }}
+                      />
 
                       {/* Name */}
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 500 }}>
+                        <div
+                          style={{ fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 500 }}
+                        >
                           {svc.display_name}
                         </div>
-                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
+                        <div
+                          style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: 10,
+                            color: 'var(--text-muted)',
+                          }}
+                        >
                           {containerName}
-                          {hasOverride && <span style={{ color: 'var(--accent)', marginLeft: 6 }}>· overridden</span>}
+                          {hasOverride && (
+                            <span style={{ color: 'var(--accent)', marginLeft: 6 }}>
+                              · overridden
+                            </span>
+                          )}
                         </div>
                       </div>
 
                       {/* Monitor status */}
-                      <span style={{
-                        fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 8px',
-                        borderRadius: 4,
-                        background: monitorMatch ? 'var(--green-bg)' : 'var(--amber-bg)',
-                        color: monitorMatch ? 'var(--green)' : 'var(--amber)',
-                        border: `1px solid ${monitorMatch ? 'var(--green-border)' : 'var(--amber-border)'}`,
-                      }}>
+                      <span
+                        style={{
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 10,
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          background: monitorMatch ? 'var(--green-bg)' : 'var(--amber-bg)',
+                          color: monitorMatch ? 'var(--green)' : 'var(--amber)',
+                          border: `1px solid ${monitorMatch ? 'var(--green-border)' : 'var(--amber-border)'}`,
+                        }}
+                      >
                         {monitorMatch ? 'monitored' : 'no monitor'}
                       </span>
 
@@ -173,7 +243,12 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                       <button
                         className="settings-btn"
                         onClick={() => toggleHide(nodeKey, containerName)}
-                        style={{ flex: 0, padding: '4px 10px', fontSize: 11, color: hidden ? 'var(--green)' : 'var(--text-muted)' }}
+                        style={{
+                          flex: 0,
+                          padding: '4px 10px',
+                          fontSize: 11,
+                          color: hidden ? 'var(--green)' : 'var(--text-muted)',
+                        }}
                       >
                         {hidden ? 'Show' : 'Hide'}
                       </button>
@@ -188,12 +263,22 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
 
                     {/* Expanded edit form */}
                     {isEditing && (
-                      <div className="settings-stack" style={{ marginTop: 12, gap: 10, paddingTop: 10, borderTop: '1px solid var(--border-color)' }}>
+                      <div
+                        className="settings-stack"
+                        style={{
+                          marginTop: 12,
+                          gap: 10,
+                          paddingTop: 10,
+                          borderTop: '1px solid var(--border-color)',
+                        }}
+                      >
                         <FieldRow label="Display Name">
                           <input
                             className="settings-input"
                             value={override.display_name || ''}
-                            onChange={e => updateOverride(containerName, 'display_name', e.target.value)}
+                            onChange={(e) =>
+                              updateOverride(containerName, 'display_name', e.target.value)
+                            }
                             placeholder={svc.display_name}
                           />
                         </FieldRow>
@@ -202,7 +287,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                           <input
                             className="settings-input mono"
                             value={override.icon || ''}
-                            onChange={e => updateOverride(containerName, 'icon', e.target.value)}
+                            onChange={(e) => updateOverride(containerName, 'icon', e.target.value)}
                             placeholder="auto (e.g. npm, adguard, photoprism)"
                           />
                         </FieldRow>
@@ -211,7 +296,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                           <select
                             className="settings-input mono"
                             value={override.monitor || ''}
-                            onChange={e => {
+                            onChange={(e) => {
                               if (e.target.value === '') {
                                 removeOverride(containerName, 'monitor');
                               } else {
@@ -221,8 +306,10 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                             style={{ fontSize: 13 }}
                           >
                             <option value="">Auto-match</option>
-                            {(monitorNames || []).map(name => (
-                              <option key={name} value={name}>{name}</option>
+                            {(monitorNames || []).map((name) => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
                             ))}
                           </select>
                         </FieldRow>
@@ -230,12 +317,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
                         {hasOverride && (
                           <button
                             className="settings-btn-danger settings-btn-compact"
-                            onClick={() => {
-                              const updatedServices = { ...serverConfig.services };
-                              delete updatedServices[containerName];
-                              onSave({ ...serverConfig, services: updatedServices });
-                              setEditService(null);
-                            }}
+                            onClick={() => removeAllOverrides(containerName, svc.display_name)}
                             style={{ alignSelf: 'flex-start' }}
                           >
                             Remove All Overrides
@@ -262,5 +344,9 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
 
 // Row-style field; delegates to the shared Field for the label/htmlFor wiring.
 function FieldRow({ label, children }) {
-  return <Field layout="row" label={label}>{children}</Field>;
+  return (
+    <Field layout="row" label={label}>
+      {children}
+    </Field>
+  );
 }

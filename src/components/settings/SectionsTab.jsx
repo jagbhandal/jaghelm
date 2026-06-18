@@ -3,6 +3,7 @@ import { HexColorPicker } from 'react-colorful';
 import IconPicker from '../IconPicker';
 import Field from './Field';
 import { useConfig } from '../../context/ConfigContext.jsx';
+import { useConfirm } from '../../context/OverlayContext.jsx';
 import { apiFetch } from '../../api/client.js';
 
 /**
@@ -25,6 +26,7 @@ const STATIC_SECTIONS = [
 
 export default function SectionsTab() {
   const { config, update } = useConfig();
+  const confirm = useConfirm();
   const sections = config.sections || {};
   const [colorTarget, setColorTarget] = useState(null);
   const [colorValue, setColorValue] = useState('#6366f1');
@@ -85,7 +87,15 @@ export default function SectionsTab() {
     update('customGroups', updated);
   };
 
-  const deleteGroup = (groupId) => {
+  const deleteGroup = async (groupId) => {
+    const group = customGroups.find((g) => g.id === groupId);
+    const ok = await confirm({
+      title: `Delete the "${group?.title || 'custom'}" group?`,
+      body: 'This removes the custom group. The containers it held return to the available pool. This cannot be undone.',
+      confirmLabel: 'Delete Group',
+      danger: true,
+    });
+    if (!ok) return;
     update(
       'customGroups',
       customGroups.filter((g) => g.id !== groupId)
