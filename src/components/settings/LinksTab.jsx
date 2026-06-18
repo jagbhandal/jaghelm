@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import IconPicker from '../IconPicker';
+import { useConfig } from '../../context/ConfigContext.jsx';
 
 const DEFAULT_GROUPS = ['personal', 'management', 'devops'];
 
-export default function LinksTab({ config, update, setConfig }) {
+export default function LinksTab() {
+  const { config, update, setConfig } = useConfig();
   const [editingLink, setEditingLink] = useState(null); // { group, index } or null
   const [addingTo, setAddingTo] = useState(null); // group key or null
   const [newLink, setNewLink] = useState({ name: '', icon: '', url: '' });

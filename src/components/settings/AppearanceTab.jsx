@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { HexColorPicker } from 'react-colorful';
 import { uploadFile } from '../../hooks/useData';
+import { useConfig } from '../../context/ConfigContext.jsx';
 import Field from './Field';
 import InlineError from './InlineError';
 import { THEMES } from './themes.js';
@@ -8,7 +9,8 @@ import { THEMES } from './themes.js';
 // Re-export so existing importers of THEMES from this module keep working.
 export { THEMES };
 
-export default function AppearanceTab({ config, update, theme, setTheme }) {
+export default function AppearanceTab({ theme, setTheme }) {
+  const { config, update } = useConfig();
   const [colorPicking, setColorPicking] = useState(false);
   const [colorValue, setColorValue] = useState(config.accentColor || '#6366f1');
   const [uploadError, setUploadError] = useState('');

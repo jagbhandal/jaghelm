@@ -2,32 +2,22 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { useState, useRef } from 'react';
 import { describe, it, expect } from 'vitest';
 import LinksTab from './LinksTab';
+import { ConfigProvider } from '../../context/ConfigContext.jsx';
 
-// LinksTab does link CRUD. Each edit clones with setIn (L16)
-// then routes through the `update(path, value)` deep-setter and `setConfig`.
-// These tests lock in that add/edit produce the right config AND don't mutate the
-// previous config object — the immutability the JSON.parse clone provides today
-// and the setIn refactor must preserve.
-
-// Mirror of SettingsView's real update(): immutable deep-set by dotted path.
-function deepSet(prev, path, value) {
-  const next = JSON.parse(JSON.stringify(prev));
-  const keys = path.split('.');
-  let obj = next;
-  for (let i = 0; i < keys.length - 1; i++) {
-    if (!obj[keys[i]]) obj[keys[i]] = {};
-    obj = obj[keys[i]];
-  }
-  obj[keys[keys.length - 1]] = value;
-  return next;
-}
+// LinksTab does link CRUD. It now reads `config`, `update`, and `setConfig` from
+// ConfigContext. The `update(path, value)` deep-setter is computed by the
+// provider from the (captured) setConfig using setIn — structural-sharing
+// immutability. These tests lock in that add/edit produce the right config AND
+// don't mutate the previous config object — the immutability setIn preserves.
 
 // Controlled wrapper that captures every {prev,next} config commit so tests can
-// assert immutability of the prior object.
+// assert immutability of the prior object. The captured setConfig is handed to
+// ConfigProvider, which derives the `update` deep-setter LinksTab consumes — so
+// both the `update` path and the direct `setConfig` path flow through here.
 function Harness({ initialConfig, onCommit }) {
   const [config, setConfigState] = useState(initialConfig);
   const refs = useRef([]);
-  const commit = (updater) => {
+  const setConfig = (updater) => {
     setConfigState((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
       refs.current.push({ prev, next });
@@ -35,9 +25,11 @@ function Harness({ initialConfig, onCommit }) {
       return next;
     });
   };
-  const update = (path, value) => commit((prev) => deepSet(prev, path, value));
-  const setConfig = (updater) => commit(updater);
-  return <LinksTab config={config} update={update} setConfig={setConfig} />;
+  return (
+    <ConfigProvider config={config} setConfig={setConfig}>
+      <LinksTab />
+    </ConfigProvider>
+  );
 }
 
 const makeConfig = (links) => ({

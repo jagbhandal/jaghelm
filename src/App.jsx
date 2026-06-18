@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 
 import NavBar from './components/NavBar';
 import LoginPage from './components/LoginPage';
 import DashboardView from './views/DashboardView';
+import { ConfigProvider } from './context/ConfigContext.jsx';
 import { getMonitors } from './hooks/useData';
 
 // Settings (13-tab tree) and the iframe view aren't needed for the default
@@ -259,7 +260,7 @@ export default function App() {
   ];
 
   return (
-    <>
+    <ConfigProvider config={config} setConfig={setConfig}>
       <div className="bg-layer">
         {config.bgImage && (
           <div className="bg-image" style={{ backgroundImage: `url(${config.bgImage})` }} />
@@ -284,7 +285,6 @@ export default function App() {
           }}
           health={overallHealth}
           lastUpdated={lastUpdated}
-          config={config}
           onOpenSettings={() => setActiveTab((t) => (t === 'settings' ? 'dashboard' : 'settings'))}
           onLogout={
             authRequired
@@ -306,12 +306,7 @@ export default function App() {
               : { visibility: 'hidden', height: 0, overflow: 'hidden' }
           }
         >
-          <DashboardView
-            config={config}
-            setConfig={setConfig}
-            refreshKey={refreshKey}
-            onOpenSettings={() => setActiveTab('settings')}
-          />
+          <DashboardView refreshKey={refreshKey} onOpenSettings={() => setActiveTab('settings')} />
         </div>
         <Suspense
           fallback={
@@ -323,9 +318,7 @@ export default function App() {
             </div>
           }
         >
-          {activeTab === 'settings' && (
-            <SettingsView config={config} setConfig={setConfig} theme={theme} setTheme={setTheme} />
-          )}
+          {activeTab === 'settings' && <SettingsView theme={theme} setTheme={setTheme} />}
           {allTabs.find((t) => t.id === activeTab && t.type === 'iframe') && (
             <IframeView
               url={allTabs.find((t) => t.id === activeTab).url}
@@ -334,7 +327,7 @@ export default function App() {
           )}
         </Suspense>
       </div>
-    </>
+    </ConfigProvider>
   );
 }
 

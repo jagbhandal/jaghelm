@@ -1,9 +1,11 @@
 import React, { useRef, useState } from 'react';
 import { uploadFile } from '../../hooks/useData';
+import { useConfig } from '../../context/ConfigContext.jsx';
 import Field from './Field';
 import InlineError from './InlineError';
 
-export default function GeneralTab({ config, update }) {
+export default function GeneralTab() {
+  const { config, update } = useConfig();
   const logoRef = useRef();
   const [uploadError, setUploadError] = useState('');
 
@@ -25,7 +27,7 @@ export default function GeneralTab({ config, update }) {
           <input
             className="settings-input"
             value={config.title || ''}
-            onChange={e => update('title', e.target.value)}
+            onChange={(e) => update('title', e.target.value)}
             placeholder="JAG-NET"
           />
         </Field>
@@ -33,7 +35,7 @@ export default function GeneralTab({ config, update }) {
           <input
             className="settings-input"
             value={config.subtitle || ''}
-            onChange={e => update('subtitle', e.target.value)}
+            onChange={(e) => update('subtitle', e.target.value)}
             placeholder="Infrastructure Dashboard"
           />
         </Field>
@@ -70,19 +72,22 @@ export default function GeneralTab({ config, update }) {
               type="file"
               accept="image/*"
               hidden
-              onChange={e => e.target.files[0] && handleUpload(e.target.files[0])}
+              onChange={(e) => e.target.files[0] && handleUpload(e.target.files[0])}
             />
           </div>
         </div>
       </Card>
 
       <Card title="Welcome Message">
-        <Field label="Show Welcome Message" hint="Displays a greeting banner below the navigation bar">
+        <Field
+          label="Show Welcome Message"
+          hint="Displays a greeting banner below the navigation bar"
+        >
           <label className="settings-toggle">
             <input
               type="checkbox"
               checked={config.welcomeMessage?.enabled || false}
-              onChange={e => update('welcomeMessage.enabled', e.target.checked)}
+              onChange={(e) => update('welcomeMessage.enabled', e.target.checked)}
             />
             <span>Enabled</span>
           </label>
@@ -91,7 +96,7 @@ export default function GeneralTab({ config, update }) {
           <input
             className="settings-input"
             value={config.welcomeMessage?.text || ''}
-            onChange={e => update('welcomeMessage.text', e.target.value)}
+            onChange={(e) => update('welcomeMessage.text', e.target.value)}
             placeholder="Welcome to JagHelm"
           />
         </Field>
@@ -99,7 +104,7 @@ export default function GeneralTab({ config, update }) {
           <input
             className="settings-input"
             value={config.welcomeMessage?.description || ''}
-            onChange={e => update('welcomeMessage.description', e.target.value)}
+            onChange={(e) => update('welcomeMessage.description', e.target.value)}
             placeholder="Your infrastructure at a glance"
           />
         </Field>
@@ -110,7 +115,7 @@ export default function GeneralTab({ config, update }) {
             min="14"
             max="40"
             value={config.welcomeMessage?.fontSize || 20}
-            onChange={e => update('welcomeMessage.fontSize', Number(e.target.value))}
+            onChange={(e) => update('welcomeMessage.fontSize', Number(e.target.value))}
           />
         </Field>
       </Card>

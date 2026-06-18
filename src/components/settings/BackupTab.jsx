@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { useConfig } from '../../context/ConfigContext.jsx';
 
-export default function BackupTab({ config, setConfig }) {
+export default function BackupTab() {
+  const { config, setConfig } = useConfig();
   const [importStatus, setImportStatus] = useState(null);
 
   const exportConfig = () => {
@@ -35,7 +37,8 @@ export default function BackupTab({ config, setConfig }) {
     <div className="settings-section">
       <Card title="Export">
         <p className="settings-desc" style={{ marginBottom: 12 }}>
-          Download your full display configuration as a JSON file. This includes theme, layout, sections, links, tabs, and all UI settings.
+          Download your full display configuration as a JSON file. This includes theme, layout,
+          sections, links, tabs, and all UI settings.
         </p>
         <button className="settings-btn-primary" onClick={exportConfig}>
           Export Config
@@ -44,19 +47,25 @@ export default function BackupTab({ config, setConfig }) {
 
       <Card title="Import">
         <p className="settings-desc" style={{ marginBottom: 12 }}>
-          Restore a previously exported configuration file. This will replace all current display settings.
+          Restore a previously exported configuration file. This will replace all current display
+          settings.
         </p>
         <label className="settings-btn-sm" style={{ cursor: 'pointer', display: 'inline-block' }}>
           Choose File
           <input type="file" accept=".json" onChange={importConfig} hidden />
         </label>
         {importStatus && (
-          <div style={{
-            marginTop: 12, padding: '10px 14px', borderRadius: 8, fontSize: 13,
-            background: importStatus.ok ? 'var(--green-bg)' : 'var(--red-bg)',
-            color: importStatus.ok ? 'var(--green)' : 'var(--red)',
-            border: `1px solid ${importStatus.ok ? 'var(--green-border)' : 'var(--red-border)'}`,
-          }}>
+          <div
+            style={{
+              marginTop: 12,
+              padding: '10px 14px',
+              borderRadius: 8,
+              fontSize: 13,
+              background: importStatus.ok ? 'var(--green-bg)' : 'var(--red-bg)',
+              color: importStatus.ok ? 'var(--green)' : 'var(--red)',
+              border: `1px solid ${importStatus.ok ? 'var(--green-border)' : 'var(--red-border)'}`,
+            }}
+          >
             {importStatus.msg}
           </div>
         )}
@@ -64,16 +73,34 @@ export default function BackupTab({ config, setConfig }) {
 
       <Card title="Server Config">
         <p className="settings-desc" style={{ marginBottom: 12 }}>
-          Infrastructure config (nodes, services, integrations) is stored server-side in <code className="settings-mono" style={{
-            fontSize: 12, background: 'var(--bg-card-inner)',
-            padding: '2px 6px', borderRadius: 4,
-          }}>data/services.yaml</code> and persists across container rebuilds via the data volume.
+          Infrastructure config (nodes, services, integrations) is stored server-side in{' '}
+          <code
+            className="settings-mono"
+            style={{
+              fontSize: 12,
+              background: 'var(--bg-card-inner)',
+              padding: '2px 6px',
+              borderRadius: 4,
+            }}
+          >
+            data/services.yaml
+          </code>{' '}
+          and persists across container rebuilds via the data volume.
         </p>
         <p className="settings-hint-block">
-          Display config is saved to <code className="settings-mono" style={{
-            fontSize: 11, background: 'var(--bg-card-inner)',
-            padding: '2px 4px', borderRadius: 3,
-          }}>data/display-config.json</code> automatically. All changes save in real-time.
+          Display config is saved to{' '}
+          <code
+            className="settings-mono"
+            style={{
+              fontSize: 11,
+              background: 'var(--bg-card-inner)',
+              padding: '2px 4px',
+              borderRadius: 3,
+            }}
+          >
+            data/display-config.json
+          </code>{' '}
+          automatically. All changes save in real-time.
         </p>
       </Card>
     </div>

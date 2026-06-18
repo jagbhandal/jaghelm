@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { useConfig } from '../../context/ConfigContext.jsx';
 import Field from './Field';
 
-export default function TabsTab({ config, update }) {
+export default function TabsTab() {
+  const { config, update } = useConfig();
   const tabs = config.tabs || [];
   const [editingIndex, setEditingIndex] = useState(null);
 

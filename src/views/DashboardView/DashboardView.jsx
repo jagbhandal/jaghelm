@@ -11,6 +11,7 @@ import { UPSCard, GiteaActivity, QuickLaunch, CronJobs } from '../../components/
 import { cachedIconUrl } from '../../hooks/useData';
 
 import NodePanel from './NodePanel';
+import { useConfig } from '../../context/ConfigContext.jsx';
 import { DEFAULT_LAYOUTS, migrateLayouts } from './layouts';
 import { useDashboardData } from './useDashboardData';
 import { useAppDataMatching } from './useAppDataMatching';
@@ -28,7 +29,8 @@ import { useEffectiveLayouts } from './useEffectiveLayouts';
  *   - HelmGrid              → drag/resize-aware responsive grid
  *   - DndContext            → service-card drag between panels
  */
-export default function DashboardView({ config, setConfig, refreshKey, onOpenSettings }) {
+export default function DashboardView({ refreshKey, onOpenSettings }) {
+  const { config, setConfig } = useConfig();
   // Mobile detection — used to disable drag/resize on small screens
   const mobileRef = useRef(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -41,7 +43,8 @@ export default function DashboardView({ config, setConfig, refreshKey, onOpenSet
   }, []);
 
   // Data — fetch loop encapsulated in the hook
-  const { serviceData, ups, commits, cronJobs, integrationData, servicesLoaded } = useDashboardData(refreshKey);
+  const { serviceData, ups, commits, cronJobs, integrationData, servicesLoaded } =
+    useDashboardData(refreshKey);
 
   // Tier 3 app data per container (preset metrics: queries, blocked, etc.)
   const appDataByContainer = useAppDataMatching(integrationData, serviceData);
@@ -111,7 +114,12 @@ export default function DashboardView({ config, setConfig, refreshKey, onOpenSet
     return { lg, md: Math.min(lg, 20), sm: 1 };
   }, [config.gridColumns]);
 
-  const effectiveLayouts = useEffectiveLayouts(layouts, serviceData, customGroups, config.gridColumns);
+  const effectiveLayouts = useEffectiveLayouts(
+    layouts,
+    serviceData,
+    customGroups,
+    config.gridColumns
+  );
 
   const handleLayoutChange = useCallback(
     (_, allLayouts) => setConfig((p) => ({ ...p, gridLayout: allLayouts })),
@@ -157,13 +165,15 @@ export default function DashboardView({ config, setConfig, refreshKey, onOpenSet
       Object.entries(serviceData.nodes || {})
         .map(([nodeKey, node]) => (
           <div key={`node-${nodeKey}`}>
-            <ErrorBoundary inline itemId={`node-${nodeKey}`} label={`Node "${nodeKey}" failed to render`}>
+            <ErrorBoundary
+              inline
+              itemId={`node-${nodeKey}`}
+              label={`Node "${nodeKey}" failed to render`}
+            >
               <NodePanel
                 nodeKey={nodeKey}
                 node={node}
                 sectionCfg={sc[nodeKey] || {}}
-                config={config}
-                setConfig={setConfig}
                 appDataByContainer={appDataByContainer}
                 claimedContainers={claimedContainers}
                 integrationData={integrationData}
@@ -173,7 +183,7 @@ export default function DashboardView({ config, setConfig, refreshKey, onOpenSet
           </div>
         ))
         .filter(Boolean),
-    [serviceData, sc, config, setConfig, appDataByContainer, claimedContainers, integrationData, isMobile]
+    [serviceData, sc, appDataByContainer, claimedContainers, integrationData, isMobile]
   );
 
   // Custom group panels — user-defined groupings of containers
@@ -189,12 +199,14 @@ export default function DashboardView({ config, setConfig, refreshKey, onOpenSet
 
           return (
             <div key={gridKey}>
-              <ErrorBoundary inline itemId={gridKey} label={`Group "${group.title || group.id}" failed to render`}>
+              <ErrorBoundary
+                inline
+                itemId={gridKey}
+                label={`Group "${group.title || group.id}" failed to render`}
+              >
                 <DroppablePanel panelId={gridKey} disabled={isMobile}>
                   <NodeCard
                     sectionKey={`group-${group.id}`}
-                    config={config}
-                    setConfig={setConfig}
                     borderColor={borderColor}
                     metrics={null}
                     services={services}
@@ -216,7 +228,7 @@ export default function DashboardView({ config, setConfig, refreshKey, onOpenSet
           );
         })
         .filter(Boolean),
-    [customGroups, allServicesFlat, sc, config, setConfig, isMobile]
+    [customGroups, allServicesFlat, sc, isMobile]
   );
 
   // ── Auto-scroll while dragging panels near viewport edges ──
@@ -269,10 +281,10 @@ export default function DashboardView({ config, setConfig, refreshKey, onOpenSet
   // Saved-but-not-yet-loaded node placeholders. Prevents the grid from collapsing
   // while /api/services is still in flight.
   const nodePlaceholders = useMemo(() => {
-    const loadedNodeKeys = new Set(
-      Object.keys(serviceData.nodes || {}).map((k) => `node-${k}`)
-    );
-    const savedKeys = (layouts.lg || layouts.md || []).map((i) => i.i).filter((k) => k.startsWith('node-'));
+    const loadedNodeKeys = new Set(Object.keys(serviceData.nodes || {}).map((k) => `node-${k}`));
+    const savedKeys = (layouts.lg || layouts.md || [])
+      .map((i) => i.i)
+      .filter((k) => k.startsWith('node-'));
     return savedKeys
       .filter((k) => !loadedNodeKeys.has(k))
       .map((k) => (
@@ -307,72 +319,80 @@ export default function DashboardView({ config, setConfig, refreshKey, onOpenSet
       {isEmpty ? (
         <DashboardEmptyState onOpenSettings={onOpenSettings} />
       ) : (
-      <DndContext
-        sensors={sensors}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
-      >
-        <HelmGrid
-          className="layout"
-          layouts={effectiveLayouts}
-          breakpoints={{ lg: 1200, md: 768, sm: 480 }}
-          cols={cols}
-          rowHeight={36}
-          margin={isMobile ? [12, 12] : [16, 16]}
-          draggable={!isMobile}
-          dragHandle=".section-header"
-          resizable={!isMobile}
-          onLayoutChange={handleLayoutChange}
-          onDrag={handlePanelDrag}
-          onDragStop={handlePanelDragStop}
-          onResizeStop={handlePanelResizeStop}
+        <DndContext
+          sensors={sensors}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
         >
-          {nodeElements}
-          {nodePlaceholders}
-          {customGroupElements}
+          <HelmGrid
+            className="layout"
+            layouts={effectiveLayouts}
+            breakpoints={{ lg: 1200, md: 768, sm: 480 }}
+            cols={cols}
+            rowHeight={36}
+            margin={isMobile ? [12, 12] : [16, 16]}
+            draggable={!isMobile}
+            dragHandle=".section-header"
+            resizable={!isMobile}
+            onLayoutChange={handleLayoutChange}
+            onDrag={handlePanelDrag}
+            onDragStop={handlePanelDragStop}
+            onResizeStop={handlePanelResizeStop}
+          >
+            {nodeElements}
+            {nodePlaceholders}
+            {customGroupElements}
 
-          {sc.ups?.visible !== false && (
-            <div key="ups">
-              <ErrorBoundary inline itemId="ups" label="UPS panel failed to render">
-                <UPSCard upsData={ups} borderColor={sc.ups?.borderColor} config={config} />
-              </ErrorBoundary>
-            </div>
-          )}
-          {sc.pipeline?.visible !== false && (
-            <div key="pipeline">
-              <ErrorBoundary inline itemId="pipeline" label="Pipeline panel failed to render">
-                <GiteaActivity commits={commits} config={config} />
-              </ErrorBoundary>
-            </div>
-          )}
-          {sc.todos?.visible !== false && (
-            <div key="todos">
-              <ErrorBoundary inline itemId="todos" label="Todos panel failed to render">
-                <TodoCard borderColor={sc.todos?.borderColor} config={config} setConfig={setConfig} />
-              </ErrorBoundary>
-            </div>
-          )}
-          {config.showCronJobs !== false && (
-            <div key="cron-jobs">
-              <ErrorBoundary inline itemId="cron-jobs" label="Cron Jobs panel failed to render">
-                <CronJobs nodes={cronJobs} config={config} />
-              </ErrorBoundary>
-            </div>
-          )}
-          {sc.quicklaunch?.visible !== false && (
-            <div key="quicklaunch">
-              <ErrorBoundary inline itemId="quicklaunch" label="Quick Launch panel failed to render">
-                <QuickLaunch config={config} borderColor={sc.quicklaunch?.borderColor} />
-              </ErrorBoundary>
-            </div>
-          )}
-        </HelmGrid>
+            {sc.ups?.visible !== false && (
+              <div key="ups">
+                <ErrorBoundary inline itemId="ups" label="UPS panel failed to render">
+                  <UPSCard upsData={ups} borderColor={sc.ups?.borderColor} />
+                </ErrorBoundary>
+              </div>
+            )}
+            {sc.pipeline?.visible !== false && (
+              <div key="pipeline">
+                <ErrorBoundary inline itemId="pipeline" label="Pipeline panel failed to render">
+                  <GiteaActivity commits={commits} />
+                </ErrorBoundary>
+              </div>
+            )}
+            {sc.todos?.visible !== false && (
+              <div key="todos">
+                <ErrorBoundary inline itemId="todos" label="Todos panel failed to render">
+                  <TodoCard
+                    borderColor={sc.todos?.borderColor}
+                    config={config}
+                    setConfig={setConfig}
+                  />
+                </ErrorBoundary>
+              </div>
+            )}
+            {config.showCronJobs !== false && (
+              <div key="cron-jobs">
+                <ErrorBoundary inline itemId="cron-jobs" label="Cron Jobs panel failed to render">
+                  <CronJobs nodes={cronJobs} />
+                </ErrorBoundary>
+              </div>
+            )}
+            {sc.quicklaunch?.visible !== false && (
+              <div key="quicklaunch">
+                <ErrorBoundary
+                  inline
+                  itemId="quicklaunch"
+                  label="Quick Launch panel failed to render"
+                >
+                  <QuickLaunch borderColor={sc.quicklaunch?.borderColor} />
+                </ErrorBoundary>
+              </div>
+            )}
+          </HelmGrid>
 
-        <DragOverlay dropAnimation={null}>
-          {activeDrag ? <ServiceDragOverlay service={activeDrag} /> : null}
-        </DragOverlay>
-      </DndContext>
+          <DragOverlay dropAnimation={null}>
+            {activeDrag ? <ServiceDragOverlay service={activeDrag} /> : null}
+          </DragOverlay>
+        </DndContext>
       )}
     </div>
   );
@@ -387,19 +407,42 @@ function DashboardEmptyState({ onOpenSettings }) {
     <div
       className="glass-card"
       style={{
-        maxWidth: 560, margin: '48px auto', padding: '40px 32px',
-        textAlign: 'center', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', gap: 12,
+        maxWidth: 560,
+        margin: '48px auto',
+        padding: '40px 32px',
+        textAlign: 'center',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 12,
       }}
     >
-      <div style={{ fontSize: 44, lineHeight: 1 }} aria-hidden="true">🛰️</div>
-      <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 22, color: 'var(--text-primary)', margin: 0 }}>
+      <div style={{ fontSize: 44, lineHeight: 1 }} aria-hidden="true">
+        🛰️
+      </div>
+      <h2
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: 22,
+          color: 'var(--text-primary)',
+          margin: 0,
+        }}
+      >
         Connect your first node
       </h2>
-      <p style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--text-secondary)', maxWidth: 420, margin: 0, lineHeight: 1.6 }}>
-        No infrastructure nodes have reported in yet. Add a Prometheus target or
-        a node in Settings, and live metrics will start streaming onto your
-        dashboard here.
+      <p
+        style={{
+          fontFamily: 'var(--font-body)',
+          fontSize: 14,
+          color: 'var(--text-secondary)',
+          maxWidth: 420,
+          margin: 0,
+          lineHeight: 1.6,
+        }}
+      >
+        No infrastructure nodes have reported in yet. Add a Prometheus target or a node in Settings,
+        and live metrics will start streaming onto your dashboard here.
       </p>
       {onOpenSettings && (
         <button
