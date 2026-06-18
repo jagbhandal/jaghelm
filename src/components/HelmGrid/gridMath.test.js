@@ -14,6 +14,7 @@ import {
   layoutsEqual,
   nudge,
   grow,
+  autoArrange,
 } from './gridMath.js';
 
 // Shared fixtures. gap is [horizontal, vertical] in px.
@@ -300,4 +301,45 @@ test('grow clamps width to [minW, cols - x] and height to >= minH', () => {
 
 test('grow defaults minW to 2 when the item omits it', () => {
   assert.deepEqual(grow({ x: 0, w: 2, h: 4 }, -1, 0, 24, 1), { w: 2, h: 4 });
+});
+
+// autoArrange — "tidy up": priority order + gapless shelf packing (cols = 24)
+test('autoArrange packs nodes, then widgets, then groups; left-to-right, wrapping rows', () => {
+  const items = [
+    { i: 'todos', x: 5, y: 9, w: 6, h: 4 },
+    { i: 'group-a', x: 0, y: 0, w: 6, h: 4 },
+    { i: 'node-b', x: 2, y: 2, w: 12, h: 4 },
+    { i: 'node-a', x: 0, y: 0, w: 12, h: 4 },
+  ];
+  const byId = Object.fromEntries(autoArrange(items, 24).map((o) => [o.i, o]));
+  // node-a, node-b fill row 0 (12+12=24); todos wraps to y=4; group-a follows it.
+  assert.deepEqual([byId['node-a'].x, byId['node-a'].y], [0, 0]);
+  assert.deepEqual([byId['node-b'].x, byId['node-b'].y], [12, 0]);
+  assert.deepEqual([byId['todos'].x, byId['todos'].y], [0, 4]);
+  assert.deepEqual([byId['group-a'].x, byId['group-a'].y], [6, 4]);
+});
+
+test('autoArrange clamps a panel wider than the grid to full width', () => {
+  const out = autoArrange([{ i: 'node-x', x: 0, y: 0, w: 30, h: 3 }], 24);
+  assert.equal(out[0].w, 24);
+  assert.deepEqual([out[0].x, out[0].y], [0, 0]);
+});
+
+test('autoArrange preserves size/min fields, leaves no overlaps, and handles empty input', () => {
+  assert.deepEqual(autoArrange([], 24), []);
+  assert.deepEqual(autoArrange(undefined, 24), []);
+  const items = [
+    { i: 'a', x: 3, y: 7, w: 8, h: 5, minW: 4 },
+    { i: 'b', x: 0, y: 0, w: 8, h: 3 },
+    { i: 'c', x: 0, y: 0, w: 10, h: 4 },
+  ];
+  const out = autoArrange(items, 24);
+  const byId = Object.fromEntries(out.map((o) => [o.i, o]));
+  assert.equal(byId['a'].h, 5);
+  assert.equal(byId['a'].minW, 4); // non-position fields preserved
+  for (let i = 0; i < out.length; i++) {
+    for (let j = i + 1; j < out.length; j++) {
+      assert.equal(collides(out[i], out[j]), false);
+    }
+  }
 });

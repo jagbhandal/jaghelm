@@ -79,6 +79,41 @@ export function autoFitWidth(item, cols) {
   return item;
 }
 
+// Priority for "tidy up": nodes first, then widgets, then custom groups.
+function arrangeRank(id = '') {
+  if (String(id).startsWith('node-')) return 0;
+  if (String(id).startsWith('group-')) return 2;
+  return 1;
+}
+
+/**
+ * "Tidy up" — shelf-pack items left-to-right, top-to-bottom with no gaps, in
+ * priority order (nodes → widgets → custom groups; alphabetical within each).
+ * Preserves each panel's size (only x/y change); a panel wider than the grid is
+ * clamped to full width. Runs resolveOverlaps as a safety net. Pure.
+ */
+export function autoArrange(items, cols) {
+  const sorted = [...(items || [])].sort(
+    (a, b) => arrangeRank(a.i) - arrangeRank(b.i) || String(a.i).localeCompare(String(b.i))
+  );
+  let x = 0;
+  let y = 0;
+  let rowH = 0;
+  const out = [];
+  for (const it of sorted) {
+    const w = Math.min(it.w, cols);
+    if (x + w > cols) {
+      x = 0;
+      y += rowH;
+      rowH = 0;
+    }
+    out.push({ ...it, x, y, w });
+    x += w;
+    rowH = Math.max(rowH, it.h);
+  }
+  return resolveOverlaps(out);
+}
+
 /**
  * Nudge an item by (dx, dy) grid cells, clamped to the grid: x stays within
  * [0, cols - w] so the item never overflows a column, and y never goes negative.

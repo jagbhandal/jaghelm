@@ -1,12 +1,14 @@
 import React from 'react';
 import { useConfig } from '../../context/ConfigContext.jsx';
-import { useConfirm } from '../../context/OverlayContext.jsx';
+import { useConfirm, useToast } from '../../context/OverlayContext.jsx';
 import Field from './Field';
 import { Card, ChoiceGroup } from './primitives.jsx';
+import { autoArrange } from '../HelmGrid/gridMath.js';
 
 export default function LayoutTab() {
   const { config, update } = useConfig();
   const confirm = useConfirm();
+  const toast = useToast();
 
   const resetGridLayout = async () => {
     const ok = await confirm({
@@ -16,6 +18,29 @@ export default function LayoutTab() {
       danger: true,
     });
     if (ok) update('gridLayout', null);
+  };
+
+  // "Tidy up" — pack every panel gaplessly in priority order. Operates on the
+  // saved layout (per breakpoint); sm is stacked, so it's left alone.
+  const autoArrangeLayout = async () => {
+    const current = config.gridLayout;
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+      toast('Layout is already at its default arrangement.', 'info');
+      return;
+    }
+    const ok = await confirm({
+      title: 'Auto-arrange panels?',
+      body: 'Packs every panel top-to-bottom, left-to-right with no gaps (nodes first, then widgets, then groups). Your current positions are replaced — you can drag them back.',
+      confirmLabel: 'Tidy up',
+    });
+    if (!ok) return;
+    const colsFor = (bp) => (bp === 'md' ? 20 : config.gridColumns || 24);
+    const next = {};
+    for (const [bp, items] of Object.entries(current)) {
+      next[bp] = bp === 'sm' || !Array.isArray(items) ? items : autoArrange(items, colsFor(bp));
+    }
+    update('gridLayout', next);
+    toast('Panels tidied up.', 'success');
   };
 
   return (
@@ -42,14 +67,18 @@ export default function LayoutTab() {
           </div>
         </Field>
 
-        <div style={{ marginTop: 16 }}>
+        <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button className="settings-btn" onClick={autoArrangeLayout}>
+            ✨ Auto-arrange
+          </button>
           <button className="settings-btn-danger" onClick={resetGridLayout}>
             Reset Grid Layout
           </button>
-          <p className="settings-hint-block" style={{ marginTop: 6 }}>
-            Resets all panel positions and sizes to defaults.
-          </p>
         </div>
+        <p className="settings-hint-block" style={{ marginTop: 8 }}>
+          <strong>Auto-arrange</strong> tidies panels into a gapless grid (you keep your
+          panels and sizes). <strong>Reset</strong> returns everything to defaults.
+        </p>
       </Card>
 
       <Card title="Refresh">
