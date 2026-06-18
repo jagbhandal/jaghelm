@@ -80,6 +80,32 @@ export function autoFitWidth(item, cols) {
 }
 
 /**
+ * Nudge an item by (dx, dy) grid cells, clamped to the grid: x stays within
+ * [0, cols - w] so the item never overflows a column, and y never goes negative.
+ * Returns the new {x, y}; identical to the input when the move is fully clamped
+ * (so callers can detect a no-op). Pure — the keyboard move handler builds on it.
+ */
+export function nudge(item, dx, dy, cols) {
+  const x = Math.max(0, Math.min(item.x + dx, cols - item.w));
+  const y = Math.max(0, item.y + dy);
+  return { x, y };
+}
+
+/**
+ * Grow/shrink an item by (dw, dh) grid cells, clamped: width to
+ * [minW, cols - x] (can't exceed the remaining columns or drop below minW) and
+ * height to >= minH (can't shrink below its content). Returns the new {w, h};
+ * identical to the input when fully clamped. Pure — the keyboard resize handler
+ * builds on it.
+ */
+export function grow(item, dw, dh, cols, minH) {
+  const minW = item.minW || 2;
+  const w = Math.max(minW, Math.min(item.w + dw, cols - item.x));
+  const h = Math.max(minH, item.h + dh);
+  return { w, h };
+}
+
+/**
  * Deep-equal layout comparison, order-independent.
  * Used to skip no-op syncs when props change but the resolved layout is the same.
  */

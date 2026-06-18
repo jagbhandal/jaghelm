@@ -12,6 +12,8 @@ import {
   getBottom,
   autoFitWidth,
   layoutsEqual,
+  nudge,
+  grow,
 } from './gridMath.js';
 
 // Shared fixtures. gap is [horizontal, vertical] in px.
@@ -260,4 +262,42 @@ test('layoutsEqual is false when ids differ even if positions match', () => {
   const a = [{ i: 'a', x: 0, y: 0, w: 2, h: 2 }];
   const b = [{ i: 'z', x: 0, y: 0, w: 2, h: 2 }];
   assert.equal(layoutsEqual(a, b), false);
+});
+
+// nudge — keyboard move clamp (cols = 24)
+test('nudge moves by the delta when there is room', () => {
+  assert.deepEqual(nudge({ x: 4, y: 2, w: 3 }, 1, 0, 24), { x: 5, y: 2 });
+  assert.deepEqual(nudge({ x: 4, y: 2, w: 3 }, 0, 1, 24), { x: 4, y: 3 });
+  assert.deepEqual(nudge({ x: 4, y: 2, w: 3 }, -1, -1, 24), { x: 3, y: 1 });
+});
+
+test('nudge clamps x so the item never overflows the columns or goes negative', () => {
+  // At the right edge (x + w === cols): moving right is clamped to the same x.
+  assert.deepEqual(nudge({ x: 21, y: 0, w: 3 }, 1, 0, 24), { x: 21, y: 0 });
+  // At the left edge: moving left is clamped to 0.
+  assert.deepEqual(nudge({ x: 0, y: 5, w: 3 }, -1, 0, 24), { x: 0, y: 5 });
+});
+
+test('nudge clamps y at the top but allows unbounded downward movement', () => {
+  assert.deepEqual(nudge({ x: 2, y: 0, w: 3 }, 0, -1, 24), { x: 2, y: 0 });
+  assert.deepEqual(nudge({ x: 2, y: 0, w: 3 }, 0, 9, 24), { x: 2, y: 9 });
+});
+
+// grow — keyboard resize clamp (cols = 24)
+test('grow changes size by the delta when within bounds', () => {
+  assert.deepEqual(grow({ x: 2, w: 4, h: 3, minW: 2 }, 1, 0, 24, 2), { w: 5, h: 3 });
+  assert.deepEqual(grow({ x: 2, w: 4, h: 3, minW: 2 }, 0, 1, 24, 2), { w: 4, h: 4 });
+});
+
+test('grow clamps width to [minW, cols - x] and height to >= minH', () => {
+  // Width can't exceed the remaining columns (x=20, cols=24 → max w=4).
+  assert.deepEqual(grow({ x: 20, w: 4, h: 3, minW: 2 }, 5, 0, 24, 2), { w: 4, h: 3 });
+  // Width can't drop below minW.
+  assert.deepEqual(grow({ x: 2, w: 2, h: 3, minW: 2 }, -5, 0, 24, 2), { w: 2, h: 3 });
+  // Height can't shrink below the content minimum (minH = 3 here).
+  assert.deepEqual(grow({ x: 2, w: 4, h: 3, minW: 2 }, 0, -5, 24, 3), { w: 4, h: 3 });
+});
+
+test('grow defaults minW to 2 when the item omits it', () => {
+  assert.deepEqual(grow({ x: 0, w: 2, h: 4 }, -1, 0, 24, 1), { w: 2, h: 4 });
 });

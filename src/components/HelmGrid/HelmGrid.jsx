@@ -10,6 +10,8 @@ import {
   getBottom,
   autoFitWidth,
   layoutsEqual,
+  nudge,
+  grow,
 } from './gridMath.js';
 
 /**
@@ -41,6 +43,7 @@ export default function HelmGrid({
   onDrag,
   onDragStop,
   onResizeStop,
+  labels = {},
   className = '',
 }) {
   // ── Container width ──
@@ -181,6 +184,18 @@ export default function HelmGrid({
   const interactionRef = useRef(null);
   const [interaction, setInteraction] = useState(null);
 
+  // Screen-reader announcement for keyboard move/resize (the pointer drag has
+  // visual feedback; the keyboard path needs a polite live region instead). A
+  // live region only re-speaks when its text changes, so we toggle a trailing
+  // space — invisible on screen and ignored by AT — to force an identical
+  // message (e.g. pressing into the same boundary twice) to announce again.
+  const [announceText, setAnnounceText] = useState('');
+  const announceTick = useRef(0);
+  const announce = useCallback((msg) => {
+    announceTick.current += 1;
+    setAnnounceText(announceTick.current % 2 ? `${msg} ` : msg);
+  }, []);
+
   // ── Commit layout ──
   const commitLayout = useCallback((newLayout) => {
     const resolved = resolveOverlaps(newLayout);
@@ -191,6 +206,7 @@ export default function HelmGrid({
       const all = { ...layouts, [breakpoint]: resolved };
       setTimeout(() => onLayoutChange(resolved, all), 0);
     }
+    return resolved;
   }, [onLayoutChange, layouts, breakpoint]);
 
   // ── Drag ───────────────────────────────────────────────────────────────────
@@ -363,6 +379,45 @@ export default function HelmGrid({
     window.addEventListener('pointerup', onUp);
   }, [onResizeStop, commitLayout, getContentMinH]);
 
+  // ── Keyboard move / resize ───────────────────────────────────────────────────
+  // The pointer path (startDrag/startResize) has no keyboard equivalent, so a
+  // panel was unreachable without a mouse. These commit through the same
+  // commitLayout chokepoint (overlap-resolved + persisted) using the pure
+  // nudge/grow clamps. Both read the EFFECTIVE layout (what the user sees, incl.
+  // content-driven height) like the pointer handlers do — so a shrink at the
+  // content floor is a true no-op — and announce the FINAL resolved position
+  // (post overlap-resolution), or a boundary message when fully clamped.
+
+  const keyboardMove = useCallback((itemId, dx, dy) => {
+    const item = effectiveRef.current.find((l) => l.i === itemId);
+    if (!item) return;
+    const { x, y } = nudge(item, dx, dy, gridRef.current.activeCols);
+    if (x === item.x && y === item.y) {
+      announce(dx > 0 ? 'At the right edge' : dx < 0 ? 'At the left edge' : 'At the top');
+      return;
+    }
+    const resolved = commitLayout(
+      layoutRef.current.map((l) => (l.i === itemId ? { ...l, x, y } : l))
+    );
+    const f = resolved.find((l) => l.i === itemId) || { x, y };
+    announce(`Moved to column ${f.x + 1}, row ${f.y + 1}`);
+  }, [commitLayout, announce]);
+
+  const keyboardResize = useCallback((itemId, dw, dh) => {
+    const item = effectiveRef.current.find((l) => l.i === itemId);
+    if (!item) return;
+    const { w, h } = grow(item, dw, dh, gridRef.current.activeCols, getContentMinH(itemId));
+    if (w === item.w && h === item.h) {
+      announce(dw < 0 || dh < 0 ? 'At minimum size' : 'At maximum width');
+      return;
+    }
+    const resolved = commitLayout(
+      layoutRef.current.map((l) => (l.i === itemId ? { ...l, w, h } : l))
+    );
+    const f = resolved.find((l) => l.i === itemId) || { w, h };
+    announce(`Resized to ${f.w} by ${f.h}`);
+  }, [commitLayout, getContentMinH, announce]);
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const containerHeight = useMemo(() => {
@@ -448,6 +503,13 @@ export default function HelmGrid({
             onDragStart={startDrag}
             onResizeStart={startResize}
             onContentHeight={handleContentHeight}
+            gridX={item.x}
+            gridY={item.y}
+            gridW={item.w}
+            gridH={item.h}
+            gridLabel={labels[item.i]}
+            onKeyboardMove={keyboardMove}
+            onKeyboardResize={keyboardResize}
           >
             {child}
           </GridItem>
@@ -468,6 +530,11 @@ export default function HelmGrid({
           }}
         />
       )}
+
+      {/* Polite live region: announces keyboard move/resize results to AT. */}
+      <div className="sr-only" role="status" aria-live="polite">
+        {announceText}
+      </div>
     </div>
   );
 }
