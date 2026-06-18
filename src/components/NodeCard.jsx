@@ -3,6 +3,7 @@ import DraggableServiceCard from './DraggableServiceCard';
 import { cachedIconUrl } from '../hooks/useData';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { usageSeverity, cardSeverity, severityColor, severityLabel } from '../utils/thresholds.js';
+import Sparkline from './Sparkline';
 
 /**
  * ServiceGrid — Responsive service card grid with draggable cards
@@ -201,6 +202,15 @@ export default React.memo(function NodeCard({
                   {m.unit && <span className="metric-unit">{m.unit}</span>}
                   {sevLabel && <span className="sr-only"> ({sevLabel})</span>}
                 </span>
+                {/* Glance-context trend: the last ~1h of this usage %, colored by
+                    severity (muted normally). Decorative + aria-hidden. */}
+                {m.history && m.history.length >= 2 && (
+                  <Sparkline
+                    data={m.history}
+                    color={severityColor(sev, 'var(--text-muted)')}
+                    className="metric-sparkline"
+                  />
+                )}
                 {m.percent != null && !isNaN(m.percent) && (
                   <div className="metric-bar">
                     {m.withCachePercent != null &&

@@ -582,3 +582,7 @@ body { font-family: var(--font-body); font-size: var(--text-lg); line-height: 1.
    and stacks the halo on top; the inline borderTop accent still wins. */
 .node-card--warn { box-shadow: var(--shadow-card), inset 0 0 0 1px var(--amber-border), 0 0 16px -6px var(--amber); border-color: var(--amber-border); }
 .node-card--critical { box-shadow: var(--shadow-card), inset 0 0 0 1px var(--red), 0 0 22px -5px var(--red); border-color: var(--red-border); }
+
+/* Glance-context sparkline behind a metric value (src/components/Sparkline.jsx).
+   Sits between the value and the usage bar; stretches to the tile width. */
+.metric-sparkline { display: block; width: 100%; height: 16px; margin-top: 2px; }

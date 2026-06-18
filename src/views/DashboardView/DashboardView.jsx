@@ -45,8 +45,17 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
   }, []);
 
   // Data — fetch loop encapsulated in the hook
-  const { serviceData, ups, commits, cronJobs, integrationData, servicesLoaded, sources, retry } =
-    useDashboardData(refreshKey);
+  const {
+    serviceData,
+    ups,
+    commits,
+    cronJobs,
+    integrationData,
+    history,
+    servicesLoaded,
+    sources,
+    retry,
+  } = useDashboardData(refreshKey);
 
   // Per-panel degraded/stale banners are computed AT RENDER from `sources`
   // (per-source { error, lastSuccessMs }) and a live clock — no per-tick state,
@@ -236,6 +245,7 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
                 claimedContainers={claimedContainers}
                 integrationData={integrationData}
                 isMobile={isMobile}
+                history={history}
                 banner={
                   nodeBanner?.message || nodeBanner?.staleNote ? (
                     <DegradedBanner
@@ -257,6 +267,7 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
       claimedContainers,
       integrationData,
       isMobile,
+      history,
       nodeBanner,
       retry,
     ]

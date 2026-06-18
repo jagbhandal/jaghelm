@@ -102,6 +102,12 @@ export async function getServices(skipEtag) {
   return fetchJson(`${BASE}/services`, skipEtag);
 }
 
+// Metric history (sparklines). Not ETag-cached server-side — it changes every
+// cycle by design — so this always returns a fresh body.
+export async function getMetricHistory() {
+  return fetchJson(`${BASE}/history`);
+}
+
 // ══════════════════════════════════════════════════════════════
 // Dedicated section data (not covered by /api/services or /api/integrations)
 // ══════════════════════════════════════════════════════════════

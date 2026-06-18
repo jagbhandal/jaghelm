@@ -14,15 +14,18 @@ import { ProxmoxVMList, ProxmoxStoragePools, ProxmoxBackupStatus } from './Proxm
  *   - Disk tile only when the node reports filesystem stats; switches to TB > 1000 GB.
  *   - Uptime is always last.
  */
-function buildMetrics(node, tempUnit = 'F') {
+function buildMetrics(node, tempUnit = 'F', nodeKey, history) {
   const m = node.metrics || {};
   const metrics = [];
+  // The ~1h usage series for this node's CPU/RAM/disk, for the sparklines.
+  const hist = (field) => history?.[`${nodeKey}:${field}`];
 
   metrics.push({
     label: 'CPU',
     value: m.cpu,
     unit: '%',
     percent: parseFloat(m.cpu),
+    history: hist('cpu'),
   });
 
   if (m.memTotalGB && parseFloat(m.memTotalGB) > 4) {
@@ -33,6 +36,7 @@ function buildMetrics(node, tempUnit = 'F') {
       withCachePercent: parseFloat(m.memWithCachePercent) || null,
       cacheGB: m.memCacheGB || null,
       small: true,
+      history: hist('mem'),
     });
   } else {
     metrics.push({
@@ -42,6 +46,7 @@ function buildMetrics(node, tempUnit = 'F') {
       percent: parseFloat(m.memPercent),
       withCachePercent: parseFloat(m.memWithCachePercent) || null,
       cacheGB: m.memCacheGB || null,
+      history: hist('mem'),
     });
   }
 
@@ -56,6 +61,7 @@ function buildMetrics(node, tempUnit = 'F') {
       value: `${m.diskUsed || '—'}/${m.diskTotal || '—'}`,
       percent: parseFloat(m.diskPercent),
       small: true,
+      history: hist('disk'),
     });
   }
 
@@ -80,13 +86,14 @@ export default function NodePanel({
   integrationData,
   isMobile,
   banner,
+  history,
 }) {
   const { config } = useConfig();
   if (sectionCfg.visible === false) return null;
 
   const gridKey = `node-${nodeKey}`;
   const borderColor = node.border_color || sectionCfg.borderColor || 'var(--accent)';
-  const metrics = buildMetrics(node, config.tempUnit);
+  const metrics = buildMetrics(node, config.tempUnit, nodeKey, history);
 
   const services = (node.services || [])
     .filter((s) => !claimedContainers.has(`${nodeKey}:${s.container}`))

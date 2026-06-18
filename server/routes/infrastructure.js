@@ -19,6 +19,7 @@ import http from 'http';
 
 import { fetchMonitors } from '../monitors.js';
 import { refreshUPS, refreshGitea } from '../refresh.js';
+import { getHistory } from '../history.js';
 import { getCached, setCache, jsonWithEtag } from '../cache.js';
 import { apiError } from '../errors.js';
 import { safeFetch } from '../httpClient.js';
@@ -271,5 +272,15 @@ router.get('/gitea/activity', asyncHandler(async (req, res) => {
 
   apiError(res, 502, 'Gitea data not yet available');
 }));
+
+// ── Metric history (sparklines) ──────────────────────────────────────────
+// The last ~1h of each node's CPU/RAM/disk usage, recorded by the refresh loop.
+// Deliberately NOT ETag-cached: it changes every cycle (that's the point), and a
+// 304 path would defeat the live sparkline. Kept off /api/services so the main
+// board stays 304-stable.
+
+router.get('/history', (req, res) => {
+  res.json(getHistory());
+});
 
 export { router as infrastructureRoutes };
