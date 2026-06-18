@@ -41,7 +41,8 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
         borderBottom: '1px solid var(--border-color)',
         minWidth: 0,
       }}>
-        {statusStyle === 'dot' && <StatusDot color={statusColor} />}
+        {statusStyle === 'dot' && <StatusDot color={statusColor} isUp={isUp} isDown={isDown} />}
+        {statusStyle === 'minimal' && <StatusGlyph color={statusColor} isUp={isUp} isDown={isDown} />}
         {icon && <ServiceIcon src={icon} size={20} />}
         <span style={{
           fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
@@ -65,7 +66,8 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
       }}>
         {/* Primary row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {statusStyle === 'dot' && <StatusDot color={statusColor} />}
+          {statusStyle === 'dot' && <StatusDot color={statusColor} isUp={isUp} isDown={isDown} />}
+          {statusStyle === 'minimal' && <StatusGlyph color={statusColor} isUp={isUp} isDown={isDown} />}
           {icon && <ServiceIcon src={icon} size={24} />}
           <span style={{
             fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
@@ -127,7 +129,8 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
     }}>
       {/* Header: icon + name + badges */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: showStats || showApp ? 8 : 0 }}>
-        {statusStyle === 'dot' && <StatusDot color={statusColor} />}
+        {statusStyle === 'dot' && <StatusDot color={statusColor} isUp={isUp} isDown={isDown} />}
+        {statusStyle === 'minimal' && <StatusGlyph color={statusColor} isUp={isUp} isDown={isDown} />}
         {icon && <ServiceIcon src={icon} size={20} />}
         <span style={{
           fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
@@ -177,12 +180,47 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
 
 // ─── Shared sub-components ───────────────────────────────────────────────────
 
-function StatusDot({ color }) {
+// Non-color redundant status cue (WCAG 1.4.1): a distinct shape per state plus
+// a screen-reader label, so up/down/unknown never relies on color alone.
+//   up → triangle-up, down → triangle-down, unknown → diamond.
+function statusCue(isUp, isDown) {
+  if (isUp) return { glyph: '▲', label: 'Up' };
+  if (isDown) return { glyph: '▼', label: 'Down' };
+  return { glyph: '◆', label: 'Unknown' };
+}
+
+function StatusDot({ color, isUp, isDown }) {
+  const { glyph, label } = statusCue(isUp, isDown);
   return (
-    <div style={{
-      width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-      background: color, boxShadow: `0 0 6px ${color}`,
-    }} />
+    <span
+      role="img"
+      aria-label={`Status: ${label}`}
+      title={label}
+      style={{
+        flexShrink: 0, lineHeight: 1, fontSize: 9, color,
+        textShadow: `0 0 6px ${color}`, fontFamily: 'var(--font-mono)',
+      }}
+    >
+      <span aria-hidden="true">{glyph}</span>
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
+// Minimal mode shows only icon + name; surface a redundant glyph so status
+// is conveyed without color or a badge.
+function StatusGlyph({ color, isUp, isDown }) {
+  const { glyph, label } = statusCue(isUp, isDown);
+  return (
+    <span
+      role="img"
+      aria-label={`Status: ${label}`}
+      title={label}
+      style={{ flexShrink: 0, lineHeight: 1, fontSize: 10, color, fontFamily: 'var(--font-mono)' }}
+    >
+      <span aria-hidden="true">{glyph}</span>
+      <span className="sr-only">{label}</span>
+    </span>
   );
 }
 
