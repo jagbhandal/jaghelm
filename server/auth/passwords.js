@@ -12,9 +12,10 @@
  */
 
 import crypto from 'crypto';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { atomicWriteFileSync } from '../util/atomicWrite.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUTH_FILE = join(__dirname, '..', '..', 'data', 'auth.json');
@@ -37,9 +38,12 @@ function loadAuthOverride() {
 }
 
 function persistHash(hash) {
-  writeFileSync(
+  // Atomic + 0600: a crash mid-write can't truncate the admin hash, and the
+  // file is never group/world-readable.
+  atomicWriteFileSync(
     AUTH_FILE,
-    JSON.stringify({ passwordHash: hash, updatedAt: new Date().toISOString() }, null, 2)
+    JSON.stringify({ passwordHash: hash, updatedAt: new Date().toISOString() }, null, 2),
+    { mode: 0o600 }
   );
 }
 

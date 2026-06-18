@@ -6,15 +6,56 @@
  */
 
 import crypto from 'crypto';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { atomicWriteFileSync } from './util/atomicWrite.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SECRETS_PATH = join(__dirname, '..', 'data', 'secrets.json');
+// Data dir is overridable so tests can run against a temp dir instead of the
+// live store (and so a containerized deploy can relocate state if needed).
+const DATA_DIR = process.env.JAGHELM_DATA_DIR || join(__dirname, '..', 'data');
+const SECRETS_PATH = join(DATA_DIR, 'secrets.json');
+const SALT_PATH = join(DATA_DIR, '.secrets-salt');
+// Salt used by installs created before per-install salts existed. Kept so their
+// already-encrypted secrets keep decrypting; never used for fresh installs.
+const LEGACY_SALT = 'jaghelm-secrets-v1';
 
 // Derive a 256-bit key from DASH_SECRET using PBKDF2
 let derivedKey = null;
+
+/**
+ * Resolve the PBKDF2 salt for this install.
+ *
+ * A per-install RANDOM salt means two deployments sharing the same DASH_SECRET
+ * no longer derive the same key — defeating cross-install precomputation and
+ * rainbow attacks against the published default. The salt is not itself a
+ * secret, but it's stored 0600 next to the data anyway.
+ *
+ * Precedence: explicit salt file → legacy static salt (only if secrets already
+ * exist, so old data still decrypts) → freshly generated random salt.
+ */
+function getSalt() {
+  if (existsSync(SALT_PATH)) {
+    const s = readFileSync(SALT_PATH, 'utf8').trim();
+    if (s) return s;
+  }
+  if (existsSync(SECRETS_PATH)) {
+    try {
+      const existing = JSON.parse(readFileSync(SECRETS_PATH, 'utf8'));
+      if (existing && Object.keys(existing).length > 0) return LEGACY_SALT;
+    } catch {
+      /* unreadable — fall through to a fresh salt */
+    }
+  }
+  const fresh = crypto.randomBytes(16).toString('hex');
+  try {
+    atomicWriteFileSync(SALT_PATH, fresh, { mode: 0o600 });
+  } catch (err) {
+    console.warn('[secrets] Could not persist per-install salt, using ephemeral:', err.message);
+  }
+  return fresh;
+}
 
 function getKey() {
   if (derivedKey) return derivedKey;
@@ -23,9 +64,10 @@ function getKey() {
     console.warn('[secrets] DASH_SECRET not set — secrets manager disabled. Credentials will only resolve from .env.');
     return null;
   }
-  // Static salt — acceptable for homelab use. The secret itself provides entropy.
-  const salt = 'jaghelm-secrets-v1';
-  derivedKey = crypto.pbkdf2Sync(secret, salt, 100000, 32, 'sha256');
+  if (secret.length < 16) {
+    console.warn('[secrets] DASH_SECRET is weak (<16 chars). Generate a strong one with `openssl rand -hex 32` — short secrets are brute-forceable even with a unique salt.');
+  }
+  derivedKey = crypto.pbkdf2Sync(secret, getSalt(), 100000, 32, 'sha256');
   return derivedKey;
 }
 
@@ -46,7 +88,9 @@ function loadSecrets() {
 
 function persistSecrets() {
   try {
-    writeFileSync(SECRETS_PATH, JSON.stringify(secrets, null, 2), 'utf8');
+    // Atomic + 0600: a crash mid-write can't truncate the encrypted store, and
+    // the file is never group/world-readable.
+    atomicWriteFileSync(SECRETS_PATH, JSON.stringify(secrets, null, 2), { mode: 0o600 });
   } catch (err) {
     console.error('[secrets] Failed to save secrets.json:', err.message);
   }
