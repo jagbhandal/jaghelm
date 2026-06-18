@@ -52,6 +52,7 @@ import { errorHandler } from './errors.js';
 import { VERSION } from './version.js';
 import { createLogger } from './util/logger.js';
 import { metricsMiddleware, metricsHandler } from './metrics.js';
+import { isDemoMode, demoMiddleware, logDemoBanner } from './demo.js';
 
 const log = createLogger('jaghelm');
 
@@ -191,6 +192,11 @@ app.use('/uploads', express.static(uploadsDir));
 // it exposes request counts/timings, not secrets, and Prometheus must reach it.
 app.get('/metrics', metricsHandler);
 
+// Read-only public demo: when DEMO_MODE=true this owns the whole /api surface
+// (refuses all writes, serves canned fixtures, never reaches a real route or
+// outbound) — mounted BEFORE auth + the routers. See server/demo.js.
+if (isDemoMode()) app.use('/api', demoMiddleware);
+
 app.use('/api/auth', authRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/icons', iconRoutes);
@@ -264,6 +270,7 @@ async function boot() {
   const server = app.listen(PORT, '0.0.0.0', () => {
     log.info({ version: VERSION, port: PORT }, 'listening');
     log.info({ nodes: Object.keys(config.nodes || {}) }, 'active nodes');
+    if (isDemoMode()) logDemoBanner(PORT);
     if (!authEnabled()) {
       log.warn(
         { port: PORT },
