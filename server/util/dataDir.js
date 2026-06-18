@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Single source of truth for where runtime state lives.
  *

@@ -182,6 +182,10 @@ export function startConfigWatcher() {
       if (!existsSync(CONFIG_PATH)) return;
       const mtime = statSync(CONFIG_PATH).mtimeMs;
       if (mtime > lastModified) {
+        // Record the attempt up front so a persistently-corrupt services.yaml
+        // (which loadConfig leaves lastModified unchanged on) isn't re-parsed,
+        // re-failed, and re-logged every single 5s tick.
+        lastModified = mtime;
         if (reloadDebounceTimer) clearTimeout(reloadDebounceTimer);
         reloadDebounceTimer = setTimeout(() => {
           reloadDebounceTimer = null;

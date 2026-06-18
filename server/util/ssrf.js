@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * SSRF guard — vetting for outbound URLs, called at the fetch chokepoints
  * (server/integrations/lib/http.js and server/httpClient.js), which cover all
@@ -35,10 +36,12 @@ const PRIVATE_V4_RANGES = [
   /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // 172.16/12
 ];
 
+/** @param {string} ip */
 function isPrivateV4(ip) {
   return PRIVATE_V4_RANGES.some((re) => re.test(ip));
 }
 
+/** @param {string} ip */
 function isPrivateV6(ip) {
   const lower = ip.toLowerCase();
   if (lower === '::1' || lower === '::') return true;

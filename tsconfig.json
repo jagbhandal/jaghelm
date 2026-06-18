@@ -12,7 +12,7 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "jsx": "react-jsx",
-    "types": []
+    "types": ["node"]
   },
   "include": ["types.d.ts", "src/**/*", "server/**/*", "vite.config.js"],
   "exclude": ["node_modules", "dist", "coverage"]

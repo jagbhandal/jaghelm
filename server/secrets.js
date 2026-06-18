@@ -35,6 +35,14 @@ function getSalt() {
   if (existsSync(SALT_PATH)) {
     const s = readFileSync(SALT_PATH, 'utf8').trim();
     if (s) return s;
+    // File exists but is empty/blank (truncated/corrupted). Falling back to any
+    // other salt would derive a DIFFERENT key and silently fail to decrypt every
+    // existing secret. Fail loud so the operator restores it instead.
+    throw new Error(
+      `[secrets] ${SALT_PATH} exists but is empty — refusing to derive a key with a fallback salt ` +
+        `(that would corrupt access to existing secrets). Restore the salt file, or delete it AND ` +
+        `data/secrets.json to start fresh.`
+    );
   }
   if (existsSync(SECRETS_PATH)) {
     try {
@@ -58,6 +66,18 @@ function getKey() {
   const secret = process.env.DASH_SECRET;
   if (!secret) {
     console.warn('[secrets] DASH_SECRET not set — secrets manager disabled. Credentials will only resolve from .env.');
+    return null;
+  }
+  // Refuse the published example placeholders — using a globally-known string as
+  // the AES master key is no better than no encryption. Treat as unset.
+  const PLACEHOLDERS = new Set([
+    'your-random-secret-here', 'replace_me', 'changeme', 'change-me', 'secret', 'password',
+  ]);
+  if (PLACEHOLDERS.has(secret.toLowerCase())) {
+    console.error(
+      '[secrets] DASH_SECRET is an example placeholder — refusing to use it as an encryption key. ' +
+        'Generate a real one: `openssl rand -hex 32`. Secrets manager disabled until fixed.'
+    );
     return null;
   }
   if (secret.length < 16) {

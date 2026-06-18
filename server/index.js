@@ -147,6 +147,10 @@ app.use('/api', authMiddleware, infrastructureRoutes);
 // ── Static assets + SPA fallback ──────────────────────────────────────────
 
 const distPath = join(__dirname, '..', 'dist');
+// Vite emits content-hashed filenames under /assets, so they can be cached
+// forever — serve them immutable to avoid a revalidation round-trip on every
+// reload. index.html and other root files keep the default (revalidated) cache.
+app.use('/assets', express.static(join(distPath, 'assets'), { maxAge: '1y', immutable: true }));
 app.use(express.static(distPath));
 app.all('/api/*', (req, res) => res.status(404).json({ error: 'Endpoint not found' }));
 app.get('*', (req, res) => res.sendFile(join(distPath, 'index.html')));
@@ -156,6 +160,16 @@ app.get('*', (req, res) => res.sendFile(join(distPath, 'index.html')));
 app.use(errorHandler);
 
 // ── Boot sequence ─────────────────────────────────────────────────────────
+
+// Keep a single stray rejection / thrown error from killing the whole
+// single-instance dashboard. Log loudly; the container restart policy is the
+// backstop for a genuinely unrecoverable state.
+process.on('unhandledRejection', (reason) => {
+  console.error('[jaghelm] Unhandled promise rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[jaghelm] Uncaught exception (continuing):', err);
+});
 
 async function boot() {
   const promUrl = process.env.PROMETHEUS_URL || 'http://localhost:9090';

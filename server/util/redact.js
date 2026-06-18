@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Strip credentials from a string before it's logged or returned to a client.
  *
@@ -12,7 +13,10 @@
 const SECRET_PARAMS =
   /([?&](?:api[_-]?key|token|password|passwd|pass|secret|auth|access[_-]?token|sig)=)[^&\s'"]+/gi;
 
-/** Redact secrets from a string. */
+/**
+ * Redact secrets from a string.
+ * @param {*} input
+ */
 export function redactSecrets(input) {
   if (input == null) return input;
   let s = String(input);
@@ -23,7 +27,10 @@ export function redactSecrets(input) {
   return s;
 }
 
-/** Convenience: redact an Error's message. */
+/**
+ * Convenience: redact an Error's message.
+ * @param {*} err
+ */
 export function redactError(err) {
   if (!err) return err;
   return redactSecrets(err.message || String(err));

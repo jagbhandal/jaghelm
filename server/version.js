@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Single source of truth for the app version — read from package.json so the
  * boot log, /api/health, and image labels can't drift (they previously

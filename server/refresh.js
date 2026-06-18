@@ -306,6 +306,9 @@ async function _refreshIntegrations() {
         const handlerType = cfg.preset || key;
         const result = await fetchIntegration(handlerType, { ...cfg, _storageKey: key }, true);
         const entry = { ...(result.fields || {}) };
+        // Surface fetch/auth failures instead of dropping them — otherwise a
+        // down integration renders as silent zeros, not an error state.
+        if (result.error) entry._error = result.error;
         if (result.vms) entry._vms = result.vms;
         if (result.storagePools) entry._storagePools = result.storagePools;
         if (result.lastBackup) entry._lastBackup = result.lastBackup;
