@@ -105,9 +105,9 @@ export default React.memo(function NavBar({ tabs, activeTab, onTabChange, theme,
         )}
         <span className="nav-clock">{clock}</span>
         <span className="nav-updated">Updated {timeSince}</span>
-        <button className="icon-btn" onClick={onOpenSettings}>⚙️</button>
-        <button className="icon-btn" onClick={onToggleTheme} title="Cycle theme">🎨</button>
-        {onLogout && <button className="icon-btn" onClick={onLogout} title="Log out">🚪</button>}
+        <button className="icon-btn" onClick={onOpenSettings} aria-label="Settings" title="Settings">⚙️</button>
+        <button className="icon-btn" onClick={onToggleTheme} aria-label="Cycle theme" title="Cycle theme">🎨</button>
+        {onLogout && <button className="icon-btn" onClick={onLogout} aria-label="Log out" title="Log out">🚪</button>}
       </div>
     </nav>
   );

@@ -13,11 +13,23 @@ import { apiError } from '../errors.js';
 import { safeFetch } from '../httpClient.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { VERSION } from '../version.js';
+import { getRefreshHealth } from '../refresh.js';
 
 const router = Router();
 
 router.get('/health', (req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime(), version: VERSION });
+  // Reflect real liveness: the Docker HEALTHCHECK + deploy verify gate read this,
+  // so a static 'ok' would let a wedged refresh loop (stale data) pass as healthy.
+  // 'starting' (pre-first-cycle) still reports ok so a booting container isn't killed.
+  const refresh = getRefreshHealth();
+  const healthy = refresh.state !== 'stale';
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : 'degraded',
+    refresh: refresh.state,
+    refreshAgeMs: refresh.ageMs,
+    uptime: process.uptime(),
+    version: VERSION,
+  });
 });
 
 router.get('/weather', authMiddleware, asyncHandler(async (req, res) => {

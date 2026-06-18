@@ -15,7 +15,11 @@ if (!window._origFetch) {
   window._origFetch = window.fetch;
   window.fetch = (url, opts = {}) => {
     if (typeof url === 'string' && url.startsWith('/api') && !url.includes('/auth/login') && _authTokenRef.current) {
-      opts.headers = { ...opts.headers, 'x-auth-token': _authTokenRef.current };
+      // Build a new opts object — don't mutate the caller's.
+      return window._origFetch(url, {
+        ...opts,
+        headers: { ...opts.headers, 'x-auth-token': _authTokenRef.current },
+      });
     }
     return window._origFetch(url, opts);
   };

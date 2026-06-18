@@ -36,6 +36,7 @@ const MIN_INTERVAL_SECONDS = 10;
 
 let bgRefreshTimer = null;
 let bgRefreshRunning = false;
+let lastRefreshComplete = 0; // ms epoch of the last finished cycle (0 = never)
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -344,7 +345,21 @@ async function runBackgroundRefresh() {
     console.error('[refresh] Background cycle error:', err.message);
   } finally {
     bgRefreshRunning = false;
+    lastRefreshComplete = Date.now();
   }
+}
+
+/**
+ * Liveness of the background refresh loop, for /api/health (which the Docker
+ * HEALTHCHECK + deploy verify gate trust). 'starting' before the first cycle,
+ * 'stale' once the loop has missed ~3 expected cycles (wedged), else 'ok'.
+ */
+export function getRefreshHealth() {
+  if (lastRefreshComplete === 0) return { state: 'starting', ageMs: null };
+  const ageMs = Date.now() - lastRefreshComplete;
+  const intervalMs = getRefreshIntervalMs();
+  const state = ageMs > Math.max(3 * intervalMs, 90_000) ? 'stale' : 'ok';
+  return { state, ageMs };
 }
 
 export function startBackgroundRefresh() {
