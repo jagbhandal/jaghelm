@@ -1,5 +1,16 @@
 import React from 'react';
 
+/**
+ * ErrorBoundary — catches render errors in its subtree.
+ *
+ * Two modes:
+ *   - default (root): full-screen "Something went wrong" with a reload CTA.
+ *   - inline (`inline` prop): a compact in-place card, so one throwing panel
+ *     degrades inline instead of blanking the whole dashboard. The root
+ *     boundary stays the last resort for anything the inline ones don't cover.
+ *
+ * `itemId` is logged with the caught error to identify the failing panel/item.
+ */
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -11,11 +22,44 @@ export default class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    console.error('[ErrorBoundary] Caught render error:', error, info.componentStack);
+    const where = this.props.itemId ? ` [${this.props.itemId}]` : '';
+    console.error(`[ErrorBoundary]${where} Caught render error:`, error, info.componentStack);
   }
 
   render() {
     if (this.state.hasError) {
+      if (this.props.inline) {
+        return (
+          <div
+            className="glass-card node-card"
+            role="alert"
+            style={{
+              borderTop: '2px solid var(--red)',
+              display: 'flex', flexDirection: 'column', gap: 6,
+              justifyContent: 'center', minHeight: 80,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span aria-hidden="true" style={{ fontSize: 18 }}>⚠️</span>
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>
+                {this.props.label || 'This panel failed to render'}
+              </span>
+            </div>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-word' }}>
+              {this.state.error?.message || 'Unexpected error'}
+            </span>
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="settings-btn-sm"
+              style={{ alignSelf: 'flex-start', marginTop: 4 }}
+            >
+              Retry
+            </button>
+          </div>
+        );
+      }
+
       return (
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',

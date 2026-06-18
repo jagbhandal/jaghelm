@@ -6,6 +6,7 @@ import NodeCard from '../../components/NodeCard';
 import TodoCard from '../../components/TodoCard';
 import DroppablePanel from '../../components/DroppablePanel';
 import ServiceDragOverlay from '../../components/ServiceDragOverlay';
+import ErrorBoundary from '../../components/ErrorBoundary';
 import { UPSCard, GiteaActivity, QuickLaunch, CronJobs } from '../../components/Widgets';
 import { cachedIconUrl } from '../../hooks/useData';
 
@@ -155,18 +156,21 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
     () =>
       Object.entries(serviceData.nodes || {})
         .map(([nodeKey, node]) => (
-          <NodePanel
-            key={`node-${nodeKey}`}
-            nodeKey={nodeKey}
-            node={node}
-            sectionCfg={sc[nodeKey] || {}}
-            config={config}
-            setConfig={setConfig}
-            appDataByContainer={appDataByContainer}
-            claimedContainers={claimedContainers}
-            integrationData={integrationData}
-            isMobile={isMobile}
-          />
+          <div key={`node-${nodeKey}`}>
+            <ErrorBoundary inline itemId={`node-${nodeKey}`} label={`Node "${nodeKey}" failed to render`}>
+              <NodePanel
+                nodeKey={nodeKey}
+                node={node}
+                sectionCfg={sc[nodeKey] || {}}
+                config={config}
+                setConfig={setConfig}
+                appDataByContainer={appDataByContainer}
+                claimedContainers={claimedContainers}
+                integrationData={integrationData}
+                isMobile={isMobile}
+              />
+            </ErrorBoundary>
+          </div>
         ))
         .filter(Boolean),
     [serviceData, sc, config, setConfig, appDataByContainer, claimedContainers, integrationData, isMobile]
@@ -185,27 +189,29 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
           return (
             <div key={gridKey}>
-              <DroppablePanel panelId={gridKey} disabled={isMobile}>
-                <NodeCard
-                  sectionKey={`group-${group.id}`}
-                  config={config}
-                  setConfig={setConfig}
-                  borderColor={borderColor}
-                  metrics={null}
-                  services={services}
-                  nodeData={{
-                    display_name: group.title,
-                    icon:
-                      group.icon ||
-                      cachedIconUrl(
-                        'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/folder_special/outline.svg'
-                      ),
-                    subtitle: `${services.length} services`,
-                  }}
-                  panelId={gridKey}
-                  dragDisabled={isMobile}
-                />
-              </DroppablePanel>
+              <ErrorBoundary inline itemId={gridKey} label={`Group "${group.title || group.id}" failed to render`}>
+                <DroppablePanel panelId={gridKey} disabled={isMobile}>
+                  <NodeCard
+                    sectionKey={`group-${group.id}`}
+                    config={config}
+                    setConfig={setConfig}
+                    borderColor={borderColor}
+                    metrics={null}
+                    services={services}
+                    nodeData={{
+                      display_name: group.title,
+                      icon:
+                        group.icon ||
+                        cachedIconUrl(
+                          'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/folder_special/outline.svg'
+                        ),
+                      subtitle: `${services.length} services`,
+                    }}
+                    panelId={gridKey}
+                    dragDisabled={isMobile}
+                  />
+                </DroppablePanel>
+              </ErrorBoundary>
             </div>
           );
         })
@@ -315,27 +321,37 @@ export default function DashboardView({ config, setConfig, refreshKey }) {
 
           {sc.ups?.visible !== false && (
             <div key="ups">
-              <UPSCard upsData={ups} borderColor={sc.ups?.borderColor} config={config} />
+              <ErrorBoundary inline itemId="ups" label="UPS panel failed to render">
+                <UPSCard upsData={ups} borderColor={sc.ups?.borderColor} config={config} />
+              </ErrorBoundary>
             </div>
           )}
           {sc.pipeline?.visible !== false && (
             <div key="pipeline">
-              <GiteaActivity commits={commits} config={config} />
+              <ErrorBoundary inline itemId="pipeline" label="Pipeline panel failed to render">
+                <GiteaActivity commits={commits} config={config} />
+              </ErrorBoundary>
             </div>
           )}
           {sc.todos?.visible !== false && (
             <div key="todos">
-              <TodoCard borderColor={sc.todos?.borderColor} config={config} setConfig={setConfig} />
+              <ErrorBoundary inline itemId="todos" label="Todos panel failed to render">
+                <TodoCard borderColor={sc.todos?.borderColor} config={config} setConfig={setConfig} />
+              </ErrorBoundary>
             </div>
           )}
           {config.showCronJobs !== false && (
             <div key="cron-jobs">
-              <CronJobs nodes={cronJobs} config={config} />
+              <ErrorBoundary inline itemId="cron-jobs" label="Cron Jobs panel failed to render">
+                <CronJobs nodes={cronJobs} config={config} />
+              </ErrorBoundary>
             </div>
           )}
           {sc.quicklaunch?.visible !== false && (
             <div key="quicklaunch">
-              <QuickLaunch config={config} borderColor={sc.quicklaunch?.borderColor} />
+              <ErrorBoundary inline itemId="quicklaunch" label="Quick Launch panel failed to render">
+                <QuickLaunch config={config} borderColor={sc.quicklaunch?.borderColor} />
+              </ErrorBoundary>
             </div>
           )}
         </HelmGrid>
