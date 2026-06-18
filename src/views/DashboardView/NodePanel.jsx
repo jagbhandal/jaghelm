@@ -1,6 +1,7 @@
 import React from 'react';
 import NodeCard from '../../components/NodeCard';
 import DroppablePanel from '../../components/DroppablePanel';
+import { useConfig } from '../../context/ConfigContext.jsx';
 import { ProxmoxVMList, ProxmoxStoragePools, ProxmoxBackupStatus } from './ProxmoxPanels';
 
 /**
@@ -74,13 +75,12 @@ export default function NodePanel({
   nodeKey,
   node,
   sectionCfg,
-  config,
-  setConfig,
   appDataByContainer,
   claimedContainers,
   integrationData,
   isMobile,
 }) {
+  const { config } = useConfig();
   if (sectionCfg.visible === false) return null;
 
   const gridKey = `node-${nodeKey}`;
@@ -113,8 +113,6 @@ export default function NodePanel({
       <DroppablePanel panelId={gridKey} disabled={isMobile}>
         <NodeCard
           sectionKey={nodeKey}
-          config={config}
-          setConfig={setConfig}
           borderColor={borderColor}
           metrics={metrics}
           services={services}

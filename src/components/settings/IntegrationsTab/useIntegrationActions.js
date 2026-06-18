@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { apiFetch } from '../../../api/client.js';
 
 /**
  * useIntegrationActions — wraps the four API-touching handlers (test, save,
@@ -28,7 +29,7 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
       if (form.token) body.token = form.token;
       if (Object.keys(form.params).length > 0) body.params = form.params;
 
-      const res = await fetch('/api/integrations/test', {
+      const res = await apiFetch('/api/integrations/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -58,7 +59,7 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
       // When editing, send the original storage key so server can remove it if the key changed
       if (editingType) body.editingKey = editingType;
 
-      const res = await fetch('/api/integrations/save', {
+      const res = await apiFetch('/api/integrations/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -79,7 +80,7 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
   const handleDelete = async (type) => {
     if (!confirm(`Remove ${type} integration? This will delete stored credentials.`)) return;
     try {
-      await fetch(`/api/integrations/${type}`, { method: 'DELETE' });
+      await apiFetch(`/api/integrations/${type}`, { method: 'DELETE' });
       refetch();
     } catch {
       // Silently fail
@@ -96,7 +97,7 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
       };
       if (currentConfig.username) body.username = currentConfig.username;
       // Don't send password/token — they're already stored as $secret refs
-      await fetch('/api/integrations/save', {
+      await apiFetch('/api/integrations/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

@@ -1,15 +1,20 @@
 import React from 'react';
+import { useConfig } from '../../context/ConfigContext.jsx';
 import Field from './Field';
 
-export default function LayoutTab({ config, update }) {
+export default function LayoutTab() {
+  const { config, update } = useConfig();
   return (
     <div className="settings-section">
       <Card title="Grid">
         <Field label={`Grid Columns: ${config.gridColumns || 24}`}>
           <input
-            type="range" min="6" max="24" step="2"
+            type="range"
+            min="6"
+            max="24"
+            step="2"
             value={config.gridColumns || 24}
-            onChange={e => update('gridColumns', parseInt(e.target.value))}
+            onChange={(e) => update('gridColumns', parseInt(e.target.value))}
             className="settings-range"
           />
           <div className="settings-range-labels">
@@ -18,16 +23,13 @@ export default function LayoutTab({ config, update }) {
             <span>24 (fine grid)</span>
           </div>
           <div className="settings-hint-block" style={{ marginTop: 8 }}>
-            More columns = finer positioning and narrower panels possible.
-            Changing this resets panel positions.
+            More columns = finer positioning and narrower panels possible. Changing this resets
+            panel positions.
           </div>
         </Field>
 
         <div style={{ marginTop: 16 }}>
-          <button
-            className="settings-btn-danger"
-            onClick={() => update('gridLayout', null)}
-          >
+          <button className="settings-btn-danger" onClick={() => update('gridLayout', null)}>
             Reset Grid Layout
           </button>
           <p className="settings-hint-block" style={{ marginTop: 6 }}>
@@ -39,9 +41,12 @@ export default function LayoutTab({ config, update }) {
       <Card title="Refresh">
         <Field label={`Auto-refresh Interval: ${config.refreshInterval || 30}s`}>
           <input
-            type="range" min="10" max="120" step="5"
+            type="range"
+            min="10"
+            max="120"
+            step="5"
             value={config.refreshInterval || 30}
-            onChange={e => update('refreshInterval', parseInt(e.target.value))}
+            onChange={(e) => update('refreshInterval', parseInt(e.target.value))}
             className="settings-range"
           />
           <div className="settings-range-labels">
@@ -57,10 +62,12 @@ export default function LayoutTab({ config, update }) {
             <input
               type="checkbox"
               checked={config.showDockerStats !== false}
-              onChange={e => update('showDockerStats', e.target.checked)}
+              onChange={(e) => update('showDockerStats', e.target.checked)}
               className="settings-checkbox"
             />
-            <span className="settings-checkbox-text">Show per-container CPU, memory, and network stats</span>
+            <span className="settings-checkbox-text">
+              Show per-container CPU, memory, and network stats
+            </span>
           </label>
         </Field>
 
@@ -69,16 +76,18 @@ export default function LayoutTab({ config, update }) {
             <input
               type="checkbox"
               checked={config.showAppData !== false}
-              onChange={e => update('showAppData', e.target.checked)}
+              onChange={(e) => update('showAppData', e.target.checked)}
               className="settings-checkbox"
             />
-            <span className="settings-checkbox-text">Show app-specific API data (queries blocked, streams, etc.)</span>
+            <span className="settings-checkbox-text">
+              Show app-specific API data (queries blocked, streams, etc.)
+            </span>
           </label>
         </Field>
 
         <Field label={`Service Columns per Row: ${config.serviceColumns || 'Auto'}`}>
           <div className="settings-choice-group">
-            {[0, 2, 3, 4, 5, 6].map(n => (
+            {[0, 2, 3, 4, 5, 6].map((n) => (
               <button
                 key={n}
                 onClick={() => update('serviceColumns', n)}
@@ -89,8 +98,10 @@ export default function LayoutTab({ config, update }) {
             ))}
           </div>
           <div className="settings-hint-block" style={{ marginTop: 8 }}>
-            <strong>Auto:</strong> Cards fill available space responsively<br />
-            <strong>2–6:</strong> Maximum columns — cards reflow to fewer columns as the panel narrows
+            <strong>Auto:</strong> Cards fill available space responsively
+            <br />
+            <strong>2–6:</strong> Maximum columns — cards reflow to fewer columns as the panel
+            narrows
           </div>
         </Field>
 
@@ -100,7 +111,7 @@ export default function LayoutTab({ config, update }) {
               { id: 'list', label: 'List' },
               { id: 'row', label: 'Row' },
               { id: 'grid', label: 'Grid' },
-            ].map(mode => (
+            ].map((mode) => (
               <button
                 key={mode.id}
                 onClick={() => update('cardLayout', mode.id)}
@@ -111,13 +122,14 @@ export default function LayoutTab({ config, update }) {
             ))}
           </div>
           <div className="settings-hint-block">
-            List: clean rows, no backgrounds. Row: subtle card per service (default). Grid: compact card boxes.
+            List: clean rows, no backgrounds. Row: subtle card per service (default). Grid: compact
+            card boxes.
           </div>
         </Field>
 
         <Field label="Status Style">
           <div className="settings-choice-group">
-            {['dot', 'badge', 'minimal'].map(style => (
+            {['dot', 'badge', 'minimal'].map((style) => (
               <button
                 key={style}
                 onClick={() => update('statusStyle', style)}
@@ -136,7 +148,7 @@ export default function LayoutTab({ config, update }) {
       <Card title="Behavior">
         <Field label="Link Target">
           <div className="settings-choice-group">
-            {['_blank', '_self'].map(target => (
+            {['_blank', '_self'].map((target) => (
               <button
                 key={target}
                 onClick={() => update('linkTarget', target)}
@@ -146,14 +158,12 @@ export default function LayoutTab({ config, update }) {
               </button>
             ))}
           </div>
-          <div className="settings-hint-block">
-            Where Quick Launch links and service links open
-          </div>
+          <div className="settings-hint-block">Where Quick Launch links and service links open</div>
         </Field>
 
         <Field label="Temperature Unit">
           <div className="settings-choice-group">
-            {['F', 'C'].map(unit => (
+            {['F', 'C'].map((unit) => (
               <button
                 key={unit}
                 onClick={() => update('tempUnit', unit)}
@@ -170,10 +180,12 @@ export default function LayoutTab({ config, update }) {
             <input
               type="checkbox"
               checked={config.collapsibleSections || false}
-              onChange={e => update('collapsibleSections', e.target.checked)}
+              onChange={(e) => update('collapsibleSections', e.target.checked)}
               className="settings-checkbox"
             />
-            <span className="settings-checkbox-text">Allow clicking section headers to collapse/expand</span>
+            <span className="settings-checkbox-text">
+              Allow clicking section headers to collapse/expand
+            </span>
           </label>
         </Field>
       </Card>
@@ -181,7 +193,7 @@ export default function LayoutTab({ config, update }) {
       <Card title="Visual">
         <Field label={`Card Blur: ${config.cardBlur || 'none'}`}>
           <div className="settings-choice-group">
-            {['none', 'sm', 'md', 'lg'].map(blur => (
+            {['none', 'sm', 'md', 'lg'].map((blur) => (
               <button
                 key={blur}
                 onClick={() => update('cardBlur', blur)}

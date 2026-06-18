@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 
 import NavBar from './components/NavBar';
 import LoginPage from './components/LoginPage';
 import DashboardView from './views/DashboardView';
+import { ConfigProvider } from './context/ConfigContext.jsx';
 import { getMonitors } from './hooks/useData';
 
 // Settings (13-tab tree) and the iframe view aren't needed for the default
@@ -9,34 +10,12 @@ import { getMonitors } from './hooks/useData';
 const IframeView = lazy(() => import('./views/IframeView'));
 const SettingsView = lazy(() => import('./views/SettingsView'));
 import { THEMES } from './components/settings/themes.js';
-
-// ── Auth token interceptor ──
-// Set up ONCE, synchronously, before any component renders.
-// Uses a mutable ref so the token value updates without re-patching fetch.
-const _authTokenRef = { current: localStorage.getItem('jaghelm-token') || '' };
-if (!window._origFetch) {
-  window._origFetch = window.fetch;
-  window.fetch = (url, opts = {}) => {
-    if (
-      typeof url === 'string' &&
-      url.startsWith('/api') &&
-      !url.includes('/auth/login') &&
-      _authTokenRef.current
-    ) {
-      // Build a new opts object — don't mutate the caller's.
-      return window._origFetch(url, {
-        ...opts,
-        headers: { ...opts.headers, 'x-auth-token': _authTokenRef.current },
-      });
-    }
-    return window._origFetch(url, opts);
-  };
-}
+import { apiFetch, setAuthToken as setApiAuthToken } from './api/client.js';
 
 export default function App() {
   const [authed, setAuthed] = useState(false);
   const [authRequired, setAuthRequired] = useState(null);
-  const [authToken, setAuthToken] = useState(() => _authTokenRef.current);
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('jaghelm-token') || '');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [theme, setTheme] = useState(() => localStorage.getItem('jaghelm-theme') || 'dark');
   const [lastUpdated, setLastUpdated] = useState(new Date());
@@ -63,7 +42,7 @@ export default function App() {
 
   // Check auth on mount
   useEffect(() => {
-    fetch('/api/auth/check')
+    apiFetch('/api/auth/check')
       .then((r) => r.json())
       .then((d) => {
         setAuthRequired(d.authRequired);
@@ -77,7 +56,7 @@ export default function App() {
 
   const handleLogin = (token) => {
     localStorage.setItem('jaghelm-token', token);
-    _authTokenRef.current = token; // Update interceptor immediately
+    setApiAuthToken(token); // Keep apiFetch's in-memory token in sync
     setAuthToken(token);
     setAuthed(true);
   };
@@ -94,7 +73,7 @@ export default function App() {
     if (!configLoadedFromServer.current) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      fetch('/api/display-config', {
+      apiFetch('/api/display-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -108,7 +87,7 @@ export default function App() {
   // The server layout may be stale from a previous deploy or compactor bug.
   useEffect(() => {
     if (!authed) return;
-    fetch('/api/display-config')
+    apiFetch('/api/display-config')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data && typeof data === 'object' && Object.keys(data).length > 0) {
@@ -281,7 +260,7 @@ export default function App() {
   ];
 
   return (
-    <>
+    <ConfigProvider config={config} setConfig={setConfig}>
       <div className="bg-layer">
         {config.bgImage && (
           <div className="bg-image" style={{ backgroundImage: `url(${config.bgImage})` }} />
@@ -306,13 +285,12 @@ export default function App() {
           }}
           health={overallHealth}
           lastUpdated={lastUpdated}
-          config={config}
           onOpenSettings={() => setActiveTab((t) => (t === 'settings' ? 'dashboard' : 'settings'))}
           onLogout={
             authRequired
               ? () => {
                   localStorage.removeItem('jaghelm-token');
-                  _authTokenRef.current = '';
+                  setApiAuthToken(''); // Clear apiFetch's in-memory token
                   setAuthToken('');
                   setAuthed(false);
                   setActiveTab('dashboard');
@@ -328,12 +306,7 @@ export default function App() {
               : { visibility: 'hidden', height: 0, overflow: 'hidden' }
           }
         >
-          <DashboardView
-            config={config}
-            setConfig={setConfig}
-            refreshKey={refreshKey}
-            onOpenSettings={() => setActiveTab('settings')}
-          />
+          <DashboardView refreshKey={refreshKey} onOpenSettings={() => setActiveTab('settings')} />
         </div>
         <Suspense
           fallback={
@@ -345,9 +318,7 @@ export default function App() {
             </div>
           }
         >
-          {activeTab === 'settings' && (
-            <SettingsView config={config} setConfig={setConfig} theme={theme} setTheme={setTheme} />
-          )}
+          {activeTab === 'settings' && <SettingsView theme={theme} setTheme={setTheme} />}
           {allTabs.find((t) => t.id === activeTab && t.type === 'iframe') && (
             <IframeView
               url={allTabs.find((t) => t.id === activeTab).url}
@@ -356,7 +327,7 @@ export default function App() {
           )}
         </Suspense>
       </div>
-    </>
+    </ConfigProvider>
   );
 }
 

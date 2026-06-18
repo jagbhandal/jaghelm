@@ -1,13 +1,25 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import NavBar from './NavBar';
+import { ConfigProvider } from '../context/ConfigContext.jsx';
 
 // NavBar is config-driven: the title, the tab list, and feature toggles
-// (search, weather) all come from `config`. These tests lock in that the
-// rendered output reflects config flags, so moving config into a context can't
-// silently drop a feature. Weather pulls /api/weather, so we stub fetch.
+// (search, weather) all come from `config`. NavBar now reads `config` from
+// ConfigContext (not props), so we render it inside a ConfigProvider seeded with
+// the same config the props used to carry. These tests lock in that the rendered
+// output reflects config flags, so moving config into a context can't silently
+// drop a feature. Weather pulls /api/weather, so we stub fetch.
 
-const baseProps = (configOverrides = {}) => ({
+const baseConfig = (configOverrides = {}) => ({
+  title: 'MY HELM',
+  showSearch: true,
+  showWeather: false,
+  links: {},
+  ...configOverrides,
+});
+
+// Non-config NavBar props. Config is supplied via the ConfigProvider instead.
+const baseProps = () => ({
   tabs: [
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'media', label: 'Media' },
@@ -20,14 +32,15 @@ const baseProps = (configOverrides = {}) => ({
   health: 'up',
   lastUpdated: new Date(),
   refreshKey: 0,
-  config: {
-    title: 'MY HELM',
-    showSearch: true,
-    showWeather: false,
-    links: {},
-    ...configOverrides,
-  },
 });
+
+// Render NavBar inside a ConfigProvider seeded with the given config.
+const renderNav = (props = {}, config = baseConfig()) =>
+  render(
+    <ConfigProvider config={config} setConfig={vi.fn()}>
+      <NavBar {...baseProps()} {...props} />
+    </ConfigProvider>
+  );
 
 describe('NavBar', () => {
   beforeEach(() => {
@@ -46,17 +59,17 @@ describe('NavBar', () => {
   });
 
   it('renders the title from config', () => {
-    render(<NavBar {...baseProps({ title: 'MY HELM' })} />);
+    renderNav({}, baseConfig({ title: 'MY HELM' }));
     expect(screen.getByText('MY HELM')).toBeInTheDocument();
   });
 
   it('falls back to JAG-NET when config has no title', () => {
-    render(<NavBar {...baseProps({ title: '' })} />);
+    renderNav({}, baseConfig({ title: '' }));
     expect(screen.getByText('JAG-NET')).toBeInTheDocument();
   });
 
   it('renders one tab per config-driven tab, marking the active one selected', () => {
-    render(<NavBar {...baseProps()} />);
+    renderNav();
     const tabs = screen.getAllByRole('tab');
     expect(tabs).toHaveLength(2);
     expect(screen.getByRole('tab', { name: 'Dashboard' })).toHaveAttribute('aria-selected', 'true');
@@ -64,20 +77,28 @@ describe('NavBar', () => {
   });
 
   it('shows the search box when showSearch is not false', () => {
-    render(<NavBar {...baseProps({ showSearch: true })} />);
+    renderNav({}, baseConfig({ showSearch: true }));
     expect(screen.getByPlaceholderText(/search services or web/i)).toBeInTheDocument();
   });
 
   it('hides the search box when showSearch is false (feature toggle changes output)', () => {
-    render(<NavBar {...baseProps({ showSearch: false })} />);
+    renderNav({}, baseConfig({ showSearch: false }));
     expect(screen.queryByPlaceholderText(/search services or web/i)).not.toBeInTheDocument();
   });
 
   it('reflects health status in the navbar label', () => {
-    const props = baseProps();
-    const { rerender } = render(<NavBar {...props} health="up" />);
+    const config = baseConfig();
+    const { rerender } = render(
+      <ConfigProvider config={config} setConfig={vi.fn()}>
+        <NavBar {...baseProps()} health="up" />
+      </ConfigProvider>
+    );
     expect(screen.getByText('All Systems Operational')).toBeInTheDocument();
-    rerender(<NavBar {...props} health="down" />);
+    rerender(
+      <ConfigProvider config={config} setConfig={vi.fn()}>
+        <NavBar {...baseProps()} health="down" />
+      </ConfigProvider>
+    );
     expect(screen.getByText('Service Disruption')).toBeInTheDocument();
   });
 
@@ -93,16 +114,15 @@ describe('NavBar', () => {
         })
       )
     );
-    render(
-      <NavBar
-        {...baseProps({
-          showWeather: true,
-          weatherLat: '39.88',
-          weatherLon: '-83.09',
-          tempUnit: 'F',
-          weatherCity: 'Grove City',
-        })}
-      />
+    renderNav(
+      {},
+      baseConfig({
+        showWeather: true,
+        weatherLat: '39.88',
+        weatherLon: '-83.09',
+        tempUnit: 'F',
+        weatherCity: 'Grove City',
+      })
     );
     // Weather is fetched in an effect, then setState — await the async update.
     expect(await screen.findByText('72°F')).toBeInTheDocument();
@@ -110,9 +130,7 @@ describe('NavBar', () => {
   });
 
   it('does not render weather when showWeather is false even with coords', () => {
-    render(
-      <NavBar {...baseProps({ showWeather: false, weatherLat: '39.88', weatherLon: '-83.09' })} />
-    );
+    renderNav({}, baseConfig({ showWeather: false, weatherLat: '39.88', weatherLon: '-83.09' }));
     // No weather city/temp markup. fetch for weather should not be the path that renders it.
     expect(screen.queryByText(/°F/)).not.toBeInTheDocument();
   });

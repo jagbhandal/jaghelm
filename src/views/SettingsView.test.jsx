@@ -2,17 +2,19 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { useState, useRef } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import SettingsView from './SettingsView';
+import { ConfigProvider } from '../context/ConfigContext.jsx';
 
-// SettingsView's `update(path, value)` helper is THE thing the upcoming refactor
-// changes: today it deep-sets immutably via JSON.parse(JSON.stringify(prev)), and
-// that clone is to be replaced with setIn. These tests pin the OBSERVABLE
-// contract of `update`, driven through the real UI:
+// The `update(path, value)` deep-setter that the General tab drives now lives in
+// ConfigContext (computed once from the stable setConfig, immutable via setIn),
+// not inside SettingsView. These tests pin the OBSERVABLE contract of `update`,
+// driven through the real UI:
 //   1. a nested path is set to the new value (correct deep-set), and
 //   2. the previous config object is NOT mutated (immutability) — the property
-//      that setIn must also preserve.
-// We render the General tab (simplest field-driven tab) which receives the real
-// `update` callback SettingsView builds. SettingsView also renders a scaled
-// DashboardView preview that fetches data, so we stub fetch to inert responses.
+//      that setIn preserves.
+// We wrap SettingsView in a ConfigProvider seeded with the Harness's captured
+// setConfig, then render the General tab (simplest field-driven tab) which reads
+// `update` from context. SettingsView also renders a scaled DashboardView
+// preview that fetches data, so we stub fetch to inert responses.
 
 function inertFetch() {
   return Promise.resolve({
@@ -25,7 +27,8 @@ function inertFetch() {
 
 // Controlled wrapper: holds config state like App.jsx does, captures every
 // config reference React commits, and exposes the previous reference so the test
-// can assert it was never mutated by `update`.
+// can assert it was never mutated by `update`. The captured setConfig is handed
+// to ConfigProvider, which derives the `update` deep-setter the tabs consume.
 function Harness({ initialConfig, onConfigs }) {
   const [config, setConfigState] = useState(initialConfig);
   const refs = useRef([]);
@@ -37,7 +40,11 @@ function Harness({ initialConfig, onConfigs }) {
       return next;
     });
   };
-  return <SettingsView config={config} setConfig={setConfig} theme="dark" setTheme={() => {}} />;
+  return (
+    <ConfigProvider config={config} setConfig={setConfig}>
+      <SettingsView theme="dark" setTheme={() => {}} />
+    </ConfigProvider>
+  );
 }
 
 // Flush the embedded DashboardView preview's async fetch state updates so they

@@ -1,16 +1,23 @@
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { DndContext } from '@dnd-kit/core';
 import NodeCard from './NodeCard';
+import { ConfigProvider } from '../context/ConfigContext.jsx';
 
 // NodeCard renders a node's display name (preferring nodeData.display_name over
 // the section title) plus its services. Services render through
 // DraggableServiceCard, which uses dnd-kit's useDraggable — so we wrap in a
-// DndContext to mirror the real DashboardView tree. These tests lock in that a
-// node's name and its services reach the screen from config + node data, which
-// must survive config moving into a context.
+// DndContext to mirror the real DashboardView tree. NodeCard now reads its
+// config from ConfigContext (not props), so we wrap in a ConfigProvider too.
+// These tests lock in that a node's name and its services reach the screen from
+// config + node data, which must survive config moving into a context.
 
-const renderInDnd = (ui) => render(<DndContext>{ui}</DndContext>);
+const renderInDnd = (ui, config = baseConfig()) =>
+  render(
+    <ConfigProvider config={config} setConfig={vi.fn()}>
+      <DndContext>{ui}</DndContext>
+    </ConfigProvider>
+  );
 
 const baseConfig = (overrides = {}) => ({
   sections: {},
@@ -26,7 +33,6 @@ describe('NodeCard', () => {
     renderInDnd(
       <NodeCard
         sectionKey="production"
-        config={baseConfig()}
         nodeData={{ display_name: 'Production Node' }}
         services={[]}
       />
@@ -36,18 +42,17 @@ describe('NodeCard', () => {
 
   it('falls back to the section title, then the sectionKey, when no nodeData name', () => {
     const { rerender } = renderInDnd(
-      <NodeCard
-        sectionKey="prod"
-        config={baseConfig({ sections: { prod: { title: 'Prod Box' } } })}
-        services={[]}
-      />
+      <NodeCard sectionKey="prod" services={[]} />,
+      baseConfig({ sections: { prod: { title: 'Prod Box' } } })
     );
     expect(screen.getByText('Prod Box')).toBeInTheDocument();
 
     rerender(
-      <DndContext>
-        <NodeCard sectionKey="raw-key" config={baseConfig()} services={[]} />
-      </DndContext>
+      <ConfigProvider config={baseConfig()} setConfig={vi.fn()}>
+        <DndContext>
+          <NodeCard sectionKey="raw-key" services={[]} />
+        </DndContext>
+      </ConfigProvider>
     );
     expect(screen.getByText('raw-key')).toBeInTheDocument();
   });
@@ -56,7 +61,6 @@ describe('NodeCard', () => {
     renderInDnd(
       <NodeCard
         sectionKey="production"
-        config={baseConfig()}
         nodeData={{ display_name: 'Production', subtitle: '8 cores · 32GB' }}
         services={[]}
       />
@@ -68,7 +72,6 @@ describe('NodeCard', () => {
     renderInDnd(
       <NodeCard
         sectionKey="production"
-        config={baseConfig()}
         nodeData={{ display_name: 'Production' }}
         services={[
           { uid: 'a', container: 'grafana', name: 'Grafana', status: 'up' },
@@ -84,7 +87,6 @@ describe('NodeCard', () => {
     renderInDnd(
       <NodeCard
         sectionKey="production"
-        config={baseConfig()}
         nodeData={{ display_name: 'Production' }}
         services={[]}
         metrics={[{ label: 'CPU', value: 42, unit: '%', percent: 42 }]}
@@ -97,12 +99,7 @@ describe('NodeCard', () => {
 
   it('renders children passed through', () => {
     renderInDnd(
-      <NodeCard
-        sectionKey="production"
-        config={baseConfig()}
-        nodeData={{ display_name: 'Production' }}
-        services={[]}
-      >
+      <NodeCard sectionKey="production" nodeData={{ display_name: 'Production' }} services={[]}>
         <div>child-content</div>
       </NodeCard>
     );

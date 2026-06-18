@@ -1,23 +1,29 @@
 import React from 'react';
 import { SEARCH_ENGINES } from '../../hooks/useData';
+import { useConfig } from '../../context/ConfigContext.jsx';
 import Field from './Field';
 
-export default function WidgetsTab({ config, update }) {
+export default function WidgetsTab() {
+  const { config, update } = useConfig();
   return (
     <div className="settings-section">
       <Card title="Search">
         <Chk
           label="Show search bar in navigation"
           checked={config.showSearch !== false}
-          onChange={v => update('showSearch', v)}
+          onChange={(v) => update('showSearch', v)}
         />
         <Field label="Search Engine">
           <select
             className="settings-input"
             value={config.searchEngine || 'google'}
-            onChange={e => update('searchEngine', e.target.value)}
+            onChange={(e) => update('searchEngine', e.target.value)}
           >
-            {SEARCH_ENGINES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {SEARCH_ENGINES.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
           </select>
         </Field>
       </Card>
@@ -26,11 +32,11 @@ export default function WidgetsTab({ config, update }) {
         <Chk
           label="Show weather in navigation"
           checked={config.showWeather !== false}
-          onChange={v => update('showWeather', v)}
+          onChange={(v) => update('showWeather', v)}
         />
         <Field label="Temperature Unit">
           <div className="settings-choice-group">
-            {['F', 'C'].map(u => (
+            {['F', 'C'].map((u) => (
               <button
                 key={u}
                 onClick={() => update('tempUnit', u)}
@@ -46,7 +52,7 @@ export default function WidgetsTab({ config, update }) {
             <input
               className="settings-input mono"
               value={config.weatherLat || ''}
-              onChange={e => update('weatherLat', e.target.value)}
+              onChange={(e) => update('weatherLat', e.target.value)}
               placeholder="39.88"
             />
           </Field>
@@ -54,7 +60,7 @@ export default function WidgetsTab({ config, update }) {
             <input
               className="settings-input mono"
               value={config.weatherLon || ''}
-              onChange={e => update('weatherLon', e.target.value)}
+              onChange={(e) => update('weatherLon', e.target.value)}
               placeholder="-83.09"
             />
           </Field>
@@ -63,7 +69,7 @@ export default function WidgetsTab({ config, update }) {
           <input
             className="settings-input"
             value={config.weatherCity || ''}
-            onChange={e => update('weatherCity', e.target.value)}
+            onChange={(e) => update('weatherCity', e.target.value)}
             placeholder="Grove City"
           />
         </Field>
@@ -73,12 +79,12 @@ export default function WidgetsTab({ config, update }) {
         <Chk
           label="Show checklist panel on dashboard"
           checked={config.showTodos !== false}
-          onChange={v => update('showTodos', v)}
+          onChange={(v) => update('showTodos', v)}
         />
         <Chk
           label="Show scheduled jobs panel on dashboard"
           checked={config.showCronJobs !== false}
-          onChange={v => update('showCronJobs', v)}
+          onChange={(v) => update('showCronJobs', v)}
         />
       </Card>
     </div>
@@ -97,7 +103,7 @@ function Card({ title, children }) {
 function Chk({ label, checked, onChange }) {
   return (
     <label className="settings-toggle">
-      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
       <span>{label}</span>
     </label>
   );
