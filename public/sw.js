@@ -1,4 +1,10 @@
-const CACHE_NAME = 'jaghelm-v1';
+// Cache key is versioned so a new deploy invalidates the old app shell.
+// The version is hardcoded to match package.json ("version") at build time.
+// FOLLOW-UP (owned by the deploy pipeline): single-source this from the build
+// SHA / package.json version so it auto-bumps on every release instead of
+// needing a manual edit here. See docs/IMPROVEMENT-PLAN.md Phase 6.
+const APP_VERSION = '1.0.0';
+const CACHE_NAME = `jaghelm-v${APP_VERSION}`;
 
 // Cache the app shell on install
 self.addEventListener('install', (event) => {
