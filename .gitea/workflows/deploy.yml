@@ -40,9 +40,24 @@ jobs:
             sleep 15
           done
 
-      - name: Deploy to production
+      # Opt-in supply-chain gate: verify the image's cosign signature (the build
+      # signs by digest) before deploying. Off by default until cosign is present
+      # on the runner; set the repo variable COSIGN_VERIFY=true to enforce it.
+      - name: Verify image signature (cosign, opt-in)
+        if: ${{ vars.COSIGN_VERIFY == 'true' }}
         run: |
           set -euo pipefail
+          REPO="ghcr.io/jagbhandal/jaghelm"
+          TAG="sha-$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          cosign verify "${REPO}:${TAG}" \
+            --certificate-identity-regexp 'https://github.com/jagbhandal/jaghelm/.*' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+      - name: Deploy to production (pinned to this commit's image)
+        run: |
+          set -euo pipefail
+          REPO="ghcr.io/jagbhandal/jaghelm"
+          TAG="sha-$(echo "${GITHUB_SHA}" | cut -c1-7)"
           SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /root/.ssh/runner_deploy jagbhandal@192.168.68.11"
 
           # Record the image currently running so we can roll back to it if the
@@ -52,8 +67,18 @@ jobs:
           echo "    previous image: ${PREV_IMAGE:-<none>}"
           echo "PREV_IMAGE=${PREV_IMAGE}" >> "$GITHUB_ENV"
 
-          echo ">>> Pulling latest image"
-          $SSH_CMD "cd /opt/stacks/jaghelm && docker compose pull"
+          # Deploy THIS commit's immutable image: pull the :sha-<short> tag and
+          # retag it as :latest locally so compose (which references :latest) runs
+          # exactly what this push built — not whatever :latest races to. Falls
+          # back to :latest only if the sha tag never became available.
+          echo ">>> Pulling ${REPO}:${TAG} (this commit's image)"
+          if $SSH_CMD "docker pull '${REPO}:${TAG}'"; then
+            $SSH_CMD "docker tag '${REPO}:${TAG}' '${REPO}:latest'"
+            echo "    pinned :latest -> ${TAG}"
+          else
+            echo "    WARNING: ${TAG} unavailable — falling back to :latest"
+            $SSH_CMD "cd /opt/stacks/jaghelm && docker compose pull"
+          fi
 
           echo ">>> Deploying"
           $SSH_CMD "cd /opt/stacks/jaghelm && docker compose up -d --force-recreate"

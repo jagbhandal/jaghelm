@@ -30,6 +30,8 @@ jobs:
         run: npm run lint || true
       - name: Dependency audit (high+)
         run: npm audit --audit-level=high
+      - name: Asset/link existence check
+        run: npm run check:assets
 
   build-push:
     needs: test
@@ -37,7 +39,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-      # id-token: write   # uncomment to enable keyless cosign signing (see TODO below)
+      id-token: write # keyless cosign signing via the GitHub OIDC token
 
     steps:
       - name: Checkout code
@@ -113,24 +115,17 @@ jobs:
       #     ignore-unfixed: true
       #     exit-code: '0'
 
-      # ── TODO: cosign keyless signing (ready to enable) ────────────────────
-      # Keyless signing via the GitHub OIDC token proves these bytes came from
-      # this workflow. To enable:
-      #   1. Add `id-token: write` to the job `permissions` block above.
-      #   2. Uncomment the two steps below.
-      #   3. Verify on the host before deploy with:
-      #        cosign verify ghcr.io/jagbhandal/jaghelm:sha-<short> \
-      #          --certificate-identity-regexp 'https://github.com/jagbhandal/jaghelm/.*' \
-      #          --certificate-oidc-issuer https://token.actions.githubusercontent.com
-      # Left disabled (not half-wired) because it needs the id-token permission
-      # and a matching host-side verification step to be meaningful.
-      #
-      # - name: Install cosign
-      #   uses: sigstore/cosign-installer@v3
-      #
-      # - name: Sign the published image (keyless)
-      #   env:
-      #     COSIGN_EXPERIMENTAL: "1"
-      #     DIGEST: ${{ steps.build.outputs.digest }}
-      #   run: |
-      #     cosign sign --yes "ghcr.io/jagbhandal/jaghelm@${DIGEST}"
+      # ── Keyless cosign signing (via the GitHub OIDC token) ────────────────
+      # Proves these exact bytes were built by this workflow — no key to manage.
+      # Verify host-side before deploy:
+      #   cosign verify ghcr.io/jagbhandal/jaghelm@<digest> \
+      #     --certificate-identity-regexp 'https://github.com/jagbhandal/jaghelm/.*' \
+      #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      # (see .gitea/workflows/deploy.yml for the deploy-time verify hook).
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign the published image (keyless, by digest)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "ghcr.io/jagbhandal/jaghelm@${DIGEST}"

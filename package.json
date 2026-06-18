@@ -19,7 +19,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:assets": "node scripts/check-assets.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
