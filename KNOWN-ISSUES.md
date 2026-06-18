@@ -40,12 +40,14 @@ JagHelm is.
 
 ## Responsive / mobile
 
-- **No dedicated mobile layout yet.** Below the mobile breakpoint the grid
-  collapses panels into a single column, but the experience is not tuned for
-  small screens, and the top-nav tabs can disappear at narrow widths. JagHelm is
-  installable as a PWA, but it's primarily designed for a desktop or
-  wall-mounted display. A proper responsive pass (mobile nav affordance, tuned
-  breakpoints) is planned.
+- **Phone layout is functional, not bespoke.** JagHelm is responsive on small
+  screens — the grid collapses to a single column, the top-nav tabs fold into a
+  hamburger menu (44px touch targets), drag/resize is disabled under 480px, the
+  settings sidebar stacks, and overlays/popovers clamp to the viewport. It is
+  installable as a PWA. It is still **primarily designed for a desktop or
+  wall-mounted display**, so it's tuned for glance-ability rather than a native
+  phone app feel (no swipe gestures, no bottom-tab navigation). Device QA across
+  real phones is recommended before relying on it as your primary mobile surface.
 
 ## Security defaults (read before exposing it)
 
