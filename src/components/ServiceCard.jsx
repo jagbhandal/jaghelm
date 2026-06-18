@@ -29,7 +29,15 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
   const docker = service.docker || {};
   const showStats = showDockerStats && (docker.cpu != null || docker.memMB != null);
   const appData = service.appData;
-  const showApp = showAppData && appData && Object.keys(appData).length > 0;
+  // Split the integration "doctor" (last redacted fetch error) out of the
+  // display stats so it renders as a "why is this dashed?" affordance rather
+  // than as a garbage stat tile.
+  const doctor = appData?._doctor || null;
+  const appStats = appData
+    ? Object.fromEntries(Object.entries(appData).filter(([k]) => k !== '_doctor'))
+    : null;
+  const showApp = showAppData && appStats && Object.keys(appStats).length > 0;
+  const showDoctor = showAppData && !!doctor?.error;
   const showBorder = statusStyle !== 'minimal';
 
   // ── Layout: List — clean rows, no card background ──
@@ -105,15 +113,16 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
         {showApp && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: `repeat(${Object.keys(appData).length}, 1fr)`,
+            gridTemplateColumns: `repeat(${Object.keys(appStats).length}, 1fr)`,
             gap: 6, marginTop: 8, paddingTop: 8,
             borderTop: '1px solid var(--border-color)',
           }}>
-            {Object.entries(appData).map(([label, value]) => (
+            {Object.entries(appStats).map(([label, value]) => (
               <GridStat key={label} label={label} value={String(value)} />
             ))}
           </div>
         )}
+        {showDoctor && <IntegrationDoctor error={doctor.error} />}
       </div>
     );
   }
@@ -151,12 +160,13 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
 
       {/* App data grid */}
       {showApp && (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Object.keys(appData).length}, 1fr)`, gap: 4, marginTop: showStats ? 4 : 0 }}>
-          {Object.entries(appData).map(([label, value]) => (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Object.keys(appStats).length}, 1fr)`, gap: 4, marginTop: showStats ? 4 : 0 }}>
+          {Object.entries(appStats).map(([label, value]) => (
             <GridStat key={label} label={label} value={String(value)} />
           ))}
         </div>
       )}
+      {showDoctor && <IntegrationDoctor error={doctor.error} />}
 
       {/* Uptime bar */}
       {service.uptime != null && showStats && (
@@ -296,6 +306,21 @@ function GridStat({ label, value }) {
       <div className="stat-label" style={{ marginBottom: 2 }}>{label}</div>
       <div className="stat-value">{value}</div>
     </div>
+  );
+}
+
+// "Why is this dashed?" — when an integration's last fetch failed, the handler
+// already caught and REDACTED the error (e.g. "HTTP 401 Unauthorized"); the UI
+// used to drop it, leaving mystery dashes. A native <details> keeps it collapsed
+// (keyboard + SR accessible for free) until the user asks.
+function IntegrationDoctor({ error }) {
+  return (
+    <details className="svc-doctor">
+      <summary className="svc-doctor-summary">
+        <span aria-hidden="true">⚠</span> No data — why?
+      </summary>
+      <div className="svc-doctor-detail">{error}</div>
+    </details>
   );
 }
 

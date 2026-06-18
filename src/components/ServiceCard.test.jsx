@@ -112,4 +112,46 @@ describe('ServiceCard', () => {
     expect(screen.getByText('Queries')).toBeInTheDocument();
     expect(screen.getByText('42')).toBeInTheDocument();
   });
+
+  it('surfaces the integration "why is this dashed?" doctor on a fetch error', () => {
+    render(
+      <ServiceCard
+        service={baseService({ appData: { _doctor: { error: 'HTTP 401 Unauthorized' } } })}
+        statusStyle="badge"
+        cardLayout="grid"
+        showAppData
+      />
+    );
+    // The collapsed <details> summary + the redacted error in the detail.
+    expect(screen.getByText(/no data/i)).toBeInTheDocument();
+    expect(screen.getByText('HTTP 401 Unauthorized')).toBeInTheDocument();
+    // _doctor must NOT leak into the stat grid as a garbage tile.
+    expect(screen.queryByText('_doctor')).not.toBeInTheDocument();
+  });
+
+  it('shows real stats AND the doctor when an integration partially failed', () => {
+    render(
+      <ServiceCard
+        service={baseService({ appData: { Queries: 42, _doctor: { error: 'HTTP 500' } } })}
+        statusStyle="badge"
+        cardLayout="row"
+        showAppData
+      />
+    );
+    expect(screen.getByText('Queries')).toBeInTheDocument();
+    expect(screen.getByText('42')).toBeInTheDocument();
+    expect(screen.getByText(/no data/i)).toBeInTheDocument();
+  });
+
+  it('shows no doctor when there is no integration error', () => {
+    render(
+      <ServiceCard
+        service={baseService({ appData: { Queries: 42 } })}
+        statusStyle="badge"
+        cardLayout="grid"
+        showAppData
+      />
+    );
+    expect(screen.queryByText(/no data/i)).not.toBeInTheDocument();
+  });
 });
