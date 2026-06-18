@@ -39,7 +39,11 @@ export default defineConfig({
     setupFiles: ['./src/testing/setup.js'],
     include: ['src/**/*.test.{js,jsx}'],
     // gridMath.test.js is a pure node:test suite; it runs under `npm test`, not vitest.
-    exclude: ['src/components/HelmGrid/gridMath.test.js', 'node_modules/**'],
+    exclude: [
+      'src/components/HelmGrid/gridMath.test.js',
+      'src/utils/thresholds.test.js',
+      'node_modules/**',
+    ],
     css: false,
     restoreMocks: true,
   },
