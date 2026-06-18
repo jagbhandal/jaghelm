@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import NavBar from './components/NavBar';
 import LoginPage from './components/LoginPage';
+import CommandPalette from './components/CommandPalette';
 import DashboardView from './views/DashboardView';
 import { ConfigProvider } from './context/ConfigContext.jsx';
 import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
@@ -108,6 +109,19 @@ function AppMain({ authRequired, onLogout }) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('jaghelm-theme', theme);
   }, [theme]);
+
+  // ⌘K / Ctrl+K toggles the command palette from anywhere.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key?.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Save config: localStorage immediately, server debounced
   useEffect(() => {
@@ -410,6 +424,23 @@ function AppMain({ authRequired, onLogout }) {
               : null
           }
           refreshKey={refreshKey}
+        />
+        <CommandPalette
+          open={paletteOpen}
+          onClose={() => setPaletteOpen(false)}
+          tabs={allTabs}
+          onSelectTab={setActiveTab}
+          onOpenSettings={() => setActiveTab('settings')}
+          theme={theme}
+          setTheme={setTheme}
+          onLogout={
+            authRequired
+              ? () => {
+                  onLogout();
+                  setActiveTab('dashboard');
+                }
+              : null
+          }
         />
         <div
           style={
