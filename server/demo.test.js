@@ -55,3 +55,12 @@ test('demo: an unknown /api read returns empty (no real route → no outbound)',
   assert.equal(r.status, 200);
   assert.deepEqual(r.body, {});
 });
+
+test('demo: HEAD and OPTIONS are owned by the guard, not a real route', async () => {
+  // app.use('/api', guard) captures every method, so HEAD/OPTIONS can't fall
+  // through to a real route (which could do outbound or touch state).
+  const h = await request(app).head('/api/services');
+  assert.equal(h.status, 200);
+  const o = await request(app).options('/api/secrets/keys');
+  assert.equal(o.status, 200); // answered by the guard; real secrets route never runs
+});
