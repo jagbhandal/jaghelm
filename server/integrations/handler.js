@@ -33,6 +33,9 @@ import { fetchWithSession, testSessionAuth } from './lib/session.js';
 import { resolveIntegrationConfig } from './lib/config.js';
 import { assertSafeUrl } from '../util/ssrf.js';
 import { redactSecrets } from '../util/redact.js';
+import { createLogger } from '../util/logger.js';
+
+const log = createLogger('integrations');
 
 // Re-export so the public API of handler.js is unchanged.
 export { resolveIntegrationConfig };
@@ -138,7 +141,7 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
     // Redact before logging AND returning: query-auth presets put the API key
     // in the URL, and fetch errors embed the full URL — never leak it.
     const safe = redactSecrets(err.message);
-    console.error(`[integrations] ${type} fetch error:`, safe);
+    log.error({ type, error: safe }, 'fetch error');
     return { error: safe, fields: {} };
   }
 }

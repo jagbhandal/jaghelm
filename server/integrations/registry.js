@@ -38,6 +38,9 @@
 import { readdirSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { createLogger } from '../util/logger.js';
+
+const log = createLogger('integrations');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PRESETS_DIR = join(__dirname, 'presets');
@@ -116,7 +119,7 @@ export async function initRegistry() {
   try {
     files = readdirSync(PRESETS_DIR).filter(f => f.endsWith('.js'));
   } catch (err) {
-    console.warn('[integrations] No presets directory found at', PRESETS_DIR);
+    log.warn({ presetsDir: PRESETS_DIR }, 'No presets directory found');
     return;
   }
 
@@ -132,24 +135,24 @@ export async function initRegistry() {
 
       // Emit warnings even on success — they're informational, not blocking.
       for (const w of warnings) {
-        console.warn(`[integrations] ${file}: ${w}`);
+        log.warn({ file }, w);
       }
 
       if (!ok) {
         // Match the existing error-logging style; skip rather than throw so
         // one bad preset doesn't disable the entire integrations subsystem.
-        console.error(`[integrations] Skipping invalid preset ${file}: ${errors.join(', ')}`);
+        log.error({ file, errors: errors.join(', ') }, 'Skipping invalid preset');
         continue;
       }
 
       preset.type = type;
       presets.set(type, preset);
     } catch (err) {
-      console.error(`[integrations] Failed to load preset ${file}:`, err.message);
+      log.error({ file, err }, 'Failed to load preset');
     }
   }
 
-  console.log(`[integrations] Loaded ${presets.size} presets: ${[...presets.keys()].join(', ')}`);
+  log.info({ count: presets.size, presets: [...presets.keys()].join(', ') }, 'Loaded presets');
 }
 
 /**

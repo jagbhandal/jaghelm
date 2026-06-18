@@ -15,7 +15,10 @@ import { authEnabled, checkPassword, getAuthUser, setPassword } from './password
 import { createSession, deleteAllSessionsExcept, getSession } from './sessions.js';
 import { checkLoginRate, resetLoginRate } from './rateLimit.js';
 import { apiError } from '../errors.js';
+import { recordAuthFailure } from '../metrics.js';
+import { createLogger } from '../util/logger.js';
 
+const log = createLogger('auth');
 const router = Router();
 
 /**
@@ -61,6 +64,7 @@ router.post('/login', (req, res) => {
     return res.json({ token, user: username });
   }
 
+  recordAuthFailure();
   return apiError(res, 401, 'Invalid credentials');
 });
 
@@ -93,7 +97,7 @@ router.post('/change-password', authMiddleware, (req, res) => {
   try {
     setPassword(newPassword);
     deleteAllSessionsExcept(req.headers['x-auth-token']);
-    console.log('[auth] Password changed successfully');
+    log.info('password changed');
     return res.json({ ok: true });
   } catch (err) {
     return apiError(res, 500, 'Failed to save new password', err);

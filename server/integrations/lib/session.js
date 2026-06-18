@@ -1,5 +1,8 @@
 import { safeFetch } from './http.js';
 import { extractValue, resolveEndpointParams } from './extract.js';
+import { createLogger } from '../../util/logger.js';
+
+const log = createLogger('integrations');
 
 /**
  * Session-based authentication: log in once, cache the token, reuse it on
@@ -82,7 +85,7 @@ export async function fetchWithSession(config) {
         // Token might be expired server-side (or network blip / rate limit / DNS).
         // Drop the cache entry and fall through to fresh login. Logging here lets
         // us distinguish real token expiry from other transient failures.
-        console.warn(`[integrations] Cached token fetch failed (${fetchErr.message}), retrying with fresh login`);
+        log.warn({ error: fetchErr.message }, 'Cached token fetch failed, retrying with fresh login');
         sessionTokenCache.delete(cacheKey);
       }
     }
@@ -94,7 +97,7 @@ export async function fetchWithSession(config) {
       const data = await fetchWithToken(tokenInfo, config, baseUrl, skipTls);
       return data;
     } catch (err) {
-      console.warn(`[integrations] ${key} session auth failed: ${err.message}`);
+      log.warn({ key, error: err.message }, 'session auth failed');
       continue;
     }
   }

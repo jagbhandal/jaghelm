@@ -7,13 +7,17 @@
  * in a single Promise.all (12 queries) instead of two sequential batches.
  */
 
+import { createLogger } from './util/logger.js';
+
+const log = createLogger('discovery');
+
 const PROM_TIMEOUT = 8000;
 
 let promUrl = null;
 
 export function initDiscovery(prometheusUrl) {
   promUrl = prometheusUrl;
-  console.log('[discovery] Prometheus URL: %s', promUrl);
+  log.info({ promUrl }, 'Prometheus URL');
 }
 
 /**

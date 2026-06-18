@@ -10,6 +10,9 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { atomicWriteFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
+import { createLogger } from './util/logger.js';
+
+const log = createLogger('secrets');
 
 const SECRETS_PATH = join(DATA_DIR, 'secrets.json');
 const SALT_PATH = join(DATA_DIR, '.secrets-salt');
@@ -56,7 +59,7 @@ function getSalt() {
   try {
     atomicWriteFileSync(SALT_PATH, fresh, { mode: 0o600 });
   } catch (err) {
-    console.warn('[secrets] Could not persist per-install salt, using ephemeral:', err.message);
+    log.warn({ err }, 'Could not persist per-install salt, using ephemeral');
   }
   return fresh;
 }
@@ -65,7 +68,7 @@ function getKey() {
   if (derivedKey) return derivedKey;
   const secret = process.env.DASH_SECRET;
   if (!secret) {
-    console.warn('[secrets] DASH_SECRET not set — secrets manager disabled. Credentials will only resolve from .env.');
+    log.warn('DASH_SECRET not set — secrets manager disabled. Credentials will only resolve from .env.');
     return null;
   }
   // Refuse the published example placeholders — using a globally-known string as
@@ -74,14 +77,14 @@ function getKey() {
     'your-random-secret-here', 'replace_me', 'changeme', 'change-me', 'secret', 'password',
   ]);
   if (PLACEHOLDERS.has(secret.toLowerCase())) {
-    console.error(
-      '[secrets] DASH_SECRET is an example placeholder — refusing to use it as an encryption key. ' +
+    log.error(
+      'DASH_SECRET is an example placeholder — refusing to use it as an encryption key. ' +
         'Generate a real one: `openssl rand -hex 32`. Secrets manager disabled until fixed.'
     );
     return null;
   }
   if (secret.length < 16) {
-    console.warn('[secrets] DASH_SECRET is weak (<16 chars). Generate a strong one with `openssl rand -hex 32` — short secrets are brute-forceable even with a unique salt.');
+    log.warn('DASH_SECRET is weak (<16 chars). Generate a strong one with `openssl rand -hex 32` — short secrets are brute-forceable even with a unique salt.');
   }
   derivedKey = crypto.pbkdf2Sync(secret, getSalt(), 100000, 32, 'sha256');
   return derivedKey;
@@ -94,10 +97,10 @@ function loadSecrets() {
   try {
     if (existsSync(SECRETS_PATH)) {
       secrets = JSON.parse(readFileSync(SECRETS_PATH, 'utf8'));
-      console.log('[secrets] Loaded %d encrypted secrets', Object.keys(secrets).length);
+      log.info({ count: Object.keys(secrets).length }, 'Loaded encrypted secrets');
     }
   } catch (err) {
-    console.error('[secrets] Failed to load secrets.json:', err.message);
+    log.error({ err }, 'Failed to load secrets.json');
     secrets = {};
   }
 }
@@ -108,7 +111,7 @@ function persistSecrets() {
     // the file is never group/world-readable.
     atomicWriteFileSync(SECRETS_PATH, JSON.stringify(secrets, null, 2), { mode: 0o600 });
   } catch (err) {
-    console.error('[secrets] Failed to save secrets.json:', err.message);
+    log.error({ err }, 'Failed to save secrets.json');
   }
 }
 
@@ -155,7 +158,7 @@ export function getSecret(name) {
     decrypted += decipher.final('utf8');
     return decrypted;
   } catch (err) {
-    console.error('[secrets] Failed to decrypt %s:', name, err.message);
+    log.error({ name, err }, 'Failed to decrypt');
     return null;
   }
 }

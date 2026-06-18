@@ -23,6 +23,9 @@ import { getCached, setCache, jsonWithEtag } from '../cache.js';
 import { apiError } from '../errors.js';
 import { safeFetch } from '../httpClient.js';
 import { asyncHandler } from '../util/asyncHandler.js';
+import { createLogger } from '../util/logger.js';
+
+const log = createLogger('infrastructure');
 
 const router = Router();
 
@@ -126,7 +129,7 @@ router.get('/npm/stats', asyncHandler(async (req, res) => {
         const authD = await authR.json();
         token = authD?.token || '';
       } catch (err) {
-        console.warn('[npm] Auth failed:', err.message);
+        log.warn({ err }, 'npm Auth failed');
       }
     }
 
@@ -144,7 +147,7 @@ router.get('/npm/stats', asyncHandler(async (req, res) => {
         certs = data.filter((h) => h.certificate_id > 0).length;
       }
     } catch (err) {
-      console.warn('[npm] Failed to fetch proxy hosts:', err.message);
+      log.warn({ err }, 'npm Failed to fetch proxy hosts');
     }
 
     const result = { hosts, online, certs };
@@ -218,7 +221,7 @@ router.get('/docker/containers', asyncHandler(async (req, res) => {
       return res.json(result);
     }
   } catch (err) {
-    console.warn('[docker] Prometheus container query failed, trying Docker socket:', err.message);
+    log.warn({ err }, 'docker Prometheus container query failed, trying Docker socket');
   }
 
   // Fallback: Docker socket

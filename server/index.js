@@ -50,6 +50,10 @@ import { authEnabled } from './auth/passwords.js';
 import { authRoutes } from './auth/routes.js';
 import { errorHandler } from './errors.js';
 import { VERSION } from './version.js';
+import { createLogger } from './util/logger.js';
+import { metricsMiddleware, metricsHandler } from './metrics.js';
+
+const log = createLogger('jaghelm');
 
 // Domain routes
 import { servicesRoutes } from './routes/services.js';
@@ -96,6 +100,24 @@ if (trustProxy.length > 0) {
   app.set('trust proxy', trustProxy);
 }
 
+// ── Observability ─────────────────────────────────────────────────────────
+// Count + time every request (Prometheus metrics) and emit a structured access
+// log line on completion. Mounted first so it brackets the whole pipeline.
+// The scrape/health endpoints are skipped in the access log to avoid spam.
+app.use(metricsMiddleware);
+app.use((req, res, next) => {
+  const start = process.hrtime.bigint();
+  res.on('finish', () => {
+    if (req.path === '/metrics' || req.path === '/api/health' || req.path === '/api/readyz') return;
+    const ms = Math.round(Number(process.hrtime.bigint() - start) / 1e6);
+    const fields = { method: req.method, path: req.path, status: res.statusCode, ms };
+    if (res.statusCode >= 500) log.error(fields, 'request');
+    else if (req.path.startsWith('/api/')) log.info(fields, 'request');
+    else log.debug(fields, 'request');
+  });
+  next();
+});
+
 // CSP stays off until the frontend is audited for a nonce/hash strategy
 // (currently relies on inline styles + dynamic theme injection). Everything
 // else is explicitly enabled so future helmet defaults can't quietly regress.
@@ -132,10 +154,14 @@ app.use('/uploads', express.static(uploadsDir));
 
 // ── Public routes ─────────────────────────────────────────────────────────
 
+// Prometheus scrape endpoint (root path, by convention). Public like /health —
+// it exposes request counts/timings, not secrets, and Prometheus must reach it.
+app.get('/metrics', metricsHandler);
+
 app.use('/api/auth', authRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/icons', iconRoutes);
-app.use('/api', systemRoutes); // /health public; /weather authed inside
+app.use('/api', systemRoutes); // /health + /readyz public; /weather authed inside
 
 // ── Auth-protected routes ─────────────────────────────────────────────────
 
@@ -170,10 +196,10 @@ app.use(errorHandler);
 // single-instance dashboard. Log loudly; the container restart policy is the
 // backstop for a genuinely unrecoverable state.
 process.on('unhandledRejection', (reason) => {
-  console.error('[jaghelm] Unhandled promise rejection:', reason);
+  log.error({ err: reason }, 'unhandled promise rejection');
 });
 process.on('uncaughtException', (err) => {
-  console.error('[jaghelm] Uncaught exception (continuing):', err);
+  log.error({ err }, 'uncaught exception (continuing)');
 });
 
 async function boot() {
@@ -187,14 +213,14 @@ async function boot() {
   await initRegistry();
 
   // Non-blocking — icon search returns empty until the index is ready
-  initIconIndex().catch((err) => console.warn('[icons] Background init failed:', err.message));
+  initIconIndex().catch((err) => log.warn({ err }, 'icon index background init failed'));
 
   // Load services.yaml or auto-generate one from discovery on first boot
   let config = loadConfig();
   if (!config) {
-    console.log('[boot] First boot — running node discovery...');
+    log.info('first boot — running node discovery');
     const nodeLabels = await discoverNodes();
-    console.log('[boot] Discovered nodes:', nodeLabels);
+    log.info({ nodes: nodeLabels }, 'discovered nodes');
     config = generateDefaultConfig(nodeLabels);
     saveConfig(config);
   }
@@ -203,14 +229,14 @@ async function boot() {
   startBackgroundRefresh();
 
   const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log('[jaghelm] v%s on port %d', VERSION, PORT);
-    console.log('[jaghelm] Nodes: %s', Object.keys(config.nodes || {}).join(', ') || '(none)');
+    log.info({ version: VERSION, port: PORT }, 'listening');
+    log.info({ nodes: Object.keys(config.nodes || {}) }, 'active nodes');
     if (!authEnabled()) {
-      console.warn(
-        '[jaghelm] ⚠ NO PASSWORD SET — the dashboard is unauthenticated. Anyone who can reach ' +
-          'port %d can read your config and metrics. Set DASH_PASS (or a password in Settings) ' +
-          'and avoid exposing this port beyond a trusted LAN.',
-        PORT
+      log.warn(
+        { port: PORT },
+        '⚠ NO PASSWORD SET — the dashboard is unauthenticated. Anyone who can reach this ' +
+          'port can read your config and metrics. Set DASH_PASS (or a password in Settings) ' +
+          'and avoid exposing this port beyond a trusted LAN.'
       );
     }
   });
@@ -222,19 +248,19 @@ async function boot() {
   function shutdown(signal) {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log(`[jaghelm] ${signal} received, shutting down...`);
+    log.info({ signal }, 'shutting down');
     stopBackgroundRefresh();
     const forceExit = setTimeout(() => {
-      console.warn('[jaghelm] Forced exit after 10s drain timeout');
+      log.warn('forced exit after 10s drain timeout');
       process.exit(1);
     }, 10_000);
     forceExit.unref();
     server.close((err) => {
       if (err) {
-        console.error('[jaghelm] Error during shutdown:', err);
+        log.error({ err }, 'error during shutdown');
         process.exit(1);
       }
-      console.log('[jaghelm] HTTP server closed cleanly');
+      log.info('HTTP server closed cleanly');
       process.exit(0);
     });
   }
@@ -247,7 +273,7 @@ async function boot() {
 const isMain = import.meta.url === pathToFileURL(process.argv[1] || '').href;
 if (isMain) {
   boot().catch((err) => {
-    console.error('[jaghelm] Fatal boot error:', err);
+    log.error({ err }, 'fatal boot error');
     process.exit(1);
   });
 }

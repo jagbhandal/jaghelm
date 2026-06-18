@@ -3,6 +3,10 @@
  * Fetches monitors from Uptime Kuma and matches them to discovered containers.
  */
 
+import { createLogger } from './util/logger.js';
+
+const log = createLogger('monitors');
+
 const KUMA_TIMEOUT = 8000;
 
 let kumaUrl = null;
@@ -21,7 +25,7 @@ function staleOrEmpty() {
 
 export function initMonitors(url) {
   kumaUrl = url;
-  console.log('[monitors] Uptime Kuma URL: %s', kumaUrl);
+  log.info({ kumaUrl }, 'Uptime Kuma URL');
 }
 
 /**
@@ -48,7 +52,7 @@ export async function fetchMonitors(bustCache = false) {
 
     const monitorList = (pageData.publicGroupList || []).flatMap(g => g.monitorList || []);
     if (monitorList.length === 0) {
-      console.warn('[monitors] No monitors found in status page');
+      log.warn('No monitors found in status page');
       return staleOrEmpty();
     }
 
@@ -67,7 +71,7 @@ export async function fetchMonitors(bustCache = false) {
           uptimeList = hbData.uptimeList || {};
         }
       } catch (err) {
-        console.warn('[monitors] Heartbeat endpoint unavailable:', err.message);
+        log.warn({ err }, 'Heartbeat endpoint unavailable');
       }
     }
 
@@ -87,12 +91,12 @@ export async function fetchMonitors(bustCache = false) {
       };
     }
 
-    console.log('[monitors] Loaded %d monitors from Kuma', Object.keys(monitors).length);
+    log.info({ count: Object.keys(monitors).length }, 'Loaded monitors from Kuma');
     cachedMonitors = monitors;
     cacheTime = Date.now();
     return monitors;
   } catch (err) {
-    console.error('[monitors] Failed to fetch Kuma monitors:', err.message);
+    log.error({ err }, 'Failed to fetch Kuma monitors');
     return staleOrEmpty();
   }
 }
@@ -134,10 +138,9 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
     // Log once per unique (container, monitor) pair, then stay silent.
     const key = `${containerName}::${explicitMonitor}`;
     if (!explicitMissWarned.has(key)) {
-      console.warn(
-        '[monitors] Explicit monitor "%s" not found for container "%s" — falling back to fuzzy match (this warning logs once per pair)',
-        explicitMonitor,
-        containerName
+      log.warn(
+        { explicitMonitor, containerName },
+        'Explicit monitor not found for container — falling back to fuzzy match (this warning logs once per pair)'
       );
       explicitMissWarned.add(key);
     }
@@ -203,9 +206,9 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
 
   // Log unmatched containers once at startup to help debug
   if (!loggedOnce) {
-    console.log('[monitors] No match for container "%s" among monitors: %s',
-      containerName,
-      monitorList.map(m => m.name).join(', ')
+    log.info(
+      { containerName, monitors: monitorList.map(m => m.name).join(', ') },
+      'No match for container among monitors'
     );
   }
 

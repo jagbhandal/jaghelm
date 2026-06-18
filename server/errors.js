@@ -10,12 +10,15 @@
  */
 
 import { redactSecrets } from './util/redact.js';
+import { createLogger } from './util/logger.js';
+
+const log = createLogger('api');
 
 export function apiError(res, status, publicMessage, err = null) {
   if (err) {
     // Redact: a bubbled-up integration error can carry a URL with ?apikey=…
     const detail = redactSecrets(err.message || String(err));
-    console.error(`[api] ${status} ${publicMessage}: ${detail}`);
+    log.error({ status, detail }, publicMessage);
   }
   return res.status(status).json({ error: publicMessage });
 }

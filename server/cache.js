@@ -43,6 +43,17 @@ export function setCache(key, data) {
 }
 
 /**
+ * Age in ms of a cache entry, or null if absent. Used by the metrics layer to
+ * publish jaghelm_cache_age_seconds (the data-freshness SLO). Unlike getCached,
+ * this does NOT treat an expired entry as missing — staleness is exactly what
+ * the freshness metric needs to observe.
+ */
+export function getCacheAgeMs(key) {
+  const entry = cache.get(key);
+  return entry ? Date.now() - entry.ts : null;
+}
+
+/**
  * Send a JSON response with ETag/304 support.
  *
  * Clients that send a matching If-None-Match header receive a 304 and skip

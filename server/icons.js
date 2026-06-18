@@ -12,6 +12,10 @@
  * Icons are served via jsDelivr CDN — we only store the names.
  */
 
+import { createLogger } from './util/logger.js';
+
+const log = createLogger('icons');
+
 const ICON_REPOS = [
   {
     id: 'dashboard-icons',
@@ -60,7 +64,7 @@ async function fetchRepoIcons(repoConfig) {
     clearTimeout(timeout);
 
     if (!res.ok) {
-      console.warn(`[icons] GitHub API returned ${res.status} for ${repo}`);
+      log.warn({ status: res.status, repo }, 'GitHub API returned error');
       return [];
     }
 
@@ -109,7 +113,7 @@ async function fetchRepoIcons(repoConfig) {
         };
       });
   } catch (err) {
-    console.warn(`[icons] Failed to fetch icons from ${repo}:`, err.message);
+    log.warn({ err, repo }, 'Failed to fetch icons');
     return [];
   }
 }
@@ -119,7 +123,7 @@ async function fetchRepoIcons(repoConfig) {
  * Fetches all repos in parallel, deduplicates by slug, sorts alphabetically.
  */
 export async function initIconIndex() {
-  console.log('[icons] Fetching icon listings from %d repositories...', ICON_REPOS.length);
+  log.info({ count: ICON_REPOS.length }, 'Fetching icon listings from repositories...');
 
   const results = await Promise.allSettled(
     ICON_REPOS.map(repo => fetchRepoIcons(repo))
@@ -143,7 +147,7 @@ export async function initIconIndex() {
   all.sort((a, b) => a.name.localeCompare(b.name));
   iconIndex = all;
   indexReady = true;
-  console.log('[icons] Indexed %d unique icons from %d repositories', iconIndex.length, ICON_REPOS.length);
+  log.info({ count: iconIndex.length, repositories: ICON_REPOS.length }, 'Indexed unique icons from repositories');
 }
 
 /**

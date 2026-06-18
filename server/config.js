@@ -10,6 +10,9 @@ import yaml from 'js-yaml';
 
 import { atomicWriteFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
+import { createLogger } from './util/logger.js';
+
+const log = createLogger('config');
 
 const CONFIG_PATH = join(DATA_DIR, 'services.yaml');
 
@@ -61,22 +64,24 @@ const DEFAULT_CONFIG = {
 export function loadConfig() {
   try {
     if (!existsSync(CONFIG_PATH)) {
-      console.log('[config] No services.yaml found — first boot, will auto-discover');
+      log.info('No services.yaml found — first boot, will auto-discover');
       return null;
     }
     const raw = readFileSync(CONFIG_PATH, 'utf8');
     config = yaml.load(raw) || {};
     lastModified = statSync(CONFIG_PATH).mtimeMs;
-    console.log(
-      '[config] Loaded services.yaml (%d nodes, %d service overrides)',
-      Object.keys(config.nodes || {}).length,
-      Object.keys(config.services || {}).length
+    log.info(
+      {
+        nodes: Object.keys(config.nodes || {}).length,
+        serviceOverrides: Object.keys(config.services || {}).length,
+      },
+      'Loaded services.yaml'
     );
     // Return a clone too, so all three read paths (loadConfig/getConfig/watcher)
     // honor the same copy-on-read contract — no caller ever holds the canonical ref.
     return getConfig();
   } catch (err) {
-    console.error('[config] Failed to load services.yaml:', err.message);
+    log.error({ err }, 'Failed to load services.yaml');
     return null;
   }
 }
@@ -102,7 +107,7 @@ let saveInProgress = false;
 
 export function saveConfig(newConfig) {
   if (saveInProgress) {
-    console.error('[config] saveConfig reentered while a save was in progress — refusing');
+    log.error('saveConfig reentered while a save was in progress — refusing');
     return false;
   }
   saveInProgress = true;
@@ -122,10 +127,10 @@ export function saveConfig(newConfig) {
     // must not be able to reach into our canonical in-memory state.
     config = structuredClone(newConfig);
     lastModified = statSync(CONFIG_PATH).mtimeMs;
-    console.log('[config] Saved services.yaml');
+    log.info('Saved services.yaml');
     return true;
   } catch (err) {
-    console.error('[config] Failed to save services.yaml:', err.message);
+    log.error({ err }, 'Failed to save services.yaml');
     return false;
   } finally {
     saveInProgress = false;
@@ -221,7 +226,7 @@ export function startConfigWatcher() {
         if (reloadDebounceTimer) clearTimeout(reloadDebounceTimer);
         reloadDebounceTimer = setTimeout(() => {
           reloadDebounceTimer = null;
-          console.log('[config] External change detected, reloading services.yaml');
+          log.info('External change detected, reloading services.yaml');
           loadConfig();
           // Hand listeners an isolated copy, consistent with getConfig() — a
           // listener must not be able to mutate shared in-memory state.
@@ -229,7 +234,7 @@ export function startConfigWatcher() {
         }, 250);
       }
     } catch (err) {
-      console.warn('[config] Watcher error:', err.message);
+      log.warn({ err }, 'Watcher error');
     }
   }, 5000);
 }

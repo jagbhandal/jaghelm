@@ -16,6 +16,9 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { DATA_DIR } from '../util/dataDir.js';
+import { createLogger } from '../util/logger.js';
+
+const log = createLogger('auth');
 
 const AUTH_FILE = join(DATA_DIR, 'auth.json');
 
@@ -31,7 +34,7 @@ function loadAuthOverride() {
       return data.passwordHash || null;
     }
   } catch (err) {
-    console.warn('[auth] Failed to load auth override:', err.message);
+    log.warn({ err }, 'Failed to load auth override');
   }
   return null;
 }
@@ -93,12 +96,12 @@ export function checkPassword(password) {
   if (storedPasswordHash) {
     const match = verifyPassword(password, storedPasswordHash);
     if (match && !storedPasswordHash.startsWith('scrypt:')) {
-      console.log('[auth] Migrating password hash from SHA-256 to scrypt');
+      log.info('Migrating password hash from SHA-256 to scrypt');
       storedPasswordHash = hashPassword(password);
       try {
         persistHash(storedPasswordHash);
       } catch (err) {
-        console.error('[auth] Failed to save migrated hash:', err.message);
+        log.error({ err }, 'Failed to save migrated hash');
       }
     }
     return match;
