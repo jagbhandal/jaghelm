@@ -8,7 +8,7 @@
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "node server/index.js",
     "dev:client": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/inject-sw-precache.mjs",
     "start": "node server/index.js",
     "test": "node --test --test-force-exit",
     "test:watch": "node --test --watch",
