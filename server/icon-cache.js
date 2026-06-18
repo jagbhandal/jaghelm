@@ -20,6 +20,9 @@
 import { existsSync, mkdirSync, writeFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import crypto from 'crypto';
+import { createLogger } from './util/logger.js';
+
+const log = createLogger('icon-cache');
 
 let cacheDir = '';
 
@@ -34,9 +37,9 @@ export function initIconCache(dataDir) {
   }
   try {
     const count = readdirSync(cacheDir).filter(f => /\.(svg|png|webp|jpg)$/.test(f)).length;
-    console.log('[icon-cache] %d icons cached locally', count);
+    log.info({ count }, 'icons cached locally');
   } catch {
-    console.log('[icon-cache] Ready');
+    log.info('Ready');
   }
 }
 
@@ -127,7 +130,7 @@ export async function handleCachedIcon(req, res) {
     try {
       writeFileSync(filepath, buffer);
     } catch (err) {
-      console.warn('[icon-cache] Write failed:', err.message);
+      log.warn({ err }, 'Write failed');
     }
 
     res.setHeader('Content-Type', mime);

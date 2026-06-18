@@ -18,6 +18,9 @@ import { apiError } from '../errors.js';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { validateConfig, displayConfigSchema } from '../util/configSchema.js';
 import { DATA_DIR } from '../util/dataDir.js';
+import { createLogger } from '../util/logger.js';
+
+const log = createLogger('display-config');
 
 // Honor JAGHELM_DATA_DIR like every other store (secrets/auth/services.yaml)
 // so tests stay isolated and a containerized deploy can relocate state.
@@ -33,7 +36,7 @@ router.get('/', (req, res) => {
     }
     res.json(null);
   } catch (err) {
-    console.error('[display-config] Failed to read:', err.message);
+    log.error({ err }, 'Failed to read');
     res.json(null);
   }
 });

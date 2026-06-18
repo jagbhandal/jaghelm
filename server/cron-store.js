@@ -10,6 +10,9 @@ import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { atomicWriteFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
+import { createLogger } from './util/logger.js';
+
+const log = createLogger('cron-store');
 
 const STORE_PATH = join(DATA_DIR, 'cron-jobs.json');
 const MAX_RUNS = 3;
@@ -37,7 +40,7 @@ function save(store) {
   try {
     atomicWriteFileSync(STORE_PATH, JSON.stringify(store, null, 2));
   } catch (err) {
-    console.error('[cron-store] Failed to save:', err.message);
+    log.error({ err }, 'Failed to save');
   }
 }
 
