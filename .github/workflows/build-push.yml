@@ -129,3 +129,32 @@ jobs:
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign sign --yes "ghcr.io/jagbhandal/jaghelm@${DIGEST}"
+
+      # ── Event-driven deploy trigger (closes the build→deploy race) ──────────
+      # The image is now built, pushed, and signed — tell the Gitea deploy
+      # workflow to run NOW, instead of Gitea polling GHCR guessing when the image
+      # is ready (see .gitea/workflows/deploy.yml). OFF BY DEFAULT and never fatal:
+      # it runs only when the repo variable DEPLOY_DISPATCH_ENABLED == 'true', and
+      # `continue-on-error` means a dispatch failure (e.g. an older Gitea without
+      # the workflow_dispatch API) just leaves the Gitea push trigger to deploy.
+      # Required config + rollout steps: docs/adr/0005-event-driven-deploy.md.
+      - name: Trigger Gitea deploy (event-driven, opt-in)
+        if: ${{ github.event_name == 'push' && vars.DEPLOY_DISPATCH_ENABLED == 'true' }}
+        continue-on-error: true
+        env:
+          GITEA_DEPLOY_TOKEN: ${{ secrets.GITEA_DEPLOY_TOKEN }}
+          GITEA_API_URL: ${{ vars.GITEA_API_URL }}
+        run: |
+          set -euo pipefail
+          : "${GITEA_API_URL:?set the GITEA_API_URL repo variable, e.g. https://git.example.com/api/v1}"
+          : "${GITEA_DEPLOY_TOKEN:?set the GITEA_DEPLOY_TOKEN secret (Gitea token, write:repository scope)}"
+          echo ">>> Dispatching the Gitea deploy workflow (ref=main)"
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: token ${GITEA_DEPLOY_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "${GITEA_API_URL%/}/repos/jagbhandal/jaghelm/actions/workflows/deploy.yml/dispatches" \
+            -d '{"ref":"main"}')
+          case "${code}" in
+            200|201|204) echo "    Gitea dispatch accepted (HTTP ${code})" ;;
+            *) echo "    WARNING: Gitea dispatch returned HTTP ${code} — relying on the Gitea push-trigger fallback" ;;
+          esac
