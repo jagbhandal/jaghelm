@@ -42,6 +42,13 @@ router.get('/uptime/monitors', asyncHandler(async (req, res) => {
 router.get('/prometheus/query', asyncHandler(async (req, res) => {
   const { q } = req.query;
   if (!q) return apiError(res, 400, 'Missing q');
+  // Cap the query: bounds the (bounded) cache key and stops an oversized/
+  // pathological PromQL string being proxied to the upstream. NOTE: this is a
+  // raw passthrough — in no-auth mode it exposes the full metrics backend; a
+  // query allowlist is the proper follow-up (see docs/IMPROVEMENT-PLAN.md P2).
+  if (typeof q !== 'string' || q.length > 2048) {
+    return apiError(res, 400, 'Invalid or oversized query');
+  }
 
   const cacheKey = `prom-${q}`;
   const cached = getCached(cacheKey);

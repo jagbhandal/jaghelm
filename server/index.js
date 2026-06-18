@@ -39,7 +39,7 @@ import { initMonitors } from './monitors.js';
 import { initRegistry } from './integrations/registry.js';
 import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
-import { startBackgroundRefresh } from './refresh.js';
+import { startBackgroundRefresh, stopBackgroundRefresh } from './refresh.js';
 
 // Shared utilities
 import { createUploadMiddleware } from './upload.js';
@@ -197,15 +197,14 @@ async function boot() {
   });
 
   // ── Graceful shutdown ───────────────────────────────────────────────────
-  // Stop accepting connections, let in-flight requests drain, then exit.
-  // TODO: coordinate with refresh.js to cancel the background refresh timer
-  // so we don't log "Cannot set headers after they are sent" during drain —
-  // server/refresh.js doesn't currently export a stop hook.
+  // Stop accepting connections, cancel the background refresh timer so it can't
+  // fire mid-drain, let in-flight requests finish, then exit.
   let shuttingDown = false;
   function shutdown(signal) {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`[jaghelm] ${signal} received, shutting down...`);
+    stopBackgroundRefresh();
     const forceExit = setTimeout(() => {
       console.warn('[jaghelm] Forced exit after 10s drain timeout');
       process.exit(1);

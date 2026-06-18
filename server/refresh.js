@@ -362,3 +362,11 @@ export function restartBackgroundRefresh() {
   bgRefreshTimer = setInterval(runBackgroundRefresh, intervalMs);
   console.log('[refresh] Background loop restarted — interval %ds', intervalMs / 1000);
 }
+
+/** Stop the background loop. Called on shutdown so the timer doesn't fire mid-drain. */
+export function stopBackgroundRefresh() {
+  if (bgRefreshTimer) {
+    clearInterval(bgRefreshTimer);
+    bgRefreshTimer = null;
+  }
+}
