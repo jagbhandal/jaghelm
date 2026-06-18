@@ -1,566 +1,336 @@
-# JagHelm v8.0 — Architecture Specification
+# JagHelm — Architecture
 
-**Project:** JagHelm — Real-time infrastructure dashboard for homelabs  
-**Repo:** `jaghelm` (Gitea + GitHub mirror)  
-**Date:** March 27, 2026 (Updated)  
-**Status:** Phase 4d Complete, Phase 4e In Progress  
-**Version:** 6.1  
+JagHelm is a self-hosted homelab dashboard whose differentiator is **live data,
+not just links**: it renders real Prometheus / cAdvisor metrics and pulls live
+state from 42 service integrations, laid out on a custom drag-and-resize grid.
+It is **single-user, single-instance, and file-backed** (no database), and ships
+as a Docker image to a homelab.
 
----
+> Reflects `main` as of v1.2.0. For *why* specific decisions were made, see the
+> ADRs in [`docs/adr/`](adr/). For limitations and scope, see
+> [`KNOWN-ISSUES.md`](../KNOWN-ISSUES.md). For the change history, see
+> [`CHANGELOG.md`](../CHANGELOG.md).
 
-## 1. Design Philosophy
+## 1. Design philosophy
 
-**UI-first. Zero-config by default. Power-user escape hatch via files.**
+- **Live data over static links.** The point of difference vs Homepage/Dashy is
+  that panels show *current* numbers (CPU, RAM, queue depth, block-rate) fetched
+  server-side, not just bookmarks.
+- **Single instance, in-memory, file-backed.** Sessions live in a `Map`, the
+  refresh loop runs in-process, and all user state is a handful of files under a
+  data dir. Simple to run; deliberately not horizontally scalable
+  ([ADR 0002](adr/0002-in-memory-single-instance.md)).
+- **Server does the talking.** The browser only ever calls JagHelm's own API; the
+  server fans out to Prometheus, cAdvisor, Uptime Kuma, a NUT exporter, and the
+  integration upstreams. Credentials never reach the client.
+- **Safe by construction.** Outbound requests pass a single SSRF-guarded fetch
+  chokepoint; secrets are encrypted at rest; writes are atomic; config is
+  copy-on-read.
 
-A new user deploys the container, points it at Prometheus and Uptime Kuma via `.env`, and gets a working infrastructure dashboard with auto-discovered nodes, services, and health status. No YAML editing. No code changes. No rebuilds.
+## 2. System topology
 
-Everything the YAML can do, the Settings UI can do. Everything the Settings UI does is persisted server-side. Both paths are equivalent — the UI is the friendly face, the files are the power-user escape hatch.
+```mermaid
+flowchart LR
+  subgraph Client["Browser / PWA"]
+    UI["React SPA<br/>(Vite build)"]
+    SW["Service worker<br/>(offline shell)"]
+  end
 
-**Smooth UX before anything.** JagHelm is purpose-built for ease of use and a polished user experience. Every design decision prioritizes how things feel to the user.
+  subgraph Server["JagHelm container (Express, single instance)"]
+    API["REST API /api/*"]
+    REFRESH["Background refresh loop<br/>(every ~30s)"]
+    CACHE["In-memory cache<br/>(ETag-tagged)"]
+    STORE["File state<br/>(config, secrets, cron, auth)"]
+  end
 
----
+  subgraph Upstreams["Homelab data sources"]
+    PROM["Prometheus"]
+    CADV["cAdvisor"]
+    KUMA["Uptime Kuma"]
+    NUT["NUT / UPS"]
+    INT["42 integration<br/>upstreams"]
+  end
 
-## 2. Implementation Status
-
-### ✅ Phase 1: Foundation (Complete — March 21, 2026)
-- Config manager with YAML hot-reload
-- AES-256-GCM secrets manager
-- Node + container discovery from Prometheus
-- Kuma monitor auto-matching
-- Unified `GET /api/services` endpoint
-- DashboardView refactor to consume unified API
-- CI/CD pipeline: staging → Gitea → production via Actions runner
-
-### ✅ Phase 2: Settings UI (Complete — March 22, 2026)
-- Full-page SettingsView with sidebar navigation (13 sections)
-- NodesTab, ServicesTab, LinksTab (full CRUD), SecurityTab, TypographyTab
-- IntegrationsTab with preset gallery, custom builder, test/save/delete flow
-- 6 VS Code-inspired themes
-- Typography system (5 font presets, 8 size controls)
-- Server-side display config persistence
-- Auth with scrypt password hashing + password change API
-- Live preview panel in Settings (scaled DashboardView, refreshable)
-- Gear icon toggles between dashboard and settings
-
-### ✅ Phase 3: Integration Engine (Complete — March 22, 2026)
-- Integration engine core: registry.js + handler.js
-- Generic fetch/auth/transform/cache pipeline
-- 6 auth types: none, basic, bearer, header, query, session
-- 7 field formats: number, decimal, percent, ms, bytes, duration, string
-- 3 compute types: percent_of, subtract, sum
-- 42 presets across 10 categories (DNS, proxy, media, arr stack, downloads, infra, files, security, dev, home automation)
-- Multi-endpoint support: presets can define `extraEndpoints` (static array or function of primary response)
-- URL params support: presets can define `urlParams` for dynamic endpoint segments (e.g. Cloudflare account_id)
-- API routes: GET/POST /api/integrations, test, save, delete, presets
-- Credential flow: UI form → encrypted secrets.json → $secret:ref in services.yaml
-- DashboardView wired to consume GET /api/integrations for Tier 3 data
-- IntegrationsTab in Settings UI (preset gallery + custom builder)
-
-### ✅ Phase 4a: HelmGrid + Bug Fixes + Security (March 23, 2026)
-
-#### HelmGrid — Custom Layout Engine (replaces react-grid-layout)
-- **Full RGL replacement** — `react-grid-layout` removed from dependencies entirely
-- `src/components/HelmGrid.jsx` — purpose-built grid layout engine (~550 lines)
-- Grid-based panel positioning with snap-to-grid drag and resize
-- Content-aware panel heights — panels auto-grow to fit content, can't shrink below content edge
-- Auto-fit on drop — dragging a wide panel to a narrow spot shrinks it to fit
-- Column clamping — reducing grid columns via Settings slider auto-shrinks and repositions panels
-- Overlap resolution — panels push down when colliding, never overlap
-- Responsive breakpoints (lg/md/sm) with layout switching
-- SE/SW resize handles with visual affordance (purple tint, hover state)
-- Backward-compatible layout format (`{ i, x, y, w, h, minW, minH }`)
-- No mid-interaction state saves — layout only persists after drag/resize completes
-
-#### Service Card Drag — Node-Scoped UIDs
-- Service cards now identified by `nodeKey:containerName` (e.g. `vm103:tailscale`)
-- Fixes ghost drag bug when duplicate container names exist across nodes
-- Custom groups store and reference UIDs instead of bare container names
-- React keys on service cards use UIDs for correct reconciliation
-
-#### Security Hardening
-- **Password hashing upgraded to scrypt** — `crypto.scryptSync` with random 16-byte salt, 64-byte hash
-- Automatic migration: existing SHA-256 hashes seamlessly upgrade to scrypt on next successful login
-- Hash format: `scrypt:salt:hash` (hex encoded), easily distinguishable from legacy 64-char SHA-256
-- Timing-safe comparison via `crypto.timingSafeEqual` prevents timing attacks
-- **Auth token injection fix** — `/api/auth/change-password` now receives auth token
-- **Upload limit reduced** — 50MB → 5MB (logo and background images don't need more)
-- **Frontend fetch timeouts** — all API calls timeout after 12 seconds (server outbound timeout is 8s)
-
-#### Other Fixes
-- Gear icon toggles settings on/off (was one-way only)
-- Service card overflow fixed (`overflow: hidden`, `minWidth: 0`)
-- Panel content fills wrapper correctly via flex layout
-- Grid columns slider clamps panels with overlap resolution
-- Layout sync uses position-only comparison
-
-### ✅ Phase 4b: Proxmox Integration + Icon Cache + CSS (March 23, 2026)
-
-#### Proxmox Full Integration
-- Multi-endpoint preset: VMs + storage pools + backup tasks in parallel
-- Dynamic endpoint resolution: extracts node name from VM data to build backup tasks URL
-- VM cards with status, vCPU, VMID, and RAM usage bars
-- Storage pool cards with name, type, usage bar, percentage
-- Backup status card with last backup time, OK/FAILED badge, VM count
-- Structured transform for rich data extraction from Proxmox API responses
-
-#### Icon Cache System
-- `server/icon-cache.js` — local disk cache for CDN icon URLs
-- Icons fetched from CDN once, saved to `data/icon-cache/`, served locally on all subsequent loads
-- Eliminates 20-30 cross-origin CDN round-trips on every cold page load
-- `cachedIconUrl()` helper in useData.js transparently rewrites CDN URLs to local cache endpoint
-- Icon sources: Dashboard Icons (homarr-labs) + selfh.st Icons (curated, full-color SVGs only)
-
-#### CSS Cleanup
-- Inline styles in ServiceCard consolidated
-- Removed simple-icons and material-icons from icon index (monochrome, poor fit for dark dashboard themes)
-
-### ✅ Phase 4c: Performance Overhaul (March 24, 2026)
-
-Dashboard load time reduced from ~4 seconds to <300ms.
-
-#### Server-Side Background Refresh
-- **`startBackgroundRefresh()`** — proactive data refresh loop runs at boot
-- Four standalone refresh functions: `refreshServices()`, `refreshUPS()`, `refreshGitea()`, `refreshIntegrations()`
-- All fire in parallel via `Promise.allSettled` every N seconds
-- API endpoints become pure cache reads — zero external calls on request
-- Cold-start fallback: if cache is empty (first request before loop completes), on-demand fetch fires
-- **Refresh interval synced to user setting** — reads `refreshInterval` from `display-config.json`
-- Changing the interval in Settings UI restarts the server loop automatically
-- Cache TTL increased to 120 seconds (safety net, data kept warm by loop)
-
-#### ETag / 304 Not Modified
-- `jsonWithEtag()` helper computes MD5 hash of JSON response, sends as `ETag` header
-- Frontend sends `If-None-Match` on subsequent requests
-- Server returns `304 Not Modified` (empty body) when data unchanged
-- Frontend `fetchJson()` returns `null` on 304 — `setState` is skipped entirely
-- **Per-instance first-load bypass**: `hasLoadedRef` tracks whether a DashboardView instance has loaded data; first fetch always skips ETags to avoid 304 on empty state
-- Express built-in ETag disabled (`app.disable('etag')`) to prevent conflicts with manual ETag system
-
-#### Independent Frontend Fetches
-- `Promise.allSettled` barrier in `fetchAll()` replaced with 3 independent fetch calls
-- `fetchServices()`, `fetchSections()`, `fetchIntegrations()` each update state immediately on resolve
-- Fast data (services, UPS) renders instantly; slow data (integrations) fills in when ready
-- On 304 (null return), corresponding `setState` is skipped — zero React work
-
-#### DashboardView Stays Mounted
-- DashboardView wrapped in a persistent div — uses `visibility: hidden` + `position: absolute` when not active tab
-- Eliminates unmount/remount cycle on tab switching (Dashboard → Settings → Dashboard)
-- HelmGrid width measurement stays accurate (container has real width even when hidden)
-- Data and layout preserved across tab switches — instant return to dashboard
-
-#### Interactive Endpoints Isolated from ETag System
-- `getTodos()` and `getWeather()` use plain `fetch()` instead of ETag-aware `fetchJson()`
-- Prevents 304 from Express auto-ETag on user-interactive endpoints
-- `TodoCard` null guard added: `Array.isArray(d)` check before `setTodos()`
-
-### ✅ Phase 4d: UI Polish + Brand (March 26, 2026)
-
-#### Brand Redesign
-- **New logo** — shield (indigo `#6366f1`) + ship's wheel (amber/gold `#f59e0b`), replacing Viking helmet
-- "Helm" = steering/control, not helmet — shield + wheel communicates "infrastructure command center"
-- Three logo variants: icon (`logo.svg`), simplified favicon (`favicon.svg`), full brand lockup with wordmark + tagline (`logo-login.svg`)
-- Login page uses brand lockup: JAGHELM wordmark (JAG light indigo / HELM bold amber) + "INFRASTRUCTURE DASHBOARD" tagline
-- Colors work on both dark and light backgrounds
-
-#### RAM Cache Visualization
-- Stacked progress bar on RAM metric: solid = real app usage, striped = cache/buffers
-- Server queries `node_memory_MemFree_bytes` in addition to MemTotal and MemAvailable
-- Calculation: `memUsed = Total - Available` (actual), `memWithCache = Total - Free` (includes cache)
-- Bar color thresholds based on total (including cache): >90% red, >70% amber, else accent
-
-#### Responsive Panel Stacking
-- HelmGrid forces single-column layout at `sm` breakpoint and `md` without saved layout
-- Panels sorted by original position and stacked sequentially with recalculated `y` values
-- **Critical fix**: `effectiveLayout` now runs `resolveOverlaps()` AFTER expanding panel heights for content — prevents panels from overlapping when content causes height growth
-
-#### Service Card Improvements
-- Docker stats (CPU/MEM/RX/TX) use fixed `repeat(4, 1fr)` grid spanning full card width
-- App data metrics use `repeat(auto-fill, minmax(70px, 1fr))` for responsive wrapping
-- Minimum card height of 105px (name + badge + one metric row) for visual consistency
-- Docker stats separated from uptime badge — stats in centered grid, uptime right-aligned below
-
-#### Service Icons Added
-- `collabora` → Collabora Online (homarr-labs CDN)
-- `tunnel` → Cloudflare (matches `gateway-tunnel` container)
-- `watchtower` → Watchtower (homarr-labs CDN)
-- `nut` → NUT/Network UPS Tools (homarr-labs CDN)
-- `homepage` → Homepage (homarr-labs CDN)
-- `jaghelm` → local `/logo.svg`
-
-#### Integration Fixes
-- PhotoPrism preset: `auth: 'bearer'` → `auth: 'header'` with `authHeader: 'X-Auth-Token'`, `authPrefix: ''`
-- PhotoPrism `testEndpoint` aligned to `/api/v1/config` (same as data endpoint)
-
-### ✅ Phase 4e: Image-Based Deployment + Public Release (March 27, 2026)
-- JagHelm published to GitHub Container Registry (`ghcr.io/jagbhandal/jaghelm`)
-- GitHub Actions workflow builds and pushes image on every merge to `main`
-- Versioned image tags on GitHub Release publish (e.g. `1.0.0`)
-- `compose.yaml` updated to use pre-built image — no build step required on deploy host
-- Gitea deploy workflow updated — `docker compose pull` + `up -d`, no `--build`
-- Gitea mirror set to instant sync on push (previously 4-hour schedule)
-- `package.json` version bumped to `1.0.0`
-
-### 📋 Phase 5: Polish (Planned)
-- Docker label discovery
-- Per-node render boundaries (only re-render panels whose data actually changed)
-- Responsive mobile layout
-- Error boundaries in React (prevent white-screen crashes)
-- Split server/index.js into route modules
-
----
-
-## 3. File Layout
-
-```
-jaghelm/
-├── .env                          # Bootstrap: DASH_SECRET, PROMETHEUS_URL, KUMA_URL
-├── .gitea/workflows/
-│   ├── deploy.yml                # Merge to main → pull image from GHCR → deploy to production
-│   └── auto-pr.yml               # Push to staging → auto-create PR to main
-├── .github/workflows/
-│   └── build-push.yml            # Push to main or GitHub Release → build image → push to GHCR
-├── compose.yaml                  # Uses ghcr.io/jagbhandal/jaghelm image (no build step)
-├── Dockerfile                    # Multi-stage build: node:22-alpine builder + runtime
-├── README.md
-├── package.json / vite.config.js / index.html
-├── docs/
-│   ├── ARCHITECTURE.md           # This file
-│   ├── PHASE3-INTEGRATIONS.md    # Integration engine design notes
-│   └── PERFORMANCE-OVERHAUL.md   # Performance redesign document
-├── public/
-│   ├── logo.svg                  # Brand icon (indigo shield + amber wheel)
-│   ├── logo-login.svg            # Full brand lockup (icon + JAGHELM wordmark + tagline)
-│   └── favicon.svg               # Simplified icon for browser tab (4-spoke, thicker lines)
-├── server/
-│   ├── index.js                  # Express app, API routes, auth, background refresh, ETag cache
-│   ├── config.js                 # Config manager (services.yaml)
-│   ├── secrets.js                # AES-256-GCM encryption
-│   ├── discovery.js              # Prometheus node + container discovery + smart disk fallback + RAM cache breakdown
-│   ├── monitors.js               # Uptime Kuma monitor matching
-│   ├── icons.js                  # Icon search index (Dashboard Icons + Selfh.st)
-│   ├── icon-cache.js             # Local disk cache for CDN icons
-│   └── integrations/             # Phase 3: Integration Engine
-│       ├── registry.js           # Loads presets, exposes getPreset/listPresets
-│       ├── handler.js            # Generic fetch/auth/transform/cache pipeline + multi-endpoint
-│       └── presets/              # 42 declarative preset definitions
-│           ├── proxmox.js        # Multi-endpoint: VMs + storage + backups
-│           └── ...               # One .js file per integration
-├── data/                         # Docker volume — persists across rebuilds
-│   ├── services.yaml             # Infrastructure config (nodes, service overrides)
-│   ├── display-config.json       # UI config (theme, layout, fonts, links, refresh interval)
-│   ├── secrets.json              # Encrypted API credentials
-│   ├── auth.json                 # Password hash (scrypt format)
-│   ├── todos.json                # Checklist data
-│   └── icon-cache/               # Locally cached CDN icons (populated on first access)
-├── src/
-│   ├── App.jsx                   # Root: routing, auth, config, persistent DashboardView mount
-│   ├── views/
-│   │   ├── DashboardView.jsx     # HelmGrid layout, independent fetches, ETag-aware refresh
-│   │   ├── SettingsView.jsx      # Full-page settings with sidebar + live preview
-│   │   └── IframeView.jsx        # Embedded service tabs (Uptime Kuma, Grafana, etc.)
-│   ├── components/
-│   │   ├── HelmGrid.jsx          # Custom grid layout engine (replaced react-grid-layout)
-│   │   ├── NavBar.jsx / NodeCard.jsx / ServiceCard.jsx
-│   │   ├── DraggableServiceCard.jsx / DroppablePanel.jsx / ServiceDragOverlay.jsx
-│   │   ├── TodoCard.jsx / Widgets.jsx / LoginPage.jsx
-│   │   ├── IconPicker.jsx        # Icon search (Dashboard Icons + Selfh.st CDN)
-│   │   └── settings/             # 13 settings tab components
-│   ├── hooks/useData.js          # API calls, ETag tracking, skipEtag support, SERVICE_ICONS
-│   └── styles/global.css         # All styles, 10 themes, HelmGrid layout
-└── uploads/                      # User uploads (bg, logo)
+  UI -->|"fetch + token header"| API
+  SW -. precache .- UI
+  API --> CACHE
+  REFRESH --> CACHE
+  REFRESH --> PROM
+  REFRESH --> CADV
+  REFRESH --> KUMA
+  REFRESH --> NUT
+  REFRESH --> INT
+  API --> STORE
 ```
 
----
+The browser talks **only** to `/api/*`. A background loop refreshes upstream data
+on an interval into an in-memory cache, so API reads are fast and ETag-enabled
+(304s on unchanged data). The deploy chain is separate — see §7.
 
-## 4. HelmGrid — Custom Layout Engine
-
-HelmGrid is JagHelm's purpose-built panel layout engine, replacing `react-grid-layout`. Built from scratch in a single session after 5 sessions of fighting RGL's resize bugs.
-
-### Why we built it
-- RGL's height resize had a fundamental bug — panels snapped to huge heights mid-resize
-- RGL's `transition: all 200ms` created feedback loops during resize
-- RGL's compactor and state management were a black box that fought our save/restore logic
-- Every fix for one RGL issue created another
-
-### What HelmGrid does
-- Grid-based positioning: converts `{ x, y, w, h }` to pixel positions using configurable `cols`, `rowHeight`, and `margin`
-- **Content-aware heights**: panels auto-expand to fit their content via ResizeObserver measurement
-- **Snap-to-grid**: drag and resize snap to grid units on release
-- **Auto-fit on drop**: dragging a wide panel to a narrow spot auto-shrinks its width
-- **Column clamping**: changing the grid columns slider auto-repositions and resizes panels with overlap resolution
-- **No mid-interaction saves**: layout only persists to config after mouse release
-- **Pointer-event driven**: uses native `pointerdown`/`pointermove`/`pointerup` with refs for fresh state
-
-### Architecture
-- Single file: `src/components/HelmGrid.jsx` (~600 lines)
-- Grid math functions: `gridToPixel`, `pixelToGrid`, `pixelSizeToGrid`, `pxToRows`, `calcCellWidth`
-- `GridItem` sub-component: measures content height via ResizeObserver, renders resize handles
-- `resolveOverlaps`: sort-based collision resolver that pushes panels down — runs twice: after sync AND after content-aware height expansion
-- `layoutsEqual`: position-only comparison (ignores constraint fields)
-- Responsive stacking: sm/md breakpoints sort panels by position and stack sequentially with recalculated y values
-- Zero external dependencies — pure React + DOM APIs
-
----
-
-## 5. Performance Architecture
-
-### Data Flow — Server-Side Background Refresh
+## 3. Repository layout
 
 ```
-Server boot
-    ↓
-startBackgroundRefresh() fires immediately
-    ↓
-Every N seconds (matches user's refresh interval setting):
-    refreshServices()      → Prometheus (5 nodes × 13 queries) + Kuma (2 calls)
-    refreshUPS()           → Prometheus (4 NUT queries)
-    refreshGitea()         → Gitea API (repo discovery + commit fetch)
-    refreshIntegrations()  → configured integrations × 1-3 HTTP calls each
-    ↓
-Results cached in memory (120s TTL safety net)
-    ↓
-API endpoints are pure cache reads (~1ms response)
+server/                     Express API (Node 22, ESM)
+  index.js                  app wiring: middleware chain + route mounts + SPA fallback
+  refresh.js                background refresh loop (start/stop)
+  cache.js                  bounded in-memory cache (FIFO, ETag tags)
+  discovery.js              Prometheus/cAdvisor -> nodes + services
+  monitors.js               Uptime Kuma monitor matching
+  config.js                 display config: copy-on-read + atomic save
+  secrets.js                AES-256-GCM secret store (per-install KDF salt)
+  cron-store.js             cron history (bounded)
+  errors.js                 apiError + global JSON error handler
+  version.js                single source of version (reads package.json)
+  metrics.js                prom-client registry + middleware + /metrics handler
+  demo.js                   DEMO_MODE read-only sample dashboard
+  auth/                     scrypt passwords, in-memory sessions, login rate limit, middleware
+  routes/                   one router per resource (see 4.1)
+  integrations/             the integration engine (presets + handler + lib, see 4.3)
+  util/                     logger, ssrf, redact, rateLimiter, atomicWrite,
+                            configSchema (zod), dataDir, asyncHandler, dedupe
+
+src/                        React 19 SPA (Vite 8)
+  main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + view switch
+  api/client.js             apiFetch -- explicit auth-injecting fetch wrapper
+  context/                  ConfigContext (config + update via setIn), OverlayContext (toast/confirm)
+  hooks/useData.js          fetchJson (304-aware), weather, search engines
+  utils/setIn.js            immutable structural-sharing deep-set
+  components/HelmGrid/       custom grid engine (gridMath, GridItem, HelmGrid)
+  components/settings/       shared primitives + 13 settings tabs (+ IntegrationsTab module)
+  components/                NodeCard, ServiceCard, Widgets, NavBar, overlays, etc.
+  views/DashboardView/       grid + panels + useDashboardData (304-stable) + per-source health
+  views/SettingsView.jsx     13-tab settings shell + collapsible live preview
+  styles/global.css          themes (10) + design tokens + component styles
+
+public/sw.js                service worker (precache injected at build)
+scripts/                    inject-sw-precache.mjs, check-assets.mjs (build/CI helpers)
+.github/workflows/          build-push.yml (build -> sign -> GHCR)
+.gitea/workflows/           deploy.yml (pin -> health-gate -> rollback)
+docs/adr/                   architecture decision records (0001-0005)
 ```
 
-### Data Flow — Frontend Rendering
+## 4. Backend architecture
 
-```
-DashboardView mounts once (stays mounted across tab switches)
-    ↓
-First fetch: skipEtag=true → always gets full data from warm cache
-    ↓
-Every 30s refresh cycle (refreshKey bumps from App.jsx):
-    fetchServices()      → sends If-None-Match → 304 if unchanged → skip setState
-    fetchSections()      → sends If-None-Match → 304 if unchanged → skip setState
-    fetchIntegrations()  → sends If-None-Match → 304 if unchanged → skip setState
-    ↓
-No 304 = data changed → setState fires → React re-renders only what changed
-304 = data unchanged → null returned → no setState → zero React work
-```
+### 4.1 Express server & middleware chain
 
-### Tab Switching — Persistent Mount
+`server/index.js` wires the app in order: Prometheus metrics middleware -> request
+logger -> Helmet security headers + **Content-Security-Policy (report-only)** ->
+CORS -> `express.json({ limit: '1mb' })` -> `/uploads` static -> `/metrics` ->
+(optional `DEMO_MODE` middleware) -> the API routers -> hashed-asset static
+(`immutable, 1y`) -> SPA fallback (`index.html`) -> the global JSON error handler.
 
-```
-Dashboard active:   <div style={undefined}> → normal rendering
-Settings active:    <div style={position:absolute, visibility:hidden}> → hidden but mounted
-Iframe tab active:  <div style={position:absolute, visibility:hidden}> → hidden but mounted
-    ↓
-Switching back to Dashboard: style removed → instant appearance, data intact
-```
+Routers (each `server/routes/*.js`), mounted under `/api`:
 
----
+| Mount | Auth | Purpose |
+|-------|------|---------|
+| `/api/auth` | public | login, logout, auth-status |
+| `/api/health`, `/api/readyz` | public | liveness / readiness probes |
+| `/metrics` | public | Prometheus exposition |
+| `/api/services` | token | discovered nodes + services (background-refreshed, ETag) |
+| `/api/integrations` | token | per-integration live data (background-refreshed, ETag) |
+| `/api/display-config` | token | the display config blob |
+| `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
+| `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
+| `/api/...` (infrastructure) | token | Prometheus query proxy, UPS, etc. |
 
-## 6. Themes
+Auth is a **header token**, not a cookie (so permissive CORS is not a CSRF
+vector). `/api/secrets` additionally goes through `requireAuthEnabled` -- it
+returns 403 when no password is set, so an open instance can't enumerate
+credentials ([KNOWN-ISSUES](../KNOWN-ISSUES.md) covers the open-by-default model).
 
-| Theme | ID | Background | Accent |
-|-------|-----|-----------|--------|
-| One Dark Pro | `dark` | `#0f1123` | `#6366f1` |
-| Dracula | `dracula` | `#282a36` | `#bd93f9` |
-| Night Owl | `night-owl` | `#011627` | `#82aaff` |
-| GitHub Dark | `github-dark` | `#0d1117` | `#58a6ff` |
-| Catppuccin Mocha | `catppuccin` | `#1e1e2e` | `#89b4fa` |
-| Material Ocean | `material` | `#0f111a` | `#84ffff` |
-| GitHub Light | `github-light` | `#ffffff` | `#0969da` |
-| Catppuccin Latte | `catppuccin-latte` | `#eff1f5` | `#1e66f5` |
-| Solarized Light | `solarized` | `#fdf6e3` | `#2aa198` |
-| Atom One Light | `atom-light` | `#fafafa` | `#e45649` |
+### 4.2 Background refresh & cache
 
----
+`refresh.js` runs a single in-process interval that re-fetches node/service
+metrics and every configured integration into the bounded `cache.js`
+(FIFO-evicted, max entries, so user-influenced keys can't exhaust memory). API
+reads serve from the cache and attach an ETag; an unchanged poll returns `304`.
+The loop is cancelled cleanly on shutdown (no leaking timer).
 
-## 7. API Endpoints
-
-### Auth
-- `POST /api/auth/login` · `GET /api/auth/check` · `POST /api/auth/change-password`
-
-### Phase 1 — Unified Services (background-refreshed, ETag-enabled)
-- `GET /api/services` — Complete merged node + service + monitor data
-- `GET /api/services/config` — Raw services.yaml as JSON
-- `POST /api/services/config` — Save services.yaml
-- `GET /api/services/monitors` — Kuma monitor name list
-
-### Phase 2 — Display Config
-- `GET /api/display-config` — UI config (theme, layout, fonts, links, refresh interval)
-- `POST /api/display-config` — Save UI config (restarts background refresh if interval changed)
-
-### Icons
-- `GET /api/icons?q=search&limit=60` — Search icon index
-- `GET /api/icons/cached?url=...` — Local cache proxy for CDN icon URLs
-
-### Secrets
-- `GET /api/secrets/keys` · `PUT /api/secrets/:key` · `DELETE /api/secrets/:key`
-
-### Phase 3 — Integration Engine (background-refreshed, ETag-enabled)
-- `GET /api/integrations/presets` — List all available presets
-- `GET /api/integrations` — Fetch all configured integrations' data
-- `GET /api/integrations/:type` — Fetch one integration's data
-- `POST /api/integrations/test` — Test connection
-- `POST /api/integrations/save` — Encrypt creds → secrets.json, config → services.yaml
-- `DELETE /api/integrations/:type` — Remove integration config
-
-### Dedicated Sections (background-refreshed, ETag-enabled)
-- `GET /api/ups` — UPS power data from NUT via Prometheus
-- `GET /api/gitea/activity` — Recent commits across all repos
-
-### Legacy (backward compat, cache-only reads)
-- `/api/uptime/monitors` · `/api/prometheus/query` · `/api/adguard/stats`
-- `/api/npm/stats` · `/api/docker/containers`
-
-### Utility (not background-refreshed)
-- `/api/weather` · `/api/todos` · `/api/upload` · `/api/health`
-
----
-
-## 8. Config Persistence
-
-**Two stores, two data flows:**
-
-| Store | File | Managed By | Frontend Save |
-|-------|------|-----------|---------------|
-| Infrastructure | `data/services.yaml` | Config Manager + hot-reload | Debounced POST to `/api/services/config` |
-| Display | `data/display-config.json` | Display Config API | localStorage (instant) + debounced POST (2s) |
-
-**Boot sequence:** localStorage → render immediately → fetch `/api/display-config` → merge server config but **preserve local gridLayout** → mark `configLoadedFromServer = true` → future changes save to server.
-
-**Layout persistence:** localStorage is authoritative for `gridLayout`. Server is authoritative for everything else (theme, sections, links). HelmGrid only saves layout after drag/resize completes. Async node placeholders ensure saved positions are maintained before API data loads.
-
-**Refresh interval persistence:** Stored in `display-config.json` as `refreshInterval` (seconds). Read by both the frontend (poll interval) and server (background refresh loop interval). Changing via Settings UI triggers server loop restart.
-
-**Priority:** `.env` > `auth.json` > `secrets.json` > `display-config.json` > `services.yaml`
-
----
-
-## 9. Security Model
-
-### Password Hashing
-- **scrypt** via Node.js `crypto.scryptSync` — 16-byte random salt, 64-byte derived key
-- Hash format: `scrypt:<salt_hex>:<hash_hex>`
-- Timing-safe comparison via `crypto.timingSafeEqual`
-- Automatic migration from legacy SHA-256 hashes on next successful login
-
-### Session Management
-- 32-byte random tokens via `crypto.randomBytes`
-- 24-hour expiry, stored in-memory `Map`
-- Password change invalidates all sessions except current
-
-### Secrets Encryption
-- AES-256-GCM with PBKDF2-derived key (100,000 iterations) from `DASH_SECRET`
-- Random 12-byte IV per encryption
-- Stored in `data/secrets.json`, never in YAML or env files
-
-### Known Tradeoffs
-- `NODE_TLS_REJECT_UNAUTHORIZED=0` in compose.yaml — disables TLS cert validation for all outbound requests. Required for self-signed certs on internal services (Proxmox). Scoped bypass planned.
-- No login rate limiting yet — planned
-- CORS allows all origins — acceptable for homelab behind reverse proxy
-
----
-
-## 10. Monitoring Architecture
-
-JagHelm sits at the top of a three-layer monitoring stack. Each layer has a single responsibility: collectors gather raw metrics, Prometheus stores them as time-series data, and visualization tools (JagHelm + Grafana) query Prometheus to render dashboards.
-
-### Layer 1: Collectors
-
-**node_exporter** runs on every node. It reads system-level metrics — CPU, RAM, disk, temperature, network — directly from the Linux kernel via `/proc` and `/sys`, and exposes them as a text endpoint on port `9100`.
-
-**cAdvisor** runs on nodes with Docker containers. It reads per-container resource usage — CPU, memory, network I/O — via the Docker socket and exposes them on port `8080`.
-
-**nut_exporter** exposes UPS metrics — battery charge, runtime, load, and status — by querying the NUT server on the host the UPS is connected to.
-
-### Layer 2: Prometheus (Time-Series Database)
-
-Prometheus runs on one node and scrapes all collector endpoints on a configurable interval (default 15 seconds). The `prometheus.yml` configuration defines scrape targets with job names and `node` labels.
-
-**Key design principle:** Prometheus pulls; collectors do not push. Collectors have no awareness of Prometheus.
-
-Example `prometheus.yml` scrape config:
-
-```yaml
-scrape_configs:
-  - job_name: 'node-exporter'
-    static_configs:
-      - targets: ['192.168.x.x:9100']
-        labels:
-          node: 'myserver'
-  - job_name: 'cadvisor'
-    static_configs:
-      - targets: ['192.168.x.x:8080']
-        labels:
-          node: 'myserver'
+```mermaid
+flowchart TD
+  subgraph Loop["refresh loop (~30s)"]
+    D["discovery.js<br/>Prometheus + cAdvisor"]
+    M["monitors.js<br/>Uptime Kuma match"]
+    IE["integration engine<br/>(42 presets)"]
+  end
+  Loop --> C["cache.js (ETag-tagged)"]
+  REQ["GET /api/services<br/>or /api/integrations"] --> C
+  C -->|"unchanged → 304"| REQ
+  C -->|"changed → 200 + ETag"| REQ
 ```
 
-### Layer 3: Visualization
+### 4.3 Integration engine
 
-**JagHelm** queries Prometheus for current-moment snapshots and displays them as live numbers on dashboard node cards. JagHelm is the "glance" layer — current state, not historical trends.
+The differentiator. A declarative **preset** (`integrations/presets/*.js`, 42 of
+them) describes how to talk to one app: endpoints, auth mode, and which JSON
+paths map to which display fields. The flow:
 
-**Grafana** connects to Prometheus as a data source and executes PromQL range queries for historical trend visualization. Grafana is the "analyst" layer — trends, patterns, and capacity planning.
-
-**Uptime Kuma** monitors service availability independently of Prometheus. It performs HTTP/TCP health checks and tracks uptime percentages. Uptime Kuma is the "alerter" layer — real-time health checks and notifications.
-
----
-
-## 11. CI/CD Pipeline
-
-```
-Developer pushes to staging branch (VM 101)
-        ↓
-auto-pr.yml: Creates PR from staging → main in Gitea (if none open)
-        ↓
-Developer reviews & merges PR in Gitea
-        ↓
-Gitea mirror instantly pushes main to GitHub
-        ↓
-build-push.yml (GitHub Actions):
-  → Builds Docker image on GitHub-hosted runner (~40s)
-  → Pushes ghcr.io/jagbhandal/jaghelm:latest to GHCR
-        ↓
-deploy.yml (Gitea Actions, self-hosted runner on VM 103):
-  → Waits 120s for GitHub build to complete
-  → SSHs into production VM
-  → docker compose pull (fetches new image from GHCR)
-  → docker compose up -d --force-recreate
-  → Verifies: docker ps + curl /api/health
+```mermaid
+flowchart LR
+  CFG["user integration config<br/>(+ encrypted secret)"] --> REG["registry.js<br/>resolves preset"]
+  REG --> H["handler.js<br/>orchestrates a fetch"]
+  H --> AUTH["lib/auth + lib/session<br/>(api-key / basic / session)"]
+  H --> HTTP["lib/http.js<br/>SSRF-guarded safeFetch"]
+  HTTP -->|"vetted request"| UP["upstream app API"]
+  UP --> EX["lib/extract + lib/format<br/>JSON paths → fields"]
+  EX --> OUT["{ fields } or { error } (redacted)"]
 ```
 
-### Versioned Releases
+Key properties:
 
-When a GitHub Release is published (e.g. `v1.0.0`):
+- **One guarded chokepoint.** Every outbound request goes through
+  `lib/http.js` `safeFetch`, which calls `assertSafeUrl` (`util/ssrf.js`) by
+  construction -- blocking cloud-metadata IPs, decimal/hex/octal IPv4, and
+  IPv4-mapped IPv6, with a `trusted` flag exempting operator infra (Prometheus/
+  Kuma) from the strict private-network block.
+- **Credentials are redacted** (`util/redact.js`) before any error is logged *or*
+  returned to the browser -- query-auth presets put the key in the URL, which
+  fetch errors would otherwise echo.
+- **Session-auth presets** (e.g. Proxmox) get a managed login session via
+  `lib/session.js`; the same SSRF guard still applies.
 
+### 4.4 Config, secrets, and persistence
+
+- **Display config** (`config.js`) is **copy-on-read** (`getConfig()` returns a
+  `structuredClone`) and saved via a synchronous **atomic** write
+  (temp -> fsync -> rename), so a route can't mutate shared state and a crash
+  can't truncate the file ([ADR 0001](adr/0001-atomic-file-writes.md),
+  [ADR 0004](adr/0004-config-copy-on-read.md)). It is validated against a Zod
+  schema (`util/configSchema.js`) on read, so a malformed file fails loudly.
+- **Secrets** (`secrets.js`) are AES-256-GCM encrypted with a **per-install
+  random KDF salt** (`data/.secrets-salt`, legacy-static-salt fallback). All
+  credential stores write `0600`.
+- **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
+  secrets/auth/config/cron never split across locations.
+
+### 4.5 Auth & rate limiting
+
+scrypt password hashing (`auth/passwords.js`), in-memory sessions
+(`auth/sessions.js`), and a brute-force **login rate limiter** (`auth/rateLimit.js`).
+A reusable `util/rateLimiter.js` additionally throttles the abuse-prone
+integration connection-test endpoint.
+
+### 4.6 Observability
+
+- **Structured logging** (`util/logger.js`) with redaction -- no secrets in logs.
+- **Prometheus metrics** at `/metrics` via `prom-client` (`metrics.js`): request
+  rate, latency histograms, refresh-loop health.
+- **Two probes**: `/api/health` (liveness; reflects refresh-loop liveness -- 503
+  when wedged) and `/api/readyz` (readiness; distinguishes "not ready yet" from
+  "down"), backing the Docker `HEALTHCHECK` and the deploy gate.
+
+## 5. Frontend architecture
+
+```mermaid
+flowchart TD
+  MAIN["main.jsx"] --> EB["ErrorBoundary (root)"]
+  EB --> CP["ConfigProvider"]
+  CP --> OP["OverlayProvider<br/>(toast + confirm)"]
+  OP --> APP["App.jsx (view switch)"]
+  APP --> NAV["NavBar<br/>(search, weather, theme picker, mobile menu)"]
+  APP --> DV["DashboardView"]
+  APP --> SV["SettingsView (13 tabs)"]
+  APP --> IV["IframeView"]
+  DV --> HG["HelmGrid engine"]
+  HG --> GI["GridItem (+ keyboard handle)"]
+  DV --> NP["NodePanel / NodeCard / ServiceCard / Widgets"]
+  DV --> UDD["useDashboardData<br/>(304-stable, per-source health)"]
+  SV --> PRIM["settings primitives<br/>Card/Toggle/ChoiceGroup/EmptyState"]
+  SV --> ITAB["IntegrationsTab module"]
 ```
-GitHub Release published → build-push.yml fires
-        ↓
-Builds image → pushes BOTH:
-  ghcr.io/jagbhandal/jaghelm:latest
-  ghcr.io/jagbhandal/jaghelm:1.0.0
+
+- **State.** `ConfigContext` exposes `config`, the stable `setConfig`, and a
+  memoised `update(path, value)` built on `setIn` (immutable structural-sharing
+  deep-set) -- so leaf cards memoise and don't re-render on unrelated edits.
+  `OverlayContext` provides `useToast` / `useConfirm` (focus-trapped, Escape,
+  focus-restore, reduced-motion). `api/client.js` `apiFetch` injects the auth
+  token explicitly (replacing an old `window.fetch` monkey-patch).
+- **HelmGrid** is a custom, dependency-light layout engine: pure math in
+  `gridMath.js` (snap, overlap-resolve, content-fit), per-item measurement +
+  rendering in `GridItem.jsx`, and lifecycle (breakpoints, drag/resize, commit)
+  in `HelmGrid.jsx`. Panels auto-grow to fit content; pointer **and keyboard**
+  (arrow move / Shift+arrow resize, with a live region) reposition them.
+- **Data fetching.** `useDashboardData` holds a **304-stable identity contract**:
+  on an unchanged poll `fetchJson` returns the same reference and `setState`
+  bails via `Object.is`, so an all-304 tick triggers zero re-renders. Per-source
+  health (error / stale / retry) is derived at render without per-tick state.
+- **Design system.** 10 themes (`themes.js` + `[data-theme]` token blocks),
+  generic `--space-*` / `--text-*` scales plus semantic `--fs-*` card tokens,
+  and a global `:focus-visible` ring + reduced-motion handling.
+- **PWA.** `public/sw.js` precaches the app shell **and** the hashed first-paint
+  bundles (the precache list + version are injected at build by
+  `scripts/inject-sw-precache.mjs`); immutable `/assets/` are served cache-first.
+
+## 6. Data model
+
+All state is files under the data dir (no DB):
+
+- **display config** -- title, theme, layout (`{lg,md,sm}` grid item arrays),
+  sections (per-panel visibility/order/colour), nav/search/weather flags,
+  integration configs (the secret value stored separately, encrypted), links,
+  fonts. Read copy-on-read; validated by Zod.
+- **secrets** -- AES-256-GCM blob, keyed by integration storage key.
+- **cron history**, **todos**, **auth** (password hash + salt) -- small files,
+  atomic writes.
+
+## 7. CI/CD pipeline
+
+```mermaid
+flowchart LR
+  PR["PR merged on Gitea<br/>(source of truth)"] --> MIRROR["mirror -> GitHub"]
+  MIRROR --> GH["GitHub Actions: build-push.yml"]
+  subgraph GH2["build-push.yml"]
+    T["test gate<br/>node:test + Vitest + typecheck + audit"] --> B["build image<br/>:latest, :sha-short, (:semver)"]
+    B --> S["cosign keyless sign (by digest)"]
+  end
+  GH --> GHCR["GHCR"]
+  GH -.->|"event-driven dispatch (opt-in, ADR 0005)"| DEP
+  PR -->|"push trigger (fallback)"| DEP["Gitea deploy.yml (self-hosted)"]
+  subgraph DEP2["deploy.yml"]
+    PIN["pull + pin :sha-short"] --> GATE["health gate<br/>(Docker health + /api/health)"]
+    GATE -->|"fail"| RB["auto-rollback to prev image"]
+    GATE -->|"pass"| LIVE["live on prod"]
+  end
 ```
 
-Users pinning to a specific version in their `compose.yaml` are unaffected by subsequent `latest` updates.
+- **Build** ([build-push.yml](../.github/workflows/build-push.yml)) runs on
+  GitHub: a test gate (so a red `main` can't ship), then build with immutable
+  `:sha-<short>` tags + OCI provenance labels, then **keyless cosign signing**.
+- **Deploy** ([deploy.yml](../.gitea/workflows/deploy.yml)) runs on the
+  self-hosted Gitea runner: pull and **pin this commit's `:sha-<short>`** image,
+  recreate behind a **health gate** that auto-rolls-back to the previous image on
+  failure.
+- **Event-driven trigger** ([ADR 0005](adr/0005-event-driven-deploy.md)): the
+  build dispatches the deploy when the image is ready, replacing a GHCR poll. It
+  is opt-in and fallback-preserving -- the push trigger remains until verified.
 
-### Workflow Files
+## 8. Testing
 
-| File | Trigger | Runner | Action |
-|------|---------|--------|--------|
-| `.github/workflows/build-push.yml` | Push to `main` or GitHub Release published | GitHub-hosted (ubuntu-latest) | Build image → push to GHCR |
-| `.gitea/workflows/deploy.yml` | Push to `main` | Self-hosted (VM 103) | Pull image from GHCR → deploy |
-| `.gitea/workflows/auto-pr.yml` | Push to `staging` | Self-hosted (VM 103) | Create PR staging → main in Gitea |
+220 automated tests gate the build:
 
----
+- **Backend** (136, `node --test`): the AES-GCM secrets round-trip + tamper, the
+  SSRF guard vectors, credential redaction, the upload allowlist, config
+  schema/copy-on-read (incl. a `SIGKILL`-mid-write chaos test), route contracts,
+  rate limiting, `/health` + `/readyz`, and the pure HelmGrid `gridMath` +
+  service-worker precache injector.
+- **Client** (84, Vitest + jsdom + React Testing Library): NavBar/config-driven
+  rendering, settings primitives, the keyboard grid handle, per-source health
+  banners, overlay/confirm semantics, and the 304-stable data hook.
 
-## 12. Carry-Over Notes
+## 9. Key decisions (ADRs)
 
-### Phase 5 priorities:
-- Docker label discovery
-- Per-node render boundaries (only re-render panels whose data actually changed)
-- Responsive mobile layout
-- Error boundaries in React (prevent white-screen crashes)
-- Split server/index.js into route modules
+| ADR | Decision |
+|-----|----------|
+| [0001](adr/0001-atomic-file-writes.md) | Atomic temp->fsync->rename writes for all user state |
+| [0002](adr/0002-in-memory-single-instance.md) | Single-instance, in-memory state (no DB) |
+| [0003](adr/0003-scoped-tls-bypass.md) | Per-request, opt-in TLS-verify bypass for self-signed infra |
+| [0004](adr/0004-config-copy-on-read.md) | Config is copy-on-read + synchronous atomic writes |
+| [0005](adr/0005-event-driven-deploy.md) | Event-driven build->deploy trigger (opt-in, fallback-preserving) |
 
-### Known issues:
-- `SERVICE_ICONS` constant has 40+ hardcoded CDN URLs in useData.js — should move to config
-- Legacy `/api/docker/containers` endpoint duplicates discovery.js logic — candidate for removal
-- Settings live preview DashboardView creates a second instance with its own state and fetch cycle
-- PhotoPrism integration preset fixed (auth header) — user needs to re-save in Settings to verify metrics appear
-- Nextcloud integration showing dashes for FILES/USERS/STORAGE — may need auth or endpoint investigation
+## 10. Known tradeoffs
 
----
-
-*JagHelm Architecture Specification v6.1 — Phase 4e Complete*
+Single-instance / in-memory (no clustering), single-user / single-tenant, and a
+hard Prometheus dependency for node metrics are **deliberate scope choices**, not
+bugs. The full list -- security defaults (open-by-default, host networking),
+integration drift, and roadmap items -- lives in
+[`KNOWN-ISSUES.md`](../KNOWN-ISSUES.md).
