@@ -67,10 +67,14 @@ export function loadConfig() {
     const raw = readFileSync(CONFIG_PATH, 'utf8');
     config = yaml.load(raw) || {};
     lastModified = statSync(CONFIG_PATH).mtimeMs;
-    console.log('[config] Loaded services.yaml (%d nodes, %d service overrides)',
+    console.log(
+      '[config] Loaded services.yaml (%d nodes, %d service overrides)',
       Object.keys(config.nodes || {}).length,
-      Object.keys(config.services || {}).length);
-    return config;
+      Object.keys(config.services || {}).length
+    );
+    // Return a clone too, so all three read paths (loadConfig/getConfig/watcher)
+    // honor the same copy-on-read contract — no caller ever holds the canonical ref.
+    return getConfig();
   } catch (err) {
     console.error('[config] Failed to load services.yaml:', err.message);
     return null;
@@ -80,12 +84,19 @@ export function loadConfig() {
 /**
  * Save config to disk as YAML.
  *
- * Serialization: this function is synchronous (writeFileSync) and is called
- * from sync POST handlers, so we can't truly serialize the JS bodies — the
- * event loop already isolates them. What we DO guard against is reentrancy
- * from inside the same call stack (e.g. a config-change listener that ends
- * up calling saveConfig again): a true mutex on a sync function would
- * deadlock, so we fail fast and let the caller surface the bug.
+ * Write coordination — why this is synchronous and NOT an async queue:
+ *   writeFileSync's whole pipeline (yaml.dump → atomic temp+fsync+rename →
+ *   statSync → assign) runs in a single event-loop tick, so concurrent POST
+ *   handlers can't interleave and the 5s file watcher (a separate tick) can
+ *   never observe a half-applied state. `lastModified` is updated before the
+ *   watcher's next poll, so our own write is recognised as self-originated and
+ *   not re-read. An async mutation queue would REOPEN the watcher↔write race
+ *   (a poll could fire between the rename and the lastModified update) for no
+ *   gain — the atomic rename already gives crash-safety, see atomicWrite.js.
+ *
+ * Reentrancy: a true mutex on a sync function would deadlock, so we fail fast
+ * if saveConfig is re-entered from inside its own call stack (e.g. a config
+ * listener that saves again) and let the caller surface the bug.
  */
 let saveInProgress = false;
 
@@ -102,11 +113,14 @@ export function saveConfig(newConfig) {
       noRefs: true,
       sortKeys: false,
     });
-    const header = '# JagHelm Configuration\n# This file is managed by the dashboard. Edit here or in Settings UI — both are equivalent.\n\n';
+    const header =
+      '# JagHelm Configuration\n# This file is managed by the dashboard. Edit here or in Settings UI — both are equivalent.\n\n';
     // Atomic write: temp file → fsync → rename. A reader can never observe a
     // half-written services.yaml, even if the process crashes mid-write.
     atomicWriteFileSync(CONFIG_PATH, header + yamlStr);
-    config = newConfig;
+    // Defensive deep copy: a caller that retains and later mutates `newConfig`
+    // must not be able to reach into our canonical in-memory state.
+    config = structuredClone(newConfig);
     lastModified = statSync(CONFIG_PATH).mtimeMs;
     console.log('[config] Saved services.yaml');
     return true;
@@ -119,10 +133,18 @@ export function saveConfig(newConfig) {
 }
 
 /**
- * Get the current in-memory config (read-only).
+ * Get the current config as an isolated deep copy (copy-on-read).
+ *
+ * Returning the live object let routes mutate shared state in place
+ * (`config.integrations[x] = …`, or fetchIntegration writing a resolved
+ * `_token` onto it) — which diverges memory from disk on a failed save and can
+ * leak credentials into the shared object. Handing back a structuredClone makes
+ * every consumer's mutations land on a throwaway copy instead. The config is a
+ * few KB and this is called per-request (not in a hot loop), so the cost is
+ * negligible. Mutating routes simply mutate the copy and pass it to saveConfig.
  */
 export function getConfig() {
-  return config;
+  return config ? structuredClone(config) : config;
 }
 
 /**
@@ -134,8 +156,18 @@ export function generateDefaultConfig(discoveredNodes) {
 
   // Map discovered Prometheus nodes to config entries
   const nodeDefaults = {
-    pi1: { display_name: 'Gateway Primary', subtitle: 'Raspberry Pi 5', icon: '🛡', border_color: '#a78bfa' },
-    pi2: { display_name: 'Gateway Secondary', subtitle: 'Raspberry Pi 5', icon: '🛡', border_color: '#a78bfa' },
+    pi1: {
+      display_name: 'Gateway Primary',
+      subtitle: 'Raspberry Pi 5',
+      icon: '🛡',
+      border_color: '#a78bfa',
+    },
+    pi2: {
+      display_name: 'Gateway Secondary',
+      subtitle: 'Raspberry Pi 5',
+      icon: '🛡',
+      border_color: '#a78bfa',
+    },
     vm103: { display_name: 'Production', subtitle: 'VM 103', icon: '🚀', border_color: '#6366f1' },
     vm101: { display_name: 'Staging', subtitle: 'VM 101', icon: '🔬', border_color: '#fbbf24' },
   };
@@ -191,7 +223,9 @@ export function startConfigWatcher() {
           reloadDebounceTimer = null;
           console.log('[config] External change detected, reloading services.yaml');
           loadConfig();
-          changeListeners.forEach(fn => fn(config));
+          // Hand listeners an isolated copy, consistent with getConfig() — a
+          // listener must not be able to mutate shared in-memory state.
+          changeListeners.forEach((fn) => fn(getConfig()));
         }, 250);
       }
     } catch (err) {
