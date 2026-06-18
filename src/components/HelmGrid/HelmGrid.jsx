@@ -331,6 +331,17 @@ export default function HelmGrid({
         const contentMinH = getContentMinH(s.itemId);
         const minWpx = (s.item.minW || 2) * (g.cellWidth + g.margin[0]) - g.margin[0];
         const minHpx = contentMinH * (g.rowHeight + g.margin[1]) - g.margin[1];
+        // Cap the LIVE box at the grid bounds too. The placeholder already clamps
+        // to the columns (below), so without this the dragged panel + its resize
+        // handle run PAST the grid edge and then snap back on release — the "ghost
+        // you can drag further than the panel" bug.
+        if (s.handle === 'sw') {
+          if (left < g.margin[0]) left = g.margin[0]; // left edge can't pass column 0
+          w = s.startLeft + s.startW - left; // the right edge stays anchored
+        } else {
+          const maxWpx = (g.activeCols - s.item.x) * (g.cellWidth + g.margin[0]) - g.margin[0];
+          w = Math.min(w, maxWpx);
+        }
         w = Math.max(w, minWpx);
         h = Math.max(h, minHpx);
 
