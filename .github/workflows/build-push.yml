@@ -12,9 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Compute image tags
         id: version
@@ -94,19 +94,20 @@ jobs:
           sbom: true
           provenance: mode=max
 
-      # ── Image vulnerability scan (Trivy) ──────────────────────────────────
-      # Scans the image we just pushed for known CVEs. Non-blocking for now
-      # (exit-code 0) to avoid breaking deploys on a freshly-disclosed CVE; flip
-      # exit-code to 1 once a triage/allowlist process exists. Always uploads a
-      # SARIF report as an artifact-style scan result for review.
-      - name: Scan image for vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@v0.28.0
-        with:
-          image-ref: ghcr.io/jagbhandal/jaghelm:sha-${{ steps.version.outputs.short_sha }}
-          format: 'table'
-          severity: 'HIGH,CRITICAL'
-          ignore-unfixed: true
-          exit-code: '0' # report-only; set to '1' to gate the build on HIGH/CRITICAL
+      # ── TODO: image vulnerability scan (Trivy) — disabled, ready to re-enable ──
+      # aquasecurity/trivy-action@v0.28.0 transitively pinned a yanked
+      # setup-trivy@v0.2.1 ("unable to find version v0.2.1"), which failed the
+      # whole build-push job. Re-enable only with a tag/SHA verified against a real
+      # run (Trivy's action has had several broken releases). Non-blocking
+      # (exit-code 0) by design; flip to 1 once a triage/allowlist exists.
+      # - name: Scan image for vulnerabilities (Trivy)
+      #   uses: aquasecurity/trivy-action@<verified-tag-or-sha>
+      #   with:
+      #     image-ref: ghcr.io/jagbhandal/jaghelm:sha-${{ steps.version.outputs.short_sha }}
+      #     format: 'table'
+      #     severity: 'HIGH,CRITICAL'
+      #     ignore-unfixed: true
+      #     exit-code: '0'
 
       # ── TODO: cosign keyless signing (ready to enable) ────────────────────
       # Keyless signing via the GitHub OIDC token proves these bytes came from
