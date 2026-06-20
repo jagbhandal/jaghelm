@@ -1,0 +1,18 @@
+# Keep the (otherwise carefully cosign-signed) supply chain fresh: surfaces
+# GitHub Action + base-image digest + npm bumps as reviewable PRs, so SHA/digest
+# pins (see Dockerfile + build-push.yml) don't rot into staleness.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

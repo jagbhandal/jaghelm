@@ -20,6 +20,11 @@ const SECRET_PARAMS =
 export function redactSecrets(input) {
   if (input == null) return input;
   let s = String(input);
+  // URL userinfo: https://user:PASSWORD@host -> keep the user as a hint, drop the
+  // password. Services authed via https://user:token@host otherwise leak the token
+  // into logs/client errors (the password sits before the path, so the query-strip
+  // below never reaches it).
+  s = s.replace(/(https?:\/\/)([^/@\s'"]+):[^/@\s'"]+@/gi, '$1$2:[redacted]@');
   s = s.replace(SECRET_PARAMS, '$1[redacted]');
   // Belt-and-suspenders: drop the entire query string off any http(s) URL so a
   // secret in an unexpected param name can't slip through.

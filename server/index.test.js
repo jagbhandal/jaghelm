@@ -107,15 +107,15 @@ test('GET /api/readyz → 503 when Prometheus is unreachable, with a checks shap
   assert.equal(typeof r.body.checks.kuma, 'boolean');
 });
 
-test('CSP is report-only by default with a strict script-src + locked object-src', async () => {
+test('CSP ENFORCES by default with a strict script-src + locked object-src', async () => {
   const r = await request(app).get('/api/health');
-  const csp = r.headers['content-security-policy-report-only'];
-  assert.ok(csp, 'report-only CSP header present by default');
+  const csp = r.headers['content-security-policy'];
+  assert.ok(csp, 'enforcing CSP header present by default');
   assert.match(csp, /script-src 'self'/);
   assert.match(csp, /object-src 'none'/);
   assert.match(csp, /base-uri 'self'/);
-  // Not enforcing unless CSP_ENFORCE=true, and no upgrade-insecure-requests
-  // (which would break http LAN backends).
-  assert.ok(!r.headers['content-security-policy'], 'enforcing header absent by default');
+  // Enforcing (not report-only) unless CSP_REPORT_ONLY=true, and no
+  // upgrade-insecure-requests (which would break http LAN backends).
+  assert.ok(!r.headers['content-security-policy-report-only'], 'report-only header absent by default');
   assert.ok(!/upgrade-insecure-requests/.test(csp), 'no upgrade-insecure-requests');
 });

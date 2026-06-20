@@ -57,11 +57,21 @@ export function hashPassword(password) {
 }
 
 /** Constant-time compare a plaintext password against a stored hash string. */
-function verifyPassword(password, stored) {
+export function verifyPassword(password, stored) {
   if (stored.startsWith('scrypt:')) {
-    const [, salt, hash] = stored.split(':');
-    const derived = crypto.scryptSync(password, salt, 64).toString('hex');
-    return crypto.timingSafeEqual(Buffer.from(derived, 'hex'), Buffer.from(hash, 'hex'));
+    // A truncated/corrupt scrypt hash (bad manual edit, crash mid-write, migration
+    // bug) must read as "no match", never throw — an uncaught throw here escapes the
+    // sync /login handler as a 500 on EVERY attempt and permanently locks the admin out.
+    try {
+      const [, salt, hash] = stored.split(':');
+      if (!salt || !hash) return false;
+      const derived = Buffer.from(crypto.scryptSync(password, salt, 64).toString('hex'), 'hex');
+      const storedBuf = Buffer.from(hash, 'hex');
+      if (storedBuf.length !== derived.length) return false;
+      return crypto.timingSafeEqual(derived, storedBuf);
+    } catch {
+      return false;
+    }
   }
   // Legacy SHA-256 (no salt, plain hex) — kept for migration only.
   // Buffers are 32 bytes (SHA-256 digest), always equal length, so
