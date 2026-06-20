@@ -126,9 +126,9 @@ app.use((req, res, next) => {
 // protection here is the strict script-src ('self' only): Vite bundles all JS
 // to hashed files and the SW-registration inline script was externalized to
 // /register-sw.js, so no inline/eval script is allowed. object-src/base-uri are
-// locked down to kill the classic injection vectors. Ships REPORT-ONLY by
-// default (surfaces violations without breaking the UI); set CSP_ENFORCE=true to
-// switch the header to enforcing once a deploy has confirmed no real violations.
+// locked down to kill the classic injection vectors. ENFORCES by default (this is
+// the app's primary XSS containment); set CSP_REPORT_ONLY=true to fall back to a
+// report-only header while tuning a deploy that has custom inline assets.
 const cspDirectives = {
   defaultSrc: ["'self'"],
   scriptSrc: ["'self'"],
@@ -156,7 +156,9 @@ app.use(
     contentSecurityPolicy: {
       useDefaults: false, // avoid helmet's default upgrade-insecure-requests — breaks http LAN backends
       directives: cspDirectives,
-      reportOnly: process.env.CSP_ENFORCE !== 'true',
+      // Enforce by default (the strict script-src is our primary XSS containment).
+      // Set CSP_REPORT_ONLY=true to fall back to report-only while tuning a deploy.
+      reportOnly: process.env.CSP_REPORT_ONLY === 'true',
     },
     frameguard: { action: 'deny' },
     hsts: { maxAge: 31536000, includeSubDomains: true },

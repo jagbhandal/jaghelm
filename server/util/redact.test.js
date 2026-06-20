@@ -14,6 +14,18 @@ test('strips the entire query string off URLs (catches unknown param names)', ()
   assert.ok(!out.includes('secretvalue'), out);
 });
 
+test('redacts URL userinfo passwords (user:pass@host)', () => {
+  const out = redactSecrets("connect failed to https://admin:SUPERSECRET@host:9000/api");
+  assert.ok(!out.includes('SUPERSECRET'), out);
+  assert.ok(out.includes('admin'), out);           // username kept as a hint
+  assert.ok(out.includes('[redacted]'), out);
+});
+
+test('redacts userinfo inside a realistic fetch error message', () => {
+  const out = redactError(new Error('request to https://svc:t0k3n@10.0.0.5/v1 failed, ETIMEDOUT'));
+  assert.ok(!out.includes('t0k3n'), out);
+});
+
 test('leaves non-secret text intact', () => {
   assert.equal(redactSecrets('HTTP 502 Bad Gateway'), 'HTTP 502 Bad Gateway');
 });
