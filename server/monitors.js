@@ -4,6 +4,7 @@
  */
 
 import { createLogger } from './util/logger.js';
+import { safeFetch } from './httpClient.js';
 
 const log = createLogger('monitors');
 
@@ -44,8 +45,8 @@ export async function fetchMonitors(bustCache = false) {
 
   try {
     // Fetch monitor names
-    const pageR = await fetch(`${kumaUrl}/api/status-page/default`, {
-      signal: AbortSignal.timeout(KUMA_TIMEOUT),
+    const pageR = await safeFetch(`${kumaUrl}/api/status-page/default`, {
+      trusted: true, timeoutMs: KUMA_TIMEOUT,
     });
     if (!pageR.ok) return cachedMonitors || {};
     const pageData = await pageR.json();
@@ -62,8 +63,8 @@ export async function fetchMonitors(bustCache = false) {
 
     if (Object.keys(heartbeatList).length === 0) {
       try {
-        const hbR = await fetch(`${kumaUrl}/api/status-page/heartbeat/default`, {
-          signal: AbortSignal.timeout(KUMA_TIMEOUT),
+        const hbR = await safeFetch(`${kumaUrl}/api/status-page/heartbeat/default`, {
+          trusted: true, timeoutMs: KUMA_TIMEOUT,
         });
         if (hbR.ok) {
           const hbData = await hbR.json();

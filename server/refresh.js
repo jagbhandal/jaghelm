@@ -319,9 +319,10 @@ async function _refreshIntegrations() {
     const integrations = config?.integrations || {};
 
     const results = {};
-    const promises = Object.entries(integrations)
-      .filter(([, cfg]) => cfg.enabled !== false)
-      .map(async ([key, cfg]) => {
+    const entries = Object.entries(integrations).filter(([, cfg]) => cfg.enabled !== false);
+
+    const fetchOne = async ([key, cfg]) => {
+      try {
         const handlerType = cfg.preset || key;
         const result = await fetchIntegration(handlerType, { ...cfg, _storageKey: key }, true);
         const entry = { ...(result.fields || {}) };
@@ -334,9 +335,21 @@ async function _refreshIntegrations() {
         if (cfg.target) entry._target = cfg.target;
         if (cfg.instance) entry._instance = cfg.instance;
         results[key] = entry;
-      });
+      } catch (err) {
+        results[key] = { _error: String((err && err.message) || err) };
+      }
+    };
 
-    await Promise.allSettled(promises);
+    // Bounded fan-out: a fully-wired board can have 30-50+ integrations; firing them
+    // all at once opened that many concurrent sockets every refresh cycle. Cap the
+    // peak (no head-of-line blocking — runners pull from a shared queue).
+    const CONCURRENCY = 6;
+    const queue = [...entries];
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+        while (queue.length) await fetchOne(queue.shift());
+      })
+    );
     setCache('integrations', results);
     return results;
   } catch (err) {
