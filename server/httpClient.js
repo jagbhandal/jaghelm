@@ -6,18 +6,19 @@
  * NPM, Gitea, integration handlers).
  */
 
-import { assertSafeUrl } from './util/ssrf.js';
+import { fetchSafe } from './util/safeFetchCore.js';
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
 export async function safeFetch(url, opts = {}) {
   const { trusted, timeoutMs, ...fetchOpts } = opts;
-  // Baseline SSRF guard. Infra callers (Prometheus, Kuma, AdGuard, NPM, Gitea)
-  // are operator-configured and trusted by default, so strict mode can't break
-  // them; pass { trusted: false } for any user-influenced URL.
-  assertSafeUrl(url, { trusted: trusted !== false });
-  return fetch(url, {
-    ...fetchOpts,
-    signal: AbortSignal.timeout(timeoutMs || DEFAULT_TIMEOUT_MS),
-  });
+  // SSRF guard runs per-hop inside fetchSafe (re-validated across redirects) + a
+  // body-size cap. Infra callers (Prometheus, Kuma, AdGuard, NPM, Gitea) are
+  // operator-configured and trusted by default, so strict mode can't break them;
+  // pass { trusted: false } for any user-influenced URL.
+  return fetchSafe(
+    url,
+    { ...fetchOpts, signal: AbortSignal.timeout(timeoutMs || DEFAULT_TIMEOUT_MS) },
+    { trusted: trusted !== false }
+  );
 }

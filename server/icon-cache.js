@@ -24,6 +24,23 @@ import { createLogger } from './util/logger.js';
 
 const log = createLogger('icon-cache');
 
+const ICON_MAX_BYTES = 2 * 1024 * 1024; // 2 MB — an icon is never bigger
+
+/**
+ * Headers for a served icon. The proxy is unauthenticated and can serve
+ * attacker-influenced SVG (which can carry inline script), so sandbox it:
+ * `default-src 'none'; sandbox` + nosniff neutralize script execution even if a
+ * victim navigates straight to the endpoint, independent of the global CSP.
+ */
+function setIconHeaders(res, mime, cacheState) {
+  res.setHeader('Content-Type', mime);
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('X-Icon-Cache', cacheState);
+  res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', 'inline');
+}
+
 let cacheDir = '';
 
 /**
@@ -103,9 +120,7 @@ export async function handleCachedIcon(req, res) {
 
   // Cache HIT — serve from disk
   if (existsSync(filepath)) {
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    res.setHeader('X-Icon-Cache', 'HIT');
+    setIconHeaders(res, mime, 'HIT');
     return res.sendFile(filepath);
   }
 
@@ -117,6 +132,10 @@ export async function handleCachedIcon(req, res) {
     const response = await fetch(url, {
       headers: { 'User-Agent': 'JagHelm/8.0', 'Accept': 'image/svg+xml, image/png, image/*' },
       signal: controller.signal,
+      // Don't follow redirects: the SSRF domain-allowlist above only checks the
+      // initial URL, so an allowlisted CDN that open-redirects could otherwise reach
+      // an internal host. A 3xx becomes !ok below -> 502.
+      redirect: 'manual',
     });
     clearTimeout(timeout);
 
@@ -124,7 +143,15 @@ export async function handleCachedIcon(req, res) {
       return res.status(502).json({ error: `CDN returned ${response.status}` });
     }
 
+    // Bound the body: a (compromised) CDN response shouldn't be able to OOM us.
+    const declared = Number(response.headers.get('content-length'));
+    if (declared && declared > ICON_MAX_BYTES) {
+      return res.status(502).json({ error: 'Icon too large' });
+    }
     const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > ICON_MAX_BYTES) {
+      return res.status(502).json({ error: 'Icon too large' });
+    }
 
     // Write to cache (best-effort — don't fail the response)
     try {
@@ -133,9 +160,7 @@ export async function handleCachedIcon(req, res) {
       log.warn({ err }, 'Write failed');
     }
 
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    res.setHeader('X-Icon-Cache', 'MISS');
+    setIconHeaders(res, mime, 'MISS');
     return res.send(buffer);
   } catch (err) {
     if (err.name === 'AbortError') {

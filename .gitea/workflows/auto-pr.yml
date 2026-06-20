@@ -30,13 +30,17 @@ jobs:
           fi
 
           TITLE=$(printf '%s' "$HEAD_COMMIT_MSG" | head -1)
-          BODY=$(printf 'Auto-created from push to staging.\n\nCommit: %s' "$GH_SHA")
+          BODY="Auto-created from push to staging. Commit: ${GH_SHA}"
 
-          # jq builds correctly-escaped JSON — a quote or ${...} in the commit
-          # message can no longer break the body or inject fields.
-          jq -n --arg title "$TITLE" --arg head staging --arg base main --arg body "$BODY" \
-            '{title: $title, head: $head, base: $base, body: $body}' \
-          | /usr/bin/curl -sf -X POST \
+          # Build correctly-escaped JSON in pure bash (the runner has no jq) — escape
+          # backslash + double-quote so a quote/${...} in the commit message can't
+          # break the body or inject fields. TITLE is a single line (head -1) and BODY
+          # is single-line, so no newline escaping is needed.
+          json_escape() { local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
+          PAYLOAD=$(printf '{"title":"%s","head":"staging","base":"main","body":"%s"}' \
+            "$(json_escape "$TITLE")" "$(json_escape "$BODY")")
+
+          printf '%s' "$PAYLOAD" | /usr/bin/curl -sf -X POST \
               -H "Authorization: token ${PR_TOKEN}" \
               -H "Content-Type: application/json" \
               "${API_BASE}/pulls" --data @-
