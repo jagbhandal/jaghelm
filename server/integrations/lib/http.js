@@ -1,5 +1,5 @@
 import { Agent } from 'undici';
-import { assertSafeUrl } from '../../util/ssrf.js';
+import { fetchSafe } from '../../util/safeFetchCore.js';
 import { redactSecrets } from '../../util/redact.js';
 
 /**
@@ -26,15 +26,13 @@ const FETCH_TIMEOUT_MS = 8000;
 
 export async function safeFetch(url, opts = {}, skipTls = false) {
   try {
-    // SSRF guard at the chokepoint for every integration AND session-auth
-    // request (trusted=false: user-supplied URLs, full guard).
-    assertSafeUrl(url);
+    // SSRF guard runs per-hop inside fetchSafe (trusted=false: user-supplied URLs,
+    // full guard, re-validated across redirects) + a response-body size cap.
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      const fetchOpts = { ...opts, signal: controller.signal };
-      if (skipTls) fetchOpts.dispatcher = tlsSkipAgent;
-      return await fetch(url, fetchOpts);
+      return await fetchSafe(url, { ...opts, signal: controller.signal },
+        { trusted: false, dispatcher: skipTls ? tlsSkipAgent : undefined });
     } finally {
       clearTimeout(timeout);
     }
