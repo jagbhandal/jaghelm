@@ -1,6 +1,7 @@
 import React from 'react';
 import { getServiceIcon, cachedIconUrl } from '../hooks/useData';
 import { useConfig } from '../context/ConfigContext.jsx';
+import { safeUrl } from '../utils/safeUrl.js';
 
 // Shared: render icon (URL, slug, or emoji).
 // Alternation (not a character class) so ZWJ (\u200d) and variation selector
@@ -528,7 +529,7 @@ export const QuickLaunch = React.memo(function QuickLaunch({ borderColor }) {
                   return (
                     <a
                       key={i}
-                      href={l.url}
+                      href={safeUrl(l.url) || undefined}
                       target={config.linkTarget || '_blank'}
                       rel="noopener noreferrer"
                       className="quick-launch-link"

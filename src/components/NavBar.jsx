@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { getWeather, WEATHER_CODES, SEARCH_ENGINES } from '../hooks/useData';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { THEMES } from './settings/themes.js';
+import { safeUrl } from '../utils/safeUrl.js';
 
 export default React.memo(function NavBar({
   tabs,
@@ -146,7 +147,8 @@ export default React.memo(function NavBar({
     if (!searchQuery.trim()) return;
     const all = Object.values(config?.links || {}).flat();
     const match = all.find((l) => l.name.toLowerCase().includes(searchQuery.toLowerCase()));
-    if (match) window.open(match.url, '_blank');
+    const matchUrl = match && safeUrl(match.url);
+    if (matchUrl) window.open(matchUrl, '_blank');
     else {
       const eng = SEARCH_ENGINES.find((s) => s.id === config?.searchEngine) || SEARCH_ENGINES[0];
       window.open(eng.url + encodeURIComponent(searchQuery), '_blank');
@@ -255,7 +257,7 @@ export default React.memo(function NavBar({
               {searchResults.map((r, i) => (
                 <a
                   key={i}
-                  href={r.url}
+                  href={safeUrl(r.url) || undefined}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="nav-search-result"

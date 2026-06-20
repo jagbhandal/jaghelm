@@ -73,3 +73,9 @@ test('trusted infra callers are exempt from the private block — but never from
 test('rejects malformed URLs', () => {
   assert.throws(() => assertSafeUrl('not a url'), /Invalid URL/);
 });
+
+test('always blocks the IPv6 unspecified address :: (0.0.0.0 equivalent), even outside strict mode', () => {
+  assert.throws(() => assertSafeUrl('http://[::]/'), /Blocked host/);
+  assert.throws(() => assertSafeUrl('http://[::ffff:0.0.0.0]/'), /Blocked host/);
+  assert.throws(() => assertSafeUrl('http://[0:0:0:0:0:0:0:0]/'), /Blocked host/);
+});

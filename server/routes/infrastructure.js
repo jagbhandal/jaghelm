@@ -24,6 +24,7 @@ import { getCached, setCache, jsonWithEtag } from '../cache.js';
 import { apiError } from '../errors.js';
 import { safeFetch } from '../httpClient.js';
 import { asyncHandler } from '../util/asyncHandler.js';
+import { requireAuthEnabledInfra } from '../auth/middleware.js';
 import { createLogger } from '../util/logger.js';
 
 const log = createLogger('infrastructure');
@@ -32,7 +33,7 @@ const router = Router();
 
 // ── Uptime Kuma passthrough ──────────────────────────────────────────────
 
-router.get('/uptime/monitors', asyncHandler(async (req, res) => {
+router.get('/uptime/monitors', requireAuthEnabledInfra, asyncHandler(async (req, res) => {
   try {
     const monitors = await fetchMonitors();
     res.json(monitors);
@@ -43,7 +44,7 @@ router.get('/uptime/monitors', asyncHandler(async (req, res) => {
 
 // ── Prometheus ad-hoc query ──────────────────────────────────────────────
 
-router.get('/prometheus/query', asyncHandler(async (req, res) => {
+router.get('/prometheus/query', requireAuthEnabledInfra, asyncHandler(async (req, res) => {
   const { q } = req.query;
   if (!q) return apiError(res, 400, 'Missing q');
   // Cap the query: bounds the (bounded) cache key and stops an oversized/
@@ -71,7 +72,7 @@ router.get('/prometheus/query', asyncHandler(async (req, res) => {
 
 // ── AdGuard Home stats ───────────────────────────────────────────────────
 
-router.get('/adguard/stats', asyncHandler(async (req, res) => {
+router.get('/adguard/stats', requireAuthEnabledInfra, asyncHandler(async (req, res) => {
   const cached = getCached('adguard');
   if (cached) return res.json(cached);
 
@@ -109,7 +110,7 @@ router.get('/ups', asyncHandler(async (req, res) => {
 
 // ── Nginx Proxy Manager stats ────────────────────────────────────────────
 
-router.get('/npm/stats', asyncHandler(async (req, res) => {
+router.get('/npm/stats', requireAuthEnabledInfra, asyncHandler(async (req, res) => {
   const cached = getCached('npm-stats');
   if (cached) return res.json(cached);
 
@@ -161,7 +162,7 @@ router.get('/npm/stats', asyncHandler(async (req, res) => {
 
 // ── Docker containers (Prometheus first, Docker socket fallback) ─────────
 
-router.get('/docker/containers', asyncHandler(async (req, res) => {
+router.get('/docker/containers', requireAuthEnabledInfra, asyncHandler(async (req, res) => {
   const cached = getCached('docker-containers');
   if (cached) return res.json(cached);
 

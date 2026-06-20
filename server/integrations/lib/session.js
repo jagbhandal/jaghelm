@@ -1,4 +1,23 @@
 import { safeFetch } from './http.js';
+
+/**
+ * Replace {username}/{password} placeholders structurally, then the caller
+ * JSON.stringify's the result — so JSON.stringify escapes a quote/backslash in a
+ * credential. Substituting into ALREADY-serialized JSON (the old approach) let a
+ * credential containing `"` inject fields or break the login body.
+ */
+function fillCreds(value, username, password) {
+  if (typeof value === 'string') {
+    return value.replace('{username}', username).replace('{password}', password);
+  }
+  if (Array.isArray(value)) return value.map((v) => fillCreds(v, username, password));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = fillCreds(v, username, password);
+    return out;
+  }
+  return value;
+}
 import { extractValue, resolveEndpointParams } from './extract.js';
 import { createLogger } from '../../util/logger.js';
 
@@ -120,9 +139,7 @@ async function doSessionLogin(config, session, baseUrl, skipTls) {
       .replace('{username}', encodeURIComponent(config._username || ''))
       .replace('{password}', encodeURIComponent(config._password || ''));
   } else {
-    loginBody = JSON.stringify(session.loginBody)
-      .replace('{username}', config._username || '')
-      .replace('{password}', config._password || '');
+    loginBody = JSON.stringify(fillCreds(session.loginBody, config._username || '', config._password || ''));
   }
 
   const loginRes = await safeFetch(`${baseUrl}${session.loginEndpoint}`, {
@@ -189,9 +206,7 @@ export async function testSessionAuth(config, session, baseUrl, skipTls) {
         .replace('{username}', encodeURIComponent(config._username || ''))
         .replace('{password}', encodeURIComponent(config._password || ''));
     } else {
-      loginBody = JSON.stringify(session.loginBody)
-        .replace('{username}', config._username || '')
-        .replace('{password}', config._password || '');
+      loginBody = JSON.stringify(fillCreds(session.loginBody, config._username || '', config._password || ''));
     }
 
     const res = await safeFetch(`${baseUrl}${session.loginEndpoint}`, {

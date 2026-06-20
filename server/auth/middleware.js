@@ -47,3 +47,24 @@ export function requireAuthEnabled(req, res, next) {
     'Disabled until a dashboard password is set (DASH_PASS or the password setup). Set JAGHELM_ALLOW_OPEN_SECRETS=true to override on a trusted LAN.'
   );
 }
+
+/**
+ * Fail-closed gate for the raw infrastructure passthroughs (PromQL query, the
+ * Docker-socket container list, AdGuard/NPM/Uptime stats). In no-auth mode
+ * authMiddleware lets everyone through, which would hand an unauthenticated LAN
+ * peer a raw query interface into the whole homelab (and the Docker socket).
+ * Aggregated/benign routes (/history, /ups, /gitea/activity) stay open.
+ *
+ * Escape hatch for a deliberately-open trusted LAN: JAGHELM_ALLOW_OPEN_INFRA=true.
+ */
+export function requireAuthEnabledInfra(req, res, next) {
+  if (authEnabled()) return next();
+  if (String(process.env.JAGHELM_ALLOW_OPEN_INFRA || '').toLowerCase() === 'true') {
+    return next();
+  }
+  return apiError(
+    res,
+    403,
+    'Disabled until a dashboard password is set. Set JAGHELM_ALLOW_OPEN_INFRA=true to override on a trusted LAN.'
+  );
+}

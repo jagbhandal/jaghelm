@@ -41,6 +41,17 @@ test('GET /api/secrets/keys → 403 when no password is set (fail-closed)', asyn
   assert.match(r.headers['content-type'], /json/);
 });
 
+test('raw infra passthroughs → 403 when no password is set (fail-closed)', async () => {
+  for (const path of ['/api/prometheus/query?q=up', '/api/docker/containers',
+                      '/api/adguard/stats', '/api/npm/stats', '/api/uptime/monitors']) {
+    const r = await request(app).get(path);
+    assert.equal(r.status, 403, `${path} should be gated in no-auth mode`);
+  }
+  // aggregated/benign routes stay open (not 403)
+  const ups = await request(app).get('/api/ups');
+  assert.notEqual(ups.status, 403, '/api/ups should remain open');
+});
+
 test('unknown /api/* route → JSON 404, not an HTML page', async () => {
   const r = await request(app).get('/api/does-not-exist');
   assert.equal(r.status, 404);

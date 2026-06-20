@@ -32,9 +32,53 @@ export const displayConfigSchema = z
   .passthrough();
 
 // Reserved keys are never valid config; they exist only to seed prototype
-// pollution in a future merge-based consumer, and .passthrough() would
-// otherwise preserve them verbatim. Reject at the validation boundary.
+// pollution in a future merge-based consumer, and .passthrough() would otherwise
+// preserve them verbatim. Checked at ANY depth (a nested __proto__ is the real
+// vector — a top-level-only guard gives false completeness).
 const RESERVED_KEYS = ['__proto__', 'constructor', 'prototype'];
+
+/**
+ * A URL value with an explicit non-http(s)/mailto scheme (e.g. javascript:, data:).
+ * @param {unknown} v
+ * @returns {boolean}
+ */
+function isUnsafeUrl(v) {
+  if (typeof v !== 'string') return false;
+  const m = /^([a-z][a-z0-9+.-]*):/i.exec(v.trim());
+  if (!m) return false; // relative / bare host -> fine
+  return !['http', 'https', 'mailto'].includes(m[1].toLowerCase());
+}
+
+/**
+ * DFS the parsed config rejecting reserved keys + unsafe `url` schemes at any
+ * depth. A stored `javascript:` link URL would execute in the SPA origin when
+ * clicked (the render-boundary guard in src/utils/safeUrl.js is the load-bearing
+ * defense for the watcher-loaded YAML path, but rejecting here blocks the API +
+ * BackupTab-import write paths). Size is already capped, so the walk is bounded.
+ * @param {unknown} value
+ * @param {number} [depth]
+ * @returns {string|null} an error message, or null if clean
+ */
+function scanConfig(value, depth = 0) {
+  if (depth > 50 || value === null || typeof value !== 'object') return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const e = scanConfig(item, depth + 1);
+      if (e) return e;
+    }
+    return null;
+  }
+  const obj = /** @type {Record<string, unknown>} */ (value);
+  for (const k of Object.keys(obj)) {
+    if (RESERVED_KEYS.includes(k)) return `Reserved key not allowed: ${k}`;
+    if (k === 'url' && isUnsafeUrl(obj[k])) {
+      return "Unsafe URL scheme in 'url' (only http/https/mailto allowed)";
+    }
+    const e = scanConfig(obj[k], depth + 1);
+    if (e) return e;
+  }
+  return null;
+}
 
 /**
  * Validate a request body against a schema + a byte cap.
@@ -47,11 +91,6 @@ export function validateConfig(schema, body, opts = {}) {
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { ok: false, status: 400, error: 'Config must be a JSON object' };
-  }
-  for (const k of RESERVED_KEYS) {
-    if (Object.prototype.hasOwnProperty.call(body, k)) {
-      return { ok: false, status: 400, error: `Reserved key not allowed: ${k}` };
-    }
   }
   let serialized;
   try {
@@ -66,6 +105,8 @@ export function validateConfig(schema, body, opts = {}) {
       error: `Config too large (max ${Math.round(maxBytes / 1024)}KB)`,
     };
   }
+  const violation = scanConfig(body);
+  if (violation) return { ok: false, status: 400, error: violation };
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
