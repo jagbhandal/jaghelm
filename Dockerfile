@@ -1,5 +1,5 @@
 # ─── Build stage ──────────────────────────────────────────────────────────
-FROM node:22-alpine AS builder
+FROM node:26-alpine AS builder
 WORKDIR /app
 
 # Install all deps (incl. devDeps for the Vite build) reproducibly from lock file.
@@ -11,7 +11,7 @@ COPY . .
 RUN npm run build
 
 # ─── Runtime stage ────────────────────────────────────────────────────────
-FROM node:22-alpine
+FROM node:26-alpine
 WORKDIR /app
 
 # Build-time provenance args. The CI build passes these (see
