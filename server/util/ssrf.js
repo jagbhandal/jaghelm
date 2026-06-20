@@ -95,8 +95,17 @@ export function assertSafeUrl(rawUrl, opts = {}) {
     throw new Error('Blocked host: (empty)');
   }
   const isIPv4 = /^\d+\.\d+\.\d+\.\d+$/.test(host);
+  // The IPv6 unspecified address (::) and its v4-mapped-zero forms target
+  // localhost on Linux, so they're the 0.0.0.0 equivalent and must always block.
+  // (The WHATWG URL parser normalizes [::]/[0:0:..:0] to "::" and
+  // [::ffff:0.0.0.0] to "::ffff:0:0", so match the normalized forms.)
+  const isV6Zero =
+    host === '::' ||
+    /^0:0:0:0:0:0:0:0$/.test(host) ||
+    /^::ffff:0{1,4}:0{1,4}$/.test(host) ||
+    /^::ffff:0+(\.0){3}$/.test(host);
   // Always block cloud-metadata IP and 0/8 "this network" (no legitimate use).
-  if (host === '169.254.169.254' || (isIPv4 && /^0\./.test(host))) {
+  if (host === '169.254.169.254' || (isIPv4 && /^0\./.test(host)) || isV6Zero) {
     throw new Error(`Blocked host: ${host}`);
   }
   // Trusted infra callers are never subject to the private-range block; for

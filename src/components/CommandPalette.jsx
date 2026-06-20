@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { THEMES } from './settings/themes.js';
+import { safeUrl } from '../utils/safeUrl.js';
 
 /**
  * ⌘K command palette — fuzzy-jump to a tab/theme/link + run actions.
@@ -51,7 +52,7 @@ export default function CommandPalette({
           group: 'Open link',
           label: l.name || l.url,
           hint: l.url.replace(/^https?:\/\//, ''),
-          run: () => window.open(l.url, '_blank', 'noopener,noreferrer'),
+          run: () => { const u = safeUrl(l.url); if (u) window.open(u, '_blank', 'noopener,noreferrer'); },
         });
       }
     }

@@ -61,7 +61,12 @@ export async function fetchSafe(url, opts = {}, cfg = {}) {
   }
 }
 
-/** Read a response body with a hard byte cap, returning a re-usable Response. */
+/**
+ * Read a response body with a hard byte cap, returning a re-usable Response.
+ * @param {Response} res
+ * @param {number} maxBytes
+ * @returns {Promise<Response>}
+ */
 async function capBody(res, maxBytes) {
   const declared =
     res.headers && typeof res.headers.get === 'function'
@@ -74,6 +79,7 @@ async function capBody(res, maxBytes) {
   // partial mock in tests) — production fetch responses always expose getReader.
   if (!res.body || typeof res.body.getReader !== 'function') return res;
   const reader = res.body.getReader();
+  /** @type {Uint8Array[]} */
   const chunks = [];
   let total = 0;
   for (;;) {

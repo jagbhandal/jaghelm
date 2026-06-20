@@ -45,3 +45,23 @@ test('displayConfig: validates known fields but allows unknown ones through', ()
   assert.equal(ok.ok, true);
   assert.equal(ok.data.someNewToggle, true);
 });
+
+test('rejects a nested __proto__ key, not just top-level (recursive guard)', () => {
+  // Built via JSON.parse (as express.json() does) so __proto__ is an OWN key — an
+  // object literal's __proto__: would set the prototype instead, which isn't the vector.
+  const body = JSON.parse('{"services":{"evil":{"__proto__":{"polluted":true}}}}');
+  const r = validateConfig(servicesConfigSchema, body);
+  assert.equal(r.ok, false);
+  assert.match(r.error, /Reserved key/);
+});
+
+test('rejects a javascript: link URL at the persistence boundary (stored XSS)', () => {
+  const r = validateConfig(servicesConfigSchema, {
+    links: [{ name: 'x', url: "javascript:fetch('/api/secrets')" }],
+  });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /Unsafe URL/);
+  // http(s)/relative links still pass
+  assert.equal(validateConfig(servicesConfigSchema, { links: [{ name: 'ok', url: 'https://h/x' }] }).ok, true);
+  assert.equal(validateConfig(servicesConfigSchema, { links: [{ name: 'rel', url: '/local' }] }).ok, true);
+});
