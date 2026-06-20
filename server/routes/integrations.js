@@ -36,6 +36,18 @@ const testLimiter = createRateLimiter({ max: 10, windowMs: 60_000 });
 // Preset type + instance become part of the secret key / config key, so bound them.
 const SAFE_ID = /^[\w-]{1,64}$/;
 
+// Allow-list user-supplied `params` to the preset's declared urlParams keys, so a
+// client can't fold handler-honored keys (endpoint/url override, tlsSkip to disable
+// cert validation, extraHeaders, authHeader, extraEndpoints) into the saved/tested
+// config. Non-preset (custom) integrations declare no urlParams -> nothing accepted.
+export function allowedParams(type, params) {
+  if (!params || typeof params !== 'object') return {};
+  const keys = new Set((getPreset(type)?.urlParams || []).map((p) => p.key));
+  const out = {};
+  for (const [k, v] of Object.entries(params)) if (keys.has(k)) out[k] = v;
+  return out;
+}
+
 /** Auto-prepend http:// when the user types a bare host. */
 function normalizeUrl(raw) {
   const trimmed = (raw || '').trim();
@@ -87,7 +99,7 @@ router.post(
       /* keep the raw string if it doesn't parse */
     }
 
-    const testConfig = { url: cleanUrl, username, password, token, ...params };
+    const testConfig = { url: cleanUrl, username, password, token, ...allowedParams(type, params) };
     const result = await testIntegration(type || '_custom', testConfig);
     log.info({ ip, type: type || '_custom', host, ok: !!result.ok }, 'integration connection test');
     res.json(result);
@@ -134,8 +146,9 @@ router.post('/save', (req, res) => {
     if (password) entry.password = `$secret:integration_${storageKey}_password`;
     if (token) entry.token = `$secret:integration_${storageKey}_token`;
 
-    // URL params (e.g. account_id for Cloudflare presets)
-    if (req.body.params) Object.assign(entry, req.body.params);
+    // URL params (e.g. account_id for Cloudflare presets) — allow-listed to the
+    // preset's declared urlParams; unknown keys are dropped (no config injection).
+    Object.assign(entry, allowedParams(type, req.body.params));
 
     // Custom fields (only for non-preset integrations)
     if (customFields) entry.fields = customFields;

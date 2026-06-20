@@ -24,6 +24,7 @@
 
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import helmet from 'helmet';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
@@ -181,6 +182,10 @@ const corsOrigins = corsOriginEnv
       .filter(Boolean)
   : false;
 app.use(cors({ origin: corsOrigins }));
+
+// gzip responses. The big win is /api/history — intentionally non-304 (it changes
+// every poll) and the largest repeatedly-fetched JSON; numeric JSON gzips ~80-90%.
+app.use(compression());
 
 // 1 MB request bodies are plenty for JSON config + small uploads (binary
 // uploads go through multer, which has its own limits in upload.js).

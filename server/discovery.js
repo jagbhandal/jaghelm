@@ -8,6 +8,7 @@
  */
 
 import { createLogger } from './util/logger.js';
+import { safeFetch } from './httpClient.js';
 
 const log = createLogger('discovery');
 
@@ -26,9 +27,9 @@ export function initDiscovery(prometheusUrl) {
 async function promQuery(query) {
   if (!promUrl) return [];
   try {
-    const r = await fetch(
+    const r = await safeFetch(
       `${promUrl}/api/v1/query?query=${encodeURIComponent(query)}`,
-      { signal: AbortSignal.timeout(PROM_TIMEOUT) }
+      { trusted: true, timeoutMs: PROM_TIMEOUT }
     );
     const data = await r.json();
     return data?.data?.result || [];

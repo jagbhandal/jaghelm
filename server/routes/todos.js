@@ -7,14 +7,16 @@
 
 import { Router } from 'express';
 import { readFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 
 import { apiError } from '../errors.js';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
+import { DATA_DIR } from '../util/dataDir.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const TODOS_PATH = join(__dirname, '..', '..', 'data', 'todos.json');
+// Use the shared resolver (honors JAGHELM_DATA_DIR) like every other store —
+// otherwise todos split off into an image-layer path that ignores the data volume
+// and breaks test isolation.
+const TODOS_PATH = join(DATA_DIR, 'todos.json');
 const MAX_PAYLOAD_BYTES = 512_000;
 
 const router = Router();
