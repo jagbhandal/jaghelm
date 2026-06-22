@@ -47,6 +47,11 @@ const PRESETS_DIR = join(__dirname, 'presets');
 
 const presets = new Map();
 
+// Helper modules that live in presets/ but aren't themselves presets (they're
+// imported BY presets). Excluded from the directory scan so they don't trip the
+// "default export is not an object" validation and log a spurious load error.
+const NON_PRESET_FILES = new Set(['createArrPreset.js']);
+
 // Keys that every preset MUST declare. Verified against the actual readers:
 //   - `name`      → registry.listPresets() exposes to UI
 //   - `endpoint`  → handler.js fetchIntegration builds the request URL
@@ -76,6 +81,13 @@ const ALLOWED_KEYS = new Set([
   'envKeys',
   // UI hints
   'urlParams', 'defaultUrl',
+  // Availability gate: when set to a non-empty reason string, the preset is
+  // recognized (getPreset/getPresetFull still return it) but gated OUT of the
+  // gallery by listPresets(), so it can't be added/configured/polled. Used for
+  // presets that can't work against the current handler (GET-only) or that hit
+  // a side-effecting endpoint on every refresh. Non-destructive: the file stays
+  // on disk for when the underlying limitation is fixed.
+  'unsupported',
 ]);
 
 /**
@@ -117,7 +129,8 @@ function validatePreset(file, preset) {
 export async function initRegistry() {
   let files;
   try {
-    files = readdirSync(PRESETS_DIR).filter(f => f.endsWith('.js'));
+    files = readdirSync(PRESETS_DIR)
+      .filter(f => f.endsWith('.js') && !NON_PRESET_FILES.has(f));
   } catch (err) {
     log.warn({ presetsDir: PRESETS_DIR }, 'No presets directory found');
     return;
@@ -166,9 +179,14 @@ export function getPreset(type) {
 /**
  * List all available presets (for the Settings UI gallery).
  * Returns a lightweight summary array — no auth details or endpoints exposed.
+ *
+ * Presets flagged `unsupported` (a non-empty reason string) are gated out:
+ * they're still resolvable via getPreset()/getPresetFull() for any config that
+ * already references them, but they never appear in the gallery, so they can't
+ * be newly added — and therefore aren't polled or connection-tested.
  */
 export function listPresets() {
-  return [...presets.values()].map(p => ({
+  return [...presets.values()].filter(p => !p.unsupported).map(p => ({
     type: p.type,
     name: p.name,
     icon: p.icon,

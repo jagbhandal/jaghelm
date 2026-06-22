@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import Field from './Field';
+import { FieldRow } from './Field';
+import { SettingsIcon } from './primitives.jsx';
 import { useConfirm } from '../../context/OverlayContext.jsx';
 
 /**
@@ -124,18 +125,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
             }}
           >
             <span style={{ fontSize: 18, display: 'inline-flex', alignItems: 'center' }}>
-              {node.icon && (node.icon.startsWith('http') || node.icon.startsWith('/')) ? (
-                <img
-                  src={node.icon}
-                  alt=""
-                  style={{ width: 22, height: 22, borderRadius: 4 }}
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                  }}
-                />
-              ) : (
-                node.icon || '🖥'
-              )}
+              <SettingsIcon value={node.icon} fallback="🖥" size={22} />
             </span>
             <span
               style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 14, flex: 1 }}
@@ -339,14 +329,5 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
         </div>
       )}
     </div>
-  );
-}
-
-// Row-style field; delegates to the shared Field for the label/htmlFor wiring.
-function FieldRow({ label, children }) {
-  return (
-    <Field layout="row" label={label}>
-      {children}
-    </Field>
   );
 }

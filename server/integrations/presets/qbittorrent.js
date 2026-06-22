@@ -2,6 +2,10 @@ export default {
   name: 'qBittorrent',
   icon: 'qbittorrent',
   description: 'Free BitTorrent client',
+  // Gated out of the gallery: login returns plain-text "Ok." + a SID cookie,
+  // which the token-path session model can't extract (see the TODO below).
+  // Recognized but unselectable until cookie-session support lands.
+  unsupported: 'Requires cookie-session support the handler lacks',
   // TODO(integrations): qBittorrent's /api/v2/auth/login returns plain text
   // "Ok." and sets a SID cookie — there's no token in the JSON response, so
   // lib/session.js's extractValue/tokenPath model fails to find a token and

@@ -16,7 +16,7 @@ import { Router } from 'express';
 import { getConfig, saveConfig } from '../config.js';
 import { getMonitorNames } from '../monitors.js';
 import { refreshServices } from '../refresh.js';
-import { getCached, jsonWithEtag } from '../cache.js';
+import { respondWarmCached } from '../cache.js';
 import { apiError } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { validateConfig, servicesConfigSchema } from '../util/configSchema.js';
@@ -25,16 +25,13 @@ const router = Router();
 
 router.get(
   '/',
-  asyncHandler(async (req, res) => {
-    const cached = getCached('services');
-    if (cached) return jsonWithEtag(res, req, 'services', cached);
-
-    // Cold start — refresh inline once
-    const data = await refreshServices();
-    if (data) return jsonWithEtag(res, req, 'services', data);
-
-    return apiError(res, 503, 'Service data not yet available');
-  })
+  asyncHandler((req, res) =>
+    respondWarmCached(req, res, {
+      key: 'services',
+      refresh: refreshServices,
+      fallback: (r) => apiError(r, 503, 'Service data not yet available'),
+    })
+  )
 );
 
 router.get('/config', (req, res) => {

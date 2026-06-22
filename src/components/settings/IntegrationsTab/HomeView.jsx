@@ -1,5 +1,6 @@
 import React from 'react';
 import { cachedIconUrl } from '../../../hooks/useData';
+import { presetIconUrl } from '../primitives.jsx';
 
 /**
  * HomeView — list of configured integrations + entry points for adding new ones.
@@ -73,7 +74,7 @@ export default function HomeView({
               }}>
                 {/* Icon */}
                 <img
-                  src={cachedIconUrl(`https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${preset?.icon || presetType}.svg`)}
+                  src={cachedIconUrl(presetIconUrl(preset?.icon || presetType))}
                   alt=""
                   style={{ width: 28, height: 28, borderRadius: 6 }}
                   onError={e => { e.target.style.display = 'none'; }}

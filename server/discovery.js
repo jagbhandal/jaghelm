@@ -219,17 +219,6 @@ export async function getNodeData(nodeLabel) {
   return { metrics, containers };
 }
 
-// ── Keep legacy exports for backward compat (used by /api/docker/containers) ──
-export async function getNodeMetrics(nodeLabel) {
-  const { metrics } = await getNodeData(nodeLabel);
-  return metrics;
-}
-
-export async function discoverContainers(nodeLabel) {
-  const { containers } = await getNodeData(nodeLabel);
-  return containers;
-}
-
 function formatUptime(s) {
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);

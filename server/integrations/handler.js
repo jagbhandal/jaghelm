@@ -32,10 +32,25 @@ import { buildAuthHeaders } from './lib/auth.js';
 import { fetchWithSession, testSessionAuth } from './lib/session.js';
 import { resolveIntegrationConfig } from './lib/config.js';
 import { assertSafeUrl } from '../util/ssrf.js';
-import { redactSecrets } from '../util/redact.js';
+import { redactError } from '../util/redact.js';
 import { createLogger } from '../util/logger.js';
 
 const log = createLogger('integrations');
+
+/**
+ * Append query-param auth (`?apikey=…`) to a URL for the `query` auth type.
+ * No-op for any other auth type or when no token is resolved. The token is
+ * URL-encoded so a raw token containing reserved chars (&, =, +, space) can't
+ * corrupt the query string or split into extra params.
+ */
+function applyQueryAuth(url, config) {
+  if (config.auth === 'query' && config._token) {
+    const paramName = config.queryParam || 'apikey';
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}${paramName}=${encodeURIComponent(config._token)}`;
+  }
+  return url;
+}
 
 // Re-export so the public API of handler.js is unchanged.
 export { resolveIntegrationConfig };
@@ -71,13 +86,7 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       rawData = await fetchWithSession(config);
     } else {
       let url = `${baseUrl}${resolveEndpointParams(config.endpoint, config)}`;
-
-      // Query param auth
-      if (config.auth === 'query' && config._token) {
-        const paramName = config.queryParam || 'apikey';
-        const separator = url.includes('?') ? '&' : '?';
-        url = `${url}${separator}${paramName}=${config._token}`;
-      }
+      url = applyQueryAuth(url, config);
 
       const headers = buildAuthHeaders(config);
       const res = await safeFetch(url, { headers }, skipTls);
@@ -140,7 +149,7 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
   } catch (err) {
     // Redact before logging AND returning: query-auth presets put the API key
     // in the URL, and fetch errors embed the full URL — never leak it.
-    const safe = redactSecrets(err.message);
+    const safe = redactError(err);
     log.error({ type, error: safe }, 'fetch error');
     return { error: safe, fields: {} };
   }
@@ -194,18 +203,13 @@ export async function testIntegration(type, testConfig) {
 
     } else {
       // Non-session auth (basic, bearer, header, query)
-      let url = `${baseUrl}${testEndpoint}`;
-      if (config.auth === 'query' && config._token) {
-        const paramName = config.queryParam || 'apikey';
-        const separator = url.includes('?') ? '&' : '?';
-        url = `${url}${separator}${paramName}=${config._token}`;
-      }
+      const url = applyQueryAuth(`${baseUrl}${testEndpoint}`, config);
       const headers = buildAuthHeaders(config);
       const res = await safeFetch(url, { headers }, skipTls);
       if (!res.ok) return { ok: false, error: `HTTP ${res.status}: ${res.statusText}` };
       return { ok: true, status: res.status };
     }
   } catch (err) {
-    return { ok: false, error: redactSecrets(err.message) };
+    return { ok: false, error: redactError(err) };
   }
 }

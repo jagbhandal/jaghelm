@@ -12,6 +12,7 @@ import { UPSCard, GiteaActivity, QuickLaunch, CronJobs } from '../../components/
 import { cachedIconUrl } from '../../hooks/useData';
 
 import NodePanel from './NodePanel';
+import { toServiceCard } from './serviceCard';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { DEFAULT_LAYOUTS, migrateLayouts } from './layouts';
 import { useDashboardData } from './useDashboardData';
@@ -201,19 +202,8 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
     const map = {};
     for (const [nodeKey, node] of Object.entries(serviceData.nodes || {})) {
       for (const s of node.services || []) {
-        const uid = `${nodeKey}:${s.container}`;
-        map[uid] = {
-          name: s.display_name,
-          container: s.container,
-          uid,
-          node: nodeKey,
-          status: s.status,
-          uptime: s.uptime24,
-          ping: s.ping,
-          icon: s.icon,
-          docker: s.docker,
-          appData: appDataByContainer[s.container] || null,
-        };
+        const card = toServiceCard(nodeKey, s, appDataByContainer);
+        map[card.uid] = card;
       }
     }
     return map;

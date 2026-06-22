@@ -2,6 +2,10 @@ export default {
   name: 'Transmission',
   icon: 'transmission',
   description: 'Lightweight BitTorrent client',
+  // Gated out of the gallery: Transmission's RPC needs POST-with-body plus a
+  // CSRF dance (X-Transmission-Session-Id 409-retry) the GET-only handler
+  // can't do (see the TODO below). Recognized but unselectable until then.
+  unsupported: 'Requires POST + CSRF (X-Transmission-Session-Id) support the handler lacks',
   // TODO(integrations): Transmission's RPC requires POST with a JSON body
   // ({"method":"session-stats"}) and a CSRF dance via X-Transmission-Session-Id.
   // handler.js currently only does GET, so this preset will fail. Previously

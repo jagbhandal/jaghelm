@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { HexColorPicker } from 'react-colorful';
 import IconPicker from '../IconPicker';
 import Field from './Field';
-import { EmptyState } from './primitives.jsx';
+import { EmptyState, SettingsIcon } from './primitives.jsx';
+import ColorPickerPopover from './ColorPickerPopover.jsx';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { useConfirm } from '../../context/OverlayContext.jsx';
 import { apiFetch } from '../../api/client.js';
@@ -30,7 +30,9 @@ export default function SectionsTab() {
   const confirm = useConfirm();
   const sections = config.sections || {};
   const [colorTarget, setColorTarget] = useState(null);
-  const [colorValue, setColorValue] = useState('#6366f1');
+  // Seed color for the popover when a swatch is opened; the popover owns the
+  // live draft from there and reports the committed value back on Apply.
+  const [colorSeed, setColorSeed] = useState('#6366f1');
 
   // Custom groups state
   const customGroups = config.customGroups || [];
@@ -59,12 +61,12 @@ export default function SectionsTab() {
 
   const openColor = (path, currentColor) => {
     setColorTarget(path);
-    setColorValue(currentColor || '#6366f1');
+    setColorSeed(currentColor || '#6366f1');
   };
 
-  const applyColor = () => {
+  const applyColor = (color) => {
     if (colorTarget) {
-      update(colorTarget, colorValue);
+      update(colorTarget, color);
       setColorTarget(null);
     }
   };
@@ -131,28 +133,11 @@ export default function SectionsTab() {
 
       {colorTarget && (
         <div className="settings-card" style={{ borderColor: 'var(--accent)' }}>
-          <HexColorPicker
-            color={colorValue}
-            onChange={setColorValue}
-            style={{ width: '100%', maxWidth: 300, height: 150 }}
+          <ColorPickerPopover
+            value={colorSeed}
+            onApply={applyColor}
+            onCancel={() => setColorTarget(null)}
           />
-          <div className="settings-actions">
-            <input
-              className="settings-input mono flex-1"
-              value={colorValue}
-              onChange={(e) => setColorValue(e.target.value)}
-            />
-            <button
-              className="settings-btn-primary"
-              onClick={applyColor}
-              style={{ background: colorValue }}
-            >
-              Apply
-            </button>
-            <button className="settings-btn-sm" onClick={() => setColorTarget(null)}>
-              Cancel
-            </button>
-          </div>
         </div>
       )}
 
@@ -172,16 +157,7 @@ export default function SectionsTab() {
                 className="settings-checkbox"
               />
               <span style={{ fontSize: 22 }}>
-                {(s.icon || defaultIcon)?.startsWith('http') ||
-                (s.icon || defaultIcon)?.startsWith('/') ? (
-                  <img
-                    src={s.icon || defaultIcon}
-                    alt=""
-                    style={{ width: 24, height: 24, borderRadius: 4 }}
-                  />
-                ) : (
-                  s.icon || defaultIcon
-                )}
+                <SettingsIcon value={s.icon} fallback={defaultIcon} size={24} />
               </span>
               <span className="settings-item-title" style={{ fontSize: 15, flex: 1 }}>
                 {s.title || defaultTitle}
@@ -307,16 +283,7 @@ export default function SectionsTab() {
                 }}
               >
                 <span style={{ fontSize: 20 }}>
-                  {(group.icon || '📂')?.startsWith('http') ||
-                  (group.icon || '')?.startsWith('/') ? (
-                    <img
-                      src={group.icon}
-                      alt=""
-                      style={{ width: 22, height: 22, borderRadius: 4 }}
-                    />
-                  ) : (
-                    group.icon || '📂'
-                  )}
+                  <SettingsIcon value={group.icon} fallback="📂" size={22} />
                 </span>
                 <span className="settings-item-title" style={{ fontSize: 15, flex: 1 }}>
                   {group.title}
@@ -385,26 +352,14 @@ export default function SectionsTab() {
                   {/* Color picker for group (reuse same color picker) */}
                   {colorTarget === `__group_color_${group.id}` && (
                     <div>
-                      <HexColorPicker
-                        color={colorValue}
-                        onChange={setColorValue}
-                        style={{ width: '100%', maxWidth: 280, height: 130 }}
+                      <ColorPickerPopover
+                        value={colorSeed}
+                        onApply={(color) => {
+                          updateGroup(group.id, 'borderColor', color);
+                          setColorTarget(null);
+                        }}
+                        onCancel={() => setColorTarget(null)}
                       />
-                      <div className="settings-actions" style={{ marginTop: 8 }}>
-                        <button
-                          className="settings-btn-primary"
-                          onClick={() => {
-                            updateGroup(group.id, 'borderColor', colorValue);
-                            setColorTarget(null);
-                          }}
-                          style={{ background: colorValue }}
-                        >
-                          Apply
-                        </button>
-                        <button className="settings-btn-sm" onClick={() => setColorTarget(null)}>
-                          Cancel
-                        </button>
-                      </div>
                     </div>
                   )}
 

@@ -1,4 +1,8 @@
 import { safeFetch } from './http.js';
+import { extractValue, resolveEndpointParams } from './extract.js';
+import { createLogger } from '../../util/logger.js';
+
+const log = createLogger('integrations');
 
 /**
  * Replace {username}/{password} placeholders structurally, then the caller
@@ -18,10 +22,22 @@ function fillCreds(value, username, password) {
   }
   return value;
 }
-import { extractValue, resolveEndpointParams } from './extract.js';
-import { createLogger } from '../../util/logger.js';
 
-const log = createLogger('integrations');
+/**
+ * Build the login request body from a session config + resolved credentials.
+ * For form-urlencoded logins, fills the {username}/{password} placeholders in
+ * the raw template string (URL-encoding each); otherwise structurally fills the
+ * JSON body object and serializes it. Shared by doSessionLogin + testSessionAuth.
+ */
+function buildLoginBody(session, config) {
+  const contentType = session.loginContentType || 'application/json';
+  if (contentType === 'application/x-www-form-urlencoded') {
+    return (typeof session.loginBody === 'string' ? session.loginBody : '')
+      .replace('{username}', encodeURIComponent(config._username || ''))
+      .replace('{password}', encodeURIComponent(config._password || ''));
+  }
+  return JSON.stringify(fillCreds(session.loginBody, config._username || '', config._password || ''));
+}
 
 /**
  * Session-based authentication: log in once, cache the token, reuse it on
@@ -133,14 +149,7 @@ export async function fetchWithSession(config) {
 /** Login and return token info (without fetching data). */
 async function doSessionLogin(config, session, baseUrl, skipTls) {
   const contentType = session.loginContentType || 'application/json';
-  let loginBody;
-  if (contentType === 'application/x-www-form-urlencoded') {
-    loginBody = (typeof session.loginBody === 'string' ? session.loginBody : '')
-      .replace('{username}', encodeURIComponent(config._username || ''))
-      .replace('{password}', encodeURIComponent(config._password || ''));
-  } else {
-    loginBody = JSON.stringify(fillCreds(session.loginBody, config._username || '', config._password || ''));
-  }
+  const loginBody = buildLoginBody(session, config);
 
   const loginRes = await safeFetch(`${baseUrl}${session.loginEndpoint}`, {
     method: 'POST',
@@ -200,14 +209,7 @@ async function fetchWithToken(tokenInfo, config, baseUrl, skipTls) {
 export async function testSessionAuth(config, session, baseUrl, skipTls) {
   try {
     const contentType = session.loginContentType || 'application/json';
-    let loginBody;
-    if (contentType === 'application/x-www-form-urlencoded') {
-      loginBody = (typeof session.loginBody === 'string' ? session.loginBody : '')
-        .replace('{username}', encodeURIComponent(config._username || ''))
-        .replace('{password}', encodeURIComponent(config._password || ''));
-    } else {
-      loginBody = JSON.stringify(fillCreds(session.loginBody, config._username || '', config._password || ''));
-    }
+    const loginBody = buildLoginBody(session, config);
 
     const res = await safeFetch(`${baseUrl}${session.loginEndpoint}`, {
       method: 'POST',

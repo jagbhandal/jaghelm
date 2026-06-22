@@ -13,6 +13,10 @@ export default {
   name: 'Deluge',
   icon: 'deluge',
   description: 'Lightweight BitTorrent client',
+  // Gated out of the gallery: the GET-only handler can't drive Deluge's
+  // JSON-RPC API (needs POST-with-body + cookie-jar session — see the TODO
+  // above). Recognized but unselectable until that support lands.
+  unsupported: 'Requires POST/JSON-RPC + cookie-session support the handler lacks',
   auth: 'session',
   session: {
     loginEndpoint: '/json',

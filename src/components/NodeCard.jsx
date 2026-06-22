@@ -3,6 +3,7 @@ import DraggableServiceCard from './DraggableServiceCard';
 import { cachedIconUrl } from '../hooks/useData';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { usageSeverity, cardSeverity, severityColor, severityLabel } from '../utils/thresholds.js';
+import { isEmoji } from '../utils/icon.jsx';
 import Sparkline from './Sparkline';
 
 /**
@@ -97,17 +98,6 @@ export default React.memo(function NodeCard({
   // Pre-attentive emphasis: if any metric's real usage is elevated/critical,
   // halo the whole card so trouble jumps off the board before you read it.
   const halo = cardSeverity(metrics);
-
-  // Check if icon is an emoji (not a URL or slug).
-  // Alternation (not a character class) so ZWJ (\u200d) and variation selector
-  // (\ufe0f) read as repeatable join tokens, not as combining marks on a base
-  // char \u2014 which is what no-misleading-character-class flags. Behaviour is
-  // identical to the prior class form; this just makes the intent explicit.
-  const isEmoji = (str) =>
-    str &&
-    !str.startsWith('http') &&
-    !str.startsWith('/') &&
-    /^(?:\p{Emoji}|\u200d|\ufe0f)+$/u.test(str);
 
   const bgStyle = {};
   if (sec.bgColor && sec.bgOpacity > 0) {

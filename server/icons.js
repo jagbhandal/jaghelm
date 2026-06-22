@@ -46,7 +46,7 @@ let indexReady = false;
  * Returns array of { name, slug, url, repo }
  */
 async function fetchRepoIcons(repoConfig) {
-  const { id, label, repo, branch, treePath, cdnBase, ext, isNested, nestedFile } = repoConfig;
+  const { id, label, repo, branch, treePath, cdnBase, ext } = repoConfig;
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
@@ -71,31 +71,7 @@ async function fetchRepoIcons(repoConfig) {
     const data = await res.json();
     const tree = data.tree || [];
 
-    if (isNested && nestedFile) {
-      // Nested structure: svg/{icon-name}/outline.svg
-      // Find all files matching the pattern svg/*/nestedFile
-      const targetSuffix = `/${nestedFile}`;
-      return tree
-        .filter(item => item.type === 'blob' && item.path.startsWith(treePath) && item.path.endsWith(targetSuffix))
-        .map(item => {
-          // Extract icon name from path: svg/home/outline.svg → home
-          const withoutPrefix = item.path.slice(treePath.length);
-          const slug = withoutPrefix.split('/')[0];
-          const name = slug
-            .replace(/_/g, ' ')
-            .replace(/-/g, ' ')
-            .replace(/\b\w/g, c => c.toUpperCase());
-          return {
-            name,
-            slug,
-            url: `${cdnBase}/${slug}/${nestedFile}`,
-            repo: id,
-            repoLabel: label,
-          };
-        });
-    }
-
-    // Standard flat structure: svg/{icon-name}.svg
+    // Flat structure: svg/{icon-name}.svg
     return tree
       .filter(item => item.type === 'blob' && item.path.startsWith(treePath) && item.path.endsWith(ext))
       .map(item => {

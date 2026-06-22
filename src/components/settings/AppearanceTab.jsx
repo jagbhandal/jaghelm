@@ -1,10 +1,10 @@
 import React, { useState, useRef } from 'react';
-import { HexColorPicker } from 'react-colorful';
 import { uploadFile } from '../../hooks/useData';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import Field from './Field';
 import InlineError from './InlineError';
 import { Card, Toggle } from './primitives.jsx';
+import ColorPickerPopover from './ColorPickerPopover.jsx';
 import { THEMES } from './themes.js';
 
 // Re-export so existing importers of THEMES from this module keep working.
@@ -13,7 +13,9 @@ export { THEMES };
 export default function AppearanceTab({ theme, setTheme }) {
   const { config, update } = useConfig();
   const [colorPicking, setColorPicking] = useState(false);
-  const [colorValue, setColorValue] = useState(config.accentColor || '#6366f1');
+  // Seed color for the popover when the accent swatch is opened; the popover
+  // owns the live draft and reports the committed value back on Apply.
+  const [colorSeed, setColorSeed] = useState(config.accentColor || '#6366f1');
   const [uploadError, setUploadError] = useState('');
   const bgRef = useRef();
 
@@ -73,31 +75,14 @@ export default function AppearanceTab({ theme, setTheme }) {
       <Card title="Accent Color">
         {colorPicking ? (
           <div>
-            <HexColorPicker
-              color={colorValue}
-              onChange={setColorValue}
-              style={{ width: '100%', maxWidth: 300, height: 160 }}
+            <ColorPickerPopover
+              value={colorSeed}
+              onApply={(color) => {
+                update('accentColor', color);
+                setColorPicking(false);
+              }}
+              onCancel={() => setColorPicking(false)}
             />
-            <div className="settings-actions">
-              <input
-                className="settings-input mono flex-1"
-                value={colorValue}
-                onChange={(e) => setColorValue(e.target.value)}
-              />
-              <button
-                className="settings-btn-sm"
-                onClick={() => {
-                  update('accentColor', colorValue);
-                  setColorPicking(false);
-                }}
-                style={{ background: colorValue, color: '#fff', border: 'none' }}
-              >
-                Apply
-              </button>
-              <button className="settings-btn-sm" onClick={() => setColorPicking(false)}>
-                Cancel
-              </button>
-            </div>
           </div>
         ) : (
           <div className="settings-row" style={{ gap: 12 }}>
@@ -105,7 +90,7 @@ export default function AppearanceTab({ theme, setTheme }) {
               className="settings-color-swatch-lg"
               style={{ background: config.accentColor || '#6366f1' }}
               onClick={() => {
-                setColorValue(config.accentColor || '#6366f1');
+                setColorSeed(config.accentColor || '#6366f1');
                 setColorPicking(true);
               }}
             />

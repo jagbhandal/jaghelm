@@ -6,7 +6,8 @@ import DashboardView from './views/DashboardView';
 import { ConfigProvider } from './context/ConfigContext.jsx';
 import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
 import { getMonitors } from './hooks/useData';
-import { getAuthToken } from './api/client.js';
+import { useThemeVars } from './hooks/useThemeVars.js';
+import { useConfigPersistence } from './hooks/useConfigPersistence.js';
 
 // Settings (13-tab tree) and the iframe view aren't needed for the default
 // dashboard render — code-split them so they don't weigh down the initial bundle.
@@ -97,13 +98,7 @@ function AppMain({ authRequired, onLogout }) {
   // Start with localStorage for instant render; the server fetch overrides it.
   // `migrate` upgrades the legacy `jagnet-config` key to the current one.
   const [config, setConfig] = useState(() => readStoredConfig({ migrate: true }));
-  const configLoadedFromServer = useRef(false);
   const intervalRef = useRef(null);
-  const saveTimerRef = useRef(null);
-  // Latest config + whether a debounced server save is still pending, so the
-  // flush-on-unload handler can write the most recent edit synchronously.
-  const pendingConfigRef = useRef(config);
-  const savePendingRef = useRef(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -123,220 +118,14 @@ function AppMain({ authRequired, onLogout }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Save config: localStorage immediately, server debounced
-  useEffect(() => {
-    localStorage.setItem('jaghelm-config', JSON.stringify(config));
-    // Keep the latest config available to the unload flush handler.
-    pendingConfigRef.current = config;
-    // Don't save to server until we've loaded from server first (prevents overwriting server config with defaults)
-    if (!configLoadedFromServer.current) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    // From here a server write is owed; the flush handler may send it early.
-    savePendingRef.current = true;
-    saveTimerRef.current = setTimeout(() => {
-      saveTimerRef.current = null;
-      savePendingRef.current = false;
-      apiFetch('/api/display-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-        // keepalive so a save that fires just before an unload still completes
-        // (closes the narrow race the visibilitychange flush doesn't cover).
-        keepalive: true,
-      })
-        .then((r) => {
-          // A non-2xx response is a failed save just as much as a thrown error.
-          if (!r.ok) throw new Error(`save failed (${r.status})`);
-        })
-        .catch(() => {
-          // The debounced effect re-arms on the next edit, and localStorage
-          // already holds the value — surface the failure so the user knows
-          // their settings aren't yet persisted server-side.
-          toast("Couldn't save settings — will retry", 'error');
-        });
-    }, 2000);
-  }, [config, toast]);
+  // Display-config save/load machinery (localStorage + debounced server save,
+  // flush-on-unload, authoritative server load on mount). Extracted to a hook;
+  // behaviour + effect order preserved.
+  useConfigPersistence(config, setConfig, setTheme, toast);
 
-  // Flush a pending (debounced-but-unsent) server save immediately when the tab
-  // is hidden or about to unload. Without this, an edit made <2s before the user
-  // closes/navigates is lost server-side (localStorage survives, but other
-  // devices never see it). sendBeacon can't carry the x-auth-token header (the
-  // server rejects query/cookie tokens), so when authed we use fetch+keepalive
-  // which can; we only fall back to sendBeacon when no token is needed.
-  useEffect(() => {
-    const flushSave = () => {
-      if (!savePendingRef.current) return;
-      // Cancel the debounce and consume the pending state so we send exactly once.
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-      savePendingRef.current = false;
-      const body = JSON.stringify(pendingConfigRef.current);
-      const token = getAuthToken();
-      // No token → auth disabled → sendBeacon works (no custom header needed).
-      if (!token && typeof navigator !== 'undefined' && navigator.sendBeacon) {
-        try {
-          navigator.sendBeacon(
-            '/api/display-config',
-            new Blob([body], { type: 'application/json' })
-          );
-          return;
-        } catch {
-          // fall through to keepalive fetch
-        }
-      }
-      // keepalive lets the request outlive the page, and unlike sendBeacon it
-      // can carry the x-auth-token header (via apiFetch) on authed instances.
-      apiFetch('/api/display-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        keepalive: true,
-      }).catch(() => {});
-    };
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') flushSave();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('beforeunload', flushSave);
-    window.addEventListener('pagehide', flushSave);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('beforeunload', flushSave);
-      window.removeEventListener('pagehide', flushSave);
-    };
-  }, []);
-
-  // Load config from server on mount (authoritative source)
-  // Exception: gridLayout is preserved from localStorage if it exists,
-  // because the local layout is always the most recent user arrangement.
-  // The server layout may be stale from a previous deploy or compactor bug.
-  useEffect(() => {
-    apiFetch('/api/display-config')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data && typeof data === 'object' && Object.keys(data).length > 0) {
-          setConfig((prev) => {
-            const merged = { ...data };
-            // localStorage layout is authoritative — server may be stale from a previous deploy
-            if (prev.gridLayout) {
-              merged.gridLayout = prev.gridLayout;
-            }
-            localStorage.setItem('jaghelm-config', JSON.stringify(merged));
-            if (data.theme && !localStorage.getItem('jaghelm-theme')) setTheme(data.theme);
-            return merged;
-          });
-        }
-        configLoadedFromServer.current = true;
-      })
-      .catch(() => {
-        configLoadedFromServer.current = true;
-      });
-  }, []);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const hex = config.accentColor || '#6366f1';
-    root.style.setProperty('--accent', hex);
-    const r = parseInt(hex.slice(1, 3), 16),
-      g = parseInt(hex.slice(3, 5), 16),
-      b = parseInt(hex.slice(5, 7), 16);
-    root.style.setProperty('--accent-glow', `rgba(${r},${g},${b},0.12)`);
-    root.style.setProperty('--accent-light', hex);
-    root.style.setProperty('--bg-opacity', String(config.bgOpacity ?? 0.3));
-    root.style.setProperty('--overlay-opacity', String(config.overlayOpacity ?? 0.75));
-
-    // Font family
-    const fonts = config.fontFamily || 'default';
-    const FONT_FAMILIES = {
-      default: {
-        display: "'Outfit', sans-serif",
-        body: "'DM Sans', sans-serif",
-        mono: "'JetBrains Mono', monospace",
-      },
-      clean: {
-        display: "'Inter', sans-serif",
-        body: "'Inter', sans-serif",
-        mono: "'Fira Code', monospace",
-      },
-      rounded: {
-        display: "'Nunito', sans-serif",
-        body: "'Nunito', sans-serif",
-        mono: "'Source Code Pro', monospace",
-      },
-      sharp: {
-        display: "'Rajdhani', sans-serif",
-        body: "'Roboto', sans-serif",
-        mono: "'Roboto Mono', monospace",
-      },
-      system: {
-        display: 'system-ui, -apple-system, sans-serif',
-        body: 'system-ui, -apple-system, sans-serif',
-        mono: "ui-monospace, 'SF Mono', monospace",
-      },
-    };
-    const ff = FONT_FAMILIES[fonts] || FONT_FAMILIES.default;
-    root.style.setProperty('--font-display', ff.display);
-    root.style.setProperty('--font-body', ff.body);
-    root.style.setProperty('--font-mono', ff.mono);
-
-    // Font sizes
-    const fs = config.fontSizes || {};
-    if (fs.sectionTitle) root.style.setProperty('--fs-section-title', `${fs.sectionTitle}px`);
-    if (fs.sectionSubtitle)
-      root.style.setProperty('--fs-section-subtitle', `${fs.sectionSubtitle}px`);
-    if (fs.metricValue) root.style.setProperty('--fs-metric-value', `${fs.metricValue}px`);
-    if (fs.metricValueSm) root.style.setProperty('--fs-metric-value-sm', `${fs.metricValueSm}px`);
-    if (fs.metricLabel) root.style.setProperty('--fs-metric-label', `${fs.metricLabel}px`);
-    if (fs.serviceName) root.style.setProperty('--fs-service-name', `${fs.serviceName}px`);
-    if (fs.serviceStatValue)
-      root.style.setProperty('--fs-service-stat-value', `${fs.serviceStatValue}px`);
-    if (fs.serviceStatLabel)
-      root.style.setProperty('--fs-service-stat-label', `${fs.serviceStatLabel}px`);
-  }, [
-    config.accentColor,
-    config.bgOpacity,
-    config.overlayOpacity,
-    config.fontFamily,
-    config.fontSizes,
-  ]);
-
-  // Dynamic webfont loading.
-  // global.css no longer eagerly @imports every alternate family (that pulled
-  // all 11 webfonts on first paint). The 3 DEFAULT families (Outfit / DM Sans /
-  // JetBrains Mono) ship via the index.html <link>. Here we lazily inject a
-  // Google Fonts stylesheet for the selected non-default family — once, and only
-  // when it's actually chosen — so the Typography setting still works.
-  // 'default' and 'system' need nothing ('system' uses native system-ui stacks).
-  // The family list/weights mirror the FONT_FAMILIES map above.
-  useEffect(() => {
-    const fonts = config.fontFamily || 'default';
-    const FONT_WEBFONTS = {
-      clean: 'family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500',
-      rounded: 'family=Nunito:wght@300;400;500;600;700;800&family=Source+Code+Pro:wght@400;500',
-      sharp:
-        'family=Rajdhani:wght@400;500;600;700&family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500',
-    };
-    const spec = FONT_WEBFONTS[fonts];
-    if (!spec) return; // 'default' (preloaded) and 'system' (no webfont) need nothing
-    const id = `jaghelm-font-${fonts}`;
-    if (document.getElementById(id)) return; // idempotent — inject each family once
-    const link = document.createElement('link');
-    link.id = id;
-    link.rel = 'stylesheet';
-    link.href = `https://fonts.googleapis.com/css2?${spec}&display=swap`;
-    document.head.appendChild(link);
-  }, [config.fontFamily]);
-
-  // Card blur override
-  useEffect(() => {
-    const root = document.documentElement;
-    const blur = config.cardBlur;
-    if (blur && blur !== 'none') {
-      const blurMap = { sm: '4px', md: '12px', lg: '24px' };
-      root.style.setProperty('--glass-blur', blurMap[blur] || '24px');
-    }
-    // When 'none' or unset, don't override — let theme default handle it
-  }, [config.cardBlur]);
+  // Apply config to the document as CSS custom properties + lazy webfont
+  // injection (accent/opacity/font family/font sizes/blur). Extracted to a hook.
+  useThemeVars(config);
 
   const intervalMs = (config.refreshInterval || 30) * 1000;
   const doRefresh = useCallback(() => {

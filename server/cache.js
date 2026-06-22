@@ -74,3 +74,28 @@ export function jsonWithEtag(res, req, cacheKey, data) {
   res.set('Content-Type', 'application/json');
   res.send(json);
 }
+
+/**
+ * Serve a warm-cached endpoint with a uniform cache-or-refresh-then-fallback
+ * contract: return the cached value (ETag/304) if present; otherwise run the
+ * cold-start refresh and serve its result (ETag/304); otherwise hand off to
+ * the caller's fallback (e.g. an apiError or an empty body).
+ *
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {object} opts
+ * @param {string} opts.key            cache key (also the ETag key)
+ * @param {() => Promise<*>} opts.refresh  cold-start refresh; returns the
+ *   payload or a falsy value if data isn't available yet.
+ * @param {(res: import('express').Response) => *} opts.fallback  invoked when
+ *   neither the cache nor the refresh produced data.
+ */
+export async function respondWarmCached(req, res, { key, refresh, fallback }) {
+  const cached = getCached(key);
+  if (cached) return jsonWithEtag(res, req, key, cached);
+
+  const data = await refresh();
+  if (data) return jsonWithEtag(res, req, key, data);
+
+  return fallback(res);
+}

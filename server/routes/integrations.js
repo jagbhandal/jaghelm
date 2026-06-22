@@ -20,7 +20,7 @@ import { setSecret } from '../secrets.js';
 import { getPreset, listPresets } from '../integrations/registry.js';
 import { fetchIntegration, testIntegration } from '../integrations/handler.js';
 import { refreshIntegrations } from '../refresh.js';
-import { getCached, jsonWithEtag } from '../cache.js';
+import { respondWarmCached } from '../cache.js';
 import { apiError } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { createRateLimiter } from '../util/rateLimiter.js';
@@ -65,15 +65,13 @@ router.get('/presets', (req, res) => {
 
 router.get(
   '/',
-  asyncHandler(async (req, res) => {
-    const cached = getCached('integrations');
-    if (cached) return jsonWithEtag(res, req, 'integrations', cached);
-
-    const data = await refreshIntegrations();
-    if (data) return jsonWithEtag(res, req, 'integrations', data);
-
-    res.json({});
-  })
+  asyncHandler((req, res) =>
+    respondWarmCached(req, res, {
+      key: 'integrations',
+      refresh: refreshIntegrations,
+      fallback: (r) => r.json({}),
+    })
+  )
 );
 
 // ── Test connection (creds in body, not stored) ──────────────────────────

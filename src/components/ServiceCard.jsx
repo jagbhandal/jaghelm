@@ -280,16 +280,6 @@ function BadgeArea({ service, statusStyle, statusColor, isUp, isDown, st, compac
   );
 }
 
-function InlineStat({ label, value }) {
-  if (value == null) return null;
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-      <span className="stat-label" style={{ fontSize: 9 }}>{label}</span>
-      <span className="stat-value" style={{ fontSize: 12 }}>{value}</span>
-    </div>
-  );
-}
-
 function CompactStats({ docker }) {
   const parts = [];
   if (docker.cpu != null) parts.push(`${docker.cpu}%`);

@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { HexColorPicker } from 'react-colorful';
+import React, { useState } from 'react';
 import IconPicker from '../IconPicker';
-import Field from './Field';
+import { FieldRow } from './Field';
+import { SettingsIcon } from './primitives.jsx';
+import ColorPickerPopover from './ColorPickerPopover.jsx';
 
 /**
  * NodesTab — Phase 2 Settings
@@ -17,7 +18,6 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
   const nodes = serverConfig?.nodes || {};
   const [editNode, setEditNode] = useState(null);
   const [colorPicking, setColorPicking] = useState(null);
-  const [colorValue, setColorValue] = useState('#6366f1');
 
   const updateNode = (nodeKey, field, value) => {
     const updated = {
@@ -47,14 +47,9 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
     updateNode(nodeKey, 'hide', [...current, item.trim()]);
   };
 
-  const openColor = (nodeKey) => {
-    setColorPicking(nodeKey);
-    setColorValue(nodes[nodeKey]?.border_color || '#6366f1');
-  };
-
-  const applyColor = () => {
+  const applyColor = (color) => {
     if (colorPicking) {
-      updateNode(colorPicking, 'border_color', colorValue);
+      updateNode(colorPicking, 'border_color', color);
       setColorPicking(null);
     }
   };
@@ -73,16 +68,11 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
 
       {colorPicking && (
         <div style={{ marginBottom: 20, padding: 16, background: 'var(--bg-card-inner)', borderRadius: 14, border: '1px solid var(--border-color)' }}>
-          <HexColorPicker color={colorValue} onChange={setColorValue} style={{ width: '100%', height: 150 }} />
-          <div className="settings-actions">
-            <input
-              className="settings-input mono flex-1"
-              value={colorValue}
-              onChange={e => setColorValue(e.target.value)}
-            />
-            <button className="settings-btn-primary" onClick={applyColor} style={{ background: colorValue }}>Apply</button>
-            <button className="settings-btn-sm" onClick={() => setColorPicking(null)}>Cancel</button>
-          </div>
+          <ColorPickerPopover
+            value={nodes[colorPicking]?.border_color || '#6366f1'}
+            onApply={applyColor}
+            onCancel={() => setColorPicking(null)}
+          />
         </div>
       )}
 
@@ -103,9 +93,7 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
               className="settings-checkbox"
             />
             <span style={{ fontSize: 22, display: 'inline-flex', alignItems: 'center' }}>
-              {(node.icon && (node.icon.startsWith('http') || node.icon.startsWith('/')))
-                ? <img src={node.icon} alt="" style={{ width: 24, height: 24, borderRadius: 4 }} onError={e => { e.target.style.display = 'none'; }} />
-                : (node.icon || '🖥')}
+              <SettingsIcon value={node.icon} fallback="🖥" size={24} />
             </span>
             <div className="flex-1">
               <div className="settings-item-title" style={{ fontSize: 15 }}>
@@ -118,7 +106,7 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
             <div
               className="settings-color-swatch"
               style={{ width: 26, height: 26, borderRadius: 6, background: node.border_color || '#6366f1' }}
-              onClick={() => openColor(key)}
+              onClick={() => setColorPicking(key)}
               title="Border color"
             />
             <button
@@ -215,11 +203,6 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
       )}
     </div>
   );
-}
-
-// Row-style field; delegates to the shared Field for the label/htmlFor wiring.
-function FieldRow({ label, children }) {
-  return <Field layout="row" label={label}>{children}</Field>;
 }
 
 function AddChip({ onAdd, placeholder }) {

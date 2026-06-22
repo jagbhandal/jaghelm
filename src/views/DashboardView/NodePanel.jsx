@@ -3,6 +3,7 @@ import NodeCard from '../../components/NodeCard';
 import DroppablePanel from '../../components/DroppablePanel';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { ProxmoxVMList, ProxmoxStoragePools, ProxmoxBackupStatus } from './ProxmoxPanels';
+import { toServiceCard } from './serviceCard';
 
 /**
  * Builds the metric tiles displayed on a NodeCard from the raw node payload.
@@ -97,18 +98,7 @@ export default function NodePanel({
 
   const services = (node.services || [])
     .filter((s) => !claimedContainers.has(`${nodeKey}:${s.container}`))
-    .map((s) => ({
-      name: s.display_name,
-      container: s.container,
-      uid: `${nodeKey}:${s.container}`,
-      node: nodeKey,
-      status: s.status,
-      uptime: s.uptime24,
-      ping: s.ping,
-      icon: s.icon,
-      docker: s.docker,
-      appData: appDataByContainer[s.container] || null,
-    }));
+    .map((s) => toServiceCard(nodeKey, s, appDataByContainer));
 
   // Proxmox-specific child panels — only render when this is the PVE node
   const isPve = nodeKey === 'pve';

@@ -1,7 +1,8 @@
 import React from 'react';
 import { cachedIconUrl } from '../../../hooks/useData';
 import { AUTH_LABELS, AUTH_FIELDS } from './constants.js';
-import FieldGroup from './FieldGroup.jsx';
+import { FieldRow as FieldGroup } from '../Field';
+import { presetIconUrl } from '../primitives.jsx';
 
 /**
  * ConfigView — the config form. Used for both create (preset or custom) and
@@ -55,7 +56,7 @@ export default function ConfigView({
       <div className="settings-row" style={{ gap: 14, marginBottom: 24 }}>
         {isPreset && (
           <img
-            src={cachedIconUrl(`https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${selectedPreset.icon}.svg`)}
+            src={cachedIconUrl(presetIconUrl(selectedPreset.icon))}
             alt=""
             style={{ width: 40, height: 40, borderRadius: 10 }}
             onError={e => { e.target.style.display = 'none'; }}

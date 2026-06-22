@@ -2,43 +2,7 @@ import React from 'react';
 import { getServiceIcon, cachedIconUrl } from '../hooks/useData';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { safeUrl } from '../utils/safeUrl.js';
-
-// Shared: render icon (URL, slug, or emoji).
-// Alternation (not a character class) so ZWJ (\u200d) and variation selector
-// (\ufe0f) read as repeatable join tokens rather than combining marks on a
-// base char \u2014 what no-misleading-character-class flags. Same matches as before.
-function isEmoji(str) {
-  return (
-    str &&
-    !str.startsWith('http') &&
-    !str.startsWith('/') &&
-    /^(?:\p{Emoji}|\u200d|\ufe0f)+$/u.test(str)
-  );
-}
-
-function renderIcon(icon) {
-  if (!icon) return null;
-  if (icon.startsWith('http') || icon.startsWith('/')) {
-    return <img src={cachedIconUrl(icon) || icon} alt="" className="icon-img" />;
-  }
-  if (isEmoji(icon)) {
-    return <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>;
-  }
-  // Treat as a Dashboard Icons slug
-  const url = cachedIconUrl(
-    `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`
-  );
-  return (
-    <img
-      src={url}
-      alt=""
-      className="icon-img"
-      onError={(e) => {
-        e.target.style.display = 'none';
-      }}
-    />
-  );
-}
+import { renderIcon } from '../utils/icon.jsx';
 
 // Shared: compute background style from section config
 function sectionBgStyle(sec) {
