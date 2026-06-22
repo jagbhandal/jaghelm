@@ -40,24 +40,46 @@ export function isEmoji(str) {
 }
 
 /**
+ * iconImageSrc — resolve an icon value to an <img> src, or null when it should
+ * render as text (an emoji / bare glyph) or is empty.
+ *
+ * - full URL (http… or a leading "/") → routed through the local cache proxy
+ * - a Dashboard Icons slug ("gitea") or a filename ("gitea.svg") → the CDN slug
+ *   URL (lower-cased, image extension stripped, so "Gitea" and "gitea.svg" both
+ *   resolve to the gitea icon)
+ * - emoji / empty → null (the caller renders it as text)
+ *
+ * This is the single source of truth every renderer shares (renderIcon,
+ * NodeCard, SettingsIcon, LinksTab) so a bare slug can never be printed as text.
+ *
+ * @param {string} value
+ * @returns {string|null}
+ */
+export function iconImageSrc(value) {
+  if (!value || typeof value !== 'string') return null;
+  if (value.startsWith('http') || value.startsWith('/')) {
+    return cachedIconUrl(value) || value;
+  }
+  if (isEmoji(value)) return null;
+  const slug = value.toLowerCase().replace(/\.(svg|png|webp|jpe?g)$/, '');
+  return cachedIconUrl(iconSlugUrl(slug)) || iconSlugUrl(slug);
+}
+
+/**
  * renderIcon — render an icon value (URL, slug, or emoji) as a React node.
  *
  * @param {string} icon
  * @returns {React.ReactNode}
  */
 export function renderIcon(icon) {
-  if (!icon) return null;
-  if (icon.startsWith('http') || icon.startsWith('/')) {
-    return <img src={cachedIconUrl(icon) || icon} alt="" className="icon-img" />;
-  }
   if (isEmoji(icon)) {
     return <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>;
   }
-  // Treat as a Dashboard Icons slug
-  const url = cachedIconUrl(iconSlugUrl(icon));
+  const src = iconImageSrc(icon);
+  if (!src) return null;
   return (
     <img
-      src={url}
+      src={src}
       alt=""
       className="icon-img"
       onError={(e) => {

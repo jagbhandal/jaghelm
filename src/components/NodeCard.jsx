@@ -1,9 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import DraggableServiceCard from './DraggableServiceCard';
-import { cachedIconUrl } from '../hooks/useData';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { usageSeverity, cardSeverity, severityColor, severityLabel } from '../utils/thresholds.js';
-import { isEmoji } from '../utils/icon.jsx';
+import { isEmoji, iconImageSrc } from '../utils/icon.jsx';
 import Sparkline from './Sparkline';
 
 /**
@@ -122,22 +121,11 @@ export default React.memo(function NodeCard({
               border: `1px solid ${borderColor || 'var(--accent)'}30`,
             }}
           >
-            {icon.startsWith('http') || icon.startsWith('/') ? (
-              <img
-                src={cachedIconUrl(icon) || icon}
-                alt=""
-                className="icon-img"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                }}
-              />
-            ) : isEmoji(icon) ? (
+            {isEmoji(icon) ? (
               <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>
             ) : (
               <img
-                src={cachedIconUrl(
-                  `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`
-                )}
+                src={iconImageSrc(icon)}
                 alt=""
                 className="icon-img"
                 onError={(e) => {

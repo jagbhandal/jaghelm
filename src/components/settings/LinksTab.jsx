@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import IconPicker from '../IconPicker';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { useConfirm } from '../../context/OverlayContext.jsx';
-import { Card } from './primitives.jsx';
+import { Card, SettingsIcon } from './primitives.jsx';
 
 const DEFAULT_GROUPS = ['personal', 'management', 'devops'];
 
@@ -178,17 +178,7 @@ export default function LinksTab() {
                       onClick={() => setEditingLink({ group, index: i })}
                     >
                       <span style={{ fontSize: 18, width: 24, textAlign: 'center', flexShrink: 0 }}>
-                        {link.icon &&
-                        (link.icon.startsWith('http') || link.icon.startsWith('/')) ? (
-                          <img
-                            src={link.icon}
-                            alt=""
-                            className="icon-img-sm"
-                            style={{ width: 20, height: 20 }}
-                          />
-                        ) : (
-                          link.icon || '🔗'
-                        )}
+                        <SettingsIcon value={link.icon} fallback="🔗" size={20} />
                       </span>
                       <span className="flex-1" style={{ fontSize: 14, fontWeight: 500 }}>
                         {link.name}
