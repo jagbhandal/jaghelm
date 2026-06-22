@@ -1,6 +1,5 @@
 import React from 'react';
-import { cachedIconUrl } from '../../../hooks/useData';
-import { presetIconUrl } from '../primitives.jsx';
+import { iconImageSrc } from '../../../utils/icon.jsx';
 
 /**
  * HomeView — list of configured integrations + entry points for adding new ones.
@@ -74,7 +73,7 @@ export default function HomeView({
               }}>
                 {/* Icon */}
                 <img
-                  src={cachedIconUrl(presetIconUrl(preset?.icon || presetType))}
+                  src={iconImageSrc(preset?.icon || presetType)}
                   alt=""
                   style={{ width: 28, height: 28, borderRadius: 6 }}
                   onError={e => { e.target.style.display = 'none'; }}

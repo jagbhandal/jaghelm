@@ -1,8 +1,7 @@
 import React from 'react';
-import { cachedIconUrl } from '../../../hooks/useData';
+import { iconImageSrc } from '../../../utils/icon.jsx';
 import { AUTH_LABELS, AUTH_FIELDS } from './constants.js';
 import { FieldRow as FieldGroup } from '../Field';
-import { presetIconUrl } from '../primitives.jsx';
 
 /**
  * ConfigView — the config form. Used for both create (preset or custom) and
@@ -56,7 +55,7 @@ export default function ConfigView({
       <div className="settings-row" style={{ gap: 14, marginBottom: 24 }}>
         {isPreset && (
           <img
-            src={cachedIconUrl(presetIconUrl(selectedPreset.icon))}
+            src={iconImageSrc(selectedPreset.icon)}
             alt=""
             style={{ width: 40, height: 40, borderRadius: 10 }}
             onError={e => { e.target.style.display = 'none'; }}

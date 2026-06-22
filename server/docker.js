@@ -60,15 +60,15 @@ export async function getDockerContainers() {
     for (const r of cpuR?.data?.result || []) {
       const name = r.metric?.name;
       if (name && containers[name]) {
-        containers[name].cpu = r.value?.[1] ? parseFloat(parseFloat(r.value[1]).toFixed(1)) : null;
+        containers[name].cpu =
+          r.value?.[1] != null ? parseFloat(parseFloat(r.value[1]).toFixed(1)) : null;
       }
     }
     for (const r of memR?.data?.result || []) {
       const name = r.metric?.name;
       if (name && containers[name]) {
-        containers[name].memMB = r.value?.[1]
-          ? parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1))
-          : null;
+        containers[name].memMB =
+          r.value?.[1] != null ? parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1)) : null;
       }
     }
 

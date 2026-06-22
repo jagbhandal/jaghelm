@@ -31,12 +31,13 @@ function fillCreds(value, username, password) {
  */
 function buildLoginBody(session, config) {
   const contentType = session.loginContentType || 'application/json';
-  if (contentType === 'application/x-www-form-urlencoded') {
-    return (typeof session.loginBody === 'string' ? session.loginBody : '')
-      .replace('{username}', encodeURIComponent(config._username || ''))
-      .replace('{password}', encodeURIComponent(config._password || ''));
-  }
-  return JSON.stringify(fillCreds(session.loginBody, config._username || '', config._password || ''));
+  const body =
+    contentType === 'application/x-www-form-urlencoded'
+      ? (typeof session.loginBody === 'string' ? session.loginBody : '')
+          .replace('{username}', encodeURIComponent(config._username || ''))
+          .replace('{password}', encodeURIComponent(config._password || ''))
+      : JSON.stringify(fillCreds(session.loginBody, config._username || '', config._password || ''));
+  return { body, contentType };
 }
 
 // Session-auth token cache — key: baseUrl + loginEndpoint, value:
@@ -133,13 +134,12 @@ export async function fetchWithSession(config) {
 
 /** Login and return token info (without fetching data). */
 async function doSessionLogin(config, session, baseUrl, skipTls) {
-  const contentType = session.loginContentType || 'application/json';
-  const loginBody = buildLoginBody(session, config);
+  const { body, contentType } = buildLoginBody(session, config);
 
   const loginRes = await safeFetch(`${baseUrl}${session.loginEndpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': contentType },
-    body: loginBody,
+    body,
   }, skipTls);
 
   if (!loginRes.ok) {
@@ -193,13 +193,12 @@ async function fetchWithToken(tokenInfo, config, baseUrl, skipTls) {
  */
 export async function testSessionAuth(config, session, baseUrl, skipTls) {
   try {
-    const contentType = session.loginContentType || 'application/json';
-    const loginBody = buildLoginBody(session, config);
+    const { body, contentType } = buildLoginBody(session, config);
 
     const res = await safeFetch(`${baseUrl}${session.loginEndpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': contentType },
-      body: loginBody,
+      body,
     }, skipTls);
 
     if (!res.ok) return { ok: false, error: `Login failed: HTTP ${res.status}` };

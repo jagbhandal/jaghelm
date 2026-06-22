@@ -77,18 +77,6 @@ export function ChoiceGroup({ value, options, onChange, ariaLabel }) {
 }
 
 /**
- * Build a Dashboard Icons CDN URL for a preset icon key.
- *
- * Single source of truth for the icon CDN base. Uses the maintained
- * homarr-labs/dashboard-icons repo (the walkxcode/dashboard-icons base the
- * IntegrationsTab views used to inline is deprecated/read-only). Callers wrap
- * the result in cachedIconUrl() so it's proxied through the local icon cache.
- */
-export function presetIconUrl(iconKey) {
-  return `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${iconKey}.svg`;
-}
-
-/**
  * SettingsIcon — renders an icon value (URL, Dashboard Icons slug/filename, or
  * emoji). A URL or slug resolves to an <img> via the shared iconImageSrc(); an
  * emoji/bare glyph renders as text. When `value` is empty the `fallback` glyph
