@@ -2,7 +2,7 @@ import React from 'react';
 import { getServiceIcon, cachedIconUrl } from '../hooks/useData';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { safeUrl } from '../utils/safeUrl.js';
-import { renderIcon } from '../utils/icon.jsx';
+import { renderIcon, iconSlugUrl } from '../utils/icon.jsx';
 
 // Shared: compute background style from section config
 function sectionBgStyle(sec) {
@@ -424,13 +424,11 @@ export const CronJobs = React.memo(function CronJobs({ nodes, banner }) {
   );
 });
 
-const CDN_BASE = 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg';
-
 // Resolve best icon URL for a quick launch link
 function resolveQuickLinkIcon(link) {
   // 1. If link has an icon field that looks like a CDN slug, use it directly
   if (link.icon && /^[a-z0-9-]+$/i.test(link.icon)) {
-    return cachedIconUrl(`${CDN_BASE}/${link.icon.toLowerCase()}.svg`);
+    return cachedIconUrl(iconSlugUrl(link.icon.toLowerCase()));
   }
   // 2. If link.icon is a full URL, route through cache
   if (link.icon && (link.icon.startsWith('http') || link.icon.startsWith('/'))) {
@@ -441,7 +439,7 @@ function resolveQuickLinkIcon(link) {
   if (mapped) return mapped;
   // 4. Try the link name directly as a CDN slug
   const slug = (link.name || '').toLowerCase().replace(/\s+/g, '-');
-  if (slug) return cachedIconUrl(`${CDN_BASE}/${slug}.svg`);
+  if (slug) return cachedIconUrl(iconSlugUrl(slug));
   return null;
 }
 

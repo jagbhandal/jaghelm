@@ -89,6 +89,25 @@ async function fetchJson(url, skipEtag = false) {
   return body;
 }
 
+/**
+ * Send a request and parse its JSON body, but FAIL on a non-2xx status.
+ *
+ * The hand-rolled mutators (saveTodos, the integration POST/DELETE helpers) used
+ * to call r.json() unconditionally: a failed save was silently swallowed, and a
+ * non-2xx HTML/error body threw an opaque JSON-parse error instead of a clear
+ * "HTTP 500". This mirrors the r.ok check fetchJson already does for reads, so
+ * every fetcher in this module surfaces a real failure the same way.
+ *
+ * A 204 (or any empty body) resolves to null rather than throwing on parse.
+ */
+async function requestJson(url, opts) {
+  const r = await apiFetch(url, opts);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  if (r.status === 204) return null;
+  const text = await r.text();
+  return text ? JSON.parse(text) : null;
+}
+
 // ══════════════════════════════════════════════════════════════
 // Phase 1: Unified service data
 // ══════════════════════════════════════════════════════════════
@@ -130,24 +149,21 @@ export async function getIntegrationPresets() {
   return fetchJson(`${BASE}/integrations/presets`);
 }
 export async function testIntegration(data) {
-  const r = await apiFetch(`${BASE}/integrations/test`, {
+  return requestJson(`${BASE}/integrations/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  return r.json();
 }
 export async function saveIntegration(data) {
-  const r = await apiFetch(`${BASE}/integrations/save`, {
+  return requestJson(`${BASE}/integrations/save`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  return r.json();
 }
 export async function deleteIntegration(type) {
-  const r = await apiFetch(`${BASE}/integrations/${type}`, { method: 'DELETE' });
-  return r.json();
+  return requestJson(`${BASE}/integrations/${type}`, { method: 'DELETE' });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -172,7 +188,10 @@ export async function getTodos() {
   return r.json();
 }
 export async function saveTodos(todos) {
-  await apiFetch(`${BASE}/todos`, {
+  // Route through requestJson so a failed save REJECTS (was silently swallowed:
+  // the old code awaited the fetch but never checked r.ok, so a 500 looked like
+  // a successful save). Caller awaits for completion only; no body is returned.
+  await requestJson(`${BASE}/todos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(todos),
@@ -291,9 +310,18 @@ export const SERVICE_ICONS = {
   jaghelm: '/logo.svg',
 };
 
+// SERVICE_ICONS entries sorted by key length DESCENDING. getServiceIcon does a
+// substring match, so a shorter key can shadow a longer, more-specific one if we
+// iterate in insertion order (e.g. "nas" would match "synology-nas"/"nasa"
+// before "synology" ever gets a chance). Matching the LONGEST key first makes the
+// result independent of object-literal order and picks the most specific icon.
+const SERVICE_ICONS_BY_KEY_LENGTH = Object.entries(SERVICE_ICONS).sort(
+  ([a], [b]) => b.length - a.length
+);
+
 export function getServiceIcon(name) {
   const lower = (name || '').toLowerCase();
-  for (const [key, url] of Object.entries(SERVICE_ICONS)) {
+  for (const [key, url] of SERVICE_ICONS_BY_KEY_LENGTH) {
     if (lower.includes(key)) return cachedIconUrl(url);
   }
   return null;

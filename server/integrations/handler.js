@@ -117,10 +117,28 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
           return { key: ep.key, data: await epRes.json() };
         })
       );
-      rawData._extra = {};
-      for (const r of extraResults) {
-        if (r.status === 'fulfilled' && r.value) {
-          rawData._extra[r.value.key] = r.value.data;
+      // Only attach _extra when rawData is a mutable object. A primary endpoint
+      // that returns a bare array or a primitive would otherwise either throw
+      // (primitive) or mis-attach a non-enumerable-ish prop onto an array.
+      if (rawData && typeof rawData === 'object') {
+        rawData._extra = {};
+        for (const r of extraResults) {
+          if (r.status === 'fulfilled' && r.value) {
+            rawData._extra[r.value.key] = r.value.data;
+          } else if (r.status === 'rejected') {
+            // A failing extra sub-fetch used to vanish silently. Surface it with
+            // a REDACTED reason — query-auth presets embed the API key in the URL
+            // and fetch/undici errors echo the full URL, so never log it raw.
+            log.warn({ type, reason: redactError(r.reason) }, 'extra endpoint fetch failed');
+          }
+        }
+      } else {
+        // rawData isn't an object we can hang _extra off of; still don't lose
+        // the diagnostics for any rejected sub-fetch.
+        for (const r of extraResults) {
+          if (r.status === 'rejected') {
+            log.warn({ type, reason: redactError(r.reason) }, 'extra endpoint fetch failed');
+          }
         }
       }
     }

@@ -37,17 +37,27 @@ export default function App() {
     if (stored) document.documentElement.setAttribute('data-theme', stored);
   }, []);
 
-  // Check auth on mount
+  // Check auth on mount.
+  //
+  // Fail CLOSED: if the check itself fails (network error / non-2xx), we cannot
+  // know whether auth is disabled, so we must NOT render the authenticated shell
+  // (every data call would just 401). Treat a failed check as "auth required,
+  // not authenticated" → show the login gate. A *successful* check that reports
+  // `authRequired:false` is the only way to bypass login. The normal happy paths
+  // (200 with authRequired/authenticated flags) are preserved exactly.
   useEffect(() => {
     apiFetch('/api/auth/check')
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((d) => {
         setAuthRequired(d.authRequired);
         setAuthed(d.authenticated);
       })
       .catch(() => {
-        setAuthRequired(false);
-        setAuthed(true);
+        setAuthRequired(true);
+        setAuthed(false);
       });
   }, [authToken]);
 

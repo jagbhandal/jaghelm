@@ -16,6 +16,9 @@ const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
 const sessions = new Map();
 
+// .unref() so this housekeeping timer never keeps the process alive on its own
+// (lets the process — and route tests that import the app — exit cleanly).
+// Mirrors the cleanup timer in rateLimit.js.
 setInterval(() => {
   const now = Date.now();
   for (const [token, entry] of sessions) {
@@ -23,7 +26,7 @@ setInterval(() => {
       sessions.delete(token);
     }
   }
-}, CLEANUP_INTERVAL_MS);
+}, CLEANUP_INTERVAL_MS).unref();
 
 /** Create a new session for `user` and return the token. */
 export function createSession(user) {
@@ -60,4 +63,9 @@ export function deleteAllSessionsExcept(keepToken) {
   for (const token of sessions.keys()) {
     if (token !== keepToken) sessions.delete(token);
   }
+}
+
+// Test seam: drop all sessions between cases to isolate state.
+export function _resetAllSessions() {
+  sessions.clear();
 }

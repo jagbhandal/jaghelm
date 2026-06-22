@@ -418,11 +418,7 @@ export default function SectionsTab() {
                     </span>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
                       {allContainers
-                        .filter((c) => !group.containers.includes(c.container))
-                        .filter(
-                          (c) =>
-                            !claimedSet.has(c.container) || group.containers.includes(c.container)
-                        )
+                        .filter((c) => !claimedSet.has(c.container))
                         .map((c) => (
                           <button
                             key={c.container}

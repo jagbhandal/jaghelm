@@ -4,6 +4,22 @@ import { cachedIconUrl } from '../hooks/useData';
 // Shared icon helpers: detect emoji strings and render an icon value
 // (URL, Dashboard Icons slug, or emoji) as a React node.
 
+// Canonical Dashboard Icons CDN base. The repo moved from walkxcode to
+// homarr-labs; pin every slug URL here so all call sites resolve the same
+// way (avoids slug 404s where one base lags behind the other).
+export const ICON_CDN_BASE =
+  'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg';
+
+/**
+ * iconSlugUrl — build the Dashboard Icons SVG URL for a slug.
+ *
+ * @param {string} slug
+ * @returns {string}
+ */
+export function iconSlugUrl(slug) {
+  return `${ICON_CDN_BASE}/${slug}.svg`;
+}
+
 /**
  * isEmoji — true when the string is a bare emoji (not a URL or path).
  *
@@ -38,9 +54,7 @@ export function renderIcon(icon) {
     return <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>;
   }
   // Treat as a Dashboard Icons slug
-  const url = cachedIconUrl(
-    `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`
-  );
+  const url = cachedIconUrl(iconSlugUrl(icon));
   return (
     <img
       src={url}

@@ -47,6 +47,12 @@ export function migrateLayouts(layouts) {
   let changed = false;
 
   for (const [bp, items] of Object.entries(layouts)) {
+    // De-dupe `i` per breakpoint, keeping the FIRST occurrence. Renaming a
+    // legacy key (e.g. "gateway" → "node-gateway") can collide with an already-
+    // migrated "node-gateway" already present in the saved layout, producing two
+    // grid items with the same `i`. react-grid-layout keys on `i`, so the
+    // duplicate would drop/overlap a panel. Drop the later duplicate here.
+    const seen = new Set();
     migrated[bp] = items
       .map((item) => {
         const newKey = LEGACY_KEY_MAP[item.i];
@@ -61,6 +67,11 @@ export function migrateLayouts(layouts) {
           changed = true;
           return false;
         }
+        if (seen.has(item.i)) {
+          changed = true;
+          return false;
+        }
+        seen.add(item.i);
         return true;
       });
   }

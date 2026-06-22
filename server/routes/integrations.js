@@ -129,8 +129,17 @@ router.post('/save', (req, res) => {
   const storageKey = instance ? `${type}_${instance}` : type;
 
   try {
-    if (password) setSecret(`integration_${storageKey}_password`, password);
-    if (token) setSecret(`integration_${storageKey}_token`, token);
+    // setSecret returns false when the secrets manager is uninitialized (no
+    // DASH_SECRET). Writing entry.password="$secret:…" anyway would persist a
+    // config pointing at a credential that was never stored — the integration
+    // silently has no credential and fails later with no save-time error. Surface
+    // it as a 500 now, matching the standalone secrets route.
+    if (password && !setSecret(`integration_${storageKey}_password`, password)) {
+      return apiError(res, 500, 'Secrets manager not initialized (DASH_SECRET missing?)');
+    }
+    if (token && !setSecret(`integration_${storageKey}_token`, token)) {
+      return apiError(res, 500, 'Secrets manager not initialized (DASH_SECRET missing?)');
+    }
 
     const entry = {
       url: cleanUrl,
@@ -160,7 +169,9 @@ router.post('/save', (req, res) => {
     }
 
     config.integrations[storageKey] = entry;
-    saveConfig(config);
+    // saveConfig returns false on a write failure (or a reentrant save) — surface
+    // that as a 500 instead of reporting success, matching services.js POST /config.
+    if (!saveConfig(config)) return apiError(res, 500, 'Failed to persist config');
 
     res.json({ ok: true, type: storageKey });
   } catch (err) {
@@ -178,7 +189,9 @@ router.delete('/:type', (req, res) => {
   }
 
   delete config.integrations[type];
-  saveConfig(config);
+  // saveConfig returns false on a write failure (or a reentrant save) — surface
+  // that as a 500 instead of reporting success, matching services.js POST /config.
+  if (!saveConfig(config)) return apiError(res, 500, 'Failed to persist config');
   res.json({ ok: true });
 });
 

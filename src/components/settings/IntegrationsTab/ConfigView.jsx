@@ -18,9 +18,9 @@ import { presetIconUrl } from '../primitives.jsx';
  *   saveStatus      — null | 'saving' | 'saved' | { error }
  *   handleTest      — () => Promise<void>
  *   handleSave      — () => Promise<void>
- *   handleDelete    — (storageKey) => Promise<void>
+ *   handleDelete    — (storageKey) => Promise<boolean> (true only on confirmed success)
  *   onBack          — () => void
- *   onAfterDelete   — () => void (typically goHome)
+ *   onAfterDelete   — () => void (typically goHome); called only when delete succeeds
  */
 export default function ConfigView({
   selectedPreset,
@@ -243,7 +243,7 @@ export default function ConfigView({
           {isEditing && (
             <button
               className="settings-btn-danger"
-              onClick={() => { handleDelete(editingType); onAfterDelete(); }}
+              onClick={async () => { if (await handleDelete(editingType)) onAfterDelete(); }}
               style={{ padding: '8px 20px', marginLeft: 'auto' }}
             >
               🗑 Delete

@@ -69,14 +69,19 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
     onSave({ ...serverConfig, services: updatedServices });
   };
 
+  // Hide rules match a container by its EXACT name (case-insensitive), not a
+  // substring — otherwise hiding "redis" would also hide "redis-backup" and
+  // un-hiding it would strip every rule whose name is a substring of this one.
+  const matchesHide = (containerName, h) => h.toLowerCase() === containerName.toLowerCase();
+
   const toggleHide = (nodeKey, containerName) => {
     const node = serverConfig.nodes?.[nodeKey];
     if (!node) return;
     const hideList = node.hide || [];
-    const isHidden = hideList.some((h) => containerName.toLowerCase().includes(h.toLowerCase()));
+    const isHidden = hideList.some((h) => matchesHide(containerName, h));
     let updated;
     if (isHidden) {
-      updated = hideList.filter((h) => !containerName.toLowerCase().includes(h.toLowerCase()));
+      updated = hideList.filter((h) => !matchesHide(containerName, h));
     } else {
       updated = [...hideList, containerName];
     }
@@ -91,7 +96,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
 
   const isHidden = (nodeKey, containerName) => {
     const hideList = serverConfig.nodes?.[nodeKey]?.hide || [];
-    return hideList.some((h) => containerName.toLowerCase().includes(h.toLowerCase()));
+    return hideList.some((h) => matchesHide(containerName, h));
   };
 
   return (

@@ -15,6 +15,47 @@ import { toServiceCard } from './serviceCard';
  *   - Disk tile only when the node reports filesystem stats; switches to TB > 1000 GB.
  *   - Uptime is always last.
  */
+// Proxmox structured fields are emitted only by the proxmox preset (see
+// server/refresh.js), so their presence is a reliable proxmox-integration marker.
+const PROXMOX_STRUCTURED_KEYS = ['_vms', '_storagePools', '_lastBackup'];
+
+/**
+ * Resolves which discovered node a proxmox integration entry belongs to.
+ *
+ * Drives off the integration's OWN data instead of a hardcoded node name:
+ *   - `_target` is a container uid ("node:container"); its node segment is the
+ *     node the operator scoped the integration to.
+ *   - With no `_target`, the preset itself defaults to the node named "pve"
+ *     (it extracts the node from VM data, falling back to "pve"), so we mirror
+ *     that default here to preserve the existing pve-named behavior.
+ */
+function proxmoxTargetNode(entry) {
+  if (entry?._target) return String(entry._target).split(':')[0];
+  return 'pve';
+}
+
+/**
+ * Finds the proxmox integration entry (if any) targeting `nodeKey` and returns
+ * its child-panel data. Scans every integration entry — a proxmox integration
+ * created with an instance name is keyed "proxmox_<instance>", not "proxmox",
+ * so keying off `integrationData.proxmox` alone silently dropped those.
+ */
+export function proxmoxChildrenForNode(integrationData, nodeKey) {
+  if (!integrationData) return null;
+  for (const entry of Object.values(integrationData)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const isProxmox = PROXMOX_STRUCTURED_KEYS.some((k) => entry[k] != null);
+    if (!isProxmox) continue;
+    if (proxmoxTargetNode(entry) !== nodeKey) continue;
+    return {
+      vms: entry._vms || null,
+      storage: entry._storagePools || null,
+      backup: entry._lastBackup || null,
+    };
+  }
+  return null;
+}
+
 function buildMetrics(node, tempUnit = 'F', nodeKey, history) {
   const m = node.metrics || {};
   const metrics = [];
@@ -100,11 +141,12 @@ export default function NodePanel({
     .filter((s) => !claimedContainers.has(`${nodeKey}:${s.container}`))
     .map((s) => toServiceCard(nodeKey, s, appDataByContainer));
 
-  // Proxmox-specific child panels — only render when this is the PVE node
-  const isPve = nodeKey === 'pve';
-  const proxmoxVms = isPve ? integrationData.proxmox?._vms : null;
-  const proxmoxStorage = isPve ? integrationData.proxmox?._storagePools : null;
-  const proxmoxBackup = isPve ? integrationData.proxmox?._lastBackup : null;
+  // Proxmox-specific child panels — render whenever a proxmox integration
+  // targets THIS node (by its own _target), not just a node literally named "pve".
+  const proxmox = proxmoxChildrenForNode(integrationData, nodeKey);
+  const proxmoxVms = proxmox?.vms || null;
+  const proxmoxStorage = proxmox?.storage || null;
+  const proxmoxBackup = proxmox?.backup || null;
 
   return (
     <div key={gridKey}>

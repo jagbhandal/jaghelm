@@ -219,7 +219,7 @@ async function _refreshUPS() {
         safeFetch(`${url}/api/v1/query?query=${encodeURIComponent(queryMap[k])}`)
           .then((r) => r.json())
           .then((d) =>
-            d?.data?.result?.[0]?.value?.[1] ? parseFloat(d.data.result[0].value[1]) : null
+            d?.data?.result?.[0]?.value?.[1] != null ? parseFloat(d.data.result[0].value[1]) : null
           )
           .catch(() => null)
       )

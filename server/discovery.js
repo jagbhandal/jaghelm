@@ -47,7 +47,7 @@ function scalar(results, matchLabels = {}) {
       ([k, v]) => r.metric?.[k] === v
     );
     if (match || Object.keys(matchLabels).length === 0) {
-      return r.value?.[1] ? parseFloat(r.value[1]) : null;
+      return r.value?.[1] != null ? parseFloat(r.value[1]) : null;
     }
   }
   return null;
@@ -120,7 +120,7 @@ export async function getNodeData(nodeLabel) {
     let maxSize = 0;
     let bestMount = null;
     for (const r of allDiskT) {
-      const val = r.value?.[1] ? parseFloat(r.value[1]) : 0;
+      const val = r.value?.[1] != null ? parseFloat(r.value[1]) : 0;
       if (val > maxSize) {
         maxSize = val;
         bestMount = r.metric?.mountpoint;
@@ -131,7 +131,7 @@ export async function getNodeData(nodeLabel) {
       // Find matching free bytes for the same mountpoint
       for (const r of allDiskF) {
         if (r.metric?.mountpoint === bestMount) {
-          diskFree = r.value?.[1] ? parseFloat(r.value[1]) : null;
+          diskFree = r.value?.[1] != null ? parseFloat(r.value[1]) : null;
           break;
         }
       }
@@ -193,25 +193,25 @@ export async function getNodeData(nodeLabel) {
   for (const r of cCpuR) {
     const name = r.metric?.name;
     const c = containerMap.get(name);
-    if (c && r.value?.[1]) c.docker.cpu = parseFloat(parseFloat(r.value[1]).toFixed(1));
+    if (c && r.value?.[1] != null) c.docker.cpu = parseFloat(parseFloat(r.value[1]).toFixed(1));
   }
   // Fill MEM
   for (const r of cMemR) {
     const name = r.metric?.name;
     const c = containerMap.get(name);
-    if (c && r.value?.[1]) c.docker.memMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
+    if (c && r.value?.[1] != null) c.docker.memMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
   }
   // Fill RX
   for (const r of cRxR) {
     const name = r.metric?.name;
     const c = containerMap.get(name);
-    if (c && r.value?.[1]) c.docker.rxMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
+    if (c && r.value?.[1] != null) c.docker.rxMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
   }
   // Fill TX
   for (const r of cTxR) {
     const name = r.metric?.name;
     const c = containerMap.get(name);
-    if (c && r.value?.[1]) c.docker.txMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
+    if (c && r.value?.[1] != null) c.docker.txMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
   }
 
   const containers = Array.from(containerMap.values());
