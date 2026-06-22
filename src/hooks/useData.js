@@ -1,4 +1,5 @@
 import { apiFetch } from '../api/client.js';
+import { iconSlugUrl } from '../utils/iconCdn.js';
 
 const BASE = '/api';
 
@@ -206,46 +207,46 @@ export const SEARCH_ENGINES = [
 ];
 
 export const SERVICE_ICONS = {
-  npm: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/nginx-proxy-manager.svg',
-  nginx: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/nginx-proxy-manager.svg',
-  adguard: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/adguard-home.svg',
-  photoprism: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/photoprism.svg',
-  photos: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/photoprism.svg',
-  vaultwarden: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/vaultwarden.svg',
-  vault: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/vaultwarden.svg',
-  gitea: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/gitea.svg',
-  nextcloud: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/nextcloud.svg',
-  cloud: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/nextcloud.svg',
-  grafana: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/grafana.svg',
-  proxmox: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/proxmox.svg',
-  dockge: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/dockge.svg',
-  uptime: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/uptime-kuma.svg',
-  kuma: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/uptime-kuma.svg',
-  code: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/vscode.svg',
-  'vs code': 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/vscode.svg',
-  cloudflare: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/cloudflare.svg',
-  tunnel: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/cloudflare.svg',
-  tailscale: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/tailscale.svg',
-  prometheus: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/prometheus.svg',
-  nas: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/nas.svg',
-  synology: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/synology.svg',
-  ugreen: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/nas.svg',
-  ntfy: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/ntfy.svg',
-  homebridge: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/homebridge.svg',
-  plex: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/plex.svg',
-  jellyfin: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/jellyfin.svg',
-  pihole: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/pi-hole.svg',
-  sonarr: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/sonarr.svg',
-  radarr: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/radarr.svg',
-  portainer: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/portainer.svg',
-  wireguard: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/wireguard.svg',
-  backrest: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/backrest.svg',
-  casaos: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/casaos.svg',
+  npm: 'nginx-proxy-manager',
+  nginx: 'nginx-proxy-manager',
+  adguard: 'adguard-home',
+  photoprism: 'photoprism',
+  photos: 'photoprism',
+  vaultwarden: 'vaultwarden',
+  vault: 'vaultwarden',
+  gitea: 'gitea',
+  nextcloud: 'nextcloud',
+  cloud: 'nextcloud',
+  grafana: 'grafana',
+  proxmox: 'proxmox',
+  dockge: 'dockge',
+  uptime: 'uptime-kuma',
+  kuma: 'uptime-kuma',
+  code: 'vscode',
+  'vs code': 'vscode',
+  cloudflare: 'cloudflare',
+  tunnel: 'cloudflare',
+  tailscale: 'tailscale',
+  prometheus: 'prometheus',
+  nas: 'nas',
+  synology: 'synology',
+  ugreen: 'nas',
+  ntfy: 'ntfy',
+  homebridge: 'homebridge',
+  plex: 'plex',
+  jellyfin: 'jellyfin',
+  pihole: 'pi-hole',
+  sonarr: 'sonarr',
+  radarr: 'radarr',
+  portainer: 'portainer',
+  wireguard: 'wireguard',
+  backrest: 'backrest',
+  casaos: 'casaos',
   collabora:
-    'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/collabora-online.svg',
-  watchtower: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/watchtower.svg',
-  nut: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/nut.svg',
-  homepage: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/homepage.svg',
+    'collabora-online',
+  watchtower: 'watchtower',
+  nut: 'nut',
+  homepage: 'homepage',
   jaghelm: '/logo.svg',
 };
 
@@ -260,8 +261,9 @@ const SERVICE_ICONS_BY_KEY_LENGTH = Object.entries(SERVICE_ICONS).sort(
 
 export function getServiceIcon(name) {
   const lower = (name || '').toLowerCase();
-  for (const [key, url] of SERVICE_ICONS_BY_KEY_LENGTH) {
-    if (lower.includes(key)) return cachedIconUrl(url);
+  for (const [key, slug] of SERVICE_ICONS_BY_KEY_LENGTH) {
+    // jaghelm is a local asset path; every other value is a Dashboard Icons slug.
+    if (lower.includes(key)) return cachedIconUrl(slug.startsWith('/') ? slug : iconSlugUrl(slug));
   }
   return null;
 }

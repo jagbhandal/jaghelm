@@ -15,10 +15,6 @@ import { toServiceCard } from './serviceCard';
  *   - Disk tile only when the node reports filesystem stats; switches to TB > 1000 GB.
  *   - Uptime is always last.
  */
-// Proxmox structured fields are emitted only by the proxmox preset (see
-// server/refresh.js), so their presence is a reliable proxmox-integration marker.
-const PROXMOX_STRUCTURED_KEYS = ['_vms', '_storagePools', '_lastBackup'];
-
 /**
  * Resolves which discovered node a proxmox integration entry belongs to.
  *
@@ -39,13 +35,16 @@ function proxmoxTargetNode(entry) {
  * its child-panel data. Scans every integration entry — a proxmox integration
  * created with an instance name is keyed "proxmox_<instance>", not "proxmox",
  * so keying off `integrationData.proxmox` alone silently dropped those.
+ *
+ * Identifies proxmox by the server-stamped `_preset` (refresh.js), not by
+ * sniffing output fields — so a future preset that happens to emit a `_vms`
+ * field can't be mistaken for proxmox.
  */
 export function proxmoxChildrenForNode(integrationData, nodeKey) {
   if (!integrationData) return null;
   for (const entry of Object.values(integrationData)) {
     if (!entry || typeof entry !== 'object') continue;
-    const isProxmox = PROXMOX_STRUCTURED_KEYS.some((k) => entry[k] != null);
-    if (!isProxmox) continue;
+    if (entry._preset !== 'proxmox') continue;
     if (proxmoxTargetNode(entry) !== nodeKey) continue;
     return {
       vms: entry._vms || null,

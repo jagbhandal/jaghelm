@@ -1,24 +1,12 @@
 import React from 'react';
 import { cachedIconUrl } from '../hooks/useData';
+import { ICON_CDN_BASE, iconSlugUrl } from './iconCdn.js';
 
-// Shared icon helpers: detect emoji strings and render an icon value
-// (URL, Dashboard Icons slug, or emoji) as a React node.
-
-// Canonical Dashboard Icons CDN base. The repo moved from walkxcode to
-// homarr-labs; pin every slug URL here so all call sites resolve the same
-// way (avoids slug 404s where one base lags behind the other).
-export const ICON_CDN_BASE =
-  'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg';
-
-/**
- * iconSlugUrl — build the Dashboard Icons SVG URL for a slug.
- *
- * @param {string} slug
- * @returns {string}
- */
-export function iconSlugUrl(slug) {
-  return `${ICON_CDN_BASE}/${slug}.svg`;
-}
+// Shared icon helpers: detect emoji strings and render an icon value (URL,
+// Dashboard Icons slug, or emoji) as a React node. The CDN base + slug-URL
+// builder live in ./iconCdn.js (a dependency-free leaf) so useData can share
+// them without an import cycle; re-exported here for existing call sites.
+export { ICON_CDN_BASE, iconSlugUrl };
 
 /**
  * isEmoji — true when the string is a bare emoji (not a URL or path).
