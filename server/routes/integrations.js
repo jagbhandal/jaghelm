@@ -124,6 +124,10 @@ router.post('/save', (req, res) => {
   if (!SAFE_ID.test(type) || (instance && !SAFE_ID.test(instance))) {
     return apiError(res, 400, 'Invalid type or instance (letters, digits, _ - only; max 64)');
   }
+  const unsupported = getPreset(type)?.unsupported;
+  if (unsupported) {
+    return apiError(res, 400, `Integration unavailable: ${unsupported}`);
+  }
 
   const cleanUrl = normalizeUrl(url);
   const storageKey = instance ? `${type}_${instance}` : type;

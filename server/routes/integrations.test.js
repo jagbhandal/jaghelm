@@ -90,3 +90,29 @@ test('DELETE /:type → 404 on an unknown integration (no false success)', async
   const r = await request(makeApp()).delete('/api/integrations/never_existed');
   assert.equal(r.status, 404);
 });
+
+// ── unsupported-preset gate enforced server-side (security review) ─────────
+// The `unsupported` flag (e.g. watchtower's side-effecting /v1/update) must be
+// blocked at the routes + resolution chokepoint, not only hidden from the
+// gallery — otherwise a direct save/test, or a saved/imported config, still
+// reaches the side-effecting endpoint.
+test('POST /save → 400 for an unsupported preset (watchtower)', async () => {
+  const r = await request(makeApp())
+    .post('/api/integrations/save')
+    .send({ type: 'watchtower', url: 'http://wt.test' });
+  assert.equal(r.status, 400, 'an unsupported preset must not be persistable');
+  assert.match(r.body.error || '', /unavailable/i);
+});
+
+test('POST /test → blocked for an unsupported preset (watchtower)', async () => {
+  const r = await request(makeApp())
+    .post('/api/integrations/test')
+    .send({ type: 'watchtower', url: 'http://wt.test' });
+  assert.equal(r.body.ok, false);
+  assert.match(r.body.error || '', /unavailable/i);
+});
+
+test('resolveIntegrationConfig → null for an unsupported preset (refresh-loop chokepoint)', async () => {
+  const { resolveIntegrationConfig } = await import('../integrations/lib/config.js');
+  assert.equal(resolveIntegrationConfig('watchtower', { url: 'http://wt.test' }), null);
+});

@@ -30,6 +30,12 @@ function resolveSecretRef(value) {
 export function resolveIntegrationConfig(type, yamlConfig) {
   const preset = getPresetFull(type);
 
+  // A preset flagged `unsupported` must never be fetched or polled, even if a
+  // config for it was saved directly or imported before the flag existed. The
+  // gallery hides it, but the refresh loop and GET /:type resolve through here,
+  // so block at this chokepoint — fetchIntegration treats null as "don't fetch".
+  if (preset?.unsupported) return null;
+
   // For custom integrations (no preset), yamlConfig IS the full config
   const config = preset ? { ...preset, ...yamlConfig } : yamlConfig;
   if (!config) return null;

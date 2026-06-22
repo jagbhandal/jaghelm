@@ -160,6 +160,10 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
 export async function testIntegration(type, testConfig) {
   const preset = getPresetFull(type);
 
+  if (preset?.unsupported) {
+    return { ok: false, error: `Integration unavailable: ${preset.unsupported}` };
+  }
+
   // Merge preset with test config
   const config = preset ? { ...preset, ...testConfig } : testConfig;
   if (!config || !config.url) {

@@ -55,12 +55,18 @@ export function isEmoji(str) {
  * @param {string} value
  * @returns {string|null}
  */
+// A bare value is treated as a Dashboard Icons slug only when it looks like one
+// (2+ slug chars, optional image extension). Arbitrary text labels ("My Server",
+// a "►" glyph) fall through to null so callers render them as text rather than a
+// guaranteed-404 slug image.
+const ICON_SLUG_RE = /^[a-z0-9][a-z0-9-]+(\.(svg|png|webp|jpe?g))?$/i;
+
 export function iconImageSrc(value) {
   if (!value || typeof value !== 'string') return null;
   if (value.startsWith('http') || value.startsWith('/')) {
     return cachedIconUrl(value) || value;
   }
-  if (isEmoji(value)) return null;
+  if (isEmoji(value) || !ICON_SLUG_RE.test(value)) return null;
   const slug = value.toLowerCase().replace(/\.(svg|png|webp|jpe?g)$/, '');
   return cachedIconUrl(iconSlugUrl(slug)) || iconSlugUrl(slug);
 }

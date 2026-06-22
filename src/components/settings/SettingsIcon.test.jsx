@@ -29,4 +29,10 @@ describe('SettingsIcon — bare slug / filename icons', () => {
     const { container } = render(<SettingsIcon value="https://example.com/x.png" />);
     expect(container.querySelector('img')).not.toBeNull();
   });
+
+  it('renders an arbitrary text label as text, not a blank image', () => {
+    const { container } = render(<SettingsIcon value="My Server" />);
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.textContent).toContain('My Server');
+  });
 });

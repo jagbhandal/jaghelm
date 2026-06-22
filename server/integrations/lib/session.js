@@ -34,8 +34,8 @@ function buildLoginBody(session, config) {
   const body =
     contentType === 'application/x-www-form-urlencoded'
       ? (typeof session.loginBody === 'string' ? session.loginBody : '')
-          .replace('{username}', encodeURIComponent(config._username || ''))
-          .replace('{password}', encodeURIComponent(config._password || ''))
+          .replace(/\{username\}/g, encodeURIComponent(config._username || ''))
+          .replace(/\{password\}/g, encodeURIComponent(config._password || ''))
       : JSON.stringify(fillCreds(session.loginBody, config._username || '', config._password || ''));
   return { body, contentType };
 }

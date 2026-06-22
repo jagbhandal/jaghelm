@@ -27,6 +27,12 @@ describe('iconImageSrc', () => {
     expect(decodeURIComponent(iconImageSrc('Gitea'))).toContain('/gitea.svg');
   });
 
+  it('returns null for arbitrary text labels (render as text, not a 404 slug)', () => {
+    expect(iconImageSrc('My Server')).toBeNull();
+    expect(iconImageSrc('►')).toBeNull();
+    expect(iconImageSrc('M')).toBeNull();
+  });
+
   it('routes a full CDN url through the cache proxy', () => {
     const src = iconImageSrc(
       'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/plex.svg'
