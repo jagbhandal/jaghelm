@@ -146,6 +146,42 @@ describe('NavBar', () => {
     expect(screen.queryByText(/°F/)).not.toBeInTheDocument();
   });
 
+  // Link search: the live dropdown and the Enter (form-submit) handler must use
+  // the SAME matcher. Previously the dropdown matched name OR url while Enter
+  // matched name ONLY, so a url-only match shown in the dropdown was ignored by
+  // Enter, which fell through to a web search. These tests lock the two in sync.
+  describe('link search (dropdown ⇄ Enter agree)', () => {
+    const linksConfig = () =>
+      baseConfig({
+        showSearch: true,
+        links: {
+          tools: [{ name: 'Photos', url: 'https://immich.example.com' }],
+        },
+      });
+
+    it('opens a url-only match on Enter instead of falling through to web search', async () => {
+      const user = userEvent.setup();
+      const openSpy = vi.fn();
+      vi.stubGlobal('open', openSpy);
+      renderNav({}, linksConfig());
+      const input = screen.getByPlaceholderText(/search services or web/i);
+      // Query matches the link by URL only (its name is "Photos", not "immich").
+      await user.type(input, 'immich');
+      await user.keyboard('{Enter}');
+      expect(openSpy).toHaveBeenCalledTimes(1);
+      expect(openSpy).toHaveBeenCalledWith('https://immich.example.com', '_blank');
+    });
+
+    it('surfaces a url-only match in the live dropdown', async () => {
+      const user = userEvent.setup();
+      renderNav({}, linksConfig());
+      const input = screen.getByPlaceholderText(/search services or web/i);
+      await user.type(input, 'immich');
+      // The dropdown shows the link the Enter handler would open.
+      expect(await screen.findByText('Photos')).toBeInTheDocument();
+    });
+  });
+
   // Mobile nav: .nav-tabs is hidden under 600px, so a hamburger menu is the only
   // way to switch tab on a phone. These tests lock in the menu existing, being
   // accessible, listing every tab, switching tab on tap, and closing correctly.

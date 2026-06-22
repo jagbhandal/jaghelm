@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { apiFetch } from '../../../api/client.js';
-import { useConfirm } from '../../../context/OverlayContext.jsx';
+import { useConfirm, useToast } from '../../../context/OverlayContext.jsx';
 
 /**
  * useIntegrationActions — wraps the four API-touching handlers (test, save,
@@ -15,6 +15,7 @@ import { useConfirm } from '../../../context/OverlayContext.jsx';
  */
 export function useIntegrationActions({ selectedPreset, editingType, form, refetch, onAfterSave }) {
   const confirm = useConfirm();
+  const toast = useToast();
   const [testStatus, setTestStatus] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null);
 
@@ -85,6 +86,9 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
   };
 
   // ── Delete integration ──
+  // Returns true only when the user confirmed AND the delete succeeded, so
+  // callers (e.g. ConfigView) navigate away only on a real deletion. A failed
+  // request surfaces a toast instead of silently leaving the UI stale.
   const handleDelete = async (type) => {
     const ok = await confirm({
       title: `Remove the ${type} integration?`,
@@ -92,12 +96,18 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
       confirmLabel: 'Remove Integration',
       danger: true,
     });
-    if (!ok) return;
+    if (!ok) return false;
     try {
-      await apiFetch(`/api/integrations/${type}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/integrations/${type}`, { method: 'DELETE' });
+      if (!res.ok) {
+        toast(`Failed to delete ${type} (HTTP ${res.status}).`, 'error');
+        return false;
+      }
       refetch();
-    } catch {
-      // Silently fail
+      return true;
+    } catch (err) {
+      toast(`Failed to delete ${type}: ${err.message}`, 'error');
+      return false;
     }
   };
 
@@ -111,14 +121,19 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
       };
       if (currentConfig.username) body.username = currentConfig.username;
       // Don't send password/token — they're already stored as $secret refs
-      await apiFetch('/api/integrations/save', {
+      const res = await apiFetch('/api/integrations/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
+      const data = res.ok ? await res.json().catch(() => ({})) : {};
+      if (!res.ok || data.ok === false) {
+        toast(`Failed to ${body.enabled ? 'enable' : 'disable'} ${type}.`, 'error');
+        return;
+      }
       refetch();
-    } catch {
-      // Silently fail
+    } catch (err) {
+      toast(`Failed to toggle ${type}: ${err.message}`, 'error');
     }
   };
 

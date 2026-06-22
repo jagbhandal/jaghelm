@@ -7,11 +7,10 @@
  *   POST /api/auth/change-password
  */
 
-import crypto from 'crypto';
 import { Router } from 'express';
 
 import { authMiddleware } from './middleware.js';
-import { authEnabled, checkPassword, getAuthUser, setPassword } from './passwords.js';
+import { authEnabled, checkPassword, getAuthUser, safeBufEqual, setPassword } from './passwords.js';
 import { createSession, deleteAllSessionsExcept, getSession } from './sessions.js';
 import {
   checkLoginRate,
@@ -26,23 +25,10 @@ import { createLogger } from '../util/logger.js';
 const log = createLogger('auth');
 const router = Router();
 
-/**
- * Constant-time string compare that doesn't leak length information by
- * short-circuiting. Equal-length buffers are compared via timingSafeEqual;
- * unequal-length inputs still run the compare (against a same-length dummy)
- * before returning false, so the call duration is independent of where the
- * mismatch is.
- */
+/** Constant-time string compare. Coerces to buffers, then defers to the shared
+ *  length-guarded safeBufEqual (see passwords.js for the constant-time rationale). */
 function constantTimeEqual(a, b) {
-  const ab = Buffer.from(String(a));
-  const bb = Buffer.from(String(b));
-  if (ab.length !== bb.length) {
-    // Run a dummy compare so timing stays roughly flat across the
-    // length-mismatch and equal-length-mismatch cases.
-    crypto.timingSafeEqual(ab, Buffer.alloc(ab.length));
-    return false;
-  }
-  return crypto.timingSafeEqual(ab, bb);
+  return safeBufEqual(Buffer.from(String(a)), Buffer.from(String(b)));
 }
 
 router.post('/login', async (req, res) => {

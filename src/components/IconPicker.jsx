@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { apiFetch } from '../api/client.js';
+import { isEmoji } from '../utils/icon.jsx';
 
 /**
  * IconPicker — Reusable icon search & selection component
@@ -338,13 +339,6 @@ function PickerDropdown({ query, setQuery, results, totalCount, loading, onSelec
 }
 
 // ── Helpers ──
-function isEmoji(str) {
-  if (!str || typeof str !== 'string') return false;
-  // Check if it's a URL
-  if (str.startsWith('http') || str.startsWith('/')) return false;
-  return /^[\u{1F000}-\u{1FFFF}]|^[\u{2600}-\u{27BF}]|^[\u{FE00}-\u{FEFF}]|^[\u00A0-\u00FF]|^[\u2000-\u3300]/u.test(str);
-}
-
 function extractSlug(url) {
   if (!url) return '';
   try {

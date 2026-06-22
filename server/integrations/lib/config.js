@@ -30,6 +30,12 @@ function resolveSecretRef(value) {
 export function resolveIntegrationConfig(type, yamlConfig) {
   const preset = getPresetFull(type);
 
+  // A preset flagged `unsupported` must never be fetched or polled, even if a
+  // config for it was saved directly or imported before the flag existed. The
+  // gallery hides it, but the refresh loop and GET /:type resolve through here,
+  // so block at this chokepoint — fetchIntegration treats null as "don't fetch".
+  if (preset?.unsupported) return null;
+
   // For custom integrations (no preset), yamlConfig IS the full config
   const config = preset ? { ...preset, ...yamlConfig } : yamlConfig;
   if (!config) return null;
@@ -41,19 +47,15 @@ export function resolveIntegrationConfig(type, yamlConfig) {
   const resolved = { ...config };
 
   if (preset?.envKeys) {
-    // URL: .env > yaml > null
     if (preset.envKeys.url) {
       resolved.url = resolveCredential(preset.envKeys.url, `integration_${secretKey}_url`) || config.url;
     }
-    // Username: .env > yaml > null
     if (preset.envKeys.username) {
       resolved._username = resolveCredential(preset.envKeys.username, `integration_${secretKey}_username`) || config.username;
     }
-    // Password: .env > yaml ($secret:ref) > null
     if (preset.envKeys.password) {
       resolved._password = resolveCredential(preset.envKeys.password, `integration_${secretKey}_password`) || resolveSecretRef(config.password);
     }
-    // Token: .env > yaml ($secret:ref) > null
     if (preset.envKeys.token) {
       resolved._token = resolveCredential(preset.envKeys.token, `integration_${secretKey}_token`) || resolveSecretRef(config.token);
     }

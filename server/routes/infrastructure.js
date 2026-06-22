@@ -15,12 +15,12 @@
  */
 
 import { Router } from 'express';
-import http from 'http';
 
 import { fetchMonitors } from '../monitors.js';
 import { refreshUPS, refreshGitea } from '../refresh.js';
+import { getDockerContainers } from '../docker.js';
 import { getHistory } from '../history.js';
-import { getCached, setCache, jsonWithEtag } from '../cache.js';
+import { getCached, setCache, respondWarmCached } from '../cache.js';
 import { apiError } from '../errors.js';
 import { safeFetch } from '../httpClient.js';
 import { asyncHandler } from '../util/asyncHandler.js';
@@ -98,15 +98,13 @@ router.get('/adguard/stats', requireAuthEnabledInfra, asyncHandler(async (req, r
 
 // ── UPS (warm-cached) ────────────────────────────────────────────────────
 
-router.get('/ups', asyncHandler(async (req, res) => {
-  const cached = getCached('ups');
-  if (cached) return jsonWithEtag(res, req, 'ups', cached);
-
-  const data = await refreshUPS();
-  if (data) return jsonWithEtag(res, req, 'ups', data);
-
-  apiError(res, 502, 'UPS data not yet available');
-}));
+router.get('/ups', asyncHandler((req, res) =>
+  respondWarmCached(req, res, {
+    key: 'ups',
+    refresh: refreshUPS,
+    fallback: (r) => apiError(r, 502, 'UPS data not yet available'),
+  })
+));
 
 // ── Nginx Proxy Manager stats ────────────────────────────────────────────
 
@@ -166,113 +164,22 @@ router.get('/docker/containers', requireAuthEnabledInfra, asyncHandler(async (re
   const cached = getCached('docker-containers');
   if (cached) return res.json(cached);
 
-  const promUrl = process.env.PROMETHEUS_URL || 'http://localhost:9090';
-
-  // Try Prometheus + cAdvisor first
-  try {
-    const [namesR, cpuR, memR] = await Promise.all([
-      safeFetch(`${promUrl}/api/v1/query?query=${encodeURIComponent('container_last_seen{name!=""}')}`)
-        .then((r) => r.json())
-        .catch(() => null),
-      safeFetch(
-        `${promUrl}/api/v1/query?query=${encodeURIComponent(
-          'rate(container_cpu_usage_seconds_total{name!=""}[5m]) * 100'
-        )}`
-      )
-        .then((r) => r.json())
-        .catch(() => null),
-      safeFetch(
-        `${promUrl}/api/v1/query?query=${encodeURIComponent(
-          'container_memory_usage_bytes{name!=""}'
-        )}`
-      )
-        .then((r) => r.json())
-        .catch(() => null),
-    ]);
-
-    const containers = {};
-    const allResults = [
-      ...(namesR?.data?.result || []),
-      ...(cpuR?.data?.result || []),
-      ...(memR?.data?.result || []),
-    ];
-    for (const r of allResults) {
-      const name = r.metric?.name;
-      if (name && !containers[name]) {
-        containers[name] = { name, cpu: null, memMB: null, status: 'running' };
-      }
-    }
-    for (const r of cpuR?.data?.result || []) {
-      const name = r.metric?.name;
-      if (name && containers[name]) {
-        containers[name].cpu = r.value?.[1] ? parseFloat(parseFloat(r.value[1]).toFixed(1)) : null;
-      }
-    }
-    for (const r of memR?.data?.result || []) {
-      const name = r.metric?.name;
-      if (name && containers[name]) {
-        containers[name].memMB = r.value?.[1]
-          ? parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1))
-          : null;
-      }
-    }
-
-    if (Object.keys(containers).length > 0) {
-      const result = Object.values(containers).sort((a, b) => a.name.localeCompare(b.name));
-      setCache('docker-containers', result);
-      return res.json(result);
-    }
-  } catch (err) {
-    log.warn({ err }, 'docker Prometheus container query failed, trying Docker socket');
-  }
-
-  // Fallback: Docker socket
-  try {
-    const data = await new Promise((resolve, reject) => {
-      const rq = http.get(
-        { socketPath: '/var/run/docker.sock', path: '/containers/json' },
-        (resp) => {
-          let body = '';
-          resp.on('data', (c) => (body += c));
-          resp.on('end', () => {
-            try {
-              resolve(JSON.parse(body));
-            } catch (e) {
-              reject(e);
-            }
-          });
-        }
-      );
-      rq.on('error', reject);
-      rq.setTimeout(5000, () => {
-        rq.destroy();
-        reject(new Error('timeout'));
-      });
-    });
-    const containers = (data || []).map((c) => ({
-      name: (c.Names?.[0] || '').replace(/^\//, ''),
-      image: c.Image?.split(':')[0]?.split('/').pop() || c.Image,
-      status: c.State || 'unknown',
-      state: c.Status || '',
-    }));
-    setCache('docker-containers', containers);
-    res.json(containers);
-  } catch {
-    res.json([]);
-  }
+  const containers = await getDockerContainers();
+  // Only cache a populated list: an empty result means no source had data, so
+  // we don't want to suppress retries for the TTL window.
+  if (containers.length > 0) setCache('docker-containers', containers);
+  res.json(containers);
 }));
 
 // ── Gitea recent commits (warm-cached) ───────────────────────────────────
 
-router.get('/gitea/activity', asyncHandler(async (req, res) => {
-  const cached = getCached('gitea');
-  if (cached) return jsonWithEtag(res, req, 'gitea', cached);
-
-  const data = await refreshGitea();
-  if (data) return jsonWithEtag(res, req, 'gitea', data);
-
-  apiError(res, 502, 'Gitea data not yet available');
-}));
+router.get('/gitea/activity', asyncHandler((req, res) =>
+  respondWarmCached(req, res, {
+    key: 'gitea',
+    refresh: refreshGitea,
+    fallback: (r) => apiError(r, 502, 'Gitea data not yet available'),
+  })
+));
 
 // ── Metric history (sparklines) ──────────────────────────────────────────
 // The last ~1h of each node's CPU/RAM/disk usage, recorded by the refresh loop.

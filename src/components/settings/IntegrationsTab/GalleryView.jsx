@@ -1,5 +1,5 @@
 import React from 'react';
-import { cachedIconUrl } from '../../../hooks/useData';
+import { iconImageSrc } from '../../../utils/icon.jsx';
 import { CATEGORIES, PRESET_CATEGORIES, AUTH_LABELS } from './constants.js';
 
 /**
@@ -131,7 +131,7 @@ export default function GalleryView({
                 </span>
               )}
               <img
-                src={cachedIconUrl(`https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${p.icon}.svg`)}
+                src={iconImageSrc(p.icon)}
                 alt=""
                 style={{ width: 36, height: 36, borderRadius: 8 }}
                 onError={e => { e.target.style.display = 'none'; }}

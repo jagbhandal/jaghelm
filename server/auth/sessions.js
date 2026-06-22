@@ -1,12 +1,7 @@
 /**
- * In-memory session store.
- *
- * Sessions live for 24 hours. A background sweep removes expired entries
- * once an hour so the Map doesn't grow unbounded over long uptimes.
- *
- * Sessions are keyed by an opaque random token (32 bytes hex) generated at
- * login. Token storage and transport (header vs. localStorage) is the
- * caller's concern.
+ * In-memory session store. Sessions live 24h, keyed by an opaque random token
+ * (32 bytes hex). An hourly sweep evicts expired entries to bound Map growth.
+ * Token storage and transport (header vs. localStorage) is the caller's concern.
  */
 
 import crypto from 'crypto';
@@ -16,6 +11,9 @@ const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
 const sessions = new Map();
 
+// .unref() so this housekeeping timer never keeps the process alive on its own
+// (lets the process — and route tests that import the app — exit cleanly).
+// Mirrors the cleanup timer in rateLimit.js.
 setInterval(() => {
   const now = Date.now();
   for (const [token, entry] of sessions) {
@@ -23,7 +21,7 @@ setInterval(() => {
       sessions.delete(token);
     }
   }
-}, CLEANUP_INTERVAL_MS);
+}, CLEANUP_INTERVAL_MS).unref();
 
 /** Create a new session for `user` and return the token. */
 export function createSession(user) {
@@ -60,4 +58,9 @@ export function deleteAllSessionsExcept(keepToken) {
   for (const token of sessions.keys()) {
     if (token !== keepToken) sessions.delete(token);
   }
+}
+
+// Test seam: drop all sessions between cases to isolate state.
+export function _resetAllSessions() {
+  sessions.clear();
 }

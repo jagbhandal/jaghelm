@@ -61,14 +61,25 @@ function findByTarget(allContainers, targetUid) {
 }
 
 function findByKeywords(allContainers, keywords, alreadyMatched) {
+  // Prefer an unclaimed container (fall-through: when several containers match
+  // the keywords, distinct integrations land on distinct containers). But if
+  // every matching container is already claimed, still return the first match so
+  // the caller can detect the collision and resolve it by precedence — rather
+  // than silently returning null and dropping the integration with no signal.
+  let claimedFallback = null;
+
+  const consider = (svc) => {
+    if (!alreadyMatched[svc.container]) return svc; // unclaimed — take it now
+    if (!claimedFallback) claimedFallback = svc; // remember first claimed match
+    return null;
+  };
+
   // First pass: exact container-name match
   for (const svc of allContainers) {
     const containerLower = (svc.container || '').toLowerCase();
-    if (
-      keywords.some((kw) => containerLower === kw.toLowerCase()) &&
-      !alreadyMatched[svc.container]
-    ) {
-      return svc;
+    if (keywords.some((kw) => containerLower === kw.toLowerCase())) {
+      const hit = consider(svc);
+      if (hit) return hit;
     }
   }
   // Second pass: substring match against container name OR display name
@@ -79,15 +90,53 @@ function findByKeywords(allContainers, keywords, alreadyMatched) {
       const kwLower = kw.toLowerCase();
       return containerLower.includes(kwLower) || displayLower.includes(kwLower);
     });
-    if (matched && !alreadyMatched[svc.container]) return svc;
+    if (matched) {
+      const hit = consider(svc);
+      if (hit) return hit;
+    }
   }
-  return null;
+  return claimedFallback;
 }
+
+// Precedence when two integrations resolve to the SAME container. Higher wins.
+// An explicit `_target` (operator pinned this integration to this container) beats
+// a fuzzy name guess. Within the same tier, the FIRST integration in
+// integrationData key-iteration order wins — deterministic regardless of how the
+// keys happen to be ordered, so metrics don't flip between refreshes.
+const PRECEDENCE = { target: 2, fuzzy: 1 };
 
 export function useAppDataMatching(integrationData, serviceData) {
   return useMemo(() => {
     const map = {};
+    // Per-container claim record so collisions resolve deterministically instead
+    // of last-write-wins. { [container]: { tier, intKey } }
+    const claims = {};
     const allContainers = flattenContainers(serviceData);
+
+    // Record a claim, honoring precedence. Returns true if `appEntry` was written.
+    const claim = (container, tier, intKey, appEntry) => {
+      const prior = claims[container];
+      if (prior) {
+        // Two integrations want the same container. Keep the higher-precedence
+        // one; on a tie keep the earlier (already-recorded) one. Either way warn
+        // in dev so the ambiguous config is fixable, instead of silently picking.
+        const incomingWins = PRECEDENCE[tier] > PRECEDENCE[prior.tier];
+        if (import.meta.env.DEV) {
+          const kept = incomingWins ? intKey : prior.intKey;
+          const dropped = incomingWins ? prior.intKey : intKey;
+          console.warn(
+            `[useAppDataMatching] container "${container}" matched by multiple ` +
+              `integrations ("${prior.intKey}" and "${intKey}"); keeping "${kept}" ` +
+              `(${incomingWins ? tier : prior.tier}), dropping "${dropped}". ` +
+              `Set a Target Container to disambiguate.`
+          );
+        }
+        if (!incomingWins) return false;
+      }
+      claims[container] = { tier, intKey };
+      map[container] = appEntry;
+      return true;
+    };
 
     for (const [intKey, fields] of Object.entries(integrationData)) {
       const displayFields = stripInternalFields(fields);
@@ -101,7 +150,7 @@ export function useAppDataMatching(integrationData, serviceData) {
       // Mode 1: target-scoped
       if (fields._target) {
         const svc = findByTarget(allContainers, fields._target);
-        if (svc) map[svc.container] = appEntry;
+        if (svc) claim(svc.container, 'target', intKey, appEntry);
         continue;
       }
 
@@ -111,7 +160,7 @@ export function useAppDataMatching(integrationData, serviceData) {
       const keywords = INTEGRATION_KEYWORDS[baseType] || [baseType];
 
       const match = findByKeywords(allContainers, keywords, map);
-      if (match) map[match.container] = appEntry;
+      if (match) claim(match.container, 'fuzzy', intKey, appEntry);
     }
 
     return map;

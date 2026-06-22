@@ -1,25 +1,12 @@
 /**
- * JagHelm Integration Handler
+ * JagHelm Integration Handler — all integrations, preset and custom, flow
+ * through this single handler. Pipeline: resolve config → auth → fetch →
+ * transform → cache. Owns the two orchestrators fetchIntegration + testIntegration.
  *
- * Generic pipeline: resolve config → authenticate → fetch → transform → cache.
- *
- * Supports auth types: none, basic, bearer, header, query, session
- * Supports field formats: number, decimal, percent, ms, bytes, duration, string
- * Supports compute types: percent_of, subtract, sum
- *
- * All integrations — both presets and custom — flow through this single handler.
- *
- * Architecture:
- *   ./lib/cache.js     — in-memory response cache + TTL
- *   ./lib/http.js      — safeFetch wrapper (per-request undici dispatcher for TLS skip)
- *   ./lib/extract.js   — JSON path DSL (extractValue, _filter:, _length) + URL templating
- *   ./lib/format.js    — formatValue + computeField
- *   ./lib/auth.js      — buildAuthHeaders for non-session auth
- *   ./lib/session.js   — session token cache + login + token reuse
- *   ./lib/config.js    — credential resolution and config merging
- *
- * This file owns the two top-level orchestrators: fetchIntegration (the data
- * pipeline) and testIntegration (the connection-test pipeline).
+ * lib/ map: cache.js (response cache+TTL), http.js (safeFetch), extract.js (JSON
+ * path DSL + URL templating), format.js (formatValue+computeField), auth.js
+ * (buildAuthHeaders), session.js (session token cache+login), config.js (cred
+ * resolution + config merging).
  */
 
 import { getPresetFull } from './registry.js';
@@ -32,16 +19,29 @@ import { buildAuthHeaders } from './lib/auth.js';
 import { fetchWithSession, testSessionAuth } from './lib/session.js';
 import { resolveIntegrationConfig } from './lib/config.js';
 import { assertSafeUrl } from '../util/ssrf.js';
-import { redactSecrets } from '../util/redact.js';
+import { redactError } from '../util/redact.js';
 import { createLogger } from '../util/logger.js';
 
 const log = createLogger('integrations');
 
-// Re-export so the public API of handler.js is unchanged.
+/**
+ * Append query-param auth (`?apikey=…`) to a URL for the `query` auth type.
+ * No-op for any other auth type or when no token is resolved. The token is
+ * URL-encoded so a raw token containing reserved chars (&, =, +, space) can't
+ * corrupt the query string or split into extra params.
+ */
+function applyQueryAuth(url, config) {
+  if (config.auth === 'query' && config._token) {
+    const paramName = config.queryParam || 'apikey';
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}${paramName}=${encodeURIComponent(config._token)}`;
+  }
+  return url;
+}
+
+// Re-exported for back-compat; SSRF is also enforced at the fetch chokepoint in
+// lib/http.js, so every auth path is guarded by construction.
 export { resolveIntegrationConfig };
-// assertSafeUrl moved to util/ssrf.js (now also enforced at the fetch
-// chokepoint in lib/http.js, so session-auth & every future path are guarded
-// by construction). Re-exported here for back-compat + handler.test.js.
 export { assertSafeUrl };
 
 // ── Main fetch function for any integration ──
@@ -71,13 +71,7 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       rawData = await fetchWithSession(config);
     } else {
       let url = `${baseUrl}${resolveEndpointParams(config.endpoint, config)}`;
-
-      // Query param auth
-      if (config.auth === 'query' && config._token) {
-        const paramName = config.queryParam || 'apikey';
-        const separator = url.includes('?') ? '&' : '?';
-        url = `${url}${separator}${paramName}=${config._token}`;
-      }
+      url = applyQueryAuth(url, config);
 
       const headers = buildAuthHeaders(config);
       const res = await safeFetch(url, { headers }, skipTls);
@@ -87,11 +81,9 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       rawData = await res.json();
     }
 
-    // Multi-endpoint support: if preset defines extraEndpoints, fetch them in parallel.
-    // extraEndpoints can be an array or a function(rawData) that returns an array.
-    // This allows dynamic endpoints that depend on primary response data
-    // (e.g. Proxmox extracts node name from VMs, then fetches /nodes/{node}/tasks).
-    // Results are attached to rawData._extra = { key1: data1, key2: data2 }
+    // extraEndpoints: array, or function(rawData) returning one so endpoints can
+    // depend on the primary response (Proxmox: node name from VMs → /nodes/{node}/tasks).
+    // Fetched in parallel; results attached to rawData._extra = { key: data }.
     const extraEpDef = config.extraEndpoints;
     const extraEps = typeof extraEpDef === 'function' ? extraEpDef(rawData) :
                      Array.isArray(extraEpDef) ? extraEpDef : null;
@@ -108,10 +100,28 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
           return { key: ep.key, data: await epRes.json() };
         })
       );
-      rawData._extra = {};
-      for (const r of extraResults) {
-        if (r.status === 'fulfilled' && r.value) {
-          rawData._extra[r.value.key] = r.value.data;
+      // Only attach _extra when rawData is a mutable object. A primary endpoint
+      // that returns a bare array or a primitive would otherwise either throw
+      // (primitive) or mis-attach a non-enumerable-ish prop onto an array.
+      if (rawData && typeof rawData === 'object') {
+        rawData._extra = {};
+        for (const r of extraResults) {
+          if (r.status === 'fulfilled' && r.value) {
+            rawData._extra[r.value.key] = r.value.data;
+          } else if (r.status === 'rejected') {
+            // A failing extra sub-fetch used to vanish silently. Surface it with
+            // a REDACTED reason — query-auth presets embed the API key in the URL
+            // and fetch/undici errors echo the full URL, so never log it raw.
+            log.warn({ type, reason: redactError(r.reason) }, 'extra endpoint fetch failed');
+          }
+        }
+      } else {
+        // rawData isn't an object we can hang _extra off of; still don't lose
+        // the diagnostics for any rejected sub-fetch.
+        for (const r of extraResults) {
+          if (r.status === 'rejected') {
+            log.warn({ type, reason: redactError(r.reason) }, 'extra endpoint fetch failed');
+          }
         }
       }
     }
@@ -140,7 +150,7 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
   } catch (err) {
     // Redact before logging AND returning: query-auth presets put the API key
     // in the URL, and fetch errors embed the full URL — never leak it.
-    const safe = redactSecrets(err.message);
+    const safe = redactError(err);
     log.error({ type, error: safe }, 'fetch error');
     return { error: safe, fields: {} };
   }
@@ -149,6 +159,10 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
 // ── Test connection: lightweight check that URL + creds work ──
 export async function testIntegration(type, testConfig) {
   const preset = getPresetFull(type);
+
+  if (preset?.unsupported) {
+    return { ok: false, error: `Integration unavailable: ${preset.unsupported}` };
+  }
 
   // Merge preset with test config
   const config = preset ? { ...preset, ...testConfig } : testConfig;
@@ -194,18 +208,13 @@ export async function testIntegration(type, testConfig) {
 
     } else {
       // Non-session auth (basic, bearer, header, query)
-      let url = `${baseUrl}${testEndpoint}`;
-      if (config.auth === 'query' && config._token) {
-        const paramName = config.queryParam || 'apikey';
-        const separator = url.includes('?') ? '&' : '?';
-        url = `${url}${separator}${paramName}=${config._token}`;
-      }
+      const url = applyQueryAuth(`${baseUrl}${testEndpoint}`, config);
       const headers = buildAuthHeaders(config);
       const res = await safeFetch(url, { headers }, skipTls);
       if (!res.ok) return { ok: false, error: `HTTP ${res.status}: ${res.statusText}` };
       return { ok: true, status: res.status };
     }
   } catch (err) {
-    return { ok: false, error: redactSecrets(err.message) };
+    return { ok: false, error: redactError(err) };
   }
 }

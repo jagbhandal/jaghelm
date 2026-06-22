@@ -1,20 +1,13 @@
 /**
  * Background refresh loop and per-domain refresh functions.
  *
- * Refresh functions populate the in-memory cache used by the API routes.
- * They run on a configurable interval (default 30s) and are also called as
- * cold-start fallbacks by routes whose cache hasn't been populated yet.
+ * Refresh functions populate the in-memory cache used by the API routes. They
+ * run on a configurable interval (default 30s) and are also called as cold-start
+ * fallbacks by routes whose cache hasn't been populated yet.
  *
- * Functions exported here:
- *   - refreshServices     → /api/services payload (nodes + containers + monitors)
- *   - refreshUPS          → /api/ups payload
- *   - refreshGitea        → /api/gitea/activity payload
- *   - refreshIntegrations → /api/integrations payload
- *
- * Loop control:
- *   - startBackgroundRefresh()   → starts the interval (call once at boot)
- *   - restartBackgroundRefresh() → re-reads the interval from display-config
- *                                  and restarts (called after settings save)
+ * Loop control: startBackgroundRefresh() starts the interval (once at boot);
+ * restartBackgroundRefresh() re-reads the interval from display-config and
+ * restarts it (called after a settings save).
  */
 
 import { existsSync, readFileSync } from 'fs';
@@ -219,7 +212,7 @@ async function _refreshUPS() {
         safeFetch(`${url}/api/v1/query?query=${encodeURIComponent(queryMap[k])}`)
           .then((r) => r.json())
           .then((d) =>
-            d?.data?.result?.[0]?.value?.[1] ? parseFloat(d.data.result[0].value[1]) : null
+            d?.data?.result?.[0]?.value?.[1] != null ? parseFloat(d.data.result[0].value[1]) : null
           )
           .catch(() => null)
       )

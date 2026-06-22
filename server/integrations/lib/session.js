@@ -1,4 +1,8 @@
 import { safeFetch } from './http.js';
+import { extractValue, resolveEndpointParams } from './extract.js';
+import { createLogger } from '../../util/logger.js';
+
+const log = createLogger('integrations');
 
 /**
  * Replace {username}/{password} placeholders structurally, then the caller
@@ -18,29 +22,29 @@ function fillCreds(value, username, password) {
   }
   return value;
 }
-import { extractValue, resolveEndpointParams } from './extract.js';
-import { createLogger } from '../../util/logger.js';
-
-const log = createLogger('integrations');
 
 /**
- * Session-based authentication: log in once, cache the token, reuse it on
- * subsequent fetches until expiry, transparently re-authenticate if the cached
- * token gets rejected.
- *
- * Two cache eviction triggers:
- *   1. Time-based — entry expires after `tokenTtl` ms (configurable per preset
- *      via session.tokenTtl, defaults to 1 hour).
- *   2. Server rejection — if a fetch with the cached token fails for any reason,
- *      we drop the cache entry and re-auth. Failures are logged so transient
- *      network issues are distinguishable from real token expiry in the logs.
+ * Build the login request body from a session config + resolved credentials.
+ * For form-urlencoded logins, fills the {username}/{password} placeholders in
+ * the raw template string (URL-encoding each); otherwise structurally fills the
+ * JSON body object and serializes it. Shared by doSessionLogin + testSessionAuth.
  */
+function buildLoginBody(session, config) {
+  const contentType = session.loginContentType || 'application/json';
+  const body =
+    contentType === 'application/x-www-form-urlencoded'
+      ? (typeof session.loginBody === 'string' ? session.loginBody : '')
+          .replace(/\{username\}/g, encodeURIComponent(config._username || ''))
+          .replace(/\{password\}/g, encodeURIComponent(config._password || ''))
+      : JSON.stringify(fillCreds(session.loginBody, config._username || '', config._password || ''));
+  return { body, contentType };
+}
 
-// Token cache — key: baseUrl + loginEndpoint, value: { token, header, prefix, expires }
-// Capped at SESSION_CACHE_MAX entries with simple LRU eviction (Map preserves
-// insertion order; on access we delete + re-set to bump the entry to the tail).
-// Without this cap, a misconfigured caller that varies the cache key (e.g.
-// rotating loginEndpoint paths) could grow the Map unbounded.
+// Session-auth token cache — key: baseUrl + loginEndpoint, value:
+// { token, header, prefix, expires }. Evicted on TTL expiry or server rejection
+// (re-auth on either). Capped at SESSION_CACHE_MAX with LRU eviction (Map keeps
+// insertion order; access bumps to the tail): without the cap, a caller that
+// varies the key (e.g. rotating loginEndpoint paths) could grow it unbounded.
 const sessionTokenCache = new Map();
 const SESSION_CACHE_MAX = 100;
 
@@ -101,9 +105,7 @@ export async function fetchWithSession(config) {
         const data = await fetchWithToken(cached, config, baseUrl, skipTls);
         return data;
       } catch (fetchErr) {
-        // Token might be expired server-side (or network blip / rate limit / DNS).
-        // Drop the cache entry and fall through to fresh login. Logging here lets
-        // us distinguish real token expiry from other transient failures.
+        // Cached token rejected (expiry or transient blip): drop it and re-login. Logged to tell the two apart.
         log.warn({ error: fetchErr.message }, 'Cached token fetch failed, retrying with fresh login');
         sessionTokenCache.delete(cacheKey);
       }
@@ -132,20 +134,12 @@ export async function fetchWithSession(config) {
 
 /** Login and return token info (without fetching data). */
 async function doSessionLogin(config, session, baseUrl, skipTls) {
-  const contentType = session.loginContentType || 'application/json';
-  let loginBody;
-  if (contentType === 'application/x-www-form-urlencoded') {
-    loginBody = (typeof session.loginBody === 'string' ? session.loginBody : '')
-      .replace('{username}', encodeURIComponent(config._username || ''))
-      .replace('{password}', encodeURIComponent(config._password || ''));
-  } else {
-    loginBody = JSON.stringify(fillCreds(session.loginBody, config._username || '', config._password || ''));
-  }
+  const { body, contentType } = buildLoginBody(session, config);
 
   const loginRes = await safeFetch(`${baseUrl}${session.loginEndpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': contentType },
-    body: loginBody,
+    body,
   }, skipTls);
 
   if (!loginRes.ok) {
@@ -199,20 +193,12 @@ async function fetchWithToken(tokenInfo, config, baseUrl, skipTls) {
  */
 export async function testSessionAuth(config, session, baseUrl, skipTls) {
   try {
-    const contentType = session.loginContentType || 'application/json';
-    let loginBody;
-    if (contentType === 'application/x-www-form-urlencoded') {
-      loginBody = (typeof session.loginBody === 'string' ? session.loginBody : '')
-        .replace('{username}', encodeURIComponent(config._username || ''))
-        .replace('{password}', encodeURIComponent(config._password || ''));
-    } else {
-      loginBody = JSON.stringify(fillCreds(session.loginBody, config._username || '', config._password || ''));
-    }
+    const { body, contentType } = buildLoginBody(session, config);
 
     const res = await safeFetch(`${baseUrl}${session.loginEndpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': contentType },
-      body: loginBody,
+      body,
     }, skipTls);
 
     if (!res.ok) return { ok: false, error: `Login failed: HTTP ${res.status}` };

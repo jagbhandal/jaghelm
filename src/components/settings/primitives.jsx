@@ -1,17 +1,10 @@
 import React from 'react';
+import { iconImageSrc } from '../../utils/icon.jsx';
 
 /**
- * Shared settings-tab primitives.
- *
- * Every settings tab had its own copy of these tiny building blocks — `Card`
- * was redefined verbatim in ~10 tabs, the toggle checkbox (`Chk`) in three, and
- * the `settings-choice-group` button row was hand-rolled inline in a dozen
- * places. Extracting them here means the markup, class names, and (newly added)
- * accessibility semantics live in exactly one spot, so a change propagates
- * everywhere instead of being patched tab-by-tab.
- *
- * These are presentational only — they take `value`/`onChange` and render the
- * existing `.settings-*` classes, so the visual output is unchanged.
+ * Shared settings-tab primitives: one home for the tiny building blocks each tab
+ * used to copy inline, so markup, class names, and a11y semantics change in one place.
+ * Presentational only — `value`/`onChange` over the existing `.settings-*` classes.
  */
 
 /**
@@ -81,6 +74,31 @@ export function ChoiceGroup({ value, options, onChange, ariaLabel }) {
       })}
     </div>
   );
+}
+
+/**
+ * SettingsIcon — renders an icon value (URL, Dashboard Icons slug/filename, or
+ * emoji). A URL or slug resolves to an <img> via the shared iconImageSrc(); an
+ * emoji/bare glyph renders as text. When `value` is empty the `fallback` glyph
+ * is shown. `size` sets the <img> box (px). Broken image URLs hide themselves
+ * via onError.
+ */
+export function SettingsIcon({ value, fallback = '', size = 24 }) {
+  const resolved = value || fallback;
+  const src = iconImageSrc(resolved);
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        style={{ width: size, height: size, borderRadius: 4, objectFit: 'contain' }}
+        onError={(e) => {
+          e.target.style.display = 'none';
+        }}
+      />
+    );
+  }
+  return resolved;
 }
 
 /**

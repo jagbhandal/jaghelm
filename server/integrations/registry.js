@@ -1,38 +1,13 @@
 /**
- * JagHelm Integration Registry
- *
- * Loads all preset definitions from the presets/ directory.
- * Presets are pure data — no code execution, just config shapes.
- *
- * Usage:
- *   import { getPreset, listPresets } from './integrations/registry.js';
- *   const adguard = getPreset('adguard');     // returns preset object or null
- *   const all = listPresets();                 // returns [{ type, name, icon, description }, ...]
- *
- * ─── Schema validation ───────────────────────────────────────────────────
- * Every preset loaded from disk is validated against a known key set:
- *   - REQUIRED_KEYS must all be present and truthy, else the preset is
- *     SKIPPED (logged at error level). This is graceful degradation —
- *     one broken preset shouldn't take down the whole integrations system.
- *   - Unknown top-level keys trigger a warn-and-strip: the key is removed
- *     from the preset object and logged with filename + key name so the
- *     author can spot the typo. This catches the class of bugs where a
- *     preset declares e.g. `transform:` (never read) instead of
- *     `structuredTransform:` (read by handler.js).
- * The allowed key list is the union of every property handler.js / lib/*.js
- * actually reads. If you add a new field to a preset, you MUST also add it
- * to ALLOWED_KEYS below — that's intentional friction so dead keys don't
- * accumulate again.
- *
- * ─── Arr-family factory (follow-up) ──────────────────────────────────────
- * Radarr, Sonarr, Lidarr, Readarr, and Prowlarr share a near-identical
- * shape: header auth with `X-Api-Key`, a queue endpoint, a system/status
- * test endpoint, and a single `totalRecords` field (or `_length` for
- * Prowlarr's indexer list). A follow-up PR could collapse these into a
- * `createArrPreset({ name, version, queueEndpoint, ... })` factory living
- * next to this file, which would cut ~80 lines and make adding a new
- * *arr trivial. Deferred for now — wanted this PR to be pure hygiene, no
- * structural changes that touch multiple presets at once.
+ * JagHelm Integration Registry — loads preset config (pure data, no code) from
+ * presets/ and validates each against a known key set:
+ *   - REQUIRED_KEYS missing → preset SKIPPED (logged), so one broken preset
+ *     can't take down the whole integrations subsystem (graceful degradation).
+ *   - Unknown top-level key → warn-and-strip, which catches typos like
+ *     `transform:` (never read) vs `structuredTransform:` (read by handler.js).
+ * ALLOWED_KEYS is the union of every field handler.js / lib/*.js actually reads;
+ * adding a new preset field means adding it here too — intentional friction so
+ * dead keys can't accumulate again.
  */
 
 import { readdirSync } from 'fs';
@@ -46,6 +21,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PRESETS_DIR = join(__dirname, 'presets');
 
 const presets = new Map();
+
+// Helper modules that live in presets/ but aren't themselves presets (they're
+// imported BY presets). Excluded from the directory scan so they don't trip the
+// "default export is not an object" validation and log a spurious load error.
+const NON_PRESET_FILES = new Set(['createArrPreset.js']);
 
 // Keys that every preset MUST declare. Verified against the actual readers:
 //   - `name`      → registry.listPresets() exposes to UI
@@ -76,6 +56,13 @@ const ALLOWED_KEYS = new Set([
   'envKeys',
   // UI hints
   'urlParams', 'defaultUrl',
+  // Availability gate: when set to a non-empty reason string, the preset is
+  // recognized (getPreset/getPresetFull still return it) but gated OUT of the
+  // gallery by listPresets(), so it can't be added/configured/polled. Used for
+  // presets that can't work against the current handler (GET-only) or that hit
+  // a side-effecting endpoint on every refresh. Non-destructive: the file stays
+  // on disk for when the underlying limitation is fixed.
+  'unsupported',
 ]);
 
 /**
@@ -117,7 +104,8 @@ function validatePreset(file, preset) {
 export async function initRegistry() {
   let files;
   try {
-    files = readdirSync(PRESETS_DIR).filter(f => f.endsWith('.js'));
+    files = readdirSync(PRESETS_DIR)
+      .filter(f => f.endsWith('.js') && !NON_PRESET_FILES.has(f));
   } catch (err) {
     log.warn({ presetsDir: PRESETS_DIR }, 'No presets directory found');
     return;
@@ -166,9 +154,14 @@ export function getPreset(type) {
 /**
  * List all available presets (for the Settings UI gallery).
  * Returns a lightweight summary array — no auth details or endpoints exposed.
+ *
+ * Presets flagged `unsupported` (a non-empty reason string) are gated out:
+ * they're still resolvable via getPreset()/getPresetFull() for any config that
+ * already references them, but they never appear in the gallery, so they can't
+ * be newly added — and therefore aren't polled or connection-tested.
  */
 export function listPresets() {
-  return [...presets.values()].map(p => ({
+  return [...presets.values()].filter(p => !p.unsupported).map(p => ({
     type: p.type,
     name: p.name,
     icon: p.icon,

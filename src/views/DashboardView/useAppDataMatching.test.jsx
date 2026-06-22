@@ -1,5 +1,5 @@
 import { renderHook } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { useAppDataMatching } from './useAppDataMatching';
 
 const serviceData = {
@@ -38,5 +38,47 @@ describe('useAppDataMatching', () => {
     const integrationData = { adguard: { _target: 'pi:adguard-home' } };
     const { result } = renderHook(() => useAppDataMatching(integrationData, serviceData));
     expect(result.current['adguard-home']).toBeUndefined();
+  });
+});
+
+describe('useAppDataMatching — collision precedence', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('resolves two fuzzy matches on the same container deterministically (first key wins)', () => {
+    // Two integrations whose keywords both resolve to "adguard-home". Previously
+    // last-write-wins on map[container] made the chosen metrics depend on key order.
+    const integrationData = {
+      adguard_a: { Blocked: 1 },
+      adguard_b: { Blocked: 2 },
+    };
+    const { result } = renderHook(() => useAppDataMatching(integrationData, serviceData));
+    // First in iteration order (adguard_a) wins; result is stable, not nondeterministic.
+    expect(result.current['adguard-home']).toEqual({ Blocked: 1 });
+  });
+
+  it('warns (in dev) on a fuzzy/fuzzy collision', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const integrationData = {
+      adguard_a: { Blocked: 1 },
+      adguard_b: { Blocked: 2 },
+    };
+    renderHook(() => useAppDataMatching(integrationData, serviceData));
+    expect(warn).toHaveBeenCalledTimes(1);
+    const msg = warn.mock.calls[0][0];
+    expect(msg).toContain('adguard-home');
+    expect(msg).toContain('adguard_a');
+    expect(msg).toContain('adguard_b');
+  });
+
+  it('lets an explicit _target win over a prior fuzzy claim on the same container', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const integrationData = {
+      adguard_fuzzy: { Blocked: 1 }, // fuzzy, claims first
+      adguard_pinned: { Blocked: 99, _target: 'pi:adguard-home' }, // explicit target
+    };
+    const { result } = renderHook(() => useAppDataMatching(integrationData, serviceData));
+    // Target (higher precedence) overrides the earlier fuzzy claim.
+    expect(result.current['adguard-home']).toEqual({ Blocked: 99 });
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

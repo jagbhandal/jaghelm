@@ -1,6 +1,6 @@
 import { Agent } from 'undici';
 import { fetchSafe } from '../../util/safeFetchCore.js';
-import { redactSecrets } from '../../util/redact.js';
+import { redactError } from '../../util/redact.js';
 
 /**
  * Safe fetch wrapper with timeout + optional per-request TLS skip.
@@ -40,7 +40,7 @@ export async function safeFetch(url, opts = {}, skipTls = false) {
     // Redact at the egress point: query-auth presets put the API key in the URL
     // and fetch/assertSafeUrl errors echo it. Stripping it here means no
     // downstream catch (handler, session) can leak it even if it forgets to.
-    const safe = new Error(redactSecrets(err.message || String(err)));
+    const safe = new Error(redactError(err));
     if (err && err.code) safe.code = err.code;
     throw safe;
   }

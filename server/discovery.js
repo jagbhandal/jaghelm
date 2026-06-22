@@ -4,7 +4,7 @@
  * Returns merged data with config overrides applied.
  * 
  * Performance: getNodeData() fires all node metrics + container queries
- * in a single Promise.all (12 queries) instead of two sequential batches.
+ * in a single Promise.all (13 queries) instead of two sequential batches.
  */
 
 import { createLogger } from './util/logger.js';
@@ -47,7 +47,7 @@ function scalar(results, matchLabels = {}) {
       ([k, v]) => r.metric?.[k] === v
     );
     if (match || Object.keys(matchLabels).length === 0) {
-      return r.value?.[1] ? parseFloat(r.value[1]) : null;
+      return r.value?.[1] != null ? parseFloat(r.value[1]) : null;
     }
   }
   return null;
@@ -70,7 +70,7 @@ export async function discoverNodes() {
 
 /**
  * Get node metrics AND container data in a single parallel batch.
- * Fires all 12 Prometheus queries simultaneously instead of two sequential batches.
+ * Fires all 13 Prometheus queries simultaneously instead of two sequential batches.
  * Returns { metrics, containers }
  */
 export async function getNodeData(nodeLabel) {
@@ -120,7 +120,7 @@ export async function getNodeData(nodeLabel) {
     let maxSize = 0;
     let bestMount = null;
     for (const r of allDiskT) {
-      const val = r.value?.[1] ? parseFloat(r.value[1]) : 0;
+      const val = r.value?.[1] != null ? parseFloat(r.value[1]) : 0;
       if (val > maxSize) {
         maxSize = val;
         bestMount = r.metric?.mountpoint;
@@ -131,7 +131,7 @@ export async function getNodeData(nodeLabel) {
       // Find matching free bytes for the same mountpoint
       for (const r of allDiskF) {
         if (r.metric?.mountpoint === bestMount) {
-          diskFree = r.value?.[1] ? parseFloat(r.value[1]) : null;
+          diskFree = r.value?.[1] != null ? parseFloat(r.value[1]) : null;
           break;
         }
       }
@@ -189,45 +189,31 @@ export async function getNodeData(nodeLabel) {
     }
   }
 
-  // Fill CPU
+  // Fill each container's CPU / MEM / RX / TX from its matching result set.
   for (const r of cCpuR) {
     const name = r.metric?.name;
     const c = containerMap.get(name);
-    if (c && r.value?.[1]) c.docker.cpu = parseFloat(parseFloat(r.value[1]).toFixed(1));
+    if (c && r.value?.[1] != null) c.docker.cpu = parseFloat(parseFloat(r.value[1]).toFixed(1));
   }
-  // Fill MEM
   for (const r of cMemR) {
     const name = r.metric?.name;
     const c = containerMap.get(name);
-    if (c && r.value?.[1]) c.docker.memMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
+    if (c && r.value?.[1] != null) c.docker.memMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
   }
-  // Fill RX
   for (const r of cRxR) {
     const name = r.metric?.name;
     const c = containerMap.get(name);
-    if (c && r.value?.[1]) c.docker.rxMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
+    if (c && r.value?.[1] != null) c.docker.rxMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
   }
-  // Fill TX
   for (const r of cTxR) {
     const name = r.metric?.name;
     const c = containerMap.get(name);
-    if (c && r.value?.[1]) c.docker.txMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
+    if (c && r.value?.[1] != null) c.docker.txMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
   }
 
   const containers = Array.from(containerMap.values());
 
   return { metrics, containers };
-}
-
-// ── Keep legacy exports for backward compat (used by /api/docker/containers) ──
-export async function getNodeMetrics(nodeLabel) {
-  const { metrics } = await getNodeData(nodeLabel);
-  return metrics;
-}
-
-export async function discoverContainers(nodeLabel) {
-  const { containers } = await getNodeData(nodeLabel);
-  return containers;
 }
 
 function formatUptime(s) {

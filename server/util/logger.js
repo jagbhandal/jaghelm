@@ -1,19 +1,11 @@
 /**
- * Minimal structured (JSON) logger — zero dependencies.
+ * Minimal structured (JSON) logger — one JSON object per line, greppable in
+ * journald/Loki. In-house rather than pino on purpose: modest log volume here,
+ * and this keeps three transitive deps out of the runtime supply chain.
  *
- * Replaces ad-hoc console.* with one JSON object per line:
- *   {"time":"2026-…","level":"info","module":"refresh","msg":"cycle complete","ms":42}
- * so logs are greppable/queryable in journald/Loki instead of free text.
- *
- * We use an in-house logger rather than pino on purpose: the log volume here is
- * modest and this keeps three transitive deps out of the runtime supply chain.
- * Output: info/debug → stdout, warn/error → stderr. Level is filtered by
- * LOG_LEVEL (debug|info|warn|error|silent; default 'info').
- *
- * Call styles (both supported, so migrating from console.* stays mechanical):
- *   log.info('Background loop started')
- *   log.info({ ms: 42, nodes: 3 }, 'cycle complete')   // structured fields
- *   log.error('Failed to load:', err.message)          // console-style join
+ * Output: info/debug → stdout, warn/error → stderr. Level filtered by LOG_LEVEL
+ * (debug|info|warn|error|silent; default 'info'). Both call styles are accepted:
+ * a leading fields object is structured; otherwise args are joined console-style.
  */
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40, silent: 99 };
 const threshold = LEVELS[(process.env.LOG_LEVEL || 'info').toLowerCase()] ?? LEVELS.info;

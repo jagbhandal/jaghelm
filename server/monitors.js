@@ -48,7 +48,7 @@ export async function fetchMonitors(bustCache = false) {
     const pageR = await safeFetch(`${kumaUrl}/api/status-page/default`, {
       trusted: true, timeoutMs: KUMA_TIMEOUT,
     });
-    if (!pageR.ok) return cachedMonitors || {};
+    if (!pageR.ok) return staleOrEmpty();
     const pageData = await pageR.json();
 
     const monitorList = (pageData.publicGroupList || []).flatMap(g => g.monitorList || []);

@@ -1,8 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import DraggableServiceCard from './DraggableServiceCard';
-import { cachedIconUrl } from '../hooks/useData';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { usageSeverity, cardSeverity, severityColor, severityLabel } from '../utils/thresholds.js';
+import { isEmoji, iconImageSrc } from '../utils/icon.jsx';
 import Sparkline from './Sparkline';
 
 /**
@@ -71,9 +71,7 @@ function ServiceGrid({ services, config, panelId, dragDisabled }) {
 }
 
 /**
- * NodeCard v8 — Phase 4
- *
- * Now accepts panelId and dragDisabled props for drag-and-drop support.
+ * NodeCard — a dashboard section: header, metrics, and a draggable service grid.
  * Service cards are draggable between panels when dragDisabled is false.
  */
 export default React.memo(function NodeCard({
@@ -98,17 +96,6 @@ export default React.memo(function NodeCard({
   // halo the whole card so trouble jumps off the board before you read it.
   const halo = cardSeverity(metrics);
 
-  // Check if icon is an emoji (not a URL or slug).
-  // Alternation (not a character class) so ZWJ (\u200d) and variation selector
-  // (\ufe0f) read as repeatable join tokens, not as combining marks on a base
-  // char \u2014 which is what no-misleading-character-class flags. Behaviour is
-  // identical to the prior class form; this just makes the intent explicit.
-  const isEmoji = (str) =>
-    str &&
-    !str.startsWith('http') &&
-    !str.startsWith('/') &&
-    /^(?:\p{Emoji}|\u200d|\ufe0f)+$/u.test(str);
-
   const bgStyle = {};
   if (sec.bgColor && sec.bgOpacity > 0) {
     const hex = sec.bgColor;
@@ -132,22 +119,11 @@ export default React.memo(function NodeCard({
               border: `1px solid ${borderColor || 'var(--accent)'}30`,
             }}
           >
-            {icon.startsWith('http') || icon.startsWith('/') ? (
-              <img
-                src={cachedIconUrl(icon) || icon}
-                alt=""
-                className="icon-img"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                }}
-              />
-            ) : isEmoji(icon) ? (
+            {isEmoji(icon) ? (
               <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>
             ) : (
               <img
-                src={cachedIconUrl(
-                  `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`
-                )}
+                src={iconImageSrc(icon)}
                 alt=""
                 className="icon-img"
                 onError={(e) => {

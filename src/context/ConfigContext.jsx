@@ -2,33 +2,20 @@ import { createContext, useContext, useCallback, useMemo } from 'react';
 import { setIn } from '../utils/setIn.js';
 
 /**
- * ConfigContext — single source of the display config for the whole UI tree.
+ * ConfigContext — single source of the display config for the whole UI tree
+ * (App owns the useState; this exposes it without prop-drilling through the 13
+ * settings tabs and node/widget leaves).
  *
- * Why a context instead of prop-drilling:
- *   App owns `const [config, setConfig] = useState(...)`. Previously that pair
- *   was drilled through DashboardView / SettingsView / NavBar and into all 13
- *   settings tabs (plus NodePanel → NodeCard, Widgets). Every render of App
- *   handed the children the SAME `config`/`setConfig`, but `update` was rebuilt
- *   inside SettingsView and any inline `() => setConfig(...)` closures were new
- *   each render — which defeats React.memo on the leaf cards.
- *
- *   By exposing `config`, the STABLE `setConfig` setter, and a memoised
- *   `update(path, value)` through context, consumers read exactly what they need
- *   and memo'd subtrees only re-render when `config` itself changes.
- *
- * Contract:
- *   - `setConfig` is the raw useState setter from App — stable across renders.
- *   - `update(path, value)` is wrapped in useCallback([setConfig]) so it, too,
- *     is stable. It performs an immutable structural-sharing deep-set via setIn,
- *     so untouched config branches keep their reference identity (memo-friendly).
- *   - The provided value object is memoised on [config, setConfig, update] so a
- *     re-render that doesn't change config hands consumers the same reference.
+ * Memo-friendliness is the point: `update(path, value)` does an immutable
+ * structural-sharing deep-set via setIn, so untouched config branches keep their
+ * reference identity and React.memo'd subtrees don't thrash. Both `update` and
+ * the provided value object are memoised on the stable setConfig, so a re-render
+ * that doesn't change config hands consumers the same reference.
  */
 const ConfigContext = createContext(null);
 
 export function ConfigProvider({ config, setConfig, children }) {
-  // Immutable deep-set by dotted/array path. Stable identity (depends only on
-  // the stable setConfig) so consumers reading `update` don't thrash.
+  // Immutable deep-set by dotted/array path.
   const update = useCallback(
     (path, value) => {
       setConfig((prev) => setIn(prev, path, value));

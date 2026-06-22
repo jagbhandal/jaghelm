@@ -1,16 +1,13 @@
-export default {
+import { createArrPreset } from './createArrPreset.js';
+
+export default createArrPreset({
   name: 'Prowlarr',
   icon: 'prowlarr',
   description: 'Indexer manager for Usenet and BitTorrent',
-  auth: 'header',
-  authHeader: 'X-Api-Key',
+  apiVersion: 'v1',
+  envPrefix: 'PROWLARR',
   endpoint: '/api/v1/indexer',
-  testEndpoint: '/api/v1/system/status',
   fields: [
     { key: 'indexers', label: 'Indexers', path: '_length', format: 'number' },
   ],
-  envKeys: {
-    url: 'PROWLARR_URL',
-    token: 'PROWLARR_API_KEY',
-  },
-};
+});

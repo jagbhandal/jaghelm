@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../../../api/client.js';
+import { useToast } from '../../../context/OverlayContext.jsx';
 
 /**
  * useIntegrationsData — fetches presets, configured integrations, and the flat
@@ -7,6 +8,7 @@ import { apiFetch } from '../../../api/client.js';
  * that mutate the configured set (save / delete / toggle).
  */
 export function useIntegrationsData() {
+  const toast = useToast();
   const [presets, setPresets] = useState([]);
   const [configured, setConfigured] = useState({});
   const [allContainers, setAllContainers] = useState([]);
@@ -36,11 +38,13 @@ export function useIntegrationsData() {
       }
       containers.sort((a, b) => a.name.localeCompare(b.name));
       setAllContainers(containers);
-    } catch {
-      // Silently fail
+    } catch (err) {
+      // A failed fetch would otherwise leave the integrations list silently
+      // stale; surface it so the user knows the view may be out of date.
+      toast(`Failed to load integrations: ${err.message}`, 'error');
     }
     setLoading(false);
-  }, []);
+  }, [toast]);
 
   useEffect(() => { refetch(); }, [refetch]);
 

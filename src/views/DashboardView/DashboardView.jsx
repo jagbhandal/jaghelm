@@ -12,6 +12,7 @@ import { UPSCard, GiteaActivity, QuickLaunch, CronJobs } from '../../components/
 import { cachedIconUrl } from '../../hooks/useData';
 
 import NodePanel from './NodePanel';
+import { toServiceCard } from './serviceCard';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { DEFAULT_LAYOUTS, migrateLayouts } from './layouts';
 import { useDashboardData } from './useDashboardData';
@@ -57,19 +58,12 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
     retry,
   } = useDashboardData(refreshKey);
 
-  // Per-panel degraded/stale banners are computed AT RENDER from `sources`
-  // (per-source { error, lastSuccessMs }) and a live clock — no per-tick state,
-  // so an all-304 refresh that doesn't flip any error stays render-free and the
-  // 304-stable-identity contract holds. The render that surfaces a NEW error
-  // (or recovery) is the error-flip setState in the hook; staleness is read off
-  // the live clock on whatever render happens to occur.
-  //
-  // `now` is bucketed to half the refresh interval before it feeds the memo, so
-  // back-to-back renders within the same bucket recompute IDENTICAL banner
-  // content and the node/group element memos keep their referential identity
-  // (a render triggered by something unrelated doesn't needlessly rebuild every
-  // panel). The bucket is far finer than the ~2-interval staleness threshold, so
-  // the "updated Nm ago" note still flips promptly once it crosses.
+  // Banners are computed at render from `sources` + a live clock (no per-tick
+  // state), so an all-304 refresh stays render-free. `now` is bucketed to half
+  // the refresh interval so back-to-back renders in one bucket recompute
+  // IDENTICAL content and the node/group memos keep their identity; the bucket
+  // is still far finer than the staleness threshold, so "updated Nm ago" flips
+  // promptly once it crosses.
   const refreshIntervalMs = (config.refreshInterval || 30) * 1000;
   const nowBucket = Math.floor(Date.now() / Math.max(refreshIntervalMs / 2, 1000));
   const banners = useMemo(() => {
@@ -201,19 +195,8 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
     const map = {};
     for (const [nodeKey, node] of Object.entries(serviceData.nodes || {})) {
       for (const s of node.services || []) {
-        const uid = `${nodeKey}:${s.container}`;
-        map[uid] = {
-          name: s.display_name,
-          container: s.container,
-          uid,
-          node: nodeKey,
-          status: s.status,
-          uptime: s.uptime24,
-          ping: s.ping,
-          icon: s.icon,
-          docker: s.docker,
-          appData: appDataByContainer[s.container] || null,
-        };
+        const card = toServiceCard(nodeKey, s, appDataByContainer);
+        map[card.uid] = card;
       }
     }
     return map;

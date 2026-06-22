@@ -112,7 +112,13 @@ export function demoMiddleware(req, res, next) {
   // 2. Reads: serve a fixture, else an empty object. Never call next() for /api,
   //    so no real route runs → no outbound, no secrets, no backend needed.
   //    Mounted at /api, so req.path is mount-relative — reconstruct the full path.
-  const fullPath = req.baseUrl + req.path;
+  //    Express does NOT strip a trailing slash, so "/api/services/" would miss the
+  //    FIXTURES map and fall through to {}. Normalize by dropping a trailing "/"
+  //    (except the root path itself) before the lookup.
+  let fullPath = req.baseUrl + req.path;
+  if (fullPath.length > 1 && fullPath.endsWith('/')) {
+    fullPath = fullPath.slice(0, -1);
+  }
   if (Object.prototype.hasOwnProperty.call(FIXTURES, fullPath)) {
     return res.json(FIXTURES[fullPath]);
   }

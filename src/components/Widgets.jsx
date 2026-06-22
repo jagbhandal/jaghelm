@@ -2,43 +2,7 @@ import React from 'react';
 import { getServiceIcon, cachedIconUrl } from '../hooks/useData';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { safeUrl } from '../utils/safeUrl.js';
-
-// Shared: render icon (URL, slug, or emoji).
-// Alternation (not a character class) so ZWJ (\u200d) and variation selector
-// (\ufe0f) read as repeatable join tokens rather than combining marks on a
-// base char \u2014 what no-misleading-character-class flags. Same matches as before.
-function isEmoji(str) {
-  return (
-    str &&
-    !str.startsWith('http') &&
-    !str.startsWith('/') &&
-    /^(?:\p{Emoji}|\u200d|\ufe0f)+$/u.test(str)
-  );
-}
-
-function renderIcon(icon) {
-  if (!icon) return null;
-  if (icon.startsWith('http') || icon.startsWith('/')) {
-    return <img src={cachedIconUrl(icon) || icon} alt="" className="icon-img" />;
-  }
-  if (isEmoji(icon)) {
-    return <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>;
-  }
-  // Treat as a Dashboard Icons slug
-  const url = cachedIconUrl(
-    `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/${icon}.svg`
-  );
-  return (
-    <img
-      src={url}
-      alt=""
-      className="icon-img"
-      onError={(e) => {
-        e.target.style.display = 'none';
-      }}
-    />
-  );
-}
+import { renderIcon, iconSlugUrl } from '../utils/icon.jsx';
 
 // Shared: compute background style from section config
 function sectionBgStyle(sec) {
@@ -460,13 +424,11 @@ export const CronJobs = React.memo(function CronJobs({ nodes, banner }) {
   );
 });
 
-const CDN_BASE = 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg';
-
 // Resolve best icon URL for a quick launch link
 function resolveQuickLinkIcon(link) {
   // 1. If link has an icon field that looks like a CDN slug, use it directly
   if (link.icon && /^[a-z0-9-]+$/i.test(link.icon)) {
-    return cachedIconUrl(`${CDN_BASE}/${link.icon.toLowerCase()}.svg`);
+    return cachedIconUrl(iconSlugUrl(link.icon.toLowerCase()));
   }
   // 2. If link.icon is a full URL, route through cache
   if (link.icon && (link.icon.startsWith('http') || link.icon.startsWith('/'))) {
@@ -477,7 +439,7 @@ function resolveQuickLinkIcon(link) {
   if (mapped) return mapped;
   // 4. Try the link name directly as a CDN slug
   const slug = (link.name || '').toLowerCase().replace(/\s+/g, '-');
-  if (slug) return cachedIconUrl(`${CDN_BASE}/${slug}.svg`);
+  if (slug) return cachedIconUrl(iconSlugUrl(slug));
   return null;
 }
 

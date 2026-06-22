@@ -4,6 +4,28 @@ import { useConfig } from '../context/ConfigContext.jsx';
 import { THEMES } from './settings/themes.js';
 import { safeUrl } from '../utils/safeUrl.js';
 
+/**
+ * matchLinks — find configured links whose name OR url contains the query.
+ *
+ * Single source of truth so the live dropdown and the Enter handler agree:
+ * a url-only match shown in the dropdown is also the one Enter opens (it must
+ * not fall through to a web search).
+ *
+ * @param {Record<string, Array<{name: string, url: string}>>|undefined} links
+ * @param {string} query
+ * @returns {Array<{name: string, url: string}>}
+ */
+function matchLinks(links, query) {
+  const q = (query || '').trim().toLowerCase();
+  if (!q) return [];
+  return Object.values(links || {})
+    .flat()
+    .filter(
+      (l) =>
+        (l.name || '').toLowerCase().includes(q) || (l.url || '').toLowerCase().includes(q)
+    );
+}
+
 export default React.memo(function NavBar({
   tabs,
   activeTab,
@@ -72,11 +94,7 @@ export default React.memo(function NavBar({
       setShowResults(false);
       return;
     }
-    const q = searchQuery.toLowerCase();
-    const all = Object.values(config?.links || {}).flat();
-    const m = all.filter(
-      (l) => l.name.toLowerCase().includes(q) || l.url.toLowerCase().includes(q)
-    );
+    const m = matchLinks(config?.links, searchQuery);
     setSearchResults(m);
     setShowResults(m.length > 0);
   }, [searchQuery, config?.links]);
@@ -145,8 +163,7 @@ export default React.memo(function NavBar({
   const handleSearch = (e) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
-    const all = Object.values(config?.links || {}).flat();
-    const match = all.find((l) => l.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    const match = matchLinks(config?.links, searchQuery)[0];
     const matchUrl = match && safeUrl(match.url);
     if (matchUrl) window.open(matchUrl, '_blank');
     else {

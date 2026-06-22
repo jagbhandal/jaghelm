@@ -10,35 +10,19 @@ import {
 } from '../../hooks/useData';
 
 /**
- * Owns all dashboard data state and the periodic-refresh wiring.
+ * Owns all dashboard data state and the periodic-refresh wiring. Fetches are
+ * independent (slow endpoints don't block fast ones); the first fetch after
+ * mount skips ETags for a full payload, later refreshes use ETags.
  *
- * Each fetch is independent — slow endpoints don't block fast ones from
- * rendering. The first fetch after mount skips ETags so a fresh tab always
- * gets a full payload; subsequent refreshes use ETags.
+ * 304-stable-identity contract (see hooks/useData.js): a 304 returns the SAME
+ * reference as the prior 200, so setState(sameRef) is bailed by Object.is and
+ * an all-304 tick triggers zero re-renders. Per-source health preserves this:
+ * `error` is state but setState fires only on a status FLIP, and `lastSuccessMs`
+ * lives in a ref (no render) bumped on every success (200 or 304).
  *
- * 304-stable-identity contract (see hooks/useData.js):
- *   - On 304, fetchJson returns the SAME reference it returned for the prior 200.
- *   - Calling setState(sameRef) is bailed by React via Object.is — no re-render.
- *   - The `data !== null` guards below are defensive only (cold-start 304 edge).
- * Net: a 30s tick that produces all-304 responses triggers zero re-renders
- * in the DashboardView subtree.
- *
- * Per-source health is tracked WITHOUT violating that contract:
- *   - `error` is per-source useState, but setState fires ONLY when the error
- *     status FLIPS (null→string or string→null). An unchanged success — 200 or
- *     304 — never touches error state, so an all-304 tick stays render-free.
- *   - `lastSuccessMs` lives in a useRef (refs don't re-render). It's bumped on
- *     every successful fetch (200 OR 304) and read at call time, so the freshest
- *     value is always returned without provoking a render.
- *
- * `refreshKey` is bumped by the parent on every interval tick.
- *
- * Retry affordance:
- *   - `retry()` (returned) forces an immediate full re-fetch of all sources.
- *     It's user-triggered (a click on a degraded banner), NOT per-tick, so the
- *     extra setState it does is fine — it never fires on an idle 304 tick. The
- *     forced fetch SKIPS ETags so a wedged endpoint that's since recovered comes
- *     back with a fresh 200 body rather than a 304 against a stale cache.
+ * `retry()` (user-triggered, not per-tick) forces an immediate full re-fetch
+ * that SKIPS ETags, so a recovered endpoint returns a fresh 200 body rather
+ * than a 304 against a stale cache.
  */
 
 const SOURCE_KEYS = ['services', 'ups', 'commits', 'cron', 'integrations'];
@@ -60,10 +44,8 @@ export function useDashboardData(refreshKey) {
 
   const hasLoadedRef = useRef(false);
 
-  // User-triggered retry. Bumping this re-runs the fetch effect immediately,
-  // independent of the parent's interval-driven refreshKey. `forceFullRef`
-  // signals the next fetch to skip ETags so a recovered endpoint returns a
-  // fresh 200 instead of a 304 against a stale cache.
+  // Bumping retryNonce re-runs the fetch effect immediately, independent of the
+  // parent's interval-driven refreshKey; forceFullRef makes that fetch skip ETags.
   const [retryNonce, setRetryNonce] = useState(0);
   const forceFullRef = useRef(false);
   const retry = useCallback(() => {
@@ -71,8 +53,7 @@ export function useDashboardData(refreshKey) {
     setRetryNonce((n) => n + 1);
   }, []);
 
-  // Per-source error STATE — short string or null. Setting this re-renders, so
-  // we only ever set it on a status FLIP (see recordSuccess/recordError below).
+  // Per-source error state (short string or null); set only on a status flip.
   const [sourceErrors, setSourceErrors] = useState(() =>
     SOURCE_KEYS.reduce((acc, k) => {
       acc[k] = null;
@@ -84,8 +65,6 @@ export function useDashboardData(refreshKey) {
   // rather than a possibly-stale render snapshot. Never read for rendering.
   const errorRef = useRef(sourceErrors);
 
-  // Per-source last-success timestamp — REF, not state (refs don't re-render).
-  // Updated on every successful fetch (200 or 304); read at call time.
   const lastSuccessRef = useRef(
     SOURCE_KEYS.reduce((acc, k) => {
       acc[k] = null;
@@ -93,10 +72,6 @@ export function useDashboardData(refreshKey) {
     }, {})
   );
 
-  // Record a successful fetch for `source` (a 200 OR a 304 — both mean the
-  // round-trip worked and the data is current). Always bumps lastSuccessMs in
-  // the ref (no render). Clears the error ONLY if one was set (error→null flip),
-  // so an unchanged success never calls setState and the 304 tick stays inert.
   const recordSuccess = useCallback((source) => {
     lastSuccessRef.current[source] = Date.now();
     if (errorRef.current[source] !== null) {
@@ -105,8 +80,6 @@ export function useDashboardData(refreshKey) {
     }
   }, []);
 
-  // Record a failed fetch for `source`. Sets the error ONLY if it was previously
-  // clear (null→error flip), so repeated failures across ticks don't re-render.
   const recordError = useCallback((source, message) => {
     const msg = message || 'Fetch failed';
     if (errorRef.current[source] !== msg) {
@@ -215,12 +188,10 @@ export function useDashboardData(refreshKey) {
     fetchHistory();
   }, [fetchServices, fetchSections, fetchIntegrations, fetchHistory, refreshKey, retryNonce]);
 
-  // Assemble per-source health. error comes from state (flips only); lastSuccessMs
-  // is read from the ref. Memoize on [sourceErrors, healthBucket] so `sources`
-  // keeps a STABLE identity across unrelated re-renders (e.g. a drag tick) — only
-  // rebuilding when an error flips or the coarse staleness clock advances. Without
-  // this, a fresh `sources` object every render defeats the downstream banner +
-  // panel memos. (Doesn't affect the 304 contract — no new render is triggered.)
+  // Memoize on [sourceErrors, healthBucket] so `sources` keeps a STABLE identity
+  // across unrelated re-renders (e.g. a drag tick), rebuilding only on an error
+  // flip or staleness-clock tick — otherwise a fresh object every render defeats
+  // the downstream banner + panel memos. (No new render triggered; 304 contract holds.)
   const healthBucket = Math.floor(Date.now() / 15000);
   const sources = useMemo(
     () =>

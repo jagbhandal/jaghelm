@@ -20,7 +20,7 @@ import { setSecret } from '../secrets.js';
 import { getPreset, listPresets } from '../integrations/registry.js';
 import { fetchIntegration, testIntegration } from '../integrations/handler.js';
 import { refreshIntegrations } from '../refresh.js';
-import { getCached, jsonWithEtag } from '../cache.js';
+import { respondWarmCached } from '../cache.js';
 import { apiError } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { createRateLimiter } from '../util/rateLimiter.js';
@@ -65,15 +65,13 @@ router.get('/presets', (req, res) => {
 
 router.get(
   '/',
-  asyncHandler(async (req, res) => {
-    const cached = getCached('integrations');
-    if (cached) return jsonWithEtag(res, req, 'integrations', cached);
-
-    const data = await refreshIntegrations();
-    if (data) return jsonWithEtag(res, req, 'integrations', data);
-
-    res.json({});
-  })
+  asyncHandler((req, res) =>
+    respondWarmCached(req, res, {
+      key: 'integrations',
+      refresh: refreshIntegrations,
+      fallback: (r) => r.json({}),
+    })
+  )
 );
 
 // ── Test connection (creds in body, not stored) ──────────────────────────
@@ -126,13 +124,26 @@ router.post('/save', (req, res) => {
   if (!SAFE_ID.test(type) || (instance && !SAFE_ID.test(instance))) {
     return apiError(res, 400, 'Invalid type or instance (letters, digits, _ - only; max 64)');
   }
+  const unsupported = getPreset(type)?.unsupported;
+  if (unsupported) {
+    return apiError(res, 400, `Integration unavailable: ${unsupported}`);
+  }
 
   const cleanUrl = normalizeUrl(url);
   const storageKey = instance ? `${type}_${instance}` : type;
 
   try {
-    if (password) setSecret(`integration_${storageKey}_password`, password);
-    if (token) setSecret(`integration_${storageKey}_token`, token);
+    // setSecret returns false when the secrets manager is uninitialized (no
+    // DASH_SECRET). Writing entry.password="$secret:…" anyway would persist a
+    // config pointing at a credential that was never stored — the integration
+    // silently has no credential and fails later with no save-time error. Surface
+    // it as a 500 now, matching the standalone secrets route.
+    if (password && !setSecret(`integration_${storageKey}_password`, password)) {
+      return apiError(res, 500, 'Secrets manager not initialized (DASH_SECRET missing?)');
+    }
+    if (token && !setSecret(`integration_${storageKey}_token`, token)) {
+      return apiError(res, 500, 'Secrets manager not initialized (DASH_SECRET missing?)');
+    }
 
     const entry = {
       url: cleanUrl,
@@ -162,7 +173,9 @@ router.post('/save', (req, res) => {
     }
 
     config.integrations[storageKey] = entry;
-    saveConfig(config);
+    // saveConfig returns false on a write failure (or a reentrant save) — surface
+    // that as a 500 instead of reporting success, matching services.js POST /config.
+    if (!saveConfig(config)) return apiError(res, 500, 'Failed to persist config');
 
     res.json({ ok: true, type: storageKey });
   } catch (err) {
@@ -180,7 +193,9 @@ router.delete('/:type', (req, res) => {
   }
 
   delete config.integrations[type];
-  saveConfig(config);
+  // saveConfig returns false on a write failure (or a reentrant save) — surface
+  // that as a 500 instead of reporting success, matching services.js POST /config.
+  if (!saveConfig(config)) return apiError(res, 500, 'Failed to persist config');
   res.json({ ok: true });
 });
 

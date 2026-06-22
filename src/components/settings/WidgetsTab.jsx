@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { SEARCH_ENGINES } from '../../hooks/useData';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import Field from './Field';
@@ -24,6 +24,22 @@ export default function WidgetsTab() {
   // user edits — letting us show an error for garbage without committing it.
   const [latDraft, setLatDraft] = useState(config.weatherLat || '');
   const [lonDraft, setLonDraft] = useState(config.weatherLon || '');
+
+  // Track focus so a config change from outside this tab (Backup → Import whole-
+  // config replace, or a reset) re-syncs the draft to the new persisted value,
+  // but only while the user isn't actively editing that field — otherwise the
+  // re-sync would clobber mid-keystroke input.
+  const latFocused = useRef(false);
+  const lonFocused = useRef(false);
+
+  useEffect(() => {
+    if (!latFocused.current) setLatDraft(config.weatherLat || '');
+  }, [config.weatherLat]);
+
+  useEffect(() => {
+    if (!lonFocused.current) setLonDraft(config.weatherLon || '');
+  }, [config.weatherLon]);
+
   const latError = coordError(latDraft, -90, 90, 'Latitude');
   const lonError = coordError(lonDraft, -180, 180, 'Longitude');
 
@@ -81,6 +97,8 @@ export default function WidgetsTab() {
               className="settings-input mono"
               value={latDraft}
               onChange={onCoord('weatherLat', setLatDraft, -90, 90, 'Latitude')}
+              onFocus={() => { latFocused.current = true; }}
+              onBlur={() => { latFocused.current = false; }}
               placeholder="39.88"
             />
           </Field>
@@ -89,6 +107,8 @@ export default function WidgetsTab() {
               className="settings-input mono"
               value={lonDraft}
               onChange={onCoord('weatherLon', setLonDraft, -180, 180, 'Longitude')}
+              onFocus={() => { lonFocused.current = true; }}
+              onBlur={() => { lonFocused.current = false; }}
               placeholder="-83.09"
             />
           </Field>

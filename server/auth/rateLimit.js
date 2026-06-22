@@ -1,18 +1,11 @@
 /**
  * Login rate limiter — defence in depth against credential brute force.
  *
- * Three layers:
- *  1. Per-IP sliding window: after MAX_ATTEMPTS failures in WINDOW_MS the
- *     bucket locks until the window expires; a successful login resets it.
- *  2. Global failure counter: total failed logins across ALL IPs in the
- *     window. Once GLOBAL_MAX is hit, every login is refused until the window
- *     rolls over — this catches an attacker rotating source IPs (incl. a
- *     misconfigured proxy letting X-Forwarded-For be spoofed) that the per-IP
- *     limit alone would miss. With a single admin account, this is effectively
- *     account lockout.
- *  3. Failure delay floor: every failed login waits a jittered minimum before
- *     responding, so a brute-force loop is throttled and the response time
- *     can't be used as a fine-grained credential oracle.
+ * Three layers: per-IP sliding window, a global failure counter, and a jittered
+ * floor delay on every failure. The global counter exists because an attacker
+ * rotating source IPs (incl. a misconfigured proxy letting X-Forwarded-For be
+ * spoofed) would slip past a per-IP limit alone; the jittered delay keeps the
+ * 401 response time from being a fine-grained credential oracle.
  *
  * Client identification (req.ip) is the caller's responsibility; behind a proxy
  * this needs `app.set('trust proxy', ...)` configured correctly — see KNOWN-ISSUES.

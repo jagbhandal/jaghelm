@@ -3,23 +3,11 @@ import React from 'react';
 /**
  * DegradedBanner — a compact, in-panel "this data source is unhealthy" notice.
  *
- * Two independent, additive signals:
- *   - `message` (required): a short, CAUSE-NAMING line shown when a source's last
- *     fetch failed (e.g. "Live metrics unavailable — Prometheus unreachable").
- *     Rendered with role="alert" so assistive tech announces the degradation.
- *   - `staleNote` (optional): a subtle "updated Nm ago" line shown when the data
- *     is going stale (last success exceeded ~2 refresh intervals) even if the
- *     most recent fetch technically succeeded. Lower-key than the error line.
- *
- * Visual style mirrors ErrorBoundary's inline card (red top accent, glass-card,
- * ⚠️ + mono detail), so a degraded panel reads consistently with a crashed one.
- *
- * The "Retry" button calls `onRetry`, which forces an immediate full re-fetch.
- * It's a normal click handler — no per-render/per-tick state — so it can't
- * perturb the 304-stable-identity contract.
+ * Two additive signals: `message` (a cause-naming line shown when a fetch
+ * failed) and `staleNote` (a subtler "updated Nm ago" line when data is going
+ * stale despite a technically-successful last fetch).
  */
 export default function DegradedBanner({ message, staleNote, onRetry }) {
-  // Nothing to say → render nothing (keeps the happy path visually unchanged).
   if (!message && !staleNote) return null;
 
   // An error is a louder signal than mere staleness; the red accent + alert role

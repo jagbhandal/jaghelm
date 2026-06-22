@@ -69,8 +69,6 @@ import { iconRoutes } from './routes/icons.js';
 import { cronRoutes } from './routes/cron.js';
 import { systemRoutes } from './routes/system.js';
 
-// ── Paths ─────────────────────────────────────────────────────────────────
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PORT = process.env.PORT || 3099;
@@ -80,11 +78,8 @@ const dataDir = join(__dirname, '..', 'data');
 if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
 if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
 
-// ── App + middleware ──────────────────────────────────────────────────────
-
 const app = express();
-// ── Trust proxy ───────────────────────────────────────────────────────────
-// Behind a reverse proxy, X-Forwarded-For determines req.ip — which the
+// Trust proxy: behind a reverse proxy, X-Forwarded-For determines req.ip — which the
 // login rate limiter buckets by. Trust ONLY specific upstream IPs/ranges
 // listed in TRUST_PROXY (comma-separated). Never use `true` — that lets
 // any client spoof their IP via X-Forwarded-For and bypass rate limiting.
@@ -102,7 +97,6 @@ if (trustProxy.length > 0) {
   app.set('trust proxy', trustProxy);
 }
 
-// ── Observability ─────────────────────────────────────────────────────────
 // Count + time every request (Prometheus metrics) and emit a structured access
 // log line on completion. Mounted first so it brackets the whole pipeline.
 // The scrape/health endpoints are skipped in the access log to avoid spam.
@@ -170,8 +164,7 @@ app.use(
 
 const upload = createUploadMiddleware(uploadsDir);
 
-// ── CORS lock-down ────────────────────────────────────────────────────────
-// Allow-list driven by CORS_ORIGIN env (comma-separated). When unset, cross-
+// CORS lock-down: allow-list driven by CORS_ORIGIN env (comma-separated). When unset, cross-
 // origin requests are blocked entirely — JagHelm serves its own SPA from
 // the same origin, so this is the safe default for homelab deployments.
 const corsOriginEnv = (process.env.CORS_ORIGIN || '').trim();
@@ -193,8 +186,6 @@ app.use(express.json({ limit: '1mb' }));
 app.disable('etag'); // We manage ETags manually via cache.jsonWithEtag
 app.use('/uploads', express.static(uploadsDir));
 
-// ── Public routes ─────────────────────────────────────────────────────────
-
 // Prometheus scrape endpoint (root path, by convention). Public like /health —
 // it exposes request counts/timings, not secrets, and Prometheus must reach it.
 app.get('/metrics', metricsHandler);
@@ -209,8 +200,6 @@ app.use('/api/cron', cronRoutes);
 app.use('/api/icons', iconRoutes);
 app.use('/api', systemRoutes); // /health + /readyz public; /weather authed inside
 
-// ── Auth-protected routes ─────────────────────────────────────────────────
-
 app.use('/api/services', authMiddleware, servicesRoutes);
 app.use('/api/integrations', authMiddleware, integrationRoutes);
 // Standalone secrets API is fail-closed: refuses to serve (enumerate/overwrite/
@@ -220,8 +209,6 @@ app.use('/api/display-config', authMiddleware, displayConfigRoutes);
 app.use('/api/todos', authMiddleware, todosRoutes);
 app.use('/api/upload', authMiddleware, createUploadRoutes(upload));
 app.use('/api', authMiddleware, infrastructureRoutes);
-
-// ── Static assets + SPA fallback ──────────────────────────────────────────
 
 const distPath = join(__dirname, '..', 'dist');
 // Vite emits content-hashed filenames under /assets, so they can be cached
@@ -235,8 +222,6 @@ app.get('*', (req, res) => res.sendFile(join(distPath, 'index.html')));
 // Global error handler — keeps the JSON error contract for async route
 // rejections (asyncHandler forwards them here) instead of an HTML 500.
 app.use(errorHandler);
-
-// ── Boot sequence ─────────────────────────────────────────────────────────
 
 // Keep a single stray rejection / thrown error from killing the whole
 // single-instance dashboard. Log loudly; the container restart policy is the
@@ -288,8 +273,7 @@ async function boot() {
     }
   });
 
-  // ── Graceful shutdown ───────────────────────────────────────────────────
-  // Stop accepting connections, cancel the background refresh timer so it can't
+  // Graceful shutdown: stop accepting connections, cancel the background refresh timer so it can't
   // fire mid-drain, let in-flight requests finish, then exit.
   let shuttingDown = false;
   function shutdown(signal) {

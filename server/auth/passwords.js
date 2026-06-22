@@ -25,6 +25,28 @@ const AUTH_FILE = join(DATA_DIR, 'auth.json');
 const AUTH_USER = process.env.DASH_USER || 'admin';
 const AUTH_PASS_ENV = process.env.DASH_PASS || '';
 
+/**
+ * Constant-time buffer equality that doesn't leak length information by
+ * short-circuiting. Equal-length buffers are compared via timingSafeEqual;
+ * unequal-length inputs still run a dummy compare (against a same-length
+ * zero buffer) before returning false, so the call duration is independent
+ * of where — or whether — the lengths diverge. timingSafeEqual itself throws
+ * on a length mismatch, which is why the guard runs first.
+ *
+ * @param {Buffer} a
+ * @param {Buffer} b
+ * @returns {boolean}
+ */
+export function safeBufEqual(a, b) {
+  if (a.length !== b.length) {
+    // Dummy compare keeps timing roughly flat across the length-mismatch and
+    // equal-length-mismatch cases.
+    crypto.timingSafeEqual(a, Buffer.alloc(a.length));
+    return false;
+  }
+  return crypto.timingSafeEqual(a, b);
+}
+
 let storedPasswordHash = loadAuthOverride();
 
 function loadAuthOverride() {
@@ -40,8 +62,7 @@ function loadAuthOverride() {
 }
 
 function persistHash(hash) {
-  // Atomic + 0600: a crash mid-write can't truncate the admin hash, and the
-  // file is never group/world-readable.
+  // Atomic + 0600: a crash mid-write can't truncate the admin hash, and it's never group/world-readable.
   atomicWriteFileSync(
     AUTH_FILE,
     JSON.stringify({ passwordHash: hash, updatedAt: new Date().toISOString() }, null, 2),
@@ -67,20 +88,16 @@ export function verifyPassword(password, stored) {
       if (!salt || !hash) return false;
       const derived = Buffer.from(crypto.scryptSync(password, salt, 64).toString('hex'), 'hex');
       const storedBuf = Buffer.from(hash, 'hex');
-      if (storedBuf.length !== derived.length) return false;
-      return crypto.timingSafeEqual(derived, storedBuf);
+      return safeBufEqual(derived, storedBuf);
     } catch {
       return false;
     }
   }
   // Legacy SHA-256 (no salt, plain hex) — kept for migration only.
-  // Buffers are 32 bytes (SHA-256 digest), always equal length, so
-  // timingSafeEqual is safe to call directly without padding.
   if (stored.length === 64 && !stored.includes(':')) {
     const sha = crypto.createHash('sha256').update(password).digest();
     const storedBuf = Buffer.from(stored, 'hex');
-    if (storedBuf.length !== sha.length) return false;
-    return crypto.timingSafeEqual(sha, storedBuf);
+    return safeBufEqual(sha, storedBuf);
   }
   return false;
 }

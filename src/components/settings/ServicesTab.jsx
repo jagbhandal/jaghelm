@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import Field from './Field';
+import { FieldRow } from './Field';
+import { SettingsIcon } from './primitives.jsx';
 import { useConfirm } from '../../context/OverlayContext.jsx';
 
 /**
@@ -68,14 +69,19 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
     onSave({ ...serverConfig, services: updatedServices });
   };
 
+  // Hide rules match a container by its EXACT name (case-insensitive), not a
+  // substring — otherwise hiding "redis" would also hide "redis-backup" and
+  // un-hiding it would strip every rule whose name is a substring of this one.
+  const matchesHide = (containerName, h) => h.toLowerCase() === containerName.toLowerCase();
+
   const toggleHide = (nodeKey, containerName) => {
     const node = serverConfig.nodes?.[nodeKey];
     if (!node) return;
     const hideList = node.hide || [];
-    const isHidden = hideList.some((h) => containerName.toLowerCase().includes(h.toLowerCase()));
+    const isHidden = hideList.some((h) => matchesHide(containerName, h));
     let updated;
     if (isHidden) {
-      updated = hideList.filter((h) => !containerName.toLowerCase().includes(h.toLowerCase()));
+      updated = hideList.filter((h) => !matchesHide(containerName, h));
     } else {
       updated = [...hideList, containerName];
     }
@@ -90,7 +96,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
 
   const isHidden = (nodeKey, containerName) => {
     const hideList = serverConfig.nodes?.[nodeKey]?.hide || [];
-    return hideList.some((h) => containerName.toLowerCase().includes(h.toLowerCase()));
+    return hideList.some((h) => matchesHide(containerName, h));
   };
 
   return (
@@ -124,18 +130,7 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
             }}
           >
             <span style={{ fontSize: 18, display: 'inline-flex', alignItems: 'center' }}>
-              {node.icon && (node.icon.startsWith('http') || node.icon.startsWith('/')) ? (
-                <img
-                  src={node.icon}
-                  alt=""
-                  style={{ width: 22, height: 22, borderRadius: 4 }}
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                  }}
-                />
-              ) : (
-                node.icon || '🖥'
-              )}
+              <SettingsIcon value={node.icon} fallback="🖥" size={22} />
             </span>
             <span
               style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 14, flex: 1 }}
@@ -339,14 +334,5 @@ export default function ServicesTab({ serverConfig, liveServices, monitorNames, 
         </div>
       )}
     </div>
-  );
-}
-
-// Row-style field; delegates to the shared Field for the label/htmlFor wiring.
-function FieldRow({ label, children }) {
-  return (
-    <Field layout="row" label={label}>
-      {children}
-    </Field>
   );
 }

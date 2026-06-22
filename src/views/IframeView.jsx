@@ -2,6 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 
 export default function IframeView({ url, title }) {
   const [status, setStatus] = useState('loading'); // loading | ok | blocked
+  // Bumped by the manual "Retry" button. The load-detection effect below is
+  // keyed on it so a retry re-arms the 8s timeout (the url is unchanged on a
+  // retry, so without this the effect — and its timer — never re-runs and a
+  // still-blocked retry would spin forever).
+  const [retryNonce, setRetryNonce] = useState(0);
   const iframeRef = useRef(null);
   const timerRef = useRef(null);
   // Mirror the latest status into a ref so the timeout callback below reads the
@@ -22,7 +27,7 @@ export default function IframeView({ url, title }) {
     }, 8000);
 
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [url]);
+  }, [url, retryNonce]);
 
   const handleLoad = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -61,7 +66,7 @@ export default function IframeView({ url, title }) {
             <a href={url} target="_blank" rel="noopener noreferrer" style={{ padding: '10px 24px', background: 'var(--accent)', color: '#fff', borderRadius: '10px', textDecoration: 'none', fontSize: '14px', fontWeight: 500 }}>
               Open in New Tab
             </a>
-            <button onClick={() => setStatus('loading')} style={{ padding: '10px 24px', background: 'var(--bg-card-inner)', color: 'var(--text-primary)', borderRadius: '10px', border: '1px solid var(--border-color)', fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}>
+            <button onClick={() => { setStatus('loading'); setRetryNonce((n) => n + 1); }} style={{ padding: '10px 24px', background: 'var(--bg-card-inner)', color: 'var(--text-primary)', borderRadius: '10px', border: '1px solid var(--border-color)', fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}>
               Retry
             </button>
           </div>
@@ -97,7 +102,10 @@ export default function IframeView({ url, title }) {
         Revisit if we ever expose this view to untrusted users or third-party
         URLs.
       */}
-      <iframe ref={iframeRef} src={url} title={title || 'Embedded'} onLoad={handleLoad} onError={() => setStatus('blocked')}
+      {/* `key={retryNonce}` forces a fresh iframe element on manual retry so the
+          same `src` is actually re-fetched (and onLoad re-fires) — re-arming the
+          detection alongside the effect's re-run. */}
+      <iframe key={retryNonce} ref={iframeRef} src={url} title={title || 'Embedded'} onLoad={handleLoad} onError={() => setStatus('blocked')}
         style={{ display: status === 'ok' ? 'block' : 'none' }}
         sandbox="allow-same-origin allow-scripts allow-forms allow-popups" />
     </div>

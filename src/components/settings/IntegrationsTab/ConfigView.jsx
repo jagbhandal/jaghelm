@@ -1,7 +1,7 @@
 import React from 'react';
-import { cachedIconUrl } from '../../../hooks/useData';
+import { iconImageSrc } from '../../../utils/icon.jsx';
 import { AUTH_LABELS, AUTH_FIELDS } from './constants.js';
-import FieldGroup from './FieldGroup.jsx';
+import { FieldRow as FieldGroup } from '../Field';
 
 /**
  * ConfigView — the config form. Used for both create (preset or custom) and
@@ -17,9 +17,9 @@ import FieldGroup from './FieldGroup.jsx';
  *   saveStatus      — null | 'saving' | 'saved' | { error }
  *   handleTest      — () => Promise<void>
  *   handleSave      — () => Promise<void>
- *   handleDelete    — (storageKey) => Promise<void>
+ *   handleDelete    — (storageKey) => Promise<boolean> (true only on confirmed success)
  *   onBack          — () => void
- *   onAfterDelete   — () => void (typically goHome)
+ *   onAfterDelete   — () => void (typically goHome); called only when delete succeeds
  */
 export default function ConfigView({
   selectedPreset,
@@ -55,7 +55,7 @@ export default function ConfigView({
       <div className="settings-row" style={{ gap: 14, marginBottom: 24 }}>
         {isPreset && (
           <img
-            src={cachedIconUrl(`https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${selectedPreset.icon}.svg`)}
+            src={iconImageSrc(selectedPreset.icon)}
             alt=""
             style={{ width: 40, height: 40, borderRadius: 10 }}
             onError={e => { e.target.style.display = 'none'; }}
@@ -242,7 +242,7 @@ export default function ConfigView({
           {isEditing && (
             <button
               className="settings-btn-danger"
-              onClick={() => { handleDelete(editingType); onAfterDelete(); }}
+              onClick={async () => { if (await handleDelete(editingType)) onAfterDelete(); }}
               style={{ padding: '8px 20px', marginLeft: 'auto' }}
             >
               🗑 Delete

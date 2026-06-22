@@ -50,6 +50,14 @@ test('demo: secrets are unreachable — read is empty, write is 403', async () =
   assert.equal(w.status, 403);
 });
 
+test('demo: a trailing-slash path still hits the canned fixture (not the empty default)', async () => {
+  // Express does not strip a trailing slash, so "/api/services/" reconstructs to
+  // "/api/services/" and would miss the FIXTURES map without normalization.
+  const r = await request(app).get('/api/services/');
+  assert.equal(r.status, 200);
+  assert.ok(r.body.nodes && r.body.nodes['demo-1'], 'fixture served despite trailing slash');
+});
+
 test('demo: an unknown /api read returns empty (no real route → no outbound)', async () => {
   const r = await request(app).get('/api/integrations/proxmox');
   assert.equal(r.status, 200);

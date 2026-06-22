@@ -4,11 +4,10 @@
  * Fetches icon listings from multiple GitHub icon repositories at boot,
  * caches them in memory, and provides a search API.
  * 
- * Sources (same as Homarr):
+ * Sources:
  * - homarr-labs/dashboard-icons (primary, ~1800+ icons)
  * - selfhst/icons (~200+ self-hosted app icons)
- * - simple-icons/simple-icons (~2500+ brand icons)
- * 
+ *
  * Icons are served via jsDelivr CDN — we only store the names.
  */
 
@@ -46,7 +45,7 @@ let indexReady = false;
  * Returns array of { name, slug, url, repo }
  */
 async function fetchRepoIcons(repoConfig) {
-  const { id, label, repo, branch, treePath, cdnBase, ext, isNested, nestedFile } = repoConfig;
+  const { id, label, repo, branch, treePath, cdnBase, ext } = repoConfig;
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
@@ -71,31 +70,7 @@ async function fetchRepoIcons(repoConfig) {
     const data = await res.json();
     const tree = data.tree || [];
 
-    if (isNested && nestedFile) {
-      // Nested structure: svg/{icon-name}/outline.svg
-      // Find all files matching the pattern svg/*/nestedFile
-      const targetSuffix = `/${nestedFile}`;
-      return tree
-        .filter(item => item.type === 'blob' && item.path.startsWith(treePath) && item.path.endsWith(targetSuffix))
-        .map(item => {
-          // Extract icon name from path: svg/home/outline.svg → home
-          const withoutPrefix = item.path.slice(treePath.length);
-          const slug = withoutPrefix.split('/')[0];
-          const name = slug
-            .replace(/_/g, ' ')
-            .replace(/-/g, ' ')
-            .replace(/\b\w/g, c => c.toUpperCase());
-          return {
-            name,
-            slug,
-            url: `${cdnBase}/${slug}/${nestedFile}`,
-            repo: id,
-            repoLabel: label,
-          };
-        });
-    }
-
-    // Standard flat structure: svg/{icon-name}.svg
+    // Flat structure: svg/{icon-name}.svg
     return tree
       .filter(item => item.type === 'blob' && item.path.startsWith(treePath) && item.path.endsWith(ext))
       .map(item => {
@@ -135,7 +110,7 @@ export async function initIconIndex() {
   for (const result of results) {
     if (result.status === 'fulfilled') {
       for (const icon of result.value) {
-        // Deduplicate: prefer dashboard-icons > selfhst > simple-icons
+        // Deduplicate: prefer dashboard-icons > selfhst (fetch order)
         if (!seen.has(icon.slug)) {
           seen.add(icon.slug);
           all.push(icon);

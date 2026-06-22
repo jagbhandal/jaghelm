@@ -1,20 +1,9 @@
 // PhotoPrism uses session-cookie auth (`X-Auth-Token`) in its public API.
-// The previous version of this preset declared `auth: 'oauth2'` with a separate
-// `oauth2: { ... }` block, but handler.js / lib/session.js have no oauth2 path —
-// only `auth: 'session'` is recognised — so the integration was silently broken.
-//
-// The oauth2 block declared the following PhotoPrism-specific fields that don't
-// translate to the session contract:
-//   - loginEndpoint: '/api/v1/oauth/token'
-//   - loginContentType: 'application/x-www-form-urlencoded'
-//   - loginBody: 'grant_type=client_credentials&client_id={username}&client_secret={password}'
-//   - tokenPath: 'access_token'
-//   - tokenHeader: 'Authorization'
-//   - tokenPrefix: 'Bearer '
-// TODO(integrations): when handler.js grows a real oauth2 path (with token-refresh
-// + 2FA-aware login), restore the oauth2 client-credentials block as the primary
-// and demote session to authFallback. Until then, session-auth is the only mode
-// PhotoPrism users without 2FA can rely on.
+// handler.js / lib/session.js only recognise `auth: 'session'` — there's no
+// oauth2 path — so session is the only mode that works (and only without 2FA).
+// TODO(integrations): when handler.js grows a real oauth2 path (token-refresh +
+// 2FA-aware login), use PhotoPrism's oauth2 client-credentials flow as primary
+// (POST /api/v1/oauth/token, Bearer token) and demote session to authFallback.
 export default {
   name: 'PhotoPrism',
   icon: 'photoprism',

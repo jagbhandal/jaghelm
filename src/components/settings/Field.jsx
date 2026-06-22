@@ -94,3 +94,17 @@ export default function Field({ label, children, hint, error, layout = 'field' }
     </div>
   );
 }
+
+/**
+ * FieldRow — the row-layout convenience wrapper that NodesTab, ServicesTab and
+ * the IntegrationsTab config form each used to redefine locally (byte-identical
+ * copies / a FieldGroup alias). Delegates to <Field layout="row">, so the
+ * label/htmlFor/error wiring stays in one place.
+ */
+export function FieldRow({ label, hint, children }) {
+  return (
+    <Field layout="row" label={label} hint={hint}>
+      {children}
+    </Field>
+  );
+}
