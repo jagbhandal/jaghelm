@@ -33,8 +33,6 @@ function usageColor(percent, fallback) {
   return fallback || 'var(--accent)';
 }
 
-// ── Virtual Machines ─────────────────────────────────────────────────────
-
 export function ProxmoxVMList({ vms, borderColor }) {
   if (!vms || vms.length === 0) return null;
 
@@ -157,8 +155,6 @@ export function ProxmoxVMList({ vms, borderColor }) {
   );
 }
 
-// ── Storage Pools ────────────────────────────────────────────────────────
-
 export function ProxmoxStoragePools({ pools, borderColor }) {
   if (!pools || pools.length === 0) return null;
 
@@ -256,8 +252,6 @@ export function ProxmoxStoragePools({ pools, borderColor }) {
     </div>
   );
 }
-
-// ── Backup Status ────────────────────────────────────────────────────────
 
 export function ProxmoxBackupStatus({ backup }) {
   if (!backup) return null;

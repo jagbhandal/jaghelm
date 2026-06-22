@@ -8,11 +8,8 @@ export default {
   unsupported: 'Requires POST + CSRF (X-Transmission-Session-Id) support the handler lacks',
   // TODO(integrations): Transmission's RPC requires POST with a JSON body
   // ({"method":"session-stats"}) and a CSRF dance via X-Transmission-Session-Id.
-  // handler.js currently only does GET, so this preset will fail. Previously
-  // declared `method: 'POST'`, `body: '...'`, and
-  // `extraHeaders: {Content-Type: 'application/json'}` were stripped during
-  // preset hygiene — none were read by handler/lib. Restore alongside POST
-  // support and 409-retry handling for the CSRF token if Transmission is wanted.
+  // handler.js currently only does GET, so this preset will fail. Restore alongside
+  // POST support and 409-retry handling for the CSRF token if Transmission is wanted.
   auth: 'basic',
   endpoint: '/transmission/rpc',
   testEndpoint: '/transmission/rpc',

@@ -4,11 +4,10 @@
  * Fetches icon listings from multiple GitHub icon repositories at boot,
  * caches them in memory, and provides a search API.
  * 
- * Sources (same as Homarr):
+ * Sources:
  * - homarr-labs/dashboard-icons (primary, ~1800+ icons)
  * - selfhst/icons (~200+ self-hosted app icons)
- * - simple-icons/simple-icons (~2500+ brand icons)
- * 
+ *
  * Icons are served via jsDelivr CDN — we only store the names.
  */
 
@@ -111,7 +110,7 @@ export async function initIconIndex() {
   for (const result of results) {
     if (result.status === 'fulfilled') {
       for (const icon of result.value) {
-        // Deduplicate: prefer dashboard-icons > selfhst > simple-icons
+        // Deduplicate: prefer dashboard-icons > selfhst (fetch order)
         if (!seen.has(icon.slug)) {
           seen.add(icon.slug);
           all.push(icon);

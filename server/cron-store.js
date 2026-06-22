@@ -17,13 +17,9 @@ const log = createLogger('cron-store');
 const STORE_PATH = join(DATA_DIR, 'cron-jobs.json');
 const MAX_RUNS = 3;
 
-// Ensure data directory exists
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
-/**
- * Load the full cron store from disk.
- * Structure: { [node]: { [job]: [ ...runs ] } }
- */
+/** Load the full cron store. Structure: { [node]: { [job]: [ ...runs ] } } */
 function load() {
   try {
     if (!existsSync(STORE_PATH)) return {};
@@ -33,9 +29,6 @@ function load() {
   }
 }
 
-/**
- * Persist the store to disk.
- */
 function save(store) {
   try {
     atomicWriteFileSync(STORE_PATH, JSON.stringify(store, null, 2));
@@ -76,11 +69,7 @@ export function recordRun(report) {
   save(store);
 }
 
-/**
- * Return all job statuses grouped by node.
- * Each node contains its jobs with their run history.
- * Result is sorted: nodes alphabetically, jobs alphabetically.
- */
+/** All job statuses grouped by node, with run history; nodes + jobs sorted alphabetically. */
 export function getAllStatuses() {
   const store = load();
   return Object.entries(store)

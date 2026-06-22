@@ -2,17 +2,9 @@ import React from 'react';
 import { iconImageSrc } from '../../utils/icon.jsx';
 
 /**
- * Shared settings-tab primitives.
- *
- * Every settings tab had its own copy of these tiny building blocks — `Card`
- * was redefined verbatim in ~10 tabs, the toggle checkbox (`Chk`) in three, and
- * the `settings-choice-group` button row was hand-rolled inline in a dozen
- * places. Extracting them here means the markup, class names, and (newly added)
- * accessibility semantics live in exactly one spot, so a change propagates
- * everywhere instead of being patched tab-by-tab.
- *
- * These are presentational only — they take `value`/`onChange` and render the
- * existing `.settings-*` classes, so the visual output is unchanged.
+ * Shared settings-tab primitives: one home for the tiny building blocks each tab
+ * used to copy inline, so markup, class names, and a11y semantics change in one place.
+ * Presentational only — `value`/`onChange` over the existing `.settings-*` classes.
  */
 
 /**

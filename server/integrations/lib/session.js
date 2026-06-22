@@ -39,24 +39,11 @@ function buildLoginBody(session, config) {
   return JSON.stringify(fillCreds(session.loginBody, config._username || '', config._password || ''));
 }
 
-/**
- * Session-based authentication: log in once, cache the token, reuse it on
- * subsequent fetches until expiry, transparently re-authenticate if the cached
- * token gets rejected.
- *
- * Two cache eviction triggers:
- *   1. Time-based — entry expires after `tokenTtl` ms (configurable per preset
- *      via session.tokenTtl, defaults to 1 hour).
- *   2. Server rejection — if a fetch with the cached token fails for any reason,
- *      we drop the cache entry and re-auth. Failures are logged so transient
- *      network issues are distinguishable from real token expiry in the logs.
- */
-
-// Token cache — key: baseUrl + loginEndpoint, value: { token, header, prefix, expires }
-// Capped at SESSION_CACHE_MAX entries with simple LRU eviction (Map preserves
-// insertion order; on access we delete + re-set to bump the entry to the tail).
-// Without this cap, a misconfigured caller that varies the cache key (e.g.
-// rotating loginEndpoint paths) could grow the Map unbounded.
+// Session-auth token cache — key: baseUrl + loginEndpoint, value:
+// { token, header, prefix, expires }. Evicted on TTL expiry or server rejection
+// (re-auth on either). Capped at SESSION_CACHE_MAX with LRU eviction (Map keeps
+// insertion order; access bumps to the tail): without the cap, a caller that
+// varies the key (e.g. rotating loginEndpoint paths) could grow it unbounded.
 const sessionTokenCache = new Map();
 const SESSION_CACHE_MAX = 100;
 
@@ -117,9 +104,7 @@ export async function fetchWithSession(config) {
         const data = await fetchWithToken(cached, config, baseUrl, skipTls);
         return data;
       } catch (fetchErr) {
-        // Token might be expired server-side (or network blip / rate limit / DNS).
-        // Drop the cache entry and fall through to fresh login. Logging here lets
-        // us distinguish real token expiry from other transient failures.
+        // Cached token rejected (expiry or transient blip): drop it and re-login. Logged to tell the two apart.
         log.warn({ error: fetchErr.message }, 'Cached token fetch failed, retrying with fresh login');
         sessionTokenCache.delete(cacheKey);
       }

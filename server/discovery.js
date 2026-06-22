@@ -4,7 +4,7 @@
  * Returns merged data with config overrides applied.
  * 
  * Performance: getNodeData() fires all node metrics + container queries
- * in a single Promise.all (12 queries) instead of two sequential batches.
+ * in a single Promise.all (13 queries) instead of two sequential batches.
  */
 
 import { createLogger } from './util/logger.js';
@@ -70,7 +70,7 @@ export async function discoverNodes() {
 
 /**
  * Get node metrics AND container data in a single parallel batch.
- * Fires all 12 Prometheus queries simultaneously instead of two sequential batches.
+ * Fires all 13 Prometheus queries simultaneously instead of two sequential batches.
  * Returns { metrics, containers }
  */
 export async function getNodeData(nodeLabel) {
@@ -189,25 +189,22 @@ export async function getNodeData(nodeLabel) {
     }
   }
 
-  // Fill CPU
+  // Fill each container's CPU / MEM / RX / TX from its matching result set.
   for (const r of cCpuR) {
     const name = r.metric?.name;
     const c = containerMap.get(name);
     if (c && r.value?.[1] != null) c.docker.cpu = parseFloat(parseFloat(r.value[1]).toFixed(1));
   }
-  // Fill MEM
   for (const r of cMemR) {
     const name = r.metric?.name;
     const c = containerMap.get(name);
     if (c && r.value?.[1] != null) c.docker.memMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
   }
-  // Fill RX
   for (const r of cRxR) {
     const name = r.metric?.name;
     const c = containerMap.get(name);
     if (c && r.value?.[1] != null) c.docker.rxMB = parseFloat((parseFloat(r.value[1]) / 1048576).toFixed(1));
   }
-  // Fill TX
   for (const r of cTxR) {
     const name = r.metric?.name;
     const c = containerMap.get(name);

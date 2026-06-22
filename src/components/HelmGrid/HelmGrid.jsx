@@ -46,7 +46,6 @@ export default function HelmGrid({
   labels = {},
   className = '',
 }) {
-  // ── Container width ──
   const containerRef = useRef(null);
   const [width, setWidth] = useState(0);
   const [mounted, setMounted] = useState(false);
@@ -64,7 +63,6 @@ export default function HelmGrid({
     return () => ro.disconnect();
   }, []);
 
-  // ── Breakpoint ──
   const breakpoint = useMemo(() => {
     if (!width) return 'lg';
     const sorted = Object.entries(breakpoints).sort((a, b) => b[1] - a[1]);
@@ -77,12 +75,11 @@ export default function HelmGrid({
   const activeCols = cols[breakpoint] || cols.lg || 24;
   const cellWidth = width > 0 ? calcCellWidth(width, activeCols, margin) : 0;
 
-  // ── Working layout ──
   const [workingLayout, setWorkingLayout] = useState([]);
   const layoutRef = useRef(workingLayout);
   layoutRef.current = workingLayout;
 
-  // ── Content heights — measured by GridItem, used for auto-grow ──
+  // Measured by GridItem, used for auto-grow.
   const [contentHeights, setContentHeights] = useState({}); // itemId → pixels
   const contentHeightsRef = useRef({});
   const pendingHeightsRef = useRef(null); // batched updates
@@ -139,11 +136,9 @@ export default function HelmGrid({
     }
   }, [layouts, breakpoint, activeCols]);
 
-  // ── Refs for grid params ──
   const gridRef = useRef({ cellWidth, rowHeight, margin, activeCols });
   gridRef.current = { cellWidth, rowHeight, margin, activeCols };
 
-  // ── Child map ──
   const childMap = useMemo(() => {
     const map = {};
     React.Children.forEach(children, (child) => {
@@ -154,7 +149,7 @@ export default function HelmGrid({
     return map;
   }, [children]);
 
-  // ── Effective layout — expand h to fit content where needed, then resolve overlaps ──
+  // Expand h to fit content where needed, then resolve overlaps.
   const effectiveLayout = useMemo(() => {
     const expanded = workingLayout.map(item => {
       const contentPx = contentHeights[item.i];
@@ -173,14 +168,13 @@ export default function HelmGrid({
   const effectiveRef = useRef(effectiveLayout);
   effectiveRef.current = effectiveLayout;
 
-  // ── Content-aware minH for resize ──
+  // Content-aware minH for resize.
   const getContentMinH = useCallback((itemId) => {
     const contentPx = contentHeightsRef.current[itemId];
     if (!contentPx) return 3; // fallback
     return pxToRows(contentPx, rowHeight, margin);
   }, [rowHeight, margin]);
 
-  // ── Interaction state ──
   const interactionRef = useRef(null);
   const [interaction, setInteraction] = useState(null);
 
@@ -196,7 +190,6 @@ export default function HelmGrid({
     setAnnounceText(announceTick.current % 2 ? `${msg} ` : msg);
   }, []);
 
-  // ── Commit layout ──
   const commitLayout = useCallback((newLayout) => {
     const resolved = resolveOverlaps(newLayout);
     layoutRef.current = resolved;
@@ -208,8 +201,6 @@ export default function HelmGrid({
     }
     return resolved;
   }, [onLayoutChange, layouts, breakpoint]);
-
-  // ── Drag ───────────────────────────────────────────────────────────────────
 
   const startDrag = useCallback((e, itemId) => {
     const layout = effectiveRef.current;
@@ -287,8 +278,6 @@ export default function HelmGrid({
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
   }, [onDrag, onDragStop, commitLayout]);
-
-  // ── Resize ─────────────────────────────────────────────────────────────────
 
   const startResize = useCallback((e, itemId, handle) => {
     const layout = effectiveRef.current;
@@ -390,7 +379,7 @@ export default function HelmGrid({
     window.addEventListener('pointerup', onUp);
   }, [onResizeStop, commitLayout, getContentMinH]);
 
-  // ── Keyboard move / resize ───────────────────────────────────────────────────
+  // Keyboard move / resize.
   // The pointer path (startDrag/startResize) has no keyboard equivalent, so a
   // panel was unreachable without a mouse. These commit through the same
   // commitLayout chokepoint (overlap-resolved + persisted) using the pure
@@ -428,8 +417,6 @@ export default function HelmGrid({
     const f = resolved.find((l) => l.i === itemId) || { w, h };
     announce(`Resized to ${f.w} by ${f.h}`);
   }, [commitLayout, getContentMinH, announce]);
-
-  // ── Render ─────────────────────────────────────────────────────────────────
 
   const containerHeight = useMemo(() => {
     return getBottom(effectiveLayout) * (rowHeight + margin[1]) + margin[1];

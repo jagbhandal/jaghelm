@@ -9,27 +9,14 @@ import {
 } from 'react';
 
 /**
- * OverlayContext — one provider for the two transient, app-global UI surfaces
- * that previously had no home: ephemeral toasts and a promise-based confirm
- * modal. App mounts <OverlayProvider> once (above the tree) so any component
- * can `useToast()` / `useConfirm()` without prop-drilling a notifier.
+ * OverlayContext — one provider for the two app-global transient UI surfaces:
+ * ephemeral toasts and a promise-based confirm modal. App mounts it once so any
+ * component can useToast() / useConfirm() without prop-drilling a notifier.
+ * Styles are inline and read the theme's CSS custom properties.
  *
- * Why both in one provider:
- *   - They share the same "floating above everything" concern and the same
- *     theme tokens; a single provider keeps App's mount list short and avoids
- *     two near-identical portals.
- *   - Neither needs the other, but co-locating them means one place owns the
- *     z-index / reduced-motion / focus-restore behaviour.
- *
- * Theming: everything is INLINE styles reading the existing CSS custom
- * properties (var(--bg-card), var(--text-primary), var(--accent), var(--red),
- * …) so it tracks the active theme with zero edits to global.css.
- *
- * Accessibility:
- *   - Toast region is aria-live=polite, role=status, dismissible, auto-expires.
- *   - Confirm modal is role=dialog aria-modal, labelled by its title, focus
- *     trapped, Escape cancels, and focus returns to the trigger on close.
- *   - prefers-reduced-motion suppresses the slide/scale transitions.
+ * Accessibility: toasts are role=status (errors role=alert — see Toast); the
+ * confirm modal is role=dialog aria-modal, focus-trapped, Escape cancels, and
+ * focus returns to the trigger on close. prefers-reduced-motion drops transitions.
  */
 
 const ToastContext = createContext(null);
@@ -79,7 +66,7 @@ function usePrefersReducedMotion() {
 export function OverlayProvider({ children }) {
   const reducedMotion = usePrefersReducedMotion();
 
-  // ---- Toasts -------------------------------------------------------------
+  // Toasts
   const [toasts, setToasts] = useState([]);
   const timersRef = useRef(new Map());
   const idRef = useRef(0);
@@ -115,9 +102,8 @@ export function OverlayProvider({ children }) {
     };
   }, []);
 
-  // ---- Confirm ------------------------------------------------------------
-  // `confirmState` is null when idle; otherwise the live dialog props plus the
-  // resolver that settles the awaited promise.
+  // Confirm. `confirmState` is null when idle; otherwise the live dialog props
+  // plus the resolver that settles the awaited promise.
   const [confirmState, setConfirmState] = useState(null);
   const resolverRef = useRef(null);
   const triggerElRef = useRef(null);
@@ -174,9 +160,7 @@ export function OverlayProvider({ children }) {
   );
 }
 
-// ---------------------------------------------------------------------------
 // Toast stack — fixed top-right, newest on top, each auto-dismisses.
-// ---------------------------------------------------------------------------
 function ToastStack({ toasts, onDismiss, reducedMotion }) {
   if (toasts.length === 0) return null;
   return (
@@ -261,9 +245,7 @@ function Toast({ toast, onDismiss, reducedMotion }) {
   );
 }
 
-// ---------------------------------------------------------------------------
 // Confirm modal — focus-trapped, Escape cancels, role=dialog.
-// ---------------------------------------------------------------------------
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
@@ -428,9 +410,6 @@ function ConfirmModal({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Hooks
-// ---------------------------------------------------------------------------
 export function useToast() {
   const ctx = useContext(ToastContext);
   if (ctx === null) {

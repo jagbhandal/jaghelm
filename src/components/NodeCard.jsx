@@ -71,9 +71,7 @@ function ServiceGrid({ services, config, panelId, dragDisabled }) {
 }
 
 /**
- * NodeCard v8 — Phase 4
- *
- * Now accepts panelId and dragDisabled props for drag-and-drop support.
+ * NodeCard — a dashboard section: header, metrics, and a draggable service grid.
  * Service cards are draggable between panels when dragDisabled is false.
  */
 export default React.memo(function NodeCard({

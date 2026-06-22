@@ -89,19 +89,14 @@ export function loadConfig() {
 /**
  * Save config to disk as YAML.
  *
- * Write coordination — why this is synchronous and NOT an async queue:
- *   writeFileSync's whole pipeline (yaml.dump → atomic temp+fsync+rename →
- *   statSync → assign) runs in a single event-loop tick, so concurrent POST
- *   handlers can't interleave and the 5s file watcher (a separate tick) can
- *   never observe a half-applied state. `lastModified` is updated before the
- *   watcher's next poll, so our own write is recognised as self-originated and
- *   not re-read. An async mutation queue would REOPEN the watcher↔write race
- *   (a poll could fire between the rename and the lastModified update) for no
- *   gain — the atomic rename already gives crash-safety, see atomicWrite.js.
+ * Synchronous on purpose, NOT an async queue: the whole pipeline (dump → atomic
+ * write → statSync → assign lastModified) runs in one event-loop tick, so the 5s
+ * watcher (a separate tick) can never observe a half-applied state and always
+ * sees our own write as self-originated. An async queue would reopen that
+ * watcher↔write race for no gain — the atomic rename already gives crash-safety.
  *
- * Reentrancy: a true mutex on a sync function would deadlock, so we fail fast
- * if saveConfig is re-entered from inside its own call stack (e.g. a config
- * listener that saves again) and let the caller surface the bug.
+ * Reentrancy: a real mutex on a sync function would deadlock, so we fail fast if
+ * saveConfig is re-entered from its own call stack (e.g. a listener that saves).
  */
 let saveInProgress = false;
 

@@ -1,25 +1,12 @@
 /**
- * JagHelm Integration Handler
+ * JagHelm Integration Handler — all integrations, preset and custom, flow
+ * through this single handler. Pipeline: resolve config → auth → fetch →
+ * transform → cache. Owns the two orchestrators fetchIntegration + testIntegration.
  *
- * Generic pipeline: resolve config → authenticate → fetch → transform → cache.
- *
- * Supports auth types: none, basic, bearer, header, query, session
- * Supports field formats: number, decimal, percent, ms, bytes, duration, string
- * Supports compute types: percent_of, subtract, sum
- *
- * All integrations — both presets and custom — flow through this single handler.
- *
- * Architecture:
- *   ./lib/cache.js     — in-memory response cache + TTL
- *   ./lib/http.js      — safeFetch wrapper (per-request undici dispatcher for TLS skip)
- *   ./lib/extract.js   — JSON path DSL (extractValue, _filter:, _length) + URL templating
- *   ./lib/format.js    — formatValue + computeField
- *   ./lib/auth.js      — buildAuthHeaders for non-session auth
- *   ./lib/session.js   — session token cache + login + token reuse
- *   ./lib/config.js    — credential resolution and config merging
- *
- * This file owns the two top-level orchestrators: fetchIntegration (the data
- * pipeline) and testIntegration (the connection-test pipeline).
+ * lib/ map: cache.js (response cache+TTL), http.js (safeFetch), extract.js (JSON
+ * path DSL + URL templating), format.js (formatValue+computeField), auth.js
+ * (buildAuthHeaders), session.js (session token cache+login), config.js (cred
+ * resolution + config merging).
  */
 
 import { getPresetFull } from './registry.js';
@@ -52,11 +39,9 @@ function applyQueryAuth(url, config) {
   return url;
 }
 
-// Re-export so the public API of handler.js is unchanged.
+// Re-exported for back-compat; SSRF is also enforced at the fetch chokepoint in
+// lib/http.js, so every auth path is guarded by construction.
 export { resolveIntegrationConfig };
-// assertSafeUrl moved to util/ssrf.js (now also enforced at the fetch
-// chokepoint in lib/http.js, so session-auth & every future path are guarded
-// by construction). Re-exported here for back-compat + handler.test.js.
 export { assertSafeUrl };
 
 // ── Main fetch function for any integration ──
@@ -96,11 +81,9 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       rawData = await res.json();
     }
 
-    // Multi-endpoint support: if preset defines extraEndpoints, fetch them in parallel.
-    // extraEndpoints can be an array or a function(rawData) that returns an array.
-    // This allows dynamic endpoints that depend on primary response data
-    // (e.g. Proxmox extracts node name from VMs, then fetches /nodes/{node}/tasks).
-    // Results are attached to rawData._extra = { key1: data1, key2: data2 }
+    // extraEndpoints: array, or function(rawData) returning one so endpoints can
+    // depend on the primary response (Proxmox: node name from VMs → /nodes/{node}/tasks).
+    // Fetched in parallel; results attached to rawData._extra = { key: data }.
     const extraEpDef = config.extraEndpoints;
     const extraEps = typeof extraEpDef === 'function' ? extraEpDef(rawData) :
                      Array.isArray(extraEpDef) ? extraEpDef : null;

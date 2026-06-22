@@ -26,31 +26,9 @@ const password = 'correct horse battery staple';
 const wrongPassword = 'tr0ub4dor&3';
 const sha256Hex = crypto.createHash('sha256').update(password).digest('hex');
 
-// Stage a fake data/auth.json before importing passwords.js. The module
-// resolves its path as join(__dirname, '..', '..', 'data', 'auth.json'), so
-// we need to write to /opt/stacks/jaghelm/data/auth.json — but that would
-// collide with dev data. Instead, we re-import after monkey-patching via
-// a runtime swap: write a temp auth.json and dynamically set the module's
-// internal `storedPasswordHash` through the public setPassword + a follow-up
-// hash overwrite. Simpler: spin a child process? Too heavy. We use the
-// existing module and call setPassword to install a known scrypt hash, then
-// directly test the verifyPassword path through checkPassword.
-//
-// For the legacy-SHA-256 branch specifically: we cannot reach it cleanly
-// from the public API without writing to data/auth.json (setPassword always
-// writes scrypt). So we shell out a tiny child Node process that:
-//   1. writes a temp data/auth.json with the legacy hash
-//   2. dynamically imports passwords.js with cwd pointed at the temp dir
-//
-// That ends up brittle. Instead, we re-export the internal verifyPassword
-// via a side-door: passwords.js doesn't export it, so we test the legacy
-// path through behaviour — call setPassword(sha256Hex string as if it were
-// the new password). That's wrong though.
-//
-// Cleanest: directly exercise crypto.timingSafeEqual semantics for the
-// legacy branch via a focused integration test that writes auth.json into
-// the real data/ dir, imports passwords.js, runs checkPassword, then
-// restores the prior file. The fixture is small and we restore at the end.
+// The legacy-SHA-256 branch isn't reachable via the public API (setPassword
+// always writes scrypt), so we stage auth.json directly in the real data/ dir,
+// import passwords.js, run checkPassword, and restore the prior file at the end.
 
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';

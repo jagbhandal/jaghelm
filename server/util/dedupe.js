@@ -1,15 +1,10 @@
 /**
- * In-flight promise deduplication by slot key.
+ * In-flight promise deduplication by slot key. Concurrent callers on the same
+ * slot share one execution — used by refresh.js to avoid cache-stampede when
+ * several tabs hit the dashboard at cold start and each kicks off a refresh.
  *
- * Multiple concurrent callers asking for the same slot share one underlying
- * execution. Used by refresh.js to avoid cache-stampede when several browser
- * tabs hit the dashboard at cold start and each kicks off a full refresh.
- *
- * The slot is cleared as soon as the in-flight promise settles (resolve or
- * reject) so the next caller sees a fresh attempt — we don't want a stuck
- * rejection to permanently poison the slot.
- *
- *   const fresh = await dedupe('services', () => doExpensiveRefresh());
+ * The slot clears as soon as the promise settles (resolve OR reject) so the next
+ * caller gets a fresh attempt — a stuck rejection must not poison the slot.
  *
  * `inFlightSlots` is exported for tests/diagnostics only; do not mutate.
  */

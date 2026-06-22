@@ -1,65 +1,32 @@
-/**
- * JagHelm Data Hooks — v8 Phase 4 Performance
- *
- * Primary: getServices() — fetches unified /api/services endpoint
- * Legacy: Individual fetch functions kept for dedicated sections (UPS, Gitea, etc.)
- *
- * ETag support: Each endpoint tracks its last ETag. If the server returns
- * 304 Not Modified, fetchJson returns the *same reference* it returned for the
- * prior 200 — so downstream useState(ref) bails on Object.is equality and no
- * subtree re-renders. This is the 304-stable-identity contract.
- *
- * If there is no prior 200 cached (cold start, first request) and the server
- * somehow answers 304 — which it shouldn't, since we don't send If-None-Match
- * without a stored etag — we return the NOT_MODIFIED_NO_BODY sentinel (a
- * success with no body to apply, distinct from a thrown failure) and consumers
- * leave their data state alone.
- */
-
 import { apiFetch } from '../api/client.js';
 
 const BASE = '/api';
 
-// ETag tracking per endpoint — persists across fetch calls
 const etagStore = new Map();
-
-// Last successful response body per endpoint. On a 304, fetchJson returns the
-// stored reference instead of re-parsing/re-allocating. This is the load-bearing
-// piece of the 304-stable-identity contract — without it every 30s refresh
-// would still allocate a new object even when nothing changed on the server.
 const resultStore = new Map();
 
 /**
- * Sentinel returned by fetchJson on a 304 cold-start edge: the server answered
- * 304 but we have no cached 200 body to return. Distinct from a real fetch
- * failure (which throws) AND from a legitimate `null` payload that an endpoint
- * might actually return as its 200 body. Consumers MUST treat NOT_MODIFIED_NO_BODY
- * as a *success* (the server confirmed nothing changed) but leave their data
- * state untouched — there is simply no body to apply yet.
- *
- * Identity is module-frozen so callers can compare by reference (===).
+ * Sentinel for the 304 cold-start edge (304 with no cached 200 body). Distinct
+ * from a thrown failure AND from a legitimate `null` 200 payload. Consumers MUST
+ * treat it as a success (server confirmed nothing changed) but leave their data
+ * untouched — there is no body to apply. Frozen so callers can compare by ===.
  */
 export const NOT_MODIFIED_NO_BODY = Object.freeze({ __jaghelm304NoBody: true });
 
 /**
  * Fetch JSON with ETag support.
  *
- * Outcome contract — three mutually-distinguishable results so callers can
- * track per-source health without conflating "unchanged" with "failed":
- *   1. SUCCESS (200): returns the freshly-parsed body (new reference).
- *   2. SUCCESS (304, have prior body): returns the previously-cached body — the
- *      SAME reference returned for the prior 200, so downstream useState(ref)
- *      bails on Object.is and the subtree does NOT re-render. (Load-bearing
- *      304-stable-identity contract.)
- *   3. SUCCESS (304, cold-start, no prior body): returns the NOT_MODIFIED_NO_BODY
- *      sentinel. Still a success — the network round-trip worked — but there is
- *      no body to apply.
- *   FAILURE (network error / non-2xx / non-304): THROWS. This is the only path
- *      a caller should read as a source error; an unchanged 304 must never look
- *      like a failure.
+ * The 304-stable-identity contract: on a 304 with a cached prior 200, returns
+ * the SAME reference as that 200, so downstream useState(ref) bails on Object.is
+ * and the subtree does NOT re-render (no per-30s-refresh re-allocation). Three
+ * distinguishable outcomes so callers track per-source health without conflating
+ * "unchanged" with "failed":
+ *   1. 200 → freshly-parsed body (new reference).
+ *   2. 304 with prior body → that prior reference (stable identity).
+ *   3. 304 cold-start, no prior body → NOT_MODIFIED_NO_BODY sentinel (still a success).
+ *   network error / non-2xx / non-304 → THROWS; the only path a caller reads as error.
  *
- * - Sends If-None-Match header if we have a cached ETag for this URL.
- * - Pass skipEtag=true to force a full fetch (used on first load when state is empty).
+ * Pass skipEtag=true to force a full fetch (used on first load when state is empty).
  */
 async function fetchJson(url, skipEtag = false) {
   const headers = {};
@@ -70,17 +37,12 @@ async function fetchJson(url, skipEtag = false) {
 
   const r = await apiFetch(url, { headers, signal: AbortSignal.timeout(12000) });
 
-  // 304 Not Modified — return the prior result reference (stable identity).
-  // If we somehow got 304 with no cached body, return the sentinel (still a
-  // success, just nothing to apply) rather than null/throw, so callers can tell
-  // it apart from a real failure and from an endpoint's genuine null payload.
   if (r.status === 304) {
     return resultStore.has(url) ? resultStore.get(url) : NOT_MODIFIED_NO_BODY;
   }
 
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
 
-  // Store the new ETag for next request
   const newEtag = r.headers.get('ETag');
   if (newEtag) etagStore.set(url, newEtag);
 
@@ -90,15 +52,10 @@ async function fetchJson(url, skipEtag = false) {
 }
 
 /**
- * Send a request and parse its JSON body, but FAIL on a non-2xx status.
- *
- * The hand-rolled mutators (saveTodos, the integration POST/DELETE helpers) used
- * to call r.json() unconditionally: a failed save was silently swallowed, and a
- * non-2xx HTML/error body threw an opaque JSON-parse error instead of a clear
- * "HTTP 500". This mirrors the r.ok check fetchJson already does for reads, so
- * every fetcher in this module surfaces a real failure the same way.
- *
- * A 204 (or any empty body) resolves to null rather than throwing on parse.
+ * Send a request and parse its JSON body, throwing on a non-2xx status (mirrors
+ * the r.ok check fetchJson does for reads) so a failed mutation surfaces as a
+ * clear "HTTP 500" instead of being silently swallowed or throwing an opaque
+ * JSON-parse error on an HTML error body. A 204 / empty body resolves to null.
  */
 async function requestJson(url, opts) {
   const r = await apiFetch(url, opts);
@@ -107,10 +64,6 @@ async function requestJson(url, opts) {
   const text = await r.text();
   return text ? JSON.parse(text) : null;
 }
-
-// ══════════════════════════════════════════════════════════════
-// Phase 1: Unified service data
-// ══════════════════════════════════════════════════════════════
 
 /**
  * Fetch all node + service data in one call.
@@ -127,10 +80,7 @@ export async function getMetricHistory() {
   return fetchJson(`${BASE}/history`);
 }
 
-// ══════════════════════════════════════════════════════════════
-// Dedicated section data (not covered by /api/services or /api/integrations)
-// ══════════════════════════════════════════════════════════════
-
+// Dedicated section data (not covered by /api/services or /api/integrations).
 export async function getUPSStatus(skipEtag) {
   return fetchJson(`${BASE}/ups`, skipEtag);
 }
@@ -166,10 +116,7 @@ export async function deleteIntegration(type) {
   return requestJson(`${BASE}/integrations/${type}`, { method: 'DELETE' });
 }
 
-// ══════════════════════════════════════════════════════════════
-// Legacy functions (kept: getMonitors used by App.jsx health check)
-// ══════════════════════════════════════════════════════════════
-
+// Legacy functions (kept: getMonitors used by App.jsx health check).
 export async function getMonitors() {
   return fetchJson(`${BASE}/uptime/monitors`);
 }
@@ -206,10 +153,6 @@ export async function uploadFile(file, type) {
   return r.json();
 }
 
-// ══════════════════════════════════════════════════════════════
-// Icon URL helper — routes external CDN URLs through local cache
-// ══════════════════════════════════════════════════════════════
-
 /**
  * Convert an external CDN icon URL to a locally-cached URL.
  * Icons are fetched from the CDN once, saved to data/icon-cache/,
@@ -231,10 +174,6 @@ export function cachedIconUrl(url) {
   // Local paths, data URIs, etc. — pass through
   return url;
 }
-
-// ══════════════════════════════════════════════════════════════
-// Constants (icons, weather codes, search engines)
-// ══════════════════════════════════════════════════════════════
 
 export const WEATHER_CODES = {
   0: { icon: '☀️', label: 'Clear' },

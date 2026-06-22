@@ -3,12 +3,8 @@
 // lib/session.js extracts a token from the JSON login response — Deluge's
 // /json login returns `{result: true, id: 1}` (no token field) and sets a
 // session cookie. With tokenPath:null, lib/session.js throws "Login succeeded
-// but no token in response" — a loud, predictable failure mode that's been
-// left in place intentionally. Previously the preset also declared top-level
-// `method: 'POST'`, `body: '...JSON-RPC...'`, `extraHeaders: {Content-Type}`,
-// and a session-block `useCookie: true` marker — none read by handler/lib;
-// stripped in the preset-hygiene pass. Restore alongside real cookie-session
-// support if Deluge is wanted.
+// but no token in response" — a loud, predictable failure mode left in place
+// intentionally. Restore alongside real cookie-session support if Deluge is wanted.
 export default {
   name: 'Deluge',
   icon: 'deluge',

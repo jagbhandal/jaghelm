@@ -231,9 +231,7 @@ export default function SectionsTab() {
         );
       })}
 
-      {/* ═══════════════════════════════════════════
-          CUSTOM GROUPS
-          ═══════════════════════════════════════════ */}
+      {/* Custom Groups */}
       <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border-color)' }}>
         <div className="settings-row-spread" style={{ marginBottom: 16 }}>
           <div>

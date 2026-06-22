@@ -19,28 +19,24 @@ import ConfigView from './ConfigView.jsx';
  * view lives in HomeView.jsx / GalleryView.jsx / ConfigView.jsx.
  */
 export default function IntegrationsTab() {
-  // ── Navigation state ──
   const [view, setView] = useState('home'); // 'home' | 'gallery' | 'config'
   const [selectedPreset, setSelectedPreset] = useState(null); // null = custom builder
   const [editingType, setEditingType] = useState(null); // set when editing existing (storage key)
 
-  // ── Gallery filter state (kept here so gallery → config → gallery preserves filters) ──
+  // Kept here so gallery → config → gallery preserves the user's filters.
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
 
-  // ── Server data + form state ──
   const { presets, configured, allContainers, loading, refetch } = useIntegrationsData();
   const form = useConfigForm();
 
-  // ── Navigation helpers ──
   const goHome = () => {
     setView('home');
     setSelectedPreset(null);
     setEditingType(null);
-    refetch(); // Refresh configured list
+    refetch();
   };
 
-  // ── API actions (depend on goHome via onAfterSave) ──
   const {
     testStatus, setTestStatus,
     saveStatus, setSaveStatus,
@@ -71,10 +67,6 @@ export default function IntegrationsTab() {
   const openCustomBuilder = () => {
     openConfig(null);
   };
-
-  // ══════════════════════════════════════════════════
-  // RENDER
-  // ══════════════════════════════════════════════════
 
   if (loading) {
     return (

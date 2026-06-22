@@ -1,12 +1,7 @@
 /**
- * In-memory session store.
- *
- * Sessions live for 24 hours. A background sweep removes expired entries
- * once an hour so the Map doesn't grow unbounded over long uptimes.
- *
- * Sessions are keyed by an opaque random token (32 bytes hex) generated at
- * login. Token storage and transport (header vs. localStorage) is the
- * caller's concern.
+ * In-memory session store. Sessions live 24h, keyed by an opaque random token
+ * (32 bytes hex). An hourly sweep evicts expired entries to bound Map growth.
+ * Token storage and transport (header vs. localStorage) is the caller's concern.
  */
 
 import crypto from 'crypto';

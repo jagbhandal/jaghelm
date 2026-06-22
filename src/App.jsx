@@ -16,12 +16,9 @@ const SettingsView = lazy(() => import('./views/SettingsView'));
 import { apiFetch, setAuthToken as setApiAuthToken } from './api/client.js';
 
 /**
- * App — outer shell. Owns auth resolution and the (unauthenticated) login
- * screen. The login screen renders OUTSIDE <OverlayProvider> (it has no need
- * for toasts/confirms). Once authenticated, the whole authenticated experience
- * — dashboard, settings, and the save machinery — is mounted inside
- * <OverlayProvider> so any of it can useToast()/useConfirm(). AppMain is split
- * out precisely so it can sit under that provider and call the hooks itself.
+ * App — outer shell owning auth resolution and the login screen. The
+ * authenticated tree (AppMain) is split out so it can sit inside
+ * <OverlayProvider> and call useToast()/useConfirm(); login renders outside it.
  */
 export default function App() {
   const [authed, setAuthed] = useState(false);
@@ -128,13 +125,12 @@ function AppMain({ authRequired, onLogout }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Display-config save/load machinery (localStorage + debounced server save,
-  // flush-on-unload, authoritative server load on mount). Extracted to a hook;
-  // behaviour + effect order preserved.
+  // Display-config save/load (localStorage + debounced server save,
+  // flush-on-unload, authoritative server load on mount).
   useConfigPersistence(config, setConfig, setTheme, toast);
 
   // Apply config to the document as CSS custom properties + lazy webfont
-  // injection (accent/opacity/font family/font sizes/blur). Extracted to a hook.
+  // injection (accent/opacity/font family/font sizes/blur).
   useThemeVars(config);
 
   const intervalMs = (config.refreshInterval || 30) * 1000;

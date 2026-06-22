@@ -1,38 +1,13 @@
 /**
- * JagHelm Integration Registry
- *
- * Loads all preset definitions from the presets/ directory.
- * Presets are pure data — no code execution, just config shapes.
- *
- * Usage:
- *   import { getPreset, listPresets } from './integrations/registry.js';
- *   const adguard = getPreset('adguard');     // returns preset object or null
- *   const all = listPresets();                 // returns [{ type, name, icon, description }, ...]
- *
- * ─── Schema validation ───────────────────────────────────────────────────
- * Every preset loaded from disk is validated against a known key set:
- *   - REQUIRED_KEYS must all be present and truthy, else the preset is
- *     SKIPPED (logged at error level). This is graceful degradation —
- *     one broken preset shouldn't take down the whole integrations system.
- *   - Unknown top-level keys trigger a warn-and-strip: the key is removed
- *     from the preset object and logged with filename + key name so the
- *     author can spot the typo. This catches the class of bugs where a
- *     preset declares e.g. `transform:` (never read) instead of
- *     `structuredTransform:` (read by handler.js).
- * The allowed key list is the union of every property handler.js / lib/*.js
- * actually reads. If you add a new field to a preset, you MUST also add it
- * to ALLOWED_KEYS below — that's intentional friction so dead keys don't
- * accumulate again.
- *
- * ─── Arr-family factory (follow-up) ──────────────────────────────────────
- * Radarr, Sonarr, Lidarr, Readarr, and Prowlarr share a near-identical
- * shape: header auth with `X-Api-Key`, a queue endpoint, a system/status
- * test endpoint, and a single `totalRecords` field (or `_length` for
- * Prowlarr's indexer list). A follow-up PR could collapse these into a
- * `createArrPreset({ name, version, queueEndpoint, ... })` factory living
- * next to this file, which would cut ~80 lines and make adding a new
- * *arr trivial. Deferred for now — wanted this PR to be pure hygiene, no
- * structural changes that touch multiple presets at once.
+ * JagHelm Integration Registry — loads preset config (pure data, no code) from
+ * presets/ and validates each against a known key set:
+ *   - REQUIRED_KEYS missing → preset SKIPPED (logged), so one broken preset
+ *     can't take down the whole integrations subsystem (graceful degradation).
+ *   - Unknown top-level key → warn-and-strip, which catches typos like
+ *     `transform:` (never read) vs `structuredTransform:` (read by handler.js).
+ * ALLOWED_KEYS is the union of every field handler.js / lib/*.js actually reads;
+ * adding a new preset field means adding it here too — intentional friction so
+ * dead keys can't accumulate again.
  */
 
 import { readdirSync } from 'fs';

@@ -40,7 +40,6 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
   const showDoctor = showAppData && !!doctor?.error;
   const showBorder = statusStyle !== 'minimal';
 
-  // ── Layout: List — clean rows, no card background ──
   if (cardLayout === 'list') {
     return (
       <div style={{
@@ -62,7 +61,6 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
     );
   }
 
-  // ── Layout: Row — subtle card background, JagHelm signature ──
   if (cardLayout === 'row') {
     return (
       <div style={{
@@ -127,7 +125,6 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
     );
   }
 
-  // ── Layout: Grid — denser card boxes (original compact style) ──
   return (
     <div style={{
       background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
@@ -187,8 +184,6 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
     </div>
   );
 });
-
-// ─── Shared sub-components ───────────────────────────────────────────────────
 
 // Non-color redundant status cue (WCAG 1.4.1): a distinct shape per state plus
 // a screen-reader label, so up/down/unknown never relies on color alone.

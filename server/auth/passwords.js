@@ -62,8 +62,7 @@ function loadAuthOverride() {
 }
 
 function persistHash(hash) {
-  // Atomic + 0600: a crash mid-write can't truncate the admin hash, and the
-  // file is never group/world-readable.
+  // Atomic + 0600: a crash mid-write can't truncate the admin hash, and it's never group/world-readable.
   atomicWriteFileSync(
     AUTH_FILE,
     JSON.stringify({ passwordHash: hash, updatedAt: new Date().toISOString() }, null, 2),
