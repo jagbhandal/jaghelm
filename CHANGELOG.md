@@ -4,6 +4,66 @@ All notable changes to JagHelm are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] — 2026-06-22
+
+**Correctness and clarity.** Where 1.3.0 added the glance layer, 1.4.0 is a deep
+cleanup pass — a whole-codebase map → fix → review. No new features: it squashes
+27+ real bugs (including a Kuma-outage board freeze and a class of "a real 0 reads
+as no-data" drops), fixes an icon picker that showed a chosen icon's filename
+instead of the icon, converges the icon pipeline onto a single resolver, trims
+~370 lines of comment bloat, and closes a gap where an "unsupported" integration
+could still be reached server-side. **314 automated tests (up from 256); 0 known
+vulnerabilities.**
+
+### Fixed
+
+- **A Kuma outage no longer freezes the board.** A sustained status-page `5xx`
+  was serving indefinitely-old "up" statuses past the 5-minute stale ceiling — the
+  exact freeze the ceiling exists to prevent. Failure now drops to "unknown".
+- **A real `0` is no longer mistaken for "no data."** A 0% CPU container, an idle
+  `0°` sensor, a `0` UPS reading, or `0 MB` used previously coerced to a blank —
+  fixed across ~10 metric-extraction sites (node discovery, refresh, and the Docker
+  containers view).
+- **Picking an icon now shows the icon, not a filename.** A panel/quick-link icon
+  set to a bare Dashboard-Icons slug or filename (`gitea`, `gitea.svg`) was printed
+  as text by some renderers; every renderer now resolves icon values the same way.
+- **Proxmox child panels show on any node**, not only one literally named `pve` —
+  the VM/storage/backup panels were gated on a hardcoded node key.
+- **Quieter failures got louder.** Integration delete confirms before navigating
+  away; a failed delete/toggle/refetch now raises a toast instead of silently
+  leaving stale UI; the auth check fails closed (login gate) on a network/5xx
+  instead of rendering a shell that then 401s.
+- **Exact-match service hide/unhide** — hiding `redis` no longer also hides
+  `redis-backup`, and un-hiding can't remove an unrelated rule.
+- A batch of smaller correctness fixes: caddy/frigate count fields, an honest
+  GitLab tile (version, not a meaningless project id), demo trailing-slash routes,
+  the iframe **Retry** timer, weather lat/lon re-sync on config import, NavBar
+  Enter-vs-dropdown agreement, and deterministic app-data matching.
+
+### Changed
+
+- **Whole-codebase structural cleanup.** De-duplicated primitives that had already
+  *drifted* (error redaction, emoji detection, constant-time compare, login-body
+  construction, color picker, field rows, the service-card projection), extracted
+  oversized components into hooks, and deleted dead code — behavior preserved.
+- **One icon pipeline.** A single `iconImageSrc` resolver (URL / slug / filename /
+  emoji) shared by every renderer, one CDN base, one slug builder; built-in service
+  icons moved off the deprecated `walkxcode` CDN to the maintained `homarr-labs`
+  one. Proxmox integrations are now identified by a server-stamped preset id rather
+  than by sniffing their output fields.
+- **~370 fewer lines of comment bloat** (ASCII banners, changelog-in-comments,
+  essays restating the code) — every security/why rationale kept.
+
+### Security
+
+- **The "unsupported integration" gate is now enforced server-side.** A preset
+  flagged unsupported (e.g. Watchtower, whose `/v1/update` is a side-effecting
+  update *trigger*, not a read-only status endpoint) was only hidden from the
+  gallery — a directly-saved or imported config could still reach it via save,
+  test, or the refresh loop. It's now blocked at the save / test / resolve
+  chokepoints. Surfaced and fixed by this release's own multi-agent security
+  review, which found no critical or high-severity issues.
+
 ## [1.3.0] — 2026-06-18
 
 The **glance layer gets smart.** Where 1.2.0 hardened and polished, 1.3.0 makes
