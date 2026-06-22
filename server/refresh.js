@@ -327,6 +327,9 @@ async function _refreshIntegrations() {
         if (result.lastBackup) entry._lastBackup = result.lastBackup;
         if (cfg.target) entry._target = cfg.target;
         if (cfg.instance) entry._instance = cfg.instance;
+        // Stamp the preset identity so the client can detect integration type
+        // directly (e.g. proxmox child panels) rather than sniffing output fields.
+        entry._preset = handlerType;
         results[key] = entry;
       } catch (err) {
         results[key] = { _error: String((err && err.message) || err) };

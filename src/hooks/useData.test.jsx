@@ -8,11 +8,15 @@ import {
   deleteIntegration,
   SERVICE_ICONS,
 } from './useData.js';
+import { iconSlugUrl } from '../utils/iconCdn.js';
 
-// getServiceIcon routes the matched icon through cachedIconUrl (CDN URLs get
-// proxied to /api/icons/cached). To assert WHICH key matched, compare against
-// the same transform applied to the expected raw icon.
-const icon = (key) => cachedIconUrl(SERVICE_ICONS[key]);
+// getServiceIcon resolves a slug to the CDN URL then proxies it via
+// cachedIconUrl (jaghelm is a local path). To assert WHICH key matched, mirror
+// that same transform on the expected SERVICE_ICONS value.
+const icon = (key) => {
+  const v = SERVICE_ICONS[key];
+  return cachedIconUrl(v.startsWith('/') ? v : iconSlugUrl(v));
+};
 
 // .jsx extension keeps these in Vitest's lane (node:test only globs *.test.js).
 

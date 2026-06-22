@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { proxmoxChildrenForNode } from './NodePanel';
 
 const PROXMOX = {
+  _preset: 'proxmox',
   _vms: [{ name: 'vm1', vmid: 100 }],
   _storagePools: [{ name: 'local-lvm' }],
   _lastBackup: { ok: true },
@@ -49,11 +50,18 @@ describe('proxmoxChildrenForNode', () => {
   });
 
   it('tolerates a partial proxmox entry (only some structured fields present)', () => {
-    const data = { proxmox: { _vms: [{ vmid: 1 }] } };
+    const data = { proxmox: { _preset: 'proxmox', _vms: [{ vmid: 1 }] } };
     expect(proxmoxChildrenForNode(data, 'pve')).toEqual({
       vms: [{ vmid: 1 }],
       storage: null,
       backup: null,
     });
+  });
+
+  it('identifies proxmox by _preset, not by output-field shape (no false positive)', () => {
+    // A non-proxmox preset that happens to emit a _vms-shaped field must NOT be
+    // treated as proxmox — detection is identity-based, not shape-based.
+    const data = { mystery: { _preset: 'adguard', _vms: [{ vmid: 1 }], _target: 'pve:x' } };
+    expect(proxmoxChildrenForNode(data, 'pve')).toBeNull();
   });
 });
