@@ -1,0 +1,67 @@
+name: check
+
+# Runs the verification suite on every PR to main and every push to staging, so
+# lint/typecheck/tests gate a change BEFORE the merge. The GitHub build-push
+# workflow runs the same suite, but only post-merge on main — this closes the gap
+# where unverified code could reach the manual merge gate. (npm audit is
+# intentionally NOT run here — it stays post-merge in build-push.yml so a transitive
+# CVE landing mid-PR doesn't block an unrelated change.)
+#
+# Mirrors the homelab-infra CI runner pattern: a self-hosted runner + a toolchain
+# container + a manual clone (the act_runner host lacks Node for actions/checkout;
+# the node:22 container supplies Node + git).
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - staging
+
+jobs:
+  check:
+    runs-on: self-hosted
+    container:
+      image: node:22
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Manual checkout (git clone — runner host lacks Node for actions/checkout)
+        env:
+          PR_TOKEN: ${{ secrets.PR_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_SAFE: ${{ github.sha }}
+          # github.server_url resolves to an internal non-TLS port on this runner;
+          # hardcode the public reverse-proxied URL (same fix as homelab-infra CI).
+          PUBLIC_GITEA_URL: "https://git.jagbhandal.com"
+        run: |
+          # Keep `set -e` and NOT `set -x`: tracing would echo the
+          # http.extraHeader Authorization token into the CI logs.
+          set -e
+          CLONE_URL="${PUBLIC_GITEA_URL%/}/${REPOSITORY}.git"
+          cd "$GITHUB_WORKSPACE"
+          git init -q
+          git remote add origin "$CLONE_URL"
+          # token via http.extraHeader so it never lands in an echoed remote URL.
+          git -c "http.extraHeader=Authorization: token ${PR_TOKEN}" \
+              fetch --depth 1 origin "$GITHUB_REF_SAFE"
+          git checkout -q FETCH_HEAD
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Lint (blocking)
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests (backend, node:test)
+        run: npm test
+
+      - name: Client tests (Vitest + RTL)
+        run: npm run test:client
+
+      - name: Asset/link existence check
+        run: npm run check:assets
