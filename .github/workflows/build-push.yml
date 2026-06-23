@@ -26,8 +26,8 @@ jobs:
         run: npm run test:client
       - name: Typecheck
         run: npm run typecheck
-      - name: Lint (report-only during Phase 1 — see docs/IMPROVEMENT-PLAN.md)
-        run: npm run lint || true
+      - name: Lint
+        run: npm run lint
       - name: Dependency audit (high+)
         run: npm audit --audit-level=high
       - name: Asset/link existence check
