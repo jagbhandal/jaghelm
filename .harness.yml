@@ -1,0 +1,41 @@
+# .harness.yml — harness conformance manifest for jaghelm.
+#
+# Assessed against CURRENT main (commit 8e8a6f9, v1.4.0). Levels are the on-disk
+# verifiable reality (honest-numbers): runtime/branch-only claims do NOT count.
+# Levels & criteria: homelab-infra/docs/harness/MATURITY-RUBRIC.md
+# Target bars (web-app): ctx L2 · leg L2 · enf L3 · ver L3 · gc L2 · aut L2.
+
+archetype: web-app
+
+levels:
+  # GAP (target L2): structured docs/ exists (ARCHITECTURE.md, 5 ADRs, security/, slos/)
+  # but NO AGENTS.md/CLAUDE.md map on main — no agent-facing <=100-line entrypoint into docs/.
+  context:      L1
+  # = target L2: boots in isolation (server/demo.js + docs/DEMO.md self-contained run);
+  # server/metrics.js (prom-client) + server/util/logger.js give one queryable signal class.
+  legibility:   L2
+  # GAP (target L3): eslint.config.js is self-described "report-only"; CI lint is `npm run lint || true`
+  # (non-blocking). No custom structural/dependency enforcer that injects remediation into agent context.
+  enforcers:    L2
+  # GAP (target L3): HONEST-NUMBERS — the PR-triggered check.yml is NOT on main (lives on the unmerged
+  # branch ci/pr-checks; verified: `git cat-file -e origin/main:.gitea/workflows/check.yml` fails). Sole
+  # main CI = build-push.yml on push:[main] + release:published — POST-merge, not per-PR. Per the
+  # "L2->L3 is TRIGGER not asset; post-merge tests are L1" calibration, this is L1. 53 test files exist
+  # but are not a per-change blocking trigger. ACTION: merging ci/pr-checks lifts this to L2.
+  verification: L1
+  # GAP (target L2): no quality-grade / golden-principles doc (no QUALITY_SCORE.md). CHANGELOG +
+  # IMPROVEMENT-PLAN are periodic-manual. Per calibration gc L1 = no quality-grade doc.
+  gc:           L1
+  # = target L2: auto-pr.yml opens staging->main PR (human merges); deploy.yml runs with serialized
+  # concurrency + opt-in cosign verify + health-gate backstop = the merge/deploy gate is held by a human.
+  autonomy:     L2
+
+evidence:
+  context:      [docs/ARCHITECTURE.md, docs/adr/README.md, docs/security/STRIDE.md, docs/slos/README.md]
+  legibility:   [server/demo.js, docs/DEMO.md, server/metrics.js, server/util/logger.js, server/observability.test.js]
+  enforcers:    [eslint.config.js, .github/workflows/build-push.yml]
+  verification: [.github/workflows/build-push.yml, scripts/check-assets.mjs]
+  gc:           [CHANGELOG.md, docs/IMPROVEMENT-PLAN.md]
+  autonomy:     [.gitea/workflows/auto-pr.yml, .gitea/workflows/deploy.yml]
+
+last_audited: 2026-06-23
