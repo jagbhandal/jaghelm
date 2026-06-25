@@ -20,7 +20,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "check:assets": "node scripts/check-assets.mjs"
+    "check:assets": "node scripts/check-assets.mjs",
+    "secret-scan": "python3 scripts/secret-scan.py"
   },
   "dependencies": {
     "compression": "^1.8.1",

@@ -18,6 +18,6 @@ export default {
   envKeys: {
     url: 'PORTAINER_URL',
     username: 'PORTAINER_USER',
-    password: 'PORTAINER_PASS',
+    password: 'PORTAINER_PASS', // pragma: allowlist secret
   },
 };

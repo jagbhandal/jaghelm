@@ -3,3 +3,44 @@ dist/
 .env
 uploads/
 data/
+
+# --- secrets (harness floor) — never commit credentials ---
+# (Phase 0 hardened: web + mobile secret classes. Negations below keep templates tracked.)
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+*.pkcs12
+id_rsa
+id_ed25519
+*credential*
+*-secret.json
+*service-account*.json
+.secrets/
+
+# mobile / FCM secret classes (pre-empt Android + push creds)
+*.jks
+*.keystore
+keystore.properties
+google-services.json
+GoogleService-Info.plist
+
+# scratch dirs
+.superpowers/
+
+# Python bytecode (secret-scan.py + secret_rules.py generate these)
+__pycache__/
+*.pyc
+
+# --- template NEGATIONS — committed *.example / *.sample templates MUST stay tracked ---
+# Broad first so it survives EVERY ignore glob above (incl. *service-account*.json,
+# *credential*, *.pem). Git evaluates last-match-wins, so these negations come last.
+!**/*.example
+!**/*.sample
+!.env.example
+!.env.sample
+# The FCM template is renamed so NO *service-account*.json glob can swallow it, AND
+# it is double-protected by the *.example negation above. Keep BOTH belt + braces:
+!fcm-service-account.json.example
+!**/google-services.json.example

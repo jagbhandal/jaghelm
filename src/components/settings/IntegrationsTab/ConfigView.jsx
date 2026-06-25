@@ -133,7 +133,7 @@ export default function ConfigView({
               type="password"
               value={form.password}
               onChange={e => form.setPassword(e.target.value)}
-              placeholder={isEditing ? '••••••••' : authType === 'oauth2' ? 'OAuth2 Client Secret' : 'Enter password'}
+              placeholder={isEditing ? '••••••••' : authType === 'oauth2' ? 'OAuth2 Client Secret' : 'Enter password'} // pragma: allowlist secret
               autoComplete="new-password"
             />
           </FieldGroup>

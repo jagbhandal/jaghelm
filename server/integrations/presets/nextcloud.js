@@ -15,6 +15,6 @@ export default {
   envKeys: {
     url: 'NEXTCLOUD_URL',
     username: 'NEXTCLOUD_USER',
-    password: 'NEXTCLOUD_PASS',
+    password: 'NEXTCLOUD_PASS', // pragma: allowlist secret
   },
 };

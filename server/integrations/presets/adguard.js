@@ -14,6 +14,6 @@ export default {
   envKeys: {
     url: 'JAGHELM_ADGUARD_URL',
     username: 'JAGHELM_ADGUARD_USER',
-    password: 'JAGHELM_ADGUARD_PASS',
+    password: 'JAGHELM_ADGUARD_PASS', // pragma: allowlist secret
   },
 };

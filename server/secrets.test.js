@@ -12,7 +12,7 @@ import { join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'jaghelm-secrets-'));
 process.env.JAGHELM_DATA_DIR = dir;
-process.env.DASH_SECRET = 'test-secret-at-least-16-chars-long';
+process.env.DASH_SECRET = 'test-secret-at-least-16-chars-long'; // pragma: allowlist secret
 
 const secrets = await import('./secrets.js');
 

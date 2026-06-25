@@ -22,7 +22,7 @@ import { writeFileSync, mkdirSync, rmSync } from 'fs';
 // import by setting DASH_USER + DASH_PASS to known values for the env path,
 // and we exercise legacy SHA-256 via a manually-written auth.json sibling.
 
-const password = 'correct horse battery staple';
+const password = 'correct horse battery staple'; // pragma: allowlist secret
 const wrongPassword = 'tr0ub4dor&3';
 const sha256Hex = crypto.createHash('sha256').update(password).digest('hex');
 
