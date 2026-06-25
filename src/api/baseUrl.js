@@ -1,16 +1,12 @@
 /**
  * Single source of truth for the API base URL.
  *
- * Web (desktop) uses a relative same-origin '/api' and never calls setApiBase,
- * so getApiBase() returns '/api' and behaviour is byte-for-byte as before.
- * Mobile (a later phase) reads a stored absolute Tailscale URL from secure
- * storage at boot and calls setApiBase() BEFORE any data hook fires.
- *
- * A build may pre-seed an absolute base via VITE_JAGHELM_BASE_URL; the desktop
- * build sets no such var, so the default '/api' holds.
+ * Web (desktop) defaults unconditionally to '/api' (same-origin relative) and
+ * never calls setApiBase — behaviour is byte-for-byte unchanged.
+ * Mobile reads a stored absolute Tailscale URL from secure storage at boot and
+ * calls setApiBase() BEFORE any data hook fires.
  */
-let apiBase =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_JAGHELM_BASE_URL) || '/api';
+let apiBase = '/api';
 
 /** Set the API base. Strips trailing slashes; falls back to '/api' if falsy. */
 export function setApiBase(base) {
