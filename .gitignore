@@ -29,6 +29,10 @@ GoogleService-Info.plist
 # scratch dirs
 .superpowers/
 
+# Python bytecode (secret-scan.py + secret_rules.py generate these)
+__pycache__/
+*.pyc
+
 # --- template NEGATIONS — committed *.example / *.sample templates MUST stay tracked ---
 # Broad first so it survives EVERY ignore glob above (incl. *service-account*.json,
 # *credential*, *.pem). Git evaluates last-match-wins, so these negations come last.

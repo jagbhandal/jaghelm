@@ -15,13 +15,13 @@ test -x scripts/secret-scan.py || { echo "FAIL: scripts/secret-scan.py missing/n
 # ── plant fake keys in a temp dir outside the repo ──────────────────────────
 d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
 
-# (a) GCP service-account JSON — clearly fake PKCS#8 body
-printf '{\n "type":"service_account",\n "private_key":"-----BEGIN PRIVATE KEY-----\\nMIIEvFAKEFAKEFAKE\\n-----END PRIVATE KEY-----\\n"\n}\n' \
-  > "$d/sa.json"  # pragma: allowlist secret
+# (a) GCP service-account JSON — clearly fake PKCS#8 body; pragma on the same line keeps scanner quiet
+_sa_key='-----BEGIN PRIVATE KEY-----\nMIIEvFAKEFAKEFAKE\n-----END PRIVATE KEY-----\n' # pragma: allowlist secret
+printf '{\n "type":"service_account",\n "private_key":"%s"\n}\n' "$_sa_key" > "$d/sa.json"
 
-# (b) Bare PKCS#8 PEM file — clearly fake
-printf -- '-----BEGIN PRIVATE KEY-----\nMIIEvFAKEFAKEFAKEFAKE\n-----END PRIVATE KEY-----\n' \
-  > "$d/key.pem"  # pragma: allowlist secret
+# (b) Bare PKCS#8 PEM file — clearly fake; pragma on the same line keeps scanner quiet
+_pem_key='-----BEGIN PRIVATE KEY-----\nMIIEvFAKEFAKEFAKEFAKE\n-----END PRIVATE KEY-----\n' # pragma: allowlist secret
+printf -- '%s' "$_pem_key" > "$d/key.pem"
 
 # ── assert each planted file is CAUGHT (non-zero exit) ──────────────────────
 fail=0

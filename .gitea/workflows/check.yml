@@ -48,6 +48,36 @@ jobs:
               fetch --depth 1 origin "$GITHUB_REF_SAFE"
           git checkout -q FETCH_HEAD
 
+      # --- harness floor: secret scan + template-tracked guard (Phase 0) ---
+      # Runs on PR-head BEFORE npm ci so a leaked key / dropped template fails fast.
+      - name: Secret scan (harness floor — blocks committed credentials)
+        run: |
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends python3
+          python3 scripts/secret-scan.py
+
+      - name: Assert secret-template files are tracked (negations didn't drop them)
+        run: |
+          set -euo pipefail
+          # Each path MUST be a committed template; --error-unmatch exits 1 if not tracked.
+          # If you add a new committed *.example secret template, add it here too.
+          templates=(
+            "env.example"
+            "fcm-service-account.json.example"
+          )
+          missing=0
+          for f in "${templates[@]}"; do
+            if git ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then
+              echo "  ok   tracked: $f"
+            else
+              echo "  FAIL untracked (ignored or deleted?): $f"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::a required secret-template file is not git-tracked — check .gitignore negations (!**/*.example)"
+            exit 1
+          fi
+
       - name: Install dependencies (npm ci)
         run: npm ci
 
