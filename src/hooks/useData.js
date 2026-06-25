@@ -1,7 +1,11 @@
 import { apiFetch } from '../api/client.js';
 import { iconSlugUrl } from '../utils/iconCdn.js';
+import { getApiBase } from '../api/baseUrl.js';
 
-const BASE = '/api';
+// Resolve the API base per-call through the single source of truth. On web this
+// is always '/api' (byte-for-byte unchanged); mobile sets an absolute base at
+// boot before any of these helpers run.
+const BASE = () => getApiBase();
 
 const etagStore = new Map();
 const resultStore = new Map();
@@ -72,58 +76,58 @@ async function requestJson(url, opts) {
  * { nodes: { [key]: { display_name, subtitle, icon, border_color, metrics, services } } }
  */
 export async function getServices(skipEtag) {
-  return fetchJson(`${BASE}/services`, skipEtag);
+  return fetchJson(`${BASE()}/services`, skipEtag);
 }
 
 // Metric history (sparklines). Not ETag-cached server-side — it changes every
 // cycle by design — so this always returns a fresh body.
 export async function getMetricHistory() {
-  return fetchJson(`${BASE}/history`);
+  return fetchJson(`${BASE()}/history`);
 }
 
 // Dedicated section data (not covered by /api/services or /api/integrations).
 export async function getUPSStatus(skipEtag) {
-  return fetchJson(`${BASE}/ups`, skipEtag);
+  return fetchJson(`${BASE()}/ups`, skipEtag);
 }
 export async function getGiteaActivity(skipEtag) {
-  return fetchJson(`${BASE}/gitea/activity`, skipEtag);
+  return fetchJson(`${BASE()}/gitea/activity`, skipEtag);
 }
 export async function getCronStatus(skipEtag) {
-  return fetchJson(`${BASE}/cron/status`, skipEtag);
+  return fetchJson(`${BASE()}/cron/status`, skipEtag);
 }
 
 // Phase 3: Integration Engine
 export async function getAllIntegrations(skipEtag) {
-  return fetchJson(`${BASE}/integrations`, skipEtag);
+  return fetchJson(`${BASE()}/integrations`, skipEtag);
 }
 export async function getIntegrationPresets() {
-  return fetchJson(`${BASE}/integrations/presets`);
+  return fetchJson(`${BASE()}/integrations/presets`);
 }
 export async function testIntegration(data) {
-  return requestJson(`${BASE}/integrations/test`, {
+  return requestJson(`${BASE()}/integrations/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 export async function saveIntegration(data) {
-  return requestJson(`${BASE}/integrations/save`, {
+  return requestJson(`${BASE()}/integrations/save`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 export async function deleteIntegration(type) {
-  return requestJson(`${BASE}/integrations/${type}`, { method: 'DELETE' });
+  return requestJson(`${BASE()}/integrations/${type}`, { method: 'DELETE' });
 }
 
 // Legacy functions (kept: getMonitors used by App.jsx health check).
 export async function getMonitors() {
-  return fetchJson(`${BASE}/uptime/monitors`);
+  return fetchJson(`${BASE()}/uptime/monitors`);
 }
 
 export async function getWeather(lat, lon) {
-  const r = await apiFetch(`${BASE}/weather?lat=${lat}&lon=${lon}`, {
+  const r = await apiFetch(`${BASE()}/weather?lat=${lat}&lon=${lon}`, {
     signal: AbortSignal.timeout(12000),
   });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -131,7 +135,7 @@ export async function getWeather(lat, lon) {
 }
 
 export async function getTodos() {
-  const r = await apiFetch(`${BASE}/todos`, { signal: AbortSignal.timeout(12000) });
+  const r = await apiFetch(`${BASE()}/todos`, { signal: AbortSignal.timeout(12000) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -139,7 +143,7 @@ export async function saveTodos(todos) {
   // Route through requestJson so a failed save REJECTS (was silently swallowed:
   // the old code awaited the fetch but never checked r.ok, so a 500 looked like
   // a successful save). Caller awaits for completion only; no body is returned.
-  await requestJson(`${BASE}/todos`, {
+  await requestJson(`${BASE()}/todos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(todos),
