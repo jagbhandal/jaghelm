@@ -26,6 +26,6 @@ export default {
   envKeys: {
     url: 'QBITTORRENT_URL',
     username: 'QBITTORRENT_USER',
-    password: 'QBITTORRENT_PASS',
+    password: 'QBITTORRENT_PASS', // pragma: allowlist secret
   },
 };

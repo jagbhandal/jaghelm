@@ -21,6 +21,6 @@ export default {
   envKeys: {
     url: 'TRANSMISSION_URL',
     username: 'TRANSMISSION_USER',
-    password: 'TRANSMISSION_PASS',
+    password: 'TRANSMISSION_PASS', // pragma: allowlist secret
   },
 };

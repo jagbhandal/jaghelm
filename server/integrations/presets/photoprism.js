@@ -29,6 +29,6 @@ export default {
   envKeys: {
     url: 'JAGHELM_PHOTOPRISM_URL',
     username: 'JAGHELM_PHOTOPRISM_USER',
-    password: 'JAGHELM_PHOTOPRISM_PASS',
+    password: 'JAGHELM_PHOTOPRISM_PASS', // pragma: allowlist secret
   },
 };
