@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import BackHeader from '../components/BackHeader.jsx';
 import { getPushStatus, getPushPrefs, setPushPrefs } from '../push/pushPrefsApi.js';
+import { disablePush } from '../push/registerPush.js';
 import { getPref } from '../storage/prefsAdapter.js';
 import { PUSH_TOKEN_KEY } from '../runtimeConfig.js';
 
@@ -44,6 +45,17 @@ export default function NotificationSettings({ nav }) {
     return () => { cancelled = true; };
   }, []);
 
+  // The SOLE in-app DELETE trigger (locked decision 9): hard-unregister this
+  // device. Distinct from the master toggle's SOFT PUT enabled:false (token
+  // KEPT). After the backend DELETE + local clear resolve, the FCM token is
+  // gone, so the screen drops to the unavailable / "turned off" state.
+  const onTurnOff = async () => {
+    await disablePush(token);
+    setPrefs(null);
+    setToken(null);
+    setState({ status: 'unavailable', reason: 'turned-off' });
+  };
+
   return (
     <section className="mobile-view" aria-label="Notification settings">
       <BackHeader title="Notifications" onBack={nav.pop} />
@@ -52,20 +64,22 @@ export default function NotificationSettings({ nav }) {
 
       {state.status === 'unavailable' && (
         <p className="notif-unavailable">
-          {state.reason === 'not-registered'
-            ? 'Push not registered on this device. Enable notifications in system settings, then reopen the app.'
-            : 'Push notifications are unavailable — the server has no notification credentials configured.'}
+          {state.reason === 'turned-off'
+            ? 'Push is turned off on this device. Re-enable notifications in system settings, then reopen the app.'
+            : state.reason === 'not-registered'
+              ? 'Push not registered on this device. Enable notifications in system settings, then reopen the app.'
+              : 'Push notifications are unavailable — the server has no notification credentials configured.'}
         </p>
       )}
 
       {state.status === 'ready' && prefs && (
-        <Controls prefs={prefs} setPrefs={setPrefs} token={token} />
+        <Controls prefs={prefs} setPrefs={setPrefs} token={token} onTurnOff={onTurnOff} />
       )}
     </section>
   );
 }
 
-function Controls({ prefs, setPrefs, token }) {
+function Controls({ prefs, setPrefs, token, onTurnOff }) {
   // Apply a full-prefs change optimistically, PUT the COMPLETE object, revert on
   // failure. PUT is a strict full-replace: the body is always the entire
   // {categories{4}, notifyRecoveries, enabled} shape — no PATCH, no extra keys.
@@ -125,6 +139,13 @@ function Controls({ prefs, setPrefs, token }) {
           onChange={toggleEnabled}
         />
       </label>
+      <button
+        type="button"
+        className="notif-turnoff"
+        onClick={onTurnOff}
+      >
+        Turn off push on this device
+      </button>
     </div>
   );
 }

@@ -11,6 +11,9 @@ vi.mock('../push/pushPrefsApi.js', () => ({ getPushStatus, getPushPrefs, setPush
 const { getPref } = vi.hoisted(() => ({ getPref: vi.fn() }));
 vi.mock('../storage/prefsAdapter.js', () => ({ getPref, setPref: vi.fn() }));
 
+const { disablePush } = vi.hoisted(() => ({ disablePush: vi.fn() }));
+vi.mock('../push/registerPush.js', () => ({ disablePush }));
+
 import NotificationSettings from './NotificationSettings.jsx';
 
 const PREFS = {
@@ -25,6 +28,7 @@ beforeEach(() => {
   getPushPrefs.mockReset().mockResolvedValue(PREFS);
   setPushPrefs.mockReset().mockResolvedValue(PREFS);
   getPref.mockReset().mockResolvedValue('fcmtok');
+  disablePush.mockReset().mockResolvedValue(undefined);
 });
 
 describe('NotificationSettings (read path)', () => {
@@ -102,5 +106,19 @@ describe('NotificationSettings (write path)', () => {
     fireEvent.click(recovery);
     await waitFor(() => expect(setPushPrefs).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByRole('switch', { name: /notify on recovery/i })).not.toBeChecked());
+  });
+});
+
+describe('NotificationSettings — turn off push (DELETE teardown)', () => {
+  it('fires disablePush(token) and drops to the unavailable state', async () => {
+    render(<NotificationSettings nav={nav} data={{}} params={{}} />);
+    await waitFor(() => expect(getPushPrefs).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: /turn off push on this device/i }));
+    await waitFor(() => expect(disablePush).toHaveBeenCalledWith('fcmtok'));
+    // After teardown the screen no longer shows the live toggles.
+    await waitFor(() =>
+      expect(screen.queryByRole('switch', { name: /enable push|push notifications/i })).toBeNull(),
+    );
+    expect(screen.getByText(/not registered|unavailable|turned off/i)).toBeInTheDocument();
   });
 });
