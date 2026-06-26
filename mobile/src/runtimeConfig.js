@@ -10,14 +10,20 @@ export const THEME_KEY = 'jaghelm-theme'; // non-secret → Preferences
 export const LAST_TAB_KEY = 'jaghelm-last-tab'; // non-secret → Preferences
 export const URL_PRESENT_KEY = 'jaghelm-base-url-present'; // non-secret breadcrumb → Preferences
 
-/** Validate + canonicalize a backend URL to `<origin>/api`. Throws on bad input. */
+/** Validate + canonicalize a backend URL to `<origin><path>/api`. Throws on bad input. */
 export function normalizeBaseUrl(input) {
   const s = String(input || '').trim();
-  if (!/^https?:\/\//i.test(s)) throw new Error('invalid url');
-  // strip trailing slashes, then a trailing /api (any case), then trailing slashes again
-  const stripped = s.replace(/\/+$/, '').replace(/\/api$/i, '').replace(/\/+$/, '');
-  if (!/^https?:\/\/.+/i.test(stripped)) throw new Error('invalid url');
-  return `${stripped}/api`;
+  let u;
+  try {
+    u = new URL(s);
+  } catch {
+    throw new Error('invalid url');
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('invalid url');
+  // Drop trailing slashes, then a trailing /api segment (any case), so the result
+  // is idempotent and a sub-path deployment's own /api is not doubled.
+  const path = u.pathname.replace(/\/+$/, '').replace(/\/api$/i, '');
+  return `${u.protocol}//${u.host}${path}/api`;
 }
 
 /** First-run field validation. Returns { ok, errors } — never throws. */

@@ -5,6 +5,8 @@ import {
   BASE_URL_KEY,
   TOKEN_KEY,
   URL_PRESENT_KEY,
+  THEME_KEY,
+  LAST_TAB_KEY,
 } from './runtimeConfig.js';
 
 describe('normalizeBaseUrl', () => {
@@ -24,6 +26,13 @@ describe('normalizeBaseUrl', () => {
   it('throws on empty or non-http input', () => {
     expect(() => normalizeBaseUrl('')).toThrow('invalid url');
     expect(() => normalizeBaseUrl('vm-101:3099')).toThrow('invalid url');
+  });
+  it('treats a host literally named api correctly (no scheme collapse)', () => {
+    expect(normalizeBaseUrl('http://api')).toBe('http://api/api');
+  });
+  it('preserves a sub-path deployment and does not double /api', () => {
+    expect(normalizeBaseUrl('https://host/base/api')).toBe('https://host/base/api');
+    expect(normalizeBaseUrl('https://host/base')).toBe('https://host/base/api');
   });
 });
 
@@ -53,5 +62,9 @@ describe('storage keys', () => {
   it('exposes base url + presence keys', () => {
     expect(BASE_URL_KEY).toBe('jaghelm-base-url');
     expect(URL_PRESENT_KEY).toBe('jaghelm-base-url-present');
+  });
+  it('exposes theme + last-tab keys', () => {
+    expect(THEME_KEY).toBe('jaghelm-theme');
+    expect(LAST_TAB_KEY).toBe('jaghelm-last-tab');
   });
 });
