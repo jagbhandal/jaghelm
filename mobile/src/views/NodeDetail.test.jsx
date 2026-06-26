@@ -14,7 +14,7 @@ const DATA = { servicesBody: { nodes: { 'vm-101': {
 describe('NodeDetail', () => {
   it('shows the node metrics and its full service list, problems-first', () => {
     render(<NodeDetail data={DATA} nav={{ pop: vi.fn(), push: vi.fn() }} params={{ nodeKey: 'vm-101' }} />);
-    expect(screen.getByText('VM 101')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'VM 101' })).toBeInTheDocument();
     const names = screen.getAllByText(/AdGuard|Gitea/).map((n) => n.textContent);
     expect(names[0]).toBe('Gitea'); // down first
   });

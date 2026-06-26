@@ -16,7 +16,7 @@ export default function NodeDetail({ data, nav, params }) {
   }
   const m = node.metrics || {};
   const third = thirdMetric(m);
-  const services = sortProblemsFirst((node.services || []).map((s) => ({ ...s, nodeKey: params.nodeKey, nodeName: params.nodeKey })));
+  const services = sortProblemsFirst((node.services || []).map((s) => ({ ...s, nodeKey: params.nodeKey, nodeName: node.display_name || params.nodeKey })));
   return (
     <section className="mobile-view" aria-label="Node detail">
       <BackHeader title={node.display_name} onBack={nav.pop} />

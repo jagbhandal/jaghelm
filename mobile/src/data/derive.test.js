@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseMetricPct, serviceIsProblem, flattenServices, sortProblemsFirst,
-  groupByNode, nodeUpDown, upsDegraded, cronDegraded,
+  groupByNode, thirdMetric, nodeUpDown, upsDegraded, cronDegraded,
   deriveSubsystems, deriveIncidents,
 } from './derive.js';
 
@@ -79,6 +79,29 @@ describe('groupByNode + nodeUpDown', () => {
     expect(nodeUpDown(node)).toEqual({ up: 1, down: 1 });
     const pi = SERVICES_BODY.nodes['gateway-pi'];
     expect(nodeUpDown(pi)).toEqual({ up: 1, down: 0 }); // unknown counts as up-side
+  });
+});
+
+describe('thirdMetric', () => {
+  it('returns TEMP descriptor when temp is a numeric string', () => {
+    const result = thirdMetric({ temp: '52.1', diskPercent: '20.0' });
+    expect(result.label).toBe('TEMP');
+    expect(result.value).toBe('52.1');
+    expect(result.unit).toBe('°C');
+    expect(result.percent).toBeCloseTo(52.1);
+  });
+  it('returns DISK descriptor when temp is null', () => {
+    const result = thirdMetric({ temp: null, diskPercent: '55.6' });
+    expect(result.label).toBe('DISK');
+    expect(result.value).toBe('55.6');
+    expect(result.unit).toBe('%');
+    expect(result.percent).toBeCloseTo(55.6);
+  });
+  it('returns DISK descriptor when temp is a non-numeric/garbage string', () => {
+    const result = thirdMetric({ temp: 'n/a', diskPercent: '30.0' });
+    expect(result.label).toBe('DISK');
+    expect(result.unit).toBe('%');
+    expect(result.percent).toBeCloseTo(30.0);
   });
 });
 
