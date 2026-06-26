@@ -92,5 +92,13 @@ jobs:
       - name: Client tests (Vitest + RTL)
         run: npm run test:client
 
+      - name: Mobile tests (Vitest)
+        run: npm ci && npm test
+        working-directory: mobile
+
+      - name: Mobile dependency audit (high+)
+        run: npm audit --audit-level=high
+        working-directory: mobile
+
       - name: Asset/link existence check
         run: npm run check:assets
