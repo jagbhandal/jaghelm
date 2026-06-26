@@ -8,7 +8,7 @@ over the existing app (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). Generate the key o
 back it up, and reuse it forever.
 
 The CI workflow `.github/workflows/build-apk.yml` does the actual signing — you only
-need to (1) generate the keystore once, (2) set four GitHub secrets, and (3) trigger a
+need to (1) generate the keystore once, (2) set four Gitea Actions secrets, and (3) trigger a
 build. The Gradle side (`mobile/android/app/build.gradle`) reads
 `mobile/android/app/keystore.properties`; when that file is absent the build still
 succeeds but produces an **unsigned** APK (which will not sideload) — so for a real
@@ -58,7 +58,7 @@ keytool -list -v -keystore jaghelm-release.jks -alias jaghelm-upload
 
 ## 2. Base64-encode the keystore for the GitHub secret
 
-GitHub secrets hold text, so the binary `.jks` must be base64-encoded **with no line
+Gitea Actions secrets hold text, so the binary `.jks` must be base64-encoded **with no line
 wrapping** (`-w0`), or the CI `base64 -d` step reassembles corrupted bytes:
 
 ```bash
@@ -73,9 +73,9 @@ Delete the `.b64` file once you've pasted it into GitHub.
 
 ---
 
-## 3. Set the FOUR GitHub repo secrets
+## 3. Set the FOUR Gitea repo secrets
 
-Repo → **Settings → Secrets and variables → Actions → New repository secret**. Set
+Repo → **Settings → Actions → Secrets → Add Secret** (on `git.jagbhandal.com`). Set
 these **exact** four names (the workflow references them by name):
 
 | Secret name | Value |
@@ -102,8 +102,9 @@ git tag mobile-v1.0.0
 git push origin mobile-v1.0.0
 ```
 
-**B. Manual run:** repo → **Actions → "Build Signed Mobile APK" → Run workflow**
-(`workflow_dispatch`), pick the branch, Run.
+**B. Manual run:** repo → **Actions** tab → **Build Signed Mobile APK** → **Run workflow**
+(`workflow_dispatch`), pick the branch, Run. (If your Gitea predates workflow_dispatch
+support the manual button may not appear — use the tag-push path above, which always works.)
 
 When the job finishes, open the run and download the **`jaghelm-release-apk`** artifact
 (a zip containing `app-release.apk`). The workflow also runs `apksigner verify` and an
@@ -118,8 +119,10 @@ workflow to regenerate.)
 `apksigner` lives in the Android SDK `build-tools/<ver>/`:
 
 ```bash
-apksigner verify --print-certs -v app-release.apk
+apksigner verify --min-sdk-version 24 --print-certs -v app-release.apk
 ```
+(The CI gate passes the same `--min-sdk-version 24` — matching `minSdkVersion` in
+`variables.gradle` — so your manual check verifies identically.)
 
 A signed APK reports `Verified using v2 scheme (APK Signature Scheme v2): true`
 (v3 also true). For an Android-14-class target (`targetSdk 36`), **v2 is the practical
@@ -146,10 +149,19 @@ minimum** — `apksigner` applies v2+v3 automatically. A non-zero exit / missing
    tap **Test & Connect**. It reaches the backend over the Tailscale network via native
    HTTP; all four tabs should render live data.
 
+> **Push notifications are OFF in the CI-built APK.** `build.gradle` applies the Firebase
+> (google-services) plugin only when a real `google-services.json` is present, and CI does
+> not inject one — so a CI-signed APK installs and runs fine but receives **no FCM push**.
+> Enabling push in release builds (injecting `google-services.json` from a secret, same
+> pattern as the keystore) is the separate **prod FCM service-account** follow-up, out of
+> scope for this signing pipeline. All in-app tab data still works without it.
+
 ### Updating later
 
 Build a new signed APK (bump the tag, e.g. `mobile-v1.0.1`), then `adb install -r` or
-tap-to-install over the top. Because it's the **same** key, Android updates in place and
+tap-to-install over the top. CI derives an **incrementing `versionCode`** from the tag
+(`mobile-vMAJOR.MINOR.PATCH` → `MAJOR*1000000 + MINOR*1000 + PATCH`), so each higher tag
+installs cleanly over the last. Because it's the **same** key, Android updates in place and
 preserves the app's stored config. If you ever see
 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, you signed with a different key — uninstall the old
 app first (you'll lose its stored state) or recover the original keystore.
