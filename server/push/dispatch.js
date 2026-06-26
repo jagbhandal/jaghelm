@@ -19,11 +19,7 @@ const defaultLog = createLogger('push-dispatch');
 
 /** Map an event type to its preference category. */
 export function categoryOf(type) {
-  if (type.startsWith('service_')) return 'service';
-  if (type.startsWith('host_')) return 'host';
-  if (type.startsWith('ups_')) return 'ups';
-  if (type.startsWith('cron_')) return 'cron';
-  return 'service'; // unreachable for contract types; conservative default
+  return type.split('_')[0];
 }
 
 /**
@@ -51,10 +47,15 @@ export async function dispatchEvents(events, { store, fcm, logger = defaultLog }
   let suppressed = 0;
   const toPrune = new Set();
 
+  // Build a single prefs map before iterating events — prefs don't change
+  // mid-dispatch, so calling store.getPrefs() once per token (not per event×token)
+  // is equivalent and avoids O(events × tokens) redundant lookups.
   const tokens = store.getAllTokens();
+  const prefsMap = new Map(tokens.map(({ token }) => [token, store.getPrefs(token)]));
+
   for (const event of events) {
     for (const { token } of tokens) {
-      const prefs = store.getPrefs(token);
+      const prefs = prefsMap.get(token);
       if (!shouldDeliver(event, prefs)) {
         suppressed += 1;
         continue;

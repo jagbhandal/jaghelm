@@ -25,21 +25,15 @@ export const DEFAULT_PREFS = Object.freeze({
   enabled: true,
 });
 
-/** Deep, plain (unfrozen) clone of DEFAULT_PREFS so callers can mutate safely. */
-function defaultPrefs() {
-  return {
-    categories: { ...DEFAULT_PREFS.categories },
-    notifyRecoveries: DEFAULT_PREFS.notifyRecoveries,
-    enabled: DEFAULT_PREFS.enabled,
-  };
-}
-
 /** Deep copy of a prefs object so callers can never mutate stored state. */
 function clonePrefs(prefs) {
   return { ...prefs, categories: { ...prefs.categories } };
 }
 
-const CATEGORY_KEYS = ['service', 'host', 'ups', 'cron'];
+/** Deep, plain (unfrozen) clone of DEFAULT_PREFS so callers can mutate safely. */
+const defaultPrefs = () => clonePrefs(DEFAULT_PREFS);
+
+export const CATEGORY_KEYS = ['service', 'host', 'ups', 'cron'];
 
 /**
  * Coerce arbitrary input into a valid PREFS object. Unknown keys are dropped,

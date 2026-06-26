@@ -45,29 +45,35 @@ let lastRefreshComplete = 0; // ms epoch of the last finished cycle (0 = never)
 const PUSH_SNAPSHOT_PATH = join(DATA_DIR, 'push-snapshot.json');
 const DEFAULT_PUSH_THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
 
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+/** Read and parse display-config.json once. Returns the parsed object or null on missing/error. */
+function readDisplayConfig() {
+  try {
+    if (existsSync(DISPLAY_CONFIG_PATH)) {
+      return JSON.parse(readFileSync(DISPLAY_CONFIG_PATH, 'utf8'));
+    }
+  } catch {
+    // fall through
+  }
+  return null;
+}
+
 // Thresholds come from display-config when present, else the defaults. Read
 // through the same cached file the loop already touches.
 function getPushThresholds() {
-  try {
-    if (existsSync(DISPLAY_CONFIG_PATH)) {
-      const data = JSON.parse(readFileSync(DISPLAY_CONFIG_PATH, 'utf8'));
-      const t = data?.pushThresholds;
-      if (t && typeof t === 'object') {
-        return {
-          cpu: typeof t.cpu === 'number' ? t.cpu : DEFAULT_PUSH_THRESHOLDS.cpu,
-          mem: typeof t.mem === 'number' ? t.mem : DEFAULT_PUSH_THRESHOLDS.mem,
-          disk: typeof t.disk === 'number' ? t.disk : DEFAULT_PUSH_THRESHOLDS.disk,
-          hysteresis: typeof t.hysteresis === 'number' ? t.hysteresis : DEFAULT_PUSH_THRESHOLDS.hysteresis,
-        };
-      }
-    }
-  } catch {
-    // fall through to defaults
+  const data = readDisplayConfig();
+  const t = data?.pushThresholds;
+  if (t && typeof t === 'object') {
+    return {
+      cpu: typeof t.cpu === 'number' ? t.cpu : DEFAULT_PUSH_THRESHOLDS.cpu,
+      mem: typeof t.mem === 'number' ? t.mem : DEFAULT_PUSH_THRESHOLDS.mem,
+      disk: typeof t.disk === 'number' ? t.disk : DEFAULT_PUSH_THRESHOLDS.disk,
+      hysteresis: typeof t.hysteresis === 'number' ? t.hysteresis : DEFAULT_PUSH_THRESHOLDS.hysteresis,
+    };
   }
   return DEFAULT_PUSH_THRESHOLDS;
 }
-
-// ── Helpers ──────────────────────────────────────────────────────────────
 
 function formatContainerName(name) {
   return name.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -85,17 +91,11 @@ export function invalidateRefreshIntervalCache() {
 
 function getRefreshIntervalMs() {
   if (cachedIntervalMs !== null) return cachedIntervalMs;
-  try {
-    if (existsSync(DISPLAY_CONFIG_PATH)) {
-      const data = JSON.parse(readFileSync(DISPLAY_CONFIG_PATH, 'utf8'));
-      const seconds = data?.refreshInterval;
-      if (typeof seconds === 'number' && seconds >= MIN_INTERVAL_SECONDS) {
-        cachedIntervalMs = seconds * 1000;
-        return cachedIntervalMs;
-      }
-    }
-  } catch {
-    // Ignore — fall through to default
+  const data = readDisplayConfig();
+  const seconds = data?.refreshInterval;
+  if (typeof seconds === 'number' && seconds >= MIN_INTERVAL_SECONDS) {
+    cachedIntervalMs = seconds * 1000;
+    return cachedIntervalMs;
   }
   cachedIntervalMs = DEFAULT_INTERVAL_MS;
   return cachedIntervalMs;

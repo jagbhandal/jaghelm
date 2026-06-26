@@ -14,8 +14,7 @@
 
 import { Router } from 'express';
 import { apiError } from '../errors.js';
-
-const CATEGORY_KEYS = ['service', 'host', 'ups', 'cron'];
+import { CATEGORY_KEYS } from '../push/tokenStore.js';
 
 // Defense-in-depth: reject well-known prototype-pollution keys before they
 // ever reach the store layer (C1 + I1 defense-in-depth).
@@ -23,6 +22,23 @@ const RESERVED_TOKEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 // I1: top-level prefs key allowlist — extra keys are rejected, not silently dropped.
 const PREFS_TOP_KEYS = new Set(['categories', 'notifyRecoveries', 'enabled']);
+
+/**
+ * Validate and extract a token string from raw input.
+ * Sends a 400 on error and returns null; returns the token string on success.
+ * C1: blocks reserved prototype-pollution keys at the route layer.
+ */
+function extractToken(raw, res, emptyMsg = 'token required') {
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    apiError(res, 400, emptyMsg);
+    return null;
+  }
+  if (RESERVED_TOKEN_KEYS.has(raw)) {
+    apiError(res, 400, 'invalid token');
+    return null;
+  }
+  return raw;
+}
 
 /**
  * Validates the shape of a prefs object. Returns false if malformed.
@@ -50,46 +66,32 @@ export function createPushRoutes({ store, fcm }) {
 
   // POST /register — register or refresh an FCM token
   router.post('/register', (req, res) => {
-    const { token, platform, appVersion } = req.body || {};
-    if (typeof token !== 'string' || token.trim() === '') {
-      return apiError(res, 400, 'token required');
-    }
-    // C1: block reserved prototype-pollution keys at the route layer.
-    if (RESERVED_TOKEN_KEYS.has(token)) return apiError(res, 400, 'invalid token');
+    const { platform, appVersion } = req.body || {};
+    const token = extractToken((req.body || {}).token, res);
+    if (token === null) return;
     store.registerToken(token, { platform, appVersion });
     res.json({ stored: true, deliveryEnabled: fcm.isPushEnabled() });
   });
 
   // DELETE /register — remove a token
   router.delete('/register', (req, res) => {
-    const { token } = req.body || {};
-    if (typeof token !== 'string' || token.trim() === '') {
-      return apiError(res, 400, 'token required');
-    }
-    // C1: block reserved prototype-pollution keys at the route layer.
-    if (RESERVED_TOKEN_KEYS.has(token)) return apiError(res, 400, 'invalid token');
+    const token = extractToken((req.body || {}).token, res);
+    if (token === null) return;
     res.json({ removed: store.removeToken(token) });
   });
 
   // GET /prefs?token=T — fetch per-token prefs (returns DEFAULT_PREFS if unset)
   router.get('/prefs', (req, res) => {
-    const token = req.query.token;
-    if (typeof token !== 'string' || token.trim() === '') {
-      return apiError(res, 400, 'token query param required');
-    }
-    // C1: block reserved prototype-pollution keys at the route layer.
-    if (RESERVED_TOKEN_KEYS.has(token)) return apiError(res, 400, 'invalid token');
+    const token = extractToken(req.query.token, res, 'token query param required');
+    if (token === null) return;
     res.json({ prefs: store.getPrefs(token) });
   });
 
   // PUT /prefs — replace a token's notification prefs
   router.put('/prefs', (req, res) => {
-    const { token, prefs } = req.body || {};
-    if (typeof token !== 'string' || token.trim() === '') {
-      return apiError(res, 400, 'token required');
-    }
-    // C1: block reserved prototype-pollution keys at the route layer.
-    if (RESERVED_TOKEN_KEYS.has(token)) return apiError(res, 400, 'invalid token');
+    const { prefs } = req.body || {};
+    const token = extractToken((req.body || {}).token, res);
+    if (token === null) return;
     if (!validPrefsShape(prefs)) {
       return apiError(res, 400, 'malformed prefs');
     }
