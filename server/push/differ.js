@@ -35,8 +35,53 @@ export function diffSnapshots(prev, next, thresholds) {
   // Baseline: first cycle has no prior state, so nothing has "changed" yet.
   if (prev === null || prev === undefined) return [];
   const events = [];
-  // (transition detection added in subsequent tasks)
+  diffServices(prev.services || {}, next.services || {}, events);
   return sortEvents(events);
+}
+
+/** "NODE:ID" -> the NODE portion (substring before the first colon). */
+function nodeOf(key) {
+  const i = key.indexOf(':');
+  return i === -1 ? key : key.slice(0, i);
+}
+
+/** "NODE:ID" -> the ID portion (substring after the first colon). */
+function idPart(key) {
+  const i = key.indexOf(':');
+  return i === -1 ? key : key.slice(i + 1);
+}
+
+function diffServices(prev, next, events) {
+  for (const key of Object.keys(next)) {
+    const before = prev[key] === undefined ? 'unknown' : prev[key];
+    const after = next[key];
+    if (after === 'unknown') continue; // unknown never emits
+    const wentDown = (before === 'up' || before === 'unknown') && after === 'down';
+    const recovered = before === 'down' && after === 'up';
+    if (wentDown) {
+      events.push({
+        type: 'service_down',
+        id: key,
+        node: nodeOf(key),
+        title: 'Service down',
+        body: `${idPart(key)} on ${nodeOf(key)} is down`,
+        severity: SEVERITY.service_down,
+        prev: before,
+        next: after,
+      });
+    } else if (recovered) {
+      events.push({
+        type: 'service_recovered',
+        id: key,
+        node: nodeOf(key),
+        title: 'Service recovered',
+        body: `${idPart(key)} on ${nodeOf(key)} is back up`,
+        severity: SEVERITY.service_recovered,
+        prev: before,
+        next: after,
+      });
+    }
+  }
 }
 
 /**

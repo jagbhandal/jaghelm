@@ -54,3 +54,63 @@ test('no change: identical prev/next returns []', () => {
   };
   assert.deepEqual(diffSnapshots(snap, snap, THRESHOLDS), []);
 });
+
+function svc(map) {
+  return { services: map, hosts: {}, ups: { state: 'unknown' }, cron: {} };
+}
+
+test('service up->down emits service_down(critical)', () => {
+  const prev = svc({ 'n1:web': 'up' });
+  const next = svc({ 'n1:web': 'down' });
+  const events = diffSnapshots(prev, next, THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    type: 'service_down',
+    id: 'n1:web',
+    node: 'n1',
+    title: 'Service down',
+    body: 'web on n1 is down',
+    severity: 'critical',
+    prev: 'up',
+    next: 'down',
+  });
+});
+
+test('service unknown->down emits service_down', () => {
+  const events = diffSnapshots(svc({ 'n1:web': 'unknown' }), svc({ 'n1:web': 'down' }), THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, 'service_down');
+  assert.equal(events[0].prev, 'unknown');
+});
+
+test('service down->up emits service_recovered(info)', () => {
+  const events = diffSnapshots(svc({ 'n1:web': 'down' }), svc({ 'n1:web': 'up' }), THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    type: 'service_recovered',
+    id: 'n1:web',
+    node: 'n1',
+    title: 'Service recovered',
+    body: 'web on n1 is back up',
+    severity: 'info',
+    prev: 'down',
+    next: 'up',
+  });
+});
+
+test('service down->unknown emits nothing (unknown never emits)', () => {
+  assert.deepEqual(diffSnapshots(svc({ 'n1:web': 'down' }), svc({ 'n1:web': 'unknown' }), THRESHOLDS), []);
+});
+
+test('service up->up and down->down emit nothing', () => {
+  assert.deepEqual(diffSnapshots(svc({ 'n1:web': 'up' }), svc({ 'n1:web': 'up' }), THRESHOLDS), []);
+  assert.deepEqual(diffSnapshots(svc({ 'n1:web': 'down' }), svc({ 'n1:web': 'down' }), THRESHOLDS), []);
+});
+
+test('service new key in next (no prev entry) treated as prev=unknown', () => {
+  // absent in prev => undefined => treated as "unknown"; unknown->down emits
+  const events = diffSnapshots(svc({}), svc({ 'n1:web': 'down' }), THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, 'service_down');
+  assert.equal(events[0].prev, 'unknown');
+});
