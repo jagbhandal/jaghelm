@@ -162,3 +162,81 @@ test('host absent in prev defaults to reachable:false (no false unreachable)', (
   assert.equal(events.length, 1);
   assert.equal(events[0].type, 'host_recovered');
 });
+
+function hostM(prevM, nextM) {
+  const p = { reachable: true, cpu: 0.1, mem: 0.1, disk: 0.1, ...prevM };
+  const n = { reachable: true, cpu: 0.1, mem: 0.1, disk: 0.1, ...nextM };
+  return [host({ n1: p }), host({ n1: n })];
+}
+
+test('cpu rises below->above threshold emits host_threshold(warning)', () => {
+  const [prev, next] = hostM({ cpu: 0.5 }, { cpu: 0.95 });
+  const events = diffSnapshots(prev, next, THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    type: 'host_threshold',
+    id: 'n1:cpu',
+    node: 'n1',
+    title: 'Host cpu high',
+    body: 'n1 cpu at 95% (threshold 90%)',
+    severity: 'warning',
+    prev: 0.5,
+    next: 0.95,
+  });
+});
+
+test('cpu exactly at threshold (0.90) counts as crossed (>=)', () => {
+  const [prev, next] = hostM({ cpu: 0.5 }, { cpu: 0.9 });
+  const events = diffSnapshots(prev, next, THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, 'host_threshold');
+});
+
+test('cpu falls below (threshold - hysteresis) clears => host_threshold_cleared(info)', () => {
+  // already above, drop to 0.84 (< 0.90-0.05=0.85)
+  const [prev, next] = hostM({ cpu: 0.95 }, { cpu: 0.84 });
+  const events = diffSnapshots(prev, next, THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    type: 'host_threshold_cleared',
+    id: 'n1:cpu',
+    node: 'n1',
+    title: 'Host cpu normal',
+    body: 'n1 cpu back to 84% (threshold 90%)',
+    severity: 'info',
+    prev: 0.95,
+    next: 0.84,
+  });
+});
+
+test('hysteresis band: above, drops to 0.87 (between 0.85 and 0.90) emits nothing', () => {
+  const [prev, next] = hostM({ cpu: 0.95 }, { cpu: 0.87 });
+  assert.deepEqual(diffSnapshots(prev, next, THRESHOLDS), []);
+});
+
+test('hysteresis band: below, rises to 0.87 (between 0.85 and 0.90) emits nothing', () => {
+  const [prev, next] = hostM({ cpu: 0.5 }, { cpu: 0.87 });
+  assert.deepEqual(diffSnapshots(prev, next, THRESHOLDS), []);
+});
+
+test('clear at exactly threshold-hysteresis (0.85) does NOT clear (must be below)', () => {
+  const [prev, next] = hostM({ cpu: 0.95 }, { cpu: 0.85 });
+  assert.deepEqual(diffSnapshots(prev, next, THRESHOLDS), []);
+});
+
+test('mem and disk crossings are independent events with NODE:METRIC ids', () => {
+  const [prev, next] = hostM({ mem: 0.5, disk: 0.5 }, { mem: 0.95, disk: 0.99 });
+  const events = diffSnapshots(prev, next, THRESHOLDS);
+  assert.equal(events.length, 2);
+  // canonically sorted by (type,id): both host_threshold, id mem < disk? "n1:disk" < "n1:mem"
+  assert.deepEqual(events.map((e) => e.id), ['n1:disk', 'n1:mem']);
+});
+
+test('threshold crossings skipped when host not reachable in next', () => {
+  const [prev] = hostM({ cpu: 0.5 }, {});
+  const next = host({ n1: { reachable: false, cpu: 0.99, mem: 0.99, disk: 0.99 } });
+  const events = diffSnapshots(prev, next, THRESHOLDS);
+  // only host_unreachable, no host_threshold despite high cpu
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, 'host_unreachable');
+});

@@ -85,6 +85,12 @@ function diffServices(prev, next, events) {
   }
 }
 
+const HOST_METRICS = ['cpu', 'disk', 'mem']; // iterate sorted so insertion order is deterministic
+
+function pct(fraction) {
+  return `${Math.round(fraction * 100)}%`;
+}
+
 function diffHosts(prev, next, thresholds, events) {
   for (const node of Object.keys(next)) {
     const before = prev[node] || { reachable: false };
@@ -115,6 +121,40 @@ function diffHosts(prev, next, thresholds, events) {
         prev: false,
         next: true,
       });
+    }
+    // Metric thresholds only meaningful when reachable both cycles.
+    if (!beforeReach || !afterReach) continue;
+    for (const metric of HOST_METRICS) {
+      const limit = thresholds[metric];
+      const clearAt = limit - thresholds.hysteresis;
+      const b = before[metric];
+      const a = after[metric];
+      const wasHigh = b >= limit;
+      const isHigh = a >= limit;
+      if (!wasHigh && isHigh) {
+        events.push({
+          type: 'host_threshold',
+          id: `${node}:${metric}`,
+          node,
+          title: `Host ${metric} high`,
+          body: `${node} ${metric} at ${pct(a)} (threshold ${pct(limit)})`,
+          severity: SEVERITY.host_threshold,
+          prev: b,
+          next: a,
+        });
+      } else if (wasHigh && a < clearAt) {
+        events.push({
+          type: 'host_threshold_cleared',
+          id: `${node}:${metric}`,
+          node,
+          title: `Host ${metric} normal`,
+          body: `${node} ${metric} back to ${pct(a)} (threshold ${pct(limit)})`,
+          severity: SEVERITY.host_threshold_cleared,
+          prev: b,
+          next: a,
+        });
+      }
+      // staying in [clearAt, limit) band: emit nothing (hysteresis).
     }
   }
 }
