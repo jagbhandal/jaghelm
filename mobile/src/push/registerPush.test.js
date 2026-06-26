@@ -171,3 +171,27 @@ describe('disablePush teardown', () => {
     expect(setPref).toHaveBeenCalledWith('jaghelm-push-token', '');
   });
 });
+
+function captureAppHandlers() {
+  const handlers = {};
+  appPlugin.addListener.mockImplementation((event, cb) => {
+    handlers[event] = cb;
+    return Promise.resolve({ remove: vi.fn() });
+  });
+  return handlers;
+}
+
+describe('appUrlOpen custom-scheme deep-link (path B)', () => {
+  it('registers an appUrlOpen listener that routes via routeFromUrl with the live nav', async () => {
+    plugin.checkPermissions.mockResolvedValue({ receive: 'granted' });
+    const nav = { push: vi.fn() };
+    const appHandlers = captureAppHandlers();
+    await initPush({ nav });
+    expect(appHandlers.appUrlOpen).toBeTypeOf('function');
+    appHandlers.appUrlOpen({ url: 'jaghelm://incident/vm-101%3Anginx?type=service_down&node=vm-101&severity=critical' });
+    expect(routeFromUrl).toHaveBeenCalledWith(
+      'jaghelm://incident/vm-101%3Anginx?type=service_down&node=vm-101&severity=critical',
+      nav,
+    );
+  });
+});
