@@ -14,6 +14,9 @@ vi.mock('../storage/prefsAdapter.js', () => ({ getPref, setPref: vi.fn() }));
 const { disablePush } = vi.hoisted(() => ({ disablePush: vi.fn() }));
 vi.mock('../push/registerPush.js', () => ({ disablePush }));
 
+const { logout, forgetDevice } = vi.hoisted(() => ({ logout: vi.fn(), forgetDevice: vi.fn() }));
+vi.mock('../auth/authState.js', () => ({ logout, forgetDevice }));
+
 import NotificationSettings from './NotificationSettings.jsx';
 
 const PREFS = {
@@ -29,6 +32,32 @@ beforeEach(() => {
   setPushPrefs.mockReset().mockResolvedValue(PREFS);
   getPref.mockReset().mockResolvedValue('fcmtok');
   disablePush.mockReset().mockResolvedValue(undefined);
+  logout.mockReset();
+  forgetDevice.mockReset();
+});
+
+describe('NotificationSettings (session controls)', () => {
+  it('logs out when "Log out" is tapped', async () => {
+    render(<NotificationSettings nav={nav} />);
+    fireEvent.click(await screen.findByRole('button', { name: /log out/i }));
+    expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires a confirmation step before forgetting the device', async () => {
+    render(<NotificationSettings nav={nav} />);
+    fireEvent.click(await screen.findByRole('button', { name: /forget this device/i }));
+    expect(forgetDevice).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /^forget$/i }));
+    expect(forgetDevice).toHaveBeenCalledTimes(1);
+  });
+
+  it('can cancel the forget-device confirmation', async () => {
+    render(<NotificationSettings nav={nav} />);
+    fireEvent.click(await screen.findByRole('button', { name: /forget this device/i }));
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(forgetDevice).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /forget this device/i })).toBeInTheDocument();
+  });
 });
 
 describe('NotificationSettings (read path)', () => {

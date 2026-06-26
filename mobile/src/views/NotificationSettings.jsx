@@ -4,6 +4,7 @@ import { getPushStatus, getPushPrefs, setPushPrefs } from '../push/pushPrefsApi.
 import { disablePush } from '../push/registerPush.js';
 import { getPref } from '../storage/prefsAdapter.js';
 import { PUSH_TOKEN_KEY } from '../runtimeConfig.js';
+import { logout, forgetDevice } from '../auth/authState.js';
 
 // Plural UI label -> singular pref key (the server prefs schema is singular).
 const CATEGORIES = [
@@ -75,7 +76,45 @@ export default function NotificationSettings({ nav }) {
       {state.status === 'ready' && prefs && (
         <Controls prefs={prefs} setPrefs={setPrefs} token={token} onTurnOff={onTurnOff} />
       )}
+
+      <SessionControls />
     </section>
+  );
+}
+
+/**
+ * Session controls. Log out clears the session token and drops to the re-auth
+ * screen (the saved server URL is kept). Forget-this-device wipes the URL +
+ * sign-in entirely and returns to first-run; it is gated behind an inline
+ * confirm since it is destructive of the on-device setup. Neither ever touched
+ * a password — only the token is stored.
+ */
+function SessionControls() {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="session-controls">
+      <h2 className="detail-section">Session</h2>
+      <button type="button" className="session-logout" onClick={() => logout()}>
+        Log out
+      </button>
+      {!confirming ? (
+        <button type="button" className="session-forget" onClick={() => setConfirming(true)}>
+          Forget this device
+        </button>
+      ) : (
+        <div className="session-forget-confirm">
+          <p className="notif-unavailable">
+            Forget this device? This wipes the saved server URL and sign-in from this phone.
+          </p>
+          <button type="button" className="session-forget" onClick={() => forgetDevice()}>
+            Forget
+          </button>
+          <button type="button" onClick={() => setConfirming(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
