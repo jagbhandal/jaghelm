@@ -240,3 +240,48 @@ test('threshold crossings skipped when host not reachable in next', () => {
   assert.equal(events.length, 1);
   assert.equal(events[0].type, 'host_unreachable');
 });
+
+function ups(state) {
+  return { services: {}, hosts: {}, ups: { state }, cron: {} };
+}
+
+test('ups online->on_battery emits ups_on_battery(critical)', () => {
+  const events = diffSnapshots(ups('online'), ups('on_battery'), THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    type: 'ups_on_battery',
+    id: 'ups',
+    node: 'ups',
+    title: 'UPS on battery',
+    body: 'UPS switched to battery power',
+    severity: 'critical',
+    prev: 'online',
+    next: 'on_battery',
+  });
+});
+
+test('ups on_battery->online emits ups_restored(info)', () => {
+  const events = diffSnapshots(ups('on_battery'), ups('online'), THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    type: 'ups_restored',
+    id: 'ups',
+    node: 'ups',
+    title: 'UPS restored',
+    body: 'UPS back on line power',
+    severity: 'info',
+    prev: 'on_battery',
+    next: 'online',
+  });
+});
+
+test('ups transitions to/from unknown emit nothing', () => {
+  assert.deepEqual(diffSnapshots(ups('unknown'), ups('on_battery'), THRESHOLDS), []);
+  assert.deepEqual(diffSnapshots(ups('online'), ups('unknown'), THRESHOLDS), []);
+  assert.deepEqual(diffSnapshots(ups('unknown'), ups('online'), THRESHOLDS), []);
+});
+
+test('ups unchanged emits nothing', () => {
+  assert.deepEqual(diffSnapshots(ups('online'), ups('online'), THRESHOLDS), []);
+  assert.deepEqual(diffSnapshots(ups('on_battery'), ups('on_battery'), THRESHOLDS), []);
+});

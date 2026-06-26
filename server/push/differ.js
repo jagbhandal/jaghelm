@@ -37,6 +37,7 @@ export function diffSnapshots(prev, next, thresholds) {
   const events = [];
   diffServices(prev.services || {}, next.services || {}, events);
   diffHosts(prev.hosts || {}, next.hosts || {}, thresholds, events);
+  diffUps(prev.ups || { state: 'unknown' }, next.ups || { state: 'unknown' }, events);
   return sortEvents(events);
 }
 
@@ -157,6 +158,35 @@ function diffHosts(prev, next, thresholds, events) {
       // staying in [clearAt, limit) band: emit nothing (hysteresis).
     }
   }
+}
+
+function diffUps(prev, next, events) {
+  const before = prev.state;
+  const after = next.state;
+  if (before === 'online' && after === 'on_battery') {
+    events.push({
+      type: 'ups_on_battery',
+      id: 'ups',
+      node: 'ups',
+      title: 'UPS on battery',
+      body: 'UPS switched to battery power',
+      severity: SEVERITY.ups_on_battery,
+      prev: before,
+      next: after,
+    });
+  } else if (before === 'on_battery' && after === 'online') {
+    events.push({
+      type: 'ups_restored',
+      id: 'ups',
+      node: 'ups',
+      title: 'UPS restored',
+      body: 'UPS back on line power',
+      severity: SEVERITY.ups_restored,
+      prev: before,
+      next: after,
+    });
+  }
+  // any state involving "unknown" => no event.
 }
 
 /**
