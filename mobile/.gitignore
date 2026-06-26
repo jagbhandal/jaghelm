@@ -1,0 +1,23 @@
+# Build output
+dist/
+node_modules/
+
+# Capacitor / Android build artifacts
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/capacitor-cordova-android-plugins/
+
+# Secrets — NEVER commit (public repo). Templates negated below.
+android/app/google-services.json
+google-services.json
+keystore.properties
+android/key.properties
+**/*.keystore
+**/*.jks
+.env
+
+# Template negations — committed *.example placeholders MUST survive the globs
+!**/*.example
+!**/*.example.json

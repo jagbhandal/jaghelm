@@ -11,14 +11,15 @@ const config: CapacitorConfig = {
     // `cleartext` left false: Tailscale already encrypts transport.
     // `allowNavigation` left empty: app talks to backend via native HTTP, not nav.
   },
-  android: {
-    // Capacitor 8 / Android 15 (SDK 35+) enforce edge-to-edge; inject correct
-    // safe-area inset variables regardless of WebView version.
-    adjustMarginsForEdgeToEdge: 'auto',
-  },
   plugins: {
     CapacitorHttp: { enabled: true }, // native HTTP = default transport (bypasses CORS, reads ETag)
     PushNotifications: { presentationOptions: ['badge', 'sound', 'alert'] }, // declared for Phase 5
+    // Capacitor 8 / Android 15 (SDK 35+) enforce edge-to-edge by default.
+    // SystemBars.insetsHandling = 'css' injects correct --safe-area-inset-* CSS variables
+    // into the WebView so layouts respect navigation bars / notch regardless of WebView version.
+    // (Task 8: `android.adjustMarginsForEdgeToEdge` was NOT a valid CapacitorConfig key —
+    //  removed; SystemBars plugin config is the correct Cap 8 hook.)
+    SystemBars: { insetsHandling: 'css' },
   },
 };
 
