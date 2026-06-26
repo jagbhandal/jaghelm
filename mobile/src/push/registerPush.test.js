@@ -39,6 +39,11 @@ const routeFromUrl = vi.hoisted(() => vi.fn());
 vi.mock('./routeFromData.js', () => ({ routeFromData }));
 vi.mock('./routeFromUrl.js', () => ({ routeFromUrl }));
 
+// Build-time push-configured gate. Default ON for the existing flow tests; the
+// gate test below flips it OFF.
+const { isPushConfigured } = vi.hoisted(() => ({ isPushConfigured: vi.fn(() => true) }));
+vi.mock('./pushConfig.js', () => ({ isPushConfigured }));
+
 import { initPush, disablePush } from './registerPush.js';
 
 beforeEach(() => {
@@ -52,6 +57,21 @@ beforeEach(() => {
   plugin.addListener.mockResolvedValue({ remove: vi.fn() });
   plugin.register.mockResolvedValue(undefined);
   plugin.createChannel.mockResolvedValue(undefined);
+  isPushConfigured.mockReset().mockReturnValue(true);
+});
+
+describe('initPush build-config gate', () => {
+  it('when push is NOT configured (no google-services.json build), returns disabled and never touches the plugin', async () => {
+    isPushConfigured.mockReturnValue(false);
+    const r = await initPush({ nav: { push: vi.fn() } });
+    expect(r).toEqual({ enabled: false, reason: 'not-configured' });
+    // register() without Firebase throws an uncaught NATIVE exception that crashes
+    // the app — so it (and every other push call) must NOT run.
+    expect(plugin.checkPermissions).not.toHaveBeenCalled();
+    expect(plugin.requestPermissions).not.toHaveBeenCalled();
+    expect(plugin.register).not.toHaveBeenCalled();
+    expect(plugin.addListener).not.toHaveBeenCalled();
+  });
 });
 
 describe('initPush permission gate', () => {
