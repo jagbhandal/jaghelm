@@ -22,11 +22,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- jaghelm://incident/<id> custom-scheme deep link (path B). -->
+            <!-- jaghelm://incident/<id> custom-scheme deep link (path B).
+                 No BROWSABLE: real notification taps route via FCM
+                 pushNotificationActionPerformed (path A, data-only payload), so the
+                 app never needs a web page to launch this. Omitting BROWSABLE stops
+                 any visited web page from silently firing the link with attacker-set
+                 type/node/severity. DEFAULT keeps explicit/internal intents working.
+                 A custom scheme is not cryptographically claimable (another app can
+                 register the same filter); the hijack-resistant future channel is
+                 verified https App Links (autoVerify + per-self-hoster assetlinks.json). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="jaghelm" android:host="incident" />
             </intent-filter>
 
