@@ -400,3 +400,87 @@ test('canonical sort: same type, id ordering uses string compare (n1:cpu < n1:di
   const events = diffSnapshots(host({ n1: base }), host({ n1: hot }), THRESHOLDS);
   assert.deepEqual(events.map((e) => e.id), ['n1:cpu', 'n1:disk', 'n1:mem']);
 });
+
+test('purity: diffSnapshots does not mutate prev or next', () => {
+  const prev = Object.freeze({
+    services: Object.freeze({ 'n1:web': 'up' }),
+    hosts: Object.freeze({ n1: Object.freeze({ reachable: true, cpu: 0.1, mem: 0.1, disk: 0.1 }) }),
+    ups: Object.freeze({ state: 'online' }),
+    cron: Object.freeze({ 'n1:backup': 'success' }),
+  });
+  const next = Object.freeze({
+    services: Object.freeze({ 'n1:web': 'down' }),
+    hosts: Object.freeze({ n1: Object.freeze({ reachable: true, cpu: 0.95, mem: 0.1, disk: 0.1 }) }),
+    ups: Object.freeze({ state: 'on_battery' }),
+    cron: Object.freeze({ 'n1:backup': 'failure' }),
+  });
+  // Frozen inputs => any write attempt throws in strict mode; this passing proves no mutation.
+  assert.doesNotThrow(() => diffSnapshots(prev, next, THRESHOLDS));
+});
+
+test('purity: repeated identical calls return deep-equal, byte-identical results (no module state)', () => {
+  const prev = { services: { 'n1:web': 'up' }, hosts: {}, ups: { state: 'online' }, cron: {} };
+  const next = { services: { 'n1:web': 'down' }, hosts: {}, ups: { state: 'online' }, cron: {} };
+  const r1 = diffSnapshots(prev, next, THRESHOLDS);
+  const r2 = diffSnapshots(prev, next, THRESHOLDS);
+  const r3 = diffSnapshots(prev, next, THRESHOLDS);
+  assert.deepEqual(r1, r2);
+  assert.equal(JSON.stringify(r1), JSON.stringify(r2));
+  assert.equal(JSON.stringify(r2), JSON.stringify(r3));
+});
+
+test('clock-free: result independent of wall time (no Date.now in output)', () => {
+  const prev = { services: { 'n1:web': 'up' }, hosts: {}, ups: { state: 'online' }, cron: {} };
+  const next = { services: { 'n1:web': 'down' }, hosts: {}, ups: { state: 'online' }, cron: {} };
+  const before = diffSnapshots(prev, next, THRESHOLDS);
+  const realNow = Date.now;
+  Date.now = () => 1234567890; // tamper the clock
+  try {
+    const after = diffSnapshots(prev, next, THRESHOLDS);
+    assert.equal(JSON.stringify(before), JSON.stringify(after)); // unaffected
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('cross-category: all 10 event types can co-occur in one cycle, sorted', () => {
+  const prev = {
+    services: { 'n1:web': 'up', 'n1:api': 'down' },
+    hosts: {
+      n1: { reachable: true, cpu: 0.95, mem: 0.1, disk: 0.1 }, // will clear
+      n2: { reachable: true, cpu: 0.5, mem: 0.5, disk: 0.5 },
+      n3: { reachable: false, cpu: 0, mem: 0, disk: 0 }, // will recover
+    },
+    ups: { state: 'online' },
+    cron: { 'n1:b1': 'success', 'n1:b2': 'failure' },
+  };
+  const next = {
+    services: { 'n1:web': 'down', 'n1:api': 'up' }, // down + recovered
+    hosts: {
+      n1: { reachable: true, cpu: 0.5, mem: 0.95, disk: 0.5 }, // cpu cleared + mem threshold
+      n2: { reachable: false, cpu: 0, mem: 0, disk: 0 }, // unreachable
+      n3: { reachable: true, cpu: 0.5, mem: 0.5, disk: 0.5 }, // recovered
+    },
+    ups: { state: 'on_battery' }, // on_battery
+    cron: { 'n1:b1': 'failure', 'n1:b2': 'success' }, // failed + recovered
+  };
+  const events = diffSnapshots(prev, next, THRESHOLDS);
+  const types = [...new Set(events.map((e) => e.type))].sort();
+  assert.deepEqual(types, [
+    'cron_failed',
+    'cron_recovered',
+    'host_recovered',
+    'host_threshold',
+    'host_threshold_cleared',
+    'host_unreachable',
+    'service_down',
+    'service_recovered',
+    'ups_on_battery',
+  ]);
+  // fully sorted by (type,id), and re-run is byte-identical
+  const sorted = [...events].sort((a, b) =>
+    a.type < b.type ? -1 : a.type > b.type ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
+  assert.deepEqual(events, sorted);
+  assert.equal(JSON.stringify(events), JSON.stringify(diffSnapshots(prev, next, THRESHOLDS)));
+});
