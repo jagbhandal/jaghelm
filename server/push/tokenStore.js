@@ -34,6 +34,11 @@ function defaultPrefs() {
   };
 }
 
+/** Deep copy of a prefs object so callers can never mutate stored state. */
+function clonePrefs(prefs) {
+  return { ...prefs, categories: { ...prefs.categories } };
+}
+
 const CATEGORY_KEYS = ['service', 'host', 'ups', 'cron'];
 
 /**
@@ -86,9 +91,7 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
       if (platform !== undefined) existing.platform = platform;
       if (appVersion !== undefined) existing.appVersion = appVersion;
       save(store);
-      // Return a shallow copy of the record but share the prefs reference so
-      // callers can mutate prefs and see changes reflected via getToken.
-      return { ...existing };
+      return { ...existing, prefs: clonePrefs(existing.prefs) };
     }
     const record = {
       platform: platform ?? null,
@@ -99,16 +102,12 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
     };
     store[token] = record;
     save(store);
-    // Return a shallow copy; prefs is the live internal object (intentional: lets
-    // tests mutate rec.prefs and observe via getToken, while DEFAULT_PREFS stays frozen).
-    return { ...record };
+    return { ...record, prefs: clonePrefs(record.prefs) };
   }
 
   function getToken(token) {
     const rec = store[token];
-    if (!rec) return null;
-    // Shallow copy of the record; prefs is the live internal reference.
-    return { ...rec };
+    return rec ? { ...rec, prefs: clonePrefs(rec.prefs) } : null;
   }
 
   function removeToken(token) {
@@ -121,7 +120,7 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
   function getAllTokens() {
     return Object.keys(store).map((token) => {
       const rec = store[token];
-      return { token, ...rec };
+      return { token, ...rec, prefs: clonePrefs(rec.prefs) };
     });
   }
 
@@ -136,7 +135,7 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
     if (!rec) return null;
     rec.prefs = normalizePrefs(prefs);
     save(store);
-    return { ...rec };
+    return { ...rec, prefs: clonePrefs(rec.prefs) };
   }
 
   function pruneStale(maxAgeMs = THIRTY_DAYS_MS) {

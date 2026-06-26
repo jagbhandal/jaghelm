@@ -29,10 +29,19 @@ test('registerToken seeds DEFAULT_PREFS and stamps registeredAt/lastSeenAt from 
   assert.equal(rec.registeredAt, 5000);
   assert.equal(rec.lastSeenAt, 5000);
   assert.deepEqual(rec.prefs, DEFAULT_PREFS);
-  // DEFAULT_PREFS must be a copy, not a shared mutable reference.
+  cleanup();
+});
+
+test('returned records are deep-isolated — mutating them never touches the store', () => {
+  const { store, setNow, cleanup } = freshStore(1000);
+  setNow(1000);
+  const rec = store.registerToken('tok-a', { platform: 'android', appVersion: '1.0.0' });
   rec.prefs.enabled = false;
+  rec.prefs.categories.service = false;
+  // store is unaffected — getToken still returns the seeded defaults
+  assert.deepEqual(store.getToken('tok-a').prefs, DEFAULT_PREFS);
+  // and DEFAULT_PREFS itself stays frozen/untouched
   assert.equal(DEFAULT_PREFS.enabled, true);
-  assert.deepEqual(store.getToken('tok-a').prefs, { ...DEFAULT_PREFS, enabled: false });
   cleanup();
 });
 
@@ -223,4 +232,28 @@ test('construct tolerates a corrupt JSON file (falls back to empty store)', () =
   store.registerToken('recover', { platform: 'android', appVersion: '1.0.0' });
   assert.equal(createTokenStore({ path, now: () => 1 }).getToken('recover').platform, 'android');
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('setPrefs with an ARRAY categories falls back to all defaults, no crash', () => {
+  const { store, setNow, cleanup } = freshStore();
+  setNow(1000);
+  store.registerToken('tok-arr', { platform: 'android', appVersion: '1.0.0' });
+  const rec = store.setPrefs('tok-arr', { categories: ['bad', 'input'] });
+  assert.deepEqual(rec.prefs, DEFAULT_PREFS);
+  cleanup();
+});
+
+test('setPrefs on an unknown token returns null', () => {
+  const { store, cleanup } = freshStore();
+  assert.equal(store.setPrefs('ghost', {}), null);
+  cleanup();
+});
+
+test('setPrefs with a PRIMITIVE categories falls back to all defaults, no crash', () => {
+  const { store, setNow, cleanup } = freshStore();
+  setNow(1000);
+  store.registerToken('tok-prim', { platform: 'android', appVersion: '1.0.0' });
+  const rec = store.setPrefs('tok-prim', { categories: 42 });
+  assert.deepEqual(rec.prefs, DEFAULT_PREFS);
+  cleanup();
 });
