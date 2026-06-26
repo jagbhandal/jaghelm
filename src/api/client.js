@@ -9,6 +9,8 @@
  * setAuthToken() to keep the in-memory copy in sync within the live session.
  */
 
+import { getApiBase } from './baseUrl.js';
+
 // Seed from localStorage at module load so a page reload keeps the session.
 let authToken = (typeof localStorage !== 'undefined' && localStorage.getItem('jaghelm-token')) || '';
 
@@ -27,20 +29,25 @@ export function getAuthToken() {
 
 /**
  * fetch wrapper that injects the auth header for protected /api calls. If `url`
- * is a '/api' string that isn't the login route and a token is set, `x-auth-token`
- * is merged into a *new* options object (the caller's opts/headers are never
- * mutated); otherwise the call passes through unchanged.
+ * starts with the configured API base (getApiBase()), is not the login route,
+ * and a token is set, `x-auth-token` is merged into a *new* options object (the
+ * caller's opts/headers are never mutated); otherwise the call passes through
+ * unchanged. Web base is '/api' (same-origin, byte-for-byte unchanged). Mobile
+ * base is an absolute Tailscale URL so absolute calls also get the header.
  */
-export function apiFetch(url, opts = {}) {
+export function apiFetch(url, opts) {
+  // Base-aware: matches '/api' on web OR 'http://host/api' on mobile, so the
+  // protected-route guard injects x-auth-token regardless of transport origin.
+  const base = getApiBase();
   if (
     typeof url === 'string' &&
-    url.startsWith('/api') &&
+    url.startsWith(base) &&
     !url.includes('/auth/login') &&
     authToken
   ) {
     return window.fetch(url, {
-      ...opts,
-      headers: { ...opts.headers, 'x-auth-token': authToken },
+      ...(opts || {}),
+      headers: { ...(opts && opts.headers), 'x-auth-token': authToken },
     });
   }
   return window.fetch(url, opts);
