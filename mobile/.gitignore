@@ -18,6 +18,9 @@ android/key.properties
 **/*.jks
 .env
 
+# Visual harness output (dev tool only — not shipped)
+visual/out/
+
 # Template negations — committed *.example placeholders MUST survive the globs
 !**/*.example
 !**/*.example.json
