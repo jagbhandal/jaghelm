@@ -171,3 +171,54 @@ test('buildUps: numeric status mapped to state; missing -> unknown', () => {
   assert.deepEqual(buildUps(null), { state: 'unknown' });
   assert.deepEqual(buildUps({}), { state: 'unknown' });
 });
+
+// ── Task 4: buildSnapshot (composed PURE snapshot via injectable seam) ───────
+
+function fakeCaches({ services, ups, cron }) {
+  return {
+    getCached: (key) => (key === 'services' ? services : key === 'ups' ? ups : null),
+    getAllCronStatuses: () => cron ?? [],
+  };
+}
+
+test('buildSnapshot: composes all four sub-maps from injected caches', () => {
+  const caches = fakeCaches({
+    services: {
+      nodes: {
+        vm103: {
+          metrics: { cpu: '20.0', memPercent: '30.0', diskPercent: '40.0' },
+          services: [{ uid: 'vm103:db', status: 'up' }, { uid: 'vm103:web', status: 'down' }],
+        },
+      },
+    },
+    ups: { status: 2 }, // 2 = On Battery (OB) per the NUT decode
+    cron: [{ node: 'vm103', jobs: [{ job: 'backup', runs: [{ status: 'failure' }] }] }],
+  });
+  const snap = buildSnapshot(caches);
+  assert.deepEqual(snap, {
+    services: { 'vm103:db': 'up', 'vm103:web': 'down' },
+    hosts: { vm103: { reachable: true, cpu: 0.2, mem: 0.3, disk: 0.4 } },
+    ups: { state: 'on_battery' },
+    cron: { 'vm103:backup': 'failure' },
+  });
+});
+
+test('buildSnapshot: top-level keys are exactly the four, in fixed order', () => {
+  const snap = buildSnapshot(fakeCaches({ services: null, ups: null, cron: [] }));
+  assert.deepEqual(Object.keys(snap), ['services', 'hosts', 'ups', 'cron']);
+  assert.deepEqual(snap, {
+    services: {},
+    hosts: {},
+    ups: { state: 'unknown' },
+    cron: {},
+  });
+});
+
+test('buildSnapshot: PURE — same input twice is byte-identical', () => {
+  const caches = fakeCaches({
+    services: { nodes: { b: { services: [{ uid: 'b:y', status: 'up' }] }, a: { services: [{ uid: 'a:x', status: 'down' }] } } },
+    ups: { status: 1 }, // 1 = Online (OL)
+    cron: [{ node: 'b', jobs: [{ job: 'j', runs: [{ status: 'success' }] }] }],
+  });
+  assert.equal(JSON.stringify(buildSnapshot(caches)), JSON.stringify(buildSnapshot(caches)));
+});
