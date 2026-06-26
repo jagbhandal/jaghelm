@@ -26,7 +26,7 @@ import { createLogger } from './util/logger.js';
 import { recordRefreshCycle } from './metrics.js';
 import { runPushCycle } from './push/dispatch.js';
 import { buildSnapshot } from './push/snapshot.js';
-import { createTokenStore } from './push/tokenStore.js';
+import { getPushStore } from './push/store.js';
 import * as fcm from './push/fcm.js';
 
 const log = createLogger('refresh');
@@ -44,14 +44,6 @@ let lastRefreshComplete = 0; // ms epoch of the last finished cycle (0 = never)
 // Snapshot of the prev cycle's state lives beside the other data/ stores.
 const PUSH_SNAPSHOT_PATH = join(DATA_DIR, 'push-snapshot.json');
 const DEFAULT_PUSH_THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
-
-// Token store is constructed lazily on first cycle (after initPush has run at
-// boot) and reused thereafter.
-let pushStore = null;
-function getPushStore() {
-  if (!pushStore) pushStore = createTokenStore({});
-  return pushStore;
-}
 
 // Thresholds come from display-config when present, else the defaults. Read
 // through the same cached file the loop already touches.
