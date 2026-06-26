@@ -15,6 +15,12 @@ import { openTarget } from '../open.js';
  *  - Detected: the trigger cause
  *  - Push sent: Phase-5 placeholder (not yet wired to a real push pipeline)
  */
+// Turn a differ event type ('host_unreachable') into a human title ('Host unreachable').
+function humanizeType(type) {
+  const s = String(type || '').replace(/_/g, ' ').trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Incident';
+}
+
 export default function IncidentDetail({ data, nav, params }) {
   const incidents = deriveIncidents({
     services: data.servicesBody,
@@ -24,6 +30,31 @@ export default function IncidentDetail({ data, nav, params }) {
   const incident = incidents.find((i) => i.id === params.id);
 
   if (!incident) {
+    // No live derived incident. If the deep-link carried push-event params
+    // (host events have NO derived incident by design; or the incident has
+    // since resolved), render a real push-event detail from those params
+    // instead of a dead stub. Only when there are no params either do we show
+    // the resolved copy.
+    if (params.type) {
+      const title = humanizeType(params.type);
+      return (
+        <section className="mobile-view" aria-label="Incident detail">
+          {/* title is in the header only (do NOT also repeat it in a <p>, or a
+              getByText(/host unreachable/i) query would match twice). */}
+          <BackHeader title={title} onBack={nav.pop} />
+          <div className="detail-head">
+            <StatusDot status={params.severity === 'info' ? 'up' : 'down'} />
+            <span className="detail-head__node">{params.node || params.fcmId}</span>
+          </div>
+          {params.severity && (
+            <p className="push-event__severity">Severity: {params.severity}</p>
+          )}
+          <p className="push-event__note">
+            Live status for this event is not in the current snapshot — it may have resolved.
+          </p>
+        </section>
+      );
+    }
     return (
       <section className="mobile-view" aria-label="Incident detail">
         <BackHeader title="Incident" onBack={nav.pop} />

@@ -86,3 +86,45 @@ describe('IncidentDetail', () => {
     expect(screen.queryByRole('button', { name: /mute/i })).toBeNull();
   });
 });
+
+// APPEND below the existing describe('IncidentDetail', ...) block — no new imports.
+describe('IncidentDetail push-event fallback (Phase 5)', () => {
+  const liveData = {
+    servicesBody: { nodes: { 'vm-101': { display_name: 'VM 101', services: [
+      { uid: 'vm-101:nginx', display_name: 'nginx', status: 'down', uptime24: 0.5, url: '' },
+    ] } } },
+    ups: { status: 1 }, cron: [],
+  };
+  const calmData = { servicesBody: { nodes: {} }, ups: { status: 1 }, cron: [] };
+
+  it('renders a host-event push from fallback params when no derived incident exists (NOT the resolved stub)', () => {
+    render(
+      <IncidentDetail
+        nav={{ pop: vi.fn() }}
+        data={calmData}
+        params={{ id: null, fcmId: 'vm-101', type: 'host_unreachable', node: 'vm-101', severity: 'critical' }}
+      />,
+    );
+    expect(screen.queryByText(/This incident has resolved/i)).toBeNull();
+    expect(screen.getByText('vm-101')).toBeInTheDocument();
+    expect(screen.getByText(/host unreachable/i)).toBeInTheDocument();
+    expect(screen.getByText(/critical/i)).toBeInTheDocument();
+  });
+
+  it('still renders the LIVE incident when the reconciled id matches (path unchanged)', () => {
+    render(
+      <IncidentDetail
+        nav={{ pop: vi.fn() }}
+        data={liveData}
+        params={{ id: 'service:vm-101:nginx', fcmId: 'vm-101:nginx', type: 'service_down', node: 'vm-101', severity: 'critical' }}
+      />,
+    );
+    expect(screen.getByText('nginx')).toBeInTheDocument(); // live incident title (display_name)
+    expect(screen.queryByText(/This incident has resolved/i)).toBeNull();
+  });
+
+  it('falls back to the resolved copy ONLY when there is neither a live incident nor push params', () => {
+    render(<IncidentDetail nav={{ pop: vi.fn() }} data={calmData} params={{ id: 'service:gone' }} />);
+    expect(screen.getByText(/This incident has resolved/i)).toBeInTheDocument();
+  });
+});
