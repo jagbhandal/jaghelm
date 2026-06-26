@@ -154,12 +154,19 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          rm -f mobile/android/app/keystore.properties mobile/android/app/release.keystore
+          # shred (not rm): a self-hosted Gitea act_runner may use a persistent disk where
+          # rm leaves recoverable bytes of the signing key. Same predicate as the guard below
+          # so cleanup and detection can't drift; recursive in case a partial decode left a
+          # truncated file. `-exec ... +` is a no-op when nothing matches.
+          find mobile/android/app \
+            \( -name 'keystore.properties' -o -name '*.keystore' -o -name '*.jks' \) \
+            -exec shred -fu {} +
 
       # --- Artifact-secret guard. The signing material is written to the Gradle module dir
       # (mobile/android/app/), NOT to build/outputs/ — so the guard must scan THAT path to
       # actually verify the cleanup step shredded it, then double-check the upload glob. ---
       - name: Guard against secret leakage
+        if: always()
         run: |
           set -euo pipefail
           # The keystore is written to mobile/android/app/ and the APK to its

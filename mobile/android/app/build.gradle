@@ -12,6 +12,17 @@ def keystoreProperties = new Properties()
 def hasReleaseKeystore = keystorePropertiesFile.exists()
 if (hasReleaseKeystore) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    // Fail LOUD rather than silently shipping an UNSIGNED release: once keystore.properties
+    // is present it signals "sign this build", so a missing/misnamed storeFile is a config
+    // error, not a reason to fall back to unsigned. (Absent keystore.properties is still the
+    // graceful unsigned path above — this only guards the declared-but-broken case.)
+    def declaredStoreFile = keystoreProperties['storeFile']
+    if (declaredStoreFile == null || !file(declaredStoreFile).exists()) {
+        throw new GradleException(
+            "keystore.properties is present but storeFile='${declaredStoreFile}' does not resolve to a file " +
+            "(looked at '${file(declaredStoreFile ?: 'null')}'). Refusing to build a silently-unsigned release. " +
+            "Fix storeFile, or remove keystore.properties for an intentional unsigned build.")
+    }
 }
 
 android {
