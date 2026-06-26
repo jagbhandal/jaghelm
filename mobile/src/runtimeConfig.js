@@ -9,6 +9,7 @@ export const TOKEN_KEY = 'jaghelm-token'; // secret → Keystore (matches initAu
 export const THEME_KEY = 'jaghelm-theme'; // non-secret → Preferences
 export const LAST_TAB_KEY = 'jaghelm-last-tab'; // non-secret → Preferences
 export const URL_PRESENT_KEY = 'jaghelm-base-url-present'; // non-secret breadcrumb → Preferences
+export const REMEMBER_KEY = 'jaghelm-remember'; // non-secret UI choice → Preferences ('true'|'false')
 
 // Non-secret push state -> @capacitor/preferences (throw-free; NEVER Keystore,
 // which would hit the M3a removeItem-throws-on-missing defect). The FCM device
@@ -43,5 +44,26 @@ export function validateFirstRun({ url, token }) {
   if (!String(token || '').trim()) {
     errors.token = 'Enter your access token'; // pragma: allowlist secret -- UI validation message, not a credential
   }
+  return { ok: Object.keys(errors).length === 0, errors };
+}
+
+/**
+ * Login-screen field validation. The URL is only checked in first-run mode
+ * (`askUrl`); the re-auth screen reuses the stored URL and asks for credentials
+ * only. Username + password are always required non-empty. Returns { ok, errors }
+ * — never throws. (A noauth server ignores the credentials but the fields still
+ * guide a real-auth deployment, which is the common case.)
+ */
+export function validateLogin({ url, username, password, askUrl }) {
+  const errors = {};
+  if (askUrl) {
+    try {
+      normalizeBaseUrl(url);
+    } catch {
+      errors.url = 'Enter a valid http(s) backend URL';
+    }
+  }
+  if (!String(username || '').trim()) errors.username = 'Enter your username';
+  if (!String(password || '').trim()) errors.password = 'Enter your password'; // pragma: allowlist secret -- UI validation message, not a credential
   return { ok: Object.keys(errors).length === 0, errors };
 }

@@ -2,11 +2,13 @@ import { describe, it, expect } from 'vitest';
 import {
   normalizeBaseUrl,
   validateFirstRun,
+  validateLogin,
   BASE_URL_KEY,
   TOKEN_KEY,
   URL_PRESENT_KEY,
   THEME_KEY,
   LAST_TAB_KEY,
+  REMEMBER_KEY,
   PUSH_TOKEN_KEY,
   PUSH_PERM_KEY,
 } from './runtimeConfig.js';
@@ -57,6 +59,28 @@ describe('validateFirstRun', () => {
   });
 });
 
+describe('validateLogin', () => {
+  it('accepts a good url + username + password when asking for the url', () => {
+    expect(validateLogin({ url: 'http://h:3099', username: 'admin', password: 'pw', askUrl: true })).toEqual({
+      ok: true,
+      errors: {},
+    });
+  });
+  it('rejects a bad url only when askUrl is true', () => {
+    expect(validateLogin({ url: 'nope', username: 'a', password: 'b', askUrl: true }).errors.url).toBeTruthy();
+    expect(validateLogin({ url: 'nope', username: 'a', password: 'b', askUrl: false }).errors.url).toBeFalsy();
+  });
+  it('requires a non-empty username and password', () => {
+    const r = validateLogin({ url: 'http://h', username: '  ', password: '', askUrl: false });
+    expect(r.ok).toBe(false);
+    expect(r.errors.username).toBeTruthy();
+    expect(r.errors.password).toBeTruthy();
+  });
+  it('passes credentials-only mode with the url omitted', () => {
+    expect(validateLogin({ username: 'admin', password: 'pw', askUrl: false })).toEqual({ ok: true, errors: {} });
+  });
+});
+
 describe('storage keys', () => {
   it('token key matches the data-layer initAuthToken key', () => {
     expect(TOKEN_KEY).toBe('jaghelm-token');
@@ -68,6 +92,9 @@ describe('storage keys', () => {
   it('exposes theme + last-tab keys', () => {
     expect(THEME_KEY).toBe('jaghelm-theme');
     expect(LAST_TAB_KEY).toBe('jaghelm-last-tab');
+  });
+  it('exposes the remember-me preference key', () => {
+    expect(REMEMBER_KEY).toBe('jaghelm-remember');
   });
 });
 
