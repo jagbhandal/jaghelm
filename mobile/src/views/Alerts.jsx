@@ -56,7 +56,7 @@ export default function Alerts({ data, nav }) {
               type="button"
               className="alert-row alert-row--active"
               onClick={() => nav.push('incident', { id: inc.id })}
-              aria-label={`${inc.title} on ${inc.node}`}
+              aria-label={`${inc.title} on ${inc.node} (active)`}
             >
               <span className="alert-row__title">{inc.title}</span>
               <span className="alert-row__node">{inc.node}</span>
@@ -74,8 +74,9 @@ export default function Alerts({ data, nav }) {
                   type="button"
                   className="alert-row"
                   onClick={() => nav.push('incident', { id: inc.id })}
-                  aria-label={`${inc.node}: ${inc.cause}`}
+                  aria-label={`${inc.title} on ${inc.node}: ${inc.cause}`}
                 >
+                  <span className="alert-row__title">{inc.title}</span>
                   <span className="alert-row__node">{inc.node}</span>
                   <span className="alert-row__cause">{inc.cause}</span>
                 </button>

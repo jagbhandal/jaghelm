@@ -63,8 +63,8 @@ export default function IncidentDetail({ data, nav, params }) {
 
       <h2 className="detail-section">Event timeline</h2>
       <ul className="timeline">
-        {events.map((e, i) => (
-          <li key={i} className="timeline__item">
+        {events.map((e) => (
+          <li key={e.label} className="timeline__item">
             <span className="timeline__label">{e.label}</span>
             <span className="timeline__detail">{e.detail}</span>
           </li>

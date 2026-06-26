@@ -22,9 +22,9 @@ describe('groupByDay', () => {
 
   it('handles three distinct days, newest day first', () => {
     const items = [
-      { id: 'x', at: '2026-06-24T00:00:00Z' },
-      { id: 'y', at: '2026-06-25T00:00:00Z' },
-      { id: 'z', at: '2026-06-26T00:00:00Z' },
+      { id: 'x', at: '2026-06-24T12:00:00Z' },
+      { id: 'y', at: '2026-06-25T12:00:00Z' },
+      { id: 'z', at: '2026-06-26T12:00:00Z' },
     ];
     const groups = groupByDay(items, (i) => new Date(i.at));
     expect(groups).toHaveLength(3);

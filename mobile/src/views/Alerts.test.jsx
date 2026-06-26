@@ -37,7 +37,7 @@ describe('Alerts', () => {
   it('pins the active incident at top and shows a day section', () => {
     render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
     expect(screen.getByText(/Active/i)).toBeInTheDocument();
-    expect(screen.getByText('Gitea')).toBeInTheDocument();
+    expect(screen.getAllByText('Gitea').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Today/i)).toBeInTheDocument();
   });
 
@@ -50,8 +50,15 @@ describe('Alerts', () => {
   it('tapping an incident pushes its detail', () => {
     const push = vi.fn();
     render(<Alerts data={DATA} nav={{ push }} />);
-    fireEvent.click(screen.getByRole('button', { name: /Gitea/ }));
+    // Active row has "(active)" appended; click it to trigger nav
+    fireEvent.click(screen.getByRole('button', { name: /Gitea.*active/i }));
     expect(push).toHaveBeenCalledWith('incident', { id: 'service:vm-101:gitea' });
+  });
+
+  it('history rows show the service title', () => {
+    render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
+    // Both active and history rows render Gitea; getAllByText confirms title appears in history too
+    expect(screen.getAllByText('Gitea').length).toBeGreaterThanOrEqual(2);
   });
 
   it('shows an empty state when nothing is wrong', () => {
