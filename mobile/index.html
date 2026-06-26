@@ -3,8 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Default (native-HTTP transport): connect-src stays tight; native calls bypass it.
+         CSP is NOT the network boundary on mobile (token auth + Tailscale are);
+         the backend host is runtime-configured and cannot be pinned here. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+               font-src 'self' data:; img-src 'self' data: blob: https://cdn.jsdelivr.net;
+               connect-src 'self';"
+    />
     <title>JagHelm</title>
-    <!-- CSP meta is added in Task 7 (tight connect-src 'self' for native HTTP). -->
   </head>
   <body>
     <div id="root"></div>

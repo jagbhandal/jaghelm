@@ -17,7 +17,7 @@ export default defineConfig({
     globals: true,
     unstubGlobals: true,
     setupFiles: ['./src/testing/setup.js'],
-    include: ['capacitor.config.test.js', 'src/**/*.test.{js,jsx}'],
+    include: ['capacitor.config.test.js', 'index.html.test.js', 'src/**/*.test.{js,jsx}'],
     css: false,
     restoreMocks: true,
   },

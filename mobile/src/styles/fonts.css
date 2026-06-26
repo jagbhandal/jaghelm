@@ -1,1 +1,24 @@
-/* Local font faces are added in Task 7 (no CDN). */
+/* Locally-bundled fonts (no CDN) so font-src 'self' holds under the mobile CSP.
+   Family names match the desktop tokens in global.css (--font-display/body/mono)
+   so reused styles resolve with zero token change. */
+@font-face {
+  font-family: 'Outfit';
+  font-style: normal;
+  font-weight: 300 800;
+  font-display: swap;
+  src: url('../fonts/outfit-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 300 600;
+  font-display: swap;
+  src: url('../fonts/dmsans-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('../fonts/jetbrainsmono-latin.woff2') format('woff2');
+}
