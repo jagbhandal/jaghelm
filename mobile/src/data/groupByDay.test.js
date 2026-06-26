@@ -3,14 +3,15 @@ import { groupByDay, formatDayLabel } from './groupByDay.js';
 
 describe('groupByDay', () => {
   it('groups items by calendar day, newest day first', () => {
+    // Use T12:00:00Z so the local date matches UTC date in all timezones UTC-11..UTC+11
     const items = [
-      { id: 'a', at: '2026-06-26T10:00:00Z' },
-      { id: 'b', at: '2026-06-26T18:00:00Z' },
-      { id: 'c', at: '2026-06-25T09:00:00Z' },
+      { id: 'a', at: '2026-06-26T12:00:00Z' },
+      { id: 'b', at: '2026-06-26T13:00:00Z' },
+      { id: 'c', at: '2026-06-25T12:00:00Z' },
     ];
     const groups = groupByDay(items, (i) => new Date(i.at));
     expect(groups).toHaveLength(2);
-    // newest day first — but group[0].items order depends on UTC→local; sort by id for stable assertion
+    // newest day first — sort by id for stable assertion regardless of insertion order
     expect(groups[0].items.map((i) => i.id).sort()).toEqual(['a', 'b']);
     expect(groups[1].items.map((i) => i.id)).toEqual(['c']);
     expect(new Date(groups[0].day) >= new Date(groups[1].day)).toBe(true);

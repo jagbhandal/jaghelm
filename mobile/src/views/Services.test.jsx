@@ -30,9 +30,12 @@ describe('Services', () => {
     expect(screen.getByText('Gitea')).toBeInTheDocument();
     expect(screen.queryByText('AdGuard')).toBeNull();
   });
-  it('per-node chip filters to that node', () => {
+  it('per-node chip shows node display name and filters correctly', () => {
     render(<Services data={DATA} nav={{ push: vi.fn() }} />);
-    fireEvent.click(screen.getByRole('button', { name: 'gateway-pi' }));
+    // Chip label is "Gateway Pi" (display_name), not raw key "gateway-pi"
+    const chip = screen.getByRole('button', { name: 'Gateway Pi' });
+    expect(chip).toBeInTheDocument();
+    fireEvent.click(chip);
     expect(screen.getByText('Pi-hole')).toBeInTheDocument();
     expect(screen.queryByText('Gitea')).toBeNull();
   });
@@ -47,5 +50,21 @@ describe('Services', () => {
     render(<Services data={DATA} nav={{ push }} />);
     fireEvent.click(screen.getByRole('button', { name: /Gitea/ }));
     expect(push).toHaveBeenCalledWith('serviceDetail', { uid: 'vm-101:gitea' });
+  });
+
+  it('search does not crash when a service has null display_name', () => {
+    const dataWithNull = {
+      ...DATA,
+      servicesBody: { nodes: {
+        'vm-101': { display_name: 'VM 101', metrics: {}, services: [
+          { uid: 'vm-101:adguard', container: 'adguard', display_name: null, icon: null, status: 'up', ping: 12, uptime24: 0.99, url: '' },
+          { uid: 'vm-101:gitea', container: 'gitea', display_name: 'Gitea', icon: null, status: 'down', ping: null, uptime24: 0.42, url: 'http://h/gitea' },
+        ] },
+      } },
+    };
+    render(<Services data={dataWithNull} nav={{ push: vi.fn() }} />);
+    // Typing a query must not throw; the null-name service is simply excluded
+    fireEvent.change(screen.getByLabelText('Search services'), { target: { value: 'gitea' } });
+    expect(screen.getByText('Gitea')).toBeInTheDocument();
   });
 });

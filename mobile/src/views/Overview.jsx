@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import SubsystemStrip from '../components/SubsystemStrip.jsx';
 import IncidentCard from '../components/IncidentCard.jsx';
 import UsageBar from '../components/UsageBar.jsx';
+import StatusBanner from '../components/StatusBanner.jsx';
 import { deriveSubsystems, deriveIncidents, groupByNode, nodeUpDown, parseMetricPct } from '../data/derive.js';
 import { openTarget } from '../open.js';
 
 const DEFAULT_EXPANDED = 2;
 
 export default function Overview({ data, nav }) {
-  const { servicesBody, ups, cron } = data;
+  const { servicesBody, ups, cron, loading, error } = data;
   const [showAll, setShowAll] = useState(false);
   const cells = deriveSubsystems({ services: servicesBody, ups, cron });
   const incidents = deriveIncidents({ services: servicesBody, ups, cron });
@@ -19,6 +20,8 @@ export default function Overview({ data, nav }) {
   return (
     <section className="mobile-view" aria-label="Overview">
       <h1>Overview</h1>
+      <StatusBanner error={error} hasData={!!servicesBody} />
+      {loading && !servicesBody && <p className="mobile-view__todo">Loading…</p>}
       <SubsystemStrip cells={cells} />
 
       {incidents.length > 0 && (

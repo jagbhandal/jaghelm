@@ -31,6 +31,27 @@ describe('Overview', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
     expect(openTarget).toHaveBeenCalled();
   });
+
+  it('shows error banner and no all-clear when backend unreachable (has prior data)', () => {
+    const errorData = { ...makeData(0), error: new Error('fetch failed') };
+    render(<Overview data={errorData} nav={{ push: vi.fn() }} />);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('alert').textContent).toMatch(/Couldn't reach JagHelm/);
+    expect(screen.queryByText(/all clear/i)).toBeNull();
+  });
+
+  it('shows error banner without prior data', () => {
+    const noData = { servicesBody: null, ups: null, cron: null, history: null, loading: false, error: new Error('fail') };
+    render(<Overview data={noData} nav={{ push: vi.fn() }} />);
+    expect(screen.getByRole('alert').textContent).toBe("Couldn't reach JagHelm");
+  });
+
+  it('shows loading state when loading and no data', () => {
+    const loadingData = { servicesBody: null, ups: null, cron: null, history: null, loading: true, error: null };
+    render(<Overview data={loadingData} nav={{ push: vi.fn() }} />);
+    expect(screen.getByText(/Loading/i)).toBeInTheDocument();
+    expect(screen.queryByText(/all clear/i)).toBeNull();
+  });
   it('tapping a node row calls nav.push with node key', () => {
     const nav = { push: vi.fn() };
     render(<Overview data={makeData(1)} nav={nav} />);

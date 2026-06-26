@@ -79,7 +79,7 @@
 .incident-card__uptime { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-xs); }
 .incident-card__uptime-label { color: var(--text-muted); letter-spacing: 0.5px; }
 .incident-card__open { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: var(--space-2) var(--space-4); font-size: var(--text-sm); min-height: 44px; }
-.overview-more { align-self: flex-start; background: var(--bg-card-inner); color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: var(--space-2) var(--space-3); font-size: var(--text-sm); }
+.overview-more { align-self: flex-start; display: inline-flex; align-items: center; background: var(--bg-card-inner); color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: var(--space-2) var(--space-3); font-size: var(--text-sm); min-height: 44px; }
 .overview-nodes { display: flex; flex-direction: column; gap: var(--space-3); }
 .node-row { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; text-align: left; padding: var(--space-3) var(--space-4); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); min-height: 44px; }
 .node-row__head { display: flex; justify-content: space-between; align-items: baseline; }
@@ -88,7 +88,9 @@
 .node-row__bars { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
 
 /* --- Phase 3: Services + detail --- */
-.search-bar { width: 100%; box-sizing: border-box; padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); color: var(--text-primary); font-family: var(--font-body); font-size: var(--text-base); }
+.search-bar { width: 100%; box-sizing: border-box; padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); color: var(--text-primary); font-family: var(--font-body); font-size: var(--text-base); min-height: 44px; }
+.status-banner { padding: var(--space-3) var(--space-4); border-radius: var(--card-radius-sm); margin-bottom: var(--space-3); font-size: var(--text-sm); }
+.status-banner--error { background: var(--red-bg); border: 1px solid var(--red-border); color: var(--red); }
 .filter-chips { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: var(--space-2); margin-bottom: var(--space-3); -webkit-overflow-scrolling: touch; }
 .chip { flex-shrink: 0; min-height: 44px; padding: var(--space-2) var(--space-4); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); font-size: var(--text-sm); white-space: nowrap; }
 .chip--active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }

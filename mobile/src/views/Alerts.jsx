@@ -1,6 +1,7 @@
 import React from 'react';
 import { deriveIncidents } from '../data/derive.js';
 import { groupByDay, formatDayLabel } from '../data/groupByDay.js';
+import StatusBanner from '../components/StatusBanner.jsx';
 
 /**
  * Alerts: active (live-derived) incidents are pinned at top in alarm-red.
@@ -14,8 +15,9 @@ import { groupByDay, formatDayLabel } from '../data/groupByDay.js';
  * Mute is NOT rendered.
  */
 export default function Alerts({ data, nav }) {
+  const { loading, error, servicesBody } = data;
   const incidents = deriveIncidents({
-    services: data.servicesBody,
+    services: servicesBody,
     ups: data.ups,
     cron: data.cron,
   });
@@ -43,7 +45,10 @@ export default function Alerts({ data, nav }) {
         </button>
       </div>
 
-      {incidents.length === 0 && (
+      <StatusBanner error={error} hasData={!!servicesBody} />
+      {loading && !servicesBody && <p className="mobile-view__todo">Loading…</p>}
+
+      {!loading && !error && incidents.length === 0 && (
         <p className="alerts-clear">All clear — nothing is on fire.</p>
       )}
 

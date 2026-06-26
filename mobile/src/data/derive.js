@@ -81,18 +81,19 @@ export function cronDegraded(cronBody) {
   );
 }
 
-/** Newest-run failure cause for a cron body, or null. (Helper for incidents.) */
-function firstCronFailure(cronBody) {
-  if (!Array.isArray(cronBody)) return null;
+/** All newest-run failures from a cron body. Returns [] when none. */
+function allCronFailures(cronBody) {
+  if (!Array.isArray(cronBody)) return [];
+  const failures = [];
   for (const n of cronBody) {
     for (const j of n.jobs || []) {
       const run = (j.runs || [])[0];
       if (run && run.status === 'failure') {
-        return { node: n.node, job: j.job, cause: run.error || 'Job failed', run };
+        failures.push({ node: n.node, job: j.job, cause: run.error || 'Job failed', run });
       }
     }
   }
-  return null;
+  return failures;
 }
 
 /** The 4 Overview subsystem cells. degraded drives the alarm tint. */
@@ -131,8 +132,7 @@ export function deriveIncidents({ services, ups, cron }) {
       uptime24: null, status: 'down', target: { kind: 'ups' },
     });
   }
-  const cf = firstCronFailure(cron);
-  if (cf) {
+  for (const cf of allCronFailures(cron)) {
     incidents.push({
       id: `cron:${cf.node}:${cf.job}`, kind: 'cron', title: `${cf.job} failed`, node: cf.node,
       cause: cf.cause, uptime24: null, status: 'down', target: { kind: 'cron', job: cf.job },

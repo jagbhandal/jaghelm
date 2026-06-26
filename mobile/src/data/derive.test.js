@@ -156,4 +156,19 @@ describe('deriveIncidents', () => {
       'cron:pi:backup',
     ]);
   });
+
+  it('emits one incident per failing cron job when multiple jobs fail', () => {
+    const cron = [{
+      node: 'pi',
+      jobs: [
+        { job: 'backup', runs: [{ status: 'failure', timestamp: 't', error: 'disk full' }] },
+        { job: 'sync',   runs: [{ status: 'failure', timestamp: 't', error: 'timeout' }] },
+      ],
+    }];
+    const incidents = deriveIncidents({ services: null, ups: { status: 1 }, cron });
+    const cronIds = incidents.filter((i) => i.kind === 'cron').map((i) => i.id);
+    expect(cronIds).toContain('cron:pi:backup');
+    expect(cronIds).toContain('cron:pi:sync');
+    expect(cronIds).toHaveLength(2);
+  });
 });

@@ -23,7 +23,9 @@ export default function IncidentCard({ incident, onOpen }) {
             <span style={{ color: pctColor }}>{pct}%</span>
           </span>
         )}
-        <button type="button" className="incident-card__open" onClick={() => onOpen(incident.target)}>Open</button>
+        {incident.target?.url && (
+          <button type="button" className="incident-card__open" onClick={() => onOpen(incident.target)}>Open</button>
+        )}
       </div>
     </article>
   );

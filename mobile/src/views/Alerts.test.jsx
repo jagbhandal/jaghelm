@@ -62,9 +62,32 @@ describe('Alerts', () => {
   });
 
   it('shows an empty state when nothing is wrong', () => {
-    const calm = { ...DATA, servicesBody: { nodes: {} }, ups: { status: 1 }, cron: [] };
+    const calm = { ...DATA, servicesBody: { nodes: {} }, ups: { status: 1 }, cron: [], loading: false, error: null };
     render(<Alerts data={calm} nav={{ push: vi.fn() }} />);
     expect(screen.getByText(/All clear/i)).toBeInTheDocument();
+  });
+
+  it('shows error banner and NOT all-clear when backend unreachable (has prior data)', () => {
+    const errData = { ...DATA, error: new Error('network error') };
+    render(<Alerts data={errData} nav={{ push: vi.fn() }} />);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('alert').textContent).toMatch(/Couldn't reach JagHelm/);
+    expect(screen.queryByText(/All clear/i)).toBeNull();
+  });
+
+  it('shows error banner without "showing last known data" when no prior data', () => {
+    const errNoData = { servicesBody: null, ups: null, cron: null, history: null, loading: false, error: new Error('fail') };
+    render(<Alerts data={errNoData} nav={{ push: vi.fn() }} />);
+    const banner = screen.getByRole('alert');
+    expect(banner.textContent).toBe("Couldn't reach JagHelm");
+    expect(banner.textContent).not.toMatch(/last known/i);
+  });
+
+  it('shows loading state and NOT all-clear when loading with no data', () => {
+    const loading = { servicesBody: null, ups: null, cron: null, history: null, loading: true, error: null };
+    render(<Alerts data={loading} nav={{ push: vi.fn() }} />);
+    expect(screen.getByText(/Loading/i)).toBeInTheDocument();
+    expect(screen.queryByText(/All clear/i)).toBeNull();
   });
 
   it('history day section heading uses formatDayLabel (Today for current-day incidents)', () => {
