@@ -41,6 +41,7 @@ import { initRegistry } from './integrations/registry.js';
 import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
 import { startBackgroundRefresh, stopBackgroundRefresh } from './refresh.js';
+import * as fcmModule from './push/fcm.js';
 
 // Shared utilities
 import { createUploadMiddleware } from './upload.js';
@@ -68,6 +69,8 @@ import { createUploadRoutes } from './routes/upload.js';
 import { iconRoutes } from './routes/icons.js';
 import { cronRoutes } from './routes/cron.js';
 import { systemRoutes } from './routes/system.js';
+import { createPushRoutes } from './routes/push.js';
+import { getPushStore } from './push/store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -231,6 +234,7 @@ app.use('/api/integrations', authMiddleware, integrationRoutes);
 app.use('/api/secrets', requireAuthEnabled, authMiddleware, secretsRoutes);
 app.use('/api/display-config', authMiddleware, displayConfigRoutes);
 app.use('/api/todos', authMiddleware, todosRoutes);
+app.use('/api/push', authMiddleware, createPushRoutes({ store: getPushStore(), fcm: fcmModule }));
 app.use('/api/upload', authMiddleware, createUploadRoutes(upload));
 app.use('/api', authMiddleware, infrastructureRoutes);
 
@@ -265,6 +269,11 @@ async function boot() {
   initDiscovery(promUrl);
   initMonitors(kumaUrl);
   initIconCache(dataDir);
+
+  // Push (FCM) — graceful-disable when no service-account creds are present.
+  // Never throws; isPushEnabled() stays false and the pipeline no-ops.
+  fcmModule.initPush({ env: process.env, logger: log });
+
   await initRegistry();
 
   // Non-blocking — icon search returns empty until the index is ready

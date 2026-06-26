@@ -24,6 +24,10 @@ import { dedupe } from './util/dedupe.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { createLogger } from './util/logger.js';
 import { recordRefreshCycle } from './metrics.js';
+import { runPushCycle } from './push/dispatch.js';
+import { buildSnapshot } from './push/snapshot.js';
+import { getPushStore } from './push/store.js';
+import * as fcm from './push/fcm.js';
 
 const log = createLogger('refresh');
 
@@ -36,7 +40,40 @@ let bgRefreshTimer = null;
 let bgRefreshRunning = false;
 let lastRefreshComplete = 0; // ms epoch of the last finished cycle (0 = never)
 
+// ── Push pipeline wiring ─────────────────────────────────────────────────
+// Snapshot of the prev cycle's state lives beside the other data/ stores.
+const PUSH_SNAPSHOT_PATH = join(DATA_DIR, 'push-snapshot.json');
+const DEFAULT_PUSH_THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
+
 // ── Helpers ──────────────────────────────────────────────────────────────
+
+/** Read and parse display-config.json once. Returns the parsed object or null on missing/error. */
+function readDisplayConfig() {
+  try {
+    if (existsSync(DISPLAY_CONFIG_PATH)) {
+      return JSON.parse(readFileSync(DISPLAY_CONFIG_PATH, 'utf8'));
+    }
+  } catch {
+    // fall through
+  }
+  return null;
+}
+
+// Thresholds come from display-config when present, else the defaults. Read
+// through the same cached file the loop already touches.
+function getPushThresholds() {
+  const data = readDisplayConfig();
+  const t = data?.pushThresholds;
+  if (t && typeof t === 'object') {
+    return {
+      cpu: typeof t.cpu === 'number' ? t.cpu : DEFAULT_PUSH_THRESHOLDS.cpu,
+      mem: typeof t.mem === 'number' ? t.mem : DEFAULT_PUSH_THRESHOLDS.mem,
+      disk: typeof t.disk === 'number' ? t.disk : DEFAULT_PUSH_THRESHOLDS.disk,
+      hysteresis: typeof t.hysteresis === 'number' ? t.hysteresis : DEFAULT_PUSH_THRESHOLDS.hysteresis,
+    };
+  }
+  return DEFAULT_PUSH_THRESHOLDS;
+}
 
 function formatContainerName(name) {
   return name.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -54,17 +91,11 @@ export function invalidateRefreshIntervalCache() {
 
 function getRefreshIntervalMs() {
   if (cachedIntervalMs !== null) return cachedIntervalMs;
-  try {
-    if (existsSync(DISPLAY_CONFIG_PATH)) {
-      const data = JSON.parse(readFileSync(DISPLAY_CONFIG_PATH, 'utf8'));
-      const seconds = data?.refreshInterval;
-      if (typeof seconds === 'number' && seconds >= MIN_INTERVAL_SECONDS) {
-        cachedIntervalMs = seconds * 1000;
-        return cachedIntervalMs;
-      }
-    }
-  } catch {
-    // Ignore — fall through to default
+  const data = readDisplayConfig();
+  const seconds = data?.refreshInterval;
+  if (typeof seconds === 'number' && seconds >= MIN_INTERVAL_SECONDS) {
+    cachedIntervalMs = seconds * 1000;
+    return cachedIntervalMs;
   }
   cachedIntervalMs = DEFAULT_INTERVAL_MS;
   return cachedIntervalMs;
@@ -369,6 +400,18 @@ async function runBackgroundRefresh() {
       refreshIntegrations(),
     ]);
     log.info({ ms: Date.now() - start }, 'background cycle complete');
+
+    // Push cycle: diff this cycle's state vs the last and notify mobile
+    // tokens. Self-contained — it can NEVER reject (see runPushCycle), so it
+    // cannot flip `ok` or break the loop. No-ops when push is disabled.
+    await runPushCycle({
+      buildSnapshotFn: buildSnapshot,
+      store: getPushStore(),
+      fcm,
+      snapshotPath: PUSH_SNAPSHOT_PATH,
+      thresholds: getPushThresholds(),
+      logger: log,
+    });
   } catch (err) {
     ok = false;
     log.error({ err }, 'background cycle error');
