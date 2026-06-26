@@ -242,3 +242,45 @@ test('no creds => default messagingFactory never invoked (firebase-admin untouch
   assert.equal(factoryInvoked, false);
   assert.equal(isPushEnabled(), false);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fix 2: factory returning object without .send => isPushEnabled() false
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('factory returning {} (no .send) => isPushEnabled() false', () => {
+  const { dir, path } = fakeServiceAccountFile();
+  try {
+    const logger = makeLogger();
+    // Factory returns a plain object with no .send — should NOT enable push.
+    initPush({ credsPath: path, env: {}, messagingFactory: () => ({}), logger });
+    assert.equal(isPushEnabled(), false);
+    assert.ok(
+      logger._calls.warn.some((args) => args.some((a) => typeof a === 'string' && a.includes('no usable messaging'))),
+      'expected a warn about no usable messaging',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fix 3: GOOGLE_APPLICATION_CREDENTIALS fallback => isPushEnabled() true
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('GOOGLE_APPLICATION_CREDENTIALS env fallback with injected factory => isPushEnabled() true', () => {
+  const { dir, path } = fakeServiceAccountFile();
+  try {
+    const logger = makeLogger();
+    const fakeMessaging = { send: async () => {} };
+    initPush({
+      credsPath: undefined,
+      env: { GOOGLE_APPLICATION_CREDENTIALS: path },
+      messagingFactory: () => fakeMessaging,
+      logger,
+    });
+    assert.equal(isPushEnabled(), true);
+    assert.equal(logger._calls.error.length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -15,7 +15,7 @@ import { readFileSync } from 'fs';
 
 import { createLogger } from '../util/logger.js';
 
-// Module-level state. Set by initPush(); read by isPushEnabled()/sendToToken().
+// Module-level singleton: initPush runs once at boot; one FCM messaging instance per process.
 let messaging = null;
 let log = createLogger('push:fcm');
 
@@ -96,16 +96,24 @@ export function initPush({
     if (built && typeof built.then === 'function') {
       built
         .then((m) => {
-          messaging = m;
-          log.info('push enabled: FCM messaging initialized');
+          if (m && typeof m.send === 'function') {
+            messaging = m;
+            log.info('push enabled: FCM messaging initialized');
+          } else {
+            log.warn('push disabled: messaging factory returned no usable messaging');
+          }
         })
         .catch((err) => {
           messaging = null;
           log.warn({ errType: err && err.constructor && err.constructor.name }, 'push disabled: messaging factory rejected');
         });
     } else {
-      messaging = built;
-      log.info('push enabled: FCM messaging initialized');
+      if (built && typeof built.send === 'function') {
+        messaging = built;
+        log.info('push enabled: FCM messaging initialized');
+      } else {
+        log.warn('push disabled: messaging factory returned no usable messaging');
+      }
     }
   } catch (err) {
     messaging = null;
@@ -168,7 +176,7 @@ export async function sendToToken(token, event) {
   } catch (err) {
     const prune = PRUNE_CODES.has(err && err.code);
     log.warn(
-      { token: token.slice(0, 12), code: err && err.code, prune },
+      { token: String(token).slice(0, 12), code: err && err.code, prune },
       'fcm send failed',
     );
     return { ok: false, prune, error: err && err.message };
