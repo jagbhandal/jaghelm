@@ -12,10 +12,10 @@ function Root({ initialConfigured }) {
   return <MobileApp />;
 }
 
-bootMobile().then(({ configured }) => {
+bootMobile().then(({ hasUrl, hasToken }) => {
   ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
-      <Root initialConfigured={configured} />
+      <Root initialConfigured={hasUrl && hasToken} />
     </React.StrictMode>
   );
 });

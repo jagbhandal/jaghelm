@@ -1,49 +1,95 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { setStorageAdapter, initAuthToken, setApiBase, getItem } = vi.hoisted(() => ({
+const { setStorageAdapter, getItem, removeItem } = vi.hoisted(() => ({
   setStorageAdapter: vi.fn(),
-  initAuthToken: vi.fn().mockResolvedValue(undefined),
-  setApiBase: vi.fn(),
   getItem: vi.fn(),
+  removeItem: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock('@shared/storage/index.js', () => ({ setStorageAdapter, secureStore: { getItem, removeItem } }));
 
-vi.mock('@shared/storage/index.js', () => ({ setStorageAdapter, secureStore: { getItem } }));
-vi.mock('@shared/api/client.js', () => ({ initAuthToken }));
-vi.mock('@shared/api/baseUrl.js', () => ({ setApiBase }));
 vi.mock('./storage/keystoreAdapter.js', () => ({ keystoreAdapter: {} }));
+
+const { installNativeHttp } = vi.hoisted(() => ({ installNativeHttp: vi.fn() }));
+vi.mock('./nativeHttp.js', () => ({ installNativeHttp }));
+
+const { getPref } = vi.hoisted(() => ({ getPref: vi.fn() }));
+vi.mock('./storage/prefsAdapter.js', () => ({ getPref }));
+
+const { initAuthToken, setAuthToken, getAuthToken, apiFetch } = vi.hoisted(() => ({
+  initAuthToken: vi.fn().mockResolvedValue(undefined),
+  setAuthToken: vi.fn(),
+  getAuthToken: vi.fn(),
+  apiFetch: vi.fn(),
+}));
+vi.mock('@shared/api/client.js', () => ({ initAuthToken, setAuthToken, getAuthToken, apiFetch }));
+
+const { setApiBase } = vi.hoisted(() => ({ setApiBase: vi.fn() }));
+vi.mock('@shared/api/baseUrl.js', () => ({ setApiBase }));
 
 import { bootMobile } from './boot.js';
 
+const checkRes = (authenticated, ok = true) => ({ ok, json: async () => ({ authenticated, authRequired: true }) });
+
 beforeEach(() => {
-  setStorageAdapter.mockClear();
-  initAuthToken.mockClear();
-  setApiBase.mockClear();
-  getItem.mockReset();
+  vi.clearAllMocks();
+  removeItem.mockResolvedValue(undefined);
+  initAuthToken.mockResolvedValue(undefined);
 });
 
 describe('bootMobile', () => {
-  it('wires keystore adapter, inits token, and reports unconfigured on first run', async () => {
+  it('wires the keystore adapter and reports not-configured when no base URL is stored', async () => {
     getItem.mockResolvedValue(null);
     const r = await bootMobile();
     expect(setStorageAdapter).toHaveBeenCalledTimes(1);
-    expect(initAuthToken).toHaveBeenCalledTimes(1);
-    expect(setApiBase).not.toHaveBeenCalled();
-    expect(r).toEqual({ configured: false });
+    expect(r).toEqual({ hasUrl: false, hasToken: false });
+    expect(apiFetch).not.toHaveBeenCalled();
   });
 
-  it('applies the stored base and reports configured', async () => {
+  it('with remember on + a valid token, applies the base, revalidates, and reports authed', async () => {
     getItem.mockResolvedValue('http://vm-101:3099/api');
+    getPref.mockResolvedValue('true');
+    getAuthToken.mockReturnValue('tok');
+    apiFetch.mockResolvedValue(checkRes(true));
     const r = await bootMobile();
+    expect(r).toEqual({ hasUrl: true, hasToken: true });
     expect(setApiBase).toHaveBeenCalledWith('http://vm-101:3099/api');
-    expect(r).toEqual({ configured: true });
   });
 
-  it('inits the token AFTER the storage adapter is swapped', async () => {
-    getItem.mockResolvedValue(null);
-    const order = [];
-    setStorageAdapter.mockImplementation(() => order.push('adapter'));
-    initAuthToken.mockImplementation(async () => order.push('token'));
-    await bootMobile();
-    expect(order).toEqual(['adapter', 'token']);
+  it('clears a stale token when the server says not authenticated', async () => {
+    getItem.mockResolvedValue('http://vm-101:3099/api');
+    getPref.mockResolvedValue('true');
+    getAuthToken.mockReturnValue('stale');
+    apiFetch.mockResolvedValue(checkRes(false));
+    const r = await bootMobile();
+    expect(r).toEqual({ hasUrl: true, hasToken: false });
+    expect(removeItem).toHaveBeenCalledWith('jaghelm-token');
+    expect(setAuthToken).toHaveBeenCalledWith('');
+  });
+
+  it('with remember off, wipes the token and never revalidates', async () => {
+    getItem.mockResolvedValue('http://vm-101:3099/api');
+    getPref.mockResolvedValue('false');
+    const r = await bootMobile();
+    expect(r).toEqual({ hasUrl: true, hasToken: false });
+    expect(removeItem).toHaveBeenCalledWith('jaghelm-token');
+    expect(apiFetch).not.toHaveBeenCalled();
+  });
+
+  it('with remember on but no token, reports needs-auth without revalidating', async () => {
+    getItem.mockResolvedValue('http://vm-101:3099/api');
+    getPref.mockResolvedValue('true');
+    getAuthToken.mockReturnValue('');
+    const r = await bootMobile();
+    expect(r).toEqual({ hasUrl: true, hasToken: false });
+    expect(apiFetch).not.toHaveBeenCalled();
+  });
+
+  it('keeps the token optimistically when revalidation throws (offline cold start)', async () => {
+    getItem.mockResolvedValue('http://vm-101:3099/api');
+    getPref.mockResolvedValue('true');
+    getAuthToken.mockReturnValue('tok');
+    apiFetch.mockRejectedValue(new Error('offline'));
+    const r = await bootMobile();
+    expect(r).toEqual({ hasUrl: true, hasToken: true });
   });
 });
