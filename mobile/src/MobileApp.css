@@ -111,3 +111,20 @@
 .node-card__count { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-secondary); }
 .node-card__bars, .node-detail__bars { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }
 .node-detail__bars { margin-bottom: var(--space-4); }
+
+/* --- Phase 3: Alerts + incident detail --- */
+.alerts-head { display: flex; align-items: center; justify-content: space-between; }
+.alerts-gear { background: none; border: none; color: var(--text-muted); font-size: var(--text-xl); min-height: 44px; min-width: 44px; opacity: 0.5; cursor: default; }
+.alerts-clear { color: var(--text-muted); }
+.alerts-section { font-family: var(--font-display); font-size: var(--text-base); color: var(--text-secondary); margin: var(--space-4) 0 var(--space-2); }
+.alerts-section--active { color: var(--red); }
+.alert-row { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: var(--space-3) var(--space-4); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); margin-bottom: var(--space-2); min-height: 44px; }
+.alert-row--active { background: var(--red-bg); border-color: var(--red-border); }
+.alert-row__title { font-family: var(--font-display); font-size: var(--text-base); color: var(--text-primary); }
+.alert-row__node, .alert-row__cause { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
+.detail-cause { color: var(--text-secondary); font-size: var(--text-sm); }
+.detail-section { font-family: var(--font-display); font-size: var(--text-base); color: var(--text-secondary); margin: var(--space-4) 0 var(--space-2); }
+.timeline { list-style: none; padding: 0; margin: 0 0 var(--space-4); }
+.timeline__item { display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) 0; border-left: 2px solid var(--border-color); padding-left: var(--space-3); min-height: 44px; }
+.timeline__label { font-family: var(--font-body); font-size: var(--text-sm); color: var(--text-primary); }
+.timeline__detail { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
