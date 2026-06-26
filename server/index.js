@@ -124,6 +124,12 @@ app.use((req, res, next) => {
 // locked down to kill the classic injection vectors. ENFORCES by default (this is
 // the app's primary XSS containment); set CSP_REPORT_ONLY=true to fall back to a
 // report-only header while tuning a deploy that has custom inline assets.
+// Additive, env-gated connect-src extension for a WebView-fetch fallback
+// deployment. Unset ⇒ no extra origins ⇒ connect-src is byte-for-byte as today.
+const extraConnect = (process.env.CSP_CONNECT_EXTRA || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 const cspDirectives = {
   defaultSrc: ["'self'"],
   scriptSrc: ["'self'"],
@@ -136,7 +142,7 @@ const cspDirectives = {
     'https://cdn.jsdelivr.net',
     'https://raw.githubusercontent.com',
   ],
-  connectSrc: ["'self'", 'https://cdn.jsdelivr.net', 'https://raw.githubusercontent.com'],
+  connectSrc: ["'self'", 'https://cdn.jsdelivr.net', 'https://raw.githubusercontent.com', ...extraConnect],
   // The iframe view embeds operator-configured service URLs (often http on LAN).
   frameSrc: ["'self'", 'https:', 'http:'],
   workerSrc: ["'self'"],
