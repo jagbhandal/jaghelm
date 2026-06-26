@@ -15,7 +15,6 @@ export const URL_PRESENT_KEY = 'jaghelm-base-url-present'; // non-secret breadcr
 // token is non-secret device state; permission/prefs are UI state.
 export const PUSH_TOKEN_KEY = 'jaghelm-push-token'; // FCM device token (for GET/PUT prefs)
 export const PUSH_PERM_KEY = 'jaghelm-push-perm'; // 'granted'|'denied'|'prompt' breadcrumb
-export const PUSH_PREFS_KEY = 'jaghelm-push-prefs'; // last-known prefs JSON for fast first paint
 
 /** Validate + canonicalize a backend URL to `<origin><path>/api`. Throws on bad input. */
 export function normalizeBaseUrl(input) {
