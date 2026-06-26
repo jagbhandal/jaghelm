@@ -153,6 +153,9 @@ export async function saveTodos(todos) {
 export async function uploadFile(file, type) {
   const form = new FormData();
   form.append('file', file);
+  // HARNESS-GAP (ledger #1): the one remaining raw '/api' literal that bypasses
+  // getApiBase(). Intentionally relative — uploadFile is web-only (mobile does no
+  // uploads). Promote through getApiBase() if/when mobile ever uploads.
   const r = await apiFetch(`/api/upload?type=${type}`, { method: 'POST', body: form });
   if (!r.ok) throw new Error('Upload failed');
   return r.json();
