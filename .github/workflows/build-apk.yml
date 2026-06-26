@@ -1,0 +1,191 @@
+name: Build Signed Mobile APK
+
+# Builds a SIGNED release APK for sideload (no Play Store) on a `mobile-v*` tag,
+# or on demand via workflow_dispatch. Signing material is injected from GitHub
+# Actions secrets, decoded to a temp file, and SHREDDED in an `if: always()` step
+# so it never persists in the workspace. No secret value is ever echoed.
+#
+# Required repo secrets (see docs/mobile/KEYSTORE.md):
+#   KEYSTORE_BASE64   — `base64 -w0 < jaghelm-release.jks`
+#   KEYSTORE_PASSWORD — keystore (store) password
+#   KEY_ALIAS         — signing key alias (e.g. jaghelm-upload)
+#   KEY_PASSWORD      — key (alias) password
+#
+# Graceful fallback: mobile/android/app/build.gradle keys signing on the presence
+# of `keystore.properties`. If the secrets are unset the decode step fails fast
+# (intentional) rather than silently shipping an unsigned/debug-signed APK.
+
+on:
+  push:
+    tags:
+      - 'mobile-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-signed-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          # Cache ~/.gradle/caches + wrapper keyed on the gradle files, so a cold
+          # Android assembleRelease doesn't re-resolve the full AGP/AndroidX/Capacitor
+          # graph every run. npm is already cached below; this matches that discipline.
+          cache: gradle
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      - name: Install mobile dependencies
+        run: npm ci
+        working-directory: mobile
+
+      - name: Build web bundle (Vite, mobile config)
+        run: npm run build
+        working-directory: mobile
+
+      - name: Capacitor sync (android)
+        run: npx cap sync android
+        working-directory: mobile
+
+      # --- Derive versionCode/versionName from the release tag. A fixed versionCode
+      # would silently break the documented "bump tag -> install over the top" path:
+      # some OEMs refuse a tap-install of an equal-versionCode APK. mobile-vMAJOR.MINOR.PATCH
+      # maps to a monotonic versionCode (MAJOR*1e6 + MINOR*1e3 + PATCH). A non-tag
+      # (workflow_dispatch) build is a clearly-marked, non-distribution test build. ---
+      - name: Derive app version
+        run: |
+          set -euo pipefail
+          REF="${GITHUB_REF_NAME:-}"
+          case "${GITHUB_REF_TYPE:-}:${REF}" in
+            tag:mobile-v*)
+              VNAME="${REF#mobile-v}"
+              CORE="${VNAME%%-*}"      # strip any pre-release suffix: 1.2.3-rc1 -> 1.2.3
+              case "$CORE" in
+                [0-9]*.[0-9]*.[0-9]*) : ;;
+                *) echo "::error::release tag '$REF' must be mobile-vMAJOR.MINOR.PATCH"; exit 1 ;;
+              esac
+              IFS=. read -r MAJ MIN PAT <<< "$CORE"
+              VCODE=$(( MAJ*1000000 + MIN*1000 + PAT ))
+              ;;
+            *)
+              VNAME="0.0.0-dispatch.${GITHUB_RUN_NUMBER:-0}"
+              VCODE="${GITHUB_RUN_NUMBER:-1}"
+              ;;
+          esac
+          echo "VERSION_NAME=${VNAME}" >> "${GITHUB_ENV}"
+          echo "VERSION_CODE=${VCODE}" >> "${GITHUB_ENV}"
+          echo ">>> versionName=${VNAME} versionCode=${VCODE}"
+
+      # --- Signing material: decode + write keystore.properties. Never echoes a secret. ---
+      # The keystore is decoded into mobile/android/app/ (the Gradle module dir) so the
+      # `storeFile` bare filename in keystore.properties resolves there. keystore.properties
+      # is written next to build.gradle's `rootProject.file("app/keystore.properties")`.
+      - name: Decode keystore and write keystore.properties
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          : "${KEYSTORE_BASE64:?KEYSTORE_BASE64 secret is required to build a signed APK}"
+          : "${KEYSTORE_PASSWORD:?KEYSTORE_PASSWORD secret is required}"
+          : "${KEY_ALIAS:?KEY_ALIAS secret is required}"
+          : "${KEY_PASSWORD:?KEY_PASSWORD secret is required}"
+
+          APP_DIR="mobile/android/app"
+          KEYSTORE_FILE="release.keystore"
+          KEYSTORE_PATH="${APP_DIR}/${KEYSTORE_FILE}"
+
+          # Decode base64 secret straight to file — the value never lands in an echo
+          # or process-listing visible in logs. printf '%s' avoids trailing-newline
+          # corruption of the keystore bytes; base64 -d is GNU coreutils on ubuntu-latest.
+          printf '%s' "${KEYSTORE_BASE64}" | base64 -d > "${KEYSTORE_PATH}"
+
+          # Write keystore.properties from secrets via env (values never printed).
+          # storeFile is a bare filename => file(...) resolves it relative to mobile/android/app/.
+          {
+            printf 'storeFile=%s\n'     "${KEYSTORE_FILE}"
+            printf 'storePassword=%s\n' "${KEYSTORE_PASSWORD}"
+            printf 'keyAlias=%s\n'      "${KEY_ALIAS}"
+            printf 'keyPassword=%s\n'   "${KEY_PASSWORD}"
+          } > "${APP_DIR}/keystore.properties"
+
+      - name: Build signed release APK
+        run: ./gradlew assembleRelease --no-daemon -PversionCode="${VERSION_CODE}" -PversionName="${VERSION_NAME}"
+        working-directory: mobile/android
+
+      # --- Confirm the produced APK is actually SIGNED before we publish it. ---
+      # A genuinely unsigned APK fails apksigner verify (non-zero exit) — fail loud
+      # rather than upload an un-installable artifact. apksigner is on PATH via the
+      # SDK build-tools that setup-android installs.
+      - name: Verify APK signature (apksigner)
+        run: |
+          set -euo pipefail
+          APK=$(find mobile/android/app/build/outputs/apk/release -name '*.apk' | head -n1)
+          : "${APK:?no release APK produced}"
+          echo ">>> Verifying ${APK}"
+          APKSIGNER=$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -name apksigner | sort -V | tail -n1)
+          : "${APKSIGNER:?apksigner not found in build-tools}"
+          "${APKSIGNER}" verify --min-sdk-version 24 --print-certs -v "${APK}"
+
+      # --- Cleanup runs even on failure; the ephemeral runner is the backstop, not the only line.
+      # No `|| true` — rm -f already tolerates absent files, so a genuine failure here should
+      # surface rather than be swallowed (the guard below then proves the material is gone). ---
+      - name: Remove signing material
+        if: always()
+        run: |
+          set -euo pipefail
+          # shred (not rm): a self-hosted Gitea act_runner may use a persistent disk where
+          # rm leaves recoverable bytes of the signing key. Same predicate as the guard below
+          # so cleanup and detection can't drift; recursive in case a partial decode left a
+          # truncated file. `-exec ... +` is a no-op when nothing matches.
+          find mobile/android/app \
+            \( -name 'keystore.properties' -o -name '*.keystore' -o -name '*.jks' \) \
+            -exec shred -fu {} +
+
+      # --- Artifact-secret guard. The signing material is written to the Gradle module dir
+      # (mobile/android/app/), NOT to build/outputs/ — so the guard must scan THAT path to
+      # actually verify the cleanup step shredded it, then double-check the upload glob. ---
+      - name: Guard against secret leakage
+        if: always()
+        run: |
+          set -euo pipefail
+          # The keystore is written to mobile/android/app/ and the APK to its
+          # build/outputs/ subtree, so one recursive scan of mobile/android/app both
+          # proves the cleanup step shredded the signing material AND that none leaked
+          # into the artifact path before upload. (keystore.properties.example lives one
+          # level up in mobile/android/, outside this scan, so it never false-positives.)
+          if find mobile/android/app \
+               \( -name 'keystore.properties' -o -name '*.keystore' -o -name '*.jks' \) \
+               -print -quit | grep -q .; then
+            echo "::error::signing material present under mobile/android/app — cleanup failed or leaked into the artifact; refusing to upload"
+            exit 1
+          fi
+          echo "no signing material under mobile/android/app — safe to upload"
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: jaghelm-release-apk
+          path: mobile/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7

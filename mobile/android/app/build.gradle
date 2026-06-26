@@ -1,5 +1,30 @@
 apply plugin: 'com.android.application'
 
+// --- Release signing: presence of keystore.properties IS the flag (graceful disable). ---
+// Mirrors the conditional google-services apply below: when the operator (or CI) drops a
+// `keystore.properties` next to this build.gradle (resolved relative to the `app/` Gradle
+// project), we load it and define a real `signingConfigs.release`. When the file is ABSENT
+// (any clone without the key — the default OSS state), NO release signing config is created,
+// so `assembleRelease` still succeeds and emits an UNSIGNED APK. It is deliberately NEVER
+// downgraded to the publicly-known debug key (which would install but is unshippable).
+def keystorePropertiesFile = rootProject.file("app/keystore.properties")
+def keystoreProperties = new Properties()
+def hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    // Fail LOUD rather than silently shipping an UNSIGNED release: once keystore.properties
+    // is present it signals "sign this build", so a missing/misnamed storeFile is a config
+    // error, not a reason to fall back to unsigned. (Absent keystore.properties is still the
+    // graceful unsigned path above — this only guards the declared-but-broken case.)
+    def declaredStoreFile = keystoreProperties['storeFile']
+    if (declaredStoreFile == null || !file(declaredStoreFile).exists()) {
+        throw new GradleException(
+            "keystore.properties is present but storeFile='${declaredStoreFile}' does not resolve to a file " +
+            "(looked at '${file(declaredStoreFile ?: 'null')}'). Refusing to build a silently-unsigned release. " +
+            "Fix storeFile, or remove keystore.properties for an intentional unsigned build.")
+    }
+}
+
 android {
     namespace = "io.jaghelm.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +32,12 @@ android {
         applicationId "io.jaghelm.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // versionCode / versionName are overridable from CI via -PversionCode / -PversionName,
+        // which build-apk.yml derives from the `mobile-v*` release tag so each tag yields a
+        // monotonically-incrementing, installable update. The literals are the local-build
+        // fallback so a plain `./gradlew assembleRelease` (no -P props) still works.
+        versionCode = (project.findProperty("versionCode") ?: "1").toString().toInteger()
+        versionName = (project.findProperty("versionName") ?: "1.0").toString()
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,9 +45,27 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        // Only define a release signing config when keystore.properties is present.
+        // Absent file => no `release` signing config => unsigned release build.
+        if (hasReleaseKeystore) {
+            release {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
+            // Attach the release signing config ONLY when it was actually defined above.
+            // When absent, signingConfig stays null => the APK is built UNSIGNED — it is NOT
+            // set to signingConfigs.debug, so a release is never shipped debug-signed.
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
