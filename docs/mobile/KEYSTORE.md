@@ -7,9 +7,11 @@ update MUST be signed with the SAME key**, or Android refuses to install the upd
 over the existing app (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). Generate the key once,
 back it up, and reuse it forever.
 
-The CI workflow `.github/workflows/build-apk.yml` does the actual signing — you only
-need to (1) generate the keystore once, (2) set four Gitea Actions secrets, and (3) trigger a
-build. The Gradle side (`mobile/android/app/build.gradle`) reads
+The CI workflow `.github/workflows/build-apk.yml` runs on **GitHub Actions** and does the
+actual signing — you only need to (1) generate the keystore once, (2) set four **GitHub**
+Actions secrets, and (3) trigger a build. Your repo lives on Gitea and is **push-mirrored to
+GitHub**, where the build runs; the mirror copies code and tags but **not** secrets, so the
+four secrets must be set on GitHub directly (see §3). The Gradle side (`mobile/android/app/build.gradle`) reads
 `mobile/android/app/keystore.properties`; when that file is absent the build still
 succeeds but produces an **unsigned** APK (which will not sideload) — so for a real
 release you must provide the key, locally or via CI.
@@ -61,7 +63,7 @@ keytool -list -v -keystore jaghelm-release.jks -alias jaghelm-upload
 
 ## 2. Base64-encode the keystore for the GitHub secret
 
-Gitea Actions secrets hold text, so the binary `.jks` must be base64-encoded **with no line
+GitHub Actions secrets hold text, so the binary `.jks` must be base64-encoded **with no line
 wrapping** (`-w0`), or the CI `base64 -d` step reassembles corrupted bytes:
 
 ```bash
@@ -76,10 +78,17 @@ Delete the `.b64` file once you've pasted it into GitHub.
 
 ---
 
-## 3. Set the FOUR Gitea repo secrets
+## 3. Set the FOUR GitHub repo secrets
 
-Repo → **Settings → Actions → Secrets → Add Secret** (on `git.jagbhandal.com`). Set
-these **exact** four names (the workflow references them by name):
+> **These go on GitHub, NOT Gitea.** The Gitea→GitHub push-mirror copies your code and
+> tags but **not** secrets — GitHub Actions only reads secrets stored in the GitHub repo.
+> Setting them on Gitea does nothing; the build then fails fast at the *Decode keystore* step
+> with exit 1 (a ~35s run that produces no artifact). This is the one mistake that silently
+> wastes a build.
+
+On **GitHub** (`github.com/jagbhandal/jaghelm`): repo → **Settings → Secrets and variables →
+Actions** → **New repository secret**. Set these **exact** four names (the workflow
+references them by name):
 
 | Secret name | Value |
 |---|---|
@@ -105,11 +114,21 @@ git tag mobile-v1.0.0
 git push origin mobile-v1.0.0
 ```
 
-**B. Manual run:** repo → **Actions** tab → **Build Signed Mobile APK** → **Run workflow**
-(`workflow_dispatch`), pick the branch, Run. (If your Gitea predates workflow_dispatch
-support the manual button may not appear — use the tag-push path above, which always works.)
+`origin` is Gitea; the push-mirror copies the tag to GitHub, where the workflow fires on the
+`mobile-v*` trigger. Pushing to Gitea is all you do — the mirror handles GitHub.
 
-When the job finishes, open the run and download the **`jaghelm-release-apk`** artifact
+**B. Manual run (on GitHub):** the **GitHub** repo → **Actions** tab → **Build Signed Mobile
+APK** → **Run workflow** (`workflow_dispatch`), pick the branch, Run.
+
+> **A manual dispatch is a TEST build, not a release.** It stamps `versionName 0.0.0-dispatch.N`
+> (`versionCode` = run number), per the workflow's version logic — fine for a smoke test, but
+> use the tag-push path (A) for an actual release so the version is real and monotonic.
+
+> **Re-running after a failed build** (e.g. you just added the missing secrets): on GitHub →
+> **Actions** → the failed run → **Re-run jobs**. No new tag needed — it re-checks out the
+> same commit, now with the secrets present.
+
+When the job finishes, open the run **on GitHub** and download the **`jaghelm-release-apk`** artifact
 (a zip containing `app-release.apk`). The workflow also runs `apksigner verify` and an
 artifact-secret guard before publishing, so a green run means the APK is genuinely
 signed and contains no leaked key material. (Artifacts retain for 7 days — re-run the
@@ -128,8 +147,9 @@ apksigner verify --min-sdk-version 24 --print-certs -v app-release.apk
 `variables.gradle` — so your manual check verifies identically.)
 
 A signed APK reports `Verified using v2 scheme (APK Signature Scheme v2): true`
-(v3 also true). For an Android-14-class target (`targetSdk 36`), **v2 is the practical
-minimum** — `apksigner` applies v2+v3 automatically. A non-zero exit / missing
+(v3 also true). For this app (`targetSdk 36` = Android 16), **v2 is the practical minimum** —
+note the v2 requirement actually follows from `minSdkVersion 24`, not the target — and
+`apksigner` applies v2+v3 automatically. A non-zero exit / missing
 `Verifies` line means it is unsigned.
 
 ---
@@ -179,6 +199,7 @@ app first (you'll lose its stored state) or recover the original keystore.
 | Key alias | `jaghelm-upload` |
 | Gradle reads | `mobile/android/app/keystore.properties` (gitignored) |
 | CI workflow | `.github/workflows/build-apk.yml` (`mobile-v*` tag or manual) |
-| Secrets | `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` |
+| Runs on | **GitHub Actions** (`github.com/jagbhandal/jaghelm`), reached via the Gitea→GitHub push-mirror |
+| Secrets | `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` — set on **GitHub**, not Gitea |
 | Distribution | sideload only (no Play Store) → one self-signed key, reuse forever |
 | Artifact | `jaghelm-release-apk` → `app-release.apk` |
