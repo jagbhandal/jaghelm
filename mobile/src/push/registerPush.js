@@ -18,7 +18,7 @@ import { PushNotifications } from '@capacitor/push-notifications';
 import { App } from '@capacitor/app';
 import { setPref } from '../storage/prefsAdapter.js';
 import { PUSH_PERM_KEY, PUSH_TOKEN_KEY } from '../runtimeConfig.js';
-import { registerToken } from './pushPrefsApi.js';
+import { registerToken, deleteToken } from './pushPrefsApi.js';
 import { routeFromData } from './routeFromData.js';
 import { routeFromUrl } from './routeFromUrl.js';
 
@@ -45,9 +45,7 @@ export async function initPush({ nav }) {
   });
 
   // Listeners BEFORE register() — 'registration' may fire immediately.
-  await PushNotifications.addListener('registration', (token) => {
-    onRegistration(token);
-  });
+  await PushNotifications.addListener('registration', (token) => onRegistration(token));
   await PushNotifications.addListener('registrationError', (err) => {
     console.warn('[push] registration error:', err && err.error);
   });
@@ -79,4 +77,26 @@ async function onRegistration(token) {
   } catch (e) {
     console.warn('[push] backend register failed:', e && e.message);
   }
+}
+
+/**
+ * Teardown for logout / explicit push-disable: remove plugin listeners, hard-
+ * remove the registration server-side (DELETE /push/register — token in body),
+ * and clear the locally-cached FCM token. Uses setPref('', ) NOT removeItem,
+ * which (on the Keystore adapter) throws on a missing key (M3a) — Preferences is
+ * throw-free regardless, and push state never lives in the Keystore.
+ *
+ * This is the HARD path. The settings master toggle (enabled:false) is the SOFT
+ * path (PUT /push/prefs, token KEPT) and must NOT call this.
+ */
+export async function disablePush(token) {
+  await PushNotifications.removeAllListeners();
+  if (token) {
+    try {
+      await deleteToken(token);
+    } catch (e) {
+      console.warn('[push] backend delete failed:', e && e.message);
+    }
+  }
+  await setPref(PUSH_TOKEN_KEY, '');
 }

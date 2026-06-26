@@ -39,7 +39,7 @@ const routeFromUrl = vi.hoisted(() => vi.fn());
 vi.mock('./routeFromData.js', () => ({ routeFromData }));
 vi.mock('./routeFromUrl.js', () => ({ routeFromUrl }));
 
-import { initPush } from './registerPush.js';
+import { initPush, disablePush } from './registerPush.js';
 
 beforeEach(() => {
   for (const f of Object.values(plugin)) f.mockReset();
@@ -106,5 +106,68 @@ describe('initPush permission gate', () => {
     expect(registerIdx).toBeGreaterThan(lastListenIdx);
     expect(order[order.length - 1]).toBe('register');
     expect(setPref).toHaveBeenCalledWith('jaghelm-push-perm', 'granted');
+  });
+});
+
+// routeFromData is already imported as the hoisted mock at the top of the file
+// (Task 5). Reference it directly in assertions.
+
+function captureHandlers() {
+  const handlers = {};
+  plugin.addListener.mockImplementation((event, cb) => {
+    handlers[event] = cb;
+    return Promise.resolve({ remove: vi.fn() });
+  });
+  return handlers;
+}
+
+describe('registration handler + listeners (captured)', () => {
+  it("'registration' persists token.value and POSTs it to the backend", async () => {
+    plugin.checkPermissions.mockResolvedValue({ receive: 'granted' });
+    const handlers = captureHandlers();
+    await initPush({ nav: { push: vi.fn() } });
+    await handlers.registration({ value: 'fake-fcm-token' });
+    expect(setPref).toHaveBeenCalledWith('jaghelm-push-token', 'fake-fcm-token');
+    expect(registerToken).toHaveBeenCalledWith('fake-fcm-token');
+  });
+
+  it("'registration' with a backend failure does NOT throw (logged)", async () => {
+    plugin.checkPermissions.mockResolvedValue({ receive: 'granted' });
+    registerToken.mockRejectedValueOnce(new Error('500'));
+    const handlers = captureHandlers();
+    await initPush({ nav: { push: vi.fn() } });
+    await expect(handlers.registration({ value: 't' })).resolves.toBeUndefined();
+  });
+
+  it("'registrationError' does not throw", async () => {
+    plugin.checkPermissions.mockResolvedValue({ receive: 'granted' });
+    const handlers = captureHandlers();
+    await initPush({ nav: { push: vi.fn() } });
+    expect(() => handlers.registrationError({ error: 'boom' })).not.toThrow();
+  });
+
+  it("'pushNotificationActionPerformed' deep-links via routeFromData with the data block", async () => {
+    plugin.checkPermissions.mockResolvedValue({ receive: 'granted' });
+    const nav = { push: vi.fn() };
+    const handlers = captureHandlers();
+    await initPush({ nav });
+    const data = { type: 'service_down', id: 'vm-101:nginx', node: 'vm-101', severity: 'critical' };
+    handlers.pushNotificationActionPerformed({ actionId: 'tap', notification: { data } });
+    expect(routeFromData).toHaveBeenCalledWith(data, nav);
+  });
+});
+
+describe('disablePush teardown', () => {
+  it('removes listeners, DELETEs the token, and clears the local token (no Keystore removeItem)', async () => {
+    await disablePush('fcmtok');
+    expect(plugin.removeAllListeners).toHaveBeenCalledTimes(1);
+    expect(deleteToken).toHaveBeenCalledWith('fcmtok');
+    expect(setPref).toHaveBeenCalledWith('jaghelm-push-token', '');
+  });
+
+  it('still clears local state when the backend DELETE fails (does not throw)', async () => {
+    deleteToken.mockRejectedValueOnce(new Error('500'));
+    await expect(disablePush('fcmtok')).resolves.toBeUndefined();
+    expect(setPref).toHaveBeenCalledWith('jaghelm-push-token', '');
   });
 });
