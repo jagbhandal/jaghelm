@@ -114,3 +114,51 @@ test('service new key in next (no prev entry) treated as prev=unknown', () => {
   assert.equal(events[0].type, 'service_down');
   assert.equal(events[0].prev, 'unknown');
 });
+
+function host(map) {
+  return { services: {}, hosts: map, ups: { state: 'unknown' }, cron: {} };
+}
+const OK = { reachable: true, cpu: 0.1, mem: 0.1, disk: 0.1 };
+const DOWN = { reachable: false, cpu: 0, mem: 0, disk: 0 };
+
+test('host reachable true->false emits host_unreachable(critical)', () => {
+  const events = diffSnapshots(host({ n1: OK }), host({ n1: DOWN }), THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    type: 'host_unreachable',
+    id: 'n1',
+    node: 'n1',
+    title: 'Host unreachable',
+    body: 'n1 is unreachable',
+    severity: 'critical',
+    prev: true,
+    next: false,
+  });
+});
+
+test('host reachable false->true emits host_recovered(info)', () => {
+  const events = diffSnapshots(host({ n1: DOWN }), host({ n1: OK }), THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    type: 'host_recovered',
+    id: 'n1',
+    node: 'n1',
+    title: 'Host recovered',
+    body: 'n1 is reachable again',
+    severity: 'info',
+    prev: false,
+    next: true,
+  });
+});
+
+test('host reachable unchanged emits nothing', () => {
+  assert.deepEqual(diffSnapshots(host({ n1: OK }), host({ n1: OK }), THRESHOLDS), []);
+  assert.deepEqual(diffSnapshots(host({ n1: DOWN }), host({ n1: DOWN }), THRESHOLDS), []);
+});
+
+test('host absent in prev defaults to reachable:false (no false unreachable)', () => {
+  // prev missing host => reachable:false; next OK => false->true => host_recovered
+  const events = diffSnapshots(host({}), host({ n1: OK }), THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, 'host_recovered');
+});

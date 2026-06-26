@@ -36,6 +36,7 @@ export function diffSnapshots(prev, next, thresholds) {
   if (prev === null || prev === undefined) return [];
   const events = [];
   diffServices(prev.services || {}, next.services || {}, events);
+  diffHosts(prev.hosts || {}, next.hosts || {}, thresholds, events);
   return sortEvents(events);
 }
 
@@ -79,6 +80,40 @@ function diffServices(prev, next, events) {
         severity: SEVERITY.service_recovered,
         prev: before,
         next: after,
+      });
+    }
+  }
+}
+
+function diffHosts(prev, next, thresholds, events) {
+  for (const node of Object.keys(next)) {
+    const before = prev[node] || { reachable: false };
+    const after = next[node];
+    const beforeReach = before.reachable === true;
+    const afterReach = after.reachable === true;
+    if (beforeReach && !afterReach) {
+      events.push({
+        type: 'host_unreachable',
+        id: node,
+        node,
+        title: 'Host unreachable',
+        body: `${node} is unreachable`,
+        severity: SEVERITY.host_unreachable,
+        prev: true,
+        next: false,
+      });
+      continue; // unreachable supersedes metric crossings this cycle
+    }
+    if (!beforeReach && afterReach) {
+      events.push({
+        type: 'host_recovered',
+        id: node,
+        node,
+        title: 'Host recovered',
+        body: `${node} is reachable again`,
+        severity: SEVERITY.host_recovered,
+        prev: false,
+        next: true,
       });
     }
   }
