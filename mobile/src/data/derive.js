@@ -5,6 +5,14 @@
  * Nothing in this file imports React or does I/O — it is table-testable.
  */
 
+/** Format a uptime24 scalar (0–1) as "NN.N"; returns null when u is null/undefined. */
+export function uptimePct(u) { return u != null ? (u * 100).toFixed(1) : null; }
+
+/** CSS color token for a uptime24 scalar — matches the IncidentCard color ramp. */
+export function uptimeColor(u) {
+  return u == null ? 'var(--text-muted)' : u > 0.99 ? 'var(--green)' : u > 0.95 ? 'var(--amber)' : 'var(--red)';
+}
+
 /** parseFloat a string metric (node metrics arrive as strings); null if non-finite. */
 export function parseMetricPct(str) {
   const n = parseFloat(str);
@@ -101,11 +109,13 @@ export function deriveSubsystems({ services, ups, cron }) {
   const flat = flattenServices(services);
   const downCount = flat.filter(serviceIsProblem).length;
   const nodeCount = Object.keys((services && services.nodes) || {}).length;
+  const upsDeg = upsDegraded(ups);
+  const cronDeg = cronDegraded(cron);
   return [
     { key: 'services', label: 'Services', degraded: downCount > 0, detail: downCount ? `${downCount} down` : `${flat.length} up` },
     { key: 'nodes', label: 'Nodes', degraded: false, detail: `${nodeCount} online` },
-    { key: 'ups', label: 'UPS', degraded: upsDegraded(ups), detail: upsDegraded(ups) ? 'On battery' : 'Mains' },
-    { key: 'cron', label: 'Cron', degraded: cronDegraded(cron), detail: cronDegraded(cron) ? 'Job failed' : 'Healthy' },
+    { key: 'ups', label: 'UPS', degraded: upsDeg, detail: upsDeg ? 'On battery' : 'Mains' },
+    { key: 'cron', label: 'Cron', degraded: cronDeg, detail: cronDeg ? 'Job failed' : 'Healthy' },
   ];
 }
 

@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { deriveIncidents } from '../data/derive.js';
-import { groupByDay, formatDayLabel } from '../data/groupByDay.js';
+import { groupByDay, formatDayLabel, dateToDayKey } from '../data/groupByDay.js';
 import StatusBanner from '../components/StatusBanner.jsx';
 
 /**
@@ -16,19 +16,22 @@ import StatusBanner from '../components/StatusBanner.jsx';
  */
 export default function Alerts({ data, nav }) {
   const { loading, error, servicesBody } = data;
-  const incidents = deriveIncidents({
-    services: servicesBody,
-    ups: data.ups,
-    cron: data.cron,
-  });
+  const { ups, cron } = data;
+  const incidents = useMemo(
+    () => deriveIncidents({ services: servicesBody, ups, cron }),
+    [servicesBody, ups, cron],
+  );
 
   // Phase 3: stamp all derived incidents with "now" for day-grouping.
   // When Phase 5 brings a real history feed, replace `now` with the incident's
   // actual event timestamp.
   const now = new Date();
-  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const dated = incidents.map((i) => ({ ...i, _at: now }));
-  const groups = groupByDay(dated, (i) => i._at);
+  const todayKey = dateToDayKey(now);
+  const groups = useMemo(() => {
+    const dated = incidents.map((i) => ({ ...i, _at: now }));
+    return groupByDay(dated, (i) => i._at);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incidents]);
 
   return (
     <section className="mobile-view" aria-label="Alerts">
@@ -45,8 +48,7 @@ export default function Alerts({ data, nav }) {
         </button>
       </div>
 
-      <StatusBanner error={error} hasData={!!servicesBody} />
-      {loading && !servicesBody && <p className="mobile-view__todo">Loading…</p>}
+      <StatusBanner loading={loading} error={error} hasData={!!servicesBody} />
 
       {!loading && !error && incidents.length === 0 && (
         <p className="alerts-clear">All clear — nothing is on fire.</p>

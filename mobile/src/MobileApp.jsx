@@ -14,7 +14,6 @@ import NodeDetail from './views/NodeDetail.jsx';
 import IncidentDetail from './views/IncidentDetail.jsx';
 import './MobileApp.css';
 
-const VIEWS = { overview: Overview, services: Services, infra: Infra, alerts: Alerts };
 const SCREENS = {
   overview: Overview, services: Services, infra: Infra, alerts: Alerts,
   serviceDetail: ServiceDetail, node: NodeDetail, incident: IncidentDetail,
@@ -32,7 +31,7 @@ export default function MobileApp() {
     let cancelled = false;
     (async () => {
       const last = await getPref(LAST_TAB_KEY);
-      if (!cancelled && last && VIEWS[last]) { setActive(last); navRef.current.reset(ROOT[last]); }
+      if (!cancelled && last && ROOT[last]) { setActive(last); navRef.current.reset(ROOT[last]); }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -52,7 +51,7 @@ export default function MobileApp() {
     setPref(LAST_TAB_KEY, id);
   };
 
-  const Screen = SCREENS[nav.current.screen] || VIEWS[active];
+  const Screen = SCREENS[nav.current.screen] || SCREENS[active];
 
   return (
     <div id="mobile-root">

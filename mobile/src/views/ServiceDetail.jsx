@@ -1,6 +1,7 @@
 import React from 'react';
 import StatusDot from '../components/StatusDot.jsx';
 import BackHeader from '../components/BackHeader.jsx';
+import UptimeLine from '../components/UptimeLine.jsx';
 import { flattenServices } from '../data/derive.js';
 import { openTarget } from '../open.js';
 
@@ -14,7 +15,6 @@ export default function ServiceDetail({ data, nav, params }) {
       </section>
     );
   }
-  const u = svc.uptime24;
   return (
     <section className="mobile-view" aria-label="Service detail">
       <BackHeader title={svc.display_name} onBack={nav.pop} />
@@ -23,16 +23,14 @@ export default function ServiceDetail({ data, nav, params }) {
         <span className="detail-head__node">{svc.nodeName}</span>
         {svc.ping != null && svc.ping > 0 && <span className="detail-head__ping">{svc.ping}ms</span>}
       </div>
-      {u != null && (
-        <p className="detail-uptime"><span>24H uptime</span> <strong>{(u * 100).toFixed(1)}%</strong></p>
-      )}
+      <UptimeLine uptime24={svc.uptime24} />
       {svc.docker && (
         <div className="detail-docker">
           {svc.docker.cpu != null && <span>CPU {svc.docker.cpu}%</span>}
           {svc.docker.memMB != null && <span>MEM {svc.docker.memMB} MB</span>}
         </div>
       )}
-      {svc.url && <button type="button" className="incident-card__open" onClick={() => openTarget({ kind: 'service', uid: svc.uid, url: svc.url })}>Open</button>}
+      {svc.url && <button type="button" className="open-btn" onClick={() => openTarget({ kind: 'service', uid: svc.uid, url: svc.url })}>Open</button>}
     </section>
   );
 }

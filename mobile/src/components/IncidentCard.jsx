@@ -1,4 +1,5 @@
 import React from 'react';
+import UptimeLine from './UptimeLine.jsx';
 
 /**
  * An expanded incident: title, node tag, cause, 24h uptime (the per-service
@@ -6,9 +7,6 @@ import React from 'react';
  * read-only Open action. Alarm-tinted (red border). onOpen(target) only.
  */
 export default function IncidentCard({ incident, onOpen }) {
-  const u = incident.uptime24;
-  const pct = u != null ? (u * 100).toFixed(1) : null;
-  const pctColor = u == null ? 'var(--text-muted)' : u > 0.99 ? 'var(--green)' : u > 0.95 ? 'var(--amber)' : 'var(--red)';
   return (
     <article className="incident-card">
       <div className="incident-card__head">
@@ -17,14 +15,9 @@ export default function IncidentCard({ incident, onOpen }) {
       </div>
       <p className="incident-card__cause">{incident.cause}</p>
       <div className="incident-card__foot">
-        {pct != null && (
-          <span className="incident-card__uptime">
-            <span className="incident-card__uptime-label">24H</span>
-            <span style={{ color: pctColor }}>{pct}%</span>
-          </span>
-        )}
+        <UptimeLine uptime24={incident.uptime24} />
         {incident.target?.url && (
-          <button type="button" className="incident-card__open" onClick={() => onOpen(incident.target)}>Open</button>
+          <button type="button" className="open-btn" onClick={() => onOpen(incident.target)}>Open</button>
         )}
       </div>
     </article>

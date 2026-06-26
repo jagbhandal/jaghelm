@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import SubsystemStrip from '../components/SubsystemStrip.jsx';
 import IncidentCard from '../components/IncidentCard.jsx';
 import UsageBar from '../components/UsageBar.jsx';
@@ -11,17 +11,16 @@ const DEFAULT_EXPANDED = 2;
 export default function Overview({ data, nav }) {
   const { servicesBody, ups, cron, loading, error } = data;
   const [showAll, setShowAll] = useState(false);
-  const cells = deriveSubsystems({ services: servicesBody, ups, cron });
-  const incidents = deriveIncidents({ services: servicesBody, ups, cron });
+  const cells = useMemo(() => deriveSubsystems({ services: servicesBody, ups, cron }), [servicesBody, ups, cron]);
+  const incidents = useMemo(() => deriveIncidents({ services: servicesBody, ups, cron }), [servicesBody, ups, cron]);
   const shown = showAll ? incidents : incidents.slice(0, DEFAULT_EXPANDED);
   const extra = incidents.length - shown.length;
-  const nodes = groupByNode(servicesBody);
+  const nodes = useMemo(() => groupByNode(servicesBody), [servicesBody]);
 
   return (
     <section className="mobile-view" aria-label="Overview">
       <h1>Overview</h1>
-      <StatusBanner error={error} hasData={!!servicesBody} />
-      {loading && !servicesBody && <p className="mobile-view__todo">Loading…</p>}
+      <StatusBanner loading={loading} error={error} hasData={!!servicesBody} />
       <SubsystemStrip cells={cells} />
 
       {incidents.length > 0 && (

@@ -10,11 +10,10 @@ export default function Services({ data, nav }) {
   const flat = useMemo(() => sortProblemsFirst(flattenServices(data.servicesBody)), [data.servicesBody]);
   const nodeKeys = useMemo(() => [...new Set(flat.map((s) => s.nodeKey))], [flat]);
 
-  const nodes = (data.servicesBody && data.servicesBody.nodes) || {};
   const chips = [
     { id: 'all', label: 'All' },
     { id: 'down', label: 'Down' },
-    ...nodeKeys.map((k) => ({ id: k, label: (nodes[k] && nodes[k].display_name) || k })),
+    ...nodeKeys.map((k) => ({ id: k, label: flat.find((s) => s.nodeKey === k)?.nodeName || k })),
   ];
 
   const visible = flat.filter((s) => {

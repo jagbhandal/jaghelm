@@ -1,4 +1,13 @@
 /**
+ * Format a Date as YYYY-MM-DD using local calendar date.
+ * @param {Date} d
+ * @returns {string}
+ */
+export function dateToDayKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
  * Group items by calendar day (local date), newest day first.
  * `getDate(item)` must return a Date. `day` is the YYYY-MM-DD key.
  * Pure; no I/O, no Date() calls inside the core logic — ready for Phase-5
@@ -11,8 +20,7 @@
 export function groupByDay(items, getDate) {
   const byDay = new Map();
   for (const item of items) {
-    const d = getDate(item);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const key = dateToDayKey(getDate(item));
     if (!byDay.has(key)) byDay.set(key, []);
     byDay.get(key).push(item);
   }

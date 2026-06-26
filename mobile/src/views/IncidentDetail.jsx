@@ -1,6 +1,7 @@
 import React from 'react';
 import BackHeader from '../components/BackHeader.jsx';
 import StatusDot from '../components/StatusDot.jsx';
+import UptimeLine from '../components/UptimeLine.jsx';
 import { deriveIncidents } from '../data/derive.js';
 import { openTarget } from '../open.js';
 
@@ -31,9 +32,6 @@ export default function IncidentDetail({ data, nav, params }) {
     );
   }
 
-  const u = incident.uptime24;
-  const pct = u != null ? (u * 100).toFixed(1) : null;
-
   // Phase 3 timeline: synthetic events derived from the incident.
   // Phase 5 will replace this with real push-event records from the server.
   // Note: "Detected" deliberately omits the cause (already shown above the timeline)
@@ -54,12 +52,7 @@ export default function IncidentDetail({ data, nav, params }) {
 
       <p className="detail-cause">{incident.cause}</p>
 
-      {pct != null && (
-        <p className="detail-uptime">
-          <span className="detail-uptime__label">24H uptime</span>{' '}
-          <strong className="detail-uptime__value">{pct}%</strong>
-        </p>
-      )}
+      <UptimeLine uptime24={incident.uptime24} />
 
       <h2 className="detail-section">Event timeline</h2>
       <ul className="timeline">
@@ -74,7 +67,7 @@ export default function IncidentDetail({ data, nav, params }) {
       {incident.target?.url && (
         <button
           type="button"
-          className="incident-card__open"
+          className="open-btn"
           onClick={() => openTarget(incident.target)}
         >
           Open
