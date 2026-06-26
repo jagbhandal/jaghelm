@@ -4,15 +4,29 @@
  * route) it attaches `x-auth-token` when a token is set, everything else passes
  * straight through to the real `window.fetch`.
  *
- * Source of truth for the token across reloads is localStorage('jaghelm-token'):
- * this module seeds from it at load; App writes it on login/logout then calls
+ * Source of truth for the token across reloads is secureStore('jaghelm-token'):
+ * initAuthToken() seeds it at boot; App writes it on login/logout then calls
  * setAuthToken() to keep the in-memory copy in sync within the live session.
+ * Web adapter = localStorage (byte-for-byte unchanged); mobile = Keystore later.
  */
 
 import { getApiBase } from './baseUrl.js';
+import { secureStore } from '../storage/index.js';
 
-// Seed from localStorage at module load so a page reload keeps the session.
-let authToken = (typeof localStorage !== 'undefined' && localStorage.getItem('jaghelm-token')) || '';
+// In-memory token. Previously seeded synchronously from localStorage at module
+// load; that seed is now an explicit awaited boot step (initAuthToken) so the
+// token source is swappable (web localStorage default; mobile Keystore later).
+let authToken = '';
+
+/**
+ * Seed the in-memory token from secure storage. Awaited at boot BEFORE any data
+ * hook fires, so a reload (web) or app start (mobile) keeps the session. Web
+ * reads localStorage via the default adapter — same persisted-session behaviour
+ * as the old module-load seed.
+ */
+export async function initAuthToken() {
+  authToken = (await secureStore.getItem('jaghelm-token')) || '';
+}
 
 /**
  * Update the in-memory auth token. App owns localStorage persistence; this only
