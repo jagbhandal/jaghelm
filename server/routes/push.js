@@ -37,6 +37,10 @@ function extractToken(raw, res, emptyMsg = 'token required') {
     apiError(res, 400, 'invalid token');
     return null;
   }
+  if (raw.length > 4096) {
+    apiError(res, 400, 'token too long');
+    return null;
+  }
   return raw;
 }
 
@@ -66,9 +70,10 @@ export function createPushRoutes({ store, fcm }) {
 
   // POST /register — register or refresh an FCM token
   router.post('/register', (req, res) => {
-    const { platform, appVersion } = req.body || {};
     const token = extractToken((req.body || {}).token, res);
     if (token === null) return;
+    const platform = typeof (req.body || {}).platform === 'string' ? (req.body || {}).platform.slice(0, 64) : null;
+    const appVersion = typeof (req.body || {}).appVersion === 'string' ? (req.body || {}).appVersion.slice(0, 64) : null;
     store.registerToken(token, { platform, appVersion });
     res.json({ stored: true, deliveryEnabled: fcm.isPushEnabled() });
   });

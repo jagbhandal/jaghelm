@@ -179,6 +179,6 @@ export async function sendToToken(token, event) {
       { token: String(token).slice(0, 12), code: err && err.code, prune },
       'fcm send failed',
     );
-    return { ok: false, prune, error: err && err.message };
+    return { ok: false, prune, error: err && err.code };
   }
 }

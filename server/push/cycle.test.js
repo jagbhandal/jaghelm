@@ -39,6 +39,7 @@ function oneTokenStore() {
       enabled: true,
     }),
     removeToken: () => true,
+    pruneStale: () => 0,
   };
 }
 
@@ -130,6 +131,29 @@ test('runPushCycle ERROR ISOLATION: a throwing dep => resolves, never rejects', 
         logger: silentLog,
       })
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runPushCycle RETENTION: pruneStale called on every cycle, even when push is disabled', async () => {
+  const { dir, path } = tmpSnapshotPath();
+  let pruneCallCount = 0;
+  const fakeStore = {
+    ...oneTokenStore(),
+    pruneStale: () => { pruneCallCount += 1; },
+  };
+  const disabledFcm = { isPushEnabled: () => false, sendToToken: async () => ({ ok: true, prune: false }) };
+  try {
+    await runPushCycle({
+      buildSnapshotFn: () => SNAP_UP,
+      store: fakeStore,
+      fcm: disabledFcm,
+      snapshotPath: path,
+      thresholds: THRESHOLDS,
+      logger: silentLog,
+    });
+    assert.equal(pruneCallCount, 1, 'pruneStale must be called once per cycle regardless of push-enabled state');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

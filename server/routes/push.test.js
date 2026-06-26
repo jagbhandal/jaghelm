@@ -10,6 +10,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
+import express from 'express';
+import { createPushRoutes } from './push.js';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-push-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
@@ -199,4 +201,56 @@ test('PUT /api/push/prefs → 400 when prefs has extra top-level key', async () 
 test('DELETE /api/push/register {token:42} → 400', async () => {
   const r = await request(app).delete('/api/push/register').send({ token: 42 });
   assert.equal(r.status, 400);
+});
+
+// ── Fix 2: token length cap → 400 when token exceeds 4096 chars ──────────────
+
+test('POST /api/push/register token >4096 chars → 400', async () => {
+  const longToken = 'a'.repeat(4097);
+  const r = await request(app).post('/api/push/register').send({ token: longToken, platform: 'android' });
+  assert.equal(r.status, 400);
+});
+
+test('POST /api/push/register token exactly 4096 chars → 200 (at boundary, accepted)', async () => {
+  const boundaryToken = 'b'.repeat(4096);
+  const r = await request(app).post('/api/push/register').send({ token: boundaryToken, platform: 'android' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.stored, true);
+});
+
+// ── Fix 2 (unit): platform/appVersion coercion via injected fake store ────────
+
+function buildCoercionApp() {
+  const registered = [];
+  const fakeStore = {
+    registerToken: (token, meta) => { registered.push({ token, ...meta }); return {}; },
+    removeToken: () => true,
+    getPrefs: () => ({ categories: { service: true, host: true, ups: true, cron: true }, notifyRecoveries: true, enabled: true }),
+    setPrefs: () => ({}),
+    getAllTokens: () => [],
+  };
+  const fakeFcm = { isPushEnabled: () => false, sendToToken: async () => ({ ok: false, prune: false }) };
+  const miniApp = express();
+  miniApp.use(express.json());
+  miniApp.use('/', createPushRoutes({ store: fakeStore, fcm: fakeFcm }));
+  return { miniApp, registered };
+}
+
+test('Fix2: register with object platform → stored as null', async () => {
+  const { miniApp, registered } = buildCoercionApp();
+  const r = await request(miniApp).post('/register').send({ token: 'tok-unit-1', platform: { evil: 1 }, appVersion: '1.0' });
+  assert.equal(r.status, 200);
+  assert.equal(registered.length, 1);
+  assert.equal(registered[0].platform, null, 'non-string platform must be coerced to null');
+  assert.equal(registered[0].appVersion, '1.0');
+});
+
+test('Fix2: register with 10000-char appVersion → stored truncated to ≤64 chars', async () => {
+  const { miniApp, registered } = buildCoercionApp();
+  const longVersion = 'x'.repeat(10000);
+  const r = await request(miniApp).post('/register').send({ token: 'tok-unit-2', platform: 'android', appVersion: longVersion });
+  assert.equal(r.status, 200);
+  assert.equal(registered.length, 1);
+  assert.ok(registered[0].appVersion.length <= 64, 'appVersion must be truncated to at most 64 chars');
+  assert.equal(registered[0].appVersion, longVersion.slice(0, 64));
 });

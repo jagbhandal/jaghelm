@@ -98,6 +98,7 @@ export async function dispatchEvents(events, { store, fcm, logger = defaultLog }
  */
 export async function runPushCycle({ buildSnapshotFn, store, fcm, snapshotPath, thresholds, logger = defaultLog }) {
   try {
+    store.pruneStale();
     if (!fcm.isPushEnabled()) return;
 
     const snap = buildSnapshotFn();
