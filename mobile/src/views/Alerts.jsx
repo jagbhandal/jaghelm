@@ -10,7 +10,7 @@ import StatusBanner from '../components/StatusBanner.jsx';
  * Phase 5; day-grouping is wired + unit-tested now so the heading is correct
  * for all future multi-day data, not hard-coded "Today").
  *
- * The notification-settings gear is rendered DISABLED/inert (Phase 5 owns it).
+ * The notification-settings gear pushes the NotificationSettings screen (Phase 5).
  * READ-ONLY: the only action here is nav.push to the incident detail screen.
  * Mute is NOT rendered.
  */
@@ -40,9 +40,8 @@ export default function Alerts({ data, nav }) {
         <button
           type="button"
           className="alerts-gear"
-          aria-label="Notification settings (coming soon)"
-          disabled
-          title="Coming soon"
+          aria-label="Notification settings"
+          onClick={() => nav.push('notificationSettings')}
         >
           ⚙
         </button>

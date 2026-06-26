@@ -10,6 +10,12 @@ export const THEME_KEY = 'jaghelm-theme'; // non-secret → Preferences
 export const LAST_TAB_KEY = 'jaghelm-last-tab'; // non-secret → Preferences
 export const URL_PRESENT_KEY = 'jaghelm-base-url-present'; // non-secret breadcrumb → Preferences
 
+// Non-secret push state -> @capacitor/preferences (throw-free; NEVER Keystore,
+// which would hit the M3a removeItem-throws-on-missing defect). The FCM device
+// token is non-secret device state; permission/prefs are UI state.
+export const PUSH_TOKEN_KEY = 'jaghelm-push-token'; // FCM device token (for GET/PUT prefs)
+export const PUSH_PERM_KEY = 'jaghelm-push-perm'; // 'granted'|'denied'|'prompt' breadcrumb
+
 /** Validate + canonicalize a backend URL to `<origin><path>/api`. Throws on bad input. */
 export function normalizeBaseUrl(input) {
   const s = String(input || '').trim();

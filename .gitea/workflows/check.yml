@@ -92,5 +92,14 @@ jobs:
       - name: Client tests (Vitest + RTL)
         run: npm run test:client
 
+      # Mobile is a separate npm project (own package.json/lock + vite.config.mobile.js)
+      # that root `npm ci`/`npm test`/`test:client` never touch. Phase 5 grew the mobile
+      # surface substantially, so gate its Vitest suite PRE-merge here too — not just
+      # post-merge in build-push.yml. (Mobile `npm audit` stays post-merge only, matching
+      # the root-audit policy in this file's header.)
+      - name: Mobile tests (Vitest)
+        run: npm ci && npm test
+        working-directory: mobile
+
       - name: Asset/link existence check
         run: npm run check:assets

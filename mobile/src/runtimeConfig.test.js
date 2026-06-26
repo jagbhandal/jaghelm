@@ -7,6 +7,8 @@ import {
   URL_PRESENT_KEY,
   THEME_KEY,
   LAST_TAB_KEY,
+  PUSH_TOKEN_KEY,
+  PUSH_PERM_KEY,
 } from './runtimeConfig.js';
 
 describe('normalizeBaseUrl', () => {
@@ -66,5 +68,15 @@ describe('storage keys', () => {
   it('exposes theme + last-tab keys', () => {
     expect(THEME_KEY).toBe('jaghelm-theme');
     expect(LAST_TAB_KEY).toBe('jaghelm-last-tab');
+  });
+});
+
+describe('push Preferences keys', () => {
+  it('exports stable, namespaced, distinct non-secret push keys', () => {
+    expect(PUSH_TOKEN_KEY).toBe('jaghelm-push-token');
+    expect(PUSH_PERM_KEY).toBe('jaghelm-push-perm');
+    const all = [PUSH_TOKEN_KEY, PUSH_PERM_KEY];
+    expect(new Set(all).size).toBe(2);
+    for (const k of all) expect(k.startsWith('jaghelm-')).toBe(true);
   });
 });

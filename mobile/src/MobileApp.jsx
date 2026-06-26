@@ -12,11 +12,14 @@ import Alerts from './views/Alerts.jsx';
 import ServiceDetail from './views/ServiceDetail.jsx';
 import NodeDetail from './views/NodeDetail.jsx';
 import IncidentDetail from './views/IncidentDetail.jsx';
+import NotificationSettings from './views/NotificationSettings.jsx';
+import { initPush } from './push/registerPush.js';
 import './MobileApp.css';
 
 const SCREENS = {
   overview: Overview, services: Services, infra: Infra, alerts: Alerts,
   serviceDetail: ServiceDetail, node: NodeDetail, incident: IncidentDetail,
+  notificationSettings: NotificationSettings,
 };
 const ROOT = { overview: { screen: 'overview' }, services: { screen: 'services' }, infra: { screen: 'infra' }, alerts: { screen: 'alerts' } };
 
@@ -43,6 +46,14 @@ export default function MobileApp() {
       else App.exitApp();
     });
     return () => { Promise.resolve(handle).then((h) => h && h.remove && h.remove()); };
+  }, []);
+
+  // Phase 5: register for push once the app is in the connected state (MobileApp
+  // only mounts when configured===true, so base URL + auth token are live). Push
+  // depends on a configured backend + Android runtime permission, so it belongs
+  // here, NOT in boot.js. nav drives deep-link routing from a tapped push.
+  useEffect(() => {
+    initPush({ nav: navRef.current });
   }, []);
 
   const onTab = (id) => {

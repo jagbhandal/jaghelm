@@ -7,7 +7,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
-  { ignores: ['**/dist/**', 'coverage/**', 'public/**', '**/node_modules/**', 'mobile/visual/out/**'] },
+  { ignores: ['**/dist/**', 'coverage/**', 'public/**', '**/node_modules/**', 'mobile/visual/out/**', 'mobile/android/**'] },
   js.configs.recommended,
   // Frontend (desktop `src/` + mobile app `mobile/`) — browser + React + JSX
   {
