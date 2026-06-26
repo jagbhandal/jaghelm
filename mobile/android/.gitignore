@@ -52,8 +52,11 @@ captures/
 # Comment next line if keeping position of elements in Navigation Editor is relevant for you
 .idea/navEditor.xml
 
-# Keystore files — NEVER commit real key material (public repo). The committed
-# keystore.properties.example template is negated in mobile/.gitignore so it survives.
+# Keystore files — defense-in-depth. The AUTHORITATIVE keystore ignores live in
+# mobile/.gitignore (`**/*.jks`, `**/*.keystore`, `keystore.properties`) and root
+# .gitignore; these module-local copies are belt-and-suspenders for a crown-jewel
+# signing key. The committed keystore.properties.example template survives via the
+# `!**/*.example` negation in mobile/.gitignore.
 *.jks
 *.keystore
 keystore.properties

@@ -37,6 +37,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          # Cache ~/.gradle/caches + wrapper keyed on the gradle files, so a cold
+          # Android assembleRelease doesn't re-resolve the full AGP/AndroidX/Capacitor
+          # graph every run. npm is already cached below; this matches that discipline.
+          cache: gradle
 
       - name: Set up Node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -72,12 +76,12 @@ jobs:
           case "${GITHUB_REF_TYPE:-}:${REF}" in
             tag:mobile-v*)
               VNAME="${REF#mobile-v}"
-              case "$VNAME" in
+              CORE="${VNAME%%-*}"      # strip any pre-release suffix: 1.2.3-rc1 -> 1.2.3
+              case "$CORE" in
                 [0-9]*.[0-9]*.[0-9]*) : ;;
                 *) echo "::error::release tag '$REF' must be mobile-vMAJOR.MINOR.PATCH"; exit 1 ;;
               esac
-              MAJ="${VNAME%%.*}"; rest="${VNAME#*.}"; MIN="${rest%%.*}"; PAT="${rest#*.}"
-              PAT="${PAT%%[!0-9]*}"   # drop any pre-release suffix (1.2.3-rc1 -> 3)
+              IFS=. read -r MAJ MIN PAT <<< "$CORE"
               VCODE=$(( MAJ*1000000 + MIN*1000 + PAT ))
               ;;
             *)
@@ -158,21 +162,18 @@ jobs:
       - name: Guard against secret leakage
         run: |
           set -euo pipefail
-          # 1) the signing material must be gone from where it was written — proves cleanup ran.
-          if find mobile/android/app -maxdepth 1 \
+          # The keystore is written to mobile/android/app/ and the APK to its
+          # build/outputs/ subtree, so one recursive scan of mobile/android/app both
+          # proves the cleanup step shredded the signing material AND that none leaked
+          # into the artifact path before upload. (keystore.properties.example lives one
+          # level up in mobile/android/, outside this scan, so it never false-positives.)
+          if find mobile/android/app \
                \( -name 'keystore.properties' -o -name '*.keystore' -o -name '*.jks' \) \
                -print -quit | grep -q .; then
-            echo "::error::signing material still present in mobile/android/app — cleanup failed, refusing to upload"
+            echo "::error::signing material present under mobile/android/app — cleanup failed or leaked into the artifact; refusing to upload"
             exit 1
           fi
-          # 2) belt-and-suspenders: the uploaded glob's dir must contain no signing material.
-          if find mobile/android/app/build/outputs/apk/release \
-               \( -name 'keystore.properties' -o -name '*.keystore' -o -name '*.jks' \) \
-               -print -quit | grep -q .; then
-            echo "::error::signing material found in the artifact path — refusing to upload"
-            exit 1
-          fi
-          echo "no signing material in module dir or artifact path"
+          echo "no signing material under mobile/android/app — safe to upload"
 
       - name: Upload signed APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
