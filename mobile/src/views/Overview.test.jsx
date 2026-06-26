@@ -31,6 +31,14 @@ describe('Overview', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
     expect(openTarget).toHaveBeenCalled();
   });
+  it('tapping a node row calls nav.push with node key', () => {
+    const nav = { push: vi.fn() };
+    render(<Overview data={makeData(1)} nav={nav} />);
+    const nodeRow = document.querySelector('.node-row');
+    expect(nodeRow).not.toBeNull();
+    fireEvent.click(nodeRow);
+    expect(nav.push).toHaveBeenCalledWith('node', { nodeKey: 'vm-101' });
+  });
   it('collapses extra incidents behind "+N more"', () => {
     render(<Overview data={makeData(4)} nav={{ push: vi.fn() }} />);
     // default expanded = 2; remaining 2 behind the toggle
