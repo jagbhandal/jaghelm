@@ -18,7 +18,10 @@ release you must provide the key, locally or via CI.
 
 ## 1. Generate your release keystore (do this ONCE, then back it up)
 
-`keytool` ships with the JDK. RSA 2048, 10000-day validity, alias `jaghelm-upload`:
+`keytool` ships with any JDK/JRE. If you hit `keytool: command not found`, install one
+first — on Ubuntu/Debian: `sudo apt install openjdk-21-jre-headless` (any JDK version
+works; for keystore generation the version doesn't matter). RSA 2048, 10000-day validity,
+alias `jaghelm-upload`:
 
 ```bash
 keytool -genkeypair \
