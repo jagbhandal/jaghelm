@@ -7,7 +7,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
-  { ignores: ['dist/**', 'coverage/**', 'public/**', 'node_modules/**'] },
+  { ignores: ['**/dist/**', 'coverage/**', 'public/**', '**/node_modules/**', 'mobile/visual/out/**'] },
   js.configs.recommended,
   // Frontend (desktop `src/` + mobile app `mobile/`) — browser + React + JSX
   {
@@ -33,6 +33,19 @@ export default [
       ecmaVersion: 2023,
       sourceType: 'module',
       globals: { ...globals.node },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    },
+  },
+  // Visual harness — Node dev script (Playwright) that also references browser-context
+  // globals inside page.evaluate(...) callbacks. Dev tool only; not shipped/built.
+  {
+    files: ['mobile/visual/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'module',
+      globals: { ...globals.node, ...globals.browser },
     },
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
