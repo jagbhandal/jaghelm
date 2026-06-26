@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 
 const { addListener, exitApp, getPref, setPref, useDashboard } = vi.hoisted(() => ({
   addListener: vi.fn(), exitApp: vi.fn(), getPref: vi.fn(), setPref: vi.fn(),
@@ -21,17 +21,36 @@ vi.mock('./views/Services.jsx', () => ({
   ),
 }));
 vi.mock('./views/Infra.jsx', () => ({ default: () => <div>InfraView</div> }));
-vi.mock('./views/Alerts.jsx', () => ({ default: () => <div>AlertsView</div> }));
+vi.mock('./views/Alerts.jsx', () => ({
+  default: ({ nav }) => (
+    <div>
+      <div>AlertsView</div>
+      <button onClick={() => nav.push('notificationSettings')}>go-settings</button>
+    </div>
+  ),
+}));
 // Mock the detail views so the dispatcher renders them without real data deps.
 vi.mock('./views/ServiceDetail.jsx', () => ({ default: ({ nav }) => <div>SERVICE_DETAIL<button onClick={nav.pop}>back</button></div> }));
 vi.mock('./views/NodeDetail.jsx', () => ({ default: ({ nav }) => <div>NODE_DETAIL<button onClick={nav.pop}>back</button></div> }));
 vi.mock('./views/IncidentDetail.jsx', () => ({ default: ({ nav }) => <div>INCIDENT_DETAIL<button onClick={nav.pop}>back</button></div> }));
+// Phase 5: mock the push init + the settings screen so the existing shell tests
+// don't pull the real plugin/storage import chain, and so we can assert initPush.
+const { initPush } = vi.hoisted(() => ({
+  initPush: vi.fn().mockResolvedValue({ enabled: true, permission: 'granted' }),
+}));
+vi.mock('./push/registerPush.js', () => ({ initPush, disablePush: vi.fn() }));
+vi.mock('./views/NotificationSettings.jsx', () => ({
+  default: ({ nav }) => (
+    <div>NOTIFICATION_SETTINGS<button onClick={nav.pop}>back</button></div>
+  ),
+}));
 
 import MobileApp from './MobileApp.jsx';
 
 let backHandler;
 beforeEach(() => {
   addListener.mockReset(); exitApp.mockReset(); getPref.mockReset(); setPref.mockReset(); useDashboard.mockReset();
+  initPush.mockClear();
   getPref.mockResolvedValue(null);
   setPref.mockResolvedValue(undefined);
   useDashboard.mockReturnValue({ servicesBody: { nodes: {} }, ups: {}, cron: [], history: {}, loading: false, error: null });
@@ -90,5 +109,21 @@ describe('MobileApp shell — Task 9 screen dispatcher', () => {
     fireEvent.click(screen.getByText('back'));
     expect(screen.queryByText('SERVICE_DETAIL')).toBeNull();
     expect(screen.getByText('ServicesView')).toBeInTheDocument();
+  });
+});
+
+describe('MobileApp shell — Phase 5 push wiring', () => {
+  it('calls initPush exactly once on mount, passing the live nav', async () => {
+    await act(async () => { render(<MobileApp />); });
+    await waitFor(() => expect(initPush).toHaveBeenCalledTimes(1));
+    expect(initPush).toHaveBeenCalledWith(expect.objectContaining({ nav: expect.any(Object) }));
+  });
+
+  it('registers notificationSettings in SCREENS so nav.push renders it', async () => {
+    await act(async () => { render(<MobileApp />); });
+    fireEvent.click(screen.getByRole('tab', { name: 'Alerts' }));
+    fireEvent.click(screen.getByText('go-settings'));
+    expect(screen.getByText('NOTIFICATION_SETTINGS')).toBeInTheDocument();
+    expect(screen.queryByText('AlertsView')).toBeNull();
   });
 });
