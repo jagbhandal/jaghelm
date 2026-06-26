@@ -257,3 +257,33 @@ test('setPrefs with a PRIMITIVE categories falls back to all defaults, no crash'
   assert.deepEqual(rec.prefs, DEFAULT_PREFS);
   cleanup();
 });
+
+// ── C1: prototype-pollution hardening ────────────────────────────────────────
+
+test('registerToken("__proto__") does NOT pollute Object.prototype', () => {
+  const { store, setNow, cleanup } = freshStore();
+  setNow(1000);
+  store.registerToken('__proto__', { platform: 'x' });
+  // Object.prototype must NOT have been poisoned.
+  assert.equal(({}).platform, undefined, 'Object.prototype.platform must be undefined');
+  cleanup();
+});
+
+test('registerToken("__proto__") round-trips as a normal own entry', () => {
+  const { store, setNow, cleanup } = freshStore();
+  setNow(1000);
+  const rec = store.registerToken('__proto__', { platform: 'android' });
+  assert.equal(rec.platform, 'android');
+  const got = store.getToken('__proto__');
+  assert.ok(got, 'getToken("__proto__") returns the stored record');
+  assert.equal(got.platform, 'android');
+  cleanup();
+});
+
+test('registerToken("constructor") does NOT pollute Object.prototype', () => {
+  const { store, setNow, cleanup } = freshStore();
+  setNow(1000);
+  store.registerToken('constructor', { platform: 'ios' });
+  assert.equal(({}).platform, undefined, 'Object.prototype.platform must be undefined after constructor key');
+  cleanup();
+});

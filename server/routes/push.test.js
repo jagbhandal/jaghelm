@@ -157,3 +157,46 @@ test('PUT /api/push/prefs → 400 on malformed prefs', async () => {
     assert.equal(r.status, 400, `prefs ${JSON.stringify(prefs)} should 400`);
   }
 });
+
+// ── C1: prototype-pollution route-level hardening ────────────────────────────
+
+test('POST /api/push/register {token:"__proto__"} → 400 and Object.prototype unpolluted', async () => {
+  const r = await request(app).post('/api/push/register').send({ token: '__proto__', platform: 'android' });
+  assert.equal(r.status, 400);
+  assert.equal(({}).platform, undefined, 'Object.prototype.platform must be undefined');
+});
+
+test('POST /api/push/register {token:"constructor"} → 400', async () => {
+  const r = await request(app).post('/api/push/register').send({ token: 'constructor', platform: 'android' });
+  assert.equal(r.status, 400);
+});
+
+test('DELETE /api/push/register {token:"__proto__"} → 400', async () => {
+  const r = await request(app).delete('/api/push/register').send({ token: '__proto__' });
+  assert.equal(r.status, 400);
+});
+
+// ── I1: extra top-level prefs key → 400 ─────────────────────────────────────
+
+test('PUT /api/push/prefs → 400 when prefs has extra top-level key', async () => {
+  await request(app).post('/api/push/register').send({ token: 'tok-extra-key', platform: 'android' });
+  // Use a real own enumerable key (not __proto__ which is a syntax special case
+  // and does NOT appear in Object.keys). The I1 allowlist must reject it.
+  const r = await request(app).put('/api/push/prefs').send({
+    token: 'tok-extra-key',
+    prefs: {
+      categories: { service: true, host: true, ups: true, cron: true },
+      notifyRecoveries: true,
+      enabled: true,
+      injected: true, // extra own enumerable key — must 400
+    },
+  });
+  assert.equal(r.status, 400);
+});
+
+// ── m2: DELETE with a non-string token → 400 ─────────────────────────────────
+
+test('DELETE /api/push/register {token:42} → 400', async () => {
+  const r = await request(app).delete('/api/push/register').send({ token: 42 });
+  assert.equal(r.status, 400);
+});

@@ -60,14 +60,21 @@ function normalizePrefs(input) {
 }
 
 export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
-  /** @type {Record<string, any>} Tolerant load: missing/corrupt => empty map. */
+  /** @type {Record<string, any>} Tolerant load: missing/corrupt => null-proto map. */
   function load() {
     try {
-      if (!existsSync(path)) return {};
+      if (!existsSync(path)) return Object.create(null);
       const parsed = JSON.parse(readFileSync(path, 'utf8'));
-      return parsed && typeof parsed === 'object' ? parsed : {};
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        // Rebuild into a null-proto map so inherited keys (__proto__ etc.) can
+        // never be accessed via a bare store[key] lookup.
+        const safe = Object.create(null);
+        for (const k of Object.keys(parsed)) safe[k] = parsed[k];
+        return safe;
+      }
+      return Object.create(null);
     } catch {
-      return {};
+      return Object.create(null);
     }
   }
 
@@ -85,7 +92,7 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
 
   function registerToken(token, { platform, appVersion } = {}) {
     const ts = now();
-    const existing = store[token];
+    const existing = Object.prototype.hasOwnProperty.call(store, token) ? store[token] : undefined;
     if (existing) {
       existing.lastSeenAt = ts;
       if (platform !== undefined) existing.platform = platform;
@@ -100,12 +107,16 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
       lastSeenAt: ts,
       prefs: defaultPrefs(),
     };
-    store[token] = record;
+    // Use defineProperty so that even if `token` is '__proto__' the value is
+    // stored as an OWN enumerable property on the null-proto map, not as a
+    // prototype mutation.
+    Object.defineProperty(store, token, { value: record, writable: true, enumerable: true, configurable: true });
     save(store);
     return { ...record, prefs: clonePrefs(record.prefs) };
   }
 
   function getToken(token) {
+    if (!Object.prototype.hasOwnProperty.call(store, token)) return null;
     const rec = store[token];
     return rec ? { ...rec, prefs: clonePrefs(rec.prefs) } : null;
   }
@@ -125,12 +136,14 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
   }
 
   function getPrefs(token) {
+    if (!Object.prototype.hasOwnProperty.call(store, token)) return defaultPrefs();
     const rec = store[token];
     if (!rec || !rec.prefs) return defaultPrefs();
     return normalizePrefs(rec.prefs);
   }
 
   function setPrefs(token, prefs) {
+    if (!Object.prototype.hasOwnProperty.call(store, token)) return null;
     const rec = store[token];
     if (!rec) return null;
     rec.prefs = normalizePrefs(prefs);

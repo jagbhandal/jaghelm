@@ -17,12 +17,21 @@ import { apiError } from '../errors.js';
 
 const CATEGORY_KEYS = ['service', 'host', 'ups', 'cron'];
 
+// Defense-in-depth: reject well-known prototype-pollution keys before they
+// ever reach the store layer (C1 + I1 defense-in-depth).
+const RESERVED_TOKEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+// I1: top-level prefs key allowlist — extra keys are rejected, not silently dropped.
+const PREFS_TOP_KEYS = new Set(['categories', 'notifyRecoveries', 'enabled']);
+
 /**
  * Validates the shape of a prefs object. Returns false if malformed.
  * The route owns the 400 contract; malformed bodies never reach persistence.
  */
 function validPrefsShape(p) {
   if (!p || typeof p !== 'object' || Array.isArray(p)) return false;
+  // I1: no extra top-level keys permitted.
+  if (!Object.keys(p).every((k) => PREFS_TOP_KEYS.has(k))) return false;
   if (typeof p.notifyRecoveries !== 'boolean') return false;
   if (typeof p.enabled !== 'boolean') return false;
   const c = p.categories;
@@ -45,6 +54,8 @@ export function createPushRoutes({ store, fcm }) {
     if (typeof token !== 'string' || token.trim() === '') {
       return apiError(res, 400, 'token required');
     }
+    // C1: block reserved prototype-pollution keys at the route layer.
+    if (RESERVED_TOKEN_KEYS.has(token)) return apiError(res, 400, 'invalid token');
     store.registerToken(token, { platform, appVersion });
     res.json({ stored: true, deliveryEnabled: fcm.isPushEnabled() });
   });
@@ -55,6 +66,8 @@ export function createPushRoutes({ store, fcm }) {
     if (typeof token !== 'string' || token.trim() === '') {
       return apiError(res, 400, 'token required');
     }
+    // C1: block reserved prototype-pollution keys at the route layer.
+    if (RESERVED_TOKEN_KEYS.has(token)) return apiError(res, 400, 'invalid token');
     res.json({ removed: store.removeToken(token) });
   });
 
@@ -64,6 +77,8 @@ export function createPushRoutes({ store, fcm }) {
     if (typeof token !== 'string' || token.trim() === '') {
       return apiError(res, 400, 'token query param required');
     }
+    // C1: block reserved prototype-pollution keys at the route layer.
+    if (RESERVED_TOKEN_KEYS.has(token)) return apiError(res, 400, 'invalid token');
     res.json({ prefs: store.getPrefs(token) });
   });
 
@@ -73,6 +88,8 @@ export function createPushRoutes({ store, fcm }) {
     if (typeof token !== 'string' || token.trim() === '') {
       return apiError(res, 400, 'token required');
     }
+    // C1: block reserved prototype-pollution keys at the route layer.
+    if (RESERVED_TOKEN_KEYS.has(token)) return apiError(res, 400, 'invalid token');
     if (!validPrefsShape(prefs)) {
       return apiError(res, 400, 'malformed prefs');
     }
@@ -80,8 +97,8 @@ export function createPushRoutes({ store, fcm }) {
     if (record === null) {
       return apiError(res, 404, 'token not found');
     }
-    // setPrefs returns the full record; prefs live on record.prefs
-    res.json({ prefs: record.prefs ?? record });
+    // m1: setPrefs always sets prefs; record.prefs is always defined.
+    res.json({ prefs: record.prefs });
   });
 
   return router;

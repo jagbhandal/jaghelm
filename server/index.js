@@ -41,7 +41,6 @@ import { initRegistry } from './integrations/registry.js';
 import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
 import { startBackgroundRefresh, stopBackgroundRefresh } from './refresh.js';
-import { initPush } from './push/fcm.js';
 import * as fcmModule from './push/fcm.js';
 
 // Shared utilities
@@ -273,7 +272,7 @@ async function boot() {
 
   // Push (FCM) — graceful-disable when no service-account creds are present.
   // Never throws; isPushEnabled() stays false and the pipeline no-ops.
-  initPush({ env: process.env, logger: log });
+  fcmModule.initPush({ env: process.env, logger: log });
 
   await initRegistry();
 
