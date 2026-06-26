@@ -124,6 +124,24 @@ app.use((req, res, next) => {
 // locked down to kill the classic injection vectors. ENFORCES by default (this is
 // the app's primary XSS containment); set CSP_REPORT_ONLY=true to fall back to a
 // report-only header while tuning a deploy that has custom inline assets.
+// Additive, env-gated connect-src extension for a WebView-fetch fallback
+// deployment. Unset ⇒ no extra origins ⇒ connect-src is byte-for-byte as today.
+//
+// Helmet does NOT validate CSP directive values; it passes them through
+// verbatim. We validate entries ourselves: only well-formed http/https/wss/ws
+// origins are accepted. Anything else (bare *, javascript: URIs, entries with
+// whitespace/semicolons/quotes) is dropped with a warning so a misconfigured
+// operator env can't silently widen or corrupt connect-src.
+const VALID_CSP_ORIGIN_RE = /^(https?|wss?):\/\/[^\s'";,]+$/;
+const extraConnect = (process.env.CSP_CONNECT_EXTRA || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .filter((entry) => {
+    if (VALID_CSP_ORIGIN_RE.test(entry)) return true;
+    console.warn(`[csp] ignoring invalid CSP_CONNECT_EXTRA entry: ${entry}`);
+    return false;
+  });
 const cspDirectives = {
   defaultSrc: ["'self'"],
   scriptSrc: ["'self'"],
@@ -136,7 +154,7 @@ const cspDirectives = {
     'https://cdn.jsdelivr.net',
     'https://raw.githubusercontent.com',
   ],
-  connectSrc: ["'self'", 'https://cdn.jsdelivr.net', 'https://raw.githubusercontent.com'],
+  connectSrc: ["'self'", 'https://cdn.jsdelivr.net', 'https://raw.githubusercontent.com', ...extraConnect],
   // The iframe view embeds operator-configured service URLs (often http on LAN).
   frameSrc: ["'self'", 'https:', 'http:'],
   workerSrc: ["'self'"],
@@ -174,7 +192,13 @@ const corsOrigins = corsOriginEnv
       .map((s) => s.trim())
       .filter(Boolean)
   : false;
-app.use(cors({ origin: corsOrigins }));
+// exposedHeaders:['ETag'] is REQUIRED only on the WebView-fetch fallback
+// (cross-origin JS cannot read ETag by default → would silently break
+// useData.js's If-None-Match 304 caching). Additive + inert: with CORS_ORIGIN
+// unset (origin:false), no Access-Control-* headers are emitted, so the desktop
+// same-origin response is byte-for-byte unchanged. (Native HTTP — the mobile
+// default — bypasses CORS entirely and needs none of this.)
+app.use(cors({ origin: corsOrigins, exposedHeaders: ['ETag'] }));
 
 // gzip responses. The big win is /api/history — intentionally non-304 (it changes
 // every poll) and the largest repeatedly-fetched JSON; numeric JSON gzips ~80-90%.

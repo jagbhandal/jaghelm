@@ -1,7 +1,6 @@
 import { apiFetch } from '../api/client.js';
 import { iconSlugUrl } from '../utils/iconCdn.js';
-
-const BASE = '/api';
+import { getApiBase } from '../api/baseUrl.js';
 
 const etagStore = new Map();
 const resultStore = new Map();
@@ -72,58 +71,58 @@ async function requestJson(url, opts) {
  * { nodes: { [key]: { display_name, subtitle, icon, border_color, metrics, services } } }
  */
 export async function getServices(skipEtag) {
-  return fetchJson(`${BASE}/services`, skipEtag);
+  return fetchJson(`${getApiBase()}/services`, skipEtag);
 }
 
 // Metric history (sparklines). Not ETag-cached server-side — it changes every
 // cycle by design — so this always returns a fresh body.
 export async function getMetricHistory() {
-  return fetchJson(`${BASE}/history`);
+  return fetchJson(`${getApiBase()}/history`);
 }
 
 // Dedicated section data (not covered by /api/services or /api/integrations).
 export async function getUPSStatus(skipEtag) {
-  return fetchJson(`${BASE}/ups`, skipEtag);
+  return fetchJson(`${getApiBase()}/ups`, skipEtag);
 }
 export async function getGiteaActivity(skipEtag) {
-  return fetchJson(`${BASE}/gitea/activity`, skipEtag);
+  return fetchJson(`${getApiBase()}/gitea/activity`, skipEtag);
 }
 export async function getCronStatus(skipEtag) {
-  return fetchJson(`${BASE}/cron/status`, skipEtag);
+  return fetchJson(`${getApiBase()}/cron/status`, skipEtag);
 }
 
 // Phase 3: Integration Engine
 export async function getAllIntegrations(skipEtag) {
-  return fetchJson(`${BASE}/integrations`, skipEtag);
+  return fetchJson(`${getApiBase()}/integrations`, skipEtag);
 }
 export async function getIntegrationPresets() {
-  return fetchJson(`${BASE}/integrations/presets`);
+  return fetchJson(`${getApiBase()}/integrations/presets`);
 }
 export async function testIntegration(data) {
-  return requestJson(`${BASE}/integrations/test`, {
+  return requestJson(`${getApiBase()}/integrations/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 export async function saveIntegration(data) {
-  return requestJson(`${BASE}/integrations/save`, {
+  return requestJson(`${getApiBase()}/integrations/save`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 export async function deleteIntegration(type) {
-  return requestJson(`${BASE}/integrations/${type}`, { method: 'DELETE' });
+  return requestJson(`${getApiBase()}/integrations/${type}`, { method: 'DELETE' });
 }
 
 // Legacy functions (kept: getMonitors used by App.jsx health check).
 export async function getMonitors() {
-  return fetchJson(`${BASE}/uptime/monitors`);
+  return fetchJson(`${getApiBase()}/uptime/monitors`);
 }
 
 export async function getWeather(lat, lon) {
-  const r = await apiFetch(`${BASE}/weather?lat=${lat}&lon=${lon}`, {
+  const r = await apiFetch(`${getApiBase()}/weather?lat=${lat}&lon=${lon}`, {
     signal: AbortSignal.timeout(12000),
   });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -131,7 +130,7 @@ export async function getWeather(lat, lon) {
 }
 
 export async function getTodos() {
-  const r = await apiFetch(`${BASE}/todos`, { signal: AbortSignal.timeout(12000) });
+  const r = await apiFetch(`${getApiBase()}/todos`, { signal: AbortSignal.timeout(12000) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -139,7 +138,7 @@ export async function saveTodos(todos) {
   // Route through requestJson so a failed save REJECTS (was silently swallowed:
   // the old code awaited the fetch but never checked r.ok, so a 500 looked like
   // a successful save). Caller awaits for completion only; no body is returned.
-  await requestJson(`${BASE}/todos`, {
+  await requestJson(`${getApiBase()}/todos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(todos),
@@ -149,6 +148,9 @@ export async function saveTodos(todos) {
 export async function uploadFile(file, type) {
   const form = new FormData();
   form.append('file', file);
+  // HARNESS-GAP (ledger #1): the one remaining raw '/api' literal that bypasses
+  // getApiBase(). Intentionally relative — uploadFile is web-only (mobile does no
+  // uploads). Promote through getApiBase() if/when mobile ever uploads.
   const r = await apiFetch(`/api/upload?type=${type}`, { method: 'POST', body: form });
   if (!r.ok) throw new Error('Upload failed');
   return r.json();
@@ -162,6 +164,10 @@ export async function uploadFile(file, type) {
  *
  * Non-CDN URLs (local paths, data URIs) pass through unchanged.
  * Emojis and empty strings return null.
+ *
+ * Base-aware: the proxied URL is built from getApiBase() so on mobile it is an
+ * absolute same-base URL that reaches Express over Tailscale and gets the
+ * x-auth-token injected (the icon route is protected). Web is unchanged ('/api').
  */
 export function cachedIconUrl(url) {
   if (!url || typeof url !== 'string') return null;
@@ -170,7 +176,7 @@ export function cachedIconUrl(url) {
     url.startsWith('https://cdn.jsdelivr.net/') ||
     url.startsWith('https://raw.githubusercontent.com/')
   ) {
-    return `/api/icons/cached?url=${encodeURIComponent(url)}`;
+    return `${getApiBase()}/icons/cached?url=${encodeURIComponent(url)}`;
   }
   // Local paths, data URIs, etc. — pass through
   return url;
