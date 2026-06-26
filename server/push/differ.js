@@ -38,6 +38,7 @@ export function diffSnapshots(prev, next, thresholds) {
   diffServices(prev.services || {}, next.services || {}, events);
   diffHosts(prev.hosts || {}, next.hosts || {}, thresholds, events);
   diffUps(prev.ups || { state: 'unknown' }, next.ups || { state: 'unknown' }, events);
+  diffCron(prev.cron || {}, next.cron || {}, events);
   return sortEvents(events);
 }
 
@@ -156,6 +157,39 @@ function diffHosts(prev, next, thresholds, events) {
         });
       }
       // staying in [clearAt, limit) band: emit nothing (hysteresis).
+    }
+  }
+}
+
+function diffCron(prev, next, events) {
+  for (const key of Object.keys(next)) {
+    const before = prev[key] === undefined ? 'unknown' : prev[key];
+    const after = next[key];
+    if (after === 'unknown') continue; // unknown never emits
+    const failed = (before === 'success' || before === 'unknown') && after === 'failure';
+    const recovered = before === 'failure' && after === 'success';
+    if (failed) {
+      events.push({
+        type: 'cron_failed',
+        id: key,
+        node: nodeOf(key),
+        title: 'Cron job failed',
+        body: `${idPart(key)} on ${nodeOf(key)} failed`,
+        severity: SEVERITY.cron_failed,
+        prev: before,
+        next: after,
+      });
+    } else if (recovered) {
+      events.push({
+        type: 'cron_recovered',
+        id: key,
+        node: nodeOf(key),
+        title: 'Cron job recovered',
+        body: `${idPart(key)} on ${nodeOf(key)} succeeded`,
+        severity: SEVERITY.cron_recovered,
+        prev: before,
+        next: after,
+      });
     }
   }
 }

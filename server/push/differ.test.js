@@ -285,3 +285,50 @@ test('ups unchanged emits nothing', () => {
   assert.deepEqual(diffSnapshots(ups('online'), ups('online'), THRESHOLDS), []);
   assert.deepEqual(diffSnapshots(ups('on_battery'), ups('on_battery'), THRESHOLDS), []);
 });
+
+function cron(map) {
+  return { services: {}, hosts: {}, ups: { state: 'unknown' }, cron: map };
+}
+
+test('cron success->failure emits cron_failed(warning)', () => {
+  const events = diffSnapshots(cron({ 'n1:backup': 'success' }), cron({ 'n1:backup': 'failure' }), THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    type: 'cron_failed',
+    id: 'n1:backup',
+    node: 'n1',
+    title: 'Cron job failed',
+    body: 'backup on n1 failed',
+    severity: 'warning',
+    prev: 'success',
+    next: 'failure',
+  });
+});
+
+test('cron new (no prev) ->failure emits cron_failed with prev=unknown', () => {
+  const events = diffSnapshots(cron({}), cron({ 'n1:backup': 'failure' }), THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, 'cron_failed');
+  assert.equal(events[0].prev, 'unknown');
+});
+
+test('cron failure->success emits cron_recovered(info)', () => {
+  const events = diffSnapshots(cron({ 'n1:backup': 'failure' }), cron({ 'n1:backup': 'success' }), THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    type: 'cron_recovered',
+    id: 'n1:backup',
+    node: 'n1',
+    title: 'Cron job recovered',
+    body: 'backup on n1 succeeded',
+    severity: 'info',
+    prev: 'failure',
+    next: 'success',
+  });
+});
+
+test('cron failure->unknown and unchanged emit nothing', () => {
+  assert.deepEqual(diffSnapshots(cron({ 'n1:backup': 'failure' }), cron({ 'n1:backup': 'unknown' }), THRESHOLDS), []);
+  assert.deepEqual(diffSnapshots(cron({ 'n1:backup': 'success' }), cron({ 'n1:backup': 'success' }), THRESHOLDS), []);
+  assert.deepEqual(diffSnapshots(cron({ 'n1:backup': 'failure' }), cron({ 'n1:backup': 'failure' }), THRESHOLDS), []);
+});
