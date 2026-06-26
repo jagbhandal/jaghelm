@@ -35,7 +35,7 @@ export function validateFirstRun({ url, token }) {
     errors.url = 'Enter a valid http(s) backend URL';
   }
   if (!String(token || '').trim()) {
-    errors.token = 'Enter your access token';
+    errors.token = 'Enter your access token'; // pragma: allowlist secret -- UI validation message, not a credential
   }
   return { ok: Object.keys(errors).length === 0, errors };
 }
