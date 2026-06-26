@@ -44,3 +44,13 @@
   color: var(--text-muted);
   font-size: var(--text-sm);
 }
+.firstrun .remember-row {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-primary);
+}
+.firstrun .remember-row input {
+  width: auto;
+  flex: 0 0 auto;
+}

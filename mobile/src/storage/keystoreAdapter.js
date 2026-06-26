@@ -19,6 +19,12 @@ export const keystoreAdapter = {
     await SecureStoragePlugin.set({ key: k, value: String(v) });
   },
   async removeItem(k) {
-    await SecureStoragePlugin.remove({ key: k });
+    try {
+      await SecureStoragePlugin.remove({ key: k });
+    } catch {
+      // Idempotent delete: the plugin rejects on a missing key (the M3a defect).
+      // logout / forget-device / session-only must not blow up when the key is
+      // already absent — the post-condition (key gone) holds either way.
+    }
   },
 };
