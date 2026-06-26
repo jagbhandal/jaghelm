@@ -172,12 +172,34 @@ note the v2 requirement actually follows from `minSdkVersion 24`, not the target
    tap **Test & Connect**. It reaches the backend over the Tailscale network via native
    HTTP; all four tabs should render live data.
 
-> **Push notifications are OFF in the CI-built APK.** `build.gradle` applies the Firebase
-> (google-services) plugin only when a real `google-services.json` is present, and CI does
-> not inject one — so a CI-signed APK installs and runs fine but receives **no FCM push**.
-> Enabling push in release builds (injecting `google-services.json` from a secret, same
-> pattern as the keystore) is the separate **prod FCM service-account** follow-up, out of
-> scope for this signing pipeline. All in-app tab data still works without it.
+> **Push notifications — enable by setting `GOOGLE_SERVICES_JSON_BASE64`.** `build.gradle`
+> applies the Firebase (google-services) plugin only when a real `google-services.json` is
+> present, and the JS push gate (`__PUSH_ENABLED__`) keys on the same file. The workflow now
+> writes that file from the **optional** `GOOGLE_SERVICES_JSON_BASE64` secret *before* the
+> Vite build, so:
+>
+> - **Secret set** → push ENABLED (the file flips the JS gate on AND the gradle plugin
+>   applies); the client registers an FCM token with the backend.
+> - **Secret unset** → push DISABLED gracefully; the APK installs/runs fine with no FCM and
+>   **no crash** (calling `register()` without Firebase config crashes the app natively, which
+>   is exactly why the gate exists).
+>
+> Delivery also requires the **server** to have `FCM_SERVICE_ACCOUNT` configured (prod). All
+> in-app tab data works regardless of push.
+
+### Enabling push
+
+1. **Firebase console** (project for app `io.jaghelm.app`) → download `google-services.json`.
+2. **Encode + set the GitHub secret** (same place as the signing secrets, §3):
+   `base64 -w0 < google-services.json` → paste as `GOOGLE_SERVICES_JSON_BASE64`. It's on
+   **GitHub**, not Gitea (secrets don't mirror).
+3. **Server:** confirm prod JagHelm has `FCM_SERVICE_ACCOUNT` pointing at the service-account
+   JSON (out-of-tree). Push is graceful-disabled server-side until it is.
+4. Cut a fresh `mobile-v*` tag → the APK ships with push on.
+
+> **Local sideload (no CI):** drop `google-services.json` into
+> `mobile/android/app/google-services.json` **before** `npm run build`, then
+> `npx cap sync android && npx cap run android`. Grant the notification prompt on first run.
 
 ### Updating later
 
@@ -200,6 +222,6 @@ app first (you'll lose its stored state) or recover the original keystore.
 | Gradle reads | `mobile/android/app/keystore.properties` (gitignored) |
 | CI workflow | `.github/workflows/build-apk.yml` (`mobile-v*` tag or manual) |
 | Runs on | **GitHub Actions** (`github.com/jagbhandal/jaghelm`), reached via the Gitea→GitHub push-mirror |
-| Secrets | `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` — set on **GitHub**, not Gitea |
+| Secrets | `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` (signing) + optional `GOOGLE_SERVICES_JSON_BASE64` (enables push) — set on **GitHub**, not Gitea |
 | Distribution | sideload only (no Play Store) → one self-signed key, reuse forever |
 | Artifact | `jaghelm-release-apk` → `app-release.apk` |

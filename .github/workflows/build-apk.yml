@@ -10,6 +10,9 @@ name: Build Signed Mobile APK
 #   KEYSTORE_PASSWORD — keystore (store) password
 #   KEY_ALIAS         — signing key alias (e.g. jaghelm-upload)
 #   KEY_PASSWORD      — key (alias) password
+# Optional repo secret (enables push notifications; omit to ship push disabled):
+#   GOOGLE_SERVICES_JSON_BASE64 — `base64 -w0 < google-services.json` (Firebase
+#                                 Android config for app io.jaghelm.app)
 #
 # Graceful fallback: mobile/android/app/build.gradle keys signing on the presence
 # of `keystore.properties`. If the secrets are unset the decode step fails fast
@@ -59,6 +62,30 @@ jobs:
       - name: Install mobile dependencies
         run: npm ci
         working-directory: mobile
+
+      # --- Firebase config: write google-services.json from a secret BEFORE the
+      # Vite build, so the push-config gate (__PUSH_ENABLED__, vite.config.mobile.js)
+      # flips ON and the Android google-services gradle plugin applies. OPTIONAL —
+      # with the secret unset the build still succeeds with push gracefully DISABLED
+      # (matches the gate + the gradle's own file-exists conditional). The Firebase
+      # *client* config (app id / sender id / restricted API key) is embedded in the
+      # APK by design — not a server secret — but it's gitignored and injected here. ---
+      - name: Write google-services.json (enables push)
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
+            echo ">>> GOOGLE_SERVICES_JSON_BASE64 unset — building with push DISABLED (no crash; gated off)"
+            exit 0
+          fi
+          printf '%s' "${GOOGLE_SERVICES_JSON_BASE64}" | base64 -d > mobile/android/app/google-services.json
+          # Fail loud on a malformed/wrong-app file rather than shipping a build where
+          # the JS gate and the native Firebase init disagree (which would re-crash).
+          test -s mobile/android/app/google-services.json
+          grep -q 'io.jaghelm.app' mobile/android/app/google-services.json \
+            || { echo "::error::google-services.json has no io.jaghelm.app package — wrong file?"; exit 1; }
+          echo ">>> google-services.json written — push ENABLED for this build"
 
       - name: Build web bundle (Vite, mobile config)
         run: npm run build
