@@ -130,16 +130,17 @@ Registry hygiene: entries are retained across restarts; an entry is only meaning
 a matching active monitor exists. Stale entries (no monitor, not seen for a long window)
 may be pruned, but pruning is best-effort and not required for correctness.
 
-### 4.4 Tighten the matcher (prevent down→up mis-paint)
+### 4.4 Matcher mis-paint guard — DEFERRED (separate follow-up)
 
-`matchMonitor` (`server/monitors.js:130`) uses loose fuzzy strategies (containment, word
-overlap). A risk: a *down* service's container gets mis-matched to a *different, up*
-monitor, painting it green. This is secondary to the main fix but in-scope because it is
-the same "down is hidden" failure. Minimal change: when the explicit mapping
-(`services.yaml` `monitor:`) is present but not found, do **not** fall through to fuzzy
-matching for status colour (the explicit miss already warns). Keep fuzzy matching only
-for services with no explicit mapping. (Detailed rule finalised in the plan; this is a
-guard, not a rewrite of the 5-strategy matcher.)
+`matchMonitor` (`server/monitors.js:130`) uses loose fuzzy strategies. In theory a *down*
+service's container could fuzzy-mis-match a *different, up* monitor and show green. In
+practice strategy 2 (exact normalized match) wins for same-named services, so this only
+bites genuinely ambiguous names — and the union/synthesis fix already surfaces the real
+down monitor as its own card. Tightening the fuzzy fall-through is a **behavior change
+with regression risk** (users may rely on fuzzy fallback after an explicit-monitor typo)
+and is **orthogonal** to this plan's core invariant. **Deferred** to a separate, focused
+PR — NOT implemented here, to keep this change scoped to "show down services +
+down-vs-inactive."
 
 ### 4.5 Status values
 
@@ -155,8 +156,8 @@ already treat `docker` as optional.
   synthesised down cards; upsert the last-seen registry; attribute synthesised cards to a
   node. Keep `Promise.all`/`allSettled` resilience intact.
 - `server/monitors.js` — expose enough monitor detail to know `active`/paused (per §4.2),
-  and a helper to list "active down monitors." Tighten explicit-mapping fall-through
-  (§4.4).
+  and a helper to list "active down monitors" (`selectOutageMonitors`). (Matcher
+  fall-through tightening is deferred — see §4.4.)
 - New small module `server/serviceRegistry.js` (name TBD in plan) — load/save the
   last-seen registry to `data/`, with atomic write and corruption-safe load (empty on
   parse failure). Mirrors existing `data/`-persistence patterns (see `cache.js`/config
@@ -166,8 +167,10 @@ already treat `docker` as optional.
 
 ## 6. Web frontend changes
 
-- `src/views/DashboardView/NodePanel.jsx:139-141` — add **down-first sort** before
-  `.map(toServiceCard...)` (stable: down first, otherwise preserve API order).
+- **Down-first ordering: no web change needed.** The backend now emits each node's
+  `services` already ordered down-first (canonical order in `assembleServices`), so the
+  web panel inherits it from render order — DRY, one sort for all clients. (Originally
+  scoped as a `NodePanel.jsx` sort; folded into the backend instead.)
 - `src/components/ServiceCard.jsx` — **no change** for the down state itself (already red
   dot + red border for `status === 'down'`). Verify a card with `docker: null` renders
   cleanly (no metrics row / graceful empty).
