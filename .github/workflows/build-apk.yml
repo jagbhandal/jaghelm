@@ -60,6 +60,35 @@ jobs:
         run: npx cap sync android
         working-directory: mobile
 
+      # --- Derive versionCode/versionName from the release tag. A fixed versionCode
+      # would silently break the documented "bump tag -> install over the top" path:
+      # some OEMs refuse a tap-install of an equal-versionCode APK. mobile-vMAJOR.MINOR.PATCH
+      # maps to a monotonic versionCode (MAJOR*1e6 + MINOR*1e3 + PATCH). A non-tag
+      # (workflow_dispatch) build is a clearly-marked, non-distribution test build. ---
+      - name: Derive app version
+        run: |
+          set -euo pipefail
+          REF="${GITHUB_REF_NAME:-}"
+          case "${GITHUB_REF_TYPE:-}:${REF}" in
+            tag:mobile-v*)
+              VNAME="${REF#mobile-v}"
+              case "$VNAME" in
+                [0-9]*.[0-9]*.[0-9]*) : ;;
+                *) echo "::error::release tag '$REF' must be mobile-vMAJOR.MINOR.PATCH"; exit 1 ;;
+              esac
+              MAJ="${VNAME%%.*}"; rest="${VNAME#*.}"; MIN="${rest%%.*}"; PAT="${rest#*.}"
+              PAT="${PAT%%[!0-9]*}"   # drop any pre-release suffix (1.2.3-rc1 -> 3)
+              VCODE=$(( MAJ*1000000 + MIN*1000 + PAT ))
+              ;;
+            *)
+              VNAME="0.0.0-dispatch.${GITHUB_RUN_NUMBER:-0}"
+              VCODE="${GITHUB_RUN_NUMBER:-1}"
+              ;;
+          esac
+          echo "VERSION_NAME=${VNAME}" >> "${GITHUB_ENV}"
+          echo "VERSION_CODE=${VCODE}" >> "${GITHUB_ENV}"
+          echo ">>> versionName=${VNAME} versionCode=${VCODE}"
+
       # --- Signing material: decode + write keystore.properties. Never echoes a secret. ---
       # The keystore is decoded into mobile/android/app/ (the Gradle module dir) so the
       # `storeFile` bare filename in keystore.properties resolves there. keystore.properties
@@ -97,7 +126,7 @@ jobs:
           } > "${APP_DIR}/keystore.properties"
 
       - name: Build signed release APK
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon -PversionCode="${VERSION_CODE}" -PversionName="${VERSION_NAME}"
         working-directory: mobile/android
 
       # --- Confirm the produced APK is actually SIGNED before we publish it. ---
@@ -114,25 +143,36 @@ jobs:
           : "${APKSIGNER:?apksigner not found in build-tools}"
           "${APKSIGNER}" verify --min-sdk-version 24 --print-certs -v "${APK}"
 
-      # --- Cleanup runs even on failure; the ephemeral runner is the backstop, not the only line. ---
+      # --- Cleanup runs even on failure; the ephemeral runner is the backstop, not the only line.
+      # No `|| true` — rm -f already tolerates absent files, so a genuine failure here should
+      # surface rather than be swallowed (the guard below then proves the material is gone). ---
       - name: Remove signing material
         if: always()
         run: |
-          rm -f mobile/android/app/keystore.properties || true
-          rm -f mobile/android/app/release.keystore || true
+          set -euo pipefail
+          rm -f mobile/android/app/keystore.properties mobile/android/app/release.keystore
 
-      # --- Artifact-secret guard: the uploaded glob must contain ONLY the APK. ---
-      # Fail if any signing material leaked into the upload path before we publish.
-      - name: Guard against secret leakage into the artifact
+      # --- Artifact-secret guard. The signing material is written to the Gradle module dir
+      # (mobile/android/app/), NOT to build/outputs/ — so the guard must scan THAT path to
+      # actually verify the cleanup step shredded it, then double-check the upload glob. ---
+      - name: Guard against secret leakage
         run: |
           set -euo pipefail
+          # 1) the signing material must be gone from where it was written — proves cleanup ran.
+          if find mobile/android/app -maxdepth 1 \
+               \( -name 'keystore.properties' -o -name '*.keystore' -o -name '*.jks' \) \
+               -print -quit | grep -q .; then
+            echo "::error::signing material still present in mobile/android/app — cleanup failed, refusing to upload"
+            exit 1
+          fi
+          # 2) belt-and-suspenders: the uploaded glob's dir must contain no signing material.
           if find mobile/android/app/build/outputs/apk/release \
                \( -name 'keystore.properties' -o -name '*.keystore' -o -name '*.jks' \) \
                -print -quit | grep -q .; then
             echo "::error::signing material found in the artifact path — refusing to upload"
             exit 1
           fi
-          echo "artifact path clean — no signing material present"
+          echo "no signing material in module dir or artifact path"
 
       - name: Upload signed APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
