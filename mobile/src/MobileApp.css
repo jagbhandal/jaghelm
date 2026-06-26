@@ -130,3 +130,29 @@
 .timeline__item { display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) 0; border-left: 2px solid var(--border-color); padding-left: var(--space-3); min-height: 44px; }
 .timeline__label { font-family: var(--font-body); font-size: var(--text-sm); color: var(--text-primary); }
 .timeline__detail { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
+
+/* Phase 5: Notification Settings screen. One Dark Pro tokens; >=44px rows. */
+.notif-controls { display: flex; flex-direction: column; }
+.notif-row {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 44px; padding: var(--space-2) var(--space-1);
+  border-bottom: 1px solid var(--border-color);
+}
+.notif-row__label { color: var(--text-primary); font-size: var(--text-base); }
+.notif-switch { width: 44px; height: 44px; accent-color: var(--accent); cursor: pointer; }
+.notif-unavailable { color: var(--text-muted); font-size: var(--text-base); padding: var(--space-2) 0; }
+
+/* Phase 5: destructive "turn off push on this device" (the DELETE teardown). */
+.notif-turnoff {
+  margin-top: var(--space-3); min-height: 44px; padding: var(--space-2) var(--space-3);
+  background: transparent; color: var(--red); border: 1px solid var(--border-color);
+  border-radius: var(--card-radius-sm); font-size: var(--text-base); cursor: pointer;
+}
+
+/* Phase 5: push-event detail (host events / since-resolved ids rendered from
+   the deep-link fallback params when no derived incident matches). */
+.push-event__severity { color: var(--text-muted); font-size: var(--text-base); }
+.push-event__note { color: var(--text-muted); font-size: var(--text-sm); margin-top: var(--space-2); }
+
+/* Phase 5: enable the Alerts-tab gear (was opacity:0.5/cursor:default while disabled). */
+.alerts-gear:not([disabled]) { color: var(--accent); opacity: 1; cursor: pointer; }
