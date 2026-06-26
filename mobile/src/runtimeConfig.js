@@ -33,20 +33,6 @@ export function normalizeBaseUrl(input) {
   return `${u.protocol}//${u.host}${path}/api`;
 }
 
-/** First-run field validation. Returns { ok, errors } — never throws. */
-export function validateFirstRun({ url, token }) {
-  const errors = {};
-  try {
-    normalizeBaseUrl(url);
-  } catch {
-    errors.url = 'Enter a valid http(s) backend URL';
-  }
-  if (!String(token || '').trim()) {
-    errors.token = 'Enter your access token'; // pragma: allowlist secret -- UI validation message, not a credential
-  }
-  return { ok: Object.keys(errors).length === 0, errors };
-}
-
 /**
  * Login-screen field validation. The URL is only checked in first-run mode
  * (`askUrl`); the re-auth screen reuses the stored URL and asks for credentials

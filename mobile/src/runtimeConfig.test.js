@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   normalizeBaseUrl,
-  validateFirstRun,
   validateLogin,
   BASE_URL_KEY,
   TOKEN_KEY,
@@ -37,25 +36,6 @@ describe('normalizeBaseUrl', () => {
   it('preserves a sub-path deployment and does not double /api', () => {
     expect(normalizeBaseUrl('https://host/base/api')).toBe('https://host/base/api');
     expect(normalizeBaseUrl('https://host/base')).toBe('https://host/base/api');
-  });
-});
-
-describe('validateFirstRun', () => {
-  it('accepts a good url + token', () => {
-    expect(validateFirstRun({ url: 'http://h:3099', token: 'abc' })).toEqual({
-      ok: true,
-      errors: {},
-    });
-  });
-  it('rejects a bad url', () => {
-    const r = validateFirstRun({ url: 'nope', token: 'abc' });
-    expect(r.ok).toBe(false);
-    expect(r.errors.url).toBeTruthy();
-  });
-  it('rejects an empty token', () => {
-    const r = validateFirstRun({ url: 'http://h', token: '   ' });
-    expect(r.ok).toBe(false);
-    expect(r.errors.token).toBeTruthy();
   });
 });
 
