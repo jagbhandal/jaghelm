@@ -1,9 +1,17 @@
 import React from 'react';
-export default function Infra() {
+import NodeCard from '../components/NodeCard.jsx';
+import { groupByNode } from '../data/derive.js';
+
+export default function Infra({ data, nav }) {
+  const nodes = groupByNode(data.servicesBody);
   return (
     <section className="mobile-view" aria-label="Infra">
       <h1>Infra</h1>
-      <p className="mobile-view__todo">Node cards + node detail land in Phase 3.</p>
+      <div className="node-grid">
+        {nodes.map(({ nodeKey, node }) => (
+          <NodeCard key={nodeKey} nodeKey={nodeKey} node={node} onTap={(k) => nav.push('node', { nodeKey: k })} />
+        ))}
+      </div>
     </section>
   );
 }

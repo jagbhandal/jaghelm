@@ -49,6 +49,19 @@ export function groupByNode(servicesBody) {
   }));
 }
 
+/**
+ * Return the third metric bar descriptor for a node: TEMP when temp is present
+ * (non-null, numeric), else DISK. Returns { label, value, unit, percent }.
+ */
+export function thirdMetric(metrics) {
+  const m = metrics || {};
+  const tempPct = parseMetricPct(m.temp);
+  if (tempPct != null) {
+    return { label: 'TEMP', value: m.temp, unit: '°C', percent: tempPct };
+  }
+  return { label: 'DISK', value: m.diskPercent, unit: '%', percent: parseMetricPct(m.diskPercent) };
+}
+
 /** Count up vs down for a node. down = explicit 'down'; up = everything else. */
 export function nodeUpDown(node) {
   const services = (node && node.services) || [];
