@@ -94,7 +94,7 @@ function SessionControls() {
   return (
     <div className="session-controls">
       <h2 className="detail-section">Session</h2>
-      <button type="button" className="session-logout" onClick={() => logout()}>
+      <button type="button" className="session-logout" onClick={logout}>
         Log out
       </button>
       {!confirming ? (
@@ -106,7 +106,7 @@ function SessionControls() {
           <p className="notif-unavailable">
             Forget this device? This wipes the saved server URL and sign-in from this phone.
           </p>
-          <button type="button" className="session-forget" onClick={() => forgetDevice()}>
+          <button type="button" className="session-forget" onClick={forgetDevice}>
             Forget
           </button>
           <button type="button" onClick={() => setConfirming(false)}>

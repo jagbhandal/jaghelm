@@ -41,7 +41,7 @@ describe('bootMobile', () => {
     getItem.mockResolvedValue(null);
     const r = await bootMobile();
     expect(setStorageAdapter).toHaveBeenCalledTimes(1);
-    expect(r).toEqual({ hasUrl: false, hasToken: false });
+    expect(r).toEqual({ hasUrl: false, hasToken: false, baseUrl: '' });
     expect(apiFetch).not.toHaveBeenCalled();
   });
 
@@ -51,7 +51,7 @@ describe('bootMobile', () => {
     getAuthToken.mockReturnValue('tok');
     apiFetch.mockResolvedValue(checkRes(true));
     const r = await bootMobile();
-    expect(r).toEqual({ hasUrl: true, hasToken: true });
+    expect(r).toEqual({ hasUrl: true, hasToken: true, baseUrl: 'http://vm-101:3099/api' });
     expect(setApiBase).toHaveBeenCalledWith('http://vm-101:3099/api');
   });
 
@@ -61,7 +61,7 @@ describe('bootMobile', () => {
     getAuthToken.mockReturnValue('stale');
     apiFetch.mockResolvedValue(checkRes(false));
     const r = await bootMobile();
-    expect(r).toEqual({ hasUrl: true, hasToken: false });
+    expect(r).toEqual({ hasUrl: true, hasToken: false, baseUrl: 'http://vm-101:3099/api' });
     expect(removeItem).toHaveBeenCalledWith('jaghelm-token');
     expect(setAuthToken).toHaveBeenCalledWith('');
   });
@@ -70,7 +70,7 @@ describe('bootMobile', () => {
     getItem.mockResolvedValue('http://vm-101:3099/api');
     getPref.mockResolvedValue('false');
     const r = await bootMobile();
-    expect(r).toEqual({ hasUrl: true, hasToken: false });
+    expect(r).toEqual({ hasUrl: true, hasToken: false, baseUrl: 'http://vm-101:3099/api' });
     expect(removeItem).toHaveBeenCalledWith('jaghelm-token');
     expect(apiFetch).not.toHaveBeenCalled();
   });
@@ -80,7 +80,7 @@ describe('bootMobile', () => {
     getPref.mockResolvedValue('true');
     getAuthToken.mockReturnValue('');
     const r = await bootMobile();
-    expect(r).toEqual({ hasUrl: true, hasToken: false });
+    expect(r).toEqual({ hasUrl: true, hasToken: false, baseUrl: 'http://vm-101:3099/api' });
     expect(apiFetch).not.toHaveBeenCalled();
   });
 
@@ -90,6 +90,6 @@ describe('bootMobile', () => {
     getAuthToken.mockReturnValue('tok');
     apiFetch.mockRejectedValue(new Error('offline'));
     const r = await bootMobile();
-    expect(r).toEqual({ hasUrl: true, hasToken: true });
+    expect(r).toEqual({ hasUrl: true, hasToken: true, baseUrl: 'http://vm-101:3099/api' });
   });
 });

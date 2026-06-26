@@ -19,26 +19,20 @@ import { TOKEN_KEY, BASE_URL_KEY, URL_PRESENT_KEY, REMEMBER_KEY } from './runtim
 export default function App({ initial }) {
   const [hasUrl, setHasUrl] = useState(initial.hasUrl);
   const [hasToken, setHasToken] = useState(initial.hasToken);
-  const [knownUrl, setKnownUrl] = useState('');
+  const [knownUrl, setKnownUrl] = useState(initial.baseUrl || '');
 
   useEffect(() => {
-    secureStore.getItem(BASE_URL_KEY).then((b) => {
-      if (b) setKnownUrl(b);
-    });
-
-    // 401 from any protected call → clear the dead token, route to re-auth.
-    setAuthExpiredHandler(() => {
+    // Kill the session token and drop to re-auth — reached from a server-driven
+    // 401 and from a user-initiated logout (same operation, one definition).
+    const clearSession = () => {
       secureStore.removeItem(TOKEN_KEY);
       setAuthToken('');
       setHasToken(false);
-    });
+    };
 
+    setAuthExpiredHandler(clearSession);
     setAuthHandlers({
-      logout: async () => {
-        await secureStore.removeItem(TOKEN_KEY);
-        setAuthToken('');
-        setHasToken(false);
-      },
+      logout: clearSession,
       forgetDevice: async () => {
         await secureStore.removeItem(TOKEN_KEY);
         await secureStore.removeItem(BASE_URL_KEY);

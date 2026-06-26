@@ -13,12 +13,8 @@ import { assertSafeBackendUrl } from './netGuard.js';
 export async function login({ url, username, password }) {
   let base;
   try {
-    base = normalizeBaseUrl(url);
-  } catch {
-    return { ok: false, error: 'Enter a valid http(s) backend URL' };
-  }
-  try {
-    assertSafeBackendUrl(url);
+    base = normalizeBaseUrl(url); // throws 'invalid url' on bad/non-http input
+    assertSafeBackendUrl(url); // throws 'cleartext-public' on http to a public host
   } catch (e) {
     if (e?.message === 'cleartext-public') {
       return {
