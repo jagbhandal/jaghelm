@@ -104,7 +104,7 @@
 
 /* --- Phase 3: Infra --- */
 .node-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
-.node-card { width: 100%; text-align: left; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); }
+.node-card { width: 100%; text-align: left; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); min-height: 44px; }
 .node-card__head { display: flex; align-items: baseline; gap: var(--space-2); }
 .node-card__name { font-family: var(--font-display); font-size: var(--text-lg); color: var(--text-primary); }
 .node-card__type { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
