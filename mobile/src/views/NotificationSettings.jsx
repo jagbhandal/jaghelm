@@ -65,8 +65,26 @@ export default function NotificationSettings({ nav }) {
   );
 }
 
-// Write path (optimistic PUT) is filled in Task 8; read-path render here.
-function Controls({ prefs }) {
+function Controls({ prefs, setPrefs, token }) {
+  // Apply a full-prefs change optimistically, PUT the COMPLETE object, revert on
+  // failure. PUT is a strict full-replace: the body is always the entire
+  // {categories{4}, notifyRecoveries, enabled} shape — no PATCH, no extra keys.
+  const apply = async (next) => {
+    const prev = prefs;
+    setPrefs(next);
+    try {
+      const saved = await setPushPrefs(token, next);
+      setPrefs(saved);
+    } catch {
+      setPrefs(prev); // revert optimistic change
+    }
+  };
+
+  const toggleCategory = (key) =>
+    apply({ ...prefs, categories: { ...prefs.categories, [key]: !prefs.categories[key] } });
+  const toggleRecoveries = () => apply({ ...prefs, notifyRecoveries: !prefs.notifyRecoveries });
+  const toggleEnabled = () => apply({ ...prefs, enabled: !prefs.enabled });
+
   return (
     <div className="notif-controls">
       <h2 className="detail-section">Categories</h2>
@@ -79,7 +97,7 @@ function Controls({ prefs }) {
             aria-label={label}
             className="notif-switch"
             checked={!!prefs.categories[key]}
-            readOnly
+            onChange={() => toggleCategory(key)}
           />
         </label>
       ))}
@@ -92,7 +110,7 @@ function Controls({ prefs }) {
           aria-label="Notify on recovery"
           className="notif-switch"
           checked={!!prefs.notifyRecoveries}
-          readOnly
+          onChange={toggleRecoveries}
         />
       </label>
       <h2 className="detail-section">Push</h2>
@@ -104,7 +122,7 @@ function Controls({ prefs }) {
           aria-label="Enable push notifications"
           className="notif-switch"
           checked={!!prefs.enabled}
-          readOnly
+          onChange={toggleEnabled}
         />
       </label>
     </div>
