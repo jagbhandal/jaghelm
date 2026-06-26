@@ -25,10 +25,10 @@ export default function MobileApp() {
     let cancelled = false;
     (async () => {
       const last = await getPref(LAST_TAB_KEY);
-      if (!cancelled && last && VIEWS[last]) { setActive(last); nav.reset(ROOT[last]); }
+      if (!cancelled && last && VIEWS[last]) { setActive(last); navRef.current.reset(ROOT[last]); }
     })();
     return () => { cancelled = true; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Hardware back: pop a pushed detail first; only exit at a tab root.
   useEffect(() => {

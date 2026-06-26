@@ -28,8 +28,28 @@ let backHandler;
 beforeEach(() => {
   addListener.mockReset(); exitApp.mockReset(); getPref.mockReset(); setPref.mockReset(); useDashboard.mockReset();
   getPref.mockResolvedValue(null);
+  setPref.mockResolvedValue(undefined);
   useDashboard.mockReturnValue({ servicesBody: { nodes: {} }, ups: {}, cron: [], history: {}, loading: false, error: null });
   addListener.mockImplementation((evt, cb) => { if (evt === 'backButton') backHandler = cb; return { remove() {} }; });
+});
+
+describe('MobileApp shell — Phase 2 tab regression', () => {
+  it('renders all four bottom-tab buttons with Overview selected by default', async () => {
+    await act(async () => { render(<MobileApp />); });
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs).toHaveLength(4);
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Services' })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('tab', { name: 'Infra' })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('tab', { name: 'Alerts' })).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('restores last tab from prefs and marks that tab aria-selected', async () => {
+    getPref.mockResolvedValue('alerts');
+    await act(async () => { render(<MobileApp />); });
+    expect(screen.getByRole('tab', { name: 'Alerts' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'false');
+  });
 });
 
 describe('MobileApp shell — Phase 3 nav', () => {
