@@ -41,6 +41,7 @@ import { initRegistry } from './integrations/registry.js';
 import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
 import { startBackgroundRefresh, stopBackgroundRefresh } from './refresh.js';
+import { initPush } from './push/fcm.js';
 
 // Shared utilities
 import { createUploadMiddleware } from './upload.js';
@@ -265,6 +266,11 @@ async function boot() {
   initDiscovery(promUrl);
   initMonitors(kumaUrl);
   initIconCache(dataDir);
+
+  // Push (FCM) — graceful-disable when no service-account creds are present.
+  // Never throws; isPushEnabled() stays false and the pipeline no-ops.
+  initPush({ env: process.env, logger: log });
+
   await initRegistry();
 
   // Non-blocking — icon search returns empty until the index is ready
