@@ -29,8 +29,9 @@ export async function initAuthToken() {
 }
 
 /**
- * Update the in-memory auth token. App owns localStorage persistence; this only
- * updates the value apiFetch reads. Pass '' to clear it (logout).
+ * Update the in-memory auth token. Token persistence routes through secureStore
+ * (web: localStorage via the default adapter; mobile: Keystore later); this only
+ * updates the in-memory value apiFetch reads. Pass '' to clear it (logout).
  */
 export function setAuthToken(token) {
   authToken = token || '';

@@ -13,7 +13,8 @@ import { useConfigPersistence } from './hooks/useConfigPersistence.js';
 // dashboard render — code-split them so they don't weigh down the initial bundle.
 const IframeView = lazy(() => import('./views/IframeView'));
 const SettingsView = lazy(() => import('./views/SettingsView'));
-import { apiFetch, setAuthToken as setApiAuthToken } from './api/client.js';
+import { apiFetch, setAuthToken as setApiAuthToken, initAuthToken } from './api/client.js';
+import { secureStore } from './storage/index.js';
 
 /**
  * App — outer shell owning auth resolution and the login screen. The
@@ -42,31 +43,41 @@ export default function App() {
   // not authenticated" → show the login gate. A *successful* check that reports
   // `authRequired:false` is the only way to bypass login. The normal happy paths
   // (200 with authRequired/authenticated flags) are preserved exactly.
+  //
+  // Seed apiFetch's in-memory token from secure storage (web: localStorage)
+  // BEFORE the auth check fires, so a reload keeps the session. Then run the
+  // auth check. Re-runs when authToken changes (login/logout).
   useEffect(() => {
-    apiFetch('/api/auth/check')
-      .then((r) => {
+    let cancelled = false;
+    (async () => {
+      await initAuthToken();
+      try {
+        const r = await apiFetch('/api/auth/check');
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((d) => {
+        const d = await r.json();
+        if (cancelled) return;
         setAuthRequired(d.authRequired);
         setAuthed(d.authenticated);
-      })
-      .catch(() => {
+      } catch {
+        if (cancelled) return;
         setAuthRequired(true);
         setAuthed(false);
-      });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [authToken]);
 
   const handleLogin = (token) => {
-    localStorage.setItem('jaghelm-token', token);
+    secureStore.setItem('jaghelm-token', token); // web: localStorage; mobile: Keystore
     setApiAuthToken(token); // Keep apiFetch's in-memory token in sync
     setAuthToken(token);
     setAuthed(true);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('jaghelm-token');
+    secureStore.removeItem('jaghelm-token'); // web: localStorage; mobile: Keystore
     setApiAuthToken(''); // Clear apiFetch's in-memory token
     setAuthToken('');
     setAuthed(false);
