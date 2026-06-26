@@ -9,9 +9,9 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 export default [
   { ignores: ['dist/**', 'coverage/**', 'public/**', 'node_modules/**'] },
   js.configs.recommended,
-  // Frontend — browser + React + JSX
+  // Frontend (desktop `src/` + mobile app `mobile/`) — browser + React + JSX
   {
-    files: ['src/**/*.{js,jsx}'],
+    files: ['src/**/*.{js,jsx}', 'mobile/**/*.{js,jsx}'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
