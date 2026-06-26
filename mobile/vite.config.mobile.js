@@ -1,15 +1,23 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
-// Push is enabled ONLY when this build ships Firebase config — mirrors the Android
-// gradle's `google-services.json`-exists conditional. Calling PushNotifications
-// .register() without it crashes the app natively (uncaught, un-catchable in JS),
-// so the client gates on the SAME signal. An explicit env var can force-enable it.
-const pushConfigured =
-  existsSync(fileURLToPath(new URL('./android/app/google-services.json', import.meta.url))) ||
-  process.env.VITE_PUSH_ENABLED === '1';
+// Push is enabled ONLY when this build ships Firebase config. Calling
+// PushNotifications.register() without it crashes the app natively (uncaught,
+// un-catchable in JS), so the client must gate on the EXACT same signal the
+// Android gradle uses (build.gradle: `if (servicesJSON.text)` — non-empty
+// CONTENT, not mere existence). Keying both on the same predicate is what stops
+// the two configs drifting into "web push on / APK has no Firebase" → the crash.
+function hasFirebaseConfig() {
+  try {
+    const p = fileURLToPath(new URL('./android/app/google-services.json', import.meta.url));
+    return existsSync(p) && readFileSync(p, 'utf8').trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+const pushConfigured = hasFirebaseConfig();
 
 export default defineConfig({
   plugins: [react()],
