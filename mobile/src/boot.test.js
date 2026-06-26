@@ -7,10 +7,10 @@ const { setStorageAdapter, initAuthToken, setApiBase, getItem } = vi.hoisted(() 
   getItem: vi.fn(),
 }));
 
-vi.mock('@shared/storage/index.js', () => ({ setStorageAdapter }));
+vi.mock('@shared/storage/index.js', () => ({ setStorageAdapter, secureStore: { getItem } }));
 vi.mock('@shared/api/client.js', () => ({ initAuthToken }));
 vi.mock('@shared/api/baseUrl.js', () => ({ setApiBase }));
-vi.mock('./storage/keystoreAdapter.js', () => ({ keystoreAdapter: { getItem } }));
+vi.mock('./storage/keystoreAdapter.js', () => ({ keystoreAdapter: {} }));
 
 import { bootMobile } from './boot.js';
 

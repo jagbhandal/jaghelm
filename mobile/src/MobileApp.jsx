@@ -11,7 +11,7 @@ import './MobileApp.css';
 
 const VIEWS = { overview: Overview, services: Services, infra: Infra, alerts: Alerts };
 
-export default function MobileApp({ configured }) {
+export default function MobileApp() {
   const [active, setActive] = useState('overview');
 
   // Restore the last tab from Preferences (non-secret UI state).

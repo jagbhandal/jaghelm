@@ -5,7 +5,7 @@ const { testConnection } = vi.hoisted(() => ({ testConnection: vi.fn() }));
 vi.mock('./connect.js', () => ({ testConnection }));
 
 const { setItem } = vi.hoisted(() => ({ setItem: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('./storage/keystoreAdapter.js', () => ({ keystoreAdapter: { setItem } }));
+vi.mock('@shared/storage/index.js', () => ({ secureStore: { setItem } }));
 
 const { setPref } = vi.hoisted(() => ({ setPref: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('./storage/prefsAdapter.js', () => ({ setPref }));

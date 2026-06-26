@@ -9,7 +9,7 @@ import './styles/fonts.css';
 function Root({ initialConfigured }) {
   const [configured, setConfigured] = useState(initialConfigured);
   if (!configured) return <FirstRun onConnected={() => setConfigured(true)} />;
-  return <MobileApp configured={configured} />;
+  return <MobileApp />;
 }
 
 bootMobile().then(({ configured }) => {

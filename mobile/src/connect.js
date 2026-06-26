@@ -21,6 +21,6 @@ export async function testConnection({ url, token }) {
     if (!r.ok) return { ok: false, status: r.status, error: `HTTP ${r.status}` };
     return { ok: true, status: r.status };
   } catch (err) {
-    return { ok: false, error: String(err && err.message ? err.message : err) };
+    return { ok: false, error: err?.message ?? String(err) };
   }
 }

@@ -6,7 +6,7 @@
  *   read stored base from Keystore      → setApiBase() if configured
  * Returns { configured } so the shell can route to FirstRun on a cold start.
  */
-import { setStorageAdapter } from '@shared/storage/index.js';
+import { setStorageAdapter, secureStore } from '@shared/storage/index.js';
 import { initAuthToken } from '@shared/api/client.js';
 import { setApiBase } from '@shared/api/baseUrl.js';
 import { keystoreAdapter } from './storage/keystoreAdapter.js';
@@ -17,7 +17,7 @@ export async function bootMobile() {
   setStorageAdapter(keystoreAdapter);
   installNativeHttp();
   await initAuthToken();
-  const base = await keystoreAdapter.getItem(BASE_URL_KEY);
+  const base = await secureStore.getItem(BASE_URL_KEY);
   if (base) {
     setApiBase(base);
     return { configured: true };

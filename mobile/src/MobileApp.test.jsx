@@ -21,7 +21,7 @@ beforeEach(() => {
 
 describe('MobileApp shell', () => {
   it('renders all four tabs and defaults to Overview', async () => {
-    render(<MobileApp configured={true} onConnected={() => {}} />);
+    render(<MobileApp />);
     for (const label of ['Overview', 'Services', 'Infra', 'Alerts']) {
       expect(screen.getByRole('tab', { name: label })).toBeInTheDocument();
     }
@@ -32,7 +32,7 @@ describe('MobileApp shell', () => {
   });
 
   it('switches tab on tap and persists it to Preferences', async () => {
-    render(<MobileApp configured={true} onConnected={() => {}} />);
+    render(<MobileApp />);
     fireEvent.click(screen.getByRole('tab', { name: 'Infra' }));
     expect(screen.getByRole('tab', { name: 'Infra' })).toHaveAttribute(
       'aria-selected',
@@ -45,7 +45,7 @@ describe('MobileApp shell', () => {
 
   it('restores the last tab from Preferences on mount', async () => {
     getPref.mockResolvedValue('alerts');
-    render(<MobileApp configured={true} onConnected={() => {}} />);
+    render(<MobileApp />);
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: 'Alerts' })).toHaveAttribute(
         'aria-selected',
@@ -55,7 +55,7 @@ describe('MobileApp shell', () => {
   });
 
   it('registers a hardware-back listener', () => {
-    render(<MobileApp configured={true} onConnected={() => {}} />);
+    render(<MobileApp />);
     expect(addListener).toHaveBeenCalledWith('backButton', expect.any(Function));
   });
 });
