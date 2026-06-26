@@ -33,6 +33,17 @@ GoogleService-Info.plist
 __pycache__/
 *.pyc
 
+# mobile build artifacts + native secrets (Phase 2)
+mobile/dist/
+mobile/node_modules/
+mobile/android/app/build/
+mobile/android/build/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/google-services.json
+mobile/keystore.properties
+mobile/android/key.properties
+
 # --- template NEGATIONS — committed *.example / *.sample templates MUST stay tracked ---
 # Broad first so it survives EVERY ignore glob above (incl. *service-account*.json,
 # *credential*, *.pem). Git evaluates last-match-wins, so these negations come last.

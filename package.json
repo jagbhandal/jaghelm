@@ -21,7 +21,11 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "check:assets": "node scripts/check-assets.mjs",
-    "secret-scan": "python3 scripts/secret-scan.py"
+    "secret-scan": "python3 scripts/secret-scan.py",
+    "mobile:dev": "npm run --prefix mobile dev",
+    "mobile:build": "npm run --prefix mobile build",
+    "mobile:sync": "npm run --prefix mobile build && npx --prefix mobile @capacitor/cli sync android --config mobile/capacitor.config.ts",
+    "test:mobile": "npm run --prefix mobile test"
   },
   "dependencies": {
     "compression": "^1.8.1",
