@@ -123,3 +123,51 @@ test('buildCron: empty runs / empty input -> unknown or empty map', () => {
   assert.deepEqual(buildCron(null), {});
   assert.deepEqual(buildCron([{ node: 'pi', jobs: [{ job: 'j', runs: [] }] }]), { 'pi:j': 'unknown' });
 });
+
+// ── Task 3: buildHosts + buildUps ────────────────────────────────────────────
+
+test('buildHosts: percent-string metrics -> 0..1 fractions, reachable, sorted', () => {
+  const cache = {
+    nodes: {
+      vm103: { metrics: { cpu: '12.0', memPercent: '45.0', diskPercent: '78.0' } },
+      pi2: { metrics: { cpu: '90.0', memPercent: '90.0', diskPercent: '5.0' } },
+    },
+  };
+  const out = buildHosts(cache);
+  assert.deepEqual(out, {
+    pi2: { reachable: true, cpu: 0.9, mem: 0.9, disk: 0.05 },
+    vm103: { reachable: true, cpu: 0.12, mem: 0.45, disk: 0.78 },
+  });
+  assert.deepEqual(Object.keys(out), ['pi2', 'vm103']);
+});
+
+test('buildHosts: all-null metrics -> reachable:false, zeroed; partial -> reachable:true', () => {
+  const cache = {
+    nodes: {
+      dead: { metrics: { cpu: null, memPercent: null, diskPercent: null } },
+      half: { metrics: { cpu: '50.0', memPercent: null, diskPercent: null } },
+      bare: {}, // no metrics key at all
+    },
+  };
+  const out = buildHosts(cache);
+  assert.deepEqual(out.dead, { reachable: false, cpu: 0, mem: 0, disk: 0 });
+  assert.deepEqual(out.half, { reachable: true, cpu: 0.5, mem: 0, disk: 0 });
+  assert.deepEqual(out.bare, { reachable: false, cpu: 0, mem: 0, disk: 0 });
+});
+
+test('buildHosts: missing cache -> empty map', () => {
+  assert.deepEqual(buildHosts(null), {});
+  assert.deepEqual(buildHosts({ nodes: {} }), {});
+});
+
+test('buildUps: numeric status mapped to state; missing -> unknown', () => {
+  assert.deepEqual(buildUps({ status: 1 }), { state: 'online' });       // OL
+  assert.deepEqual(buildUps({ status: 2 }), { state: 'on_battery' });   // OB
+  assert.deepEqual(buildUps({ status: 0 }), { state: 'unknown' });      // Unknown
+  // LB (3) folds into on_battery per the normalization law (must not drop urgent power event)
+  assert.deepEqual(buildUps({ status: 3 }), { state: 'on_battery' });   // Low Battery -> on_battery
+  assert.deepEqual(buildUps({ status: 9 }), { state: 'unknown' });
+  assert.deepEqual(buildUps({ status: null }), { state: 'unknown' });
+  assert.deepEqual(buildUps(null), { state: 'unknown' });
+  assert.deepEqual(buildUps({}), { state: 'unknown' });
+});
