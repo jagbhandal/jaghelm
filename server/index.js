@@ -174,7 +174,13 @@ const corsOrigins = corsOriginEnv
       .map((s) => s.trim())
       .filter(Boolean)
   : false;
-app.use(cors({ origin: corsOrigins }));
+// exposedHeaders:['ETag'] is REQUIRED only on the WebView-fetch fallback
+// (cross-origin JS cannot read ETag by default → would silently break
+// useData.js's If-None-Match 304 caching). Additive + inert: with CORS_ORIGIN
+// unset (origin:false), no Access-Control-* headers are emitted, so the desktop
+// same-origin response is byte-for-byte unchanged. (Native HTTP — the mobile
+// default — bypasses CORS entirely and needs none of this.)
+app.use(cors({ origin: corsOrigins, exposedHeaders: ['ETag'] }));
 
 // gzip responses. The big win is /api/history — intentionally non-304 (it changes
 // every poll) and the largest repeatedly-fetched JSON; numeric JSON gzips ~80-90%.
