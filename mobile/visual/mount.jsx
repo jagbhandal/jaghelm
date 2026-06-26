@@ -3,6 +3,8 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import '@shared/styles/global.css';
+import '../src/styles/fonts.css';
+import '../src/MobileApp.css';
 import * as fx from './fixtures.js';
 import Overview from '../src/views/Overview.jsx';
 import Services from '../src/views/Services.jsx';
