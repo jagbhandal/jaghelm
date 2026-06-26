@@ -41,10 +41,13 @@ describe('Alerts', () => {
     expect(screen.getByText(/Today/i)).toBeInTheDocument();
   });
 
-  it('renders a disabled, inert notification gear (Phase 5)', () => {
-    render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
+  it('the gear is enabled and pushes the notificationSettings screen on tap', () => {
+    const push = vi.fn();
+    render(<Alerts data={DATA} nav={{ push }} />);
     const gear = screen.getByRole('button', { name: /notification settings/i });
-    expect(gear).toBeDisabled();
+    expect(gear).not.toBeDisabled();
+    fireEvent.click(gear);
+    expect(push).toHaveBeenCalledWith('notificationSettings');
   });
 
   it('tapping an incident pushes its detail', () => {
