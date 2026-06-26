@@ -24,6 +24,10 @@ import { dedupe } from './util/dedupe.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { createLogger } from './util/logger.js';
 import { recordRefreshCycle } from './metrics.js';
+import { runPushCycle } from './push/dispatch.js';
+import { buildSnapshot } from './push/snapshot.js';
+import { createTokenStore } from './push/tokenStore.js';
+import * as fcm from './push/fcm.js';
 
 const log = createLogger('refresh');
 
@@ -35,6 +39,41 @@ const MIN_INTERVAL_SECONDS = 10;
 let bgRefreshTimer = null;
 let bgRefreshRunning = false;
 let lastRefreshComplete = 0; // ms epoch of the last finished cycle (0 = never)
+
+// ── Push pipeline wiring ─────────────────────────────────────────────────
+// Snapshot of the prev cycle's state lives beside the other data/ stores.
+const PUSH_SNAPSHOT_PATH = join(DATA_DIR, 'push-snapshot.json');
+const DEFAULT_PUSH_THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
+
+// Token store is constructed lazily on first cycle (after initPush has run at
+// boot) and reused thereafter.
+let pushStore = null;
+function getPushStore() {
+  if (!pushStore) pushStore = createTokenStore({});
+  return pushStore;
+}
+
+// Thresholds come from display-config when present, else the defaults. Read
+// through the same cached file the loop already touches.
+function getPushThresholds() {
+  try {
+    if (existsSync(DISPLAY_CONFIG_PATH)) {
+      const data = JSON.parse(readFileSync(DISPLAY_CONFIG_PATH, 'utf8'));
+      const t = data?.pushThresholds;
+      if (t && typeof t === 'object') {
+        return {
+          cpu: typeof t.cpu === 'number' ? t.cpu : DEFAULT_PUSH_THRESHOLDS.cpu,
+          mem: typeof t.mem === 'number' ? t.mem : DEFAULT_PUSH_THRESHOLDS.mem,
+          disk: typeof t.disk === 'number' ? t.disk : DEFAULT_PUSH_THRESHOLDS.disk,
+          hysteresis: typeof t.hysteresis === 'number' ? t.hysteresis : DEFAULT_PUSH_THRESHOLDS.hysteresis,
+        };
+      }
+    }
+  } catch {
+    // fall through to defaults
+  }
+  return DEFAULT_PUSH_THRESHOLDS;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -369,6 +408,18 @@ async function runBackgroundRefresh() {
       refreshIntegrations(),
     ]);
     log.info({ ms: Date.now() - start }, 'background cycle complete');
+
+    // Push cycle: diff this cycle's state vs the last and notify mobile
+    // tokens. Self-contained — it can NEVER reject (see runPushCycle), so it
+    // cannot flip `ok` or break the loop. No-ops when push is disabled.
+    await runPushCycle({
+      buildSnapshotFn: buildSnapshot,
+      store: getPushStore(),
+      fcm,
+      snapshotPath: PUSH_SNAPSHOT_PATH,
+      thresholds: getPushThresholds(),
+      logger: log,
+    });
   } catch (err) {
     ok = false;
     log.error({ err }, 'background cycle error');
