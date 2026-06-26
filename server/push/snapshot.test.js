@@ -222,3 +222,44 @@ test('buildSnapshot: PURE — same input twice is byte-identical', () => {
   });
   assert.equal(JSON.stringify(buildSnapshot(caches)), JSON.stringify(buildSnapshot(caches)));
 });
+
+// ── Task 5: Determinism + normalization-law guard tests ──────────────────────
+
+test('LAW: top-level snapshot is byte-identical under reordered node/service/cron insertion', () => {
+  const mk = (order) => fakeCaches({
+    services: {
+      nodes: order === 'fwd'
+        ? { alpha: { metrics: { cpu: '10.0', memPercent: '10.0', diskPercent: '10.0' }, services: [{ uid: 'alpha:s2', status: 'down' }, { uid: 'alpha:s1', status: 'up' }] },
+            beta: { metrics: { cpu: '20.0', memPercent: '20.0', diskPercent: '20.0' }, services: [{ uid: 'beta:s1', status: 'up' }] } }
+        : { beta: { metrics: { cpu: '20.0', memPercent: '20.0', diskPercent: '20.0' }, services: [{ uid: 'beta:s1', status: 'up' }] },
+            alpha: { metrics: { cpu: '10.0', memPercent: '10.0', diskPercent: '10.0' }, services: [{ uid: 'alpha:s1', status: 'up' }, { uid: 'alpha:s2', status: 'down' }] } },
+    },
+    ups: { status: 1 }, // Online (OL)
+    cron: order === 'fwd'
+      ? [{ node: 'alpha', jobs: [{ job: 'b', runs: [{ status: 'success' }] }, { job: 'a', runs: [{ status: 'failure' }] }] }]
+      : [{ node: 'alpha', jobs: [{ job: 'a', runs: [{ status: 'failure' }] }, { job: 'b', runs: [{ status: 'success' }] }] }],
+  });
+  assert.equal(JSON.stringify(buildSnapshot(mk('fwd'))), JSON.stringify(buildSnapshot(mk('rev'))));
+});
+
+test('LAW: every unrecognized value collapses to unknown / reachable:false', () => {
+  const snap = buildSnapshot(fakeCaches({
+    services: {
+      nodes: {
+        ghost: { metrics: { cpu: 'NaN', memPercent: null, diskPercent: undefined },
+                 services: [{ uid: 'ghost:x', status: 'flapping' }] },
+      },
+    },
+    ups: { status: 'bogus' },
+    cron: [{ node: 'ghost', jobs: [{ job: 'j', runs: [{ status: 'maybe' }] }] }],
+  }));
+  assert.equal(snap.services['ghost:x'], 'unknown');
+  assert.equal(snap.cron['ghost:j'], 'unknown');
+  assert.equal(snap.ups.state, 'unknown');
+  assert.deepEqual(snap.hosts.ghost, { reachable: false, cpu: 0, mem: 0, disk: 0 });
+});
+
+test('LAW: empty/cold caches yield a well-formed baseline snapshot', () => {
+  const snap = buildSnapshot(fakeCaches({ services: null, ups: null, cron: null }));
+  assert.deepEqual(snap, { services: {}, hosts: {}, ups: { state: 'unknown' }, cron: {} });
+});
