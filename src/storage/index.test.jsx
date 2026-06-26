@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { secureStore, setStorageAdapter } from './index.js';
+import { secureStore, setStorageAdapter, webStorage } from './index.js';
 
 beforeEach(() => {
   if (typeof localStorage !== 'undefined') localStorage.clear();
@@ -7,17 +7,7 @@ beforeEach(() => {
 
 afterEach(() => {
   // Reset to the web default so a swapped adapter can't leak across tests.
-  setStorageAdapter({
-    async getItem(k) {
-      return (typeof localStorage !== 'undefined' && localStorage.getItem(k)) || null;
-    },
-    async setItem(k, v) {
-      if (typeof localStorage !== 'undefined') localStorage.setItem(k, v);
-    },
-    async removeItem(k) {
-      if (typeof localStorage !== 'undefined') localStorage.removeItem(k);
-    },
-  });
+  setStorageAdapter(webStorage);
 });
 
 describe('secureStore — web default backed by localStorage', () => {

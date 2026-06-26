@@ -24,7 +24,7 @@ import { secureStore } from './storage/index.js';
 export default function App() {
   const [authed, setAuthed] = useState(false);
   const [authRequired, setAuthRequired] = useState(null);
-  const [authToken, setAuthToken] = useState(() => localStorage.getItem('jaghelm-token') || '');
+  const [authToken, setAuthToken] = useState('');
 
   // Apply the persisted theme to the document before login resolves, so the
   // login screen renders in the user's chosen theme (matching prior behaviour

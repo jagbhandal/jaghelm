@@ -6,7 +6,7 @@
  * desktop persistence is byte-for-byte as before (it still reads/writes
  * localStorage).
  */
-const webStorage = {
+export const webStorage = {
   async getItem(k) {
     return (typeof localStorage !== 'undefined' && localStorage.getItem(k)) || null;
   },
