@@ -9,9 +9,16 @@ import Overview from './views/Overview.jsx';
 import Services from './views/Services.jsx';
 import Infra from './views/Infra.jsx';
 import Alerts from './views/Alerts.jsx';
+import ServiceDetail from './views/ServiceDetail.jsx';
+import NodeDetail from './views/NodeDetail.jsx';
+import IncidentDetail from './views/IncidentDetail.jsx';
 import './MobileApp.css';
 
 const VIEWS = { overview: Overview, services: Services, infra: Infra, alerts: Alerts };
+const SCREENS = {
+  overview: Overview, services: Services, infra: Infra, alerts: Alerts,
+  serviceDetail: ServiceDetail, node: NodeDetail, incident: IncidentDetail,
+};
 const ROOT = { overview: { screen: 'overview' }, services: { screen: 'services' }, infra: { screen: 'infra' }, alerts: { screen: 'alerts' } };
 
 export default function MobileApp() {
@@ -45,12 +52,12 @@ export default function MobileApp() {
     setPref(LAST_TAB_KEY, id);
   };
 
-  const ActiveView = VIEWS[active];
+  const Screen = SCREENS[nav.current.screen] || VIEWS[active];
 
   return (
     <div id="mobile-root">
       <main className="mobile-content">
-        <ActiveView nav={nav} data={data} />
+        <Screen nav={nav} data={data} params={nav.current.params} />
       </main>
       <nav className="mobile-tabbar" role="tablist" aria-label="Primary">
         {TABS.map((t) => (
