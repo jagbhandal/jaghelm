@@ -33,4 +33,16 @@ describe('openTarget (read-only)', () => {
     openTarget({ kind: 'service', url: 'not a url !!!' });
     expect(window.open).not.toHaveBeenCalled();
   });
+
+  // Defense-in-depth: new URL() normalizes case + rejects leading whitespace, so
+  // these obfuscated javascript: payloads are blocked by the same scheme guard.
+  it('is a no-op for a mixed-case Javascript: url', () => {
+    openTarget({ kind: 'service', url: 'JaVaScRiPt:alert(1)' });
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op for a whitespace-prefixed javascript: url', () => {
+    openTarget({ kind: 'service', url: '\t javascript:alert(1)' });
+    expect(window.open).not.toHaveBeenCalled();
+  });
 });
