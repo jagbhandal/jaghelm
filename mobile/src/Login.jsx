@@ -64,7 +64,7 @@ export default function Login({ askUrl = true, knownUrl = '', onConnected }) {
               inputMode="url"
               autoCapitalize="none"
               autoCorrect="off"
-              placeholder="http://vm-101:3099"
+              placeholder="http://<tailnet-ip>:3099"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
             />
