@@ -24,8 +24,12 @@ export default function App({ initial }) {
   useEffect(() => {
     // Kill the session token and drop to re-auth — reached from a server-driven
     // 401 and from a user-initiated logout (same operation, one definition).
-    const clearSession = () => {
-      secureStore.removeItem(TOKEN_KEY);
+    // Flip REMEMBER off so the next boot wipes the token UNCONDITIONALLY even if
+    // the Keystore delete here silently failed (the adapter swallows errors) —
+    // otherwise a failed delete + remember==='true' would silently re-auth.
+    const clearSession = async () => {
+      await secureStore.removeItem(TOKEN_KEY);
+      await setPref(REMEMBER_KEY, 'false');
       setAuthToken('');
       setHasToken(false);
     };
@@ -34,12 +38,9 @@ export default function App({ initial }) {
     setAuthHandlers({
       logout: clearSession,
       forgetDevice: async () => {
-        await secureStore.removeItem(TOKEN_KEY);
+        await clearSession();
         await secureStore.removeItem(BASE_URL_KEY);
         await setPref(URL_PRESENT_KEY, 'false');
-        await setPref(REMEMBER_KEY, 'false');
-        setAuthToken('');
-        setHasToken(false);
         setHasUrl(false);
       },
     });

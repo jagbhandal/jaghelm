@@ -141,6 +141,7 @@
 ## Out of scope (follow-ups)
 - **Backend long-lived revocable "remember-me" device token** (30-day, listed under active devices, revocable) — the *safe* way to skip login beyond the 24h session. Server change to `sessions.js` + a devices UI. Recommended next PR if Jag wants multi-day no-retype.
 - **App-lock (biometric/PIN to open)** — optional convenience+security layer; adds a native biometric plugin.
+- **Redirect-target validation (security-review follow-up).** The manifest grants cleartext globally (Android can't CIDR-scope) and `netGuard` enforces tailnet-only at the JS trust boundary (login + boot). But `CapacitorHttp` (native OkHttp) follows 3xx redirects at the native layer and re-sends custom headers (`x-auth-token`) cross-host — OkHttp only strips `Authorization`, not custom headers. A malicious/compromised backend issuing `302 Location: http://public-host` could leak the token. Residual risk is LOW under the threat model (own backend over a WireGuard-encrypted tailnet — that vector requires an already-catastrophic server/tailnet compromise), so it's deferred rather than half-fixed. Proper fix: route API calls through `CapacitorHttp.request({ disableRedirects: true })` or re-validate each resolved redirect target — a transport-layer change affecting web too.
 
 ## Self-Review notes
 - Web byte-for-byte: only `client.js` touches shared code, additively (null-default hook). ✔

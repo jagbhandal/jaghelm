@@ -45,6 +45,15 @@ describe('bootMobile', () => {
     expect(apiFetch).not.toHaveBeenCalled();
   });
 
+  it('rejects a poisoned cleartext-public stored base and forces re-setup', async () => {
+    getItem.mockResolvedValue('http://8.8.8.8:3099/api');
+    getPref.mockResolvedValue('true');
+    const r = await bootMobile();
+    expect(r).toEqual({ hasUrl: false, hasToken: false, baseUrl: '' });
+    expect(removeItem).toHaveBeenCalledWith('jaghelm-token');
+    expect(apiFetch).not.toHaveBeenCalled();
+  });
+
   it('with remember on + a valid token, applies the base, revalidates, and reports authed', async () => {
     getItem.mockResolvedValue('http://vm-101:3099/api');
     getPref.mockResolvedValue('true');
