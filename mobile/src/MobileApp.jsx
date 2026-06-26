@@ -53,7 +53,9 @@ export default function MobileApp() {
   // depends on a configured backend + Android runtime permission, so it belongs
   // here, NOT in boot.js. nav drives deep-link routing from a tapped push.
   useEffect(() => {
-    initPush({ nav: navRef.current });
+    // initPush self-contains its failures (build-config gate + try/catch); the
+    // .catch is a final guard so a push fault can never surface here.
+    initPush({ nav: navRef.current }).catch(() => {});
   }, []);
 
   const onTab = (id) => {

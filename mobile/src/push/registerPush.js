@@ -21,50 +21,66 @@ import { PUSH_PERM_KEY, PUSH_TOKEN_KEY } from '../runtimeConfig.js';
 import { registerToken, deleteToken } from './pushPrefsApi.js';
 import { routeFromData } from './routeFromData.js';
 import { routeFromUrl } from './routeFromUrl.js';
+import { isPushConfigured } from './pushConfig.js';
 
 const CHANNEL_ID = 'jaghelm-incidents';
 
 export async function initPush({ nav }) {
-  let perm = await PushNotifications.checkPermissions();
-  if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') {
-    perm = await PushNotifications.requestPermissions();
+  // HARD GATE: register() needs Firebase (google-services.json). Without it, it
+  // throws an UNCAUGHT native exception on the CapacitorPlugins thread that
+  // crashes the whole app — JS try/catch cannot stop it. So when push isn't
+  // configured in this build, do NOTHING (no register, no permission prompt).
+  if (!isPushConfigured()) {
+    return { enabled: false, reason: 'not-configured' };
   }
-  if (perm.receive !== 'granted') {
-    await setPref(PUSH_PERM_KEY, perm.receive);
-    return { enabled: false, permission: perm.receive };
+
+  // Belt-and-suspenders: any JS-level push failure degrades to disabled rather
+  // than escaping into MobileApp's mount effect as an unhandled rejection.
+  try {
+    let perm = await PushNotifications.checkPermissions();
+    if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') {
+      perm = await PushNotifications.requestPermissions();
+    }
+    if (perm.receive !== 'granted') {
+      await setPref(PUSH_PERM_KEY, perm.receive);
+      return { enabled: false, permission: perm.receive };
+    }
+    await setPref(PUSH_PERM_KEY, 'granted');
+
+    // Matches the server payload's android.notification.channelId. Importance 5
+    // (MAX) so critical (priority:high) pushes are not silenced on Android 8+.
+    await PushNotifications.createChannel({
+      id: CHANNEL_ID,
+      name: 'JagHelm incidents',
+      importance: 5,
+      visibility: 1,
+    });
+
+    // Listeners BEFORE register() — 'registration' may fire immediately.
+    await PushNotifications.addListener('registration', (token) => onRegistration(token));
+    await PushNotifications.addListener('registrationError', (err) => {
+      console.warn('[push] registration error:', err && err.error);
+    });
+    await PushNotifications.addListener('pushNotificationReceived', () => {
+      // Foreground arrival: Android does not auto-show in the tray. v1 logs only
+      // (no in-app toast); the deep-link path is the action-performed listener.
+    });
+    await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+      routeFromData(action && action.notification && action.notification.data, nav);
+    });
+
+    // Deep-link path B: the jaghelm://incident/<id> custom URL scheme (DESIGN line
+    // 307 — the primary OSS-build deep-link path). Same nav, same reconciler.
+    await App.addListener('appUrlOpen', (event) => {
+      routeFromUrl(event && event.url, nav);
+    });
+
+    await PushNotifications.register();
+    return { enabled: true, permission: 'granted' };
+  } catch (e) {
+    console.warn('[push] init failed; push disabled:', e && e.message);
+    return { enabled: false, error: e && e.message };
   }
-  await setPref(PUSH_PERM_KEY, 'granted');
-
-  // Matches the server payload's android.notification.channelId. Importance 5
-  // (MAX) so critical (priority:high) pushes are not silenced on Android 8+.
-  await PushNotifications.createChannel({
-    id: CHANNEL_ID,
-    name: 'JagHelm incidents',
-    importance: 5,
-    visibility: 1,
-  });
-
-  // Listeners BEFORE register() — 'registration' may fire immediately.
-  await PushNotifications.addListener('registration', (token) => onRegistration(token));
-  await PushNotifications.addListener('registrationError', (err) => {
-    console.warn('[push] registration error:', err && err.error);
-  });
-  await PushNotifications.addListener('pushNotificationReceived', () => {
-    // Foreground arrival: Android does not auto-show in the tray. v1 logs only
-    // (no in-app toast); the deep-link path is the action-performed listener.
-  });
-  await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
-    routeFromData(action && action.notification && action.notification.data, nav);
-  });
-
-  // Deep-link path B: the jaghelm://incident/<id> custom URL scheme (DESIGN line
-  // 307 — the primary OSS-build deep-link path). Same nav, same reconciler.
-  await App.addListener('appUrlOpen', (event) => {
-    routeFromUrl(event && event.url, nav);
-  });
-
-  await PushNotifications.register();
-  return { enabled: true, permission: 'granted' };
 }
 
 /** 'registration' handler: persist the FCM token (note: event.value) + POST it. */
