@@ -166,6 +166,10 @@ export async function uploadFile(file, type) {
  *
  * Non-CDN URLs (local paths, data URIs) pass through unchanged.
  * Emojis and empty strings return null.
+ *
+ * Base-aware: the proxied URL is built from getApiBase() so on mobile it is an
+ * absolute same-base URL that reaches Express over Tailscale and gets the
+ * x-auth-token injected (the icon route is protected). Web is unchanged ('/api').
  */
 export function cachedIconUrl(url) {
   if (!url || typeof url !== 'string') return null;
@@ -174,7 +178,7 @@ export function cachedIconUrl(url) {
     url.startsWith('https://cdn.jsdelivr.net/') ||
     url.startsWith('https://raw.githubusercontent.com/')
   ) {
-    return `/api/icons/cached?url=${encodeURIComponent(url)}`;
+    return `${getApiBase()}/icons/cached?url=${encodeURIComponent(url)}`;
   }
   // Local paths, data URIs, etc. — pass through
   return url;
