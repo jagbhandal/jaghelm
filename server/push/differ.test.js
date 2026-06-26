@@ -332,3 +332,71 @@ test('cron failure->unknown and unchanged emit nothing', () => {
   assert.deepEqual(diffSnapshots(cron({ 'n1:backup': 'success' }), cron({ 'n1:backup': 'success' }), THRESHOLDS), []);
   assert.deepEqual(diffSnapshots(cron({ 'n1:backup': 'failure' }), cron({ 'n1:backup': 'failure' }), THRESHOLDS), []);
 });
+
+test('canonical sort: two insertion-order permutations produce byte-identical arrays', () => {
+  // Same logical changes, keys inserted in different order in `next`.
+  const prevA = {
+    services: { 'n1:web': 'up', 'n2:db': 'up' },
+    hosts: { n1: { reachable: true, cpu: 0.1, mem: 0.1, disk: 0.1 } },
+    ups: { state: 'online' },
+    cron: { 'n1:backup': 'success' },
+  };
+  const nextA = {
+    services: { 'n1:web': 'down', 'n2:db': 'down' },
+    hosts: { n1: { reachable: false, cpu: 0.1, mem: 0.1, disk: 0.1 } },
+    ups: { state: 'on_battery' },
+    cron: { 'n1:backup': 'failure' },
+  };
+  // Permutation: same data, different object key insertion order.
+  const prevB = {
+    cron: { 'n1:backup': 'success' },
+    ups: { state: 'online' },
+    services: { 'n2:db': 'up', 'n1:web': 'up' },
+    hosts: { n1: { disk: 0.1, mem: 0.1, cpu: 0.1, reachable: true } },
+  };
+  const nextB = {
+    cron: { 'n1:backup': 'failure' },
+    ups: { state: 'on_battery' },
+    services: { 'n2:db': 'down', 'n1:web': 'down' },
+    hosts: { n1: { disk: 0.1, mem: 0.1, cpu: 0.1, reachable: false } },
+  };
+  const a = diffSnapshots(prevA, nextA, THRESHOLDS);
+  const b = diffSnapshots(prevB, nextB, THRESHOLDS);
+  assert.equal(JSON.stringify(a), JSON.stringify(b)); // byte-identical
+});
+
+test('canonical sort: ascending by (type, id) with id tiebreak', () => {
+  const prev = {
+    services: { 'n1:a': 'up', 'n2:z': 'up' },
+    hosts: {},
+    ups: { state: 'online' },
+    cron: { 'n1:job': 'success' },
+  };
+  const next = {
+    services: { 'n1:a': 'down', 'n2:z': 'down' },
+    hosts: {},
+    ups: { state: 'on_battery' },
+    cron: { 'n1:job': 'failure' },
+  };
+  const events = diffSnapshots(prev, next, THRESHOLDS);
+  // types: cron_failed, service_down, service_down, ups_on_battery
+  // sorted by type then id: cron_failed(n1:job) < service_down(n1:a) < service_down(n2:z) < ups_on_battery(ups)
+  assert.deepEqual(
+    events.map((e) => [e.type, e.id]),
+    [
+      ['cron_failed', 'n1:job'],
+      ['service_down', 'n1:a'],
+      ['service_down', 'n2:z'],
+      ['ups_on_battery', 'ups'],
+    ],
+  );
+  // explicit determinism guard: re-running yields byte-identical output
+  assert.equal(JSON.stringify(diffSnapshots(prev, next, THRESHOLDS)), JSON.stringify(events));
+});
+
+test('canonical sort: same type, id ordering uses string compare (n1:cpu < n1:disk < n1:mem)', () => {
+  const base = { reachable: true, cpu: 0.5, mem: 0.5, disk: 0.5 };
+  const hot = { reachable: true, cpu: 0.95, mem: 0.95, disk: 0.95 };
+  const events = diffSnapshots(host({ n1: base }), host({ n1: hot }), THRESHOLDS);
+  assert.deepEqual(events.map((e) => e.id), ['n1:cpu', 'n1:disk', 'n1:mem']);
+});
