@@ -40,3 +40,93 @@
 .mobile-tabbar button[aria-selected='true'] {
   color: var(--accent);
 }
+
+/* --- Phase 3: atoms --- */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+.usage-bar { display: flex; flex-direction: column; gap: 2px; }
+.usage-bar__head { display: flex; justify-content: space-between; align-items: baseline; }
+.usage-bar__label { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); letter-spacing: 0.5px; }
+.usage-bar__value { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-secondary); }
+.usage-bar__track { height: 4px; background: var(--border-color); border-radius: 2px; overflow: hidden; }
+.usage-bar__fill { height: 100%; border-radius: 2px; }
+.svc-row {
+  display: flex; align-items: center; gap: var(--space-3); width: 100%;
+  min-height: 48px; padding: var(--space-3) var(--space-4); background: var(--bg-card-inner);
+  border: none; border-bottom: 1px solid var(--border-color); border-radius: 0; text-align: left;
+}
+.svc-row__icon { width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0; }
+.svc-row__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); font-family: var(--font-body); font-size: var(--fs-service-name); font-weight: 500; }
+.svc-row__node { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 6px; flex-shrink: 0; }
+.svc-row__ping { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--green); flex-shrink: 0; }
+
+/* --- Phase 3: Overview --- */
+.subsys-strip { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-2); margin-bottom: var(--space-4); }
+.subsys-cell { display: flex; flex-direction: column; gap: 2px; padding: var(--space-3); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); }
+.subsys-cell--degraded { background: var(--red-bg); border-color: var(--red-border); }
+.subsys-cell__dot { width: 8px; height: 8px; border-radius: 50%; }
+.subsys-cell__label { font-family: var(--font-display); font-size: var(--text-base); color: var(--text-primary); }
+.subsys-cell__detail { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
+.overview-incidents { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-4); }
+.incident-card { padding: var(--space-3) var(--space-4); background: var(--red-bg); border: 1px solid var(--red-border); border-radius: var(--card-radius-sm); }
+.incident-card__head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); }
+.incident-card__title { font-family: var(--font-display); font-size: var(--text-lg); color: var(--text-primary); }
+.incident-card__node { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
+.incident-card__cause { margin: var(--space-1) 0 var(--space-2); color: var(--text-secondary); font-size: var(--text-sm); }
+.incident-card__foot { display: flex; align-items: center; justify-content: space-between; }
+.incident-card__uptime { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-xs); }
+.incident-card__uptime-label { color: var(--text-muted); letter-spacing: 0.5px; }
+.open-btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: var(--space-2) var(--space-4); font-size: var(--text-sm); min-height: 44px; }
+.overview-more { align-self: flex-start; display: inline-flex; align-items: center; background: var(--bg-card-inner); color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: var(--space-2) var(--space-3); font-size: var(--text-sm); min-height: 44px; }
+.overview-nodes { display: flex; flex-direction: column; gap: var(--space-3); }
+.node-row { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; text-align: left; padding: var(--space-3) var(--space-4); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); min-height: 44px; }
+.node-row__head { display: flex; justify-content: space-between; align-items: baseline; }
+.node-row__name { font-family: var(--font-display); font-size: var(--text-lg); color: var(--text-primary); }
+.node-row__count { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
+.node-row__bars { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+
+/* --- Phase 3: Services + detail --- */
+.search-bar { width: 100%; box-sizing: border-box; padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); color: var(--text-primary); font-family: var(--font-body); font-size: var(--text-base); min-height: 44px; }
+.status-banner { padding: var(--space-3) var(--space-4); border-radius: var(--card-radius-sm); margin-bottom: var(--space-3); font-size: var(--text-sm); }
+.status-banner--error { background: var(--red-bg); border: 1px solid var(--red-border); color: var(--red); }
+.filter-chips { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: var(--space-2); margin-bottom: var(--space-3); -webkit-overflow-scrolling: touch; }
+.chip { flex-shrink: 0; min-height: 44px; padding: var(--space-2) var(--space-4); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); font-size: var(--text-sm); white-space: nowrap; }
+.chip--active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
+.svc-list { display: flex; flex-direction: column; border-radius: var(--card-radius-sm); overflow: hidden; }
+.back-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.back-header__btn { background: none; border: none; color: var(--accent); font-size: var(--text-base); min-height: 44px; padding: 0 var(--space-2); }
+.back-header__title { font-family: var(--font-display); font-size: var(--text-xl); margin: 0; }
+.detail-head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.detail-head__node { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); padding: var(--space-1) var(--space-2); }
+.detail-head__ping { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--green); }
+.detail-uptime { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-secondary); }
+.detail-docker { display: flex; gap: var(--space-4); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--space-3); }
+
+/* --- Phase 3: Infra --- */
+.node-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
+.node-card { width: 100%; text-align: left; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); min-height: 44px; }
+.node-card__head { display: flex; align-items: baseline; gap: var(--space-2); }
+.node-card__name { font-family: var(--font-display); font-size: var(--text-lg); color: var(--text-primary); }
+.node-card__type { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
+.node-card__count { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-secondary); }
+.node-card__bars, .node-detail__bars { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }
+.node-detail__bars { margin-bottom: var(--space-4); }
+
+/* --- Phase 3: Alerts + incident detail --- */
+.alerts-head { display: flex; align-items: center; justify-content: space-between; }
+.alerts-gear { background: none; border: none; color: var(--text-muted); font-size: var(--text-xl); min-height: 44px; min-width: 44px; opacity: 0.5; cursor: default; }
+.alerts-clear { color: var(--text-muted); }
+.alerts-section { font-family: var(--font-display); font-size: var(--text-base); color: var(--text-secondary); margin: var(--space-4) 0 var(--space-2); }
+.alerts-section--active { color: var(--red); }
+.alert-row { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: var(--space-3) var(--space-4); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); margin-bottom: var(--space-2); min-height: 44px; }
+.alert-row--active { background: var(--red-bg); border-color: var(--red-border); }
+.alert-row__title { font-family: var(--font-display); font-size: var(--text-base); color: var(--text-primary); }
+.alert-row__node, .alert-row__cause { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
+.detail-cause { color: var(--text-secondary); font-size: var(--text-sm); }
+.detail-section { font-family: var(--font-display); font-size: var(--text-base); color: var(--text-secondary); margin: var(--space-4) 0 var(--space-2); }
+.timeline { list-style: none; padding: 0; margin: 0 0 var(--space-4); }
+.timeline__item { display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) 0; border-left: 2px solid var(--border-color); padding-left: var(--space-3); min-height: 44px; }
+.timeline__label { font-family: var(--font-body); font-size: var(--text-sm); color: var(--text-primary); }
+.timeline__detail { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }

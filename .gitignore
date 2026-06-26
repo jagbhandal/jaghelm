@@ -3,6 +3,9 @@ dist/
 .env
 uploads/
 data/
+# mobile/src/data/ is source code (derivation modules), not a data directory — negate
+!mobile/src/data/
+!mobile/src/data/**
 
 # --- secrets (harness floor) — never commit credentials ---
 # (Phase 0 hardened: web + mobile secret classes. Negations below keep templates tracked.)
