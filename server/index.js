@@ -126,10 +126,22 @@ app.use((req, res, next) => {
 // report-only header while tuning a deploy that has custom inline assets.
 // Additive, env-gated connect-src extension for a WebView-fetch fallback
 // deployment. Unset ⇒ no extra origins ⇒ connect-src is byte-for-byte as today.
+//
+// Helmet does NOT validate CSP directive values; it passes them through
+// verbatim. We validate entries ourselves: only well-formed http/https/wss/ws
+// origins are accepted. Anything else (bare *, javascript: URIs, entries with
+// whitespace/semicolons/quotes) is dropped with a warning so a misconfigured
+// operator env can't silently widen or corrupt connect-src.
+const VALID_CSP_ORIGIN_RE = /^(https?|wss?):\/\/[^\s'";,]+$/;
 const extraConnect = (process.env.CSP_CONNECT_EXTRA || '')
   .split(',')
   .map((s) => s.trim())
-  .filter(Boolean);
+  .filter(Boolean)
+  .filter((entry) => {
+    if (VALID_CSP_ORIGIN_RE.test(entry)) return true;
+    console.warn(`[csp] ignoring invalid CSP_CONNECT_EXTRA entry: ${entry}`);
+    return false;
+  });
 const cspDirectives = {
   defaultSrc: ["'self'"],
   scriptSrc: ["'self'"],
