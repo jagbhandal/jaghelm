@@ -86,3 +86,18 @@
 .node-row__name { font-family: var(--font-display); font-size: var(--text-lg); color: var(--text-primary); }
 .node-row__count { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
 .node-row__bars { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+
+/* --- Phase 3: Services + detail --- */
+.search-bar { width: 100%; box-sizing: border-box; padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); color: var(--text-primary); font-family: var(--font-body); font-size: var(--text-base); }
+.filter-chips { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: var(--space-2); margin-bottom: var(--space-3); -webkit-overflow-scrolling: touch; }
+.chip { flex-shrink: 0; min-height: 36px; padding: var(--space-2) var(--space-4); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); font-size: var(--text-sm); white-space: nowrap; }
+.chip--active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
+.svc-list { display: flex; flex-direction: column; border-radius: var(--card-radius-sm); overflow: hidden; }
+.back-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.back-header__btn { background: none; border: none; color: var(--accent); font-size: var(--text-base); min-height: 44px; padding: 0 var(--space-2); }
+.back-header__title { font-family: var(--font-display); font-size: var(--text-xl); margin: 0; }
+.detail-head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.detail-head__node { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 6px; }
+.detail-head__ping { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--green); }
+.detail-uptime { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-secondary); }
+.detail-docker { display: flex; gap: var(--space-4); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--space-3); }
