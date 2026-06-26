@@ -130,7 +130,7 @@ test('PUT /api/push/prefs → 404 on unknown token', async () => {
   const r = await request(app)
     .put('/api/push/prefs')
     .send({
-      token: 'tok-unknown-xyz',
+      token: 'tok-unknown-xyz', // pragma: allowlist secret  (fake test fixture, not a real token)
       prefs: { categories: { service: true, host: true, ups: true, cron: true }, notifyRecoveries: true, enabled: true },
     });
   assert.equal(r.status, 404);
@@ -181,11 +181,11 @@ test('DELETE /api/push/register {token:"__proto__"} → 400', async () => {
 // ── I1: extra top-level prefs key → 400 ─────────────────────────────────────
 
 test('PUT /api/push/prefs → 400 when prefs has extra top-level key', async () => {
-  await request(app).post('/api/push/register').send({ token: 'tok-extra-key', platform: 'android' });
+  await request(app).post('/api/push/register').send({ token: 'tok-extra-key', platform: 'android' }); // pragma: allowlist secret  (fake test fixture)
   // Use a real own enumerable key (not __proto__ which is a syntax special case
   // and does NOT appear in Object.keys). The I1 allowlist must reject it.
   const r = await request(app).put('/api/push/prefs').send({
-    token: 'tok-extra-key',
+    token: 'tok-extra-key', // pragma: allowlist secret  (fake test fixture)
     prefs: {
       categories: { service: true, host: true, ups: true, cron: true },
       notifyRecoveries: true,
