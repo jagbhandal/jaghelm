@@ -71,10 +71,12 @@ test('presenceStore: corrupt file loads as empty (no throw)', () => {
 test('presenceStore: __proto__ key is ignored on load (no prototype pollution)', () => {
   const path = tmpPath('proto');
   try {
-    writeFileSync(path, '{"__proto__":{"v":1},"safe":{"v":2}}');
+    writeFileSync(path, '{"__proto__":{"v":1},"constructor":{"v":3},"prototype":{"v":4},"safe":{"v":2}}');
     const s = createPresenceStore({ path, sanitize: sanitizeNum });
     assert.deepEqual(s.get('safe'), { v: 2 });
     assert.equal(s.has('__proto__'), false);
+    assert.equal(s.has('constructor'), false);
+    assert.equal(s.has('prototype'), false);
     assert.equal(({}).v, undefined); // global proto untouched
   } finally { if (existsSync(path)) rmSync(path); }
 });

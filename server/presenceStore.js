@@ -28,7 +28,9 @@ export function createPresenceStore({ path, now = Date.now, sanitize = (v) => v 
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return Object.create(null);
       const safe = Object.create(null);
       for (const k of Object.keys(parsed)) {
-        if (k === '__proto__') continue;
+        // Belt-and-suspenders: `safe` is already null-proto, but refuse the
+        // pollution-prone keys outright so a hand-edited/corrupt file can't seed them.
+        if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
         const rec = sanitize(parsed[k]);
         if (rec) safe[k] = rec;
       }
