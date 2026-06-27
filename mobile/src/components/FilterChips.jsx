@@ -26,7 +26,7 @@ export default function FilterChips({ chips, active, onChange }) {
           aria-pressed={active === c.id}
           onClick={() => onChange(c.id)}
         >
-          {c.label}{c.count != null ? ` ${c.count}` : ''}
+          {c.label}{c.count != null ? <>{' '}<span className="chip__count">{c.count}</span></> : ''}
         </button>
       ))}
     </div>

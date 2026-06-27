@@ -56,11 +56,12 @@ describe('IncidentCard', () => {
     expect(screen.queryByText('24H uptime')).toBeNull();
   });
 
-  // Bug #9: Open button is the ghost secondary variant, NOT the loud indigo .open-btn fill
-  it('Open button has the ghost class (incident-card__open), not the loud indigo .open-btn', () => {
-    const { container } = render(<IncidentCard incident={INC} onOpen={() => {}} />);
+  // Bug #9 / F8: Open button is the unified ghost variant (open-btn--ghost composed
+  // on the open-btn base layout), matching IncidentDetail + ServiceDetail.
+  it('Open button has the unified ghost class (open-btn--ghost), not the old incident-card__open', () => {
+    render(<IncidentCard incident={INC} onOpen={() => {}} />);
     const openBtn = screen.getByRole('button', { name: 'Open' });
-    expect(openBtn.classList.contains('open-btn')).toBe(false);
-    expect(openBtn.classList.contains('incident-card__open')).toBe(true);
+    expect(openBtn.classList.contains('open-btn--ghost')).toBe(true);
+    expect(openBtn.classList.contains('incident-card__open')).toBe(false);
   });
 });

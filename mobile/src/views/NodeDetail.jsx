@@ -4,14 +4,7 @@ import UsageBar from '../components/UsageBar.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import StatusLamp from '../components/StatusLamp.jsx';
 import StatusWord from '../components/StatusWord.jsx';
-import { nodeSeverity, nodeUpDown, sortProblemsFirst, parseMetricPct, thirdMetric } from '../data/derive.js';
-
-/** Map node resource severity to a colorblind-safe lamp shape. */
-function severityToShape(sev) {
-  if (sev === 'critical') return 'slash';
-  if (sev === 'unknown') return 'ring';
-  return 'disc'; // caution (amber disc) + healthy (green disc)
-}
+import { nodeSeverity, nodeUpDown, sortProblemsFirst, parseMetricPct, thirdMetric, severityToShape, nodeSeverityWord } from '../data/derive.js';
 
 /**
  * NodeDetail — status header (resource lamp + word + up/down count) + 3 metric
@@ -30,7 +23,7 @@ export default function NodeDetail({ data, nav, params }) {
   }
   const sev = nodeSeverity(node);
   const shape = severityToShape(sev);
-  const sevWord = sev === 'caution' ? 'DEGRADED' : sev === 'healthy' ? 'OK' : 'NO SIGNAL';
+  const sevWord = nodeSeverityWord(sev);
   const { up, down } = nodeUpDown(node);
   const m = node.metrics || {};
   const third = thirdMetric(m);

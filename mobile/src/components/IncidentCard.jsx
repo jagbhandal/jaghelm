@@ -22,11 +22,12 @@ export default function IncidentCard({ incident, onOpen }) {
       <p className="incident-card__cause">{incident.cause}</p>
       <div className="incident-card__foot">
         <UptimeRing uptime24={incident.uptime24} />
-        {/* Bug #9: ghost secondary button — NOT the loud .open-btn indigo fill */}
+        {/* Bug #9: ghost secondary button — unified with IncidentDetail/ServiceDetail
+            (open-btn base layout + open-btn--ghost muted skin), NOT the loud indigo fill */}
         {incident.target?.url && (
           <button
             type="button"
-            className="incident-card__open"
+            className="open-btn open-btn--ghost"
             onClick={() => onOpen(incident.target)}
           >
             Open

@@ -57,7 +57,8 @@
 }
 .firstrun input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+  /* Derive the focus ring from --accent so an accent recolor carries here too. */
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 /* --- Submit button (already --accent) --- */

@@ -19,7 +19,9 @@ export default function ServiceRow({ service, onTap }) {
 
   const shape = statusToShape(service.status, service.source);
   const severity = statusToSeverity(service.status, service.source);
-  const word = (service.status ?? 'unknown').toUpperCase();
+  // Strict status word: only up/down are named; everything else reads UNKNOWN
+  // (never a raw container state like RUNNING).
+  const word = service.status === 'up' ? 'UP' : service.status === 'down' ? 'DOWN' : 'UNKNOWN';
 
   return (
     <button

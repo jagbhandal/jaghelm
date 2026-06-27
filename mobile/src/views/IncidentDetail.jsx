@@ -3,7 +3,7 @@ import BackHeader from '../components/BackHeader.jsx';
 import StatusLamp from '../components/StatusLamp.jsx';
 import StatusWord from '../components/StatusWord.jsx';
 import UptimeRing from '../components/UptimeRing.jsx';
-import { deriveIncidents } from '../data/derive.js';
+import { deriveIncidents, formatClock } from '../data/derive.js';
 import { openTarget } from '../open.js';
 
 /**
@@ -21,21 +21,6 @@ import { openTarget } from '../open.js';
 function humanizeType(type) {
   const s = String(type || '').replace(/_/g, ' ').trim();
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Incident';
-}
-
-// Format a REAL push-record timestamp (epoch-ms number/string, or ISO) → "HH:MM".
-// Returns null for anything that is not a real, parseable time — honest numbers:
-// no real datum, no clock. Never invents a time.
-function formatClock(ts) {
-  if (ts == null || ts === '') return null;
-  const ms = typeof ts === 'number'
-    ? ts
-    : (/^\d+$/.test(String(ts).trim()) ? Number(ts) : Date.parse(ts));
-  if (!Number.isFinite(ms)) return null;
-  const d = new Date(ms);
-  if (Number.isNaN(d.getTime())) return null;
-  const pad = (x) => String(x).padStart(2, '0');
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 // Map a push-record severity string → lamp shape/severity/word. severity is a

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import StatusLamp from './StatusLamp.jsx';
+import { formatClock } from '../data/derive.js';
 
 /**
  * Pinned worst-of annunciator strip (spec §7.1). Persists across all four tabs.
@@ -108,12 +109,4 @@ export default function RefreshStatus({ severity, summary, lastUpdated, interval
       ) : null}
     </button>
   );
-}
-
-/** Real wall-clock "HH:MM" of the last successful poll — a genuine datum, not synthesized. */
-function formatClock(ts) {
-  const d = new Date(ts);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
 }

@@ -83,8 +83,9 @@ export default function Alerts({ data, nav }) {
             >
               <span className="alert-row__title">{inc.title}</span>
               <span className="alert-row__node">{inc.node}</span>
-              {/* Cause shown on active rows (Bug #8 — active cards must show cause) */}
-              {inc.cause && <span className="alert-row__cause">{inc.cause}</span>}
+              {/* Cause shown unconditionally on active rows (Bug #8); derive cause is
+                  never falsy. Matches the history rows + IncidentCard. */}
+              <span className="alert-row__cause">{inc.cause}</span>
             </button>
           ))}
 

@@ -53,7 +53,9 @@ export default function UptimeRing({ uptime24 }) {
           strokeWidth={STROKE_W}
         />
 
-        {/* Colored progress arc — fraction of full circle, starts at 12 o'clock */}
+        {/* Colored progress arc — fraction of full circle, starts at 12 o'clock.
+            Round linecap reads as a stray dot at a zero-length arc (uptime24 === 0),
+            so fall back to a butt cap when the fraction is 0. */}
         <circle
           className="uptime-ring__arc"
           cx={CX}
@@ -63,7 +65,7 @@ export default function UptimeRing({ uptime24 }) {
           stroke={color}
           strokeWidth={STROKE_W}
           strokeDasharray={dashArray}
-          strokeLinecap="round"
+          strokeLinecap={fraction > 0 ? 'round' : 'butt'}
           transform={`rotate(-90 ${CX} ${CY})`}
         />
 

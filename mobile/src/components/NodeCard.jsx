@@ -1,14 +1,7 @@
 import React from 'react';
 import UsageBar from './UsageBar.jsx';
 import StatusLamp from './StatusLamp.jsx';
-import { nodeSeverity, nodeUpDown, parseMetricPct, thirdMetric } from '../data/derive.js';
-
-/** Map node resource severity to a colorblind-safe lamp shape. */
-function severityToShape(sev) {
-  if (sev === 'critical') return 'slash';
-  if (sev === 'unknown') return 'ring';
-  return 'disc'; // caution (amber disc) + healthy (green disc)
-}
+import { nodeSeverity, nodeUpDown, parseMetricPct, thirdMetric, severityToShape, nodeSeverityWord } from '../data/derive.js';
 
 /**
  * Compact node card. Header: node name (Outfit) + subtitle (mono) + resource
@@ -22,7 +15,7 @@ function severityToShape(sev) {
 export default function NodeCard({ nodeKey, node, onTap }) {
   const sev = nodeSeverity(node);
   const shape = severityToShape(sev);
-  const sevWord = sev === 'caution' ? 'DEGRADED' : sev === 'healthy' ? 'OK' : 'NO SIGNAL';
+  const sevWord = nodeSeverityWord(sev);
   const { up, down } = nodeUpDown(node);
   const m = node.metrics || {};
   const third = thirdMetric(m);

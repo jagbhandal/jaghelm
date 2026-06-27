@@ -7,6 +7,8 @@ import {
   statusToSeverity, statusToShape, formatRuntime,
   overallSeverity, nodeSeverity, hasUnknownService, subsystemSeverity,
   activeIncidentIds,
+  severityToShape, nodeSeverityWord, pluralize, allCronFailures,
+  worstCaution, deriveHero, formatClock,
 } from './derive.js';
 
 const SERVICES_BODY = {
@@ -475,5 +477,196 @@ describe('activeIncidentIds', () => {
   });
   it('empty incidents → empty set', () => {
     expect(activeIncidentIds([]).size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// /simplify consolidation: helpers lifted out of the screens (behavior-identical)
+// ---------------------------------------------------------------------------
+
+describe('severityToShape', () => {
+  it('maps node resource severity → colorblind-safe lamp shape', () => {
+    expect(severityToShape('critical')).toBe('slash');
+    expect(severityToShape('unknown')).toBe('ring');
+    expect(severityToShape('healthy')).toBe('disc');
+    expect(severityToShape('caution')).toBe('disc');
+  });
+});
+
+describe('nodeSeverityWord', () => {
+  it('replicates the NodeCard/NodeDetail sevWord ternary verbatim', () => {
+    expect(nodeSeverityWord('caution')).toBe('DEGRADED');
+    expect(nodeSeverityWord('healthy')).toBe('OK');
+    expect(nodeSeverityWord('unknown')).toBe('NO SIGNAL');
+    // critical falls through the ternary to the NO SIGNAL arm (matches current code)
+    expect(nodeSeverityWord('critical')).toBe('NO SIGNAL');
+  });
+});
+
+describe('pluralize', () => {
+  it('appends "s" unless n === 1', () => {
+    expect(pluralize(1, 'service')).toBe('service');
+    expect(pluralize(2, 'service')).toBe('services');
+    expect(pluralize(0, 'node')).toBe('nodes');
+    expect(pluralize(1, 'job')).toBe('job');
+    expect(pluralize(3, 'job')).toBe('jobs');
+  });
+});
+
+describe('allCronFailures (now exported)', () => {
+  const CRON_OK = [{ node: 'pi', jobs: [{ job: 'backup', runs: [{ status: 'success' }] }] }];
+  const CRON_FAIL = [{ node: 'pi', jobs: [
+    { job: 'backup', runs: [{ status: 'failure', error: 'disk full' }] },
+    { job: 'sync', runs: [{ status: 'success' }] },
+  ] }];
+  it('returns [] for a non-array / no failures', () => {
+    expect(allCronFailures(null)).toEqual([]);
+    expect(allCronFailures(CRON_OK)).toEqual([]);
+  });
+  it('returns the newest-run failures with node/job/cause', () => {
+    const fails = allCronFailures(CRON_FAIL);
+    expect(fails).toHaveLength(1);
+    expect(fails[0].node).toBe('pi');
+    expect(fails[0].job).toBe('backup');
+    expect(fails[0].cause).toBe('disk full');
+  });
+  it('falls back to "Job failed" when the run has no error string', () => {
+    const fails = allCronFailures([{ node: 'pi', jobs: [{ job: 'x', runs: [{ status: 'failure' }] }] }]);
+    expect(fails[0].cause).toBe('Job failed');
+  });
+});
+
+describe('worstCaution', () => {
+  const HOT_NODE = { nodes: { hot: { display_name: 'Hot', metrics: { cpu: '95', memPercent: '40' }, services: [{ uid: 'h:a', status: 'up' }] } } };
+  const UNKNOWN_SVC = { nodes: { n: { display_name: 'N', metrics: { cpu: '10', memPercent: '20' }, services: [{ uid: 'n:x', status: 'unknown', source: 'container' }] } } };
+  const CRON_FAIL = [{ node: 'pi', jobs: [{ job: 'backup', runs: [{ status: 'failure', error: 'x' }] }] }];
+
+  it('null when nothing is in caution', () => {
+    expect(worstCaution({ services: { nodes: {} }, ups: { status: 1 }, cron: [] })).toBeNull();
+  });
+  it('UPS on battery wins outright (headline)', () => {
+    const w = worstCaution({ services: { nodes: {} }, ups: { status: 0, charge: 55 }, cron: CRON_FAIL });
+    expect(w.kind).toBe('ups');
+    expect(w.headline).toBe('UPS on battery');
+  });
+  it('cron failure → "N cron job(s) failed"', () => {
+    const w = worstCaution({ services: { nodes: {} }, ups: { status: 1 }, cron: CRON_FAIL });
+    expect(w.kind).toBe('cron');
+    expect(w.headline).toBe('1 cron job failed');
+  });
+  it('hot node → "N node(s) running hot" when no ups/cron', () => {
+    const w = worstCaution({ services: HOT_NODE, ups: { status: 1 }, cron: [] });
+    expect(w.kind).toBe('hot');
+    expect(w.headline).toBe('1 node running hot');
+  });
+  it('tracked unknown service → "N service(s) unknown" when nothing else', () => {
+    const w = worstCaution({ services: UNKNOWN_SVC, ups: { status: 1 }, cron: [] });
+    expect(w.kind).toBe('unknown');
+    expect(w.headline).toBe('1 service unknown');
+  });
+});
+
+describe('deriveHero (spec §7.2 deterministic wording)', () => {
+  const HEALTHY = {
+    services: { nodes: { 'vm-101': { display_name: 'VM 101', metrics: { cpu: '45', memPercent: '31' }, services: [
+      { uid: 'a', status: 'up', display_name: 'A' }, { uid: 'b', status: 'up', display_name: 'B' },
+    ] } } },
+    ups: { status: 1, charge: 100 }, cron: [],
+  };
+  function downData(n) {
+    const services = [];
+    for (let i = 0; i < n; i++) services.push({ uid: `d${i}`, status: 'down', display_name: `Svc ${i}`, url: `http://h/${i}` });
+    services.push({ uid: 'ok', status: 'up', display_name: 'Ok' });
+    return { services: { nodes: { 'vm-101': { display_name: 'VM 101', metrics: { cpu: '45', memPercent: '31' }, services } } }, ups: { status: 1, charge: 100 }, cron: [] };
+  }
+
+  it('unknown/unreachable → "No signal", never green', () => {
+    expect(deriveHero('unknown', HEALTHY)).toEqual({
+      severity: 'unknown', headline: 'No signal', word: 'No signal', subline: "Can't reach JagHelm", counts: '',
+    });
+  });
+
+  it('healthy → headline + word + counts + UPS-on-mains tail', () => {
+    const h = deriveHero('healthy', HEALTHY);
+    expect(h.headline).toBe("Everything's healthy");
+    expect(h.word).toBe('healthy');
+    expect(h.subline).toBe('2 services up across 1 node — UPS on mains');
+    expect(h.counts).toBe('2 up · 0 down · 1 node');
+  });
+
+  it('critical One → word-number One, names in subline', () => {
+    const h = deriveHero('critical', downData(1));
+    expect(h.headline).toBe('One service down');
+    expect(h.word).toBe('down');
+    expect(h.subline).toBe('Svc 0');
+    expect(h.counts).toBe('1 up · 1 down · 1 node');
+  });
+
+  it('critical Two → word-number Two, two names', () => {
+    const h = deriveHero('critical', downData(2));
+    expect(h.headline).toBe('Two services down');
+    expect(h.subline).toBe('Svc 0 · Svc 1');
+  });
+
+  it('critical ≥3 → digit headline, up-to-2 names + "+N more"', () => {
+    const h = deriveHero('critical', downData(3));
+    expect(h.headline).toBe('3 services down');
+    expect(h.subline).toBe('Svc 0 · Svc 1 +1 more');
+  });
+
+  it('critical + UPS on battery → "— plus UPS on battery" tail', () => {
+    const d = downData(1); d.ups = { status: 0, charge: 80 };
+    expect(deriveHero('critical', d).subline).toBe('Svc 0 — plus UPS on battery');
+  });
+
+  it('critical + cron failure (mains) → "— plus N cron failure(s)" tail', () => {
+    const d = downData(1); d.cron = [{ node: 'pi', jobs: [{ job: 'backup', runs: [{ status: 'failure', error: 'x' }] }] }];
+    expect(deriveHero('critical', d).subline).toBe('Svc 0 — plus 1 cron failure');
+  });
+
+  it('caution UPS → battery headline + charge prose', () => {
+    const ctx = { services: { nodes: { n: { display_name: 'N', metrics: { cpu: '10', memPercent: '20' }, services: [{ uid: 'n:a', status: 'up' }] } } }, ups: { status: 0, charge: 55 }, cron: [] };
+    const h = deriveHero('caution', ctx);
+    expect(h.headline).toBe('UPS on battery');
+    expect(h.word).toBe('battery');
+    expect(h.subline).toBe('On battery power — 55% charge.');
+  });
+
+  it('caution precedence (cron over hot) + rest summarised in subline', () => {
+    const ctx = {
+      services: { nodes: { hot: { display_name: 'Hot', metrics: { cpu: '95', memPercent: '40' }, services: [{ uid: 'h:a', status: 'up' }] } } },
+      ups: { status: 1 }, cron: [{ node: 'pi', jobs: [{ job: 'backup', runs: [{ status: 'failure', error: 'x' }] }] }],
+    };
+    const h = deriveHero('caution', ctx);
+    expect(h.headline).toBe('1 cron job failed');
+    expect(h.word).toBe('failed');
+    expect(h.subline).toBe('1 node over the resource threshold.');
+  });
+
+  it('caution unknown → unknown headline + unknown counts segment', () => {
+    const ctx = { services: { nodes: { n: { display_name: 'N', metrics: { cpu: '10', memPercent: '20' }, services: [
+      { uid: 'n:x', status: 'unknown', source: 'container', display_name: 'X' }, { uid: 'n:y', status: 'up', display_name: 'Y' },
+    ] } } }, ups: { status: 1 }, cron: [] };
+    const h = deriveHero('caution', ctx);
+    expect(h.headline).toBe('1 service unknown');
+    expect(h.word).toBe('unknown');
+    expect(h.subline).toBe('1 service not reporting.');
+    expect(h.counts).toBe('1 up · 0 down · 1 unknown · 1 node');
+  });
+});
+
+describe('formatClock', () => {
+  const TS = 1700000000000;
+  const d = new Date(TS);
+  const expected = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  it('formats an epoch-ms number → HH:MM', () => expect(formatClock(TS)).toBe(expected));
+  it('formats a numeric string (as FCM delivers)', () => expect(formatClock(String(TS))).toBe(expected));
+  it('formats an ISO string', () => expect(formatClock(d.toISOString())).toBe(expected));
+  it('null-safe: null/empty/garbage/NaN → null', () => {
+    expect(formatClock(null)).toBeNull();
+    expect(formatClock('')).toBeNull();
+    expect(formatClock(undefined)).toBeNull();
+    expect(formatClock('not a date')).toBeNull();
+    expect(formatClock(NaN)).toBeNull();
   });
 });

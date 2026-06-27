@@ -93,7 +93,7 @@ export function cronDegraded(cronBody) {
 }
 
 /** All newest-run failures from a cron body. Returns [] when none. */
-function allCronFailures(cronBody) {
+export function allCronFailures(cronBody) {
   if (!Array.isArray(cronBody)) return [];
   const failures = [];
   for (const n of cronBody) {
@@ -149,6 +149,28 @@ export function statusToShape(status, source) {
   return 'ring';
 }
 
+/**
+ * Map a node's RESOURCE severity to a colorblind-safe lamp shape (NodeCard +
+ * NodeDetail). Distinct from statusToShape (which keys off a service status):
+ * critical → slash, unknown → ring, caution/healthy → disc.
+ */
+export function severityToShape(sev) {
+  if (sev === 'critical') return 'slash';
+  if (sev === 'unknown') return 'ring';
+  return 'disc'; // caution (amber disc) + healthy (green disc)
+}
+
+/** Node resource-severity → status word (NodeCard + NodeDetail). caution →
+ *  DEGRADED, healthy → OK, anything else (unknown/critical) → NO SIGNAL. */
+export function nodeSeverityWord(sev) {
+  return sev === 'caution' ? 'DEGRADED' : sev === 'healthy' ? 'OK' : 'NO SIGNAL';
+}
+
+/** Pluralize a word by count: n === 1 → word, else word + 's'. */
+export function pluralize(n, word) {
+  return `${word}${n === 1 ? '' : 's'}`;
+}
+
 /** Format UPS runtime seconds → "Xm" (whole minutes). null/NaN → null. */
 export function formatRuntime(seconds) {
   if (seconds == null) return null;
@@ -189,7 +211,9 @@ export function overallSeverity({ services, ups, cron, unreachable } = {}) {
   const flat = flattenServices(services);
   if (flat.some((s) => s.status === 'down')) return 'critical';
   const nodeHot = Object.values(services.nodes || {}).some((n) => nodeSeverity(n) === 'caution');
-  if (upsDegraded(ups) || cronDegraded(cron) || nodeHot || hasUnknownService(services)) return 'caution';
+  // Reuse the already-flattened list rather than re-flattening via hasUnknownService.
+  const loneUnknown = flat.some((s) => s.status === 'unknown' && s.source !== 'presence');
+  if (upsDegraded(ups) || cronDegraded(cron) || nodeHot || loneUnknown) return 'caution';
   return 'healthy';
 }
 
@@ -209,8 +233,13 @@ export function subsystemSeverity(key, ctx = {}) {
     if (services == null) return { ...NO_SIGNAL_CELL };
     const flat = flattenServices(services);
     const total = flat.length;
-    const down = flat.filter((s) => s.status === 'down').length;
-    const unknown = flat.filter((s) => s.status === 'unknown' && s.source !== 'presence').length;
+    // Single pass for both counters (down + lone-unknown) instead of two filters.
+    let down = 0;
+    let unknown = 0;
+    for (const s of flat) {
+      if (s.status === 'down') down += 1;
+      if (s.status === 'unknown' && s.source !== 'presence') unknown += 1;
+    }
     if (down > 0) return { severity: 'critical', word: 'DOWN', detail: `${total - down} / ${total}` };
     if (unknown > 0) return { severity: 'caution', word: 'DEGRADED', detail: `${unknown} unknown` };
     return { severity: 'healthy', word: 'OK', detail: `${total} / ${total}` };
@@ -281,9 +310,10 @@ export function deriveSubsystems(ctx) {
  */
 export function deriveIncidents({ services, ups, cron } = {}) {
   const incidents = [];
+  const flat = flattenServices(services); // flatten once, reused by both service loops
 
   // Down services → red DOWN (slash). readout = node only (no invented age).
-  for (const svc of flattenServices(services)) {
+  for (const svc of flat) {
     if (svc.status === 'down') {
       incidents.push({
         id: `service:${svc.uid}`, kind: 'service', title: svc.display_name,
@@ -322,7 +352,7 @@ export function deriveIncidents({ services, ups, cron } = {}) {
   }
 
   // Tracked-unknown services → steel UNKN (ring). Presence breadcrumbs excluded.
-  for (const svc of flattenServices(services)) {
+  for (const svc of flat) {
     if (svc.status === 'unknown' && svc.source !== 'presence') {
       incidents.push({
         id: `unknown:${svc.uid}`, kind: 'unknown', title: svc.display_name,
@@ -341,4 +371,143 @@ export function deriveIncidents({ services, ups, cron } = {}) {
 /** The set of active incident ids — history renders only ids NOT in this set. */
 export function activeIncidentIds(incidents) {
   return new Set((incidents || []).map((i) => i.id));
+}
+
+// ---------------------------------------------------------------------------
+// Caution precedence + hero headline (spec §7.1 / §7.2). One source of truth for
+// the worst-of "caution" wording, shared by the MobileApp annunciator sentence
+// and the Overview hero headline so they can never drift.
+// ---------------------------------------------------------------------------
+
+// 1 → "One", 2 → "Two", ≥3 → digit (spec §7.2 down-headline rule).
+const WORD_NUMBER = { 1: 'One', 2: 'Two' };
+const wordNumber = (n) => WORD_NUMBER[n] || String(n);
+
+/**
+ * Presentation for a single caution kind: { kind, count, charge, headline, word,
+ * prose }. `headline` doubles as the annunciator sentence and the hero headline;
+ * `word`/`prose` feed the hero. The default branch is the "Degraded" fallback.
+ */
+function cautionDescriptor(kind, count, charge) {
+  switch (kind) {
+    case 'ups':
+      return { kind, count, charge, headline: 'UPS on battery', word: 'battery',
+        prose: `On battery power${charge != null ? ` — ${charge}% charge` : ''}.` };
+    case 'cron':
+      return { kind, count, charge, headline: `${count} cron ${pluralize(count, 'job')} failed`, word: 'failed',
+        prose: `${count} cron ${pluralize(count, 'job')} reported a failure.` };
+    case 'hot':
+      return { kind, count, charge, headline: `${count} ${pluralize(count, 'node')} running hot`, word: 'hot',
+        prose: `${count} ${pluralize(count, 'node')} over the resource threshold.` };
+    case 'unknown':
+      return { kind, count, charge, headline: `${count} ${pluralize(count, 'service')} unknown`, word: 'unknown',
+        prose: `${count} ${pluralize(count, 'service')} not reporting.` };
+    default:
+      return { kind: 'degraded', count: 0, charge: null, headline: 'Degraded', word: 'Degraded',
+        prose: 'A subsystem needs attention.' };
+  }
+}
+
+/**
+ * All active cautions in spec precedence ups → cron → node-hot → unknown. Empty
+ * when nothing is in caution. Internal — exposed via worstCaution + deriveHero.
+ */
+function listCautions({ services, ups, cron } = {}) {
+  const out = [];
+  if (upsDegraded(ups)) {
+    const charge = ups && ups.charge != null ? Math.round(ups.charge) : null;
+    out.push(cautionDescriptor('ups', 0, charge));
+  }
+  const cronFails = allCronFailures(cron).length;
+  if (cronFails > 0) out.push(cautionDescriptor('cron', cronFails, null));
+  const hot = Object.values((services && services.nodes) || {}).filter((n) => nodeSeverity(n) === 'caution').length;
+  if (hot > 0) out.push(cautionDescriptor('hot', hot, null));
+  const unknown = flattenServices(services).filter((s) => s.status === 'unknown' && s.source !== 'presence').length;
+  if (unknown > 0) out.push(cautionDescriptor('unknown', unknown, null));
+  return out;
+}
+
+/**
+ * The single worst caution by precedence (ups → cron → node-hot → unknown), or
+ * null when nothing is in caution. The annunciator renders `.headline`; the hero
+ * uses `.headline`/`.word`. ctx = { services, ups, cron }.
+ */
+export function worstCaution(ctx) {
+  return listCautions(ctx)[0] || null;
+}
+
+/**
+ * The Overview hero { severity, headline, word, subline, counts } per spec §7.2.
+ * `word` is the substring of `headline` the SystemStatusCard color-spans by
+ * severity. ctx = { services, ups, cron }. Pure: callers just render the result.
+ */
+export function deriveHero(severity, { services, ups, cron } = {}) {
+  // unknown / unreachable — never green (Bug #4).
+  if (severity === 'unknown') {
+    return { severity, headline: 'No signal', word: 'No signal', subline: "Can't reach JagHelm", counts: '' };
+  }
+
+  const flat = flattenServices(services);
+  const upCount = flat.filter((s) => s.status === 'up').length;
+  const downServices = flat.filter((s) => s.status === 'down');
+  const downCount = downServices.length;
+  const unknownCount = flat.filter((s) => s.status === 'unknown' && s.source !== 'presence').length;
+  const nodeCount = Object.keys((services && services.nodes) || {}).length;
+  const onBattery = upsDegraded(ups);
+
+  // Mono counts footer — shared across non-unknown states.
+  const counts = [
+    `${upCount} up`,
+    `${downCount} down`,
+    ...(unknownCount > 0 ? [`${unknownCount} unknown`] : []),
+    `${nodeCount} ${pluralize(nodeCount, 'node')}`,
+  ].join(' · ');
+
+  // healthy
+  if (severity === 'healthy') {
+    const upsTail = ups ? ` — UPS on ${onBattery ? 'battery' : 'mains'}` : '';
+    return {
+      severity,
+      headline: "Everything's healthy",
+      word: 'healthy',
+      subline: `${upCount} ${pluralize(upCount, 'service')} up across ${nodeCount} ${pluralize(nodeCount, 'node')}${upsTail}`,
+      counts,
+    };
+  }
+
+  // critical (down) — count words, up-to-2 names + "+N more", co-existing caution tail.
+  if (severity === 'critical') {
+    const headline = `${wordNumber(downCount)} ${pluralize(downCount, 'service')} down`;
+    const names = downServices.slice(0, 2).map((s) => s.display_name).join(' · ');
+    const more = downCount > 2 ? ` +${downCount - 2} more` : '';
+    const cronFails = allCronFailures(cron).length;
+    let tail = '';
+    if (onBattery) tail = ' — plus UPS on battery';
+    else if (cronFails > 0) tail = ` — plus ${cronFails} cron ${pluralize(cronFails, 'failure')}`;
+    return { severity, headline, word: 'down', subline: `${names}${more}${tail}`, counts };
+  }
+
+  // caution (no down) — headline the single worst caution by precedence; the rest
+  // are summarized in the subline.
+  const cautions = listCautions({ services, ups, cron });
+  const first = cautions[0] || cautionDescriptor('degraded');
+  const rest = cautions.slice(1).map((c) => c.prose).join(' ');
+  return { severity, headline: first.headline, word: first.word, subline: rest || first.prose, counts };
+}
+
+/**
+ * Real wall-clock "HH:MM" from an epoch-ms number, numeric string, or ISO string.
+ * Null-safe: returns null for null/empty/unparseable input (honest numbers — no
+ * real datum, no clock). Pure (no I/O). Shared by RefreshStatus + IncidentDetail.
+ */
+export function formatClock(ts) {
+  if (ts == null || ts === '') return null;
+  const ms = typeof ts === 'number'
+    ? ts
+    : (/^\d+$/.test(String(ts).trim()) ? Number(ts) : Date.parse(ts));
+  if (!Number.isFinite(ms)) return null;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (x) => String(x).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
