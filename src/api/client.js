@@ -18,6 +18,18 @@ import { secureStore } from '../storage/index.js';
 // token source is swappable (web localStorage default; mobile Keystore later).
 let authToken = '';
 
+// Optional hook fired when a protected /api call returns 401 (token expired or
+// revoked — JagHelm sessions are 24h and die on server restart). Null by default,
+// so the web path is byte-for-byte unchanged; the mobile shell registers a
+// handler that clears the token and routes back to the login screen. Must be
+// idempotent: several in-flight requests can each 401 in the same window.
+let onAuthExpired = null;
+
+/** Register (or clear, with null) the 401 auth-expired handler. */
+export function setAuthExpiredHandler(fn) {
+  onAuthExpired = typeof fn === 'function' ? fn : null;
+}
+
 /**
  * Seed the in-memory token from secure storage. Awaited at boot BEFORE any data
  * hook fires, so a reload (web) or app start (mobile) keeps the session. Web
@@ -60,10 +72,23 @@ export function apiFetch(url, opts) {
     !url.includes('/auth/login') &&
     authToken
   ) {
-    return window.fetch(url, {
-      ...(opts || {}),
-      headers: { ...(opts && opts.headers), 'x-auth-token': authToken },
-    });
+    return window
+      .fetch(url, {
+        ...(opts || {}),
+        headers: { ...(opts && opts.headers), 'x-auth-token': authToken },
+      })
+      .then((r) => {
+        // Self-heal on an expired/revoked session: notify the shell, but never
+        // let a throwing handler break the caller's fetch result.
+        if (r && r.status === 401 && onAuthExpired) {
+          try {
+            onAuthExpired();
+          } catch {
+            /* handler errors are non-fatal to the request */
+          }
+        }
+        return r;
+      });
   }
   return window.fetch(url, opts);
 }
