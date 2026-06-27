@@ -50,7 +50,7 @@ Task 1 already shipped `server/serviceRegistry.js` (monitor-id → last-seen nod
 - **`containerRegistry`** (new, `server/containerRegistry.js`) — `containerName → { lastSeenNode, firstSeenAt, lastSeenAt }`. Persists to `data/container-registry.json`. Keyed by container **name globally** (so a container that legitimately moves nodes is never falsely "missing" — running *anywhere* ⇒ present). Adds:
   - `recordSeen(name, nodeKey, now)` — set `firstSeenAt` on first sight; always update `lastSeenNode`/`lastSeenAt`.
   - `getMissing({ now, graceMs, ttlMs, establishMs }) → Array<{ container, lastSeenNode, lastSeenAt, ageMs }>` — entries that are **established** (`lastSeenAt − firstSeenAt ≥ establishMs`) and **in the absent window** (`graceMs ≤ now − lastSeenAt ≤ ttlMs`).
-  - `prune(ttlMs, now)` — drop entries absent longer than `ttlMs` (decommission cleanup); invoked on `save()`.
+  - `prune(ttlMs, now)` — drop entries absent longer than `ttlMs` (decommission cleanup); invoked as an explicit refresh-loop step (decoupled from `save()` so persistence never deletes by clock as a side effect).
 
 ### 2. `assembleServices` — third synthesis pass
 

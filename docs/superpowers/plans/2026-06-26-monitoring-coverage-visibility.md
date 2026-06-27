@@ -1111,7 +1111,9 @@ In `server/refresh.js`, REPLACE the inline assembly block in `_refreshServices` 
     for (const { monitorId, nodeKey } of seen) serviceRegistry.recordSeen(monitorId, nodeKey);
     serviceRegistry.save();
     // containerRegistry was updated in-pass (recordSeen) inside assembleServices;
-    // persist + decommission-prune it here.
+    // decommission-prune (>TTL) then persist here. prune() is an explicit refresh-loop
+    // step (NOT a save() side effect) so persistence never silently deletes by clock.
+    containerRegistry.prune();
     containerRegistry.save();
 
     // overallHealth is server-computed once (above) and shipped in the payload so
