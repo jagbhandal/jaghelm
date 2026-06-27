@@ -27,6 +27,8 @@ Every service card resolves to exactly one state:
 | **Untracked, running** | **green + "unmonitored" tag** + nudge tooltip | no |
 | **Untracked, vanished** (was *established*) | **grey "Unknown — last seen {age}"** | amber/degraded |
 
+> **Global health is computed SERVER-SIDE** (user-approved refinement, 2026-06-27). `assembleServices` derives one `overallHealth` value from the whole assembled board and returns it in the `/api/services` payload; **both** frontends read that single field for their global dot (web NavBar, mobile Overview) instead of each re-deriving it. The "Drives global health" column above is therefore symmetric across web + mobile and deterministic: `down` if any card is down; else `degraded` if any card is `unknown` (this **includes** presence breadcrumbs, which are `status:'unknown'`); else `up` if there are any cards; else `unknown`.
+
 ### Invariants
 
 - **DOWN (red)** iff an **active Kuma monitor reports `down`**. (base spec — unchanged)
@@ -34,6 +36,7 @@ Every service card resolves to exactly one state:
 - **UNKNOWN / breadcrumb (grey)** iff an **established, unmatched** container has been **absent ≥ grace and ≤ TTL**. Never amber, never red — we are not claiming it broke.
 - **Kuma owns tracked services entirely.** A container that matches *any* monitor never becomes a breadcrumb; its fate is decided by the base spec's logic (down-active → red synth, up → nothing, paused → hidden).
 - **Fail-safe** carries over: prefer a *missed* breadcrumb to a *false* one (the establish-guard and grace window enforce this).
+- **Global health is server-computed, not client-derived.** One `overallHealth` value is calculated in `assembleServices` from every assembled card and shipped in the `/api/services` payload; both dots consume it verbatim, so web + mobile stay symmetric and no derivation is duplicated client-side.
 
 The grey breadcrumb **reuses the existing `'unknown'` status** that both frontends already render — no new status string. It is distinguished by `source: 'presence'` + a `lastSeenAt` timestamp.
 
@@ -57,6 +60,7 @@ After the existing (a) container cards [Kuma overlays status] and (b) down-monit
 2. `const candidates = containerRegistry.getMissing({ now, graceMs, ttlMs, establishMs })`.
 3. For each candidate: **skip if running anywhere** this cycle (defensive — `getMissing` already excludes fresh records via grace); **skip if `matchMonitor(name, null, monitors)` is truthy** (Kuma owns it); else synthesise a grey card on `lastSeenNode` (fallback: first node).
 4. Final per-node order becomes **down → unknown → up** (extend the existing comparator).
+5. **Compute global health** from the fully-assembled board (after sorting): `overallHealth = 'down'` if any card is `down`; else `'degraded'` if any card is `unknown` (this includes presence breadcrumbs); else `'up'` if there are any cards; else `'unknown'`. Return it alongside the nodes — the cache payload becomes `{ nodes, overallHealth }` — so both frontends read one server truth (user-approved refinement, 2026-06-27).
 
 Breadcrumb card shape (mirrors the existing card contract + two new fields):
 ```js
@@ -73,7 +77,7 @@ Breadcrumb card shape (mirrors the existing card contract + two new fields):
 - **Unmonitored tag:** render the existing `monitored === false` flag as a subtle tag/indicator + a nudge tooltip — *"No Uptime Kuma monitor — add one to track this service's true status."* Subtle, never alarming.
 - **Breadcrumb:** `source === 'presence'` → grey card with a **"last seen {age} ago"** subtitle (a small relative-time helper formats `lastSeenAt`).
 - **Sort:** down → unknown → up (inherits the backend order; confirm each client renders in backend order or sorts identically).
-- **Global health:** `'unknown'` already maps to **degraded/amber** in both the web NavBar and mobile `deriveGlobalHealth`. The breadcrumb inherits this — a heads-up on the global dot, **not** a red alarm.
+- **Global health (server-computed, symmetric):** both dots read the single `overallHealth` field from the `/api/services` payload — the web NavBar via `getServices()` (replacing the old `getMonitors()`-derived dot) and the mobile Overview via `servicesBody.overallHealth` (replacing the client `deriveGlobalHealth`). A presence breadcrumb (status `'unknown'`) makes `overallHealth === 'degraded'`, so it shows as a heads-up (amber) on **both** dots — **not** a red alarm. No client re-derivation.
 
 ## Defaults (deterministic constants, env-overridable)
 
@@ -96,8 +100,8 @@ Breadcrumb card shape (mirrors the existing card contract + two new fields):
 ## Testing Strategy
 
 - **`containerRegistry`** unit tests: record + firstSeen/lastSeen, `getMissing` window boundaries (below grace, in window, past TTL), establish-guard, `prune`, persistence round-trip, corrupt-file → empty.
-- **`assembleServices`** tests: breadcrumb synthesis on last-seen node; skip-if-monitored; skip-if-running; establish-guard exclusion; down→unknown→up ordering; grey `'unknown'` + `source:'presence'` shape.
-- **Frontend** tests: unmonitored-tag render on `monitored:false`; breadcrumb grey + "last seen" subtitle on `source:'presence'`; sort order; global-health amber on a presence-unknown card.
+- **`assembleServices`** tests: breadcrumb synthesis on last-seen node; skip-if-monitored; skip-if-running; establish-guard exclusion; down→unknown→up ordering; grey `'unknown'` + `source:'presence'` shape; **server-computed `overallHealth`** (down / unknown-breadcrumb → degraded / all-up / empty → unknown).
+- **Frontend** tests: unmonitored-tag render on `monitored:false`; breadcrumb grey + "last seen" subtitle on `source:'presence'`; sort order. (Global health is no longer derived client-side, so it is covered by the backend `assembleServices` test above; both dots simply read the `overallHealth` field.)
 
 ## Out of Scope (v1)
 
@@ -111,6 +115,6 @@ Breadcrumb card shape (mirrors the existing card contract + two new fields):
 |---|---|
 | Task 1 (serviceRegistry) | ✅ done; gets the shared-core refactor |
 | Task 2 (Kuma `active` flag) | unchanged |
-| Task 3 (assembleServices) | gains the third (breadcrumb) synthesis pass + `containerRegistry` |
-| Task 4 (mobile dot) | gains the unmonitored tag + breadcrumb + down→unknown→up sort |
-| **New web-frontend task** | unmonitored tag + breadcrumb rendering + sort (the base plan leaned entirely on existing 'down' rendering; that no longer covers us) |
+| Task 3 (assembleServices) | gains the third (breadcrumb) synthesis pass + `containerRegistry` + **server-computed `overallHealth`** in the payload |
+| Task 4 (mobile dot) | **reads the server `overallHealth`** (client `deriveGlobalHealth` **dropped**) + unmonitored tag + breadcrumb + down→unknown→up sort |
+| **New web-frontend task** | unmonitored tag + breadcrumb rendering + sort, **and repoints the NavBar dot to the server `overallHealth`** via `getServices()` (the old `getMonitors()`-derived dot is removed) |
