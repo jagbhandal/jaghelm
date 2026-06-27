@@ -279,6 +279,9 @@ function BadgeArea({ service, statusStyle, statusColor, isUp, isDown, st, isBrea
   const showUnmonitored = service.monitored === false && !isBreadcrumb;
   if (statusStyle === 'dot') {
     // Dot mode: ping on the right, plus the unmonitored tag if applicable.
+    // Render no node when there's neither tag nor ping — preserves the prior
+    // null return so monitored, no-ping cards don't gain a stray flex gap.
+    if (!showUnmonitored && !(service.ping != null && service.ping > 0)) return null;
     return (
       <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexShrink: 0 }}>
         {showUnmonitored && <UnmonitoredTag />}
