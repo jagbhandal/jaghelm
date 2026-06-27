@@ -1,59 +1,63 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Monochrome adaptive icon layer — Android 13+ themed icons (API 33+).
-     System applies a tint colour over this; keep shapes white / single-colour.
-     Contains shield outline + helm wheel as the recognisable silhouette. -->
+     The system tints this single-colour silhouette; all shapes are white.
+     Geometry mirrors the foreground: shield outline + bold ship's-wheel
+     (bold rim + 8 spokes hub->peg), scaled 1.16x about (100,98) to match. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="200"
     android:viewportHeight="200">
+    <group
+        android:name="art"
+        android:scaleX="1.16"
+        android:scaleY="1.16"
+        android:pivotX="100"
+        android:pivotY="98">
 
-    <!-- Outer shield path (outline only — no fill, the tint provides colour) -->
-    <path
-        android:pathData="M100,16 L166,42 Q170,44 170,48 L170,108 Q170,148 100,178 Q30,148 30,108 L30,48 Q30,44 34,42 Z"
-        android:fillColor="#FFFFFF"
-        android:fillAlpha="0.15"/>
-    <path
-        android:pathData="M100,16 L166,42 Q170,44 170,48 L170,108 Q170,148 100,178 Q30,148 30,108 L30,48 Q30,44 34,42 Z"
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="5"/>
+        <!-- Shield: soft fill + outline -->
+        <path
+            android:pathData="M100,16 L166,42 Q170,44 170,48 L170,108 Q170,148 100,178 Q30,148 30,108 L30,48 Q30,44 34,42 Z"
+            android:fillColor="#FFFFFF"
+            android:fillAlpha="0.16"/>
+        <path
+            android:pathData="M100,16 L166,42 Q170,44 170,48 L170,108 Q170,148 100,178 Q30,148 30,108 L30,48 Q30,44 34,42 Z"
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="5.5"/>
 
-    <!-- Helm wheel — solid white so system tint applies -->
-    <!-- Hub -->
-    <path
-        android:pathData="M100,80 A12,12 0 1,0 100,104 A12,12 0 1,0 100,80 Z"
-        android:fillColor="#FFFFFF"/>
-    <!-- Cardinal spokes -->
-    <path
-        android:pathData="M98,80 L102,80 L102,50 L98,50 Z"
-        android:fillColor="#FFFFFF"/>
-    <path
-        android:pathData="M98,104 L102,104 L102,134 L98,134 Z"
-        android:fillColor="#FFFFFF"/>
-    <path
-        android:pathData="M88,90 L88,94 L58,94 L58,90 Z"
-        android:fillColor="#FFFFFF"/>
-    <path
-        android:pathData="M112,90 L112,94 L142,94 L142,90 Z"
-        android:fillColor="#FFFFFF"/>
-    <!-- Outer ring -->
-    <path
-        android:pathData="M100,50 A42,42 0 1,0 100,134 A42,42 0 1,0 100,50 Z"
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="5"/>
-    <!-- Cardinal pegs -->
-    <path
-        android:pathData="M100,41 A7,7 0 1,0 100,55 A7,7 0 1,0 100,41 Z"
-        android:fillColor="#FFFFFF"/>
-    <path
-        android:pathData="M100,129 A7,7 0 1,0 100,143 A7,7 0 1,0 100,129 Z"
-        android:fillColor="#FFFFFF"/>
-    <path
-        android:pathData="M49,85 A7,7 0 1,0 49,99 A7,7 0 1,0 49,85 Z"
-        android:fillColor="#FFFFFF"/>
-    <path
-        android:pathData="M137,85 A7,7 0 1,0 137,99 A7,7 0 1,0 137,85 Z"
-        android:fillColor="#FFFFFF"/>
+        <!-- Bold rim -->
+        <path
+            android:pathData="M100,50 A42,42 0 1,0 100,134 A42,42 0 1,0 100,50 Z"
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="7"/>
+
+        <!-- Cardinal spokes (hub -> peg) -->
+        <path android:pathData="M100,80 L100,48" android:strokeColor="#FFFFFF" android:strokeWidth="7" android:strokeLineCap="round"/>
+        <path android:pathData="M100,104 L100,136" android:strokeColor="#FFFFFF" android:strokeWidth="7" android:strokeLineCap="round"/>
+        <path android:pathData="M88,92 L56,92" android:strokeColor="#FFFFFF" android:strokeWidth="7" android:strokeLineCap="round"/>
+        <path android:pathData="M112,92 L144,92" android:strokeColor="#FFFFFF" android:strokeWidth="7" android:strokeLineCap="round"/>
+
+        <!-- Diagonal spokes -->
+        <path android:pathData="M91.5,83.5 L69,61" android:strokeColor="#FFFFFF" android:strokeWidth="5" android:strokeLineCap="round"/>
+        <path android:pathData="M108.5,83.5 L131,61" android:strokeColor="#FFFFFF" android:strokeWidth="5" android:strokeLineCap="round"/>
+        <path android:pathData="M91.5,100.5 L69,123" android:strokeColor="#FFFFFF" android:strokeWidth="5" android:strokeLineCap="round"/>
+        <path android:pathData="M108.5,100.5 L131,123" android:strokeColor="#FFFFFF" android:strokeWidth="5" android:strokeLineCap="round"/>
+
+        <!-- Hub -->
+        <path android:pathData="M100,79 A13,13 0 1,0 100,105 A13,13 0 1,0 100,79 Z" android:fillColor="#FFFFFF"/>
+
+        <!-- Cardinal pegs -->
+        <path android:pathData="M100,41 A7,7 0 1,0 100,55 A7,7 0 1,0 100,41 Z" android:fillColor="#FFFFFF"/>
+        <path android:pathData="M100,129 A7,7 0 1,0 100,143 A7,7 0 1,0 100,129 Z" android:fillColor="#FFFFFF"/>
+        <path android:pathData="M49,92 A7,7 0 1,0 63,92 A7,7 0 1,0 49,92 Z" android:fillColor="#FFFFFF"/>
+        <path android:pathData="M137,92 A7,7 0 1,0 151,92 A7,7 0 1,0 137,92 Z" android:fillColor="#FFFFFF"/>
+
+        <!-- Diagonal pegs -->
+        <path android:pathData="M63.5,61 A5.5,5.5 0 1,0 74.5,61 A5.5,5.5 0 1,0 63.5,61 Z" android:fillColor="#FFFFFF"/>
+        <path android:pathData="M125.5,61 A5.5,5.5 0 1,0 136.5,61 A5.5,5.5 0 1,0 125.5,61 Z" android:fillColor="#FFFFFF"/>
+        <path android:pathData="M63.5,123 A5.5,5.5 0 1,0 74.5,123 A5.5,5.5 0 1,0 63.5,123 Z" android:fillColor="#FFFFFF"/>
+        <path android:pathData="M125.5,123 A5.5,5.5 0 1,0 136.5,123 A5.5,5.5 0 1,0 125.5,123 Z" android:fillColor="#FFFFFF"/>
+    </group>
 </vector>
