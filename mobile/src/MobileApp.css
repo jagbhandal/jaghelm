@@ -279,16 +279,19 @@
 .timeline__label { font-family: var(--font-body); font-size: var(--text-sm); color: var(--text-primary); }
 .timeline__detail { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
 
-/* Phase 5: Notification Settings screen. One Dark Pro tokens; >=44px rows. */
+/* Task 11: Notification Settings screen — carbon tokens + indigo switches. >=44px rows. */
 .notif-controls { display: flex; flex-direction: column; }
 .notif-row {
   display: flex; align-items: center; justify-content: space-between;
   min-height: 44px; padding: var(--space-2) var(--space-1);
   border-bottom: 1px solid var(--border-color);
 }
-.notif-row__label { color: var(--text-primary); font-size: var(--text-base); }
+/* DM Sans for labels per three-role type system (spec §7.9). */
+.notif-row__label { font-family: var(--font-body); color: var(--text-primary); font-size: var(--text-base); }
+/* Indigo switch: accent-color tints the native checkbox chrome to --accent (#6366f1). */
 .notif-switch { width: 44px; height: 44px; accent-color: var(--accent); cursor: pointer; }
-.notif-unavailable { color: var(--text-muted); font-size: var(--text-base); padding: var(--space-2) 0; }
+/* DM Sans for unavailable copy (spec §7.9: "copy in DM Sans"). */
+.notif-unavailable { font-family: var(--font-body); color: var(--text-muted); font-size: var(--text-base); padding: var(--space-2) 0; }
 
 /* Phase 5: destructive "turn off push on this device" (the DELETE teardown). */
 .notif-turnoff {
