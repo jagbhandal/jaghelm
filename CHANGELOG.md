@@ -4,6 +4,72 @@ All notable changes to JagHelm are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] — 2026-06-27
+
+**JagHelm goes mobile — and gets loud when something breaks.** Where 1.4.0 was a
+correctness pass, 1.5.0 ships the biggest new surface since the dashboard itself:
+a native Android app that watches the board from your pocket over the tailnet and
+**pushes a notification the moment a service, host, UPS, or cron job changes state**
+— no open tab, no manual polling. Alongside it, the board stops lying by omission —
+a service that goes down now *shows* as down instead of silently vanishing, overall
+health is computed once on the server, and Kuma can read every monitor and its uptime
+from the authenticated `/metrics` endpoint. **389 server tests (up from 314), plus a
+183-test web suite and a new 244-test mobile suite; the release's multi-agent security
+review found no critical- or high-severity issues.**
+
+### Mobile
+
+- **A native Android app.** A Capacitor shell around the live dashboard, installable as
+  a signed APK. Log in with username/password over the tailnet, with a keep-signed-in
+  toggle that revalidates on launch.
+- **Push notifications on real state changes.** The server diffs each refresh against the
+  last and pushes via FCM only on genuine transitions: a service going **down/recovering**,
+  a host going **unreachable**, a host metric **crossing a threshold** (with a hysteresis
+  band so it doesn't flap on the edge), a **UPS dropping to battery / restored**, and a
+  **cron job failing/recovering**. The snapshot → diff → dispatch core is deterministic.
+- **Tap-to-incident deep links.** A notification opens the app straight to the relevant
+  incident via a `jaghelm://` scheme.
+- **Per-category notification settings + a real off switch.** Choose which event classes
+  notify you; turning push off tears the device token down server-side, not just locally.
+- **Signed-APK release pipeline.** A GitHub Actions workflow builds and signs the release
+  APK (Capacitor 8 / JDK 21), gated on keystore secrets so it no-ops until they're set,
+  with a keystore runbook.
+
+### Monitoring
+
+- **Down services show as down — they no longer disappear.** A stopped container's card
+  used to vanish from the board entirely, which reads as "all clear." The board is now
+  assembled from **running containers ∪ active Kuma monitors ∪ presence breadcrumbs**, so
+  a down service stays on the board as a down card and a recently-vanished container leaves
+  a grey breadcrumb instead of a silent gap.
+- **Server-computed overall health** drives one status dot in the web NavBar and the mobile
+  Overview, an **"unmonitored"** tag for services nothing is watching, and a
+  **down → unknown → up** sort that floats trouble to the top.
+- **Kuma can read the authenticated `/metrics` endpoint.** With `KUMA_API_KEY` set, one
+  authenticated scrape replaces the two status-page calls and sees **every** monitor plus
+  its 1-day uptime — keyed on `monitor_id`. It **degrades gracefully** back to the
+  status-page path when the key is unset, wrong (a `401`), or the Kuma is too old to expose
+  `monitor_id`, so a bad key never blanks the board.
+
+### Fixed
+
+- **One source of truth for the API base** across web and mobile (`getApiBase()`), with
+  `ETag` added to the CORS exposed headers.
+- A batch of mobile correctness fixes: push registration gated on build-time Firebase
+  config, node-row navigation, ≥44px tap targets, and a tailnet-accurate URL placeholder.
+
+### Security
+
+- **Prototype pollution blocked in the new parsers and stores.** The Kuma `/metrics` parser
+  and the push token/prefs store reject `__proto__` / `constructor` / `prototype` keys and
+  validate their numeric inputs. Surfaced and fixed by this release's own multi-agent
+  security review.
+- **Mobile attack surface kept tight.** Cleartext HTTP is scoped to the tailnet only, the
+  deep-link intent-filter drops `BROWSABLE`, `allowBackup` is off, and extra CSP connect
+  entries are validated.
+- **Dependency note.** Adding `firebase-admin` for FCM introduces **6 moderate** transitive
+  advisories (via `@google-cloud/storage`); none are critical or high.
+
 ## [1.4.0] — 2026-06-22
 
 **Correctness and clarity.** Where 1.3.0 added the glance layer, 1.4.0 is a deep
