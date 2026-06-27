@@ -62,7 +62,7 @@ describe('sortProblemsFirst', () => {
     const sorted = sortProblemsFirst(flat);
     expect(sorted[0].status).toBe('down');
     expect(sorted.map((s) => s.uid)).toEqual([
-      'vm-101:gitea', 'vm-101:adguard', 'gateway-pi:pihole',
+      'vm-101:gitea', 'gateway-pi:pihole', 'vm-101:adguard',
     ]);
     expect(flat).toEqual(input); // unmutated
   });
@@ -170,5 +170,16 @@ describe('deriveIncidents', () => {
     expect(cronIds).toContain('cron:pi:backup');
     expect(cronIds).toContain('cron:pi:sync');
     expect(cronIds).toHaveLength(2);
+  });
+});
+
+describe('sortProblemsFirst (down → unknown → up)', () => {
+  it('orders down first, unknown/presence in the middle, up last', () => {
+    const input = [
+      { uid: 'a', status: 'up' },
+      { uid: 'b', status: 'unknown', source: 'presence' },
+      { uid: 'c', status: 'down' },
+    ];
+    expect(sortProblemsFirst(input).map((s) => s.uid)).toEqual(['c', 'b', 'a']);
   });
 });

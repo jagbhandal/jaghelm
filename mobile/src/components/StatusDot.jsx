@@ -1,13 +1,10 @@
-import React from 'react';
-
-/**
- * Glowing status dot with a redundant glyph + SR label (WCAG 1.4.1 — never
- * color-only). 'running' counts as up; anything not up/down is unknown.
- */
-export default function StatusDot({ status }) {
+export default function StatusDot({ status, source }) {
   const isUp = status === 'up' || status === 'running';
   const isDown = status === 'down';
-  const color = isUp ? 'var(--green)' : isDown ? 'var(--red)' : 'var(--amber)';
+  // A presence breadcrumb is grey (muted), never the amber a tracked 'unknown'
+  // monitor would get — we are not claiming it broke.
+  const isBreadcrumb = source === 'presence';
+  const color = isBreadcrumb ? 'var(--text-muted)' : isUp ? 'var(--green)' : isDown ? 'var(--red)' : 'var(--amber)';
   const label = isUp ? 'Up' : isDown ? 'Down' : 'Unknown';
   const glyph = isUp ? '▲' : isDown ? '▼' : '◆';
   return (

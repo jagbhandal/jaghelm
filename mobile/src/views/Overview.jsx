@@ -17,9 +17,28 @@ export default function Overview({ data, nav }) {
   const extra = incidents.length - shown.length;
   const nodes = useMemo(() => groupByNode(servicesBody), [servicesBody]);
 
+  // Server-computed global health off the /api/services payload — the same field
+  // the web NavBar dot reads (Task 4), so both dots are symmetric. No client
+  // re-derivation; a presence breadcrumb already makes this 'degraded' server-side.
+  const health = servicesBody?.overallHealth || 'unknown';
+  const healthColor = health === 'up' ? 'var(--green)' : health === 'down' ? 'var(--red)' : 'var(--amber)';
+  const healthLabel =
+    health === 'up' ? 'All systems operational'
+    : health === 'down' ? 'Service disruption'
+    : health === 'degraded' ? 'Degraded'
+    : 'No data';
+
   return (
     <section className="mobile-view" aria-label="Overview">
-      <h1>Overview</h1>
+      <header className="overview-header">
+        <span
+          className="overview-health-dot"
+          style={{ background: healthColor, boxShadow: `0 0 8px ${healthColor}` }}
+          aria-hidden="true"
+        />
+        <h1>Overview</h1>
+        <span className="sr-only" role="status" aria-live="polite">{healthLabel}</span>
+      </header>
       <StatusBanner loading={loading} error={error} hasData={!!servicesBody} />
       <SubsystemStrip cells={cells} />
 
