@@ -213,8 +213,11 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   const nodeKeys = Object.keys(nodes);
 
   // (b) Down-monitor synthesis — outages whose container left cAdvisor. The
-  // down-vs-inactive invariant lives in selectOutageMonitors (active !== false).
-  const outages = selectOutageMonitors(monitors, consumed);
+  // down-vs-inactive invariant lives in selectOutageMonitors: it keeps only
+  // monitors that are down, active, and FRESH (a paused monitor's heartbeat
+  // goes stale and is excluded, so a retired-while-down service can't leave a
+  // phantom red card — `active` reads null on real Kuma and can't be relied on).
+  const outages = selectOutageMonitors(monitors, consumed, { now: nowMs });
   for (const m of outages) {
     let nodeKey = lastSeenNodeOf(m.id);
     if (!nodeKey || !nodes[nodeKey]) nodeKey = nodeKeys[0];
