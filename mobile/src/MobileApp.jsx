@@ -5,6 +5,7 @@ import { LAST_TAB_KEY } from './runtimeConfig.js';
 import { getPref, setPref } from './storage/prefsAdapter.js';
 import { useNavStack } from './nav/useNavStack.js';
 import { useDashboard } from './data/useDashboard.js';
+import { overallSeverity, flattenServices, upsDegraded, nodeSeverity } from './data/derive.js';
 import Overview from './views/Overview.jsx';
 import Services from './views/Services.jsx';
 import Infra from './views/Infra.jsx';
@@ -23,6 +24,40 @@ const SCREENS = {
   notificationSettings: NotificationSettings,
 };
 const ROOT = { overview: { screen: 'overview' }, services: { screen: 'services' }, infra: { screen: 'infra' }, alerts: { screen: 'alerts' } };
+
+const plural = (n, w) => `${w}${n === 1 ? '' : 's'}`;
+
+function cronFailureCount(cron) {
+  if (!Array.isArray(cron)) return 0;
+  let k = 0;
+  for (const node of cron) for (const job of node.jobs || []) if ((job.runs || [])[0]?.status === 'failure') k += 1;
+  return k;
+}
+
+/**
+ * The pinned annunciator's mono status sentence (spec §7.1). Terse worst-of
+ * phrasing with digits ("2 services down" / "All systems operational") — the
+ * Overview hero (§7.2) carries the richer word-number headline. Error/loading
+ * copy is owned by RefreshStatus; this only supplies the live-state sentence.
+ */
+function annunciatorSummary(severity, { servicesBody, ups, cron }) {
+  if (severity === 'critical') {
+    const n = flattenServices(servicesBody).filter((s) => s.status === 'down').length;
+    return `${n} ${plural(n, 'service')} down`;
+  }
+  if (severity === 'caution') {
+    if (upsDegraded(ups)) return 'UPS on battery';
+    const cronFails = cronFailureCount(cron);
+    if (cronFails > 0) return `${cronFails} cron ${plural(cronFails, 'job')} failed`;
+    const hot = Object.values(servicesBody?.nodes || {}).filter((n) => nodeSeverity(n) === 'caution').length;
+    if (hot > 0) return `${hot} ${plural(hot, 'node')} running hot`;
+    const unk = flattenServices(servicesBody).filter((s) => s.status === 'unknown' && s.source !== 'presence').length;
+    if (unk > 0) return `${unk} ${plural(unk, 'service')} unknown`;
+    return 'Degraded';
+  }
+  if (severity === 'healthy') return 'All systems operational';
+  return 'No signal';
+}
 
 export default function MobileApp() {
   const [active, setActive] = useState('overview');
@@ -67,9 +102,19 @@ export default function MobileApp() {
 
   const Screen = SCREENS[nav.current.screen] || SCREENS[active];
 
+  // Worst-of severity for the pinned annunciator. Bug #4: a live fetch error
+  // means the (possibly stale) body can't be trusted, so thread
+  // `unreachable = data.error != null` into overallSeverity — a mid-session
+  // outage reads steel/unknown, never stale green.
+  const unreachable = data.error != null;
+  const severity = overallSeverity({ services: data.servicesBody, ups: data.ups, cron: data.cron, unreachable });
+  const summary = annunciatorSummary(severity, { servicesBody: data.servicesBody, ups: data.ups, cron: data.cron });
+
   return (
     <div id="mobile-root">
       <RefreshStatus
+        severity={severity}
+        summary={summary}
         lastUpdated={data.lastUpdated}
         intervalMs={data.intervalMs}
         error={data.error}

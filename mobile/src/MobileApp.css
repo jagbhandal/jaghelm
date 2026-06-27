@@ -324,33 +324,37 @@
 }
 .mobile-statusbar:active { background: var(--bg-card-hover); }
 .mobile-statusbar__left { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.mobile-statusbar__dot {
-  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-  background: var(--green); /* calm health indicator; the progress line carries the motion */
-}
-.mobile-statusbar__label {
-  color: var(--text-secondary);
+.mobile-statusbar .status-lamp { flex-shrink: 0; }
+/* Worst-of status sentence — mono data-plane phrase (spec §7.1). */
+.mobile-statusbar__summary {
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+  color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.mobile-statusbar__next {
+/* Right cluster: clock (--muted) · countdown (--accent-light chrome). Colors are
+   also set inline on the spans so they resolve in jsdom tests. */
+.mobile-statusbar__right {
   flex-shrink: 0;
+  display: flex; align-items: center; gap: 4px;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+.mobile-statusbar__clock { color: var(--muted); }
+.mobile-statusbar__sep { color: var(--muted); }
+.mobile-statusbar__next { color: var(--accent-light); }
+.mobile-statusbar__retry { color: var(--steel); }
 .mobile-statusbar__progress {
   position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
   transform-origin: left; transform: scaleX(0);
   background: var(--accent);
   animation: statusbar-progress linear forwards;
 }
-/* Stale (last fetch errored): freeze the bar red, drop the pulse + countdown. */
-.mobile-statusbar--stale .mobile-statusbar__dot { background: var(--red); }
-.mobile-statusbar--stale .mobile-statusbar__label,
-.mobile-statusbar--stale .mobile-statusbar__next { color: var(--red); }
-.mobile-statusbar--stale .mobile-statusbar__progress {
-  background: var(--red); animation: none; transform: scaleX(1); opacity: 0.4;
+/* Unreachable: STEEL frozen line (NOT red) — unreachable is unknown, not an
+   outage (spec §13 decision #2 / Bug #4). */
+.mobile-statusbar__progress--frozen {
+  background: var(--steel); animation: none; transform: scaleX(1); opacity: 0.4;
 }
 @keyframes statusbar-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @media (prefers-reduced-motion: reduce) {
@@ -698,4 +702,55 @@
   margin: 0;
   /* Indent to align with text after the lamp (lamp=14px + gap=8px = ~22px) */
   padding-left: calc(14px + var(--space-2));
+}
+
+/* Steel (unknown) rows — banked rule: neutral card surface, no status tint. */
+#mobile-root .issue-row--unknown { background: var(--card); border-color: var(--border); }
+
+/* =========================================================================
+   Task 6: Overview — Active issues section + clear state (§7.2)
+   ========================================================================= */
+
+#mobile-root .overview-issues { margin-top: var(--space-4); }
+
+/* Section title — Outfit display, small heading */
+#mobile-root .overview-issues__title {
+  font-family: var(--disp);
+  font-size: var(--text-base);
+  color: var(--label);
+  margin: 0 0 var(--space-2);
+}
+
+#mobile-root .overview-issues__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Caution-with-no-rows fallback (e.g. a hot node, which is not an "incident"). */
+#mobile-root .overview-issues__empty {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+  margin: 0;
+}
+
+/* Healthy clear state — 🌙 prose line (DM Sans) + honest mono "no data" line. */
+#mobile-root .overview-clear {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+}
+#mobile-root .overview-clear__msg {
+  font-family: var(--body);
+  font-size: var(--text-base);
+  color: var(--text);
+  margin: 0;
+}
+#mobile-root .overview-clear__sub {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+  margin: 0;
 }
