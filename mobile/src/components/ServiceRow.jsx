@@ -1,18 +1,26 @@
 import React from 'react';
 import { getServiceIcon } from '@shared/hooks/useData.js';
 import { lastSeenLabel } from '@shared/util/relativeTime.js';
-import StatusDot from './StatusDot.jsx';
+import StatusLamp from './StatusLamp.jsx';
+import StatusWord from './StatusWord.jsx';
+import { statusToShape, statusToSeverity } from '../data/derive.js';
 
 /**
- * One service row: base-aware icon (NEVER a relative /api path), name (+ "last
- * seen X ago" subtitle for a vanished-container breadcrumb), an "unmonitored"
- * tag when no Kuma monitor matched, node tag, status dot, ping. The whole row is
- * a button → onTap(service). Read-only.
+ * One service row: StatusLamp (shape) + StatusWord (UP/DOWN/UNKNOWN) + base-aware
+ * icon (NEVER a relative /api path) + name (DM Sans, ellipsis) + node tag (mono) +
+ * ping (mono; omitted when null). The whole row is a button → onTap(service).
+ * Breadcrumbs show "last seen X ago"; unmonitored services show an "unmonitored" tag.
+ * Compact ≤ 48px; worst-first ordering is the caller's responsibility.
  */
 export default function ServiceRow({ service, onTap }) {
   const icon = getServiceIcon(service.icon) || getServiceIcon(service.display_name);
   const isBreadcrumb = service.source === 'presence';
   const isUnmonitored = service.monitored === false && !isBreadcrumb;
+
+  const shape = statusToShape(service.status, service.source);
+  const severity = statusToSeverity(service.status, service.source);
+  const word = (service.status ?? 'unknown').toUpperCase();
+
   return (
     <button
       type="button"
@@ -20,19 +28,35 @@ export default function ServiceRow({ service, onTap }) {
       onClick={() => onTap && onTap(service)}
       aria-label={`${service.display_name} on ${service.nodeName}`}
     >
-      <StatusDot status={service.status} source={service.source} />
-      {icon && <img role="img" className="svc-row__icon" src={icon} alt={service.display_name} onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+      <StatusLamp shape={shape} severity={severity} label={word} size={16} />
+      <StatusWord word={word} severity={severity} />
+      {icon && (
+        <img
+          role="img"
+          className="svc-row__icon"
+          src={icon}
+          alt={service.display_name}
+          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+        />
+      )}
       <div className="svc-row__name-col">
         <span className="svc-row__name">{service.display_name}</span>
-        {isBreadcrumb && <span className="svc-row__subtitle">{lastSeenLabel(service.lastSeenAt)}</span>}
+        {isBreadcrumb && (
+          <span className="svc-row__subtitle">{lastSeenLabel(service.lastSeenAt)}</span>
+        )}
       </div>
       {isUnmonitored && (
-        <span className="svc-row__unmonitored" title="No Uptime Kuma monitor — add one to track this service's true status.">
+        <span
+          className="svc-row__unmonitored"
+          title="No Uptime Kuma monitor — add one to track this service's true status."
+        >
           unmonitored
         </span>
       )}
       <span className="svc-row__node">{service.nodeName}</span>
-      {service.ping != null && service.ping > 0 && <span className="svc-row__ping">{service.ping}ms</span>}
+      {service.ping != null && service.ping > 0 && (
+        <span className="svc-row__ping">{service.ping}ms</span>
+      )}
     </button>
   );
 }

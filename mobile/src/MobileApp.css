@@ -220,8 +220,10 @@
 .search-bar { width: 100%; box-sizing: border-box; padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); color: var(--text-primary); font-family: var(--font-body); font-size: var(--text-base); min-height: 44px; }
 .status-banner { padding: var(--space-3) var(--space-4); border-radius: var(--card-radius-sm); margin-bottom: var(--space-3); font-size: var(--text-sm); }
 .status-banner--error { background: var(--red-bg); border: 1px solid var(--red-border); color: var(--red); }
-.filter-chips { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: var(--space-2); margin-bottom: var(--space-3); -webkit-overflow-scrolling: touch; }
-.chip { flex-shrink: 0; min-height: 44px; padding: var(--space-2) var(--space-4); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); font-size: var(--text-sm); white-space: nowrap; }
+.filter-chips { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: var(--space-2); margin-bottom: var(--space-3); -webkit-overflow-scrolling: touch; /* Bug #11: right-edge scroll-fade hints there is more to scroll */ -webkit-mask-image: linear-gradient(to right, black 0%, black 85%, transparent 100%); mask-image: linear-gradient(to right, black 0%, black 85%, transparent 100%); }
+/* Bug #11: min-width keeps short labels ("All") as pills, never lone circles.
+   Symmetric padding sets height via padding, not a forced square. */
+.chip { flex-shrink: 0; min-width: 56px; min-height: 44px; padding: var(--space-2) var(--space-3); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); font-size: var(--text-sm); white-space: nowrap; text-align: center; }
 .chip--active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
 .svc-list { display: flex; flex-direction: column; border-radius: var(--card-radius-sm); overflow: hidden; }
 .back-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
@@ -285,6 +287,12 @@
 
 /* Phase 5: enable the Alerts-tab gear (was opacity:0.5/cursor:default while disabled). */
 .alerts-gear:not([disabled]) { color: var(--accent); opacity: 1; cursor: pointer; }
+
+/* Task 7: ServiceRow — StatusWord sizing within the row */
+.svc-row .status-word { font-size: var(--text-2xs); flex-shrink: 0; }
+/* Task 7: search bar — indigo focus ring (carbon reskin) */
+.search-bar:focus { outline: 2px solid var(--accent); outline-offset: 2px; border-color: var(--accent); }
+.search-bar::placeholder { color: var(--text-muted); }
 
 /* C-lite: name column wrapper when a subtitle is present (name loses flex:1) */
 .svc-row__name-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
