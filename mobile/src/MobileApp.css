@@ -420,3 +420,36 @@
   border-radius: var(--card-radius-sm);
 }
 .session-forget-confirm .notif-unavailable { color: var(--text-secondary); padding: 0; }
+
+/* =====================================================================
+   Task 3: StatusLamp + StatusWord — status primitives
+   ===================================================================== */
+
+/* StatusLamp: inline SVG wrapper + per-severity color via `currentColor`. */
+#mobile-root .status-lamp {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+  line-height: 0; /* remove inline-block baseline gap */
+}
+
+/* Severity → color token; SVG uses fill/stroke="currentColor" to inherit. */
+#mobile-root .lamp--critical { color: var(--red);   }
+#mobile-root .lamp--caution  { color: var(--amber); }
+#mobile-root .lamp--healthy  { color: var(--green); }
+#mobile-root .lamp--unknown  { color: var(--steel); }
+
+/* StatusWord: mono weight-500 UPPERCASE label, colored by severity. */
+#mobile-root .status-word {
+  font-family: var(--mono);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Per-severity color mirrors the lamp classes (belt-and-suspenders; color
+   is also applied via inline style for testability in jsdom). */
+#mobile-root .word--critical { color: var(--red);   }
+#mobile-root .word--caution  { color: var(--amber); }
+#mobile-root .word--healthy  { color: var(--green); }
+#mobile-root .word--unknown  { color: var(--steel); }
