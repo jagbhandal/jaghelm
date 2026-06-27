@@ -120,7 +120,9 @@ export function statusFromValue(v) {
  * status-page API.
  */
 export function parseKumaMetrics(text) {
-  const monitors = {};
+  // Prototype-less map: defense-in-depth so a crafted id can never reach
+  // Object.prototype even if the canonical-id guard below were weakened.
+  const monitors = Object.create(null);
   if (!text || typeof text !== 'string') return monitors;
 
   const ensure = (id, name) => {
@@ -141,10 +143,15 @@ export function parseKumaMetrics(text) {
   };
 
   for (const line of text.split('\n')) {
+    if (line.length > 65536) continue; // skip pathologically long lines (DoS guard)
     const p = parsePromLine(line);
     if (!p) continue;
+    // monitor_id must be a canonical non-negative integer (Kuma's DB id). This
+    // rejects prototype-pollution keys ("__proto__" / "constructor" / "prototype")
+    // and Number()-collision spoofs ("5e3", " 5000") BEFORE id is used as a map
+    // key — a parser must never let its input corrupt interpreter state.
     const id = p.labels.monitor_id;
-    if (id == null || id === '') continue;
+    if (!/^\d+$/.test(id ?? '')) continue;
 
     if (p.name === 'monitor_status') {
       ensure(id, p.labels.monitor_name).status = statusFromValue(p.value);

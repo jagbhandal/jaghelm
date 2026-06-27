@@ -45,10 +45,30 @@ function staleOrEmpty() {
   return {};
 }
 
+// The API key rides an HTTP Basic header (base64 — trivially reversible). Warn
+// once at init if it would be transmitted in cleartext to a non-loopback host.
+function warnIfCleartext(url, apiKey) {
+  if (!apiKey) return;
+  try {
+    const u = new URL(url);
+    const loopback =
+      u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '::1';
+    if (u.protocol === 'http:' && !loopback) {
+      log.warn(
+        { host: u.hostname },
+        'KUMA_API_KEY will be sent over cleartext HTTP to a non-loopback host — use an https:// KUMA_URL'
+      );
+    }
+  } catch {
+    // an invalid URL surfaces via the fetch path; nothing to warn about here
+  }
+}
+
 export function initMonitors(url, apiKey = '') {
   kumaUrl = url;
   kumaApiKey = apiKey || '';
   log.info({ kumaUrl, metrics: !!kumaApiKey }, 'Uptime Kuma URL');
+  warnIfCleartext(url, kumaApiKey);
 }
 
 /**

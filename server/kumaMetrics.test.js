@@ -122,17 +122,15 @@ test('parseKumaMetrics: uptime24 takes window=1d, ignores 30d/365d', () => {
   assert.equal(parseKumaMetrics(SAMPLE)[2].uptime24, 1);
 });
 
-test('parseKumaMetrics: empty / garbage input → {}', () => {
-  assert.deepEqual(parseKumaMetrics(''), {});
-  assert.deepEqual(parseKumaMetrics('garbage\nlines\n# comment'), {});
-  assert.deepEqual(parseKumaMetrics(null), {});
+test('parseKumaMetrics: empty / garbage input → no monitors', () => {
+  assert.equal(Object.keys(parseKumaMetrics('')).length, 0);
+  assert.equal(Object.keys(parseKumaMetrics('garbage\nlines\n# comment')).length, 0);
+  assert.equal(Object.keys(parseKumaMetrics(null)).length, 0);
 });
 
 test('parseKumaMetrics: series lacking monitor_id are skipped (Kuma < 2.1)', () => {
-  assert.deepEqual(
-    parseKumaMetrics('monitor_status{monitor_name="Grafana",monitor_type="http"} 1'),
-    {}
-  );
+  const m = parseKumaMetrics('monitor_status{monitor_name="Grafana",monitor_type="http"} 1');
+  assert.equal(Object.keys(m).length, 0);
 });
 
 test('parseKumaMetrics: pending(2)/maintenance(3) → unknown', () => {
@@ -148,4 +146,28 @@ test('parseKumaMetrics: NaN response_time → ping null', () => {
     'monitor_status{monitor_id="1",monitor_name="X"} 1\nmonitor_response_time{monitor_id="1"} NaN'
   );
   assert.equal(m[1].ping, null);
+});
+
+test('parseKumaMetrics: a monitor_id of __proto__ cannot pollute Object.prototype', () => {
+  const m = parseKumaMetrics(
+    'monitor_status{monitor_id="__proto__",monitor_name="PWNED"} 1\n' +
+      'monitor_response_time{monitor_id="__proto__"} 99999\n' +
+      'monitor_uptime_ratio{monitor_id="__proto__",window="1d"} 0.5'
+  );
+  // A fresh object must inherit nothing from the crafted input.
+  const probe = {};
+  assert.equal(probe.status, undefined);
+  assert.equal(probe.name, undefined);
+  assert.equal(probe.ping, undefined);
+  assert.equal(probe.uptime24, undefined);
+  // And the crafted series are dropped, not stored.
+  assert.equal(Object.keys(m).length, 0);
+});
+
+test('parseKumaMetrics: Number()-collision ids ("5e3", " 5000") are rejected', () => {
+  const m = parseKumaMetrics(
+    'monitor_status{monitor_id="5e3",monitor_name="A"} 1\n' +
+      'monitor_status{monitor_id=" 5000",monitor_name="B"} 0'
+  );
+  assert.equal(Object.keys(m).length, 0);
 });
