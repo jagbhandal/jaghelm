@@ -5,7 +5,7 @@ import CommandPalette from './components/CommandPalette';
 import DashboardView from './views/DashboardView';
 import { ConfigProvider } from './context/ConfigContext.jsx';
 import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
-import { getMonitors } from './hooks/useData';
+import { getServices } from './hooks/useData';
 import { useThemeVars } from './hooks/useThemeVars.js';
 import { useConfigPersistence } from './hooks/useConfigPersistence.js';
 
@@ -147,31 +147,23 @@ function AppMain({ authRequired, onLogout }) {
   const intervalMs = (config.refreshInterval || 30) * 1000;
   const doRefresh = useCallback(() => {
     // Bump refreshKey IMMEDIATELY so DashboardView starts fetching right away.
-    // The Kuma health check runs in parallel — it updates the navbar health dot
-    // but does NOT block the dashboard data load.
+    // The health read runs in parallel — it updates the navbar health dot but
+    // does NOT block the dashboard data load.
     setLastUpdated(new Date());
     setRefreshKey((k) => k + 1);
 
-    // Navbar health indicator — fire and forget, non-blocking
-    getMonitors()
-      .then((m) => {
-        if (m === null) return; // 304 — no change, keep current health status
-        if (m && typeof m === 'object') {
-          const v = Object.values(m);
-          if (v.length === 0) {
-            setOverallHealth('unknown');
-          } else {
-            setOverallHealth(
-              v.some((x) => x.status === 'down')
-                ? 'down'
-                : v.some((x) => x.status === 'unknown')
-                  ? 'degraded'
-                  : 'up'
-            );
-          }
-        } else {
-          setOverallHealth('unknown');
-        }
+    // Navbar health dot — fire and forget, non-blocking. Read the SERVER-computed
+    // overallHealth off the same /api/services payload the dashboard renders, so
+    // the web header dot and the mobile Overview dot are symmetric (one server
+    // truth, no client re-derivation). getServices shares useData's ETag/result
+    // cache with DashboardView's fetch: on an unchanged (304) cycle both resolve
+    // to the same cached object; on a changed cycle both pull the full 200 body
+    // (one redundant fetch — acceptable for an infrequent flip on a 30s poll; a
+    // follow-up could lift overallHealth from the dashboard fetch instead). A
+    // 304-no-body / missing field keeps the current value; a thrown fetch → 'unknown'.
+    getServices()
+      .then((body) => {
+        if (body && typeof body.overallHealth === 'string') setOverallHealth(body.overallHealth);
       })
       .catch(() => setOverallHealth('unknown'));
   }, []);

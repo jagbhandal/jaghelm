@@ -37,15 +37,18 @@ export function flattenServices(servicesBody) {
   return out;
 }
 
-/** Stable problems-first sort (down → rest, original order preserved). No mutation. */
+/** Rank for the down → unknown → up sort. Presence breadcrumbs rank as unknown. */
+function serviceRank(s) {
+  if (s && s.status === 'down') return 0;
+  if (s && (s.status === 'unknown' || s.source === 'presence')) return 1;
+  return 2;
+}
+
+/** Stable down → unknown → up sort (original order preserved within a rank). No mutation. */
 export function sortProblemsFirst(list) {
   return [...list]
     .map((s, i) => [s, i])
-    .sort((a, b) => {
-      const pa = serviceIsProblem(a[0]) ? 0 : 1;
-      const pb = serviceIsProblem(b[0]) ? 0 : 1;
-      return pa - pb || a[1] - b[1];
-    })
+    .sort((a, b) => serviceRank(a[0]) - serviceRank(b[0]) || a[1] - b[1])
     .map(([s]) => s);
 }
 

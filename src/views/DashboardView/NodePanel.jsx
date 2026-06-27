@@ -136,9 +136,11 @@ export default function NodePanel({
   const borderColor = node.border_color || sectionCfg.borderColor || 'var(--accent)';
   const metrics = buildMetrics(node, config.tempUnit, nodeKey, history);
 
+  const serviceRank = (c) => (c.status === 'down' ? 0 : c.status === 'unknown' ? 1 : 2);
   const services = (node.services || [])
     .filter((s) => !claimedContainers.has(`${nodeKey}:${s.container}`))
-    .map((s) => toServiceCard(nodeKey, s, appDataByContainer));
+    .map((s) => toServiceCard(nodeKey, s, appDataByContainer))
+    .sort((a, b) => serviceRank(a) - serviceRank(b) || (a.name || '').localeCompare(b.name || ''));
 
   // Proxmox-specific child panels — render whenever a proxmox integration
   // targets THIS node (by its own _target), not just a node literally named "pve".

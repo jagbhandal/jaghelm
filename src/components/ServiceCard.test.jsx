@@ -154,4 +154,22 @@ describe('ServiceCard', () => {
     );
     expect(screen.queryByText(/no data/i)).not.toBeInTheDocument();
   });
+
+  it('shows an "unmonitored" tag with a nudge tooltip for a running untracked service', () => {
+    render(<ServiceCard service={{ name: 'Postgres', status: 'running', monitored: false, source: 'container' }} statusStyle="badge" cardLayout="row" />);
+    const tag = screen.getByText('unmonitored');
+    expect(tag).toBeInTheDocument();
+    expect(tag).toHaveAttribute('title', expect.stringContaining('add one to track'));
+  });
+
+  it('does NOT show the unmonitored tag for a monitored service', () => {
+    render(<ServiceCard service={{ name: 'Gitea', status: 'up', monitored: true, source: 'container' }} statusStyle="badge" cardLayout="row" />);
+    expect(screen.queryByText('unmonitored')).toBeNull();
+  });
+
+  it('renders a presence breadcrumb grey with a "last seen X ago" subtitle and no unmonitored tag', () => {
+    render(<ServiceCard service={{ name: 'Postgres', status: 'unknown', monitored: false, source: 'presence', lastSeenAt: Date.now() - 2 * 60_000 }} statusStyle="badge" cardLayout="row" />);
+    expect(screen.getByText(/last seen .* ago/)).toBeInTheDocument();
+    expect(screen.queryByText('unmonitored')).toBeNull();
+  });
 });

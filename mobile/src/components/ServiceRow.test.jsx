@@ -32,4 +32,26 @@ describe('ServiceRow', () => {
     fireEvent.click(screen.getByRole('button', { name: /Gitea/ }));
     expect(onTap).toHaveBeenCalledWith(SVC);
   });
+
+  it('shows an "unmonitored" tag for a running untracked service', () => {
+    getServiceIcon.mockReturnValue(null);
+    render(<ServiceRow service={{ display_name: 'Postgres', nodeName: 'VM103', status: 'running', monitored: false, source: 'container' }} />);
+    const tag = screen.getByText('unmonitored');
+    expect(tag).toBeInTheDocument();
+    expect(tag).toHaveAttribute('title', expect.stringContaining('add one to track'));
+  });
+
+  it('renders a presence breadcrumb with a "last seen X ago" subtitle and no unmonitored tag', () => {
+    getServiceIcon.mockReturnValue(null);
+    render(<ServiceRow service={{ display_name: 'Postgres', nodeName: 'VM103', status: 'unknown', monitored: false, source: 'presence', lastSeenAt: Date.now() - 2 * 60_000 }} />);
+    expect(screen.getByText(/last seen .* ago/)).toBeInTheDocument();
+    expect(screen.queryByText('unmonitored')).toBeNull();
+  });
+
+  it('does not show the tag or subtitle for a monitored, up service', () => {
+    getServiceIcon.mockReturnValue(null);
+    render(<ServiceRow service={{ display_name: 'Gitea', nodeName: 'VM103', status: 'up', monitored: true, source: 'container' }} />);
+    expect(screen.queryByText('unmonitored')).toBeNull();
+    expect(screen.queryByText(/last seen/)).toBeNull();
+  });
 });

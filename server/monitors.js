@@ -5,6 +5,7 @@
 
 import { createLogger } from './util/logger.js';
 import { safeFetch } from './httpClient.js';
+import { positiveMs } from './util/env.js';
 
 const log = createLogger('monitors');
 
@@ -18,6 +19,24 @@ const CACHE_TTL = 15000;
 // unreachable. Past this, a sustained Kuma outage would otherwise freeze the
 // board on stale "up" statuses; we return empty (unknown) instead.
 const STALE_CEILING_MS = 5 * 60 * 1000;
+
+// A monitor reporting `down` only counts as a live OUTAGE if its latest Kuma
+// heartbeat is FRESH. A paused/retired monitor stops beating, so its last beat
+// goes stale — this is how we tell "actively down" from "paused while down".
+// (The status-page `active` field is unreliable: it reads `null` on real Kuma
+// setups, so `active !== false` can't distinguish a paused monitor.) Default
+// 10min, comfortably above typical check intervals so a real slow-interval
+// outage is never mistaken for stale; env-overridable for slower monitors.
+const MONITOR_STALE_MS = positiveMs(process.env.JAGHELM_MONITOR_STALE_MS, 10 * 60 * 1000);
+
+// Kuma status-page heartbeat times are UTC, formatted "YYYY-MM-DD HH:mm:ss.SSS"
+// (no zone suffix). Parse as UTC → epoch ms, or null if missing/unparseable.
+export function parseBeatTime(t) {
+  if (!t || typeof t !== 'string') return null;
+  const iso = t.includes('T') ? t : t.replace(' ', 'T');
+  const ms = Date.parse(iso.endsWith('Z') ? iso : `${iso}Z`);
+  return Number.isFinite(ms) ? ms : null;
+}
 
 function staleOrEmpty() {
   if (cachedMonitors && Date.now() - cacheTime < STALE_CEILING_MS) return cachedMonitors;
@@ -89,6 +108,8 @@ export async function fetchMonitors(bustCache = false) {
         status: latest?.status === 1 ? 'up' : latest?.status === 0 ? 'down' : 'unknown',
         ping: latest?.ping || 0,
         uptime24: uptimeList[`${id}_24`] || 0,
+        active: pub.active !== false,
+        lastBeatAt: parseBeatTime(latest?.time),
       };
     }
 
@@ -219,4 +240,30 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
 // Call after first full service build to suppress repeat logs
 export function markMonitorLogDone() {
   loggedOnce = true;
+}
+
+/**
+ * Select the monitors that represent a live OUTAGE: reporting `down`, with a
+ * FRESH heartbeat (a paused/retired monitor stops beating → goes stale →
+ * excluded, so it can't leave a phantom red card — the status-page `active`
+ * flag is unreliable for this), and NOT already claimed by a running container
+ * this cycle. These become synthesised red "down" cards on the board so an
+ * outage stays visible after the container disappears from cAdvisor.
+ *
+ * `monitors` is the id→monitor map from fetchMonitors (or the `[]` fallback a
+ * failed fetch returns — Object.values handles both). `consumedIds` is a Set of
+ * monitor ids already rendered as a running container's card. A monitor whose
+ * heartbeat time is missing/unparseable (`lastBeatAt == null`) is treated as
+ * fresh: we only EXCLUDE on a positively-stale beat, never miss a real outage
+ * over a parse gap.
+ */
+export function selectOutageMonitors(monitors, consumedIds, { now = Date.now(), staleMs = MONITOR_STALE_MS } = {}) {
+  return Object.values(monitors).filter(
+    (m) =>
+      m &&
+      m.status === 'down' &&
+      m.active !== false &&
+      !consumedIds.has(m.id) &&
+      (m.lastBeatAt == null || now - m.lastBeatAt <= staleMs)
+  );
 }
