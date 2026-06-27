@@ -147,7 +147,7 @@ function serviceRank(s) {
  * BOTH frontends read this single server value for their global dot, so they are
  * symmetric and deterministic (no client re-derivation).
  *
- * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown' }}
+ * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown' }}
  */
 export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf, lastSeenContainerOf, containerRegistry, now = Date.now }) {
   const consumed = new Set();
