@@ -89,6 +89,7 @@ export async function fetchMonitors(bustCache = false) {
         status: latest?.status === 1 ? 'up' : latest?.status === 0 ? 'down' : 'unknown',
         ping: latest?.ping || 0,
         uptime24: uptimeList[`${id}_24`] || 0,
+        active: pub.active !== false,
       };
     }
 
@@ -219,4 +220,20 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
 // Call after first full service build to suppress repeat logs
 export function markMonitorLogDone() {
   loggedOnce = true;
+}
+
+/**
+ * Select the monitors that represent a live OUTAGE: reporting `down`, still
+ * active (not paused/retired), and NOT already claimed by a running container
+ * this cycle. These become synthesised red "down" cards on the board so an
+ * outage stays visible after the container disappears from cAdvisor.
+ *
+ * `monitors` is the id→monitor map from fetchMonitors (or the `[]` fallback a
+ * failed fetch returns — Object.values handles both). `consumedIds` is a Set of
+ * monitor ids already rendered as a running container's card.
+ */
+export function selectOutageMonitors(monitors, consumedIds) {
+  return Object.values(monitors).filter(
+    (m) => m && m.status === 'down' && m.active !== false && !consumedIds.has(m.id)
+  );
 }
