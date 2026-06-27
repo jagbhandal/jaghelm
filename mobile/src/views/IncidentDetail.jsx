@@ -1,24 +1,37 @@
 import React from 'react';
 import BackHeader from '../components/BackHeader.jsx';
-import StatusDot from '../components/StatusDot.jsx';
-import UptimeLine from '../components/UptimeLine.jsx';
-import { deriveIncidents } from '../data/derive.js';
+import StatusLamp from '../components/StatusLamp.jsx';
+import StatusWord from '../components/StatusWord.jsx';
+import UptimeRing from '../components/UptimeRing.jsx';
+import { deriveIncidents, formatClock } from '../data/derive.js';
 import { openTarget } from '../open.js';
 
 /**
- * IncidentDetail: full detail view for a derived incident.
- * Read-only — the only action besides back is Open (deep-link to the service URL).
- * Mute is NOT rendered (Phase 5).
- * The notification gear is on the Alerts list screen, not here.
+ * IncidentDetail — full detail for a derived incident, or a push-event fallback.
+ * Read-only; the only action besides back is a demoted (ghost) Open deep-link.
  *
- * Timeline includes:
- *  - Detected: the trigger cause
- *  - Push sent: Phase-5 placeholder (not yet wired to a real push pipeline)
+ * Honest numbers (Bug #2, #14): a DERIVED incident has NO real detection/event
+ * time in the snapshot (no `downSince`; `ping` is latency, not age), so it gets
+ * NO fabricated timeline — just a clock-less status line. A PUSH-EVENT deep-link
+ * carries a real timestamp from the push record, so it renders `{event} · HH:MM`
+ * from that real value. Timestamps appear ONLY where the datum genuinely exists.
  */
+
 // Turn a differ event type ('host_unreachable') into a human title ('Host unreachable').
 function humanizeType(type) {
   const s = String(type || '').replace(/_/g, ' ').trim();
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Incident';
+}
+
+// Map a push-record severity string → lamp shape/severity/word. severity is a
+// REAL field on the push payload; we never invent a status the record lacks.
+function pushSeverityLamp(severity) {
+  switch (severity) {
+    case 'critical': return { shape: 'slash', severity: 'critical', word: 'CRITICAL' };
+    case 'warning':  return { shape: 'slash', severity: 'caution',  word: 'WARNING' };
+    case 'info':     return { shape: 'disc',  severity: 'healthy',  word: 'INFO' };
+    default:         return { shape: 'ring',  severity: 'unknown',  word: 'UNKNOWN' };
+  }
 }
 
 export default function IncidentDetail({ data, nav, params }) {
@@ -30,22 +43,30 @@ export default function IncidentDetail({ data, nav, params }) {
   const incident = incidents.find((i) => i.id === params.id);
 
   if (!incident) {
-    // No live derived incident. If the deep-link carried push-event params
-    // (host events have NO derived incident by design; or the incident has
-    // since resolved), render a real push-event detail from those params
-    // instead of a dead stub. Only when there are no params either do we show
-    // the resolved copy.
+    // No live derived incident. If the deep-link carried push-event params, render
+    // a real push-event detail from them (host events have NO derived incident by
+    // design; or the incident has since resolved). The timestamp is rendered ONLY
+    // when the push record carried a real one — never synthesized.
     if (params.type) {
       const title = humanizeType(params.type);
+      const lamp = pushSeverityLamp(params.severity);
+      const clock = formatClock(params.ts);
       return (
         <section className="mobile-view" aria-label="Incident detail">
-          {/* title is in the header only (do NOT also repeat it in a <p>, or a
-              getByText(/host unreachable/i) query would match twice). */}
+          {/* title lives in the header AND the status line below; tests query the
+              status line by its `· HH:MM` suffix, not the bare title. */}
           <BackHeader title={title} onBack={nav.pop} />
           <div className="detail-head">
-            <StatusDot status={params.severity === 'info' ? 'up' : 'down'} />
+            <StatusLamp shape={lamp.shape} severity={lamp.severity} label={lamp.word} size={18} />
+            <StatusWord word={lamp.word} severity={lamp.severity} />
             <span className="detail-head__node">{params.node || params.fcmId}</span>
           </div>
+
+          {/* Push records DO carry a real event time → render {event} · HH:MM.
+              Absent a real timestamp, render NO line at all — never a fake clock,
+              and never a bare title echo (the header already carries it). */}
+          {clock && <p className="detail-status">{`${title} · ${clock}`}</p>}
+
           {params.severity && (
             <p className="push-event__severity">Severity: {params.severity}</p>
           )}
@@ -63,42 +84,29 @@ export default function IncidentDetail({ data, nav, params }) {
     );
   }
 
-  // Phase 3 timeline: synthetic events derived from the incident.
-  // Phase 5 will replace this with real push-event records from the server.
-  // Note: "Detected" deliberately omits the cause (already shown above the timeline)
-  // to avoid duplicate accessible text that breaks single-element queries.
-  const events = [
-    { label: 'Detected', detail: `Incident opened — ${incident.node}` },
-    { label: 'Push sent', detail: 'Pending — push pipeline lands in Phase 5' },
-  ];
-
+  // DERIVED incident: no real detection time in the snapshot → a single CLOCK-LESS
+  // status line (`Active — {node}`), never a fabricated "Detected · HH:MM".
   return (
     <section className="mobile-view" aria-label="Incident detail">
       <BackHeader title={incident.title} onBack={nav.pop} />
 
       <div className="detail-head">
-        <StatusDot status={incident.status} />
+        <StatusLamp shape={incident.shape} severity={incident.severity} label={incident.word} size={18} />
+        <StatusWord word={incident.word} severity={incident.severity} />
         <span className="detail-head__node">{incident.node}</span>
       </div>
 
       <p className="detail-cause">{incident.cause}</p>
 
-      <UptimeLine uptime24={incident.uptime24} />
+      <UptimeRing uptime24={incident.uptime24} />
 
-      <h2 className="detail-section">Event timeline</h2>
-      <ul className="timeline">
-        {events.map((e) => (
-          <li key={e.label} className="timeline__item">
-            <span className="timeline__label">{e.label}</span>
-            <span className="timeline__detail">{e.detail}</span>
-          </li>
-        ))}
-      </ul>
+      <p className="detail-status">Active — {incident.node}</p>
 
+      {/* Open demoted to a secondary ghost button (Bug #9). */}
       {incident.target?.url && (
         <button
           type="button"
-          className="open-btn"
+          className="open-btn open-btn--ghost"
           onClick={() => openTarget(incident.target)}
         >
           Open

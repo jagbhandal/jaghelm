@@ -138,6 +138,16 @@ describe('NotificationSettings (write path)', () => {
   });
 });
 
+describe('NotificationSettings — reskin (carbon tokens + indigo switches)', () => {
+  it('every toggle input carries the notif-switch class (accent-color: var(--accent) is applied via this class)', async () => {
+    render(<NotificationSettings nav={nav} data={{}} params={{}} />);
+    await waitFor(() => expect(getPushPrefs).toHaveBeenCalled());
+    for (const sw of screen.getAllByRole('switch')) {
+      expect(sw).toHaveClass('notif-switch');
+    }
+  });
+});
+
 describe('NotificationSettings — turn off push (DELETE teardown)', () => {
   it('fires disablePush(token) and drops to the unavailable state', async () => {
     render(<NotificationSettings nav={nav} data={{}} params={{}} />);

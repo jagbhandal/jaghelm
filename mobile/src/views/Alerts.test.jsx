@@ -34,11 +34,14 @@ const DATA = {
 };
 
 describe('Alerts', () => {
-  it('pins the active incident at top and shows a day section', () => {
+  it('pins the active incident at top under Active heading', () => {
     render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
     expect(screen.getByText(/Active/i)).toBeInTheDocument();
     expect(screen.getAllByText('Gitea').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/Today/i)).toBeInTheDocument();
+    // History is empty-by-design; "Today" is NOT shown as a day-group heading
+    const headings = screen.getAllByRole('heading');
+    const dayHeading = headings.find((h) => /Today/i.test(h.textContent));
+    expect(dayHeading).toBeFalsy();
   });
 
   it('the gear is enabled and pushes the notificationSettings screen on tap', () => {
@@ -58,10 +61,27 @@ describe('Alerts', () => {
     expect(push).toHaveBeenCalledWith('incident', { id: 'service:vm-101:gitea' });
   });
 
-  it('history rows show the service title', () => {
+  // Bug #3: history de-dup — active incidents are NOT repeated in history section
+  it('active incident is NOT repeated in the history section (de-dup)', () => {
     render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
-    // Both active and history rows render Gitea; getAllByText confirms title appears in history too
-    expect(screen.getAllByText('Gitea').length).toBeGreaterThanOrEqual(2);
+    // With history de-dup, Gitea appears only once (in the Active section, not history)
+    expect(screen.getAllByText('Gitea').length).toBe(1);
+  });
+
+  // History empty-by-design (§13 decision #3)
+  it('shows the history empty-state copy when all incidents are active', () => {
+    render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
+    expect(screen.getByText('No earlier alerts this session.')).toBeInTheDocument();
+  });
+
+  // Active cards must show cause (Bug #8)
+  it('active incident row shows the cause text', () => {
+    render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
+    // deriveIncidents builds cause = "Service is down · VM 101" or similar; check partial match
+    // The cause text comes from deriveIncidents — assert the row has some cause content
+    const activeRow = screen.getByRole('button', { name: /Gitea.*active/i });
+    // The cause span is inside the active button
+    expect(activeRow.querySelector('.alert-row__cause')).not.toBeNull();
   });
 
   it('shows an empty state when nothing is wrong', () => {
@@ -93,11 +113,9 @@ describe('Alerts', () => {
     expect(screen.queryByText(/All clear/i)).toBeNull();
   });
 
-  it('history day section heading uses formatDayLabel (Today for current-day incidents)', () => {
+  it('gear button does not have disabled attribute (always active)', () => {
     render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
-    // All Phase-3 incidents are stamped now, so the history heading must say "Today"
-    const headings = screen.getAllByRole('heading');
-    const dayHeading = headings.find((h) => /Today/i.test(h.textContent));
-    expect(dayHeading).toBeTruthy();
+    const gear = screen.getByRole('button', { name: /notification settings/i });
+    expect(gear).not.toHaveAttribute('disabled');
   });
 });

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon foreground source — 108dp canvas (200-unit viewBox), 66dp safe zone.
+     Artwork scaled UP 1.16× (centred at 100,98) so the shield body fills ~81% of the
+     icon width and the helm reads large.  The shield's pointed bottom tip may extend
+     toward the lower edge — that's fine: the carbon-black background layer handles any
+     circle-mask clipping seamlessly (clipped indigo tip -> carbon-black, no white).
+     No feGaussianBlur / glow.  Shield fill #6366f1 + #818cf8 outline pop sharply
+     against the carbon-black (#0A0D0C) background.  Helm keeps the original amber palette. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <g transform="translate(100,98) scale(1.16) translate(-100,-98)">
+
+    <!-- Shield: indigo fill pops against the carbon-black background;
+         #818cf8 outline (bumped to 5.5) sharpens the shape at small sizes. -->
+    <path d="M100 16 L166 42 Q170 44 170 48 L170 108 Q170 148 100 178 Q30 148 30 108 L30 48 Q30 44 34 42 Z"
+          fill="#6366f1"/>
+    <path d="M100 16 L166 42 Q170 44 170 48 L170 108 Q170 148 100 178 Q30 148 30 108 L30 48 Q30 44 34 42 Z"
+          fill="none" stroke="#818cf8" stroke-width="5.5" stroke-linejoin="round"/>
+
+    <!-- Ship's wheel — amber/gold, NO glow filter.
+         BOLD rim + BOLD spokes so the wheel structure reads at every size.
+         Draw order: rim -> spokes (hub->peg) -> hub -> pegs (hub/pegs on top). -->
+
+    <!-- Outer rim (bold) -->
+    <circle cx="100" cy="92" r="42" fill="none" stroke="#f59e0b" stroke-width="7"/>
+
+    <!-- Cardinal spokes: from hub edge, THROUGH the rim, out to each cardinal peg (bold) -->
+    <line x1="100" y1="80"  x2="100" y2="48"  stroke="#f59e0b" stroke-width="7" stroke-linecap="round"/>
+    <line x1="100" y1="104" x2="100" y2="136" stroke="#f59e0b" stroke-width="7" stroke-linecap="round"/>
+    <line x1="88"  y1="92"  x2="56"  y2="92"  stroke="#f59e0b" stroke-width="7" stroke-linecap="round"/>
+    <line x1="112" y1="92"  x2="144" y2="92"  stroke="#f59e0b" stroke-width="7" stroke-linecap="round"/>
+
+    <!-- Diagonal spokes: from hub edge out to each diagonal peg (bold) -->
+    <line x1="91.5"  y1="83.5"  x2="69"  y2="61"  stroke="#f59e0b" stroke-width="5" stroke-linecap="round"/>
+    <line x1="108.5" y1="83.5"  x2="131" y2="61"  stroke="#f59e0b" stroke-width="5" stroke-linecap="round"/>
+    <line x1="91.5"  y1="100.5" x2="69"  y2="123" stroke="#f59e0b" stroke-width="5" stroke-linecap="round"/>
+    <line x1="108.5" y1="100.5" x2="131" y2="123" stroke="#f59e0b" stroke-width="5" stroke-linecap="round"/>
+
+    <!-- Hub (on top of spoke inner ends) -->
+    <circle cx="100" cy="92" r="13" fill="#f59e0b"/>
+    <circle cx="100" cy="92" r="8"  fill="#fbbf24"/>
+    <circle cx="100" cy="92" r="3"  fill="#fde68a"/>
+
+    <!-- Cardinal pegs (on top of spoke outer ends) -->
+    <circle cx="100" cy="48"  r="7"   fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <circle cx="100" cy="136" r="7"   fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <circle cx="56"  cy="92"  r="7"   fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <circle cx="144" cy="92"  r="7"   fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+
+    <!-- Diagonal pegs -->
+    <circle cx="69"  cy="61"  r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+    <circle cx="131" cy="61"  r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+    <circle cx="69"  cy="123" r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+    <circle cx="131" cy="123" r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+
+  </g>
+</svg>

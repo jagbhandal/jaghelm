@@ -1,5 +1,94 @@
 /* Edge-to-edge: content draws under the system bars (Android 15 / SDK 35+).
    Safe-area insets keep the tab bar and header clear of the status/nav bars. */
+
+/* =====================================================================
+   Carbon token layer — shared by the main shell (#mobile-root) and the
+   auth shell (.mobile-shell / Login). These shadow the inherited One-Dark
+   web tokens for mobile only; global.css is NOT modified.
+   ===================================================================== */
+#mobile-root,
+.mobile-shell {
+  /* --- Carbon surfaces --- */
+  --bg: #0A0D0C;
+  --bg2: #0E1211;
+  --card: rgba(255, 255, 255, 0.04);
+  --card-inner: rgba(255, 255, 255, 0.025);
+
+  /* --- Borders (indigo-tinted) --- */
+  --border: rgba(99, 102, 241, 0.12);
+  --border2: rgba(99, 102, 241, 0.22);
+
+  /* --- Chrome (indigo — accent only, never status) --- */
+  --accent: #6366f1;
+  --accent-light: #818cf8;
+
+  /* --- Status colors (calm web palette, 9 %/24 % tints) --- */
+  --green: #34d399;
+  --green-bg: rgba(52, 211, 153, 0.09);
+  --green-bd: rgba(52, 211, 153, 0.24);
+
+  --red: #f87171;
+  --red-bg: rgba(248, 113, 113, 0.09);
+  --red-bd: rgba(248, 113, 113, 0.24);
+
+  --amber: #fbbf24;
+  --amber-bg: rgba(251, 191, 36, 0.09);
+  --amber-bd: rgba(251, 191, 36, 0.24);
+
+  --muted: #848b98;
+  --steel: #848b98;
+
+  /* --- Text --- */
+  --text: #e6e9ef;
+  --label: #9aa3b5;
+
+  /* --- Font family tokens --- */
+  --disp: 'Outfit', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+  --body: 'DM Sans', sans-serif;
+
+  /* --- Radius --- */
+  --card-radius: 20px;
+  --card-radius-sm: 16px;
+
+  /* ---- Legacy aliases: reused CSS still references these One-Dark token
+         names; without aliases components silently fall back to #282c34. ---- */
+
+  /* surfaces */
+  --bg-primary: var(--bg);
+  --bg-secondary: var(--bg2);
+  --bg-card: var(--card);
+  --bg-card-inner: var(--card-inner);
+  --bg-card-hover: rgba(255, 255, 255, 0.06);
+
+  /* glass (tab bar / status bar) */
+  --glass-bg: var(--bg2);
+  --glass-blur: 14px;
+
+  /* borders */
+  --border-color: var(--border);
+  --border-glow: var(--border2);
+  --glass-border: var(--border2);
+
+  /* chrome alias (chip active bg) */
+  --accent-glow: rgba(99, 102, 241, 0.12);
+
+  /* text — shadows global.css; now aliased to carbon values */
+  --text-primary: var(--text);
+  --text-secondary: var(--label);
+  --text-muted: var(--muted);
+
+  /* font families */
+  --font-display: var(--disp);
+  --font-body: var(--body);
+  --font-mono: var(--mono);
+
+  /* status border aliases → new *-bd tokens */
+  --green-border: var(--green-bd);
+  --red-border: var(--red-bd);
+  --amber-border: var(--amber-bd);
+}
+
 #mobile-root {
   display: flex;
   flex-direction: column;
@@ -10,19 +99,15 @@
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  background: var(--bg-primary);
+  background: radial-gradient(120% 80% at 50% -12%, #14191B, transparent 58%), var(--bg);
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: var(--text-base);
 
-  /* --- Mobile second-pass type/contrast (scoped: web tokens in global.css are
-     untouched). Text lifted toward white for phone-in-daylight legibility; the
-     UI/data scale bumped one notch. HEADINGS unchanged: --text-xl, --text-2xl,
+  /* --- Mobile type scale (scoped: web tokens in global.css are untouched).
+     Text lifted toward white for phone-in-daylight legibility; the UI/data
+     scale bumped one notch. HEADINGS unchanged: --text-xl, --text-2xl,
      --fs-section-title, --fs-metric-value stay as defined in global.css. --- */
-  --text-primary: #e6e9ef;
-  --text-secondary: #bcc3d0;
-  --text-muted: #9aa3b5;
-
   --text-2xs: 11px;
   --text-xs: 12px;
   --text-sm: 13px;
@@ -94,7 +179,7 @@
 .usage-bar__head { display: flex; justify-content: space-between; align-items: baseline; }
 .usage-bar__label { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); letter-spacing: 0.5px; }
 .usage-bar__value { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-secondary); }
-.usage-bar__track { height: 4px; background: var(--border-color); border-radius: 2px; overflow: hidden; }
+.usage-bar__track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
 .usage-bar__fill { height: 100%; border-radius: 2px; }
 .svc-row {
   display: flex; align-items: center; gap: var(--space-3); width: 100%;
@@ -108,11 +193,6 @@
 
 /* --- Phase 3: Overview --- */
 .subsys-strip { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-2); margin-bottom: var(--space-4); }
-.subsys-cell { display: flex; flex-direction: column; gap: 2px; padding: var(--space-3); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); }
-.subsys-cell--degraded { background: var(--red-bg); border-color: var(--red-border); }
-.subsys-cell__dot { width: 8px; height: 8px; border-radius: 50%; }
-.subsys-cell__label { font-family: var(--font-display); font-size: var(--text-base); color: var(--text-primary); }
-.subsys-cell__detail { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
 .overview-incidents { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-4); }
 .incident-card { padding: var(--space-3) var(--space-4); background: var(--red-bg); border: 1px solid var(--red-border); border-radius: var(--card-radius-sm); }
 .incident-card__head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); }
@@ -122,22 +202,22 @@
 .incident-card__foot { display: flex; align-items: center; justify-content: space-between; }
 .incident-card__uptime { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-xs); }
 .incident-card__uptime-label { color: var(--text-muted); letter-spacing: 0.5px; }
+/* .open-btn is the shared button base — open-btn--ghost composes its layout
+   (padding / radius / min-height) on top, so the base rule stays even though no
+   screen uses the loud non-ghost fill on its own. */
 .open-btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: var(--space-2) var(--space-4); font-size: var(--text-sm); min-height: 44px; }
-.overview-more { align-self: flex-start; display: inline-flex; align-items: center; background: var(--bg-card-inner); color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: var(--space-2) var(--space-3); font-size: var(--text-sm); min-height: 44px; }
-.overview-nodes { display: flex; flex-direction: column; gap: var(--space-3); }
-.node-row { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; text-align: left; padding: var(--space-3) var(--space-4); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); min-height: 44px; }
-.node-row__head { display: flex; justify-content: space-between; align-items: baseline; }
-.node-row__name { font-family: var(--font-display); font-size: var(--text-lg); color: var(--text-primary); }
-.node-row__count { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
-.node-row__bars { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
 
 /* --- Phase 3: Services + detail --- */
 .search-bar { width: 100%; box-sizing: border-box; padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); color: var(--text-primary); font-family: var(--font-body); font-size: var(--text-base); min-height: 44px; }
 .status-banner { padding: var(--space-3) var(--space-4); border-radius: var(--card-radius-sm); margin-bottom: var(--space-3); font-size: var(--text-sm); }
 .status-banner--error { background: var(--red-bg); border: 1px solid var(--red-border); color: var(--red); }
-.filter-chips { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: var(--space-2); margin-bottom: var(--space-3); -webkit-overflow-scrolling: touch; }
-.chip { flex-shrink: 0; min-height: 44px; padding: var(--space-2) var(--space-4); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); font-size: var(--text-sm); white-space: nowrap; }
+.filter-chips { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: var(--space-2); margin-bottom: var(--space-3); -webkit-overflow-scrolling: touch; /* Bug #11: right-edge scroll-fade hints there is more to scroll */ -webkit-mask-image: linear-gradient(to right, black 0%, black 85%, transparent 100%); mask-image: linear-gradient(to right, black 0%, black 85%, transparent 100%); }
+/* Bug #11: min-width keeps short labels ("All") as pills, never lone circles.
+   Symmetric padding sets height via padding, not a forced square. */
+.chip { flex-shrink: 0; min-width: 56px; min-height: 44px; padding: var(--space-2) var(--space-3); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); font-size: var(--text-sm); white-space: nowrap; text-align: center; }
 .chip--active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
+/* Counts render mono per spec §4 (the chip label keeps the body font). */
+#mobile-root .chip__count { font-family: var(--font-mono); }
 .svc-list { display: flex; flex-direction: column; border-radius: var(--card-radius-sm); overflow: hidden; }
 .back-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
 .back-header__btn { background: none; border: none; color: var(--accent); font-size: var(--text-base); min-height: 44px; padding: 0 var(--space-2); }
@@ -147,21 +227,36 @@
 .detail-head__ping { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--green); }
 .detail-uptime { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-secondary); }
 .detail-docker { display: flex; gap: var(--space-4); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--space-3); }
+/* Detail screens — honest-numbers helpers + demoted Open (Tasks 7.6/7.8). */
+#mobile-root .detail-lastseen { font-family: var(--mono); font-size: var(--text-xs); color: var(--text-muted); margin: var(--space-1) 0 var(--space-2); }
+#mobile-root .detail-status { font-family: var(--mono); font-size: var(--text-sm); color: var(--text-secondary); margin: var(--space-2) 0 var(--space-3); }
+/* Bug #9: secondary ghost Open — card-inner bg + border, NOT the loud indigo fill. */
+#mobile-root .open-btn--ghost { background: var(--card-inner); color: var(--text-secondary); border: 1px solid var(--border); cursor: pointer; }
 
-/* --- Phase 3: Infra --- */
+/* --- Phase 3: Infra (Task 8 reskin) --- */
 .node-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
-.node-card { width: 100%; text-align: left; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); min-height: 44px; }
-.node-card__head { display: flex; align-items: baseline; gap: var(--space-2); }
-.node-card__name { font-family: var(--font-display); font-size: var(--text-lg); color: var(--text-primary); }
-.node-card__type { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
-.node-card__count { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-secondary); }
+.node-card { width: 100%; text-align: left; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); background: var(--card); border: 1px solid var(--border); border-radius: var(--card-radius-sm); min-height: 44px; }
+.node-card__head { display: flex; align-items: center; gap: var(--space-2); }
+.node-card__name { flex: 1; font-family: var(--disp); font-size: var(--text-lg); color: var(--text); font-weight: 700; }
+.node-card__type { font-family: var(--mono); font-size: var(--text-2xs); color: var(--label); }
+.node-card__lamp { display: flex; align-items: center; margin-left: auto; }
+.node-card__count { font-family: var(--mono); font-size: var(--text-xs); color: var(--label); }
+.node-card__down-count { color: var(--red); }
 .node-card__bars, .node-detail__bars { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }
 .node-detail__bars { margin-bottom: var(--space-4); }
+/* NodeDetail status header: lamp + word + count */
+.node-detail__head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.node-detail__count { font-family: var(--mono); font-size: var(--text-xs); color: var(--label); margin-left: auto; }
+.node-detail__down-count { color: var(--red); }
+.mobile-view__empty { color: var(--muted); font-size: var(--text-base); }
 
 /* --- Phase 3: Alerts + incident detail --- */
 .alerts-head { display: flex; align-items: center; justify-content: space-between; }
-.alerts-gear { background: none; border: none; color: var(--text-muted); font-size: var(--text-xl); min-height: 44px; min-width: 44px; opacity: 0.5; cursor: default; }
+/* Bug #13 partial: gear always enabled + indigo chrome; removed opacity:0.5/cursor:default */
+.alerts-gear { background: none; border: none; color: var(--accent); font-size: var(--text-xl); min-height: 44px; min-width: 44px; cursor: pointer; }
 .alerts-clear { color: var(--text-muted); }
+/* History empty-by-design copy (§13 decision #3) */
+.alerts-history-empty { color: var(--text-muted); font-size: var(--text-sm); padding: var(--space-2) 0; }
 .alerts-section { font-family: var(--font-display); font-size: var(--text-base); color: var(--text-secondary); margin: var(--space-4) 0 var(--space-2); }
 .alerts-section--active { color: var(--red); }
 .alert-row { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: var(--space-3) var(--space-4); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); margin-bottom: var(--space-2); min-height: 44px; }
@@ -175,16 +270,19 @@
 .timeline__label { font-family: var(--font-body); font-size: var(--text-sm); color: var(--text-primary); }
 .timeline__detail { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
 
-/* Phase 5: Notification Settings screen. One Dark Pro tokens; >=44px rows. */
+/* Task 11: Notification Settings screen — carbon tokens + indigo switches. >=44px rows. */
 .notif-controls { display: flex; flex-direction: column; }
 .notif-row {
   display: flex; align-items: center; justify-content: space-between;
   min-height: 44px; padding: var(--space-2) var(--space-1);
   border-bottom: 1px solid var(--border-color);
 }
-.notif-row__label { color: var(--text-primary); font-size: var(--text-base); }
+/* DM Sans for labels per three-role type system (spec §7.9). */
+.notif-row__label { font-family: var(--font-body); color: var(--text-primary); font-size: var(--text-base); }
+/* Indigo switch: accent-color tints the native checkbox chrome to --accent (#6366f1). */
 .notif-switch { width: 44px; height: 44px; accent-color: var(--accent); cursor: pointer; }
-.notif-unavailable { color: var(--text-muted); font-size: var(--text-base); padding: var(--space-2) 0; }
+/* DM Sans for unavailable copy (spec §7.9: "copy in DM Sans"). */
+.notif-unavailable { font-family: var(--font-body); color: var(--text-muted); font-size: var(--text-base); padding: var(--space-2) 0; }
 
 /* Phase 5: destructive "turn off push on this device" (the DELETE teardown). */
 .notif-turnoff {
@@ -198,8 +296,13 @@
 .push-event__severity { color: var(--text-muted); font-size: var(--text-base); }
 .push-event__note { color: var(--text-muted); font-size: var(--text-sm); margin-top: var(--space-2); }
 
-/* Phase 5: enable the Alerts-tab gear (was opacity:0.5/cursor:default while disabled). */
-.alerts-gear:not([disabled]) { color: var(--accent); opacity: 1; cursor: pointer; }
+/* Task 9: .alerts-gear is now always enabled (indigo, cursor:pointer) in the base rule above. */
+
+/* Task 7: ServiceRow — StatusWord sizing within the row */
+.svc-row .status-word { font-size: var(--text-2xs); flex-shrink: 0; }
+/* Task 7: search bar — indigo focus ring (carbon reskin) */
+.search-bar:focus { outline: 2px solid var(--accent); outline-offset: 2px; border-color: var(--accent); }
+.search-bar::placeholder { color: var(--text-muted); }
 
 /* C-lite: name column wrapper when a subtitle is present (name loses flex:1) */
 .svc-row__name-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -207,8 +310,7 @@
 .svc-row__subtitle { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* C-lite: unmonitored tag (mirrors .svc-row__node) */
 .svc-row__unmonitored { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 6px; flex-shrink: 0; }
-/* Task 4: overview-header dot */
-.overview-header { display: flex; align-items: center; gap: 8px; }
+/* Task 4: overview health dot */
 .overview-health-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
 /* =====================================================================
@@ -239,37 +341,41 @@
 }
 .mobile-statusbar:active { background: var(--bg-card-hover); }
 .mobile-statusbar__left { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.mobile-statusbar__dot {
-  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-  background: var(--green); /* calm health indicator; the progress line carries the motion */
-}
-.mobile-statusbar__label {
-  color: var(--text-secondary);
+.mobile-statusbar .status-lamp { flex-shrink: 0; }
+/* Worst-of status sentence — mono data-plane phrase (spec §7.1). */
+.mobile-statusbar__summary {
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+  color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.mobile-statusbar__next {
+/* Right cluster: clock (--muted) · countdown (--accent-light chrome). Colors are
+   also set inline on the spans so they resolve in jsdom tests. */
+.mobile-statusbar__right {
   flex-shrink: 0;
+  display: flex; align-items: center; gap: 4px;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+.mobile-statusbar__clock { color: var(--muted); }
+.mobile-statusbar__sep { color: var(--muted); }
+.mobile-statusbar__next { color: var(--accent-light); }
+.mobile-statusbar__retry { color: var(--steel); }
 .mobile-statusbar__progress {
   position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
   transform-origin: left; transform: scaleX(0);
   background: var(--accent);
   animation: statusbar-progress linear forwards;
 }
-/* Stale (last fetch errored): freeze the bar red, drop the pulse + countdown. */
-.mobile-statusbar--stale .mobile-statusbar__dot { background: var(--red); }
-.mobile-statusbar--stale .mobile-statusbar__label,
-.mobile-statusbar--stale .mobile-statusbar__next { color: var(--red); }
-.mobile-statusbar--stale .mobile-statusbar__progress {
-  background: var(--red); animation: none; transform: scaleX(1); opacity: 0.4;
+/* Unreachable: STEEL frozen line (NOT red) — unreachable is unknown, not an
+   outage (spec §13 decision #2 / Bug #4). */
+.mobile-statusbar__progress--frozen {
+  background: var(--steel); animation: none; transform: scaleX(1); opacity: 0.4;
 }
 @keyframes statusbar-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @media (prefers-reduced-motion: reduce) {
-  .mobile-statusbar__progress { animation: none; transform: scaleX(1); opacity: 0.3; }
+  .mobile-statusbar__progress { animation: none; transition: none; transform: scaleX(1); opacity: 0.3; }
 }
 
 /* =====================================================================
@@ -335,3 +441,333 @@
   border-radius: var(--card-radius-sm);
 }
 .session-forget-confirm .notif-unavailable { color: var(--text-secondary); padding: 0; }
+
+/* =====================================================================
+   Task 3: StatusLamp + StatusWord — status primitives
+   ===================================================================== */
+
+/* StatusLamp: inline SVG wrapper + per-severity color via `currentColor`. */
+#mobile-root .status-lamp {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+  line-height: 0; /* remove inline-block baseline gap */
+}
+
+/* Severity → color token; SVG uses fill/stroke="currentColor" to inherit. */
+#mobile-root .lamp--critical { color: var(--red);   }
+#mobile-root .lamp--caution  { color: var(--amber); }
+#mobile-root .lamp--healthy  { color: var(--green); }
+#mobile-root .lamp--unknown  { color: var(--steel); }
+
+/* StatusWord: mono weight-500 UPPERCASE label, colored by severity. */
+#mobile-root .status-word {
+  font-family: var(--mono);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Per-severity color mirrors the lamp classes (belt-and-suspenders; color
+   is also applied via inline style for testability in jsdom). */
+#mobile-root .word--critical { color: var(--red);   }
+#mobile-root .word--caution  { color: var(--amber); }
+#mobile-root .word--healthy  { color: var(--green); }
+#mobile-root .word--unknown  { color: var(--steel); }
+
+/* =========================================================================
+   UptimeRing — inline-SVG radial arc gauge for the uptime24 scalar.
+   Replaces UptimeLine in ServiceDetail / IncidentDetail / IncidentCard.
+   Scoped to #mobile-root so the web app is unaffected.
+   ========================================================================= */
+
+#mobile-root .uptime-ring {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Background track — neutral muted ring behind the progress arc */
+#mobile-root .uptime-ring__track {
+  stroke: var(--border);
+}
+
+/* Progress arc — color applied via inline stroke attr (testable in jsdom);
+   CSS here is visual fallback / override for dark identity. */
+#mobile-root .uptime-ring__arc {
+  transition: stroke-dasharray 0.4s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #mobile-root .uptime-ring__arc {
+    transition: none;
+  }
+}
+
+/* Centered percentage — mono, readable size */
+#mobile-root .uptime-ring__pct {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 500;
+  /* fill is set via inline style for testability; CSS fill below is a fallback */
+  fill: var(--text);
+}
+
+/* "24H" label — smaller, muted, intentionally a separate text node from the % */
+#mobile-root .uptime-ring__label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  fill: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* =========================================================================
+   Task 5: SystemStatusCard — glass hero annunciator (Overview §7.2)
+   ========================================================================= */
+
+#mobile-root .sys-status-card {
+  position: relative;
+  border-radius: var(--card-radius);   /* 20px */
+  padding: var(--space-4);
+  background: var(--card);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  margin-bottom: var(--space-4);
+}
+
+/* Soft radial tint by severity — `::before` sits behind content (z-index not needed:
+   it's before pseudo, content is in normal flow on top). NO pulse/glow (spec §7.2). */
+#mobile-root .sys-status-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+#mobile-root .sys-status-card--critical { border-color: var(--red-bd); }
+#mobile-root .sys-status-card--caution  { border-color: var(--amber-bd); }
+#mobile-root .sys-status-card--healthy  { border-color: var(--green-bd); }
+#mobile-root .sys-status-card--unknown  { border-color: var(--border); }
+
+#mobile-root .sys-status-card--critical::before {
+  background: radial-gradient(circle at 30% 0%, var(--red-bg) 0%, transparent 70%);
+}
+#mobile-root .sys-status-card--caution::before {
+  background: radial-gradient(circle at 30% 0%, var(--amber-bg) 0%, transparent 70%);
+}
+#mobile-root .sys-status-card--healthy::before {
+  background: radial-gradient(circle at 30% 0%, var(--green-bg) 0%, transparent 70%);
+}
+/* unknown — no tint; steel/card default already reads "no signal" */
+
+/* Silkscreen mono label — small, muted, uppercase */
+#mobile-root .sys-status-card__label {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 var(--space-2);
+}
+
+/* Outfit headline — display weight 700 (Outfit ships 300–800; 700 is valid) */
+#mobile-root .sys-status-card__headline {
+  font-family: var(--disp);
+  font-size: var(--text-xl, 20px);
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 var(--space-2);
+  line-height: 1.25;
+}
+
+/* The color-spanned status WORD within the headline — inherits severity color
+   via inline style (testable in jsdom) + CSS class for visual completeness. */
+#mobile-root .sys-status-card__word--critical { color: var(--red);   }
+#mobile-root .sys-status-card__word--caution  { color: var(--amber); }
+#mobile-root .sys-status-card__word--healthy  { color: var(--green); }
+#mobile-root .sys-status-card__word--unknown  { color: var(--steel); }
+
+/* DM Sans prose subline */
+#mobile-root .sys-status-card__subline {
+  font-family: var(--body);
+  font-size: var(--text-sm);
+  color: var(--label);
+  margin: 0 0 var(--space-3);
+}
+
+/* Mono counts footer */
+#mobile-root .sys-status-card__counts {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+  margin: 0;
+}
+
+/* =========================================================================
+   Task 5: SubsystemCell — one 2×2 cell in the Overview strip (§7.2 / §5)
+   ========================================================================= */
+
+#mobile-root .subsystem-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius-sm);  /* 16px */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+
+/* Severity tint + border (9%/24% palette from §3) */
+#mobile-root .subsystem-cell--critical { background: var(--red-bg);   border-color: var(--red-bd);   }
+#mobile-root .subsystem-cell--caution  { background: var(--amber-bg); border-color: var(--amber-bd); }
+#mobile-root .subsystem-cell--healthy  { background: var(--green-bg); border-color: var(--green-bd); }
+#mobile-root .subsystem-cell--unknown  { background: var(--card);     border-color: var(--border);   }
+
+/* Header: silkscreen label left, lamp right */
+#mobile-root .subsystem-cell__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Silkscreen lab label — mono, muted, uppercase (§4 "lab" pattern) */
+#mobile-root .subsystem-cell__label {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Mono detail line */
+#mobile-root .subsystem-cell__detail {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+}
+
+/* =========================================================================
+   Task 5: IssueRow — Active-issues list rows (§7.2 Active issues)
+   ========================================================================= */
+
+#mobile-root .issue-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius-sm);
+  min-height: 44px;
+  cursor: pointer;
+  /* Reset browser button styles */
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+#mobile-root .issue-row:active { background: var(--bg-card-hover); }
+
+/* Severity tint */
+#mobile-root .issue-row--critical { background: var(--red-bg);   border-color: var(--red-bd);   }
+#mobile-root .issue-row--caution  { background: var(--amber-bg); border-color: var(--amber-bd); }
+#mobile-root .issue-row--critical:active { background: var(--red-bg);   }
+#mobile-root .issue-row--caution:active  { background: var(--amber-bg); }
+
+/* Main row: lamp + word + name (ellipsis) + readout */
+#mobile-root .issue-row__main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Service/incident name — DM Sans prose, ellipsis clamp */
+#mobile-root .issue-row__name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--body);
+  font-size: var(--text-sm);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mono readout (node / charge% · runtime / no-signal datum) */
+#mobile-root .issue-row__readout {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+  flex-shrink: 0;
+}
+
+/* Prose cause — shown only under critical (down) rows; indented under lamp */
+#mobile-root .issue-row__cause {
+  font-family: var(--body);
+  font-size: var(--text-xs);
+  color: var(--label);
+  margin: 0;
+  /* Indent to align with text after the lamp (lamp=14px + gap=8px = ~22px) */
+  padding-left: calc(14px + var(--space-2));
+}
+
+/* Steel (unknown) rows — banked rule: neutral card surface, no status tint. */
+#mobile-root .issue-row--unknown { background: var(--card); border-color: var(--border); }
+
+/* =========================================================================
+   Task 6: Overview — Active issues section + clear state (§7.2)
+   ========================================================================= */
+
+#mobile-root .overview-issues { margin-top: var(--space-4); }
+
+/* Section title — Outfit display, small heading */
+#mobile-root .overview-issues__title {
+  font-family: var(--disp);
+  font-size: var(--text-base);
+  color: var(--label);
+  margin: 0 0 var(--space-2);
+}
+
+#mobile-root .overview-issues__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Caution-with-no-rows fallback (e.g. a hot node, which is not an "incident"). */
+#mobile-root .overview-issues__empty {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+  margin: 0;
+}
+
+/* Healthy clear state — 🌙 prose line (DM Sans) + honest mono "no data" line. */
+#mobile-root .overview-clear {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+}
+#mobile-root .overview-clear__msg {
+  font-family: var(--body);
+  font-size: var(--text-base);
+  color: var(--text);
+  margin: 0;
+}
+#mobile-root .overview-clear__sub {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+  margin: 0;
+}

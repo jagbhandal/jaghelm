@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon background source — full-bleed carbon-black (#0A0D0C, the app's --bg).
+     The indigo shield (#6366f1) + #818cf8 outline pop sharply against carbon-black,
+     so no gradient trickery is needed. Corners under any launcher mask
+     (squircle / circle / square) show carbon-black — never white. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
+  <rect width="108" height="108" fill="#0A0D0C"/>
+</svg>

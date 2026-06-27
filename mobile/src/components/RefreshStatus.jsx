@@ -1,69 +1,112 @@
 import React, { useState, useEffect } from 'react';
+import StatusLamp from './StatusLamp.jsx';
+import { formatClock } from '../data/derive.js';
 
 /**
- * Pinned top status bar: shows when the data last refreshed and counts down to
- * the next refresh, with a progress line that fills over exactly one interval.
- * The cadence (`intervalMs`) is the server's configured refreshInterval, so this
- * stays in lockstep with the web dashboard's auto-refresh. Tap to refresh now.
+ * Pinned worst-of annunciator strip (spec §7.1). Persists across all four tabs.
+ *
+ *  - Left:  StatusLamp (color = overall `severity`) + the mono status sentence
+ *           ("2 services down" / "All systems operational").
+ *  - Right: `HH:MM · next Xs` — clock in `--muted`, the "next Xs" countdown in
+ *           `--accent-light` (chrome, NOT a status color).
+ *  - Bottom: indigo (`--accent`) progress line filling over exactly one
+ *           `intervalMs`; `key={lastUpdated}` restarts it; reduced-motion → static.
+ *
+ * States (severity carries meaning; chrome carries cadence):
+ *  - error/unreachable → STEEL lamp + "Can't reach JagHelm" + "Retrying…" + a
+ *    frozen steel progress line. Unreachable is UNKNOWN, never red, never green
+ *    (spec §13 decision #2 / Bug #4). MobileApp already forces `severity` to
+ *    'unknown' here, but the copy is owned by this component.
+ *  - loading (no data yet) → steel lamp + "Connecting…", no countdown.
+ *  - live → `severity` lamp + `summary` sentence + clock + indigo countdown.
+ *
+ * `severity`/`summary` are computed by MobileApp from the dashboard data (with
+ * `unreachable = data.error != null` threaded into `overallSeverity`). Tap = refresh.
  */
-export default function RefreshStatus({ lastUpdated, intervalMs, error, loading, onRefresh }) {
+
+// Overall severity → colorblind-safe lamp shape (mirrors SubsystemCell's mapping).
+const SEV_SHAPE = { critical: 'slash', caution: 'disc', healthy: 'disc', unknown: 'ring' };
+
+export default function RefreshStatus({ severity, summary, lastUpdated, intervalMs, error, loading, onRefresh }) {
   const [now, setNow] = useState(() => Date.now());
 
-  // 1s heartbeat drives the relative time + countdown text only. The progress
-  // line itself is a CSS animation (smooth, no per-frame JS).
+  // 1s heartbeat drives the countdown text only. The progress line itself is a
+  // CSS animation (smooth, no per-frame JS in steady state).
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
 
-  const stale = !!error;
+  const unreachable = !!error;
   const elapsed = lastUpdated == null ? null : Math.max(0, now - lastUpdated);
   const remainingS = elapsed == null ? null : Math.max(0, Math.ceil((intervalMs - elapsed) / 1000));
 
-  let label;
-  let next;
-  if (stale) {
-    label = lastUpdated == null ? 'Waiting for data' : `Last update ${formatAgo(elapsed)} ago`;
-    next = 'Retrying…';
+  // Resolve the annunciator state. Precedence: unreachable > cold-start > live.
+  let lampSeverity;
+  let lampShape;
+  let sentence;
+  let mod;
+  let countdown = false;
+  let frozen = false;
+
+  if (unreachable) {
+    lampSeverity = 'unknown';
+    lampShape = 'ring';
+    sentence = "Can't reach JagHelm";
+    mod = 'error';
+    frozen = true;
   } else if (lastUpdated == null) {
-    label = loading ? 'Updating…' : 'Connecting…';
-    next = '';
+    lampSeverity = 'unknown';
+    lampShape = 'ring';
+    sentence = 'Connecting…';
+    mod = 'loading';
   } else {
-    label = `Updated ${formatAgo(elapsed)} ago`;
-    next = remainingS > 0 ? `Next in ${remainingS}s` : 'Updating…';
+    lampSeverity = severity || 'unknown';
+    lampShape = SEV_SHAPE[lampSeverity] || 'disc';
+    sentence = summary || '';
+    mod = lampSeverity;
+    countdown = true;
   }
 
   return (
     <button
       type="button"
-      className={`mobile-statusbar${stale ? ' mobile-statusbar--stale' : ''}`}
+      className={`mobile-statusbar mobile-statusbar--${mod}`}
       onClick={onRefresh}
-      aria-label={stale ? 'Data refresh failed. Tap to retry.' : `${label}. Tap to refresh now.`}
+      aria-label={unreachable ? "Can't reach JagHelm. Tap to retry." : `${sentence}. Tap to refresh now.`}
     >
       <span className="mobile-statusbar__left">
-        <span className="mobile-statusbar__dot" aria-hidden="true" />
-        <span className="mobile-statusbar__label">{label}</span>
+        <StatusLamp shape={lampShape} severity={lampSeverity} label={sentence} size={10} />
+        <span className="mobile-statusbar__summary">{sentence}</span>
       </span>
-      {next && <span className="mobile-statusbar__next">{next}</span>}
-      {/* key restarts the fill animation on each successful refresh */}
-      {!stale && lastUpdated != null && (
+
+      <span className="mobile-statusbar__right">
+        {unreachable ? (
+          <span className="mobile-statusbar__retry">Retrying…</span>
+        ) : countdown ? (
+          <>
+            <span className="mobile-statusbar__clock" style={{ color: 'var(--muted)' }}>
+              {formatClock(lastUpdated)}
+            </span>
+            <span className="mobile-statusbar__sep" aria-hidden="true">·</span>
+            <span className="mobile-statusbar__next" style={{ color: 'var(--accent-light)' }}>
+              next {remainingS}s
+            </span>
+          </>
+        ) : null}
+      </span>
+
+      {/* Progress line: animated indigo fill (live) or frozen steel (unreachable). */}
+      {frozen ? (
+        <span className="mobile-statusbar__progress mobile-statusbar__progress--frozen" aria-hidden="true" />
+      ) : countdown ? (
         <span
           key={lastUpdated}
           className="mobile-statusbar__progress"
           style={{ animationDuration: `${intervalMs}ms` }}
           aria-hidden="true"
         />
-      )}
+      ) : null}
     </button>
   );
-}
-
-/** "just now" | "12s" | "3m" | "2h" — compact, single unit. */
-function formatAgo(ms) {
-  const s = Math.floor(ms / 1000);
-  if (s < 1) return 'just now';
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  return `${Math.floor(m / 60)}h`;
 }

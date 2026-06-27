@@ -44,6 +44,12 @@ vi.mock('./views/NotificationSettings.jsx', () => ({
     <div>NOTIFICATION_SETTINGS<button onClick={nav.pop}>back</button></div>
   ),
 }));
+// Task 6: stub RefreshStatus to capture the severity/summary MobileApp computes.
+vi.mock('./components/RefreshStatus.jsx', () => ({
+  default: ({ severity, summary }) => (
+    <div data-testid="refresh-status">{severity}::{summary}</div>
+  ),
+}));
 
 import MobileApp from './MobileApp.jsx';
 
@@ -109,6 +115,35 @@ describe('MobileApp shell — Task 9 screen dispatcher', () => {
     fireEvent.click(screen.getByText('back'));
     expect(screen.queryByText('SERVICE_DETAIL')).toBeNull();
     expect(screen.getByText('ServicesView')).toBeInTheDocument();
+  });
+});
+
+describe('MobileApp — Task 6 annunciator severity wiring', () => {
+  it('passes healthy severity + "All systems operational" when nothing is wrong', async () => {
+    useDashboard.mockReturnValue({
+      servicesBody: { nodes: { 'vm-101': { display_name: 'VM 101', services: [{ uid: 'vm-101:a', status: 'up' }] } } },
+      ups: { status: 1 }, cron: [], loading: false, error: null, lastUpdated: Date.now(), intervalMs: 30000, refresh: vi.fn(),
+    });
+    await act(async () => { render(<MobileApp />); });
+    expect(screen.getByTestId('refresh-status').textContent).toBe('healthy::All systems operational');
+  });
+
+  it('passes critical severity + the worst-of down sentence', async () => {
+    useDashboard.mockReturnValue({
+      servicesBody: { nodes: { 'vm-101': { display_name: 'VM 101', services: [{ uid: 'vm-101:a', status: 'down' }] } } },
+      ups: { status: 1 }, cron: [], loading: false, error: null, lastUpdated: Date.now(), intervalMs: 30000, refresh: vi.fn(),
+    });
+    await act(async () => { render(<MobileApp />); });
+    expect(screen.getByTestId('refresh-status').textContent).toBe('critical::1 service down');
+  });
+
+  it('threads unreachable from data.error → unknown severity even with stale data (Bug #4)', async () => {
+    useDashboard.mockReturnValue({
+      servicesBody: { nodes: { 'vm-101': { display_name: 'VM 101', services: [{ uid: 'vm-101:a', status: 'up' }] } } },
+      ups: { status: 1 }, cron: [], loading: false, error: new Error('fetch failed'), lastUpdated: Date.now(), intervalMs: 30000, refresh: vi.fn(),
+    });
+    await act(async () => { render(<MobileApp />); });
+    expect(screen.getByTestId('refresh-status').textContent.startsWith('unknown::')).toBe(true);
   });
 });
 
