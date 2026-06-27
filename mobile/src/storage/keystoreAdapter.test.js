@@ -44,4 +44,9 @@ describe('keystoreAdapter', () => {
     await keystoreAdapter.removeItem('k');
     expect(remove).toHaveBeenCalledWith({ key: 'k' });
   });
+
+  it('removeItem resolves (never throws) on a missing key', async () => {
+    remove.mockRejectedValue(new Error('Item with given key does not exist'));
+    await expect(keystoreAdapter.removeItem('missing')).resolves.toBeUndefined();
+  });
 });

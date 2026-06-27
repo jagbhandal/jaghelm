@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Path A reaches the JagHelm backend directly over the tailnet, which is plain
+  http (the tailnet itself is the encrypted transport). This enables the cleartext
+  *capability*; it does NOT scope it, because Android's <domain> entries accept
+  only literal hosts/IPs, never a CIDR range like 100.64.0.0/10. The real scoping
+  lives in JS — mobile/src/netGuard.js refuses cleartext http to any public host
+  before a request leaves the device (https always allowed; http only to tailnet
+  100.64.0.0/10, RFC1918, loopback, single-label, or *.ts.net). System CAs are
+  trusted for the https path.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
