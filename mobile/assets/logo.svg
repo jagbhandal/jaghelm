@@ -1,22 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
-  <defs>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="1.5" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
-
   <!-- Shield - solid indigo fill with bold outline -->
-  <path d="M100 16 L166 42 Q170 44 170 48 L170 108 Q170 148 100 178 Q30 148 30 108 L30 48 Q30 44 34 42 Z" 
+  <path d="M100 16 L166 42 Q170 44 170 48 L170 108 Q170 148 100 178 Q30 148 30 108 L30 48 Q30 44 34 42 Z"
         fill="#6366f1"/>
-  <path d="M100 16 L166 42 Q170 44 170 48 L170 108 Q170 148 100 178 Q30 148 30 108 L30 48 Q30 44 34 42 Z" 
+  <path d="M100 16 L166 42 Q170 44 170 48 L170 108 Q170 148 100 178 Q30 148 30 108 L30 48 Q30 44 34 42 Z"
         fill="none" stroke="#818cf8" stroke-width="4" stroke-linejoin="round"/>
 
-  <!-- Ship's wheel - amber/gold -->
-  <g filter="url(#glow)">
+  <!-- Ship's wheel - amber/gold, no glow -->
+  <g>
     <circle cx="100" cy="92" r="42" fill="none" stroke="#f59e0b" stroke-width="5"/>
     <circle cx="100" cy="92" r="26" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.35"/>
     <circle cx="100" cy="92" r="12" fill="#f59e0b"/>

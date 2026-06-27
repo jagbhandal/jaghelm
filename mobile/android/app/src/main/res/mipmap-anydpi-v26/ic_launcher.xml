@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Full-bleed indigo background — no white at any masked corner -->
     <background android:drawable="@color/ic_launcher_background"/>
+    <!-- Foreground: indigo shield + amber helm, scaled to safe zone, no glow -->
     <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    <!-- Monochrome layer for Android 13+ themed icons (API 33+) -->
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome"/>
 </adaptive-icon>

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon foreground source — 108dp canvas, 66dp safe zone.
+     Content scaled to 0.617× and centred so the shield fits within the safe zone.
+     No feGaussianBlur / glow filters.  Background layer is full-bleed indigo so
+     the indigo shield fill blends seamlessly at the corners — only the #818cf8
+     outline and the amber helm are visible against the background. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- All content wrapped in a scale transform that fits the artwork within the
+       66dp safe zone of the 108dp foreground canvas (scale ≈ 0.617, centred at 100,97). -->
+  <g transform="translate(100,97) scale(0.617) translate(-100,-97)">
+
+    <!-- Shield: indigo fill matches background — corners outside mask are invisible.
+         The lighter outline (#818cf8) gives the shield its shape against the indigo bg. -->
+    <path d="M100 16 L166 42 Q170 44 170 48 L170 108 Q170 148 100 178 Q30 148 30 108 L30 48 Q30 44 34 42 Z"
+          fill="#6366f1"/>
+    <path d="M100 16 L166 42 Q170 44 170 48 L170 108 Q170 148 100 178 Q30 148 30 108 L30 48 Q30 44 34 42 Z"
+          fill="none" stroke="#818cf8" stroke-width="5" stroke-linejoin="round"/>
+
+    <!-- Ship's wheel — amber/gold, NO glow filter -->
+    <circle cx="100" cy="92" r="42" fill="none" stroke="#f59e0b" stroke-width="5"/>
+    <circle cx="100" cy="92" r="26" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.35"/>
+    <circle cx="100" cy="92" r="12" fill="#f59e0b"/>
+    <circle cx="100" cy="92" r="7"  fill="#fbbf24"/>
+    <circle cx="100" cy="92" r="3"  fill="#fde68a"/>
+
+    <!-- Cardinal spokes -->
+    <line x1="100" y1="80"  x2="100" y2="50"  stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round"/>
+    <line x1="100" y1="104" x2="100" y2="134" stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round"/>
+    <line x1="88"  y1="92"  x2="58"  y2="92"  stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round"/>
+    <line x1="112" y1="92"  x2="142" y2="92"  stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round"/>
+
+    <!-- Diagonal spokes -->
+    <line x1="91.5"  y1="83.5"  x2="70.3"  y2="62.3"  stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+    <line x1="108.5" y1="83.5"  x2="129.7" y2="62.3"  stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+    <line x1="91.5"  y1="100.5" x2="70.3"  y2="121.7" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+    <line x1="108.5" y1="100.5" x2="129.7" y2="121.7" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- Cardinal pegs -->
+    <circle cx="100" cy="48"  r="7"   fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <circle cx="100" cy="136" r="7"   fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <circle cx="56"  cy="92"  r="7"   fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+    <circle cx="144" cy="92"  r="7"   fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+
+    <!-- Diagonal pegs -->
+    <circle cx="69"  cy="61"  r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+    <circle cx="131" cy="61"  r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+    <circle cx="69"  cy="123" r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+    <circle cx="131" cy="123" r="5.5" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5"/>
+
+  </g>
+</svg>
