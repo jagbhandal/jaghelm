@@ -1,42 +1,59 @@
 import React, { useMemo } from 'react';
-import { deriveIncidents } from '../data/derive.js';
+import { deriveIncidents, activeIncidentIds } from '../data/derive.js';
 import { groupByDay, formatDayLabel, dateToDayKey } from '../data/groupByDay.js';
 import StatusBanner from '../components/StatusBanner.jsx';
 
 /**
- * Alerts: active (live-derived) incidents are pinned at top in alarm-red.
- * Below, the same incidents are grouped by day using groupByDay + formatDayLabel
- * (Phase 3 has no persisted push history yet — the real history feed lands in
- * Phase 5; day-grouping is wired + unit-tested now so the heading is correct
- * for all future multi-day data, not hard-coded "Today").
+ * Alerts: active (live-derived) incidents are pinned at top in alarm-red,
+ * shown as compact rows that include the cause (Bug #8).
  *
- * The notification-settings gear pushes the NotificationSettings screen (Phase 5).
- * READ-ONLY: the only action here is nav.push to the incident detail screen.
- * Mute is NOT rendered.
+ * History de-dup (Bug #3): history renders ONLY incidents whose id is NOT in
+ * activeIncidentIds(). Since all currently-derived incidents ARE active, the
+ * history section is empty by design → shows "No earlier alerts this session."
+ *
+ * Day-grouping stays wired for the future persisted-history feed (Phase 5+).
+ * When that feed lands, pass real persisted incidents (filtered to non-active)
+ * into historyIncidents and stamp them with their real event timestamps.
+ *
+ * Gear → NotificationSettings: always enabled + indigo (Bug #13 partial).
+ * READ-ONLY: the only action is nav.push.
  */
 export default function Alerts({ data, nav }) {
   const { loading, error, servicesBody } = data;
   const { ups, cron } = data;
+
   const incidents = useMemo(
     () => deriveIncidents({ services: servicesBody, ups, cron }),
     [servicesBody, ups, cron],
   );
 
-  // Phase 3: stamp all derived incidents with "now" for day-grouping.
-  // When Phase 5 brings a real history feed, replace `now` with the incident's
-  // actual event timestamp.
+  // The set of active incident ids — history filters these OUT (de-dup, Bug #3).
+  const activeIds = useMemo(() => activeIncidentIds(incidents), [incidents]);
+
+  // History: only incidents NOT in the active set.
+  // In snapshot-only mode all derived incidents are active → historyIncidents is always [].
+  // When a real persisted-history feed lands (Phase 5+), non-active incidents live here.
+  const historyIncidents = useMemo(
+    () => incidents.filter((i) => !activeIds.has(i.id)),
+    [incidents, activeIds],
+  );
+
   const now = new Date();
   const todayKey = dateToDayKey(now);
+
+  // Day-grouping stays wired for the future feed; currently always produces [].
   const groups = useMemo(() => {
-    const dated = incidents.map((i) => ({ ...i, _at: now }));
+    if (historyIncidents.length === 0) return [];
+    const dated = historyIncidents.map((i) => ({ ...i, _at: now }));
     return groupByDay(dated, (i) => i._at);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [incidents]);
+  }, [historyIncidents]);
 
   return (
     <section className="mobile-view" aria-label="Alerts">
       <div className="alerts-head">
         <h1>Alerts</h1>
+        {/* Gear always enabled + indigo chrome (Bug #13 partial; removed opacity:0.5/cursor:default) */}
         <button
           type="button"
           className="alerts-gear"
@@ -66,29 +83,37 @@ export default function Alerts({ data, nav }) {
             >
               <span className="alert-row__title">{inc.title}</span>
               <span className="alert-row__node">{inc.node}</span>
+              {/* Cause shown on active rows (Bug #8 — active cards must show cause) */}
+              {inc.cause && <span className="alert-row__cause">{inc.cause}</span>}
             </button>
           ))}
 
-          {groups.map((g) => (
-            <div key={g.day}>
-              <h2 className="alerts-section">
-                {formatDayLabel(g.day, todayKey)}
-              </h2>
-              {g.items.map((inc) => (
-                <button
-                  key={`h-${inc.id}`}
-                  type="button"
-                  className="alert-row"
-                  onClick={() => nav.push('incident', { id: inc.id })}
-                  aria-label={`${inc.title} on ${inc.node}: ${inc.cause}`}
-                >
-                  <span className="alert-row__title">{inc.title}</span>
-                  <span className="alert-row__node">{inc.node}</span>
-                  <span className="alert-row__cause">{inc.cause}</span>
-                </button>
-              ))}
-            </div>
-          ))}
+          {/* History — empty-by-design in snapshot mode (§13 decision #3) */}
+          <h2 className="alerts-section">History</h2>
+          {groups.length === 0 ? (
+            <p className="alerts-history-empty">No earlier alerts this session.</p>
+          ) : (
+            groups.map((g) => (
+              <div key={g.day}>
+                <h2 className="alerts-section">
+                  {formatDayLabel(g.day, todayKey)}
+                </h2>
+                {g.items.map((inc) => (
+                  <button
+                    key={`h-${inc.id}`}
+                    type="button"
+                    className="alert-row"
+                    onClick={() => nav.push('incident', { id: inc.id })}
+                    aria-label={`${inc.title} on ${inc.node}: ${inc.cause}`}
+                  >
+                    <span className="alert-row__title">{inc.title}</span>
+                    <span className="alert-row__node">{inc.node}</span>
+                    <span className="alert-row__cause">{inc.cause}</span>
+                  </button>
+                ))}
+              </div>
+            ))
+          )}
         </>
       )}
     </section>

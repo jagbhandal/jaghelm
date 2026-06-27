@@ -13,11 +13,11 @@ describe('IncidentCard', () => {
     expect(screen.getByText('Gitea')).toBeInTheDocument();
     expect(screen.getByText('VM 101')).toBeInTheDocument();
     expect(screen.getByText('Service is down')).toBeInTheDocument();
-    expect(screen.getByText('42.0%')).toBeInTheDocument(); // uptime24 scalar
+    expect(screen.getByText('42.0%')).toBeInTheDocument(); // uptime24 scalar via UptimeRing SVG text
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
     expect(onOpen).toHaveBeenCalledWith(INC.target);
   });
-  it('omits the uptime line when uptime24 is null (e.g. UPS/cron)', () => {
+  it('omits the uptime ring when uptime24 is null (e.g. UPS/cron)', () => {
     render(<IncidentCard incident={{ ...INC, uptime24: null }} onOpen={() => {}} />);
     expect(screen.queryByText(/%$/)).toBeNull();
   });
@@ -32,5 +32,35 @@ describe('IncidentCard', () => {
   it('renders the Open button for a service incident with a url', () => {
     render(<IncidentCard incident={INC} onOpen={() => {}} />);
     expect(screen.getByRole('button', { name: 'Open' })).toBeInTheDocument();
+  });
+
+  // Bug #8: cause is ALWAYS shown on active cards
+  it('always renders the cause text', () => {
+    render(<IncidentCard incident={INC} onOpen={() => {}} />);
+    expect(screen.getByText('Service is down')).toBeInTheDocument();
+  });
+  it('renders cause even when uptime24 is null (UPS/cron incidents)', () => {
+    render(<IncidentCard incident={UPS_INC} onOpen={() => {}} />);
+    expect(screen.getByText('On battery')).toBeInTheDocument();
+  });
+
+  // UptimeRing replaces UptimeLine (Bug #1 fix: no whitespace-node flex jam)
+  it('renders UptimeRing (aria-label) when uptime24 is set', () => {
+    render(<IncidentCard incident={INC} onOpen={() => {}} />);
+    expect(screen.getByLabelText(/24-hour uptime/i)).toBeInTheDocument();
+  });
+  it('does NOT render a UptimeLine paragraph (no "24H uptime" prose label)', () => {
+    render(<IncidentCard incident={INC} onOpen={() => {}} />);
+    // UptimeLine renders "24H uptime" as span text; UptimeRing uses a separate SVG <text> node.
+    // We assert the old prose "24H uptime" label is gone.
+    expect(screen.queryByText('24H uptime')).toBeNull();
+  });
+
+  // Bug #9: Open button is the ghost secondary variant, NOT the loud indigo .open-btn fill
+  it('Open button has the ghost class (incident-card__open), not the loud indigo .open-btn', () => {
+    const { container } = render(<IncidentCard incident={INC} onOpen={() => {}} />);
+    const openBtn = screen.getByRole('button', { name: 'Open' });
+    expect(openBtn.classList.contains('open-btn')).toBe(false);
+    expect(openBtn.classList.contains('incident-card__open')).toBe(true);
   });
 });

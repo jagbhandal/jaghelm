@@ -208,6 +208,8 @@
 .incident-card__uptime { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-xs); }
 .incident-card__uptime-label { color: var(--text-muted); letter-spacing: 0.5px; }
 .open-btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: var(--space-2) var(--space-4); font-size: var(--text-sm); min-height: 44px; }
+/* Bug #9: ghost secondary Open button — card-inner bg + border, NOT the loud indigo fill */
+.incident-card__open { background: var(--card-inner, rgba(255,255,255,0.025)); color: var(--text-secondary); border: 1px solid var(--border, rgba(99,102,241,0.12)); border-radius: 8px; padding: var(--space-2) var(--space-4); font-size: var(--text-sm); min-height: 44px; cursor: pointer; }
 .overview-more { align-self: flex-start; display: inline-flex; align-items: center; background: var(--bg-card-inner); color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: var(--space-2) var(--space-3); font-size: var(--text-sm); min-height: 44px; }
 .overview-nodes { display: flex; flex-direction: column; gap: var(--space-3); }
 .node-row { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; text-align: left; padding: var(--space-3) var(--space-4); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); min-height: 44px; }
@@ -254,8 +256,11 @@
 
 /* --- Phase 3: Alerts + incident detail --- */
 .alerts-head { display: flex; align-items: center; justify-content: space-between; }
-.alerts-gear { background: none; border: none; color: var(--text-muted); font-size: var(--text-xl); min-height: 44px; min-width: 44px; opacity: 0.5; cursor: default; }
+/* Bug #13 partial: gear always enabled + indigo chrome; removed opacity:0.5/cursor:default */
+.alerts-gear { background: none; border: none; color: var(--accent); font-size: var(--text-xl); min-height: 44px; min-width: 44px; cursor: pointer; }
 .alerts-clear { color: var(--text-muted); }
+/* History empty-by-design copy (§13 decision #3) */
+.alerts-history-empty { color: var(--text-muted); font-size: var(--text-sm); padding: var(--space-2) 0; }
 .alerts-section { font-family: var(--font-display); font-size: var(--text-base); color: var(--text-secondary); margin: var(--space-4) 0 var(--space-2); }
 .alerts-section--active { color: var(--red); }
 .alert-row { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: var(--space-3) var(--space-4); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); margin-bottom: var(--space-2); min-height: 44px; }
@@ -292,8 +297,7 @@
 .push-event__severity { color: var(--text-muted); font-size: var(--text-base); }
 .push-event__note { color: var(--text-muted); font-size: var(--text-sm); margin-top: var(--space-2); }
 
-/* Phase 5: enable the Alerts-tab gear (was opacity:0.5/cursor:default while disabled). */
-.alerts-gear:not([disabled]) { color: var(--accent); opacity: 1; cursor: pointer; }
+/* Task 9: .alerts-gear is now always enabled (indigo, cursor:pointer) in the base rule above. */
 
 /* Task 7: ServiceRow — StatusWord sizing within the row */
 .svc-row .status-word { font-size: var(--text-2xs); flex-shrink: 0; }

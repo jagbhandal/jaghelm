@@ -1,10 +1,15 @@
 import React from 'react';
-import UptimeLine from './UptimeLine.jsx';
+import UptimeRing from './UptimeRing.jsx';
 
 /**
- * An expanded incident: title, node tag, cause, 24h uptime (the per-service
- * uptime24 scalar — there is no per-service 24h SERIES from the server), and a
- * read-only Open action. Alarm-tinted (red border). onOpen(target) only.
+ * Compact incident card: title, node tag, cause (ALWAYS shown — Bug #8),
+ * UptimeRing gauge (replaces UptimeLine — Bug #1 fix), and a secondary ghost
+ * Open button (NOT the loud indigo fill — Bug #9).
+ *
+ * Primary affordance: the card/row itself taps to detail (via the parent nav).
+ * Secondary affordance: the ghost Open button opens the service URL externally.
+ *
+ * Alarm-tinted (red border). onOpen(target) fires on Open button click only.
  */
 export default function IncidentCard({ incident, onOpen }) {
   return (
@@ -13,11 +18,19 @@ export default function IncidentCard({ incident, onOpen }) {
         <span className="incident-card__title">{incident.title}</span>
         <span className="incident-card__node">{incident.node}</span>
       </div>
+      {/* Cause is ALWAYS shown (Bug #8 — active cards must be as informative as history) */}
       <p className="incident-card__cause">{incident.cause}</p>
       <div className="incident-card__foot">
-        <UptimeLine uptime24={incident.uptime24} />
+        <UptimeRing uptime24={incident.uptime24} />
+        {/* Bug #9: ghost secondary button — NOT the loud .open-btn indigo fill */}
         {incident.target?.url && (
-          <button type="button" className="open-btn" onClick={() => onOpen(incident.target)}>Open</button>
+          <button
+            type="button"
+            className="incident-card__open"
+            onClick={() => onOpen(incident.target)}
+          >
+            Open
+          </button>
         )}
       </div>
     </article>
