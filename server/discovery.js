@@ -9,10 +9,19 @@
 
 import { createLogger } from './util/logger.js';
 import { safeFetch } from './httpClient.js';
+import { positiveNum } from './util/env.js';
 
 const log = createLogger('discovery');
 
 const PROM_TIMEOUT = 8000;
+
+// Seconds after cAdvisor's last `container_last_seen` stamp that we still treat a
+// container as running. Prometheus keeps serving a stopped container's series for
+// its lookback window (~5m), so metric *presence* is not proof of life — a stale
+// stamp is. Must exceed the Prometheus scrape interval (else a slow scrape
+// false-flags a live container as stopped) and stay well under the ~5m lookback
+// (else a stopped container lingers as a phantom "running" card). Env-overridable.
+const CONTAINER_STALE_SEC = positiveNum(process.env.JAGHELM_CONTAINER_STALE_SEC, 90);
 
 let promUrl = null;
 
@@ -176,11 +185,30 @@ export async function getNodeData(nodeLabel) {
   };
 
   // ── Build container list ──
+  // `container_last_seen` is cAdvisor's freshness stamp (epoch seconds it last saw
+  // the container). A stopped container keeps a series in Prometheus for the
+  // lookback window (~5m), so its mere presence is NOT "running" — a stale stamp
+  // (the query's eval time minus the value exceeds CONTAINER_STALE_SEC) means it
+  // has stopped. Collect those names and exclude them, so a stopped container
+  // leaves the running set and the down/breadcrumb synthesis surfaces it instead
+  // of a phantom green card. (value[0] is Prometheus' own eval timestamp, so the
+  // gap is computed on one clock — no JagHelm-vs-Prometheus skew.)
+  const staleNames = new Set();
+  for (const r of namesR) {
+    const name = r.metric?.name;
+    if (!name) continue;
+    const evalTs = Number(r.value?.[0]);
+    const lastSeen = Number(r.value?.[1]);
+    if (Number.isFinite(evalTs) && Number.isFinite(lastSeen) && evalTs - lastSeen > CONTAINER_STALE_SEC) {
+      staleNames.add(name);
+    }
+  }
+
   const containerMap = new Map();
   const allResults = [...namesR, ...cCpuR, ...cMemR, ...cRxR, ...cTxR];
   for (const r of allResults) {
     const name = r.metric?.name;
-    if (name && !containerMap.has(name)) {
+    if (name && !staleNames.has(name) && !containerMap.has(name)) {
       containerMap.set(name, {
         container: name,
         status: 'running',
