@@ -70,7 +70,10 @@ export default function Alerts({ data, nav }) {
         <p className="alerts-clear">All clear — nothing is on fire.</p>
       )}
 
-      {incidents.length > 0 && (
+      {/* When unreachable (error set) we do NOT present stale incidents as currently
+          "Active" — the error banner stands alone, consistent with Overview/Bug #4
+          (a mid-session outage must never render stale data as live). */}
+      {!error && incidents.length > 0 && (
         <>
           <h2 className="alerts-section alerts-section--active">Active</h2>
           {incidents.map((inc) => (
