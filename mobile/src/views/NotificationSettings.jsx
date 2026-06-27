@@ -106,10 +106,10 @@ function SessionControls() {
           <p className="notif-unavailable">
             Forget this device? This wipes the saved server URL and sign-in from this phone.
           </p>
-          <button type="button" className="session-forget" onClick={forgetDevice}>
+          <button type="button" className="session-forget session-forget--confirm" onClick={forgetDevice}>
             Forget
           </button>
-          <button type="button" onClick={() => setConfirming(false)}>
+          <button type="button" className="session-cancel" onClick={() => setConfirming(false)}>
             Cancel
           </button>
         </div>

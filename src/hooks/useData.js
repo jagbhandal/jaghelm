@@ -74,6 +74,14 @@ export async function getServices(skipEtag) {
   return fetchJson(`${getApiBase()}/services`, skipEtag);
 }
 
+// Dashboard display config (refresh cadence + layout flags). This is the SAME
+// endpoint the web dashboard reads its `refreshInterval` from, so the mobile app
+// can sync its refresh countdown to the exact cadence the web polls at. Display
+// settings only — not the secret-bearing service/integration config.
+export async function getDisplayConfig(skipEtag) {
+  return fetchJson(`${getApiBase()}/display-config`, skipEtag);
+}
+
 // Metric history (sparklines). Not ETag-cached server-side — it changes every
 // cycle by design — so this always returns a fresh body.
 export async function getMetricHistory() {
