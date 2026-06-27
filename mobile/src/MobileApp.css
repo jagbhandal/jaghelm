@@ -1,5 +1,94 @@
 /* Edge-to-edge: content draws under the system bars (Android 15 / SDK 35+).
    Safe-area insets keep the tab bar and header clear of the status/nav bars. */
+
+/* =====================================================================
+   Carbon token layer — shared by the main shell (#mobile-root) and the
+   auth shell (.mobile-shell / Login). These shadow the inherited One-Dark
+   web tokens for mobile only; global.css is NOT modified.
+   ===================================================================== */
+#mobile-root,
+.mobile-shell {
+  /* --- Carbon surfaces --- */
+  --bg: #0A0D0C;
+  --bg2: #0E1211;
+  --card: rgba(255, 255, 255, 0.04);
+  --card-inner: rgba(255, 255, 255, 0.025);
+
+  /* --- Borders (indigo-tinted) --- */
+  --border: rgba(99, 102, 241, 0.12);
+  --border2: rgba(99, 102, 241, 0.22);
+
+  /* --- Chrome (indigo — accent only, never status) --- */
+  --accent: #6366f1;
+  --accent-light: #818cf8;
+
+  /* --- Status colors (calm web palette, 9 %/24 % tints) --- */
+  --green: #34d399;
+  --green-bg: rgba(52, 211, 153, 0.09);
+  --green-bd: rgba(52, 211, 153, 0.24);
+
+  --red: #f87171;
+  --red-bg: rgba(248, 113, 113, 0.09);
+  --red-bd: rgba(248, 113, 113, 0.24);
+
+  --amber: #fbbf24;
+  --amber-bg: rgba(251, 191, 36, 0.09);
+  --amber-bd: rgba(251, 191, 36, 0.24);
+
+  --muted: #848b98;
+  --steel: #848b98;
+
+  /* --- Text --- */
+  --text: #e6e9ef;
+  --label: #9aa3b5;
+
+  /* --- Font family tokens --- */
+  --disp: 'Outfit', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+  --body: 'DM Sans', sans-serif;
+
+  /* --- Radius --- */
+  --card-radius: 20px;
+  --card-radius-sm: 16px;
+
+  /* ---- Legacy aliases: reused CSS still references these One-Dark token
+         names; without aliases components silently fall back to #282c34. ---- */
+
+  /* surfaces */
+  --bg-primary: var(--bg);
+  --bg-secondary: var(--bg2);
+  --bg-card: var(--card);
+  --bg-card-inner: var(--card-inner);
+  --bg-card-hover: rgba(255, 255, 255, 0.06);
+
+  /* glass (tab bar / status bar) */
+  --glass-bg: var(--bg2);
+  --glass-blur: 14px;
+
+  /* borders */
+  --border-color: var(--border);
+  --border-glow: var(--border2);
+  --glass-border: var(--border2);
+
+  /* chrome alias (chip active bg) */
+  --accent-glow: rgba(99, 102, 241, 0.12);
+
+  /* text — shadows global.css; now aliased to carbon values */
+  --text-primary: var(--text);
+  --text-secondary: var(--label);
+  --text-muted: var(--muted);
+
+  /* font families */
+  --font-display: var(--disp);
+  --font-body: var(--body);
+  --font-mono: var(--mono);
+
+  /* status border aliases → new *-bd tokens */
+  --green-border: var(--green-bd);
+  --red-border: var(--red-bd);
+  --amber-border: var(--amber-bd);
+}
+
 #mobile-root {
   display: flex;
   flex-direction: column;
@@ -10,19 +99,15 @@
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  background: var(--bg-primary);
+  background: radial-gradient(120% 80% at 50% -12%, #14191B, transparent 58%), var(--bg);
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: var(--text-base);
 
-  /* --- Mobile second-pass type/contrast (scoped: web tokens in global.css are
-     untouched). Text lifted toward white for phone-in-daylight legibility; the
-     UI/data scale bumped one notch. HEADINGS unchanged: --text-xl, --text-2xl,
+  /* --- Mobile type scale (scoped: web tokens in global.css are untouched).
+     Text lifted toward white for phone-in-daylight legibility; the UI/data
+     scale bumped one notch. HEADINGS unchanged: --text-xl, --text-2xl,
      --fs-section-title, --fs-metric-value stay as defined in global.css. --- */
-  --text-primary: #e6e9ef;
-  --text-secondary: #bcc3d0;
-  --text-muted: #9aa3b5;
-
   --text-2xs: 11px;
   --text-xs: 12px;
   --text-sm: 13px;
@@ -269,7 +354,7 @@
 }
 @keyframes statusbar-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @media (prefers-reduced-motion: reduce) {
-  .mobile-statusbar__progress { animation: none; transform: scaleX(1); opacity: 0.3; }
+  .mobile-statusbar__progress { animation: none; transition: none; transform: scaleX(1); opacity: 0.3; }
 }
 
 /* =====================================================================
