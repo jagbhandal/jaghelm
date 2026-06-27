@@ -90,3 +90,21 @@ describe('Login', () => {
     expect(removeItem).toHaveBeenCalledWith('jaghelm-token');
   });
 });
+
+describe('Login visual tokens (Task 12)', () => {
+  it('renders the JagHelm wordmark (Outfit branded title)', () => {
+    render(<Login askUrl onConnected={() => {}} />);
+    expect(screen.getByText('JagHelm')).toBeInTheDocument();
+  });
+
+  it('login root carries the mobile-shell class (shared carbon token layer)', () => {
+    const { container } = render(<Login askUrl onConnected={() => {}} />);
+    expect(container.querySelector('.mobile-shell')).not.toBeNull();
+  });
+
+  it('checkbox has accent-color inline style (indigo, not browser-blue)', () => {
+    render(<Login askUrl onConnected={() => {}} />);
+    const cb = screen.getByLabelText(/keep me signed in/i);
+    expect(cb.getAttribute('style')).toMatch(/accent-color/);
+  });
+});

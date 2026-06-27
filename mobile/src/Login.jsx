@@ -53,8 +53,11 @@ export default function Login({ askUrl = true, knownUrl = '', onConnected }) {
   };
 
   return (
-    <form className="firstrun" onSubmit={onSubmit}>
-      <h1>{askUrl ? 'Connect to JagHelm' : 'Sign in'}</h1>
+    <form className="firstrun mobile-shell" onSubmit={onSubmit}>
+      <div className="login-brand">
+        <h1 className="login-wordmark">JagHelm</h1>
+        <p className="login-subtitle">{askUrl ? 'Connect to JagHelm' : 'Sign in'}</p>
+      </div>
       {askUrl && (
         <>
           <label>
@@ -100,6 +103,7 @@ export default function Login({ askUrl = true, knownUrl = '', onConnected }) {
           type="checkbox"
           checked={remember}
           onChange={(e) => setRemember(e.target.checked)}
+          style={{ accentColor: 'var(--accent)' }}
         />
         Keep me signed in on this device
       </label>
