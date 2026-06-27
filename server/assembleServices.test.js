@@ -129,6 +129,25 @@ test('assemble: a vanished container that MATCHES a monitor is NOT a breadcrumb 
   assert.equal(breadcrumbCount, 0);
 });
 
+test('assemble: a vanished container mapped to a monitor via EXPLICIT override is NOT a breadcrumb (Kuma owns it)', () => {
+  // 'pgmon' does NOT fuzzy-match 'postgres'; only the explicit
+  // config.services.postgres.monitor mapping links them. The breadcrumb guard
+  // must honor that override (mirror the running-card path) — else a tracked
+  // service leaks out as a grey breadcrumb.
+  const { nodes, breadcrumbCount } = assembleServices({
+    nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'gitea', status: 'running', docker: {} }])]],
+    monitors: { 1: { id: 1, name: 'pgmon', status: 'up', active: true } },
+    config: { services: { postgres: { monitor: 'pgmon' } } },
+    lastSeenNodeOf: () => null,
+    containerRegistry: fakeRegistry([
+      { container: 'postgres', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 },
+    ]),
+    now: () => 0,
+  });
+  assert.equal(nodes.vm103.services.some((s) => s.container === 'postgres'), false);
+  assert.equal(breadcrumbCount, 0);
+});
+
 test('assemble: a candidate that is actually RUNNING this cycle is NOT a breadcrumb (defensive skip)', () => {
   const { nodes, breadcrumbCount } = run({
     nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'postgres', status: 'running', docker: { cpu: 3 } }])]],

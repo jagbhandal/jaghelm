@@ -241,11 +241,14 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     const candidates = containerRegistry.getMissing({ now: nowMs });
     for (const cand of candidates) {
       if (runningNames.has(cand.container)) continue;             // running somewhere this cycle
-      if (matchMonitor(cand.container, null, monitors)) continue; // Kuma owns it
+      const override = config.services?.[cand.container] || {};
+      // Kuma owns it — honor the explicit monitor mapping too (mirror pass (a)),
+      // so an explicitly-mapped, dissimilar-named monitor never lets a tracked
+      // service leak out as a grey breadcrumb (or double as breadcrumb + red card).
+      if (matchMonitor(cand.container, override.monitor || null, monitors)) continue;
       let nodeKey = cand.lastSeenNode;
       if (!nodeKey || !nodes[nodeKey]) nodeKey = nodeKeys[0];
       if (!nodeKey || !nodes[nodeKey]) continue; // no nodes to attach to
-      const override = config.services?.[cand.container] || {};
       nodes[nodeKey].services.push({
         container: cand.container,
         uid: `${nodeKey}:${cand.container}`,
