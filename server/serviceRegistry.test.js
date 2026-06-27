@@ -39,6 +39,42 @@ test('registry: corrupt file loads as empty (no throw)', () => {
   } finally { if (existsSync(path)) rmSync(path); }
 });
 
+test('registry: remembers + returns the matched container (3-arg recordSeen)', () => {
+  const path = tmpPath('container');
+  try {
+    const r = createServiceRegistry({ path, now: () => 1000 });
+    r.recordSeen('7', 'vm103', 'radarr');
+    assert.equal(r.getLastSeenContainer('7'), 'radarr');
+    assert.equal(r.getLastSeenNode('7'), 'vm103');
+    assert.equal(r.getLastSeenContainer('999'), null);
+  } finally { if (existsSync(path)) rmSync(path); }
+});
+
+test('registry: the remembered container persists across reload', () => {
+  const path = tmpPath('container-persist');
+  try {
+    const a = createServiceRegistry({ path, now: () => 1 });
+    a.recordSeen('7', 'vm103', 'radarr');
+    a.save();
+    const b = createServiceRegistry({ path });
+    assert.equal(b.getLastSeenContainer('7'), 'radarr');
+    assert.equal(b.getLastSeenNode('7'), 'vm103');
+  } finally { if (existsSync(path)) rmSync(path); }
+});
+
+test('registry: a changed container dirties the store (same node)', () => {
+  const path = tmpPath('container-dirty');
+  try {
+    const r = createServiceRegistry({ path, now: () => 5 });
+    r.recordSeen('1', 'vm103', 'radarr');
+    r.save();
+    rmSync(path);
+    r.recordSeen('1', 'vm103', 'sonarr');   // same node, NEW container → must write
+    r.save();
+    assert.equal(existsSync(path), true);
+  } finally { if (existsSync(path)) rmSync(path); }
+});
+
 test('registry: re-recording the same node does not require a write', () => {
   const path = tmpPath('dirty');
   try {

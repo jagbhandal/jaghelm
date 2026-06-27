@@ -3,15 +3,40 @@
 #mobile-root {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  /* Pin the shell to the viewport so the status bar + tab bar stay fixed and
+     only .mobile-content scrolls. 100dvh tracks the *dynamic* viewport (correct
+     under Android browser/system chrome); 100vh is the fallback. overflow:hidden
+     keeps the root itself from ever scrolling the chrome out of view. */
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-body);
+  font-size: var(--text-base);
+
+  /* --- Mobile second-pass type/contrast (scoped: web tokens in global.css are
+     untouched). Text lifted toward white for phone-in-daylight legibility; the
+     UI/data scale bumped one notch. HEADINGS unchanged: --text-xl, --text-2xl,
+     --fs-section-title, --fs-metric-value stay as defined in global.css. --- */
+  --text-primary: #e6e9ef;
+  --text-secondary: #bcc3d0;
+  --text-muted: #9aa3b5;
+
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-base: 15px;
+  --text-lg: 16px;
+  --fs-service-name: 14px; /* the only semantic --fs-* token the mobile shell renders */
 }
 .mobile-content {
   flex: 1;
+  min-height: 0; /* allow this flex child to shrink so it (not the root) scrolls */
   overflow-y: auto;
-  padding: calc(env(safe-area-inset-top) + var(--space-4)) var(--space-4) var(--space-4);
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-4);
 }
 .mobile-view h1 {
   font-family: var(--font-display);
@@ -23,22 +48,41 @@
   font-size: var(--text-base);
 }
 .mobile-tabbar {
+  flex-shrink: 0; /* pinned: never compressed by content */
   display: flex;
   border-top: 1px solid var(--border-color);
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   padding-bottom: env(safe-area-inset-bottom);
 }
 .mobile-tabbar button {
+  position: relative;
   flex: 1;
   background: none;
   border: none;
   color: var(--text-muted);
+  font-family: var(--font-body);
   font-size: var(--text-sm);
+  font-weight: 500;
   padding: var(--space-3) 0;
+  cursor: pointer;
+  transition: color 0.15s ease;
 }
 .mobile-tabbar button[aria-selected='true'] {
   color: var(--accent);
+}
+/* Active-tab indicator: a short accent bar riding the top edge. */
+.mobile-tabbar button[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--accent);
 }
 
 /* --- Phase 3: atoms --- */
@@ -166,3 +210,128 @@
 /* Task 4: overview-header dot */
 .overview-header { display: flex; align-items: center; gap: 8px; }
 .overview-health-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+/* =====================================================================
+   Second-pass: pinned refresh status bar (top of shell).
+   Shows "last updated" + a live "next in" countdown, with a progress line
+   that fills over exactly one refresh interval — synced to the same server
+   refreshInterval the web dashboard polls at. Tap to refresh now.
+   ===================================================================== */
+.mobile-statusbar {
+  flex-shrink: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  padding: calc(env(safe-area-inset-top) + var(--space-2)) var(--space-4) var(--space-2);
+  cursor: pointer;
+}
+.mobile-statusbar:active { background: var(--bg-card-hover); }
+.mobile-statusbar__left { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.mobile-statusbar__dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--green); /* calm health indicator; the progress line carries the motion */
+}
+.mobile-statusbar__label {
+  color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mobile-statusbar__next {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.mobile-statusbar__progress {
+  position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+  transform-origin: left; transform: scaleX(0);
+  background: var(--accent);
+  animation: statusbar-progress linear forwards;
+}
+/* Stale (last fetch errored): freeze the bar red, drop the pulse + countdown. */
+.mobile-statusbar--stale .mobile-statusbar__dot { background: var(--red); }
+.mobile-statusbar--stale .mobile-statusbar__label,
+.mobile-statusbar--stale .mobile-statusbar__next { color: var(--red); }
+.mobile-statusbar--stale .mobile-statusbar__progress {
+  background: var(--red); animation: none; transform: scaleX(1); opacity: 0.4;
+}
+@keyframes statusbar-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .mobile-statusbar__progress { animation: none; transform: scaleX(1); opacity: 0.3; }
+}
+
+/* =====================================================================
+   Second-pass: Session controls (Log out / Forget this device).
+   Were unstyled browser buttons — now a grouped, intentional block with a
+   clear non-destructive vs destructive hierarchy.
+   ===================================================================== */
+.session-controls {
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.session-logout,
+.session-forget,
+.session-cancel {
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--card-radius-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: 500;
+  cursor: pointer;
+}
+/* Log out — neutral secondary (non-destructive: keeps the saved server URL). */
+.session-logout {
+  background: var(--bg-card-inner);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+.session-logout:active { background: var(--bg-card-hover); }
+/* Forget — destructive, quiet by default (red outline). */
+.session-forget {
+  background: transparent;
+  color: var(--red);
+  border: 1px solid var(--red-border);
+}
+.session-forget:active { background: var(--red-bg); }
+/* Forget — final confirm, loud (solid red). */
+.session-forget--confirm {
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red);
+}
+.session-forget--confirm:active { opacity: 0.85; }
+/* Cancel — neutral ghost. */
+.session-cancel {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+.session-cancel:active { background: var(--bg-card-inner); }
+.session-forget-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--red-bg);
+  border: 1px solid var(--red-border);
+  border-radius: var(--card-radius-sm);
+}
+.session-forget-confirm .notif-unavailable { color: var(--text-secondary); padding: 0; }

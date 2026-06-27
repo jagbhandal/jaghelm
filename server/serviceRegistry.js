@@ -18,7 +18,11 @@ const DEFAULT_PATH = join(DATA_DIR, 'service-registry.json');
 
 function sanitizeServiceEntry(v) {
   if (v && typeof v === 'object' && typeof v.lastSeenNode === 'string') {
-    return { lastSeenNode: v.lastSeenNode, lastSeenAt: Number(v.lastSeenAt) || 0 };
+    const out = { lastSeenNode: v.lastSeenNode, lastSeenAt: Number(v.lastSeenAt) || 0 };
+    // Optional: the container name this monitor was last matched to, so an
+    // outage's synthesized down card can reuse the SAME uid the running card had.
+    if (typeof v.lastSeenContainer === 'string') out.lastSeenContainer = v.lastSeenContainer;
+    return out;
   }
   return null;
 }
@@ -26,14 +30,20 @@ function sanitizeServiceEntry(v) {
 export function createServiceRegistry({ path = DEFAULT_PATH, now = Date.now } = {}) {
   const core = createPresenceStore({ path, now, sanitize: sanitizeServiceEntry });
 
-  function recordSeen(monitorId, nodeKey) {
+  function recordSeen(monitorId, nodeKey, containerName) {
     if (monitorId == null || !nodeKey) return;
     const key = String(monitorId);
     const prev = core.get(key);
-    // Only the NODE changing is a meaningful write — a refreshed lastSeenAt for
-    // the same node never dirties the store (keeps disk churn off the hot loop).
-    if (!prev || prev.lastSeenNode !== nodeKey) core.markDirty();
-    core.set(key, { lastSeenNode: nodeKey, lastSeenAt: core.now() });
+    // Keep any previously-remembered container if this call omits it (backward
+    // compatible with 2-arg callers).
+    const container = typeof containerName === 'string' ? containerName : prev?.lastSeenContainer;
+    // A changed NODE or CONTAINER is a meaningful write — a refreshed lastSeenAt
+    // for the same (node, container) never dirties the store (keeps disk churn
+    // off the hot loop).
+    if (!prev || prev.lastSeenNode !== nodeKey || prev.lastSeenContainer !== container) core.markDirty();
+    const record = { lastSeenNode: nodeKey, lastSeenAt: core.now() };
+    if (container != null) record.lastSeenContainer = container;
+    core.set(key, record);
   }
 
   function getLastSeenNode(monitorId) {
@@ -41,7 +51,12 @@ export function createServiceRegistry({ path = DEFAULT_PATH, now = Date.now } = 
     return e ? e.lastSeenNode : null;
   }
 
-  return { recordSeen, getLastSeenNode, save: core.save, snapshot: core.snapshot };
+  function getLastSeenContainer(monitorId) {
+    const e = core.get(monitorId);
+    return e && typeof e.lastSeenContainer === 'string' ? e.lastSeenContainer : null;
+  }
+
+  return { recordSeen, getLastSeenNode, getLastSeenContainer, save: core.save, snapshot: core.snapshot };
 }
 
 export const serviceRegistry = createServiceRegistry();

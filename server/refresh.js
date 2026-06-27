@@ -147,9 +147,9 @@ function serviceRank(s) {
  * BOTH frontends read this single server value for their global dot, so they are
  * symmetric and deterministic (no client re-derivation).
  *
- * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown' }}
+ * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown' }}
  */
-export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf, containerRegistry, now = Date.now }) {
+export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf, lastSeenContainerOf, containerRegistry, now = Date.now }) {
   const consumed = new Set();
   const seen = [];
   const runningNames = new Set();
@@ -174,7 +174,9 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
       const monitor = matchMonitor(c.container, explicitMonitor, monitors);
       if (monitor) {
         consumed.add(monitor.id);
-        seen.push({ monitorId: monitor.id, nodeKey });
+        // Remember the container too, so a later outage's synth card can reuse
+        // this exact uid (keeps down→recovery on ONE key for the push differ).
+        seen.push({ monitorId: monitor.id, nodeKey, container: c.container });
       }
       const rawStatus = monitor?.status || c.status || 'unknown';
       // Normalise Docker's 'running' to the Kuma-aligned 'up' so the status
@@ -222,11 +224,19 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     let nodeKey = lastSeenNodeOf(m.id);
     if (!nodeKey || !nodes[nodeKey]) nodeKey = nodeKeys[0];
     if (!nodeKey || !nodes[nodeKey]) continue; // no nodes to attach to
-    const override = config.services?.[m.name] || {};
+    // Reuse the SAME uid the running card used (remembered container name) so a
+    // down→recovery transition stays on ONE key. The push differ keys off uid
+    // and only emits a recovery when 'down' and 'up' share a key — without this,
+    // the down card (monitor name) and the recovered card (container name) were
+    // different keys and the recovery push silently never fired. Fall back to the
+    // monitor name for a pure-monitor service that never had a container.
+    const remembered = lastSeenContainerOf ? lastSeenContainerOf(m.id) : null;
+    const idPart = remembered || m.name;
+    const override = config.services?.[idPart] || {};
     nodes[nodeKey].services.push({
-      container: m.name,
-      uid: `${nodeKey}:${m.name}`,
-      display_name: override.display_name || m.name,
+      container: idPart,
+      uid: `${nodeKey}:${idPart}`,
+      display_name: override.display_name || (remembered ? formatContainerName(remembered) : m.name),
       icon: override.icon || null,
       status: 'down',
       monitored: true,
@@ -342,13 +352,15 @@ async function _refreshServices() {
       monitors,
       config,
       lastSeenNodeOf: (id) => serviceRegistry.getLastSeenNode(id),
+      lastSeenContainerOf: (id) => serviceRegistry.getLastSeenContainer(id),
       containerRegistry,
       now: Date.now,
     });
 
-    // Remember where each running, monitored service lives so an outage that
-    // later loses its container still lands on its panel.
-    for (const { monitorId, nodeKey } of seen) serviceRegistry.recordSeen(monitorId, nodeKey);
+    // Remember where each running, monitored service lives (and which container
+    // it maps to) so an outage that later loses its container still lands on its
+    // panel AND keeps the same uid for recovery detection.
+    for (const { monitorId, nodeKey, container } of seen) serviceRegistry.recordSeen(monitorId, nodeKey, container);
     serviceRegistry.save();
     // containerRegistry was updated in-pass (recordSeen) inside assembleServices;
     // decommission-prune (>TTL) then persist here. prune() is an explicit refresh-loop

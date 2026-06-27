@@ -13,6 +13,7 @@ import ServiceDetail from './views/ServiceDetail.jsx';
 import NodeDetail from './views/NodeDetail.jsx';
 import IncidentDetail from './views/IncidentDetail.jsx';
 import NotificationSettings from './views/NotificationSettings.jsx';
+import RefreshStatus from './components/RefreshStatus.jsx';
 import { initPush } from './push/registerPush.js';
 import './MobileApp.css';
 
@@ -68,6 +69,13 @@ export default function MobileApp() {
 
   return (
     <div id="mobile-root">
+      <RefreshStatus
+        lastUpdated={data.lastUpdated}
+        intervalMs={data.intervalMs}
+        error={data.error}
+        loading={data.loading}
+        onRefresh={data.refresh}
+      />
       <main className="mobile-content">
         <Screen nav={nav} data={data} params={nav.current.params} />
       </main>
