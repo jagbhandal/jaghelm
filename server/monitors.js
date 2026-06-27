@@ -6,12 +6,14 @@
 import { createLogger } from './util/logger.js';
 import { safeFetch } from './httpClient.js';
 import { positiveMs } from './util/env.js';
+import { parseKumaMetrics } from './kumaMetrics.js';
 
 const log = createLogger('monitors');
 
 const KUMA_TIMEOUT = 8000;
 
 let kumaUrl = null;
+let kumaApiKey = '';
 let cachedMonitors = null;
 let cacheTime = 0;
 const CACHE_TTL = 15000;
@@ -43,17 +45,115 @@ function staleOrEmpty() {
   return {};
 }
 
-export function initMonitors(url) {
+export function initMonitors(url, apiKey = '') {
   kumaUrl = url;
-  log.info({ kumaUrl }, 'Uptime Kuma URL');
+  kumaApiKey = apiKey || '';
+  log.info({ kumaUrl, metrics: !!kumaApiKey }, 'Uptime Kuma URL');
 }
 
 /**
- * Fetch all monitors from Uptime Kuma.
- * Two API calls:
+ * Fetch monitors from Uptime Kuma's authenticated `/metrics` endpoint.
+ *
+ * One scrape gives status + response time + 24h uptime for EVERY active monitor
+ * (not just status-page ones), keyed on monitor_id. Paused monitors are absent
+ * (Kuma stops their metrics), so they drop off the board naturally. Requires
+ * Kuma >= 2.1.0 and a configured API key, sent as the HTTP Basic password with a
+ * blank username (Kuma's scheme).
+ *
+ * Returns the monitor map on success, or `null` to signal "fall back to the
+ * status-page API": a non-2xx response (e.g. 401 on a bad/missing key), or a
+ * pre-2.1 Kuma whose series carry no monitor_id (empty parse).
+ */
+async function fetchFromMetrics() {
+  const auth = Buffer.from(`:${kumaApiKey}`).toString('base64');
+  const r = await safeFetch(`${kumaUrl}/metrics`, {
+    trusted: true,
+    timeoutMs: KUMA_TIMEOUT,
+    headers: { Authorization: `Basic ${auth}` },
+  });
+  if (!r.ok) {
+    log.warn({ status: r.status }, 'Kuma /metrics not ok — falling back to status-page API');
+    return null;
+  }
+  const monitors = parseKumaMetrics(await r.text());
+  if (Object.keys(monitors).length === 0) {
+    log.warn(
+      'Kuma /metrics had no monitor_id series (Kuma < 2.1?) — falling back to status-page API'
+    );
+    return null;
+  }
+  return monitors;
+}
+
+/**
+ * Fetch monitors from Kuma's PUBLIC status-page API — the pre-/metrics path, and
+ * the fallback when no API key is set. Two calls:
  *   1. /api/status-page/default → monitor names + IDs from publicGroupList
  *   2. /api/status-page/heartbeat/default → heartbeat status, ping, uptime
- * Returns a map of { id: { id, name, status, ping, uptime24 } }
+ * Returns the monitor map, or `null` on a failed/empty fetch.
+ */
+async function fetchFromStatusPage() {
+  const pageR = await safeFetch(`${kumaUrl}/api/status-page/default`, {
+    trusted: true,
+    timeoutMs: KUMA_TIMEOUT,
+  });
+  if (!pageR.ok) return null;
+  const pageData = await pageR.json();
+
+  const monitorList = (pageData.publicGroupList || []).flatMap((g) => g.monitorList || []);
+  if (monitorList.length === 0) {
+    log.warn('No monitors found in status page');
+    return null;
+  }
+
+  // Fetch heartbeat data (separate endpoint in newer Kuma versions)
+  let heartbeatList = pageData.heartbeatList || {};
+  let uptimeList = pageData.uptimeList || {};
+
+  if (Object.keys(heartbeatList).length === 0) {
+    try {
+      const hbR = await safeFetch(`${kumaUrl}/api/status-page/heartbeat/default`, {
+        trusted: true,
+        timeoutMs: KUMA_TIMEOUT,
+      });
+      if (hbR.ok) {
+        const hbData = await hbR.json();
+        heartbeatList = hbData.heartbeatList || {};
+        uptimeList = hbData.uptimeList || {};
+      }
+    } catch (err) {
+      log.warn({ err }, 'Heartbeat endpoint unavailable');
+    }
+  }
+
+  // Merge monitor names with heartbeat data
+  const monitors = {};
+  for (const pub of monitorList) {
+    const id = pub.id;
+    const beats = heartbeatList[id] || [];
+    const latest = beats[beats.length - 1];
+
+    monitors[id] = {
+      id,
+      name: pub.name,
+      status: latest?.status === 1 ? 'up' : latest?.status === 0 ? 'down' : 'unknown',
+      ping: latest?.ping || 0,
+      uptime24: uptimeList[`${id}_24`] || 0,
+      active: pub.active !== false,
+      lastBeatAt: parseBeatTime(latest?.time),
+    };
+  }
+  return monitors;
+}
+
+/**
+ * Fetch all monitors from Uptime Kuma. Prefers the authenticated `/metrics`
+ * endpoint when an API key is set, transparently falling back to the public
+ * status-page API otherwise (or when /metrics is unavailable). Both sources
+ * produce the SAME monitor-map shape, so every downstream consumer is identical.
+ *
+ * The stale-serving ceiling (staleOrEmpty) applies to BOTH paths: a sustained
+ * Kuma outage surfaces "unknown" rather than freezing the board on stale "up"s.
  */
 export async function fetchMonitors(bustCache = false) {
   if (!kumaUrl) return {};
@@ -63,57 +163,27 @@ export async function fetchMonitors(bustCache = false) {
   }
 
   try {
-    // Fetch monitor names
-    const pageR = await safeFetch(`${kumaUrl}/api/status-page/default`, {
-      trusted: true, timeoutMs: KUMA_TIMEOUT,
-    });
-    if (!pageR.ok) return staleOrEmpty();
-    const pageData = await pageR.json();
+    let monitors = null;
+    let source = null;
 
-    const monitorList = (pageData.publicGroupList || []).flatMap(g => g.monitorList || []);
-    if (monitorList.length === 0) {
-      log.warn('No monitors found in status page');
-      return staleOrEmpty();
-    }
-
-    // Fetch heartbeat data (separate endpoint in newer Kuma versions)
-    let heartbeatList = pageData.heartbeatList || {};
-    let uptimeList = pageData.uptimeList || {};
-
-    if (Object.keys(heartbeatList).length === 0) {
+    if (kumaApiKey) {
       try {
-        const hbR = await safeFetch(`${kumaUrl}/api/status-page/heartbeat/default`, {
-          trusted: true, timeoutMs: KUMA_TIMEOUT,
-        });
-        if (hbR.ok) {
-          const hbData = await hbR.json();
-          heartbeatList = hbData.heartbeatList || {};
-          uptimeList = hbData.uptimeList || {};
-        }
+        monitors = await fetchFromMetrics();
+        if (monitors) source = 'metrics';
       } catch (err) {
-        log.warn({ err }, 'Heartbeat endpoint unavailable');
+        log.warn({ err }, 'Kuma /metrics path errored — falling back to status-page API');
+        monitors = null;
       }
     }
 
-    // Merge monitor names with heartbeat data
-    const monitors = {};
-    for (const pub of monitorList) {
-      const id = pub.id;
-      const beats = heartbeatList[id] || [];
-      const latest = beats[beats.length - 1];
-
-      monitors[id] = {
-        id,
-        name: pub.name,
-        status: latest?.status === 1 ? 'up' : latest?.status === 0 ? 'down' : 'unknown',
-        ping: latest?.ping || 0,
-        uptime24: uptimeList[`${id}_24`] || 0,
-        active: pub.active !== false,
-        lastBeatAt: parseBeatTime(latest?.time),
-      };
+    if (!monitors) {
+      monitors = await fetchFromStatusPage();
+      if (monitors) source = 'status-page';
     }
 
-    log.info({ count: Object.keys(monitors).length }, 'Loaded monitors from Kuma');
+    if (!monitors) return staleOrEmpty();
+
+    log.info({ count: Object.keys(monitors).length, source }, 'Loaded monitors from Kuma');
     cachedMonitors = monitors;
     cacheTime = Date.now();
     return monitors;
@@ -128,7 +198,9 @@ export async function fetchMonitors(bustCache = false) {
  */
 export async function getMonitorNames() {
   const monitors = await fetchMonitors();
-  return Object.values(monitors).map(m => m.name).sort();
+  return Object.values(monitors)
+    .map((m) => m.name)
+    .sort();
 }
 
 /**
@@ -153,9 +225,7 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
 
   // Strategy 1: Explicit mapping
   if (explicitMonitor) {
-    const exact = monitorList.find(
-      m => m.name.toLowerCase() === explicitMonitor.toLowerCase()
-    );
+    const exact = monitorList.find((m) => m.name.toLowerCase() === explicitMonitor.toLowerCase());
     if (exact) return exact;
     // Log once per unique (container, monitor) pair, then stay silent.
     const key = `${containerName}::${explicitMonitor}`;
@@ -214,9 +284,19 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
   if (best) return best;
 
   // Strategy 5: Word overlap — split both names into words, check if any match
-  const containerWords = containerName.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(w => w.length >= 3);
+  const containerWords = containerName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length >= 3);
   for (const m of monitorList) {
-    const monitorWords = m.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(w => w.length >= 3);
+    const monitorWords = m.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter((w) => w.length >= 3);
     for (const cw of containerWords) {
       for (const mw of monitorWords) {
         if (cw === mw && cw.length >= 4) {
@@ -229,7 +309,7 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
   // Log unmatched containers once at startup to help debug
   if (!loggedOnce) {
     log.info(
-      { containerName, monitors: monitorList.map(m => m.name).join(', ') },
+      { containerName, monitors: monitorList.map((m) => m.name).join(', ') },
       'No match for container among monitors'
     );
   }
@@ -257,7 +337,11 @@ export function markMonitorLogDone() {
  * fresh: we only EXCLUDE on a positively-stale beat, never miss a real outage
  * over a parse gap.
  */
-export function selectOutageMonitors(monitors, consumedIds, { now = Date.now(), staleMs = MONITOR_STALE_MS } = {}) {
+export function selectOutageMonitors(
+  monitors,
+  consumedIds,
+  { now = Date.now(), staleMs = MONITOR_STALE_MS } = {}
+) {
   return Object.values(monitors).filter(
     (m) =>
       m &&
