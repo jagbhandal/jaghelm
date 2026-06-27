@@ -58,3 +58,8 @@ mobile/android/key.properties
 # it is double-protected by the *.example negation above. Keep BOTH belt + braces:
 !fcm-service-account.json.example
 !**/google-services.json.example
+
+# Superpowers implementation plans are ephemeral build-scaffolding (the merged
+# code is their realized form). Keep them on disk for resume, out of the repo.
+# Design SPECS stay tracked (docs/superpowers/specs/) — durable design rationale.
+docs/superpowers/plans/
