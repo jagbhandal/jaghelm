@@ -292,8 +292,8 @@ async function _refreshServices() {
   try {
     const config = getConfig();
     if (!config || !config.nodes || Object.keys(config.nodes).length === 0) {
-      setCache('services', { nodes: {} });
-      return { nodes: {} };
+      setCache('services', { nodes: {}, overallHealth: 'unknown' });
+      return { nodes: {}, overallHealth: 'unknown' };
     }
 
     // Monitors are best-effort; if Kuma is down we still want node data.
