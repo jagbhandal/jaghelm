@@ -15,16 +15,13 @@
 import { join } from 'path';
 import { createPresenceStore } from './presenceStore.js';
 import { DATA_DIR } from './util/dataDir.js';
+import { positiveMs } from './util/env.js';
 
 const DEFAULT_PATH = join(DATA_DIR, 'container-registry.json');
 
 // Deterministic, env-overridable (JAGHELM_* convention). Only a finite, positive
-// override wins — a typo'd / Infinity / negative value falls back to the default
-// rather than silently disabling prune (which would let the registry grow unbounded).
-function positiveMs(envVal, def) {
-  const n = Number(envVal);
-  return Number.isFinite(n) && n > 0 ? n : def;
-}
+// override wins (positiveMs) — a typo'd / Infinity / negative value falls back to
+// the default rather than silently disabling prune (unbounded registry growth).
 export const PRESENCE_GRACE_MS = positiveMs(process.env.JAGHELM_PRESENCE_GRACE_MS, 90_000);        // 90s ≈ 3 refreshes
 export const PRESENCE_TTL_MS = positiveMs(process.env.JAGHELM_PRESENCE_TTL_MS, 86_400_000);        // 24h decommission fade
 export const PRESENCE_ESTABLISH_MS = positiveMs(process.env.JAGHELM_PRESENCE_ESTABLISH_MS, 60_000); // 60s min run span
