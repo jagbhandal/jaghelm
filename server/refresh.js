@@ -16,7 +16,9 @@ import { join } from 'path';
 import { getConfig } from './config.js';
 import { getNodeData } from './discovery.js';
 import { recordSamples } from './history.js';
-import { fetchMonitors, matchMonitor, markMonitorLogDone } from './monitors.js';
+import { fetchMonitors, matchMonitor, markMonitorLogDone, selectOutageMonitors } from './monitors.js';
+import { serviceRegistry } from './serviceRegistry.js';
+import { containerRegistry } from './containerRegistry.js';
 import { fetchIntegration } from './integrations/handler.js';
 import { setCache } from './cache.js';
 import { safeFetch } from './httpClient.js';
@@ -111,6 +113,181 @@ export async function refreshServices() {
   return dedupe('services', _refreshServices);
 }
 
+/**
+ * Rank for the canonical per-node sort: down → unknown → up. Both frontends
+ * inherit this order (web renders in array order, mobile re-sorts identically).
+ */
+function serviceRank(s) {
+  if (s.status === 'down') return 0;
+  if (s.status === 'unknown') return 1;
+  return 2;
+}
+
+/**
+ * Pure assembly of the services cache payload from discovered node data, Kuma
+ * monitors, and the container presence registry. Extracted from _refreshServices
+ * so it can be unit-tested without the network.
+ *
+ * Three passes:
+ *  (a) Running-container cards — Kuma overlays status; each running container is
+ *      recorded into the container registry (last-seen node + timing).
+ *  (b) Down-monitor synthesis — active monitors reporting `down` that matched no
+ *      running container become red cards on their last-seen node (base spec).
+ *  (c) Breadcrumb synthesis — established, UNMONITORED containers that have
+ *      vanished (absent past grace, within TTL) become grey `unknown`
+ *      `source:'presence'` cards on their last-seen node. Skipped if the
+ *      container is running anywhere this cycle, or if ANY monitor matches it
+ *      (Kuma owns tracked services entirely).
+ *
+ * Every node's cards are ordered down → unknown → up.
+ *
+ * Finally it computes ONE `overallHealth` from the whole assembled board (after
+ * sorting) — `down` if any card is down; else `degraded` if any card is unknown
+ * (presence breadcrumbs included); else `up` if there are cards; else `unknown`.
+ * BOTH frontends read this single server value for their global dot, so they are
+ * symmetric and deterministic (no client re-derivation).
+ *
+ * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown' }}
+ */
+export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf, containerRegistry, now = Date.now }) {
+  const consumed = new Set();
+  const seen = [];
+  const runningNames = new Set();
+  const nowMs = now();
+
+  // (a) Running-container cards.
+  const nodeEntries = nodeResults.filter(Boolean).map(([nodeKey, nodeCfg, nodeData]) => {
+    const metrics = nodeData.metrics;
+    let containers = nodeData.containers;
+
+    const hideList = (nodeCfg.hide || []).map((h) => h.toLowerCase());
+    containers = containers.filter(
+      (c) => !hideList.some((h) => c.container.toLowerCase().includes(h))
+    );
+
+    const services = containers.map((c) => {
+      runningNames.add(c.container);
+      if (containerRegistry) containerRegistry.recordSeen(c.container, nodeKey, nowMs);
+      const override = config.services?.[c.container] || {};
+      const displayName = override.display_name || formatContainerName(c.container);
+      const explicitMonitor = override.monitor || null;
+      const monitor = matchMonitor(c.container, explicitMonitor, monitors);
+      if (monitor) {
+        consumed.add(monitor.id);
+        seen.push({ monitorId: monitor.id, nodeKey });
+      }
+      const rawStatus = monitor?.status || c.status || 'unknown';
+      // Normalise Docker's 'running' to the Kuma-aligned 'up' so the status
+      // vocabulary is consistent across container and monitor cards.
+      const status = rawStatus === 'running' ? 'up' : rawStatus;
+
+      return {
+        container: c.container,
+        uid: `${nodeKey}:${c.container}`,
+        display_name: displayName,
+        icon: override.icon || null,
+        status,
+        monitored: !!monitor,
+        ping: monitor?.ping || null,
+        uptime24: monitor?.uptime24 || null,
+        docker: c.docker,
+        integration: null,
+        source: 'container',
+      };
+    });
+
+    return [
+      nodeKey,
+      {
+        display_name: nodeCfg.display_name || nodeKey,
+        subtitle: nodeCfg.subtitle || '',
+        icon: nodeCfg.icon || '🖥',
+        border_color: nodeCfg.border_color || '#6366f1',
+        metrics,
+        services,
+      },
+    ];
+  });
+
+  const nodes = Object.fromEntries(nodeEntries.filter(Boolean));
+  const nodeKeys = Object.keys(nodes);
+
+  // (b) Down-monitor synthesis — outages whose container left cAdvisor. The
+  // down-vs-inactive invariant lives in selectOutageMonitors (active !== false).
+  const outages = selectOutageMonitors(monitors, consumed);
+  for (const m of outages) {
+    let nodeKey = lastSeenNodeOf(m.id);
+    if (!nodeKey || !nodes[nodeKey]) nodeKey = nodeKeys[0];
+    if (!nodeKey || !nodes[nodeKey]) continue; // no nodes to attach to
+    const override = config.services?.[m.name] || {};
+    nodes[nodeKey].services.push({
+      container: m.name,
+      uid: `${nodeKey}:${m.name}`,
+      display_name: override.display_name || m.name,
+      icon: override.icon || null,
+      status: 'down',
+      monitored: true,
+      ping: m.ping || null,
+      uptime24: m.uptime24 || null,
+      docker: null,
+      integration: null,
+      source: 'monitor',
+    });
+  }
+
+  // (c) Breadcrumb synthesis — vanished, established, UNMONITORED containers.
+  let breadcrumbCount = 0;
+  if (containerRegistry) {
+    const candidates = containerRegistry.getMissing({ now: nowMs });
+    for (const cand of candidates) {
+      if (runningNames.has(cand.container)) continue;             // running somewhere this cycle
+      if (matchMonitor(cand.container, null, monitors)) continue; // Kuma owns it
+      let nodeKey = cand.lastSeenNode;
+      if (!nodeKey || !nodes[nodeKey]) nodeKey = nodeKeys[0];
+      if (!nodeKey || !nodes[nodeKey]) continue; // no nodes to attach to
+      const override = config.services?.[cand.container] || {};
+      nodes[nodeKey].services.push({
+        container: cand.container,
+        uid: `${nodeKey}:${cand.container}`,
+        display_name: override.display_name || formatContainerName(cand.container),
+        icon: null,
+        status: 'unknown',
+        monitored: false,
+        source: 'presence',
+        lastSeenAt: cand.lastSeenAt,
+        ping: null,
+        uptime24: null,
+        docker: null,
+        integration: null,
+      });
+      breadcrumbCount += 1;
+    }
+  }
+
+  // Canonical order per node: down → unknown → up, then alphabetical.
+  for (const node of Object.values(nodes)) {
+    node.services.sort((a, b) => serviceRank(a) - serviceRank(b) || a.display_name.localeCompare(b.display_name));
+  }
+
+  // Server-computed global health for BOTH frontends' dot (web NavBar + mobile
+  // Overview). Computed ONCE from every assembled card across all nodes so the
+  // two clients are symmetric and deterministic — a presence breadcrumb (status
+  // 'unknown') drives 'degraded', exactly as a tracked-unknown monitor would.
+  let anyCard = false;
+  let anyDown = false;
+  let anyUnknown = false;
+  for (const node of Object.values(nodes)) {
+    for (const s of node.services) {
+      anyCard = true;
+      if (s.status === 'down') anyDown = true;
+      else if (s.status === 'unknown') anyUnknown = true;
+    }
+  }
+  const overallHealth = anyDown ? 'down' : anyUnknown ? 'degraded' : anyCard ? 'up' : 'unknown';
+
+  return { nodes, seen, outageCount: outages.length, breadcrumbCount, overallHealth };
+}
+
 async function _refreshServices() {
   try {
     const config = getConfig();
@@ -154,53 +331,28 @@ async function _refreshServices() {
       }
     }
 
-    const nodeEntries = nodeResults.filter(Boolean).map(([nodeKey, nodeCfg, nodeData]) => {
-      const metrics = nodeData.metrics;
-      let containers = nodeData.containers;
-
-      const hideList = (nodeCfg.hide || []).map((h) => h.toLowerCase());
-      containers = containers.filter(
-        (c) => !hideList.some((h) => c.container.toLowerCase().includes(h))
-      );
-
-      const services = containers.map((c) => {
-        const override = config.services?.[c.container] || {};
-        const displayName = override.display_name || formatContainerName(c.container);
-        const explicitMonitor = override.monitor || null;
-        const monitor = matchMonitor(c.container, explicitMonitor, monitors);
-        const status = monitor?.status || c.status || 'unknown';
-
-        return {
-          container: c.container,
-          uid: `${nodeKey}:${c.container}`,
-          display_name: displayName,
-          icon: override.icon || null,
-          status,
-          monitored: !!monitor,
-          ping: monitor?.ping || null,
-          uptime24: monitor?.uptime24 || null,
-          docker: c.docker,
-          integration: null,
-        };
-      });
-
-      services.sort((a, b) => a.display_name.localeCompare(b.display_name));
-
-      return [
-        nodeKey,
-        {
-          display_name: nodeCfg.display_name || nodeKey,
-          subtitle: nodeCfg.subtitle || '',
-          icon: nodeCfg.icon || '🖥',
-          border_color: nodeCfg.border_color || '#6366f1',
-          metrics,
-          services,
-        },
-      ];
+    const { nodes, seen, overallHealth } = assembleServices({
+      nodeResults,
+      monitors,
+      config,
+      lastSeenNodeOf: (id) => serviceRegistry.getLastSeenNode(id),
+      containerRegistry,
+      now: Date.now,
     });
 
-    const nodes = Object.fromEntries(nodeEntries.filter(Boolean));
-    const result = { nodes };
+    // Remember where each running, monitored service lives so an outage that
+    // later loses its container still lands on its panel.
+    for (const { monitorId, nodeKey } of seen) serviceRegistry.recordSeen(monitorId, nodeKey);
+    serviceRegistry.save();
+    // containerRegistry was updated in-pass (recordSeen) inside assembleServices;
+    // decommission-prune (>TTL) then persist here. prune() is an explicit refresh-loop
+    // step (NOT a save() side effect) so persistence never silently deletes by clock.
+    containerRegistry.prune();
+    containerRegistry.save();
+
+    // overallHealth is server-computed once (above) and shipped in the payload so
+    // BOTH frontends' global dots read one truth (web NavBar + mobile Overview).
+    const result = { nodes, overallHealth };
     setCache('services', result);
 
     // Record this cycle's usage into the ring buffer so the UI can draw a
