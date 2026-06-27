@@ -157,7 +157,12 @@ const cspDirectives = {
     'https://cdn.jsdelivr.net',
     'https://raw.githubusercontent.com',
   ],
-  connectSrc: ["'self'", 'https://cdn.jsdelivr.net', 'https://raw.githubusercontent.com', ...extraConnect],
+  connectSrc: [
+    "'self'",
+    'https://cdn.jsdelivr.net',
+    'https://raw.githubusercontent.com',
+    ...extraConnect,
+  ],
   // The iframe view embeds operator-configured service URLs (often http on LAN).
   frameSrc: ["'self'", 'https:', 'http:'],
   workerSrc: ["'self'"],
@@ -267,7 +272,7 @@ async function boot() {
 
   initSecrets();
   initDiscovery(promUrl);
-  initMonitors(kumaUrl);
+  initMonitors(kumaUrl, process.env.KUMA_API_KEY || '');
   initIconCache(dataDir);
 
   // Push (FCM) — graceful-disable when no service-account creds are present.

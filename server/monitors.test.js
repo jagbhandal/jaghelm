@@ -33,18 +33,15 @@ function mockResponse({ ok, body }) {
   };
 }
 
+// Canonical status-page response body (one 'grafana' monitor, up, 99% 24h).
+const STATUS_PAGE_BODY = {
+  publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }] }],
+  heartbeatList: { 1: [{ status: 1, ping: 5 }] },
+  uptimeList: { '1_24': 0.99 },
+};
+
 test('monitors: a fresh ok fetch primes the cache with live statuses', async () => {
-  globalThis.fetch = async () =>
-    mockResponse({
-      ok: true,
-      body: {
-        publicGroupList: [
-          { monitorList: [{ id: 1, name: 'grafana' }] },
-        ],
-        heartbeatList: { 1: [{ status: 1, ping: 5 }] },
-        uptimeList: { '1_24': 0.99 },
-      },
-    });
+  globalThis.fetch = async () => mockResponse({ ok: true, body: STATUS_PAGE_BODY });
   try {
     const m = await fetchMonitors(true);
     assert.equal(m[1]?.status, 'up', 'live status loaded into cache');
@@ -70,15 +67,7 @@ test('monitors: a stale cache PAST the ceiling is NOT served on !ok', async () =
 
 test('monitors: a stale cache WITHIN the ceiling is still served on !ok', async () => {
   // Re-prime the cache fresh.
-  globalThis.fetch = async () =>
-    mockResponse({
-      ok: true,
-      body: {
-        publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }] }],
-        heartbeatList: { 1: [{ status: 1, ping: 5 }] },
-        uptimeList: { '1_24': 0.99 },
-      },
-    });
+  globalThis.fetch = async () => mockResponse({ ok: true, body: STATUS_PAGE_BODY });
   await fetchMonitors(true);
 
   // Kuma goes 5xx, but only 1 minute has elapsed — within the 5-min ceiling.
@@ -91,5 +80,81 @@ test('monitors: a stale cache WITHIN the ceiling is still served on !ok', async 
   } finally {
     globalThis.fetch = realFetch;
     Date.now = realNow;
+  }
+});
+
+// ── /metrics path + status-page fallback ───────────────────────────────────
+// Mirrors a real Kuma 2.3.2 /metrics block (tag label, monitor_id, 1d/30d/365d).
+const METRICS_SAMPLE = `monitor_status{Infrastructure="",monitor_id="2",monitor_name="Vaultwarden",monitor_type="http",monitor_url="https://vault.jagbhandal.com",monitor_hostname="null",monitor_port="null"} 1
+monitor_response_time{Infrastructure="",monitor_id="2",monitor_name="Vaultwarden",monitor_type="http",monitor_url="https://vault.jagbhandal.com",monitor_hostname="null",monitor_port="null"} 137
+monitor_uptime_ratio{Infrastructure="",monitor_id="2",monitor_name="Vaultwarden",monitor_type="http",monitor_url="https://vault.jagbhandal.com",monitor_hostname="null",monitor_port="null",window="1d"} 1`;
+
+function mockText({ ok, status, text = '' }) {
+  return {
+    ok,
+    status: status ?? (ok ? 200 : 503),
+    headers: { get: () => null },
+    body: null,
+    text: async () => text,
+    json: async () => ({}),
+  };
+}
+
+test('monitors: with KUMA_API_KEY, a good /metrics response is used (status-page NOT called)', async () => {
+  initMonitors('http://localhost:9999', 'uk1_testkey');
+  let statusPageHit = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith('/metrics')) return mockText({ ok: true, text: METRICS_SAMPLE });
+    statusPageHit++;
+    return mockResponse({ ok: true, body: STATUS_PAGE_BODY });
+  };
+  try {
+    const m = await fetchMonitors(true);
+    assert.equal(m[2]?.status, 'up', 'parsed live status from /metrics');
+    assert.equal(m[2]?.ping, 137);
+    assert.equal(m[2]?.uptime24, 1);
+    assert.equal(statusPageHit, 0, 'status-page API not called when /metrics succeeds');
+  } finally {
+    globalThis.fetch = realFetch;
+    initMonitors('http://localhost:9999'); // reset to no-key for any later tests
+  }
+});
+
+test('monitors: with KUMA_API_KEY, a 401 on /metrics falls back to the status-page API', async () => {
+  initMonitors('http://localhost:9999', 'uk1_badkey');
+  let statusPageHit = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith('/metrics')) return mockText({ ok: false, status: 401 });
+    statusPageHit++;
+    return mockResponse({ ok: true, body: STATUS_PAGE_BODY });
+  };
+  try {
+    const m = await fetchMonitors(true);
+    assert.equal(m[1]?.status, 'up', 'fell back to the status-page monitor');
+    assert.ok(statusPageHit >= 1, 'status-page API was used as fallback');
+  } finally {
+    globalThis.fetch = realFetch;
+    initMonitors('http://localhost:9999');
+  }
+});
+
+test('monitors: with KUMA_API_KEY, a /metrics body with no monitor_id falls back (Kuma < 2.1)', async () => {
+  initMonitors('http://localhost:9999', 'uk1_oldkuma');
+  let statusPageHit = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith('/metrics')) {
+      // pre-2.1 Kuma: monitor series carry no monitor_id label
+      return mockText({ ok: true, text: 'monitor_status{monitor_name="grafana"} 1' });
+    }
+    statusPageHit++;
+    return mockResponse({ ok: true, body: STATUS_PAGE_BODY });
+  };
+  try {
+    const m = await fetchMonitors(true);
+    assert.equal(m[1]?.status, 'up', 'empty parse → status-page fallback');
+    assert.ok(statusPageHit >= 1);
+  } finally {
+    globalThis.fetch = realFetch;
+    initMonitors('http://localhost:9999');
   }
 });
