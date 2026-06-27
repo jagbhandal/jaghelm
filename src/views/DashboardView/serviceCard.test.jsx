@@ -40,4 +40,15 @@ describe('toServiceCard', () => {
   it('defaults appDataByContainer to an empty object when omitted', () => {
     expect(toServiceCard('pi', rawService).appData).toBeNull();
   });
+
+  it('passes monitored / source / lastSeenAt through for the unmonitored tag + breadcrumb', () => {
+    const presence = {
+      display_name: 'Postgres', container: 'postgres', status: 'unknown',
+      monitored: false, source: 'presence', lastSeenAt: 1000,
+    };
+    const card = toServiceCard('vm103', presence, {});
+    expect(card.monitored).toBe(false);
+    expect(card.source).toBe('presence');
+    expect(card.lastSeenAt).toBe(1000);
+  });
 });

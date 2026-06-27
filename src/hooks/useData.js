@@ -116,11 +116,6 @@ export async function deleteIntegration(type) {
   return requestJson(`${getApiBase()}/integrations/${type}`, { method: 'DELETE' });
 }
 
-// Legacy functions (kept: getMonitors used by App.jsx health check).
-export async function getMonitors() {
-  return fetchJson(`${getApiBase()}/uptime/monitors`);
-}
-
 export async function getWeather(lat, lon) {
   const r = await apiFetch(`${getApiBase()}/weather?lat=${lat}&lon=${lon}`, {
     signal: AbortSignal.timeout(12000),

@@ -1,5 +1,6 @@
 import React from 'react';
 import { getServiceIcon } from '../hooks/useData';
+import { lastSeenLabel } from '../util/relativeTime.js';
 
 /**
  * ServiceCard v10 — Three layout modes
@@ -24,7 +25,12 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
   const st = service.status || 'unknown';
   const isUp = st === 'up' || st === 'running';
   const isDown = st === 'down';
-  const statusColor = isUp ? 'var(--green)' : isDown ? 'var(--red)' : 'var(--amber)';
+  // A presence breadcrumb (vanished, unmonitored container) is GREY — never the
+  // amber that a tracked 'unknown' monitor would get. We are not claiming it broke.
+  const isBreadcrumb = service.source === 'presence';
+  const statusColor = isBreadcrumb
+    ? 'var(--text-muted)'
+    : isUp ? 'var(--green)' : isDown ? 'var(--red)' : 'var(--amber)';
 
   const docker = service.docker || {};
   const showStats = showDockerStats && (docker.cpu != null || docker.memMB != null);
@@ -51,12 +57,9 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
         {statusStyle === 'dot' && <StatusDot color={statusColor} isUp={isUp} isDown={isDown} />}
         {statusStyle === 'minimal' && <StatusGlyph color={statusColor} isUp={isUp} isDown={isDown} />}
         {icon && <ServiceIcon src={icon} size={20} />}
-        <span style={{
-          fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
-          color: 'var(--text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>{service.name}</span>
+        <NameBlock service={service} />
         {showStats && <CompactStats docker={docker} />}
-        <BadgeArea service={service} statusStyle={statusStyle} statusColor={statusColor} isUp={isUp} isDown={isDown} st={st} />
+        <BadgeArea service={service} statusStyle={statusStyle} statusColor={statusColor} isUp={isUp} isDown={isDown} st={st} isBreadcrumb={isBreadcrumb} />
       </div>
     );
   }
@@ -75,11 +78,8 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
           {statusStyle === 'dot' && <StatusDot color={statusColor} isUp={isUp} isDown={isDown} />}
           {statusStyle === 'minimal' && <StatusGlyph color={statusColor} isUp={isUp} isDown={isDown} />}
           {icon && <ServiceIcon src={icon} size={24} />}
-          <span style={{
-            fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
-            color: 'var(--text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>{service.name}</span>
-          <BadgeArea service={service} statusStyle={statusStyle} statusColor={statusColor} isUp={isUp} isDown={isDown} st={st} />
+          <NameBlock service={service} />
+          <BadgeArea service={service} statusStyle={statusStyle} statusColor={statusColor} isUp={isUp} isDown={isDown} st={st} isBreadcrumb={isBreadcrumb} />
         </div>
 
         {/* Docker stats row */}
@@ -138,11 +138,8 @@ export default React.memo(function ServiceCard({ service, showDockerStats = true
         {statusStyle === 'dot' && <StatusDot color={statusColor} isUp={isUp} isDown={isDown} />}
         {statusStyle === 'minimal' && <StatusGlyph color={statusColor} isUp={isUp} isDown={isDown} />}
         {icon && <ServiceIcon src={icon} size={20} />}
-        <span style={{
-          fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
-          color: 'var(--text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>{service.name}</span>
-        <BadgeArea service={service} statusStyle={statusStyle} statusColor={statusColor} isUp={isUp} isDown={isDown} st={st} compact />
+        <NameBlock service={service} />
+        <BadgeArea service={service} statusStyle={statusStyle} statusColor={statusColor} isUp={isUp} isDown={isDown} st={st} isBreadcrumb={isBreadcrumb} compact />
       </div>
 
       {/* Stats grid */}
@@ -239,24 +236,66 @@ function ServiceIcon({ src, size = 24 }) {
   );
 }
 
-function BadgeArea({ service, statusStyle, statusColor, isUp, isDown, st, compact }) {
-  if (statusStyle === 'minimal') return null;
-  if (statusStyle === 'dot') {
-    // Dot mode: just ping on the right
-    if (service.ping != null && service.ping > 0) {
-      return (
+// Name + optional "last seen X ago" subtitle (presence breadcrumb). Stacks the
+// two lines in a flex column so the subtitle sits directly under the name.
+function NameBlock({ service }) {
+  const showSubtitle = service.source === 'presence';
+  return (
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <span style={{
+        fontFamily: 'var(--font-body)', fontSize: 'var(--fs-service-name)', fontWeight: 500,
+        color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>{service.name}</span>
+      {showSubtitle && (
         <span style={{
-          fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 6px',
-          borderRadius: 4, background: 'var(--green-bg)', color: 'var(--green)',
-          border: '1px solid var(--green-border)', flexShrink: 0, whiteSpace: 'nowrap',
-        }}>{service.ping}ms</span>
-      );
-    }
-    return null;
+          fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>{lastSeenLabel(service.lastSeenAt)}</span>
+      )}
+    </div>
+  );
+}
+
+// Subtle "unmonitored" pill + nudge tooltip — a running container that matched
+// no Kuma monitor. Surfaces the coverage gap without alarming (muted, not amber).
+function UnmonitoredTag() {
+  return (
+    <span
+      title="No Uptime Kuma monitor — add one to track this service's true status."
+      style={{
+        fontFamily: 'var(--font-mono)', fontSize: 9, padding: '2px 6px', borderRadius: 4,
+        textTransform: 'uppercase', fontWeight: 500, whiteSpace: 'nowrap',
+        background: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border-color)',
+      }}
+    >unmonitored</span>
+  );
+}
+
+function BadgeArea({ service, statusStyle, statusColor, isUp, isDown, st, isBreadcrumb, compact }) {
+  if (statusStyle === 'minimal') return null;
+  // A running, untracked container wears the unmonitored tag. A presence
+  // breadcrumb is inherently unmonitored — it shows the "last seen" subtitle
+  // instead, so it never double-signals.
+  const showUnmonitored = service.monitored === false && !isBreadcrumb;
+  if (statusStyle === 'dot') {
+    // Dot mode: ping on the right, plus the unmonitored tag if applicable.
+    return (
+      <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexShrink: 0 }}>
+        {showUnmonitored && <UnmonitoredTag />}
+        {service.ping != null && service.ping > 0 && (
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 6px',
+            borderRadius: 4, background: 'var(--green-bg)', color: 'var(--green)',
+            border: '1px solid var(--green-border)', whiteSpace: 'nowrap',
+          }}>{service.ping}ms</span>
+        )}
+      </div>
+    );
   }
   // Badge mode
   return (
     <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexShrink: 0 }}>
+      {showUnmonitored && <UnmonitoredTag />}
       {service.ping != null && service.ping > 0 && (
         <span style={{
           fontFamily: 'var(--font-mono)', fontSize: compact ? 9 : 10, padding: '2px 6px',
@@ -267,9 +306,9 @@ function BadgeArea({ service, statusStyle, statusColor, isUp, isDown, st, compac
       <span style={{
         fontFamily: 'var(--font-mono)', fontSize: compact ? 9 : 10, padding: '2px 6px',
         borderRadius: 4, textTransform: 'uppercase', fontWeight: 500, whiteSpace: 'nowrap',
-        background: isUp ? 'var(--green-bg)' : isDown ? 'var(--red-bg)' : 'var(--amber-bg)',
+        background: isBreadcrumb ? 'var(--bg-card)' : isUp ? 'var(--green-bg)' : isDown ? 'var(--red-bg)' : 'var(--amber-bg)',
         color: statusColor,
-        border: `1px solid ${isUp ? 'var(--green-border)' : isDown ? 'var(--red-border)' : 'var(--amber-border)'}`,
+        border: `1px solid ${isBreadcrumb ? 'var(--border-color)' : isUp ? 'var(--green-border)' : isDown ? 'var(--red-border)' : 'var(--amber-border)'}`,
       }}>{st === 'up' ? 'running' : st}</span>
     </div>
   );
