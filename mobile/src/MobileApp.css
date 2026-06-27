@@ -453,3 +453,51 @@
 #mobile-root .word--caution  { color: var(--amber); }
 #mobile-root .word--healthy  { color: var(--green); }
 #mobile-root .word--unknown  { color: var(--steel); }
+
+/* =========================================================================
+   UptimeRing — inline-SVG radial arc gauge for the uptime24 scalar.
+   Replaces UptimeLine in ServiceDetail / IncidentDetail / IncidentCard.
+   Scoped to #mobile-root so the web app is unaffected.
+   ========================================================================= */
+
+#mobile-root .uptime-ring {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Background track — neutral muted ring behind the progress arc */
+#mobile-root .uptime-ring__track {
+  stroke: var(--border);
+}
+
+/* Progress arc — color applied via inline stroke attr (testable in jsdom);
+   CSS here is visual fallback / override for dark identity. */
+#mobile-root .uptime-ring__arc {
+  transition: stroke-dasharray 0.4s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #mobile-root .uptime-ring__arc {
+    transition: none;
+  }
+}
+
+/* Centered percentage — mono, readable size */
+#mobile-root .uptime-ring__pct {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 500;
+  /* fill is set via inline style for testability; CSS fill below is a fallback */
+  fill: var(--text);
+}
+
+/* "24H" label — smaller, muted, intentionally a separate text node from the % */
+#mobile-root .uptime-ring__label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  fill: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
