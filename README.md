@@ -77,6 +77,8 @@ genuinely live data rather than bookmarks.
 JagHelm is a single-page dashboard you point at your homelab. It reads metrics from Prometheus, container stats from cAdvisor, and health checks from Uptime Kuma, then renders them as draggable cards in a layout you arrange yourself. Settings live in the UI — themes, layouts, integrations, secrets — backed by YAML on disk so nothing gets lost on a container rebuild.
  
 It started as a personal project and is shared in the hope that other homelab folks will find it useful. The core flow: install once, point at your existing monitoring stack, drag panels around until you like them, walk away.
+
+There's also a **native Android app** (Capacitor): the same board on your phone over your tailnet, plus push notifications the moment a service, host, UPS, or cron job changes state — so you hear about an outage without a tab open.
  
 ## What it isn't
  
@@ -105,6 +107,10 @@ mkdir -p /opt/stacks/jaghelm && cd /opt/stacks/jaghelm
 # Required: where to read metrics from
 PROMETHEUS_URL=http://your-prometheus:9090
 KUMA_URL=http://your-kuma:3001
+
+# Optional: Uptime Kuma API key — reads all monitors + uptime from Kuma's
+# authenticated /metrics endpoint (needs Kuma >= 2.1.0). Blank = public status page.
+KUMA_API_KEY=
  
 # Required: encryption key for stored credentials
 # Generate once: openssl rand -hex 32
