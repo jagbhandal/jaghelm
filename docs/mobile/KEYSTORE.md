@@ -78,16 +78,16 @@ Delete the `.b64` file once you've pasted it into GitHub.
 
 ---
 
-## 3. Set the FOUR GitHub repo secrets
+## 3. Set the FIVE GitHub repo secrets
 
 > **These go on GitHub, NOT Gitea.** The Gitea→GitHub push-mirror copies your code and
 > tags but **not** secrets — GitHub Actions only reads secrets stored in the GitHub repo.
-> Setting them on Gitea does nothing; the build then fails fast at the *Decode keystore* step
-> with exit 1 (a ~35s run that produces no artifact). This is the one mistake that silently
-> wastes a build.
+> Setting them on Gitea does nothing; the build then fails fast at the *Decode keystore* /
+> *Inject Firebase config* step with exit 1 (a ~35s run that produces no artifact). This is
+> the one mistake that silently wastes a build.
 
 On **GitHub** (`github.com/jagbhandal/jaghelm`): repo → **Settings → Secrets and variables →
-Actions** → **New repository secret**. Set these **exact** four names (the workflow
+Actions** → **New repository secret**. Set these **exact** five names (the workflow
 references them by name):
 
 | Secret name | Value |
@@ -96,10 +96,13 @@ references them by name):
 | `KEYSTORE_PASSWORD` | the keystore (store) password from step 1 |
 | `KEY_ALIAS` | `jaghelm-upload` |
 | `KEY_PASSWORD` | the key (alias) password (= the store password if you reused it) |
+| `GOOGLE_SERVICES_JSON_BASE64` | `base64 -w0 < google-services.json` — the Firebase **client** config (enables push in the APK). See **[PUSH-SETUP.md](PUSH-SETUP.md)** for where to download it. |
 
-No other config is needed; the workflow injects these, decodes the keystore to a temp
-file, writes `keystore.properties`, builds, then **shreds the signing material in an
-`if: always()` step** so nothing persists on the ephemeral runner.
+No other config is needed; the workflow injects these, decodes the keystore to a temp file,
+writes `keystore.properties`, decodes `google-services.json` before the build, builds, then
+**shreds the signing material in an `if: always()` step** so nothing persists on the
+ephemeral runner. (`google-services.json` is intentionally *not* shredded — it is embedded in
+the APK by design and is not a secret.)
 
 ---
 
@@ -172,12 +175,13 @@ note the v2 requirement actually follows from `minSdkVersion 24`, not the target
    tap **Test & Connect**. It reaches the backend over the Tailscale network via native
    HTTP; all four tabs should render live data.
 
-> **Push notifications are OFF in the CI-built APK.** `build.gradle` applies the Firebase
-> (google-services) plugin only when a real `google-services.json` is present, and CI does
-> not inject one — so a CI-signed APK installs and runs fine but receives **no FCM push**.
-> Enabling push in release builds (injecting `google-services.json` from a secret, same
-> pattern as the keystore) is the separate **prod FCM service-account** follow-up, out of
-> scope for this signing pipeline. All in-app tab data still works without it.
+> **Push notifications need the `GOOGLE_SERVICES_JSON_BASE64` secret set (step 3).** The CI
+> build injects `google-services.json` before the Vite/Gradle build, so a release APK ships
+> with FCM compiled in — but that is only the **client half**. For a notification to actually
+> arrive, the **prod server** must also have its FCM service-account wired
+> (`FCM_SERVICE_ACCOUNT`). Both ends are covered end-to-end in **[PUSH-SETUP.md](PUSH-SETUP.md)**.
+> If you omit the secret the build fails fast at *Inject Firebase config* (rather than
+> silently shipping a push-disabled APK). All in-app tab data still works regardless of push.
 
 ### Updating later
 
@@ -200,6 +204,7 @@ app first (you'll lose its stored state) or recover the original keystore.
 | Gradle reads | `mobile/android/app/keystore.properties` (gitignored) |
 | CI workflow | `.github/workflows/build-apk.yml` (`mobile-v*` tag or manual) |
 | Runs on | **GitHub Actions** (`github.com/jagbhandal/jaghelm`), reached via the Gitea→GitHub push-mirror |
-| Secrets | `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` — set on **GitHub**, not Gitea |
+| Secrets | `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, `GOOGLE_SERVICES_JSON_BASE64` — set on **GitHub**, not Gitea |
+| Push setup | **[PUSH-SETUP.md](PUSH-SETUP.md)** — end-to-end (APK Firebase config + prod server FCM service-account) |
 | Distribution | sideload only (no Play Store) → one self-signed key, reuse forever |
 | Artifact | `jaghelm-release-apk` → `app-release.apk` |

@@ -5,15 +5,19 @@ name: Build Signed Mobile APK
 # Actions secrets, decoded to a temp file, and SHREDDED in an `if: always()` step
 # so it never persists in the workspace. No secret value is ever echoed.
 #
-# Required repo secrets (see docs/mobile/KEYSTORE.md):
-#   KEYSTORE_BASE64   — `base64 -w0 < jaghelm-release.jks`
-#   KEYSTORE_PASSWORD — keystore (store) password
-#   KEY_ALIAS         — signing key alias (e.g. jaghelm-upload)
-#   KEY_PASSWORD      — key (alias) password
+# Required repo secrets (see docs/mobile/KEYSTORE.md + docs/mobile/PUSH-SETUP.md):
+#   KEYSTORE_BASE64             — `base64 -w0 < jaghelm-release.jks`
+#   KEYSTORE_PASSWORD           — keystore (store) password
+#   KEY_ALIAS                   — signing key alias (e.g. jaghelm-upload)
+#   KEY_PASSWORD                — key (alias) password
+#   GOOGLE_SERVICES_JSON_BASE64 — `base64 -w0 < google-services.json` (Firebase client
+#                                 config; makes the release APK ship with push/FCM enabled)
 #
-# Graceful fallback: mobile/android/app/build.gradle keys signing on the presence
-# of `keystore.properties`. If the secrets are unset the decode step fails fast
-# (intentional) rather than silently shipping an unsigned/debug-signed APK.
+# Graceful fallback: mobile/android/app/build.gradle keys signing on the presence of
+# `keystore.properties`, and BOTH the Vite build (__PUSH_ENABLED__) and the google-services
+# Gradle plugin key push on the presence of `google-services.json`. If either secret is unset
+# the corresponding step fails fast (intentional) rather than silently shipping an
+# unsigned/debug-signed APK, or one with push compiled out.
 
 on:
   push:
@@ -55,6 +59,39 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      # --- Firebase client config: decode google-services.json BEFORE the Vite build.
+      # Push is gated on this file at TWO layers that must agree: the Vite build sets
+      # __PUSH_ENABLED__ from ./android/app/google-services.json (vite.config.mobile.js),
+      # and Gradle applies the google-services plugin from the same file (app/build.gradle) —
+      # so it must exist before `npm run build`. Placed before `npm ci` so a bad/missing
+      # secret fails in seconds rather than after the install. NOT a secret (it ships inside
+      # every APK) → intentionally not shredded and not flagged by the leak-guard below;
+      # base64'd only to keep project IDs out of git (gitignored). See docs/mobile/PUSH-SETUP.md.
+      - name: Inject Firebase config (google-services.json)
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+          : "${GOOGLE_SERVICES_JSON_BASE64:?GOOGLE_SERVICES_JSON_BASE64 secret is required so the release APK ships with push (FCM) enabled — see docs/mobile/PUSH-SETUP.md}"
+
+          DEST="mobile/android/app/google-services.json"
+          # decode straight to file (see the keystore step for the printf/base64 rationale)
+          printf '%s' "${GOOGLE_SERVICES_JSON_BASE64}" | base64 -d > "${DEST}"
+
+          # Fail loud on a malformed/wrong secret rather than silently building a push-disabled
+          # APK (the regression this step prevents). Two checks give DISTINCT operator errors:
+          # invalid JSON (a botched base64 paste) vs the wrong Firebase project (valid JSON,
+          # wrong app). EXPECTED must stay in sync with build.gradle applicationId /
+          # capacitor.config.ts appId (asserted by mobile/capacitor.config.test.js).
+          jq -e . "${DEST}" > /dev/null \
+            || { echo "::error::decoded google-services.json is not valid JSON — check the GOOGLE_SERVICES_JSON_BASE64 secret"; exit 1; }
+
+          EXPECTED="io.jaghelm.app"
+          jq -e --arg p "${EXPECTED}" \
+            'any(.client[]?; .client_info.android_client_info.package_name == $p)' "${DEST}" > /dev/null \
+            || { echo "::error::google-services.json has no client for ${EXPECTED} — wrong Firebase project/app in the GOOGLE_SERVICES_JSON_BASE64 secret"; exit 1; }
+          echo "google-services.json injected and validated for ${EXPECTED}"
 
       - name: Install mobile dependencies
         run: npm ci
@@ -178,6 +215,8 @@ jobs:
           # proves the cleanup step shredded the signing material AND that none leaked
           # into the artifact path before upload. (keystore.properties.example lives one
           # level up in mobile/android/, outside this scan, so it never false-positives.)
+          # NOTE: google-services.json is deliberately NOT matched here — it is the Firebase
+          # CLIENT config and is meant to ship inside the APK (not a secret); see the Inject step.
           if find mobile/android/app \
                \( -name 'keystore.properties' -o -name '*.keystore' -o -name '*.jks' \) \
                -print -quit | grep -q .; then
