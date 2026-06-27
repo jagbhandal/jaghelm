@@ -1,14 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Adaptive icon background — full-bleed indigo, no white anywhere.
-     Used as @drawable/ic_launcher_background; the @color variant is also set
-     to #6366f1 in values/ic_launcher_background.xml. -->
+<!-- Adaptive icon background — full-bleed carbon-black (#0A0D0C, the app's --bg).
+     The indigo shield pops on carbon-black with no gradient needed. No white anywhere.
+     Referenced as @drawable/ic_launcher_background by the adaptive-icon background layer. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <gradient
-        android:type="radial"
-        android:gradientRadius="200%"
-        android:centerX="0.5"
-        android:centerY="0.35"
-        android:startColor="#818cf8"
-        android:endColor="#6366f1"/>
+    <solid android:color="#0A0D0C"/>
 </shape>
