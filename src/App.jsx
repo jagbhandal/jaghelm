@@ -156,9 +156,11 @@ function AppMain({ authRequired, onLogout }) {
     // overallHealth off the same /api/services payload the dashboard renders, so
     // the web header dot and the mobile Overview dot are symmetric (one server
     // truth, no client re-derivation). getServices shares useData's ETag/result
-    // cache with DashboardView's fetch, so this is the 304-stable-identity path,
-    // not a duplicate round-trip. A 304-no-body / missing field keeps the current
-    // value; a thrown fetch flips to 'unknown'.
+    // cache with DashboardView's fetch: on an unchanged (304) cycle both resolve
+    // to the same cached object; on a changed cycle both pull the full 200 body
+    // (one redundant fetch — acceptable for an infrequent flip on a 30s poll; a
+    // follow-up could lift overallHealth from the dashboard fetch instead). A
+    // 304-no-body / missing field keeps the current value; a thrown fetch → 'unknown'.
     getServices()
       .then((body) => {
         if (body && typeof body.overallHealth === 'string') setOverallHealth(body.overallHealth);
