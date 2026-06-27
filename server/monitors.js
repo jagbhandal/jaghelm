@@ -6,7 +6,7 @@
 import { createLogger } from './util/logger.js';
 import { safeFetch } from './httpClient.js';
 import { positiveMs } from './util/env.js';
-import { parseKumaMetrics } from './kumaMetrics.js';
+import { parseKumaMetrics, statusFromValue } from './kumaMetrics.js';
 
 const log = createLogger('monitors');
 
@@ -136,7 +136,7 @@ async function fetchFromStatusPage() {
     monitors[id] = {
       id,
       name: pub.name,
-      status: latest?.status === 1 ? 'up' : latest?.status === 0 ? 'down' : 'unknown',
+      status: statusFromValue(latest?.status),
       ping: latest?.ping || 0,
       uptime24: uptimeList[`${id}_24`] || 0,
       active: pub.active !== false,
@@ -172,7 +172,6 @@ export async function fetchMonitors(bustCache = false) {
         if (monitors) source = 'metrics';
       } catch (err) {
         log.warn({ err }, 'Kuma /metrics path errored — falling back to status-page API');
-        monitors = null;
       }
     }
 
@@ -335,7 +334,10 @@ export function markMonitorLogDone() {
  * monitor ids already rendered as a running container's card. A monitor whose
  * heartbeat time is missing/unparseable (`lastBeatAt == null`) is treated as
  * fresh: we only EXCLUDE on a positively-stale beat, never miss a real outage
- * over a parse gap.
+ * over a parse gap. Metrics-path monitors (the /metrics source) carry
+ * `lastBeatAt: null` + `active: true` by construction — paused monitors are
+ * absent from /metrics entirely, so this staleness guard is intentionally INERT
+ * for that source.
  */
 export function selectOutageMonitors(
   monitors,

@@ -33,16 +33,15 @@ function mockResponse({ ok, body }) {
   };
 }
 
+// Canonical status-page response body (one 'grafana' monitor, up, 99% 24h).
+const STATUS_PAGE_BODY = {
+  publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }] }],
+  heartbeatList: { 1: [{ status: 1, ping: 5 }] },
+  uptimeList: { '1_24': 0.99 },
+};
+
 test('monitors: a fresh ok fetch primes the cache with live statuses', async () => {
-  globalThis.fetch = async () =>
-    mockResponse({
-      ok: true,
-      body: {
-        publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }] }],
-        heartbeatList: { 1: [{ status: 1, ping: 5 }] },
-        uptimeList: { '1_24': 0.99 },
-      },
-    });
+  globalThis.fetch = async () => mockResponse({ ok: true, body: STATUS_PAGE_BODY });
   try {
     const m = await fetchMonitors(true);
     assert.equal(m[1]?.status, 'up', 'live status loaded into cache');
@@ -68,15 +67,7 @@ test('monitors: a stale cache PAST the ceiling is NOT served on !ok', async () =
 
 test('monitors: a stale cache WITHIN the ceiling is still served on !ok', async () => {
   // Re-prime the cache fresh.
-  globalThis.fetch = async () =>
-    mockResponse({
-      ok: true,
-      body: {
-        publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }] }],
-        heartbeatList: { 1: [{ status: 1, ping: 5 }] },
-        uptimeList: { '1_24': 0.99 },
-      },
-    });
+  globalThis.fetch = async () => mockResponse({ ok: true, body: STATUS_PAGE_BODY });
   await fetchMonitors(true);
 
   // Kuma goes 5xx, but only 1 minute has elapsed — within the 5-min ceiling.
@@ -108,12 +99,6 @@ function mockText({ ok, status, text = '' }) {
     json: async () => ({}),
   };
 }
-
-const STATUS_PAGE_BODY = {
-  publicGroupList: [{ monitorList: [{ id: 1, name: 'grafana' }] }],
-  heartbeatList: { 1: [{ status: 1, ping: 5 }] },
-  uptimeList: { '1_24': 0.99 },
-};
 
 test('monitors: with KUMA_API_KEY, a good /metrics response is used (status-page NOT called)', async () => {
   initMonitors('http://localhost:9999', 'uk1_testkey');

@@ -106,7 +106,7 @@ export function parsePromLine(line) {
   return { name, labels, value: parseValue(valueTok) };
 }
 
-function statusFromValue(v) {
+export function statusFromValue(v) {
   return v === 1 ? 'up' : v === 0 ? 'down' : 'unknown';
 }
 
