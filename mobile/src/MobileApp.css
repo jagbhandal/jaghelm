@@ -501,3 +501,201 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
+
+/* =========================================================================
+   Task 5: SystemStatusCard — glass hero annunciator (Overview §7.2)
+   ========================================================================= */
+
+#mobile-root .sys-status-card {
+  position: relative;
+  border-radius: var(--card-radius);   /* 20px */
+  padding: var(--space-4);
+  background: var(--card);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  margin-bottom: var(--space-4);
+}
+
+/* Soft radial tint by severity — `::before` sits behind content (z-index not needed:
+   it's before pseudo, content is in normal flow on top). NO pulse/glow (spec §7.2). */
+#mobile-root .sys-status-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+#mobile-root .sys-status-card--critical { border-color: var(--red-bd); }
+#mobile-root .sys-status-card--caution  { border-color: var(--amber-bd); }
+#mobile-root .sys-status-card--healthy  { border-color: var(--green-bd); }
+#mobile-root .sys-status-card--unknown  { border-color: var(--border); }
+
+#mobile-root .sys-status-card--critical::before {
+  background: radial-gradient(circle at 30% 0%, var(--red-bg) 0%, transparent 70%);
+}
+#mobile-root .sys-status-card--caution::before {
+  background: radial-gradient(circle at 30% 0%, var(--amber-bg) 0%, transparent 70%);
+}
+#mobile-root .sys-status-card--healthy::before {
+  background: radial-gradient(circle at 30% 0%, var(--green-bg) 0%, transparent 70%);
+}
+/* unknown — no tint; steel/card default already reads "no signal" */
+
+/* Silkscreen mono label — small, muted, uppercase */
+#mobile-root .sys-status-card__label {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 var(--space-2);
+}
+
+/* Outfit headline — display weight 700 (Outfit ships 300–800; 700 is valid) */
+#mobile-root .sys-status-card__headline {
+  font-family: var(--disp);
+  font-size: var(--text-xl, 20px);
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 var(--space-2);
+  line-height: 1.25;
+}
+
+/* The color-spanned status WORD within the headline — inherits severity color
+   via inline style (testable in jsdom) + CSS class for visual completeness. */
+#mobile-root .sys-status-card__word--critical { color: var(--red);   }
+#mobile-root .sys-status-card__word--caution  { color: var(--amber); }
+#mobile-root .sys-status-card__word--healthy  { color: var(--green); }
+#mobile-root .sys-status-card__word--unknown  { color: var(--steel); }
+
+/* DM Sans prose subline */
+#mobile-root .sys-status-card__subline {
+  font-family: var(--body);
+  font-size: var(--text-sm);
+  color: var(--label);
+  margin: 0 0 var(--space-3);
+}
+
+/* Mono counts footer */
+#mobile-root .sys-status-card__counts {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+  margin: 0;
+}
+
+/* =========================================================================
+   Task 5: SubsystemCell — one 2×2 cell in the Overview strip (§7.2 / §5)
+   ========================================================================= */
+
+#mobile-root .subsystem-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius-sm);  /* 16px */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+
+/* Severity tint + border (9%/24% palette from §3) */
+#mobile-root .subsystem-cell--critical { background: var(--red-bg);   border-color: var(--red-bd);   }
+#mobile-root .subsystem-cell--caution  { background: var(--amber-bg); border-color: var(--amber-bd); }
+#mobile-root .subsystem-cell--healthy  { background: var(--green-bg); border-color: var(--green-bd); }
+#mobile-root .subsystem-cell--unknown  { background: var(--card);     border-color: var(--border);   }
+
+/* Header: silkscreen label left, lamp right */
+#mobile-root .subsystem-cell__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Silkscreen lab label — mono, muted, uppercase (§4 "lab" pattern) */
+#mobile-root .subsystem-cell__label {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Mono detail line */
+#mobile-root .subsystem-cell__detail {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+}
+
+/* =========================================================================
+   Task 5: IssueRow — Active-issues list rows (§7.2 Active issues)
+   ========================================================================= */
+
+#mobile-root .issue-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius-sm);
+  min-height: 44px;
+  cursor: pointer;
+  /* Reset browser button styles */
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+#mobile-root .issue-row:active { background: var(--bg-card-hover); }
+
+/* Severity tint */
+#mobile-root .issue-row--critical { background: var(--red-bg);   border-color: var(--red-bd);   }
+#mobile-root .issue-row--caution  { background: var(--amber-bg); border-color: var(--amber-bd); }
+#mobile-root .issue-row--critical:active { background: var(--red-bg);   }
+#mobile-root .issue-row--caution:active  { background: var(--amber-bg); }
+
+/* Main row: lamp + word + name (ellipsis) + readout */
+#mobile-root .issue-row__main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Service/incident name — DM Sans prose, ellipsis clamp */
+#mobile-root .issue-row__name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--body);
+  font-size: var(--text-sm);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mono readout (node / charge% · runtime / no-signal datum) */
+#mobile-root .issue-row__readout {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--label);
+  flex-shrink: 0;
+}
+
+/* Prose cause — shown only under critical (down) rows; indented under lamp */
+#mobile-root .issue-row__cause {
+  font-family: var(--body);
+  font-size: var(--text-xs);
+  color: var(--label);
+  margin: 0;
+  /* Indent to align with text after the lamp (lamp=14px + gap=8px = ~22px) */
+  padding-left: calc(14px + var(--space-2));
+}
