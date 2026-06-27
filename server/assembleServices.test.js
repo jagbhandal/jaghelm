@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { existsSync, rmSync } from 'node:fs';
 import { assembleServices } from './refresh.js';
 import { createContainerRegistry } from './containerRegistry.js';
+import { buildServices } from './push/snapshot.js';
+import { diffSnapshots } from './push/differ.js';
 
 const nodeCfg = { display_name: 'Production' };
 function nodeData(containers) { return { metrics: {}, containers }; }
@@ -15,12 +17,13 @@ function fakeRegistry(missing = []) {
   return { recordSeen() {}, getMissing() { return missing; } };
 }
 
-function run({ nodeResults, monitors, lastSeen = {}, containerRegistry = null, now = () => 0 }) {
+function run({ nodeResults, monitors, lastSeen = {}, lastSeenContainer = {}, containerRegistry = null, now = () => 0, config = { services: {} } }) {
   return assembleServices({
     nodeResults,
     monitors,
-    config: { services: {} },
+    config,
     lastSeenNodeOf: (id) => lastSeen[String(id)] ?? null,
+    lastSeenContainerOf: (id) => lastSeenContainer[String(id)] ?? null,
     containerRegistry,
     now,
   });
@@ -84,12 +87,56 @@ test('assemble: with no last-seen record, a down monitor falls back to the first
   assert.ok(nodes.vm103.services.some((s) => s.container === 'orphan' && s.status === 'down'));
 });
 
-test('assemble: seen[] reports matched (monitorId, node) pairs for the registry', () => {
+test('assemble: seen[] reports matched (monitorId, node, container) triples for the registry', () => {
   const { seen } = run({
     nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'gitea', status: 'running', docker: {} }])]],
     monitors: { 1: { id: 1, name: 'gitea', status: 'up', active: true } },
   });
-  assert.deepEqual(seen, [{ monitorId: 1, nodeKey: 'vm103' }]);
+  assert.deepEqual(seen, [{ monitorId: 1, nodeKey: 'vm103', container: 'gitea' }]);
+});
+
+// ---- recovery-push uid stability (the "no recovered push" bug) ----
+
+test('assemble: a down synth card reuses the remembered CONTAINER uid, not the monitor name', () => {
+  // Monitor "Radarr" was matched to container "radarr" while up; the container
+  // has now vanished and only the down monitor remains. The synth card must key
+  // off the remembered container ("radarr"), NOT the monitor name ("Radarr") —
+  // otherwise the down card and the later recovered card live under different
+  // uids and the push differ never sees a down→up transition.
+  const { nodes } = run({
+    nodeResults: [['vm103', nodeCfg, nodeData([])]], // container gone
+    monitors: { 7: { id: 7, name: 'Radarr', status: 'down', active: true } },
+    lastSeen: { 7: 'vm103' },
+    lastSeenContainer: { 7: 'radarr' },
+  });
+  const card = nodes.vm103.services.find((s) => s.status === 'down');
+  assert.ok(card, 'synth down card exists');
+  assert.equal(card.uid, 'vm103:radarr');   // container uid, NOT vm103:Radarr
+  assert.equal(card.container, 'radarr');
+});
+
+test('recovery push: vanish→down then return→up emits service_recovered on a stable uid', () => {
+  const thresholds = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
+  // DOWN cycle: container gone, down monitor remembered as container "radarr".
+  const down = run({
+    nodeResults: [['vm103', nodeCfg, nodeData([])]],
+    monitors: { 7: { id: 7, name: 'Radarr', status: 'down', active: true } },
+    lastSeen: { 7: 'vm103' },
+    lastSeenContainer: { 7: 'radarr' },
+  });
+  // UP cycle: container back, monitor up (matched → no synth).
+  const up = run({
+    nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'radarr', status: 'running', docker: {} }])]],
+    monitors: { 7: { id: 7, name: 'Radarr', status: 'up', active: true } },
+  });
+  const snapDown = { services: buildServices({ nodes: down.nodes }), hosts: {}, ups: { state: 'unknown' }, cron: {} };
+  const snapUp = { services: buildServices({ nodes: up.nodes }), hosts: {}, ups: { state: 'unknown' }, cron: {} };
+  assert.equal(snapDown.services['vm103:radarr'], 'down');
+  assert.equal(snapUp.services['vm103:radarr'], 'up');
+  const events = diffSnapshots(snapDown, snapUp, thresholds);
+  const rec = events.find((e) => e.type === 'service_recovered');
+  assert.ok(rec, 'service_recovered fires for the returned service');
+  assert.equal(rec.id, 'vm103:radarr');
 });
 
 // ---- breadcrumb synthesis (this plan) ----
