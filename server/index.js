@@ -71,6 +71,12 @@ import { cronRoutes } from './routes/cron.js';
 import { systemRoutes } from './routes/system.js';
 import { createPushRoutes } from './routes/push.js';
 import { getPushStore } from './push/store.js';
+import { createWatchtowerRoutes } from './routes/watchtower.js';
+import { dispatchEvents } from './push/dispatch.js';
+import { createDedup } from './watchtower/dedup.js';
+import { postToDiscord } from './watchtower/discord.js';
+
+const watchtowerDedup = createDedup();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -229,6 +235,7 @@ if (isDemoMode()) app.use('/api', demoMiddleware);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/cron', cronRoutes);
+app.use('/api/watchtower', createWatchtowerRoutes({ store: getPushStore(), fcm: fcmModule, dispatch: dispatchEvents, postDiscord: postToDiscord, dedup: watchtowerDedup }));
 app.use('/api/icons', iconRoutes);
 app.use('/api', systemRoutes); // /health + /readyz public; /weather authed inside
 

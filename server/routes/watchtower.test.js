@@ -71,3 +71,19 @@ test('push dispatch failure does not block discord', async () => {
   assert.equal(r.status, 200);
   assert.equal(calls.discord.length, 1); // discord still happened
 });
+
+test('mounted app: unknown secret rejected (mount smoke)', async () => {
+  const { app } = (() => {
+    const a = express();
+    a.use(express.json());
+    a.use('/api/watchtower', createWatchtowerRoutes({
+      store: {}, fcm: {},
+      dispatch: async () => {}, postDiscord: async () => ({ ok: true }),
+      dedup: { isDuplicate: () => false },
+      getEnv: () => ({ JAGHELM_WATCHTOWER_SECRET: 'x' }),
+    }));
+    return { app: a };
+  })();
+  const r = await request(app).post('/api/watchtower/event').send({ secret: 'wrong', message: 'updated|a|1|2' });
+  assert.equal(r.status, 401);
+});
