@@ -64,3 +64,10 @@ test('discord failure does not block push (and vice versa)', async () => {
   assert.equal(r.status, 200);
   assert.equal(calls.dispatch.length, 1); // push still happened
 });
+
+test('push dispatch failure does not block discord', async () => {
+  const { app, calls } = makeApp({ dispatch: async () => { throw new Error('fcm 500'); } });
+  const r = await request(app).post('/api/watchtower/event').send(GOOD);
+  assert.equal(r.status, 200);
+  assert.equal(calls.discord.length, 1); // discord still happened
+});
