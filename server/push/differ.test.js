@@ -19,7 +19,7 @@ test('exports SEVERITY map covering all event types', () => {
   assert.equal(SEVERITY.cron_recovered, 'info');
 });
 
-test('RECOVERY_TYPES is exactly the info-severity types', () => {
+test('RECOVERY_TYPES is the info-severity types plus watchtower_cleared', () => {
   assert.ok(RECOVERY_TYPES instanceof Set);
   const expected = [
     'service_recovered',
@@ -27,6 +27,9 @@ test('RECOVERY_TYPES is exactly the info-severity types', () => {
     'host_threshold_cleared',
     'ups_restored',
     'cron_recovered',
+    // Built outside the snapshot differ (watchtower/format.js) but semantically
+    // a recovery, so it joins the set to be gated by notifyRecoveries.
+    'watchtower_cleared',
   ].sort();
   assert.deepEqual([...RECOVERY_TYPES].sort(), expected);
   for (const [type, sev] of Object.entries(SEVERITY)) {

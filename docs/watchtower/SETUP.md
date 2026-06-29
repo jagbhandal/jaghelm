@@ -41,9 +41,15 @@ environment:
     {{ end -}}
     {{- range .Report.Failed }}failed|{{ .Name }}|{{ .Error }}
     {{ end -}}
+    {{- range .Report.Stale }}stale|{{ .Name }}|{{ .CurrentImageID.ShortID }}|{{ .LatestImageID.ShortID }}
+    {{ end -}}
     {{- end -}}
 ```
 Notes:
+- The `.Report.Stale` range is what surfaces **held-back** containers — a monitor-only
+  container with a newer image available that Watchtower deliberately did NOT update. Without
+  this range, those containers are protected but silent. It is required for the held-back pings
+  to work; the `updated`/`failed` ranges alone never see them.
 - Set `$node` to that node's name (`vm-101`, `vm103`, `gateway-pi`, `failover-pi`).
 - Use `disabletls=yes` only for plain-HTTP intra-LAN; drop it if JagHelm is HTTPS.
 - **Validate the template field names against your Watchtower version** before relying on it —
@@ -51,14 +57,36 @@ Notes:
   notification template API and can differ across versions. Run a manual Watchtower cycle and
   confirm a clean line appears (see step 4).
 
-## 4. End-to-end verification
+## 4. Held-back (monitor-only) notifications
+A container that Watchtower is set to **monitor only** — either the whole instance
+(`WATCHTOWER_MONITOR_ONLY: "true"`) or per-container
+(`com.centurylinklabs.watchtower.monitor-only=true`) — is protected from auto-update. When a
+newer image appears for one, Watchtower reports it under `.Report.Stale` (NOT `.Updated`), and
+JagHelm turns that into:
+- `⏸️ Held back` — a mobile push **only when a container becomes newly held back** (or a newer
+  image lands on one already held back). No repeat ping each poll cycle for a static backlog.
+- A standing `⏸️ Held back (N): …` section in the Discord message, listing the full current
+  backlog every time JagHelm posts — so it never falls off your radar.
+- `✅ Caught up` — a recovery push (honors the per-device *recovery notifications* toggle) when a
+  held-back container drops off the stale list, e.g. after you pull it manually.
+
+A run with no updates, no failures, and no change to the held-back set is skipped entirely — no
+push, no Discord — so monitor-only nodes stay quiet until something actually changes.
+
+## 5. End-to-end verification
 Trigger a Watchtower run (`docker exec <watchtower> /watchtower --run-once` on a node with a
 floating-tag container, or wait for a real update). Confirm:
 - one push on the phone (`Watchtower · <node>`), and
 - one line in the daily-health Discord channel,
-per run. If several containers update in one run, they appear in a single digest.
+per run. If several containers update in one run, they appear in a single digest. For held-back
+verification, label a floating-tag container `monitor-only=true`, run once, and confirm a
+`⏸️ Held back` push + Discord line; run again unchanged and confirm **silence**.
 
 ## Notes / limits
 - Pinned-by-version-tag containers never trigger (Watchtower can't see "a newer version exists"
-  for a fixed tag). That's expected and out of scope.
-- Duplicate suppression: identical reports within ~5 min are de-duped server-side.
+  for a fixed tag). That's expected and out of scope — held-back only covers floating-tag
+  monitor-only containers, where a newer image genuinely exists.
+- Deleting (rather than updating) a held-back container makes it drop off the stale list and
+  fires a one-off `✅ Caught up`. Harmless, and rare.
+- Duplicate suppression: identical update/failure reports within ~5 min are de-duped
+  server-side; held-back/caught-up are gated by state-change instead of the time window.

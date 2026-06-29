@@ -14,9 +14,34 @@ test('parses updated and failed records', () => {
 });
 
 test('ignores blank and unknown lines; tolerates non-string', () => {
-  assert.deepEqual(parseWatchtowerReport(''), { updated: [], failed: [] });
-  assert.deepEqual(parseWatchtowerReport('\n  \ngibberish\nscanned|5'), { updated: [], failed: [] });
-  assert.deepEqual(parseWatchtowerReport(null), { updated: [], failed: [] });
+  assert.deepEqual(parseWatchtowerReport(''), { updated: [], failed: [], stale: [] });
+  assert.deepEqual(parseWatchtowerReport('\n  \ngibberish\nscanned|5'), { updated: [], failed: [], stale: [] });
+  assert.deepEqual(parseWatchtowerReport(null), { updated: [], failed: [], stale: [] });
+});
+
+test('parses stale (held-back / monitor-only) records', () => {
+  const r = parseWatchtowerReport('stale|vaultwarden|1a2b|9f8e\nstale|adguard|aaaa|bbbb');
+  assert.deepEqual(r.stale, [
+    { name: 'vaultwarden', current: '1a2b', latest: '9f8e' },
+    { name: 'adguard', current: 'aaaa', latest: 'bbbb' },
+  ]);
+});
+
+test('parses a mixed report of updated, failed, and stale', () => {
+  const r = parseWatchtowerReport('updated|radarr|v1|v2\nfailed|sonarr|pull error\nstale|vaultwarden|1a2b|9f8e');
+  assert.deepEqual(r.updated, [{ name: 'radarr', from: 'v1', to: 'v2' }]);
+  assert.deepEqual(r.failed, [{ name: 'sonarr', error: 'pull error' }]);
+  assert.deepEqual(r.stale, [{ name: 'vaultwarden', current: '1a2b', latest: '9f8e' }]);
+});
+
+test('a stale record with too few fields is ignored', () => {
+  assert.deepEqual(parseWatchtowerReport('stale|onlyname'), { updated: [], failed: [], stale: [] });
+});
+
+test('proto-pollution: a __proto__ stale container name stays a value, never a key', () => {
+  const r = parseWatchtowerReport('stale|__proto__|a|b');
+  assert.equal(r.stale[0].name, '__proto__');
+  assert.equal(({}).polluted, undefined);
 });
 
 test('failed error may contain pipes; rejoined', () => {

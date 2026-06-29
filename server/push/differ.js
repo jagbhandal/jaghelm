@@ -26,10 +26,16 @@ export const SEVERITY = {
   cron_recovered: 'info',
 };
 
-/** Recovery/info types — equivalent to severity==="info", exported explicitly. */
-export const RECOVERY_TYPES = new Set(
-  Object.keys(SEVERITY).filter((type) => SEVERITY[type] === 'info'),
-);
+/**
+ * Recovery/info types — equivalent to severity==="info", exported explicitly.
+ * `watchtower_cleared` is built outside the snapshot differ (in watchtower/
+ * format.js) but is semantically a recovery, so it joins the set here to be
+ * gated by the notifyRecoveries pref in shouldDeliver.
+ */
+export const RECOVERY_TYPES = new Set([
+  ...Object.keys(SEVERITY).filter((type) => SEVERITY[type] === 'info'),
+  'watchtower_cleared',
+]);
 
 export function diffSnapshots(prev, next, thresholds) {
   // Baseline: first cycle has no prior state, so nothing has "changed" yet.

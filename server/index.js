@@ -75,6 +75,7 @@ import { createWatchtowerRoutes } from './routes/watchtower.js';
 import { dispatchEvents } from './push/dispatch.js';
 import { createDedup } from './watchtower/dedup.js';
 import { postToDiscord } from './watchtower/discord.js';
+import { getHeldBackStore } from './watchtower/heldBackStore.js';
 
 const watchtowerDedup = createDedup();
 
@@ -241,6 +242,7 @@ app.use('/api/watchtower', createWatchtowerRoutes({
   dispatch: dispatchEvents,
   postDiscord: postToDiscord,
   dedup: watchtowerDedup,
+  heldBackStore: getHeldBackStore(),
   logger: createLogger('watchtower'),
 }));
 app.use('/api/icons', iconRoutes);
