@@ -23,3 +23,16 @@ test('posts content with mentions disabled', async () => {
   assert.equal(body.content, 'hello');
   assert.deepEqual(body.allowed_mentions, { parse: [] });
 });
+
+test('bad-webhook (non-Discord host) skips fetch', async () => {
+  const r = await postToDiscord('https://evil.example/hook', 'hi', {
+    fetchImpl: async () => { throw new Error('should not call'); },
+  });
+  assert.equal(r.skipped, 'bad-webhook');
+});
+
+test('all allowlisted Discord hosts are valid over https', () => {
+  for (const h of ['discord.com', 'discordapp.com', 'ptb.discord.com', 'canary.discord.com']) {
+    assert.equal(isValidWebhookUrl(`https://${h}/api/webhooks/1/abc`), true);
+  }
+});
