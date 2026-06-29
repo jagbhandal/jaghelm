@@ -14,7 +14,8 @@ export function createWatchtowerRoutes({ store, fcm, dispatch, postDiscord, dedu
       if (!secretOk(env.JAGHELM_WATCHTOWER_SECRET || '', req.body?.secret)) {
         return apiError(res, 401, 'Unauthorized');
       }
-      const node = typeof req.body?.node === 'string' && req.body.node ? req.body.node : 'unknown';
+      const rawNode = typeof req.body?.node === 'string' && req.body.node ? req.body.node : 'unknown';
+      const node = rawNode.slice(0, 256); // bound the one free-form field (matches cron.js discipline)
       const { updated, failed } = parseWatchtowerReport(req.body?.message);
       if (updated.length === 0 && failed.length === 0) {
         return res.json({ ok: true, skipped: 'empty' });

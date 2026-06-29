@@ -22,6 +22,9 @@ export async function postToDiscord(webhookUrl, content, { fetchImpl = safeFetch
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+    // A Discord webhook POST never legitimately redirects; trusted:false makes
+    // safeFetch's SSRF guard strict (blocks RFC1918 too) on any redirect hop.
+    trusted: false,
   });
   return { ok: !!res.ok, status: res.status };
 }

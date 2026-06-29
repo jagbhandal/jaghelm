@@ -29,3 +29,9 @@ test('proto-pollution: a __proto__ container name stays a value, never a key', (
   assert.equal(r.updated[0].name, '__proto__');
   assert.equal(({}).polluted, undefined);
 });
+
+test('caps records at 500 so a pathological body cannot blow up downstream work', () => {
+  const msg = Array.from({ length: 600 }, (_, i) => `updated|c${i}|1|2`).join('\n');
+  const r = parseWatchtowerReport(msg);
+  assert.equal(r.updated.length, 500);
+});
