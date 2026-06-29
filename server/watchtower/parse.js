@@ -3,6 +3,7 @@
 // Grammar (one record per line, pipe-delimited):
 //   updated|<name>|<fromImageId>|<toImageId>
 //   failed|<name>|<error>
+//   stale|<name>|<currentImageId>|<latestImageId>   (monitor-only: update held back)
 // Unknown/malformed lines are ignored (never throw on operator/registry text).
 // Records are plain objects with FIXED keys only — parsed tokens are never used
 // as object keys (prototype-pollution guard).
@@ -15,9 +16,10 @@ const MAX_RECORDS = 500;
 export function parseWatchtowerReport(message) {
   const updated = [];
   const failed = [];
-  if (typeof message !== 'string') return { updated, failed };
+  const stale = [];
+  if (typeof message !== 'string') return { updated, failed, stale };
   for (const rawLine of message.split('\n')) {
-    if (updated.length + failed.length >= MAX_RECORDS) break;
+    if (updated.length + failed.length + stale.length >= MAX_RECORDS) break;
     const line = rawLine.trim();
     if (!line) continue;
     const parts = line.split('|');
@@ -25,7 +27,9 @@ export function parseWatchtowerReport(message) {
       updated.push({ name: parts[1], from: parts[2], to: parts[3] });
     } else if (parts[0] === 'failed' && parts.length >= 3) {
       failed.push({ name: parts[1], error: parts.slice(2).join('|') });
+    } else if (parts[0] === 'stale' && parts.length >= 4) {
+      stale.push({ name: parts[1], current: parts[2], latest: parts[3] });
     }
   }
-  return { updated, failed };
+  return { updated, failed, stale };
 }

@@ -8,9 +8,12 @@ export function escapeDiscord(text) {
     .replace(/\r?\n/g, ' ');
 }
 
+/** Comma-join the `name` of each record — the shared push-body name list. */
+const joinNames = (items) => items.map((i) => i.name).join(', ');
+
 /** One digest push event per Watchtower run. */
 export function buildPushEvent({ node, updated, failed }) {
-  const names = updated.map((u) => u.name).join(', ');
+  const names = joinNames(updated);
   let body = updated.length ? `${updated.length} updated: ${names}` : 'no updates';
   if (failed.length) body += ` · ${failed.length} failed`;
   return {
@@ -23,8 +26,46 @@ export function buildPushEvent({ node, updated, failed }) {
   };
 }
 
-/** One Discord message per run. */
-export function buildDiscordContent({ node, updated, failed }) {
+/**
+ * Push event: monitor-only container(s) now have an update HELD BACK. Fired only
+ * for newly-held-back containers (transition), so it never repeats per cycle.
+ * Category is `watchtower` (gated by that pref); NOT a recovery, so it is not
+ * suppressed by notifyRecoveries — a held-back update is news you want.
+ */
+export function buildHeldBackPushEvent({ node, heldBack }) {
+  const names = joinNames(heldBack);
+  return {
+    type: 'watchtower_heldback',
+    id: `watchtower:${node}:heldback`,
+    node,
+    title: `Watchtower · ${node}`,
+    body: `${heldBack.length} update${heldBack.length === 1 ? '' : 's'} held back: ${names}`,
+    severity: 'info',
+  };
+}
+
+/**
+ * Recovery push event: previously held-back container(s) are now caught up.
+ * Type is registered in differ.js RECOVERY_TYPES, so it honors notifyRecoveries.
+ */
+export function buildClearedPushEvent({ node, cleared }) {
+  const names = joinNames(cleared);
+  return {
+    type: 'watchtower_cleared',
+    id: `watchtower:${node}:cleared`,
+    node,
+    title: `Watchtower · ${node}`,
+    body: `${cleared.length} caught up: ${names}`,
+    severity: 'info',
+  };
+}
+
+/**
+ * One Discord message per run. `heldBack` is the full STANDING set (the digest
+ * surface), `cleared` is the just-resolved set; both default empty so existing
+ * updated/failed-only callers are unchanged.
+ */
+export function buildDiscordContent({ node, updated, failed, heldBack = [], cleared = [] }) {
   const lines = [];
   if (updated.length) {
     const parts = updated.map(
@@ -35,6 +76,16 @@ export function buildDiscordContent({ node, updated, failed }) {
   if (failed.length) {
     const parts = failed.map((f) => `${escapeDiscord(f.name)} (${escapeDiscord(f.error)})`);
     lines.push(`⚠️ Failed: ${parts.join(', ')}`);
+  }
+  if (heldBack.length) {
+    const parts = heldBack.map(
+      (h) => `${escapeDiscord(h.name)} (${escapeDiscord(h.current)}→${escapeDiscord(h.latest)})`,
+    );
+    lines.push(`⏸️ **Watchtower · ${escapeDiscord(node)}** — Held back (${heldBack.length}): ${parts.join(', ')}`);
+  }
+  if (cleared.length) {
+    const parts = cleared.map((c) => escapeDiscord(c.name));
+    lines.push(`✅ **Watchtower · ${escapeDiscord(node)}** — Caught up: ${parts.join(', ')}`);
   }
   return lines.join('\n');
 }
