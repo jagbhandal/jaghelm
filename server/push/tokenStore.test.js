@@ -133,7 +133,7 @@ test('setPrefs normalizes: coerces booleans, drops unknown keys, fills missing f
     junk: 'ignored',     // unknown top-level key dropped
   });
   assert.deepEqual(rec.prefs, {
-    categories: { service: false, host: true, ups: true, cron: true },
+    categories: { service: false, host: true, ups: true, cron: true, watchtower: true },
     notifyRecoveries: false,
     enabled: true,
   });
