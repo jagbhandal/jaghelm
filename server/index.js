@@ -235,7 +235,14 @@ if (isDemoMode()) app.use('/api', demoMiddleware);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/cron', cronRoutes);
-app.use('/api/watchtower', createWatchtowerRoutes({ store: getPushStore(), fcm: fcmModule, dispatch: dispatchEvents, postDiscord: postToDiscord, dedup: watchtowerDedup }));
+app.use('/api/watchtower', createWatchtowerRoutes({
+  store: getPushStore(),
+  fcm: fcmModule,
+  dispatch: dispatchEvents,
+  postDiscord: postToDiscord,
+  dedup: watchtowerDedup,
+  logger: createLogger('watchtower'),
+}));
 app.use('/api/icons', iconRoutes);
 app.use('/api', systemRoutes); // /health + /readyz public; /weather authed inside
 

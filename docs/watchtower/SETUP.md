@@ -25,13 +25,16 @@ notified). `401` = wrong/missing secret; connection refused/timeout = node can't
 ## 3. Watchtower config per node
 Add to each node's Watchtower (compose env or `docker run -e`). The template renders the exact
 pipe-delimited grammar the JagHelm parser expects. The shoutrrr generic URL injects `node` and
-`secret` into the JSON body via `$`-prefixed params.
+`secret` into the JSON body via `$`-prefixed params — these are ONLY added to the body when
+`template=json` is also present in the URL (without it shoutrrr silently drops them and the
+server gets no secret → 401). `WATCHTOWER_NOTIFICATION_URL` is standalone; do NOT set
+`WATCHTOWER_NOTIFICATIONS` (that legacy var is for named services like slack/email and has no
+`shoutrrr` value).
 
 ```yaml
 environment:
-  WATCHTOWER_NOTIFICATIONS: "shoutrrr"
   WATCHTOWER_NOTIFICATION_REPORT: "true"
-  WATCHTOWER_NOTIFICATION_URL: "generic://HOST:PORT/api/watchtower/event?$node=vm-101&$secret=SECRET&disabletls=yes"
+  WATCHTOWER_NOTIFICATION_URL: "generic://HOST:PORT/api/watchtower/event?template=json&$node=vm-101&$secret=SECRET&disabletls=yes"
   WATCHTOWER_NOTIFICATION_TEMPLATE: |
     {{- if .Report -}}
     {{- range .Report.Updated }}updated|{{ .Name }}|{{ .CurrentImageID.ShortID }}|{{ .LatestImageID.ShortID }}
