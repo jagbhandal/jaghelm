@@ -8,9 +8,12 @@ export function escapeDiscord(text) {
     .replace(/\r?\n/g, ' ');
 }
 
+/** Comma-join the `name` of each record — the shared push-body name list. */
+const joinNames = (items) => items.map((i) => i.name).join(', ');
+
 /** One digest push event per Watchtower run. */
 export function buildPushEvent({ node, updated, failed }) {
-  const names = updated.map((u) => u.name).join(', ');
+  const names = joinNames(updated);
   let body = updated.length ? `${updated.length} updated: ${names}` : 'no updates';
   if (failed.length) body += ` · ${failed.length} failed`;
   return {
@@ -30,7 +33,7 @@ export function buildPushEvent({ node, updated, failed }) {
  * suppressed by notifyRecoveries — a held-back update is news you want.
  */
 export function buildHeldBackPushEvent({ node, heldBack }) {
-  const names = heldBack.map((h) => h.name).join(', ');
+  const names = joinNames(heldBack);
   return {
     type: 'watchtower_heldback',
     id: `watchtower:${node}:heldback`,
@@ -46,7 +49,7 @@ export function buildHeldBackPushEvent({ node, heldBack }) {
  * Type is registered in differ.js RECOVERY_TYPES, so it honors notifyRecoveries.
  */
 export function buildClearedPushEvent({ node, cleared }) {
-  const names = cleared.map((c) => c.name).join(', ');
+  const names = joinNames(cleared);
   return {
     type: 'watchtower_cleared',
     id: `watchtower:${node}:cleared`,

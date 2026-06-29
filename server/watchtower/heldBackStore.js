@@ -83,15 +83,13 @@ export function createHeldBackStore({ path = DEFAULT_PATH } = {}) {
     }
     const current = [...currentByName.values()];
 
-    const newlyHeldBack = [];
-    for (const e of current) {
+    // Newly held back: absent before, or its latest image changed since.
+    const newlyHeldBack = current.filter((e) => {
       const before = prevByName.get(e.name);
-      if (!before || before.latest !== e.latest) newlyHeldBack.push(e);
-    }
-    const cleared = [];
-    for (const e of prev) {
-      if (!currentByName.has(e.name)) cleared.push(e);
-    }
+      return !before || before.latest !== e.latest;
+    });
+    // Cleared: was held back, now gone from the stale set.
+    const cleared = prev.filter((e) => !currentByName.has(e.name));
 
     if (newlyHeldBack.length || cleared.length) {
       // defineProperty so a '__proto__' node name lands as an OWN key on the

@@ -34,10 +34,9 @@ export function createWatchtowerRoutes({ store, fcm, dispatch, postDiscord, dedu
       // transition. This is what stops a monitor-only backlog from re-pinging
       // every poll cycle (containrrr/watchtower#1962).
       if (!eventIsNew && newlyHeldBack.length === 0 && cleared.length === 0) {
-        if (updated.length === 0 && failed.length === 0 && stale.length === 0) {
-          return res.json({ ok: true, skipped: 'empty' });
-        }
-        return res.json({ ok: true, skipped: hasEvent ? 'deduped' : 'no-change', ...(hasEvent ? { deduped: true } : {}) });
+        if (!hasEvent && stale.length === 0) return res.json({ ok: true, skipped: 'empty' });
+        if (hasEvent) return res.json({ ok: true, deduped: true }); // event was a retry
+        return res.json({ ok: true, skipped: 'no-change' }); // stale set unchanged
       }
 
       const pushEvents = [];
