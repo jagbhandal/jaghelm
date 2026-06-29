@@ -20,7 +20,7 @@ vi.mock('../auth/authState.js', () => ({ logout, forgetDevice }));
 import NotificationSettings from './NotificationSettings.jsx';
 
 const PREFS = {
-  categories: { service: true, host: false, ups: true, cron: true },
+  categories: { service: true, host: false, ups: true, cron: true, watchtower: true },
   notifyRecoveries: false,
   enabled: true,
 };
@@ -61,13 +61,14 @@ describe('NotificationSettings (session controls)', () => {
 });
 
 describe('NotificationSettings (read path)', () => {
-  it('loads prefs and reflects them in the four category + recovery + master controls', async () => {
+  it('loads prefs and reflects them in the five category + recovery + master controls', async () => {
     render(<NotificationSettings nav={nav} data={{}} params={{}} />);
     await waitFor(() => expect(getPushPrefs).toHaveBeenCalledWith('fcmtok'));
     expect(screen.getByRole('switch', { name: /services/i })).toBeChecked();
     expect(screen.getByRole('switch', { name: /hosts/i })).not.toBeChecked();
     expect(screen.getByRole('switch', { name: /ups/i })).toBeChecked();
     expect(screen.getByRole('switch', { name: /cron/i })).toBeChecked();
+    expect(screen.getByRole('switch', { name: /watchtower/i })).toBeChecked();
     expect(screen.getByRole('switch', { name: /notify on recovery/i })).not.toBeChecked();
     expect(screen.getByRole('switch', { name: /enable push|push notifications/i })).toBeChecked();
   });
@@ -85,6 +86,12 @@ describe('NotificationSettings (read path)', () => {
     render(<NotificationSettings nav={nav} data={{}} params={{}} />);
     await waitFor(() => expect(screen.getByText(/not registered|unavailable/i)).toBeInTheDocument());
     expect(getPushPrefs).not.toHaveBeenCalled();
+  });
+
+  it('renders the Watchtower category toggle', async () => {
+    render(<NotificationSettings nav={nav} data={{}} params={{}} />);
+    await waitFor(() => expect(getPushPrefs).toHaveBeenCalled());
+    expect(screen.getByRole('switch', { name: /watchtower/i })).toBeInTheDocument();
   });
 
   it('every control sits in a .notif-row (CSS-class smoke check for the >=44px row; jsdom has no layout)', async () => {
@@ -109,12 +116,12 @@ describe('NotificationSettings (write path)', () => {
     const [tok, sent] = setPushPrefs.mock.calls[0];
     expect(tok).toBe('fcmtok');
     expect(sent).toEqual({
-      categories: { service: true, host: true, ups: true, cron: true },
+      categories: { service: true, host: true, ups: true, cron: true, watchtower: true },
       notifyRecoveries: false,
       enabled: true,
     });
     expect(Object.keys(sent).sort()).toEqual(['categories', 'enabled', 'notifyRecoveries']);
-    expect(Object.keys(sent.categories).sort()).toEqual(['cron', 'host', 'service', 'ups']);
+    expect(Object.keys(sent.categories).sort()).toEqual(['cron', 'host', 'service', 'ups', 'watchtower']);
   });
 
   it('master OFF sends enabled:false via PUT (token KEPT — no DELETE here)', async () => {

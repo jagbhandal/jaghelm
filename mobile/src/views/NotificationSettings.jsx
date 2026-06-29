@@ -12,6 +12,7 @@ const CATEGORIES = [
   ['host', 'Hosts'],
   ['ups', 'UPS'],
   ['cron', 'Cron'],
+  ['watchtower', 'Watchtower'],
 ];
 
 /**
@@ -121,7 +122,7 @@ function SessionControls() {
 function Controls({ prefs, setPrefs, token, onTurnOff }) {
   // Apply a full-prefs change optimistically, PUT the COMPLETE object, revert on
   // failure. PUT is a strict full-replace: the body is always the entire
-  // {categories{4}, notifyRecoveries, enabled} shape — no PATCH, no extra keys.
+  // {categories{5}, notifyRecoveries, enabled} shape — no PATCH, no extra keys.
   const apply = async (next) => {
     const prev = prefs;
     setPrefs(next);
