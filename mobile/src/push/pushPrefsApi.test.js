@@ -12,7 +12,7 @@ import {
 } from './pushPrefsApi.js';
 
 const PREFS = {
-  categories: { service: true, host: true, ups: true, cron: true },
+  categories: { service: true, host: true, ups: true, cron: true, watchtower: true },
   notifyRecoveries: true,
   enabled: true,
 };

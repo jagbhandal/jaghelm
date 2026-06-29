@@ -86,7 +86,7 @@ test('GET /api/push/prefs → defaults for an unknown token', async () => {
   const r = await request(app).get('/api/push/prefs').query({ token: 'never-seen' });
   assert.equal(r.status, 200);
   assert.deepEqual(r.body.prefs, {
-    categories: { service: true, host: true, ups: true, cron: true },
+    categories: { service: true, host: true, ups: true, cron: true, watchtower: true },
     notifyRecoveries: true,
     enabled: true,
   });
@@ -114,7 +114,7 @@ test('PUT /api/push/prefs → stores + echoes the normalized prefs', async () =>
     .post('/api/push/register')
     .send({ token: 'tok-prefs', platform: 'android', appVersion: '1.0.0' });
   const prefs = {
-    categories: { service: true, host: false, ups: true, cron: false },
+    categories: { service: true, host: false, ups: true, cron: false, watchtower: true },
     notifyRecoveries: false,
     enabled: true,
   };
@@ -131,7 +131,7 @@ test('PUT /api/push/prefs → 404 on unknown token', async () => {
     .put('/api/push/prefs')
     .send({
       token: 'tok-unknown-xyz', // pragma: allowlist secret  (fake test fixture, not a real token)
-      prefs: { categories: { service: true, host: true, ups: true, cron: true }, notifyRecoveries: true, enabled: true },
+      prefs: { categories: { service: true, host: true, ups: true, cron: true, watchtower: true }, notifyRecoveries: true, enabled: true },
     });
   assert.equal(r.status, 404);
 });
@@ -139,7 +139,7 @@ test('PUT /api/push/prefs → 404 on unknown token', async () => {
 test('PUT /api/push/prefs → 400 on a missing token', async () => {
   const r = await request(app)
     .put('/api/push/prefs')
-    .send({ prefs: { categories: { service: true, host: true, ups: true, cron: true }, notifyRecoveries: true, enabled: true } });
+    .send({ prefs: { categories: { service: true, host: true, ups: true, cron: true, watchtower: true }, notifyRecoveries: true, enabled: true } });
   assert.equal(r.status, 400);
 });
 
@@ -187,7 +187,7 @@ test('PUT /api/push/prefs → 400 when prefs has extra top-level key', async () 
   const r = await request(app).put('/api/push/prefs').send({
     token: 'tok-extra-key', // pragma: allowlist secret  (fake test fixture)
     prefs: {
-      categories: { service: true, host: true, ups: true, cron: true },
+      categories: { service: true, host: true, ups: true, cron: true, watchtower: true },
       notifyRecoveries: true,
       enabled: true,
       injected: true, // extra own enumerable key — must 400
@@ -225,7 +225,7 @@ function buildCoercionApp() {
   const fakeStore = {
     registerToken: (token, meta) => { registered.push({ token, ...meta }); return {}; },
     removeToken: () => true,
-    getPrefs: () => ({ categories: { service: true, host: true, ups: true, cron: true }, notifyRecoveries: true, enabled: true }),
+    getPrefs: () => ({ categories: { service: true, host: true, ups: true, cron: true, watchtower: true }, notifyRecoveries: true, enabled: true }),
     setPrefs: () => ({}),
     getAllTokens: () => [],
   };

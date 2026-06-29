@@ -20,7 +20,7 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Default notification preferences seeded for every newly-registered token. */
 export const DEFAULT_PREFS = Object.freeze({
-  categories: Object.freeze({ service: true, host: true, ups: true, cron: true }),
+  categories: Object.freeze({ service: true, host: true, ups: true, cron: true, watchtower: true }),
   notifyRecoveries: true,
   enabled: true,
 });
@@ -33,7 +33,7 @@ function clonePrefs(prefs) {
 /** Deep, plain (unfrozen) clone of DEFAULT_PREFS so callers can mutate safely. */
 const defaultPrefs = () => clonePrefs(DEFAULT_PREFS);
 
-export const CATEGORY_KEYS = ['service', 'host', 'ups', 'cron'];
+export const CATEGORY_KEYS = ['service', 'host', 'ups', 'cron', 'watchtower'];
 
 /**
  * Coerce arbitrary input into a valid PREFS object. Unknown keys are dropped,

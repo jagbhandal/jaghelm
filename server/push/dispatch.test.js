@@ -20,7 +20,7 @@ test('categoryOf maps every event type to its category', () => {
 
 test('DEFAULT_PREFS is all-on', () => {
   assert.deepEqual(DEFAULT_PREFS, {
-    categories: { service: true, host: true, ups: true, cron: true },
+    categories: { service: true, host: true, ups: true, cron: true, watchtower: true },
     notifyRecoveries: true,
     enabled: true,
   });
