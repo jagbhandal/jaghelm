@@ -122,6 +122,34 @@ test('a __proto__ node name does not pollute Object.prototype', () => {
   }
 });
 
+test('over-long fields are length-bounded (anti-stuffing)', () => {
+  const { path, dir } = tmpStorePath();
+  try {
+    const s = createHeldBackStore({ path });
+    const big = 'a'.repeat(5000);
+    const r = s.diffAndSet('vm-101', [{ name: big, current: big, latest: big }]);
+    assert.equal(r.current[0].name.length, 256);
+    assert.equal(r.current[0].current.length, 256);
+    assert.equal(r.current[0].latest.length, 256);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('node count is bounded; oldest nodes are evicted under a flood', () => {
+  const { path, dir } = tmpStorePath();
+  try {
+    const s = createHeldBackStore({ path });
+    for (let i = 0; i < 150; i += 1) {
+      s.diffAndSet(`node-${i}`, [{ name: 'x', current: '1', latest: '2' }]);
+    }
+    assert.equal(s.getNode('node-0').length, 0, 'oldest node should be evicted');
+    assert.equal(s.getNode('node-149').length, 1, 'newest node should be retained');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('empty stale set for an unseen node creates no entry and no write', () => {
   const { path, dir } = tmpStorePath();
   try {

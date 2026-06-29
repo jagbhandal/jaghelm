@@ -25,10 +25,21 @@ const log = createLogger('held-back');
 
 const DEFAULT_PATH = join(DATA_DIR, 'held-back.json');
 
-/** Coerce one incoming stale entry to a fixed-key record, or null if unusable. */
+// Defense-in-depth against a flood from a node (or a leaked secret): bound both
+// the per-field length and the number of retained node keys, so a crafted body
+// can't grow data/held-back.json (and its synchronous rewrite cost) without
+// bound. Generous for a homelab — real use is a handful of nodes, few stale each.
+const MAX_FIELD = 256; // matches the node-name slice in routes/watchtower.js
+const MAX_NODES = 100;
+
+/** Coerce one incoming stale entry to a length-bounded fixed-key record, or null. */
 function sanitize(entry) {
   if (!entry || typeof entry.name !== 'string') return null;
-  return { name: entry.name, current: String(entry.current ?? ''), latest: String(entry.latest ?? '') };
+  return {
+    name: entry.name.slice(0, MAX_FIELD),
+    current: String(entry.current ?? '').slice(0, MAX_FIELD),
+    latest: String(entry.latest ?? '').slice(0, MAX_FIELD),
+  };
 }
 
 export function createHeldBackStore({ path = DEFAULT_PATH } = {}) {
@@ -92,11 +103,21 @@ export function createHeldBackStore({ path = DEFAULT_PATH } = {}) {
     const cleared = prev.filter((e) => !currentByName.has(e.name));
 
     if (newlyHeldBack.length || cleared.length) {
+      const isNewNode = !Object.prototype.hasOwnProperty.call(store, node);
       // defineProperty so a '__proto__' node name lands as an OWN key on the
       // null-proto map rather than mutating Object.prototype.
       Object.defineProperty(store, node, {
         value: current, writable: true, enumerable: true, configurable: true,
       });
+      // Bound the node count: evict oldest-inserted keys (string keys keep
+      // insertion order) so a flood of unique node names can't grow the file.
+      if (isNewNode) {
+        let keys = Object.keys(store);
+        while (keys.length > MAX_NODES && keys[0] !== node) {
+          delete store[keys[0]];
+          keys = Object.keys(store);
+        }
+      }
       save(store);
     }
     return { newlyHeldBack, cleared, current };
