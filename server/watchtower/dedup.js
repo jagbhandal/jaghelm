@@ -11,6 +11,9 @@ export function createDedup({ windowMs = 5 * 60 * 1000 } = {}) {
   }
 
   function isDuplicate(report, now) {
+    // Prune expired entries first. Deleting during for...of is safe per the Map
+    // iteration spec (entries deleted before being visited are simply skipped),
+    // and bounds the Map to at most one live key per node within the window.
     for (const [k, ts] of seenAt) if (now - ts > windowMs) seenAt.delete(k);
     const key = keyOf(report);
     const prev = seenAt.get(key);
@@ -18,5 +21,7 @@ export function createDedup({ windowMs = 5 * 60 * 1000 } = {}) {
     return prev !== undefined && now - prev <= windowMs;
   }
 
-  return { isDuplicate, keyOf };
+  // keyOf stays internal — its hash format is an implementation detail callers
+  // must not depend on; the only public operation is isDuplicate.
+  return { isDuplicate };
 }

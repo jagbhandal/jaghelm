@@ -3,21 +3,14 @@ import { Router } from 'express';
 import { authMiddleware } from '../auth/middleware.js';
 import { recordRun, getAllStatuses } from '../cron-store.js';
 import { apiError } from '../errors.js';
-import { constantTimeEquals } from '../util/secretAuth.js';
+import { secretOk } from '../util/secretAuth.js';
 
 const router = Router();
 
 router.post('/report', (req, res) => {
-  const secret = process.env.JAGHELM_CRON_SECRET || '';
-  const provided = req.body?.secret || '';
-
-  // No secret configured = endpoint effectively disabled. Bail before doing
-  // any comparison work so an unconfigured server can't be brute-forced.
-  if (!secret) {
-    return apiError(res, 401, 'Unauthorized');
-  }
-
-  if (!constantTimeEquals(secret, provided)) {
+  // secretOk returns false when no secret is configured (endpoint disabled) and
+  // otherwise does a constant-time compare — same two-step guard, one call.
+  if (!secretOk(process.env.JAGHELM_CRON_SECRET || '', req.body?.secret)) {
     return apiError(res, 401, 'Unauthorized');
   }
 

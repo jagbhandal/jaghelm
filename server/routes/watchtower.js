@@ -23,17 +23,16 @@ export function createWatchtowerRoutes({ store, fcm, dispatch, postDiscord, dedu
       if (dedup.isDuplicate(report, Date.now())) {
         return res.json({ ok: true, deduped: true });
       }
-      // Independent fan-out: one leg failing must not block the other.
-      try {
-        await dispatch([buildPushEvent(report)], { store, fcm, logger });
-      } catch (err) {
-        logger.warn({ err }, 'watchtower push dispatch failed');
-      }
-      try {
-        await postDiscord(env.JAGHELM_WATCHTOWER_DISCORD_WEBHOOK || '', buildDiscordContent(report));
-      } catch (err) {
-        logger.warn({ err }, 'watchtower discord post failed');
-      }
+      // Independent fan-out — run concurrently; each leg is isolated so one
+      // failing (sync throw or async rejection) never blocks the other.
+      await Promise.allSettled([
+        Promise.resolve()
+          .then(() => dispatch([buildPushEvent(report)], { store, fcm, logger }))
+          .catch((err) => logger.warn({ err }, 'watchtower push dispatch failed')),
+        Promise.resolve()
+          .then(() => postDiscord(env.JAGHELM_WATCHTOWER_DISCORD_WEBHOOK || '', buildDiscordContent(report)))
+          .catch((err) => logger.warn({ err }, 'watchtower discord post failed')),
+      ]);
       return res.json({ ok: true, updated: updated.length, failed: failed.length });
     } catch (err) {
       // Truly unexpected pre-fan-out throw (secretOk/parse/dedup) — return 500
