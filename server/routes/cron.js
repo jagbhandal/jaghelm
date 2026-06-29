@@ -1,24 +1,11 @@
 import { Router } from 'express';
-import { createHash, timingSafeEqual } from 'crypto';
 
 import { authMiddleware } from '../auth/middleware.js';
 import { recordRun, getAllStatuses } from '../cron-store.js';
 import { apiError } from '../errors.js';
+import { constantTimeEquals } from '../util/secretAuth.js';
 
 const router = Router();
-
-/**
- * Constant-time string comparison via SHA-256 digests.
- * Inputs are hashed to fixed 32-byte buffers, so the comparison is constant-time
- * with respect to both content and length. Plain `===` or `!==` short-circuits
- * on the first mismatched byte, leaking the secret one character at a time
- * over many requests.
- */
-function constantTimeEquals(a, b) {
-  const hashA = createHash('sha256').update(String(a)).digest();
-  const hashB = createHash('sha256').update(String(b)).digest();
-  return timingSafeEqual(hashA, hashB);
-}
 
 router.post('/report', (req, res) => {
   const secret = process.env.JAGHELM_CRON_SECRET || '';
