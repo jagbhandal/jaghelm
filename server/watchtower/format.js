@@ -3,7 +3,7 @@
 /** Escape Discord markdown + neutralize mass mentions in untrusted text. */
 export function escapeDiscord(text) {
   return String(text)
-    .replace(/([\\`*_~|>])/g, '\\$1')
+    .replace(/([\\`*_~|<>[\]])/g, '\\$1')
     .replace(/@(everyone|here)/gi, '@​$1')
     .replace(/\r?\n/g, ' ');
 }

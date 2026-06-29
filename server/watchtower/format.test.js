@@ -25,6 +25,11 @@ test('escapeDiscord defangs mentions and markdown', () => {
   assert.match(escapeDiscord('a`b*c'), /a\\`b\\\*c/);
 });
 
+test('escapeDiscord neutralizes user/channel mentions and link brackets', () => {
+  assert.equal(escapeDiscord('<@279648609777>'), '\\<@279648609777\\>');
+  assert.match(escapeDiscord('[x](y)'), /\\\[x\\\]\(y\)/);
+});
+
 test('discord content lists updates and failures on separate lines', () => {
   const out = buildDiscordContent(UPFAIL);
   const lines = out.split('\n');
