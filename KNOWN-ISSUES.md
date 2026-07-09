@@ -10,7 +10,7 @@ If you hit something not listed, please open an issue (see the bug-report
 template — it asks for your JagHelm version, Prometheus version, deployment
 method, and browser).
 
-Last reviewed: 2026-06-17.
+Last reviewed: 2026-07-09.
 
 ---
 
@@ -55,26 +55,37 @@ JagHelm is built for a LAN behind a reverse proxy. Read this before putting it
 anywhere reachable from outside your network.
 
 - **Ships open by default.** If you leave `DASH_PASS` empty, login is disabled
-  and the dashboard — including some config/secrets endpoints — is reachable by
-  anyone who can reach the port. Set `DASH_USER` / `DASH_PASS` (and ideally a
-  reverse proxy with its own auth) before exposing it. **Do not put a
-  no-password instance on the public internet.**
-- **`network_mode: host` in the shipped compose.** The published `compose.yaml`
-  runs on the host network so JagHelm can reach LAN services and exporters
-  directly. That means it binds to the host's interfaces, not an isolated
-  Docker bridge. If you'd rather isolate it, a bridge + published-port variant
-  is shown in the README quickstart / `docs/GET-STARTED.md`.
-- **TLS validation is disabled for outbound requests.** The compose sets
-  `NODE_TLS_REJECT_UNAUTHORIZED=0` so JagHelm can talk to internal services with
-  self-signed certs (e.g. Proxmox). This disables certificate validation for
-  *all* outbound requests, not just the ones that need it. A scoped, per-request
-  bypass is planned.
-- **No login rate limiting yet.** Failed-login throttling / lockout is planned
-  but not implemented. Another reason to keep it behind a reverse proxy and off
-  the public internet.
-- **CORS allows all origins.** Acceptable for a homelab behind a reverse proxy;
-  the API uses a header token rather than cookies, so this is not a CSRF vector,
-  but be aware of it if you adapt the deployment.
+  and the dashboard is reachable by anyone who can reach the port. The most
+  sensitive endpoints are fail-closed even in this mode — the standalone secrets
+  API and the raw infrastructure passthroughs (PromQL query, Docker-socket
+  container list) refuse to serve until a password is set, unless you explicitly
+  opt back in with `JAGHELM_ALLOW_OPEN_SECRETS=true` / `JAGHELM_ALLOW_OPEN_INFRA=true`.
+  Aggregated/benign endpoints stay open. Still: set `DASH_USER` / `DASH_PASS`
+  (and ideally a reverse proxy with its own auth) before exposing it. **Do not
+  put a no-password instance on the public internet.**
+- **Bridge network by default; host networking is opt-in.** The published
+  `compose.yaml` uses a bridge network and publishes only the app port — the
+  safer, isolated default. If JagHelm can't reach LAN exporters/services that
+  the bridge won't route to, an opt-in `network_mode: host` block is provided
+  (commented) in `compose.yaml`; host mode removes network isolation, so prefer
+  the bridge unless a missing-exporter symptom forces it.
+- **Outbound TLS validation is on by default; the self-signed bypass is
+  per-request.** Certificate validation is enabled for all outbound requests.
+  The one exception is presets that talk to services with self-signed certs
+  (currently only Proxmox), which opt in via a per-request, dedicated undici
+  dispatcher (`rejectUnauthorized=false` scoped to that single call). The
+  process-global `NODE_TLS_REJECT_UNAUTHORIZED=0` approach — which disabled cert
+  checks for *every* outbound request — has been removed.
+- **Login rate limiting is in place.** Failed logins are throttled by a per-IP
+  sliding window (5 attempts / 15 min), a global failure counter that trips
+  during a distributed brute force, and a jittered floor delay on every failure
+  (which also dulls the response-time credential oracle). Behind a proxy this
+  relies on `TRUST_PROXY` being configured correctly (see below) so `req.ip`
+  isn't spoofable via `X-Forwarded-For`. A reverse proxy is still recommended.
+- **CORS is default-deny.** Cross-origin requests are blocked entirely unless
+  you allow-list origins via the `CORS_ORIGIN` env var — JagHelm serves its own
+  SPA same-origin, so this is the safe homelab default. The API uses a header
+  token rather than cookies, so it isn't a CSRF vector regardless.
 
 ## Integrations
 
@@ -96,12 +107,13 @@ which changes independently — expect occasional drift.
 
 Honest about where the engineering floor sits today:
 
-- **No CI gate on tests yet.** Several `node:test` suites exist in the repo, but
-  there is no automated job running them on every change, so a regression can
-  land unnoticed. Wiring a report-only-then-required CI gate is the first item
-  in the improvement plan (`docs/IMPROVEMENT-PLAN.md` Phase 1).
-- **No linter / formatter / type-check enforced** in CI yet. Config for ESLint,
-  Prettier, and a JSDoc/`checkJs` pass is planned but not gating.
+- **CI gates tests, lint, and type-check on every change.** The Gitea
+  workflow (`.gitea/workflows/check.yml`) runs a secret scan, then `npm run
+  lint`, `npm run typecheck`, the server suite (`npm test`), the client suite
+  (`npm run test:client`), and the mobile suite — all required before merge.
+  Node 22 is the validated toolchain (matching the Docker base image); newer
+  Node majors can break the jsdom-based client tests, which is why
+  `package.json` now declares a supported `engines` range.
 - **Accessibility gaps.** Focus indicators, reduced-motion handling, form-label
   associations, and keyboard-driven panel reordering are incomplete. Tracked in
   Phase 4 of the plan.

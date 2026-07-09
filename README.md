@@ -31,7 +31,7 @@ docker run --rm -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:latest
 Then open **http://localhost:3099**, drag a panel around, flip a theme. Like it?
 **⭐ Star the repo** and [point it at your real stack](#quick-start).
 
-> Built in the open · MIT · signed container images · 256 automated tests · 0 known vulnerabilities.
+> Built in the open · MIT · signed container images · 1,000+ automated tests · 0 direct-dependency vulnerabilities.
 
 ## Why JagHelm
 
