@@ -4,6 +4,30 @@ All notable changes to JagHelm are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Nextcloud integration no longer trips Nextcloud's brute-force protection.**
+  The preset authenticated to the `serverinfo` API with **basic auth**, so every
+  dashboard poll was a login attempt. A wrong or rotated admin password turned
+  each refresh into a failed login — silently accumulating brute-force attempts,
+  throttling the reverse-proxy IP (HTTP 429 "Reached maximum delay"), and
+  flooding the Nextcloud log. The connection could also *test* green against
+  `/ocs/v2.php/cloud/capabilities` while the real `serverinfo` poll kept failing.
+
+### Changed
+
+- **BREAKING (Nextcloud integration): now authenticates with a serverinfo
+  `NC-Token` instead of a username + password.** This is serverinfo's
+  purpose-built, unattended-monitoring auth and never touches the login /
+  brute-force path. **Migration:** on your Nextcloud host run
+  `occ config:app:set serverinfo token --value "$(openssl rand -hex 32)"`, then
+  open the Nextcloud integration in JagHelm and paste that token into the new
+  **API Key (NC-Token)** field (the Username/Password fields are gone). The
+  connection test now hits the same token-gated `serverinfo` endpoint it polls,
+  so a green test means the live poll works.
+
 ## [1.5.0] — 2026-06-27
 
 **JagHelm goes mobile — and gets loud when something breaks.** Where 1.4.0 was a
