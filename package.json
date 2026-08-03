@@ -65,5 +65,8 @@
     "typescript": "^5.7.2",
     "vite": "^8.0.1",
     "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }
