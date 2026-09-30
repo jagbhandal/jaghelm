@@ -156,3 +156,30 @@ jobs:
             echo ">>> No previous image recorded — cannot auto-rollback. Manual intervention required."
           fi
           exit 1
+
+      # Every deploy pulls a new :sha-<short> image and nothing removed the old
+      # ones — ~35 had piled up on vm103. Runs only after the health gate passes
+      # (a failed deploy keeps everything for the rollback above). Keeps the
+      # KEEP newest :sha-* tags plus whatever image the container is running,
+      # then clears the untagged leftovers. Best-effort: never fails the deploy.
+      - name: Prune old JagHelm images
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /root/.ssh/runner_deploy jagbhandal@192.168.68.11"
+          $SSH_CMD "KEEP=3 bash -s" <<'EOF'
+          set -euo pipefail
+          REPO=ghcr.io/jagbhandal/jaghelm
+          RUNNING="$(docker inspect --format '{{.Image}}' jaghelm)"
+          # `docker images` lists newest first, so everything past KEEP is old.
+          docker images "$REPO" --format '{{.Tag}}' \
+            | { grep '^sha-' || true; } \
+            | tail -n +$((KEEP + 1)) \
+            | while read -r TAG; do
+                if [ "$(docker image inspect --format '{{.Id}}' "$REPO:$TAG")" = "$RUNNING" ]; then
+                  continue
+                fi
+                docker rmi "$REPO:$TAG" >/dev/null && echo "    removed $REPO:$TAG"
+              done
+          docker image prune -f
+          EOF
