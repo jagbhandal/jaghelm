@@ -74,8 +74,11 @@ jobs:
 
           # Record the image currently running so we can roll back to it if the
           # new one fails its health gate. Empty string if nothing is running yet.
+          # Must be the image ID ({{.Image}}), not the name ({{.Config.Image}}):
+          # the name is always ":latest", which the retag below re-points at the
+          # NEW image — "rolling back" to it would just restart the bad deploy.
           echo ">>> Recording current image for rollback"
-          PREV_IMAGE="$($SSH_CMD "docker inspect --format '{{.Config.Image}}' jaghelm 2>/dev/null || true")"
+          PREV_IMAGE="$($SSH_CMD "docker inspect --format '{{.Image}}' jaghelm 2>/dev/null || true")"
           echo "    previous image: ${PREV_IMAGE:-<none>}"
           echo "PREV_IMAGE=${PREV_IMAGE}" >> "$GITHUB_ENV"
 
