@@ -452,11 +452,10 @@ async function _refreshGitea() {
   try {
     const url = process.env.GITEA_URL || 'http://localhost:3060';
     const token = process.env.GITEA_TOKEN || '';
-    const authParam = token ? `token=${token}` : '';
+    // Header, not ?token= — Gitea logs full request URLs, which would leak it.
+    const opts = token ? { headers: { Authorization: `token ${token}` } } : {};
 
-    const reposRes = await safeFetch(
-      `${url}/api/v1/repos/search?limit=20${authParam ? '&' + authParam : ''}`
-    );
+    const reposRes = await safeFetch(`${url}/api/v1/repos/search?limit=20`, opts);
     const reposData = await reposRes.json();
     const repos = (reposData?.data || reposData || [])
       .filter((r) => !r.fork && !r.mirror && !r.archived)
@@ -470,7 +469,8 @@ async function _refreshGitea() {
     const repoCommits = await Promise.allSettled(
       repos.map(async (repo) => {
         const commitsRes = await safeFetch(
-          `${url}/api/v1/repos/${repo.fullName}/commits?limit=5&sha=main${authParam ? '&' + authParam : ''}`
+          `${url}/api/v1/repos/${repo.fullName}/commits?limit=5&sha=main`,
+          opts
         );
         const data = await commitsRes.json();
         const commits = Array.isArray(data)
