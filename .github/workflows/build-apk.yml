@@ -19,17 +19,22 @@ name: Build Signed Mobile APK
 # the corresponding step fails fast (intentional) rather than silently shipping an
 # unsigned/debug-signed APK, or one with push compiled out.
 #
-# Release (push of a mobile-vX.Y.Z tag): the tag must equal mobile/package.json's
-# version and mobile/CHANGELOG.md must have a section for it, both checked before
-# the build. After the build, signature check, shredding and leak guard, the APK
-# is renamed jaghelm-android-X.Y.Z.apk and attached to a new GitHub Release
-# "JagHelm Android X.Y.Z" with notes from scripts/release-notes.mjs, created with
-# --latest=false so Latest stays on the server release. A release page that
-# already exists is never rewritten: the run fails instead.
+# Release (push of a mobile-vX.Y.Z tag), in two jobs:
+#   build    (contents: read) The tag must equal mobile/package.json's version and
+#            mobile/CHANGELOG.md must have a section for it, both checked before the
+#            build. After the build, signature check, shredding and leak guard, the
+#            APK is renamed jaghelm-android-X.Y.Z.apk, hashed and uploaded as an
+#            artifact.
+#   release  (contents: write, no signing secrets, no npm/Gradle) Downloads that
+#            artifact, checks it against the build job's SHA-256, and attaches it
+#            to a new GitHub Release "JagHelm Android X.Y.Z" with notes from
+#            scripts/release-notes.mjs, created with --latest=false so Latest stays
+#            on the server release. A release page that already exists is never
+#            rewritten: the run fails instead.
 #
 # Dry run (workflow_dispatch, any ref): a test build (versionName
 # 0.0.0-dispatch.N, versionCode N) that renders the release page for
-# mobile/package.json's version into the job summary. It never creates a release.
+# mobile/package.json's version into the job summary. The release job never runs.
 #
 # Tags are created on Gitea only and reach GitHub through the push mirror.
 # Procedure: docs/RELEASING.md.
@@ -52,12 +57,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-signed-apk:
+  # Holds the signing secrets and runs third-party build code (npm, Gradle, Vite),
+  # so it gets read-only repository access. Publishing is the release job below.
+  build:
     runs-on: ubuntu-latest
-    # Write access is for `gh release create` (the last step), the only run step
-    # given the token. Checkout does not persist it in .git/config.
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      apk_name: ${{ steps.apk.outputs.name }}
+      apk_sha256: ${{ steps.apk.outputs.sha256 }}
+      commit: ${{ steps.apk.outputs.commit }}
 
     steps:
       # Runs before checkout so nothing uses an unvalidated tag. Later steps read
@@ -98,7 +107,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
-          # Nothing here pushes with git; keep the write token out of .git/config.
+          # Nothing here uses git credentials; keep the token out of .git/config,
+          # out of reach of the build's third-party code.
           persist-credentials: false
 
       - name: Set up JDK 21 (Temurin)
@@ -316,10 +326,12 @@ jobs:
           echo "no signing material under mobile/android/app — safe to upload"
 
       # --- Everything below runs only after the guard passed (default if: success()).
-      # Exactly one APK may exist, so the file named, hashed, uploaded and released is
-      # the one apksigner verified. Release builds rename it to its public name; the
-      # dry run keeps the test build's name and hashes that. ---
+      # Exactly one APK may exist, so the file named, hashed and uploaded is the one
+      # apksigner verified. Release builds rename it to its public name; the dry run
+      # keeps the test build's name and hashes that. The name, checksum and commit
+      # are handed to the release job as job outputs. ---
       - name: Name the APK and record its checksum
+        id: apk
         run: |
           set -euo pipefail
           DIR="mobile/android/app/build/outputs/apk/release"
@@ -338,8 +350,14 @@ jobs:
             echo "::error::could not compute the APK checksum"
             exit 1
           fi
-          echo "$APK_PATH sha256 $SHA"
+          COMMIT="$(git rev-parse HEAD)"
+          echo "$APK_PATH sha256 $SHA (commit $COMMIT)"
           echo "APK_SHA256=$SHA" >> "$GITHUB_ENV"
+          {
+            echo "name=$(basename "$APK_PATH")"
+            echo "sha256=$SHA"
+            echo "commit=$COMMIT"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload signed APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -348,14 +366,15 @@ jobs:
           path: mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 7
-          # A re-run attempt re-uploads instead of failing on the earlier attempt's
-          # artifact, so it can still reach the release step.
+          # Re-running all jobs replaces the earlier attempt's artifact instead of
+          # failing on it.
           overwrite: true
 
-      # --- Release page. The dry run renders the same page with the test build's
-      # checksum into the job summary; if it cannot be rendered, the dry run fails
-      # as the tag build would (the test APK is already uploaded above). ---
-      - name: Render release notes
+      # --- Dry run only: the release page a tag would publish, with the test build's
+      # checksum, in the job summary. If it cannot be rendered, the dry run fails as
+      # the tag build would (the test APK is already uploaded above). ---
+      - name: Render the release page (dry run)
+        if: github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
           if ! node scripts/release-notes.mjs android "$VERSION" \
@@ -363,24 +382,111 @@ jobs:
             echo "::error::release notes for $VERSION could not be rendered (see above); a mobile-v$VERSION tag would fail the same way"
             exit 1
           fi
-          if [[ "$RELEASE" != "true" ]]; then
-            {
-              echo "## Dry run — checksum is of this test build"
-              echo
-              echo "A \`mobile-v$VERSION\` tag would publish this as **JagHelm Android $VERSION**. Test build: versionName \`$VERSION_NAME\`, versionCode $VERSION_CODE."
-              echo
-              echo "---"
-              echo
-              cat notes.md
-            } >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Dry run — checksum is of this test build"
+            echo
+            echo "A \`mobile-v$VERSION\` tag would publish this as **JagHelm Android $VERSION**. Test build: versionName \`$VERSION_NAME\`, versionCode $VERSION_CODE."
+            echo
+            echo "---"
+            echo
+            cat notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Publishes the APK the build job verified, uploaded and hashed. The only job with
+  # write access. It holds no signing secrets and runs no npm, Gradle or Vite code:
+  # first-party actions, gh, and scripts/release-notes.mjs (Node built-ins only).
+  # "Re-run failed jobs" re-runs just this job against the same build.
+  release:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/mobile-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # Same tag validation as the build job, before anything else uses the tag.
+      # The build job's outputs are checked too, before they are used.
+      - name: Resolve the release
+        env:
+          APK_NAME: ${{ needs.build.outputs.apk_name }}
+          APK_SHA256: ${{ needs.build.outputs.apk_sha256 }}
+          BUILT_COMMIT: ${{ needs.build.outputs.commit }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" != "tag" || ! "$GITHUB_REF_NAME" =~ ^mobile-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::release tags must look like mobile-vMAJOR.MINOR.PATCH (e.g. mobile-v1.1.0)"
+            exit 1
           fi
+          TAG="$GITHUB_REF_NAME"
+          VERSION="${TAG#mobile-v}"
+          if [[ "$APK_NAME" != "jaghelm-android-$VERSION.apk" ]]; then
+            echo "::error::the build job did not report jaghelm-android-$VERSION.apk"
+            exit 1
+          fi
+          if [[ ! "$APK_SHA256" =~ ^[0-9a-f]{64}$ || ! "$BUILT_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::the build job did not report a checksum and commit"
+            exit 1
+          fi
+          {
+            echo "TAG=$TAG"
+            echo "VERSION=$VERSION"
+            echo "APK_NAME=$APK_NAME"
+            echo "APK_SHA256=$APK_SHA256"
+            echo "BUILT_COMMIT=$BUILT_COMMIT"
+          } >> "$GITHUB_ENV"
+          echo "releasing $APK_NAME (sha256 $APK_SHA256) from $BUILT_COMMIT as $TAG"
+
+      # For mobile/CHANGELOG.md and scripts/ at the tag.
+      - name: Checkout code
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          # Nothing here pushes with git; keep the write token out of .git/config.
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+
+      - name: Download the signed APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: jaghelm-release-apk
+          path: ${{ runner.temp }}/apk
+
+      # The artifact must hold exactly the file the build job hashed, and the
+      # notes must come from the commit that was built.
+      - name: Verify the APK and the checkout
+        run: |
+          set -euo pipefail
+          DIR="$RUNNER_TEMP/apk"
+          mapfile -t files < <(find "$DIR" -type f)
+          if (( ${#files[@]} != 1 )) || [[ "${files[0]}" != "$DIR/$APK_NAME" ]]; then
+            echo "::error::the artifact must contain exactly $APK_NAME (found ${#files[@]} files)"
+            exit 1
+          fi
+          if ! printf '%s  %s\n' "$APK_SHA256" "$DIR/$APK_NAME" | sha256sum --check --status; then
+            echo "::error::the downloaded $APK_NAME does not match the checksum the build job computed"
+            exit 1
+          fi
+          HEAD_COMMIT="$(git rev-parse HEAD)"
+          if [[ "$HEAD_COMMIT" != "$BUILT_COMMIT" ]]; then
+            echo "::error::checked out $HEAD_COMMIT, but the APK was built from $BUILT_COMMIT"
+            exit 1
+          fi
+          echo "$APK_NAME matches sha256 $APK_SHA256; checkout is $BUILT_COMMIT"
+
+      - name: Render release notes
+        run: |
+          set -euo pipefail
+          node scripts/release-notes.mjs android "$VERSION" \
+            --apk "$APK_NAME" --sha256 "$APK_SHA256" > notes.md
 
       # --- Created once, never rewritten. --verify-tag: gh must never create the tag
       # on GitHub (the mirror would delete it); it must already exist, pushed from
       # Gitea. gh uploads the APK to a draft and publishes only after the upload
       # succeeds, deleting the draft on failure, so a failed run can be re-run. ---
       - name: Create the GitHub Release
-        if: github.event_name == 'push' && env.RELEASE == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -390,21 +496,13 @@ jobs:
             echo "::error::release notes were not rendered"
             exit 1
           fi
-          # The one file attached: the renamed APK under the guarded directory,
-          # and only if it is the file whose checksum the notes print.
-          APK="mobile/android/app/build/outputs/apk/release/jaghelm-android-$VERSION.apk"
-          if ! printf '%s  %s\n' "$APK_SHA256" "$APK" | sha256sum --check --status; then
-            echo "::error::$APK is missing or does not match the checksum in the release notes"
-            exit 1
-          fi
-          # The tag must still point at the commit this APK was built from.
-          BUILT="$(git rev-parse HEAD)"
+          # The tag must still point at the commit the APK was built from.
           if ! TAGGED="$(gh api "repos/$GH_REPO/commits/refs/tags/$TAG" --jq .sha)"; then
             echo "::error::could not resolve $TAG on GitHub"
             exit 1
           fi
-          if [[ "$TAGGED" != "$BUILT" ]]; then
-            echo "::error::$TAG now points to $TAGGED, but this APK was built from $BUILT"
+          if [[ "$TAGGED" != "$BUILT_COMMIT" ]]; then
+            echo "::error::$TAG now points to $TAGGED, but the APK was built from $BUILT_COMMIT"
             exit 1
           fi
           err="$RUNNER_TEMP/release-view.err"
@@ -417,6 +515,6 @@ jobs:
             echo "::error::could not check for an existing GitHub Release for $TAG"
             exit 1
           fi
-          gh release create "$TAG" "$APK" --verify-tag \
+          gh release create "$TAG" "$RUNNER_TEMP/apk/$APK_NAME" --verify-tag \
             --title "JagHelm Android $VERSION" --notes-file notes.md --latest=false
-          echo "created GitHub Release $TAG with $(basename "$APK") (sha256 $APK_SHA256)"
+          echo "created GitHub Release $TAG with $APK_NAME (sha256 $APK_SHA256)"
