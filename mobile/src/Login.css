@@ -99,3 +99,17 @@
   /* accent-color also set inline on the element for testability */
   accent-color: var(--accent);
 }
+
+/* --- Startup screens (ConnectionScreen.jsx) — same shell, same tokens --- */
+.firstrun .conn-address {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+  color: var(--label);
+  overflow-wrap: anywhere;
+}
+.firstrun button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border2);
+}
