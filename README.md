@@ -287,7 +287,7 @@ Server releases are published as signed container images (`ghcr.io/jagbhandal/ja
 
 ## Status
  
-This is a single-maintainer hobby project, used daily for my own homelab. No SLA, no roadmap commitments, no test suite yet. Issues and PRs are welcome but I respond when I have time. Known gaps and intentional deferrals are tracked in [`KNOWN-ISSUES.md`](KNOWN-ISSUES.md).
+This is a single-maintainer hobby project, used daily for my own homelab. No SLA, no roadmap commitments. Issues and PRs are welcome but I respond when I have time. Known gaps and intentional deferrals are tracked in [`KNOWN-ISSUES.md`](KNOWN-ISSUES.md).
  
 If you're considering using JagHelm in a production-adjacent context — sharing a dashboard with non-technical users, exposing it on the public internet, etc. — read KNOWN-ISSUES first.
  

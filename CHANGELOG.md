@@ -81,9 +81,10 @@ authenticated metrics endpoint when an API key is set.
 
 ## [1.4.0] — 2026-06-22
 
-A maintenance release with no new features: it fixes a board freeze during
+A maintenance release with no new features that fixes a board freeze during
 Kuma outages, zero values shown as missing data and icons shown as filenames,
-and enforces the block on unsupported integrations on the server.
+and tightens security, including enforcing the Content-Security-Policy by
+default.
 
 ### Changed
 - Built-in service icons load from the maintained `homarr-labs` Dashboard Icons
@@ -118,6 +119,8 @@ and enforces the block on unsupported integrations on the server.
 - In the navigation bar, pressing Enter opens the same link the dropdown
   suggests.
 - When several containers match a service, the same one is always chosen.
+- A corrupt password hash in `auth.json` makes a login fail normally instead of
+  returning a server error on every attempt.
 
 ### Security
 - The block on unsupported integrations is enforced on the server. A preset
@@ -125,6 +128,35 @@ and enforces the block on unsupported integrations on the server.
   updates rather than reporting status) was only hidden from the gallery, so a
   directly saved or imported configuration could still save, test or poll it.
   Saving, testing and polling now refuse it.
+- The Content-Security-Policy is enforced by default instead of being sent in
+  report-only mode. Set `CSP_REPORT_ONLY=true` to switch back to report-only.
+- Without a dashboard password, the raw infrastructure endpoints (Prometheus
+  query, Docker container list, and AdGuard, NPM and Uptime Kuma stats) return
+  `403`. On a trusted LAN, set `JAGHELM_ALLOW_OPEN_INFRA=true` to allow them.
+- Outbound requests are checked by the SSRF guard on every redirect (up to 5
+  hops) instead of only at the first URL, and response bodies are capped at
+  10 MB. Prometheus and Kuma requests go through the same checks.
+- The SSRF guard always blocks the IPv6 unspecified address (`::`) and its
+  IPv4-mapped form, as it does `0.0.0.0`.
+- The icon cache proxy (`/api/icons/cached`) no longer follows redirects, which
+  could lead outside its allowed CDNs, caps icons at 2 MB, and serves them with
+  a sandboxing Content-Security-Policy and `nosniff`.
+- Link URLs from the configuration (widgets, navigation bar, command palette)
+  are used only when they are `http`, `https`, `mailto` or relative, and saving
+  a link with another scheme is rejected, so a stored `javascript:` link cannot
+  run.
+- The configuration's prototype-pollution check rejects reserved keys
+  (`__proto__`, `constructor`, `prototype`) at any depth, not only at the top
+  level.
+- Saving or testing an integration accepts only the URL parameters its preset
+  declares, so a request cannot inject an endpoint, URL, TLS setting or extra
+  headers.
+- Session logins build JSON request bodies structurally, so a quote or
+  backslash in a credential is escaped instead of altering the request.
+- Credentials embedded in URLs (`https://user:token@host`) are removed before
+  an error is logged or returned to the browser.
+- `undici` is updated to 6.27.0, fixing a high-severity advisory in the HTTP
+  client used for integrations.
 
 ## [1.3.0] — 2026-06-18
 

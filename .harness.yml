@@ -23,10 +23,9 @@ levels:
   # server/web/mobile tests, asset check. GitHub build-push.yml runs on every push to main: tests, npm
   # audit, image build + cosign signing. On tags, release.yml (vX.Y.Z) promotes the already-built
   # :sha-<short> image to :X.Y.Z by digest and publishes the GitHub Release, and build-apk.yml
-  # (mobile-vX.Y.Z) builds the signed APK and attaches it to a GitHub Release. Per-PR blocking tests =
-  # L2 (re-assessed 2026-10-16; was L1 on the stale premise that check.yml was not on main). Missing for
-  # L3: an on-disk agent-to-agent review loop that runs before a human looks.
-  verification: L2
+  # (mobile-vX.Y.Z) builds the signed APK and attaches it to a GitHub Release. The level below is from
+  # the 2026-06-23 audit, which assumed check.yml was not on main; levels change only at an audit.
+  verification: L1
   # GAP (target L2): no quality-grade / golden-principles doc (no QUALITY_SCORE.md). CHANGELOG +
   # IMPROVEMENT-PLAN are periodic-manual. Per calibration gc L1 = no quality-grade doc.
   gc:           L1

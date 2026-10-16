@@ -313,8 +313,9 @@ flowchart LR
   never move and release pages are never rewritten. Procedure:
   [RELEASING.md](RELEASING.md).
 - **Android release** ([build-apk.yml](../.github/workflows/build-apk.yml)) runs
-  on GitHub for a `mobile-vX.Y.Z` tag: it builds and signs the APK and attaches
-  it to a GitHub Release with notes from `mobile/CHANGELOG.md`. A manual run is a
+  on GitHub for a `mobile-vX.Y.Z` tag: it builds and signs the APK, then a
+  release job attaches it to a GitHub Release with notes from
+  `mobile/CHANGELOG.md`. A manual run is a
   test build and creates no release.
 - **Deploy** ([deploy.yml](../.gitea/workflows/deploy.yml)) runs on the
   self-hosted Gitea runner: pull and **pin this commit's `:sha-<short>`** image,

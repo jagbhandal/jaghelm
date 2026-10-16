@@ -152,8 +152,8 @@ The job summary records the commit, digest, signature status and outcome.
    installs over the previous one. The signature is verified with `apksigner`,
    and the signing material is shredded and checked for leaks before anything
    is uploaded.
-3. Renames the APK to `jaghelm-android-X.Y.Z.apk` and computes its SHA-256.
-4. Creates the GitHub Release "JagHelm Android X.Y.Z" with the APK attached and
+3. A release job then publishes the APK as `jaghelm-android-X.Y.Z.apk`: it
+   creates the GitHub Release "JagHelm Android X.Y.Z" with the APK attached and
    its SHA-256 in the notes, not marked Latest, so the repository's Latest badge
    stays on the server release. If a release for the tag already exists, the
    run fails without changing it.

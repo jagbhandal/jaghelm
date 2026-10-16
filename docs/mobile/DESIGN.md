@@ -726,6 +726,8 @@ Generate the keystore once, off-repo: `keytool -genkey -v -keystore jaghelm-rele
 
 **CI — `.github/workflows/build-apk.yml`** (separate from the Docker-only `build-push.yml`; triggers on `release: published` + `workflow_dispatch` so a signed APK is a release artifact). **The signing job MUST run on an ephemeral `ubuntu-latest` runner; self-hosted runners MUST NOT run it** (decoded secrets would persist in the workspace between jobs and be readable by later workflows). Keystore + `google-services.json` come from **GitHub Actions secrets**, base64-decoded to temp paths, used, and **shredded in an `if: always()` step** so they never outlive the job. The keystore-password env vars are scoped to the `assembleRelease` step only.
 
+> **Superseded by [docs/RELEASING.md](../RELEASING.md)** for the release trigger and the attach step. There is no `release: published` trigger any more: releases start from a tag pushed to Gitea. On a `mobile-vX.Y.Z` tag, `build-apk.yml` builds and signs the APK, then a release job attaches it to a GitHub Release with notes from `mobile/CHANGELOG.md`. On a `vX.Y.Z` tag, `release.yml` adds the version tag to the image `main` already built (by digest, no rebuild) and publishes the GitHub Release. The sketch below is the original design.
+
 ```yaml
 name: Build signed APK
 on: { release: { types: [published] }, workflow_dispatch: {} }
