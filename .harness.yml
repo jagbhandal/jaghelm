@@ -18,13 +18,14 @@ levels:
   # rules are deliberately lenient and there is no custom structural/dependency enforcer that injects
   # remediation into agent context.
   enforcers:    L2
-  # GAP (target L3): CI is a blocking trigger on every change. Gitea .gitea/workflows/check.yml (on main
-  # since #157, 2026-06-23) runs on every PR to main: secret scan, CHANGELOG format, lint, typecheck,
-  # server/web/mobile tests, asset check. GitHub build-push.yml runs on every push to main: tests, npm
-  # audit, image build + cosign signing. On tags, release.yml (vX.Y.Z) promotes the already-built
-  # :sha-<short> image to :X.Y.Z by digest and publishes the GitHub Release, and build-apk.yml
-  # (mobile-vX.Y.Z) builds the signed APK and attaches it to a GitHub Release. The level below is from
-  # the 2026-06-23 audit, which assumed check.yml was not on main; levels change only at an audit.
+  # GAP (target L3): no on-disk agent-to-agent review loop that runs before a human looks.
+  # CI today: Gitea .gitea/workflows/check.yml (on main since #157, 2026-06-23) runs on every PR to
+  # main: secret scan, CHANGELOG format, lint, typecheck, server/web/mobile tests, asset check.
+  # GitHub build-push.yml runs on every push to main: tests, npm audit, image build + cosign signing.
+  # On tags, release.yml (vX.Y.Z) promotes the already-built :sha-<short> image to :X.Y.Z by digest
+  # and publishes the GitHub Release, and build-apk.yml (mobile-vX.Y.Z) builds the signed APK and
+  # attaches it to a GitHub Release. The level below is from the audit of 8e8a6f9, which predates
+  # check.yml reaching main; levels change only at an audit.
   verification: L1
   # GAP (target L2): no quality-grade / golden-principles doc (no QUALITY_SCORE.md). CHANGELOG +
   # IMPROVEMENT-PLAN are periodic-manual. Per calibration gc L1 = no quality-grade doc.

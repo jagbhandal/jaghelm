@@ -25,6 +25,11 @@ first — on Ubuntu/Debian: `sudo apt install openjdk-21-jre-headless` (any JDK 
 works; for keystore generation the version doesn't matter). RSA 2048, 10000-day validity,
 alias `jaghelm-upload`:
 
+> **Choose an alias that does not appear inside the APK's name** `jaghelm-android-X.Y.Z.apk`
+> (so not `jaghelm`, `android` or `apk`). GitHub masks any job output that contains a secret's
+> value, and the build job hands the APK name to the release job as an output; with such an
+> alias the name is masked and the release job fails. `jaghelm-upload` is safe.
+
 ```bash
 keytool -genkeypair \
   -v \
@@ -112,7 +117,8 @@ Two ways to run `.github/workflows/build-apk.yml`:
 
 **A. Push a `mobile-v*` tag** (the release path). A release needs `mobile/package.json` at the
 tag's version and a matching section in `mobile/CHANGELOG.md`; the full procedure is in
-**[RELEASING.md](../RELEASING.md)**.
+**[RELEASING.md](../RELEASING.md)**. The tag must be a plain `mobile-vX.Y.Z` (at most three
+digits per part); pre-release tags such as `mobile-v1.2.0-rc1` are rejected.
 
 ```bash
 git tag -a mobile-vX.Y.Z -m "JagHelm Android X.Y.Z" <merge-commit>
@@ -124,17 +130,21 @@ the `mobile-v*` trigger. Never create the tag on GitHub: the mirror deletes refs
 there.
 
 **B. Manual run (on GitHub):** the **GitHub** repo → **Actions** tab → **Build Signed Mobile
-APK** → **Run workflow** (`workflow_dispatch`), pick the branch, Run.
+APK** → **Run workflow** (`workflow_dispatch`), pick a branch or tag, Run.
 
-> **A manual dispatch is a TEST build, not a release.** It stamps `versionName 0.0.0-dispatch.N`
-> (`versionCode` = run number), per the workflow's version logic, and never creates a GitHub
-> Release. It doubles as the release dry run: the job summary shows the release notes for the
-> `mobile/package.json` version. Use the tag-push path (A) for an actual release so the version
-> is real and monotonic.
+> **A manual dispatch is a TEST build, not a release,** even when started on a tag. It stamps
+> `versionName 0.0.0-dispatch.N` (`versionCode` = run number) and never creates a GitHub
+> Release; the app inside still reports the `mobile/package.json` version to the server when it
+> registers for push. It doubles as the release dry run: the job summary shows the release notes
+> for the `mobile/package.json` version. Use the tag-push path (A) for an actual release so the
+> version is real and monotonic.
 
 > **Re-running after a failed build** (e.g. you just added the missing secrets): on GitHub →
-> **Actions** → the failed run → **Re-run jobs**. No new tag needed — it re-checks out the
-> same commit, now with the secrets present.
+> **Actions** → the failed run → **Re-run all jobs**. No new tag needed — it re-checks out the
+> same commit, now with the secrets present. If only the release job failed, delete any draft
+> release it left for the tag, then use **Re-run failed jobs** to publish the same build (within
+> the artifact's 7-day retention; after that, **Re-run all jobs**). See
+> [RELEASING.md](../RELEASING.md#recovery).
 
 When a tag build finishes, download the APK from the **GitHub Release** for the tag
 ([Releases page](https://github.com/jagbhandal/jaghelm/releases)): `jaghelm-android-X.Y.Z.apk`,
@@ -214,4 +224,4 @@ app first (you'll lose its stored state) or recover the original keystore.
 | Secrets | `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, `GOOGLE_SERVICES_JSON_BASE64` — set on **GitHub**, not Gitea |
 | Push setup | **[PUSH-SETUP.md](PUSH-SETUP.md)** — end-to-end (APK Firebase config + prod server FCM service-account) |
 | Distribution | sideload only (no Play Store) → one self-signed key, reuse forever |
-| Release APK | `jaghelm-android-X.Y.Z.apk` on the tag's GitHub Release (test builds: `jaghelm-release-apk` artifact, 7 days) |
+| Release APK | `jaghelm-android-X.Y.Z.apk` on the tag's GitHub Release (test builds: `app-release.apk` in the run's `jaghelm-release-apk` artifact, 7 days) |

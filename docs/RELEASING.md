@@ -32,7 +32,8 @@ the ones that were deployed from that commit.
 Release when `## [Unreleased]` holds user-facing changes worth shipping. Pick
 the version by [Semantic Versioning](https://semver.org/): a breaking change
 (anything under "Breaking changes") is a major bump, a new feature a minor
-bump, and fixes only a patch bump.
+bump, and fixes only a patch bump. Before 2.0.0, breaking changes shipped in
+minor releases.
 
 When an Android release depends on a new server version, release the server
 first and give the Android section a requirement line (see below).
@@ -91,9 +92,12 @@ as it will appear into the run's job summary.
   `:X.Y.Z` is free. The `:sha-<short>` image of `main` must exist, so wait for
   `build-push.yml` to finish after the merge.
 - **Android:** GitHub → Actions → **Build Signed Mobile APK** → **Run
-  workflow** on `main`. It builds and signs a test APK (`0.0.0-dispatch.N`) and
-  renders the notes for the `mobile/package.json` version under "Dry run —
-  checksum is of this test build". It never creates a release.
+  workflow** on `main`. It builds and signs a test APK (version name
+  `0.0.0-dispatch.N`, version code = run number) and renders the notes for the
+  `mobile/package.json` version under "Dry run — checksum is of this test
+  build". A manual run is always a test build and never creates a release, even
+  when it is started on a tag. The test APK still reports the
+  `mobile/package.json` version to the server when it registers for push.
 
 ## 3. Tag on Gitea
 
@@ -116,6 +120,10 @@ git push <gitea-remote> mobile-vX.Y.Z
 
 `<gitea-remote>` is the remote that points at the Gitea repository. The tag
 reaches GitHub within seconds and starts the release workflow there.
+
+Release tags are plain `vX.Y.Z` and `mobile-vX.Y.Z`; pre-release suffixes such
+as `-rc1` are rejected. Each part of an Android version has at most three
+digits, because the version code is built from them.
 
 Push release tags one or two at a time. GitHub does not create tag push events
 when more than three tags are pushed at once, so a mirror sync that carries
@@ -153,10 +161,11 @@ The job summary records the commit, digest, signature status and outcome.
    and the signing material is shredded and checked for leaks before anything
    is uploaded.
 3. A release job then publishes the APK as `jaghelm-android-X.Y.Z.apk`: it
+   checks the downloaded build against the SHA-256 computed after signing, then
    creates the GitHub Release "JagHelm Android X.Y.Z" with the APK attached and
    its SHA-256 in the notes, not marked Latest, so the repository's Latest badge
-   stays on the server release. If a release for the tag already exists, the
-   run fails without changing it.
+   stays on the server release. If a release for the tag already exists, even a
+   draft, the run fails without changing it.
 
 The signing secrets are described in [mobile/KEYSTORE.md](mobile/KEYSTORE.md).
 
@@ -197,8 +206,15 @@ Push the tag again on its own: delete it on Gitea, let the mirror remove it
 from GitHub, then push the same tag at the same commit.
 
 **A release run failed** (for example, a missing secret). Fix the cause, then
-re-run the failed run from its page on GitHub (**Re-run jobs**). It checks out
-the same tag again.
+re-run it from its page on GitHub. It checks out the same tag again. For
+Android:
+
+- If the build job failed, use **Re-run all jobs**.
+- If the release job failed, first delete any draft release it left for the
+  tag on the Releases page, because the job refuses to run while a release for
+  the tag exists. Then use **Re-run failed jobs**, which publishes the same
+  build. The build is kept as an artifact for 7 days; after that, use **Re-run
+  all jobs** to rebuild.
 
 **The `:X.Y.Z` image tag points at the wrong image.** Actions → **Release** →
 **Run workflow** with `tag` set to `vX.Y.Z`, `repair` on and `create_release`
