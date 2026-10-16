@@ -16,6 +16,7 @@ test('categoryOf maps every event type to its category', () => {
   assert.equal(categoryOf('ups_restored'), 'ups');
   assert.equal(categoryOf('cron_failed'), 'cron');
   assert.equal(categoryOf('cron_recovered'), 'cron');
+  assert.equal(categoryOf('cron_overdue'), 'cron');
 });
 
 test('DEFAULT_PREFS is all-on', () => {

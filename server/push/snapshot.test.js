@@ -263,3 +263,34 @@ test('LAW: empty/cold caches yield a well-formed baseline snapshot', () => {
   const snap = buildSnapshot(fakeCaches({ services: null, ups: null, cron: null }));
   assert.deepEqual(snap, { services: {}, hosts: {}, ups: { state: 'unknown' }, cron: {} });
 });
+
+// ── cron overdue ─────────────────────────────────────────────────────────────
+
+const OVERDUE_RUN = {
+  status: 'success',
+  timestamp: '2026-01-01T00:00:00Z',
+  expected_every_seconds: 3600,
+};
+const OVERDUE_NOW = Date.parse('2026-01-01T00:00:00Z') + (3600 + 900) * 1000 + 1000;
+
+test('buildCron: overdue latest run + now => "overdue"', () => {
+  const cron = [{ node: 'n', jobs: [{ job: 'j', runs: [OVERDUE_RUN] }] }];
+  assert.deepEqual(buildCron(cron, OVERDUE_NOW), { 'n:j': 'overdue' });
+});
+
+test('buildCron: same run without now (or within grace) stays "success"', () => {
+  const cron = [{ node: 'n', jobs: [{ job: 'j', runs: [OVERDUE_RUN] }] }];
+  assert.deepEqual(buildCron(cron, null), { 'n:j': 'success' });
+  assert.deepEqual(buildCron(cron), { 'n:j': 'success' });
+  assert.deepEqual(buildCron(cron, Date.parse(OVERDUE_RUN.timestamp) + 1000), { 'n:j': 'success' });
+});
+
+test('buildSnapshot: clock enters only via caches.now', () => {
+  const base = fakeCaches({
+    services: null,
+    ups: null,
+    cron: [{ node: 'n', jobs: [{ job: 'j', runs: [OVERDUE_RUN] }] }],
+  });
+  assert.equal(buildSnapshot(base).cron['n:j'], 'success');
+  assert.equal(buildSnapshot({ ...base, now: () => OVERDUE_NOW }).cron['n:j'], 'overdue');
+});

@@ -1,13 +1,14 @@
 /**
  * Pure push-snapshot builder. Reads the warm in-memory caches and the cron
  * store and projects them into the canonical, byte-deterministic Snapshot
- * consumed by the differ. PURE given its injected inputs: no clock, no I/O.
+ * consumed by the differ. PURE given its injected inputs: no I/O, and the clock
+ * enters only through the injected `caches.now` (absent => no overdue).
  *
  * Snapshot shape (every map's keys inserted in ascending sorted order):
  *   services: "NODE:ID" -> "up" | "down" | "unknown"
  *   hosts:    "NODE"    -> { reachable, cpu, mem, disk }  (metrics 0..1 fractions)
  *   ups:      { state: "online" | "on_battery" | "unknown" }
- *   cron:     "NODE:JOB" -> "success" | "failure" | "unknown"
+ *   cron:     "NODE:JOB" -> "success" | "failure" | "overdue" | "unknown"
  *
  * Normalization law: anything unrecognized => "unknown" (services/cron),
  * "unknown" ups, or reachable:false (hosts). "unknown" never produces an event.
@@ -17,6 +18,7 @@
 // Tests NEVER hit this path — they inject `caches`.
 import { getCached } from '../cache.js';
 import { getAllStatuses } from '../cron-store.js';
+import { isOverdue } from '../cron-overdue.js';
 
 /** Kuma/container service status -> canonical up|down|unknown. */
 export function normalizeServiceStatus(raw) {
@@ -102,9 +104,11 @@ export function buildServices(servicesCache) {
 
 /**
  * Project getAllStatuses() into the snapshot cron map. Key is "NODE:JOB";
- * value is the latest run's normalized status (runs[0]; missing -> unknown).
+ * value is the latest run's normalized status (runs[0]; missing -> unknown),
+ * or "overdue" when that run is past its expected schedule at `nowMs`
+ * (null/absent nowMs => never overdue).
  */
-export function buildCron(cronStatuses) {
+export function buildCron(cronStatuses, nowMs = null) {
   if (!Array.isArray(cronStatuses)) return {};
   const entries = [];
   for (const nodeEntry of cronStatuses) {
@@ -115,7 +119,8 @@ export function buildCron(cronStatuses) {
       const job = jobEntry?.job;
       if (typeof job !== 'string') continue;
       const latest = Array.isArray(jobEntry.runs) ? jobEntry.runs[0] : null;
-      entries.push([`${node}:${job}`, normalizeCronStatus(latest?.status)]);
+      const state = isOverdue(latest, nowMs) ? 'overdue' : normalizeCronStatus(latest?.status);
+      entries.push([`${node}:${job}`, state]);
     }
   }
   return sortedObject(entries);
@@ -158,6 +163,7 @@ export function buildUps(upsCache) {
 const _defaultCaches = {
   getCached,
   getAllCronStatuses: getAllStatuses,
+  now: () => Date.now(),
 };
 
 /**
@@ -165,7 +171,7 @@ const _defaultCaches = {
  * PURE given its injected `caches`. The four top-level keys are emitted in a
  * fixed order; every sub-map is ascending-sorted by key.
  *
- * @param {{ getCached: (key: string) => *, getAllCronStatuses: () => * }} [caches]
+ * @param {{ getCached: (key: string) => *, getAllCronStatuses: () => *, now?: () => number }} [caches]
  */
 export function buildSnapshot(caches = _defaultCaches) {
   const servicesCache = caches.getCached('services');
@@ -175,6 +181,6 @@ export function buildSnapshot(caches = _defaultCaches) {
     services: buildServices(servicesCache),
     hosts: buildHosts(servicesCache),
     ups: buildUps(upsCache),
-    cron: buildCron(cronStatuses),
+    cron: buildCron(cronStatuses, typeof caches.now === 'function' ? caches.now() : null),
   };
 }
