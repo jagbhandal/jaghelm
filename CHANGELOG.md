@@ -83,7 +83,7 @@ authenticated metrics endpoint when an API key is set.
 
 A maintenance release with no new features that fixes a board freeze during
 Kuma outages, zero values shown as missing data and icons shown as filenames,
-and tightens security, with two changes that may need action on upgrade.
+and tightens security, with three changes that may need action on upgrade.
 
 ### Breaking changes
 - **The Content-Security-Policy is enforced by default.** It was sent in
@@ -95,6 +95,12 @@ and tightens security, with two changes that may need action on upgrade.
   stats endpoints return `403`, so an unauthenticated device on the network
   cannot query the homelab or the Docker socket through JagHelm. On a trusted
   LAN, set `JAGHELM_ALLOW_OPEN_INFRA=true` to allow them.
+- **Links accept only `http`, `https` and `mailto` URLs, or relative ones.**
+  Saving or importing a configuration in which any `url` value has another
+  scheme (for example `ssh://` or `javascript:`) is rejected, and such links
+  edited directly into the configuration files do nothing when clicked. This
+  stops a stored `javascript:` link from running in JagHelm. Change or remove
+  links with other schemes before saving.
 
 ### Changed
 - Built-in service icons load from the maintained `homarr-labs` Dashboard Icons
@@ -150,10 +156,6 @@ and tightens security, with two changes that may need action on upgrade.
 - The icon cache proxy (`/api/icons/cached`) no longer follows redirects, which
   could lead outside its allowed CDNs, caps icons at 2 MB, and serves them with
   a sandboxing Content-Security-Policy and `nosniff`.
-- Link URLs from the configuration (widgets, navigation bar, command palette)
-  are used only when they are `http`, `https`, `mailto` or relative, and saving
-  a link with another scheme is rejected, so a stored `javascript:` link cannot
-  run.
 - The configuration's prototype-pollution check rejects reserved keys
   (`__proto__`, `constructor`, `prototype`) at any depth, not only at the top
   level.
