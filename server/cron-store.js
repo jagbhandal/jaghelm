@@ -46,9 +46,10 @@ function save(store) {
  * @param {number} [report.duration_seconds]
  * @param {string} [report.schedule]    - Human-readable schedule (e.g. "every 15 min")
  * @param {string} [report.error]       - Error message if status === "failure"
+ * @param {number} [report.expected_every_seconds] - Expected interval, for overdue detection
  */
 export function recordRun(report) {
-  const { job, node, status, duration_seconds, schedule, error } = report;
+  const { job, node, status, duration_seconds, schedule, error, expected_every_seconds } = report;
   if (!job || !node || !status) return;
 
   const store = load();
@@ -61,6 +62,7 @@ export function recordRun(report) {
     ...(duration_seconds != null && { duration_seconds }),
     ...(schedule && { schedule }),
     ...(error && { error }),
+    ...(expected_every_seconds != null && { expected_every_seconds }),
   };
 
   // Prepend newest run, keep only MAX_RUNS
@@ -80,4 +82,14 @@ export function getAllStatuses() {
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([job, runs]) => ({ job, runs })),
     }));
+}
+
+/** Remove a job (and its node when empty). Returns false when absent. */
+export function deleteJob(node, job) {
+  const store = load();
+  if (!Object.hasOwn(store, node) || !Object.hasOwn(store[node], job)) return false;
+  delete store[node][job];
+  if (Object.keys(store[node]).length === 0) delete store[node];
+  save(store);
+  return true;
 }
