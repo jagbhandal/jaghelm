@@ -128,8 +128,6 @@ Lower-stakes items the maintainer is aware of:
   is a removal candidate.
 - The Settings live-preview spins up a second dashboard instance with its own
   state and fetch cycle, which is wasteful.
-- The version string reported by the app and the docs/image labels can drift;
-  single-sourcing the version is on the roadmap (Phase 6).
 
 ---
 

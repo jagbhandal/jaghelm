@@ -81,8 +81,9 @@ authenticated metrics endpoint when an API key is set.
 ### Security
 - The Kuma `/metrics` parser and the push token and preference store reject
   `__proto__`, `constructor` and `prototype` keys and validate numeric input.
-- Android app: cleartext HTTP is allowed only for tailnet addresses, the
-  deep-link intent filter is not `BROWSABLE`, and Android backup
+- Android app: plain `http://` is refused for public hosts; it is allowed only
+  for tailnet, private-network (RFC 1918, unique-local IPv6) and loopback
+  addresses, the deep-link intent filter is not `BROWSABLE`, and Android backup
   (`allowBackup`) is disabled.
 - A warning is logged at startup when `KUMA_API_KEY` would be sent over plain
   HTTP to a host other than localhost; use an `https://` `KUMA_URL` for a
