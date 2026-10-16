@@ -6,21 +6,42 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-10-16
+
+Watchtower update notifications, overdue detection for scheduled jobs, and
+token-based Nextcloud authentication.
+
 ### Breaking changes
-- **Nextcloud authenticates with a serverinfo token.** Username and password are no longer accepted. On the Nextcloud host run `occ config:app:set serverinfo token --value "$(openssl rand -hex 32)"`, then enter the token in the integration's **API Key (NC-Token)** field.
+- **Nextcloud authenticates with a serverinfo token.** Username and password are
+  no longer accepted. On the Nextcloud host run
+  `occ config:app:set serverinfo token --value "$(openssl rand -hex 32)"`, then
+  enter the token in the integration's **API Key (NC-Token)** field.
 
 ### Added
-- Watchtower update notifications via Discord and mobile push, including containers held back by monitor-only labels.
+- Watchtower update notifications via Discord and mobile push, including
+  containers held back by monitor-only labels. Point Watchtower's webhook
+  notifications at `POST /api/watchtower/event` and set
+  `JAGHELM_WATCHTOWER_SECRET` (sent as `secret` in the body) to enable it; set
+  `JAGHELM_WATCHTOWER_DISCORD_WEBHOOK` to also post to Discord.
+- Overdue detection for scheduled jobs: reporters can declare an expected
+  interval, and JagHelm alerts when a job stops reporting.
+- Scheduled jobs can be removed from the dashboard, together with their history.
 - `/api/health` reports the build commit alongside the version.
 
 ### Changed
-- Version tags now point to the exact image built from `main`; releases no longer rebuild, and published tags never move.
+- Version tags now point to the exact image built from `main`; releases no
+  longer rebuild, and published tags never move.
 
 ### Fixed
 - Nextcloud polling no longer triggers Nextcloud's brute-force protection.
+- `ghcr.io/jagbhandal/jaghelm:1.4.0` pointed to the 1.5.0 build; it now points
+  to the 1.4.0 build.
 
 ### Security
-- The Gitea integration sends its API token in the `Authorization` header instead of the URL, keeping it out of Gitea's request logs.
+- The Gitea integration sends its API token in the `Authorization` header
+  instead of the URL, keeping it out of Gitea's request logs.
+- Scheduled-job report names must be plain strings, and reserved names such as
+  `__proto__` are rejected.
 - Dependencies updated to resolve published high-severity advisories.
 
 ## [1.5.0] — 2026-06-27
@@ -444,7 +465,8 @@ First public release.
 - Stored credentials encrypted with AES-256-GCM.
 - Password authentication with scrypt hashing.
 
-[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/jagbhandal/jaghelm/compare/v1.5.0...v2.0.0
 [1.5.0]: https://github.com/jagbhandal/jaghelm/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/jagbhandal/jaghelm/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/jagbhandal/jaghelm/compare/v1.2.0...v1.3.0

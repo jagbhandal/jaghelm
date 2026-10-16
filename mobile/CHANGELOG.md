@@ -4,8 +4,20 @@ All notable changes to the JagHelm Android app are documented here. The format i
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-16
+
+A connection screen when the server can't be reached, overdue scheduled jobs on the Overview, and Watchtower notification settings.
+
+Requires JagHelm server 2.0.0 or later.
+
 ### Added
+- Connection screen with retry when the server can't be reached at startup, replacing an indefinite blank screen.
+- Sign-in gives up after 10 seconds with a clear message instead of waiting indefinitely.
+- Overdue scheduled jobs appear on the Overview with how long since they last reported.
 - Notification toggle for Watchtower update events.
+
+### Fixed
+- The app reports its real version when registering for notifications.
 
 ### Security
 - Dependencies updated to resolve published advisories.
@@ -19,5 +31,6 @@ First release of the Android app, distributed as a signed APK; builds 1.0.1 to 1
 - Push notifications for service, host, UPS and scheduled-job state changes, with per-category settings and links to the related incident.
 - Overview, Alerts and Infrastructure screens.
 
-[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/mobile-v1.0.7...HEAD
+[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/mobile-v1.1.0...HEAD
+[1.1.0]: https://github.com/jagbhandal/jaghelm/compare/mobile-v1.0.7...mobile-v1.1.0
 [1.0.0]: https://github.com/jagbhandal/jaghelm/tree/mobile-v1.0.0
