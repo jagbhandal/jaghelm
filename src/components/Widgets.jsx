@@ -2,6 +2,7 @@ import React from 'react';
 import { getServiceIcon, cachedIconUrl } from '../hooks/useData';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { safeUrl } from '../utils/safeUrl.js';
+import { fmtSpan } from '../util/span.js';
 import { renderIcon, iconSlugUrl } from '../utils/icon.jsx';
 
 // Shared: compute background style from section config
@@ -223,7 +224,7 @@ export const GiteaActivity = React.memo(function GiteaActivity({ commits, banner
   );
 });
 
-export const CronJobs = React.memo(function CronJobs({ nodes, banner }) {
+export const CronJobs = React.memo(function CronJobs({ nodes, banner, onRemove }) {
   const { config } = useConfig();
   const sec = config?.sections?.cronJobs || {};
 
@@ -309,6 +310,7 @@ export const CronJobs = React.memo(function CronJobs({ nodes, banner }) {
                   const lastRun = jobEntry.runs[0];
                   const isSuccess = lastRun?.status === 'success';
                   const statusColor = isSuccess ? 'var(--green)' : 'var(--red)';
+                  const overdue = jobEntry.overdue === true;
 
                   return (
                     <div
@@ -345,22 +347,55 @@ export const CronJobs = React.memo(function CronJobs({ nodes, banner }) {
                               {lastRun.schedule}
                             </span>
                           )}
-                          {lastRun && (
+                          {(overdue || lastRun) && (
                             <span
                               style={{
                                 fontSize: 10,
                                 fontFamily: 'var(--font-mono)',
                                 fontWeight: 600,
-                                color: statusColor,
+                                color: overdue ? 'var(--amber)' : statusColor,
                                 textTransform: 'uppercase',
                                 letterSpacing: 0.5,
                               }}
                             >
-                              {lastRun.status}
+                              {overdue ? 'Overdue' : lastRun.status}
                             </span>
+                          )}
+                          {onRemove && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `Remove ${jobEntry.job} on ${nodeEntry.node} and its history? It reappears if it reports again.`
+                                  )
+                                ) {
+                                  onRemove(nodeEntry.node, jobEntry.job);
+                                }
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                padding: 0,
+                                cursor: 'pointer',
+                                fontSize: 10,
+                                color: 'var(--text-muted)',
+                                textDecoration: 'underline',
+                              }}
+                            >
+                              Remove
+                            </button>
                           )}
                         </div>
                       </div>
+
+                      {overdue && jobEntry.seconds_since_report != null && (
+                        <div style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 4 }}>
+                          Last report {fmtSpan(jobEntry.seconds_since_report)} ago
+                          {jobEntry.expected_every_seconds != null &&
+                            ` · expected every ${fmtSpan(jobEntry.expected_every_seconds)}`}
+                        </div>
+                      )}
 
                       {/* Run history rows */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

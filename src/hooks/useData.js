@@ -124,6 +124,17 @@ export async function deleteIntegration(type) {
   return requestJson(`${getApiBase()}/integrations/${type}`, { method: 'DELETE' });
 }
 
+export async function deleteCronJob(node, job) {
+  const url = `${getApiBase()}/cron/jobs/${encodeURIComponent(node)}/${encodeURIComponent(job)}`;
+  try {
+    return await requestJson(url, { method: 'DELETE' });
+  } catch (err) {
+    // 404 = already gone, which is the outcome the caller wanted.
+    if (err?.message === 'HTTP 404') return null;
+    throw err;
+  }
+}
+
 export async function getWeather(lat, lon) {
   const r = await apiFetch(`${getApiBase()}/weather?lat=${lat}&lon=${lon}`, {
     signal: AbortSignal.timeout(12000),
