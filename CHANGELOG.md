@@ -53,10 +53,10 @@ authenticated metrics endpoint when an API key is set.
 - An overall health status, computed on the server, shown as one status dot in
   the web navigation bar and on the app's Overview.
 - Services that nothing monitors are tagged "unmonitored".
-- `CSP_CONNECT_EXTRA` adds comma-separated origins to the Content-Security-Policy
-  `connect-src` directive, for clients that call the API from another origin.
-  Each entry must be an `http`, `https`, `ws` or `wss` URL; invalid entries are
-  dropped with a warning.
+- `CSP_CONNECT_EXTRA` adds origins the web dashboard may connect to (the
+  Content-Security-Policy `connect-src`). It takes a comma-separated list of
+  `http`, `https`, `ws` or `wss` URLs; invalid entries are dropped with a
+  warning.
 
 ### Changed
 - Services are sorted down, then unknown, then up, so problems are listed first.
@@ -117,8 +117,10 @@ and tightens security, with four changes that may need action on upgrade.
 - **The Deluge, qBittorrent, Transmission and Watchtower integrations are
   removed.** Watchtower's endpoint triggered an image update on every refresh
   instead of reporting status, and the other three never returned data because
-  their login flows are not supported. They are gone from the gallery, and
-  existing ones are no longer polled; remove them from your configuration.
+  they need POST requests or session handshakes (cookie sessions, a CSRF token)
+  that JagHelm's integration engine does not support. They are gone from the
+  gallery, and existing ones are no longer polled; remove them from your
+  configuration.
 
 ### Changed
 - Built-in service icons load from the maintained `homarr-labs` Dashboard Icons
@@ -161,8 +163,8 @@ and tightens security, with four changes that may need action on upgrade.
   `JAGHELM_DATA_DIR`, like the other data files.
 
 ### Security
-- The server refuses to save, test or poll a removed integration, including
-  one in a configuration that was edited directly or imported.
+- The server refuses to save or test a removed integration, and never polls one
+  left in the configuration files or an imported backup.
 - Outbound requests are checked by the SSRF guard on every redirect (up to 5
   hops) instead of only at the first URL, and response bodies are capped at
   10 MB. Prometheus and Kuma requests go through the same checks.
@@ -328,6 +330,10 @@ container runtime; several changes need action before upgrading.
 - **The `?token=` query parameter is no longer accepted.** Send the session
   token in the `x-auth-token` header instead; tokens in URLs leak into proxy
   logs, browser history and `Referer` headers.
+- **PhotoPrism accounts with two-factor authentication are no longer
+  supported.** The OAuth2 client-credentials fallback was removed; if you
+  entered a client ID and secret, switch the integration to a PhotoPrism
+  account without 2FA.
 
 ### Added
 - A visible keyboard focus ring in all 10 themes (WCAG 2.4.7), and support for
@@ -367,6 +373,7 @@ container runtime; several changes need action before upgrading.
 - `multer` is upgraded from 1.x, which is end-of-life, to 2.x. No configuration
   change is needed.
 - A refresh in which nothing changed no longer re-renders the dashboard.
+- JSON request bodies up to 1 MB are accepted (previously 100 KB).
 
 ### Removed
 - SVG uploads for the logo and background images: SVG can carry scripts, so
@@ -390,9 +397,6 @@ container runtime; several changes need action before upgrading.
   still render.
 - A theme chosen in the browser is no longer replaced by the configuration's
   theme when settings reload.
-- The PhotoPrism integration signs in with a username and password only. Its
-  setup text no longer suggests OAuth2 client credentials for accounts with
-  two-factor authentication, which never worked; use an account without 2FA.
 - Two instances of the same integration preset no longer receive each other's
   cached data.
 - A panel that throws an error shows the error in place instead of blanking the
@@ -421,7 +425,9 @@ container runtime; several changes need action before upgrading.
   no longer be shown inside another site's frame.
 - A failed login shows the same message whether the username or the password
   is wrong.
-- JSON request bodies are limited to 1 MB.
+- Skipping TLS verification for a self-signed Proxmox certificate now applies
+  only to that integration's requests; before, it disabled certificate checks
+  for every outbound request made at the same time.
 
 ## [1.0.0] — 2026-03-27
 
