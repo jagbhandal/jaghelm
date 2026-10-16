@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // vi.hoisted() so the mock fns are safely referenced inside the hoisted vi.mock
 // factories (the repo convention — see connect.test.js — avoids the TDZ trap).
@@ -61,7 +64,12 @@ describe('pushPrefsApi', () => {
     const sent = JSON.parse(opts.body);
     expect(sent.token).toBe('fcmtok');
     expect(sent.platform).toBe('android');
-    expect(typeof sent.appVersion).toBe('string');
+    // The reported version is mobile/package.json's, injected at build time.
+    // (path.resolve, not `new URL(rel, import.meta.url)`: Vite rewrites that
+    // pattern into an asset URL.)
+    const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    expect(sent.appVersion).toBe(pkg.version);
     expect(r).toEqual({ stored: true, deliveryEnabled: false });
   });
 

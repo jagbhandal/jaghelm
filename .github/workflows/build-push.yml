@@ -1,11 +1,12 @@
 name: Build and Push Docker Image
 
+# Builds every push to main and publishes :latest plus the immutable
+# :sha-<short>. Releases never rebuild: release.yml promotes this exact
+# :sha-<short> image to :X.Y.Z by digest when the commit is tagged vX.Y.Z.
 on:
   push:
     branches:
       - main
-  release:
-    types: [published]
 
 jobs:
   test:
@@ -54,29 +55,26 @@ jobs:
       - name: Compute image tags
         id: version
         run: |
+          set -euo pipefail
           # Short commit SHA → an IMMUTABLE tag that never moves, so a rollback
           # target always exists ("redeploy ghcr.io/...:sha-<short>"). :latest is
           # mutable and is NOT a rollback target.
           SHORT_SHA="$(echo "${GITHUB_SHA}" | cut -c1-7)"
           REPO="ghcr.io/jagbhandal/jaghelm"
 
-          # Always publish :latest and the immutable :sha-<short> tag.
+          # Only :latest and the immutable :sha-<short> tag. Version tags (:X.Y.Z)
+          # are never built here; release.yml adds them to this image's digest.
           TAGS="${REPO}:latest,${REPO}:sha-${SHORT_SHA}"
 
-          # On a tag/release build, also publish the semver tag.
-          VERSION=""
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-            TAGS="${TAGS},${REPO}:${VERSION}"
-          else
-            # Untagged push to main → label the image with the short SHA as its
-            # version so `docker inspect` reflects exactly what shipped.
-            VERSION="sha-${SHORT_SHA}"
-          fi
+          # OCI version label = the package.json version, so the label matches the
+          # release when this commit is released (IMAGE_REVISION carries the SHA).
+          VERSION="$(jq -r .version package.json)"
 
-          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
-          echo "image_version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          {
+            echo "tags=${TAGS}"
+            echo "image_version=${VERSION}"
+            echo "short_sha=${SHORT_SHA}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -158,7 +156,7 @@ jobs:
           code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
             -H "Authorization: token ${GITEA_DEPLOY_TOKEN}" \
             -H "Content-Type: application/json" \
-            "${GITEA_API_URL%/}/repos/jagbhandal/jaghelm/actions/workflows/deploy.yml/dispatches" \
+            "${GITEA_API_URL%/}/repos/jagdeep.bhandal/JagHelm/actions/workflows/deploy.yml/dispatches" \
             -d '{"ref":"main"}')
           case "${code}" in
             200|201|204) echo "    Gitea dispatch accepted (HTTP ${code})" ;;

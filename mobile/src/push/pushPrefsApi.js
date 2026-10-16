@@ -12,7 +12,10 @@
 import { apiFetch } from '@shared/api/client.js';
 import { getApiBase } from '@shared/api/baseUrl.js';
 
-const APP_VERSION = '1.4.0'; // mirrors mobile/package.json version
+// mobile/package.json's version, injected at build by a Vite `define` in
+// vite.config.mobile.js. Without the define (not a Vite build) it is sent as null,
+// which the server stores as an unknown version.
+const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : null;
 
 async function asJson(res) {
   if (!res.ok) {

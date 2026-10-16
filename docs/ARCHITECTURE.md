@@ -103,9 +103,11 @@ src/                        React 19 SPA (Vite 8)
   styles/global.css          themes (10) + design tokens + component styles
 
 public/sw.js                service worker (precache injected at build)
-scripts/                    inject-sw-precache.mjs, check-assets.mjs (build/CI helpers)
-.github/workflows/          build-push.yml (build -> sign -> GHCR)
-.gitea/workflows/           deploy.yml (pin -> health-gate -> rollback)
+scripts/                    inject-sw-precache.mjs, check-assets.mjs, changelog-lint.mjs,
+                            release-notes.mjs (build/CI/release helpers)
+.github/workflows/          build-push.yml (test -> build -> sign -> GHCR), release.yml (tag ->
+                            promote by digest -> GitHub Release), build-apk.yml (signed APK)
+.gitea/workflows/           check.yml (PR gate), deploy.yml (pin -> health-gate -> rollback)
 docs/adr/                   architecture decision records (0001-0005)
 ```
 
@@ -277,13 +279,16 @@ All state is files under the data dir (no DB):
 
 ```mermaid
 flowchart LR
+  CHK["Gitea check.yml on the PR<br/>lint + typecheck + tests + CHANGELOG format"] --> PR
   PR["PR merged on Gitea<br/>(source of truth)"] --> MIRROR["mirror -> GitHub"]
   MIRROR --> GH["GitHub Actions: build-push.yml"]
   subgraph GH2["build-push.yml"]
-    T["test gate<br/>node:test + Vitest + typecheck + audit"] --> B["build image<br/>:latest, :sha-short, (:semver)"]
+    T["test gate<br/>node:test + Vitest + typecheck + audit"] --> B["build image<br/>:latest, :sha-short"]
     B --> S["cosign keyless sign (by digest)"]
   end
   GH --> GHCR["GHCR"]
+  TAG["vX.Y.Z tag pushed on Gitea"] --> REL["GitHub Actions: release.yml<br/>add :X.Y.Z to the :sha-short digest<br/>+ GitHub Release"]
+  REL --> GHCR
   GH -.->|"event-driven dispatch (opt-in, ADR 0005)"| DEP
   PR -->|"push trigger (fallback)"| DEP["Gitea deploy.yml (self-hosted)"]
   subgraph DEP2["deploy.yml"]
@@ -293,9 +298,25 @@ flowchart LR
   end
 ```
 
+- **PR gate** ([check.yml](../.gitea/workflows/check.yml)) runs on the
+  self-hosted Gitea runner for every PR to `main`: secret scan, CHANGELOG
+  format, lint, typecheck, server, web and mobile tests, and the asset check.
 - **Build** ([build-push.yml](../.github/workflows/build-push.yml)) runs on
-  GitHub: a test gate (so a red `main` can't ship), then build with immutable
-  `:sha-<short>` tags + OCI provenance labels, then **keyless cosign signing**.
+  GitHub for every push to `main`: a test gate (so a red `main` can't ship),
+  then build and push `:latest` and the immutable `:sha-<short>` with OCI
+  labels, then **keyless cosign signing**.
+- **Server release** ([release.yml](../.github/workflows/release.yml)) runs on
+  GitHub when a `vX.Y.Z` tag arrives from Gitea. It does not rebuild: it checks
+  the tag (on `main`, matching `package.json` and a CHANGELOG section), waits for
+  that commit's `:sha-<short>`, verifies its signature, adds `:X.Y.Z` to the same
+  digest, and creates the GitHub Release from the CHANGELOG. Published image tags
+  never move and release pages are never rewritten. Procedure:
+  [RELEASING.md](RELEASING.md).
+- **Android release** ([build-apk.yml](../.github/workflows/build-apk.yml)) runs
+  on GitHub for a `mobile-vX.Y.Z` tag: it builds and signs the APK, then a
+  release job attaches it to a GitHub Release with notes from
+  `mobile/CHANGELOG.md`. A manual run is a
+  test build and creates no release.
 - **Deploy** ([deploy.yml](../.gitea/workflows/deploy.yml)) runs on the
   self-hosted Gitea runner: pull and **pin this commit's `:sha-<short>`** image,
   recreate behind a **health gate** that auto-rolls-back to the previous image on

@@ -19,10 +19,17 @@ function hasFirebaseConfig() {
 }
 const pushConfigured = hasFirebaseConfig();
 
+// The app version reported to the server (push registration) is the one in
+// mobile/package.json, which CI checks against the mobile-v<version> release tag.
+const appVersion = JSON.parse(
+  readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf8'),
+).version;
+
 export default defineConfig({
   plugins: [react()],
   define: {
     __PUSH_ENABLED__: JSON.stringify(pushConfigured),
+    __APP_VERSION__: JSON.stringify(appVersion),
   },
   resolve: {
     alias: {

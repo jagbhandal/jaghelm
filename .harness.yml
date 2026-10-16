@@ -14,14 +14,18 @@ levels:
   # = target L2: boots in isolation (server/demo.js + docs/DEMO.md self-contained run);
   # server/metrics.js (prom-client) + server/util/logger.js give one queryable signal class.
   legibility:   L2
-  # GAP (target L3): eslint.config.js is self-described "report-only"; CI lint is `npm run lint || true`
-  # (non-blocking). No custom structural/dependency enforcer that injects remediation into agent context.
+  # GAP (target L3): lint is blocking in CI (check.yml on PRs, build-push.yml on main), but the ESLint
+  # rules are deliberately lenient and there is no custom structural/dependency enforcer that injects
+  # remediation into agent context.
   enforcers:    L2
-  # GAP (target L3): HONEST-NUMBERS — the PR-triggered check.yml is NOT on main (lives on the unmerged
-  # branch ci/pr-checks; verified: `git cat-file -e origin/main:.gitea/workflows/check.yml` fails). Sole
-  # main CI = build-push.yml on push:[main] + release:published — POST-merge, not per-PR. Per the
-  # "L2->L3 is TRIGGER not asset; post-merge tests are L1" calibration, this is L1. 53 test files exist
-  # but are not a per-change blocking trigger. ACTION: merging ci/pr-checks lifts this to L2.
+  # GAP (target L3): no on-disk agent-to-agent review loop that runs before a human looks.
+  # CI today: Gitea .gitea/workflows/check.yml (on main since #157, 2026-06-23) runs on every PR to
+  # main: secret scan, CHANGELOG format, lint, typecheck, server/web/mobile tests, asset check.
+  # GitHub build-push.yml runs on every push to main: tests, npm audit, image build + cosign signing.
+  # On tags, release.yml (vX.Y.Z) promotes the already-built :sha-<short> image to :X.Y.Z by digest
+  # and publishes the GitHub Release, and build-apk.yml (mobile-vX.Y.Z) builds the signed APK and
+  # attaches it to a GitHub Release. The level below is from the audit of 8e8a6f9, which predates
+  # check.yml reaching main; levels change only at an audit.
   verification: L1
   # GAP (target L2): no quality-grade / golden-principles doc (no QUALITY_SCORE.md). CHANGELOG +
   # IMPROVEMENT-PLAN are periodic-manual. Per calibration gc L1 = no quality-grade doc.
@@ -33,8 +37,8 @@ levels:
 evidence:
   context:      [docs/ARCHITECTURE.md, docs/adr/README.md, docs/security/STRIDE.md, docs/slos/README.md]
   legibility:   [server/demo.js, docs/DEMO.md, server/metrics.js, server/util/logger.js, server/observability.test.js]
-  enforcers:    [eslint.config.js, .github/workflows/build-push.yml]
-  verification: [.github/workflows/build-push.yml, scripts/check-assets.mjs]
+  enforcers:    [eslint.config.js, .gitea/workflows/check.yml, .github/workflows/build-push.yml]
+  verification: [.gitea/workflows/check.yml, .github/workflows/build-push.yml, scripts/check-assets.mjs]
   gc:           [CHANGELOG.md, docs/IMPROVEMENT-PLAN.md]
   autonomy:     [.gitea/workflows/auto-pr.yml, .gitea/workflows/deploy.yml]
 

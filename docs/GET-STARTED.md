@@ -251,13 +251,13 @@ docker compose up -d
 
 Docker will pull the image from GHCR automatically on first run. No cloning or building required.
 
-To pin to a specific version instead of always getting the latest:
+`:latest` follows the most recent build of `main`. To pin to a release instead:
 
 ```yaml
-    image: ghcr.io/jagbhandal/jaghelm:1.0.0
+    image: ghcr.io/jagbhandal/jaghelm:X.Y.Z   # a version from the Releases page
 ```
 
-Available versions are listed on the [GitHub Releases](https://github.com/jagbhandal/jaghelm/releases) page.
+Releases and their notes are listed on the [GitHub Releases](https://github.com/jagbhandal/jaghelm/releases) page, and the full history is in [`CHANGELOG.md`](../CHANGELOG.md). From 2.0.0, a version tag points to the exact image built from `main` for that release and never moves. Every build of `main` is also published as `:sha-<short>` (the first seven characters of the commit); sha tags are per-build and normally stable.
 
 ---
 
@@ -472,7 +472,7 @@ docker compose pull
 docker compose up -d
 ```
 
-To pin to a specific version, update the `image:` tag in your `compose.yaml` to a version from the [GitHub Releases](https://github.com/jagbhandal/jaghelm/releases) page and re-run `docker compose up -d`.
+To pin to a specific version, update the `image:` tag in your `compose.yaml` to a version from the [GitHub Releases](https://github.com/jagbhandal/jaghelm/releases) page and re-run `docker compose up -d`. Read the release notes before upgrading: a "Breaking changes" section lists the steps an upgrade needs.
 
 ---
 

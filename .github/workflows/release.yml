@@ -1,0 +1,463 @@
+name: Release
+
+# Publishes a server release for a vX.Y.Z tag WITHOUT rebuilding the image.
+# build-push.yml already built, pushed and cosign-signed
+# ghcr.io/jagbhandal/jaghelm:sha-<short> when the commit landed on main. This
+# workflow verifies the cosign signature on that exact digest, then adds the
+# :X.Y.Z tag to it, and creates the GitHub Release from the CHANGELOG
+# (scripts/release-notes.mjs).
+# A published image tag never moves and a published release page is never
+# rewritten: both cases fail instead.
+#
+# Tags are created on Gitea only and reach GitHub through the push mirror.
+# Never create a tag or a release by hand on GitHub. Procedure: docs/RELEASING.md.
+#
+# Manual runs (Actions > Release > Run workflow):
+#   tag empty, dry_run on  Rehearse the dispatched ref as if it were tagged with
+#                          its package.json version. Publishes nothing; the
+#                          rendered release page goes to the job summary.
+#   tag set, dry_run on    Run every check for an existing tag. Publishes nothing.
+#   tag set, dry_run off   Publish :X.Y.Z for an existing tag (a no-op when it is
+#                          already at this digest). create_release also creates
+#                          the release page.
+#   repair                 The only sanctioned way to move a published :X.Y.Z
+#                          (one-time :1.4.0 fix). Needs a tag.
+# Release notes are rendered only when the run would create a release (tag push,
+# create_release, or the no-tag rehearsal), whatever dry_run says. So a tag that
+# predates scripts/release-notes.mjs can still be repaired, and rehearsed with
+# dry_run on, as long as create_release is off.
+#
+# Injection safety: inputs and the tag name reach shell only through env: and are
+# validated against ^v[0-9]+\.[0-9]+\.[0-9]+$ before any other use.
+
+on:
+  push:
+    tags:
+      # GitHub anchors tag globs at the start, so 'v*' does not match mobile-v* tags.
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag, e.g. v2.0.0. Leave empty for a dry run of the selected branch at its package.json version.'
+        type: string
+        required: false
+        default: ''
+      dry_run:
+        description: 'Run every check (notes only when a release would be created); publish nothing'
+        type: boolean
+        default: true
+      create_release:
+        description: 'Also create the GitHub Release (needs a tag and dry_run off)'
+        type: boolean
+        default: false
+      repair:
+        description: 'Allow moving an existing :X.Y.Z image tag to this commit''s image (one-time repair only)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/jagbhandal/jaghelm
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      # Runs before checkout so nothing (not even the checkout ref) uses an
+      # unvalidated tag. Everything later steps read comes from $GITHUB_ENV.
+      - name: Resolve mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IN_TAG: ${{ inputs.tag }}
+          IN_DRY_RUN: ${{ inputs.dry_run }}
+          IN_CREATE_RELEASE: ${{ inputs.create_release }}
+          IN_REPAIR: ${{ inputs.repair }}
+        run: |
+          set -euo pipefail
+          tag_re='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          TAG=""
+          case "$EVENT_NAME" in
+            push)
+              if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
+                echo "::error::push event is not a tag push"
+                exit 1
+              fi
+              TAG="$GITHUB_REF_NAME"
+              DRY_RUN=false PUBLISH=true CREATE_RELEASE=true REPAIR=false
+              RENDER_NOTES=true
+              ;;
+            workflow_dispatch)
+              for b in "$IN_DRY_RUN" "$IN_CREATE_RELEASE" "$IN_REPAIR"; do
+                if [[ "$b" != "true" && "$b" != "false" ]]; then
+                  echo "::error::dry_run, create_release and repair must be true or false"
+                  exit 1
+                fi
+              done
+              DRY_RUN="$IN_DRY_RUN"
+              if [[ -n "$IN_TAG" ]]; then
+                TAG="$IN_TAG"
+                REPAIR="$IN_REPAIR"
+                # Notes whenever a release would be created, dry run or not.
+                RENDER_NOTES="$IN_CREATE_RELEASE"
+                if [[ "$DRY_RUN" == "true" ]]; then
+                  PUBLISH=false CREATE_RELEASE=false
+                else
+                  PUBLISH=true CREATE_RELEASE="$IN_CREATE_RELEASE"
+                fi
+              else
+                # No tag: dry run of the dispatched ref at its package.json
+                # version (TAG is resolved after checkout).
+                if [[ "$DRY_RUN" != "true" ]]; then
+                  echo "::error::a run without a tag is a dry run only; set dry_run or give an existing tag"
+                  exit 1
+                fi
+                if [[ "$IN_CREATE_RELEASE" == "true" || "$IN_REPAIR" == "true" ]]; then
+                  echo "::error::create_release and repair need a tag"
+                  exit 1
+                fi
+                PUBLISH=false CREATE_RELEASE=false REPAIR=false
+                RENDER_NOTES=true
+              fi
+              ;;
+            *)
+              echo "::error::unsupported event"
+              exit 1
+              ;;
+          esac
+
+          if [[ -n "$TAG" ]]; then
+            if [[ ! "$TAG" =~ $tag_re ]]; then
+              echo "::error::tag must look like vMAJOR.MINOR.PATCH (e.g. v2.0.0)"
+              exit 1
+            fi
+            CHECKOUT_REF="refs/tags/$TAG"
+          else
+            CHECKOUT_REF="$GITHUB_SHA"
+          fi
+
+          MODE="$EVENT_NAME; dry_run=$DRY_RUN; publish=$PUBLISH; create_release=$CREATE_RELEASE; repair=$REPAIR; render_notes=$RENDER_NOTES"
+          echo "mode: $MODE"
+          {
+            echo "MODE=$MODE"
+            echo "TAG=$TAG"
+            echo "DRY_RUN=$DRY_RUN"
+            echo "PUBLISH=$PUBLISH"
+            echo "CREATE_RELEASE=$CREATE_RELEASE"
+            echo "REPAIR=$REPAIR"
+            echo "RENDER_NOTES=$RENDER_NOTES"
+            echo "CHECKOUT_REF=$CHECKOUT_REF"
+          } >> "$GITHUB_ENV"
+
+      # ── 1. Check out the release commit ─────────────────────────────────────
+      - name: Checkout the release commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          fetch-depth: 0
+          # Nothing here pushes with git; keep the write token out of .git/config.
+          persist-credentials: false
+
+      - name: Resolve commit and version
+        run: |
+          set -euo pipefail
+          tag_re='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          COMMIT="$(git rev-parse HEAD)"
+          if [[ ! "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::could not resolve the checked-out commit"
+            exit 1
+          fi
+          if [[ -n "${TAG:-}" ]]; then
+            TAG_COMMIT="$(git rev-parse --verify --quiet "refs/tags/${TAG}^{commit}")" || {
+              echo "::error::tag $TAG does not exist"
+              exit 1
+            }
+            if [[ "$TAG_COMMIT" != "$COMMIT" ]]; then
+              echo "::error::checked out $COMMIT but $TAG points to $TAG_COMMIT"
+              exit 1
+            fi
+          else
+            TAG="v$(jq -r .version package.json)"
+            if [[ ! "$TAG" =~ $tag_re ]]; then
+              echo "::error::package.json version is not MAJOR.MINOR.PATCH"
+              exit 1
+            fi
+            echo "TAG=$TAG" >> "$GITHUB_ENV"
+          fi
+          SHORT="${COMMIT:0:7}"
+          VERSION="${TAG#v}"
+          echo "tag $TAG -> commit $COMMIT (image tag sha-$SHORT), version $VERSION"
+          {
+            echo "COMMIT=$COMMIT"
+            echo "SHORT=$SHORT"
+            echo "VERSION=$VERSION"
+          } >> "$GITHUB_ENV"
+
+      # ── 2. Only merged commits are released ─────────────────────────────────
+      - name: Require the commit to be on main
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor "$COMMIT" origin/main; then
+            echo "::error::$COMMIT is not reachable from origin/main; only merged commits are released"
+            exit 1
+          fi
+
+      # ── 3. Tag and version file agree ───────────────────────────────────────
+      - name: Require package.json version to match the tag
+        run: |
+          set -euo pipefail
+          PKG_VERSION="$(jq -r .version package.json)"
+          if [[ "$PKG_VERSION" != "$VERSION" ]]; then
+            echo "::error::package.json version is $PKG_VERSION but the tag is $TAG"
+            exit 1
+          fi
+
+      # ── 4. Release notes (also proves the CHANGELOG has this version) ───────
+      # Only when the run would create a release (RENDER_NOTES, see the header).
+      # Runs before anything is published, so a missing or malformed CHANGELOG
+      # entry stops the release with no side effects. No npm ci: the scripts
+      # use Node built-ins only.
+      - name: Set up Node
+        if: env.RENDER_NOTES == 'true'
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+
+      - name: Render release notes from the CHANGELOG
+        if: env.RENDER_NOTES == 'true'
+        run: |
+          set -euo pipefail
+          if [[ ! -f scripts/release-notes.mjs ]]; then
+            echo "::error::$TAG predates scripts/release-notes.mjs, so no notes can be rendered for it; repair an old tag's image with create_release off"
+            exit 1
+          fi
+          PREV="$(git describe --tags --abbrev=0 --match 'v*' "$COMMIT^" 2>/dev/null || true)"
+          echo "previous release tag: ${PREV:-none}"
+          node scripts/release-notes.mjs server "$VERSION" ${PREV:+--prev "$PREV"} > notes.md
+          echo "NOTES_RENDERED=true" >> "$GITHUB_ENV"
+
+      # ── 5. Wait (bounded) for build-push.yml's image of this commit ─────────
+      # A tag pushed seconds after the merge arrives before the image exists.
+      - name: Wait for the image built from this commit
+        run: |
+          set -euo pipefail
+          ref="$IMAGE:sha-$SHORT"
+          err="$RUNNER_TEMP/wait-inspect.err"
+          deadline=$(( $(date +%s) + 15 * 60 ))
+          until timeout 60 docker buildx imagetools inspect "$ref" > /dev/null 2> "$err"; do
+            if (( $(date +%s) >= deadline )); then
+              cat "$err" >&2
+              echo "::error::$ref did not appear within 15 minutes; check that build-push.yml succeeded for $COMMIT"
+              exit 1
+            fi
+            echo "waiting for $ref (build-push.yml still running?); next check in 20 s"
+            sleep 20
+          done
+          echo "found $ref"
+
+      # ── 6. The digest is what gets released, never a tag name ───────────────
+      - name: Resolve the image digest
+        run: |
+          set -euo pipefail
+          DIGEST="$(docker buildx imagetools inspect "$IMAGE:sha-$SHORT" --format '{{json .Manifest}}' | jq -r .digest)"
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::could not resolve a digest for $IMAGE:sha-$SHORT"
+            exit 1
+          fi
+          echo "$IMAGE:sha-$SHORT = $DIGEST"
+          echo "DIGEST=$DIGEST" >> "$GITHUB_ENV"
+
+      # ── 7. Published tags never move ────────────────────────────────────────
+      # Only a definite "not found" counts as absent; any other inspect error
+      # fails, so a registry hiccup can never be mistaken for a free tag.
+      - name: Check for an existing version tag
+        run: |
+          set -euo pipefail
+          ref="$IMAGE:$VERSION"
+          err="$RUNNER_TEMP/version-inspect.err"
+          EXISTING_DIGEST=none
+          if manifest="$(timeout 60 docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' 2> "$err")"; then
+            EXISTING_DIGEST="$(jq -r .digest <<< "$manifest")"
+            if [[ ! "$EXISTING_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::could not read the digest of the existing $ref"
+              exit 1
+            fi
+            if [[ "$EXISTING_DIGEST" == "$DIGEST" ]]; then
+              echo "::notice::$ref already points to $DIGEST (already published); not re-tagging"
+              ALREADY_PUBLISHED=true
+            elif [[ "$REPAIR" == "true" ]]; then
+              echo "::warning::repair: $ref points to $EXISTING_DIGEST and will be moved to $DIGEST (only when not a dry run)"
+              ALREADY_PUBLISHED=false
+            else
+              echo "::error::$ref already points to $EXISTING_DIGEST; published tags never move"
+              exit 1
+            fi
+          elif grep -qF "$ref: not found" "$err"; then
+            echo "$ref does not exist yet"
+            ALREADY_PUBLISHED=false
+          else
+            cat "$err" >&2
+            echo "::error::could not check whether $ref exists"
+            exit 1
+          fi
+          {
+            echo "ALREADY_PUBLISHED=$ALREADY_PUBLISHED"
+            echo "EXISTING_DIGEST=$EXISTING_DIGEST"
+          } >> "$GITHUB_ENV"
+
+      # ── 8. Only a signed image gets a version tag ───────────────────────────
+      # Verified BEFORE tagging: :X.Y.Z can never move, so an unsigned image must
+      # never receive one. If this fails, nothing is tagged. The signature is on
+      # the digest, so it also covers :X.Y.Z once the tag is added (no re-signing).
+      - name: Install cosign
+        uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3
+
+      # build-push.yml signs a few seconds after it pushes :sha-<short>, so a tag
+      # pushed seconds after the merge can get here before the signature exists:
+      # retry, bounded.
+      - name: Verify the image signature
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 5 * 60 ))
+          until timeout 120 cosign verify "$IMAGE@$DIGEST" \
+              --certificate-identity-regexp '^https://github\.com/jagbhandal/jaghelm/\.github/workflows/build-push\.yml@refs/(heads/main|tags/[^/]+)$' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-github-workflow-sha "$COMMIT" > /dev/null; do
+            if (( $(date +%s) >= deadline )); then
+              echo "::error::no valid cosign signature for $IMAGE@$DIGEST after 5 minutes; nothing was tagged"
+              exit 1
+            fi
+            echo "signature not verifiable yet; next check in 20 s"
+            sleep 20
+          done
+          echo "cosign signature verified for $IMAGE@$DIGEST"
+          echo "SIGNATURE_VERIFIED=true" >> "$GITHUB_ENV"
+
+      # ── 9. Add :X.Y.Z to the verified digest (no rebuild) ───────────────────
+      # --prefer-index=false copies the manifest byte for byte. The default (true)
+      # wraps a single-platform manifest (which build-push.yml produces) in a NEW
+      # manifest list with a different digest: :X.Y.Z would then point at
+      # something that was never signed, and could never be moved back. The
+      # planned manifest is hashed first (also in dry runs) so a mismatch stops
+      # the run before anything is pushed.
+      - name: Check the version tag would be a byte-for-byte copy
+        if: env.ALREADY_PUBLISHED == 'false'
+        run: |
+          set -euo pipefail
+          # --dry-run prints the manifest plus one trailing newline; drop it, hash the rest.
+          planned="sha256:$(docker buildx imagetools create --dry-run --prefer-index=false --tag "$IMAGE:$VERSION" "$IMAGE@$DIGEST" | head -c -1 | sha256sum | cut -d' ' -f1)"
+          if [[ "$planned" != "$DIGEST" ]]; then
+            echo "::error::tagging would publish $planned, not $DIGEST; refusing"
+            exit 1
+          fi
+          echo "$IMAGE:$VERSION would point to $DIGEST"
+
+      - name: Log in to GitHub Container Registry
+        if: env.PUBLISH == 'true' && env.ALREADY_PUBLISHED == 'false'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag the image with the version
+        if: env.PUBLISH == 'true' && env.ALREADY_PUBLISHED == 'false'
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create --prefer-index=false --tag "$IMAGE:$VERSION" "$IMAGE@$DIGEST"
+          NOW="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)"
+          if [[ "$NOW" != "$DIGEST" ]]; then
+            echo "::error::$IMAGE:$VERSION resolves to $NOW, expected $DIGEST"
+            exit 1
+          fi
+          echo "$IMAGE:$VERSION -> $DIGEST"
+          echo "PUBLISHED=true" >> "$GITHUB_ENV"
+
+      # ── 10. Release page: created once, never rewritten ─────────────────────
+      # --verify-tag: never let gh create the tag on GitHub (the mirror would
+      # delete it); the tag must already exist, pushed from Gitea.
+      - name: Create the GitHub Release
+        if: env.CREATE_RELEASE == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "${NOTES_RENDERED:-}" != "true" || ! -s notes.md ]]; then
+            echo "::error::release notes were not rendered"
+            exit 1
+          fi
+          err="$RUNNER_TEMP/release-view.err"
+          if gh release view "$TAG" --json tagName > /dev/null 2> "$err"; then
+            echo "::error::a GitHub Release for $TAG already exists; published release pages are never rewritten"
+            exit 1
+          fi
+          if ! grep -q 'release not found' "$err"; then
+            cat "$err" >&2
+            echo "::error::could not check for an existing GitHub Release for $TAG"
+            exit 1
+          fi
+          gh release create "$TAG" --verify-tag --title "JagHelm $VERSION" --notes-file notes.md --latest
+          echo "RELEASE_CREATED=true" >> "$GITHUB_ENV"
+
+      # ── 11. Job summary (always; the dry run's preview of the release page) ──
+      # Every value printed here was validated before it was written to $GITHUB_ENV.
+      - name: Job summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          if [[ "${ALREADY_PUBLISHED:-}" == "true" ]]; then
+            image_status="already published at this digest (unchanged)"
+          elif [[ "${PUBLISHED:-}" == "true" ]]; then
+            image_status="published"
+          elif [[ "${ALREADY_PUBLISHED:-}" == "false" && "${PUBLISH:-}" == "false" && "$JOB_STATUS" == "success" ]]; then
+            image_status="dry run: would publish"
+          elif [[ "$JOB_STATUS" != "success" ]]; then
+            image_status="not published (run failed)"
+          else
+            image_status="not published"
+          fi
+          if [[ "${EXISTING_DIGEST:-none}" != "none" && "${ALREADY_PUBLISHED:-}" == "false" ]]; then
+            image_status="$image_status (repair: was ${EXISTING_DIGEST})"
+          fi
+          sig_status="not verified"
+          if [[ "${SIGNATURE_VERIFIED:-}" == "true" ]]; then
+            sig_status="verified (cosign, keyless)"
+          fi
+          if [[ "${RELEASE_CREATED:-}" == "true" ]]; then
+            release_status="created"
+          elif [[ "${CREATE_RELEASE:-}" == "true" ]]; then
+            release_status="not created"
+          else
+            release_status="not requested"
+          fi
+          {
+            echo "## Release ${TAG:-(unresolved)}"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Mode | ${MODE:-unresolved} |"
+            echo "| Tag | ${TAG:-unresolved} |"
+            echo "| Commit | ${COMMIT:-unresolved} |"
+            echo "| Source image | ${IMAGE}:sha-${SHORT:-unresolved} |"
+            echo "| Digest | ${DIGEST:-unresolved} |"
+            echo "| ${IMAGE}:${VERSION:-unresolved} | ${image_status} |"
+            echo "| Signature | ${sig_status} |"
+            echo "| GitHub Release | ${release_status} |"
+            if [[ "${NOTES_RENDERED:-}" == "true" && -s notes.md ]]; then
+              echo
+              echo "### Release notes as rendered"
+              echo
+              cat notes.md
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

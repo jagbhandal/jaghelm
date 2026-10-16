@@ -58,6 +58,9 @@ CMD ["node", "server/index.js"]
 # These let `docker inspect` / registries resolve exactly what source + version
 # produced this image, which makes rollback ("redeploy the SHA that worked")
 # auditable.
+# Expose the build commit to the app at runtime (reported by /api/health).
+ENV JAGHELM_REVISION=${IMAGE_REVISION}
+
 LABEL org.opencontainers.image.title="JagHelm" \
       org.opencontainers.image.description="Self-hosted homelab dashboard with live data" \
       org.opencontainers.image.version="${IMAGE_VERSION}" \
