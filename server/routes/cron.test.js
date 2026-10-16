@@ -119,3 +119,16 @@ for (const name of ['__proto__', 'constructor', 'prototype']) {
     });
   }
 }
+
+test('report rejects non-string node/job/status', async () => {
+  for (const body of [
+    { node: ['__proto__'], job: 'x' },
+    { node: 'n1', job: ['constructor'] },
+    { node: 5, job: 'x' },
+  ]) {
+    const res = await report(body);
+    assert.equal(res.status, 400, JSON.stringify(body));
+    assert.equal(({}).x, undefined);
+  }
+  assert.equal((await report({ node: 'n1', job: 'x', status: ['success'] })).status, 400);
+});

@@ -16,7 +16,7 @@ router.post('/report', (req, res) => {
   }
 
   const { job, node, status, duration_seconds, schedule, error } = req.body;
-  if (!job || !node || !['success', 'failure'].includes(status)) {
+  if (typeof job !== 'string' || typeof node !== 'string' || typeof status !== 'string' || !job || !node || !['success', 'failure'].includes(status)) {
     return apiError(res, 400, 'Missing required fields: job, node, status');
   }
   const RESERVED = ['__proto__', 'constructor', 'prototype'];
