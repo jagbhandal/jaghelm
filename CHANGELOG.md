@@ -19,7 +19,10 @@ token-based Nextcloud authentication.
 
 ### Added
 - Watchtower update notifications via Discord and mobile push, including
-  containers held back by monitor-only labels.
+  containers held back by monitor-only labels. Point Watchtower's webhook
+  notifications at `POST /api/watchtower/event` and set
+  `JAGHELM_WATCHTOWER_SECRET` (sent as `secret` in the body) to enable it; set
+  `JAGHELM_WATCHTOWER_DISCORD_WEBHOOK` to also post to Discord.
 - Overdue detection for scheduled jobs: reporters can declare an expected
   interval, and JagHelm alerts when a job stops reporting.
 - Scheduled jobs can be removed from the dashboard, together with their history.
@@ -31,6 +34,8 @@ token-based Nextcloud authentication.
 
 ### Fixed
 - Nextcloud polling no longer triggers Nextcloud's brute-force protection.
+- `ghcr.io/jagbhandal/jaghelm:1.4.0` pointed to the 1.5.0 build; it now points
+  to the 1.4.0 build.
 
 ### Security
 - The Gitea integration sends its API token in the `Authorization` header
