@@ -59,8 +59,14 @@ export async function bootMobile() {
   // Revalidate against the server. /auth/check always returns 200 with an
   // {authenticated} flag (it never 401s), so inspect the body, not the status.
   try {
-    const r = await withTimeout(apiFetch(`${base}/auth/check`), BOOT_TIMEOUT_MS);
-    const body = await withTimeout(r.json().catch(() => ({})), BOOT_TIMEOUT_MS);
+    // One shared deadline covers the request AND the body read.
+    const { r, body } = await withTimeout(
+      (async () => {
+        const res = await apiFetch(`${base}/auth/check`);
+        return { r: res, body: await res.json().catch(() => ({})) };
+      })(),
+      BOOT_TIMEOUT_MS,
+    );
     if (r.ok && body && body.authenticated) return { hasUrl: true, hasToken: true, baseUrl: base };
     await secureStore.removeItem(TOKEN_KEY);
     setAuthToken('');

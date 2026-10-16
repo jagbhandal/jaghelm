@@ -125,4 +125,33 @@ describe('bootMobile', () => {
       vi.useRealTimers();
     }
   });
+
+  it('shares one BOOT_TIMEOUT_MS deadline across fetch and body read', async () => {
+    vi.useFakeTimers();
+    try {
+      getItem.mockResolvedValue('http://vm-101:3099/api');
+      getPref.mockResolvedValue('true');
+      getAuthToken.mockReturnValue('tok');
+      apiFetch.mockResolvedValue({ ok: true, json: () => new Promise(() => {}) });
+      let result;
+      const p = bootMobile().then((r) => { result = r; });
+      await vi.advanceTimersByTimeAsync(BOOT_TIMEOUT_MS - 1);
+      expect(result).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      await p;
+      expect(result).toEqual({ hasUrl: true, hasToken: true, baseUrl: 'http://vm-101:3099/api', unreachable: true });
+      expect(removeItem).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('treats an unparseable body as not authenticated (not unreachable)', async () => {
+    getItem.mockResolvedValue('http://vm-101:3099/api');
+    getPref.mockResolvedValue('true');
+    getAuthToken.mockReturnValue('tok');
+    apiFetch.mockResolvedValue({ ok: true, json: () => Promise.reject(new Error('bad json')) });
+    const r = await bootMobile();
+    expect(r).toEqual({ hasUrl: true, hasToken: false, baseUrl: 'http://vm-101:3099/api' });
+  });
 });
