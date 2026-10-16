@@ -6,442 +6,338 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
-### Fixed
+### Breaking changes
+- **Nextcloud authenticates with a serverinfo token.** Username and password are no longer accepted. On the Nextcloud host run `occ config:app:set serverinfo token --value "$(openssl rand -hex 32)"`, then enter the token in the integration's **API Key (NC-Token)** field.
 
-- **Nextcloud integration no longer trips Nextcloud's brute-force protection.**
-  The preset authenticated to the `serverinfo` API with **basic auth**, so every
-  dashboard poll was a login attempt. A wrong or rotated admin password turned
-  each refresh into a failed login — silently accumulating brute-force attempts,
-  throttling the reverse-proxy IP (HTTP 429 "Reached maximum delay"), and
-  flooding the Nextcloud log. The connection could also *test* green against
-  `/ocs/v2.php/cloud/capabilities` while the real `serverinfo` poll kept failing.
+### Added
+- Watchtower update notifications via Discord and mobile push, including containers held back by monitor-only labels.
+- `/api/health` reports the build commit alongside the version.
 
 ### Changed
+- Version tags now point to the exact image built from `main`; releases no longer rebuild, and published tags never move.
 
-- **BREAKING (Nextcloud integration): now authenticates with a serverinfo
-  `NC-Token` instead of a username + password.** This is serverinfo's
-  purpose-built, unattended-monitoring auth and never touches the login /
-  brute-force path. **Migration:** on your Nextcloud host run
-  `occ config:app:set serverinfo token --value "$(openssl rand -hex 32)"`, then
-  open the Nextcloud integration in JagHelm and paste that token into the new
-  **API Key (NC-Token)** field (the Username/Password fields are gone). The
-  connection test now hits the same token-gated `serverinfo` endpoint it polls,
-  so a green test means the live poll works.
+### Fixed
+- Nextcloud polling no longer triggers Nextcloud's brute-force protection.
+
+### Security
+- The Gitea integration sends its API token in the `Authorization` header instead of the URL, keeping it out of Gitea's request logs.
+- Dependencies updated to resolve published high-severity advisories.
 
 ## [1.5.0] — 2026-06-27
 
-**JagHelm goes mobile — and gets loud when something breaks.** Where 1.4.0 was a
-correctness pass, 1.5.0 ships the biggest new surface since the dashboard itself:
-a native Android app that watches the board from your pocket over the tailnet and
-**pushes a notification the moment a service, host, UPS, or cron job changes state**
-— no open tab, no manual polling. Alongside it, the board stops lying by omission —
-a service that goes down now *shows* as down instead of silently vanishing, overall
-health is computed once on the server, and Kuma can read every monitor and its uptime
-from the authenticated `/metrics` endpoint. **389 server tests (up from 314), plus a
-183-test web suite and a new 244-test mobile suite; the release's multi-agent security
-review found no critical- or high-severity issues.**
+Adds the Android app with push notifications for state changes, keeps stopped
+services visible on the board, and reads Kuma monitors from Kuma's
+authenticated metrics endpoint when an API key is set.
 
-### Mobile
+### Added
+- Android app: a Capacitor app, distributed as a signed APK, that shows the
+  dashboard over the tailnet. Sign in with your JagHelm username and password;
+  an optional keep-signed-in setting revalidates the session on launch.
+- Push notifications to the Android app (Firebase Cloud Messaging) when state
+  changes: a service goes down or recovers, a host becomes unreachable, a host
+  metric crosses a threshold (with a hysteresis band so it does not flap at the
+  edge), a UPS switches to battery or power is restored, or a cron job fails or
+  recovers. The server compares each refresh with the previous one and notifies
+  only on real transitions.
+- Tapping a notification opens the related incident in the app (`jaghelm://`
+  links).
+- Notification settings per event category. Turning notifications off removes
+  the device token on the server, not only on the phone.
+- With `KUMA_API_KEY` set, JagHelm reads every Kuma monitor and its 1-day uptime
+  from Kuma's authenticated `/metrics` endpoint in one request, keyed on
+  `monitor_id`, instead of two status-page requests. It falls back to the status
+  page when the key is unset or rejected (`401`), or when Kuma is too old to
+  report `monitor_id`, so a bad key never empties the board.
+- An overall health status, computed on the server, shown as one status dot in
+  the web navigation bar and on the app's Overview.
+- Services that nothing monitors are tagged "unmonitored".
 
-- **A native Android app.** A Capacitor shell around the live dashboard, installable as
-  a signed APK. Log in with username/password over the tailnet, with a keep-signed-in
-  toggle that revalidates on launch.
-- **Push notifications on real state changes.** The server diffs each refresh against the
-  last and pushes via FCM only on genuine transitions: a service going **down/recovering**,
-  a host going **unreachable**, a host metric **crossing a threshold** (with a hysteresis
-  band so it doesn't flap on the edge), a **UPS dropping to battery / restored**, and a
-  **cron job failing/recovering**. The snapshot → diff → dispatch core is deterministic.
-- **Tap-to-incident deep links.** A notification opens the app straight to the relevant
-  incident via a `jaghelm://` scheme.
-- **Per-category notification settings + a real off switch.** Choose which event classes
-  notify you; turning push off tears the device token down server-side, not just locally.
-- **Signed-APK release pipeline.** A GitHub Actions workflow builds and signs the release
-  APK (Capacitor 8 / JDK 21), gated on keystore secrets so it no-ops until they're set,
-  with a keystore runbook.
-
-### Monitoring
-
-- **Down services show as down — they no longer disappear.** A stopped container's card
-  used to vanish from the board entirely, which reads as "all clear." The board is now
-  assembled from **running containers ∪ active Kuma monitors ∪ presence breadcrumbs**, so
-  a down service stays on the board as a down card and a recently-vanished container leaves
-  a grey breadcrumb instead of a silent gap.
-- **Server-computed overall health** drives one status dot in the web NavBar and the mobile
-  Overview, an **"unmonitored"** tag for services nothing is watching, and a
-  **down → unknown → up** sort that floats trouble to the top.
-- **Kuma can read the authenticated `/metrics` endpoint.** With `KUMA_API_KEY` set, one
-  authenticated scrape replaces the two status-page calls and sees **every** monitor plus
-  its 1-day uptime — keyed on `monitor_id`. It **degrades gracefully** back to the
-  status-page path when the key is unset, wrong (a `401`), or the Kuma is too old to expose
-  `monitor_id`, so a bad key never blanks the board.
+### Changed
+- Services are sorted down, then unknown, then up, so problems are listed first.
 
 ### Fixed
-
-- **One source of truth for the API base** across web and mobile (`getApiBase()`), with
-  `ETag` added to the CORS exposed headers.
-- A batch of mobile correctness fixes: push registration gated on build-time Firebase
-  config, node-row navigation, ≥44px tap targets, and a tailnet-accurate URL placeholder.
+- A stopped container's card no longer disappears from the board, which made an
+  outage look like everything was fine. The board now combines running
+  containers, active Kuma monitors and recently seen containers: a down service
+  stays on the board as a down card, and a container that has just disappeared
+  leaves a grey placeholder.
+- `ETag` is included in the CORS exposed headers, and the web dashboard and the
+  app resolve the API base address the same way.
+- Android app: push registration only runs when the build includes Firebase
+  configuration.
+- Android app: tapping a node row navigates correctly.
+- Android app: tap targets are at least 44 px.
+- Android app: the server address placeholder shows a tailnet address.
 
 ### Security
-
-- **Prototype pollution blocked in the new parsers and stores.** The Kuma `/metrics` parser
-  and the push token/prefs store reject `__proto__` / `constructor` / `prototype` keys and
-  validate their numeric inputs. Surfaced and fixed by this release's own multi-agent
-  security review.
-- **Mobile attack surface kept tight.** Cleartext HTTP is scoped to the tailnet only, the
-  deep-link intent-filter drops `BROWSABLE`, `allowBackup` is off, and extra CSP connect
-  entries are validated.
-- **Dependency note.** Adding `firebase-admin` for FCM introduces **6 moderate** transitive
-  advisories (via `@google-cloud/storage`); none are critical or high.
+- The Kuma `/metrics` parser and the push token and preference store reject
+  `__proto__`, `constructor` and `prototype` keys and validate numeric input.
+- Android app: cleartext HTTP is allowed only for tailnet addresses, the
+  deep-link intent filter is not `BROWSABLE`, Android backup (`allowBackup`) is
+  disabled, and extra CSP connect entries are validated.
+- `firebase-admin`, added for push notifications, brings 6 moderate-severity
+  transitive advisories (through `@google-cloud/storage`); none are high or
+  critical.
 
 ## [1.4.0] — 2026-06-22
 
-**Correctness and clarity.** Where 1.3.0 added the glance layer, 1.4.0 is a deep
-cleanup pass — a whole-codebase map → fix → review. No new features: it squashes
-27+ real bugs (including a Kuma-outage board freeze and a class of "a real 0 reads
-as no-data" drops), fixes an icon picker that showed a chosen icon's filename
-instead of the icon, converges the icon pipeline onto a single resolver, trims
-~370 lines of comment bloat, and closes a gap where an "unsupported" integration
-could still be reached server-side. **314 automated tests (up from 256); 0 known
-vulnerabilities.**
-
-### Fixed
-
-- **A Kuma outage no longer freezes the board.** A sustained status-page `5xx`
-  was serving indefinitely-old "up" statuses past the 5-minute stale ceiling — the
-  exact freeze the ceiling exists to prevent. Failure now drops to "unknown".
-- **A real `0` is no longer mistaken for "no data."** A 0% CPU container, an idle
-  `0°` sensor, a `0` UPS reading, or `0 MB` used previously coerced to a blank —
-  fixed across ~10 metric-extraction sites (node discovery, refresh, and the Docker
-  containers view).
-- **Picking an icon now shows the icon, not a filename.** A panel/quick-link icon
-  set to a bare Dashboard-Icons slug or filename (`gitea`, `gitea.svg`) was printed
-  as text by some renderers; every renderer now resolves icon values the same way.
-- **Proxmox child panels show on any node**, not only one literally named `pve` —
-  the VM/storage/backup panels were gated on a hardcoded node key.
-- **Quieter failures got louder.** Integration delete confirms before navigating
-  away; a failed delete/toggle/refetch now raises a toast instead of silently
-  leaving stale UI; the auth check fails closed (login gate) on a network/5xx
-  instead of rendering a shell that then 401s.
-- **Exact-match service hide/unhide** — hiding `redis` no longer also hides
-  `redis-backup`, and un-hiding can't remove an unrelated rule.
-- A batch of smaller correctness fixes: caddy/frigate count fields, an honest
-  GitLab tile (version, not a meaningless project id), demo trailing-slash routes,
-  the iframe **Retry** timer, weather lat/lon re-sync on config import, NavBar
-  Enter-vs-dropdown agreement, and deterministic app-data matching.
+A maintenance release with no new features: it fixes a board freeze during
+Kuma outages, zero values shown as missing data and icons shown as filenames,
+and enforces the block on unsupported integrations on the server.
 
 ### Changed
+- Built-in service icons load from the maintained `homarr-labs` Dashboard Icons
+  CDN instead of the deprecated `walkxcode` one.
+- Proxmox integrations are identified by their preset rather than by the fields
+  they return.
 
-- **Whole-codebase structural cleanup.** De-duplicated primitives that had already
-  *drifted* (error redaction, emoji detection, constant-time compare, login-body
-  construction, color picker, field rows, the service-card projection), extracted
-  oversized components into hooks, and deleted dead code — behavior preserved.
-- **One icon pipeline.** A single `iconImageSrc` resolver (URL / slug / filename /
-  emoji) shared by every renderer, one CDN base, one slug builder; built-in service
-  icons moved off the deprecated `walkxcode` CDN to the maintained `homarr-labs`
-  one. Proxmox integrations are now identified by a server-stamped preset id rather
-  than by sniffing their output fields.
-- **~370 fewer lines of comment bloat** (ASCII banners, changelog-in-comments,
-  essays restating the code) — every security/why rationale kept.
+### Fixed
+- A sustained Kuma status-page `5xx` no longer leaves the board showing old "up"
+  statuses past the 5-minute staleness limit; statuses fall back to "unknown".
+- A real `0` (a container at 0% CPU, an idle sensor at 0°, a UPS reading of 0,
+  0 MB used) is no longer shown as missing data, across node discovery, refresh
+  and the Docker containers view.
+- A panel or quick-link icon set to a Dashboard Icons slug or filename (`gitea`,
+  `gitea.svg`) shows the icon instead of the text; every view resolves icon
+  values the same way.
+- Proxmox VM, storage and backup panels appear for any node, not only one named
+  `pve`.
+- Deleting an integration waits for the deletion to finish before leaving the
+  page.
+- A failed delete, toggle or refetch shows an error message instead of silently
+  leaving stale data on screen.
+- When the authentication check fails with a network error or `5xx`, the login
+  screen is shown instead of a page whose requests then fail with `401`.
+- Hiding a service matches its name exactly: hiding `redis` no longer also hides
+  `redis-backup`, and un-hiding cannot remove an unrelated rule.
+- Caddy and Frigate count fields show the correct values.
+- The GitLab tile shows the GitLab version instead of a project id.
+- Demo routes with a trailing slash work.
+- The Retry button on embedded tabs restarts its load timeout.
+- Weather latitude and longitude update when a configuration is imported.
+- In the navigation bar, pressing Enter opens the same link the dropdown
+  suggests.
+- When several containers match a service, the same one is always chosen.
 
 ### Security
-
-- **The "unsupported integration" gate is now enforced server-side.** A preset
-  flagged unsupported (e.g. Watchtower, whose `/v1/update` is a side-effecting
-  update *trigger*, not a read-only status endpoint) was only hidden from the
-  gallery — a directly-saved or imported config could still reach it via save,
-  test, or the refresh loop. It's now blocked at the save / test / resolve
-  chokepoints. Surfaced and fixed by this release's own multi-agent security
-  review, which found no critical or high-severity issues.
+- The block on unsupported integrations is enforced on the server. A preset
+  marked unsupported (such as Watchtower, whose `/v1/update` endpoint triggers
+  updates rather than reporting status) was only hidden from the gallery, so a
+  directly saved or imported configuration could still save, test or poll it.
+  Saving, testing and polling now refuse it.
 
 ## [1.3.0] — 2026-06-18
 
-The **glance layer gets smart.** Where 1.2.0 hardened and polished, 1.3.0 makes
-the board *tell you things at a glance* — trends, trouble, and the "why" behind a
-blank panel — plus a command palette, a keyboard-operable grid, offline PWA, and
-a real mobile pass. **256 automated tests (up from 195); 0 known vulnerabilities.**
+Adds metric sparklines, critical-value highlighting, error details on
+integration cards, a command palette, keyboard control of the grid and offline
+start-up, and improves the layout on phones.
 
-### Glance & insight
+### Added
+- Sparklines: the refresh loop keeps about one hour of each node's CPU, RAM and
+  disk usage and draws a trend line behind each metric. The history is a fixed
+  window, not a time-series database; it is served from the authenticated
+  `/api/history` endpoint and stored in `data/history.json`, which is created
+  automatically, stays bounded and is safe to delete (it refills).
+- A metric value turns red when it crosses its critical threshold, and its card
+  gets a colored halo. A screen-reader severity label gives the same information
+  without color, and amber is not used on large text, to keep contrast.
+- When an integration's last fetch failed, its card shows a collapsible "No
+  data — why?" section with the redacted error (for example `HTTP 401`) instead
+  of blank values.
+- A command palette (Ctrl+K, or Cmd+K on macOS) with fuzzy search, to jump to
+  any tab, theme or configured link and to run actions such as Settings and
+  Log out.
+- An Auto-arrange button (Settings → Layout) that packs every panel into a
+  gapless grid in priority order: nodes, then widgets, then groups.
+- The dashboard grid can be operated from the keyboard: each panel has a handle
+  that appears on focus; arrow keys move the panel one cell and Shift+arrow
+  resizes it, with screen-reader announcements and feedback at the grid edge.
+- The web app starts offline: the service worker precaches the first-paint
+  bundles and serves files under `/assets/` from cache first.
 
-- **Sparklines.** The refresh loop now keeps a ~1h ring buffer of every node's
-  CPU/RAM/disk usage (persisted to `data/history.json`, served from a new authed
-  `/api/history`) and draws an inline trend line behind each metric — "94% **and
-  climbing**." It's a fixed window, not a time-series database.
-- **Pre-attentive tinting.** A metric value turns **red** when it crosses
-  critical and the whole card gets a colored **halo**, so trouble jumps off the
-  board before you read it — instead of hiding in a 4px bar. (Non-color cue too:
-  an SR-only severity label; amber is kept off large text for contrast.)
-- **"Why is this dashed?" integration doctor.** When an integration's last fetch
-  failed, the card now shows a collapsible **⚠ No data — why?** with the
-  redacted error (e.g. `HTTP 401`) instead of mystery blanks — the error was
-  already captured server-side; we just stopped throwing it away.
-- **⌘K command palette.** Fuzzy-jump to any tab, theme, or configured link and
-  run actions (Settings, Log out) from anywhere — keyboard-first (combobox/listbox
-  semantics), no backend.
-- **Grid "Auto-arrange."** One button (Settings → Layout) packs every panel into
-  a gapless grid in priority order — nodes, then widgets, then groups.
+### Changed
+- On phones, the navigation bar drops the clock and "updated" time,
+  side-by-side settings fields stack, and the settings sidebar reflows.
 
-### Accessibility
-
-- **Keyboard-operable dashboard grid.** Each panel gains a focus-revealed handle:
-  arrow keys move it a cell, Shift+arrow resizes, with a polite live-region
-  announcement and boundary feedback — the grid was previously pointer-only.
-
-### Offline / PWA
-
-- The service worker now **precaches the hashed first-paint bundles** (injected at
-  build) so the app boots offline, serves immutable `/assets/` cache-first, and
-  **single-sources its version** from `package.json` (no more manual SW edit).
-
-### Mobile
-
-- A real responsive pass: the nav declutters on phones (drops the clock/"updated"
-  stamp), side-by-side settings fields stack, and the settings sidebar reflows —
-  closing the gaps behind the old "no mobile layout" caveat.
-
-### Fixes
-
-- **Panel resize is now in sync with its guideline.** The panel followed the
-  mouse smoothly while the dotted guideline snapped to the grid, so the guideline
-  (and the resize handle) could run past the panel and the size snapped back on
-  release. The live panel now renders at the exact snapped rectangle the guideline
-  draws — one shape, snapping together cell-by-cell — and is bounded to the grid
-  edge so it can't be dragged past the panel.
-
-### Internal & quality
-
-- **Shared settings primitives** (`Card`/`Toggle`/`ChoiceGroup`/`EmptyState`)
-  replace ~120 lines duplicated across the 13 settings tabs.
-- **Spacing & type scale tokens** (`--space-*`, `--text-*`) with 100+ exact-match
-  migrations (provably render-identical), alongside the existing semantic `--fs-*`.
-- **Regenerated `docs/ARCHITECTURE.md`** to reflect reality, with 5 Mermaid
-  diagrams (topology, refresh/cache, integration engine, frontend tree, CI/CD).
-
-### Deploy
-
-- **Event-driven build→deploy trigger** ([ADR 0005](docs/adr/0005-event-driven-deploy.md)):
-  the GitHub build can now dispatch the Gitea deploy when the image is ready,
-  replacing a registry poll. Opt-in and fallback-preserving — off until configured.
-
-### Notes
-
-- A new `data/history.json` is created automatically for the sparkline ring buffer
-  (bounded, best-effort, non-essential — safe to delete; it refills).
+### Fixed
+- Resizing a panel: the panel now follows the snapped grid outline while
+  dragging, instead of running ahead of it and snapping back on release, and
+  it cannot be dragged past the edge of the grid.
 
 ## [1.2.0] — 2026-06-18
 
-Where 1.1.0 hardened the foundation, 1.2.0 builds on it: the planned improvement
-program (observability, frontend architecture, deeper security, growth, and
-deploy hardening) lands in full, alongside a comprehensive accessibility & UX
-overhaul driven by a dedicated design audit. **195 automated tests (up from 83);
-0 known vulnerabilities.**
+Adds structured logging, Prometheus metrics, a readiness probe, a report-only
+Content-Security-Policy, a read-only demo mode and signed container images,
+along with accessibility and usability improvements across the interface.
 
-### ⚠️ Upgrade notes — read before deploying
+### Added
+- Structured request and error logging, with secrets redacted, replacing
+  ad-hoc console output.
+- Prometheus metrics at `/metrics`: request rate, latency histograms and
+  refresh-loop health.
+- A readiness probe at `/api/readyz`, separate from the liveness check
+  `/api/health`, that reports ready only after the first refresh completes.
+- Demo mode: `DEMO_MODE=true` serves a read-only sample dashboard, for
+  screenshots and public demos, and refuses writes. It is off by default.
+- schema.org JSON-LD structured data for search and social previews.
+- A save-state indicator; pending edits are sent when the page closes, so a
+  quick close does not lose them.
+- Each data source shows its own error, stale or retry state with a one-click
+  retry, instead of the whole board failing together. Polls that return
+  unchanged data still cause no re-render.
+- Skeleton loaders while data loads, and live regions that announce updates to
+  screen readers.
+- An accessible navigation menu on phones.
+- The settings live preview can be collapsed, and the settings sidebar groups
+  its sections under labels.
+- Field-level validation in settings (for example weather coordinates),
+  reported to screen readers.
+- A STRIDE threat model and an incident-response runbook in `docs/security/`.
 
-- **A Content-Security-Policy is sent in report-only mode.** It does not block
-  anything yet — it only reports violations — so custom inline scripts keep
-  working while the policy is observed. Enforcement is a later opt-in.
-- **New optional env:** `DEMO_MODE=true` serves a read-only sample dashboard
-  (for screenshots / the public demo) and refuses writes. Off by default.
+### Changed
+- Notifications appear as non-blocking toasts, and confirmations as themed
+  dialogs (focus trap, Escape to close, focus restore, reduced motion),
+  replacing the browser's `alert()` and `confirm()`.
+- The theme control opens a picker with a swatch for each of the 10 themes
+  instead of cycling through them; it works with the keyboard and screen
+  readers.
+- The dashboard loads a smaller initial bundle (route-level code splitting) and
+  re-renders less when the configuration changes.
+- Fonts load on demand instead of through a render-blocking `@import` of 11
+  font families.
+- Each theme has its own glass background.
 
-### Observability
-
-- Structured request/error logging with redaction (no secrets in logs) replacing
-  ad-hoc `console.log`.
-- Prometheus metrics at `/metrics` (request rate, latency histograms,
-  refresh-loop health) via `prom-client`.
-- A real readiness probe at `/api/readyz` (distinct from liveness `/api/health`)
-  so orchestrators don't route traffic before the first refresh completes.
+### Fixed
+- Configuration saved through the API is validated and size-limited before it
+  is written; an invalid body is rejected with a `400` error instead of being
+  stored.
+- Configuration is written atomically and read as a copy, so a crash during a
+  write cannot leave a half-written or interleaved file on disk.
+- Colors that used the undefined `--teal` and `--blue` tokens now render.
 
 ### Security
-
-- **Content-Security-Policy** (via Helmet, report-only) plus the standard
-  security-header set; the service-worker registration was moved out of an inline
-  `<script>` so the eventual enforcing policy needs no `unsafe-inline`.
-- **Rate limiting** — the auth login limiter was hardened against brute-force, and
-  a reusable `createRateLimiter` utility now throttles the abuse-prone integration
-  connection-test endpoint (10/min per key).
-- **Tighter input bounds** on the cron, secrets, and integration routes.
-- **Threat model & runbook** — a STRIDE threat model and an incident-response
-  runbook added under `docs/security/` so the posture is written down, not folklore.
-
-### Reliability & correctness
-
-- **Schema-validated config** — the display config is validated (Zod) on read, so
-  a malformed or partially-written `config.yaml` is rejected with a clear error
-  instead of crashing a render deep in the UI.
-- **Persistence coordination** — config is now copied-on-read and written
-  atomically, with a kill-test (`SIGKILL` mid-write) proving a crash can't leave a
-  half-written or interleaved config on disk.
-- **Route tests** — the Express API routes gained direct coverage (the bulk of the
-  jump from 83 → 195 tests), catching contract regressions before they ship.
-
-### Frontend architecture
-
-- **ConfigContext** — the display config flows through a context instead of being
-  prop-drilled through every view and all 13 settings tabs; memo-friendly so
-  unrelated subtrees stop re-rendering on every change.
-- **Explicit `apiFetch`** replaces a global `window.fetch` monkey-patch for
-  auth-token injection — no more action-at-a-distance on third-party fetches.
-- **`setIn`** — an immutable structural-sharing deep-set powers config edits, so
-  untouched branches keep their identity (memo-friendly) and edits never mutate.
-- **Route-level code-splitting** trims the initial bundle; **Vitest + React
-  Testing Library** add a real component-test net (10 suites, 70 cases).
-
-### Accessibility & UX
-
-A four-batch overhaul from a senior front-end / design audit
-(`docs/UI-UX-ANALYSIS.md`):
-
-- **Feedback loop** — non-blocking toast notifications (`role=status`/`alert`) and
-  themed confirm modals (focus-trap, `Escape`, focus restore, reduced-motion)
-  replace native `alert()`/`confirm()`; a save-state indicator plus a
-  flush-on-unload (`sendBeacon`/`keepalive`) so edits aren't lost on a fast close.
-- **Per-source health** — each data source shows its own error / stale / retry
-  state with a one-click retry, instead of an all-or-nothing board — without
-  breaking the 304-stable render path (an all-unchanged poll still triggers zero
-  re-renders).
-- **Theme picker popover** — the 🎨 control opens a swatch popover (pick any of the
-  10 themes directly) instead of blind-cycling; full keyboard + screen-reader
-  semantics.
-- **Skeleton loaders, live regions, accessible mobile nav** (disclosure pattern),
-  a collapsible settings live-preview with grouped sidebar labels, and
-  **field-level validation** (e.g. weather coordinates) with
-  `aria-invalid`/`aria-describedby`.
-- **Real CSS fixes** — defined the previously-undefined `--teal`/`--blue` tokens,
-  gave each theme its own glass background, and dropped a render-blocking 11-family
-  webfont `@import` in favour of an on-demand loader.
-
-### Growth
-
-- **Demo mode** (`DEMO_MODE=true`) serves a read-only sample dashboard for the
-  public demo / screenshots without exposing a writable instance.
-- **schema.org JSON-LD** structured data for richer search/social presentation.
-
-### Deploy & supply-chain
-
-- **Cosign keyless signing is enabled** — release images are signed and verifiable
-  (`cosign verify ghcr.io/jagbhandal/jaghelm:1.2.0`).
-- The **deploy pipeline pins images by digest** (not a mutable tag), with ADRs
-  (`docs/adr/`) recording the deploy/signing decisions and a CI asset-integrity
-  check (`scripts/check-assets.mjs`).
+- A Content-Security-Policy is sent in report-only mode, along with the
+  standard security headers (Helmet). Violations are reported but nothing is
+  blocked, so custom inline scripts keep working; enforcement will be a later
+  opt-in.
+- The service worker is registered from a script file instead of an inline
+  script, so an enforcing policy will not need `unsafe-inline`.
+- The login rate limiter is hardened against brute-force attempts, and the
+  integration connection-test endpoint is limited to 10 requests per minute per
+  key.
+- Stricter input limits on the cron, secrets and integration routes.
+- Container images are signed with cosign (keyless) and can be verified with
+  `cosign verify`.
 
 ## [1.1.0] — 2026-06-17
 
-A large hardening release from a full multi-agent audit of the codebase: every
-security, correctness, accessibility, and supply-chain issue that was safe to fix
-in one pass, plus deploy-pipeline and observability groundwork. **0 known
-vulnerabilities; 83 automated tests (up from 33).**
+A hardening release covering security, reliability, accessibility and the
+container runtime; several changes need action before upgrading.
 
-### ⚠️ Upgrade notes — read before deploying
+### Breaking changes
+- **The secrets API is closed when no password is set.** Without a dashboard
+  password, `/api/secrets` returns `403` instead of being readable by anyone.
+  Saving integrations is unaffected, so setups without a login keep working. On
+  a trusted LAN, set `JAGHELM_ALLOW_OPEN_SECRETS=true` to allow access. A
+  warning is logged at startup when no password is configured.
+- **`compose.yaml` uses a bridge network and a hardened runtime.** The default
+  changes from `network_mode: host` to a bridge network publishing
+  `3099:3099`, and the container runs read-only as `user: 1000:1000` with
+  dropped capabilities. Before the first start, make sure the host `data/` and
+  `uploads/` directories are owned by UID 1000. `network_mode: host` remains as
+  a commented option, needed to reach LAN exporters directly.
+- **The AdGuard and NPM panels no longer have built-in endpoints.** They no
+  longer fall back to `192.168.68.13` and `admin@example.com`; set `ADGUARD_URL`
+  and `NPM_URL` to enable them.
+- **`DASH_SECRET` is validated.** Example placeholders such as
+  `your-random-secret-here` and `changeme` are refused as the encryption key;
+  generate a real one with `openssl rand -hex 32`. Existing encrypted data
+  remains readable through a legacy-salt fallback.
 
-- **Secrets API is now fail-closed.** With no dashboard password set, the
-  standalone `/api/secrets` API returns `403` instead of being world-readable
-  (the integration-save flow is unaffected, so no-auth setups still work).
-  Override on a trusted LAN with `JAGHELM_ALLOW_OPEN_SECRETS=true`. A loud warning
-  prints at boot when no password is configured.
-- **`compose.yaml` default networking changed** from `network_mode: host` to a
-  bridge network publishing `3099:3099`; the container now runs **read-only as
-  `user: 1000:1000`** with dropped capabilities. **First deploy: ensure host
-  `data/` and `uploads/` are owned by UID 1000**, or the (now-real) deploy health
-  gate will roll back. `network_mode: host` remains a commented opt-in (needed to
-  reach LAN exporters directly).
-- **Removed hardcoded fallback endpoints** — the AdGuard/NPM panels no longer
-  default to a baked-in `192.168.68.13` / `admin@example.com`; set `ADGUARD_URL`
-  / `NPM_URL` to enable them.
-- **`DASH_SECRET` is validated** — the example placeholder (`your-random-secret-here`,
-  `changeme`, …) is refused as an encryption key; set a real one
-  (`openssl rand -hex 32`). Existing encrypted data is unaffected (legacy-salt
-  fallback).
-- **`multer` upgraded 1.x → 2.x** (1.x is end-of-life). No config change needed.
+### Added
+- A visible keyboard focus ring in all 10 themes (WCAG 2.4.7), and support for
+  `prefers-reduced-motion`.
+- Status is shown by shape and screen-reader text as well as color (WCAG
+  1.4.1).
+- Settings labels are associated with their fields, the navigation bar and
+  settings sidebar mark the current item (`aria-current`, `aria-selected`), and
+  icon buttons have accessible labels.
+- A first-run screen with a "Connect your first node" button.
+- The version is read from `package.json` and reported in `/api/health`, the
+  startup log and the image labels.
+- Each image is also published with an immutable `:sha-<short>` tag for pinning
+  and rollback, and carries OCI image labels, an SBOM and provenance
+  attestations.
+- Open Graph and Twitter card metadata for link previews.
+- `KNOWN-ISSUES.md`, listing known limitations, and a README comparison with
+  similar dashboards.
+
+### Changed
+- `/api/health` reflects whether the refresh loop is alive and returns `503`
+  (`degraded`) when the loop stalls; the Docker `HEALTHCHECK` uses it instead of
+  a fixed response.
+- Upload errors appear as inline, dismissible messages instead of blocking
+  `alert()` dialogs.
+- Content-hashed files under `/assets` are served with an immutable
+  `Cache-Control` header, so reloads skip revalidation.
+- The service-worker cache key includes the version.
+- `multer` is upgraded from 1.x, which is end-of-life, to 2.x. No configuration
+  change is needed.
+
+### Fixed
+- Failures in asynchronous API routes return JSON instead of an HTML `500`
+  page.
+- A stray unhandled promise rejection or uncaught exception no longer stops the
+  app.
+- Integration fetch errors are reported instead of showing as zeros during an
+  outage.
+- Uptime Kuma statuses expire after a staleness limit, so the board no longer
+  stays frozen on all green.
+- A corrupt `services.yaml` is no longer re-parsed every 5 seconds.
+- The refresh timer is cancelled cleanly on shutdown.
+- Two instances of the same integration preset no longer receive each other's
+  cached data.
+- A panel that throws an error shows the error in place instead of blanking the
+  dashboard.
+- Muted text in light themes meets AA contrast.
+- The missing PWA and social icons are included, fixing app installation and
+  blank link previews.
 
 ### Security
-
-- SSRF guard enforced at the fetch chokepoint — every integration and
-  session-auth request (incl. Proxmox) is vetted by construction; closes a bypass
-  where session-auth and infra proxies fetched unguarded. Operator infra
-  (Prometheus/Kuma) is exempted from strict-mode private-blocking via a `trusted`
-  flag.
-- Credential redaction — API keys carried in query-auth URLs (`?apikey=…`) are
-  stripped before any error is logged or returned to the browser.
-- Atomic `0600` writes for the encrypted secrets store, admin password hash, and
-  cron history — a crash mid-write can no longer truncate them.
-- Per-install random KDF salt replaces the published static salt (legacy fallback
-  retained); fail-loud guard against a corrupted salt file (prevents silent secret
-  loss).
-- All 10 dependency advisories resolved (`path-to-regexp` ReDoS, `qs`/`js-yaml`/
-  `postcss`/`vite`) → 0 vulnerabilities; `npm audit --audit-level=high` is now a CI
-  gate.
-- CI workflow injection fixed (`auto-pr.yml` passes the commit message via env +
-  `jq`-encodes the body); Prometheus query-length cap; bounded per-query caches.
-
-### Reliability
-
-- Global JSON error handler — async route failures return JSON, not an HTML 500.
-- Dynamic `/api/health` — reflects refresh-loop liveness (`503 degraded` when the
-  loop wedges); the Docker `HEALTHCHECK` and deploy gate no longer trust a static
-  literal.
-- Process-level `unhandledRejection` / `uncaughtException` handlers — one stray
-  rejection no longer downs the app.
-- Integration fetch errors are surfaced instead of rendering as silent zeros
-  during an outage; Uptime-Kuma staleness ceiling (no more frozen all-green
-  board); corrupt `services.yaml` no longer re-parsed every 5 s; refresh timer
-  cancelled cleanly on shutdown.
-- Fixed an integration response-cache key collision (two instances of one preset
-  served each other's data).
-
-### Accessibility & UX
-
-- Global `:focus-visible` ring across all 10 themes (WCAG 2.4.7);
-  `prefers-reduced-motion` support; non-color status cues (shape + screen-reader
-  text, WCAG 1.4.1); proper label association (`useId`/`htmlFor`) on all settings
-  tabs; `aria-current`/`aria-selected` on nav + sidebar; `aria-label`s on icon
-  buttons; AA-contrast fixes for light-theme muted text.
-- Per-panel error boundaries — one throwing panel degrades inline instead of
-  blanking the dashboard.
-- First-run empty state with a "Connect your first node" CTA; blocking `alert()`
-  upload errors replaced with inline dismissible messages.
-
-### Performance
-
-- Immutable `Cache-Control` on content-hashed `/assets` (no revalidation
-  round-trip per reload).
-
-### Quality, CI & supply-chain
-
-- Quality floor: ESLint (flat) + Prettier + TypeScript (`checkJs` foundation) +
-  `node --test`, gated in CI so a red `main` can't ship an image; meaningful
-  `typecheck` (`@types/node` + `// @ts-check` on the security utils).
-- 83 tests (from 33) — new coverage for the AES-GCM secrets round-trip + tamper,
-  the SSRF guard vectors, credential redaction, the upload allowlist, and the
-  HelmGrid layout math.
-- Supply-chain: immutable `:sha-<short>` image tags for real rollback, SBOM +
-  provenance attestations, a Trivy scan, OCI image labels, and
-  `npm ci --ignore-scripts` in the build (cosign signing wired, ready to enable).
-
-### Deploy
-
-- Deploy verify step now actually gates — polls container health + `/api/health`
-  and auto-rolls-back to the previous image on failure (was previously unable to
-  fail). Runtime-hardened `compose.yaml` (see upgrade notes); version
-  single-sourced into `/api/health`, the boot log, and image labels.
-
-### Docs
-
-- README repositioned around the "live data, not just links" differentiator + a
-  comparison table; `KNOWN-ISSUES.md` added; missing PWA + social icons (fixes
-  broken install + blank link unfurls); OG/Twitter meta; versioned service-worker
-  cache key.
-- `docs/IMPROVEMENT-PLAN.md` (full audit roadmap) and `docs/slos/` (SLO
-  definitions for the planned observability work).
+- Every integration and session-auth request, including Proxmox, goes through
+  the SSRF guard, closing a bypass where session-auth and infrastructure proxies
+  fetched without it. Operator infrastructure (Prometheus, Kuma) is exempt from
+  strict-mode private-address blocking through a `trusted` flag.
+- API keys in query-string authentication (`?apikey=…`) are removed from URLs
+  before an error is logged or returned to the browser.
+- The encrypted secrets store, the admin password hash and the cron history are
+  written atomically with `0600` permissions, so a crash during a write cannot
+  truncate them.
+- Each installation gets a random key-derivation salt instead of the published
+  static salt (existing data keeps working through a legacy fallback), and a
+  corrupted salt file stops startup instead of silently losing secrets.
+- Resolved all 10 published dependency advisories (`path-to-regexp` ReDoS,
+  `qs`, `js-yaml`, `postcss`, `vite`).
+- Prometheus queries have a length limit, and per-query caches are bounded.
 
 ## [1.0.0] — 2026-03-27
 
-- Initial public release. Image-based deployment to GHCR; HelmGrid layout engine;
-  integration engine (42 presets); Settings UI; 10 themes; AES-256-GCM secrets;
-  scrypt auth.
+First public release.
 
-[1.3.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.3.0
-[1.2.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.2.0
-[1.1.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.1.0
-[1.0.0]: https://github.com/jagbhandal/jaghelm/releases/tag/v1.0.0
+### Added
+- Container image published to GitHub Container Registry
+  (`ghcr.io/jagbhandal/jaghelm`).
+- HelmGrid, a drag-and-resize layout engine.
+- An integration engine with 42 presets.
+- A settings interface.
+- 10 themes.
+- Stored credentials encrypted with AES-256-GCM.
+- Password authentication with scrypt hashing.
+
+[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/jagbhandal/jaghelm/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/jagbhandal/jaghelm/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/jagbhandal/jaghelm/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/jagbhandal/jaghelm/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/jagbhandal/jaghelm/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/jagbhandal/jaghelm/tree/v1.0.0
