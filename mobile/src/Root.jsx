@@ -45,15 +45,18 @@ export default function Root() {
     const id = ++attempt.current;
     const isCurrent = () => id === attempt.current;
     setState(BOOTING);
-    // The executor runs task() synchronously; a sync throw becomes a rejection.
-    new Promise((resolve) => resolve(task())).then(
-      (initial) => {
-        if (isCurrent()) setState(fromBoot(initial));
-      },
-      () => {
-        if (isCurrent()) setState(FAILED);
-      },
-    );
+    // The executor runs task() synchronously; a sync throw becomes a rejection,
+    // and so does a malformed result that fromBoot can't read.
+    new Promise((resolve) => resolve(task()))
+      .then(fromBoot)
+      .then(
+        (next) => {
+          if (isCurrent()) setState(next);
+        },
+        () => {
+          if (isCurrent()) setState(FAILED);
+        },
+      );
   }, []);
 
   useEffect(() => {

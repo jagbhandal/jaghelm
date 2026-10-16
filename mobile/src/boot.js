@@ -12,8 +12,8 @@
  * (no URL → first-run login, URL but no token → re-auth credentials-only, both
  * → the app) and seed the re-auth screen's URL without re-reading the Keystore.
  * unreachable: true (only with hasUrl + hasToken) means the revalidation timed
- * out or hit a network error; the token is kept and the shell shows the
- * connection screen instead of entering the app.
+ * out, hit a network error or got a 5xx; the token is kept and the shell shows
+ * the connection screen instead of entering the app.
  */
 import { setStorageAdapter, secureStore } from '@shared/storage/index.js';
 import { initAuthToken, setAuthToken, getAuthToken, apiFetch } from '@shared/api/client.js';
@@ -67,6 +67,9 @@ export async function bootMobile() {
       })(),
       BOOT_TIMEOUT_MS,
     );
+    // A 5xx (e.g. a proxy's 502/503 while JagHelm is down) means the server
+    // can't be reached, not that the session is dead: keep the token.
+    if (r.status >= 500) return { hasUrl: true, hasToken: true, baseUrl: base, unreachable: true };
     if (r.ok && body && body.authenticated) return { hasUrl: true, hasToken: true, baseUrl: base };
     await secureStore.removeItem(TOKEN_KEY);
     setAuthToken('');

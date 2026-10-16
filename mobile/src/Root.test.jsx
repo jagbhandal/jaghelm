@@ -127,6 +127,13 @@ describe('Root', () => {
     expect(bootMobile).toHaveBeenCalledTimes(2);
   });
 
+  it('a malformed boot result shows "Something went wrong" instead of hanging on Connecting', async () => {
+    bootMobile.mockResolvedValue(undefined);
+    render(<Root />);
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.queryByText('Connecting to JagHelm…')).not.toBeInTheDocument();
+  });
+
   it('a render crash in the app shows "Something went wrong" instead of a blank screen', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     appMode.crash = true;
