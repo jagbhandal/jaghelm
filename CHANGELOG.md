@@ -83,14 +83,26 @@ authenticated metrics endpoint when an API key is set.
 
 A maintenance release with no new features that fixes a board freeze during
 Kuma outages, zero values shown as missing data and icons shown as filenames,
-and tightens security, including enforcing the Content-Security-Policy by
-default.
+and tightens security, with two changes that may need action on upgrade.
+
+### Breaking changes
+- **The Content-Security-Policy is enforced by default.** It was sent in
+  report-only mode; enforcing it contains cross-site scripting, and custom
+  inline scripts no longer run. To return to report-only, set
+  `CSP_REPORT_ONLY=true`.
+- **The raw infrastructure endpoints need a dashboard password.** Without one,
+  the Prometheus query, Docker container list, and AdGuard, NPM and Uptime Kuma
+  stats endpoints return `403`, so an unauthenticated device on the network
+  cannot query the homelab or the Docker socket through JagHelm. On a trusted
+  LAN, set `JAGHELM_ALLOW_OPEN_INFRA=true` to allow them.
 
 ### Changed
 - Built-in service icons load from the maintained `homarr-labs` Dashboard Icons
   CDN instead of the deprecated `walkxcode` one.
 - Proxmox integrations are identified by their preset rather than by the fields
   they return.
+- Integrations are refreshed at most 6 at a time instead of all at once.
+- Server responses are gzip-compressed.
 
 ### Fixed
 - A sustained Kuma status-page `5xx` no longer leaves the board showing old "up"
@@ -121,6 +133,8 @@ default.
 - When several containers match a service, the same one is always chosen.
 - A corrupt password hash in `auth.json` makes a login fail normally instead of
   returning a server error on every attempt.
+- The checklist file `todos.json` is stored in the directory set by
+  `JAGHELM_DATA_DIR`, like the other data files.
 
 ### Security
 - The block on unsupported integrations is enforced on the server. A preset
@@ -128,11 +142,6 @@ default.
   updates rather than reporting status) was only hidden from the gallery, so a
   directly saved or imported configuration could still save, test or poll it.
   Saving, testing and polling now refuse it.
-- The Content-Security-Policy is enforced by default instead of being sent in
-  report-only mode. Set `CSP_REPORT_ONLY=true` to switch back to report-only.
-- Without a dashboard password, the raw infrastructure endpoints (Prometheus
-  query, Docker container list, and AdGuard, NPM and Uptime Kuma stats) return
-  `403`. On a trusted LAN, set `JAGHELM_ALLOW_OPEN_INFRA=true` to allow them.
 - Outbound requests are checked by the SSRF guard on every redirect (up to 5
   hops) instead of only at the first URL, and response bodies are capped at
   10 MB. Prometheus and Kuma requests go through the same checks.
