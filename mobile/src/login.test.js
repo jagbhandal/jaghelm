@@ -8,6 +8,9 @@ vi.mock('@shared/api/baseUrl.js', () => ({ setApiBase }));
 
 import { login } from './login.js';
 
+const CANT_REACH =
+  "Can't reach JagHelm. If you're away from home, check that Tailscale is connected on this phone.";
+
 function res({ ok, status, token }) {
   return { ok, status, json: async () => (token !== undefined ? { token } : {}) };
 }
@@ -53,10 +56,53 @@ describe('login', () => {
     expect(r.error).toMatch(/too many/i);
   });
 
-  it('returns the error message on a network throw', async () => {
+  it("maps a network throw to the can't-reach message", async () => {
     apiFetch.mockRejectedValue(new Error('Network down'));
     const r = await login({ url: 'http://vm-101:3099', username: 'a', password: 'b' });
-    expect(r).toEqual({ ok: false, error: 'Network down' });
+    expect(r).toEqual({ ok: false, error: CANT_REACH });
+    expect(setAuthToken).not.toHaveBeenCalled();
+  });
+
+  it('gives up after BOOT_TIMEOUT_MS when the server never answers', async () => {
+    vi.useFakeTimers();
+    try {
+      apiFetch.mockReturnValue(new Promise(() => {}));
+      let result;
+      const p = login({ url: 'http://vm-101:3099', username: 'a', password: 'b' }).then((r) => {
+        result = r;
+      });
+      await vi.advanceTimersByTimeAsync(9999);
+      expect(result).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      await p;
+      expect(result).toEqual({ ok: false, error: CANT_REACH });
+      expect(setAuthToken).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('one deadline covers the request and the body read', async () => {
+    vi.useFakeTimers();
+    try {
+      apiFetch.mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve({ ok: true, status: 200, json: () => new Promise(() => {}) }), 6000),
+          ),
+      );
+      let result;
+      const p = login({ url: 'http://vm-101:3099', username: 'a', password: 'b' }).then((r) => {
+        result = r;
+      });
+      await vi.advanceTimersByTimeAsync(9999);
+      expect(result).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      await p;
+      expect(result).toEqual({ ok: false, error: CANT_REACH });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rejects cleartext http to a public host WITHOUT fetching', async () => {

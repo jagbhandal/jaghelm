@@ -9,6 +9,11 @@ import { apiFetch, setAuthToken } from '@shared/api/client.js';
 import { setApiBase } from '@shared/api/baseUrl.js';
 import { normalizeBaseUrl } from './runtimeConfig.js';
 import { assertSafeBackendUrl } from './netGuard.js';
+import { withTimeout } from './withTimeout.js';
+import { BOOT_TIMEOUT_MS } from './boot.js';
+
+const CANT_REACH =
+  "Can't reach JagHelm. If you're away from home, check that Tailscale is connected on this phone.";
 
 export async function login({ url, username, password }) {
   let base;
@@ -27,15 +32,25 @@ export async function login({ url, username, password }) {
 
   setApiBase(base);
 
+  // One deadline (the startup check's) covers the request AND the body read, so
+  // a silently dropped connection ends in an error instead of "Signing in…" forever.
   let r;
+  let body;
   try {
-    r = await apiFetch(`${base}/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    });
-  } catch (err) {
-    return { ok: false, error: err?.message ?? String(err) };
+    ({ r, body } = await withTimeout(
+      (async () => {
+        const res = await apiFetch(`${base}/auth/login`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        // Only a successful login carries a token body; an unparseable one is null.
+        return { r: res, body: res.ok ? await res.json().catch(() => null) : null };
+      })(),
+      BOOT_TIMEOUT_MS,
+    ));
+  } catch {
+    return { ok: false, error: CANT_REACH }; // timed out or network error
   }
 
   if (!r.ok) {
@@ -44,13 +59,7 @@ export async function login({ url, username, password }) {
     return { ok: false, status: r.status, error: `HTTP ${r.status}` };
   }
 
-  let token = '';
-  try {
-    const body = await r.json();
-    token = body?.token || '';
-  } catch {
-    /* fall through to no-token error */
-  }
+  const token = body?.token || '';
   if (!token) return { ok: false, status: r.status, error: 'Login succeeded but no token was returned' };
 
   setAuthToken(token);

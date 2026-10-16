@@ -26,7 +26,7 @@ vi.mock('@shared/api/client.js', () => ({ initAuthToken, setAuthToken, getAuthTo
 const { setApiBase } = vi.hoisted(() => ({ setApiBase: vi.fn() }));
 vi.mock('@shared/api/baseUrl.js', () => ({ setApiBase }));
 
-import { bootMobile } from './boot.js';
+import { bootMobile, BOOT_TIMEOUT_MS } from './boot.js';
 
 const checkRes = (authenticated, ok = true) => ({ ok, json: async () => ({ authenticated, authRequired: true }) });
 
@@ -93,12 +93,90 @@ describe('bootMobile', () => {
     expect(apiFetch).not.toHaveBeenCalled();
   });
 
-  it('keeps the token optimistically when revalidation throws (offline cold start)', async () => {
+  it('reports unreachable (token kept) when revalidation throws', async () => {
     getItem.mockResolvedValue('http://vm-101:3099/api');
     getPref.mockResolvedValue('true');
     getAuthToken.mockReturnValue('tok');
     apiFetch.mockRejectedValue(new Error('offline'));
     const r = await bootMobile();
-    expect(r).toEqual({ hasUrl: true, hasToken: true, baseUrl: 'http://vm-101:3099/api' });
+    expect(r).toEqual({ hasUrl: true, hasToken: true, baseUrl: 'http://vm-101:3099/api', unreachable: true });
+    expect(removeItem).not.toHaveBeenCalled();
+    expect(setAuthToken).not.toHaveBeenCalled();
+  });
+
+  it('reports unreachable after BOOT_TIMEOUT_MS when revalidation hangs, token untouched', async () => {
+    vi.useFakeTimers();
+    try {
+      getItem.mockResolvedValue('http://vm-101:3099/api');
+      getPref.mockResolvedValue('true');
+      getAuthToken.mockReturnValue('tok');
+      apiFetch.mockReturnValue(new Promise(() => {}));
+      expect(BOOT_TIMEOUT_MS).toBe(10000);
+      let result;
+      const p = bootMobile().then((r) => { result = r; });
+      await vi.advanceTimersByTimeAsync(BOOT_TIMEOUT_MS - 1);
+      expect(result).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      await p;
+      expect(result).toEqual({ hasUrl: true, hasToken: true, baseUrl: 'http://vm-101:3099/api', unreachable: true });
+      expect(removeItem).not.toHaveBeenCalled();
+      expect(setAuthToken).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shares one BOOT_TIMEOUT_MS deadline across fetch and body read', async () => {
+    vi.useFakeTimers();
+    try {
+      getItem.mockResolvedValue('http://vm-101:3099/api');
+      getPref.mockResolvedValue('true');
+      getAuthToken.mockReturnValue('tok');
+      // Headers arrive at 6 s, the body never does: a per-step timeout would only
+      // fire at 16 s; the shared deadline must fire at 10 s total.
+      apiFetch.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve({ ok: true, json: () => new Promise(() => {}) }), 6000)),
+      );
+      let result;
+      const p = bootMobile().then((r) => { result = r; });
+      await vi.advanceTimersByTimeAsync(BOOT_TIMEOUT_MS - 1);
+      expect(result).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      await p;
+      expect(result).toEqual({ hasUrl: true, hasToken: true, baseUrl: 'http://vm-101:3099/api', unreachable: true });
+      expect(removeItem).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('treats a 5xx from /auth/check as unreachable and keeps the token', async () => {
+    getItem.mockResolvedValue('http://vm-101:3099/api');
+    getPref.mockResolvedValue('true');
+    getAuthToken.mockReturnValue('tok');
+    apiFetch.mockResolvedValue({ ok: false, status: 502, json: async () => ({}) });
+    const r = await bootMobile();
+    expect(r).toEqual({ hasUrl: true, hasToken: true, baseUrl: 'http://vm-101:3099/api', unreachable: true });
+    expect(removeItem).not.toHaveBeenCalled();
+    expect(setAuthToken).not.toHaveBeenCalled();
+  });
+
+  it('still clears the token on a 401 from /auth/check', async () => {
+    getItem.mockResolvedValue('http://vm-101:3099/api');
+    getPref.mockResolvedValue('true');
+    getAuthToken.mockReturnValue('tok');
+    apiFetch.mockResolvedValue({ ok: false, status: 401, json: async () => ({}) });
+    const r = await bootMobile();
+    expect(r).toEqual({ hasUrl: true, hasToken: false, baseUrl: 'http://vm-101:3099/api' });
+    expect(removeItem).toHaveBeenCalledWith('jaghelm-token');
+  });
+
+  it('treats an unparseable body as not authenticated (not unreachable)', async () => {
+    getItem.mockResolvedValue('http://vm-101:3099/api');
+    getPref.mockResolvedValue('true');
+    getAuthToken.mockReturnValue('tok');
+    apiFetch.mockResolvedValue({ ok: true, json: () => Promise.reject(new Error('bad json')) });
+    const r = await bootMobile();
+    expect(r).toEqual({ hasUrl: true, hasToken: false, baseUrl: 'http://vm-101:3099/api' });
   });
 });
