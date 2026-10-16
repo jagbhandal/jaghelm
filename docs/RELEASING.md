@@ -11,7 +11,7 @@ JagHelm has two release lines, versioned independently:
 | Published | `ghcr.io/jagbhandal/jaghelm:X.Y.Z` and a GitHub Release, marked Latest | A GitHub Release with `jaghelm-android-X.Y.Z.apk` attached, not marked Latest |
 
 The only manual release action is pushing a tag to Gitea. CI does the rest. A
-published image tag never moves and a published release page is never
+published version tag never moves and a published release page is never
 rewritten; the workflows fail rather than do either.
 
 ## Image tags
@@ -19,7 +19,7 @@ rewritten; the workflows fail rather than do either.
 | Tag | Points to | Moves? |
 |---|---|---|
 | `:latest` | The most recent build of `main` | Yes, on every merge |
-| `:sha-<short>` | The build of one `main` commit | No |
+| `:sha-<short>` | The build of one `main` commit | Per build; normally stable |
 | `:X.Y.Z` | The `:sha-<short>` image of the tagged commit, by digest | No |
 
 `build-push.yml` builds, tests and cosign-signs every push to `main` and
@@ -215,6 +215,11 @@ Android:
   the tag exists. Then use **Re-run failed jobs**, which publishes the same
   build. The build is kept as an artifact for 7 days; after that, use **Re-run
   all jobs** to rebuild.
+
+**A tag was pushed on a commit whose build failed.** Nothing is published: the
+release workflow cannot find the `:sha-<short>` image, or it is unsigned, and
+stops before tagging. Delete the tag on Gitea, let the mirror remove it from
+GitHub, fix the build, and push the tag again on the fixed merge commit.
 
 **The `:X.Y.Z` image tag points at the wrong image.** Actions → **Release** →
 **Run workflow** with `tag` set to `vX.Y.Z`, `repair` on and `create_release`

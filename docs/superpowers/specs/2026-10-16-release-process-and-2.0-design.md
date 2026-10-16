@@ -14,8 +14,8 @@ this document and is open to review.
 
 ## 1. Intent
 
-The GitHub mirror is the project's public face, and it will be looked at by
-someone whose opinion matters. Today the release history is inconsistent:
+The GitHub mirror is the project's public face, and it is public and should
+read as a maintained project. Today the release history is inconsistent:
 
 - Server release pages exist only on GitHub, each formatted differently, in a
   promotional tone, with references to how the work was produced. 1.1, 1.2 and

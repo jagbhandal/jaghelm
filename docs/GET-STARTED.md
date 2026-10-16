@@ -257,7 +257,7 @@ Docker will pull the image from GHCR automatically on first run. No cloning or b
     image: ghcr.io/jagbhandal/jaghelm:X.Y.Z   # a version from the Releases page
 ```
 
-Releases and their notes are listed on the [GitHub Releases](https://github.com/jagbhandal/jaghelm/releases) page, and the full history is in [`CHANGELOG.md`](../CHANGELOG.md). From 2.0.0, a version tag points to the exact image built from `main` for that release and never moves. Every build of `main` is also published as `:sha-<short>` (the first seven characters of the commit), which never moves either.
+Releases and their notes are listed on the [GitHub Releases](https://github.com/jagbhandal/jaghelm/releases) page, and the full history is in [`CHANGELOG.md`](../CHANGELOG.md). From 2.0.0, a version tag points to the exact image built from `main` for that release and never moves. Every build of `main` is also published as `:sha-<short>` (the first seven characters of the commit); sha tags are per-build and normally stable.
 
 ---
 
