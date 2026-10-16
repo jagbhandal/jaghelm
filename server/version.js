@@ -17,3 +17,6 @@ try {
 }
 
 export const VERSION = version;
+
+/** Build commit (first 7 chars of the full SHA the image was built from). */
+export const REVISION = (process.env.JAGHELM_REVISION || '').slice(0, 7) || 'unknown';

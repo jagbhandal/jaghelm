@@ -12,7 +12,7 @@ import { getCached, setCache } from '../cache.js';
 import { apiError } from '../errors.js';
 import { safeFetch } from '../httpClient.js';
 import { asyncHandler } from '../util/asyncHandler.js';
-import { VERSION } from '../version.js';
+import { VERSION, REVISION } from '../version.js';
 import { getRefreshHealth } from '../refresh.js';
 
 const router = Router();
@@ -29,6 +29,7 @@ router.get('/health', (req, res) => {
     refreshAgeMs: refresh.ageMs,
     uptime: process.uptime(),
     version: VERSION,
+    revision: REVISION,
   });
 });
 
