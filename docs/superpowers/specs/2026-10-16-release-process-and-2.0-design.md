@@ -325,7 +325,8 @@ Examples: a nightly 02:00 job that misses a night is overdue at about 08:00; a
 ### 4.4 Display
 
 - `GET /api/cron/status` adds per job: `expected_every_seconds` (from the latest
-  run, when present) and `overdue` (boolean), computed with the current time.
+  run, when present), `overdue` (boolean) and `seconds_since_report`, computed with
+  the current time (so clients render ages without their own clock).
   Single source of truth: web and mobile read the server's verdict.
 - Web Scheduled Jobs panel: an amber "Overdue" badge and "last report <age> ago".
 - Android Overview: overdue jobs count as cron issues (caution, like a failure), with
@@ -365,7 +366,8 @@ scripts (900). Exact snippets go in the homelab docs.
   **Can't reach JagHelm** screen: the configured server address, the line "If
   you're away from home, check that Tailscale is connected on this phone.", a
   **Retry** button (re-runs the check), and **Change server** (returns to the
-  first-run screen). The saved session token is kept.
+  first-run screen). Retry keeps the saved session token; Change server clears it
+  together with the address, as Forget device does.
 - This replaces today's "offline at startup: enter the app anyway" behaviour, which
   is how the gray screen was reached.
 - Any unexpected error during startup, and any render crash (a top-level error
