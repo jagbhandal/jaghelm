@@ -53,8 +53,8 @@ export function recordRun(report) {
   if (!job || !node || !status) return;
 
   const store = load();
-  if (!store[node]) store[node] = {};
-  if (!store[node][job]) store[node][job] = [];
+  if (!Object.hasOwn(store, node)) store[node] = {};
+  if (!Object.hasOwn(store[node], job)) store[node][job] = [];
 
   const run = {
     status,

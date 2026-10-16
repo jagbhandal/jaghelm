@@ -30,3 +30,13 @@ test('deleteJob keeps the node while other jobs remain; unknown node is false', 
   assert.deepEqual(store.getAllStatuses().find((s) => s.node === 'n1').jobs.map((j) => j.job), ['b']);
   assert.equal(store.deleteJob('nope', 'a'), false);
 });
+
+test('recordRun uses own-property lookups (inherited names do not pollute)', () => {
+  store.recordRun({ node: 'hasOwnProperty', job: 'call', status: 'success' });
+  assert.equal(typeof Object.prototype.hasOwnProperty.call, 'function');
+  assert.equal(Object.prototype.hasOwnProperty.call({ a: 1 }, 'a'), true);
+  const n = store.getAllStatuses().find((s) => s.node === 'hasOwnProperty');
+  assert.ok(n.jobs.some((j) => j.job === 'call'));
+  store.recordRun({ node: 'toString', job: 'x', status: 'success' });
+  assert.equal(({}).toString.x, undefined);
+});
