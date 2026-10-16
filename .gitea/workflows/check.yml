@@ -54,6 +54,11 @@ jobs:
         run: |
           python3 scripts/secret-scan.py
 
+      # Same lint the release workflows rely on (scripts/release-notes.mjs refuses a
+      # malformed entry at tag time). Node built-ins only, so it runs before npm ci.
+      - name: Changelog format
+        run: node scripts/changelog-lint.mjs CHANGELOG.md && node scripts/changelog-lint.mjs --mobile mobile/CHANGELOG.md
+
       - name: Assert secret-template files are tracked (negations didn't drop them)
         run: |
           set -euo pipefail
