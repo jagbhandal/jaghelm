@@ -107,9 +107,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
+          # Full history so a release build can check the tag commit against
+          # origin/main.
+          fetch-depth: 0
           # Nothing here uses git credentials; keep the token out of .git/config,
           # out of reach of the build's third-party code.
           persist-credentials: false
+
+      # Only merged commits are released (release.yml does the same). Runs in the
+      # read-only build job, before the build and long before anything is published.
+      - name: Require the commit to be on main
+        if: env.RELEASE == 'true'
+        run: |
+          set -euo pipefail
+          COMMIT="$(git rev-parse HEAD)"
+          if ! git merge-base --is-ancestor "$COMMIT" origin/main; then
+            echo "::error::$COMMIT is not reachable from origin/main; only merged commits are released"
+            exit 1
+          fi
 
       - name: Set up JDK 21 (Temurin)
         uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
