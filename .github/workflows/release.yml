@@ -43,7 +43,7 @@ on:
         required: false
         default: ''
       dry_run:
-        description: 'Run every check and render the notes; publish nothing'
+        description: 'Run every check (notes only when a release would be created); publish nothing'
         type: boolean
         default: true
       create_release:
@@ -327,9 +327,10 @@ jobs:
         run: |
           set -euo pipefail
           deadline=$(( $(date +%s) + 5 * 60 ))
-          until cosign verify "$IMAGE@$DIGEST" \
-              --certificate-identity-regexp 'https://github.com/jagbhandal/jaghelm/.*' \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null; do
+          until timeout 120 cosign verify "$IMAGE@$DIGEST" \
+              --certificate-identity-regexp '^https://github\.com/jagbhandal/jaghelm/\.github/workflows/build-push\.yml@refs/(heads/main|tags/[^/]+)$' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-github-workflow-sha "$COMMIT" > /dev/null; do
             if (( $(date +%s) >= deadline )); then
               echo "::error::no valid cosign signature for $IMAGE@$DIGEST after 5 minutes; nothing was tagged"
               exit 1
@@ -411,14 +412,18 @@ jobs:
       # Every value printed here was validated before it was written to $GITHUB_ENV.
       - name: Job summary
         if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
         run: |
           set -euo pipefail
           if [[ "${ALREADY_PUBLISHED:-}" == "true" ]]; then
             image_status="already published at this digest (unchanged)"
           elif [[ "${PUBLISHED:-}" == "true" ]]; then
             image_status="published"
-          elif [[ "${ALREADY_PUBLISHED:-}" == "false" && "${PUBLISH:-}" == "false" ]]; then
+          elif [[ "${ALREADY_PUBLISHED:-}" == "false" && "${PUBLISH:-}" == "false" && "$JOB_STATUS" == "success" ]]; then
             image_status="dry run: would publish"
+          elif [[ "$JOB_STATUS" != "success" ]]; then
+            image_status="not published (run failed)"
           else
             image_status="not published"
           fi
