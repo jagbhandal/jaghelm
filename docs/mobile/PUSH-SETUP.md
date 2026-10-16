@@ -57,8 +57,9 @@ provide the secret once.
    [KEYSTORE.md step 3](KEYSTORE.md#3-set-the-five-github-repo-secrets) — secrets go on
    **GitHub**, not Gitea).
 
-4. **Build a release** by pushing a `mobile-v*` tag (see KEYSTORE.md step 4). The resulting
-   `app-release.apk` has push compiled in. If the secret is missing the build **fails fast** at
+4. **Build a release** by pushing a `mobile-v*` tag (see KEYSTORE.md step 4 and
+   [RELEASING.md](../RELEASING.md)). The APK attached to the GitHub Release has push
+   compiled in. If the secret is missing the build **fails fast** at
    the *Inject Firebase config* step rather than silently shipping a push-disabled APK — this
    applies to every `build-apk.yml` run, including manual `workflow_dispatch` test builds (there
    is no longer a no-Firebase build path).

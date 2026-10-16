@@ -110,32 +110,38 @@ the APK by design and is not a secret.)
 
 Two ways to run `.github/workflows/build-apk.yml`:
 
-**A. Push a `mobile-v*` tag** (the release path):
+**A. Push a `mobile-v*` tag** (the release path). A release needs `mobile/package.json` at the
+tag's version and a matching section in `mobile/CHANGELOG.md`; the full procedure is in
+**[RELEASING.md](../RELEASING.md)**.
 
 ```bash
-git tag mobile-v1.0.0
-git push origin mobile-v1.0.0
+git tag -a mobile-vX.Y.Z -m "JagHelm Android X.Y.Z" <merge-commit>
+git push <gitea-remote> mobile-vX.Y.Z
 ```
 
-`origin` is Gitea; the push-mirror copies the tag to GitHub, where the workflow fires on the
-`mobile-v*` trigger. Pushing to Gitea is all you do — the mirror handles GitHub.
+Push the tag to **Gitea only**; the push-mirror copies it to GitHub, where the workflow fires on
+the `mobile-v*` trigger. Never create the tag on GitHub: the mirror deletes refs that exist only
+there.
 
 **B. Manual run (on GitHub):** the **GitHub** repo → **Actions** tab → **Build Signed Mobile
 APK** → **Run workflow** (`workflow_dispatch`), pick the branch, Run.
 
 > **A manual dispatch is a TEST build, not a release.** It stamps `versionName 0.0.0-dispatch.N`
-> (`versionCode` = run number), per the workflow's version logic — fine for a smoke test, but
-> use the tag-push path (A) for an actual release so the version is real and monotonic.
+> (`versionCode` = run number), per the workflow's version logic, and never creates a GitHub
+> Release. It doubles as the release dry run: the job summary shows the release notes for the
+> `mobile/package.json` version. Use the tag-push path (A) for an actual release so the version
+> is real and monotonic.
 
 > **Re-running after a failed build** (e.g. you just added the missing secrets): on GitHub →
 > **Actions** → the failed run → **Re-run jobs**. No new tag needed — it re-checks out the
 > same commit, now with the secrets present.
 
-When the job finishes, open the run **on GitHub** and download the **`jaghelm-release-apk`** artifact
-(a zip containing `app-release.apk`). The workflow also runs `apksigner verify` and an
-artifact-secret guard before publishing, so a green run means the APK is genuinely
-signed and contains no leaked key material. (Artifacts retain for 7 days — re-run the
-workflow to regenerate.)
+When a tag build finishes, download the APK from the **GitHub Release** for the tag
+([Releases page](https://github.com/jagbhandal/jaghelm/releases)): `jaghelm-android-X.Y.Z.apk`,
+with its SHA-256 in the release notes. The workflow runs `apksigner verify` and an
+artifact-secret guard before publishing, so a published APK is genuinely signed and contains
+no leaked key material. A manual (test) build publishes no release; its APK is only in the run's
+**`jaghelm-release-apk`** artifact, which is kept for 7 days.
 
 ---
 
@@ -144,7 +150,7 @@ workflow to regenerate.)
 `apksigner` lives in the Android SDK `build-tools/<ver>/`:
 
 ```bash
-apksigner verify --min-sdk-version 24 --print-certs -v app-release.apk
+apksigner verify --min-sdk-version 24 --print-certs -v jaghelm-android-X.Y.Z.apk
 ```
 (The CI gate passes the same `--min-sdk-version 24` — matching `minSdkVersion` in
 `variables.gradle` — so your manual check verifies identically.)
@@ -165,15 +171,16 @@ note the v2 requirement actually follows from `minSdkVersion 24`, not the target
 2. **Get the APK onto the phone** — any of:
    - **adb (fastest, from your computer):**
      ```bash
-     adb install -r app-release.apk
+     adb install -r jaghelm-android-X.Y.Z.apk
      ```
      `-r` reinstalls over an existing JagHelm install (only works if it's the **same**
      signing key — see the top-of-doc rule).
-   - **Direct transfer:** copy `app-release.apk` to the phone (USB / Google Drive /
-     email-to-self), then tap it in the Files app and confirm the install prompt.
-3. **First run:** open JagHelm, enter your backend URL + token on the first-run screen,
-   tap **Test & Connect**. It reaches the backend over the Tailscale network via native
-   HTTP; all four tabs should render live data.
+   - **Direct transfer:** download the APK from the GitHub Release on the phone, or copy it
+     over (USB / Google Drive / email-to-self), then tap it in the Files app and confirm the
+     install prompt.
+3. **First run:** open JagHelm, enter your server's address and your JagHelm username and
+   password on the first-run screen, and tap **Sign in**. It reaches the server over the
+   Tailscale network via native HTTP; the tabs should render live data.
 
 > **Push notifications need the `GOOGLE_SERVICES_JSON_BASE64` secret set (step 3).** The CI
 > build injects `google-services.json` before the Vite/Gradle build, so a release APK ships
@@ -185,8 +192,8 @@ note the v2 requirement actually follows from `minSdkVersion 24`, not the target
 
 ### Updating later
 
-Build a new signed APK (bump the tag, e.g. `mobile-v1.0.1`), then `adb install -r` or
-tap-to-install over the top. CI derives an **incrementing `versionCode`** from the tag
+Release a new version (see [RELEASING.md](../RELEASING.md)), download its APK from the GitHub
+Release, then `adb install -r` or tap-to-install over the top. CI derives an **incrementing `versionCode`** from the tag
 (`mobile-vMAJOR.MINOR.PATCH` → `MAJOR*1000000 + MINOR*1000 + PATCH`), so each higher tag
 installs cleanly over the last. Because it's the **same** key, Android updates in place and
 preserves the app's stored config. If you ever see
@@ -207,4 +214,4 @@ app first (you'll lose its stored state) or recover the original keystore.
 | Secrets | `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, `GOOGLE_SERVICES_JSON_BASE64` — set on **GitHub**, not Gitea |
 | Push setup | **[PUSH-SETUP.md](PUSH-SETUP.md)** — end-to-end (APK Firebase config + prod server FCM service-account) |
 | Distribution | sideload only (no Play Store) → one self-signed key, reuse forever |
-| Artifact | `jaghelm-release-apk` → `app-release.apk` |
+| Release APK | `jaghelm-android-X.Y.Z.apk` on the tag's GitHub Release (test builds: `jaghelm-release-apk` artifact, 7 days) |
