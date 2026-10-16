@@ -10,8 +10,23 @@ const IMAGE = 'ghcr.io/jagbhandal/jaghelm';
 const REPO_URL = 'https://github.com/jagbhandal/jaghelm';
 const FENCE = '```';
 
+// GitHub renders single newlines as line breaks, so undo the CHANGELOG's hard wraps.
+function unwrapBullets(text) {
+  const out = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('- ') || out.length === 0) out.push(line);
+    else out[out.length - 1] += ` ${line}`;
+  }
+  return out.join('\n');
+}
+
 function body(entry) {
-  return [entry.summary, ...entry.sections.map((s) => `### ${s.name}\n${s.body}`)];
+  return [
+    entry.summary.split('\n').map((l) => l.trim()).filter(Boolean).join(' '),
+    ...entry.sections.map((s) => `### ${s.name}\n${unwrapBullets(s.body)}`),
+  ];
 }
 
 export function renderServerNotes(entry, { prevTag }) {

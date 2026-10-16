@@ -30,8 +30,7 @@ test('server notes match the fixed template', () => {
     'One sentence summary.',
     '',
     '### Added',
-    '- a',
-    '  continued',
+    '- a continued',
     '',
     '### Fixed',
     '- b',
@@ -60,8 +59,7 @@ test('android notes include requires in the header and asset footer', () => {
     'One sentence summary.',
     '',
     '### Added',
-    '- a',
-    '  continued',
+    '- a continued',
     '',
     '### Fixed',
     '- b',
@@ -119,4 +117,50 @@ test('CLI exits 1 on lint failure', () => {
 test('CLI android requires --apk and --sha256', () => {
   const r = runCli(LOG, ['android', '2.0.0']);
   assert.equal(r.status, 2);
+});
+
+const WRAPPED = {
+  ...ENTRY,
+  summary: 'A wrapped\nsummary.',
+  sections: [{ name: 'Added', body: '- first bullet\n  continues\n- second' }],
+};
+
+test('server notes unwrap a wrapped summary and wrapped bullets', () => {
+  const expected = [
+    '2026-10-16 · `v2.0.0` · `ghcr.io/jagbhandal/jaghelm:2.0.0`',
+    '',
+    'A wrapped summary.',
+    '',
+    '### Added',
+    '- first bullet continues',
+    '- second',
+    '',
+    '---',
+    '',
+    FENCE,
+    'docker pull ghcr.io/jagbhandal/jaghelm:2.0.0',
+    FENCE,
+    '',
+    'Image signed with cosign (keyless). Full changelog: [CHANGELOG.md](https://github.com/jagbhandal/jaghelm/blob/v2.0.0/CHANGELOG.md)',
+  ].join('\n');
+  assert.equal(renderServerNotes(WRAPPED, { prevTag: null }), expected);
+});
+
+test('android notes unwrap a wrapped summary and wrapped bullets', () => {
+  const expected = [
+    '2026-10-16 · `mobile-v2.0.0`',
+    '',
+    'A wrapped summary.',
+    '',
+    '### Added',
+    '- first bullet continues',
+    '- second',
+    '',
+    '---',
+    '',
+    '**Asset:** `a.apk` · SHA-256 `ff`',
+    '',
+    'Download the APK on your Android device and open it to install. Updates install over earlier versions and keep your settings.',
+  ].join('\n');
+  assert.equal(renderAndroidNotes(WRAPPED, { apkName: 'a.apk', sha256: 'ff' }), expected);
 });
