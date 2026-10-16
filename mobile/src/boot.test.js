@@ -26,7 +26,7 @@ vi.mock('@shared/api/client.js', () => ({ initAuthToken, setAuthToken, getAuthTo
 const { setApiBase } = vi.hoisted(() => ({ setApiBase: vi.fn() }));
 vi.mock('@shared/api/baseUrl.js', () => ({ setApiBase }));
 
-import { bootMobile } from './boot.js';
+import { bootMobile, BOOT_TIMEOUT_MS } from './boot.js';
 
 const checkRes = (authenticated, ok = true) => ({ ok, json: async () => ({ authenticated, authRequired: true }) });
 
@@ -93,12 +93,36 @@ describe('bootMobile', () => {
     expect(apiFetch).not.toHaveBeenCalled();
   });
 
-  it('keeps the token optimistically when revalidation throws (offline cold start)', async () => {
+  it('reports unreachable (token kept) when revalidation throws', async () => {
     getItem.mockResolvedValue('http://vm-101:3099/api');
     getPref.mockResolvedValue('true');
     getAuthToken.mockReturnValue('tok');
     apiFetch.mockRejectedValue(new Error('offline'));
     const r = await bootMobile();
-    expect(r).toEqual({ hasUrl: true, hasToken: true, baseUrl: 'http://vm-101:3099/api' });
+    expect(r).toEqual({ hasUrl: true, hasToken: true, baseUrl: 'http://vm-101:3099/api', unreachable: true });
+    expect(removeItem).not.toHaveBeenCalled();
+    expect(setAuthToken).not.toHaveBeenCalled();
+  });
+
+  it('reports unreachable after BOOT_TIMEOUT_MS when revalidation hangs, token untouched', async () => {
+    vi.useFakeTimers();
+    try {
+      getItem.mockResolvedValue('http://vm-101:3099/api');
+      getPref.mockResolvedValue('true');
+      getAuthToken.mockReturnValue('tok');
+      apiFetch.mockReturnValue(new Promise(() => {}));
+      expect(BOOT_TIMEOUT_MS).toBe(10000);
+      let result;
+      const p = bootMobile().then((r) => { result = r; });
+      await vi.advanceTimersByTimeAsync(BOOT_TIMEOUT_MS - 1);
+      expect(result).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      await p;
+      expect(result).toEqual({ hasUrl: true, hasToken: true, baseUrl: 'http://vm-101:3099/api', unreachable: true });
+      expect(removeItem).not.toHaveBeenCalled();
+      expect(setAuthToken).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
