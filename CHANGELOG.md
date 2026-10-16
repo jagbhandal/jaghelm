@@ -38,7 +38,9 @@ authenticated metrics endpoint when an API key is set.
   metric crosses a threshold (with a hysteresis band so it does not flap at the
   edge), a UPS switches to battery or power is restored, or a cron job fails or
   recovers. The server compares each refresh with the previous one and notifies
-  only on real transitions.
+  only on real transitions. Push needs a Firebase service account on the
+  server: set `FCM_SERVICE_ACCOUNT` (or `GOOGLE_APPLICATION_CREDENTIALS`) to the
+  path of its JSON key. Without one, push is off and everything else works.
 - Tapping a notification opens the related incident in the app (`jaghelm://`
   links).
 - Notification settings per event category. Turning notifications off removes
@@ -51,6 +53,10 @@ authenticated metrics endpoint when an API key is set.
 - An overall health status, computed on the server, shown as one status dot in
   the web navigation bar and on the app's Overview.
 - Services that nothing monitors are tagged "unmonitored".
+- `CSP_CONNECT_EXTRA` adds comma-separated origins to the Content-Security-Policy
+  `connect-src` directive, for clients that call the API from another origin.
+  Each entry must be an `http`, `https`, `ws` or `wss` URL; invalid entries are
+  dropped with a warning.
 
 ### Changed
 - Services are sorted down, then unknown, then up, so problems are listed first.
@@ -61,6 +67,9 @@ authenticated metrics endpoint when an API key is set.
   containers, active Kuma monitors and recently seen containers: a down service
   stays on the board as a down card, and a container that has just disappeared
   leaves a grey placeholder.
+- A container that has just stopped no longer shows as running while
+  Prometheus still serves its recent metrics: a container not seen for 90
+  seconds (`JAGHELM_CONTAINER_STALE_SEC`) counts as stopped.
 - `ETag` is included in the CORS exposed headers, and the web dashboard and the
   app resolve the API base address the same way.
 - Android app: push registration only runs when the build includes Firebase
@@ -73,8 +82,11 @@ authenticated metrics endpoint when an API key is set.
 - The Kuma `/metrics` parser and the push token and preference store reject
   `__proto__`, `constructor` and `prototype` keys and validate numeric input.
 - Android app: cleartext HTTP is allowed only for tailnet addresses, the
-  deep-link intent filter is not `BROWSABLE`, Android backup (`allowBackup`) is
-  disabled, and extra CSP connect entries are validated.
+  deep-link intent filter is not `BROWSABLE`, and Android backup
+  (`allowBackup`) is disabled.
+- A warning is logged at startup when `KUMA_API_KEY` would be sent over plain
+  HTTP to a host other than localhost; use an `https://` `KUMA_URL` for a
+  remote Kuma.
 - `firebase-admin`, added for push notifications, brings 6 moderate-severity
   transitive advisories (through `@google-cloud/storage`); none are high or
   critical.
@@ -83,24 +95,30 @@ authenticated metrics endpoint when an API key is set.
 
 A maintenance release with no new features that fixes a board freeze during
 Kuma outages, zero values shown as missing data and icons shown as filenames,
-and tightens security, with three changes that may need action on upgrade.
+and tightens security, with four changes that may need action on upgrade.
 
 ### Breaking changes
 - **The Content-Security-Policy is enforced by default.** It was sent in
   report-only mode; enforcing it contains cross-site scripting, and custom
   inline scripts no longer run. To return to report-only, set
-  `CSP_REPORT_ONLY=true`.
+  `CSP_REPORT_ONLY=true`; `CSP_ENFORCE` is no longer read.
 - **The raw infrastructure endpoints need a dashboard password.** Without one,
   the Prometheus query, Docker container list, and AdGuard, NPM and Uptime Kuma
   stats endpoints return `403`, so an unauthenticated device on the network
-  cannot query the homelab or the Docker socket through JagHelm. On a trusted
-  LAN, set `JAGHELM_ALLOW_OPEN_INFRA=true` to allow them.
+  cannot query the homelab or the Docker socket through JagHelm. The Uptime
+  Kuma endpoint also feeds the navigation bar's health dot, which then shows
+  unknown. On a trusted LAN, set `JAGHELM_ALLOW_OPEN_INFRA=true` to allow them.
 - **Links accept only `http`, `https` and `mailto` URLs, or relative ones.**
   Saving or importing a configuration in which any `url` value has another
   scheme (for example `ssh://` or `javascript:`) is rejected, and such links
   edited directly into the configuration files do nothing when clicked. This
   stops a stored `javascript:` link from running in JagHelm. Change or remove
   links with other schemes before saving.
+- **The Deluge, qBittorrent, Transmission and Watchtower integrations are
+  removed.** Watchtower's endpoint triggered an image update on every refresh
+  instead of reporting status, and the other three never returned data because
+  their login flows are not supported. They are gone from the gallery, and
+  existing ones are no longer polled; remove them from your configuration.
 
 ### Changed
 - Built-in service icons load from the maintained `homarr-labs` Dashboard Icons
@@ -143,11 +161,8 @@ and tightens security, with three changes that may need action on upgrade.
   `JAGHELM_DATA_DIR`, like the other data files.
 
 ### Security
-- The block on unsupported integrations is enforced on the server. A preset
-  marked unsupported (such as Watchtower, whose `/v1/update` endpoint triggers
-  updates rather than reporting status) was only hidden from the gallery, so a
-  directly saved or imported configuration could still save, test or poll it.
-  Saving, testing and polling now refuse it.
+- The server refuses to save, test or poll a removed integration, including
+  one in a configuration that was edited directly or imported.
 - Outbound requests are checked by the SSRF guard on every redirect (up to 5
   hops) instead of only at the first URL, and response bodies are capped at
   10 MB. Prometheus and Kuma requests go through the same checks.
@@ -199,8 +214,9 @@ start-up, and improves the layout on phones.
   bundles and serves files under `/assets/` from cache first.
 
 ### Changed
-- On phones, the navigation bar drops the clock and "updated" time,
-  side-by-side settings fields stack, and the settings sidebar reflows.
+- On phones, the navigation bar drops the clock and "updated" time (and, on
+  the narrowest screens, the weather city), side-by-side settings fields stack,
+  and the settings sidebar reflows.
 
 ### Fixed
 - Resizing a panel: the panel now follows the snapped grid outline while
@@ -216,10 +232,12 @@ along with accessibility and usability improvements across the interface.
 ### Added
 - Structured request and error logging, with secrets redacted, replacing
   ad-hoc console output.
-- Prometheus metrics at `/metrics`: request rate, latency histograms and
-  refresh-loop health.
+- Prometheus metrics at `/metrics` (request rate, latency histograms,
+  refresh-loop health), served without authentication so Prometheus can scrape
+  them.
 - A readiness probe at `/api/readyz`, separate from the liveness check
-  `/api/health`, that reports ready only after the first refresh completes.
+  `/api/health`: it reports ready when Prometheus is reachable, and reports
+  whether Kuma is reachable without depending on it.
 - Demo mode: `DEMO_MODE=true` serves a read-only sample dashboard, for
   screenshots and public demos, and refuses writes. It is off by default.
 - schema.org JSON-LD structured data for search and social previews.
@@ -235,12 +253,14 @@ along with accessibility and usability improvements across the interface.
   its sections under labels.
 - Field-level validation in settings (for example weather coordinates),
   reported to screen readers.
-- A STRIDE threat model and an incident-response runbook in `docs/security/`.
+- Importing a configuration backup checks the file and asks for confirmation
+  before replacing the configuration.
 
 ### Changed
 - Notifications appear as non-blocking toasts, and confirmations as themed
   dialogs (focus trap, Escape to close, focus restore, reduced motion),
-  replacing the browser's `alert()` and `confirm()`.
+  replacing the browser's `alert()` and `confirm()`. Resetting the grid,
+  removing all overrides and deleting a group or tab now ask for confirmation.
 - The theme control opens a picker with a swatch for each of the 10 themes
   instead of cycling through them; it works with the keyboard and screen
   readers.
@@ -248,26 +268,31 @@ along with accessibility and usability improvements across the interface.
   re-renders less when the configuration changes.
 - Fonts load on demand instead of through a render-blocking `@import` of 11
   font families.
-- Each theme has its own glass background.
 
 ### Fixed
 - Configuration saved through the API is validated and size-limited before it
   is written; an invalid body is rejected with a `400` error instead of being
   stored.
-- Configuration is written atomically and read as a copy, so a crash during a
-  write cannot leave a half-written or interleaved file on disk.
+- The server hands out copies of the configuration, so a failed save no longer
+  leaves the running configuration different from the file on disk.
 - Colors that used the undefined `--teal` and `--blue` tokens now render.
+- The navigation bar background follows the theme instead of staying dark on
+  light themes.
+- An embedded tab that loads slowly is no longer marked as blocked after it
+  has loaded.
 
 ### Security
-- A Content-Security-Policy is sent in report-only mode, along with the
-  standard security headers (Helmet). Violations are reported but nothing is
-  blocked, so custom inline scripts keep working; enforcement will be a later
-  opt-in.
+- A Content-Security-Policy is sent in report-only mode: violations are
+  reported, but nothing is blocked unless `CSP_ENFORCE=true` is set, so custom
+  inline scripts keep working.
 - The service worker is registered from a script file instead of an inline
   script, so an enforcing policy will not need `unsafe-inline`.
-- The login rate limiter is hardened against brute-force attempts, and the
-  integration connection-test endpoint is limited to 10 requests per minute per
-  key.
+- After 50 failed logins within 15 minutes, from any addresses, every login is
+  refused until the window passes, and each failed login is delayed by about
+  400 ms. This adds to the existing per-address limit.
+- The integration connection test is limited to 10 requests per minute per
+  client address (`429` when exceeded), and each test is logged with its target
+  host.
 - Stricter input limits on the cron, secrets and integration routes.
 - Container images are signed with cosign (keyless) and can be verified with
   `cosign verify`.
@@ -296,6 +321,13 @@ container runtime; several changes need action before upgrading.
   `your-random-secret-here` and `changeme` are refused as the encryption key;
   generate a real one with `openssl rand -hex 32`. Existing encrypted data
   remains readable through a legacy-salt fallback.
+- **Cross-origin requests are blocked by default.** The API answers browser
+  requests from another origin only when that origin is listed in
+  `CORS_ORIGIN` (comma-separated, exact scheme, host and port). If a page on
+  another origin calls the JagHelm API, add its origin to `CORS_ORIGIN`.
+- **The `?token=` query parameter is no longer accepted.** Send the session
+  token in the `x-auth-token` header instead; tokens in URLs leak into proxy
+  logs, browser history and `Referer` headers.
 
 ### Added
 - A visible keyboard focus ring in all 10 themes (WCAG 2.4.7), and support for
@@ -306,14 +338,22 @@ container runtime; several changes need action before upgrading.
   settings sidebar mark the current item (`aria-current`, `aria-selected`), and
   icon buttons have accessible labels.
 - A first-run screen with a "Connect your first node" button.
+- A Cron Jobs panel that shows each scheduled job's latest status and run time.
+  Jobs report to `POST /api/cron/report`, authenticated with
+  `JAGHELM_CRON_SECRET`; without the secret the endpoint is disabled.
+- `TRUST_PROXY` lists the reverse proxies whose `X-Forwarded-For` header is
+  trusted, so the login rate limiter sees each client's address instead of the
+  proxy's. It is empty by default.
+- `JAGHELM_BLOCK_PRIVATE_NETWORKS=true` makes the SSRF guard also block
+  private, loopback and link-local addresses, for setups where integration URLs
+  are not trusted. By default these are allowed, since homelab services live
+  there; non-HTTP schemes, `169.254.169.254` and `0.0.0.0/8` are always blocked.
 - The version is read from `package.json` and reported in `/api/health`, the
   startup log and the image labels.
 - Each image is also published with an immutable `:sha-<short>` tag for pinning
-  and rollback, and carries OCI image labels, an SBOM and provenance
-  attestations.
+  and rollback, and carries OCI image labels.
 - Open Graph and Twitter card metadata for link previews.
-- `KNOWN-ISSUES.md`, listing known limitations, and a README comparison with
-  similar dashboards.
+- The README compares JagHelm with similar dashboards.
 
 ### Changed
 - `/api/health` reflects whether the refresh loop is alive and returns `503`
@@ -326,6 +366,11 @@ container runtime; several changes need action before upgrading.
 - The service-worker cache key includes the version.
 - `multer` is upgraded from 1.x, which is end-of-life, to 2.x. No configuration
   change is needed.
+- A refresh in which nothing changed no longer re-renders the dashboard.
+
+### Removed
+- SVG uploads for the logo and background images: SVG can carry scripts, so
+  uploads accept PNG, JPEG, GIF and WebP.
 
 ### Fixed
 - Failures in asynchronous API routes return JSON instead of an HTML `500`
@@ -337,7 +382,17 @@ container runtime; several changes need action before upgrading.
 - Uptime Kuma statuses expire after a staleness limit, so the board no longer
   stays frozen on all green.
 - A corrupt `services.yaml` is no longer re-parsed every 5 seconds.
-- The refresh timer is cancelled cleanly on shutdown.
+- `services.yaml`, the display configuration and the checklist are written
+  atomically, so a crash during a write cannot leave a truncated file.
+- On `SIGTERM` or `SIGINT` the server stops its refresh timer and lets open
+  requests finish, for up to 10 seconds, before exiting.
+- One unreachable node no longer empties the services list; the other nodes
+  still render.
+- A theme chosen in the browser is no longer replaced by the configuration's
+  theme when settings reload.
+- The PhotoPrism integration signs in with a username and password only. Its
+  setup text no longer suggests OAuth2 client credentials for accounts with
+  two-factor authentication, which never worked; use an account without 2FA.
 - Two instances of the same integration preset no longer receive each other's
   cached data.
 - A panel that throws an error shows the error in place instead of blanking the
@@ -347,10 +402,9 @@ container runtime; several changes need action before upgrading.
   blank link previews.
 
 ### Security
-- Every integration and session-auth request, including Proxmox, goes through
-  the SSRF guard, closing a bypass where session-auth and infrastructure proxies
-  fetched without it. Operator infrastructure (Prometheus, Kuma) is exempt from
-  strict-mode private-address blocking through a `trusted` flag.
+- Integration requests and session logins, including Proxmox, go through an
+  SSRF guard that checks every outbound URL. Operator infrastructure
+  (Prometheus, Kuma) is exempt from the strict-mode private-address blocking.
 - API keys in query-string authentication (`?apikey=…`) are removed from URLs
   before an error is logged or returned to the browser.
 - The encrypted secrets store, the admin password hash and the cron history are
@@ -362,6 +416,12 @@ container runtime; several changes need action before upgrading.
 - Resolved all 10 published dependency advisories (`path-to-regexp` ReDoS,
   `qs`, `js-yaml`, `postcss`, `vite`).
 - Prometheus queries have a length limit, and per-query caches are bounded.
+- Security headers are sent on every response (Helmet): HSTS, `nosniff`,
+  `Referrer-Policy: no-referrer`, and `X-Frame-Options: DENY`, so JagHelm can
+  no longer be shown inside another site's frame.
+- A failed login shows the same message whether the username or the password
+  is wrong.
+- JSON request bodies are limited to 1 MB.
 
 ## [1.0.0] — 2026-03-27
 
