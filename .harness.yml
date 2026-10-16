@@ -19,7 +19,9 @@ levels:
   enforcers:    L2
   # GAP (target L3): HONEST-NUMBERS — the PR-triggered check.yml is NOT on main (lives on the unmerged
   # branch ci/pr-checks; verified: `git cat-file -e origin/main:.gitea/workflows/check.yml` fails). Sole
-  # main CI = build-push.yml on push:[main] + release:published — POST-merge, not per-PR. Per the
+  # main CI = build-push.yml on push:[main] — POST-merge, not per-PR. Releases do not rebuild: a vX.Y.Z
+  # tag pushed on Gitea mirrors to GitHub, where release.yml promotes the already-built :sha-<short>
+  # image to :X.Y.Z by digest and publishes the GitHub Release. Per the
   # "L2->L3 is TRIGGER not asset; post-merge tests are L1" calibration, this is L1. 53 test files exist
   # but are not a per-change blocking trigger. ACTION: merging ci/pr-checks lifts this to L2.
   verification: L1

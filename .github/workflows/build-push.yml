@@ -70,9 +70,11 @@ jobs:
           # release when this commit is released (IMAGE_REVISION carries the SHA).
           VERSION="$(jq -r .version package.json)"
 
-          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
-          echo "image_version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          {
+            echo "tags=${TAGS}"
+            echo "image_version=${VERSION}"
+            echo "short_sha=${SHORT_SHA}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3

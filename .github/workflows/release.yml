@@ -3,8 +3,9 @@ name: Release
 # Publishes a server release for a vX.Y.Z tag WITHOUT rebuilding the image.
 # build-push.yml already built, pushed and cosign-signed
 # ghcr.io/jagbhandal/jaghelm:sha-<short> when the commit landed on main. This
-# workflow adds the :X.Y.Z tag to that exact digest, verifies the signature, and
-# creates the GitHub Release from the CHANGELOG (scripts/release-notes.mjs).
+# workflow verifies the cosign signature on that exact digest, then adds the
+# :X.Y.Z tag to it, and creates the GitHub Release from the CHANGELOG
+# (scripts/release-notes.mjs).
 # A published image tag never moves and a published release page is never
 # rewritten: both cases fail instead.
 #
@@ -21,6 +22,10 @@ name: Release
 #                          the release page.
 #   repair                 The only sanctioned way to move a published :X.Y.Z
 #                          (one-time :1.4.0 fix). Needs a tag.
+# Release notes are rendered only when the run would create a release (tag push,
+# create_release, or the no-tag rehearsal), whatever dry_run says. So a tag that
+# predates scripts/release-notes.mjs can still be repaired, and rehearsed with
+# dry_run on, as long as create_release is off.
 #
 # Injection safety: inputs and the tag name reach shell only through env: and are
 # validated against ^v[0-9]+\.[0-9]+\.[0-9]+$ before any other use.
@@ -88,6 +93,7 @@ jobs:
               fi
               TAG="$GITHUB_REF_NAME"
               DRY_RUN=false PUBLISH=true CREATE_RELEASE=true REPAIR=false
+              RENDER_NOTES=true
               ;;
             workflow_dispatch)
               for b in "$IN_DRY_RUN" "$IN_CREATE_RELEASE" "$IN_REPAIR"; do
@@ -100,6 +106,8 @@ jobs:
               if [[ -n "$IN_TAG" ]]; then
                 TAG="$IN_TAG"
                 REPAIR="$IN_REPAIR"
+                # Notes whenever a release would be created, dry run or not.
+                RENDER_NOTES="$IN_CREATE_RELEASE"
                 if [[ "$DRY_RUN" == "true" ]]; then
                   PUBLISH=false CREATE_RELEASE=false
                 else
@@ -117,6 +125,7 @@ jobs:
                   exit 1
                 fi
                 PUBLISH=false CREATE_RELEASE=false REPAIR=false
+                RENDER_NOTES=true
               fi
               ;;
             *)
@@ -135,7 +144,7 @@ jobs:
             CHECKOUT_REF="$GITHUB_SHA"
           fi
 
-          MODE="$EVENT_NAME; dry_run=$DRY_RUN; publish=$PUBLISH; create_release=$CREATE_RELEASE; repair=$REPAIR"
+          MODE="$EVENT_NAME; dry_run=$DRY_RUN; publish=$PUBLISH; create_release=$CREATE_RELEASE; repair=$REPAIR; render_notes=$RENDER_NOTES"
           echo "mode: $MODE"
           {
             echo "MODE=$MODE"
@@ -144,6 +153,7 @@ jobs:
             echo "PUBLISH=$PUBLISH"
             echo "CREATE_RELEASE=$CREATE_RELEASE"
             echo "REPAIR=$REPAIR"
+            echo "RENDER_NOTES=$RENDER_NOTES"
             echo "CHECKOUT_REF=$CHECKOUT_REF"
           } >> "$GITHUB_ENV"
 
@@ -211,21 +221,22 @@ jobs:
           fi
 
       # ── 4. Release notes (also proves the CHANGELOG has this version) ───────
+      # Only when the run would create a release (RENDER_NOTES, see the header).
       # Runs before anything is published, so a missing or malformed CHANGELOG
       # entry stops the release with no side effects. No npm ci: the scripts
       # use Node built-ins only.
       - name: Set up Node
-        if: env.CREATE_RELEASE == 'true' || env.DRY_RUN == 'true'
+        if: env.RENDER_NOTES == 'true'
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '22'
 
       - name: Render release notes from the CHANGELOG
-        if: env.CREATE_RELEASE == 'true' || env.DRY_RUN == 'true'
+        if: env.RENDER_NOTES == 'true'
         run: |
           set -euo pipefail
           if [[ ! -f scripts/release-notes.mjs ]]; then
-            echo "::error::$TAG predates scripts/release-notes.mjs, so no notes can be rendered for it; to repair an old tag's image, run with dry_run and create_release off"
+            echo "::error::$TAG predates scripts/release-notes.mjs, so no notes can be rendered for it; repair an old tag's image with create_release off"
             exit 1
           fi
           PREV="$(git describe --tags --abbrev=0 --match 'v*' "$COMMIT^" 2>/dev/null || true)"
@@ -302,7 +313,34 @@ jobs:
             echo "EXISTING_DIGEST=$EXISTING_DIGEST"
           } >> "$GITHUB_ENV"
 
-      # ── 8. Add :X.Y.Z to the existing digest (no rebuild) ───────────────────
+      # ── 8. Only a signed image gets a version tag ───────────────────────────
+      # Verified BEFORE tagging: :X.Y.Z can never move, so an unsigned image must
+      # never receive one. If this fails, nothing is tagged. The signature is on
+      # the digest, so it also covers :X.Y.Z once the tag is added (no re-signing).
+      - name: Install cosign
+        uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3
+
+      # build-push.yml signs a few seconds after it pushes :sha-<short>, so a tag
+      # pushed seconds after the merge can get here before the signature exists:
+      # retry, bounded.
+      - name: Verify the image signature
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 5 * 60 ))
+          until cosign verify "$IMAGE@$DIGEST" \
+              --certificate-identity-regexp 'https://github.com/jagbhandal/jaghelm/.*' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null; do
+            if (( $(date +%s) >= deadline )); then
+              echo "::error::no valid cosign signature for $IMAGE@$DIGEST after 5 minutes; nothing was tagged"
+              exit 1
+            fi
+            echo "signature not verifiable yet; next check in 20 s"
+            sleep 20
+          done
+          echo "cosign signature verified for $IMAGE@$DIGEST"
+          echo "SIGNATURE_VERIFIED=true" >> "$GITHUB_ENV"
+
+      # ── 9. Add :X.Y.Z to the verified digest (no rebuild) ───────────────────
       # --prefer-index=false copies the manifest byte for byte. The default (true)
       # wraps a single-platform manifest (which build-push.yml produces) in a NEW
       # manifest list with a different digest: :X.Y.Z would then point at
@@ -341,29 +379,6 @@ jobs:
           fi
           echo "$IMAGE:$VERSION -> $DIGEST"
           echo "PUBLISHED=true" >> "$GITHUB_ENV"
-
-      # ── 9. The signature on the digest covers the version tag ───────────────
-      - name: Install cosign
-        uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3
-
-      # build-push.yml signs right after it pushes, so a tag pushed seconds after
-      # the merge can get here before the signature exists: retry, bounded.
-      - name: Verify the image signature
-        run: |
-          set -euo pipefail
-          deadline=$(( $(date +%s) + 5 * 60 ))
-          until cosign verify "$IMAGE@$DIGEST" \
-              --certificate-identity-regexp 'https://github.com/jagbhandal/jaghelm/.*' \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null; do
-            if (( $(date +%s) >= deadline )); then
-              echo "::error::no valid cosign signature for $IMAGE@$DIGEST after 5 minutes"
-              exit 1
-            fi
-            echo "signature not verifiable yet; next check in 20 s"
-            sleep 20
-          done
-          echo "cosign signature verified for $IMAGE@$DIGEST"
-          echo "SIGNATURE_VERIFIED=true" >> "$GITHUB_ENV"
 
       # ── 10. Release page: created once, never rewritten ─────────────────────
       # --verify-tag: never let gh create the tag on GitHub (the mirror would
