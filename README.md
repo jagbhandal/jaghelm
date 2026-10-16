@@ -129,6 +129,12 @@ TRUST_PROXY=
 JAGHELM_CRON_SECRET=
 ```
  
+#### Cron job reporting
+
+Jobs report with `POST /api/cron/report` (JSON body: `secret`, `node`, `job`, `status` of `success` or `failure`, optional `duration_seconds`, `schedule`, `error`). The optional `expected_every_seconds` (integer 60-2678400, or a digit string such as `"86400"`; anything else returns 400) declares how often the job should report. A job is **overdue** when it has not reported within that interval plus a grace of `max(25% of the interval, 10 minutes)`.
+
+`GET /api/cron/status` (session auth) returns each job with its runs plus `overdue`, `seconds_since_report` and `expected_every_seconds`. `DELETE /api/cron/jobs/:node/:job` (session auth, URL-encode both names) removes a job and its history: 204 on success, 404 if it does not exist. A removed job reappears if it reports again.
+
 ### 2. Create `compose.yaml`
  
 ```yaml
