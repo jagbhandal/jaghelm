@@ -175,6 +175,10 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          # The SDK repository no longer has the deprecated `tools` package that
+          # this action version installs by default; ask only for what the build uses.
+          packages: platform-tools
 
       # --- Firebase client config: decode google-services.json BEFORE the Vite build.
       # Push is gated on this file at TWO layers that must agree: the Vite build sets
