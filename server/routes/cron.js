@@ -19,6 +19,10 @@ router.post('/report', (req, res) => {
   if (!job || !node || !['success', 'failure'].includes(status)) {
     return apiError(res, 400, 'Missing required fields: job, node, status');
   }
+  const RESERVED = ['__proto__', 'constructor', 'prototype'];
+  if (RESERVED.includes(job) || RESERVED.includes(node)) {
+    return apiError(res, 400, 'job and node must not be a reserved name');
+  }
   // Bound the stored string fields so the cron history can't be bloated, and
   // coerce duration to a finite number (it flows into stored stats).
   const over = (v, n) => typeof v === 'string' && v.length > n;

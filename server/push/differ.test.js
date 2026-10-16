@@ -525,3 +525,7 @@ test('cron overdue->overdue and overdue->unknown emit nothing', () => {
   assert.deepEqual(diffSnapshots(cron({ 'n1:backup': 'overdue' }), cron({ 'n1:backup': 'overdue' }), THRESHOLDS), []);
   assert.deepEqual(diffSnapshots(cron({ 'n1:backup': 'overdue' }), cron({ 'n1:backup': 'unknown' }), THRESHOLDS), []);
 });
+
+test('cron overdue->removed job emits nothing', () => {
+  assert.deepEqual(diffSnapshots(cron({ 'n1:backup': 'overdue' }), cron({}), THRESHOLDS), []);
+});

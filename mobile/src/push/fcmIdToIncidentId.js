@@ -13,7 +13,7 @@
  *                                       caller renders host events from the
  *                                       fallback push params instead)
  *
- * @param {string} type   one of the 10 differ event types
+ * @param {string} type   one of the 11 differ event types
  * @param {string} fcmId  the FCM `data.id`
  * @returns {string|null} the derived incident id, or null when no derived
  *   incident can exist (host events) / on malformed input

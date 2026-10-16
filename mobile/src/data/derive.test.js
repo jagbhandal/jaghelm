@@ -684,7 +684,7 @@ describe('overdue cron jobs', () => {
     const body = [{ node: 'pi', jobs: [{ job: 'b', overdue: true, seconds_since_report: 7200, expected_every_seconds: 3600, runs: [{ status: 'failure', error: 'x' }] }] }];
     const f = allCronFailures(body);
     expect(f).toHaveLength(1);
-    expect(f[0].cause).toBe('No report for 2h (expected every 1h)');
+    expect(f[0].cause).toBe('No report for 2h (expected every 60m)');
   });
   it('neither failed nor overdue gives []', () => {
     expect(allCronFailures([{ node: 'pi', jobs: [{ job: 'b', overdue: false, runs: [ok] }] }])).toEqual([]);

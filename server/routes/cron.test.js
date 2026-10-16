@@ -106,3 +106,16 @@ test('DELETE handles names with spaces, / and :', async () => {
   assert.equal(r.status, 204);
   assert.equal(findJob((await getStatus()).body, node, job), undefined);
 });
+
+for (const name of ['__proto__', 'constructor', 'prototype']) {
+  for (const field of ['node', 'job']) {
+    test(`report rejects reserved ${field} name ${name}`, async () => {
+      const body = { node: 'n1', job: 'backup', [field]: name };
+      const res = await report(body);
+      assert.equal(res.status, 400);
+      assert.match(res.body.error, /reserved name/);
+      assert.equal(({}).polluted, undefined);
+      assert.equal((await getStatus()).status, 200);
+    });
+  }
+}
