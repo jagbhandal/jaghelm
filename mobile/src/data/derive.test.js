@@ -670,3 +670,34 @@ describe('formatClock', () => {
     expect(formatClock(NaN)).toBeNull();
   });
 });
+
+describe('overdue cron jobs', () => {
+  const ok = { status: 'success', timestamp: 't' };
+  const overdueBody = [{ node: 'pi', jobs: [{ job: 'backup', overdue: true, seconds_since_report: 111600, expected_every_seconds: 86400, runs: [ok] }] }];
+  it('overdue-only job is degraded with the human cause', () => {
+    expect(cronDegraded(overdueBody)).toBe(true);
+    const f = allCronFailures(overdueBody);
+    expect(f).toHaveLength(1);
+    expect(f[0].cause).toBe('No report for 31h (expected every 24h)');
+  });
+  it('failed and overdue appears once, with the overdue cause', () => {
+    const body = [{ node: 'pi', jobs: [{ job: 'b', overdue: true, seconds_since_report: 7200, expected_every_seconds: 3600, runs: [{ status: 'failure', error: 'x' }] }] }];
+    const f = allCronFailures(body);
+    expect(f).toHaveLength(1);
+    expect(f[0].cause).toBe('No report for 2h (expected every 60m)');
+  });
+  it('neither failed nor overdue gives []', () => {
+    expect(allCronFailures([{ node: 'pi', jobs: [{ job: 'b', overdue: false, runs: [ok] }] }])).toEqual([]);
+  });
+  it('falls back when span data is missing', () => {
+    const body = [{ node: 'pi', jobs: [{ job: 'b', overdue: true, seconds_since_report: null, runs: [] }] }];
+    expect(allCronFailures(body)[0].cause).toBe('No report on schedule');
+  });
+  it('overall severity is caution; consumers say overdue, not failed', () => {
+    expect(overallSeverity({ services: { nodes: { n: { metrics: { cpu: '10', memPercent: '10' }, services: [{ uid: 'a', status: 'up' }] } } }, ups: { status: 1 }, cron: overdueBody })).toBe('caution');
+    const cell = deriveSubsystems({ services: SERVICES_BODY, ups: { status: 1 }, cron: overdueBody }).find((c) => c.key === 'cron');
+    expect(cell).toMatchObject({ severity: 'caution', word: 'OVERDUE', detail: '1 job' });
+    const inc = deriveIncidents({ services: null, ups: { status: 1 }, cron: overdueBody })[0];
+    expect(inc).toMatchObject({ title: 'backup overdue', word: 'OVERDUE', cause: 'No report for 31h (expected every 24h)' });
+  });
+});

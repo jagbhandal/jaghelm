@@ -7,6 +7,9 @@
  * state. Same input => same output, same order, every time. All clock/I/O
  * (tokenStore, runPushCycle) lives OUTSIDE this file.
  *
+ * Cron states: success | failure | overdue | unknown. "overdue" means the job
+ * stopped reporting; it emits once on entry and stays silent while it persists.
+ *
  * "unknown" (services/cron) and reachable:false-from-absent are normalized
  * upstream in buildSnapshot; here "unknown" NEVER produces an event, and the
  * first cycle (prev=null) is a silent baseline.
@@ -24,6 +27,7 @@ export const SEVERITY = {
   ups_restored: 'info',
   cron_failed: 'warning',
   cron_recovered: 'info',
+  cron_overdue: 'warning',
 };
 
 /**
@@ -172,9 +176,21 @@ function diffCron(prev, next, events) {
     const before = prev[key] === undefined ? 'unknown' : prev[key];
     const after = next[key];
     if (after === 'unknown') continue; // unknown never emits
-    const failed = (before === 'success' || before === 'unknown') && after === 'failure';
-    const recovered = before === 'failure' && after === 'success';
-    if (failed) {
+    const failed = (before === 'success' || before === 'unknown' || before === 'overdue') && after === 'failure';
+    const recovered = (before === 'failure' || before === 'overdue') && after === 'success';
+    const wentOverdue = before !== 'overdue' && after === 'overdue';
+    if (wentOverdue) {
+      events.push({
+        type: 'cron_overdue',
+        id: key,
+        node: nodeOf(key),
+        title: 'Cron job overdue',
+        body: `${idPart(key)} on ${nodeOf(key)} has not reported on schedule`,
+        severity: SEVERITY.cron_overdue,
+        prev: before,
+        next: after,
+      });
+    } else if (failed) {
       events.push({
         type: 'cron_failed',
         id: key,

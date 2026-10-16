@@ -128,7 +128,7 @@ TRUST_PROXY=
 # Generate once: openssl rand -hex 32
 JAGHELM_CRON_SECRET=
 ```
- 
+
 ### 2. Create `compose.yaml`
  
 ```yaml
@@ -197,6 +197,16 @@ JAGHELM_GITEA_TOKEN=...
  
 See [`env.example`](env.example) for the full list.
  
+### Cron job reporting
+
+Jobs report with `POST /api/cron/report`. `secret` must match `JAGHELM_CRON_SECRET`; `node`, `job` and `status` (`success` or `failure`) are required; `duration_seconds`, `schedule` and `error` are optional. `expected_every_seconds` is also optional: an integer from 60 to 2678400, or a digit string. Anything else returns 400 and the report is rejected.
+
+```json
+{ "secret": "...", "node": "nas", "job": "backup", "status": "success", "expected_every_seconds": 86400 }
+```
+
+`GET /api/cron/status` reports `overdue` and `seconds_since_report` for every job (`seconds_since_report` is null if a run has no timestamp), and `expected_every_seconds` only for jobs that declared one. A job is overdue when it has not reported within the interval plus `max(25% of the interval, 10 minutes)`. `DELETE /api/cron/jobs/:node/:job` (session auth, URL-encode both segments) removes a job and its history.
+
 ## Features
  
 ### Multi-node infrastructure monitoring

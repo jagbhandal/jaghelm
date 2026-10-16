@@ -43,6 +43,7 @@ export default defineConfig({
     exclude: [
       'src/components/HelmGrid/gridMath.test.js',
       'src/utils/thresholds.test.js',
+      'src/util/span.test.js',
       'src/api/client.test.js',
       'node_modules/**',
     ],

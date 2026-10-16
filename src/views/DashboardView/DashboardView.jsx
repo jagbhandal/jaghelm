@@ -9,7 +9,7 @@ import ServiceDragOverlay from '../../components/ServiceDragOverlay';
 import ErrorBoundary from '../../components/ErrorBoundary';
 import DegradedBanner from '../../components/DegradedBanner';
 import { UPSCard, GiteaActivity, QuickLaunch, CronJobs } from '../../components/Widgets';
-import { cachedIconUrl } from '../../hooks/useData';
+import { cachedIconUrl, deleteCronJob } from '../../hooks/useData';
 
 import NodePanel from './NodePanel';
 import { toServiceCard } from './serviceCard';
@@ -57,6 +57,19 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
     sources,
     retry,
   } = useDashboardData(refreshKey);
+
+  const removeCronJob = useCallback(
+    async (node, job) => {
+      try {
+        await deleteCronJob(node, job);
+        retry();
+      } catch (err) {
+        console.warn('[dashboard] Remove cron job failed:', err?.message);
+        window.alert(`Could not remove ${job}: ${err?.message || 'unknown error'}`);
+      }
+    },
+    [retry]
+  );
 
   // Banners are computed at render from `sources` + a live clock (no per-tick
   // state), so an all-304 refresh stays render-free. `now` is bucketed to half
@@ -516,7 +529,11 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
             {config.showCronJobs !== false && (
               <div key="cron-jobs">
                 <ErrorBoundary inline itemId="cron-jobs" label="Cron Jobs panel failed to render">
-                  <CronJobs nodes={cronJobs} banner={bannerEl(banners.cron)} />
+                  <CronJobs
+                    nodes={cronJobs}
+                    banner={bannerEl(banners.cron)}
+                    onRemove={removeCronJob}
+                  />
                 </ErrorBoundary>
               </div>
             )}

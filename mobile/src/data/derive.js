@@ -5,6 +5,8 @@
  * Nothing in this file imports React or does I/O — it is table-testable.
  */
 
+import { fmtSpan } from '@shared/util/span.js';
+
 /** Format a uptime24 scalar (0–1) as "NN.N"; returns null when u is null/undefined. */
 export function uptimePct(u) { return u != null ? (u * 100).toFixed(1) : null; }
 
@@ -86,25 +88,42 @@ export function upsDegraded(ups) {
 }
 
 export function cronDegraded(cronBody) {
-  if (!Array.isArray(cronBody)) return false;
-  return cronBody.some((n) =>
-    (n.jobs || []).some((j) => (j.runs || [])[0]?.status === 'failure')
-  );
+  return allCronFailures(cronBody).length > 0;
 }
 
-/** All newest-run failures from a cron body. Returns [] when none. */
+/** Cause line for an overdue job; never renders NaN/undefined. */
+function overdueCause(j) {
+  const since = j.seconds_since_report;
+  const every = j.expected_every_seconds;
+  if (!Number.isFinite(since) || !Number.isFinite(every)) return 'No report on schedule';
+  return `No report for ${fmtSpan(since)} (expected every ${fmtSpan(every)})`;
+}
+
+/**
+ * All cron problems from a cron body: newest-run failures AND overdue jobs
+ * (server-reported, so this stays clock-free). A job that is both appears once,
+ * with the overdue cause. Entries carry `overdue` so consumers can word them.
+ * Returns [] when none.
+ */
 export function allCronFailures(cronBody) {
   if (!Array.isArray(cronBody)) return [];
   const failures = [];
   for (const n of cronBody) {
     for (const j of n.jobs || []) {
       const run = (j.runs || [])[0];
-      if (run && run.status === 'failure') {
-        failures.push({ node: n.node, job: j.job, cause: run.error || 'Job failed', run });
+      if (j.overdue === true) {
+        failures.push({ node: n.node, job: j.job, cause: overdueCause(j), run, overdue: true });
+      } else if (run && run.status === 'failure') {
+        failures.push({ node: n.node, job: j.job, cause: run.error || 'Job failed', run, overdue: false });
       }
     }
   }
   return failures;
+}
+
+/** Word for a set of cron problems: all-overdue reads "overdue", otherwise "failed". */
+function cronWord(failures) {
+  return failures.length > 0 && failures.every((f) => f.overdue) ? 'overdue' : 'failed';
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +295,7 @@ export function subsystemSeverity(key, ctx = {}) {
   if (key === 'cron') {
     const failures = allCronFailures(cron);
     if (failures.length > 0) {
-      return { severity: 'caution', word: 'FAILED', detail: `${failures.length} job${failures.length === 1 ? '' : 's'}` };
+      return { severity: 'caution', word: cronWord(failures).toUpperCase(), detail: `${failures.length} job${failures.length === 1 ? '' : 's'}` };
     }
     return { severity: 'healthy', word: 'OK', detail: `${failures.length} fail` };
   }
@@ -344,8 +363,8 @@ export function deriveIncidents({ services, ups, cron } = {}) {
   // Cron failures → amber FAILED (slash). readout = node; cause = real run error.
   for (const cf of allCronFailures(cron)) {
     incidents.push({
-      id: `cron:${cf.node}:${cf.job}`, kind: 'cron', title: `${cf.job} failed`, node: cf.node,
-      cause: cf.cause, uptime24: null, status: 'down', severity: 'caution', word: 'FAILED', shape: 'slash',
+      id: `cron:${cf.node}:${cf.job}`, kind: 'cron', title: `${cf.job} ${cf.overdue ? 'overdue' : 'failed'}`, node: cf.node,
+      cause: cf.cause, uptime24: null, status: 'down', severity: 'caution', word: cf.overdue ? 'OVERDUE' : 'FAILED', shape: 'slash',
       readout: cf.node,
       target: { kind: 'cron', job: cf.job },
     });
@@ -388,12 +407,16 @@ const wordNumber = (n) => WORD_NUMBER[n] || String(n);
  * prose }. `headline` doubles as the annunciator sentence and the hero headline;
  * `word`/`prose` feed the hero. The default branch is the "Degraded" fallback.
  */
-function cautionDescriptor(kind, count, charge) {
+function cautionDescriptor(kind, count, charge, variant) {
   switch (kind) {
     case 'ups':
       return { kind, count, charge, headline: 'UPS on battery', word: 'battery',
         prose: `On battery power${charge != null ? ` — ${charge}% charge` : ''}.` };
     case 'cron':
+      if (variant === 'overdue') {
+        return { kind, count, charge, headline: `${count} cron ${pluralize(count, 'job')} overdue`, word: 'overdue',
+          prose: `${count} cron ${pluralize(count, 'job')} stopped reporting on schedule.` };
+      }
       return { kind, count, charge, headline: `${count} cron ${pluralize(count, 'job')} failed`, word: 'failed',
         prose: `${count} cron ${pluralize(count, 'job')} reported a failure.` };
     case 'hot':
@@ -418,8 +441,8 @@ function listCautions({ services, ups, cron } = {}) {
     const charge = ups && ups.charge != null ? Math.round(ups.charge) : null;
     out.push(cautionDescriptor('ups', 0, charge));
   }
-  const cronFails = allCronFailures(cron).length;
-  if (cronFails > 0) out.push(cautionDescriptor('cron', cronFails, null));
+  const cronProblems = allCronFailures(cron);
+  if (cronProblems.length > 0) out.push(cautionDescriptor('cron', cronProblems.length, null, cronWord(cronProblems)));
   const hot = Object.values((services && services.nodes) || {}).filter((n) => nodeSeverity(n) === 'caution').length;
   if (hot > 0) out.push(cautionDescriptor('hot', hot, null));
   const unknown = flattenServices(services).filter((s) => s.status === 'unknown' && s.source !== 'presence').length;
@@ -480,10 +503,13 @@ export function deriveHero(severity, { services, ups, cron } = {}) {
     const headline = `${wordNumber(downCount)} ${pluralize(downCount, 'service')} down`;
     const names = downServices.slice(0, 2).map((s) => s.display_name).join(' · ');
     const more = downCount > 2 ? ` +${downCount - 2} more` : '';
-    const cronFails = allCronFailures(cron).length;
+    const cronProblems = allCronFailures(cron);
+    const cronFails = cronProblems.length;
     let tail = '';
     if (onBattery) tail = ' — plus UPS on battery';
-    else if (cronFails > 0) tail = ` — plus ${cronFails} cron ${pluralize(cronFails, 'failure')}`;
+    else if (cronFails > 0) tail = (cronWord(cronProblems) === 'overdue'
+      ? ` — plus ${cronFails} cron ${pluralize(cronFails, 'job')} overdue`
+      : ` — plus ${cronFails} cron ${pluralize(cronFails, 'failure')}`);
     return { severity, headline, word: 'down', subline: `${names}${more}${tail}`, counts };
   }
 

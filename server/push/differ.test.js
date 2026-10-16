@@ -17,6 +17,7 @@ test('exports SEVERITY map covering all event types', () => {
   assert.equal(SEVERITY.ups_restored, 'info');
   assert.equal(SEVERITY.cron_failed, 'warning');
   assert.equal(SEVERITY.cron_recovered, 'info');
+  assert.equal(SEVERITY.cron_overdue, 'warning');
 });
 
 test('RECOVERY_TYPES is the info-severity types plus watchtower_cleared', () => {
@@ -486,4 +487,45 @@ test('cross-category: all 10 event types can co-occur in one cycle, sorted', () 
   );
   assert.deepEqual(events, sorted);
   assert.equal(JSON.stringify(events), JSON.stringify(diffSnapshots(prev, next, THRESHOLDS)));
+});
+
+// ── cron overdue transitions ─────────────────────────────────────────────────
+
+for (const from of ['success', 'failure', 'unknown']) {
+  test(`cron ${from}->overdue emits cron_overdue(warning)`, () => {
+    const events = diffSnapshots(cron({ 'n1:backup': from }), cron({ 'n1:backup': 'overdue' }), THRESHOLDS);
+    assert.deepEqual(events, [{
+      type: 'cron_overdue',
+      id: 'n1:backup',
+      node: 'n1',
+      title: 'Cron job overdue',
+      body: 'backup on n1 has not reported on schedule',
+      severity: 'warning',
+      prev: from,
+      next: 'overdue',
+    }]);
+  });
+}
+
+test('cron overdue->success emits cron_recovered', () => {
+  const events = diffSnapshots(cron({ 'n1:backup': 'overdue' }), cron({ 'n1:backup': 'success' }), THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, 'cron_recovered');
+  assert.equal(events[0].prev, 'overdue');
+});
+
+test('cron overdue->failure emits cron_failed', () => {
+  const events = diffSnapshots(cron({ 'n1:backup': 'overdue' }), cron({ 'n1:backup': 'failure' }), THRESHOLDS);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, 'cron_failed');
+  assert.equal(events[0].prev, 'overdue');
+});
+
+test('cron overdue->overdue and overdue->unknown emit nothing', () => {
+  assert.deepEqual(diffSnapshots(cron({ 'n1:backup': 'overdue' }), cron({ 'n1:backup': 'overdue' }), THRESHOLDS), []);
+  assert.deepEqual(diffSnapshots(cron({ 'n1:backup': 'overdue' }), cron({ 'n1:backup': 'unknown' }), THRESHOLDS), []);
+});
+
+test('cron overdue->removed job emits nothing', () => {
+  assert.deepEqual(diffSnapshots(cron({ 'n1:backup': 'overdue' }), cron({}), THRESHOLDS), []);
 });
