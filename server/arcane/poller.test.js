@@ -1167,3 +1167,47 @@ test('job runs are paged back to the oldest unseen run, with a bounded page coun
     assert.equal(h.stateStore.hasActivity('vm-103', 'act-sp-3'), true, 'judged either way');
   }
 });
+
+test('back-to-back update runs report each container in exactly one push', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce();
+  const au = `${VM103}:auto_update`;
+  // Two manual container updates 30 s apart (Arcane queues them back to back).
+  h.s.activities[au].unshift(
+    act('b', 'auto_update', 'success', '2026-10-18T10:00:31Z', '2026-10-18T10:01:00Z'),
+    act('a', 'auto_update', 'success', '2026-10-18T10:00:00Z', '2026-10-18T10:00:30Z')
+  );
+  h.s.history[VM103].unshift(
+    row('2026-10-18T10:00:59Z', 'immich-machine-learning', 'updated'),
+    row('2026-10-18T10:00:29Z', 'immich-server', 'updated')
+  );
+  const r = await h.poller.pollOnce();
+  assert.deepEqual(
+    r.events.map((e) => e.body),
+    ['1 updated: immich-server', '1 updated: immich-machine-learning']
+  );
+
+  // A run still going when a later, short one finishes: the later one is seen first,
+  // and still caps the earlier one's window when that one is judged.
+  h.s.activities[au].unshift(
+    act('d', 'auto_update', 'success', '2026-10-18T11:00:20Z', '2026-10-18T11:00:40Z'),
+    act('c', 'auto_update', 'running', '2026-10-18T11:00:00Z', null)
+  );
+  h.s.history[VM103].unshift(
+    row('2026-10-18T11:00:35Z', 'redis', 'updated'),
+    row('2026-10-18T11:00:10Z', 'nextcloud', 'updated')
+  );
+  assert.deepEqual(
+    (await h.poller.pollOnce()).events.map((e) => e.body),
+    ['1 updated: redis'],
+    'd is judged alone; c is still running'
+  );
+  Object.assign(h.s.activities[au].find((x) => x.id === 'c'), {
+    status: 'success',
+    endedAt: '2026-10-18T11:01:00Z',
+  });
+  assert.deepEqual(
+    (await h.poller.pollOnce()).events.map((e) => e.body),
+    ['1 updated: nextcloud']
+  );
+});

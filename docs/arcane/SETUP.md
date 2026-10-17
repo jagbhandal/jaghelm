@@ -83,7 +83,9 @@ recovery" switch.
   push, no scheduled-job run. This is also what happens after the state files are deleted.
 - **Update run.** Each finished `auto_update` activity pushes once, with the containers
   updated and failed (title `Updates · <env>`, for example `2 updated: a, b · 1 failed: c`).
-  A run that updated nothing and failed nothing pushes nothing.
+  A run that updated nothing and failed nothing pushes nothing. Arcane's update history has
+  no run id, so a run takes the results from its start to 60 seconds after it ended, but
+  never past the start of the next run: back-to-back runs report each container once.
 - **Held back.** `1 update held back: name` (or `N updates held back: names`) pushes when a
   held-back container has image news: its update is newly pending, or its latest image
   changed. `N caught up: names` pushes when a held-back container no longer has a pending

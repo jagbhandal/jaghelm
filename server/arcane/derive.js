@@ -129,15 +129,22 @@ export function runOrigin(activity, jobRuns) {
   return !linked && unfinished ? 'pending' : 'manual';
 }
 
-/** Summarise a finished auto_update activity using updater-history rows in its time window. */
-export function summarizeUpdateRun(activity, historyRows) {
+/**
+ * Summarise a finished auto_update activity using updater-history rows in its time window:
+ * [startedAt, endedAt + 60 s], ending before `until` (the next same-type run's startedAt,
+ * in ms) when that is sooner. History rows carry no run id, so the cap is what gives each
+ * row to at most one run when runs follow each other closely.
+ */
+export function summarizeUpdateRun(activity, historyRows, { until } = {}) {
   const start = Date.parse(activity.startedAt);
   const end = Date.parse(activity.endedAt ?? activity.startedAt) + WINDOW_GRACE_MS;
+  const capped = typeof until === 'number' && Number.isFinite(until);
   const updated = [];
   const failed = [];
   for (const row of Array.isArray(historyRows) ? historyRows : []) {
     const t = Date.parse(row?.createdAt);
     if (!(t >= start && t <= end)) continue;
+    if (capped && t >= until) continue;
     const name = str(row.resourceName);
     if (row.status === 'updated') {
       updated.push({ name, from: str(row.oldImageVersions?.main), to: str(row.newImageVersions?.main) });

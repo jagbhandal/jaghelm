@@ -154,6 +154,26 @@ export function createArcanePoller({
   }
 
   /**
+   * id -> startedAt (ms) of the next activity of the same type, over every listed
+   * activity with an id and a parseable startedAt, seen and running ones included.
+   * Caps each run's history window (summarizeUpdateRun `until`).
+   */
+  function nextStarts(list) {
+    const byId = new Map();
+    for (const a of Array.isArray(list) ? list : []) {
+      const id = activityId(a);
+      const startedMs = parseMs(a?.startedAt);
+      if (id && Number.isFinite(startedMs) && !byId.has(id)) byId.set(id, startedMs);
+    }
+    const order = [...byId].sort(
+      ([ia, ma], [ib, mb]) => ma - mb || (ia < ib ? -1 : ia > ib ? 1 : 0)
+    );
+    const next = new Map();
+    for (let i = 0; i + 1 < order.length; i++) next.set(order[i][0], order[i + 1][1]);
+    return next;
+  }
+
+  /**
    * The environment's job_run rows, newest first, paged back until a page ends before
    * `oldestMs` (the oldest unseen run being judged) or the page cap is reached. A run
    * whose job_run lies beyond the cap is judged manual.
@@ -172,14 +192,14 @@ export function createArcanePoller({
   }
 
   /** Push + cron run for one finished activity of a known environment. */
-  function processActivity(env, key, type, job, activity, history, events, scheduled) {
+  function processActivity(env, key, type, job, activity, history, events, scheduled, until) {
     // An unparseable endedAt would make the history window NaN; fall back to startedAt.
     const a = Number.isFinite(parseMs(activity.endedAt))
       ? activity
       : { ...activity, endedAt: null };
     let summary;
     if (type === 'auto_update') {
-      summary = summarizeUpdateRun(a, history);
+      summary = summarizeUpdateRun(a, history, { until });
       if (summary.updated.length + summary.failed.length > 0) {
         events.push(
           buildUpdatePush({
@@ -228,10 +248,13 @@ export function createArcanePoller({
     let history = null;
     let jobRuns = [];
     const pending = {};
+    const next = {};
     try {
       containers = await client.listPendingUpdates(env.id);
       for (const { type } of ACTIVITY_JOBS) {
-        pending[type] = unseenTerminal(key, type, await client.listActivities(env.id, type));
+        const list = await client.listActivities(env.id, type);
+        pending[type] = unseenTerminal(key, type, list);
+        next[type] = nextStarts(list);
       }
       const unseen = ACTIVITY_JOBS.flatMap(({ type }) => pending[type]);
       if (known && pending.auto_update.length > 0) history = await client.updaterHistory(env.id);
@@ -295,7 +318,10 @@ export function createArcanePoller({
         }
         // Seen first: across a crash the cron run is at most once, like the push.
         stateStore.addActivity(key, id);
-        if (known) processActivity(env, key, type, job, activity, history, events, scheduled);
+        if (known) {
+          const until = next[type].get(id);
+          processActivity(env, key, type, job, activity, history, events, scheduled, until);
+        }
       }
     }
 

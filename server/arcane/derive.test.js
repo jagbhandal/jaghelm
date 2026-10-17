@@ -156,3 +156,15 @@ test('runOrigin: only a job run the scheduler started makes a run scheduled', ()
   assert.equal(runOrigin(run, []), 'manual');
   assert.equal(runOrigin(run, [{ type: 'job_run', metadata: 'junk' }, null]), 'manual');
 });
+
+test('summarizeUpdateRun window ends at the next run start (exclusive) when that is sooner', () => {
+  const act = { id: 'a', status: 'success', startedAt: '2026-01-01T00:00:00Z', endedAt: '2026-01-01T00:00:30Z' };
+  const row = (createdAt, name) => ({ createdAt, status: 'updated', resourceName: name });
+  const rows = [row('2026-01-01T00:00:29Z', 'mine'), row('2026-01-01T00:00:31Z', 'next'), row('2026-01-01T00:00:59Z', 'next2')];
+  const until = Date.parse('2026-01-01T00:00:31Z');
+  assert.deepEqual(summarizeUpdateRun(act, rows, { until }).updated.map((x) => x.name), ['mine']);
+  // A later next run leaves the endedAt + 60 s grace in charge.
+  const late = Date.parse('2026-01-01T00:05:00Z');
+  assert.deepEqual(summarizeUpdateRun(act, rows, { until: late }).updated.map((x) => x.name), ['mine', 'next', 'next2']);
+  assert.deepEqual(summarizeUpdateRun(act, rows).updated.map((x) => x.name), ['mine', 'next', 'next2']);
+});
