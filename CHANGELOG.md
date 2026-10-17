@@ -6,6 +6,15 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- Arcane update notifications by mobile push, covering applied and failed updates, held-back updates, Arcane agent outages and new Arcane releases, plus overdue detection for Arcane's scheduled update and prune runs. Set `ARCANE_URL` and `ARCANE_API_KEY` to enable it; see `docs/arcane/SETUP.md`.
+
+### Deprecated
+- `POST /api/watchtower/event` and `JAGHELM_WATCHTOWER_SECRET` / `JAGHELM_WATCHTOWER_DISCORD_WEBHOOK` are deprecated in favour of the Arcane integration and will be removed in 2.2.0.
+
+### Security
+- Outbound requests no longer forward `X-API-Key` or `X-Api-Token` headers when a server redirects to a different origin, matching the existing handling of `Authorization` and cookies. An API-key integration (Immich, Overseerr, NextDNS, Sonarr, Radarr, Lidarr, Readarr, Prowlarr, Bazarr) configured with an `http://` URL that redirects to `https://` now needs the `https://` URL, since the key is dropped on any origin change.
+
 ## [2.0.0] — 2026-10-16
 
 Watchtower update notifications, overdue detection for scheduled jobs, and

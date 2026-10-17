@@ -31,6 +31,8 @@ test('RECOVERY_TYPES is the info-severity types plus watchtower_cleared', () => 
     // Built outside the snapshot differ (watchtower/format.js) but semantically
     // a recovery, so it joins the set to be gated by notifyRecoveries.
     'watchtower_cleared',
+    'arcane_cleared',
+    'arcane_agent_recovered',
   ].sort();
   assert.deepEqual([...RECOVERY_TYPES].sort(), expected);
   for (const [type, sev] of Object.entries(SEVERITY)) {
@@ -528,4 +530,10 @@ test('cron overdue->overdue and overdue->unknown emit nothing', () => {
 
 test('cron overdue->removed job emits nothing', () => {
   assert.deepEqual(diffSnapshots(cron({ 'n1:backup': 'overdue' }), cron({}), THRESHOLDS), []);
+});
+
+test('arcane recoveries honour notifyRecoveries', () => {
+  assert.ok(RECOVERY_TYPES.has('arcane_cleared'));
+  assert.ok(RECOVERY_TYPES.has('arcane_agent_recovered'));
+  assert.ok(!RECOVERY_TYPES.has('arcane_agent_offline'));
 });

@@ -1,0 +1,169 @@
+{
+  "success": true,
+  "data": [
+    {
+      "names": [
+        "ctr-01"
+      ],
+      "image": "registry.example/img-01:latest",
+      "autoUpdateEnabled": true,
+      "updateInfo": {
+        "hasUpdate": false,
+        "currentVersion": "latest",
+        "latestVersion": "",
+        "currentDigest": "sha256:e1ee6af8e904ccd543ab78aa69e9e338c13715a964c5aaa782a5ea88b59547b5",
+        "latestDigest": "sha256:e1ee6af8e904ccd543ab78aa69e9e338c13715a964c5aaa782a5ea88b59547b5",
+        "error": ""
+      }
+    },
+    {
+      "names": [
+        "ctr-02"
+      ],
+      "image": "registry.example/img-02:v1.0.0",
+      "autoUpdateEnabled": true,
+      "updateInfo": {
+        "hasUpdate": false,
+        "currentVersion": "v1.0.0",
+        "latestVersion": "",
+        "currentDigest": "sha256:76074edaffeb26f398dac368268c889be44823b7f507db302c37372accf74c0a",
+        "latestDigest": "sha256:76074edaffeb26f398dac368268c889be44823b7f507db302c37372accf74c0a",
+        "error": ""
+      }
+    },
+    {
+      "names": [
+        "ctr-03"
+      ],
+      "image": "registry.example/img-03:v1.0.1",
+      "autoUpdateEnabled": false
+    },
+    {
+      "names": [
+        "ctr-04"
+      ],
+      "image": "registry.example/img-04:latest",
+      "autoUpdateEnabled": true,
+      "updateInfo": {
+        "hasUpdate": false,
+        "currentVersion": "latest",
+        "latestVersion": "",
+        "currentDigest": "sha256:6d6541a7fd5cca7efc471d715b3739e5bac5a7b8f5355ec04145d1a3a3a9681b",
+        "latestDigest": "sha256:6d6541a7fd5cca7efc471d715b3739e5bac5a7b8f5355ec04145d1a3a3a9681b",
+        "error": ""
+      }
+    },
+    {
+      "names": [
+        "ctr-05"
+      ],
+      "image": "registry.example/img-05",
+      "autoUpdateEnabled": true,
+      "updateInfo": {
+        "hasUpdate": true,
+        "currentVersion": "latest",
+        "latestVersion": "",
+        "currentDigest": "sha256:abf8a43584eee0da8498c1fecded0bfc30b27c16a5baf15a4f6527f020eda856",
+        "latestDigest": "sha256:634fb129d03ecd068cda74af995faf401b5500c3956c4320cadcca51fdb6d434",
+        "error": ""
+      }
+    },
+    {
+      "names": [
+        "ctr-06"
+      ],
+      "image": "registry.example/img-06:1.0.2",
+      "autoUpdateEnabled": true,
+      "updateInfo": {
+        "hasUpdate": false,
+        "currentVersion": "1.0.2",
+        "latestVersion": "",
+        "currentDigest": "sha256:2c1731a199b6369ac1032e7b664d2075c94388c8f27a6d81388c3ad515bdf099",
+        "latestDigest": "sha256:2c1731a199b6369ac1032e7b664d2075c94388c8f27a6d81388c3ad515bdf099",
+        "error": ""
+      }
+    },
+    {
+      "names": [
+        "ctr-07"
+      ],
+      "image": "registry.example/img-07:latest",
+      "autoUpdateEnabled": true,
+      "updateInfo": {
+        "hasUpdate": false,
+        "currentVersion": "latest",
+        "latestVersion": "",
+        "currentDigest": "sha256:c7b975eeac2b43af669472170c1b6cb1995ccf5231ab450b16b9238e171221f2",
+        "latestDigest": "sha256:c7b975eeac2b43af669472170c1b6cb1995ccf5231ab450b16b9238e171221f2",
+        "error": ""
+      }
+    },
+    {
+      "names": [
+        "ctr-08"
+      ],
+      "image": "registry.example/img-08:latest",
+      "autoUpdateEnabled": true,
+      "updateInfo": {
+        "hasUpdate": false,
+        "currentVersion": "latest",
+        "latestVersion": "",
+        "currentDigest": "sha256:fac72c9da4d93bcb85474c1284a763b084519879a85b06a638153ecfa1e8082c",
+        "latestDigest": "sha256:fac72c9da4d93bcb85474c1284a763b084519879a85b06a638153ecfa1e8082c",
+        "error": ""
+      }
+    },
+    {
+      "names": [
+        "ctr-09"
+      ],
+      "image": "registry.example/img-05",
+      "autoUpdateEnabled": true,
+      "updateInfo": {
+        "hasUpdate": true,
+        "currentVersion": "latest",
+        "latestVersion": "",
+        "currentDigest": "sha256:abf8a43584eee0da8498c1fecded0bfc30b27c16a5baf15a4f6527f020eda856",
+        "latestDigest": "sha256:634fb129d03ecd068cda74af995faf401b5500c3956c4320cadcca51fdb6d434",
+        "error": ""
+      }
+    },
+    {
+      "names": [
+        "ctr-10"
+      ],
+      "image": "sha256:9191ee1d3fa186f86ca0cfc32adff198d31db4a832f3d54ff8d494ea425f77d4",
+      "autoUpdateEnabled": true
+    },
+    {
+      "names": [
+        "ctr-11"
+      ],
+      "image": "registry.example/img-09:latest",
+      "autoUpdateEnabled": true,
+      "updateInfo": {
+        "hasUpdate": false,
+        "currentVersion": "latest",
+        "latestVersion": "",
+        "currentDigest": "sha256:afbea8c3021e1bdb5e2395e2345ecdfa56a823cf63580714f90d1aa0f554b679",
+        "latestDigest": "sha256:afbea8c3021e1bdb5e2395e2345ecdfa56a823cf63580714f90d1aa0f554b679",
+        "error": ""
+      }
+    },
+    {
+      "names": [
+        "ctr-12"
+      ],
+      "image": "registry.example/img-10:latest",
+      "autoUpdateEnabled": true,
+      "updateInfo": {
+        "hasUpdate": false,
+        "currentVersion": "latest",
+        "latestVersion": "",
+        "currentDigest": "sha256:3baabce69a764b909f3fc54b7b8419765808815044c0cc5904d497fdbf45c627",
+        "latestDigest": "sha256:3baabce69a764b909f3fc54b7b8419765808815044c0cc5904d497fdbf45c627",
+        "error": ""
+      }
+    }
+  ]
+}

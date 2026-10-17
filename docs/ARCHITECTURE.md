@@ -85,6 +85,8 @@ server/                     Express API (Node 22, ESM)
   demo.js                   DEMO_MODE read-only sample dashboard
   auth/                     scrypt passwords, in-memory sessions, login rate limit, middleware
   routes/                   one router per resource (see 4.1)
+  arcane/                   Arcane poller: read-only API client, state derivation, push builders,
+                            persisted state, dry-run module (see 4.2)
   integrations/             the integration engine (presets + handler + lib, see 4.3)
   util/                     logger, ssrf, redact, rateLimiter, atomicWrite,
                             configSchema (zod), dataDir, asyncHandler, dedupe
@@ -160,6 +162,15 @@ flowchart TD
   C -->|"unchanged → 304"| REQ
   C -->|"changed → 200 + ETag"| REQ
 ```
+
+`server/arcane/` adds a second, independent loop when `ARCANE_URL` and `ARCANE_API_KEY` are
+set (never in demo mode): `startArcane()` runs from `boot()` and polls the Arcane manager
+every `ARCANE_POLL_SECONDS` (default 300) plus a release check every
+`ARCANE_RELEASE_CHECK_HOURS` (default 6). With FCM credentials configured, the first poll and
+release check wait up to 30 s for push to be ready. It diffs against persisted state and emits
+push events through `dispatchEvents`, and records Arcane's scheduler-started runs into the
+cron store. Its `arcane_*` push types map to the `watchtower` preference category. Setup:
+[arcane/SETUP.md](arcane/SETUP.md).
 
 ### 4.3 Integration engine
 
@@ -272,6 +283,11 @@ All state is files under the data dir (no DB):
   integration configs (the secret value stored separately, encrypted), links,
   fonts. Read copy-on-read; validated by Zod.
 - **secrets** -- AES-256-GCM blob, keyed by integration storage key.
+- **Arcane state** -- `arcane-state.json` (baselined environments, agent down counters,
+  seen activity ids, each environment's pending updates, runs waiting on their job run,
+  last notified release) and
+  `arcane-held-back.json` (held-back containers per environment); atomic writes, tolerant
+  load.
 - **cron history**, **todos**, **auth** (password hash + salt) -- small files,
   atomic writes.
 

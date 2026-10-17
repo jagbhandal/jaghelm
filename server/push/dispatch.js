@@ -17,9 +17,23 @@ const defaultLog = createLogger('push-dispatch');
 // DEFAULT_PREFS has a single owner: server/push/tokenStore.js. shouldDeliver
 // receives already-resolved prefs, so dispatch.js does not redefine it.
 
+/**
+ * Explicit type -> pref-category overrides. The Arcane updater events share
+ * the existing `watchtower` (updates) pref key: the installed Android app has
+ * a strict 5-key prefs shape, so no new key is added.
+ */
+export const TYPE_CATEGORY = Object.freeze({
+  arcane_update: 'watchtower',
+  arcane_heldback: 'watchtower',
+  arcane_cleared: 'watchtower',
+  arcane_agent_offline: 'watchtower',
+  arcane_agent_recovered: 'watchtower',
+  arcane_release: 'watchtower',
+});
+
 /** Map an event type to its preference category. */
 export function categoryOf(type) {
-  return type.split('_')[0];
+  return Object.hasOwn(TYPE_CATEGORY, type) ? TYPE_CATEGORY[type] : type.split('_')[0];
 }
 
 /**

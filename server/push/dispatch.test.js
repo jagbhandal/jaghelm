@@ -152,3 +152,15 @@ test('dispatchEvents with no events returns all-zero counts and never touches fc
   assert.equal(fcm.calls.length, 0);
   assert.deepEqual(res, { sent: 0, suppressed: 0, pruned: 0 });
 });
+
+test('arcane push types map to the watchtower category', () => {
+  for (const t of ['arcane_update','arcane_heldback','arcane_cleared','arcane_agent_offline','arcane_agent_recovered','arcane_release'])
+    assert.equal(categoryOf(t), 'watchtower');
+  assert.equal(categoryOf('cron_failed'), 'cron');
+  assert.equal(categoryOf('watchtower_update'), 'watchtower');
+});
+
+test('watchtower pref off suppresses arcane events', () => {
+  const prefs = { enabled: true, notifyRecoveries: true, categories: { service: true, host: true, ups: true, cron: true, watchtower: false } };
+  assert.equal(shouldDeliver({ type: 'arcane_update' }, prefs), false);
+});

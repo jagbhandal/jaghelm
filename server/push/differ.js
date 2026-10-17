@@ -39,6 +39,8 @@ export const SEVERITY = {
 export const RECOVERY_TYPES = new Set([
   ...Object.keys(SEVERITY).filter((type) => SEVERITY[type] === 'info'),
   'watchtower_cleared',
+  'arcane_cleared',
+  'arcane_agent_recovered',
 ]);
 
 export function diffSnapshots(prev, next, thresholds) {
