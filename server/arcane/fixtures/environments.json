@@ -1,0 +1,6 @@
+{"success":true,"data":[
+{"id":"0","name":"vm-103","apiUrl":"http://localhost:3552","status":"online","enabled":true,"isEdge":false,"lastSeen":"2026-10-17T10:00:00Z"},
+{"id":"1","name":"vm-101","apiUrl":"edge://vm-101","status":"online","enabled":true,"isEdge":true,"lastSeen":"2026-10-17T10:00:00Z","edgeTransport":"websocket","edgeSecurityMode":"token","connected":true,"lastHeartbeat":"2026-10-17T10:00:00Z"},
+{"id":"2","name":"pi-1","apiUrl":"edge://pi-1","status":"standby","enabled":true,"isEdge":true,"lastSeen":"2026-10-17T09:59:30Z","edgeTransport":"poll","edgeSecurityMode":"token","lastPollAt":"2026-10-17T09:59:30Z"},
+{"id":"3","name":"pi-2","apiUrl":"edge://pi-2","status":"offline","enabled":true,"isEdge":true,"lastSeen":"2026-10-16T22:00:00Z","edgeTransport":"poll","edgeSecurityMode":"token"}
+],"pagination":{"totalPages":1,"totalItems":4,"currentPage":1,"itemsPerPage":-1,"grandTotalItems":4}}
