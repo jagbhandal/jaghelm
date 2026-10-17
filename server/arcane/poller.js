@@ -4,10 +4,13 @@
  *
  * Each poll reads every environment and compares it with the persisted state
  * (stateStore + heldBackStore). Only transitions push. The rules:
- *   - First sight of an environment is a silent baseline: its held-back set is
- *     stored and its finished activities are marked seen, with no pushes and no
- *     cron runs. An environment becomes known only after a pass where it was up
- *     and every fetch succeeded.
+ *   - First sight of an environment is a silent baseline: its held-back set and
+ *     pending map are stored and its finished activities are marked seen, with no
+ *     pushes and no cron runs. An environment becomes known only after a pass where
+ *     it was up and every fetch succeeded.
+ *   - Held back / caught up are image news, not policy news: a container moving
+ *     into or out of the held tier with the same latest image is silent
+ *     (heldBackTransitions).
  *   - Agent connectivity comes from the environment list's health alone, from
  *     first sight, independent of the baseline and of the per-environment reads.
  *   - Per environment, every data fetch happens before any data state is
@@ -25,6 +28,8 @@ import {
   envKey,
   envHealth,
   heldBackSet,
+  pendingMap,
+  heldBackTransitions,
   isTerminal,
   summarizeUpdateRun,
   summarizePruneRun,
@@ -212,13 +217,22 @@ export function createArcanePoller({
 
     // Commit phase (data only).
     const held = heldBackSet(containers, { checkOnly: checkOnly.has(key) });
+    const nextPending = pendingMap(containers);
+    const prevPending = stateStore.getPending(key);
     const { newlyHeldBack, cleared } = heldBackStore.diffAndSet(key, held);
+    stateStore.setPending(key, nextPending);
     if (known) {
-      if (newlyHeldBack.length > 0) {
-        events.push(buildHeldBackPush({ env: key, heldBack: newlyHeldBack.map((e) => e.name) }));
+      const { heldBack, caughtUp } = heldBackTransitions({
+        newlyHeldBack,
+        cleared,
+        prevPending,
+        nextPending,
+      });
+      if (heldBack.length > 0) {
+        events.push(buildHeldBackPush({ env: key, heldBack: heldBack.map((e) => e.name) }));
       }
-      if (cleared.length > 0) {
-        events.push(buildClearedPush({ env: key, cleared: cleared.map((e) => e.name) }));
+      if (caughtUp.length > 0) {
+        events.push(buildClearedPush({ env: key, cleared: caughtUp.map((e) => e.name) }));
       }
     }
 

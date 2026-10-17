@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   envKey, envHealth, heldBackSet, isTerminal, summarizeUpdateRun, summarizePruneRun,
+  pendingMap, heldBackTransitions,
 } from './derive.js';
 
 const fx = (n) => JSON.parse(readFileSync(new URL(`./fixtures/${n}.json`, import.meta.url), 'utf8')).data;
@@ -96,4 +97,34 @@ test('summarizePruneRun', () => {
   const f = summarizePruneRun({ id: 'p', status: 'failed', error: 'x'.repeat(3000) });
   assert.equal(f.cronStatus, 'failure');
   assert.equal(f.error.length, 2048);
+});
+
+test('pendingMap holds every container with an update, any tier', () => {
+  const m = pendingMap(fx('containers-has-update'));
+  assert.deepEqual([...m], [['gitea', '1.22.4'], ['immich-server', 'v1.131.0']]);
+  const digest = pendingMap([
+    { names: ['/z'], updateInfo: { hasUpdate: true, latestDigest: 'sha256:' + 'b'.repeat(60) } },
+    { names: ['/n'], updateInfo: { hasUpdate: false } },
+    { names: [], updateInfo: { hasUpdate: true, latestVersion: 'x' } },
+  ]);
+  assert.deepEqual([...digest], [['z', 'sha256:' + 'b'.repeat(12)]]);
+});
+
+test('heldBackTransitions: only image news is held back, only a resolved update is caught up', () => {
+  const e = (name, latest) => ({ name, current: 'c', latest });
+  const prevPending = new Map([['label-added', 'v2'], ['newer', 'v2'], ['label-removed', 'v2']]);
+  const nextPending = new Map([['label-added', 'v2'], ['newer', 'v3'], ['label-removed', 'v2'], ['fresh', 'v1']]);
+  const r = heldBackTransitions({
+    newlyHeldBack: [e('label-added', 'v2'), e('newer', 'v3'), e('fresh', 'v1')],
+    cleared: [e('label-removed', 'v2'), e('updated', 'v2')],
+    prevPending,
+    nextPending,
+  });
+  assert.deepEqual(r.heldBack.map((x) => x.name), ['newer', 'fresh']);
+  assert.deepEqual(r.caughtUp.map((x) => x.name), ['updated']);
+  // No pending map yet (state file from before it existed): held back as before.
+  const old = heldBackTransitions({
+    newlyHeldBack: [e('label-added', 'v2')], cleared: [], prevPending: null, nextPending,
+  });
+  assert.deepEqual(old.heldBack.map((x) => x.name), ['label-added']);
 });

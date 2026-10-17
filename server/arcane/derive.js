@@ -32,6 +32,9 @@ export function envHealth(env) {
   }
 }
 
+const containerName = (c) => str(c?.names?.[0]).replace(/^\//, '');
+const latestOf = (info) => str(info.latestVersion) || str(info.latestDigest).slice(0, 19);
+
 /** Containers with a pending update that Arcane will not apply on its own. */
 export function heldBackSet(containers, { checkOnly }) {
   const out = [];
@@ -39,15 +42,44 @@ export function heldBackSet(containers, { checkOnly }) {
     const info = c?.updateInfo;
     if (info?.hasUpdate !== true) continue;
     if (!(c.autoUpdateEnabled === false || checkOnly)) continue;
-    const name = str(c.names?.[0]).replace(/^\//, '');
+    const name = containerName(c);
     if (!name) continue;
     out.push({
       name,
       current: str(info.currentVersion) || str(info.currentDigest).slice(0, 19),
-      latest: str(info.latestVersion) || str(info.latestDigest).slice(0, 19),
+      latest: latestOf(info),
     });
   }
   return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/** Every container with a pending update, any tier: name -> latest, sorted by name. */
+export function pendingMap(containers) {
+  const out = new Map();
+  for (const c of Array.isArray(containers) ? containers : []) {
+    const info = c?.updateInfo;
+    if (info?.hasUpdate !== true) continue;
+    const name = containerName(c);
+    if (name) out.set(name, latestOf(info));
+  }
+  return new Map([...out].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
+
+/**
+ * Which held-back transitions are news. "Held back" is image news: X is announced
+ * only when it is newly pending or its latest changed since the previous pending map,
+ * so a policy-only move into the held tier (a label added, check-only switched on) is
+ * silent. "Caught up" means the update is resolved: X is announced only when it is no
+ * longer pending at all, so leaving the held tier while still pending (label removed,
+ * check-only switched off) is silent. prevPending null (a state file from before the
+ * pending map existed) keeps every newly held-back entry, as before.
+ */
+export function heldBackTransitions({ newlyHeldBack, cleared, prevPending, nextPending }) {
+  const heldBack = newlyHeldBack.filter(
+    (e) => !prevPending || prevPending.get(e.name) !== e.latest
+  );
+  const caughtUp = cleared.filter((e) => !nextPending.has(e.name));
+  return { heldBack, caughtUp };
 }
 
 export function isTerminal(activity) {

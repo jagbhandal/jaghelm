@@ -282,8 +282,9 @@ All state is files under the data dir (no DB):
   fonts. Read copy-on-read; validated by Zod.
 - **secrets** -- AES-256-GCM blob, keyed by integration storage key.
 - **Arcane state** -- `arcane-state.json` (baselined environments, agent down counters,
-  seen activity ids, last notified release) and `arcane-held-back.json` (held-back
-  containers per environment); atomic writes, tolerant load.
+  seen activity ids, each environment's pending updates, last notified release) and
+  `arcane-held-back.json` (held-back containers per environment); atomic writes, tolerant
+  load.
 - **cron history**, **todos**, **auth** (password hash + salt) -- small files,
   atomic writes.
 

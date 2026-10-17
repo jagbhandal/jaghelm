@@ -3,7 +3,7 @@
 // paths, so the restart test reads back what an earlier poller wrote.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createArcanePoller } from './poller.js';
@@ -855,4 +855,83 @@ test('start polls now and on intervals, skips re-entry, and stop clears the time
   t.mock.timers.tick(3_600_000);
   assert.equal(listCalls, after);
   assert.equal(versionCalls, 2);
+});
+
+test('a held-back label added to a pending container is silent; only image news pushes', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce(); // baseline: immich-server held back, gitea pending in the auto tier
+  const gitea = () => h.s.containers[VM103].find((c) => c.names[0] === '/gitea');
+
+  gitea().autoUpdateEnabled = false; // label added, same latest
+  assert.deepEqual(await h.poller.pollOnce(), { events: [], errors: [] });
+  assert.deepEqual(names(h.heldBackStore.getNode('vm-103')), ['gitea', 'immich-server']);
+
+  gitea().updateInfo.latestVersion = '1.22.5'; // a newer image: news
+  assert.deepEqual(
+    (await h.poller.pollOnce()).events.map((e) => e.body),
+    ['1 update held back: gitea']
+  );
+
+  gitea().autoUpdateEnabled = true; // label removed while still pending: not caught up
+  assert.deepEqual(await h.poller.pollOnce(), { events: [], errors: [] });
+  assert.deepEqual(names(h.heldBackStore.getNode('vm-103')), ['immich-server']);
+
+  // A real update: immich-server no longer has one.
+  h.s.containers[VM103] = h.s.containers[VM103].filter((c) => c.names[0] !== '/immich-server');
+  assert.deepEqual(
+    (await h.poller.pollOnce()).events.map((e) => e.body),
+    ['1 caught up: immich-server']
+  );
+  assert.deepEqual((await h.poller.pollOnce()).events, []);
+});
+
+test('switching an environment to check-only and back is silent', async (t) => {
+  const a = setup(t);
+  a.s.containers[VM101] = [
+    ctr('gitea', { auto: true }),
+    ctr('nginx', { auto: true }),
+    ctr('immich-server'),
+  ];
+  await a.poller.pollOnce(); // baseline: only immich-server held back on vm-101
+  assert.deepEqual(names(a.heldBackStore.getNode('vm-101')), ['immich-server']);
+
+  // JagHelm restarts with vm-101 check-only: every pending update is now held back.
+  const b = setup(t, { dir: a.dir, w: a.w, checkOnlyEnvs: new Set(['vm-101']) });
+  assert.deepEqual(await b.poller.pollOnce(), { events: [], errors: [] });
+  assert.deepEqual(names(b.heldBackStore.getNode('vm-101')), ['gitea', 'immich-server', 'nginx']);
+
+  a.s.containers[VM101].find((c) => c.names[0] === '/nginx').updateInfo.latestVersion = 'v3';
+  const news = await b.poller.pollOnce();
+  assert.deepEqual(
+    news.events.map((e) => `${e.node}|${e.body}`),
+    ['vm-101|1 update held back: nginx']
+  );
+
+  // Check-only switched off again: nothing was applied, so nothing is caught up.
+  const c = setup(t, { dir: a.dir, w: a.w });
+  assert.deepEqual(await c.poller.pollOnce(), { events: [], errors: [] });
+  assert.deepEqual(names(c.heldBackStore.getNode('vm-101')), ['immich-server']);
+  assert.equal(c.runs.length + b.runs.length, 0);
+});
+
+test('a state file from before the pending map behaves as before for one poll', async (t) => {
+  const a = setup(t);
+  await a.poller.pollOnce();
+  // Strip the pending map, as a 2.1.0-pre state file would have it.
+  const j = JSON.parse(readFileSync(a.statePath, 'utf8'));
+  for (const rec of Object.values(j.envs)) delete rec.pending;
+  writeFileSync(a.statePath, JSON.stringify(j));
+
+  a.s.containers[VM103].find((c) => c.names[0] === '/gitea').autoUpdateEnabled = false;
+  const b = setup(t, { dir: a.dir, w: a.w });
+  assert.deepEqual(
+    (await b.poller.pollOnce()).events.map((e) => e.body),
+    ['1 update held back: gitea'],
+    'no pending map yet: newly held back as before'
+  );
+  // The map is recorded silently; from here on a policy change is silent.
+  a.s.containers[VM103].find((c) => c.names[0] === '/gitea').autoUpdateEnabled = true;
+  assert.deepEqual(await b.poller.pollOnce(), { events: [], errors: [] });
+  a.s.containers[VM103].find((c) => c.names[0] === '/gitea').autoUpdateEnabled = false;
+  assert.deepEqual(await b.poller.pollOnce(), { events: [], errors: [] });
 });

@@ -83,9 +83,17 @@ recovery" switch.
 - **Update run.** Each finished `auto_update` activity pushes once, with the containers
   updated and failed (title `Updates · <env>`, for example `2 updated: a, b · 1 failed: c`).
   A run that updated nothing and failed nothing pushes nothing.
-- **Held back.** `N updates held back: names` pushes when containers newly become held back,
-  and `N caught up: names` when they stop being held back. It pushes on change only, not on
-  every poll.
+- **Held back.** `1 update held back: name` (or `N updates held back: names`) pushes when a
+  held-back container has image news: its update is newly pending, or its latest image
+  changed. `N caught up: names` pushes when a held-back container no longer has a pending
+  update at all (it was updated, or it is gone). It pushes on change only, not on every poll.
+- **Policy-only changes are silent.** Moving a container into or out of the held-back set
+  while its latest image stays the same pushes nothing: adding or removing the
+  `com.getarcaneapp.arcane.updater=false` label, editing Arcane's exclusion list, or adding
+  or removing an environment in `ARCANE_CHECK_ONLY_ENVS`. JagHelm keeps each environment's
+  pending updates (container to latest image, any tier) in `arcane-state.json` to tell the
+  two apart. A state file written before 2.1.0 has no pending map, so for its first poll a
+  newly held-back container is announced as before; the map is then recorded silently.
 - **Agent offline.** `Agent disconnected; Arcane cannot manage <env>` (title
   `Arcane · <env>`) pushes after 2 consecutive polls that report the environment down,
   counted from first sight and independent of the silent data baseline. One push per outage.
@@ -139,5 +147,23 @@ environment. Review the files before committing them anywhere.
 ## 9. Files JagHelm keeps
 
 In the data volume: `arcane-state.json` (which environments are baselined, agent down
-counters, recent activity ids, last notified release) and `arcane-held-back.json` (held-back
-containers per environment). Deleting both makes the next poll a fresh silent baseline.
+counters, recent activity ids, each environment's pending updates, last notified release) and
+`arcane-held-back.json` (held-back containers per environment). Deleting both makes the next
+poll a fresh silent baseline.
+
+## 10. Cutover from Watchtower, and rollback
+
+1. **Deploy** with `ARCANE_URL` and `ARCANE_API_KEY` set and `ARCANE_CHECK_ONLY_ENVS` empty.
+   While Watchtower is still the update source, unlabelled containers count as auto-tier, so
+   Arcane announces no held-back updates for them and nothing arrives twice. Only containers
+   that already carry `com.getarcaneapp.arcane.updater=false` (a canary, for example) push
+   as held back.
+2. **At the flip**, after Watchtower is stopped and Arcane's labels and exclusions are in
+   place, set `ARCANE_CHECK_ONLY_ENVS=pi-1,pi-2` and recreate the container. The backlog
+   moves into the held-back set as a policy-only change (§5), so it is silent: no state
+   files to delete, and only a genuinely new image pushes afterwards.
+3. **Rollback** to Watchtower: unset `ARCANE_URL` and recreate the container, so Watchtower is
+   again the only source of update pushes. The `arcane-update` and `arcane-prune` jobs then
+   stop reporting and go overdue after about 30 hours; delete them from the scheduled-jobs
+   dashboard if the rollback lasts. To start again later from a silent baseline, delete both
+   Arcane state files (§9) before setting `ARCANE_URL` again.

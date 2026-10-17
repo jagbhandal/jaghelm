@@ -3,15 +3,18 @@
  *
  * Remembers across JagHelm restarts which environments have had their silent
  * baseline, each agent's down-poll counter and alerted flag, the last
- * activity ids seen per environment, and the last Arcane release notified.
- * Without it a restart would re-announce standing state as new.
+ * activity ids seen per environment, each environment's pending map (every
+ * container with an update, any tier, name -> latest), and the last Arcane
+ * release notified. Without it a restart would re-announce standing state as new.
  *
  * Mirrors heldBackStore's idiom: null-prototype maps (environment names are
  * untrusted), a tolerant load() that never throws, and atomicWriteFileSync
  * only when something actually changed.
- * Persisted shape: { envs: { [name]: { known, agent, activities } }, release: { notified },
- * order: string[] }. `order` is true insertion order, since JSON object key order
- * puts integer-like names first; files without it load fine.
+ * Persisted shape: { envs: { [name]: { known, agent, activities, pending? } },
+ * release: { notified }, order: string[] }. `order` is true insertion order, since JSON
+ * object key order puts integer-like names first; files without it load fine. `pending`
+ * ({ [container]: latest }) is absent until first recorded; a file without it loads as
+ * "no pending map" for that environment.
  */
 import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
@@ -25,6 +28,7 @@ const DEFAULT_PATH = join(DATA_DIR, 'arcane-state.json');
 
 const MAX_ENVS = 50;
 const MAX_ACTIVITIES = 200;
+const MAX_PENDING = 500; // containers per environment
 const MAX_FIELD = 256;
 
 const isStr = (v) => typeof v === 'string' && v.length > 0;
@@ -39,8 +43,29 @@ function sanitizeAgent(a) {
   };
 }
 
+/**
+ * name -> latest pairs to a bounded Map (first MAX_PENDING by name), or null when
+ * the input is not a pending map at all. Entries that are not two non-empty
+ * strings are dropped; both sides are capped at MAX_FIELD.
+ */
+function sanitizePending(entries) {
+  if (!entries) return null;
+  const out = new Map();
+  for (const [k, v] of entries) {
+    if (isStr(k) && isStr(v)) out.set(norm(k), norm(v));
+  }
+  const keys = [...out.keys()].sort();
+  return new Map(keys.slice(0, MAX_PENDING).map((k) => [k, out.get(k)]));
+}
+
+function pendingEntries(p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+  // Own keys only: a JSON "__proto__" key is an own property and stays a plain name.
+  return Object.keys(p).map((k) => [k, p[k]]);
+}
+
 function sanitizeEnv(e) {
-  const rec = { known: false, agent: null, activities: [] };
+  const rec = { known: false, agent: null, activities: [], pending: null };
   if (!e || typeof e !== 'object' || Array.isArray(e)) return rec;
   rec.known = e.known === true;
   rec.agent = sanitizeAgent(e.agent);
@@ -53,7 +78,22 @@ function sanitizeEnv(e) {
     }
     rec.activities = rec.activities.slice(-MAX_ACTIVITIES);
   }
+  rec.pending = sanitizePending(pendingEntries(e.pending));
   return rec;
+}
+
+/** A record as written to disk: a pending map becomes an own-keyed object, or is left out. */
+function serializeEnv(rec) {
+  const out = { known: rec.known, agent: rec.agent, activities: rec.activities };
+  // fromEntries defines own properties, so a '__proto__' container stays a plain key.
+  if (rec.pending) out.pending = Object.fromEntries(rec.pending);
+  return out;
+}
+
+function samePending(a, b) {
+  if (!a || !b || a.size !== b.size) return false;
+  for (const [k, v] of a) if (b.get(k) !== v) return false;
+  return true;
 }
 
 export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
@@ -95,7 +135,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
       atomicWriteFileSync(
         path,
         JSON.stringify({
-          envs: Object.fromEntries(envs),
+          envs: Object.fromEntries([...envs].map(([k, rec]) => [k, serializeEnv(rec)])),
           release: { notified },
           order: [...envs.keys()],
         }, null, 2),
@@ -109,7 +149,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
   function ensureEnv(name) {
     let rec = envs.get(name);
     if (rec) return rec;
-    rec = { known: false, agent: null, activities: [] };
+    rec = { known: false, agent: null, activities: [], pending: null };
     envs.set(name, rec);
     for (const k of envs.keys()) {
       if (envs.size <= MAX_ENVS) break;
@@ -156,6 +196,23 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
     save();
   }
 
+  /** The environment's last recorded pending map (a copy), or null if none was ever recorded. */
+  function getPending(name) {
+    const p = envs.get(name)?.pending;
+    return p ? new Map(p) : null;
+  }
+
+  /** Record the environment's pending map (Map or [name, latest] pairs); writes only on change. */
+  function setPending(name, map) {
+    if (!isStr(name)) return;
+    const pairs = map instanceof Map ? map.entries() : Array.isArray(map) ? map : null;
+    const next = sanitizePending(pairs);
+    if (!next) return;
+    if (samePending(envs.get(name)?.pending, next)) return;
+    ensureEnv(name).pending = next;
+    save();
+  }
+
   function getReleaseNotified() {
     return notified;
   }
@@ -170,6 +227,6 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
 
   return {
     isKnownEnv, markKnownEnv, getAgent, setAgent,
-    hasActivity, addActivity, getReleaseNotified, setReleaseNotified,
+    hasActivity, addActivity, getPending, setPending, getReleaseNotified, setReleaseNotified,
   };
 }
