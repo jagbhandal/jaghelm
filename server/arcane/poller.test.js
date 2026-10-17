@@ -1549,3 +1549,20 @@ test('a persistent read failure logs once per error, then once on recovery', asy
     ['warn', 'info']
   );
 });
+
+test('deleting only arcane-held-back.json is silent while latest is unchanged', async (t) => {
+  const a = setup(t);
+  a.s.containers[VM103].push(ctr('n8n'));
+  await a.poller.pollOnce();
+  await a.poller.pollOnce();
+  rmSync(join(a.dir, 'arcane-held-back.json'));
+  const b = setup(t, { dir: a.dir, w: a.w });
+  assert.deepEqual(await b.poller.pollOnce(), { events: [], errors: [] });
+  assert.deepEqual(names(b.heldBackStore.getNode('vm-103')), ['immich-server', 'n8n']);
+  // A newer image is still news.
+  a.s.containers[VM103].find((c) => c.names[0] === '/n8n').updateInfo.latestVersion = 'v3';
+  assert.deepEqual(
+    (await b.poller.pollOnce()).events.map((e) => e.body),
+    ['1 update held back: n8n']
+  );
+});

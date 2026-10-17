@@ -39,10 +39,10 @@ Set these in the JagHelm env file on vm-103 (`/opt/stacks/jaghelm/.env`; the tem
 | `ARCANE_CHECK_ONLY_ENVS` | Comma list of environment names that are check-only (see below). Default empty. |
 | `ARCANE_POLL_SECONDS` | Poll interval. Default 300, minimum 60. |
 | `ARCANE_RELEASE_CHECK_HOURS` | Arcane release check interval. Default 6, minimum 1. |
+| `NODE_EXTRA_CA_CERTS` | Path to the manager's CA or self-signed certificate (step 3). |
 
 Both intervals are capped at the timer limit of about 24.8 days (2^31-1 ms), so a very large
 value cannot wrap around into a tight loop.
-| `NODE_EXTRA_CA_CERTS` | Path to the manager's CA or self-signed certificate (step 3). |
 
 If either `ARCANE_URL` or `ARCANE_API_KEY` is missing, JagHelm logs that the integration is
 off and starts nothing.
@@ -190,10 +190,11 @@ environment. Review the files before committing them anywhere.
 In the data volume: `arcane-state.json` (which environments are baselined, agent down
 counters, recent activity ids, each environment's pending updates, runs waiting on their job
 run, last notified release) and `arcane-held-back.json` (held-back containers per
-environment). Deleting both makes the next poll a fresh silent baseline. Do not delete only
-`arcane-held-back.json`: the environments
-stay known in `arcane-state.json`, so the next poll announces every held-back container
-again as newly held back.
+environment). Deleting both makes the next poll a fresh silent baseline. Deleting only
+`arcane-held-back.json` is silent too while each container's latest image is unchanged: the
+pending updates in `arcane-state.json` show the backlog is not news, so the set is rebuilt
+quietly and only a newer image pushes. Only a state file written before 2.1.0 (no pending
+updates in it) would announce every held-back container again.
 
 ## 10. Cutover from Watchtower, and rollback
 
