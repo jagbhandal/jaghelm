@@ -1,5 +1,7 @@
 # Watchtower Update Notifications — Operator Setup
 
+> **Deprecated.** The Watchtower webhook (`POST /api/watchtower/event`, `JAGHELM_WATCHTOWER_SECRET`, `JAGHELM_WATCHTOWER_DISCORD_WEBHOOK`) is replaced by the Arcane integration and will be removed in 2.2.0. See [docs/arcane/SETUP.md](../arcane/SETUP.md).
+
 JagHelm (vm103) hosts `POST /api/watchtower/event`. Each node's Watchtower POSTs a
 structured report there; JagHelm fans out to mobile push + the daily-health Discord channel.
 

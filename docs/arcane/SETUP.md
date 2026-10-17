@@ -1,0 +1,143 @@
+# Arcane Update Notifications: Operator Setup
+
+JagHelm polls the Arcane manager's REST API (read-only) and turns its state changes into
+mobile push notifications and scheduled-job history. This replaces the Watchtower webhook
+(see [docs/watchtower/SETUP.md](../watchtower/SETUP.md), deprecated).
+
+The poller lives in `server/arcane/` and starts at boot. It is off unless both `ARCANE_URL`
+and `ARCANE_API_KEY` are set, and it never runs in demo mode.
+
+## 1. Create a scoped API key in Arcane
+
+Create an API key for JagHelm with only these grants. All of them are read-only.
+
+| Scope | Grants |
+|---|---|
+| Global | `environments:list`, `environments:read` |
+| Each environment | `containers:list`, `image-updates:read`, `activities:read` |
+
+JagHelm calls only these endpoints, with the key in the `X-API-Key` header:
+
+- `GET /api/environments`
+- `GET /api/environments/{id}/containers` (pending updates only)
+- `GET /api/environments/{id}/activities` (`auto_update` and `system_prune`)
+- `GET /api/environments/{id}/updater/history`
+- `GET /api/app-version`
+
+It never calls `/jobs*`, which needs the write-capable `jobs:manage` grant.
+
+## 2. Configure JagHelm
+
+Set these in the JagHelm env file on vm-103 (`/opt/stacks/jaghelm/.env`; the template is
+`env.example`) and recreate the container. Never commit real values.
+
+| Variable | Meaning |
+|---|---|
+| `ARCANE_URL` | Manager base URL. Credentials in the URL (`user:pass@`) disable the poller. `http://` works but logs a one-time warning that the key travels unencrypted. |
+| `ARCANE_API_KEY` | The key from step 1. |
+| `ARCANE_CHECK_ONLY_ENVS` | Comma list of environment names that are check-only (see below). Default empty. |
+| `ARCANE_POLL_SECONDS` | Poll interval. Default 300, minimum 60. |
+| `ARCANE_RELEASE_CHECK_HOURS` | Arcane release check interval. Default 6, minimum 1. |
+| `NODE_EXTRA_CA_CERTS` | Path to the manager's CA or self-signed certificate (step 3). |
+
+If either `ARCANE_URL` or `ARCANE_API_KEY` is missing, JagHelm logs that the integration is
+off and starts nothing.
+
+## 3. Trust the manager's certificate
+
+If the manager uses a self-signed certificate, JagHelm must trust it. There is no
+TLS-skip option. Put the certificate (public part only) in the data volume as
+`data/arcane-ca.crt` and set:
+
+```
+NODE_EXTRA_CA_CERTS=/app/data/arcane-ca.crt
+```
+
+`NODE_EXTRA_CA_CERTS` is read once at process start, so restart the container after
+changing the file. It applies to every outbound HTTPS call from the process.
+
+## 4. Environments
+
+Environment names must match `[A-Za-z0-9._-]{1,64}` (for example `vm-103`, `vm-101`,
+`pi-1`, `pi-2`). An environment with any other name is skipped with one warning in the log,
+and so are two environments that share a name. Disabled environments are ignored.
+
+Health comes from the environment's `status`: `online` and `standby` are up, `offline` and
+`error` are down, anything else (such as `pending`) is unknown and changes nothing.
+
+### Check-only environments
+
+Name an environment in `ARCANE_CHECK_ONLY_ENVS` when Arcane only checks it and never
+applies updates (the Pis, for example). Every pending update there counts as held back.
+Elsewhere, a pending update is held back when the container has auto-update turned off.
+
+## 5. What pushes when
+
+All Arcane pushes use the existing **Watchtower / updates** notification toggle in the app;
+there is no separate Arcane toggle. Recovery messages also respect the "also notify on
+recovery" switch.
+
+- **First sight is silent.** The first time JagHelm sees an environment up with every read
+  succeeding, it stores the held-back set and marks existing finished activities as seen. No
+  push, no scheduled-job run. This is also what happens after the state files are deleted.
+- **Update run.** Each finished `auto_update` activity pushes once, with the containers
+  updated and failed (title `Updates · <env>`, for example `2 updated: a, b · 1 failed: c`).
+  A run that updated nothing and failed nothing pushes nothing.
+- **Held back.** `N updates held back: names` pushes when containers newly become held back,
+  and `N caught up: names` when they stop being held back. It pushes on change only, not on
+  every poll.
+- **Agent offline.** `Agent disconnected; Arcane cannot manage <env>` (title
+  `Arcane · <env>`) pushes after 2 consecutive polls that report the environment down,
+  counted from first sight and independent of the silent data baseline. One push per outage.
+  `Agent reconnected` pushes once when it returns.
+- **New Arcane release.** `Arcane <version> available` pushes once per new version, checked
+  every `ARCANE_RELEASE_CHECK_HOURS`. The body says to upgrade by PR (bump the pinned tag).
+- **Failed reads.** If any read for an environment fails (network error, non-2xx, malformed
+  body), JagHelm leaves that environment's state untouched for that poll. A flaky Arcane
+  therefore cannot cause a false "caught up" or a replayed backlog.
+
+State advances before the push is sent, so a push outage never replays old events later.
+
+## 6. Scheduled-job history
+
+Each finished activity of a known environment is also recorded as a run of the cron job
+`arcane-update` (updates) or `arcane-prune` (system prune), with the environment name as the
+node and an expected interval of 24 hours, so a job that stops running is flagged overdue.
+A run is `success` unless Arcane reports the activity `failed`; an update run is a `failure`
+only when it failed without any per-container result. The error text is capped at 2048
+characters. Activities that have not reached a final state (`success`, `failed`,
+`cancelled`) are retried on the next poll.
+
+## 7. Keep Arcane away from JagHelm itself
+
+`compose.yaml` labels the JagHelm container `com.getarcaneapp.arcane.updater=false` and
+`com.getarcaneapp.arcane.update-check=false`, so Arcane neither updates it nor reports it
+as pending. JagHelm's own deploys go through the pin, health-gate and rollback workflow.
+
+## 8. Dry run before enabling
+
+`scripts/arcane-poll-once.js` runs the real poller twice against the live manager over
+throwaway temp stores. It sends no push and never touches JagHelm's data directory. Pass 1
+is the silent baseline; pass 2 shows what would push. Run it under Node 22:
+
+```bash
+ARCANE_URL=https://arcane.example:3552 ARCANE_API_KEY=... \
+  ARCANE_CHECK_ONLY_ENVS=pi-1,pi-2 \
+  node scripts/arcane-poll-once.js
+```
+
+Use the same `NODE_EXTRA_CA_CERTS` as production if the manager is self-signed. Output lists
+each would-be push, the cron runs, and the per-environment health and held-back set. The key
+is never printed. Exit code 2 means a missing `ARCANE_URL` / `ARCANE_API_KEY` or a bad
+argument.
+
+`--record <dir>` additionally writes each response as a JSON fixture, reduced to the fields
+JagHelm reads (labels, environment variables and everything else are dropped). Per-environment
+files come from the first environment (by name) whose response has rows, otherwise the first
+environment. Review the files before committing them anywhere.
+
+## 9. Files JagHelm keeps
+
+In the data volume: `arcane-state.json` (which environments are baselined, agent down
+counters, recent activity ids, last notified release) and `arcane-held-back.json` (held-back
+containers per environment). Deleting both makes the next poll a fresh silent baseline.

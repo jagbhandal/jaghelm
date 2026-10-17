@@ -162,6 +162,14 @@ on the phone within a refresh cycle (~30s).
 
 ---
 
+## Which toggle covers what
+
+The app's **Watchtower** (updates) toggle also covers Arcane update notifications: applied and
+failed updates, held-back updates, Arcane agent outages and new Arcane releases. There is no
+separate Arcane toggle. See [docs/arcane/SETUP.md](../arcane/SETUP.md).
+
+---
+
 ## Security
 
 - **Service-account key (server) = real secret.** It can send push to every registered device.
