@@ -16,16 +16,18 @@ import { isDemoMode } from '../demo.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import { createLogger } from '../util/logger.js';
 
-const log = createLogger('arcane');
+const defaultLog = createLogger('arcane');
 let poller = null;
 
-export function startArcane({ env = process.env, demo = isDemoMode() } = {}) {
+export function startArcane({ env = process.env, demo = isDemoMode(), deps = {} } = {}) {
   stopArcane();
+  const log = deps.logger || defaultLog;
+  const makePoller = deps.createPoller || createArcanePoller;
   if (demo) {
     log.info('Arcane integration off in demo mode');
     return null;
   }
-  const cfg = readArcaneConfig(env);
+  const cfg = readArcaneConfig(env, { logger: log });
   if (!cfg.enabled) {
     log.info('Arcane integration off (ARCANE_URL / ARCANE_API_KEY not set)');
     return null;
@@ -33,7 +35,7 @@ export function startArcane({ env = process.env, demo = isDemoMode() } = {}) {
   if (cfg.cleartext) {
     log.warn('ARCANE_URL is cleartext http://; the API key travels unencrypted');
   }
-  poller = createArcanePoller({
+  poller = makePoller({
     client: createArcaneClient({ baseUrl: cfg.url, apiKey: cfg.apiKey }),
     stateStore: createArcaneStateStore({ path: join(DATA_DIR, 'arcane-state.json') }),
     heldBackStore: createHeldBackStore({ path: join(DATA_DIR, 'arcane-held-back.json') }),

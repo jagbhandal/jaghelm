@@ -16,7 +16,7 @@ const stringMap = (m) => {
 };
 
 const ROW = {
-  environments: (r) => pick(r, ['id', 'name', 'status', 'isEdge', 'lastSeen', 'enabled']),
+  environments: (r) => pick(r, ['id', 'name', 'status', 'enabled']),
   containers: (r) => {
     const out = pick(r, ['names', 'image', 'autoUpdateEnabled']);
     if (r?.updateInfo && typeof r.updateInfo === 'object') {

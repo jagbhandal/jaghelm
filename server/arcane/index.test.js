@@ -45,8 +45,55 @@ test('projectFixture drops labels and unknown fields', () => {
     ],
   });
   assert.equal(JSON.stringify(out).includes('TOKEN'), false);
-  const envs = projectFixture('environments', { success: true, data: [{ id: '0', name: 'a', status: 'online', apiUrl: 'http://x', accessToken: 'z' }] });
+  const envs = projectFixture('environments', { success: true, data: [{ id: '0', name: 'a', status: 'online', lastSeen: 'x', apiUrl: 'http://x', accessToken: 'z' }] });
   assert.deepEqual(envs.data[0], { id: '0', name: 'a', status: 'online' });
   const ver = projectFixture('app-version', { currentVersion: '1', releaseNotes: 'long' });
   assert.deepEqual(ver, { currentVersion: '1' });
+});
+
+function fakes() {
+  const made = [];
+  const warns = [];
+  const createPoller = () => {
+    const p = { started: 0, stopped: 0, start() { p.started++; }, stop() { p.stopped++; } };
+    made.push(p);
+    return p;
+  };
+  const logger = { info() {}, debug() {}, error() {}, warn: (...a) => warns.push(a) };
+  return { made, warns, deps: { createPoller, logger } };
+}
+const ON = { ARCANE_URL: 'https://a.test', ARCANE_API_KEY: KEY };
+
+test('startArcane returns a running poller when configured', () => {
+  const f = fakes();
+  const p = startArcane({ env: ON, demo: false, deps: f.deps });
+  assert.equal(p, f.made[0]);
+  assert.equal(p.started, 1);
+  assert.equal(f.warns.length, 0);
+  stopArcane();
+});
+
+test('a second startArcane leaves exactly one poller running', () => {
+  const f = fakes();
+  startArcane({ env: ON, demo: false, deps: f.deps });
+  startArcane({ env: ON, demo: false, deps: f.deps });
+  assert.equal(f.made[0].stopped, 1);
+  assert.equal(f.made[1].stopped, 0);
+  stopArcane();
+  assert.equal(f.made[1].stopped, 1);
+});
+
+test('stopArcane stops the poller and is idempotent', () => {
+  const f = fakes();
+  startArcane({ env: ON, demo: false, deps: f.deps });
+  stopArcane();
+  stopArcane();
+  assert.equal(f.made[0].stopped, 1);
+});
+
+test('http:// URL warns exactly once', () => {
+  const f = fakes();
+  startArcane({ env: { ...ON, ARCANE_URL: 'http://a.test' }, demo: false, deps: f.deps });
+  assert.equal(f.warns.length, 1);
+  stopArcane();
 });

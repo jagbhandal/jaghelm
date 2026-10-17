@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* global process, console */
 /**
  * Arcane dry run for UAT. Runs the real poller twice against a live Arcane,
  * over throwaway temp stores, so nothing touches JagHelm's data dir and no
@@ -107,6 +106,16 @@ try {
     console.log(JSON.stringify({ health, heldBack: held }, null, 2));
   }
   if (recordDir) {
+    // Independent of the poller's own fetch gate: one history file per run.
+    const envs = await client.listEnvironments();
+    for (const e of envs) {
+      if (envHealth(e) !== 'up' || !envKey(e)) continue;
+      try {
+        record('updater-history.json', 'history', await real.updaterHistory(e.id));
+      } catch (err) {
+        console.error(`updater-history not recorded for ${envKey(e)}:`, err?.message);
+      }
+    }
     try {
       record('app-version.json', 'app-version', await client.appVersion());
     } catch (err) {

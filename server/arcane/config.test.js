@@ -35,3 +35,15 @@ test('cleartext true for http:// URL and trailing slash stripped', () => {
   assert.equal(readArcaneConfig({ ARCANE_URL: 'http://a:3552/' }).url, 'http://a:3552');
   assert.equal(readArcaneConfig({ ARCANE_URL: 'https://a' }).cleartext, false);
 });
+
+test('rejects a URL with userinfo, one warning, no URL echoed', () => {
+  const warns = [];
+  const logger = { warn: (...a) => warns.push(JSON.stringify(a)) };
+  const cfg = readArcaneConfig(
+    { ARCANE_URL: 'https://user:hunter2@a.test', ARCANE_API_KEY: KEY },
+    { logger }
+  );
+  assert.equal(cfg.enabled, false);
+  assert.equal(warns.length, 1);
+  assert.equal(/hunter2|a\.test/.test(warns[0]), false);
+});
