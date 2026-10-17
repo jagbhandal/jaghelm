@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   envKey, envHealth, heldBackSet, isTerminal, summarizeUpdateRun, summarizePruneRun,
-  pendingMap, heldBackTransitions,
+  pendingMap, heldBackTransitions, runOrigin,
 } from './derive.js';
 
 const fx = (n) => JSON.parse(readFileSync(new URL(`./fixtures/${n}.json`, import.meta.url), 'utf8')).data;
@@ -127,4 +127,32 @@ test('heldBackTransitions: only image news is held back, only a resolved update 
     newlyHeldBack: [e('label-added', 'v2')], cleared: [], prevPending: null, nextPending,
   });
   assert.deepEqual(old.heldBack.map((x) => x.name), ['label-added']);
+});
+
+test('runOrigin: only a job run the scheduler started makes a run scheduled', () => {
+  const jobs = fx('activities-job_run');
+  const [au3, au2, au1] = fx('activities-auto_update');
+  const [sp2, sp1] = fx('activities-system_prune');
+  assert.equal(runOrigin(sp2, jobs), 'scheduled');
+  assert.equal(runOrigin(au1, jobs), 'scheduled');
+  assert.equal(runOrigin(au2, jobs), 'scheduled');
+  assert.equal(runOrigin(sp1, jobs), 'manual', 'Prune button: no job run at all');
+  // The job run is still going (no domain activity recorded yet): judge it later.
+  assert.equal(runOrigin({ ...au3, status: 'success' }, jobs), 'pending');
+
+  const job = (trigger, domainActivityId, extra = {}) => ({
+    id: `j-${trigger}`, type: 'job_run', status: 'success', batchId: 'b1',
+    metadata: { trigger, domainActivityId }, ...extra,
+  });
+  const run = { id: 'd1', type: 'system_prune', status: 'success', batchId: 'b1' };
+  assert.equal(runOrigin(run, [job('recovery', 'd1')]), 'scheduled', 'a missed slot caught up');
+  assert.equal(runOrigin(run, [job('manual', 'd1')]), 'manual', 'Jobs page "Run now"');
+  assert.equal(runOrigin(run, [job('remote', 'd1')]), 'manual');
+  // A finished job run that points at another activity (a retried attempt): not this one.
+  assert.equal(runOrigin(run, [job('scheduled', 'd2')]), 'manual');
+  assert.equal(runOrigin(run, [job('scheduled', 'd1', { type: 'auto_update' })]), 'manual');
+  assert.equal(runOrigin(run, [job('scheduled', '', { status: 'running' })]), 'pending');
+  assert.equal(runOrigin({ ...run, batchId: undefined }, [job('scheduled', '', { status: 'running' })]), 'manual');
+  assert.equal(runOrigin(run, []), 'manual');
+  assert.equal(runOrigin(run, [{ type: 'job_run', metadata: 'junk' }, null]), 'manual');
 });

@@ -19,6 +19,8 @@
  *     were for this poll: no "caught up" storm.
  *   - Only terminal activities with a parseable startedAt are processed; any
  *     other is skipped without being marked seen, so it is retried next poll.
+ *   - Only a run Arcane's scheduler started records a cron run (runOrigin, judged
+ *     from the environment's job_run rows); a manual run still pushes its outcome.
  *   - State advances before dispatch, and a dispatch failure is swallowed, so
  *     a push outage (or push turned off) never re-announces a backlog later.
  * No clock lives here: same inputs + same persisted state -> same outputs.
@@ -31,6 +33,7 @@ import {
   pendingMap,
   heldBackTransitions,
   isTerminal,
+  runOrigin,
   summarizeUpdateRun,
   summarizePruneRun,
 } from './derive.js';
@@ -51,6 +54,9 @@ const ACTIVITY_JOBS = [
   { type: 'auto_update', job: 'arcane-update' },
   { type: 'system_prune', job: 'arcane-prune' },
 ];
+// job_run rows are read page by page back to the oldest unseen run, at most this far.
+const JOB_RUN_PAGE = 50;
+const JOB_RUN_PAGES = 4;
 const DEFAULT_POLL_MS = 300_000;
 const DEFAULT_RELEASE_MS = 21_600_000;
 const ONCE_MAX = 1000; // bound on the log-once memory
@@ -147,8 +153,26 @@ export function createArcanePoller({
     );
   }
 
+  /**
+   * The environment's job_run rows, newest first, paged back until a page ends before
+   * `oldestMs` (the oldest unseen run being judged) or the page cap is reached. A run
+   * whose job_run lies beyond the cap is judged manual.
+   */
+  async function listJobRuns(envId, oldestMs) {
+    const rows = [];
+    for (let page = 0; page < JOB_RUN_PAGES; page++) {
+      const got = await client.listActivities(envId, 'job_run', JOB_RUN_PAGE, page * JOB_RUN_PAGE);
+      rows.push(...got);
+      if (got.length < JOB_RUN_PAGE) break;
+      const last = got[got.length - 1];
+      const lastMs = parseMs(last?.endedAt);
+      if (isTerminal(last) && Number.isFinite(lastMs) && lastMs < oldestMs) break;
+    }
+    return rows;
+  }
+
   /** Push + cron run for one finished activity of a known environment. */
-  function processActivity(env, key, type, job, activity, history, events) {
+  function processActivity(env, key, type, job, activity, history, events, scheduled) {
     // An unparseable endedAt would make the history window NaN; fall back to startedAt.
     const a = Number.isFinite(parseMs(activity.endedAt))
       ? activity
@@ -168,6 +192,9 @@ export function createArcanePoller({
     } else {
       summary = summarizePruneRun(a);
     }
+    // Only a run Arcane's scheduler started feeds the cron store (runOrigin); a manual
+    // run is a real outcome, so it still pushes above, but it must not start a daily SLA.
+    if (!scheduled) return;
     const report = buildCronReport({
       job,
       env,
@@ -199,13 +226,18 @@ export function createArcanePoller({
     // Fetch phase. No data state is written until every fetch for this environment succeeded.
     let containers;
     let history = null;
+    let jobRuns = [];
     const pending = {};
     try {
       containers = await client.listPendingUpdates(env.id);
       for (const { type } of ACTIVITY_JOBS) {
         pending[type] = unseenTerminal(key, type, await client.listActivities(env.id, type));
       }
+      const unseen = ACTIVITY_JOBS.flatMap(({ type }) => pending[type]);
       if (known && pending.auto_update.length > 0) history = await client.updaterHistory(env.id);
+      if (known && unseen.length > 0) {
+        jobRuns = await listJobRuns(env.id, Math.min(...unseen.map((p) => p.startedMs)));
+      }
     } catch (err) {
       errors.push(`${key}: ${errText(err)}`);
       log.warn(
@@ -238,9 +270,32 @@ export function createArcanePoller({
 
     for (const { type, job } of ACTIVITY_JOBS) {
       for (const { activity, id } of pending[type]) {
+        let scheduled = false;
+        if (known) {
+          const origin = runOrigin(activity, jobRuns);
+          if (origin === 'pending') {
+            // Its job run has not recorded it yet: not seen, judged on a later poll.
+            logOnce(
+              `origin:${key}:${short(id)}`,
+              'debug',
+              { env: key, type, id: short(id) },
+              'Arcane run still finishing; judged next poll'
+            );
+            continue;
+          }
+          scheduled = origin === 'scheduled';
+          if (!scheduled) {
+            logOnce(
+              `manual:${key}:${short(id)}`,
+              'info',
+              { env: key, type, id: short(id) },
+              'Arcane run not started by the scheduler; no cron run recorded'
+            );
+          }
+        }
         // Seen first: across a crash the cron run is at most once, like the push.
         stateStore.addActivity(key, id);
-        if (known) processActivity(env, key, type, job, activity, history, events);
+        if (known) processActivity(env, key, type, job, activity, history, events, scheduled);
       }
     }
 

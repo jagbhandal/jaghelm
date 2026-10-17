@@ -30,7 +30,19 @@ const ROW = {
     }
     return out;
   },
-  activities: (r) => pick(r, ['id', 'type', 'status', 'startedAt', 'endedAt', 'error']),
+  activities: (r) => {
+    const out = pick(r, ['id', 'type', 'status', 'startedAt', 'endedAt', 'error', 'batchId']);
+    // Only the job-run link the poller reads (runOrigin); other metadata is dropped.
+    const md = r?.metadata;
+    if (md && typeof md === 'object' && !Array.isArray(md)) {
+      const link = {};
+      for (const k of ['trigger', 'domainActivityId']) {
+        if (typeof md[k] === 'string') link[k] = md[k];
+      }
+      if (Object.keys(link).length) out.metadata = link;
+    }
+    return out;
+  },
   history: (r) => {
     const out = pick(r, ['id', 'createdAt', 'resourceName', 'status', 'error']);
     if ('oldImageVersions' in (r || {})) out.oldImageVersions = stringMap(r.oldImageVersions);

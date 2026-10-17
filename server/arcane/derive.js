@@ -86,6 +86,49 @@ export function isTerminal(activity) {
   return TERMINAL.has(activity?.status);
 }
 
+/*
+ * Who started a finished auto_update / system_prune activity. In Arcane v2.16.1 the
+ * activity itself cannot tell: a scheduled and a manual run have the same shape.
+ *   - startedBy is always serialised, {username:"System"} when no user is recorded
+ *     (backend/internal/activity/service.go:1585-1588), so a scheduled run and the
+ *     Prune button (system/children/prune/service.go:106, 133-155) look alike, and
+ *     POST /updater/run (updater/handler.go:58, updater/service.go:238-262) matches
+ *     the scheduled auto-update template (updater/service.go:1549-1557).
+ *   - batchId is set for every job-started run (job/service.go:672,
+ *     scheduler/runs/coordinator.go:523-524, activity/service.go:337-342), a Jobs-page
+ *     "Run now" included (trigger "manual", job/handler.go:80-84), so it is no signal.
+ * The signal is the run's job_run summary activity: metadata.trigger plus
+ * metadata.domainActivityId, the activity the run produced (activity/service.go:
+ * 1714-1720; the auto-update outcome carries it, updater/service.go finalizeAutoUpdate;
+ * the prune outcome too, scheduler/scheduled_prune_job.go:93-96). The scheduler fires
+ * "scheduled", or "recovery" for a slot it runs late (scheduler/runs/actors.go:306-310),
+ * so the scheduled work did run. A job_run is readable with activities:read
+ * (activity/helpers.go:135-141).
+ * While that job run is unfinished it has not recorded domainActivityId yet (the run's
+ * outcome is written after the activity completes), so the answer is "pending" and the
+ * activity is judged on a later poll.
+ */
+const SCHEDULER_TRIGGERS = new Set(['scheduled', 'recovery']);
+
+/** 'scheduled' | 'manual' | 'pending' for a finished activity, given the env's job_run rows. */
+export function runOrigin(activity, jobRuns) {
+  const id = activity?.id == null ? '' : String(activity.id);
+  const batch = str(activity?.batchId);
+  let linked = false;
+  let unfinished = false;
+  for (const j of Array.isArray(jobRuns) ? jobRuns : []) {
+    if (j?.type !== 'job_run') continue;
+    const md = j.metadata && typeof j.metadata === 'object' ? j.metadata : {};
+    if (id && md.domainActivityId === id) {
+      if (SCHEDULER_TRIGGERS.has(md.trigger)) return 'scheduled';
+      linked = true;
+    } else if (batch && j.batchId === batch && !isTerminal(j)) {
+      unfinished = true;
+    }
+  }
+  return !linked && unfinished ? 'pending' : 'manual';
+}
+
 /** Summarise a finished auto_update activity using updater-history rows in its time window. */
 export function summarizeUpdateRun(activity, historyRows) {
   const start = Date.parse(activity.startedAt);

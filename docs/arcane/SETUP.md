@@ -20,7 +20,8 @@ JagHelm calls only these endpoints, with the key in the `X-API-Key` header:
 
 - `GET /api/environments`
 - `GET /api/environments/{id}/containers` (pending updates only)
-- `GET /api/environments/{id}/activities` (`auto_update` and `system_prune`)
+- `GET /api/environments/{id}/activities` (`auto_update` and `system_prune`, plus `job_run`
+  to tell scheduled runs from manual ones; see §6)
 - `GET /api/environments/{id}/updater/history`
 - `GET /api/app-version`
 
@@ -108,13 +109,23 @@ State advances before the push is sent, so a push outage never replays old event
 
 ## 6. Scheduled-job history
 
-Each finished activity of a known environment is also recorded as a run of the cron job
-`arcane-update` (updates) or `arcane-prune` (system prune), with the environment name as the
-node and an expected interval of 24 hours, so a job that stops running is flagged overdue.
-A run is `success` unless Arcane reports the activity `failed`; an update run is a `failure`
-only when it failed without any per-container result. The error text is capped at 2048
-characters. Activities that have not reached a final state (`success`, `failed`,
-`cancelled`) are retried on the next poll.
+Each finished activity of a known environment that Arcane's scheduler started is also
+recorded as a run of the cron job `arcane-update` (updates) or `arcane-prune` (system prune),
+with the environment name as the node and an expected interval of 24 hours, so a schedule
+that stops running is flagged overdue. A run is `success` unless Arcane reports the activity
+`failed`; an update run is a `failure` only when it failed without any per-container result.
+The error text is capped at 2048 characters. Activities that have not reached a final state
+(`success`, `failed`, `cancelled`) are retried on the next poll.
+
+Manual runs never become cron runs, so a one-off button press does not start a daily
+overdue clock: the Prune button, a container's or project's Update button, "update all"
+from the updater page, and the Jobs page's "Run now". They still push their updated and
+failed containers (§5). Arcane gives a scheduled and a manual activity the same shape, so
+JagHelm reads the environment's `job_run` activities: a run counts as scheduled only when a
+job run with trigger `scheduled` (or `recovery`, a missed slot the scheduler runs late)
+names it as the activity it produced. While that job run is still finishing, the activity is
+judged on a later poll. Job runs are read newest first, 50 per page and at most 4 pages, back
+to the oldest run being judged; a run whose job run lies further back counts as manual.
 
 ## 7. Keep Arcane away from JagHelm itself
 

@@ -95,3 +95,16 @@ test('network error wrapped, key not in message', async () => {
   });
   await assert.rejects(c.listEnvironments(), (e) => e instanceof ArcaneError && e.status === null && !e.message.includes(KEY));
 });
+
+test('activities are read page by page (job_run)', async () => {
+  const { calls, client } = mk(fx('activities-job_run'));
+  assert.equal((await client.listActivities('0', 'job_run', 50)).length, 4);
+  await client.listActivities('0', 'job_run', 50, 100);
+  assert.deepEqual(
+    calls.map((c) => c.url),
+    [
+      'https://m:3552/api/environments/0/activities?type=job_run&order=desc&limit=50',
+      'https://m:3552/api/environments/0/activities?type=job_run&order=desc&limit=50&start=100',
+    ]
+  );
+});

@@ -69,9 +69,9 @@ export async function runPollOnce({
       note('containers-has-update.json', 'containers', id, r);
       return r;
     },
-    async listActivities(id, type, limit) {
-      const r = await real.listActivities(id, type, limit);
-      note(`activities-${type}.json`, 'activities', id, r);
+    async listActivities(id, type, limit, start = 0) {
+      const r = await real.listActivities(id, type, limit, start);
+      if (!start) note(`activities-${type}.json`, 'activities', id, r); // first page only
       return r;
     },
     async updaterHistory(id, limit) {
@@ -117,7 +117,7 @@ export async function runPollOnce({
       out(JSON.stringify({ health, heldBack: held }, null, 2));
     }
     if (recordDir) {
-      // History is fetched here too, independent of the poller's own gate.
+      // History and job runs are fetched here too, independent of the poller's own gates.
       const envs = await client.listEnvironments();
       for (const e of envs) {
         if (envHealth(e) !== 'up' || !envKey(e)) continue;
@@ -125,6 +125,11 @@ export async function runPollOnce({
           await client.updaterHistory(e.id);
         } catch (e2) {
           err(`updater-history not recorded for ${envKey(e)}: ${e2?.message}`);
+        }
+        try {
+          await client.listActivities(e.id, 'job_run', 50);
+        } catch (e2) {
+          err(`activities-job_run not recorded for ${envKey(e)}: ${e2?.message}`);
         }
       }
       try {

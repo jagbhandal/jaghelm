@@ -24,6 +24,9 @@ async function fake({ envs, containers = {}, historyFail = new Set() }) {
     if (q.url.startsWith('/api/app-version')) return send(200, fx('app-version.json'));
     if (!m) return send(404, {});
     if (m[2] === 'containers') return send(200, wrap(containers[m[1]] || []));
+    if (m[2] === 'activities' && q.url.includes('type=job_run')) {
+      return send(200, wrap(m[1] === '2' ? fx('activities-job_run.json').data : []));
+    }
     if (m[2] === 'updater/history') {
       if (historyFail.has(m[1])) return send(500, { error: `boom ${KEY}` });
       return send(200, wrap(m[1] === '2' ? fx('updater-history.json').data : []));
@@ -108,6 +111,23 @@ test('a 500 on one env history is reported without the key and does not abort', 
     assert.match(stderr.text, /updater-history not recorded for vm-103/);
     assert.equal(existsSync(join(out, 'updater-history.json')), true);
     assert.equal(stdout.text.includes(KEY) || stderr.text.includes(KEY), false);
+  } finally {
+    f.close();
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('--record writes a job_run fixture with the link fields', async () => {
+  const out = mkdtempSync(join(tmpdir(), 'pollonce-rec-'));
+  const f = await fake({ envs: ENVS });
+  try {
+    const { code } = await run(f, ['--record', out]);
+    assert.equal(code, 0);
+    const jobs = JSON.parse(readFileSync(join(out, 'activities-job_run.json'), 'utf8')).data;
+    assert.equal(jobs.length, 4);
+    assert.deepEqual(jobs[0].metadata, { trigger: 'scheduled', domainActivityId: 'act-sp-2' });
+    assert.equal(jobs[0].batchId, '0f3c1a2e-5b6d-4e7f-8a9b-0000000000a2');
+    assert.ok(f.seen.some((u) => u.includes('type=job_run')));
   } finally {
     f.close();
     rmSync(out, { recursive: true, force: true });

@@ -35,6 +35,7 @@ function world() {
     activities: {
       [`${VM103}:auto_update`]: fx('activities-auto_update'),
       [`${VM103}:system_prune`]: fx('activities-system_prune'),
+      [`${VM103}:job_run`]: fx('activities-job_run'),
     },
     history: { [VM103]: fx('updater-history') },
     version: fx('app-version'),
@@ -57,9 +58,10 @@ function world() {
       hit(`containers:${id}`);
       return clone(s.containers[id] ?? []);
     },
-    async listActivities(id, type) {
+    async listActivities(id, type, limit, start = 0) {
       hit(`activities:${id}:${type}`);
-      return clone(s.activities[`${id}:${type}`] ?? []);
+      const all = clone(s.activities[`${id}:${type}`] ?? []);
+      return typeof limit === 'number' ? all.slice(start, start + limit) : all;
     },
     async updaterHistory(id) {
       hit(`history:${id}`);
@@ -144,6 +146,27 @@ const row = (createdAt, name, status, extra = {}) => ({
   error: '',
   ...extra,
 });
+/**
+ * Make `a` a run Arcane's scheduler started: give it a batch id and add its finished
+ * job_run summary (newest first, as Arcane lists them) linking back to it.
+ */
+const scheduled = (s, envId, a, trigger = 'scheduled') => {
+  a.batchId = `run-${a.id}`;
+  const key = `${envId}:job_run`;
+  s.activities[key] = [
+    {
+      id: `job-${a.id}`,
+      type: 'job_run',
+      status: 'success',
+      batchId: a.batchId,
+      startedAt: a.startedAt,
+      endedAt: a.endedAt,
+      metadata: { trigger, runId: a.batchId, domainActivityId: a.id },
+    },
+    ...(s.activities[key] ?? []),
+  ];
+  return a;
+};
 const setStatus = (s, id, status) => {
   s.envs.find((e) => e.id === id).status = status;
 };
@@ -168,6 +191,7 @@ test('first poll is a silent baseline', async (t) => {
   }
   assert.equal(h.stateStore.hasActivity('vm-103', 'act-au-3'), false, 'running: not seen yet');
   assert.equal(h.s.calls.includes(`history:${VM103}`), false, 'unknown env needs no history');
+  assert.equal(h.s.calls.includes(`activities:${VM103}:job_run`), false, 'nor job runs');
   for (const name of ['vm-103', 'vm-101', 'pi-1', 'pi-2']) {
     assert.equal(h.stateStore.isKnownEnv(name), true, name);
     assert.deepEqual(h.stateStore.getAgent(name), { downPolls: 0, alerted: false }, name);
@@ -262,12 +286,24 @@ test('completed update run with one updated and one failed container pushes one 
   const h = setup(t);
   await h.poller.pollOnce();
   h.s.activities[`${VM103}:auto_update`].unshift(
-    act('act-au-5', 'auto_update', 'success', '2026-10-18T03:00:00Z', '2026-10-18T03:05:00Z'),
+    scheduled(
+      h.s,
+      VM103,
+      act('act-au-5', 'auto_update', 'success', '2026-10-18T03:00:00Z', '2026-10-18T03:05:00Z')
+    ),
     // Older, cancelled, nothing in its window: recorded, but silent.
-    act('act-au-4', 'auto_update', 'cancelled', '2026-10-17T12:00:00Z', '2026-10-17T12:00:10Z')
+    scheduled(
+      h.s,
+      VM103,
+      act('act-au-4', 'auto_update', 'cancelled', '2026-10-17T12:00:00Z', '2026-10-17T12:00:10Z')
+    )
   );
   h.s.activities[`${VM103}:system_prune`].unshift(
-    act('act-sp-3', 'system_prune', 'success', '2026-10-18T04:00:00Z', '2026-10-18T04:00:30Z')
+    scheduled(
+      h.s,
+      VM103,
+      act('act-sp-3', 'system_prune', 'success', '2026-10-18T04:00:00Z', '2026-10-18T04:00:30Z')
+    )
   );
   h.s.history[VM103].unshift(
     row('2026-10-18T03:03:00Z', 'redis', 'up_to_date'),
@@ -309,14 +345,22 @@ test('failed run with no container rows records failure and pushes nothing', asy
   });
   await h.poller.pollOnce();
   h.s.activities[`${VM103}:auto_update`].unshift(
-    act('act-au-4', 'auto_update', 'failed', '2026-10-18T03:00:00Z', '2026-10-18T03:00:20Z', {
-      error: 'registry unreachable',
-    })
+    scheduled(
+      h.s,
+      VM103,
+      act('act-au-4', 'auto_update', 'failed', '2026-10-18T03:00:00Z', '2026-10-18T03:00:20Z', {
+        error: 'registry unreachable',
+      })
+    )
   );
   h.s.activities[`${VM103}:system_prune`].unshift(
-    act('act-sp-3', 'system_prune', 'failed', '2026-10-18T04:00:00Z', '2026-10-18T04:00:05Z', {
-      error: 'docker daemon busy',
-    })
+    scheduled(
+      h.s,
+      VM103,
+      act('act-sp-3', 'system_prune', 'failed', '2026-10-18T04:00:00Z', '2026-10-18T04:00:05Z', {
+        error: 'docker daemon busy',
+      })
+    )
   );
   // An up_to_date row in the window is not a per-container result.
   h.s.history[VM103].unshift(row('2026-10-18T03:00:10Z', 'redis', 'up_to_date'));
@@ -352,7 +396,7 @@ test('running activity is processed only after it becomes terminal', async (t) =
   h.s.history[VM103].unshift(row('2026-10-17T03:04:00Z', 'gitea', 'updated'));
   // A terminal prune without a parseable startedAt is skipped, not marked seen.
   h.s.activities[`${VM103}:system_prune`].unshift(
-    act('act-sp-9', 'system_prune', 'success', null, '2026-10-17T05:00:00Z')
+    scheduled(h.s, VM103, act('act-sp-9', 'system_prune', 'success', null, '2026-10-17T05:00:00Z'))
   );
 
   let r = await h.poller.pollOnce();
@@ -365,6 +409,10 @@ test('running activity is processed only after it becomes terminal', async (t) =
   const running = h.s.activities[`${VM103}:auto_update`].find((a) => a.id === 'act-au-3');
   running.status = 'success';
   running.endedAt = '2026-10-17T03:10:00Z';
+  // Its scheduled job run finishes too and records the activity it ran.
+  const job = h.s.activities[`${VM103}:job_run`].find((j) => j.id === 'job-au-3');
+  job.status = 'success';
+  job.metadata.domainActivityId = 'act-au-3';
   h.s.activities[`${VM103}:system_prune`][0].startedAt = '2026-10-17T04:59:00Z';
 
   r = await h.poller.pollOnce();
@@ -691,7 +739,11 @@ test('a fresh poller on the same state files emits nothing new', async (t) => {
   await a.poller.pollOnce();
   a.s.containers[VM103].push(ctr('homeassistant'));
   a.s.activities[`${VM103}:auto_update`].unshift(
-    act('act-au-4', 'auto_update', 'success', '2026-10-18T03:00:00Z', '2026-10-18T03:01:00Z')
+    scheduled(
+      a.s,
+      VM103,
+      act('act-au-4', 'auto_update', 'success', '2026-10-18T03:00:00Z', '2026-10-18T03:01:00Z')
+    )
   );
   a.s.history[VM103].unshift(row('2026-10-18T03:00:30Z', 'gitea', 'updated'));
   setStatus(a.s, VM101, 'offline');
@@ -744,7 +796,11 @@ test('dispatch failure does not block state advance', async (t) => {
     await h.poller.pollOnce();
     h.s.containers[VM103].push(ctr('homeassistant'));
     h.s.activities[`${VM103}:auto_update`].unshift(
-      act('act-au-4', 'auto_update', 'success', '2026-10-18T03:00:00Z', '2026-10-18T03:01:00Z')
+      scheduled(
+        h.s,
+        VM103,
+        act('act-au-4', 'auto_update', 'success', '2026-10-18T03:00:00Z', '2026-10-18T03:01:00Z')
+      )
     );
     h.s.history[VM103].unshift(row('2026-10-18T03:00:30Z', 'gitea', 'updated'));
 
@@ -934,4 +990,180 @@ test('a state file from before the pending map behaves as before for one poll', 
   assert.deepEqual(await b.poller.pollOnce(), { events: [], errors: [] });
   a.s.containers[VM103].find((c) => c.names[0] === '/gitea').autoUpdateEnabled = false;
   assert.deepEqual(await b.poller.pollOnce(), { events: [], errors: [] });
+});
+
+test('only runs the scheduler started become cron runs; manual runs still push', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce();
+  const au = `${VM103}:auto_update`;
+  const sp = `${VM103}:system_prune`;
+  const job = (id, trigger, domainActivityId, at) => ({
+    id,
+    type: 'job_run',
+    status: 'success',
+    batchId: `b-${id}`,
+    startedAt: at,
+    endedAt: at,
+    metadata: { trigger, domainActivityId },
+  });
+
+  // The Prune button: no job run at all.
+  h.s.activities[sp].unshift(
+    act('man-sp', 'system_prune', 'success', '2026-10-18T01:00:00Z', '2026-10-18T01:00:10Z')
+  );
+  // A container's Update button: one container, no job run.
+  h.s.activities[au].unshift(
+    act('man-c', 'auto_update', 'success', '2026-10-18T01:10:00Z', '2026-10-18T01:10:20Z', {
+      resourceType: 'container',
+    })
+  );
+  h.s.history[VM103].unshift(row('2026-10-18T01:10:15Z', 'immich-server', 'updated'));
+  let r = await h.poller.pollOnce();
+  assert.deepEqual(
+    r.events.map((e) => e.body),
+    ['1 updated: immich-server']
+  );
+  assert.deepEqual(h.runs, [], 'manual prune and manual update: no cron run');
+  assert.equal(h.stateStore.hasActivity('vm-103', 'man-sp'), true);
+  assert.equal(h.stateStore.hasActivity('vm-103', 'man-c'), true);
+
+  // Jobs page "Run now" on auto-update: a job run, but trigger manual.
+  h.s.activities[au].unshift(
+    act('now-au', 'auto_update', 'failed', '2026-10-18T02:00:00Z', '2026-10-18T02:01:00Z', {
+      batchId: 'b-j-now',
+    })
+  );
+  h.s.activities[`${VM103}:job_run`].unshift(
+    job('j-now', 'manual', 'now-au', '2026-10-18T02:01:01Z')
+  );
+  h.s.history[VM103].unshift(row('2026-10-18T02:00:30Z', 'gitea', 'failed'));
+  r = await h.poller.pollOnce();
+  assert.deepEqual(
+    r.events.map((e) => e.body),
+    ['1 failed: gitea']
+  );
+  assert.deepEqual(h.runs, []);
+
+  // The scheduler: one on time, one late (recovery) after a missed slot.
+  h.s.activities[sp].unshift(
+    act('sch-sp', 'system_prune', 'success', '2026-10-19T00:00:00Z', '2026-10-19T00:00:10Z')
+  );
+  h.s.activities[au].unshift(
+    act('rec-au', 'auto_update', 'success', '2026-10-19T00:30:00Z', '2026-10-19T00:31:00Z')
+  );
+  h.s.activities[`${VM103}:job_run`].unshift(
+    job('j-rec', 'recovery', 'rec-au', '2026-10-19T00:31:01Z'),
+    job('j-sch', 'scheduled', 'sch-sp', '2026-10-19T00:00:11Z')
+  );
+  r = await h.poller.pollOnce();
+  assert.deepEqual(r.events, [], 'nothing updated, nothing failed');
+  assert.deepEqual(
+    h.runs.map((x) => `${x.job}:${x.status}`),
+    ['arcane-update:success', 'arcane-prune:success']
+  );
+  assert.deepEqual((await h.poller.pollOnce()).events, []);
+  assert.equal(h.runs.length, 2);
+});
+
+test('a job run read failure leaves the environment unchanged', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce();
+  h.s.activities[`${VM103}:system_prune`].unshift(
+    scheduled(
+      h.s,
+      VM103,
+      act('act-sp-3', 'system_prune', 'success', '2026-10-18T04:00:00Z', '2026-10-18T04:00:30Z')
+    )
+  );
+  h.s.containers[VM103] = []; // would clear immich-server
+  h.s.fail[`activities:${VM103}:job_run`] = new ArcaneError('Arcane HTTP 500 for /x', 500);
+  const r = await h.poller.pollOnce();
+  assert.deepEqual(r.events, []);
+  assert.equal(r.errors.length, 1);
+  assert.equal(h.stateStore.hasActivity('vm-103', 'act-sp-3'), false, 'nothing marked seen');
+  assert.deepEqual(names(h.heldBackStore.getNode('vm-103')), ['immich-server']);
+  assert.equal(h.runs.length, 0);
+
+  delete h.s.fail[`activities:${VM103}:job_run`];
+  const ok = await h.poller.pollOnce();
+  assert.deepEqual(
+    ok.events.map((e) => e.type),
+    ['arcane_cleared']
+  );
+  assert.deepEqual(
+    h.runs.map((x) => x.job),
+    ['arcane-prune']
+  );
+});
+
+test('a run whose job is still finishing is judged on a later poll', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce();
+  // The prune activity has finished; its scheduled job run has not recorded it yet.
+  h.s.activities[`${VM103}:system_prune`].unshift(
+    act('act-sp-3', 'system_prune', 'success', '2026-10-18T04:00:00Z', '2026-10-18T04:00:30Z', {
+      batchId: 'run-x',
+    })
+  );
+  const job = {
+    id: 'job-x',
+    type: 'job_run',
+    status: 'running',
+    batchId: 'run-x',
+    startedAt: '2026-10-18T04:00:00Z',
+    metadata: { trigger: 'scheduled', domainActivityId: '' },
+  };
+  h.s.activities[`${VM103}:job_run`].unshift(job);
+  assert.deepEqual(await h.poller.pollOnce(), { events: [], errors: [] });
+  assert.equal(h.stateStore.hasActivity('vm-103', 'act-sp-3'), false, 'not judged yet');
+  assert.equal(h.runs.length, 0);
+
+  job.status = 'success';
+  job.endedAt = '2026-10-18T04:00:31Z';
+  job.metadata.domainActivityId = 'act-sp-3';
+  await h.poller.pollOnce();
+  assert.equal(h.stateStore.hasActivity('vm-103', 'act-sp-3'), true);
+  assert.deepEqual(
+    h.runs.map((x) => x.job),
+    ['arcane-prune']
+  );
+});
+
+test('job runs are paged back to the oldest unseen run, with a bounded page count', async (t) => {
+  const heal = (i, at) => ({
+    id: `heal-${i}`,
+    type: 'job_run',
+    status: 'success',
+    batchId: `h-${i}`,
+    startedAt: at,
+    endedAt: at,
+    metadata: { trigger: 'scheduled', domainActivityId: `heal-act-${i}` },
+  });
+  const ts = (min) => new Date(Date.parse('2026-10-18T10:00:00Z') + min * 60_000).toISOString();
+  for (const [newer, expectRun] of [
+    [120, true],
+    [260, false],
+  ]) {
+    const h = setup(t);
+    await h.poller.pollOnce();
+    h.s.activities[`${VM103}:system_prune`].unshift(
+      act('act-sp-3', 'system_prune', 'success', ts(0), ts(1), { batchId: 'run-p' })
+    );
+    // An auto-heal job run every 5 minutes after it, newest first, then the prune's own.
+    const jobs = [];
+    for (let i = newer; i >= 1; i--) jobs.push(heal(i, ts(1 + i * 5)));
+    jobs.push({
+      ...heal(0, ts(1)),
+      id: 'job-p',
+      batchId: 'run-p',
+      metadata: { trigger: 'scheduled', domainActivityId: 'act-sp-3' },
+    });
+    h.s.activities[`${VM103}:job_run`] = jobs;
+    const from = h.s.calls.length;
+    await h.poller.pollOnce();
+    const pages = h.s.calls.slice(from).filter((c) => c === `activities:${VM103}:job_run`);
+    assert.equal(h.runs.length, expectRun ? 1 : 0, `${newer} newer job runs`);
+    assert.equal(pages.length, expectRun ? 3 : 4, 'pages read');
+    assert.equal(h.stateStore.hasActivity('vm-103', 'act-sp-3'), true, 'judged either way');
+  }
 });

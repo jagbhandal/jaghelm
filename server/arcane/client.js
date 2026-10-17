@@ -58,9 +58,10 @@ export function createArcaneClient({ baseUrl, apiKey, fetchImpl = safeFetch, tim
     listEnvironments: () => getList('/api/environments?limit=-1'),
     listPendingUpdates: (envId) =>
       getList(`/api/environments/${env(envId)}/containers?updates=has_update&limit=-1`),
-    listActivities: (envId, type, limit = 20) =>
+    listActivities: (envId, type, limit = 20, start = 0) =>
       getList(
-        `/api/environments/${env(envId)}/activities?type=${encodeURIComponent(type)}&order=desc&limit=${limit}`
+        `/api/environments/${env(envId)}/activities?type=${encodeURIComponent(type)}` +
+          `&order=desc&limit=${limit}${start > 0 ? `&start=${start}` : ''}`
       ),
     updaterHistory: (envId, limit = 200) =>
       getList(`/api/environments/${env(envId)}/updater/history?limit=${limit}`),

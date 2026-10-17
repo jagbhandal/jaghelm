@@ -97,3 +97,37 @@ test('http:// URL warns exactly once', () => {
   assert.equal(f.warns.length, 1);
   stopArcane();
 });
+
+test('projectFixture keeps the job-run link fields of activities and nothing else', () => {
+  const out = projectFixture('activities', {
+    success: true,
+    data: [
+      {
+        id: 'j1',
+        type: 'job_run',
+        status: 'success',
+        batchId: 'b1',
+        startedAt: 's',
+        endedAt: 'e',
+        error: '',
+        resourceName: 'Auto Update',
+        startedBy: { username: 'jag', userId: 'u1' },
+        metadata: { trigger: 'scheduled', domainActivityId: 'a1', jobId: 'auto-update', resolution: { by: 'x' } },
+      },
+      { id: 'a1', type: 'system_prune', status: 'success', metadata: { images: { mode: 'all' } } },
+    ],
+  });
+  assert.deepEqual(out.data, [
+    {
+      id: 'j1',
+      type: 'job_run',
+      status: 'success',
+      startedAt: 's',
+      endedAt: 'e',
+      error: '',
+      batchId: 'b1',
+      metadata: { trigger: 'scheduled', domainActivityId: 'a1' },
+    },
+    { id: 'a1', type: 'system_prune', status: 'success' },
+  ]);
+});
