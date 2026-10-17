@@ -8,9 +8,12 @@
  *     stored and its finished activities are marked seen, with no pushes and no
  *     cron runs. An environment becomes known only after a pass where it was up
  *     and every fetch succeeded.
- *   - Per environment, every fetch happens before any state is touched. A
- *     fetch error (network, non-2xx, malformed body) leaves that environment
- *     exactly as it was for this poll: no "caught up" storm, no agent flap.
+ *   - Agent connectivity comes from the environment list's health alone, from
+ *     first sight, independent of the baseline and of the per-environment reads.
+ *   - Per environment, every data fetch happens before any data state is
+ *     touched. A fetch error (network, non-2xx, malformed body) leaves that
+ *     environment's held-back set, seen activities and baseline exactly as they
+ *     were for this poll: no "caught up" storm.
  *   - Only terminal activities with a parseable startedAt are processed; any
  *     other is skipped without being marked seen, so it is retried next poll.
  *   - State advances before dispatch, and a dispatch failure is swallowed, so
@@ -177,17 +180,18 @@ export function createArcanePoller({
   async function pollEnv(env, key, events, errors) {
     const known = stateStore.isKnownEnv(key);
     const health = envHealth(env);
-    // First sight: the agent record starts from a clean baseline.
-    const prevAgent = (known && stateStore.getAgent(key)) || { downPolls: 0, alerted: false };
+
+    // Agent: from list health alone, committed before (and regardless of) any fetch.
+    // No record yet (first sight) starts from a clean {0, false}.
+    const prevAgent = stateStore.getAgent(key) || { downPolls: 0, alerted: false };
     const { agent, event: agentEvent } = stepAgent(prevAgent, health, key);
+    stateStore.setAgent(key, agent);
+    if (agentEvent) events.push(agentEvent);
 
-    if (health !== 'up') {
-      stateStore.setAgent(key, agent);
-      if (agentEvent) events.push(agentEvent);
-      return; // nothing else is fetched, so the environment does not become known
-    }
+    // Nothing else is fetched, so the environment does not become known.
+    if (health !== 'up') return;
 
-    // Fetch phase. Nothing is written until every fetch for this environment succeeded.
+    // Fetch phase. No data state is written until every fetch for this environment succeeded.
     let containers;
     let history = null;
     const pending = {};
@@ -206,10 +210,7 @@ export function createArcanePoller({
       return;
     }
 
-    // Commit phase.
-    stateStore.setAgent(key, agent);
-    if (agentEvent) events.push(agentEvent);
-
+    // Commit phase (data only).
     const held = heldBackSet(containers, { checkOnly: checkOnly.has(key) });
     const { newlyHeldBack, cleared } = heldBackStore.diffAndSet(key, held);
     if (known) {
@@ -223,8 +224,9 @@ export function createArcanePoller({
 
     for (const { type, job } of ACTIVITY_JOBS) {
       for (const { activity, id } of pending[type]) {
-        if (known) processActivity(env, key, type, job, activity, history, events);
+        // Seen first: across a crash the cron run is at most once, like the push.
         stateStore.addActivity(key, id);
+        if (known) processActivity(env, key, type, job, activity, history, events);
       }
     }
 
@@ -248,6 +250,7 @@ export function createArcanePoller({
       }
 
       const byKey = new Map();
+      const shared = new Set();
       for (const env of Array.isArray(envs) ? envs : []) {
         const key = envKey(env);
         if (!key) {
@@ -261,11 +264,19 @@ export function createArcanePoller({
           continue;
         }
         if (env.enabled === false) continue;
-        if (byKey.has(key)) {
-          logOnce(`dup:${key}`, 'warn', { env: key }, 'Skipping duplicate Arcane environment name');
-          continue;
-        }
-        byKey.set(key, env);
+        if (byKey.has(key)) shared.add(key);
+        else byKey.set(key, env);
+      }
+      // A name two environments share has no single owner for its state: skip
+      // every one of them, whatever order the API lists them in.
+      for (const key of shared) {
+        byKey.delete(key);
+        logOnce(
+          `dup:${key}`,
+          'warn',
+          { env: key },
+          'Skipping Arcane environments that share a name'
+        );
       }
 
       // Sorted by name so the event order does not depend on the API's list order.

@@ -25,6 +25,7 @@ const silent = { debug() {}, info() {}, warn() {}, error() {} };
 const VM103 = '0';
 const VM101 = '1';
 const PI1 = '2';
+const PI2 = '3';
 
 /** A fake Arcane manager: mutable per-environment data + injectable failures. */
 function world() {
@@ -40,6 +41,9 @@ function world() {
     fail: {}, // call key -> Error to throw
     calls: [],
   };
+  // The fixture's pi-2 is offline. Default it to online so its agent push
+  // stays out of every data test; connectivity tests take it down explicitly.
+  s.envs.find((e) => e.id === PI2).status = 'online';
   const hit = (key) => {
     s.calls.push(key);
     if (s.fail[key]) throw s.fail[key];
@@ -72,7 +76,7 @@ function world() {
 const PUSH_STORE = { name: 'push-store' };
 const FCM = { name: 'fcm' };
 
-function setup(t, { dir, w = world(), checkOnlyEnvs = new Set(), dispatch } = {}) {
+function setup(t, { dir, w = world(), checkOnlyEnvs = new Set(), dispatch, onRun } = {}) {
   if (!dir) {
     dir = mkdtempSync(join(tmpdir(), 'arcane-poller-'));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -87,7 +91,10 @@ function setup(t, { dir, w = world(), checkOnlyEnvs = new Set(), dispatch } = {}
     client: w.client,
     stateStore,
     heldBackStore,
-    recordRun: (report) => runs.push(report),
+    recordRun: (report) => {
+      runs.push(report);
+      if (onRun) onRun(report);
+    },
     dispatch:
       dispatch ||
       (async (events, deps) => {
@@ -161,14 +168,10 @@ test('first poll is a silent baseline', async (t) => {
   }
   assert.equal(h.stateStore.hasActivity('vm-103', 'act-au-3'), false, 'running: not seen yet');
   assert.equal(h.s.calls.includes(`history:${VM103}`), false, 'unknown env needs no history');
-  for (const name of ['vm-103', 'vm-101', 'pi-1'])
-    assert.equal(h.stateStore.isKnownEnv(name), true);
-  // pi-2 is offline: nothing fetched, so it has no baseline yet.
-  assert.equal(h.stateStore.isKnownEnv('pi-2'), false);
-  assert.equal(
-    h.s.calls.some((c) => c.includes(':3')),
-    false
-  );
+  for (const name of ['vm-103', 'vm-101', 'pi-1', 'pi-2']) {
+    assert.equal(h.stateStore.isKnownEnv(name), true, name);
+    assert.deepEqual(h.stateStore.getAgent(name), { downPolls: 0, alerted: false }, name);
+  }
 
   const again = await h.poller.pollOnce();
   assert.deepEqual(again, { events: [], errors: [] });
@@ -299,7 +302,11 @@ test('completed update run with one updated and one failed container pushes one 
 });
 
 test('failed run with no container rows records failure and pushes nothing', async (t) => {
-  const h = setup(t);
+  const seenAtRun = [];
+  const idFor = { 'arcane-update': 'act-au-4', 'arcane-prune': 'act-sp-3' };
+  const h = setup(t, {
+    onRun: (r) => seenAtRun.push(h.stateStore.hasActivity('vm-103', idFor[r.job])),
+  });
   await h.poller.pollOnce();
   h.s.activities[`${VM103}:auto_update`].unshift(
     act('act-au-4', 'auto_update', 'failed', '2026-10-18T03:00:00Z', '2026-10-18T03:00:20Z', {
@@ -333,6 +340,8 @@ test('failed run with no container rows records failure and pushes nothing', asy
       expected_every_seconds: 86400,
     },
   ]);
+  // Marked seen before its cron run is written: at most one run even across a crash.
+  assert.deepEqual(seenAtRun, [true, true]);
   await h.poller.pollOnce();
   assert.equal(h.runs.length, 2);
 });
@@ -381,12 +390,13 @@ test('running activity is processed only after it becomes terminal', async (t) =
 
 test('agent offline needs two consecutive down polls; recovery pushes once', async (t) => {
   const h = setup(t);
+  setStatus(h.s, PI2, 'offline'); // down from first sight, for the whole test
   await h.poller.pollOnce(); // vm-101 known while up
-  const all = [];
+  const polls = [];
   const poll = async (status) => {
     setStatus(h.s, VM101, status);
     const r = await h.poller.pollOnce();
-    all.push(...r.events);
+    polls.push(r.events);
     return r.events.filter((e) => e.node === 'vm-101');
   };
 
@@ -426,8 +436,102 @@ test('agent offline needs two consecutive down polls; recovery pushes once', asy
   ]);
   assert.deepEqual(h.stateStore.getAgent('vm-101'), { downPolls: 0, alerted: false });
   assert.deepEqual(await poll('online'), []);
-  // pi-2 has been offline since first sight: no baseline, so it never alerts.
-  assert.equal(all.filter((e) => e.node === 'pi-2').length, 0);
+  // pi-2, offline since first sight, alerted exactly once: on poll 2.
+  const pi2 = polls.flat().filter((e) => e.node === 'pi-2');
+  assert.deepEqual(
+    pi2.map((e) => e.type),
+    ['arcane_agent_offline']
+  );
+  assert.equal(polls[0].includes(pi2[0]), true);
+});
+
+test('environment down at first sight alerts on the second poll and recovers once', async (t) => {
+  const h = setup(t);
+  setStatus(h.s, PI2, 'offline');
+  h.s.containers[PI2] = [ctr('adguard')];
+  h.s.activities[`${PI2}:auto_update`] = [
+    act('act-p-1', 'auto_update', 'success', '2026-10-16T03:00:00Z', '2026-10-16T03:01:00Z'),
+  ];
+  h.s.history[PI2] = [row('2026-10-16T03:00:30Z', 'adguard', 'failed')];
+  const pi2 = async () => (await h.poller.pollOnce()).events.filter((e) => e.node === 'pi-2');
+
+  assert.deepEqual(await pi2(), []);
+  assert.deepEqual(h.stateStore.getAgent('pi-2'), { downPolls: 1, alerted: false });
+  assert.equal(h.stateStore.isKnownEnv('pi-2'), false, 'no data baseline while down');
+  assert.deepEqual(await pi2(), [
+    {
+      type: 'arcane_agent_offline',
+      id: 'arcane:pi-2:agent',
+      node: 'pi-2',
+      title: 'Arcane · pi-2',
+      body: 'Agent disconnected; Arcane cannot manage pi-2',
+      severity: 'warning',
+    },
+  ]);
+  assert.deepEqual(await pi2(), []);
+  assert.equal(
+    h.s.calls.some((c) => c.includes(`:${PI2}`)),
+    false,
+    'down: never fetched'
+  );
+
+  // Back up: one recovery push, and the first data pass is still a silent baseline.
+  setStatus(h.s, PI2, 'standby');
+  assert.deepEqual(
+    (await pi2()).map((e) => e.type),
+    ['arcane_agent_recovered']
+  );
+  assert.equal(h.stateStore.isKnownEnv('pi-2'), true);
+  assert.deepEqual(names(h.heldBackStore.getNode('pi-2')), ['adguard']);
+  assert.equal(h.stateStore.hasActivity('pi-2', 'act-p-1'), true);
+  assert.equal(h.runs.length, 0);
+  assert.deepEqual(await pi2(), []);
+});
+
+test('an up poll with a fetch error still resets the down streak', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce();
+  const vm101 = async (status) => {
+    setStatus(h.s, VM101, status);
+    return (await h.poller.pollOnce()).events.filter((e) => e.node === 'vm-101');
+  };
+
+  assert.deepEqual(await vm101('offline'), []);
+  h.s.fail[`containers:${VM101}`] = new ArcaneError(
+    'Arcane HTTP 500 for /api/environments/1/containers',
+    500
+  );
+  assert.deepEqual(await vm101('online'), []);
+  assert.deepEqual(h.stateStore.getAgent('vm-101'), { downPolls: 0, alerted: false });
+  delete h.s.fail[`containers:${VM101}`];
+  assert.deepEqual(await vm101('offline'), [], 'down, up, down is not two consecutive downs');
+  assert.deepEqual(h.stateStore.getAgent('vm-101'), { downPolls: 1, alerted: false });
+  assert.deepEqual(
+    (await vm101('offline')).map((e) => e.type),
+    ['arcane_agent_offline']
+  );
+});
+
+test('a restart after a first-sight-down alert stays silent', async (t) => {
+  const a = setup(t);
+  setStatus(a.s, PI2, 'offline');
+  await a.poller.pollOnce();
+  assert.deepEqual(
+    (await a.poller.pollOnce()).events.map((e) => `${e.node}|${e.type}`),
+    ['pi-2|arcane_agent_offline']
+  );
+
+  const b = setup(t, { dir: a.dir, w: a.w });
+  assert.deepEqual(await b.poller.pollOnce(), { events: [], errors: [] });
+  assert.deepEqual(await b.poller.pollOnce(), { events: [], errors: [] });
+  assert.equal(b.dispatched.length, 0);
+
+  setStatus(a.s, PI2, 'online');
+  assert.deepEqual(
+    (await b.poller.pollOnce()).events.map((e) => `${e.node}|${e.type}`),
+    ['pi-2|arcane_agent_recovered']
+  );
+  assert.deepEqual((await b.poller.pollOnce()).events, []);
 });
 
 test('pollOnce leaves state untouched when the API fails', async (t) => {
@@ -495,17 +599,22 @@ test('pollOnce leaves state untouched when the API fails', async (t) => {
       401
     );
     const r = await h.poller.pollOnce();
-    assert.deepEqual(r.events, []);
+    // Connectivity comes from the environment list alone, so recovery is not held back;
+    // the data (held-back set) is frozen until its reads succeed.
+    assert.deepEqual(
+      r.events.map((e) => e.type),
+      ['arcane_agent_recovered']
+    );
     assert.equal(r.errors.length, 1);
-    assert.deepEqual(h.stateStore.getAgent('vm-101'), { downPolls: 2, alerted: true });
+    assert.deepEqual(h.stateStore.getAgent('vm-101'), { downPolls: 0, alerted: false });
     assert.deepEqual(names(h.heldBackStore.getNode('vm-101')), ['code-server']);
 
-    // Once the API answers again, the deferred transitions arrive exactly once.
+    // Once the API answers again, only the deferred data transition arrives, once.
     delete h.s.fail[`activities:${VM101}:auto_update`];
     const ok = await h.poller.pollOnce();
     assert.deepEqual(
       ok.events.map((e) => e.type),
-      ['arcane_agent_recovered', 'arcane_cleared']
+      ['arcane_cleared']
     );
     assert.deepEqual((await h.poller.pollOnce()).events, []);
   }
@@ -550,6 +659,31 @@ test('renamed environment gets a silent baseline', async (t) => {
     next.events.map((e) => `${e.node}|${e.body}`),
     ['vm-101-new|1 update held back: whoami']
   );
+});
+
+test('environments sharing a name are all skipped', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce();
+  const before = h.stateStore.getAgent('vm-101');
+  // A second "vm-101", listed before and then after the real one.
+  const twin = { id: '9', name: 'vm-101', status: 'offline', enabled: true, isEdge: true };
+  for (const order of ['before', 'after', 'before']) {
+    const real = h.s.envs.filter((e) => e.id !== '9');
+    h.s.envs = order === 'before' ? [twin, ...real] : [...real, twin];
+    h.s.containers[VM101] = [ctr(`n-${h.s.calls.length}`)]; // would push if processed
+    const from = h.s.calls.length;
+    const r = await h.poller.pollOnce();
+    assert.deepEqual(r, { events: [], errors: [] }, order);
+    const calls = h.s.calls.slice(from);
+    assert.equal(
+      calls.some((c) => c.includes(`:${VM101}`) || c.includes(':9')),
+      false,
+      order
+    );
+    assert.ok(calls.includes(`containers:${VM103}`), 'other environments still polled');
+  }
+  assert.deepEqual(h.stateStore.getAgent('vm-101'), before);
+  assert.deepEqual(h.heldBackStore.getNode('vm-101'), []);
 });
 
 test('a fresh poller on the same state files emits nothing new', async (t) => {
