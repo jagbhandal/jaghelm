@@ -326,3 +326,76 @@ test('pending map is sanitised, bounded and prototype-safe', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('awaiting runs round-trip; a file without them loads as none', () => {
+  const { path, dir } = tmp();
+  try {
+    const s = createArcaneStateStore({ path });
+    const rec = {
+      id: 'act-1', batchId: 'run-1', job: 'arcane-update', cronStatus: 'failure',
+      error: 'boom', startedMs: 1760000000000, firstSeenMs: 1760000060000,
+    };
+    assert.deepEqual(s.getAwaiting('vm-103'), []);
+    s.setAwaiting('vm-103', [rec]);
+    const b = createArcaneStateStore({ path });
+    assert.deepEqual(b.getAwaiting('vm-103'), [rec]);
+    b.getAwaiting('vm-103')[0].id = 'changed';
+    assert.equal(b.getAwaiting('vm-103')[0].id, 'act-1', 'a copy');
+    b.setAwaiting('vm-103', []);
+    const j = JSON.parse(readFileSync(path, 'utf8'));
+    assert.equal('awaiting' in j.envs['vm-103'], false, 'left out when empty');
+    assert.deepEqual(createArcaneStateStore({ path }).getAwaiting('vm-103'), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('awaiting runs are sanitised and bounded', () => {
+  const { path, dir } = tmp();
+  try {
+    const ok = (i) => ({
+      id: `a-${i}`, batchId: '', job: 'arcane-prune', cronStatus: 'success', error: '',
+      startedMs: 1000 + i, firstSeenMs: 2000 + i,
+    });
+    writeFileSync(path, JSON.stringify({
+      envs: {
+        a: {
+          known: true,
+          activities: [],
+          awaiting: [
+            ok(1),
+            { ...ok(2), job: 'other' },
+            { ...ok(3), cronStatus: 'maybe' },
+            { ...ok(4), id: '' },
+            { ...ok(5), firstSeenMs: 'x' },
+            { ...ok(6), startedMs: null },
+            { ...ok(7), error: 'e'.repeat(3000), id: 'i'.repeat(300), batchId: 7 },
+            'junk',
+            null,
+          ],
+        },
+        b: { known: true, activities: [], awaiting: { not: 'a list' } },
+        c: { known: true, activities: [], awaiting: Array.from({ length: 70 }, (_, i) => ok(i)) },
+      },
+    }));
+    const s = createArcaneStateStore({ path });
+    const a = s.getAwaiting('a');
+    assert.deepEqual(a.map((r) => r.id.slice(0, 3)), ['a-1', 'iii']);
+    assert.equal(a[1].id.length, 256);
+    assert.equal(a[1].error.length, 2048);
+    assert.equal(a[1].batchId, '');
+    assert.deepEqual(s.getAwaiting('b'), []);
+    const c = s.getAwaiting('c');
+    assert.equal(c.length, 50, 'bounded per environment');
+    assert.equal(c[0].id, 'a-20', 'keeps the newest');
+    // No write when nothing changed.
+    s.setAwaiting('a', a);
+    const old = new Date(2020, 0, 1);
+    utimesSync(path, old, old);
+    const before = statSync(path).mtimeMs;
+    s.setAwaiting('a', s.getAwaiting('a'));
+    assert.equal(statSync(path).mtimeMs, before);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

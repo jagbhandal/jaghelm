@@ -58,10 +58,10 @@ function world() {
       hit(`containers:${id}`);
       return clone(s.containers[id] ?? []);
     },
-    async listActivities(id, type, limit, start = 0) {
+    // Like the real client: 20 rows unless asked for more, newest first.
+    async listActivities(id, type, limit = 20, start = 0) {
       hit(`activities:${id}:${type}`);
-      const all = clone(s.activities[`${id}:${type}`] ?? []);
-      return typeof limit === 'number' ? all.slice(start, start + limit) : all;
+      return clone(s.activities[`${id}:${type}`] ?? []).slice(start, start + limit);
     },
     async updaterHistory(id) {
       hit(`history:${id}`);
@@ -78,7 +78,10 @@ function world() {
 const PUSH_STORE = { name: 'push-store' };
 const FCM = { name: 'fcm' };
 
-function setup(t, { dir, w = world(), checkOnlyEnvs = new Set(), dispatch, onRun, fcm, sleep, logger } = {}) {
+function setup(
+  t,
+  { dir, w = world(), checkOnlyEnvs = new Set(), dispatch, onRun, fcm, sleep, logger, now } = {}
+) {
   if (!dir) {
     dir = mkdtempSync(join(tmpdir(), 'arcane-poller-'));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -107,6 +110,7 @@ function setup(t, { dir, w = world(), checkOnlyEnvs = new Set(), dispatch, onRun
     checkOnlyEnvs,
     logger: logger || silent,
     ...(sleep ? { sleep } : {}),
+    ...(now ? { now } : {}),
   });
   const files = () => ({
     state: existsSync(statePath) ? readFileSync(statePath, 'utf8') : null,
@@ -1097,37 +1101,202 @@ test('a job run read failure leaves the environment unchanged', async (t) => {
   );
 });
 
-test('a run whose job is still finishing is judged on a later poll', async (t) => {
-  const h = setup(t);
+test('a finished run pushes at once; its cron row waits for its job run', async (t) => {
+  let clock = Date.parse('2026-10-18T05:00:00Z');
+  const h = setup(t, { now: () => clock });
   await h.poller.pollOnce();
-  // The prune activity has finished; its scheduled job run has not recorded it yet.
-  h.s.activities[`${VM103}:system_prune`].unshift(
-    act('act-sp-3', 'system_prune', 'success', '2026-10-18T04:00:00Z', '2026-10-18T04:00:30Z', {
-      batchId: 'run-x',
+  const au = `${VM103}:auto_update`;
+  // The update finished; its scheduled job run is still queued (waiting / retrying).
+  h.s.activities[au].unshift(
+    act('act-au-9', 'auto_update', 'success', '2026-10-18T04:00:00Z', '2026-10-18T04:01:00Z', {
+      batchId: 'run-9',
     })
   );
+  h.s.history[VM103].unshift(row('2026-10-18T04:00:30Z', 'immich-server', 'updated'));
   const job = {
-    id: 'job-x',
+    id: 'job-9',
     type: 'job_run',
-    status: 'running',
-    batchId: 'run-x',
+    status: 'queued',
+    batchId: 'run-9',
     startedAt: '2026-10-18T04:00:00Z',
     metadata: { trigger: 'scheduled', domainActivityId: '' },
   };
   h.s.activities[`${VM103}:job_run`].unshift(job);
-  assert.deepEqual(await h.poller.pollOnce(), { events: [], errors: [] });
-  assert.equal(h.stateStore.hasActivity('vm-103', 'act-sp-3'), false, 'not judged yet');
-  assert.equal(h.runs.length, 0);
+  const bodies = [];
+  for (let i = 0; i < 5; i++) {
+    const r = await h.poller.pollOnce();
+    bodies.push(r.events.map((e) => e.body));
+    clock += 300_000;
+  }
+  assert.deepEqual(bodies, [['1 updated: immich-server'], [], [], [], []], 'pushed once, first poll');
+  assert.equal(h.stateStore.hasActivity('vm-103', 'act-au-9'), true, 'seen on the first poll');
+  assert.equal(h.runs.length, 0, 'no cron row while the job run is unfinished');
+  assert.deepEqual(
+    h.stateStore.getAwaiting('vm-103').map((r) => r.id),
+    ['act-au-9']
+  );
 
-  job.status = 'success';
-  job.endedAt = '2026-10-18T04:00:31Z';
-  job.metadata.domainActivityId = 'act-sp-3';
+  // A restart keeps the wait; the job run then finishes as scheduled: one cron row.
+  const b = setup(t, { dir: h.dir, w: h.w, now: () => clock });
+  Object.assign(job, { status: 'success', endedAt: '2026-10-18T04:20:00Z' });
+  job.metadata.domainActivityId = 'act-au-9';
+  assert.deepEqual((await b.poller.pollOnce()).events, []);
+  assert.deepEqual(
+    b.runs.map((x) => `${x.job}:${x.status}`),
+    ['arcane-update:success']
+  );
+  assert.deepEqual(b.stateStore.getAwaiting('vm-103'), []);
+  await b.poller.pollOnce();
+  assert.equal(b.runs.length, 1, 'exactly one');
+});
+
+test('a job run that never finishes ends the wait after 30 minutes, with one log line', async (t) => {
+  let clock = Date.parse('2026-10-18T05:00:00Z');
+  const lines = [];
+  const rec = (level) => (fields, msg) => lines.push({ level, msg: msg ?? fields });
+  const logger = { debug: rec('debug'), info: rec('info'), warn: rec('warn'), error: rec('error') };
+  const h = setup(t, { now: () => clock, logger });
   await h.poller.pollOnce();
-  assert.equal(h.stateStore.hasActivity('vm-103', 'act-sp-3'), true);
+  h.s.activities[`${VM103}:system_prune`].unshift(
+    act('act-sp-7', 'system_prune', 'success', '2026-10-18T04:59:00Z', '2026-10-18T04:59:30Z', {
+      batchId: 'run-7',
+    })
+  );
+  const job = {
+    id: 'job-7',
+    type: 'job_run',
+    status: 'queued',
+    batchId: 'run-7',
+    startedAt: '2026-10-18T04:59:00Z',
+    metadata: { trigger: 'scheduled', domainActivityId: '' },
+  };
+  h.s.activities[`${VM103}:job_run`].unshift(job);
+  await h.poller.pollOnce(); // first seen at 05:00
+  const timedOut = () => lines.filter((l) => /unfinished after 30 min/.test(l.msg));
+  clock += 29 * 60_000;
+  await h.poller.pollOnce();
+  assert.equal(h.stateStore.getAwaiting('vm-103').length, 1, 'still waiting at 29 min');
+  clock += 2 * 60_000;
+  await h.poller.pollOnce();
+  assert.deepEqual(h.stateStore.getAwaiting('vm-103'), [], 'judged manual after 30 min');
+  assert.equal(timedOut().length, 1);
+  assert.equal(timedOut()[0].level, 'info');
+  // Finishing later changes nothing: the decision is made.
+  Object.assign(job, { status: 'success', endedAt: '2026-10-18T05:40:00Z' });
+  job.metadata.domainActivityId = 'act-sp-7';
+  await h.poller.pollOnce();
+  await h.poller.pollOnce();
+  assert.equal(h.runs.length, 0);
+  assert.equal(timedOut().length, 1, 'logged once');
+});
+
+test('a waiting run pushed out of the 20-row activity window still pushed and still records', async (t) => {
+  let clock = Date.parse('2026-10-18T05:00:00Z');
+  const h = setup(t, { now: () => clock });
+  await h.poller.pollOnce();
+  const au = `${VM103}:auto_update`;
+  h.s.activities[au].unshift(
+    act('act-au-9', 'auto_update', 'success', '2026-10-18T04:00:00Z', '2026-10-18T04:01:00Z', {
+      batchId: 'run-9',
+    })
+  );
+  h.s.history[VM103].unshift(row('2026-10-18T04:00:30Z', 'immich-server', 'updated'));
+  const job = {
+    id: 'job-9',
+    type: 'job_run',
+    status: 'queued',
+    batchId: 'run-9',
+    startedAt: '2026-10-18T04:00:00Z',
+    metadata: { trigger: 'scheduled', domainActivityId: '' },
+  };
+  h.s.activities[`${VM103}:job_run`].unshift(job);
+  const first = await h.poller.pollOnce();
+  assert.deepEqual(
+    first.events.map((e) => e.body),
+    ['1 updated: immich-server'],
+    'on time'
+  );
+  // 22 newer manual activities: act-au-9 is no longer in the 20 rows read.
+  for (let i = 0; i < 22; i++) {
+    const at = new Date(Date.parse('2026-10-18T04:05:00Z') + i * 60_000).toISOString();
+    h.s.activities[au].unshift(act(`m-${i}`, 'auto_update', 'success', at, at));
+  }
+  clock += 300_000;
+  await h.poller.pollOnce();
+  assert.equal(
+    h.s.activities[au].slice(0, 20).some((a) => a.id === 'act-au-9'),
+    false,
+    'out of the window'
+  );
+  Object.assign(job, { status: 'success', endedAt: '2026-10-18T04:30:00Z' });
+  job.metadata.domainActivityId = 'act-au-9';
+  clock += 300_000;
+  await h.poller.pollOnce();
   assert.deepEqual(
     h.runs.map((x) => x.job),
-    ['arcane-prune']
+    ['arcane-update']
   );
+  const sentImmich = h.dispatched.flatMap((d) => d.events).filter((e) => /immich-server/.test(e.body));
+  assert.equal(sentImmich.length, 1);
+});
+
+test('waiting runs: manual trigger drops, a job run read failure keeps, the cap judges manual', async (t) => {
+  let clock = Date.parse('2026-10-18T05:00:00Z');
+  const h = setup(t, { now: () => clock });
+  await h.poller.pollOnce();
+  const sp = `${VM103}:system_prune`;
+  const jr = `${VM103}:job_run`;
+  const waiting = (n, at) => {
+    h.s.activities[sp].unshift(
+      act(`w-${n}`, 'system_prune', 'success', at, at, { batchId: `rb-${n}` })
+    );
+    const job = {
+      id: `jw-${n}`,
+      type: 'job_run',
+      status: 'running',
+      batchId: `rb-${n}`,
+      startedAt: at,
+      metadata: { trigger: 'manual', domainActivityId: '' },
+    };
+    h.s.activities[jr].unshift(job);
+    return job;
+  };
+  const j1 = waiting(1, '2026-10-18T04:50:00Z');
+  await h.poller.pollOnce();
+  assert.equal(h.stateStore.getAwaiting('vm-103').length, 1);
+
+  // The job run read fails: the wait is left exactly as it is.
+  h.s.fail[`activities:${VM103}:job_run`] = new ArcaneError('Arcane HTTP 500 for /x', 500);
+  Object.assign(j1, { status: 'success', endedAt: '2026-10-18T04:51:00Z' });
+  j1.metadata.domainActivityId = 'w-1';
+  await h.poller.pollOnce();
+  assert.deepEqual(
+    h.stateStore.getAwaiting('vm-103').map((r) => r.id),
+    ['w-1']
+  );
+  delete h.s.fail[`activities:${VM103}:job_run`];
+  // Back: it was a "Run now" (trigger manual), so it is dropped without a cron row.
+  await h.poller.pollOnce();
+  assert.deepEqual(h.stateStore.getAwaiting('vm-103'), []);
+  assert.equal(h.runs.length, 0);
+
+  // More than 50 waiting at once: the oldest are judged manual.
+  h.s.activities[sp] = [];
+  h.s.activities[jr] = [];
+  for (let poll = 0; poll < 3; poll++) {
+    for (let i = 0; i < 18; i++) {
+      const n = poll * 18 + i;
+      const at = new Date(Date.parse('2026-10-18T05:00:00Z') + n * 1000).toISOString();
+      waiting(100 + n, at);
+    }
+    clock += 60_000;
+    await h.poller.pollOnce();
+  }
+  const ids = h.stateStore.getAwaiting('vm-103').map((r) => r.id);
+  assert.equal(ids.length, 50);
+  assert.equal(ids.includes('w-100'), false, 'oldest out');
+  assert.equal(ids.includes('w-153'), true, 'newest kept');
+  assert.equal(h.runs.length, 0);
 });
 
 test('job runs are paged back to the oldest unseen run, with a bounded page count', async (t) => {

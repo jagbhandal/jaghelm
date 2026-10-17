@@ -144,9 +144,17 @@ from the updater page, and the Jobs page's "Run now". They still push their upda
 failed containers (§5). Arcane gives a scheduled and a manual activity the same shape, so
 JagHelm reads the environment's `job_run` activities: a run counts as scheduled only when a
 job run with trigger `scheduled` (or `recovery`, a missed slot the scheduler runs late)
-names it as the activity it produced. While that job run is still finishing, the activity is
-judged on a later poll. Job runs are read newest first, 50 per page and at most 4 pages, back
-to the oldest run being judged; a run whose job run lies further back counts as manual.
+names it as the activity it produced. Job runs are read newest first, 50 per page and at
+most 4 pages, back to the oldest run being judged; a run whose job run lies further back
+counts as manual.
+
+A finished run always pushes on the poll that first sees it. If its job run has not finished
+yet (Arcane can hold a job run queued or retrying), only the cron decision waits: the run is
+kept in `arcane-state.json` and checked again on each poll. It is recorded once its job run
+finishes as `scheduled` or `recovery`, and dropped if that turns out `manual`. A run still
+waiting after 30 minutes, or pushed out by more than 50 waiting runs in one environment,
+counts as manual (no cron run, one log line). A failed job-run read leaves the waiting runs
+as they are.
 
 ## 7. Keep Arcane away from JagHelm itself
 
@@ -180,9 +188,10 @@ environment. Review the files before committing them anywhere.
 ## 9. Files JagHelm keeps
 
 In the data volume: `arcane-state.json` (which environments are baselined, agent down
-counters, recent activity ids, each environment's pending updates, last notified release) and
-`arcane-held-back.json` (held-back containers per environment). Deleting both makes the next
-poll a fresh silent baseline. Do not delete only `arcane-held-back.json`: the environments
+counters, recent activity ids, each environment's pending updates, runs waiting on their job
+run, last notified release) and `arcane-held-back.json` (held-back containers per
+environment). Deleting both makes the next poll a fresh silent baseline. Do not delete only
+`arcane-held-back.json`: the environments
 stay known in `arcane-state.json`, so the next poll announces every held-back container
 again as newly held back.
 

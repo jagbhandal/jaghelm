@@ -4,17 +4,20 @@
  * Remembers across JagHelm restarts which environments have had their silent
  * baseline, each agent's down-poll counter and alerted flag, the last
  * activity ids seen per environment, each environment's pending map (every
- * container with an update, any tier, name -> latest), and the last Arcane
- * release notified. Without it a restart would re-announce standing state as new.
+ * container with an update, any tier, name -> latest), the finished runs whose
+ * cron decision waits on their job run ("awaiting"), and the last Arcane release
+ * notified. Without it a restart would re-announce standing state as new.
  *
  * Mirrors heldBackStore's idiom: null-prototype maps (environment names are
  * untrusted), a tolerant load() that never throws, and atomicWriteFileSync
  * only when something actually changed.
- * Persisted shape: { envs: { [name]: { known, agent, activities, pending? } },
+ * Persisted shape: { envs: { [name]: { known, agent, activities, pending?, awaiting? } },
  * release: { notified }, order: string[] }. `order` is true insertion order, since JSON
  * object key order puts integer-like names first; files without it load fine. `pending`
  * ({ [container]: latest }) is absent until first recorded; a file without it loads as
- * "no pending map" for that environment.
+ * "no pending map" for that environment. `awaiting` (a list of
+ * { id, batchId, job, cronStatus, error, startedMs, firstSeenMs }) is left out when
+ * empty; a file without it has none.
  */
 import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
@@ -29,7 +32,11 @@ const DEFAULT_PATH = join(DATA_DIR, 'arcane-state.json');
 const MAX_ENVS = 50;
 const MAX_ACTIVITIES = 200;
 const MAX_PENDING = 500; // containers per environment
+const MAX_AWAITING = 50; // runs per environment waiting on their job run
+const MAX_ERROR = 2048;
 const MAX_FIELD = 256;
+const AWAIT_JOBS = new Set(['arcane-update', 'arcane-prune']);
+const AWAIT_STATUSES = new Set(['success', 'failure']);
 
 const isStr = (v) => typeof v === 'string' && v.length > 0;
 const norm = (v) => v.slice(0, MAX_FIELD);
@@ -64,8 +71,42 @@ function pendingEntries(p) {
   return Object.keys(p).map((k) => [k, p[k]]);
 }
 
+const isMs = (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+
+/** One awaiting run, or null when it is not one. */
+function sanitizeAwaitingRec(r) {
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+  if (!isStr(r.id) || !AWAIT_JOBS.has(r.job) || !AWAIT_STATUSES.has(r.cronStatus)) return null;
+  if (!isMs(r.startedMs) || !isMs(r.firstSeenMs)) return null;
+  return {
+    id: norm(r.id),
+    batchId: typeof r.batchId === 'string' ? norm(r.batchId) : '',
+    job: r.job,
+    cronStatus: r.cronStatus,
+    error: typeof r.error === 'string' ? r.error.slice(0, MAX_ERROR) : '',
+    startedMs: r.startedMs,
+    firstSeenMs: r.firstSeenMs,
+  };
+}
+
+/** A list of awaiting runs: invalid entries and repeated ids dropped, newest MAX kept. */
+function sanitizeAwaiting(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  const ids = new Set();
+  for (const r of list) {
+    const rec = sanitizeAwaitingRec(r);
+    if (!rec || ids.has(rec.id)) continue;
+    ids.add(rec.id);
+    out.push(rec);
+  }
+  return out.slice(-MAX_AWAITING);
+}
+
+const sameAwaiting = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
 function sanitizeEnv(e) {
-  const rec = { known: false, agent: null, activities: [], pending: null };
+  const rec = { known: false, agent: null, activities: [], pending: null, awaiting: [] };
   if (!e || typeof e !== 'object' || Array.isArray(e)) return rec;
   rec.known = e.known === true;
   rec.agent = sanitizeAgent(e.agent);
@@ -79,6 +120,7 @@ function sanitizeEnv(e) {
     rec.activities = rec.activities.slice(-MAX_ACTIVITIES);
   }
   rec.pending = sanitizePending(pendingEntries(e.pending));
+  rec.awaiting = sanitizeAwaiting(e.awaiting);
   return rec;
 }
 
@@ -87,6 +129,7 @@ function serializeEnv(rec) {
   const out = { known: rec.known, agent: rec.agent, activities: rec.activities };
   // fromEntries defines own properties, so a '__proto__' container stays a plain key.
   if (rec.pending) out.pending = Object.fromEntries(rec.pending);
+  if (rec.awaiting.length > 0) out.awaiting = rec.awaiting;
   return out;
 }
 
@@ -149,7 +192,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
   function ensureEnv(name) {
     let rec = envs.get(name);
     if (rec) return rec;
-    rec = { known: false, agent: null, activities: [], pending: null };
+    rec = { known: false, agent: null, activities: [], pending: null, awaiting: [] };
     envs.set(name, rec);
     for (const k of envs.keys()) {
       if (envs.size <= MAX_ENVS) break;
@@ -213,6 +256,20 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
     save();
   }
 
+  /** The environment's runs waiting on their job run (copies), oldest first. */
+  function getAwaiting(name) {
+    return (envs.get(name)?.awaiting ?? []).map((r) => ({ ...r }));
+  }
+
+  /** Replace the environment's awaiting runs; sanitised and bounded; writes only on change. */
+  function setAwaiting(name, list) {
+    if (!isStr(name)) return;
+    const next = sanitizeAwaiting(list);
+    if (sameAwaiting(envs.get(name)?.awaiting ?? [], next)) return;
+    ensureEnv(name).awaiting = next;
+    save();
+  }
+
   function getReleaseNotified() {
     return notified;
   }
@@ -227,6 +284,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
 
   return {
     isKnownEnv, markKnownEnv, getAgent, setAgent,
-    hasActivity, addActivity, getPending, setPending, getReleaseNotified, setReleaseNotified,
+    hasActivity, addActivity, getPending, setPending, getAwaiting, setAwaiting,
+    getReleaseNotified, setReleaseNotified,
   };
 }
