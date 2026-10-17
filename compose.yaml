@@ -73,4 +73,6 @@ services:
 
     labels:
       - com.centurylinklabs.watchtower.enable=false
+      - com.getarcaneapp.arcane.updater=false
+      - com.getarcaneapp.arcane.update-check=false
 networks: {}

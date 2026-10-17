@@ -42,6 +42,7 @@ import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
 import { startBackgroundRefresh, stopBackgroundRefresh } from './refresh.js';
 import * as fcmModule from './push/fcm.js';
+import { startArcane, stopArcane } from './arcane/index.js';
 
 // Shared utilities
 import { createUploadMiddleware } from './upload.js';
@@ -312,6 +313,7 @@ async function boot() {
 
   startConfigWatcher();
   startBackgroundRefresh();
+  startArcane();
 
   const server = app.listen(PORT, '0.0.0.0', () => {
     log.info({ version: VERSION, port: PORT }, 'listening');
@@ -335,6 +337,7 @@ async function boot() {
     shuttingDown = true;
     log.info({ signal }, 'shutting down');
     stopBackgroundRefresh();
+    stopArcane();
     const forceExit = setTimeout(() => {
       log.warn('forced exit after 10s drain timeout');
       process.exit(1);
