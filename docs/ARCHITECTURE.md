@@ -166,9 +166,11 @@ flowchart TD
 `server/arcane/` adds a second, independent loop when `ARCANE_URL` and `ARCANE_API_KEY` are
 set (never in demo mode): `startArcane()` runs from `boot()` and polls the Arcane manager
 every `ARCANE_POLL_SECONDS` (default 300) plus a release check every
-`ARCANE_RELEASE_CHECK_HOURS` (default 6). It diffs against persisted state and emits push
-events through `dispatchEvents` and run reports into the cron store. Its `arcane_*` push
-types map to the `watchtower` preference category. Setup: [arcane/SETUP.md](arcane/SETUP.md).
+`ARCANE_RELEASE_CHECK_HOURS` (default 6). With FCM credentials configured, the first poll and
+release check wait up to 30 s for push to be ready. It diffs against persisted state and emits
+push events through `dispatchEvents`, and records Arcane's scheduler-started runs into the
+cron store. Its `arcane_*` push types map to the `watchtower` preference category. Setup:
+[arcane/SETUP.md](arcane/SETUP.md).
 
 ### 4.3 Integration engine
 

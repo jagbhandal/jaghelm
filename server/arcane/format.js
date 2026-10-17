@@ -1,6 +1,15 @@
 // Pure builders: Arcane poll results -> push events. No I/O.
 
-const join = (names) => names.join(', ');
+// Names come from Arcane (untrusted) and FCM rejects bodies over 4 KB, which the
+// sender treats as a dead token: cap each name and the list length.
+const NAME_MAX = 64;
+const LIST_MAX = 10;
+const capName = (n) => (n.length > NAME_MAX ? `${n.slice(0, NAME_MAX - 1)}…` : n);
+const join = (names) => {
+  const shown = names.slice(0, LIST_MAX).map(capName).join(', ');
+  const more = names.length - LIST_MAX;
+  return more > 0 ? `${shown} +${more} more` : shown;
+};
 
 /** Update digest for one environment. */
 export function buildUpdatePush({ env, updated, failed }) {

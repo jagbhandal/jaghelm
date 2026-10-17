@@ -108,3 +108,22 @@ test('activities are read page by page (job_run)', async () => {
     ]
   );
 });
+
+test('network error carries the cause code, never the key', async () => {
+  const c = createArcaneClient({
+    baseUrl: 'https://m',
+    apiKey: KEY,
+    fetchImpl: async () => {
+      throw new TypeError('fetch failed', {
+        cause: Object.assign(new Error(`self-signed ${KEY}`), { code: 'DEPTH_ZERO_SELF_SIGNED_CERT' }),
+      });
+    },
+  });
+  await assert.rejects(c.listEnvironments(), (e) => {
+    assert.equal(e.message, 'Arcane request failed: fetch failed (DEPTH_ZERO_SELF_SIGNED_CERT)');
+    assert.equal(e.message.includes(KEY), false);
+    return true;
+  });
+  const plain = createArcaneClient({ baseUrl: 'https://m', apiKey: KEY, fetchImpl: async () => { throw new Error('boom'); } });
+  await assert.rejects(plain.listEnvironments(), { message: 'Arcane request failed: boom' });
+});

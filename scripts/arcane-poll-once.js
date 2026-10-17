@@ -12,6 +12,6 @@
  * (no labels, env or anything else), under the fixture names in
  * server/arcane/fixtures/. The API key is never printed.
  */
-import { runPollOnce } from '../server/arcane/pollOnce.js';
+import { main } from '../server/arcane/pollOnce.js';
 
-process.exitCode = await runPollOnce({ argv: process.argv.slice(2) });
+process.exitCode = await main({ argv: process.argv.slice(2) });

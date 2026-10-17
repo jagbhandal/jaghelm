@@ -17,6 +17,9 @@ import { createLogger } from '../util/logger.js';
 
 // Module-level singleton: initPush runs once at boot; one FCM messaging instance per process.
 let messaging = null;
+// True from the moment usable creds were read until init fails: push is (or is about to
+// be) live. Lets boot-time callers wait for the async factory instead of dropping events.
+let configured = false;
 let log = createLogger('push:fcm');
 
 /**
@@ -72,6 +75,7 @@ export function initPush({
 } = {}) {
   if (logger) log = logger;
   messaging = null;
+  configured = false;
 
   const path = resolveCredsPath(credsPath, env);
   if (!path) {
@@ -89,6 +93,7 @@ export function initPush({
     return;
   }
 
+  configured = true;
   try {
     const built = messagingFactory(serviceAccount);
     // Injected sync factories return messaging directly; the default async
@@ -100,11 +105,13 @@ export function initPush({
             messaging = m;
             log.info('push enabled: FCM messaging initialized');
           } else {
+            configured = false;
             log.warn('push disabled: messaging factory returned no usable messaging');
           }
         })
         .catch((err) => {
           messaging = null;
+          configured = false;
           log.warn({ errType: err && err.constructor && err.constructor.name }, 'push disabled: messaging factory rejected');
         });
     } else {
@@ -112,11 +119,13 @@ export function initPush({
         messaging = built;
         log.info('push enabled: FCM messaging initialized');
       } else {
+        configured = false;
         log.warn('push disabled: messaging factory returned no usable messaging');
       }
     }
   } catch (err) {
     messaging = null;
+    configured = false;
     log.warn({ errType: err && err.constructor && err.constructor.name }, 'push disabled: messaging factory threw');
   }
 }
@@ -124,6 +133,15 @@ export function initPush({
 /** @returns {boolean} whether push delivery is live (messaging built). */
 export function isPushEnabled() {
   return messaging != null;
+}
+
+/**
+ * @returns {boolean} whether push is set up to come up: usable creds were read and the
+ * messaging factory has not failed. While true and isPushEnabled() is still false, the
+ * async factory is in flight (the boot race noted on initPush).
+ */
+export function isPushConfigured() {
+  return configured;
 }
 
 /**

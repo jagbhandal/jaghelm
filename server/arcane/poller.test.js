@@ -78,7 +78,7 @@ function world() {
 const PUSH_STORE = { name: 'push-store' };
 const FCM = { name: 'fcm' };
 
-function setup(t, { dir, w = world(), checkOnlyEnvs = new Set(), dispatch, onRun } = {}) {
+function setup(t, { dir, w = world(), checkOnlyEnvs = new Set(), dispatch, onRun, fcm, sleep, logger } = {}) {
   if (!dir) {
     dir = mkdtempSync(join(tmpdir(), 'arcane-poller-'));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -103,9 +103,10 @@ function setup(t, { dir, w = world(), checkOnlyEnvs = new Set(), dispatch, onRun
         dispatched.push({ events, deps });
       }),
     pushStore: PUSH_STORE,
-    fcm: FCM,
+    fcm: fcm || FCM,
     checkOnlyEnvs,
-    logger: silent,
+    logger: logger || silent,
+    ...(sleep ? { sleep } : {}),
   });
   const files = () => ({
     state: existsSync(statePath) ? readFileSync(statePath, 'utf8') : null,
@@ -1264,4 +1265,118 @@ test('a pending update that errors and comes back is not re-announced', async (t
   gitea().autoUpdateEnabled = false;
   assert.deepEqual(await h.poller.pollOnce(), { events: [], errors: [] });
   assert.deepEqual(names(h.heldBackStore.getNode('vm-103')), ['gitea', 'immich-server']);
+});
+
+test('with push configured, the first poll and release check wait for push to be ready', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const fcm = { configured: true, enabled: false };
+  fcm.isPushConfigured = () => fcm.configured;
+  fcm.isPushEnabled = () => fcm.enabled;
+  const slept = [];
+  const sleep = async (ms) => {
+    slept.push(ms);
+    if (slept.length === 3) fcm.enabled = true;
+  };
+  const h = setup(t, { fcm, sleep });
+  h.poller.start({ pollMs: 60_000, releaseMs: 3_600_000 });
+  assert.equal(h.s.calls.length, 0, 'nothing read before push is ready');
+  for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+  assert.equal(slept.length, 3);
+  assert.ok(h.s.calls.includes('environments'));
+  assert.ok(h.s.calls.includes('app-version'));
+  h.poller.stop();
+});
+
+test('the wait for push is bounded, skipped when push is off, and cancelled by stop', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  // Never ready: at most 30 s of waiting, then the poll runs anyway.
+  {
+    const fcm = { isPushConfigured: () => true, isPushEnabled: () => false };
+    const slept = [];
+    const h = setup(t, { fcm, sleep: async (ms) => { slept.push(ms); } });
+    h.poller.start({ pollMs: 60_000, releaseMs: 3_600_000 });
+    for (let i = 0; i < 200; i++) await new Promise((r) => setImmediate(r));
+    assert.equal(slept.reduce((a, b) => a + b, 0), 30_000);
+    assert.ok(h.s.calls.includes('environments'));
+    h.poller.stop();
+  }
+  // Push not configured: no wait, the first poll starts at once.
+  {
+    const fcm = { isPushConfigured: () => false, isPushEnabled: () => false };
+    const slept = [];
+    const h = setup(t, { fcm, sleep: async (ms) => { slept.push(ms); } });
+    h.poller.start({ pollMs: 60_000, releaseMs: 3_600_000 });
+    assert.ok(h.s.calls.includes('environments'));
+    assert.equal(slept.length, 0);
+    h.poller.stop();
+  }
+  // Stopped while waiting: the deferred first run never happens.
+  {
+    const fcm = { isPushConfigured: () => true, isPushEnabled: () => false };
+    let wake;
+    const h = setup(t, { fcm, sleep: () => new Promise((r) => { wake = r; }) });
+    h.poller.start({ pollMs: 60_000, releaseMs: 3_600_000 });
+    h.poller.stop();
+    fcm.isPushEnabled = () => true;
+    wake();
+    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+    assert.equal(h.s.calls.length, 0);
+  }
+});
+
+test('an interval beyond the timer limit is clamped, not turned into a 1 ms loop', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const h = setup(t);
+  h.poller.start({ pollMs: 1e12, releaseMs: 1e12 });
+  await new Promise((r) => setImmediate(r));
+  const after = h.s.calls.filter((c) => c === 'environments').length;
+  t.mock.timers.tick(1000);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(h.s.calls.filter((c) => c === 'environments').length, after);
+  t.mock.timers.tick(2 ** 31 - 1);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(h.s.calls.filter((c) => c === 'environments').length, after + 1);
+  h.poller.stop();
+});
+
+test('a persistent read failure logs once per error, then once on recovery', async (t) => {
+  const lines = [];
+  const rec = (level) => (fields, msg) => lines.push({ level, msg: msg ?? fields, env: fields?.env });
+  const logger = { debug: rec('debug'), info: rec('info'), warn: rec('warn'), error: rec('error') };
+  const h = setup(t, { logger });
+  await h.poller.pollOnce();
+  const loud = () => lines.filter((l) => l.level !== 'debug');
+  assert.deepEqual(loud(), [], 'a clean poll logs nothing above debug');
+  assert.ok(lines.some((l) => l.level === 'debug' && l.msg === 'Arcane poll complete'));
+
+  h.s.fail[`containers:${VM101}`] = new ArcaneError('Arcane HTTP 403 for /api/environments/1/containers', 403);
+  for (let i = 0; i < 3; i++) await h.poller.pollOnce();
+  assert.deepEqual(
+    loud().map((l) => `${l.level}|${l.env}`),
+    ['warn|vm-101'],
+    'three failing polls, one warning'
+  );
+  h.s.fail[`containers:${VM101}`] = new ArcaneError('Arcane HTTP 500 for /api/environments/1/containers', 500);
+  await h.poller.pollOnce();
+  await h.poller.pollOnce();
+  assert.equal(loud().length, 2, 'a different error is logged once');
+  delete h.s.fail[`containers:${VM101}`];
+  await h.poller.pollOnce();
+  await h.poller.pollOnce();
+  assert.deepEqual(
+    loud().map((l) => `${l.level}|${l.env}`),
+    ['warn|vm-101', 'warn|vm-101', 'info|vm-101'],
+    'one recovery line'
+  );
+
+  // The environment list behaves the same way.
+  lines.length = 0;
+  h.s.fail.environments = new ArcaneError('Arcane request failed: fetch failed (ECONNREFUSED)', null);
+  for (let i = 0; i < 3; i++) await h.poller.pollOnce();
+  delete h.s.fail.environments;
+  await h.poller.pollOnce();
+  assert.deepEqual(
+    loud().map((l) => l.level),
+    ['warn', 'info']
+  );
 });

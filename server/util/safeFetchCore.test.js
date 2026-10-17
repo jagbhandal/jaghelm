@@ -78,3 +78,40 @@ test('caps the redirect chain length', async () => {
     await assert.rejects(fetchSafe(`http://127.0.0.1:${portOf(srv)}/`), /too many redirects/i);
   } finally { srv.close(); }
 });
+
+test('a cross-origin redirect drops API-key headers along with authorization and cookie', async () => {
+  let got = null;
+  const dest = await listen((req, res) => { got = req.headers; res.writeHead(200); res.end('ok'); });
+  const redir = await listen((req, res) => {
+    res.writeHead(302, { location: `http://127.0.0.1:${portOf(dest)}/x` }); res.end();
+  });
+  try {
+    await fetchSafe(`http://127.0.0.1:${portOf(redir)}/`, {
+      headers: {
+        'X-API-Key': 'k1', // pragma: allowlist secret
+        'x-api-token': 'k2', // pragma: allowlist secret
+        Authorization: 'Bearer k3',
+        Cookie: 'c=1',
+        'X-Other': 'kept',
+      },
+    });
+    assert.equal(got['x-api-key'], undefined);
+    assert.equal(got['x-api-token'], undefined);
+    assert.equal(got.authorization, undefined);
+    assert.equal(got.cookie, undefined);
+    assert.equal(got['x-other'], 'kept');
+  } finally { dest.close(); redir.close(); }
+});
+
+test('a same-origin redirect keeps the API key', async () => {
+  const seen = [];
+  const srv = await listen((req, res) => {
+    seen.push(req.headers['x-api-key']);
+    if (req.url === '/') { res.writeHead(302, { location: '/next' }); res.end(); return; }
+    res.writeHead(200); res.end('ok');
+  });
+  try {
+    await fetchSafe(`http://127.0.0.1:${portOf(srv)}/`, { headers: { 'X-API-Key': 'k1' } }); // pragma: allowlist secret
+    assert.deepEqual(seen, ['k1', 'k1']);
+  } finally { srv.close(); }
+});

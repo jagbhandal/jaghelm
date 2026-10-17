@@ -4,7 +4,8 @@
  * With --record <dir>, writes responses projected to the fields the client
  * reads. Per-environment files record the first environment (envKey order)
  * whose response has rows, else the first environment. The API key is never
- * printed. Returns an exit code; never calls process.exit.
+ * printed. Returns an exit code (0 clean, 1 a pass reported read errors, 2 bad usage);
+ * never calls process.exit.
  */
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
@@ -100,12 +101,25 @@ export async function runPollOnce({
     logger: { debug() {}, info() {}, warn: (...a) => err(JSON.stringify(a[1] ?? a[0])), error: (...a) => err(JSON.stringify(a[1] ?? a[0])) },
   });
 
+  // Exit 1 when either pass reported a read error, so a run where every read failed
+  // (TLS, a missing grant) cannot pass for a clean one.
+  let readErrors = false;
+  const listEnvs = async () => {
+    try {
+      return await client.listEnvironments();
+    } catch (e2) {
+      readErrors = true;
+      err(`environment list failed: ${e2?.message}`);
+      return [];
+    }
+  };
   try {
     for (const pass of [1, 2]) {
       out(`--- pass ${pass}${pass === 1 ? ' (baseline)' : ''} ---`);
       const { events, errors } = await poller.pollOnce();
+      if (errors.length > 0) readErrors = true;
       out(JSON.stringify({ events, errors, cronRuns: runs.splice(0) }, null, 2));
-      const envs = await client.listEnvironments();
+      const envs = await listEnvs();
       const health = {};
       const held = {};
       for (const e of envs) {
@@ -118,7 +132,7 @@ export async function runPollOnce({
     }
     if (recordDir) {
       // History and job runs are fetched here too, independent of the poller's own gates.
-      const envs = await client.listEnvironments();
+      const envs = await listEnvs();
       for (const e of envs) {
         if (envHealth(e) !== 'up' || !envKey(e)) continue;
         try {
@@ -152,8 +166,21 @@ export async function runPollOnce({
       }
       out(`recorded: ${files.sort().join(', ')} -> ${recordDir}`);
     }
-    return 0;
+    return readErrors ? 1 : 0;
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Script entry (scripts/arcane-poll-once.js). Never rejects: an unexpected error prints
+ * its message only, no stack (the message never carries the key), and exits 2.
+ */
+export async function main({ run = runPollOnce, stderr = process.stderr, ...opts } = {}) {
+  try {
+    return await run({ stderr, ...opts });
+  } catch (e) {
+    stderr.write(`arcane-poll-once: ${e?.message || e}\n`);
+    return 2;
   }
 }

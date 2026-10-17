@@ -47,3 +47,12 @@ test('rejects a URL with userinfo, one warning, no URL echoed', () => {
   assert.equal(warns.length, 1);
   assert.equal(/hunter2|a\.test/.test(warns[0]), false);
 });
+
+test('intervals never exceed the 2^31-1 ms timer limit', () => {
+  const base = { ARCANE_URL: 'https://a', ARCANE_API_KEY: KEY };
+  const MAX = 2 ** 31 - 1;
+  assert.equal(readArcaneConfig({ ...base, ARCANE_POLL_SECONDS: '99999999' }).pollMs, MAX);
+  assert.equal(readArcaneConfig({ ...base, ARCANE_POLL_SECONDS: '2147483' }).pollMs, 2147483000);
+  assert.equal(readArcaneConfig({ ...base, ARCANE_RELEASE_CHECK_HOURS: '1000' }).releaseMs, MAX);
+  assert.equal(readArcaneConfig({ ...base, ARCANE_RELEASE_CHECK_HOURS: '596' }).releaseMs, 596 * 3600000);
+});

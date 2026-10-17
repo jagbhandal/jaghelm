@@ -85,3 +85,25 @@ test('buildReleasePush', () => {
     severity: 'info',
   });
 });
+
+test('push bodies cap each name at 64 characters and list at most 10 names', () => {
+  const many = Array.from({ length: 13 }, (_, i) => `c${i}`);
+  assert.equal(
+    buildHeldBackPush({ env: 'vm-103', heldBack: many }).body,
+    '13 updates held back: c0, c1, c2, c3, c4, c5, c6, c7, c8, c9 +3 more'
+  );
+  assert.equal(
+    buildClearedPush({ env: 'vm-103', cleared: many.slice(0, 11) }).body,
+    '11 caught up: c0, c1, c2, c3, c4, c5, c6, c7, c8, c9 +1 more'
+  );
+  const long = 'x'.repeat(300);
+  const e = buildUpdatePush({ env: 'vm-103', updated: [long], failed: many });
+  assert.equal(
+    e.body,
+    `1 updated: ${'x'.repeat(63)}… · 13 failed: c0, c1, c2, c3, c4, c5, c6, c7, c8, c9 +3 more`
+  );
+  // Exactly 10 names and a 64-character name are left as they are.
+  const ten = many.slice(0, 10);
+  assert.equal(buildClearedPush({ env: 'e', cleared: ten }).body, `10 caught up: ${ten.join(', ')}`);
+  assert.equal(buildClearedPush({ env: 'e', cleared: ['y'.repeat(64)] }).body, `1 caught up: ${'y'.repeat(64)}`);
+});

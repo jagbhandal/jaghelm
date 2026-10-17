@@ -5,11 +5,16 @@
 
 import { createLogger } from '../util/logger.js';
 
+// setInterval takes a signed 32-bit delay; anything larger fires after 1 ms instead.
+export const MAX_TIMER_MS = 2 ** 31 - 1;
+
 function intOr(raw, dflt, min) {
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n)) return dflt;
   return Math.max(min, n);
 }
+
+const timerMs = (ms) => Math.min(ms, MAX_TIMER_MS);
 
 export function readArcaneConfig(env = process.env, { logger } = {}) {
   const url = String(env.ARCANE_URL || '').trim().replace(/\/+$/, '');
@@ -20,8 +25,8 @@ export function readArcaneConfig(env = process.env, { logger } = {}) {
       .map((s) => s.trim())
       .filter(Boolean)
   );
-  const pollMs = intOr(env.ARCANE_POLL_SECONDS, 300, 60) * 1000;
-  const releaseMs = intOr(env.ARCANE_RELEASE_CHECK_HOURS, 6, 1) * 3600 * 1000;
+  const pollMs = timerMs(intOr(env.ARCANE_POLL_SECONDS, 300, 60) * 1000);
+  const releaseMs = timerMs(intOr(env.ARCANE_RELEASE_CHECK_HOURS, 6, 1) * 3600 * 1000);
   const shared = { checkOnlyEnvs, pollMs, releaseMs };
   // Credentials in the URL would leak through any error path; refuse them.
   if (/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i.test(url)) {

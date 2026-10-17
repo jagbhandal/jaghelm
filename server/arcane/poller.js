@@ -49,6 +49,7 @@ import {
   buildReleasePush,
 } from './format.js';
 import { createLogger } from '../util/logger.js';
+import { MAX_TIMER_MS } from './config.js';
 
 const OFFLINE_AFTER_POLLS = 2;
 // auto_update before system_prune: the order activities are processed in.
@@ -59,6 +60,9 @@ const ACTIVITY_JOBS = [
 // job_run rows are read page by page back to the oldest unseen run, at most this far.
 const JOB_RUN_PAGE = 50;
 const JOB_RUN_PAGES = 4;
+// With push configured, the first poll and release check wait this long at most for it.
+const PUSH_WAIT_MS = 30_000;
+const PUSH_WAIT_STEP_MS = 500;
 const DEFAULT_POLL_MS = 300_000;
 const DEFAULT_RELEASE_MS = 21_600_000;
 const ONCE_MAX = 1000; // bound on the log-once memory
@@ -68,7 +72,12 @@ const str = (v) => (typeof v === 'string' ? v : '');
 const short = (v) => String(v ?? '').slice(0, 100);
 const errText = (err) => short(err?.message || err || 'error');
 const parseMs = (v) => (typeof v === 'string' ? Date.parse(v) : NaN);
-const positive = (v, dflt) => (Number.isFinite(v) && v > 0 ? v : dflt);
+const positive = (v, dflt) => (Number.isFinite(v) && v > 0 ? Math.min(v, MAX_TIMER_MS) : dflt);
+const defaultSleep = (ms) =>
+  new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    t.unref?.();
+  });
 
 /** Activity id as a non-empty string, or null. */
 function activityId(a) {
@@ -106,6 +115,7 @@ export function createArcanePoller({
   fcm,
   checkOnlyEnvs,
   logger,
+  sleep = defaultSleep,
 }) {
   const log = logger || createLogger('arcane');
   const checkOnly = new Set(checkOnlyEnvs || []);
@@ -116,6 +126,21 @@ export function createArcanePoller({
     if (said.size >= ONCE_MAX) said.clear();
     said.add(key);
     log[level](fields, msg);
+  }
+
+  // Read failures log once per error signature and once on recovery, not every poll
+  // (a missing grant or a TLS problem would otherwise warn ~290 times a day).
+  const failing = new Map(); // scope ('environments' or env name) -> error signature
+  function readFailed(scope, err, fields, msg) {
+    const sig = `${err?.status ?? ''}:${errText(err)}`;
+    if (failing.get(scope) === sig) return;
+    if (!failing.has(scope) && failing.size >= ONCE_MAX) failing.clear();
+    failing.set(scope, sig);
+    log.warn({ ...fields, status: err?.status ?? null, err }, msg);
+  }
+  function readOk(scope, fields, msg) {
+    if (!failing.delete(scope)) return;
+    log.info(fields, msg);
   }
 
   async function send(events) {
@@ -265,12 +290,15 @@ export function createArcanePoller({
       }
     } catch (err) {
       errors.push(`${key}: ${errText(err)}`);
-      log.warn(
-        { env: key, status: err?.status ?? null, err },
-        'Arcane fetch failed; environment state unchanged this poll'
+      readFailed(
+        key,
+        err,
+        { env: key },
+        'Arcane fetch failed; environment data unchanged until reads succeed'
       );
       return;
     }
+    readOk(key, { env: key }, 'Arcane reads for environment recovered');
 
     // Commit phase (data only).
     const prevPending = stateStore.getPending(key);
@@ -343,12 +371,15 @@ export function createArcanePoller({
         envs = await client.listEnvironments();
       } catch (err) {
         errors.push(`environments: ${errText(err)}`);
-        log.warn(
-          { status: err?.status ?? null, err },
-          'Arcane environment list failed; state unchanged'
+        readFailed(
+          'environments',
+          err,
+          {},
+          'Arcane environment list failed; state unchanged until it succeeds'
         );
         return { events, errors };
       }
+      readOk('environments', {}, 'Arcane environment list recovered');
 
       const byKey = new Map();
       const shared = new Set();
@@ -395,8 +426,7 @@ export function createArcanePoller({
     }
 
     await send(events);
-    const level = events.length || errors.length ? 'info' : 'debug';
-    log[level]({ events: events.length, errors: errors.length }, 'Arcane poll complete');
+    log.debug({ events: events.length, errors: errors.length }, 'Arcane poll complete');
     return { events, errors };
   }
 
@@ -443,7 +473,30 @@ export function createArcanePoller({
     }
   }
 
+  let generation = 0; // bumped by stop(), so a first run still waiting for push is dropped
+
+  /** Push creds are set up but firebase is not ready yet (the async boot race in fcm.js). */
+  function pushStarting() {
+    return (
+      typeof fcm?.isPushConfigured === 'function' &&
+      typeof fcm?.isPushEnabled === 'function' &&
+      fcm.isPushConfigured() &&
+      !fcm.isPushEnabled()
+    );
+  }
+
+  /**
+   * Wait (bounded) for push to come up. State advances before dispatch, so an event
+   * found by a first poll that ran while push was still starting would be lost.
+   */
+  async function waitForPush() {
+    for (let waited = 0; waited < PUSH_WAIT_MS && pushStarting(); waited += PUSH_WAIT_STEP_MS) {
+      await sleep(PUSH_WAIT_STEP_MS);
+    }
+  }
+
   function stop() {
+    generation += 1;
     if (pollTimer) clearInterval(pollTimer);
     if (releaseTimer) clearInterval(releaseTimer);
     pollTimer = null;
@@ -452,6 +505,7 @@ export function createArcanePoller({
 
   function start({ pollMs, releaseMs } = {}) {
     stop();
+    const mine = generation;
     const pollEvery = positive(pollMs, DEFAULT_POLL_MS);
     const releaseEvery = positive(releaseMs, DEFAULT_RELEASE_MS);
     pollTimer = setInterval(guardedPoll, pollEvery);
@@ -463,8 +517,17 @@ export function createArcanePoller({
       { pollSec: pollEvery / 1000, releaseSec: releaseEvery / 1000 },
       'Arcane poller started'
     );
-    guardedPoll();
-    guardedRelease();
+    const first = () => {
+      if (mine !== generation) return;
+      guardedPoll();
+      guardedRelease();
+    };
+    if (!pushStarting()) {
+      first();
+      return;
+    }
+    log.info('Arcane poller waiting for push to be ready before its first poll');
+    waitForPush().then(first, first);
   }
 
   return { pollOnce, checkRelease, start, stop };

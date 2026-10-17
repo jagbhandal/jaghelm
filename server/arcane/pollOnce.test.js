@@ -4,7 +4,7 @@ import http from 'node:http';
 import { mkdtempSync, readdirSync, readFileSync, existsSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { runPollOnce } from './pollOnce.js';
+import { runPollOnce, main } from './pollOnce.js';
 
 const KEY = 'zz-recognisable-fake-key-9431'; // pragma: allowlist secret
 const fx = (n) => JSON.parse(readFileSync(new URL(`./fixtures/${n}`, import.meta.url), 'utf8'));
@@ -14,11 +14,12 @@ const cont = (name) => ({ names: [`/${name}`], image: 'i', autoUpdateEnabled: fa
   updateInfo: { hasUpdate: true, currentVersion: '1', latestVersion: '2' } });
 
 /** Fake Arcane: envs [{id,name,status}], per-id containers, history behaviour. */
-async function fake({ envs, containers = {}, historyFail = new Set() }) {
+async function fake({ envs, containers = {}, historyFail = new Set(), fail = [] }) {
   const seen = [];
   const srv = http.createServer((q, r) => {
     seen.push(q.url);
     const send = (code, body) => { r.statusCode = code; r.setHeader('content-type', 'application/json'); r.end(JSON.stringify(body)); };
+    if (fail.some((prefix) => q.url.startsWith(prefix))) return send(500, { error: `boom ${KEY}` });
     const m = q.url.match(/^\/api\/environments\/([^/]+)\/(containers|activities|updater\/history)/);
     if (q.url.startsWith('/api/environments?')) return send(200, wrap(envs));
     if (q.url.startsWith('/api/app-version')) return send(200, fx('app-version.json'));
@@ -132,4 +133,29 @@ test('--record writes a job_run fixture with the link fields', async () => {
     f.close();
     rmSync(out, { recursive: true, force: true });
   }
+});
+
+test('exit code 1 when a pass reported read errors; output is still printed', async () => {
+  for (const fail of [['/api/environments/0/containers'], ['/api/environments?']]) {
+    const f = await fake({ envs: ENVS, fail });
+    try {
+      const { code, stdout, stderr } = await run(f);
+      assert.equal(code, 1, fail[0]);
+      assert.match(stdout.text, /--- pass 2/);
+      assert.match(stdout.text, /"errors": \[\n\s+"/);
+      assert.equal(stdout.text.includes(KEY) || stderr.text.includes(KEY), false);
+      assert.equal(/\n\s+at /.test(stderr.text), false, 'no stack trace');
+    } finally {
+      f.close();
+    }
+  }
+});
+
+test('the script entry turns a rejection into its message and exit code 2', async () => {
+  const stderr = sink();
+  const err = new Error('unexpected failure');
+  const code = await main({ argv: [], stderr, run: async () => { throw err; } });
+  assert.equal(code, 2);
+  assert.equal(stderr.text, 'arcane-poll-once: unexpected failure\n');
+  assert.equal(await main({ argv: [], stderr, run: async () => 0 }), 0);
 });

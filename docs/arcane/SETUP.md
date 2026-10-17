@@ -39,6 +39,9 @@ Set these in the JagHelm env file on vm-103 (`/opt/stacks/jaghelm/.env`; the tem
 | `ARCANE_CHECK_ONLY_ENVS` | Comma list of environment names that are check-only (see below). Default empty. |
 | `ARCANE_POLL_SECONDS` | Poll interval. Default 300, minimum 60. |
 | `ARCANE_RELEASE_CHECK_HOURS` | Arcane release check interval. Default 6, minimum 1. |
+
+Both intervals are capped at the timer limit of about 24.8 days (2^31-1 ms), so a very large
+value cannot wrap around into a tight loop.
 | `NODE_EXTRA_CA_CERTS` | Path to the manager's CA or self-signed certificate (step 3). |
 
 If either `ARCANE_URL` or `ARCANE_API_KEY` is missing, JagHelm logs that the integration is
@@ -55,7 +58,9 @@ NODE_EXTRA_CA_CERTS=/app/data/arcane-ca.crt
 ```
 
 `NODE_EXTRA_CA_CERTS` is read once at process start, so restart the container after
-changing the file. It applies to every outbound HTTPS call from the process.
+changing the file. It applies to every outbound HTTPS call from the process. If the file is
+missing, Node only prints a warning at start; the poller then logs the TLS reason with each
+failed read, for example `Arcane request failed: fetch failed (DEPTH_ZERO_SELF_SIGNED_CERT)`.
 
 ## 4. Environments
 
@@ -108,12 +113,20 @@ recovery" switch.
   updates, seen activities, baseline) alone for that poll; its agent health still updates
   from the environment list. If the environment list itself fails, all state is left
   unchanged. A flaky Arcane therefore cannot cause a "caught up" storm or a replayed backlog.
+  A read that keeps failing is logged once per distinct error, plus one line when reads
+  recover, not on every poll.
 - **Failed update checks.** When Arcane's own check of a container fails (a registry outage
   or an auth error) or has not run, a held-back container stays held back, silently, with
   its last known update. It clears only when Arcane reports it up to date or it is gone, so
   a registry error never reads as "caught up".
 
-State advances before the push is sent, so a push outage never replays old events later.
+Push bodies list at most 10 names, each capped at 64 characters; the rest are summarised as
+`+N more` (for example `12 updates held back: a, b, c, d, e, f, g, h, i, j +2 more`).
+
+State advances before the push is sent, so a push outage never replays old events later. At
+startup, when push (FCM) credentials are configured, the first poll and the first release
+check wait up to 30 seconds for push to be ready, so events found right after a restart are
+not lost to the push client still starting.
 
 ## 6. Scheduled-job history
 
@@ -155,8 +168,9 @@ ARCANE_URL=https://arcane.example:3552 ARCANE_API_KEY=... \
 
 Use the same `NODE_EXTRA_CA_CERTS` as production if the manager is self-signed. Output lists
 each would-be push, the cron runs, and the per-environment health and held-back set. The key
-is never printed. Exit code 2 means a missing `ARCANE_URL` / `ARCANE_API_KEY` or a bad
-argument.
+is never printed. Exit code 0 means both passes read everything; 1 means a pass reported read
+errors (listed under `errors`); 2 means a missing `ARCANE_URL` / `ARCANE_API_KEY`, a bad
+argument, or an unexpected failure (its message is printed, without a stack trace).
 
 `--record <dir>` additionally writes each response as a JSON fixture, reduced to the fields
 JagHelm reads (labels, environment variables and everything else are dropped). Per-environment
@@ -168,7 +182,9 @@ environment. Review the files before committing them anywhere.
 In the data volume: `arcane-state.json` (which environments are baselined, agent down
 counters, recent activity ids, each environment's pending updates, last notified release) and
 `arcane-held-back.json` (held-back containers per environment). Deleting both makes the next
-poll a fresh silent baseline.
+poll a fresh silent baseline. Do not delete only `arcane-held-back.json`: the environments
+stay known in `arcane-state.json`, so the next poll announces every held-back container
+again as newly held back.
 
 ## 10. Cutover from Watchtower, and rollback
 

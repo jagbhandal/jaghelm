@@ -506,10 +506,10 @@ User-controllable, **filtered server-side** so a muted category is never sent (s
 **Model.** Prefs are stored per device token in the token-store record (one source of truth, travels with the device):
 ```json
 { "<fcm-token>": { "platform": "android", "appVersion": "1.0.0", "registeredAt": "...", "lastSeenAt": "...",
-    "prefs": { "categories": { "service": true, "host": true, "ups": true, "cron": true },
+    "prefs": { "categories": { "service": true, "host": true, "ups": true, "cron": true, "watchtower": true },
                "notifyRecoveries": true, "enabled": true } } }
 ```
-- **Categories → event types:** `service` → `service_down`/`service_recovered`; `host` → `host_down`/`host_recovered`/`host_threshold`; `ups` → `ups_onbattery`/`ups_restored`; `cron` → `cron_failed`/`cron_recovered`.
+- **Categories → event types:** `service` → `service_down`/`service_recovered`; `host` → `host_down`/`host_recovered`/`host_threshold`; `ups` → `ups_onbattery`/`ups_restored`; `cron` → `cron_failed`/`cron_recovered`/`cron_overdue`; `watchtower` (shown as *Updates*) → `watchtower_update`/`watchtower_heldback`/`watchtower_cleared` and the Arcane types `arcane_update`/`arcane_heldback`/`arcane_cleared`/`arcane_agent_offline`/`arcane_agent_recovered`/`arcane_release` (mapped explicitly in `TYPE_CATEGORY`, `server/push/dispatch.js`). `watchtower_cleared`, `arcane_cleared` and `arcane_agent_recovered` count as recoveries.
 - **`notifyRecoveries`** off ⇒ `*_recovered`/`*_restored` suppressed (you get the down, not the all-clear).
 - **`enabled`** = master switch; off ⇒ no pushes to this device (token kept so re-enabling needs no re-onboarding).
 - **Defaults** (new registration): all categories on, recoveries on, enabled on.

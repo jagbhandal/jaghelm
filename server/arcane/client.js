@@ -26,7 +26,12 @@ export function createArcaneClient({ baseUrl, apiKey, fetchImpl = safeFetch, tim
         headers: { 'X-API-Key': apiKey, Accept: 'application/json' },
       });
     } catch (err) {
-      throw new ArcaneError(`Arcane request failed: ${err?.message || 'network error'}`, null);
+      // undici reports "fetch failed" and keeps the reason (ECONNREFUSED, a TLS code,
+      // a timeout) in err.cause.code. Only a code-shaped value is appended.
+      const code = err?.cause?.code;
+      const why = typeof code === 'string' && /^[A-Z0-9_]{1,64}$/.test(code) ? ` (${code})` : '';
+      const what = err?.message || 'network error';
+      throw new ArcaneError(`Arcane request failed: ${what}${why}`, null);
     }
     if (!res.ok) throw new ArcaneError(`Arcane HTTP ${res.status} for ${path.split('?')[0]}`, res.status);
     let body;

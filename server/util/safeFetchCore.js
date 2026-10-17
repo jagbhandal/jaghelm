@@ -17,6 +17,8 @@
 import { assertSafeUrl } from './ssrf.js';
 
 const MAX_HOPS = 5;
+// Stripped on a cross-origin redirect: auth headers, cookies and API-key headers.
+const CREDENTIAL_HEADERS = ['authorization', 'cookie', 'x-api-key', 'x-api-token'];
 const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB — integration payloads are tiny
 
 /**
@@ -52,10 +54,10 @@ export async function fetchSafe(url, opts = {}, cfg = {}) {
       headers.delete('content-type');
       headers.delete('content-length');
     }
-    // Never carry credentials across an origin boundary on a redirect.
+    // Never carry credentials across an origin boundary on a redirect. Headers is
+    // case-insensitive, so this covers X-API-Key / X-Api-Token in any spelling.
     if (!sameOrigin) {
-      headers.delete('authorization');
-      headers.delete('cookie');
+      for (const h of CREDENTIAL_HEADERS) headers.delete(h);
     }
     current = next.toString();
   }
