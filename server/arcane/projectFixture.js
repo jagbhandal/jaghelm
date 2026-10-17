@@ -27,6 +27,9 @@ const ROW = {
         'currentDigest',
         'latestDigest',
       ]);
+      // Whether the check errored is read (containerState); the text (registry hosts,
+      // usernames) is not, so it is redacted.
+      if ('error' in r.updateInfo) out.updateInfo.error = r.updateInfo.error ? 'redacted' : '';
     }
     return out;
   },

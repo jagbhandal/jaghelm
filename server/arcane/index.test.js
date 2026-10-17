@@ -40,7 +40,7 @@ test('projectFixture drops labels and unknown fields', () => {
         names: ['/x'],
         image: 'img:1',
         autoUpdateEnabled: false,
-        updateInfo: { hasUpdate: true, currentVersion: '1', latestVersion: '2' },
+        updateInfo: { hasUpdate: true, currentVersion: '1', latestVersion: '2', error: 'redacted' },
       },
     ],
   });
@@ -129,5 +129,20 @@ test('projectFixture keeps the job-run link fields of activities and nothing els
       metadata: { trigger: 'scheduled', domainActivityId: 'a1' },
     },
     { id: 'a1', type: 'system_prune', status: 'success' },
+  ]);
+});
+
+test('projectFixture keeps only whether a container check errored', () => {
+  const out = projectFixture('containers', {
+    data: [
+      { names: ['/a'], updateInfo: { hasUpdate: false, error: 'unauthorized for user jag at reg.example' } },
+      { names: ['/b'], updateInfo: { hasUpdate: false, error: '' } },
+      { names: ['/c'] },
+    ],
+  });
+  assert.deepEqual(out.data.map((c) => c.updateInfo), [
+    { hasUpdate: false, error: 'redacted' },
+    { hasUpdate: false, error: '' },
+    undefined,
   ]);
 });

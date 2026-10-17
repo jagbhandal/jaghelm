@@ -33,14 +33,14 @@ test('sends X-API-Key, never Authorization', async () => {
 test('builds exact paths with encoded env id', async () => {
   const { calls, client } = mk(fx('environments'));
   await client.listEnvironments();
-  await client.listPendingUpdates('a/b');
+  await client.listContainers('a/b');
   await client.listActivities('0', 'auto_update');
   await client.listActivities('0', 'system_prune', 5);
   await client.updaterHistory('0');
   const urls = calls.map((c) => c.url);
   assert.deepEqual(urls, [
     'https://m:3552/api/environments?limit=-1',
-    'https://m:3552/api/environments/a%2Fb/containers?updates=has_update&limit=-1',
+    'https://m:3552/api/environments/a%2Fb/containers?limit=-1',
     'https://m:3552/api/environments/0/activities?type=auto_update&order=desc&limit=20',
     'https://m:3552/api/environments/0/activities?type=system_prune&order=desc&limit=5',
     'https://m:3552/api/environments/0/updater/history?limit=200',
@@ -60,7 +60,7 @@ test('unwraps envelope; app-version unenveloped returned as-is', async () => {
 });
 
 test('fixtures parse through the client', async () => {
-  assert.equal((await mk(fx('containers-has-update')).client.listPendingUpdates('0')).length, 2);
+  assert.equal((await mk(fx('containers')).client.listContainers('0')).length, 5);
   assert.equal((await mk(fx('activities-auto_update')).client.listActivities('0', 'auto_update')).length, 3);
   assert.equal((await mk(fx('activities-system_prune')).client.listActivities('0', 'system_prune')).length, 2);
   assert.equal((await mk(fx('updater-history')).client.updaterHistory('0')).length, 3);

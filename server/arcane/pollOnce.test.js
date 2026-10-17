@@ -79,7 +79,7 @@ test('--record writes history from the populated env, not the first empty one; k
     assert.equal(code, 0);
     const hist = JSON.parse(readFileSync(join(out, 'updater-history.json'), 'utf8'));
     assert.ok(hist.data.length > 0);
-    const cont2 = JSON.parse(readFileSync(join(out, 'containers-has-update.json'), 'utf8'));
+    const cont2 = JSON.parse(readFileSync(join(out, 'containers.json'), 'utf8'));
     assert.equal(cont2.data[0].names[0], '/gitea');
     assert.equal(stdout.text.includes(KEY) || stderr.text.includes(KEY), false);
   } finally {
@@ -93,7 +93,7 @@ test('record picks by envKey order, not API order; empty everywhere falls back t
   const f = await fake({ envs: [ENVS[1], ENVS[0]], containers: { 2: [cont('b')], 0: [] } });
   try {
     await run(f, ['--record', out]);
-    assert.equal(JSON.parse(readFileSync(join(out, 'containers-has-update.json'), 'utf8')).data[0].names[0], '/b');
+    assert.equal(JSON.parse(readFileSync(join(out, 'containers.json'), 'utf8')).data[0].names[0], '/b');
     assert.equal(existsSync(join(out, 'activities-auto_update.json')), true);
     assert.deepEqual(JSON.parse(readFileSync(join(out, 'activities-auto_update.json'), 'utf8')).data, []);
   } finally {

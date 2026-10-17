@@ -1,4 +1,0 @@
-{"success":true,"data":[
-{"id":"c0ffee01","names":["/immich-server"],"image":"ghcr.io/immich-app/immich-server:release","imageId":"sha256:aaa111","labels":{},"state":"running","updateStrategy":"auto","autoUpdateEnabled":false,"updateInfo":{"checkTime":"2026-10-17T09:00:00Z","updateType":"digest","currentVersion":"v1.130.0","latestVersion":"v1.131.0","currentDigest":"sha256:aaa111","latestDigest":"sha256:bbb222","error":"","hasUpdate":true,"authMethod":"none"}},
-{"id":"c0ffee02","names":["/gitea"],"image":"gitea/gitea:1.22","imageId":"sha256:ccc333","labels":{},"state":"running","updateStrategy":"auto","autoUpdateEnabled":true,"updateInfo":{"checkTime":"2026-10-17T09:00:00Z","updateType":"digest","currentVersion":"1.22.3","latestVersion":"1.22.4","currentDigest":"sha256:ccc333","latestDigest":"sha256:ddd444","error":"","hasUpdate":true,"authMethod":"none"}}
-],"pagination":{"totalPages":1,"totalItems":2,"currentPage":1,"itemsPerPage":-1,"grandTotalItems":2}}

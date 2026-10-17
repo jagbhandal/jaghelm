@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   envKey, envHealth, heldBackSet, isTerminal, summarizeUpdateRun, summarizePruneRun,
-  pendingMap, heldBackTransitions, runOrigin,
+  pendingMap, heldBackTransitions, runOrigin, containerState, nextUpdateState,
 } from './derive.js';
 
 const fx = (n) => JSON.parse(readFileSync(new URL(`./fixtures/${n}.json`, import.meta.url), 'utf8')).data;
@@ -28,7 +28,7 @@ test('envHealth maps statuses', () => {
 });
 
 test('heldBackSet uses autoUpdateEnabled and checkOnly', () => {
-  const c = fx('containers-has-update');
+  const c = fx('containers');
   assert.deepEqual(heldBackSet(c, { checkOnly: false }), [
     { name: 'immich-server', current: 'v1.130.0', latest: 'v1.131.0' },
   ]);
@@ -100,7 +100,7 @@ test('summarizePruneRun', () => {
 });
 
 test('pendingMap holds every container with an update, any tier', () => {
-  const m = pendingMap(fx('containers-has-update'));
+  const m = pendingMap(fx('containers'));
   assert.deepEqual([...m], [['gitea', '1.22.4'], ['immich-server', 'v1.131.0']]);
   const digest = pendingMap([
     { names: ['/z'], updateInfo: { hasUpdate: true, latestDigest: 'sha256:' + 'b'.repeat(60) } },
@@ -167,4 +167,50 @@ test('summarizeUpdateRun window ends at the next run start (exclusive) when that
   const late = Date.parse('2026-01-01T00:05:00Z');
   assert.deepEqual(summarizeUpdateRun(act, rows, { until: late }).updated.map((x) => x.name), ['mine', 'next', 'next2']);
   assert.deepEqual(summarizeUpdateRun(act, rows).updated.map((x) => x.name), ['mine', 'next', 'next2']);
+});
+
+test('containerState: pending, up to date, or unknown (check errored or never ran)', () => {
+  const states = fx('containers').map((c) => [c.names[0], containerState(c)]);
+  assert.deepEqual(states, [
+    ['/immich-server', 'pending'],
+    ['/gitea', 'pending'],
+    ['/redis', 'current'],
+    ['/nextcloud', 'unknown'],
+    ['/whoami', 'unknown'],
+  ]);
+  assert.equal(containerState({ updateInfo: null }), 'unknown');
+  assert.equal(containerState({ updateInfo: { hasUpdate: true, error: 'x' } }), 'pending');
+});
+
+test('nextUpdateState carries held-back and pending entries through an unknown state', () => {
+  const c = (name, info, auto = false) => ({ names: [`/${name}`], autoUpdateEnabled: auto, updateInfo: info });
+  const prevHeld = [
+    { name: 'err', current: 'c1', latest: 'l1' },
+    { name: 'nocheck', current: 'c2', latest: 'l2' },
+    { name: 'fixed', current: 'c3', latest: 'l3' },
+    { name: 'gone', current: 'c4', latest: 'l4' },
+  ];
+  const prevPending = new Map([['err', 'l1'], ['nocheck', 'l2'], ['fixed', 'l3'], ['gone', 'l4'], ['autoerr', 'l5']]);
+  const r = nextUpdateState({
+    containers: [
+      c('err', { hasUpdate: false, error: 'registry 503' }),
+      c('nocheck', undefined),
+      c('fixed', { hasUpdate: false, error: '' }),
+      c('autoerr', { hasUpdate: false, error: 'timeout' }, true),
+      c('new', { hasUpdate: true, currentVersion: 'a', latestVersion: 'b' }),
+    ],
+    checkOnly: false,
+    prevHeld,
+    prevPending,
+  });
+  assert.deepEqual(r.held, [
+    { name: 'err', current: 'c1', latest: 'l1' },
+    { name: 'new', current: 'a', latest: 'b' },
+    { name: 'nocheck', current: 'c2', latest: 'l2' },
+  ]);
+  assert.deepEqual([...r.pending], [['autoerr', 'l5'], ['err', 'l1'], ['new', 'b'], ['nocheck', 'l2']]);
+  // Without a previous pending map nothing is carried for pending; held-back still is.
+  const fresh = nextUpdateState({ containers: [c('err', { error: 'x' })], checkOnly: true, prevHeld, prevPending: null });
+  assert.deepEqual(fresh.held.map((e) => e.name), ['err']);
+  assert.deepEqual([...fresh.pending], []);
 });

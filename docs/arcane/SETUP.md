@@ -19,7 +19,7 @@ Create an API key for JagHelm with only these grants. All of them are read-only.
 JagHelm calls only these endpoints, with the key in the `X-API-Key` header:
 
 - `GET /api/environments`
-- `GET /api/environments/{id}/containers` (pending updates only)
+- `GET /api/environments/{id}/containers` (all containers, with their update check)
 - `GET /api/environments/{id}/activities` (`auto_update` and `system_prune`, plus `job_run`
   to tell scheduled runs from manual ones; see §6)
 - `GET /api/environments/{id}/updater/history`
@@ -103,9 +103,15 @@ recovery" switch.
   `Agent reconnected` pushes once when it returns.
 - **New Arcane release.** `Arcane <version> available` pushes once per new version, checked
   every `ARCANE_RELEASE_CHECK_HOURS`. The body says to upgrade by PR (bump the pinned tag).
-- **Failed reads.** If any read for an environment fails (network error, non-2xx, malformed
-  body), JagHelm leaves that environment's state untouched for that poll. A flaky Arcane
-  therefore cannot cause a false "caught up" or a replayed backlog.
+- **Failed reads.** If any data read for an environment fails (network error, non-2xx,
+  malformed body), JagHelm leaves that environment's data state (held-back set, pending
+  updates, seen activities, baseline) alone for that poll; its agent health still updates
+  from the environment list. If the environment list itself fails, all state is left
+  unchanged. A flaky Arcane therefore cannot cause a "caught up" storm or a replayed backlog.
+- **Failed update checks.** When Arcane's own check of a container fails (a registry outage
+  or an auth error) or has not run, a held-back container stays held back, silently, with
+  its last known update. It clears only when Arcane reports it up to date or it is gone, so
+  a registry error never reads as "caught up".
 
 State advances before the push is sent, so a push outage never replays old events later.
 

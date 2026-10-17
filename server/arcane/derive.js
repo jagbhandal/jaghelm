@@ -66,6 +66,58 @@ export function pendingMap(containers) {
 }
 
 /**
+ * A container's update state from Arcane's stored check (updateInfo):
+ *   'pending' - hasUpdate is true;
+ *   'current' - checked, no update, no error (up to date);
+ *   'unknown' - never checked (no updateInfo) or the check errored. Arcane keeps the
+ *     previous result only on a registry 429 (imageupdate/service.go:1143-1153); any other
+ *     registry failure is saved as an error result with hasUpdate false (:522-535, :1104-1120)
+ *     and surfaces as updateInfo.error (imageupdate/model.go:83). It must not read as
+ *     "up to date".
+ */
+export function containerState(c) {
+  const info = c?.updateInfo;
+  if (!info || typeof info !== 'object') return 'unknown';
+  if (info.hasUpdate === true) return 'pending';
+  return str(info.error) ? 'unknown' : 'current';
+}
+
+const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
+/**
+ * The next held-back set and pending map for one environment, from its unfiltered
+ * container list. A container in the 'unknown' state keeps what it had: a held-back
+ * entry is carried forward unchanged and so is its pending latest. Only 'current'
+ * (up to date) or no longer listed clears an entry.
+ */
+export function nextUpdateState({ containers, checkOnly, prevHeld, prevPending }) {
+  const list = Array.isArray(containers) ? containers : [];
+  const unknown = new Set();
+  for (const c of list) {
+    const name = containerName(c);
+    if (name && containerState(c) === 'unknown') unknown.add(name);
+  }
+  const held = heldBackSet(list, { checkOnly });
+  const heldNames = new Set(held.map((e) => e.name));
+  for (const e of Array.isArray(prevHeld) ? prevHeld : []) {
+    if (unknown.has(e.name) && !heldNames.has(e.name)) {
+      held.push({ ...e });
+      heldNames.add(e.name);
+    }
+  }
+  const pending = pendingMap(list);
+  if (prevPending) {
+    for (const name of unknown) {
+      if (!pending.has(name) && prevPending.has(name)) pending.set(name, prevPending.get(name));
+    }
+  }
+  return {
+    held: held.sort(byName),
+    pending: new Map([...pending].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))),
+  };
+}
+
+/**
  * Which held-back transitions are news. "Held back" is image news: X is announced
  * only when it is newly pending or its latest changed since the previous pending map,
  * so a policy-only move into the held tier (a label added, check-only switched on) is

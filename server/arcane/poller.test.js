@@ -31,7 +31,7 @@ const PI2 = '3';
 function world() {
   const s = {
     envs: fx('environments'),
-    containers: { [VM103]: fx('containers-has-update') },
+    containers: { [VM103]: fx('containers') },
     activities: {
       [`${VM103}:auto_update`]: fx('activities-auto_update'),
       [`${VM103}:system_prune`]: fx('activities-system_prune'),
@@ -54,7 +54,7 @@ function world() {
       hit('environments');
       return clone(s.envs);
     },
-    async listPendingUpdates(id) {
+    async listContainers(id) {
       hit(`containers:${id}`);
       return clone(s.containers[id] ?? []);
     },
@@ -261,8 +261,8 @@ test('container leaving the held-back set pushes caught up', async (t) => {
 test('check-only environment treats every pending update as held back', async (t) => {
   const h = setup(t, { checkOnlyEnvs: new Set(['pi-1']) });
   // Same rows on both: gitea has autoUpdateEnabled true, immich-server false.
-  h.s.containers[PI1] = fx('containers-has-update');
-  h.s.containers[VM101] = fx('containers-has-update');
+  h.s.containers[PI1] = fx('containers');
+  h.s.containers[VM101] = fx('containers');
   await h.poller.pollOnce();
   assert.deepEqual(names(h.heldBackStore.getNode('pi-1')), ['gitea', 'immich-server']);
   assert.deepEqual(names(h.heldBackStore.getNode('vm-101')), ['immich-server']);
@@ -1210,4 +1210,58 @@ test('back-to-back update runs report each container in exactly one push', async
     (await h.poller.pollOnce()).events.map((e) => e.body),
     ['1 updated: nextcloud']
   );
+});
+
+test('a registry error never reads as caught up', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce(); // immich-server held back
+  const immich = () => h.s.containers[VM103].find((c) => c.names[0] === '/immich-server');
+  const good = structuredClone(immich().updateInfo);
+
+  // Arcane's check fails: it stores the error and hasUpdate false.
+  immich().updateInfo = { ...good, hasUpdate: false, latestVersion: '', error: 'registry 503' };
+  assert.deepEqual(await h.poller.pollOnce(), { events: [], errors: [] });
+  assert.deepEqual(h.heldBackStore.getNode('vm-103'), [
+    { name: 'immich-server', current: 'v1.130.0', latest: 'v1.131.0' },
+  ]);
+  // Not checked at all (no update info): the same.
+  delete immich().updateInfo;
+  assert.deepEqual(await h.poller.pollOnce(), { events: [], errors: [] });
+  // The check recovers with the same pending update: still nothing new.
+  immich().updateInfo = good;
+  assert.deepEqual(await h.poller.pollOnce(), { events: [], errors: [] });
+
+  // Updated for real: Arcane reports it up to date. One caught-up push.
+  immich().updateInfo = { ...good, hasUpdate: false, currentVersion: 'v1.131.0' };
+  assert.deepEqual(
+    (await h.poller.pollOnce()).events.map((e) => e.body),
+    ['1 caught up: immich-server']
+  );
+  assert.deepEqual((await h.poller.pollOnce()).events, []);
+
+  // A held-back container that is removed is caught up too (accepted semantics).
+  h.s.containers[VM103].push(ctr('n8n'));
+  assert.deepEqual(
+    (await h.poller.pollOnce()).events.map((e) => e.body),
+    ['1 update held back: n8n']
+  );
+  h.s.containers[VM103] = h.s.containers[VM103].filter((c) => c.names[0] !== '/n8n');
+  assert.deepEqual(
+    (await h.poller.pollOnce()).events.map((e) => e.body),
+    ['1 caught up: n8n']
+  );
+});
+
+test('a pending update that errors and comes back is not re-announced', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce();
+  const gitea = () => h.s.containers[VM103].find((c) => c.names[0] === '/gitea');
+  const good = structuredClone(gitea().updateInfo);
+  gitea().updateInfo = { ...good, hasUpdate: false, error: 'timeout' };
+  await h.poller.pollOnce();
+  // Back, now held back by a label, same latest: policy-only, silent.
+  gitea().updateInfo = good;
+  gitea().autoUpdateEnabled = false;
+  assert.deepEqual(await h.poller.pollOnce(), { events: [], errors: [] });
+  assert.deepEqual(names(h.heldBackStore.getNode('vm-103')), ['gitea', 'immich-server']);
 });

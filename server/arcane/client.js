@@ -56,8 +56,9 @@ export function createArcaneClient({ baseUrl, apiKey, fetchImpl = safeFetch, tim
 
   return {
     listEnvironments: () => getList('/api/environments?limit=-1'),
-    listPendingUpdates: (envId) =>
-      getList(`/api/environments/${env(envId)}/containers?updates=has_update&limit=-1`),
+    // Unfiltered (limit=-1 is "all", pkg/pagination/types.go:14-23), so a container whose
+    // update check errored is seen as such rather than dropping out of a has_update list.
+    listContainers: (envId) => getList(`/api/environments/${env(envId)}/containers?limit=-1`),
     listActivities: (envId, type, limit = 20, start = 0) =>
       getList(
         `/api/environments/${env(envId)}/activities?type=${encodeURIComponent(type)}` +

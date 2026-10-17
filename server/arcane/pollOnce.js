@@ -64,9 +64,9 @@ export async function runPollOnce({
       single.set('environments.json', { kind: 'environments', body: r });
       return r;
     },
-    async listPendingUpdates(id) {
-      const r = await real.listPendingUpdates(id);
-      note('containers-has-update.json', 'containers', id, r);
+    async listContainers(id) {
+      const r = await real.listContainers(id);
+      note('containers.json', 'containers', id, r);
       return r;
     },
     async listActivities(id, type, limit, start = 0) {

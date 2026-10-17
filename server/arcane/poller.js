@@ -11,6 +11,9 @@
  *   - Held back / caught up are image news, not policy news: a container moving
  *     into or out of the held tier with the same latest image is silent
  *     (heldBackTransitions).
+ *   - Containers are read unfiltered. One whose update check errored or never ran
+ *     keeps its held-back entry and pending latest (nextUpdateState); only "up to
+ *     date" or "no longer listed" clears it, so a registry error is never "caught up".
  *   - Agent connectivity comes from the environment list's health alone, from
  *     first sight, independent of the baseline and of the per-environment reads.
  *   - Per environment, every data fetch happens before any data state is
@@ -29,8 +32,7 @@
 import {
   envKey,
   envHealth,
-  heldBackSet,
-  pendingMap,
+  nextUpdateState,
   heldBackTransitions,
   isTerminal,
   runOrigin,
@@ -250,7 +252,7 @@ export function createArcanePoller({
     const pending = {};
     const next = {};
     try {
-      containers = await client.listPendingUpdates(env.id);
+      containers = await client.listContainers(env.id);
       for (const { type } of ACTIVITY_JOBS) {
         const list = await client.listActivities(env.id, type);
         pending[type] = unseenTerminal(key, type, list);
@@ -271,9 +273,13 @@ export function createArcanePoller({
     }
 
     // Commit phase (data only).
-    const held = heldBackSet(containers, { checkOnly: checkOnly.has(key) });
-    const nextPending = pendingMap(containers);
     const prevPending = stateStore.getPending(key);
+    const { held, pending: nextPending } = nextUpdateState({
+      containers,
+      checkOnly: checkOnly.has(key),
+      prevHeld: heldBackStore.getNode(key),
+      prevPending,
+    });
     const { newlyHeldBack, cleared } = heldBackStore.diffAndSet(key, held);
     stateStore.setPending(key, nextPending);
     if (known) {
