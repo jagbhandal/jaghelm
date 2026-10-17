@@ -2,10 +2,11 @@
  * Arcane dry run (the logic behind scripts/arcane-poll-once.js).
  * Runs the real poller twice over throwaway temp stores; sends no push.
  * With --record <dir>, writes responses projected to the fields the client
- * reads. Per-environment files record the first environment (envKey order)
- * whose response has rows, else the first environment. The API key is never
- * printed. Returns an exit code (0 clean, 1 a pass reported read errors, 2 bad usage);
- * never calls process.exit.
+ * reads, anonymized (one anonymizer for the whole recording, so a container keeps
+ * one placeholder across files). Per-environment files record the first
+ * environment (envKey order) whose response has rows, else the first
+ * environment. The API key is never printed. Returns an exit code (0 clean, 1 a
+ * pass reported read errors, 2 bad usage); never calls process.exit.
  */
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
@@ -16,7 +17,7 @@ import { createArcaneStateStore } from './stateStore.js';
 import { createArcanePoller } from './poller.js';
 import { createHeldBackStore } from '../watchtower/heldBackStore.js';
 import { envKey, envHealth } from './derive.js';
-import { projectFixture } from './projectFixture.js';
+import { projectFixture, createAnonymizer } from './projectFixture.js';
 
 export async function runPollOnce({
   argv = [],
@@ -153,8 +154,10 @@ export async function runPollOnce({
       }
       mkdirSync(recordDir, { recursive: true });
       const files = [];
+      const anon = createAnonymizer();
       const write = (name, kind, body) => {
-        writeFileSync(join(recordDir, name), JSON.stringify(projectFixture(kind, body), null, 2) + '\n');
+        const projected = projectFixture(kind, body, anon);
+        writeFileSync(join(recordDir, name), JSON.stringify(projected, null, 2) + '\n');
         files.push(name);
       };
       for (const [name, { kind, body }] of single) write(name, kind, body);

@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": "image-check-00000000-0000-4000-8000-000000000004-1",
+      "type": "image_update_check",
+      "status": "failed",
+      "startedAt": "2026-10-17T21:44:12.985876668Z",
+      "endedAt": "2026-10-17T21:44:16.358413535Z",
+      "batchId": "00000000-0000-4000-8000-000000000004",
+      "error": "redacted"
+    }
+  ]
+}

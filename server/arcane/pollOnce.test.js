@@ -81,7 +81,8 @@ test('--record writes history from the populated env, not the first empty one; k
     const hist = JSON.parse(readFileSync(join(out, 'updater-history.json'), 'utf8'));
     assert.ok(hist.data.length > 0);
     const cont2 = JSON.parse(readFileSync(join(out, 'containers.json'), 'utf8'));
-    assert.equal(cont2.data[0].names[0], '/gitea');
+    assert.equal(cont2.data[0].names[0], '/ctr-01'); // anonymized, slash kept as shape
+    assert.equal(JSON.stringify(cont2).includes('gitea'), false);
     assert.equal(stdout.text.includes(KEY) || stderr.text.includes(KEY), false);
   } finally {
     f.close();
@@ -94,7 +95,9 @@ test('record picks by envKey order, not API order; empty everywhere falls back t
   const f = await fake({ envs: [ENVS[1], ENVS[0]], containers: { 2: [cont('b')], 0: [] } });
   try {
     await run(f, ['--record', out]);
-    assert.equal(JSON.parse(readFileSync(join(out, 'containers.json'), 'utf8')).data[0].names[0], '/b');
+    // vm-103 (first by key) has none, so the one row is vm-200's 'b', anonymized.
+    const rows = JSON.parse(readFileSync(join(out, 'containers.json'), 'utf8')).data;
+    assert.deepEqual(rows.map((c) => c.names[0]), ['/ctr-01']);
     assert.equal(existsSync(join(out, 'activities-auto_update.json')), true);
     assert.deepEqual(JSON.parse(readFileSync(join(out, 'activities-auto_update.json'), 'utf8')).data, []);
   } finally {
@@ -126,8 +129,12 @@ test('--record writes a job_run fixture with the link fields', async () => {
     assert.equal(code, 0);
     const jobs = JSON.parse(readFileSync(join(out, 'activities-job_run.json'), 'utf8')).data;
     assert.equal(jobs.length, 4);
-    assert.deepEqual(jobs[0].metadata, { trigger: 'scheduled', domainActivityId: 'act-sp-2' });
-    assert.equal(jobs[0].batchId, '0f3c1a2e-5b6d-4e7f-8a9b-0000000000a2');
+    // Ids are anonymized; the link fields and their shape stay (an empty link stays empty).
+    assert.equal(jobs[0].metadata.trigger, 'scheduled');
+    assert.match(jobs[0].metadata.domainActivityId, /^id-\d\d$/);
+    assert.match(jobs[0].batchId, /^00000000-0000-4000-8000-\d{12}$/);
+    assert.equal(jobs[1].metadata.domainActivityId, '');
+    assert.equal(JSON.stringify(jobs).includes('0f3c1a2e'), false);
     assert.ok(f.seen.some((u) => u.includes('type=job_run')));
   } finally {
     f.close();

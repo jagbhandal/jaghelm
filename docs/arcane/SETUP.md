@@ -100,7 +100,7 @@ recovery" switch.
   `com.getarcaneapp.arcane.updater=false` label, editing Arcane's exclusion list, or adding
   or removing an environment in `ARCANE_CHECK_ONLY_ENVS`. JagHelm keeps each environment's
   pending updates (container to latest image, any tier) in `arcane-state.json` to tell the
-  two apart. A state file written before 2.1.0 has no pending map, so for its first poll a
+  two apart. A state file from a pre-release build has no pending map, so for its first poll a
   newly held-back container is announced as before; the map is then recorded silently.
 - **Agent offline.** `Agent disconnected; Arcane cannot manage <env>` (title
   `Arcane · <env>`) pushes after 2 consecutive polls that report the environment down,
@@ -181,9 +181,16 @@ errors (listed under `errors`); 2 means a missing `ARCANE_URL` / `ARCANE_API_KEY
 argument, or an unexpected failure (its message is printed, without a stack trace).
 
 `--record <dir>` additionally writes each response as a JSON fixture, reduced to the fields
-JagHelm reads (labels, environment variables and everything else are dropped). Per-environment
-files come from the first environment (by name) whose response has rows, otherwise the first
-environment. Review the files before committing them anywhere.
+JagHelm reads (labels, environment variables and everything else are dropped) and anonymized:
+container names, image references, tags, digests and every id (environment, activity, batch,
+history) become stable placeholders (`ctr-01`, `registry.example/img-01:latest`, fake `sha256:`
+values, fake UUIDs, `id-01`),
+and error text becomes `redacted`. Environment names and the Arcane version are kept.
+Per-environment files come from the first environment (by name) whose response has rows,
+otherwise the first environment. Review the files before committing them anywhere. In the
+JagHelm repository, live recordings belong in `server/arcane/fixtures/live/`; the files
+directly in `server/arcane/fixtures/` are hand-built scenarios the unit tests depend on, so
+never record over them.
 
 ## 9. Files JagHelm keeps
 
@@ -193,7 +200,7 @@ run, last notified release) and `arcane-held-back.json` (held-back containers pe
 environment). Deleting both makes the next poll a fresh silent baseline. Deleting only
 `arcane-held-back.json` is silent too while each container's latest image is unchanged: the
 pending updates in `arcane-state.json` show the backlog is not news, so the set is rebuilt
-quietly and only a newer image pushes. Only a state file written before 2.1.0 (no pending
+quietly and only a newer image pushes. Only a state file from a pre-release build (no pending
 updates in it) would announce every held-back container again.
 
 ## 10. Cutover from Watchtower, and rollback

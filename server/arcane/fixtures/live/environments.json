@@ -1,0 +1,29 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": "0",
+      "name": "vm-103",
+      "status": "online",
+      "enabled": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "pi-2",
+      "status": "online",
+      "enabled": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "name": "pi-1",
+      "status": "online",
+      "enabled": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "name": "vm-101",
+      "status": "online",
+      "enabled": true
+    }
+  ]
+}

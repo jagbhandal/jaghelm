@@ -9,8 +9,10 @@
  *     node scripts/arcane-poll-once.js [--record <dir>]
  *
  * --record writes each response, projected to the fields the client reads
- * (no labels, env or anything else), under the fixture names in
- * server/arcane/fixtures/. The API key is never printed.
+ * (no labels, env or anything else), under the fixture names used in
+ * server/arcane/fixtures/. Record into server/arcane/fixtures/live/: the files
+ * directly in fixtures/ are hand-built scenarios the unit tests depend on.
+ * The API key is never printed.
  */
 import { main } from '../server/arcane/pollOnce.js';
 

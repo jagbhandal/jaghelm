@@ -32,7 +32,8 @@ const DEFAULT_PATH = join(DATA_DIR, 'arcane-state.json');
 const MAX_ENVS = 50;
 const MAX_ACTIVITIES = 200;
 const MAX_PENDING = 500; // containers per environment
-const MAX_AWAITING = 50; // runs per environment waiting on their job run
+// Runs per environment waiting on their job run. The poller evicts (judges manual) beyond it.
+export const MAX_AWAITING = 50;
 const MAX_ERROR = 2048;
 const MAX_FIELD = 256;
 const AWAIT_JOBS = new Set(['arcane-update', 'arcane-prune']);

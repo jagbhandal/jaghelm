@@ -37,10 +37,11 @@ test('projectFixture drops labels and unknown fields', () => {
     success: true,
     data: [
       {
-        names: ['/x'],
-        image: 'img:1',
+        // Anonymized for the public repo (projectFixture.test.js covers the mapping).
+        names: ['/ctr-01'],
+        image: 'registry.example/img-01:1.0.0',
         autoUpdateEnabled: false,
-        updateInfo: { hasUpdate: true, currentVersion: '1', latestVersion: '2', error: 'redacted' },
+        updateInfo: { hasUpdate: true, currentVersion: '1.0.0', latestVersion: '1.0.1', error: 'redacted' },
       },
     ],
   });
@@ -117,18 +118,19 @@ test('projectFixture keeps the job-run link fields of activities and nothing els
       { id: 'a1', type: 'system_prune', status: 'success', metadata: { images: { mode: 'all' } } },
     ],
   });
+  // Ids are anonymized; the job run's link still names the activity it points at.
   assert.deepEqual(out.data, [
     {
-      id: 'j1',
+      id: 'id-01',
       type: 'job_run',
       status: 'success',
       startedAt: 's',
       endedAt: 'e',
       error: '',
-      batchId: 'b1',
-      metadata: { trigger: 'scheduled', domainActivityId: 'a1' },
+      batchId: 'id-02',
+      metadata: { trigger: 'scheduled', domainActivityId: 'id-03' },
     },
-    { id: 'a1', type: 'system_prune', status: 'success' },
+    { id: 'id-03', type: 'system_prune', status: 'success' },
   ]);
 });
 

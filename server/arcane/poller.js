@@ -54,6 +54,7 @@ import {
 } from './format.js';
 import { createLogger } from '../util/logger.js';
 import { MAX_TIMER_MS } from './config.js';
+import { MAX_AWAITING } from './stateStore.js';
 
 const OFFLINE_AFTER_POLLS = 2;
 // auto_update before system_prune: the order activities are processed in.
@@ -67,7 +68,6 @@ const JOB_RUN_PAGES = 4;
 // How long a finished run's cron decision may wait for its job run to finish. Arcane can
 // keep a job run queued or retrying indefinitely; after this the run is judged manual.
 export const AWAIT_MAX_MS = 30 * 60_000;
-const AWAIT_MAX = 50; // awaiting runs per environment; the oldest beyond it are judged manual
 // With push configured, the first poll and release check wait this long at most for it.
 const PUSH_WAIT_MS = 30_000;
 const PUSH_WAIT_STEP_MS = 500;
@@ -396,8 +396,8 @@ export function createArcanePoller({
       }
     }
 
-    // Bounded: the oldest beyond the cap get no cron run.
-    for (const rec of keep.splice(0, Math.max(0, keep.length - AWAIT_MAX))) {
+    // Bounded by the store's own cap (MAX_AWAITING): the oldest beyond it get no cron run.
+    for (const rec of keep.splice(0, Math.max(0, keep.length - MAX_AWAITING))) {
       judgedManual(key, rec, 'evicted');
     }
     stateStore.setAwaiting(key, keep);
