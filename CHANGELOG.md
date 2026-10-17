@@ -6,6 +6,10 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-10-17
+
+JagHelm can now read an Arcane manager and send its update, held-back, prune, agent and release notifications by mobile push.
+
 ### Added
 - Arcane update notifications by mobile push, covering applied and failed updates, held-back updates, Arcane agent outages and new Arcane releases, plus overdue detection for Arcane's scheduled update and prune runs. Set `ARCANE_URL` and `ARCANE_API_KEY` to enable it; see `docs/arcane/SETUP.md`.
 
@@ -474,7 +478,8 @@ First public release.
 - Stored credentials encrypted with AES-256-GCM.
 - Password authentication with scrypt hashing.
 
-[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/jagbhandal/jaghelm/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/jagbhandal/jaghelm/compare/v1.5.0...v2.0.0
 [1.5.0]: https://github.com/jagbhandal/jaghelm/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/jagbhandal/jaghelm/compare/v1.3.0...v1.4.0
