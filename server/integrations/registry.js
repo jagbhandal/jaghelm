@@ -22,17 +22,14 @@ const PRESETS_DIR = join(__dirname, 'presets');
 
 const presets = new Map();
 
-// Helper modules that live in presets/ but aren't themselves presets (they're
-// imported BY presets). Excluded from the directory scan so they don't trip the
-// "default export is not an object" validation and log a spurious load error.
-const NON_PRESET_FILES = new Set(['createArrPreset.js']);
-
-// A preset is a <type>.js file. Test files sit beside the presets they cover
-// (`npm test` globs server/**/*.test.js) and the image ships server/ whole, so
-// importing one would run its node:test suite inside the server process and
-// log it as an invalid preset. Only .js is scanned, so .mjs/.cjs never load.
+// Every <type>.js file in presets/ is a preset, so helpers the presets import
+// live in lib/ (e.g. lib/createArrPreset.js), not here. Test files sit beside
+// the presets they cover (`npm test` globs server/**/*.test.js) and the image
+// ships server/ whole, so importing one would run its node:test suite inside
+// the server process and log it as an invalid preset. Only .js is scanned, so
+// .mjs/.cjs never load.
 function isPresetFile(file) {
-  return file.endsWith('.js') && !file.endsWith('.test.js') && !NON_PRESET_FILES.has(file);
+  return file.endsWith('.js') && !file.endsWith('.test.js');
 }
 
 // Keys that every preset MUST declare. Verified against the actual readers:

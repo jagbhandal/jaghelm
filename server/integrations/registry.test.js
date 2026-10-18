@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { __test__, initRegistry, getPreset } from './registry.js';
+import { createLogger } from '../util/logger.js';
 const { validatePreset } = __test__;
 
 // A minimal preset that satisfies REQUIRED_KEYS and uses only allowed keys.
@@ -144,8 +145,13 @@ test('initRegistry loads the shipped presets/ dir without logging errors', async
     return true;
   });
 
+  // Positive control: LOG_LEVEL=silent would hide every error line and let
+  // this test pass without checking anything.
+  createLogger('registry.test').error('probe');
   await initRegistry();
   t.mock.restoreAll();
 
-  assert.deepEqual(errors, [], 'no preset in presets/ should fail to load');
+  const isProbe = (line) => line.includes('"module":"registry.test"');
+  assert.equal(errors.filter(isProbe).length, 1, 'error lines are not reaching stderr (LOG_LEVEL=silent?)');
+  assert.deepEqual(errors.filter((line) => !isProbe(line)), [], 'no preset in presets/ should fail to load');
 });

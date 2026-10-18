@@ -36,9 +36,11 @@ README.md
 LICENSE
 docs
 
-# Tests — run in CI on the checkout, never inside the image build; nothing at
-# runtime imports them (registry.js also refuses to load presets/*.test.js)
+# Tests and test-only fixtures — run in CI on the checkout, never inside the
+# image build; nothing at runtime reads them (registry.js also refuses to load
+# presets/*.test.js)
 **/*.test.*
+server/arcane/fixtures
 
 # Archives
 *.tar.gz

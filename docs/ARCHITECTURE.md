@@ -179,9 +179,11 @@ in the app). Setup: [arcane/SETUP.md](arcane/SETUP.md).
 
 ### 4.3 Integration engine
 
-The differentiator. A declarative **preset** (`integrations/presets/*.js`, 42 of
+The differentiator. A declarative **preset** (`integrations/presets/*.js`, 41 of
 them) describes how to talk to one app: endpoints, auth mode, and which JSON
-paths map to which display fields. The flow:
+paths map to which display fields. The registry loads every `.js` file in
+`presets/` except `*.test.js`, so helpers the presets share live in `lib/`
+(e.g. `lib/createArrPreset.js`). The flow:
 
 ```mermaid
 flowchart LR
