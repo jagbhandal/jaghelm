@@ -137,7 +137,6 @@
 |---|-----|------|----------|------------|
 | 40 | **Gotify** | bearer | `/application` | Apps, Messages |
 | 41 | **Ntfy** | none/bearer | `/v1/stats` | Topics, Messages |
-| 42 | **Watchtower** | none (metrics) | Prometheus metrics endpoint | Scanned, Updated, Failed |
 | 43 | **Mealie** | bearer | `/api/recipes?page=1&perPage=1` | Recipes, Categories, Tags |
 
 ---

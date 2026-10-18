@@ -1,8 +1,8 @@
 # Arcane Update Notifications: Operator Setup
 
 JagHelm polls the Arcane manager's REST API (read-only) and turns its state changes into
-mobile push notifications and scheduled-job history. This replaces the Watchtower webhook
-(see [docs/watchtower/SETUP.md](../watchtower/SETUP.md), deprecated).
+mobile push notifications and scheduled-job history. This replaced the Watchtower webhook,
+which was removed in 2.2.0.
 
 The poller lives in `server/arcane/` and starts at boot. It is off unless both `ARCANE_URL`
 and `ARCANE_API_KEY` are set, and it never runs in demo mode.

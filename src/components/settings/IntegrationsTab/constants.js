@@ -25,7 +25,7 @@ export const PRESET_CATEGORIES = {
   nextcloud: 'files', photoprism: 'files', immich: 'files', paperless: 'files',
   vaultwarden: 'security', authentik: 'security',
   gitea: 'dev', gitlab: 'dev',
-  homeassistant: 'home', frigate: 'home', gotify: 'home', ntfy: 'home', watchtower: 'home', mealie: 'home',
+  homeassistant: 'home', frigate: 'home', gotify: 'home', ntfy: 'home', mealie: 'home',
 };
 
 // Auth type labels and field requirements

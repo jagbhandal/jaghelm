@@ -130,3 +130,10 @@ test('CSP ENFORCES by default with a strict script-src + locked object-src', asy
   assert.ok(!r.headers['content-security-policy-report-only'], 'report-only header absent by default');
   assert.ok(!/upgrade-insecure-requests/.test(csp), 'no upgrade-insecure-requests');
 });
+
+test('POST /api/watchtower/event → 404 (webhook removed in 2.2.0)', async () => {
+  const r = await request(app)
+    .post('/api/watchtower/event')
+    .send({ secret: 'x', node: 'vm-101', message: 'updated|radarr|v1|v2' });
+  assert.equal(r.status, 404);
+});
