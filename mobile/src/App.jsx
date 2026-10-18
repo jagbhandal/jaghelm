@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import MobileApp from './MobileApp.jsx';
 import Login from './Login.jsx';
 import { secureStore } from '@shared/storage/index.js';
-import { setAuthExpiredHandler, setAuthToken } from '@shared/api/client.js';
-import { setPref } from './storage/prefsAdapter.js';
+import { setAuthExpiredHandler } from '@shared/api/client.js';
 import { setAuthHandlers } from './auth/authState.js';
-import { TOKEN_KEY, BASE_URL_KEY, URL_PRESENT_KEY, REMEMBER_KEY } from './runtimeConfig.js';
+import { clearSessionToken, forgetServer } from './auth/forgetServer.js';
+import { BASE_URL_KEY } from './runtimeConfig.js';
 
 /**
  * Auth-aware shell with three states driven by { hasUrl, hasToken } from boot:
@@ -24,13 +24,10 @@ export default function App({ initial }) {
   useEffect(() => {
     // Kill the session token and drop to re-auth — reached from a server-driven
     // 401 and from a user-initiated logout (same operation, one definition).
-    // Flip REMEMBER off so the next boot wipes the token UNCONDITIONALLY even if
-    // the Keystore delete here silently failed (the adapter swallows errors) —
-    // otherwise a failed delete + remember==='true' would silently re-auth.
+    // The storage steps and their order live in auth/forgetServer.js, shared
+    // with the connection screen's Change server.
     const clearSession = async () => {
-      await secureStore.removeItem(TOKEN_KEY);
-      await setPref(REMEMBER_KEY, 'false');
-      setAuthToken('');
+      await clearSessionToken();
       setHasToken(false);
     };
 
@@ -38,9 +35,7 @@ export default function App({ initial }) {
     setAuthHandlers({
       logout: clearSession,
       forgetDevice: async () => {
-        await clearSession();
-        await secureStore.removeItem(BASE_URL_KEY);
-        await setPref(URL_PRESENT_KEY, 'false');
+        await forgetServer({ onTokenCleared: () => setHasToken(false) });
         setHasUrl(false);
       },
     });

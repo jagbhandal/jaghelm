@@ -72,6 +72,18 @@ describe('App routing', () => {
     expect(setAuthToken).toHaveBeenCalledWith('');
   });
 
+  // A throw stops the sequence before the UI drops to re-auth, so the caller
+  // sees the error instead of a sign-out that did not finish.
+  it('logout whose keep-signed-in write fails rejects and stays in the app', async () => {
+    setPref.mockRejectedValue(new Error('preferences write failed'));
+    render(<App initial={{ hasUrl: true, hasToken: true }} />);
+    await act(async () => {
+      await expect(logout()).rejects.toThrow('preferences write failed');
+    });
+    expect(screen.getByText('THE_APP')).toBeInTheDocument();
+    expect(setAuthToken).not.toHaveBeenCalled();
+  });
+
   it('forgetDevice drops an authed app to first-run and clears URL + token', async () => {
     render(<App initial={{ hasUrl: true, hasToken: true }} />);
     await act(async () => {
@@ -80,6 +92,22 @@ describe('App routing', () => {
     expect(await screen.findByText('LOGIN askUrl=true')).toBeInTheDocument();
     expect(removeItem).toHaveBeenCalledWith('jaghelm-token');
     expect(removeItem).toHaveBeenCalledWith('jaghelm-base-url');
+    expect(setPref).toHaveBeenCalledWith('jaghelm-remember', 'false');
+    expect(setPref).toHaveBeenCalledWith('jaghelm-base-url-present', 'false');
+    expect(setAuthToken).toHaveBeenCalledWith('');
+  });
+
+  it('forgetDevice that fails removing the URL still leaves the app signed out', async () => {
+    removeItem.mockImplementation(async (k) => {
+      if (k === 'jaghelm-base-url') throw new Error('delete failed');
+    });
+    render(<App initial={{ hasUrl: true, hasToken: true }} />);
+    await act(async () => {
+      await expect(forgetDevice()).rejects.toThrow('delete failed');
+    });
+    expect(screen.getByText('LOGIN askUrl=false')).toBeInTheDocument();
+    expect(setPref).toHaveBeenCalledWith('jaghelm-remember', 'false');
+    expect(setPref).not.toHaveBeenCalledWith('jaghelm-base-url-present', 'false');
   });
 
   it('a 401 auth-expired event drops an authed app to re-auth', async () => {
@@ -90,5 +118,16 @@ describe('App routing', () => {
       await handler();
     });
     expect(await screen.findByText('LOGIN askUrl=false')).toBeInTheDocument();
+  });
+
+  it('a 401 whose keep-signed-in write fails rejects and stays in the app', async () => {
+    setPref.mockRejectedValue(new Error('preferences write failed'));
+    render(<App initial={{ hasUrl: true, hasToken: true }} />);
+    const handler = capturedExpiryHandler();
+    await act(async () => {
+      await expect(handler()).rejects.toThrow('preferences write failed');
+    });
+    expect(screen.getByText('THE_APP')).toBeInTheDocument();
+    expect(setAuthToken).not.toHaveBeenCalled();
   });
 });
