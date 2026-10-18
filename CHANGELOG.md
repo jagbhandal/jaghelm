@@ -6,6 +6,10 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-10-18
+
+A weekly Arcane vulnerability digest by mobile push, sent only when there is something new.
+
 ### Added
 - A weekly Arcane vulnerability digest by mobile push. For the environments listed in `ARCANE_VULN_DIGEST_ENVS` (empty by default, which leaves it off), once a week (Sunday 14:00 UTC by default; `ARCANE_VULN_DIGEST_DAY` and `ARCANE_VULN_DIGEST_HOUR`) JagHelm reads the scan results Arcane has stored and pushes only when something is new: critical or high findings with a fix in the images your containers use, known-exploited (KEV) entries, or an image scan that has newly gone stale or failed. Each digest is recorded as a run of the `arcane-vuln-digest` scheduled job, which goes overdue when digests stop. It needs scanning turned on in Arcane and the `vulnerabilities:read` grant on JagHelm's Arcane key (a global grant in Arcane v2.16.1, so the list decides what is read); preview it with `node scripts/arcane-poll-once.js --vuln-digest`. See `docs/arcane/SETUP.md`.
 
@@ -495,7 +499,8 @@ First public release.
 - Stored credentials encrypted with AES-256-GCM.
 - Password authentication with scrypt hashing.
 
-[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/jagbhandal/jaghelm/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/jagbhandal/jaghelm/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/jagbhandal/jaghelm/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/jagbhandal/jaghelm/compare/v1.5.0...v2.0.0
