@@ -11,6 +11,7 @@ import http from 'http';
 
 import { safeFetch } from './httpClient.js';
 import { createLogger } from './util/logger.js';
+import { NOT_HELPER, isHelperSeries } from './util/helperContainers.js';
 
 const log = createLogger('docker');
 
@@ -26,19 +27,19 @@ export async function getDockerContainers() {
   // Try Prometheus + cAdvisor first
   try {
     const [namesR, cpuR, memR] = await Promise.all([
-      safeFetch(`${promUrl}/api/v1/query?query=${encodeURIComponent('container_last_seen{name!=""}')}`)
+      safeFetch(`${promUrl}/api/v1/query?query=${encodeURIComponent(`container_last_seen{name!="",${NOT_HELPER}}`)}`)
         .then((r) => r.json())
         .catch(() => null),
       safeFetch(
         `${promUrl}/api/v1/query?query=${encodeURIComponent(
-          'rate(container_cpu_usage_seconds_total{name!=""}[5m]) * 100'
+          `rate(container_cpu_usage_seconds_total{name!="",${NOT_HELPER}}[5m]) * 100`
         )}`
       )
         .then((r) => r.json())
         .catch(() => null),
       safeFetch(
         `${promUrl}/api/v1/query?query=${encodeURIComponent(
-          'container_memory_usage_bytes{name!=""}'
+          `container_memory_usage_bytes{name!="",${NOT_HELPER}}`
         )}`
       )
         .then((r) => r.json())
@@ -46,25 +47,25 @@ export async function getDockerContainers() {
     ]);
 
     const containers = {};
-    const allResults = [
-      ...(namesR?.data?.result || []),
-      ...(cpuR?.data?.result || []),
-      ...(memR?.data?.result || []),
-    ];
+    const live = (x) => (x?.data?.result || []).filter((r) => !isHelperSeries(r));
+    const nameSeries = live(namesR);
+    const cpuSeries = live(cpuR);
+    const memSeries = live(memR);
+    const allResults = [...nameSeries, ...cpuSeries, ...memSeries];
     for (const r of allResults) {
       const name = r.metric?.name;
       if (name && !containers[name]) {
         containers[name] = { name, cpu: null, memMB: null, status: 'running' };
       }
     }
-    for (const r of cpuR?.data?.result || []) {
+    for (const r of cpuSeries) {
       const name = r.metric?.name;
       if (name && containers[name]) {
         containers[name].cpu =
           r.value?.[1] != null ? parseFloat(parseFloat(r.value[1]).toFixed(1)) : null;
       }
     }
-    for (const r of memR?.data?.result || []) {
+    for (const r of memSeries) {
       const name = r.metric?.name;
       if (name && containers[name]) {
         containers[name].memMB =
