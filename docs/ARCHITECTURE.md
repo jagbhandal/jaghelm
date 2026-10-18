@@ -75,6 +75,8 @@ server/                     Express API (Node 22, ESM)
   refresh.js                background refresh loop (start/stop)
   cache.js                  bounded in-memory cache (FIFO, ETag tags)
   discovery.js              Prometheus/cAdvisor -> nodes + services
+                            (ignores containers labelled as Arcane internal helpers, so
+                            short-lived helpers never become cards or presence breadcrumbs)
   monitors.js               Uptime Kuma monitor matching
   config.js                 display config: copy-on-read + atomic save
   secrets.js                AES-256-GCM secret store (per-install KDF salt)

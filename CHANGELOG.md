@@ -6,6 +6,9 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- Arcane's short-lived internal helper containers (volume, backup and scan helpers) are no longer discovered, so they no longer appear as grey "unknown" cards or turn a node's health dot yellow after they exit.
+
 ## [2.1.0] — 2026-10-17
 
 JagHelm can now read an Arcane manager and send its update, held-back, prune, agent and release notifications by mobile push.

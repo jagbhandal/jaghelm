@@ -10,6 +10,7 @@
 import { createLogger } from './util/logger.js';
 import { safeFetch } from './httpClient.js';
 import { positiveNum } from './util/env.js';
+import { NOT_HELPER, isHelperSeries } from './util/helperContainers.js';
 
 const log = createLogger('discovery');
 
@@ -102,11 +103,11 @@ export async function getNodeData(nodeLabel) {
     promQuery(`node_filesystem_size_bytes{${l},mountpoint="/",fstype!="tmpfs"}`),
     promQuery(`node_filesystem_free_bytes{${l},mountpoint="/",fstype!="tmpfs"}`),
     // Container stats queries
-    promQuery(`container_last_seen{${l},name!=""}`),
-    promQuery(`rate(container_cpu_usage_seconds_total{${l},name!=""}[5m]) * 100`),
-    promQuery(`container_memory_usage_bytes{${l},name!=""}`),
-    promQuery(`container_network_receive_bytes_total{${l},name!=""}`),
-    promQuery(`container_network_transmit_bytes_total{${l},name!=""}`),
+    promQuery(`container_last_seen{${l},name!="",${NOT_HELPER}}`),
+    promQuery(`rate(container_cpu_usage_seconds_total{${l},name!="",${NOT_HELPER}}[5m]) * 100`),
+    promQuery(`container_memory_usage_bytes{${l},name!="",${NOT_HELPER}}`),
+    promQuery(`container_network_receive_bytes_total{${l},name!="",${NOT_HELPER}}`),
+    promQuery(`container_network_transmit_bytes_total{${l},name!="",${NOT_HELPER}}`),
   ]);
 
   // ── Build node metrics ──
@@ -207,6 +208,7 @@ export async function getNodeData(nodeLabel) {
   const containerMap = new Map();
   const allResults = [...namesR, ...cCpuR, ...cMemR, ...cRxR, ...cTxR];
   for (const r of allResults) {
+    if (isHelperSeries(r)) continue;
     const name = r.metric?.name;
     if (name && !staleNames.has(name) && !containerMap.has(name)) {
       containerMap.set(name, {
