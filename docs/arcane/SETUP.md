@@ -80,9 +80,9 @@ Elsewhere, a pending update is held back when the container has auto-update turn
 
 ## 5. What pushes when
 
-All Arcane pushes use the existing **Watchtower / updates** notification toggle in the app;
-there is no separate Arcane toggle. Recovery messages also respect the "also notify on
-recovery" switch.
+All Arcane pushes use the existing **Updates** notification toggle in the app (labelled
+**Watchtower** in app 1.1.0 and earlier; the preference key is still `watchtower`); there is no
+separate Arcane toggle. Recovery messages also respect the "also notify on recovery" switch.
 
 - **First sight is silent.** The first time JagHelm sees an environment up with every read
   succeeding, it stores the held-back set and marks existing finished activities as seen. No

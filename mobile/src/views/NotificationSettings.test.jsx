@@ -68,7 +68,7 @@ describe('NotificationSettings (read path)', () => {
     expect(screen.getByRole('switch', { name: /hosts/i })).not.toBeChecked();
     expect(screen.getByRole('switch', { name: /ups/i })).toBeChecked();
     expect(screen.getByRole('switch', { name: /cron/i })).toBeChecked();
-    expect(screen.getByRole('switch', { name: /watchtower/i })).toBeChecked();
+    expect(screen.getByRole('switch', { name: /^updates$/i })).toBeChecked();
     expect(screen.getByRole('switch', { name: /notify on recovery/i })).not.toBeChecked();
     expect(screen.getByRole('switch', { name: /enable push|push notifications/i })).toBeChecked();
   });
@@ -88,10 +88,14 @@ describe('NotificationSettings (read path)', () => {
     expect(getPushPrefs).not.toHaveBeenCalled();
   });
 
-  it('renders the Watchtower category toggle', async () => {
+  it('labels the watchtower category "Updates" and keeps its pref key', async () => {
     render(<NotificationSettings nav={nav} data={{}} params={{}} />);
     await waitFor(() => expect(getPushPrefs).toHaveBeenCalled());
-    expect(screen.getByRole('switch', { name: /watchtower/i })).toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: /watchtower/i })).toBeNull();
+    fireEvent.click(screen.getByRole('switch', { name: /^updates$/i }));
+    await waitFor(() => expect(setPushPrefs).toHaveBeenCalledTimes(1));
+    const [, sent] = setPushPrefs.mock.calls[0];
+    expect(sent.categories).toEqual({ service: true, host: false, ups: true, cron: true, watchtower: false });
   });
 
   it('every control sits in a .notif-row (CSS-class smoke check for the >=44px row; jsdom has no layout)', async () => {

@@ -170,7 +170,7 @@ every `ARCANE_POLL_SECONDS` (default 300) plus a release check every
 release check wait up to 30 s for push to be ready. It diffs against persisted state and emits
 push events through `dispatchEvents`, and records Arcane's scheduler-started update and prune
 runs, and its image watcher's checks, into the cron store. Its `arcane_*` push types map to
-the `watchtower` preference category. Setup:
+the `watchtower` preference category (labelled Updates in the app). Setup:
 [arcane/SETUP.md](arcane/SETUP.md).
 
 ### 4.3 Integration engine

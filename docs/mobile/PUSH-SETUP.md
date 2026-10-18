@@ -164,9 +164,11 @@ on the phone within a refresh cycle (~30s).
 
 ## Which toggle covers what
 
-The app's **Watchtower** (updates) toggle also covers Arcane update notifications: applied and
-failed updates, held-back updates, Arcane agent outages and new Arcane releases. There is no
-separate Arcane toggle. See [docs/arcane/SETUP.md](../arcane/SETUP.md).
+The app's **Updates** toggle (labelled **Watchtower** in app 1.1.0 and earlier) covers Arcane update
+notifications: applied and failed updates, held-back updates, Arcane agent outages and new Arcane
+releases. There is no separate Arcane toggle. The label changed, not the setting: the preference
+key is still `watchtower`, so older apps and the server keep working. See
+[docs/arcane/SETUP.md](../arcane/SETUP.md).
 
 ---
 
