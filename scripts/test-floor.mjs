@@ -13,13 +13,20 @@
 // run and still exited 0, so nothing noticed. A floor turns a silent drop into a failure.
 //
 // Bumping the floor: MIN_PASSING is a floor, not an exact count, so adding tests never
-// breaks CI. Raise it to the `# pass` count now and then to keep it tight (each run
-// prints the current count). When a change removes tests on purpose, lower it in the
-// same commit and say why in the message.
+// breaks CI. When the count is more than 2% above it, each run prints a notice to raise
+// it, and the release PR raises it to the current `# pass` (docs/RELEASING.md). When a
+// change removes tests on purpose, lower it in the same commit and say why.
+//
+// A run reports 785 today, 9 of them duplicates: registry.js loads every .js file in
+// presets/, test files included, so the gitlab and nextcloud preset tests run twice
+// (#223). Merged with the fix for #223, the suite passes 778. The floor (773) is below
+// both, so either can merge first; raise it as tests land.
 import { spawn } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export const MIN_PASSING = 780;
+export const MIN_PASSING = 773;
+const STALE_MARGIN = 0.02;
 
 const KEYS = ['tests', 'suites', 'pass', 'fail', 'cancelled', 'skipped', 'todo'];
 const SUMMARY_LINE = new RegExp(`^(?:#|ℹ) (${KEYS.join('|')}) (\\d+)\\s*$`, 'gm');
@@ -53,6 +60,12 @@ export function checkSummary(summary, minPassing) {
   return problems;
 }
 
+// A nudge to raise the floor once the suite has grown well past it; null otherwise.
+export function staleFloorNotice(summary, minPassing) {
+  if (summary.pass <= minPassing * (1 + STALE_MARGIN)) return null;
+  return `${summary.pass} passed; consider raising MIN_PASSING to ${summary.pass}`;
+}
+
 async function main(argv) {
   const args = [...argv];
   let minPassing = MIN_PASSING;
@@ -73,21 +86,32 @@ async function main(argv) {
     output += chunk;
     process.stdout.write(chunk);
   });
-  const code = await new Promise((resolve) => {
+  // Pass a CI cancel or Ctrl-C on, so the command is not left running on its own.
+  for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => child.kill(sig));
+  const { status, signal } = await new Promise((resolve) => {
     child.on('error', (err) => {
       console.error(`test-floor: could not run ${args[0]}: ${err.message}`);
-      resolve(1);
+      resolve({ status: 1, signal: null });
     });
-    child.on('close', (status) => resolve(status ?? 1));
+    child.on('close', (code, sig) => resolve({ status: code, signal: sig }));
   });
+  if (signal) {
+    console.error(`test-floor: child killed by ${signal}`);
+    return 1;
+  }
 
   const summary = parseSummary(output);
   const problems = checkSummary(summary, minPassing);
   for (const p of problems) console.error(`test-floor: ${p}`);
-  if (code !== 0) return code;
+  if (status !== 0) return status;
   if (problems.length) return 1;
   console.error(`test-floor: ${summary.pass} passed (floor ${minPassing})`);
+  const notice = staleFloorNotice(summary, minPassing);
+  if (notice) console.error(`test-floor: ${notice}`);
   return 0;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) process.exitCode = await main(process.argv.slice(2));
+// Compare real paths: import.meta.url is resolved through symlinks, argv[1] is not, and
+// a mismatch would skip main() and exit 0 without running anything.
+const invokedAs = process.argv[1] ? realpathSync(process.argv[1]) : '';
+if (invokedAs === fileURLToPath(import.meta.url)) process.exitCode = await main(process.argv.slice(2));

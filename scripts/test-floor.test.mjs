@@ -1,11 +1,11 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkSummary, parseSummary } from './test-floor.mjs';
+import { checkSummary, parseSummary, staleFloorNotice } from './test-floor.mjs';
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'test-floor.mjs');
 
@@ -78,6 +78,12 @@ test('checkSummary fails when there is no summary', () => {
   assert.match(checkSummary(null, 10).join('\n'), /no test summary/);
 });
 
+test('staleFloorNotice asks for a raise only when the count is more than 2% above the floor', () => {
+  assert.equal(staleFloorNotice(ok({ tests: 102, pass: 102 }), 100), null);
+  assert.equal(staleFloorNotice(ok({ tests: 780, pass: 780 }), 771), null);
+  assert.equal(staleFloorNotice(ok({ tests: 103, pass: 103 }), 100), '103 passed; consider raising MIN_PASSING to 103');
+});
+
 // ── CLI: runs a real node:test suite and checks the exit code ─────────────────
 
 const dir = mkdtempSync(path.join(tmpdir(), 'test-floor-'));
@@ -95,17 +101,26 @@ const LEAKING = fixture('leaking.mjs', "test('a', () => { setInterval(() => {}, 
 
 // The suite runs inside `node --test`, which marks its children with
 // NODE_TEST_CONTEXT; a nested `node --test` that inherits it does not run files.
-function run(...args) {
-  const env = { ...process.env };
-  delete env.NODE_TEST_CONTEXT;
-  return spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', env, timeout: 30_000 });
+const ENV = { ...process.env };
+delete ENV.NODE_TEST_CONTEXT;
+
+function runScript(script, args) {
+  return spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', env: ENV, timeout: 30_000 });
 }
+const run = (...args) => runScript(SCRIPT, args);
 
 test('CLI exits 0 and passes the output through when the floor is met', () => {
   const r = run('--min=3', process.execPath, '--test', PASSING);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^# pass 3$/m);
-  assert.match(r.stderr, /3 passed/);
+  assert.match(r.stderr, /3 passed \(floor 3\)/);
+  assert.doesNotMatch(r.stderr, /consider raising/);
+});
+
+test('CLI still exits 0 when the floor is stale, with a notice to raise it', () => {
+  const r = run('--min=2', process.execPath, '--test', PASSING);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /^test-floor: 3 passed; consider raising MIN_PASSING to 3$/m);
 });
 
 test('CLI exits 1 when fewer tests pass than the floor', () => {
@@ -130,6 +145,37 @@ test('CLI exits 1 when the command prints no summary', () => {
   const r = run('--min=1', process.execPath, '-e', "console.log('hello')");
   assert.equal(r.status, 1);
   assert.match(r.stderr, /no test summary/);
+});
+
+test('CLI runs when started through a symlink (does not skip main and exit 0)', () => {
+  const link = path.join(dir, 'linked-test-floor.mjs');
+  symlinkSync(SCRIPT, link);
+  const r = runScript(link, ['--min=1', process.execPath, '--test', FAILING]);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /1 test\(s\) failed/);
+});
+
+test('CLI reports a command killed by a signal', () => {
+  const r = run('--min=1', process.execPath, '-e', "process.kill(process.pid, 'SIGTERM')");
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /killed by SIGTERM/);
+  assert.doesNotMatch(r.stderr, /no test summary/);
+});
+
+test('CLI forwards SIGTERM to the command', async () => {
+  // The command would outlive the test by 5 s if the signal were not passed on.
+  const cli = spawn(
+    process.execPath,
+    [SCRIPT, '--min=1', process.execPath, '-e', "console.log('ready'); setTimeout(() => {}, 5000)"],
+    { env: ENV, stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  let stderr = '';
+  cli.stderr.setEncoding('utf8').on('data', (c) => (stderr += c));
+  cli.stdout.setEncoding('utf8').on('data', (c) => c.includes('ready') && cli.kill('SIGTERM'));
+  const [code, signal] = await new Promise((resolve) => cli.on('close', (c, s) => resolve([c, s])));
+  assert.equal(signal, null, 'the CLI handles SIGTERM itself instead of dying from it');
+  assert.equal(code, 1);
+  assert.match(stderr, /killed by SIGTERM/);
 });
 
 test('CLI exits 2 without a command', () => {

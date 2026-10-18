@@ -23,7 +23,8 @@ const { stopBackgroundRefresh } = await import('./refresh.js');
 
 after(() => {
   // A valid display-config POST restarts the refresh loop; stop it so the
-  // suite tears down cleanly (and doesn't lean solely on --test-force-exit).
+  // file's process can exit (a live loop would hold it open until
+  // --test-timeout cancels the file and fails the run).
   stopBackgroundRefresh();
   rmSync(dataDir, { recursive: true, force: true });
 });
