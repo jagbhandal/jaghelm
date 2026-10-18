@@ -6,6 +6,9 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Security
+- Outbound requests now forward only `Accept`, `Accept-Encoding`, `Content-Type` and `User-Agent` when a server redirects to a different origin, and drop every other header. Before, only `Authorization`, cookies, `X-API-Key` and `X-Api-Token` were dropped, so the Gotify, Plex, Jellyfin, GitLab, Nextcloud, Pi-hole and PhotoPrism credentials, and a custom integration's own auth header, followed the redirect. An integration configured with an `http://` URL that redirects to `https://` now needs the `https://` URL, since its credential is dropped on any origin change.
+
 ## [2.3.0] — 2026-10-18
 
 A weekly Arcane vulnerability digest by mobile push, sent only when there is something new.

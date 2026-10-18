@@ -1,6 +1,7 @@
 // @ts-check
 /**
- * The single outbound-fetch chokepoint: SSRF-revalidated redirect following + a
+ * The single outbound-fetch chokepoint: SSRF-revalidated redirect following, an
+ * allowlist of the headers that may follow a redirect to another origin, and a
  * response-body size cap. Both safeFetch wrappers (integrations/lib/http.js and
  * httpClient.js) route through here.
  *
@@ -17,8 +18,20 @@
 import { assertSafeUrl } from './ssrf.js';
 
 const MAX_HOPS = 5;
-// Stripped on a cross-origin redirect: auth headers, cookies and API-key headers.
-const CREDENTIAL_HEADERS = ['authorization', 'cookie', 'x-api-key', 'x-api-token'];
+/**
+ * The only request headers that follow a redirect to a different origin (scheme,
+ * host or port differs, so an http -> https upgrade on the same host counts);
+ * every other header is dropped there. An allowlist, not a denylist: integration
+ * presets put credentials in headers of their own (X-Gotify-Key, X-Plex-Token,
+ * NC-Token, a custom integration's authHeader, ...), and a list of names to strip
+ * misses whichever one it doesn't name. These four carry content negotiation and
+ * client identity, never a secret. Lowercase, because Headers lowercases names,
+ * so matching is case-insensitive.
+ */
+export const CROSS_ORIGIN_SAFE_HEADERS = Object.freeze([
+  'accept', 'accept-encoding', 'content-type', 'user-agent',
+]);
+const CROSS_ORIGIN_SAFE = new Set(CROSS_ORIGIN_SAFE_HEADERS);
 const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB — integration payloads are tiny
 
 /**
@@ -54,10 +67,13 @@ export async function fetchSafe(url, opts = {}, cfg = {}) {
       headers.delete('content-type');
       headers.delete('content-length');
     }
-    // Never carry credentials across an origin boundary on a redirect. Headers is
-    // case-insensitive, so this covers X-API-Key / X-Api-Token in any spelling.
+    // Never carry credentials across an origin boundary on a redirect: past one,
+    // only CROSS_ORIGIN_SAFE_HEADERS survive. Dropped headers stay dropped for the
+    // rest of the chain, even if a later hop returns to the first origin.
     if (!sameOrigin) {
-      for (const h of CREDENTIAL_HEADERS) headers.delete(h);
+      for (const h of [...headers.keys()]) {
+        if (!CROSS_ORIGIN_SAFE.has(h)) headers.delete(h);
+      }
     }
     current = next.toString();
   }

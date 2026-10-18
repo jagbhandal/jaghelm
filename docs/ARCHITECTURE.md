@@ -201,6 +201,10 @@ Key properties:
   construction -- blocking cloud-metadata IPs, decimal/hex/octal IPv4, and
   IPv4-mapped IPv6, with a `trusted` flag exempting operator infra (Prometheus/
   Kuma) from the strict private-network block.
+- **Credentials stay on their origin.** Redirects are followed in code
+  (`util/safeFetchCore.js`), and a hop to a different origin (scheme, host or
+  port) forwards only `Accept`, `Accept-Encoding`, `Content-Type` and
+  `User-Agent`. Every other header, so every preset's auth header, is dropped.
 - **Credentials are redacted** (`util/redact.js`) before any error is logged *or*
   returned to the browser -- query-auth presets put the key in the URL, which
   fetch errors would otherwise echo.
