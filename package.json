@@ -14,6 +14,7 @@
     "build": "vite build && node scripts/inject-sw-precache.mjs",
     "start": "node server/index.js",
     "test": "node --test --test-timeout=60000 \"server/**/*.test.{js,mjs,cjs}\" \"src/**/*.test.{js,mjs,cjs}\" \"scripts/**/*.test.{js,mjs,cjs}\"",
+    "test:ci": "node scripts/test-floor.mjs npm test",
     "test:watch": "node --test --watch",
     "test:client": "vitest run",
     "test:client:watch": "vitest",
