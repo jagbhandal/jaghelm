@@ -547,3 +547,42 @@ test('refusing to re-send a body warns once per origin pair, without the body', 
   assert.ok(!String(error?.message).includes(secret), 'the body reached the error');
   assert.equal((await run()).length, 0, 'same pair warns once');
 });
+
+// The upgrade exception still sends the first hop in clear text, whatever goes
+// along: a credential header, a key in the URL or a re-sent body. Each one warns
+// once per pair to configure https://, with no values.
+test('an upgrade carrying a key in the URL, and no credential header, warns once', async () => {
+  const host = `h${randomBytes(4).toString('hex')}.example.test`;
+  const key = randomBytes(8).toString('hex');
+  const run = () => safeFetchWarnings(async () => {
+    const { error } = await tryHops(`http://${host}/api?apikey=${key}`, `https://${host}/api?apikey=${key}`,
+      { init: { headers: { Accept: 'application/json' } }, ...KEYED });
+    assert.equal(error, null);
+  });
+  const first = await run();
+  assert.equal(first.length, 1);
+  assert.equal(first[0].from, `http://${host}`);
+  assert.equal(first[0].to, `https://${host}`);
+  assert.equal(first[0].credentialInUrl, true);
+  assert.equal(first[0].kept, 0);
+  assert.match(first[0].msg, /clear text on the first hop/);
+  assert.ok(!JSON.stringify(first).includes(key), 'the key reached the log');
+  assert.equal((await run()).length, 0, 'same pair warns once');
+});
+
+test('an upgrade re-sending a body on a 307 warns once, without the body', async () => {
+  const host = `h${randomBytes(4).toString('hex')}.example.test`;
+  const secret = randomBytes(8).toString('hex');
+  const logged = await safeFetchWarnings(() => tryHops(`http://${host}/login`, `https://${host}/login`,
+    { status: 307, init: { method: 'POST', body: `{"password":"${secret}"}` } }));
+  assert.equal(logged.length, 1);
+  assert.equal(logged[0].body, true);
+  assert.ok(!JSON.stringify(logged).includes(secret), 'the body reached the log');
+});
+
+test('an upgrade with nothing to protect does not warn', async () => {
+  const host = `h${randomBytes(4).toString('hex')}.example.test`;
+  const logged = await safeFetchWarnings(() => tryHops(`http://${host}/a`, `https://${host}/a`,
+    { init: { headers: { Accept: 'application/json' } } }));
+  assert.equal(logged.length, 0);
+});

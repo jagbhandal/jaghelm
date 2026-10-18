@@ -5,9 +5,11 @@
  * same-origin 307/308 with its body, and never re-sends it to another origin.
  *
  * Which presets put a credential in the URL is not listed by hand: every preset's
- * connection test and poll run once against a stubbed fetch, and a preset counts
- * if a credential value shows up in a URL it requested. The session presets are
- * the ones with auth: 'session'. A preset added later is covered without editing
+ * connection test and poll run once against a stubbed fetch, and a path counts
+ * if a credential value shows up in a URL it requested. Each path is checked on
+ * its own, since a preset can put the credential in one and not the other (a
+ * {token} in the endpoint, but not in testEndpoint). The session presets are the
+ * ones with auth: 'session'. A preset added later is covered without editing
  * this file. (#204's header policy is tested in redirectAuthHeaders.test.js.)
  */
 import test, { after } from 'node:test';
@@ -38,12 +40,18 @@ const CREDS = { username: `u${hex()}`, password: `p${hex()}`, token: `t${hex()}`
 const SECRETS = Object.values(CREDS);
 const uniqueKey = (type) => `${type}_${hex()}`;
 
-/** Run both of a preset's request paths: the connection test, then a poll. */
-async function runBoth(type, url) {
-  const tested = await testIntegration(type, { url, ...CREDS });
-  const polled = await fetchIntegration(type, { url, ...CREDS, _storageKey: uniqueKey(type) }, true);
-  return { tested, polled };
-}
+/**
+ * A preset's two request paths, each returning { ok, error }: the connection
+ * test, and a poll (fetchIntegration reports only an error).
+ */
+const PATHS = {
+  test: (type, url) => testIntegration(type, { url, ...CREDS }),
+  poll: async (type, url) => {
+    const { error } = await fetchIntegration(type, { url, ...CREDS, _storageKey: uniqueKey(type) }, true);
+    return { ok: !error, error };
+  },
+};
+const hasSecret = (u) => SECRETS.some((s) => u.includes(s));
 
 /** Swap in a fake global fetch for the duration of fn. */
 async function withFetch(fake, fn) {
@@ -58,13 +66,18 @@ async function withFetch(fake, fn) {
 
 const json200 = () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
 
-// The presets whose requests carry a credential in the URL.
-const keyed = new Set();
+// Per preset, which of its paths put a credential in a URL they request:
+// type -> { test: boolean, poll: boolean }, for the presets where either does.
+const keyed = new Map();
 for (const p of presets) {
-  const urls = [];
-  await withFetch(async (url) => { urls.push(String(url)); return json200(); },
-    () => runBoth(p.type, 'http://svc.example.test'));
-  if (urls.some((u) => SECRETS.some((s) => u.includes(s)))) keyed.add(p.type);
+  const leaks = {};
+  for (const [name, run] of Object.entries(PATHS)) {
+    const urls = [];
+    await withFetch(async (url) => { urls.push(String(url)); return json200(); },
+      () => run(p.type, 'http://svc.example.test'));
+    leaks[name] = urls.some(hasSecret);
+  }
+  if (leaks.test || leaks.poll) keyed.set(p.type, leaks);
 }
 
 function listen(handler) {
@@ -75,11 +88,13 @@ function listen(handler) {
 }
 
 // Two origins: `from` redirects every request (path and query kept) to `to`,
-// which counts what reached it. Different ports on one host are different origins.
+// which counts what reached it and keeps the URLs. Different ports on one host
+// are different origins.
 async function twoOrigins(status = 302) {
-  const state = { from: 0, to: 0 };
+  const state = { from: 0, to: 0, toUrls: [] };
   const to = await listen((req, res) => {
     state.to++;
+    state.toUrls.push(req.url);
     res.writeHead(200, { 'content-type': 'application/json' }); res.end('{}');
   });
   const from = await listen((req, res) => {
@@ -102,33 +117,44 @@ test('the presets that put a credential in the URL are found', () => {
   for (const t of ['sabnzbd', 'tautulli', 'emby']) assert.ok(keyed.has(t), `${t} not detected`);
 });
 
-for (const type of keyed) {
-  test(`${type}: a redirect to another origin is refused and the key never reaches it`, async () => {
-    const o = await twoOrigins();
-    try {
-      const { tested, polled } = await runBoth(type, o.fromUrl);
-      assert.equal(tested.ok, false);
-      assert.match(tested.error, REFUSED);
-      assert.match(polled.error, REFUSED);
-      assert.ok(o.state.from >= 2, 'the configured origin was not asked');
-      assert.equal(o.state.to, 0, 'the other origin received a request');
-    } finally { o.close(); }
-  });
+for (const [type, leaks] of keyed) {
+  for (const [name, run] of Object.entries(PATHS)) {
+    if (leaks[name]) {
+      test(`${type} ${name}: a redirect to another origin is refused and the key never reaches it`, async () => {
+        const o = await twoOrigins();
+        try {
+          const result = await run(type, o.fromUrl);
+          assert.equal(result.ok, false);
+          assert.match(result.error, REFUSED);
+          assert.ok(o.state.from >= 1, 'the configured origin was not asked');
+          assert.equal(o.state.to, 0, 'the other origin received a request');
+        } finally { o.close(); }
+      });
 
-  test(`${type}: the same-host http -> https upgrade is followed`, async () => {
-    const hops = [];
-    const { tested, polled } = await withFetch(async (url) => {
-      hops.push(String(url));
-      const u = new URL(url);
-      if (u.protocol === 'http:') {
-        return new Response(null, { status: 302, headers: { location: String(url).replace(/^http:/, 'https:') } });
-      }
-      return json200();
-    }, () => runBoth(type, 'http://svc.example.test'));
-    assert.equal(tested.ok, true, tested.error);
-    assert.equal(polled.error, null);
-    assert.ok(hops.some((h) => h.startsWith('https://svc.example.test/')), 'the upgrade was not followed');
-  });
+      test(`${type} ${name}: the same-host http -> https upgrade is followed`, async () => {
+        const hops = [];
+        const result = await withFetch(async (url) => {
+          hops.push(String(url));
+          if (new URL(url).protocol === 'http:') {
+            return new Response(null, { status: 302, headers: { location: String(url).replace(/^http:/, 'https:') } });
+          }
+          return json200();
+        }, () => run(type, 'http://svc.example.test'));
+        assert.equal(result.ok, true, result.error);
+        assert.ok(hops.some((h) => h.startsWith('https://svc.example.test/')), 'the upgrade was not followed');
+      });
+    } else {
+      // The path without a credential in its URL still follows, without one.
+      test(`${type} ${name}: no credential in the URL, so a cross-origin redirect is followed`, async () => {
+        const o = await twoOrigins();
+        try {
+          await run(type, o.fromUrl);
+          assert.ok(o.state.to >= 1, 'the redirect was not followed');
+          assert.ok(!o.state.toUrls.some(hasSecret), 'a credential reached the other origin');
+        } finally { o.close(); }
+      });
+    }
+  }
 }
 
 test('a preset without a credential in the URL still follows a cross-origin redirect', async () => {

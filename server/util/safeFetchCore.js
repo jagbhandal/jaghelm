@@ -185,8 +185,11 @@ export async function fetchSafe(url, opts = {}, cfg = {}) {
         warnRedirectOnce('dropped', prev.origin, next.origin, { dropped: unsafe.length, headers: unsafe },
           `redirected ${prev.origin} → ${next.origin}; ${unsafe.length} headers not forwarded`);
       }
-    } else if (upgrade && unsafe.length) {
-      warnRedirectOnce('upgrade', prev.origin, next.origin, { kept: unsafe.length, headers: unsafe },
+    } else if (upgrade && (unsafe.length || credentialInUrl || body != null)) {
+      // The upgrade is followed, but its first hop went out in clear text: say
+      // so for whatever it carried (credential headers, a key in the URL, a body).
+      warnRedirectOnce('upgrade', prev.origin, next.origin,
+        { kept: unsafe.length, headers: unsafe, credentialInUrl, body: body != null },
         `redirected ${prev.origin} → ${next.origin}; configure ${next.origin}, ` +
         'credentials are sent in clear text on the first hop');
     }

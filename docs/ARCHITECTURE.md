@@ -218,12 +218,16 @@ Key properties:
   `handler.js`, `resolveEndpoint` in `lib/extract.js`) passes
   `credentialInUrl`, and the request refuses any redirect to another origin
   with an error telling the user to configure the final URL. The same-host
-  `http://` to `https://` upgrade is still followed.
+  `http://` to `https://` upgrade is still followed, and logged once per
+  origin pair like a header-carrying one, since the key went out in clear
+  text first. `httpClient.js` `safeFetch` accepts the same option.
 - **Request bodies stay on their origin.** A `307` or `308` keeps the method
   and body, so a session login is re-sent, but only to the same origin or
   through the same-host upgrade; a request with a body redirected to another
   origin is refused, so a username and password never reach a host the user
-  didn't configure. A streamed body can't be re-sent and is refused too. A
+  didn't configure. Refusals, and an upgrade that re-sends a body, are logged
+  once per origin pair without values. A streamed body can't be re-sent and is
+  refused too. A
   `303`, and a `301`/`302` on any method but `GET`/`HEAD`, becomes a `GET`
   without a body.
 - **Credentials are redacted** (`util/redact.js`) before any error is logged *or*
