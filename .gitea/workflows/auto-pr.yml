@@ -18,7 +18,7 @@ jobs:
           GH_SHA: ${{ github.sha }}
           API_BASE: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
         run: |
-          set -euo pipefail
+          set -eu
 
           EXISTING=$(/usr/bin/curl -sf \
             -H "Authorization: token ${PR_TOKEN}" \
@@ -36,7 +36,7 @@ jobs:
           # backslash + double-quote so a quote/${...} in the commit message can't
           # break the body or inject fields. TITLE is a single line (head -1) and BODY
           # is single-line, so no newline escaping is needed.
-          json_escape() { local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
+          json_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
           PAYLOAD=$(printf '{"title":"%s","head":"staging","base":"main","body":"%s"}' \
             "$(json_escape "$TITLE")" "$(json_escape "$BODY")")
 
