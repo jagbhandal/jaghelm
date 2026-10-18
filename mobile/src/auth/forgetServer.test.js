@@ -108,13 +108,13 @@ describe('forgetServer', () => {
 describe('clearSessionToken', () => {
   it('runs the first three steps in order and keeps the server address', async () => {
     const { log, deps } = fakes();
-    await clearSessionToken(deps);
+    await clearSessionToken({ deps });
     expect(log).toEqual(FIVE_STEPS.slice(0, 3));
   });
 
   it('a throw at the token delete rejects before keep-signed-in is touched', async () => {
     const { log, deps } = fakes({ failAt: 'remove jaghelm-token' });
-    await expect(clearSessionToken(deps)).rejects.toThrow('remove jaghelm-token failed');
+    await expect(clearSessionToken({ deps })).rejects.toThrow('remove jaghelm-token failed');
     expect(log).toEqual(['remove jaghelm-token']);
   });
 });

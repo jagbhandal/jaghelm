@@ -18,7 +18,7 @@ import { TOKEN_KEY, BASE_URL_KEY, URL_PRESENT_KEY, REMEMBER_KEY } from '../runti
 const realDeps = { secureStore, setPref, setAuthToken };
 
 /** Delete the session token, switch keep-signed-in off, clear the in-memory token. */
-export async function clearSessionToken(deps = realDeps) {
+export async function clearSessionToken({ deps = realDeps } = {}) {
   await deps.secureStore.removeItem(TOKEN_KEY);
   await deps.setPref(REMEMBER_KEY, 'false');
   deps.setAuthToken('');
@@ -30,7 +30,7 @@ export async function clearSessionToken(deps = realDeps) {
  * failure removing the address still leaves the UI signed out).
  */
 export async function forgetServer({ deps = realDeps, onTokenCleared = () => {} } = {}) {
-  await clearSessionToken(deps);
+  await clearSessionToken({ deps });
   onTokenCleared();
   await deps.secureStore.removeItem(BASE_URL_KEY);
   await deps.setPref(URL_PRESENT_KEY, 'false');
