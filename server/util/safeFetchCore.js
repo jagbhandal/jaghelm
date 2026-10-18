@@ -1,7 +1,8 @@
 // @ts-check
 /**
  * The single outbound-fetch chokepoint: SSRF-revalidated redirect following, an
- * allowlist of the headers that may follow a redirect to another origin, and a
+ * allowlist of the headers that may follow a redirect to another origin, no
+ * cross-origin redirect at all for a request with a credential in its URL, and a
  * response-body size cap. Both safeFetch wrappers (integrations/lib/http.js and
  * httpClient.js) route through here.
  *
@@ -45,15 +46,17 @@ const warnedPairs = new Set();
 const WARNED_PAIRS_MAX = 256;
 
 /**
- * Warn once per from -> to origin pair. Logs origins and header NAMES only, never
- * values: origins carry no path or query, so no query-string key reaches the log.
+ * Warn once per kind of warning and from -> to origin pair. Logs origins and
+ * header NAMES only, never values: origins carry no path or query, so no
+ * query-string key reaches the log.
+ * @param {string} kind
  * @param {string} from
  * @param {string} to
  * @param {Record<string, unknown>} fields
  * @param {string} msg
  */
-function warnRedirectOnce(from, to, fields, msg) {
-  const key = `${from} ${to}`;
+function warnRedirectOnce(kind, from, to, fields, msg) {
+  const key = `${kind} ${from} ${to}`;
   if (warnedPairs.has(key)) return;
   if (warnedPairs.size >= WARNED_PAIRS_MAX) {
     warnedPairs.delete(/** @type {string} */ (warnedPairs.values().next().value));
@@ -63,13 +66,31 @@ function warnRedirectOnce(from, to, fields, msg) {
 }
 
 /**
+ * Refuse a redirect: warn once per origin pair, then throw. The message names
+ * the two origins only, so it is as safe to return to the browser as to log.
+ * @param {string} reason short and stable; logged as `refused`
+ * @param {URL} prev
+ * @param {URL} next
+ * @param {string} why
+ * @returns {never}
+ */
+function refuseRedirect(reason, prev, next, why) {
+  const msg = `redirected ${prev.origin} → ${next.origin}; ${why}`;
+  warnRedirectOnce(`refused ${reason}`, prev.origin, next.origin, { refused: reason }, msg);
+  throw new Error(msg);
+}
+
+/**
  * @param {string} url
  * @param {RequestInit} [opts]
- * @param {{ trusted?: boolean, maxBytes?: number, dispatcher?: any }} [cfg]
+ * @param {{ trusted?: boolean, maxBytes?: number, dispatcher?: any, credentialInUrl?: boolean }} [cfg]
+ *   credentialInUrl: the URL itself carries a credential (an integration's
+ *   query-string key, or a {token} in its endpoint), so a redirect to another
+ *   origin is refused rather than followed. Set by whoever builds the URL.
  * @returns {Promise<Response>}
  */
 export async function fetchSafe(url, opts = {}, cfg = {}) {
-  const { trusted = false, maxBytes = MAX_BODY_BYTES, dispatcher } = cfg;
+  const { trusted = false, maxBytes = MAX_BODY_BYTES, dispatcher, credentialInUrl = false } = cfg;
   let current = url;
   let method = String(opts.method || 'GET').toUpperCase();
   let body = opts.body;
@@ -88,6 +109,31 @@ export async function fetchSafe(url, opts = {}, cfg = {}) {
     if (hop >= MAX_HOPS) throw new Error('too many redirects');
     const prev = new URL(current);
     const next = new URL(location, prev);
+    // Whether this hop stays on the request's origin. Only a hop that does keeps
+    // every header, and may carry a URL credential on.
+    //
+    // One exception counts as staying: an http -> https upgrade to the same host
+    // and port (a reverse proxy's force-SSL; the UI and preset placeholders steer
+    // users to http://). URL.host is the normalised hostname plus a non-default
+    // port, so this matches exactly http://h -> https://h (80 -> 443) and
+    // http://h:P -> https://h:P; not a port change, another host, a subdomain or
+    // any https -> http downgrade. Whatever the request carries was just sent in
+    // clear text to that same host, so sending it there again over TLS discloses
+    // nothing new (Python requests' should_strip_auth makes the same exception
+    // for the default ports).
+    const upgrade = prev.protocol === 'http:' && next.protocol === 'https:' && prev.host === next.host;
+    const keepAll = next.origin === prev.origin || upgrade;
+
+    // A credential in the URL (a query-auth preset's key, a {token} endpoint)
+    // can't be stripped from the hop the way a header can: the Location may
+    // repeat the query on the new origin. So such a request follows no redirect
+    // off its origin at all; the user configures the final URL instead (#224).
+    if (credentialInUrl && !keepAll) {
+      refuseRedirect('credential in URL', prev, next,
+        "not following a redirect to another origin because this integration's credential is " +
+        'in the URL; configure the final URL instead');
+    }
+
     // 303, and 301/302 on an unsafe method, become GET with no body (browser rule).
     if (res.status === 303 || (method !== 'GET' && method !== 'HEAD')) {
       method = 'GET';
@@ -95,31 +141,20 @@ export async function fetchSafe(url, opts = {}, cfg = {}) {
       headers.delete('content-type');
       headers.delete('content-length');
     }
-    // Never carry credentials across an origin boundary on a redirect: past one,
-    // only CROSS_ORIGIN_SAFE_HEADERS survive. Dropped headers stay dropped for the
-    // rest of the chain, even if a later hop returns to the first origin.
-    //
-    // One exception: an http -> https upgrade to the same host and port keeps every
-    // header (a reverse proxy's force-SSL; the UI and preset placeholders steer
-    // users to http://). URL.host is the normalised hostname plus a non-default
-    // port, so this matches exactly http://h -> https://h (80 -> 443) and
-    // http://h:P -> https://h:P; not a port change, another host, a subdomain or
-    // any https -> http downgrade. The headers were just sent in clear text to
-    // that same host, so forwarding them to it over TLS discloses nothing new
-    // (Python requests' should_strip_auth makes the same exception for the
-    // default ports). It only skips the deletion: a header dropped on an earlier
-    // hop is never re-added.
-    const upgrade = prev.protocol === 'http:' && next.protocol === 'https:' && prev.host === next.host;
-    const keepAll = next.origin === prev.origin || upgrade;
+
+    // Never carry credential headers across an origin boundary: past one, only
+    // CROSS_ORIGIN_SAFE_HEADERS survive. Dropped headers stay dropped for the
+    // rest of the chain, even if a later hop returns to the first origin; the
+    // upgrade exception only skips the deletion, it never re-adds a header.
     const unsafe = [...headers.keys()].filter((h) => !CROSS_ORIGIN_SAFE.has(h));
     if (!keepAll) {
       for (const h of unsafe) headers.delete(h);
       if (unsafe.length) {
-        warnRedirectOnce(prev.origin, next.origin, { dropped: unsafe.length, headers: unsafe },
+        warnRedirectOnce('dropped', prev.origin, next.origin, { dropped: unsafe.length, headers: unsafe },
           `redirected ${prev.origin} → ${next.origin}; ${unsafe.length} headers not forwarded`);
       }
     } else if (upgrade && unsafe.length) {
-      warnRedirectOnce(prev.origin, next.origin, { kept: unsafe.length, headers: unsafe },
+      warnRedirectOnce('upgrade', prev.origin, next.origin, { kept: unsafe.length, headers: unsafe },
         `redirected ${prev.origin} → ${next.origin}; configure ${next.origin}, ` +
         'credentials are sent in clear text on the first hop');
     }

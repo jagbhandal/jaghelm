@@ -13,7 +13,7 @@ import { getPresetFull } from './registry.js';
 
 import { getCached, setCache } from './lib/cache.js';
 import { safeFetch } from './lib/http.js';
-import { extractValue, resolveEndpointParams } from './lib/extract.js';
+import { extractValue, resolveEndpoint } from './lib/extract.js';
 import { formatValue, computeField } from './lib/format.js';
 import { buildAuthHeaders } from './lib/auth.js';
 import { fetchWithSession, testSessionAuth } from './lib/session.js';
@@ -29,14 +29,18 @@ const log = createLogger('integrations');
  * No-op for any other auth type or when no token is resolved. The token is
  * URL-encoded so a raw token containing reserved chars (&, =, +, space) can't
  * corrupt the query string or split into extra params.
+ *
+ * Returns the URL and whether the key went into it, for safeFetch's
+ * credentialInUrl: a redirect to another origin could carry the query (and the
+ * key) with it, so such a request refuses one (#224).
  */
 function applyQueryAuth(url, config) {
   if (config.auth === 'query' && config._token) {
     const paramName = config.queryParam || 'apikey';
     const separator = url.includes('?') ? '&' : '?';
-    return `${url}${separator}${paramName}=${encodeURIComponent(config._token)}`;
+    return { url: `${url}${separator}${paramName}=${encodeURIComponent(config._token)}`, credentialInUrl: true };
   }
-  return url;
+  return { url, credentialInUrl: false };
 }
 
 // Re-exported for back-compat; SSRF is also enforced at the fetch chokepoint in
@@ -70,11 +74,12 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
     if (config.auth === 'session') {
       rawData = await fetchWithSession(config);
     } else {
-      let url = `${baseUrl}${resolveEndpointParams(config.endpoint, config)}`;
-      url = applyQueryAuth(url, config);
+      const endpoint = resolveEndpoint(config.endpoint, config);
+      const { url, credentialInUrl } = applyQueryAuth(`${baseUrl}${endpoint.path}`, config);
 
       const headers = buildAuthHeaders(config);
-      const res = await safeFetch(url, { headers }, skipTls);
+      const res = await safeFetch(url, { headers }, skipTls,
+        { credentialInUrl: credentialInUrl || endpoint.credentialInUrl });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status} ${res.statusText || ''}`.trim());
       }
@@ -91,9 +96,8 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       const headers = buildAuthHeaders(config);
       const extraResults = await Promise.allSettled(
         extraEps.map(async (ep) => {
-          const resolvedEp = resolveEndpointParams(ep.endpoint, config);
-          const epUrl = `${baseUrl}${resolvedEp}`;
-          const epRes = await safeFetch(epUrl, { headers }, skipTls);
+          const { path, credentialInUrl } = resolveEndpoint(ep.endpoint, config);
+          const epRes = await safeFetch(`${baseUrl}${path}`, { headers }, skipTls, { credentialInUrl });
           if (!epRes.ok) {
             throw new Error(`HTTP ${epRes.status} ${epRes.statusText || ''}`.trim());
           }
@@ -208,9 +212,9 @@ export async function testIntegration(type, testConfig) {
 
     } else {
       // Non-session auth (basic, bearer, header, query)
-      const url = applyQueryAuth(`${baseUrl}${testEndpoint}`, config);
+      const { url, credentialInUrl } = applyQueryAuth(`${baseUrl}${testEndpoint}`, config);
       const headers = buildAuthHeaders(config);
-      const res = await safeFetch(url, { headers }, skipTls);
+      const res = await safeFetch(url, { headers }, skipTls, { credentialInUrl });
       if (!res.ok) return { ok: false, error: `HTTP ${res.status}: ${res.statusText}` };
       return { ok: true, status: res.status };
     }

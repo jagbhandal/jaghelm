@@ -24,7 +24,16 @@ const tlsSkipAgent = new Agent({ connect: { rejectUnauthorized: false } });
 
 const FETCH_TIMEOUT_MS = 8000;
 
-export async function safeFetch(url, opts = {}, skipTls = false) {
+/**
+ * @param {string} url
+ * @param {RequestInit} [opts]
+ * @param {boolean} [skipTls]
+ * @param {{ credentialInUrl?: boolean }} [cfg] credentialInUrl: the URL carries
+ *   the integration's credential (query-param auth, or a credential placeholder
+ *   in the endpoint), so a redirect to another origin is refused (#224). Set it
+ *   from the same code that put the credential in the URL.
+ */
+export async function safeFetch(url, opts = {}, skipTls = false, { credentialInUrl = false } = {}) {
   try {
     // SSRF guard runs per-hop inside fetchSafe (trusted=false: user-supplied URLs,
     // full guard, re-validated across redirects) + a response-body size cap.
@@ -32,7 +41,7 @@ export async function safeFetch(url, opts = {}, skipTls = false) {
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
       return await fetchSafe(url, { ...opts, signal: controller.signal },
-        { trusted: false, dispatcher: skipTls ? tlsSkipAgent : undefined });
+        { trusted: false, dispatcher: skipTls ? tlsSkipAgent : undefined, credentialInUrl });
     } finally {
       clearTimeout(timeout);
     }

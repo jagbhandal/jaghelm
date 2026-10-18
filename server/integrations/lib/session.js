@@ -1,5 +1,5 @@
 import { safeFetch } from './http.js';
-import { extractValue, resolveEndpointParams } from './extract.js';
+import { extractValue, resolveEndpoint } from './extract.js';
 import { createLogger } from '../../util/logger.js';
 
 const log = createLogger('integrations');
@@ -176,11 +176,8 @@ async function fetchWithToken(tokenInfo, config, baseUrl, skipTls) {
   }
   if (config.extraHeaders) Object.assign(headers, config.extraHeaders);
 
-  const res = await safeFetch(
-    `${baseUrl}${resolveEndpointParams(config.endpoint, config)}`,
-    { headers },
-    skipTls,
-  );
+  const { path, credentialInUrl } = resolveEndpoint(config.endpoint, config);
+  const res = await safeFetch(`${baseUrl}${path}`, { headers }, skipTls, { credentialInUrl });
   if (!res.ok) throw new Error(`Data fetch returned HTTP ${res.status}`);
   return res.json();
 }

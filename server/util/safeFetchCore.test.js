@@ -301,3 +301,120 @@ test('no warning when only allowlisted headers were on the request', async () =>
       { Accept: 'application/json' }));
   assert.equal(logged.length, 0);
 });
+
+/**
+ * Drive fetchSafe against a stubbed global fetch where a redirect may be
+ * refused: hop i answers `status` with locations[i], the hop after the last one
+ * 200. Returns what each hop was sent and the error fetchSafe threw, if any.
+ */
+async function tryHops(start, locations, { status = 302, init = {}, cfg = {} } = {}) {
+  const locs = [].concat(locations);
+  const realFetch = globalThis.fetch;
+  /** @type {Array<{url: string, method: string, body: any, headers: Headers}>} */
+  const hops = [];
+  globalThis.fetch = async (url, i) => {
+    hops.push({ url: String(url), method: i.method, body: i.body, headers: new Headers(i.headers) });
+    const location = locs[hops.length - 1];
+    return location
+      ? new Response(null, { status, headers: { location } })
+      : new Response('ok', { status: 200 });
+  };
+  let error = null;
+  try {
+    await fetchSafe(start, init, cfg);
+  } catch (err) {
+    error = err;
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  return { hops, error };
+}
+
+// #224: a credential in the URL (a query-auth preset's key, a {token} endpoint)
+// can't be dropped the way a header is, so a request flagged credentialInUrl
+// does not follow a redirect to another origin at all.
+const KEYED = { cfg: { credentialInUrl: true } };
+for (const [what, start, location] of [
+  ['another host', `http://${SVC}/api?apikey=k1`, 'http://other.example.test/api?apikey=k1'],
+  ['another port on the same host', `http://${SVC}/api?apikey=k1`, `http://${SVC}:8080/api?apikey=k1`],
+  ['a subdomain', `http://${SVC}/api?apikey=k1`, `http://api.${SVC}/api?apikey=k1`],
+  ['an https upgrade that changes the port', `http://${SVC}/api?apikey=k1`, `https://${SVC}:8443/api?apikey=k1`],
+  ['an https upgrade to another host', `http://${SVC}/api?apikey=k1`, 'https://other.example.test/api?apikey=k1'],
+  ['an https -> http downgrade', `https://${SVC}/api?apikey=k1`, `http://${SVC}/api?apikey=k1`],
+  ['another host, with the query left off', `http://${SVC}/api?apikey=k1`, 'http://other.example.test/'],
+]) {
+  test(`credential in the URL: ${what} is refused`, async () => {
+    const { hops, error } = await tryHops(start, location, KEYED);
+    assert.match(String(error?.message), /not following .*credential is in the URL/);
+    assert.equal(hops.length, 1, 'the other origin was contacted');
+  });
+}
+
+for (const [what, start, location] of [
+  ['a same-origin redirect', `http://${SVC}/api?apikey=k1`, '/v2/api?apikey=k1'],
+  ['the same-host http -> https upgrade', `http://${SVC}/api?apikey=k1`, `https://${SVC}/api?apikey=k1`],
+  ['the upgrade keeping a non-default port', `http://${SVC}:8080/api?apikey=k1`, `https://${SVC}:8080/api?apikey=k1`],
+]) {
+  test(`credential in the URL: ${what} is followed`, async () => {
+    const { hops, error } = await tryHops(start, location, KEYED);
+    assert.equal(error, null);
+    assert.equal(hops.length, 2);
+    assert.equal(hops[1].url, new URL(location, start).href);
+  });
+}
+
+test('credential in the URL: a cross-origin hop after an upgrade is refused', async () => {
+  const { hops, error } = await tryHops(`http://${SVC}/api?apikey=k1`,
+    [`https://${SVC}/api?apikey=k1`, 'https://evil.example.test/api?apikey=k1'], KEYED);
+  assert.match(String(error?.message), /credential is in the URL/);
+  assert.deepEqual(hops.map((h) => new URL(h.url).origin), [`http://${SVC}`, `https://${SVC}`]);
+});
+
+test('credential in the URL: an upgrade then a downgrade back to http is refused', async () => {
+  const { hops, error } = await tryHops(`http://${SVC}/api?apikey=k1`,
+    [`https://${SVC}/api?apikey=k1`, `http://${SVC}/api?apikey=k1`], KEYED);
+  assert.match(String(error?.message), /credential is in the URL/);
+  assert.equal(hops.length, 2);
+});
+
+test('without the flag, a cross-origin redirect is still followed', async () => {
+  const { hops, error } = await tryHops(`http://${SVC}/api?q=1`, 'http://other.example.test/api?q=1');
+  assert.equal(error, null);
+  assert.equal(hops.length, 2);
+});
+
+test('credential in the URL: a real second origin receives no request', async () => {
+  let reached = 0;
+  const dest = await listen((req, res) => { reached++; res.writeHead(200); res.end('ok'); });
+  const redir = await listen((req, res) => {
+    res.writeHead(302, { location: `http://127.0.0.1:${portOf(dest)}${req.url}` }); res.end();
+  });
+  try {
+    await assert.rejects(
+      fetchSafe(`http://127.0.0.1:${portOf(redir)}/api?apikey=k1`, {}, { credentialInUrl: true }),
+      /credential is in the URL/,
+    );
+    assert.equal(reached, 0);
+  } finally { dest.close(); redir.close(); }
+});
+
+test('a refused redirect warns once per origin pair, and neither log nor error holds the key', async () => {
+  const host = `h${randomBytes(4).toString('hex')}.example.test`;
+  const key = randomBytes(8).toString('hex');
+  /** @type {Error | null} */
+  let error = null;
+  const run = (to) => safeFetchWarnings(async () => {
+    ({ error } = await tryHops(`http://${host}/api?apikey=${key}`, `${to}?apikey=${key}`, KEYED));
+  });
+
+  const first = await run(`http://other.${host}/api`);
+  assert.equal(first.length, 1);
+  assert.equal(first[0].level, 'warn');
+  assert.equal(first[0].from, `http://${host}`);
+  assert.equal(first[0].to, `http://other.${host}`);
+  assert.equal(first[0].refused, 'credential in URL');
+  assert.ok(!JSON.stringify(first).includes(key), 'the key reached the log');
+  assert.ok(!String(error?.message).includes(key), 'the key reached the error');
+  assert.equal((await run(`http://other.${host}/x`)).length, 0, 'same pair warns once');
+  assert.equal((await run(`http://third.${host}/`)).length, 1, 'a new pair warns again');
+});

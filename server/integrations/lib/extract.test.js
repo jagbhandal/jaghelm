@@ -1,5 +1,6 @@
 /**
- * Tests for extractValue() in extract.js — the JSON path DSL.
+ * Tests for extractValue() in extract.js — the JSON path DSL — and for
+ * resolveEndpoint()'s credentialInUrl flag (#224).
  *
  * Focused on two bug fixes:
  *   1. _filter ordering operators (>, <, >=, <=) are numeric-only and must not
@@ -13,7 +14,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { extractValue } from './extract.js';
+import { extractValue, resolveEndpoint } from './extract.js';
 
 // ── _filter: numeric ordering guard + strict equality ──────────────────────
 
@@ -120,4 +121,29 @@ test('array index access still works', () => {
 test('traversal short-circuits to undefined on a missing branch', () => {
   const data = { a: { b: null } };
   assert.equal(extractValue(data, 'a.b.c'), undefined);
+});
+
+// ── resolveEndpoint: placeholders + the credentialInUrl flag (#224) ─────────
+
+test('resolveEndpoint fills a non-credential placeholder without flagging it', () => {
+  assert.deepEqual(
+    resolveEndpoint('/accounts/{account_id}/x?y={missing}', { account_id: 'a1' }),
+    { path: '/accounts/a1/x?y={missing}', credentialInUrl: false },
+  );
+});
+
+test('resolveEndpoint flags a filled credential placeholder, with or without the underscore', () => {
+  const config = { token: 'raw', _token: 't1', _password: 'p1', _username: 'u1' };
+  for (const [endpoint, path] of [
+    ['/api?key={token}', '/api?key=raw'],
+    ['/api?key={_token}', '/api?key=t1'],
+    ['/api/{password}', '/api/p1'],
+    ['/users/{username}', '/users/u1'],
+  ]) {
+    assert.deepEqual(resolveEndpoint(endpoint, config), { path, credentialInUrl: true }, endpoint);
+  }
+});
+
+test('resolveEndpoint does not flag a credential placeholder left unfilled', () => {
+  assert.deepEqual(resolveEndpoint('/api?key={token}', {}), { path: '/api?key={token}', credentialInUrl: false });
 });

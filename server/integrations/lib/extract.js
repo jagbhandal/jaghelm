@@ -4,15 +4,31 @@
  * Pure functions, no I/O, no module state.
  */
 
+// The credentials resolveIntegrationConfig resolves (into _username, _password
+// and _token). A placeholder naming one, with or without the underscore, puts
+// that credential in the URL.
+const CREDENTIAL_PARAMS = new Set(['username', 'password', 'token']);
+
 /**
  * Replace {placeholder} tokens in endpoint URLs with config values.
  * Used by presets that require dynamic URL segments (e.g. Cloudflare account_id).
  * Looks up the key in config directly, then falls back to _prefixed version.
+ *
+ * Also reports whether a credential was filled in (a custom integration's
+ * `/api?key={token}`), which the caller passes to safeFetch as credentialInUrl so
+ * the request refuses a redirect to another origin (#224).
+ *
+ * @returns {{ path: string, credentialInUrl: boolean }}
  */
-export function resolveEndpointParams(endpoint, config) {
-  return endpoint.replace(/\{(\w+)\}/g, (match, key) => {
-    return config[key] || config[`_${key}`] || match;
+export function resolveEndpoint(endpoint, config) {
+  let credentialInUrl = false;
+  const path = endpoint.replace(/\{(\w+)\}/g, (match, key) => {
+    const value = config[key] || config[`_${key}`];
+    if (!value) return match;
+    if (CREDENTIAL_PARAMS.has(key.replace(/^_/, ''))) credentialInUrl = true;
+    return value;
   });
+  return { path, credentialInUrl };
 }
 
 /**
