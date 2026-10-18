@@ -109,8 +109,10 @@ Honest about where the engineering floor sits today:
 
 - **CI gates tests, lint, and type-check on every change.** The Gitea
   workflow (`.gitea/workflows/check.yml`) runs a secret scan, then `npm run
-  lint`, `npm run typecheck`, the server suite (`npm test`), the client suite
-  (`npm run test:client`), and the mobile suite — all required before merge.
+  lint`, `npm run typecheck`, the server suite (`npm run test:ci`: `npm test`
+  plus a minimum-test-count floor, so a run that silently drops tests fails),
+  the client suite (`npm run test:client`), and the mobile suite — all required
+  before merge.
   Node 22 is the validated toolchain (matching the Docker base image); newer
   Node majors can break the jsdom-based client tests, which is why
   `package.json` now declares a supported `engines` range.

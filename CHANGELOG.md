@@ -9,6 +9,9 @@ All notable changes to JagHelm are documented here. The format is based on
 ### Fixed
 - The server no longer loads the integration presets' test files as presets at startup, so it no longer logs two "Skipping invalid preset" errors (for `gitlab.test.js` and `nextcloud.test.js`) or prints their test output in its logs. Test files are also left out of the image.
 
+### Security
+- Outbound requests now forward only `Accept`, `Accept-Encoding`, `Content-Type` and `User-Agent` when a server redirects to a different origin, and drop every other header. Before, only `Authorization`, cookies, `X-API-Key` and `X-Api-Token` were dropped, so the Gotify, Plex, Jellyfin, GitLab, Nextcloud, Pi-hole and PhotoPrism credentials, and a custom integration's own auth header, followed the redirect. A redirect from `http://` to `https://` on the same host and port (a reverse proxy's force-SSL) keeps every header, since they were already sent to that host; this also restores integrations behind such a redirect that authenticate with `X-API-Key` (broken since 2.1.0) or `Authorization` (broken since 1.4.0). Once per pair of origins, JagHelm logs a warning when it drops headers on a redirect or follows such an upgrade, naming the headers but never their values; for an upgrade, configure the integration's `https://` URL so its credential is not sent in clear text first.
+
 ## [2.3.0] — 2026-10-18
 
 A weekly Arcane vulnerability digest by mobile push, sent only when there is something new.

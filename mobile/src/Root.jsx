@@ -3,10 +3,7 @@ import App from './App.jsx';
 import ErrorBoundary from './ErrorBoundary.jsx';
 import ConnectionScreen, { ConnectingScreen, ErrorScreen } from './ConnectionScreen.jsx';
 import { bootMobile } from './boot.js';
-import { secureStore } from '@shared/storage/index.js';
-import { setAuthToken } from '@shared/api/client.js';
-import { setPref } from './storage/prefsAdapter.js';
-import { TOKEN_KEY, BASE_URL_KEY, URL_PRESENT_KEY, REMEMBER_KEY } from './runtimeConfig.js';
+import { forgetServer } from './auth/forgetServer.js';
 
 const BOOTING = { phase: 'booting' };
 const FAILED = { phase: 'failed' };
@@ -14,16 +11,6 @@ const FAILED = { phase: 'failed' };
 function fromBoot(initial) {
   if (initial.unreachable) return { phase: 'unreachable', baseUrl: initial.baseUrl };
   return { phase: 'ready', initial };
-}
-
-// Change server = the same clearing as App's forgetDevice (token, remember flag,
-// in-memory token, URL, URL breadcrumb). Mirror it there if either changes.
-async function forgetServer() {
-  await secureStore.removeItem(TOKEN_KEY);
-  await setPref(REMEMBER_KEY, 'false');
-  setAuthToken('');
-  await secureStore.removeItem(BASE_URL_KEY);
-  await setPref(URL_PRESENT_KEY, 'false');
 }
 
 /**
@@ -67,6 +54,8 @@ export default function Root() {
   }, [start]);
 
   const retry = () => start(bootMobile);
+  // Change server clears the session and address exactly as Forget this device
+  // does (the same forgetServer), then re-boots into first-run.
   const changeServer = () =>
     start(async () => {
       await forgetServer();

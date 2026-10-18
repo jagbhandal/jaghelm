@@ -66,6 +66,10 @@ One PR per release, from a branch off `main`:
 
    The lint prints nothing and exits 0 when the file is valid. `check.yml`
    runs the same lint on every PR to `main`.
+6. Server only: run `npm run test:ci` and raise `MIN_PASSING` in
+   `scripts/test-floor.mjs` to the `# pass` count it prints. CI fails a run that
+   passes fewer tests than this floor, so keeping it current means a silently
+   dropped test is caught.
 
 ### The CHANGELOG format
 
