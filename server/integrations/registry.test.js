@@ -6,6 +6,9 @@
  * We test the pure validation function directly (via the __test__ export)
  * rather than driving initRegistry through fixtures on disk — that keeps
  * the test fast, deterministic, and free of fs/import-cache weirdness.
+ * The exception is which files initRegistry picks up from the directory:
+ * that's driven through a fresh temp dir (unique path, so no import cache)
+ * and through the shipped presets/ dir.
  *
  * If you change REQUIRED_KEYS or ALLOWED_KEYS in registry.js, update the
  * "valid preset" fixture below so this file stays representative.
@@ -13,8 +16,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { __test__ } from './registry.js';
+import { __test__, initRegistry, getPreset } from './registry.js';
+import { createLogger } from '../util/logger.js';
 const { validatePreset } = __test__;
 
 // A minimal preset that satisfies REQUIRED_KEYS and uses only allowed keys.
@@ -109,4 +116,42 @@ test('null/non-object default export is rejected gracefully', () => {
     assert.equal(ok, false, `expected reject for ${typeof bad} ${JSON.stringify(bad)}`);
     assert.ok(errors.length > 0, 'should produce at least one error');
   }
+});
+
+test('initRegistry does not import *.test.js files next to the presets', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'jaghelm-presets-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  writeFileSync(join(dir, 'fixturepreset.js'), `export default ${JSON.stringify(makeValidPreset())};\n`);
+  // A test file beside the preset it covers, like presets/gitlab.test.js.
+  // Importing it would run its node:test suite inside the server process.
+  writeFileSync(join(dir, 'fixturepreset.test.js'), 'globalThis.__jaghelmPresetTestImported = true;\n');
+
+  await initRegistry(dir);
+
+  assert.equal(globalThis.__jaghelmPresetTestImported, undefined, 'a .test.js file must not be imported');
+  assert.equal(getPreset('fixturepreset.test'), null, 'a .test.js file must not register a preset');
+  assert.equal(getPreset('fixturepreset')?.name, 'Test Integration', 'the preset beside it still loads');
+});
+
+test('initRegistry loads the shipped presets/ dir without logging errors', async (t) => {
+  // The logger writes warn/error lines to stderr as JSON. Before the fix, the
+  // test files in presets/ each logged "Skipping invalid preset" at startup.
+  const errors = [];
+  t.mock.method(process.stderr, 'write', (chunk) => {
+    for (const line of String(chunk).split('\n')) {
+      if (line.includes('"level":"error"')) errors.push(line);
+    }
+    return true;
+  });
+
+  // Positive control: LOG_LEVEL=silent would hide every error line and let
+  // this test pass without checking anything.
+  createLogger('registry.test').error('probe');
+  await initRegistry();
+  t.mock.restoreAll();
+
+  const isProbe = (line) => line.includes('"module":"registry.test"');
+  assert.equal(errors.filter(isProbe).length, 1, 'error lines are not reaching stderr (LOG_LEVEL=silent?)');
+  assert.deepEqual(errors.filter((line) => !isProbe(line)), [], 'no preset in presets/ should fail to load');
 });

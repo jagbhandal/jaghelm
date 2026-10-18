@@ -1,4 +1,4 @@
-import { createArrPreset } from './createArrPreset.js';
+import { createArrPreset } from '../lib/createArrPreset.js';
 
 export default createArrPreset({
   name: 'Radarr',
