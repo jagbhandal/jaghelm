@@ -262,7 +262,7 @@ const OLD_COMPOSE = `services:\n  jaghelm:\n    image: ${LATEST}\n    network_mo
 
 function stageEnv(extra = {}) {
   return {
-    PR_TOKEN: 'tok-not-on-argv',
+    PR_TOKEN: 'tok-not-on-argv', // pragma: allowlist secret -- fake token for the argv test
     SERVER_URL: 'http://gitea.example.test/',
     REPOSITORY: 'owner/JagHelm',
     FAKE_PREV_IMAGE: 'sha256:previous',
