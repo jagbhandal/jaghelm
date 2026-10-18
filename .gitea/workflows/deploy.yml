@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: [self-hosted, vm103]
     steps:
       # ── Build→deploy coupling ─────────────────────────────────────────────
       # The image this job pulls is built by a SEPARATE workflow
