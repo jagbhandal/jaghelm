@@ -11,6 +11,11 @@ services:
     # moves). The deploy workflow records the SHA tag it shipped; pin that here
     # to roll back. Replace the <REPLACE_WITH_SHA_OR_DIGEST> placeholder when
     # pinning for production.
+    #
+    # JagHelm's own deploy (.gitea/workflows/deploy.yml) replaces this file on
+    # its host at every deploy and pins by retagging :latest, so it requires
+    # :latest here. Put host-specific changes in compose.override.yaml, which
+    # Compose merges and that deploy never touches.
     image: ghcr.io/jagbhandal/jaghelm:latest # rollback: pin :sha-<short> or @sha256:<digest>
     container_name: jaghelm
     restart: unless-stopped

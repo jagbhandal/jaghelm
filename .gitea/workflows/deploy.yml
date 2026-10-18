@@ -1,5 +1,29 @@
 name: Deploy JagHelm
 
+# What a deploy does, in order:
+#   1. pin vm-103's SSH host key (fails closed without it),
+#   2. wait for this commit's image, 3. verify its signature (opt-in),
+#   4. stage: pull the image and deliver this commit's compose.yaml,
+#   5. switch: point :latest at the image and recreate the container,
+#   6. health gate, 7. roll back image and compose.yaml on any failure after 4,
+#   8. prune old images.
+#
+# Configuration (Gitea: repository Settings > Actions):
+#   VM103_HOST_KEY  variable, required. vm-103's SSH host key as one known_hosts
+#                   line: "<vm-103 address> ssh-ed25519 AAAA...". Get it with
+#                   `ssh-keyscan -t ed25519 <address>` and check its fingerprint
+#                   against `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on
+#                   vm-103. It is a variable rather than inline because this repo
+#                   is mirrored to a public GitHub repo. Missing or malformed, the
+#                   deploy fails before any SSH; after a vm-103 rebuild, update it
+#                   or deploys fail with "Host key verification failed".
+#   COSIGN_VERIFY   variable, optional. "true" enforces the signature check.
+#   PR_TOKEN        secret. Reads compose.yaml at the deployed commit from the
+#                   Gitea API (the runner has no checkout).
+#
+# Act_runner caveat: no expression interpolation inside run bodies, comments
+# included. Values come in through env: and are used as $VAR.
+
 on:
   push:
     branches:
@@ -22,7 +46,46 @@ concurrency:
 jobs:
   deploy:
     runs-on: [self-hosted, vm103]
+    env:
+      # The deploy target. Steps reach it only through SSH_CMD, which the first
+      # step exports with the pinned host key.
+      VM103_SSH: jagbhandal@192.168.68.11
+      STACK_DIR: /opt/stacks/jaghelm
     steps:
+      # ── Pin vm-103's SSH host key (#211) ──────────────────────────────────
+      # Every later SSH verifies vm-103's host key against VM103_HOST_KEY
+      # (StrictHostKeyChecking=yes, no global known_hosts), so whatever answers
+      # on vm-103's address is refused unless it holds that key. Runs first so
+      # a missing or malformed variable fails before the image wait and before
+      # anything reaches vm-103.
+      - name: Pin vm-103's SSH host key (fail closed)
+        env:
+          VM103_HOST_KEY: ${{ vars.VM103_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          HOST="${VM103_SSH#*@}"
+          # A pasted trailing newline or CR is fine; anything else must be one line.
+          KEY="$(printf '%s' "${VM103_HOST_KEY:-}" | tr -d '\r')"
+          [ -n "${KEY}" ] || fail "VM103_HOST_KEY is not set. Set the repository variable to vm-103's known_hosts line (ssh-keyscan -t ed25519 ${HOST}, fingerprint checked on vm-103). Refusing to deploy without a pinned host key."
+          [ "$(printf '%s\n' "${KEY}" | wc -l | tr -d ' ')" = 1 ] || fail "VM103_HOST_KEY must be a single known_hosts line."
+          printf '%s\n' "${KEY}" \
+            | grep -Eq '^[^[:space:]#|@][^[:space:]]*[[:space:]]+(ssh-ed25519|ecdsa-sha2-nistp(256|384|521)|ssh-rsa)[[:space:]]+AAAA[A-Za-z0-9+/]+={0,2}([[:space:]].*)?$' \
+            || fail "VM103_HOST_KEY is not a known_hosts line (<host> <key type> <base64 key>, host not hashed)."
+          HOSTS="$(printf '%s\n' "${KEY}" | awk '{print $1}')"
+          case ",${HOSTS}," in
+            *",${HOST},"*) ;;
+            *) fail "VM103_HOST_KEY is a key for '${HOSTS}', but the deploy connects to ${HOST}." ;;
+          esac
+          KH="$(mktemp)"
+          printf '%s\n' "${KEY}" > "${KH}"
+          if command -v ssh-keygen >/dev/null 2>&1; then
+            FP="$(ssh-keygen -lf "${KH}")" || { rm -f "${KH}"; fail "VM103_HOST_KEY does not hold a valid public key."; }
+            echo "    pinned vm-103 host key: ${FP}"
+          fi
+          echo "VM103_KNOWN_HOSTS=${KH}" >> "$GITHUB_ENV"
+          echo "SSH_CMD=ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${KH} -o GlobalKnownHostsFile=/dev/null -i /root/.ssh/runner_deploy ${VM103_SSH}" >> "$GITHUB_ENV"
+
       # ── Build→deploy coupling ─────────────────────────────────────────────
       # The image this job pulls is built by a SEPARATE workflow
       # (.github/workflows/build-push.yml). Two trigger paths reach here:
@@ -65,49 +128,177 @@ jobs:
             --certificate-identity-regexp 'https://github.com/jagbhandal/jaghelm/.*' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
-      - name: Deploy to production (pinned to this commit's image)
+      # ── Stage: this commit's image and compose.yaml (#207) ────────────────
+      # Nothing here changes what runs: the image is pulled but :latest is not
+      # moved, and the container is not touched.
+      #
+      # The deploy owns compose.yaml in the stack dir. It used to be a copy
+      # placed by hand, so compose changes shipped in a release but never took
+      # effect. This commit's copy is fetched from Gitea and written next to the
+      # live one as compose.yaml.new; on vm-103 its sha256 must equal the one
+      # fetched, the live copy is kept as compose.yaml.prev, the new one is
+      # renamed into place (atomic), and `docker compose config` must accept it
+      # and run only the :latest image that the switch step retags. Any failure
+      # puts the previous copy back and fails the deploy before the container is
+      # touched. The log shows the repo hash, the host hash before and after,
+      # and a diff of the host copy, so a hand edit this replaces is on record.
+      # compose.yaml holds no secrets: they are in .env, which this never reads
+      # or prints. Host-specific additions go in compose.override.yaml, which
+      # compose merges and the deploy never touches.
+      - name: Stage this commit on vm-103 (image + compose.yaml)
+        env:
+          PR_TOKEN: ${{ secrets.PR_TOKEN }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           REPO="ghcr.io/jagbhandal/jaghelm"
           TAG="sha-$(echo "${GITHUB_SHA}" | cut -c1-7)"
-          SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /root/.ssh/runner_deploy jagbhandal@192.168.68.11"
+
+          # Fetch first: if Gitea or the token fails, vm-103 is never touched.
+          # The token reaches curl as a config line on stdin, never on argv.
+          echo ">>> Fetching compose.yaml at ${GITHUB_SHA}"
+          CF="$(mktemp)"
+          trap 'rm -f "${CF}"' EXIT
+          printf 'header = "Authorization: token %s"\n' "${PR_TOKEN}" \
+            | curl -fsS --max-time 30 -K - -o "${CF}" \
+              "${SERVER_URL%/}/api/v1/repos/${REPOSITORY}/raw/compose.yaml?ref=${GITHUB_SHA}"
+          [ -s "${CF}" ] || { echo "::error::compose.yaml fetched for ${GITHUB_SHA} is empty"; exit 1; }
+          COMPOSE_SHA256="$(sha256sum "${CF}" | cut -d' ' -f1)"
+          echo "    repo compose.yaml sha256=${COMPOSE_SHA256} (commit ${GITHUB_SHA})"
 
           # Record the image currently running so we can roll back to it if the
           # new one fails its health gate. Empty string if nothing is running yet.
           # Must be the image ID ({{.Image}}), not the name ({{.Config.Image}}):
-          # the name is always ":latest", which the retag below re-points at the
+          # the name is always ":latest", which the retag re-points at the
           # NEW image — "rolling back" to it would just restart the bad deploy.
           echo ">>> Recording current image for rollback"
           PREV_IMAGE="$($SSH_CMD "docker inspect --format '{{.Image}}' jaghelm 2>/dev/null || true")"
           echo "    previous image: ${PREV_IMAGE:-<none>}"
           echo "PREV_IMAGE=${PREV_IMAGE}" >> "$GITHUB_ENV"
 
-          # Deploy THIS commit's immutable image: pull the :sha-<short> tag and
-          # retag it as :latest locally so compose (which references :latest) runs
-          # exactly what this push built — not whatever :latest races to. Falls
-          # back to :latest only if the sha tag never became available.
           echo ">>> Pulling ${REPO}:${TAG} (this commit's image)"
+          IMAGE_PULLED=0
           if $SSH_CMD "docker pull '${REPO}:${TAG}'"; then
+            IMAGE_PULLED=1
+          else
+            echo "    WARNING: ${TAG} unavailable — the switch step falls back to :latest"
+          fi
+          echo "IMAGE_PULLED=${IMAGE_PULLED}" >> "$GITHUB_ENV"
+
+          echo ">>> Delivering compose.yaml to ${STACK_DIR}"
+          $SSH_CMD "cat > '${STACK_DIR}/compose.yaml.new'" < "${CF}"
+          $SSH_CMD "bash -s -- '${STACK_DIR}' '${COMPOSE_SHA256}'" <<'INSTALL_COMPOSE'
+          set -euo pipefail
+          dir=$1 want=$2
+          cd "$dir"
+          sha() { sha256sum "$1" | cut -d' ' -f1; }
+          had_prev=0 installed=0 done=0
+          # On any failure after the rename, put the previous copy back (copy,
+          # then rename, so compose.yaml is never half-written).
+          finish() {
+            rc=$?
+            rm -f compose.yaml.new
+            if [ "$done" != 1 ] && [ "$installed" = 1 ]; then
+              if [ "$had_prev" = 0 ]; then
+                rm -f compose.yaml && echo "    removed the new compose.yaml (there was none before)"
+              elif cp -p compose.yaml.prev compose.yaml.restore && mv -f compose.yaml.restore compose.yaml; then
+                echo "    restored the previous compose.yaml (sha256=$(sha compose.yaml))"
+              else
+                echo "::error::could not restore compose.yaml; copy compose.yaml.prev back by hand"
+              fi
+            fi
+            [ "$done" = 1 ] || [ "$rc" -ne 0 ] || rc=1
+            exit "$rc"
+          }
+          trap finish EXIT
+
+          got=$(sha compose.yaml.new)
+          if [ "$got" != "$want" ]; then
+            echo "::error::compose.yaml.new on vm-103 has sha256=$got, expected $want; nothing changed"
+            exit 1
+          fi
+          if [ -f compose.yaml ]; then
+            had_prev=1
+            old=$(sha compose.yaml)
+            echo "    host compose.yaml before: sha256=$old"
+            if [ "$old" = "$want" ]; then
+              echo "    unchanged"
+            else
+              diff -u --label 'compose.yaml (host, before)' --label 'compose.yaml (this commit)' \
+                compose.yaml compose.yaml.new || true
+            fi
+            cp -p compose.yaml compose.yaml.prev
+          else
+            echo "    host compose.yaml before: none"
+            rm -f compose.yaml.prev
+          fi
+          if [ -f compose.override.yaml ]; then
+            echo "    compose.override.yaml (host-owned, not changed): sha256=$(sha compose.override.yaml)"
+          fi
+
+          mv -f compose.yaml.new compose.yaml
+          installed=1
+          # Only -q and --images: a plain `docker compose config` prints .env values.
+          docker compose config -q </dev/null \
+            || { echo "::error::docker compose config rejected the new compose.yaml"; exit 1; }
+          images=$(docker compose config --images </dev/null)
+          if [ "$images" != "ghcr.io/jagbhandal/jaghelm:latest" ]; then
+            echo "::error::compose must run only ghcr.io/jagbhandal/jaghelm:latest (the deploy pins by retagging it), got: $images"
+            exit 1
+          fi
+          now=$(sha compose.yaml)
+          if [ "$now" != "$want" ]; then
+            echo "::error::host compose.yaml has sha256=$now, expected $want"
+            exit 1
+          fi
+          echo "    host compose.yaml after: sha256=$now (matches the commit)"
+          done=1
+          INSTALL_COMPOSE
+          echo "COMPOSE_SHA256=${COMPOSE_SHA256}" >> "$GITHUB_ENV"
+          # Last: vm-103 is changed from here on, so the rollback step acts only once this ran.
+          echo "ROLLBACK_ARMED=1" >> "$GITHUB_ENV"
+
+      # ── Switch: recreate with this commit's image and compose.yaml ────────
+      - name: Switch vm-103 to this commit (retag + recreate)
+        run: |
+          set -euo pipefail
+          REPO="ghcr.io/jagbhandal/jaghelm"
+          TAG="sha-$(echo "${GITHUB_SHA}" | cut -c1-7)"
+
+          # Recreate only with the compose.yaml delivered for this commit.
+          HOST_SHA256="$($SSH_CMD "sha256sum '${STACK_DIR}/compose.yaml'" | cut -d' ' -f1)"
+          echo "    host compose.yaml sha256=${HOST_SHA256}"
+          if [ "${HOST_SHA256}" != "${COMPOSE_SHA256:-}" ]; then
+            echo "::error::host compose.yaml no longer matches commit ${GITHUB_SHA} (expected sha256=${COMPOSE_SHA256:-?})"
+            exit 1
+          fi
+
+          # Deploy THIS commit's immutable image: retag the :sha-<short> pulled
+          # in the stage step as :latest locally, so compose (which references
+          # :latest) runs exactly what this push built — not whatever :latest
+          # races to. Falls back to :latest only if the sha tag never became
+          # available.
+          if [ "${IMAGE_PULLED:-0}" = 1 ]; then
             $SSH_CMD "docker tag '${REPO}:${TAG}' '${REPO}:latest'"
             echo "    pinned :latest -> ${TAG}"
           else
             echo "    WARNING: ${TAG} unavailable — falling back to :latest"
-            $SSH_CMD "cd /opt/stacks/jaghelm && docker compose pull"
+            $SSH_CMD "cd '${STACK_DIR}' && docker compose pull"
           fi
 
           echo ">>> Deploying"
-          $SSH_CMD "cd /opt/stacks/jaghelm && docker compose up -d --force-recreate"
+          $SSH_CMD "cd '${STACK_DIR}' && docker compose up -d --force-recreate"
 
       # ── Real health gate ──────────────────────────────────────────────────
       # Unlike the old grep+curl (which could not fail), this asserts:
       #   1. the container reports Health.Status == healthy (Docker HEALTHCHECK),
       #   2. /api/health returns HTTP 200 AND a body containing "status":"ok".
-      # On failure it attempts a rollback to the previously-running image and
-      # exits non-zero so the deploy is marked failed.
-      - name: Verify deployment (gate + rollback on failure)
+      # On failure it exits non-zero; the rollback step below then restores the
+      # previous release.
+      - name: Verify deployment (health gate)
         run: |
           set -euo pipefail
-          SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /root/.ssh/runner_deploy jagbhandal@192.168.68.11"
 
           echo ">>> Polling container health (timeout 120s)"
           # Poll Docker's own HEALTHCHECK status. Healthy → pass; unhealthy or
@@ -138,27 +329,55 @@ jobs:
           echo "    endpoint_ok=${ENDPOINT_OK} health_ok=${HEALTH_OK}"
 
           if [ "${HEALTH_OK}" -eq 1 ] && [ "${ENDPOINT_OK}" -eq 1 ]; then
-            echo ">>> Deploy verified healthy."
+            echo ">>> Deploy verified healthy (commit ${GITHUB_SHA}, compose.yaml sha256=${COMPOSE_SHA256:-?})."
             exit 0
           fi
 
           echo "!!! Deploy failed health gate."
-          if [ -n "${PREV_IMAGE:-}" ]; then
-            echo ">>> Rolling back to previous image: ${PREV_IMAGE}"
-            # Minimal, dependency-free rollback: stop the bad container, re-point
-            # compose's :latest tag at the image that was running before this
-            # deploy, then recreate with the same compose config (ports, mounts,
-            # hardening all preserved). We retag locally rather than editing the
-            # compose file so the host's compose.yaml is never mutated in place.
-            $SSH_CMD "set -e; \
-              docker tag '${PREV_IMAGE}' ghcr.io/jagbhandal/jaghelm:latest; \
-              cd /opt/stacks/jaghelm && docker compose up -d --force-recreate" \
-              && echo ">>> Rollback applied — verify the service manually." \
-              || echo ">>> Rollback command FAILED — manual intervention required."
-          else
-            echo ">>> No previous image recorded — cannot auto-rollback. Manual intervention required."
-          fi
           exit 1
+
+      # ── Rollback ──────────────────────────────────────────────────────────
+      # Runs when any step failed. It acts only if the stage step completed
+      # (ROLLBACK_ARMED): before that, vm-103 was not changed. It puts back the
+      # pair that was running before this deploy: compose.yaml.prev (the file
+      # the previous container was created from) and the previous image ID,
+      # retagged as :latest, then recreates. Restoring the compose file matters:
+      # a compose change (mounts, env, read-only rootfs, limits) may not suit the
+      # old image. The file is swapped whole (copy, then rename), never edited.
+      - name: Roll back on failure
+        if: failure()
+        run: |
+          set -euo pipefail
+          if [ "${ROLLBACK_ARMED:-}" != 1 ]; then
+            echo ">>> The deploy failed before vm-103 was changed; nothing to roll back."
+            exit 0
+          fi
+          if [ -z "${PREV_IMAGE:-}" ]; then
+            echo ">>> No previous image recorded — cannot auto-rollback. Manual intervention required."
+            exit 1
+          fi
+          echo ">>> Rolling back to the previous image ${PREV_IMAGE} and its compose.yaml"
+          RC=0
+          $SSH_CMD "bash -s -- '${STACK_DIR}' '${PREV_IMAGE}'" <<'ROLLBACK' || RC=$?
+          set -euo pipefail
+          dir=$1 prev_image=$2
+          cd "$dir"
+          if [ -f compose.yaml.prev ]; then
+            cp -p compose.yaml.prev compose.yaml.restore
+            mv -f compose.yaml.restore compose.yaml
+            echo "    restored compose.yaml (sha256=$(sha256sum compose.yaml | cut -d' ' -f1))"
+          else
+            echo "    no compose.yaml.prev (there was no compose.yaml before this deploy)"
+          fi
+          docker tag "$prev_image" ghcr.io/jagbhandal/jaghelm:latest </dev/null
+          docker compose up -d --force-recreate </dev/null
+          ROLLBACK
+          if [ "${RC}" -eq 0 ]; then
+            echo ">>> Rollback applied — verify the service manually."
+          else
+            echo ">>> Rollback command FAILED — manual intervention required."
+            exit 1
+          fi
 
       # Every deploy pulls a new :sha-<short> image and nothing removed the old
       # ones — ~35 had piled up on vm103. Runs only after the health gate passes
@@ -169,7 +388,6 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /root/.ssh/runner_deploy jagbhandal@192.168.68.11"
           $SSH_CMD "KEEP=3 bash -s" <<'EOF'
           set -euo pipefail
           REPO=ghcr.io/jagbhandal/jaghelm
@@ -186,3 +404,8 @@ jobs:
               done
           docker image prune -f
           EOF
+
+      - name: Remove the pinned known_hosts file
+        if: always()
+        run: |
+          [ -z "${VM103_KNOWN_HOSTS:-}" ] || rm -f "${VM103_KNOWN_HOSTS}"
