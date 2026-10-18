@@ -19,8 +19,9 @@ const DEPLOY_LABEL = 'vm103';
 const DEPLOY_WORKFLOW = '.gitea/workflows/deploy.yml';
 const WORKFLOW_DIRS = ['.gitea/workflows', '.github/workflows'];
 
-// The label as a whole token, so it is also found inside an expression such as
-// `${{ inputs.runner || 'vm103' }}` but `vm1030` or `vm103-x` are different labels.
+// For the stray check: the label as a whole token, so it is also found inside an
+// expression such as `${{ inputs.runner || 'vm103' }}` or a matrix value, while
+// `vm1030` or `vm103-x` are different labels. The deploy pin needs the exact label.
 const LABEL_RE = new RegExp(`(^|[^\\w-])${DEPLOY_LABEL}([^\\w-]|$)`);
 
 /** `runs-on` as a label list: a string, a list, or GitHub's `{ group, labels }` form. */
@@ -35,30 +36,36 @@ function runnerLabels(runsOn) {
   return [String(runsOn)];
 }
 
-/** [{ id, runsOn, pinned }] for each job in a workflow's YAML source. */
+/** [{ id, runsOn, labels, pinned, matrix }] for each job in a workflow's YAML source. */
 function jobsOf(source) {
   const jobs = yaml.load(source)?.jobs ?? {};
   return Object.entries(jobs).map(([id, job]) => {
     const runsOn = job?.['runs-on'];
-    return { id, runsOn, pinned: runnerLabels(runsOn).some((l) => LABEL_RE.test(l)) };
+    const labels = runnerLabels(runsOn);
+    return { id, runsOn, labels, pinned: labels.some((l) => LABEL_RE.test(l)), matrix: job?.strategy?.matrix };
   });
 }
 
-/** Jobs in the deploy workflow that are NOT pinned to vm103. */
+/** Jobs in the deploy workflow without the exact vm103 label (an expression could
+ *  resolve to any runner, so it is not a pin). */
 function unpinnedDeployJobs(source) {
   const jobs = jobsOf(source);
   if (jobs.length === 0) return ['(no jobs)'];
-  return jobs.filter((j) => !j.pinned).map((j) => `${j.id}: runs-on=${JSON.stringify(j.runsOn)}`);
+  return jobs.filter((j) => !j.labels.includes(DEPLOY_LABEL)).map((j) => `${j.id}: runs-on=${JSON.stringify(j.runsOn)}`);
 }
 
-/** Jobs outside the deploy workflow that ARE pinned to vm103, as `file: job`. */
+/** Jobs outside the deploy workflow that claim vm103, as `file: job`. */
 function strayPinnedJobs(files) {
   return files
     .filter(({ file }) => file !== DEPLOY_WORKFLOW)
     .flatMap(({ file, source }) =>
-      jobsOf(source)
-        .filter((j) => j.pinned)
-        .map((j) => `${file}: job "${j.id}" runs-on=${JSON.stringify(j.runsOn)}`));
+      jobsOf(source).flatMap((j) => {
+        // the label can also arrive through the matrix: runs-on: ${{ matrix.runner }}
+        const matrix = JSON.stringify(j.matrix ?? {});
+        const viaMatrix = LABEL_RE.test(matrix);
+        if (!j.pinned && !viaMatrix) return [];
+        return [`${file}: job "${j.id}" runs-on=${JSON.stringify(j.runsOn)}${viaMatrix ? ` matrix=${matrix}` : ''}`];
+      }));
 }
 
 function repoWorkflows() {
@@ -96,6 +103,18 @@ test('vm103 checker: flags an unpinned deploy job and a stray pin, naming the fi
   assert.deepEqual(stray, ['.gitea/workflows/check.yml: job "check" runs-on=["self-hosted","vm103"]']);
 });
 
+test('vm103 checker: a deploy job needs the exact label, not one inside an expression', () => {
+  // the expression could resolve to any runner, so the job is not pinned
+  const expr = "${{ inputs.runner || 'vm103' }}";
+  assert.deepEqual(unpinnedDeployJobs(`jobs:\n  d:\n    runs-on: "${expr}"\n`), [`d: runs-on="${expr}"`]);
+});
+
+test('vm103 checker: a label supplied through the matrix is a stray pin', () => {
+  const source = 'jobs:\n  t:\n    runs-on: ${{ matrix.r }}\n    strategy:\n      matrix:\n        r: [ubuntu-latest, vm103]\n';
+  assert.deepEqual(strayPinnedJobs([{ file: '.github/workflows/m.yml', source }]),
+    ['.github/workflows/m.yml: job "t" runs-on="${{ matrix.r }}" matrix={"r":["ubuntu-latest","vm103"]}']);
+});
+
 test(`every job in ${DEPLOY_WORKFLOW} is pinned to the ${DEPLOY_LABEL} runner`, () => {
   const unpinned = unpinnedDeployJobs(read(DEPLOY_WORKFLOW));
   assert.equal(unpinned.length, 0, `${DEPLOY_WORKFLOW}: job(s) not pinned to ${DEPLOY_LABEL}:\n  ${unpinned.join('\n  ')}`);
@@ -112,16 +131,57 @@ test(`no workflow other than ${DEPLOY_WORKFLOW} uses the ${DEPLOY_LABEL} runner`
 // ── check.yml wires the secret floor ────────────────────────────────────────
 // The scanner and template-tracked assertions must stay wired as steps of the per-PR
 // check (Phase 0 secret floor). Matched against step `run:` scripts, not comments.
-test('check.yml runs the secret scan and the template-tracked assertion', () => {
-  const wf = '.gitea/workflows/check.yml';
-  const doc = yaml.load(read(wf)); // throws (fails) on invalid YAML
-  const runs = Object.values(doc?.jobs ?? {}).flatMap((job) => (job?.steps ?? []).map((s) => String(s?.run ?? '')));
-  assert.ok(runs.some((r) => r.includes('scripts/secret-scan.py')), `${wf}: no step runs scripts/secret-scan.py`);
+const CHECK_WORKFLOW = '.gitea/workflows/check.yml';
+
+/** A shell script with its comments removed: a `#` that starts a word, outside quotes,
+ *  to the end of the line (`${#arr[@]}` and `"a # b"` are kept). Line by line, so an
+ *  unbalanced quote (a heredoc's "it's") only affects its own line. */
+function stripShellComments(script) {
+  return script.split('\n').map((line) => {
+    let quote = '';
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (quote) {
+        if (c === quote) quote = '';
+        else if (c === '\\' && quote === '"') i++;
+      } else if (c === '\\') i++;
+      else if (c === '"' || c === "'") quote = c;
+      else if (c === '#' && (i === 0 || /\s/.test(line[i - 1]))) return line.slice(0, i);
+    }
+    return line;
+  }).join('\n');
+}
+
+/** What is missing from the secret-floor wiring in check.yml's source ([] = wired). */
+function floorWiringProblems(source) {
+  const doc = yaml.load(source); // throws (fails) on invalid YAML
+  const runs = Object.values(doc?.jobs ?? {}).flatMap((job) => (job?.steps ?? []).map((s) => stripShellComments(String(s?.run ?? ''))));
+  const problems = [];
+  if (!runs.some((r) => r.includes('scripts/secret-scan.py'))) problems.push('no step runs scripts/secret-scan.py');
   const tracked = runs.find((r) => r.includes('git ls-files --error-unmatch'));
-  assert.ok(tracked, `${wf}: no template-tracked step (git ls-files --error-unmatch)`);
-  for (const t of ['env.example', 'fcm-service-account.json.example']) {
-    assert.ok(tracked.includes(t), `${wf}: template-tracked step does not assert ${t}`);
+  if (!tracked) problems.push('no template-tracked step (git ls-files --error-unmatch)');
+  for (const t of tracked ? ['env.example', 'fcm-service-account.json.example'] : []) {
+    if (!tracked.includes(t)) problems.push(`template-tracked step does not assert ${t}`);
   }
+  return problems;
+}
+
+test('stripShellComments: drops comments, keeps # inside quotes and ${#…}', () => {
+  assert.equal(stripShellComments('echo skipped # python3 scripts/secret-scan.py'), 'echo skipped ');
+  assert.equal(stripShellComments('  # note\necho "a # b" \'c # d\' ${#arr[@]} x#y'), '  \necho "a # b" \'c # d\' ${#arr[@]} x#y');
+  assert.equal(stripShellComments('echo "q\\" # c" # gone'), 'echo "q\\" # c" ');
+});
+
+test('floor-wiring checker: a commented-out command does not count', () => {
+  const wf = (scan) => `jobs:\n  check:\n    steps:\n      - run: |\n          ${scan}\n      - run: |\n          for f in env.example fcm-service-account.json.example; do\n            git ls-files --error-unmatch -- "$f"\n          done\n`;
+  assert.deepEqual(floorWiringProblems(wf('python3 scripts/secret-scan.py')), []);
+  assert.deepEqual(floorWiringProblems(wf('echo skipped # python3 scripts/secret-scan.py')),
+    ['no step runs scripts/secret-scan.py']);
+});
+
+test('check.yml runs the secret scan and the template-tracked assertion', () => {
+  const problems = floorWiringProblems(read(CHECK_WORKFLOW));
+  assert.equal(problems.length, 0, `${CHECK_WORKFLOW}: ${problems.join('; ')}`);
 });
 
 // ── no tests outside npm test ───────────────────────────────────────────────

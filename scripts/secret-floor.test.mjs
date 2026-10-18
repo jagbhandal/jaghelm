@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +18,15 @@ const SCANNER = 'scripts/secret-scan.py';
 // Committed secret templates: tracked, never ignored, and clean to the scanner.
 const TEMPLATES = ['env.example', 'fcm-service-account.json.example'];
 
-const git = (...args) => spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
+// Real secret files .gitignore must keep out.
+const SECRETS = ['test.pem', 'test.jks', 'google-services.json', 'acme-service-account.json', 'keystore.properties'];
+
+function gitIn(cwd, ...args) {
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  if (r.error) throw r.error; // git missing: fail as that, not as "not ignored"
+  return r;
+}
+const git = (...args) => gitIn(ROOT, ...args);
 
 /** Run the scanner on one file; returns its exit status (throws if python3 is missing). */
 function scan(file) {
@@ -27,13 +35,32 @@ function scan(file) {
   return r.status;
 }
 
-// --no-index tests the ignore RULES even for tracked files (plain check-ignore always
-// reports a tracked path as not ignored, which would hide a swallowing glob).
+/** The secret files in SECRETS that the repo at `cwd` does not ignore. Plain
+ *  check-ignore (no --no-index): it reports a tracked path as not ignored, so a
+ *  secret force-added past the rules (`git add -f`) is caught too. */
+function secretsNotIgnored(cwd) {
+  return SECRETS.filter((f) => gitIn(cwd, 'check-ignore', '-q', f).status !== 0);
+}
+
 test('.gitignore ignores real secret files', () => {
-  for (const f of ['test.pem', 'test.jks', 'google-services.json', 'acme-service-account.json', 'keystore.properties']) {
-    assert.equal(git('check-ignore', '-q', '--no-index', f).status, 0, `${f} is NOT ignored`);
-  }
+  const missed = secretsNotIgnored(ROOT);
+  assert.deepEqual(missed, [], `secret file(s) NOT ignored: ${missed.join(', ')}`);
 });
+
+test('a secret force-added past .gitignore (git add -f) counts as not ignored', (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'jaghelm-force-tracked-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  gitIn(dir, 'init', '-q');
+  copyFileSync(path.join(ROOT, '.gitignore'), path.join(dir, '.gitignore'));
+  writeFileSync(path.join(dir, 'google-services.json'), '{}\n');
+  assert.deepEqual(secretsNotIgnored(dir), [], 'fixture: the repo rules ignore every secret');
+  gitIn(dir, 'add', '-f', 'google-services.json');
+  assert.deepEqual(secretsNotIgnored(dir), ['google-services.json']);
+});
+
+// Templates are tracked, so here --no-index is needed to test the ignore RULES: plain
+// check-ignore reports a tracked path as not ignored, which would hide a glob
+// swallowing a template.
 
 test('.gitignore does not ignore the secret templates (negations win)', () => {
   for (const f of [...TEMPLATES, '.env.example']) {
