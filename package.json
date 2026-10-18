@@ -13,7 +13,7 @@
     "dev:client": "vite",
     "build": "vite build && node scripts/inject-sw-precache.mjs",
     "start": "node server/index.js",
-    "test": "node --test --test-force-exit \"server/**/*.test.{js,mjs,cjs}\" \"src/**/*.test.{js,mjs,cjs}\" \"scripts/**/*.test.{js,mjs,cjs}\"",
+    "test": "node --test --test-timeout=60000 \"server/**/*.test.{js,mjs,cjs}\" \"src/**/*.test.{js,mjs,cjs}\" \"scripts/**/*.test.{js,mjs,cjs}\"",
     "test:watch": "node --test --watch",
     "test:client": "vitest run",
     "test:client:watch": "vitest",
