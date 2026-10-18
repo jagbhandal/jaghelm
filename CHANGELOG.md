@@ -7,6 +7,7 @@ All notable changes to JagHelm are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- A request redirected with `307` or `308` now keeps its method and body, as those codes require, instead of being turned into a `GET` without a body. A session login (Nginx Proxy Manager, Portainer, PhotoPrism) behind such a redirect on the same host and port, or from `http://` to `https://` on it, now works. A login redirected to another host is refused instead of being re-sent there, so its username and password never leave the configured host. `301`, `302` and `303` still turn a `POST`, or any method but `GET` and `HEAD`, into a `GET` without a body.
 - The server no longer loads the integration presets' test files as presets at startup, so it no longer logs two "Skipping invalid preset" errors (for `gitlab.test.js` and `nextcloud.test.js`) or prints their test output in its logs. Test files are also left out of the image.
 
 ### Security

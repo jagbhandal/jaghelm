@@ -32,7 +32,7 @@ const log = createLogger('integrations');
  *
  * Returns the URL and whether the key went into it, for safeFetch's
  * credentialInUrl: a redirect to another origin could carry the query (and the
- * key) with it, so such a request refuses one (#224).
+ * key) with it, so such a request refuses one.
  */
 function applyQueryAuth(url, config) {
   if (config.auth === 'query' && config._token) {

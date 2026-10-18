@@ -219,6 +219,13 @@ Key properties:
   `credentialInUrl`, and the request refuses any redirect to another origin
   with an error telling the user to configure the final URL. The same-host
   `http://` to `https://` upgrade is still followed.
+- **Request bodies stay on their origin.** A `307` or `308` keeps the method
+  and body, so a session login is re-sent, but only to the same origin or
+  through the same-host upgrade; a request with a body redirected to another
+  origin is refused, so a username and password never reach a host the user
+  didn't configure. A streamed body can't be re-sent and is refused too. A
+  `303`, and a `301`/`302` on any method but `GET`/`HEAD`, becomes a `GET`
+  without a body.
 - **Credentials are redacted** (`util/redact.js`) before any error is logged *or*
   returned to the browser -- query-auth presets put the key in the URL, which
   fetch errors would otherwise echo.

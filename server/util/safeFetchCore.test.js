@@ -418,3 +418,132 @@ test('a refused redirect warns once per origin pair, and neither log nor error h
   assert.equal((await run(`http://other.${host}/x`)).length, 0, 'same pair warns once');
   assert.equal((await run(`http://third.${host}/`)).length, 1, 'a new pair warns again');
 });
+
+// #225: what each redirect status does to the method and body. 301/302 turn any
+// method but GET/HEAD into a bodyless GET, and 303 any method; 307/308 keep the
+// method and body, but never re-send a body to another origin.
+const WHERE = {
+  'same origin': [`http://${SVC}/a`, '/b'],
+  'same-host https upgrade': [`http://${SVC}/a`, `https://${SVC}/b`],
+  'cross origin': [`http://${SVC}/a`, 'http://other.example.test/b'],
+};
+const REQUESTS = {
+  GET: { method: 'GET' },
+  'POST with a body': {
+    method: 'POST', body: '{"username":"u","password":"p"}', headers: { 'Content-Type': 'application/json' },
+  },
+};
+for (const status of [301, 302, 303, 307, 308]) {
+  for (const [where, [start, location]] of Object.entries(WHERE)) {
+    for (const [what, init] of Object.entries(REQUESTS)) {
+      const keeps = (status === 307 || status === 308) && init.body !== undefined;
+      const refused = keeps && where === 'cross origin';
+      const outcome = refused ? 'refused' : keeps ? 'method and body kept' : 'GET without a body';
+      test(`${status}, ${where}, ${what}: ${outcome}`, async () => {
+        const { hops, error } = await tryHops(start, location, { status, init });
+        if (refused) {
+          assert.match(String(error?.message), /refusing to re-send a request body to another origin/);
+          assert.equal(hops.length, 1, 'the other origin was contacted');
+          return;
+        }
+        assert.equal(error, null);
+        assert.equal(hops.length, 2, 'the redirect was not followed');
+        assert.equal(hops[1].url, new URL(location, start).href);
+        assert.equal(hops[1].method, keeps ? 'POST' : 'GET');
+        assert.equal(hops[1].body, keeps ? init.body : undefined);
+        assert.equal(hops[1].headers.get('content-type'), keeps ? 'application/json' : null);
+      });
+    }
+  }
+}
+
+test('307 cross origin without a body keeps the method and follows', async () => {
+  const { hops, error } = await tryHops(`http://${SVC}/a`, 'http://other.example.test/b',
+    { status: 307, init: { method: 'DELETE' } });
+  assert.equal(error, null);
+  assert.equal(hops[1].method, 'DELETE');
+  assert.equal(hops[1].body, undefined);
+});
+
+test('302 turns a PUT with a body into a GET without one, not only a POST', async () => {
+  const { hops } = await tryHops(`http://${SVC}/a`, '/b',
+    { status: 302, init: { method: 'PUT', body: 'x', headers: { 'Content-Type': 'text/plain' } } });
+  assert.equal(hops[1].method, 'GET');
+  assert.equal(hops[1].body, undefined);
+});
+
+test('307 same origin re-sends every replayable body type as is', async () => {
+  for (const body of ['s', Buffer.from('b'), new Uint8Array([1]), new URLSearchParams('a=1'),
+    new Blob(['x']), new FormData()]) {
+    const { hops, error } = await tryHops(`http://${SVC}/a`, '/b', { status: 307, init: { method: 'POST', body } });
+    assert.equal(error, null, body.constructor.name);
+    assert.equal(hops[1].body, body, body.constructor.name);
+  }
+});
+
+test('307 refuses a streamed body, which was consumed by the first request', async () => {
+  const body = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('x')); c.close(); } });
+  const { hops, error } = await tryHops(`http://${SVC}/a`, '/b',
+    { status: 307, init: { method: 'POST', body, duplex: 'half' } });
+  assert.match(String(error?.message), /cannot re-send a streamed request body/);
+  assert.equal(hops.length, 1);
+});
+
+test('307 same origin: a real server receives the POST and its body again', async () => {
+  const seen = [];
+  const srv = await listen((req, res) => {
+    let data = '';
+    req.on('data', (c) => { data += c; });
+    req.on('end', () => {
+      seen.push([req.method, req.url, req.headers['content-type'], data]);
+      if (req.url === '/login') { res.writeHead(307, { location: '/v2/login' }); res.end(); return; }
+      res.writeHead(200); res.end('ok');
+    });
+  });
+  try {
+    const r = await fetchSafe(`http://127.0.0.1:${portOf(srv)}/login`, {
+      method: 'POST', body: '{"password":"p"}', headers: { 'Content-Type': 'application/json' },
+    });
+    assert.equal(r.status, 200);
+    assert.deepEqual(seen, [
+      ['POST', '/login', 'application/json', '{"password":"p"}'],
+      ['POST', '/v2/login', 'application/json', '{"password":"p"}'],
+    ]);
+  } finally { srv.close(); }
+});
+
+test('308 cross origin with a body: a real second origin receives no request', async () => {
+  let reached = 0;
+  const dest = await listen((req, res) => { reached++; res.writeHead(200); res.end('ok'); });
+  const redir = await listen((req, res) => {
+    req.resume();
+    res.writeHead(308, { location: `http://127.0.0.1:${portOf(dest)}/login` }); res.end();
+  });
+  try {
+    await assert.rejects(
+      fetchSafe(`http://127.0.0.1:${portOf(redir)}/login`, { method: 'POST', body: '{"password":"p"}' }),
+      /refusing to re-send a request body to another origin/,
+    );
+    assert.equal(reached, 0);
+  } finally { dest.close(); redir.close(); }
+});
+
+test('refusing to re-send a body warns once per origin pair, without the body', async () => {
+  const host = `h${randomBytes(4).toString('hex')}.example.test`;
+  const secret = randomBytes(8).toString('hex');
+  /** @type {Error | null} */
+  let error = null;
+  const run = () => safeFetchWarnings(async () => {
+    ({ error } = await tryHops(`http://${host}/login`, `http://other.${host}/login`,
+      { status: 307, init: { method: 'POST', body: `{"password":"${secret}"}` } }));
+  });
+  const first = await run();
+  assert.equal(first.length, 1);
+  assert.equal(first[0].refused, 'request body');
+  assert.equal(first[0].status, 307);
+  assert.equal(first[0].from, `http://${host}`);
+  assert.equal(first[0].to, `http://other.${host}`);
+  assert.ok(!JSON.stringify(first).includes(secret), 'the body reached the log');
+  assert.ok(!String(error?.message).includes(secret), 'the body reached the error');
+  assert.equal((await run()).length, 0, 'same pair warns once');
+});

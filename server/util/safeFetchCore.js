@@ -2,9 +2,9 @@
 /**
  * The single outbound-fetch chokepoint: SSRF-revalidated redirect following, an
  * allowlist of the headers that may follow a redirect to another origin, no
- * cross-origin redirect at all for a request with a credential in its URL, and a
- * response-body size cap. Both safeFetch wrappers (integrations/lib/http.js and
- * httpClient.js) route through here.
+ * cross-origin redirect at all for a request with a credential in its URL or a
+ * body to re-send, and a response-body size cap. Both safeFetch wrappers
+ * (integrations/lib/http.js and httpClient.js) route through here.
  *
  * Why redirect:'manual' + follow-in-code: Node's global fetch follows 3xx
  * transparently, so a guard that only runs on the INITIAL url is bypassed by a
@@ -72,12 +72,24 @@ function warnRedirectOnce(kind, from, to, fields, msg) {
  * @param {URL} prev
  * @param {URL} next
  * @param {string} why
+ * @param {Record<string, unknown>} [fields] more to log (never a value)
  * @returns {never}
  */
-function refuseRedirect(reason, prev, next, why) {
+function refuseRedirect(reason, prev, next, why, fields = {}) {
   const msg = `redirected ${prev.origin} → ${next.origin}; ${why}`;
-  warnRedirectOnce(`refused ${reason}`, prev.origin, next.origin, { refused: reason }, msg);
+  warnRedirectOnce(`refused ${reason}`, prev.origin, next.origin, { refused: reason, ...fields }, msg);
   throw new Error(msg);
+}
+
+/**
+ * Whether fetch can send this request body again for a 307/308: the body types
+ * it serialises afresh for each request. Anything else (a ReadableStream, a Node
+ * stream, an async iterable) was read by the first request and is gone.
+ * @param {unknown} body
+ */
+function isReplayable(body) {
+  return typeof body === 'string' || body instanceof ArrayBuffer || ArrayBuffer.isView(body) ||
+    body instanceof URLSearchParams || body instanceof Blob || body instanceof FormData;
 }
 
 /**
@@ -110,7 +122,7 @@ export async function fetchSafe(url, opts = {}, cfg = {}) {
     const prev = new URL(current);
     const next = new URL(location, prev);
     // Whether this hop stays on the request's origin. Only a hop that does keeps
-    // every header, and may carry a URL credential on.
+    // every header, and may carry on a URL credential or re-send a body.
     //
     // One exception counts as staying: an http -> https upgrade to the same host
     // and port (a reverse proxy's force-SSL; the UI and preset placeholders steer
@@ -127,15 +139,35 @@ export async function fetchSafe(url, opts = {}, cfg = {}) {
     // A credential in the URL (a query-auth preset's key, a {token} endpoint)
     // can't be stripped from the hop the way a header can: the Location may
     // repeat the query on the new origin. So such a request follows no redirect
-    // off its origin at all; the user configures the final URL instead (#224).
+    // off its origin at all; the user configures the final URL instead.
     if (credentialInUrl && !keepAll) {
       refuseRedirect('credential in URL', prev, next,
         "not following a redirect to another origin because this integration's credential is " +
         'in the URL; configure the final URL instead');
     }
 
-    // 303, and 301/302 on an unsafe method, become GET with no body (browser rule).
-    if (res.status === 303 || (method !== 'GET' && method !== 'HEAD')) {
+    // What the status does to the method and body:
+    // - 307/308 keep both, as the spec requires. The body goes only where the
+    //   request was going (the same origin, or the upgrade above): to another
+    //   origin the redirect is refused, so a session login's username and
+    //   password are never re-sent to a host nobody configured. A request with
+    //   no body (GET, HEAD, a bare DELETE) follows anywhere with its method. A
+    //   streamed body was consumed by the first request, so it is refused too.
+    // - 303 becomes a GET without a body, whatever the method.
+    // - 301/302, and a Location on any other 3xx, turn every method but GET and
+    //   HEAD into a GET without a body. Browsers and fetch do that for POST; it
+    //   is applied to PUT, PATCH and DELETE too, so these codes never re-send a
+    //   body.
+    const status = res.status;
+    if (status === 307 || status === 308) {
+      if (body != null) {
+        if (!keepAll) {
+          refuseRedirect('request body', prev, next,
+            `refusing to re-send a request body to another origin (HTTP ${status})`, { status });
+        }
+        if (!isReplayable(body)) throw new Error(`cannot re-send a streamed request body on a ${status} redirect`);
+      }
+    } else if (status === 303 || (method !== 'GET' && method !== 'HEAD')) {
       method = 'GET';
       body = undefined;
       headers.delete('content-type');

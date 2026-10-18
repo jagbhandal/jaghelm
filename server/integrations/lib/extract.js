@@ -16,7 +16,7 @@ const CREDENTIAL_PARAMS = new Set(['username', 'password', 'token']);
  *
  * Also reports whether a credential was filled in (a custom integration's
  * `/api?key={token}`), which the caller passes to safeFetch as credentialInUrl so
- * the request refuses a redirect to another origin (#224).
+ * the request refuses a redirect to another origin.
  *
  * @returns {{ path: string, credentialInUrl: boolean }}
  */

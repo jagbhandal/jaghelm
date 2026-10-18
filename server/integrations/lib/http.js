@@ -30,8 +30,8 @@ const FETCH_TIMEOUT_MS = 8000;
  * @param {boolean} [skipTls]
  * @param {{ credentialInUrl?: boolean }} [cfg] credentialInUrl: the URL carries
  *   the integration's credential (query-param auth, or a credential placeholder
- *   in the endpoint), so a redirect to another origin is refused (#224). Set it
- *   from the same code that put the credential in the URL.
+ *   in the endpoint), so a redirect to another origin is refused. Set it from
+ *   the same code that put the credential in the URL.
  */
 export async function safeFetch(url, opts = {}, skipTls = false, { credentialInUrl = false } = {}) {
   try {

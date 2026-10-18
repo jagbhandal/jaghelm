@@ -1,12 +1,14 @@
 /**
  * #224: an integration whose credential is in the URL never follows a redirect
  * to another origin, since the redirect's Location can repeat the query there.
+ * #225: a session preset's login (username and password in the body) follows a
+ * same-origin 307/308 with its body, and never re-sends it to another origin.
  *
  * Which presets put a credential in the URL is not listed by hand: every preset's
  * connection test and poll run once against a stubbed fetch, and a preset counts
- * if a credential value shows up in a URL it requested. A preset added later is
- * covered without editing this file. (#204's header policy is tested in
- * redirectAuthHeaders.test.js.)
+ * if a credential value shows up in a URL it requested. The session presets are
+ * the ones with auth: 'session'. A preset added later is covered without editing
+ * this file. (#204's header policy is tested in redirectAuthHeaders.test.js.)
  */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -168,3 +170,61 @@ test('a custom integration with no credential in its endpoint follows a cross-or
     assert.equal(o.state.to, 1);
   } finally { o.close(); }
 });
+
+// #225: every supported session preset's login, behind a 307 or 308.
+const sessionPresets = presets.filter((p) => p.auth === 'session');
+
+/** A login response holding `tok` at the preset's tokenPath ('a.b' -> {a:{b:tok}}). */
+function loginResponse(tokenPath, tok) {
+  const out = {};
+  let at = out;
+  const keys = String(tokenPath).split('.');
+  for (const k of keys.slice(0, -1)) at = at[k] = {};
+  at[keys[keys.length - 1]] = tok;
+  return JSON.stringify(out);
+}
+
+test('session presets are found', () => {
+  assert.ok(sessionPresets.length >= 2, `only ${sessionPresets.length} session presets`);
+});
+
+for (const p of sessionPresets) {
+  for (const status of [307, 308]) {
+    test(`${p.type}: a login behind a cross-origin ${status} is not re-sent there`, async () => {
+      const o = await twoOrigins(status);
+      try {
+        const tested = await testIntegration(p.type, { url: o.fromUrl, ...CREDS });
+        assert.equal(tested.ok, false);
+        // A preset with oauth2Instructions reports every failed login as a
+        // possible 2FA problem, so only the others show the refusal itself.
+        if (!p.oauth2Instructions) {
+          assert.match(tested.error, /refusing to re-send a request body to another origin/);
+        }
+        assert.equal(o.state.to, 0, 'the other origin received the login');
+      } finally { o.close(); }
+    });
+
+    test(`${p.type}: a login behind a same-origin ${status} is re-sent with its body`, async () => {
+      const logins = [];
+      const srv = await listen((req, res) => {
+        let body = '';
+        req.on('data', (c) => { body += c; });
+        req.on('end', () => {
+          if (req.url === p.session.loginEndpoint) {
+            res.writeHead(status, { location: '/moved' }); res.end(); return;
+          }
+          logins.push([req.method, req.url, body]);
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(loginResponse(p.session.tokenPath, 'session-tok'));
+        });
+      });
+      try {
+        const tested = await testIntegration(p.type, { url: `http://127.0.0.1:${srv.address().port}`, ...CREDS });
+        assert.equal(tested.ok, true, tested.error);
+        assert.equal(logins.length, 1);
+        assert.equal(logins[0][0], 'POST');
+        assert.ok(logins[0][2].includes(CREDS.password), 'the login body was not re-sent');
+      } finally { srv.close(); }
+    });
+  }
+}
