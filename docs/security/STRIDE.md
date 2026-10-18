@@ -2,7 +2,7 @@
 
 A one-page model of JagHelm's real trust boundaries. JagHelm is a **single-user,
 single-instance** homelab dashboard: a React SPA served by an Express server that
-proxies Prometheus/cAdvisor/Kuma and 40+ third-party app APIs, persists config to
+proxies Prometheus/cAdvisor/Kuma and 35+ third-party app APIs, persists config to
 YAML/JSON files, and stores credentials AES-256-GCM-encrypted. It is designed to
 run on a **trusted LAN**; several defaults assume that (see KNOWN-ISSUES.md).
 

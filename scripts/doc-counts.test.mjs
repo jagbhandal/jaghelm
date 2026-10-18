@@ -1,9 +1,10 @@
 // Guards the README, the page's meta tags and the living docs against exact preset,
 // integration and test counts (#228). Exact counts went stale: "42 integrations" outlived
-// the Watchtower preset and "220 automated tests" outlived ~600 more tests. Say "40+"
+// the Watchtower preset and "220 automated tests" outlived ~600 more tests. Say "35+"
 // instead; a floor stays true while presets are added. A floor for presets or
-// integrations must not exceed the number of presets the registry loads, so removing
-// presets can't leave "40+" behind either.
+// integrations counts only presets a user can add (the gallery, `listPresets()`, which
+// leaves out presets flagged `unsupported`), and must not exceed that number, so
+// removing or disabling presets can't leave "35+" behind either.
 //
 // Historical records (CHANGELOG entries, plans, dated audits) describe the past and are
 // not checked.
@@ -12,10 +13,9 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { initRegistry, getPreset } from '../server/integrations/registry.js';
+import { initRegistry, listPresets } from '../server/integrations/registry.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PRESETS_DIR = path.join(ROOT, 'server/integrations/presets');
 
 const TOP_LEVEL = ['README.md', 'KNOWN-ISSUES.md', 'index.html'];
 const HISTORICAL = [
@@ -42,15 +42,15 @@ export function countClaims(text) {
   }));
 }
 
-/** Problems with the counts in one file: any exact count, or a preset floor above `presetCount`. */
-export function countProblems(file, text, presetCount) {
+/** Problems with the counts in one file: any exact count, or a preset floor above `addable`. */
+export function countProblems(file, text, addable) {
   const problems = [];
   for (const c of countClaims(text)) {
     const where = `${file}:${c.line}: "${c.claim}"`;
     if (!c.floor) {
-      problems.push(`${where} is an exact count; write a floor such as "40+" or drop the number`);
-    } else if (c.noun !== 'tests' && c.n > presetCount) {
-      problems.push(`${where} claims more than the ${presetCount} presets the registry loads`);
+      problems.push(`${where} is an exact count; write a floor such as "35+" or drop the number`);
+    } else if (c.noun !== 'tests' && c.n > addable) {
+      problems.push(`${where} claims more than the ${addable} presets a user can add`);
     }
   }
   return problems;
@@ -73,33 +73,31 @@ test('countClaims finds exact counts and floors, not section or version numbers'
   assert.deepEqual(claims('and 42 app integrations behind'), ['42 integrations']);
   assert.deepEqual(claims('proxies ~42 third-party\napp APIs'), ['42 apis']);
   assert.deepEqual(claims('IE["engine<br/>(42 presets)"]'), ['42 presets']);
-  assert.deepEqual(claims('- **40+ integrations that call**'), ['40+ integrations']);
+  assert.deepEqual(claims('- **35+ integrations that call**'), ['35+ integrations']);
   assert.deepEqual(claims('signed images · 1,000+ automated tests ·'), ['1000+ tests']);
   assert.deepEqual(claims('### 4.3 Integration engine'), []);
   assert.deepEqual(claims('Settings → Integrations; v2 presets'), []);
 });
 
-test('countProblems rejects exact counts and preset floors above the registry', () => {
-  assert.equal(countProblems('a.md', '220 automated tests gate the build', 41).length, 1);
-  assert.equal(countProblems('a.md', '42 integration presets', 41).length, 1);
-  assert.deepEqual(countProblems('a.md', '40+ presets and 1,000+ tests', 41), []);
+test('countProblems rejects exact counts and preset floors above the addable count', () => {
+  assert.equal(countProblems('a.md', '220 automated tests gate the build', 38).length, 1);
+  assert.equal(countProblems('a.md', '42 integration presets', 38).length, 1);
+  assert.deepEqual(countProblems('a.md', '35+ presets, 38+ presets and 1,000+ tests', 38), []);
   assert.match(
-    countProblems('a.md', '\n45+ integrations', 41)[0],
-    /a\.md:2: "45\+ integrations" claims more than the 41/
+    countProblems('a.md', '\n40+ integrations', 38)[0],
+    /a\.md:2: "40\+ integrations" claims more than the 38 presets a user can add/
   );
 });
 
 test('docs and meta tags state no exact preset, integration or test count', async () => {
   await initRegistry();
-  const loaded = readdirSync(PRESETS_DIR)
-    .filter((f) => f.endsWith('.js'))
-    .filter((f) => getPreset(path.basename(f, '.js'))).length;
-  assert.ok(loaded > 0, 'the registry loaded no presets');
+  const addable = listPresets().length;
+  assert.ok(addable > 0, 'the gallery offers no presets');
 
   const files = checkedFiles();
   assert.ok(files.includes('docs/ARCHITECTURE.md'), 'docs/ were not scanned');
   const problems = files.flatMap((f) =>
-    countProblems(f, readFileSync(path.join(ROOT, f), 'utf8'), loaded)
+    countProblems(f, readFileSync(path.join(ROOT, f), 'utf8'), addable)
   );
   assert.deepEqual(problems, []);
 });

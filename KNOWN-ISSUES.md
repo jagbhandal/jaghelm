@@ -89,7 +89,7 @@ anywhere reachable from outside your network.
 
 ## Integrations
 
-JagHelm ships 40+ integration presets. They depend on each upstream app's API,
+JagHelm ships 35+ integration presets. They depend on each upstream app's API,
 which changes independently — expect occasional drift.
 
 - **Nextcloud** can show dashes for FILES / USERS / STORAGE on some setups —

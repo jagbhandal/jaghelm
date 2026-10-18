@@ -2,7 +2,7 @@
 
 JagHelm is a self-hosted homelab dashboard whose differentiator is **live data,
 not just links**: it renders real Prometheus / cAdvisor metrics and pulls live
-state from 40+ service integrations, laid out on a custom drag-and-resize grid.
+state from 35+ service integrations, laid out on a custom drag-and-resize grid.
 It is **single-user, single-instance, and file-backed** (no database), and ships
 as a Docker image to a homelab.
 
@@ -48,7 +48,7 @@ flowchart LR
     CADV["cAdvisor"]
     KUMA["Uptime Kuma"]
     NUT["NUT / UPS"]
-    INT["40+ integration<br/>upstreams"]
+    INT["35+ integration<br/>upstreams"]
   end
 
   UI -->|"fetch + token header"| API
@@ -157,7 +157,7 @@ flowchart TD
   subgraph Loop["refresh loop (~30s)"]
     D["discovery.js<br/>Prometheus + cAdvisor"]
     M["monitors.js<br/>Uptime Kuma match"]
-    IE["integration engine<br/>(40+ presets)"]
+    IE["integration engine<br/>(35+ presets)"]
   end
   Loop --> C["cache.js (ETag-tagged)"]
   REQ["GET /api/services<br/>or /api/integrations"] --> C
@@ -179,11 +179,14 @@ in the app). Setup: [arcane/SETUP.md](arcane/SETUP.md).
 
 ### 4.3 Integration engine
 
-The differentiator. A declarative **preset** (`integrations/presets/*.js`, 40+ of
-them) describes how to talk to one app: endpoints, auth mode, and which JSON
-paths map to which display fields. The registry loads every `.js` file in
+The differentiator. A declarative **preset** (`integrations/presets/*.js`, one
+file per app) describes how to talk to one app: endpoints, auth mode, and which
+JSON paths map to which display fields. The registry loads every `.js` file in
 `presets/` except `*.test.js`, so helpers the presets share live in `lib/`
-(e.g. `lib/createArrPreset.js`). The flow:
+(e.g. `lib/createArrPreset.js`). A preset flagged `unsupported` still loads, so
+an existing config that names it resolves, but `listPresets()` leaves it out of
+the gallery and it can't be added; the docs count only the 35+ a user can add.
+The flow:
 
 ```mermaid
 flowchart LR
