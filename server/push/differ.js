@@ -32,13 +32,12 @@ export const SEVERITY = {
 
 /**
  * Recovery/info types — equivalent to severity==="info", exported explicitly.
- * `watchtower_cleared` is built outside the snapshot differ (in watchtower/
- * format.js) but is semantically a recovery, so it joins the set here to be
- * gated by the notifyRecoveries pref in shouldDeliver.
+ * The Arcane recovery types are built outside the snapshot differ (by the
+ * Arcane poller) but are semantically recoveries, so they join the set here to
+ * be gated by the notifyRecoveries pref in shouldDeliver.
  */
 export const RECOVERY_TYPES = new Set([
   ...Object.keys(SEVERITY).filter((type) => SEVERITY[type] === 'info'),
-  'watchtower_cleared',
   'arcane_cleared',
   'arcane_agent_recovered',
 ]);

@@ -131,8 +131,8 @@ export function createHeldBackStore({ path = DEFAULT_PATH } = {}) {
   return { diffAndSet, getNode };
 }
 
-// Process-wide singleton: the watchtower route is the only writer, but a single
-// instance keeps the in-memory map authoritative between webhook calls without a
+// Process-wide singleton: Arcane's poller is the writer; a single
+// instance keeps the in-memory map authoritative between polls without a
 // reload-from-disk per request.
 let singleton = null;
 export function getHeldBackStore() {

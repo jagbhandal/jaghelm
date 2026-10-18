@@ -20,7 +20,7 @@ test('exports SEVERITY map covering all event types', () => {
   assert.equal(SEVERITY.cron_overdue, 'warning');
 });
 
-test('RECOVERY_TYPES is the info-severity types plus watchtower_cleared', () => {
+test('RECOVERY_TYPES is the info-severity types plus the Arcane recoveries', () => {
   assert.ok(RECOVERY_TYPES instanceof Set);
   const expected = [
     'service_recovered',
@@ -28,9 +28,8 @@ test('RECOVERY_TYPES is the info-severity types plus watchtower_cleared', () => 
     'host_threshold_cleared',
     'ups_restored',
     'cron_recovered',
-    // Built outside the snapshot differ (watchtower/format.js) but semantically
-    // a recovery, so it joins the set to be gated by notifyRecoveries.
-    'watchtower_cleared',
+    // Built outside the snapshot differ (by the Arcane poller) but semantically
+    // recoveries, so they join the set to be gated by notifyRecoveries.
     'arcane_cleared',
     'arcane_agent_recovered',
   ].sort();
