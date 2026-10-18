@@ -40,9 +40,14 @@ async function fake({ envs, containers = {}, historyFail = new Set(), fail = [] 
 
 function sink() { let s = ''; return { write: (x) => { s += x; }, get text() { return s; } }; }
 
-async function run(f, argv = []) {
+async function run(f, argv = [], extraEnv = {}) {
   const stdout = sink(), stderr = sink();
-  const code = await runPollOnce({ argv, env: { ARCANE_URL: f.url, ARCANE_API_KEY: KEY }, stdout, stderr });
+  const code = await runPollOnce({
+    argv,
+    env: { ARCANE_URL: f.url, ARCANE_API_KEY: KEY, ...extraEnv },
+    stdout,
+    stderr,
+  });
   return { code, stdout, stderr };
 }
 
@@ -202,23 +207,29 @@ async function vulnFake(modes) {
   return { url: `http://127.0.0.1:${srv.address().port}`, seen, close: () => srv.close() };
 }
 
+const ONLY_0 = { ARCANE_VULN_DIGEST_ENVS: 'env-0' };
+const BOTH = { ARCANE_VULN_DIGEST_ENVS: 'env-0,env-2' };
+
 test('--vuln-digest: baseline, then what would push, a preview; nothing sent, nothing kept', async () => {
   const tmp = mkdtempSync(join(tmpdir(), 'vulnonce-test-'));
   const prev = process.env.TMPDIR;
   process.env.TMPDIR = tmp;
   const f = await vulnFake({ 0: 'ok', 2: 'denied' });
   try {
-    const { code, stdout, stderr } = await run(f, ['--vuln-digest']);
+    const { code, stdout, stderr } = await run(f, ['--vuln-digest'], ONLY_0);
     assert.equal(code, 0);
     const text = stdout.text;
+    assert.match(text, /digest environments \(ARCANE_VULN_DIGEST_ENVS\): env-0/);
     assert.match(text, /--- vulnerability digest, pass 1 \(baseline\) ---/);
     assert.match(text, /--- vulnerability digest, pass 2 ---/);
     assert.match(text, /"outcome": "baseline"/);
-    assert.match(text, /"outcome": "no-permission"/);
-    assert.match(text, /grant vulnerabilities:read/);
-    // Pass 2: the fixture's stale and failed scans would push.
-    assert.match(text, /would push: .*"title":"Vulnerabilities · env-0".*1 image not scanned in 9 days: redis/);
+    // Headroom against the cap: the critical/high fixable rows Arcane returned.
+    assert.match(text, /"criticalHighFixable": 5,\s+"cap": 20000/);
+    // Pass 2: the same results and the same scan problems as the baseline: nothing new.
+    assert.equal(text.includes('would push'), false);
     assert.match(text, /"job": "arcane-vuln-digest"/);
+    // env-2 is not listed: never read at all.
+    assert.equal(f.seen.some((u) => u.includes('/environments/2/')), false);
     assert.match(text, /--- preview: env-0 if every current finding were new ---/);
     assert.match(text, /1 new critical, 4 new high \(fix available\) · 3 images · top: immich-server 1C 1H/);
     assert.match(text, /next scheduled digest: \d{4}-\d\d-\d\dT14:00:00\.000Z/);
@@ -239,7 +250,7 @@ test('--vuln-digest exits 1 when no environment could be read, or on a read erro
   for (const modes of [{ 0: 'denied', 2: 'denied' }, { 0: 'ok', 2: 'boom' }]) {
     const f = await vulnFake(modes);
     try {
-      const { code, stdout, stderr } = await run(f, ['--vuln-digest']);
+      const { code, stdout, stderr } = await run(f, ['--vuln-digest'], BOTH);
       assert.equal(code, 1, JSON.stringify(modes));
       assert.match(stdout.text, /--- vulnerability digest, pass 2 ---/);
       assert.equal(stdout.text.includes(KEY) || stderr.text.includes(KEY), false);
@@ -259,4 +270,28 @@ test('--vuln-digest does not take --record', async () => {
   });
   assert.equal(code, 2);
   assert.match(stderr.text, /--record does not apply to --vuln-digest/);
+});
+
+test('--vuln-digest: a listed environment without the grant is reported with what to grant', async () => {
+  const f = await vulnFake({ 0: 'ok', 2: 'denied' });
+  try {
+    const { code, stdout } = await run(f, ['--vuln-digest'], BOTH);
+    assert.equal(code, 0);
+    assert.match(stdout.text, /"env": "env-2",\s+"outcome": "no-permission"/);
+    assert.match(stdout.text, /lacks vulnerabilities:read \(a global grant in Arcane v2\.16\.1\)/);
+  } finally {
+    f.close();
+  }
+});
+
+test('--vuln-digest with no ARCANE_VULN_DIGEST_ENVS says the digest is off and reads nothing', async () => {
+  const f = await vulnFake({ 0: 'ok' });
+  try {
+    const { code, stderr } = await run(f, ['--vuln-digest']);
+    assert.equal(code, 2);
+    assert.match(stderr.text, /ARCANE_VULN_DIGEST_ENVS is empty/);
+    assert.deepEqual(f.seen, []);
+  } finally {
+    f.close();
+  }
 });

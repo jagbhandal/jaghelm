@@ -92,10 +92,13 @@ const topLabel = ({ name, critical, high }) => {
 
 /**
  * Weekly vulnerability digest for one environment (vulnDerive buildDigest). New
- * critical/high findings first, then KEV, fixed and scan health.
+ * critical/high findings first, then KEV, fixed, new scan problems and the ones
+ * already reported.
  */
 export function buildVulnDigestPush({ env, digest }) {
   const { newCritical, newHigh, images, top, kev, kevNew, fixed, stale, failed } = digest;
+  const stillStale = digest.stillStale ?? [];
+  const stillFailed = digest.stillFailed ?? [];
   const parts = [];
   if (newCritical + newHigh > 0) {
     const counts = [];
@@ -113,6 +116,9 @@ export function buildVulnDigestPush({ env, digest }) {
   if (failed.length) {
     parts.push(`${plural(failed.length, 'scan', 'scans')} failed: ${join(failed)}`);
   }
+  // Problems already reported at an earlier digest: only ever in a push sent anyway.
+  if (stillStale.length) parts.push(`still not scanned: ${join(stillStale)}`);
+  if (stillFailed.length) parts.push(`still failing: ${join(stillFailed)}`);
   return {
     type: 'arcane_vulns',
     id: `arcane:${env}:vulns`,

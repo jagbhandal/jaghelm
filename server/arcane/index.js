@@ -68,6 +68,7 @@ export function startArcane({ env = process.env, demo = isDemoMode(), deps = {} 
     pushStore: getPushStore(),
     fcm: fcmModule,
     logger: log,
+    envs: cfg.vulnDigestEnvs,
     day: cfg.vulnDay,
     hour: cfg.vulnHour,
   });

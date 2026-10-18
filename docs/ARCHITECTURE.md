@@ -172,9 +172,9 @@ every `ARCANE_POLL_SECONDS` (default 300) plus a release check every
 release check wait up to 30 s for push to be ready. It diffs against persisted state and emits
 push events through `dispatchEvents`, and records Arcane's scheduler-started update and prune
 runs, and its image watcher's checks, into the cron store. On its own weekly timer it also
-reads Arcane's stored vulnerability scan results and pushes a digest per environment when
-something is new (`arcane_vulns`), recording each digest as the `arcane-vuln-digest` cron
-job. Its `arcane_*` push types map to the `watchtower` preference category (labelled Updates
+reads Arcane's stored vulnerability scan results for the environments in
+`ARCANE_VULN_DIGEST_ENVS` and pushes a digest per environment when something is new
+(`arcane_vulns`), recording each digest as the `arcane-vuln-digest` cron job. Its `arcane_*` push types map to the `watchtower` preference category (labelled Updates
 in the app). Setup: [arcane/SETUP.md](arcane/SETUP.md).
 
 ### 4.3 Integration engine
@@ -292,8 +292,8 @@ All state is files under the data dir (no DB):
   seen activity ids, each environment's pending updates, runs waiting on their job run,
   last notified release),
   `arcane-held-back.json` (held-back containers per environment) and
-  `arcane-vuln-state.json` (each environment's critical/high finding keys and KEV count at
-  the last vulnerability digest, and when it last ran); atomic writes, tolerant load.
+  `arcane-vuln-state.json` (each environment's critical/high finding keys, KEV count and
+  stale or failed images at the last vulnerability digest, and when it last ran); atomic writes, tolerant load.
 - **cron history**, **todos**, **auth** (password hash + salt) -- small files,
   atomic writes.
 

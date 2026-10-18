@@ -84,3 +84,10 @@ test('vulnerability digest slot defaults to Sunday 14:00 UTC, clamped to a real 
   // Also present when the integration is off, like the other intervals.
   assert.equal(readArcaneConfig({}).vulnHour, 14);
 });
+
+test('vulnerability digest environments parse like the check-only list; empty means off', () => {
+  const c = readArcaneConfig({ ARCANE_VULN_DIGEST_ENVS: ' vm-103, pi-1 ,,' });
+  assert.deepEqual(c.vulnDigestEnvs, new Set(['vm-103', 'pi-1']));
+  assert.deepEqual(readArcaneConfig({}).vulnDigestEnvs, new Set());
+  assert.deepEqual(readArcaneConfig({ ARCANE_VULN_DIGEST_ENVS: ' , ' }).vulnDigestEnvs, new Set());
+});

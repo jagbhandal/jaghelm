@@ -158,7 +158,12 @@ test('projectFixture keeps only whether a container check errored', () => {
 test('startArcane also starts the weekly vulnerability digest, and stopArcane stops it', () => {
   const f = fakes();
   startArcane({
-    env: { ...ON, ARCANE_VULN_DIGEST_DAY: '3', ARCANE_VULN_DIGEST_HOUR: '9' },
+    env: {
+      ...ON,
+      ARCANE_VULN_DIGEST_DAY: '3',
+      ARCANE_VULN_DIGEST_HOUR: '9',
+      ARCANE_VULN_DIGEST_ENVS: 'vm-103',
+    },
     demo: false,
     deps: f.deps,
   });
@@ -166,6 +171,7 @@ test('startArcane also starts the weekly vulnerability digest, and stopArcane st
   assert.equal(d.started, 1);
   assert.equal(d.opts.day, 3);
   assert.equal(d.opts.hour, 9);
+  assert.deepEqual(d.opts.envs, new Set(['vm-103']));
   assert.equal(typeof d.opts.client.vulnSummaries, 'function');
   assert.equal(typeof d.opts.stateStore.getLastRun, 'function');
   assert.equal(typeof d.opts.recordRun, 'function');

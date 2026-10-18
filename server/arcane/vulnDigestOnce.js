@@ -1,10 +1,12 @@
 /**
  * Vulnerability digest dry run (`scripts/arcane-poll-once.js --vuln-digest`).
- * Runs the real digest twice over a throwaway state file and sends no push: pass 1 is
- * the silent baseline, pass 2 shows what would push against it (scan health, at least).
+ * Reads only the environments in ARCANE_VULN_DIGEST_ENVS (empty: the digest is off,
+ * exit 2). Runs the real digest twice over a throwaway state file and sends no push:
+ * pass 1 is the silent baseline, pass 2 shows what would push against it. Each read
+ * environment shows its critical/high fixable row count against the cap.
  * Then, per environment that baselined, the push it would get if every current finding
  * were new, to preview the format. Prints each environment's outcome, including a
- * refused read (no vulnerabilities:read) with what to grant. The API key is never
+ * refused read (no vulnerabilities:read, or the feature off there) with the likely cause. The API key is never
  * printed. Returns an exit code: 0 when at least one environment was read and none
  * failed with a read error, 1 otherwise (a refused read alone is not an error).
  */
@@ -13,26 +15,43 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { createArcaneClient } from './client.js';
 import { createVulnStateStore } from './vulnStateStore.js';
-import { createVulnDigest, nextSlotMs } from './vulnDigest.js';
+import { createVulnDigest, nextSlotMs, MAX_FINDINGS } from './vulnDigest.js';
 import { buildDigest } from './vulnDerive.js';
 import { buildVulnDigestPush } from './format.js';
 
 const READ = new Set(['baseline', 'digest', 'no-results']);
-const HINT = 'grant vulnerabilities:read for this environment on the JagHelm key';
+const HINT =
+  'the key lacks vulnerabilities:read (a global grant in Arcane v2.16.1), ' +
+  'or vulnerability management is off on this environment';
 
 /** One environment's result, printable (no key set). */
 function describe(r) {
   const out = { env: r.env, outcome: r.outcome };
   if (r.error) out.error = r.error;
   if (r.outcome === 'no-permission') out.hint = HINT;
-  if (READ.has(r.outcome) && r.outcome !== 'no-results') {
-    Object.assign(out, { findings: r.findings, kev: r.kev, stale: r.stale, failed: r.failed });
+  if (Number.isInteger(r.rows)) {
+    // Rows Arcane returned (all images) against the cap, then the keys of used images.
+    Object.assign(out, {
+      criticalHighFixable: r.rows,
+      cap: MAX_FINDINGS,
+      findings: r.findings,
+      kev: r.kev,
+      stale: r.stale,
+      failed: r.failed,
+    });
   }
   if (r.digest) out.digest = r.digest;
   return out;
 }
 
 export async function runVulnDigestOnce({ cfg, out, err }) {
+  if (cfg.vulnDigestEnvs.size === 0) {
+    err(
+      'ARCANE_VULN_DIGEST_ENVS is empty, so the vulnerability digest is off. ' +
+        'Set it to the environment names to digest, for example ARCANE_VULN_DIGEST_ENVS=vm-103.'
+    );
+    return 2;
+  }
   const client = createArcaneClient({ baseUrl: cfg.url, apiKey: cfg.apiKey, timeoutMs: 30_000 });
   const dir = mkdtempSync(join(tmpdir(), 'arcane-vuln-digest-once-'));
   const runs = [];
@@ -51,11 +70,13 @@ export async function runVulnDigestOnce({ cfg, out, err }) {
       warn: (...a) => err(JSON.stringify(a[1] ?? a[0])),
       error: (...a) => err(JSON.stringify(a[1] ?? a[0])),
     },
+    envs: cfg.vulnDigestEnvs,
     day: cfg.vulnDay,
     hour: cfg.vulnHour,
   });
 
   try {
+    out(`digest environments (ARCANE_VULN_DIGEST_ENVS): ${[...cfg.vulnDigestEnvs].join(', ')}`);
     let failed = false;
     let read = false;
     let baselined = [];
@@ -79,6 +100,7 @@ export async function runVulnDigestOnce({ cfg, out, err }) {
         kev: r.kev,
         prevKev: r.kev,
         health: { stale: r.stale, failed: r.failed },
+        prevHealth: null,
       });
       out('  ', JSON.stringify(buildVulnDigestPush({ env: r.env, digest: d })));
     }

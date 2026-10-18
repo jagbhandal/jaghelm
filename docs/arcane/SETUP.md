@@ -16,7 +16,11 @@ Create an API key for JagHelm with only these grants. All of them are read-only.
 |---|---|
 | Global | `environments:list`, `environments:read` |
 | Each environment | `containers:list`, `image-updates:read`, `activities:read` |
-| Each environment whose scan results the digest should read (optional, §7) | `vulnerabilities:read` |
+| Global, optional, for the vulnerability digest (§7) | `vulnerabilities:read` |
+
+Arcane v2.16.1 saves every API-key grant as global: its key form has no per-environment
+choice. With `vulnerabilities:read` the key can read every environment's scan results, so
+`ARCANE_VULN_DIGEST_ENVS` (§2) decides which environments the digest reads.
 
 JagHelm calls only these endpoints, with the key in the `X-API-Key` header:
 
@@ -51,6 +55,7 @@ Set these in the JagHelm env file on vm-103 (`/opt/stacks/jaghelm/.env`; the tem
 | `ARCANE_POLL_SECONDS` | Poll interval. Default 300, minimum 60. |
 | `ARCANE_RELEASE_CHECK_HOURS` | Arcane release check interval. Default 6, minimum 1. |
 | `ARCANE_IMAGE_CHECK_HOURS` | How often Arcane's image watcher checks for updates (its **Polling** schedule), used as the `arcane-check` job's expected interval (§6). Default 6, for a schedule of `0 0 */6 * * *`; minimum 1, maximum 744 (31 days). |
+| `ARCANE_VULN_DIGEST_ENVS` | Comma list of environment names the weekly vulnerability digest (§7) reads, for example `vm-103`. Default empty, which turns the digest off. |
 | `ARCANE_VULN_DIGEST_DAY` | Day of the weekly vulnerability digest (§7) in UTC, 0 (Sunday) to 6. Default 0. |
 | `ARCANE_VULN_DIGEST_HOUR` | Hour of the weekly vulnerability digest in UTC, 0 to 23. Default 14. |
 | `NODE_EXTRA_CA_CERTS` | Path to the manager's CA or self-signed certificate (step 3). |
@@ -201,27 +206,37 @@ appears after the next check.
 Once a week, Sunday 14:00 UTC by default (`ARCANE_VULN_DIGEST_DAY`, `ARCANE_VULN_DIGEST_HOUR`),
 JagHelm reads the vulnerability scan results Arcane has stored and pushes a digest per
 environment, but only when something is new. It never starts a scan: scanning has to be
-scheduled in Arcane itself (`VULNERABILITY_SCAN_ENABLED`). An environment takes part when
-the key may read its results (`vulnerabilities:read`) and Arcane has scanned something there.
+scheduled in Arcane itself (`VULNERABILITY_SCAN_ENABLED`). It reads only the environments
+named in `ARCANE_VULN_DIGEST_ENVS`, and only once Arcane has scanned something there; an
+environment not in the list is never read and never gets a scheduled job. With the list
+empty (the default) the digest is off. The key needs `vulnerabilities:read` (§1).
 
 **What is new.** A finding is identified by its image repository (without tag or digest), its
-vulnerability id and its package, for critical and high findings that have a fixed version.
-The digest pushes when there is any of:
+vulnerability id and its package, for critical and high findings that have a fixed version,
+in the images the environment's containers use (running or not). Images no container uses
+are left out, so a stray pull or an old image waiting for the prune is not news. The digest
+pushes when there is any of:
 
 - a new critical or high finding since the last digest;
 - more known-exploited vulnerabilities (CISA KEV, from Arcane's risk overview) than at the
   last digest. This compares counts, so a KEV entry that arrives in the week another one
-  leaves is not announced as KEV (a critical or high finding behind it still is);
-- a scan health problem on the image of a running container: its latest scan is older than
-  9 days or it has none, or its latest scan failed. These push every week until resolved.
+  leaves is not announced as KEV (a critical or high finding behind it still is). Arcane
+  counts KEV over all images it scanned, including unused ones;
+- an image of a running container that is newly stale or failed: not in either list at the
+  last digest. Stale means its latest scan is older than 9 days, or it has no scan while its
+  container is older than 9 days (a container just recreated on a new image waits for the
+  next scan). Failed means its latest scan failed.
 
-Nothing new, no push. Findings that went away are added as `N fixed` to a push sent anyway,
-and never push on their own. For example (title `Vulnerabilities · vm-103`):
+Nothing new, no push. Findings that went away (`N fixed`) and scan problems already
+reported at an earlier digest (`still not scanned: …`, `still failing: …`) are listed in a
+push that goes out anyway, and never push on their own; nor does a scan problem clearing.
+The `arcane-vuln-digest` job (below) is what tells you the digest itself stopped. For
+example (title `Vulnerabilities · vm-103`):
 
 ```
 3 new critical, 11 new high (fix available) · 9 images · top: nextcloud 2C, immich-server 1C · KEV 1
 KEV 2 (1 new) · 2 fixed
-2 images not scanned in 9 days: redis, gitea · 1 scan failed: nextcloud
+1 image not scanned in 9 days: redis · 1 scan failed: gitea · still failing: nextcloud
 ```
 
 `top` lists the three images with the most new findings (`2C 1H`: two critical, one high).
@@ -230,37 +245,43 @@ digest uses the **Updates** notification toggle, like the other Arcane pushes.
 
 Because the repository is the key, an image update that keeps a finding is not news, and
 neither is the same finding in a second tag of the image. While an image's latest scan has
-not completed (it failed, or a newly pulled image is not scanned yet), Arcane lists none of
-its findings; JagHelm then keeps that repository's findings from the last digest rather than
-count them as fixed, so they are not announced again as new once a scan succeeds. An image's
-first results do count as new. Findings come from every image Arcane scanned on the
-environment, including images no container uses.
+not completed (it failed, it is running, or a newly pulled image is not scanned yet),
+Arcane lists none of its findings; JagHelm then keeps that repository's findings from the
+last digest rather than count them as fixed, so they are not announced again as new once a
+scan succeeds. The same holds for a scan that starts while JagHelm reads the findings: it
+reads each image's scan state again afterwards. While any repository is in that state, the
+stored KEV count is never lowered, so a KEV entry hidden by a failed scan does not come back
+as new. An image's first results do count as new.
 
 **First digest.** The first digest of an environment is a silent baseline: it stores the
-current findings and the KEV count and pushes nothing, as the poller does at first sight
-(§5). At start, JagHelm runs a digest at once if it has not baselined any environment yet,
-or if it was down at the last weekly slot. So after adding `vulnerabilities:read`, restart
-JagHelm to take the baseline straight away; otherwise it happens at the next weekly slot and
-the first real digest a week after that.
+current findings, the KEV count and the images already stale or failed, and pushes nothing,
+as the poller does at first sight (§5). At start, JagHelm runs a digest at once if it has
+not baselined any environment yet, or if it was down at the last weekly slot. So after
+setting `ARCANE_VULN_DIGEST_ENVS` and adding the grant, the next start takes the baseline
+straight away; a later grant waits for the next weekly slot unless JagHelm restarts.
 
 **Scheduled-job history.** Every digest records a run of the cron job `arcane-vuln-digest`
 for the environment, expected weekly, so digests that stop go overdue after 8.75 days (a
 week plus a quarter). The run is `success` when the results were read, whether or not it
 pushed, including the baseline. It is `failure` when they could not be read (Arcane
 unreachable, the environment offline, an error from Arcane) for an environment that already
-has its baseline; an environment without one has no job yet.
+has its baseline; an environment without one has no job yet. The findings read is tried up
+to three times, 30 seconds apart, before the week counts as failed.
 
-**Without the grant.** A refused read (HTTP 401 or 403: the key lacks `vulnerabilities:read`
-for the environment, or vulnerability management is turned off there) pushes nothing and
-records no run, just as the poller records nothing on a failed read. It is logged once per
-environment while JagHelm runs, plus once when reads recover. An environment the key may not
-read therefore never gets an `arcane-vuln-digest` job; revoking the grant later lets the job
-go overdue.
+**Refused reads.** A refused read (HTTP 401 or 403: the key lacks `vulnerabilities:read`, or
+vulnerability management is turned off on that environment) pushes nothing and records no
+run, just as the poller records nothing on a failed read. It is logged once per environment
+while JagHelm runs, plus once when reads recover. So a listed environment the key cannot
+read never gets an `arcane-vuln-digest` job; one that becomes unreadable later lets its job
+go overdue. A listed name Arcane does not return is logged once.
 
 **Limits.** Arcane serves findings 100 per page. JagHelm reads every page and checks the
-rows against Arcane's total, so a scan that finishes mid-read fails that digest instead of
-reporting half the findings as fixed. An environment with more than 20,000 critical and
-high findings fails its digest rather than store a partial set.
+rows against Arcane's total, so a scan that finishes mid-read fails that attempt instead of
+reporting half the findings as fixed. An environment fails its digest, loudly and without
+storing anything, when Arcane returns more than 20,000 critical and high findings or when
+the findings to keep (the current ones plus those carried for unscanned images) would pass
+20,000. The dry run (§9) shows the count against that cap. Image scan states are looked up
+for at most 500 images per environment.
 
 ## 8. Keep Arcane away from JagHelm itself
 
@@ -286,22 +307,26 @@ is never printed. Exit code 0 means both passes read everything; 1 means a pass 
 errors (listed under `errors`); 2 means a missing `ARCANE_URL` / `ARCANE_API_KEY`, a bad
 argument, or an unexpected failure (its message is printed, without a stack trace).
 
-`--vuln-digest` runs the weekly vulnerability digest (§7) instead of the poller, also twice
-over a throwaway state file and without sending anything:
+`--vuln-digest` runs the weekly vulnerability digest (§7) instead of the poller, for the
+environments in `ARCANE_VULN_DIGEST_ENVS`, also twice over a throwaway state file and
+without sending anything:
 
 ```bash
-ARCANE_URL=https://arcane.example:3552 ARCANE_API_KEY=... \
+ARCANE_URL=https://arcane.example:3552 ARCANE_API_KEY=... ARCANE_VULN_DIGEST_ENVS=vm-103 \
   node scripts/arcane-poll-once.js --vuln-digest
 ```
 
-Pass 1 is the silent baseline; pass 2 shows what would push against it (at least any scan
-health problem). Each environment's outcome is listed: `baseline` or `digest` with its
-finding count, KEV count and stale or failed scans, `no-results` (nothing scanned there),
-`no-permission` (the key lacks `vulnerabilities:read` there; the output says what to grant),
-`down`, or `error`. Then, for each environment that took a baseline, the push it would get
-if every current finding were new, to preview the wording, and the time of the next
-scheduled digest. Exit code 0 means at least one environment was read and none had a read
-error; 1 otherwise, including when every environment refused the read; 2 as above.
+Pass 1 is the silent baseline; pass 2 shows what would push against it (normally nothing,
+since nothing changed in between). Each listed environment's outcome is listed: `baseline`
+or `digest` with `criticalHighFixable` (the critical and high findings with a fix that
+Arcane returned, against the `cap` of 20,000), the finding count of the images in use, the
+KEV count and the stale or failed scans; `no-results` (nothing scanned there);
+`no-permission` (the key lacks `vulnerabilities:read`, or vulnerability management is off
+there); `not-found`; `down`; or `error`. Then, for each environment that took a baseline,
+the push it would get if every current finding and scan problem were new, to preview the
+wording, and the time of the next scheduled digest. Exit code 0 means at least one
+environment was read and none had a read error; 1 otherwise, including when every
+environment refused the read; 2 as above, and also when `ARCANE_VULN_DIGEST_ENVS` is empty.
 `--record` does not combine with `--vuln-digest`.
 
 `--record <dir>` additionally writes each response as a JSON fixture, reduced to the fields
@@ -329,7 +354,8 @@ quietly and only a newer image pushes. Only a state file from a pre-release buil
 updates in it) would announce every held-back container again.
 
 The vulnerability digest (§7) keeps `arcane-vuln-state.json`: per environment, the critical
-and high findings and the KEV count of the last digest, plus when the last digest ran.
+and high findings, the KEV count and the stale and failed images of the last digest, plus
+when the last digest ran.
 Deleting it (with JagHelm stopped) makes the next digest a silent baseline again, taken at
 the next start.
 

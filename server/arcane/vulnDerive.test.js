@@ -10,6 +10,8 @@ import {
   diffFindings,
   kevCount,
   buildDigest,
+  rescannedRepos,
+  nextKev,
   STALE_SCAN_MS,
 } from './vulnDerive.js';
 
@@ -91,6 +93,18 @@ test('currentFindings: one key per repository across tags, the worse severity wi
   assert.equal(cur.get(findingKey('app', 'CVE-2099-0009', 'busybox')).sev, 'C');
 });
 
+test('currentFindings counts only rows of the given image ids (images a container uses)', () => {
+  const rows = fx('vulnerabilities-all');
+  const used = new Set(['sha256:aaa111', 'sha256:eee555']);
+  const cur = currentFindings(rows, { imageIds: used });
+  assert.deepEqual(
+    [...cur.values()].map((e) => e.repo),
+    ['ghcr.io/immich-app/immich-server', 'ghcr.io/immich-app/immich-server', 'redis']
+  );
+  // Without a filter every row counts.
+  assert.equal(currentFindings(rows).size, 5);
+});
+
 test('currentFindings caps each key field at 256 characters', () => {
   const long = 'p'.repeat(400);
   const cur = currentFindings([
@@ -118,9 +132,11 @@ test('scanHealth: stale (over 9 days or never scanned) and failed scans of runni
   assert.equal(h.scannedAny, true);
 });
 
+const OLD = Math.floor((NOW - 30 * DAY) / 1000); // container created 30 days ago (unix seconds)
+
 test('scanHealth: a running image without any scan is stale; a scan in progress is not', () => {
   const containers = [
-    { names: ['/a'], image: 'a:1', imageId: 'sha256:a', state: 'running' },
+    { names: ['/a'], image: 'a:1', imageId: 'sha256:a', state: 'running', created: OLD },
     { names: ['/b'], image: 'b:1', imageId: 'sha256:b', state: 'running' },
     { names: ['/c'], image: 'org/c:1', imageId: 'sha256:c', state: 'running' },
     { names: ['/c2'], image: 'org/c:1', imageId: 'sha256:c', state: 'running' }, // same image once
@@ -143,7 +159,7 @@ test('scanHealth: a running image without any scan is stale; a scan in progress 
   // Exactly 9 days is not yet stale.
   summaries['sha256:c'].scanTime = new Date(NOW - STALE_SCAN_MS).toISOString();
   assert.deepEqual(scanHealth({ containers, summaries, nowMs: NOW }).stale, ['a']);
-  // An unparseable scan time is treated as no scan.
+  // A completed scan with an unparseable scan time counts as stale.
   summaries['sha256:c'].scanTime = 'not a date';
   assert.deepEqual(scanHealth({ containers, summaries, nowMs: NOW }).stale, ['a', 'c']);
 });
@@ -173,7 +189,7 @@ test('scanHealth: no summaries for any image means no scan results', () => {
   assert.deepEqual([bad.stale, bad.failed, bad.scannedAny], [[], [], false]);
   // A prototype-named image id is not read from the prototype.
   const proto = scanHealth({
-    containers: [{ image: 'a:1', imageId: '__proto__', state: 'running' }],
+    containers: [{ image: 'a:1', imageId: '__proto__', state: 'running', created: OLD }],
     summaries: {},
     nowMs: NOW,
   });
@@ -182,6 +198,73 @@ test('scanHealth: no summaries for any image means no scan results', () => {
 
 const entry = (repo, id, pkg, sev) => ({ repo, id, pkg, sev });
 const mapOf = (...entries) => new Map(entries.map((e) => [findingKey(e.repo, e.id, e.pkg), e]));
+
+test('scanHealth: an image with no scan is stale only once its newest container is 9 days old', () => {
+  const secs = (ms) => Math.floor(ms / 1000);
+  const containers = [
+    // Recreated on a new image an hour ago (a deploy between the scan and the digest).
+    { image: 'app:2', imageId: 'sha256:new', state: 'running', created: secs(NOW - 3_600_000) },
+    // Two containers on one unscanned image: the newest decides.
+    { image: 'db:1', imageId: 'sha256:db', state: 'running', created: OLD },
+    { image: 'db:1', imageId: 'sha256:db', state: 'running', created: secs(NOW - DAY) },
+    // Old enough, never scanned.
+    { image: 'old:1', imageId: 'sha256:old', state: 'running', created: OLD },
+    // No creation time: its age is unknown, so it is not called stale.
+    { image: 'nodate:1', imageId: 'sha256:nd', state: 'running' },
+  ];
+  const h = scanHealth({ containers, summaries: {}, nowMs: NOW });
+  assert.deepEqual(h.stale, ['old']);
+  // Not stale yet, but uncertain: its findings are not known.
+  assert.deepEqual([...h.uncertain].sort(), ['app', 'db', 'nodate', 'old']);
+  // Exactly 9 days is not yet stale; a second later it is.
+  containers[0].created = secs(NOW - STALE_SCAN_MS);
+  assert.deepEqual(scanHealth({ containers, summaries: {}, nowMs: NOW }).stale, ['old']);
+  containers[0].created = secs(NOW - STALE_SCAN_MS) - 1;
+  assert.deepEqual(scanHealth({ containers, summaries: {}, nowMs: NOW }).stale, ['app', 'old']);
+});
+
+test('rescannedRepos: an image whose scan changed between two reads, or is not completed now', () => {
+  const t0 = new Date(NOW - DAY).toISOString();
+  const t1 = new Date(NOW).toISOString();
+  const containers = [
+    { image: 'same:1', imageId: 'sha256:s', state: 'running' },
+    { image: 'started:1', imageId: 'sha256:st', state: 'running' },
+    { image: 'redone:1', imageId: 'sha256:r', state: 'running' },
+    { image: 'appeared:1', imageId: 'sha256:a', state: 'exited' },
+    { image: 'never:1', imageId: 'sha256:n', state: 'running' },
+  ];
+  const before = {
+    'sha256:s': { status: 'completed', scanTime: t0 },
+    'sha256:st': { status: 'completed', scanTime: t0 },
+    'sha256:r': { status: 'completed', scanTime: t0 },
+  };
+  const after = {
+    'sha256:s': { status: 'completed', scanTime: t0 },
+    'sha256:st': { status: 'scanning', scanTime: t1 },
+    'sha256:r': { status: 'completed', scanTime: t1 },
+    'sha256:a': { status: 'completed', scanTime: t1 },
+  };
+  assert.deepEqual([...rescannedRepos({ containers, before, after })].sort(), [
+    'appeared',
+    'never',
+    'redone',
+    'started',
+  ]);
+  // Unchanged: only the images without a completed scan.
+  assert.deepEqual([...rescannedRepos({ containers, before, after: before })].sort(), [
+    'appeared',
+    'never',
+  ]);
+});
+
+test('nextKev: never lowered while a repository is uncertain; unknown keeps the last count', () => {
+  assert.equal(nextKev({ kev: 0, prevKev: 1, uncertain: true }), 1);
+  assert.equal(nextKev({ kev: 3, prevKev: 1, uncertain: true }), 3);
+  assert.equal(nextKev({ kev: 0, prevKev: 1, uncertain: false }), 0);
+  assert.equal(nextKev({ kev: null, prevKev: 2, uncertain: false }), 2);
+  assert.equal(nextKev({ kev: 4, prevKev: null, uncertain: true }), 4);
+  assert.equal(nextKev({ kev: null, prevKev: null, uncertain: true }), null);
+});
 
 test('diffFindings: new, unchanged and fixed keys', () => {
   const a = entry('app', 'CVE-1', 'p', 'C');
@@ -288,16 +371,46 @@ test('buildDigest: a new KEV entry pushes as a warning; fewer or unknown does no
   }
 });
 
-test('buildDigest: scan health problems push as info', () => {
-  const d = buildDigest({
+test('buildDigest: a newly stale or failed scan pushes as info; one already reported does not', () => {
+  const health = { stale: ['redis'], failed: ['nextcloud'] };
+  const fresh = buildDigest({ added: [], fixed: [], kev: 0, prevKev: 0, health, prevHealth: null });
+  assert.deepEqual([fresh.push, fresh.severity], [true, 'info']);
+  assert.deepEqual([fresh.stale, fresh.failed], [['redis'], ['nextcloud']]);
+  assert.deepEqual([fresh.stillStale, fresh.stillFailed], [[], []]);
+  // Same problems as at the last digest: nothing new, no push.
+  const same = buildDigest({
     added: [],
     fixed: [],
     kev: 0,
     prevKev: 0,
-    health: { stale: ['redis'], failed: ['nextcloud'] },
+    health,
+    prevHealth: health,
   });
-  assert.deepEqual([d.push, d.severity], [true, 'info']);
-  assert.deepEqual([d.stale, d.failed], [['redis'], ['nextcloud']]);
+  assert.equal(same.push, false);
+  assert.deepEqual([same.stale, same.failed], [[], []]);
+  assert.deepEqual([same.stillStale, same.stillFailed], [['redis'], ['nextcloud']]);
+  // A stale image whose scan now fails is not news either; a new name is.
+  const moved = buildDigest({
+    added: [],
+    fixed: [],
+    kev: 0,
+    prevKev: 0,
+    health: { stale: ['gitea'], failed: ['redis', 'nextcloud'] },
+    prevHealth: health,
+  });
+  assert.equal(moved.push, true);
+  assert.deepEqual([moved.stale, moved.failed], [['gitea'], []]);
+  assert.deepEqual(moved.stillFailed, ['nextcloud', 'redis']);
+  // Recovery never pushes.
+  const healed = buildDigest({
+    added: [],
+    fixed: [],
+    kev: 0,
+    prevKev: 0,
+    health: { stale: [], failed: [] },
+    prevHealth: health,
+  });
+  assert.equal(healed.push, false);
 });
 
 test('STALE_SCAN_MS is nine days', () => {

@@ -27,15 +27,23 @@ const VM103 = '0';
 const VM101 = '1';
 const PI2 = '3';
 
-const row = (imageName, id, pkg, severity = 'HIGH') => ({
+// The fixture containers' image ids, so a row belongs to an image a container uses.
+const IMAGE_ID = {
+  nextcloud: 'sha256:fff666',
+  'immich-server': 'sha256:aaa111',
+  gitea: 'sha256:ccc333',
+  redis: 'sha256:eee555',
+};
+const row = (imageName, id, pkg, severity = 'HIGH', imageId) => ({
   vulnerabilityId: id,
   pkgName: pkg,
   installedVersion: '1',
   fixedVersion: '2',
   severity,
-  imageId: 'sha256:x',
+  imageId: imageId ?? IMAGE_ID[imageName.split('/').pop().split(':')[0]] ?? 'sha256:aaa111',
   imageName,
 });
+const LISTED = new Set(['vm-103', 'vm-101', 'pi-2']);
 
 /** Every container image of the fixture scanned an hour ago: no scan health problem. */
 function healthy(containers, nowMs) {
@@ -72,10 +80,17 @@ function world(nowMs = SUN_1400) {
     rows: { [VM103]: fx('vulnerabilities-all') },
     total: {}, // id -> totalItems override (function of call number or a number)
     fail: {}, // call key -> Error
+    failOnce: {}, // call key -> Error, thrown once
+    after: {}, // id -> summaries returned by the second summaries read of a run
     calls: [],
   };
   const hit = (key) => {
     s.calls.push(key);
+    if (s.failOnce[key]) {
+      const err = s.failOnce[key];
+      delete s.failOnce[key];
+      throw err;
+    }
     if (s.fail[key]) throw s.fail[key];
   };
   const client = {
@@ -90,7 +105,9 @@ function world(nowMs = SUN_1400) {
     async vulnSummaries(id, imageIds) {
       hit(`summaries:${id}`);
       s.lastImageIds = imageIds;
-      return clone(s.summaries[id] ?? {});
+      // A read right after the findings read gets `after`, when the test set one.
+      const afterFindings = s.calls.at(-2) === `findings:${id}`;
+      return clone((afterFindings && s.after[id]) || s.summaries[id] || {});
     },
     async vulnOverview(id) {
       hit(`overview:${id}`);
@@ -115,7 +132,20 @@ function world(nowMs = SUN_1400) {
 
 function setup(
   t,
-  { w = world(), dispatch, logger, now, fcm, sleep, setTimer, clearTimer, day, hour, dir } = {}
+  {
+    w = world(),
+    dispatch,
+    logger,
+    now,
+    fcm,
+    sleep,
+    setTimer,
+    clearTimer,
+    day,
+    hour,
+    dir,
+    envs = LISTED,
+  } = {}
 ) {
   if (!dir) {
     dir = mkdtempSync(join(tmpdir(), 'arcane-vuln-'));
@@ -125,6 +155,7 @@ function setup(
   const stateStore = createVulnStateStore({ path: statePath });
   const runs = [];
   const dispatched = [];
+  const slept = [];
   const clock = { ms: SUN_1400 };
   const digest = createVulnDigest({
     client: w.client,
@@ -135,14 +166,16 @@ function setup(
     fcm: fcm || { name: 'fcm' },
     logger: logger || silent,
     now: now || (() => clock.ms),
-    ...(sleep ? { sleep } : {}),
+    envs,
+    // No real pauses between read attempts in tests.
+    sleep: sleep || (async (ms) => slept.push(ms)),
     ...(setTimer ? { setTimer } : {}),
     ...(clearTimer ? { clearTimer } : {}),
     ...(day !== undefined ? { day } : {}),
     ...(hour !== undefined ? { hour } : {}),
   });
   const pushes = () => dispatched.flatMap((d) => d.events);
-  return { dir, w, s: w.s, digest, stateStore, runs, dispatched, pushes, statePath, clock };
+  return { dir, w, s: w.s, digest, stateStore, runs, dispatched, pushes, statePath, clock, slept };
 }
 
 const capture = () => {
@@ -273,25 +306,61 @@ test('a new KEV entry pushes a warning; the count stays when threat intel goes q
   assert.equal(pushes().length, 1);
 });
 
-test('scan health: stale and failed scans push as info every week while they last', async (t) => {
+test('scan health: an image newly stale or failed pushes once; known problems only ride along', async (t) => {
   const w = world();
-  w.s.summaries[VM103] = fx('vulnerabilities-summaries').summaries;
   const { digest, pushes, runs } = setup(t, { w });
-  await digest.runOnce(); // baseline: silent even with health problems
-  assert.deepEqual(pushes(), []);
+  await digest.runOnce(); // baseline, healthy
+  w.s.summaries[VM103] = fx('vulnerabilities-summaries').summaries; // redis stale, nextcloud failed
   await digest.runOnce();
+  await digest.runOnce(); // the same problems: not news
+  w.s.summaries[VM103]['sha256:ccc333'].status = 'failed'; // gitea fails too
   await digest.runOnce();
   assert.deepEqual(
     pushes().map((e) => [e.body, e.severity]),
     [
       ['KEV 1 · 1 image not scanned in 9 days: redis · 1 scan failed: nextcloud', 'info'],
-      ['KEV 1 · 1 image not scanned in 9 days: redis · 1 scan failed: nextcloud', 'info'],
+      [
+        'KEV 1 · 1 scan failed: gitea · still not scanned: redis · still failing: nextcloud',
+        'info',
+      ],
     ]
   );
   assert.deepEqual(
     runs.map((r) => r.status),
-    ['success', 'success', 'success']
+    ['success', 'success', 'success', 'success']
   );
+  // Recovery is silent.
+  w.s.summaries[VM103] = healthy(w.s.containers[VM103], SUN_1400);
+  await digest.runOnce();
+  assert.equal(pushes().length, 2);
+});
+
+test('scan health: problems present at the baseline are stored silently, not pushed later', async (t) => {
+  const w = world();
+  w.s.summaries[VM103] = fx('vulnerabilities-summaries').summaries;
+  const { digest, pushes, stateStore } = setup(t, { w });
+  await digest.runOnce();
+  assert.deepEqual(
+    [stateStore.getEnv('vm-103').stale, stateStore.getEnv('vm-103').failed],
+    [['redis'], ['nextcloud']]
+  );
+  await digest.runOnce();
+  assert.deepEqual(pushes(), []);
+});
+
+test('a restart in the same week (a catch-up run, then the slot) sends no second health push', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'arcane-vuln-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const w = world();
+  await setup(t, { w, dir }).digest.runOnce(); // baseline
+  w.s.summaries[VM103] = fx('vulnerabilities-summaries').summaries;
+  const first = setup(t, { w, dir });
+  await first.digest.runOnce();
+  assert.equal(first.pushes().length, 1);
+  const again = setup(t, { w, dir }); // JagHelm restarted later that week
+  await again.digest.runOnce();
+  await again.digest.runOnce();
+  assert.deepEqual(again.pushes(), []);
 });
 
 test('a failed scan hides its findings without reporting them fixed, or new once it scans again', async (t) => {
@@ -643,5 +712,190 @@ test('start: nothing digested yet (the grant was missing) runs at once even afte
   env.digest.start();
   await flush();
   assert.equal(env.stateStore.isKnown('vm-103'), true);
+  env.digest.stop();
+});
+
+test('I3: an unused image whose rescan fails for a week causes no fixed-then-new push', async (t) => {
+  const w = world();
+  // tool:3 is on the daemon but no container uses it.
+  const tool = row('tool:3', 'CVE-2099-0300', 'busybox', 'HIGH', 'sha256:tool');
+  w.s.rows[VM103] = [...fx('vulnerabilities-all'), tool];
+  const { digest, pushes, stateStore } = setup(t, { w });
+  await digest.runOnce();
+  // Week 2: its rescan fails, so Arcane lists none of its findings.
+  w.s.rows[VM103] = fx('vulnerabilities-all');
+  await digest.runOnce();
+  // Week 3: it scans again. Before the fix this pushed
+  // '1 new high (fix available) · 1 image · top: tool'.
+  w.s.rows[VM103] = [...fx('vulnerabilities-all'), tool];
+  await digest.runOnce();
+  assert.deepEqual(pushes(), []);
+  assert.equal(stateStore.getEnv('vm-103').keys.size, 5);
+});
+
+test('I4: KEV dropping while a scan failed does not come back as a new KEV entry', async (t) => {
+  const w = world();
+  const { digest, pushes, stateStore } = setup(t, { w });
+  await digest.runOnce(); // KEV 1
+  // Week 2: gitea's scan fails; its findings leave Arcane's overview, KEV drops to 0.
+  w.s.summaries[VM103]['sha256:ccc333'].status = 'failed';
+  w.s.overview[VM103].drivers.knownExploited = 0;
+  await digest.runOnce();
+  const storedWhileFailed = stateStore.getEnv('vm-103').kev;
+  // Week 3: the scan succeeds and KEV is 1 again. Before the fix: 'KEV 1 (1 new)', warning.
+  w.s.summaries[VM103]['sha256:ccc333'].status = 'completed';
+  w.s.overview[VM103].drivers.knownExploited = 1;
+  await digest.runOnce();
+  assert.deepEqual(
+    pushes().map((e) => [e.body, e.severity]),
+    [['1 scan failed: gitea', 'info']]
+  );
+  assert.equal(storedWhileFailed, 1);
+  // With nothing uncertain, a lower count is stored as it is.
+  w.s.overview[VM103].drivers.knownExploited = 0;
+  await digest.runOnce();
+  assert.equal(stateStore.getEnv('vm-103').kev, 0);
+});
+
+test('I5: a container just recreated on an unscanned image is not "not scanned in 9 days"', async (t) => {
+  const w = world();
+  const { digest, pushes, clock } = setup(t, { w });
+  await digest.runOnce();
+  // Between the 09:00 scan and the digest, nextcloud is recreated on a new image.
+  const nc = w.s.containers[VM103].find((c) => c.names[0] === '/nextcloud');
+  nc.imageId = 'sha256:new';
+  nc.created = Math.floor((clock.ms - HOUR) / 1000);
+  await digest.runOnce();
+  // Before the fix: '1 image not scanned in 9 days: nextcloud'.
+  assert.deepEqual(pushes(), []);
+  // Ten days on, every other image rescanned, the new one never: now it is stale.
+  clock.ms += 10 * DAY;
+  w.s.summaries[VM103] = healthy(
+    w.s.containers[VM103].filter((c) => c.imageId !== 'sha256:new'),
+    clock.ms
+  );
+  await digest.runOnce();
+  assert.deepEqual(
+    pushes().map((e) => e.body),
+    ['KEV 1 · 1 image not scanned in 9 days: nextcloud']
+  );
+});
+
+test('a scan that starts while the findings are read is uncertain, not fixed and then new', async (t) => {
+  const w = world();
+  const { digest, pushes, stateStore } = setup(t, { w });
+  await digest.runOnce();
+  const all = w.s.rows[VM103];
+  // gitea's rescan starts between the first summaries read and the findings read.
+  const during = clone(w.s.summaries[VM103]);
+  during['sha256:ccc333'].status = 'scanning';
+  w.s.after[VM103] = during;
+  w.s.rows[VM103] = all.filter((r) => !r.imageName.startsWith('gitea/'));
+  await digest.runOnce();
+  assert.equal(stateStore.getEnv('vm-103').keys.size, 5);
+  // Next week all is back: before the fix '2 new high (fix available) · 1 image · top: gitea 2H'.
+  delete w.s.after[VM103];
+  w.s.rows[VM103] = all;
+  await digest.runOnce();
+  assert.deepEqual(pushes(), []);
+});
+
+test('the findings read is tried up to 3 times, 30 s apart, before the week fails', async (t) => {
+  const w = world();
+  const env = setup(t, { w });
+  await env.digest.runOnce();
+  env.s.calls.length = 0;
+  w.s.failOnce['findings:0'] = new ArcaneError('Arcane HTTP 502 for /x', 502);
+  await env.digest.runOnce();
+  assert.equal(env.runs.at(-1).status, 'success');
+  assert.deepEqual(env.slept, [30000]);
+  // Failing every time: three attempts, then a failure run.
+  env.s.calls.length = 0;
+  w.s.fail['findings:0'] = new ArcaneError('Arcane HTTP 502 for /x', 502);
+  await env.digest.runOnce();
+  assert.equal(env.s.calls.filter((c) => c === 'findings:0').length, 3);
+  assert.equal(env.runs.at(-1).status, 'failure');
+  // A refused read is not retried.
+  env.s.calls.length = 0;
+  w.s.fail['findings:0'] = new ArcaneError('Arcane HTTP 403 for /x', 403);
+  await env.digest.runOnce();
+  assert.equal(env.s.calls.filter((c) => c === 'findings:0').length, 1);
+});
+
+test(`more than ${MAX_FINDINGS} keys to keep (current plus carried) fails loudly, never truncates`, async (t) => {
+  const w = world();
+  const { lines, logger } = capture();
+  const { digest, runs, stateStore } = setup(t, { w, logger });
+  // nextcloud carries 20,000 findings from earlier digests, and its scan failed this week.
+  const carried = Array.from({ length: MAX_FINDINGS }, (_, i) => ({
+    repo: 'nextcloud',
+    id: `CVE-2099-${String(i).padStart(5, '0')}`,
+    pkg: 'p',
+    sev: 'H',
+  }));
+  assert.equal(stateStore.setEnv('vm-103', { keys: carried, kev: 1, atMs: 1 }), true);
+  w.s.summaries[VM103]['sha256:fff666'].status = 'failed';
+  const { results } = await digest.runOnce();
+  const r = results.find((x) => x.env === 'vm-103');
+  assert.equal(r.outcome, 'error');
+  assert.match(r.error, /20000/);
+  assert.equal(runs.at(-1).status, 'failure');
+  assert.equal(stateStore.getEnv('vm-103').keys.size, MAX_FINDINGS);
+  assert.ok(lines.some((l) => l.level === 'error' && /cap/.test(l.msg)));
+});
+
+test('I1: only environments in the list are read; a listed name Arcane lacks is logged once', async (t) => {
+  const w = world();
+  const { lines, logger } = capture();
+  const { digest, s } = setup(t, { w, logger, envs: new Set(['vm-103', 'gone']) });
+  const { results } = await digest.runOnce();
+  await digest.runOnce();
+  assert.deepEqual(
+    results.map((r) => [r.env, r.outcome]),
+    [
+      ['gone', 'not-found'],
+      ['vm-103', 'baseline'],
+    ]
+  );
+  // vm-101 and pi-2 are never touched, not even their containers.
+  assert.equal(
+    s.calls.some((c) => c.endsWith(':1') || c.endsWith(':3')),
+    false
+  );
+  assert.equal(
+    lines.filter((l) => /gone|not found/i.test(l.msg + JSON.stringify(l.fields))).length,
+    1
+  );
+});
+
+test('I1: the environment-list failure records failures only for listed environments', async (t) => {
+  const w = world();
+  const { digest, runs, stateStore } = setup(t, { w, envs: new Set(['vm-103']) });
+  await digest.runOnce();
+  stateStore.setEnv('old-env', { keys: new Map(), kev: 0, atMs: 1 });
+  w.s.fail.environments = new ArcaneError('Arcane HTTP 502 for /api/environments', 502);
+  await digest.runOnce();
+  assert.deepEqual(
+    runs.slice(1).map((r) => [r.node, r.status]),
+    [['vm-103', 'failure']]
+  );
+});
+
+test('I1: an empty list turns the digest off: no timer, no request, one log line', async (t) => {
+  const tm = timers();
+  const { lines, logger } = capture();
+  const env = setup(t, {
+    envs: new Set(),
+    logger,
+    setTimer: tm.setTimer,
+    clearTimer: tm.clearTimer,
+  });
+  env.digest.start();
+  await flush();
+  assert.deepEqual(tm.set, []);
+  assert.deepEqual(env.s.calls, []);
+  assert.deepEqual(await env.digest.runOnce(), { events: [], results: [] });
+  assert.deepEqual(env.s.calls, []);
+  assert.equal(lines.filter((l) => /off/.test(l.msg)).length, 1);
   env.digest.stop();
 });

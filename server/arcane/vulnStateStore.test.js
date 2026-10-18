@@ -45,11 +45,25 @@ test('round-trips environments and the last run through a fresh instance', (t) =
 test('the file has the documented, compact shape', (t) => {
   const path = tmp(t);
   const s = createVulnStateStore({ path });
-  s.setEnv('vm-103', { keys: keysOf(e('app', 'CVE-1', 'p', 'C')), kev: null, atMs: 7 });
+  s.setEnv('vm-103', {
+    keys: keysOf(e('app', 'CVE-1', 'p', 'C')),
+    kev: null,
+    atMs: 7,
+    stale: ['redis'],
+    failed: ['nextcloud'],
+  });
   s.setLastRun(9);
   assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {
     lastRunMs: 9,
-    envs: { 'vm-103': { kev: null, atMs: 7, keys: [['app', 'CVE-1', 'p', 'C']] } },
+    envs: {
+      'vm-103': {
+        kev: null,
+        atMs: 7,
+        stale: ['redis'],
+        failed: ['nextcloud'],
+        keys: [['app', 'CVE-1', 'p', 'C']],
+      },
+    },
     order: ['vm-103'],
   });
 });
@@ -105,14 +119,43 @@ test('keys are sanitised: bad entries dropped, fields capped, duplicates merged'
   assert.ok(got.keys.has(findingKey('app', 'CVE-1', 'p')));
 });
 
-test(`at most MAX_KEYS (${MAX_KEYS}) keys per environment are kept`, (t) => {
+test(`more than MAX_KEYS (${MAX_KEYS}) keys is refused, never truncated`, (t) => {
   const path = tmp(t);
-  const many = Array.from({ length: MAX_KEYS + 5 }, (_, i) =>
+  const many = Array.from({ length: MAX_KEYS + 1 }, (_, i) =>
     e('app', `CVE-${String(i).padStart(6, '0')}`, 'p', 'H')
   );
   const s = createVulnStateStore({ path });
-  s.setEnv('vm-103', { keys: keysOf(...many), kev: 0, atMs: 1 });
+  assert.equal(
+    s.setEnv('vm-103', { keys: keysOf(e('a', 'CVE-1', 'p', 'H')), kev: 0, atMs: 1 }),
+    true
+  );
+  assert.equal(s.setEnv('vm-103', { keys: keysOf(...many), kev: 0, atMs: 2 }), false);
+  const kept = createVulnStateStore({ path }).getEnv('vm-103');
+  assert.deepEqual([kept.keys.size, kept.atMs], [1, 1]);
+  // Exactly MAX_KEYS is fine.
+  assert.equal(s.setEnv('vm-103', { keys: keysOf(...many.slice(1)), kev: 0, atMs: 3 }), true);
   assert.equal(createVulnStateStore({ path }).getEnv('vm-103').keys.size, MAX_KEYS);
+});
+
+test('scan health names round-trip, sanitised and bounded', (t) => {
+  const path = tmp(t);
+  const s = createVulnStateStore({ path });
+  const names = Array.from({ length: 250 }, (_, i) => `img-${String(i).padStart(3, '0')}`);
+  s.setEnv('vm-103', {
+    keys: new Map(),
+    kev: 0,
+    atMs: 1,
+    stale: ['b', 'a', 'a', '', 7, 'x'.repeat(300), ...names],
+    failed: 'nope',
+  });
+  const got = createVulnStateStore({ path }).getEnv('vm-103');
+  assert.equal(got.stale.length, 200);
+  assert.deepEqual(got.stale.slice(0, 2), ['a', 'b']);
+  assert.ok(got.stale.every((n) => typeof n === 'string' && n.length > 0 && n.length <= 256));
+  assert.deepEqual(got.failed, []);
+  // A file without them (or a new environment) has none.
+  s.setEnv('pi-1', { keys: new Map(), kev: 0, atMs: 1 });
+  assert.deepEqual([s.getEnv('pi-1').stale, s.getEnv('pi-1').failed], [[], []]);
 });
 
 test('at most 50 environments are kept, oldest-inserted evicted, never the one written', (t) => {

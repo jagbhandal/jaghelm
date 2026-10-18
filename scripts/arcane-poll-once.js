@@ -8,8 +8,9 @@
  *   ARCANE_URL=... ARCANE_API_KEY=... [ARCANE_CHECK_ONLY_ENVS=pi-1,pi-2] \
  *     node scripts/arcane-poll-once.js [--record <dir>]
  *
- * --vuln-digest runs the weekly vulnerability digest instead, the same way: twice
- * over a throwaway state file, printing what would push and sending nothing.
+ * --vuln-digest runs the weekly vulnerability digest instead (for the environments in
+ * ARCANE_VULN_DIGEST_ENVS), the same way: twice over a throwaway state file, printing
+ * what would push and sending nothing.
  *
  * --record writes each response, projected to the fields the client reads
  * (no labels, env or anything else), under the fixture names used in

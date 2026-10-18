@@ -2,16 +2,23 @@
  * Weekly Arcane vulnerability digest: one push per environment when something is new.
  *
  * It only reads Arcane's stored scan results (vulnerabilities:read) and never starts a
- * scan. Per environment that is online and has scan results:
- *   - containers (image ids and references) and `POST …/images/vulnerabilities/summaries`
- *     for each image's latest scan: scan health and which repositories are uncertain;
+ * scan. Only the environments named in `envs` (ARCANE_VULN_DIGEST_ENVS) are read: Arcane
+ * v2.16.1 stores API-key grants globally, so the grant alone cannot limit them. An empty
+ * list turns the digest off. Per listed environment that is online and has scan results:
+ *   - containers (image ids, references, creation times) and
+ *     `POST …/images/vulnerabilities/summaries` for each image's latest scan: scan health
+ *     and which repositories are uncertain;
  *   - `GET …/vulnerabilities/overview` for the KEV count;
- *   - `GET …/vulnerabilities/all`, critical and high with a fixed version, page by page.
+ *   - `GET …/vulnerabilities/all`, critical and high with a fixed version, page by page,
+ *     tried up to READ_ATTEMPTS times; only rows of images a container uses count;
+ *   - the summaries again, so a scan that started meanwhile makes its repository uncertain.
  * The rules:
  *   - The first digest of an environment is a silent baseline (as the Arcane poller does).
  *   - A push only when something is new: new critical/high finding keys, more KEV
- *     entries than last time, or a scan health problem (vulnDerive buildDigest). Fixed
- *     findings are summarised in a push sent anyway, never a reason for one.
+ *     entries than last time, or an image newly stale or failed (vulnDerive buildDigest).
+ *     Fixed findings and scan problems already reported are listed in a push sent anyway,
+ *     never a reason for one. The KEV count is never lowered while a repository is
+ *     uncertain.
  *   - Each digest that read its results records a `success` run of the cron job
  *     `arcane-vuln-digest` (expected weekly), pushed or not. A read that fails records a
  *     `failure`, but only for an environment that has been digested before; a new one has
@@ -26,7 +33,15 @@
  * The API key stays inside the client; nothing here can log it.
  */
 import { envKey, envHealth } from './derive.js';
-import { currentFindings, scanHealth, diffFindings, kevCount, buildDigest } from './vulnDerive.js';
+import {
+  currentFindings,
+  scanHealth,
+  rescannedRepos,
+  diffFindings,
+  kevCount,
+  nextKev,
+  buildDigest,
+} from './vulnDerive.js';
 import { buildVulnDigestPush } from './format.js';
 import { buildCronReport } from './cronBridge.js';
 import { MAX_KEYS } from './vulnStateStore.js';
@@ -43,7 +58,13 @@ const PAGE = 100;
 // store a partial key set. Equal to the state store's key cap, so a full read always fits.
 export const MAX_FINDINGS = MAX_KEYS;
 const MAX_PAGES = Math.ceil(MAX_FINDINGS / PAGE) + 1;
+// Image ids per summaries request. An image beyond it reads as never scanned (stale once
+// its container is 9 days old, and uncertain); far above a homelab host's few dozen.
 const MAX_IMAGE_IDS = 500;
+// The findings read (every page, from the first) is tried this often, this far apart,
+// before the week's digest of the environment fails.
+const READ_ATTEMPTS = 3;
+const RETRY_PAUSE_MS = 30_000;
 const PUSH_WAIT_MS = 30_000;
 const PUSH_WAIT_STEP_MS = 500;
 const ONCE_MAX = 1000;
@@ -52,6 +73,9 @@ const OFFLINE_ERROR = 'Arcane agent not online; vulnerability results not read';
 const isStr = (v) => typeof v === 'string' && v.length > 0;
 const errText = (err) => String(err?.message || err || 'error').slice(0, 2048);
 const isDenied = (err) => err?.status === 401 || err?.status === 403;
+
+/** An error that a retry cannot fix (too many findings): the read is not repeated. */
+class FindingsLimitError extends Error {}
 const defaultSleep = (ms) =>
   new Promise((resolve) => {
     const t = setTimeout(resolve, ms);
@@ -75,6 +99,7 @@ export function createVulnDigest({
   pushStore,
   fcm,
   logger,
+  envs,
   day = 0,
   hour = 14,
   now = Date.now,
@@ -83,6 +108,15 @@ export function createVulnDigest({
   clearTimer = clearTimeout,
 }) {
   const log = logger || createLogger('arcane');
+  const listed = new Set(envs || []);
+
+  const said = new Set();
+  function logOnce(key, level, fields, msg) {
+    if (said.has(key)) return;
+    if (said.size >= ONCE_MAX) said.clear();
+    said.add(key);
+    log[level](fields, msg);
+  }
 
   // Read failures log once per error signature per scope and once on recovery.
   const failing = new Map();
@@ -138,7 +172,9 @@ export function createVulnDigest({
       });
       if (total === null) {
         if (totalItems > MAX_FINDINGS) {
-          throw new Error(`more than ${MAX_FINDINGS} critical/high findings; digest not built`);
+          throw new FindingsLimitError(
+            `more than ${MAX_FINDINGS} critical/high findings; digest not built`
+          );
         }
         total = totalItems;
       } else if (totalItems !== total) {
@@ -155,6 +191,20 @@ export function createVulnDigest({
     return rows;
   }
 
+  /** readFindings, tried up to READ_ATTEMPTS times; a refused read or the cap is final. */
+  async function readFindingsWithRetry(envId) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await readFindings(envId);
+      } catch (err) {
+        if (attempt >= READ_ATTEMPTS || isDenied(err) || err instanceof FindingsLimitError) {
+          throw err;
+        }
+        await sleep(RETRY_PAUSE_MS);
+      }
+    }
+  }
+
   async function digestEnv(env, key, nowMs, events) {
     const known = stateStore.isKnown(key);
     const scope = `env:${key}`;
@@ -165,12 +215,14 @@ export function createVulnDigest({
 
     // Read phase: nothing is written until every read for the environment succeeded.
     let containers;
+    let ids;
     let summaries;
+    let summariesAfter;
     let overview;
     let rows;
     try {
       containers = await client.listContainers(env.id);
-      const ids = [...new Set(containers.map((c) => c?.imageId).filter(isStr))];
+      ids = [...new Set(containers.map((c) => c?.imageId).filter(isStr))];
       summaries = await client.vulnSummaries(env.id, ids.slice(0, MAX_IMAGE_IDS));
       overview = await client.vulnOverview(env.id);
       const scanned = Object.keys(summaries).length > 0 || overview.drivers?.imagesScanned > 0;
@@ -178,7 +230,8 @@ export function createVulnDigest({
         readOk(scope, { env: key }, 'Arcane vulnerability reads recovered');
         return { env: key, outcome: 'no-results' };
       }
-      rows = await readFindings(env.id);
+      rows = await readFindingsWithRetry(env.id);
+      summariesAfter = await client.vulnSummaries(env.id, ids.slice(0, MAX_IMAGE_IDS));
     } catch (err) {
       const error = errText(err);
       if (isDenied(err)) {
@@ -186,8 +239,8 @@ export function createVulnDigest({
           scope,
           err,
           { env: key },
-          'Arcane key cannot read vulnerability results here (needs vulnerabilities:read); ' +
-            'vulnerability digest skipped'
+          'Arcane refused the vulnerability read (the key lacks vulnerabilities:read, or ' +
+            'vulnerability management is off there); digest skipped'
         );
         return { env: key, outcome: 'no-permission', error };
       }
@@ -198,19 +251,26 @@ export function createVulnDigest({
     readOk(scope, { env: key }, 'Arcane vulnerability reads recovered');
 
     const health = scanHealth({ containers, summaries, nowMs });
-    const current = currentFindings(rows);
+    const uncertain = new Set([
+      ...health.uncertain,
+      ...rescannedRepos({ containers, before: summaries, after: summariesAfter }),
+    ]);
+    // Only images a container uses (any state): the same images whose scans are tracked.
+    const current = currentFindings(rows, { imageIds: new Set(ids) });
     const kev = kevCount(overview);
+    const { stale, failed } = health;
     const report = {
       env: key,
+      rows: rows.length,
       findings: current.size,
       kev,
-      stale: health.stale,
-      failed: health.failed,
+      stale,
+      failed,
       current,
     };
 
     if (!known) {
-      stateStore.setEnv(key, { keys: current, kev, atMs: nowMs });
+      stateStore.setEnv(key, { keys: current, kev, atMs: nowMs, stale, failed });
       recordCron(key, 'success');
       log.info(
         { env: key, findings: current.size, kev },
@@ -220,14 +280,22 @@ export function createVulnDigest({
     }
 
     const prev = stateStore.getEnv(key);
-    const { added, fixed, next } = diffFindings({
-      prev: prev.keys,
-      current,
-      uncertain: health.uncertain,
-    });
-    const digest = buildDigest({ added, fixed, kev, prevKev: prev.kev, health });
-    // An unknown KEV count (threat intel off) keeps the last one to compare against.
-    stateStore.setEnv(key, { keys: next, kev: kev ?? prev.kev, atMs: nowMs });
+    const { added, fixed, next } = diffFindings({ prev: prev.keys, current, uncertain });
+    if (next.size > MAX_KEYS) {
+      // Never stored cut short: the keys cut off would read as new the week after.
+      const error = `more than ${MAX_KEYS} critical/high findings to keep; digest not built`;
+      logOnce(
+        `cap:${key}`,
+        'error',
+        { env: key, keys: next.size, max: MAX_KEYS },
+        'Arcane vulnerability digest over the key cap; environment not digested'
+      );
+      recordCron(key, 'failure', error);
+      return { ...report, outcome: 'error', error };
+    }
+    const digest = buildDigest({ added, fixed, kev, prevKev: prev.kev, health, prevHealth: prev });
+    const storedKev = nextKev({ kev, prevKev: prev.kev, uncertain: uncertain.size > 0 });
+    stateStore.setEnv(key, { keys: next, kev: storedKev, atMs: nowMs, stale, failed });
     recordCron(key, 'success');
     if (digest.push) events.push(buildVulnDigestPush({ env: key, digest }));
     log.info(
@@ -247,11 +315,12 @@ export function createVulnDigest({
     return { ...report, outcome: 'digest', digest };
   }
 
-  /** One digest over every environment. Returns the events sent and a result per environment. */
+  /** One digest over every listed environment. Returns the events sent and a result per environment. */
   async function runOnce() {
-    const nowMs = now();
     const events = [];
     const results = [];
+    if (listed.size === 0) return { events, results };
+    const nowMs = now();
     let envs;
     try {
       envs = await client.listEnvironments();
@@ -262,24 +331,37 @@ export function createVulnDigest({
         {},
         'Arcane environment list failed; vulnerability digest skipped'
       );
-      for (const name of stateStore.knownNames()) recordCron(name, 'failure', errText(err));
+      for (const name of stateStore.knownNames()) {
+        if (listed.has(name)) recordCron(name, 'failure', errText(err));
+      }
       results.push({ env: null, outcome: 'error', error: errText(err) });
       stateStore.setLastRun(nowMs);
       return { events, results };
     }
     readOk('environments', {}, 'Arcane environment list recovered');
 
-    // Same selection as the poller: a safe, unique name, not disabled. The poller logs
-    // the skipped ones.
+    // Same selection as the poller (a safe, unique name, not disabled; the poller logs
+    // the skipped ones), then only the listed names.
     const byKey = new Map();
     const shared = new Set();
     for (const env of Array.isArray(envs) ? envs : []) {
       const key = envKey(env);
-      if (!key || env.enabled === false) continue;
+      if (!key || env.enabled === false || !listed.has(key)) continue;
       if (byKey.has(key)) shared.add(key);
       else byKey.set(key, env);
     }
     for (const key of shared) byKey.delete(key);
+
+    for (const name of [...listed].sort()) {
+      if (byKey.has(name)) continue;
+      logOnce(
+        `missing:${name}`,
+        'warn',
+        { env: name },
+        'Environment in ARCANE_VULN_DIGEST_ENVS not found in Arcane (or disabled or not unique); not digested'
+      );
+      results.push({ env: name, outcome: 'not-found' });
+    }
 
     for (const key of [...byKey.keys()].sort()) {
       try {
@@ -353,12 +435,21 @@ export function createVulnDigest({
 
   function start() {
     stop();
+    if (listed.size === 0) {
+      logOnce(
+        'off',
+        'info',
+        {},
+        'Arcane vulnerability digest off (ARCANE_VULN_DIGEST_ENVS is empty)'
+      );
+      return;
+    }
     const mine = generation;
     arm(mine);
     const last = stateStore.getLastRun();
     const missed = last === null || last < slotMs - WEEK_MS || stateStore.knownCount() === 0;
     log.info(
-      { day, hour, next: new Date(slotMs).toISOString(), runNow: missed },
+      { day, hour, envs: [...listed], next: new Date(slotMs).toISOString(), runNow: missed },
       'Arcane vulnerability digest scheduled'
     );
     if (!missed) return;

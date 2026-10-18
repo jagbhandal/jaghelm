@@ -119,6 +119,8 @@ const digest = (over = {}) => ({
   fixed: 0,
   stale: [],
   failed: [],
+  stillStale: [],
+  stillFailed: [],
   push: true,
   severity: 'info',
   ...over,
@@ -197,5 +199,21 @@ test('buildVulnDigestPush caps names and lists like the other pushes', () => {
     buildVulnDigestPush({ env: 'e', digest: d }).body,
     `1 new critical (fix available) · 1 image · top: ${'n'.repeat(63)}… 1C · ` +
       '12 images not scanned in 9 days: img0, img1, img2, img3, img4, img5, img6, img7, img8, img9 +2 more'
+  );
+});
+
+test('buildVulnDigestPush: scan problems already reported are listed after the new ones', () => {
+  const d = digest({
+    newHigh: 1,
+    images: 1,
+    top: [{ name: 'redis', critical: 0, high: 1 }],
+    failed: ['gitea'],
+    stillStale: ['a', 'b'],
+    stillFailed: ['nextcloud'],
+  });
+  assert.equal(
+    buildVulnDigestPush({ env: 'vm-103', digest: d }).body,
+    '1 new high (fix available) · 1 image · top: redis 1H · 1 scan failed: gitea · ' +
+      'still not scanned: a, b · still failing: nextcloud'
   );
 });
