@@ -6,6 +6,10 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-10-18
+
+Overdue detection for Arcane's image watcher, no more ghost cards from Arcane's helper containers, and the deprecated Watchtower webhook is removed.
+
 ### Added
 - Overdue detection for Arcane's image watcher: each check it runs on its own is recorded as a run of the `arcane-check` scheduled job per environment, which goes overdue when checks stop. The expected interval is `ARCANE_IMAGE_CHECK_HOURS` (default 6); see `docs/arcane/SETUP.md`.
 
@@ -488,7 +492,8 @@ First public release.
 - Stored credentials encrypted with AES-256-GCM.
 - Password authentication with scrypt hashing.
 
-[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/jagbhandal/jaghelm/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/jagbhandal/jaghelm/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/jagbhandal/jaghelm/compare/v1.5.0...v2.0.0
 [1.5.0]: https://github.com/jagbhandal/jaghelm/compare/v1.4.0...v1.5.0
