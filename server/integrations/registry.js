@@ -27,6 +27,14 @@ const presets = new Map();
 // "default export is not an object" validation and log a spurious load error.
 const NON_PRESET_FILES = new Set(['createArrPreset.js']);
 
+// A preset is a <type>.js file. Test files sit beside the presets they cover
+// (`npm test` globs server/**/*.test.js) and the image ships server/ whole, so
+// importing one would run its node:test suite inside the server process and
+// log it as an invalid preset. Only .js is scanned, so .mjs/.cjs never load.
+function isPresetFile(file) {
+  return file.endsWith('.js') && !file.endsWith('.test.js') && !NON_PRESET_FILES.has(file);
+}
+
 // Keys that every preset MUST declare. Verified against the actual readers:
 //   - `name`      → registry.listPresets() exposes to UI
 //   - `endpoint`  → handler.js fetchIntegration builds the request URL
@@ -97,24 +105,24 @@ function validatePreset(file, preset) {
 }
 
 /**
- * Load all .js files from presets/ directory.
+ * Load every preset file (see isPresetFile) from the presets/ directory.
  * Each file default-exports a preset config object.
  * The filename (minus .js) becomes the preset type key.
+ * `presetsDir` defaults to the shipped presets/; tests point it at a temp dir.
  */
-export async function initRegistry() {
+export async function initRegistry(presetsDir = PRESETS_DIR) {
   let files;
   try {
-    files = readdirSync(PRESETS_DIR)
-      .filter(f => f.endsWith('.js') && !NON_PRESET_FILES.has(f));
-  } catch (err) {
-    log.warn({ presetsDir: PRESETS_DIR }, 'No presets directory found');
+    files = readdirSync(presetsDir).filter(isPresetFile);
+  } catch {
+    log.warn({ presetsDir }, 'No presets directory found');
     return;
   }
 
   for (const file of files) {
     const type = basename(file, '.js');
     try {
-      const filePath = join(PRESETS_DIR, file);
+      const filePath = join(presetsDir, file);
       const fileUrl = pathToFileURL(filePath).href;
       const mod = await import(fileUrl);
       const preset = mod.default;

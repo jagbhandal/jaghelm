@@ -36,5 +36,9 @@ README.md
 LICENSE
 docs
 
+# Tests — run in CI on the checkout, never inside the image build; nothing at
+# runtime imports them (registry.js also refuses to load presets/*.test.js)
+**/*.test.*
+
 # Archives
 *.tar.gz
