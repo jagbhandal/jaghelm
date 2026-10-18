@@ -37,3 +37,18 @@ test('buildCronReport: arcane-check expects the image watcher interval', () => {
   );
   assert.equal(buildCronReport({ job: 'toString', env: { name: 'pi-1' }, cronStatus: 'success' }), null);
 });
+
+test('buildCronReport: the vulnerability digest is expected weekly', () => {
+  assert.deepEqual(
+    buildCronReport({ job: 'arcane-vuln-digest', env: { name: 'vm-103' }, cronStatus: 'success' }),
+    { job: 'arcane-vuln-digest', node: 'vm-103', status: 'success', expected_every_seconds: 604800 }
+  );
+  const f = buildCronReport({
+    job: 'arcane-vuln-digest',
+    env: { name: 'vm-103' },
+    cronStatus: 'failure',
+    error: 'Arcane HTTP 500 for /api/environments/0/vulnerabilities/all',
+  });
+  assert.equal(f.status, 'failure');
+  assert.equal(f.error, 'Arcane HTTP 500 for /api/environments/0/vulnerabilities/all');
+});

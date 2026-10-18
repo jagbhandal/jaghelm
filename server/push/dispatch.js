@@ -18,9 +18,10 @@ const defaultLog = createLogger('push-dispatch');
 // receives already-resolved prefs, so dispatch.js does not redefine it.
 
 /**
- * Explicit type -> pref-category overrides. The Arcane updater events share
- * the existing `watchtower` (updates) pref key: the installed Android app has
- * a strict 5-key prefs shape, so no new key is added.
+ * Explicit type -> pref-category overrides. The Arcane events (updates and the
+ * weekly vulnerability digest) share the existing `watchtower` (updates) pref
+ * key: the installed Android app has a strict 5-key prefs shape, so no new key
+ * is added.
  */
 export const TYPE_CATEGORY = Object.freeze({
   arcane_update: 'watchtower',
@@ -29,6 +30,7 @@ export const TYPE_CATEGORY = Object.freeze({
   arcane_agent_offline: 'watchtower',
   arcane_agent_recovered: 'watchtower',
   arcane_release: 'watchtower',
+  arcane_vulns: 'watchtower',
 });
 
 /** Map an event type to its preference category. */

@@ -6,11 +6,13 @@ import { envKey } from './derive.js';
 import { MIN_EXPECTED_EVERY_SECONDS, MAX_EXPECTED_EVERY_SECONDS } from '../cron-overdue.js';
 
 // Expected interval per job. arcane-check follows Arcane's POLLING schedule, which the
-// caller passes (ARCANE_IMAGE_CHECK_HOURS); 6 hours is the default.
+// caller passes (ARCANE_IMAGE_CHECK_HOURS); 6 hours is the default. The vulnerability
+// digest runs weekly.
 const DEFAULT_EVERY = {
   'arcane-update': 86400,
   'arcane-prune': 86400,
   'arcane-check': 21600,
+  'arcane-vuln-digest': 604800,
 };
 const STATUSES = new Set(['success', 'failure']);
 const ERROR_MAX = 2048;

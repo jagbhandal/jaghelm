@@ -68,3 +68,26 @@ test('intervals never exceed the 2^31-1 ms timer limit', () => {
   assert.equal(readArcaneConfig({ ...base, ARCANE_RELEASE_CHECK_HOURS: '1000' }).releaseMs, MAX);
   assert.equal(readArcaneConfig({ ...base, ARCANE_RELEASE_CHECK_HOURS: '596' }).releaseMs, 596 * 3600000);
 });
+
+test('vulnerability digest slot defaults to Sunday 14:00 UTC, clamped to a real day and hour', () => {
+  const base = { ARCANE_URL: 'https://a', ARCANE_API_KEY: KEY };
+  const slot = (day, hour) => {
+    const c = readArcaneConfig({ ...base, ARCANE_VULN_DIGEST_DAY: day, ARCANE_VULN_DIGEST_HOUR: hour });
+    return [c.vulnDay, c.vulnHour];
+  };
+  assert.deepEqual(slot(undefined, undefined), [0, 14]);
+  assert.deepEqual(slot('3', '9'), [3, 9]);
+  assert.deepEqual(slot('6', '23'), [6, 23]);
+  assert.deepEqual(slot('7', '24'), [6, 23]);
+  assert.deepEqual(slot('-1', '-5'), [0, 0]);
+  assert.deepEqual(slot('sun', 'noon'), [0, 14]);
+  // Also present when the integration is off, like the other intervals.
+  assert.equal(readArcaneConfig({}).vulnHour, 14);
+});
+
+test('vulnerability digest environments parse like the check-only list; empty means off', () => {
+  const c = readArcaneConfig({ ARCANE_VULN_DIGEST_ENVS: ' vm-103, pi-1 ,,' });
+  assert.deepEqual(c.vulnDigestEnvs, new Set(['vm-103', 'pi-1']));
+  assert.deepEqual(readArcaneConfig({}).vulnDigestEnvs, new Set());
+  assert.deepEqual(readArcaneConfig({ ARCANE_VULN_DIGEST_ENVS: ' , ' }).vulnDigestEnvs, new Set());
+});

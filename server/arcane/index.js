@@ -1,12 +1,15 @@
 /**
- * Arcane wiring: builds the poller from env + stores and starts it.
- * Only boot() calls startArcane(); importing this module starts nothing.
+ * Arcane wiring: builds the poller and the weekly vulnerability digest from env +
+ * stores and starts them. Only boot() calls startArcane(); importing this module
+ * starts nothing.
  */
 import { join } from 'path';
 import { readArcaneConfig } from './config.js';
 import { createArcaneClient } from './client.js';
 import { createArcaneStateStore } from './stateStore.js';
 import { createArcanePoller } from './poller.js';
+import { createVulnStateStore } from './vulnStateStore.js';
+import { createVulnDigest } from './vulnDigest.js';
 import { createHeldBackStore } from '../watchtower/heldBackStore.js';
 import { recordRun } from '../cron-store.js';
 import { dispatchEvents } from '../push/dispatch.js';
@@ -17,12 +20,17 @@ import { DATA_DIR } from '../util/dataDir.js';
 import { createLogger } from '../util/logger.js';
 
 const defaultLog = createLogger('arcane');
+// Reading a few dozen pages of findings and Arcane's risk overview can take longer
+// than the poller's 8-second reads.
+const DIGEST_TIMEOUT_MS = 30_000;
 let poller = null;
+let digest = null;
 
 export function startArcane({ env = process.env, demo = isDemoMode(), deps = {} } = {}) {
   stopArcane();
   const log = deps.logger || defaultLog;
   const makePoller = deps.createPoller || createArcanePoller;
+  const makeDigest = deps.createDigest || createVulnDigest;
   if (demo) {
     log.info('Arcane integration off in demo mode');
     return null;
@@ -48,10 +56,29 @@ export function startArcane({ env = process.env, demo = isDemoMode(), deps = {} 
     logger: log,
   });
   poller.start({ pollMs: cfg.pollMs, releaseMs: cfg.releaseMs });
+  digest = makeDigest({
+    client: createArcaneClient({
+      baseUrl: cfg.url,
+      apiKey: cfg.apiKey,
+      timeoutMs: DIGEST_TIMEOUT_MS,
+    }),
+    stateStore: createVulnStateStore({ path: join(DATA_DIR, 'arcane-vuln-state.json') }),
+    recordRun,
+    dispatch: dispatchEvents,
+    pushStore: getPushStore(),
+    fcm: fcmModule,
+    logger: log,
+    envs: cfg.vulnDigestEnvs,
+    day: cfg.vulnDay,
+    hour: cfg.vulnHour,
+  });
+  digest.start();
   return poller;
 }
 
 export function stopArcane() {
   if (poller) poller.stop();
+  if (digest) digest.stop();
   poller = null;
+  digest = null;
 }
