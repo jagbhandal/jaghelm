@@ -340,7 +340,8 @@ flowchart LR
   `mobile/CHANGELOG.md`. A manual run is a
   test build and creates no release.
 - **Deploy** ([deploy.yml](../.gitea/workflows/deploy.yml)) runs on the
-  self-hosted Gitea runner: pull and **pin this commit's `:sha-<short>`** image,
+  self-hosted Gitea runner labelled `vm103` (no other workflow may use that
+  label): pull and **pin this commit's `:sha-<short>`** image,
   recreate behind a **health gate** that auto-rolls-back to the previous image on
   failure.
 - **Event-driven trigger** ([ADR 0005](adr/0005-event-driven-deploy.md)): the
@@ -359,6 +360,10 @@ flowchart LR
 - **Client** (84, Vitest + jsdom + React Testing Library): NavBar/config-driven
   rendering, settings primitives, the keyboard grid handle, per-source health
   banners, overlay/confirm semantics, and the 304-stable data hook.
+- **Repo guards** (`node --test`, `scripts/*.test.mjs`): the deploy runner pin,
+  the secret floor (`.gitignore`, tracked templates, the scanner catching a
+  planted key) and its wiring in `check.yml`. Write new repo checks this way, not
+  as shell scripts: `npm test` only collects `*.test.{js,mjs,cjs}`.
 
 ## 9. Key decisions (ADRs)
 
