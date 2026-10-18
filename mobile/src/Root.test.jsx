@@ -118,6 +118,16 @@ describe('Root', () => {
     expect(bootMobile.mock.invocationCallOrder[1]).toBeGreaterThan(lastClear);
   });
 
+  it('Change server whose clearing throws shows "Something went wrong" without re-booting', async () => {
+    bootMobile.mockResolvedValue(UNREACHABLE);
+    setPref.mockRejectedValue(new Error('preferences write failed'));
+    render(<Root />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Change server' }));
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument();
+    expect(bootMobile).toHaveBeenCalledTimes(1);
+    expect(removeItem).toHaveBeenCalledTimes(1); // the token; stopped before the URL
+  });
+
   it('a boot that throws shows "Something went wrong", and Retry recovers', async () => {
     bootMobile.mockRejectedValueOnce(new Error('keystore failure')).mockResolvedValueOnce(REACHABLE);
     render(<Root />);

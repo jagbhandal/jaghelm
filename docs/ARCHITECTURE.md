@@ -202,6 +202,16 @@ Key properties:
   construction -- blocking cloud-metadata IPs, decimal/hex/octal IPv4, and
   IPv4-mapped IPv6, with a `trusted` flag exempting operator infra (Prometheus/
   Kuma) from the strict private-network block.
+- **Credential headers stay on their origin.** Redirects are followed in code
+  (`util/safeFetchCore.js`), and a hop to a different origin (scheme, host or
+  port) forwards only `Accept`, `Accept-Encoding`, `Content-Type` and
+  `User-Agent`. Every other header, so every preset's auth header, is dropped
+  and stays dropped for the rest of the chain. The one exception is an
+  `http://` to `https://` upgrade on the same host and port (a reverse proxy's
+  force-SSL), which keeps them because they were just sent to that host. Both
+  cases are logged once per origin pair, with header names and no values.
+  Keys in the URL query string are not covered: see the residual in
+  `docs/security/STRIDE.md` and #224.
 - **Credentials are redacted** (`util/redact.js`) before any error is logged *or*
   returned to the browser -- query-auth presets put the key in the URL, which
   fetch errors would otherwise echo.
@@ -343,7 +353,8 @@ flowchart LR
   `mobile/CHANGELOG.md`. A manual run is a
   test build and creates no release.
 - **Deploy** ([deploy.yml](../.gitea/workflows/deploy.yml)) runs on vm-103's
-  self-hosted Gitea runner and reaches the host over SSH that verifies a
+  self-hosted Gitea runner, labelled `vm103` (no other workflow may use that
+  label), and reaches the host over SSH that verifies a
   **pinned host key** (the `VM103_HOST_KEY` repository variable; without it the
   deploy fails before any SSH). It pulls and **pins this commit's
   `:sha-<short>`** image and **delivers this commit's `compose.yaml`** to the
@@ -379,6 +390,10 @@ flowchart LR
 - **Client** (84, Vitest + jsdom + React Testing Library): NavBar/config-driven
   rendering, settings primitives, the keyboard grid handle, per-source health
   banners, overlay/confirm semantics, and the 304-stable data hook.
+- **Repo guards** (`node --test`, `scripts/*.test.mjs`): the deploy runner pin,
+  the secret floor (`.gitignore`, tracked templates, the scanner catching a
+  planted key) and its wiring in `check.yml`. Write new repo checks this way, not
+  as shell scripts: `npm test` only collects `*.test.{js,mjs,cjs}`.
 
 ## 9. Key decisions (ADRs)
 

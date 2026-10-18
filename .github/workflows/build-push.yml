@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Tests (backend, node:test)
-        run: npm test
+        run: npm run test:ci
       - name: Client tests (Vitest + RTL)
         run: npm run test:client
       - name: Mobile tests (Vitest)
