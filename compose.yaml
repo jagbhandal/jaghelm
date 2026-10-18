@@ -1,21 +1,19 @@
 services:
   jaghelm:
-    # Pin to an immutable reference for real rollback. Two ways to roll back:
+    # Installs you run by hand: pin an immutable reference to roll back.
     #   1. Tag rollback  — set this to a previous :sha-<short> tag (every CI
     #      build publishes one alongside :latest), then `docker compose up -d`.
     #   2. Digest rollback (strongest) — pin by digest so the bytes can never
     #      drift even if a tag is re-pushed, e.g.
     #        image: ghcr.io/jagbhandal/jaghelm@sha256:<digest>
-    #
     # `:latest` is convenient for auto-deploy but is NOT a rollback target (it
-    # moves). The deploy workflow records the SHA tag it shipped; pin that here
-    # to roll back. Replace the <REPLACE_WITH_SHA_OR_DIGEST> placeholder when
-    # pinning for production.
+    # moves).
     #
-    # JagHelm's own deploy (.gitea/workflows/deploy.yml) replaces this file on
-    # its host at every deploy and pins by retagging :latest, so it requires
-    # :latest here. Put host-specific changes in compose.override.yaml, which
-    # Compose merges and that deploy never touches.
+    # JagHelm's own deploy (.gitea/workflows/deploy.yml) works differently. It
+    # replaces this file on its host at every deploy and needs :latest here (a
+    # pinned image fails that deploy); it pins and rolls back by retagging
+    # :latest to an image ID. Put host-specific changes in
+    # compose.override.yaml, which Compose merges and that deploy never touches.
     image: ghcr.io/jagbhandal/jaghelm:latest # rollback: pin :sha-<short> or @sha256:<digest>
     container_name: jaghelm
     restart: unless-stopped

@@ -18,8 +18,15 @@ name: Deploy JagHelm
 #                   deploy fails before any SSH; after a vm-103 rebuild, update it
 #                   or deploys fail with "Host key verification failed".
 #   COSIGN_VERIFY   variable, optional. "true" enforces the signature check.
-#   PR_TOKEN        secret. Reads compose.yaml at the deployed commit from the
-#                   Gitea API (the runner has no checkout).
+#   (job token)     the automatic GITEA_TOKEN, limited to contents: read below.
+#                   Reads compose.yaml at the deployed commit from the Gitea API
+#                   (the runner has no checkout). Nothing to configure.
+#
+# Host files in the stack dir: compose.yaml is the deploy's (replaced every
+# deploy, previous copy in compose.yaml.prev); compose.override.yaml and .env
+# are the host's and never touched. compose.accept-drops, created by hand,
+# lets ONE deploy drop host networking or a mount the running container has
+# (see the stage step); the deploy removes it once that deploy is healthy.
 #
 # Act_runner caveat: no expression interpolation inside run bodies, comments
 # included. Values come in through env: and are used as $VAR.
@@ -46,6 +53,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: [self-hosted, vm103]
+    # The job token only reads this repo (compose.yaml at the deployed commit).
+    permissions:
+      contents: read
     env:
       # The deploy target. Steps reach it only through SSH_CMD, which the first
       # step exports with the pinned host key.
@@ -145,9 +155,18 @@ jobs:
       # compose.yaml holds no secrets: they are in .env, which this never reads
       # or prints. Host-specific additions go in compose.override.yaml, which
       # compose merges and the deploy never touches.
+      #
+      # Two refusals, both before the container is touched:
+      #   • a compose.yaml change when this commit's image was not pulled (the
+      #     fallback would run it with an older :latest);
+      #   • a merged config that drops host networking or a mount the running
+      #     container has. Such a drop deploys "healthy" while, say, push stops
+      #     because the FCM key mount is gone. For a deliberate drop, create
+      #     compose.accept-drops in the stack dir: the deploy logs what it drops
+      #     and removes the file after the health gate passes.
       - name: Stage this commit on vm-103 (image + compose.yaml)
         env:
-          PR_TOKEN: ${{ secrets.PR_TOKEN }}
+          JOB_TOKEN: ${{ secrets.GITEA_TOKEN }}
           SERVER_URL: ${{ github.server_url }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -160,7 +179,7 @@ jobs:
           echo ">>> Fetching compose.yaml at ${GITHUB_SHA}"
           CF="$(mktemp)"
           trap 'rm -f "${CF}"' EXIT
-          printf 'header = "Authorization: token %s"\n' "${PR_TOKEN}" \
+          printf 'header = "Authorization: token %s"\n' "${JOB_TOKEN}" \
             | curl -fsS --max-time 30 -K - -o "${CF}" \
               "${SERVER_URL%/}/api/v1/repos/${REPOSITORY}/raw/compose.yaml?ref=${GITHUB_SHA}"
           [ -s "${CF}" ] || { echo "::error::compose.yaml fetched for ${GITHUB_SHA} is empty"; exit 1; }
@@ -188,9 +207,9 @@ jobs:
 
           echo ">>> Delivering compose.yaml to ${STACK_DIR}"
           $SSH_CMD "cat > '${STACK_DIR}/compose.yaml.new'" < "${CF}"
-          $SSH_CMD "bash -s -- '${STACK_DIR}' '${COMPOSE_SHA256}'" <<'INSTALL_COMPOSE'
+          $SSH_CMD "bash -s -- '${STACK_DIR}' '${COMPOSE_SHA256}' '${IMAGE_PULLED}'" <<'INSTALL_COMPOSE'
           set -euo pipefail
-          dir=$1 want=$2
+          dir=$1 want=$2 image_pulled=$3
           cd "$dir"
           sha() { sha256sum "$1" | cut -d' ' -f1; }
           had_prev=0 installed=0 done=0
@@ -218,9 +237,14 @@ jobs:
             echo "::error::compose.yaml.new on vm-103 has sha256=$got, expected $want; nothing changed"
             exit 1
           fi
+          old=none
+          if [ -f compose.yaml ]; then old=$(sha compose.yaml); fi
+          if [ "$image_pulled" != 1 ] && [ "$old" != "$want" ]; then
+            echo "::error::this commit's image was not pulled, so its compose.yaml change would run with an older :latest; nothing changed. Re-run the deploy once the image is built."
+            exit 1
+          fi
           if [ -f compose.yaml ]; then
             had_prev=1
-            old=$(sha compose.yaml)
             echo "    host compose.yaml before: sha256=$old"
             if [ "$old" = "$want" ]; then
               echo "    unchanged"
@@ -246,6 +270,43 @@ jobs:
           if [ "$images" != "ghcr.io/jagbhandal/jaghelm:latest" ]; then
             echo "::error::compose must run only ghcr.io/jagbhandal/jaghelm:latest (the deploy pins by retagging it), got: $images"
             exit 1
+          fi
+
+          # Drop guard: keep the running container's host networking and mounts.
+          cur_net=$(docker inspect -f '{{.HostConfig.NetworkMode}}' jaghelm </dev/null 2>/dev/null || true)
+          if [ -z "$cur_net" ]; then
+            echo "    no jaghelm container: drop check skipped"
+          else
+            cur_mounts=$(docker inspect -f '{{range .Mounts}}{{println .Destination}}{{end}}' jaghelm </dev/null)
+            # The merged config without env resolution or interpolation (so no
+            # .env values in it), reduced by python3 to the network mode and the
+            # mount targets. Never printed. An unsupported flag fails closed.
+            new_cfg=$(docker compose config --format json --no-interpolate --no-env-resolution </dev/null \
+              | python3 -c 'import json, sys; s = json.load(sys.stdin)["services"]["jaghelm"]; t = s.get("tmpfs") or []; print("\n".join(
+                  [s.get("network_mode") or "default"]
+                  + [v["target"] for v in s.get("volumes") or []]
+                  + [p.split(":")[0] for p in ([t] if isinstance(t, str) else t)]))')
+            new_net=${new_cfg%%$'\n'*}
+            new_targets=$'\n'$(printf '%s\n' "$new_cfg" | tail -n +2)$'\n'
+            drops=""
+            if [ "$cur_net" = host ] && [ "$new_net" != host ]; then
+              drops="network_mode host (would become $new_net)"
+            fi
+            while IFS= read -r d; do
+              [ -n "$d" ] || continue
+              case "$new_targets" in
+                *$'\n'"$d"$'\n'*) ;;
+                *) drops="${drops:+$drops; }mount $d" ;;
+              esac
+            done <<<"$cur_mounts"
+            if [ -z "$drops" ]; then
+              echo "    drop check: keeps the running container's network mode and mounts"
+            elif [ -e compose.accept-drops ]; then
+              echo "    compose.accept-drops present, dropping: $drops"
+            else
+              echo "::error::the new config drops what the running jaghelm container has: $drops. Keep it via compose.override.yaml, or if the drop is intended create $dir/compose.accept-drops and re-run (removed after a healthy deploy)."
+              exit 1
+            fi
           fi
           now=$(sha compose.yaml)
           if [ "$now" != "$want" ]; then
@@ -330,6 +391,9 @@ jobs:
 
           if [ "${HEALTH_OK}" -eq 1 ] && [ "${ENDPOINT_OK}" -eq 1 ]; then
             echo ">>> Deploy verified healthy (commit ${GITHUB_SHA}, compose.yaml sha256=${COMPOSE_SHA256:-?})."
+            # compose.accept-drops covers one deploy: this one succeeded.
+            $SSH_CMD "cd '${STACK_DIR}' && if [ -e compose.accept-drops ]; then rm -f compose.accept-drops && echo '    removed compose.accept-drops'; fi" \
+              || echo "::error::could not remove compose.accept-drops in ${STACK_DIR}; remove it by hand or the next deploy may drop mounts too"
             exit 0
           fi
 

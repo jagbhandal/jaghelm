@@ -79,12 +79,18 @@ case "$*" in
   "pull "*) exit "\${FAKE_PULL_RC:-0}" ;;
   "compose config -q") exit "\${FAKE_CONFIG_RC:-0}" ;;
   "compose config --images") printf '%s\\n' "\${FAKE_IMAGES:-${LATEST}}" ;;
+  "compose config --format json --no-interpolate --no-env-resolution")
+    [ "\${FAKE_JSON_RC:-0}" = 0 ] || exit "$FAKE_JSON_RC"; printf '%s\\n' "$FAKE_CONFIG_JSON" ;;
+  "inspect -f {{.HostConfig.NetworkMode}} jaghelm") [ -n "\${FAKE_RUNNING_NET:-}" ] || exit 1; echo "$FAKE_RUNNING_NET" ;;
+  "inspect -f {{range .Mounts}}{{println .Destination}}{{end}} jaghelm") printf '%s\\n' "\${FAKE_RUNNING_MOUNTS:-}" ;;
+  "inspect --format {{.State.Health.Status}} jaghelm") echo "\${FAKE_HEALTH:-healthy}" ;;
 esac
 exit 0
 `;
-// curl: records argv and the -K config read from stdin, then "downloads"
-// FAKE_COMPOSE_SRC to the -o path.
+// curl: answers the health endpoint; otherwise records argv and the -K config
+// read from stdin, then "downloads" FAKE_COMPOSE_SRC to the -o path.
 const FAKE_CURL = `#!/bin/sh
+case "$*" in *"/api/health"*) echo '{"status":"ok"}'; exit 0 ;; esac
 echo "$*" > "$FAKE_CURL_ARGV"
 cat > "$FAKE_CURL_CONFIG"
 [ "\${FAKE_CURL_RC:-0}" = 0 ] || exit "$FAKE_CURL_RC"
@@ -148,13 +154,13 @@ function githubEnv(sb) {
   return env;
 }
 
-// Runs a workflow step's script the way act does on vm-103's runner (POSIX sh
-// with `set -euo pipefail`; bash --posix stands in for busybox ash here).
-// Values the workflow injects with expressions are supplied by the test.
+// Runs a workflow step's script the way act_runner runs it on vm-103 (the live
+// deploy log shows `bash --noprofile --norc -e -o pipefail {0}`). Values the
+// workflow injects with expressions are supplied by the test.
 function runStep(sb, s, env = {}) {
   const file = path.join(sb.dir, 'step.sh');
   writeFileSync(file, s.run);
-  return spawnSync('bash', ['--posix', '-e', file], {
+  return spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', file], {
     encoding: 'utf8',
     input: '',
     env: { ...sb.env, ...githubEnv(sb), ...env },
@@ -262,7 +268,7 @@ const OLD_COMPOSE = `services:\n  jaghelm:\n    image: ${LATEST}\n    network_mo
 
 function stageEnv(extra = {}) {
   return {
-    PR_TOKEN: 'tok-not-on-argv', // pragma: allowlist secret -- fake token for the argv test
+    JOB_TOKEN: 'tok-not-on-argv', // pragma: allowlist secret -- fake token for the argv test
     SERVER_URL: 'http://gitea.example.test/',
     REPOSITORY: 'owner/JagHelm',
     FAKE_PREV_IMAGE: 'sha256:previous',
@@ -317,9 +323,22 @@ test('stage: fetches compose.yaml at the commit, delivers it, records both hashe
 
 test('docker compose config is only run in modes that print no .env values', () => {
   // Every invocation (comments and messages name it without options).
-  const calls = WF_TEXT.match(/docker compose config\s+-\S*/g) || [];
-  assert.deepEqual(calls, ['docker compose config -q', 'docker compose config --images']);
+  const calls = [...WF_TEXT.matchAll(/docker compose config((?:\s+-[-\w]+(?: json)?)+)/g)];
+  assert.deepEqual(
+    calls.map((m) => m[1].trim()),
+    ['-q', '--images', '--format json --no-interpolate --no-env-resolution']
+  );
   assert.doesNotMatch(WF_TEXT, /docker compose config\s*(\)|<|\||$)/m, 'bare config prints .env');
+  // The JSON one is captured and parsed, never echoed.
+  const json = WF_TEXT.split('\n').find((l) => l.includes('--no-env-resolution'));
+  assert.match(json, /^\s*new_cfg=\$\(docker compose config /);
+  assert.ok(!/echo[^\n]*\$new_cfg|printf '%s\\n' "\$new_cfg"\s*$/m.test(STAGE().run));
+});
+
+test('the compose.yaml fetch uses the job token, limited to reading this repo', () => {
+  assert.equal(STAGE().env.JOB_TOKEN, '${{ secrets.GITEA_TOKEN }}');
+  assert.deepEqual(JOB.permissions, { contents: 'read' });
+  assert.ok(!WF_TEXT.includes('PR_TOKEN'));
 });
 
 test('stage: a failed fetch fails before vm-103 is touched', (t) => {
@@ -331,16 +350,52 @@ test('stage: a failed fetch fails before vm-103 is touched', (t) => {
   assert.equal(githubEnv(sb).ROLLBACK_ARMED, undefined);
 });
 
+test('stage: a failed install leaves the rollback unarmed and the host copy unchanged', (t) => {
+  const sb = stagedSandbox(t);
+  const r = runStep(sb, STAGE(), stageEnv({ FAKE_CONFIG_RC: '1' }));
+  assert.notEqual(r.status, 0);
+  assert.equal(readFileSync(sb.stackFile('compose.yaml'), 'utf8'), OLD_COMPOSE);
+  assert.equal(githubEnv(sb).ROLLBACK_ARMED, undefined);
+});
+
+test('stage: refuses a compose.yaml change when this commit image was not pulled', (t) => {
+  const sb = stagedSandbox(t);
+  const r = runStep(sb, STAGE(), stageEnv({ FAKE_PULL_RC: '1' }));
+  assert.notEqual(r.status, 0);
+  assert.match(out(r), /::error::this commit's image was not pulled/);
+  assert.equal(readFileSync(sb.stackFile('compose.yaml'), 'utf8'), OLD_COMPOSE);
+  assert.ok(!existsSync(sb.stackFile('compose.yaml.prev')), 'refused before the backup');
+  assert.equal(githubEnv(sb).ROLLBACK_ARMED, undefined);
+});
+
 test('stage: arming the rollback is the last thing it does', () => {
   const lines = STAGE().run.trimEnd().split('\n');
   assert.match(lines[lines.length - 1], /ROLLBACK_ARMED=1.*GITHUB_ENV/);
 });
 
 // The remote install script, run directly for its failure paths.
-function install(sb, want, env = {}) {
+function install(sb, want, env = {}, imagePulled = '1') {
   writeFileSync(sb.stackFile('compose.yaml.new'), REPO_COMPOSE);
-  return runRemote(sb, heredoc(STAGE().run, 'INSTALL_COMPOSE'), [sb.stack, want], env);
+  return runRemote(sb, heredoc(STAGE().run, 'INSTALL_COMPOSE'), [sb.stack, want, imagePulled], env);
 }
+
+// What `docker compose config --format json` reports for the jaghelm service.
+const configJson = ({ net, targets, tmpfs = ['/tmp:rw,noexec,nosuid,size=64m'] }) =>
+  JSON.stringify({
+    services: {
+      jaghelm: {
+        ...(net ? { network_mode: net } : {}),
+        volumes: targets.map((target) => ({ type: 'bind', source: `/x${target}`, target })),
+        tmpfs,
+      },
+    },
+  });
+const FCM = '/app/secrets/fcm-service-account.json';
+// The hand-placed container today: host networking, data, uploads and the FCM key.
+const RUNNING_HOST = {
+  FAKE_RUNNING_NET: 'host',
+  FAKE_RUNNING_MOUNTS: `/app/data\n/app/uploads\n${FCM}`,
+};
 
 for (const [label, want, env] of [
   ['the staged file does not match the fetched hash', sha256('something else'), {}],
@@ -387,10 +442,98 @@ test('install: an unchanged compose.yaml prints no diff; a host override is repo
   assert.equal(readFileSync(sb.stackFile('compose.override.yaml'), 'utf8'), override);
 });
 
+test('install: an unchanged compose.yaml is fine when this commit image was not pulled', (t) => {
+  const sb = stagedSandbox(t, { oldCompose: REPO_COMPOSE });
+  const r = install(sb, sha256(REPO_COMPOSE), {}, '0');
+  assert.equal(r.status, 0, out(r));
+});
+
+// ── drop guard: never silently lose host networking or a mount ───────────────
+
+for (const [label, running, merged, dropped] of [
+  [
+    'host networking',
+    { FAKE_RUNNING_NET: 'host', FAKE_RUNNING_MOUNTS: '/app/data\n/app/uploads' },
+    { targets: ['/app/uploads', '/app/data'] },
+    /network_mode host \(would become default\)/,
+  ],
+  [
+    'a mount',
+    { FAKE_RUNNING_NET: 'jaghelm_default', FAKE_RUNNING_MOUNTS: `/app/data\n/app/uploads\n${FCM}` },
+    { targets: ['/app/uploads', '/app/data'] },
+    new RegExp(`mount ${FCM}`),
+  ],
+]) {
+  test(`drop guard: refuses and restores when the new config drops ${label}`, (t) => {
+    const sb = stagedSandbox(t);
+    const r = install(sb, sha256(REPO_COMPOSE), {
+      ...running,
+      FAKE_CONFIG_JSON: configJson(merged),
+    });
+    assert.notEqual(r.status, 0, out(r));
+    assert.match(out(r), /::error::the new config drops/);
+    assert.match(out(r), dropped);
+    assert.equal(readFileSync(sb.stackFile('compose.yaml'), 'utf8'), OLD_COMPOSE);
+    assert.ok(!existsSync(sb.stackFile('compose.yaml.new')));
+  });
+}
+
+test('drop guard: passes when an override keeps host networking and every mount', (t) => {
+  const sb = stagedSandbox(t);
+  const merged = configJson({ net: 'host', targets: ['/app/uploads', '/app/data', FCM] });
+  const r = install(sb, sha256(REPO_COMPOSE), { ...RUNNING_HOST, FAKE_CONFIG_JSON: merged });
+  assert.equal(r.status, 0, out(r));
+  assert.match(out(r), /drop check: keeps/);
+  assert.equal(readFileSync(sb.stackFile('compose.yaml'), 'utf8'), REPO_COMPOSE);
+});
+
+test('drop guard: fails closed when compose cannot render the config without .env', (t) => {
+  const sb = stagedSandbox(t);
+  const r = install(sb, sha256(REPO_COMPOSE), { ...RUNNING_HOST, FAKE_JSON_RC: '1' });
+  assert.notEqual(r.status, 0, out(r));
+  assert.equal(readFileSync(sb.stackFile('compose.yaml'), 'utf8'), OLD_COMPOSE);
+});
+
+test('drop guard: skipped when no jaghelm container exists', (t) => {
+  const sb = stagedSandbox(t);
+  const r = install(sb, sha256(REPO_COMPOSE));
+  assert.equal(r.status, 0, out(r));
+  assert.match(out(r), /no jaghelm container: drop check skipped/);
+  assert.ok(!dockerCalls(sb).some((c) => c.startsWith('compose config --format')));
+});
+
+test('drop guard: compose.accept-drops lets one deploy through, removed once it is healthy', (t) => {
+  const sb = stagedSandbox(t);
+  writeFileSync(sb.stackFile('compose.accept-drops'), '');
+  const merged = configJson({ targets: ['/app/uploads', '/app/data'] });
+  const staged = runStep(sb, STAGE(), stageEnv({ ...RUNNING_HOST, FAKE_CONFIG_JSON: merged }));
+  assert.equal(staged.status, 0, out(staged));
+  assert.match(
+    out(staged),
+    new RegExp(`accept-drops present, dropping: network_mode host.*mount ${FCM}`)
+  );
+  assert.equal(readFileSync(sb.stackFile('compose.yaml'), 'utf8'), REPO_COMPOSE);
+  assert.equal(runStep(sb, SWITCH()).status, 0);
+
+  // Still there while the deploy is unproven; gone after the health gate passes.
+  assert.ok(existsSync(sb.stackFile('compose.accept-drops')));
+  const verified = runStep(sb, VERIFY());
+  assert.equal(verified.status, 0, out(verified));
+  assert.ok(!existsSync(sb.stackFile('compose.accept-drops')));
+});
+
+test('drop guard: a failed health gate keeps compose.accept-drops for the retry', (t) => {
+  const sb = stagedSandbox(t);
+  writeFileSync(sb.stackFile('compose.accept-drops'), '');
+  const r = runStep(sb, VERIFY(), { FAKE_HEALTH: 'unhealthy' });
+  assert.notEqual(r.status, 0);
+  assert.ok(existsSync(sb.stackFile('compose.accept-drops')));
+});
+
 // ── switch, gate, rollback ───────────────────────────────────────────────────
 
-function stagedAndSwitched(t, extra = {}) {
-  const sb = stagedSandbox(t);
+function stagedAndSwitched(t, extra = {}, oldCompose = OLD_COMPOSE) {
+  const sb = stagedSandbox(t, { oldCompose });
   const staged = runStep(sb, STAGE(), stageEnv(extra));
   assert.equal(staged.status, 0, out(staged));
   const switched = runStep(sb, SWITCH());
@@ -409,7 +552,7 @@ test('switch: retags :latest to this commit and recreates with the delivered com
 });
 
 test('switch: falls back to compose pull when the commit image was not pulled', (t) => {
-  const { sb, switched } = stagedAndSwitched(t, { FAKE_PULL_RC: '1' });
+  const { sb, switched } = stagedAndSwitched(t, { FAKE_PULL_RC: '1' }, REPO_COMPOSE);
   assert.equal(switched.status, 0, out(switched));
   const calls = dockerCalls(sb);
   assert.ok(

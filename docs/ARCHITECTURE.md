@@ -367,13 +367,19 @@ flowchart LR
   previous `compose.yaml` together. The deploy owns `compose.yaml` on the host:
   host-specific additions (a secrets mount, host networking) go in
   `compose.override.yaml`, which Compose merges and the deploy never touches.
+  Before the container is touched, the deploy refuses a merged config that
+  drops host networking or a mount the running container has (such a drop can
+  deploy "healthy" while push quietly stops), unless a hand-made
+  `compose.accept-drops` file in the stack directory accepts it for one deploy;
+  and it refuses a `compose.yaml` change when the commit's own image was not
+  available.
   Configuration (Gitea repository settings, Actions):
 
   | Kind | Name | Use |
   |------|------|-----|
   | Variable | `VM103_HOST_KEY` | Required. vm-103's host key as one known_hosts line (`<address> ssh-ed25519 AAAA…`), from `ssh-keyscan -t ed25519 <address>` with the fingerprint checked on vm-103. Update it after a rebuild. |
   | Variable | `COSIGN_VERIFY` | Optional. `true` verifies the image signature before deploying. |
-  | Secret | `PR_TOKEN` | Reads `compose.yaml` at the deployed commit from the Gitea API. |
+  | Job token | `GITEA_TOKEN` (automatic) | Reads `compose.yaml` at the deployed commit from the Gitea API; the job limits it to `contents: read`. Nothing to set. |
 - **Event-driven trigger** ([ADR 0005](adr/0005-event-driven-deploy.md)): the
   build dispatches the deploy when the image is ready, replacing a GHCR poll. It
   is opt-in and fallback-preserving -- the push trigger remains until verified.
