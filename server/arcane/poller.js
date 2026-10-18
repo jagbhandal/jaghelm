@@ -27,6 +27,10 @@
  *     judged from the environment's job_run rows). While its job run is unfinished,
  *     only that cron decision waits: the run is kept in arcane-state.json
  *     ("awaiting") and resolved on later polls, for at most AWAIT_MAX_MS.
+ *   - Image watcher checks (image_update_check) push nothing. Each finished check the
+ *     scheduler or the watcher started records an arcane-check cron run (checkOrigin), so
+ *     a watcher that stops checking goes overdue. Checks have their own silent baseline
+ *     and seen list (stateStore "checks"), so a state file from before them replays none.
  *   - State advances before dispatch, and a dispatch failure is swallowed, so
  *     a push outage (or push turned off) never re-announces a backlog later.
  * The only clock is the injected `now`, read to age awaiting runs; otherwise the same
@@ -40,8 +44,10 @@ import {
   heldBackTransitions,
   isTerminal,
   runOrigin,
+  checkOrigin,
   summarizeUpdateRun,
   summarizePruneRun,
+  summarizeCheckRun,
 } from './derive.js';
 import { buildCronReport } from './cronBridge.js';
 import {
@@ -62,6 +68,8 @@ const ACTIVITY_JOBS = [
   { type: 'auto_update', job: 'arcane-update' },
   { type: 'system_prune', job: 'arcane-prune' },
 ];
+const CHECK_TYPE = 'image_update_check';
+const CHECK_JOB = 'arcane-check';
 // job_run rows are read page by page back to the oldest unseen run, at most this far.
 const JOB_RUN_PAGE = 50;
 const JOB_RUN_PAGES = 4;
@@ -122,6 +130,7 @@ export function createArcanePoller({
   pushStore,
   fcm,
   checkOnlyEnvs,
+  checkEverySeconds,
   logger,
   sleep = defaultSleep,
   now = Date.now,
@@ -165,7 +174,7 @@ export function createArcanePoller({
   }
 
   /** Terminal, parseable, not yet seen activities of one type, oldest first. */
-  function unseenTerminal(key, type, list) {
+  function unseenTerminal(key, type, list, isSeen = (id) => stateStore.hasActivity(key, id)) {
     const picked = new Set();
     const out = [];
     for (const a of list) {
@@ -180,7 +189,7 @@ export function createArcanePoller({
         );
         continue;
       }
-      if (picked.has(id) || stateStore.hasActivity(key, id)) continue;
+      if (picked.has(id) || isSeen(id)) continue;
       picked.add(id);
       out.push({ activity: a, id, startedMs });
     }
@@ -253,7 +262,8 @@ export function createArcanePoller({
 
   /** One cron run into the store; a bad report or a store error never breaks the poll. */
   function recordCron(env, key, { job, cronStatus, error }) {
-    const report = buildCronReport({ job, env, cronStatus, error });
+    const expectedEverySeconds = job === CHECK_JOB ? checkEverySeconds : undefined;
+    const report = buildCronReport({ job, env, cronStatus, error, expectedEverySeconds });
     if (!report) return;
     try {
       recordRun(report);
@@ -298,6 +308,9 @@ export function createArcanePoller({
     const pending = {};
     const next = {};
     const awaiting = known ? stateStore.getAwaiting(key) : [];
+    // Checks are judged (and so need job runs) only once both baselines are done.
+    const checksKnown = known && stateStore.isChecksKnown(key);
+    let checks = [];
     try {
       containers = await client.listContainers(env.id);
       for (const { type } of ACTIVITY_JOBS) {
@@ -305,7 +318,14 @@ export function createArcanePoller({
         pending[type] = unseenTerminal(key, type, list);
         next[type] = nextStarts(list);
       }
+      checks = unseenTerminal(
+        key,
+        CHECK_TYPE,
+        await client.listActivities(env.id, CHECK_TYPE),
+        (id) => stateStore.hasCheck(key, id)
+      );
       const unseen = ACTIVITY_JOBS.flatMap(({ type }) => pending[type]);
+      if (checksKnown) unseen.push(...checks);
       if (known && pending.auto_update.length > 0) history = await client.updaterHistory(env.id);
       if (known && unseen.length + awaiting.length > 0) {
         const oldest = Math.min(
@@ -394,6 +414,25 @@ export function createArcanePoller({
           );
         }
       }
+    }
+
+    // Image watcher checks: no push, no waiting (a job run carries its trigger from the
+    // start). Before the baseline they are only marked seen.
+    if (checksKnown) {
+      for (const { activity, id } of checks) {
+        stateStore.addCheck(key, id); // seen first, as above
+        if (checkOrigin(activity, jobRuns) !== 'scheduled') {
+          judgedManual(key, { id, job: CHECK_JOB }, 'manual');
+          continue;
+        }
+        const { cronStatus, error } = summarizeCheckRun(activity);
+        cron.push({ job: CHECK_JOB, cronStatus, error });
+      }
+    } else {
+      stateStore.baselineChecks(
+        key,
+        checks.map((c) => c.id)
+      );
     }
 
     // Bounded by the store's own cap (MAX_AWAITING): the oldest beyond it get no cron run.

@@ -24,6 +24,18 @@ test('release interval defaults to 6h, min 1h', () => {
   assert.equal(readArcaneConfig({ ...base, ARCANE_RELEASE_CHECK_HOURS: '0' }).releaseMs, 3600000);
 });
 
+test('image check interval defaults to 6h, within 1h to 31 days', () => {
+  const base = { ARCANE_URL: 'https://a', ARCANE_API_KEY: KEY };
+  const every = (v) => readArcaneConfig({ ...base, ARCANE_IMAGE_CHECK_HOURS: v }).checkEverySeconds;
+  assert.equal(readArcaneConfig(base).checkEverySeconds, 21600);
+  assert.equal(every('1'), 3600);
+  assert.equal(every('24'), 86400);
+  assert.equal(every('0'), 3600);
+  assert.equal(every('abc'), 21600);
+  assert.equal(every('744'), 2678400);
+  assert.equal(every('100000'), 2678400);
+});
+
 test('check-only envs parse trimmed', () => {
   const c = readArcaneConfig({ ARCANE_CHECK_ONLY_ENVS: ' pi-1, pi-2 ' });
   assert.deepEqual(c.checkOnlyEnvs, new Set(['pi-1', 'pi-2']));

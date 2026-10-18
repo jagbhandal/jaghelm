@@ -4,7 +4,8 @@
  *
  * Recorded fixtures are committed to a public repository, so what is kept is also
  * anonymized (createAnonymizer): container names, image references, tags, digests
- * and every id become placeholders, and error text is redacted. The shapes the
+ * and every id become placeholders, and error text is redacted (except an image check's
+ * count summary, which names nothing). The shapes the
  * code depends on are kept: a leading "/" on a name, tag vs digest form, "latest" vs
  * a version-shaped tag, an empty latestVersion, equal vs different digests (and so
  * their 19-character prefixes), the local environment's id "0", UUID-shaped edge ids.
@@ -107,6 +108,12 @@ const redact = (out, src) => {
   if (src && 'error' in src) out.error = src.error ? 'redacted' : '';
 };
 
+// An image check's summary ("Image update check completed: 34 checked, 2 errors") holds
+// only counts, and summarizeCheckRun reads it, so it is kept; any other text is not.
+const CHECK_SUMMARY =
+  /^Image update check completed: \d+ checked, \d+ errors(, \d+ tag policy errors)?$/;
+const checkSummary = (v) => typeof v === 'string' && CHECK_SUMMARY.test(v);
+
 const imageMap = (m, anon) => {
   if (!m || typeof m !== 'object' || Array.isArray(m)) return {};
   const out = {};
@@ -145,6 +152,8 @@ const ROW = {
     const out = pick(r, ['id', 'type', 'status', 'startedAt', 'endedAt', 'batchId']);
     for (const k of ['id', 'batchId']) if (k in out) out[k] = anon.id(out[k]);
     redact(out, r);
+    if (checkSummary(r?.latestMessage)) out.latestMessage = r.latestMessage;
+    if (checkSummary(r?.error)) out.error = r.error;
     // Only the job-run link the poller reads (runOrigin); other metadata is dropped.
     const md = r?.metadata;
     if (md && typeof md === 'object' && !Array.isArray(md)) {

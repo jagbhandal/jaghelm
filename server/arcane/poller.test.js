@@ -80,7 +80,18 @@ const FCM = { name: 'fcm' };
 
 function setup(
   t,
-  { dir, w = world(), checkOnlyEnvs = new Set(), dispatch, onRun, fcm, sleep, logger, now } = {}
+  {
+    dir,
+    w = world(),
+    checkOnlyEnvs = new Set(),
+    dispatch,
+    onRun,
+    fcm,
+    sleep,
+    logger,
+    now,
+    checkEverySeconds,
+  } = {}
 ) {
   if (!dir) {
     dir = mkdtempSync(join(tmpdir(), 'arcane-poller-'));
@@ -111,6 +122,7 @@ function setup(
     logger: logger || silent,
     ...(sleep ? { sleep } : {}),
     ...(now ? { now } : {}),
+    ...(checkEverySeconds ? { checkEverySeconds } : {}),
   });
   const files = () => ({
     state: existsSync(statePath) ? readFileSync(statePath, 'utf8') : null,
@@ -1564,5 +1576,190 @@ test('deleting only arcane-held-back.json is silent while latest is unchanged', 
   assert.deepEqual(
     (await b.poller.pollOnce()).events.map((e) => e.body),
     ['1 update held back: n8n']
+  );
+});
+
+// Image watcher checks (arcane-check). A check the job runner ran is bound to its run:
+// id image-check-<run>-<attempt>, batchId <run>. A Check Updates button press is not.
+const CHECK = 'image_update_check';
+const boundCheck = (run, status, startedAt, endedAt = startedAt, extra = {}) =>
+  act(`image-check-${run}-1`, CHECK, status, startedAt, endedAt, { batchId: run, ...extra });
+const buttonCheck = (uuid, status, startedAt, endedAt = startedAt) =>
+  act(`image-check-${uuid}`, CHECK, status, startedAt, endedAt);
+const summary = (n, m) => `Image update check completed: ${n} checked, ${m} errors`;
+
+test('image checks: first sight is a silent baseline; each new scheduled check records arcane-check', async (t) => {
+  const h = setup(t);
+  const key = `${PI1}:${CHECK}`;
+  h.s.activities[key] = [
+    boundCheck('r1', 'success', '2026-10-17T18:00:00Z', '2026-10-17T18:00:30Z'),
+    boundCheck('r0', 'success', '2026-10-17T12:00:00Z', '2026-10-17T12:00:30Z'),
+  ];
+  assert.deepEqual(await h.poller.pollOnce(), { events: [], errors: [] });
+  assert.deepEqual(h.runs, []);
+  assert.equal(h.stateStore.isChecksKnown('pi-1'), true);
+  assert.equal(h.stateStore.isChecksKnown('vm-101'), true, 'no checks yet still baselines');
+  assert.equal(h.stateStore.hasCheck('pi-1', 'image-check-r1-1'), true);
+
+  // The 00:00 slot of POLLING "0 0 */6 * * *": no job run exists for it.
+  h.s.activities[key].unshift(boundCheck('r2', 'success', '2026-10-18T00:00:00Z', '2026-10-18T00:00:30Z'));
+  const r = await h.poller.pollOnce();
+  assert.deepEqual(r, { events: [], errors: [] }, 'a check pushes nothing');
+  assert.deepEqual(h.runs, [
+    { job: 'arcane-check', node: 'pi-1', status: 'success', expected_every_seconds: 21600 },
+  ]);
+  assert.ok(h.s.calls.includes(`activities:${PI1}:job_run`), 'job runs read to judge the check');
+  assert.deepEqual(await h.poller.pollOnce(), { events: [], errors: [] });
+  assert.equal(h.runs.length, 1, 'once');
+  // Checks keep their own seen list: update and prune ids are never pushed out by them.
+  const env = JSON.parse(h.files().state).envs['pi-1'];
+  assert.deepEqual(env.checks, ['image-check-r0-1', 'image-check-r1-1', 'image-check-r2-1']);
+  assert.deepEqual(env.activities, []);
+});
+
+test('image checks: the interval follows ARCANE_IMAGE_CHECK_HOURS', async (t) => {
+  const h = setup(t, { checkEverySeconds: 3600 });
+  await h.poller.pollOnce();
+  h.s.activities[`${VM103}:${CHECK}`] = [boundCheck('r1', 'success', '2026-10-18T01:00:00Z')];
+  h.s.activities[`${VM103}:system_prune`].unshift(
+    scheduled(h.s, VM103, act('sp-x', 'system_prune', 'success', '2026-10-18T04:00:00Z'))
+  );
+  await h.poller.pollOnce();
+  assert.deepEqual(
+    h.runs.map((x) => [x.job, x.expected_every_seconds]),
+    [
+      ['arcane-prune', 86400],
+      ['arcane-check', 3600],
+    ]
+  );
+});
+
+test('image checks: the Check Updates button and the Jobs page Run now record nothing', async (t) => {
+  const logs = [];
+  const logger = { ...silent, info: (fields, msg) => logs.push(msg) };
+  const h = setup(t, { logger });
+  await h.poller.pollOnce();
+  const key = `${VM101}:${CHECK}`;
+  h.s.activities[key] = [
+    // The watcher at startup: bound, no job run. Counts like the schedule.
+    boundCheck('w1', 'success', '2026-10-18T00:59:09Z', '2026-10-18T01:00:05Z'),
+    // Run now, here or from the manager to an agent: its job run shares the batch, trigger manual.
+    boundCheck('m1', 'success', '2026-10-18T00:30:00Z', '2026-10-18T00:30:20Z'),
+    // The Check Updates button: unbound.
+    buttonCheck('01a00000-0000-7000-8000-0000000000b1', 'success', '2026-10-17T22:14:10Z', '2026-10-17T22:15:04Z'),
+  ];
+  h.s.activities[`${VM101}:job_run`] = [
+    {
+      id: 'jr-m1',
+      type: 'job_run',
+      status: 'success',
+      batchId: 'm1',
+      startedAt: '2026-10-18T00:29:59Z',
+      endedAt: '2026-10-18T00:30:21Z',
+      metadata: { trigger: 'manual', domainActivityId: '' },
+    },
+  ];
+  const r = await h.poller.pollOnce();
+  assert.deepEqual(r, { events: [], errors: [] });
+  assert.deepEqual(
+    h.runs.map((x) => `${x.job}:${x.node}:${x.status}`),
+    ['arcane-check:vm-101:success']
+  );
+  for (const id of ['image-check-w1-1', 'image-check-m1-1', 'image-check-01a00000-0000-7000-8000-0000000000b1']) {
+    assert.equal(h.stateStore.hasCheck('vm-101', id), true, id);
+  }
+  assert.equal(logs.filter((m) => /not started by the scheduler/.test(m)).length, 2);
+  await h.poller.pollOnce();
+  assert.equal(h.runs.length, 1);
+});
+
+test('image checks: some images erroring is a success; nothing checked is a failure', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce();
+  const key = `${PI2}:${CHECK}`;
+  h.s.activities[key] = [
+    boundCheck('run', 'running', '2026-10-18T12:00:00Z', null),
+    boundCheck('all', 'failed', '2026-10-18T06:00:00Z', '2026-10-18T06:00:09Z', {
+      latestMessage: summary(3, 3),
+      error: summary(3, 3),
+    }),
+    boundCheck('some', 'failed', '2026-10-18T00:00:00Z', '2026-10-18T00:00:06Z', {
+      latestMessage: summary(34, 2),
+      error: summary(34, 2),
+    }),
+  ];
+  await h.poller.pollOnce();
+  assert.deepEqual(
+    h.runs.map((x) => [x.status, x.error]),
+    [
+      ['success', undefined],
+      ['failure', summary(3, 3)],
+    ]
+  );
+  assert.equal(h.stateStore.hasCheck('pi-2', 'image-check-run-1'), false, 'running: retried later');
+  h.s.activities[key][0] = boundCheck('run', 'success', '2026-10-18T12:00:00Z', '2026-10-18T12:00:40Z');
+  await h.poller.pollOnce();
+  assert.deepEqual(h.runs.at(-1), {
+    job: 'arcane-check',
+    node: 'pi-2',
+    status: 'success',
+    expected_every_seconds: 21600,
+  });
+  assert.equal(h.runs.length, 3);
+});
+
+test('image checks: a state file from before them replays no old check', async (t) => {
+  const h1 = setup(t);
+  const key = `${PI1}:${CHECK}`;
+  h1.s.activities[key] = [
+    boundCheck('r1', 'success', '2026-10-17T18:00:00Z'),
+    boundCheck('r0', 'success', '2026-10-17T12:00:00Z'),
+  ];
+  await h1.poller.pollOnce();
+  // As JagHelm 2.1.0 wrote it: environments known, no checks.
+  const file = JSON.parse(readFileSync(h1.statePath, 'utf8'));
+  for (const env of Object.values(file.envs)) delete env.checks;
+  writeFileSync(h1.statePath, JSON.stringify(file));
+
+  const h = setup(t, { dir: h1.dir, w: h1.w });
+  assert.equal(h.stateStore.isKnownEnv('pi-1'), true);
+  assert.equal(h.stateStore.isChecksKnown('pi-1'), false);
+  assert.deepEqual(await h.poller.pollOnce(), { events: [], errors: [] });
+  assert.deepEqual(h.runs, [], 'the listed checks are the baseline');
+  assert.equal(h.s.calls.includes(`activities:${PI1}:job_run`), false);
+  assert.equal(h.stateStore.isChecksKnown('pi-1'), true);
+
+  h.s.activities[key].unshift(boundCheck('r2', 'success', '2026-10-18T00:00:00Z'));
+  await h.poller.pollOnce();
+  assert.deepEqual(
+    h.runs.map((x) => `${x.job}:${x.node}`),
+    ['arcane-check:pi-1']
+  );
+});
+
+test('image checks: a failed check read leaves the environment unchanged', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce();
+  const key = `${VM103}:${CHECK}`;
+  h.s.activities[key] = [boundCheck('r1', 'success', '2026-10-18T00:00:00Z')];
+  h.s.containers[VM103] = []; // would clear immich-server
+  h.s.fail[`activities:${VM103}:${CHECK}`] = new ArcaneError('Arcane HTTP 403 for /x', 403);
+  const r = await h.poller.pollOnce();
+  assert.deepEqual(r.events, []);
+  assert.equal(r.errors.length, 1);
+  assert.match(r.errors[0], /^vm-103: /);
+  assert.deepEqual(names(h.heldBackStore.getNode('vm-103')), ['immich-server']);
+  assert.equal(h.stateStore.hasCheck('vm-103', 'image-check-r1-1'), false);
+  assert.equal(h.runs.length, 0);
+
+  delete h.s.fail[`activities:${VM103}:${CHECK}`];
+  const ok = await h.poller.pollOnce();
+  assert.deepEqual(
+    ok.events.map((e) => e.type),
+    ['arcane_cleared']
+  );
+  assert.deepEqual(
+    h.runs.map((x) => x.job),
+    ['arcane-check']
   );
 });

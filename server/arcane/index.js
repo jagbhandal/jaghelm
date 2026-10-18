@@ -44,6 +44,7 @@ export function startArcane({ env = process.env, demo = isDemoMode(), deps = {} 
     pushStore: getPushStore(),
     fcm: fcmModule,
     checkOnlyEnvs: cfg.checkOnlyEnvs,
+    checkEverySeconds: cfg.checkEverySeconds,
     logger: log,
   });
   poller.start({ pollMs: cfg.pollMs, releaseMs: cfg.releaseMs });
