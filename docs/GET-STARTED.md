@@ -357,7 +357,7 @@ JagHelm can pull data from your self-hosted apps and display it on service cards
 
 1. Click the gear icon to open Settings
 2. Go to **Integrations**
-3. Browse the preset gallery — 42 presets available including AdGuard, Pi-hole, Plex, Jellyfin, Sonarr, Radarr, Grafana, Portainer, and more
+3. Browse the preset gallery — AdGuard, Pi-hole, Plex, Jellyfin, Sonarr, Radarr, Grafana, Portainer, and dozens more
 4. Click a preset, enter the URL and credentials for your instance
 5. Click **Test** to verify the connection works
 6. Click **Save** — credentials are encrypted with AES-256-GCM and stored securely

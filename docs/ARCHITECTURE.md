@@ -2,7 +2,7 @@
 
 JagHelm is a self-hosted homelab dashboard whose differentiator is **live data,
 not just links**: it renders real Prometheus / cAdvisor metrics and pulls live
-state from 42 service integrations, laid out on a custom drag-and-resize grid.
+state from 40+ service integrations, laid out on a custom drag-and-resize grid.
 It is **single-user, single-instance, and file-backed** (no database), and ships
 as a Docker image to a homelab.
 
@@ -48,7 +48,7 @@ flowchart LR
     CADV["cAdvisor"]
     KUMA["Uptime Kuma"]
     NUT["NUT / UPS"]
-    INT["42 integration<br/>upstreams"]
+    INT["40+ integration<br/>upstreams"]
   end
 
   UI -->|"fetch + token header"| API
@@ -157,7 +157,7 @@ flowchart TD
   subgraph Loop["refresh loop (~30s)"]
     D["discovery.js<br/>Prometheus + cAdvisor"]
     M["monitors.js<br/>Uptime Kuma match"]
-    IE["integration engine<br/>(42 presets)"]
+    IE["integration engine<br/>(40+ presets)"]
   end
   Loop --> C["cache.js (ETag-tagged)"]
   REQ["GET /api/services<br/>or /api/integrations"] --> C
@@ -179,7 +179,7 @@ in the app). Setup: [arcane/SETUP.md](arcane/SETUP.md).
 
 ### 4.3 Integration engine
 
-The differentiator. A declarative **preset** (`integrations/presets/*.js`, 41 of
+The differentiator. A declarative **preset** (`integrations/presets/*.js`, 40+ of
 them) describes how to talk to one app: endpoints, auth mode, and which JSON
 paths map to which display fields. The registry loads every `.js` file in
 `presets/` except `*.test.js`, so helpers the presets share live in `lib/`
@@ -362,20 +362,30 @@ flowchart LR
 
 ## 8. Testing
 
-220 automated tests gate the build:
+Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
+(`build-push.yml`):
 
-- **Backend** (136, `node --test`): the AES-GCM secrets round-trip + tamper, the
-  SSRF guard vectors, credential redaction, the upload allowlist, config
-  schema/copy-on-read (incl. a `SIGKILL`-mid-write chaos test), route contracts,
-  rate limiting, `/health` + `/readyz`, and the pure HelmGrid `gridMath` +
-  service-worker precache injector.
-- **Client** (84, Vitest + jsdom + React Testing Library): NavBar/config-driven
-  rendering, settings primitives, the keyboard grid handle, per-source health
-  banners, overlay/confirm semantics, and the 304-stable data hook.
+- **Backend** (`node --test`, `npm run test:ci`): the AES-GCM secrets round-trip +
+  tamper, the SSRF guard vectors, credential redaction, the upload allowlist,
+  config schema/copy-on-read (incl. a `SIGKILL`-mid-write chaos test), route
+  contracts, rate limiting, `/health` + `/readyz`, and the pure HelmGrid
+  `gridMath` + service-worker precache injector.
+- **Client** (`npm run test:client`, Vitest + jsdom + React Testing Library):
+  NavBar/config-driven rendering, settings primitives, the keyboard grid handle,
+  per-source health banners, overlay/confirm semantics, and the 304-stable data
+  hook.
+- **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
+  push routing and on-device storage.
 - **Repo guards** (`node --test`, `scripts/*.test.mjs`): the deploy runner pin,
   the secret floor (`.gitignore`, tracked templates, the scanner catching a
-  planted key) and its wiring in `check.yml`. Write new repo checks this way, not
-  as shell scripts: `npm test` only collects `*.test.{js,mjs,cjs}`.
+  planted key) and its wiring in `check.yml`, and the docs' preset and test
+  counts (`doc-counts.test.mjs`). Write new repo checks this way, not as shell
+  scripts: `npm test` only collects `*.test.{js,mjs,cjs}`.
+
+`npm run test:ci` also fails a run that passes fewer backend tests than the
+floor in `scripts/test-floor.mjs`, so a silently dropped test is caught. The
+docs give no exact test or preset count, since one goes stale with the next
+change; `doc-counts.test.mjs` fails on one.
 
 ## 9. Key decisions (ADRs)
 

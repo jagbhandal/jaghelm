@@ -11,7 +11,7 @@ import ConfigView from './ConfigView.jsx';
  *
  * Three views:
  *   1. Home    — list of configured integrations + "Add Integration" button
- *   2. Gallery — browse 42 presets by category, search/filter
+ *   2. Gallery — browse the presets by category, search/filter
  *   3. Config  — form for URL, credentials, test, save (works for both presets and custom)
  *
  * This file is the orchestrator: it owns top-level navigation state, wires the

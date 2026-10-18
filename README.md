@@ -6,7 +6,7 @@
 <p align="center">
   <b>Live data, not just links.</b><br>
   A self-hosted homelab dashboard that reads real Prometheus &amp; cAdvisor metrics,
-  service health, and<br>42 app integrations that call your services — behind a layout you drag and resize yourself.
+  service health, and<br>40+ app integrations that call your services — behind a layout you drag and resize yourself.
 </p>
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/ghcr.io-jagbhandal%2Fjaghelm-blue?style=flat-square&logo=github" alt="GHCR">
 </p>
 <p align="center">
-  <img src="public/dashboard.jpg" alt="JagHelm — live homelab dashboard with real Prometheus metrics and 42 service integrations on a drag-and-resize grid">
+  <img src="public/dashboard.jpg" alt="JagHelm — live homelab dashboard with real Prometheus metrics and 40+ service integrations on a drag-and-resize grid">
 </p>
 
 ## Try it in 10 seconds — no Prometheus needed
@@ -44,8 +44,8 @@ data however you like.
   come straight from Prometheus + node_exporter; per-container CPU/MEM/network
   comes from cAdvisor. These are the same time-series your Grafana reads — not a
   reachability check.
-- **42 integrations that call your services.** AdGuard queries blocked, Sonarr
-  queue, Proxmox node load, NPM proxy count, and 38 more — each preset knows the
+- **40+ integrations that call your services.** AdGuard queries blocked, Sonarr
+  queue, Proxmox node load, NPM proxy count, and dozens more — each preset knows the
   endpoint, auth shape, and formatting, so a card shows the actual number, not a
   link to go find it.
 - **A grid you actually arrange.** A custom drag-resize layout engine (HelmGrid)
@@ -62,7 +62,7 @@ probably will. The point of this table is *positioning*, not a scoreboard.
 | Primary model | Live infra **metrics** + integrations | Links + widgets | Links + status |
 | Node metrics (CPU/RAM/disk/temp) | ✅ via Prometheus + node_exporter | Partial (widgets) | ❌ |
 | Per-container stats (cAdvisor) | ✅ | ❌ | ❌ |
-| App integrations | 42 presets + custom builder | Many widgets | Status checks + some widgets |
+| App integrations | 40+ presets + custom builder | Many widgets | Status checks + some widgets |
 | Layout | Drag-resize grid (snap/auto-grow) | Config-defined columns | Config-defined sections |
 | Config | UI **and** YAML/JSON on disk | YAML files | YAML / UI editor |
 | Auth | Single-user (built-in or proxy) | Proxy-oriented | Multiple options |
@@ -217,9 +217,9 @@ Real-time CPU, RAM, disk, temperature, and uptime per node, pulled from Promethe
  
 CPU, memory, network RX/TX for every Docker container via cAdvisor. Service cards show running/down state, ping latency, and 24-hour uptime alongside the resource numbers.
  
-### 42 integration presets + a custom builder
+### 40+ integration presets + a custom builder
  
-Connect AdGuard, Plex, Sonarr, Proxmox, Cloudflare, Vaultwarden, and 36 others through the Settings → Integrations gallery. Each preset has known endpoints, auth shape, and field formatting baked in. Test-before-save catches misconfiguration before credentials hit disk. Custom integrations available for anything not in the gallery — point it at a JSON endpoint, pick paths to extract, save.
+Connect AdGuard, Plex, Sonarr, Proxmox, Cloudflare, Vaultwarden, and dozens more through the Settings → Integrations gallery. Each preset has known endpoints, auth shape, and field formatting baked in. Test-before-save catches misconfiguration before credentials hit disk. Custom integrations available for anything not in the gallery — point it at a JSON endpoint, pick paths to extract, save.
  
 Credentials are encrypted with AES-256-GCM (PBKDF2-derived key from `DASH_SECRET`) before being written to `secrets.json`.
  
@@ -266,7 +266,7 @@ Push notifications are tied to the Firebase project an APK is built with. The pu
 │                                                      │
 │  ┌──────────┐  ┌───────────┐  ┌──────────────────┐  │
 │  │ Config   │  │ Discovery │  │ Integration      │  │
-│  │ services.│  │ Prometheus│  │ 42 presets +     │  │
+│  │ services.│  │ Prometheus│  │ 40+ presets +    │  │
 │  │ yaml     │  │ cAdvisor  │  │ custom builder   │  │
 │  └──────────┘  │ Kuma      │  │                  │  │
 │                └───────────┘  └──────────────────┘  │
