@@ -4,6 +4,10 @@ All notable changes to the JagHelm Android app are documented here. The format i
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-10-18
+
+The update notification toggle is now labelled Updates.
+
 ### Changed
 - The Watchtower notification toggle is now labelled Updates, since it covers every update notification, including Arcane's. The setting itself is unchanged, so older app versions and the server keep working.
 
@@ -34,6 +38,7 @@ First release of the Android app, distributed as a signed APK; builds 1.0.1 to 1
 - Push notifications for service, host, UPS and scheduled-job state changes, with per-category settings and links to the related incident.
 - Overview, Alerts and Infrastructure screens.
 
-[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/mobile-v1.1.0...HEAD
+[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/mobile-v1.2.0...HEAD
+[1.2.0]: https://github.com/jagbhandal/jaghelm/compare/mobile-v1.1.0...mobile-v1.2.0
 [1.1.0]: https://github.com/jagbhandal/jaghelm/compare/mobile-v1.0.7...mobile-v1.1.0
 [1.0.0]: https://github.com/jagbhandal/jaghelm/tree/mobile-v1.0.0
