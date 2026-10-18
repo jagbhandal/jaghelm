@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": "auto-update-00000000-0000-4000-8000-000000000019-1",
+      "type": "auto_update",
+      "status": "failed",
+      "startedAt": "2026-10-18T00:28:30.23632262Z",
+      "endedAt": "2026-10-18T00:28:48.687022649Z",
+      "batchId": "00000000-0000-4000-8000-000000000019",
+      "error": "redacted"
+    }
+  ]
+}

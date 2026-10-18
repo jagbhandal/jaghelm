@@ -5,10 +5,22 @@
 // images registry.example/img-NN, tags and digests placeholders, edge ids fake UUIDs.
 // Environment names and the Arcane version are real (both public).
 // fixtures/live/ keeps only the responses that had rows: environments, containers (pi-1,
-// the first environment by name with rows), app-version, and one image_update_check
-// activity (vm-101's, projected with the same projectFixture). auto_update, system_prune,
-// job_run and updater history were empty on every environment (auto-update and prune were
-// still off), so those shapes stay hand-built in fixtures/ until a real run produces them.
+// the first environment by name with rows) and app-version. auto_update, system_prune,
+// job_run and updater history were empty on every environment then (auto-update and prune
+// were still off). Updater history and system_prune stay hand-built in fixtures/ until
+// they are recorded.
+//
+// Image watcher checks, recorded 2026-10-18 after the flip (projected with projectFixture
+// and one anonymizer across these files, so a batch still matches its job run):
+//   - activities-image_update_check.json: vm-101, six checks that each failed on 2 of ~34
+//     images, one of them a Check Updates button press (unbound);
+//   - activities-image_update_check-vm-103.json: vm-103, four successful checks: the 00:00
+//     POLLING slot, two watcher runs at container start, one button press;
+//   - activities-job_run.json and activities-auto_update.json: vm-101's only job run, a
+//     manual update run, and the activity it produced (the first live job run shape).
+// No job_run exists for a scheduled or watcher check: Arcane writes one for image-polling
+// only on a manual trigger. The Arcane logs (Loki) showed each off-slot bound check 2 s
+// after the watcher's "metadata backfill completed" at container start.
 //
 // What the live data showed that the hand-built fixtures did not:
 //   - container names carry no leading "/";
@@ -34,6 +46,9 @@ import {
   heldBackTransitions,
   isTerminal,
   summarizeUpdateRun,
+  runOrigin,
+  checkOrigin,
+  summarizeCheckRun,
 } from './derive.js';
 import { createArcanePoller } from './poller.js';
 import { createArcaneStateStore } from './stateStore.js';
@@ -277,4 +292,90 @@ test('poller over the live snapshot: silent baseline, silent check-only flip, th
   );
   assert.deepEqual(pushed, events);
   assert.deepEqual(runs, []);
+});
+
+test('live image checks: schedule and watcher runs are bound, a button press is not', () => {
+  const rows = live('activities-image_update_check-vm-103').data;
+  assert.deepEqual(
+    rows.map((a) => [a.startedAt.slice(11, 19), a.status, checkOrigin(a, [])]),
+    [
+      ['00:59:09', 'success', 'scheduled'], // watcher, container start
+      ['00:00:00', 'success', 'scheduled'], // POLLING 0 0 */6 * * *
+      ['22:14:10', 'success', 'manual'], // Check Updates button: image-check-<uuid>, no batch
+      ['21:09:24', 'success', 'scheduled'], // watcher, container start
+    ]
+  );
+  for (const a of rows) {
+    assert.equal(a.type, 'image_update_check');
+    assert.deepEqual(summarizeCheckRun(a), { id: a.id, cronStatus: 'success', error: '' });
+    if (a.batchId) assert.equal(a.id, `image-check-${a.batchId}-1`);
+    else assert.match(a.id, /^image-check-[0-9a-f-]{36}$/);
+  }
+});
+
+test('live image checks that failed on some images are successful arcane-check runs', () => {
+  const checks = live('activities-image_update_check').data;
+  const jobRuns = live('activities-job_run').data;
+  assert.equal(checks.length, 6);
+  for (const a of checks) {
+    assert.equal(a.status, 'failed');
+    assert.match(a.latestMessage, /^Image update check completed: \d+ checked, 2 errors$/);
+    assert.equal(a.error, a.latestMessage, 'Arcane copies the summary into error');
+    assert.equal(summarizeCheckRun(a).cronStatus, 'success');
+  }
+  // vm-101's one job run belongs to an update run: it makes no check manual.
+  assert.deepEqual(
+    checks.map((a) => checkOrigin(a, jobRuns)),
+    ['scheduled', 'scheduled', 'scheduled', 'manual', 'scheduled', 'scheduled']
+  );
+});
+
+test('live job run: a manual update run links its activity and is judged manual', () => {
+  const [jr] = live('activities-job_run').data;
+  const [run] = live('activities-auto_update').data;
+  assert.equal(jr.type, 'job_run');
+  assert.equal(jr.metadata.trigger, 'manual');
+  assert.equal(jr.metadata.domainActivityId, run.id);
+  assert.equal(jr.batchId, run.batchId);
+  assert.equal(run.id, `auto-update-${run.batchId}-1`);
+  assert.equal(runOrigin(run, [jr]), 'manual');
+  assert.equal(runOrigin(run, []), 'manual');
+});
+
+test('poller over the live vm-103 checks: baseline, then one arcane-check run per automatic check', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'arcane-live-chk-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const envs = live('environments').data;
+  const rows = live('activities-image_update_check-vm-103').data;
+  let listed = rows.slice(-1); // only the oldest check exists at first sight
+  const client = {
+    listEnvironments: async () => structuredClone(envs),
+    listContainers: async () => [],
+    listActivities: async (id, type) =>
+      id === '0' && type === 'image_update_check' ? structuredClone(listed) : [],
+    updaterHistory: async () => [],
+    appVersion: async () => live('app-version'),
+  };
+  const runs = [];
+  const poller = createArcanePoller({
+    client,
+    stateStore: createArcaneStateStore({ path: join(dir, 'arcane-state.json') }),
+    heldBackStore: createHeldBackStore({ path: join(dir, 'arcane-held-back.json') }),
+    recordRun: (r) => runs.push(r),
+    dispatch: async () => {},
+    pushStore: null,
+    fcm: null,
+    checkOnlyEnvs: new Set(),
+    checkEverySeconds: 21600,
+    logger: silent,
+  });
+  assert.deepEqual(await poller.pollOnce(), { events: [], errors: [] });
+  assert.deepEqual(runs, []);
+  listed = rows;
+  assert.deepEqual(await poller.pollOnce(), { events: [], errors: [] });
+  // 00:00 (schedule) and 00:59 (watcher); the 22:14 button press records nothing.
+  assert.deepEqual(runs, [
+    { job: 'arcane-check', node: 'vm-103', status: 'success', expected_every_seconds: 21600 },
+    { job: 'arcane-check', node: 'vm-103', status: 'success', expected_every_seconds: 21600 },
+  ]);
 });

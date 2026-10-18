@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   envKey, envHealth, heldBackSet, isTerminal, summarizeUpdateRun, summarizePruneRun,
   pendingMap, heldBackTransitions, runOrigin, containerState, nextUpdateState,
+  checkOrigin, summarizeCheckRun,
 } from './derive.js';
 
 const fx = (n) => JSON.parse(readFileSync(new URL(`./fixtures/${n}.json`, import.meta.url), 'utf8')).data;
@@ -213,4 +214,58 @@ test('nextUpdateState carries held-back and pending entries through an unknown s
   const fresh = nextUpdateState({ containers: [c('err', { error: 'x' })], checkOnly: true, prevHeld, prevPending: null });
   assert.deepEqual(fresh.held.map((e) => e.name), ['err']);
   assert.deepEqual([...fresh.pending], []);
+});
+
+test('checkOrigin: a bound check is scheduled unless a job run says otherwise', () => {
+  const B = '0f3c1a2e-5b6d-4e7f-8a9b-0000000000c1';
+  const bound = { id: `image-check-${B}-1`, type: 'image_update_check', batchId: B };
+  const jr = (trigger, extra = {}) => ({
+    id: 'jr', type: 'job_run', status: 'success', batchId: 'other', metadata: { trigger }, ...extra,
+  });
+  // Scheduled and watcher runs of image-polling have no job_run at all.
+  assert.equal(checkOrigin(bound, []), 'scheduled');
+  assert.equal(checkOrigin(bound, undefined), 'scheduled');
+  // An unrelated job run (another batch, another activity) changes nothing.
+  assert.equal(checkOrigin(bound, [jr('manual', { metadata: { trigger: 'manual', domainActivityId: 'x' } })]), 'scheduled');
+  // Jobs-page "Run now", here or delivered to an agent: a job run with this batch, trigger manual.
+  assert.equal(checkOrigin(bound, [jr('manual', { batchId: B, status: 'running' })]), 'manual');
+  assert.equal(checkOrigin(bound, [jr('manual', { metadata: { trigger: 'manual', domainActivityId: bound.id } })]), 'manual');
+  // A job run naming a scheduler trigger keeps it scheduled.
+  assert.equal(checkOrigin(bound, [jr('scheduled', { batchId: B })]), 'scheduled');
+  assert.equal(checkOrigin(bound, [jr('recovery', { batchId: B })]), 'scheduled');
+  // Only job_run rows count.
+  assert.equal(checkOrigin(bound, [{ ...jr('manual', { batchId: B }), type: 'auto_update' }]), 'scheduled');
+});
+
+test('checkOrigin: an unbound check (Check Updates button, API) is manual', () => {
+  const B = '0f3c1a2e-5b6d-4e7f-8a9b-0000000000c2';
+  // Unbound: image-check-<uuid>, no batchId.
+  assert.equal(checkOrigin({ id: 'image-check-01a00000-0000-7000-8000-0000000000b1' }, []), 'manual');
+  // A batchId that is not the one in the id, or an id of another shape.
+  assert.equal(checkOrigin({ id: `image-check-${B}-1`, batchId: 'client-batch' }, []), 'manual');
+  assert.equal(checkOrigin({ id: `image-check-${B}`, batchId: B }, []), 'manual');
+  assert.equal(checkOrigin({ id: `auto-update-${B}-1`, batchId: B }, []), 'manual');
+  assert.equal(checkOrigin({}, []), 'manual');
+  assert.equal(checkOrigin(null, []), 'manual');
+});
+
+test('summarizeCheckRun: a failure only when nothing came of the check', () => {
+  const sum = (n, m) => `Image update check completed: ${n} checked, ${m} errors`;
+  const ok = { cronStatus: 'success', error: '' };
+  const pick = ({ cronStatus, error }) => ({ cronStatus, error });
+  assert.deepEqual(pick(summarizeCheckRun({ id: 'a', status: 'success', latestMessage: sum(39, 0) })), ok);
+  assert.deepEqual(pick(summarizeCheckRun({ id: 'a', status: 'cancelled' })), ok);
+  // Some images errored: Arcane marks the check failed, but it ran.
+  assert.deepEqual(pick(summarizeCheckRun({ id: 'a', status: 'failed', latestMessage: sum(34, 2), error: sum(34, 2) })), ok);
+  assert.deepEqual(pick(summarizeCheckRun({ id: 'a', status: 'failed', error: `${sum(5, 0)}, 1 tag policy errors` })), ok);
+  // Every image errored, or the check failed before its summary.
+  assert.deepEqual(pick(summarizeCheckRun({ id: 'a', status: 'failed', latestMessage: sum(3, 3), error: sum(3, 3) })), {
+    cronStatus: 'failure', error: sum(3, 3),
+  });
+  assert.deepEqual(pick(summarizeCheckRun({ id: 'a', status: 'failed', error: 'Docker unavailable' })), {
+    cronStatus: 'failure', error: 'Docker unavailable',
+  });
+  assert.deepEqual(pick(summarizeCheckRun({ id: 'a', status: 'failed' })), { cronStatus: 'failure', error: '' });
+  assert.equal(summarizeCheckRun({ id: 'a', status: 'failed', error: 'e'.repeat(5000) }).error.length, 2048);
+  assert.equal(summarizeCheckRun({ id: 'x', status: 'success' }).id, 'x');
 });

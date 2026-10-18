@@ -2,13 +2,63 @@
   "success": true,
   "data": [
     {
-      "id": "image-check-00000000-0000-4000-8000-000000000004-1",
+      "id": "image-check-00000000-0000-4000-8000-000000000012-1",
+      "type": "image_update_check",
+      "status": "failed",
+      "startedAt": "2026-10-18T01:36:59.32937287Z",
+      "endedAt": "2026-10-18T01:37:01.976577727Z",
+      "batchId": "00000000-0000-4000-8000-000000000012",
+      "error": "Image update check completed: 34 checked, 2 errors",
+      "latestMessage": "Image update check completed: 34 checked, 2 errors"
+    },
+    {
+      "id": "image-check-00000000-0000-4000-8000-000000000013-1",
+      "type": "image_update_check",
+      "status": "failed",
+      "startedAt": "2026-10-18T00:42:20.916238708Z",
+      "endedAt": "2026-10-18T00:42:24.685179402Z",
+      "batchId": "00000000-0000-4000-8000-000000000013",
+      "error": "Image update check completed: 34 checked, 2 errors",
+      "latestMessage": "Image update check completed: 34 checked, 2 errors"
+    },
+    {
+      "id": "image-check-00000000-0000-4000-8000-000000000014-1",
+      "type": "image_update_check",
+      "status": "failed",
+      "startedAt": "2026-10-18T00:25:46.681272203Z",
+      "endedAt": "2026-10-18T00:25:50.44647365Z",
+      "batchId": "00000000-0000-4000-8000-000000000014",
+      "error": "Image update check completed: 34 checked, 2 errors",
+      "latestMessage": "Image update check completed: 34 checked, 2 errors"
+    },
+    {
+      "id": "image-check-00000000-0000-4000-8000-000000000015",
+      "type": "image_update_check",
+      "status": "failed",
+      "startedAt": "2026-10-18T00:19:20.544393442Z",
+      "endedAt": "2026-10-18T00:19:24.211961324Z",
+      "error": "Image update check completed: 34 checked, 2 errors",
+      "latestMessage": "Image update check completed: 34 checked, 2 errors"
+    },
+    {
+      "id": "image-check-00000000-0000-4000-8000-000000000016-1",
+      "type": "image_update_check",
+      "status": "failed",
+      "startedAt": "2026-10-18T00:00:00.069174381Z",
+      "endedAt": "2026-10-18T00:00:06.056487942Z",
+      "batchId": "00000000-0000-4000-8000-000000000016",
+      "error": "Image update check completed: 33 checked, 2 errors",
+      "latestMessage": "Image update check completed: 33 checked, 2 errors"
+    },
+    {
+      "id": "image-check-00000000-0000-4000-8000-000000000017-1",
       "type": "image_update_check",
       "status": "failed",
       "startedAt": "2026-10-17T21:44:12.985876668Z",
       "endedAt": "2026-10-17T21:44:16.358413535Z",
-      "batchId": "00000000-0000-4000-8000-000000000004",
-      "error": "redacted"
+      "batchId": "00000000-0000-4000-8000-000000000017",
+      "error": "Image update check completed: 33 checked, 2 errors",
+      "latestMessage": "Image update check completed: 33 checked, 2 errors"
     }
   ]
 }

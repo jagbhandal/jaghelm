@@ -16,6 +16,10 @@ function intOr(raw, dflt, min) {
 
 const timerMs = (ms) => Math.min(ms, MAX_TIMER_MS);
 
+// Arcane's image watcher schedule (its POLLING setting), as the arcane-check job's
+// expected interval. Capped at 31 days, the longest interval the cron store accepts.
+const MAX_IMAGE_CHECK_HOURS = 744;
+
 export function readArcaneConfig(env = process.env, { logger } = {}) {
   const url = String(env.ARCANE_URL || '').trim().replace(/\/+$/, '');
   const apiKey = String(env.ARCANE_API_KEY || '').trim();
@@ -27,7 +31,9 @@ export function readArcaneConfig(env = process.env, { logger } = {}) {
   );
   const pollMs = timerMs(intOr(env.ARCANE_POLL_SECONDS, 300, 60) * 1000);
   const releaseMs = timerMs(intOr(env.ARCANE_RELEASE_CHECK_HOURS, 6, 1) * 3600 * 1000);
-  const shared = { checkOnlyEnvs, pollMs, releaseMs };
+  const checkEverySeconds =
+    Math.min(intOr(env.ARCANE_IMAGE_CHECK_HOURS, 6, 1), MAX_IMAGE_CHECK_HOURS) * 3600;
+  const shared = { checkOnlyEnvs, pollMs, releaseMs, checkEverySeconds };
   // Credentials in the URL would leak through any error path; refuse them.
   if (/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i.test(url)) {
     (logger || createLogger('arcane')).warn(

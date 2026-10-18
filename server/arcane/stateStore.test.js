@@ -399,3 +399,73 @@ test('awaiting runs are sanitised and bounded', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('image checks: silent baseline, then seen ids, kept apart from activities', () => {
+  const { path, dir } = tmp();
+  try {
+    const a = createArcaneStateStore({ path });
+    assert.equal(a.isChecksKnown('pi-1'), false);
+    a.addCheck('pi-1', 'c0'); // before the baseline: nothing to add to
+    assert.equal(a.isChecksKnown('pi-1'), false);
+    assert.equal(a.hasCheck('pi-1', 'c0'), false);
+    a.baselineChecks('pi-1', ['c1', 'c2', 'c1', '', 5]);
+    a.addCheck('pi-1', 'c3');
+    a.baselineChecks('vm-101', []);
+    const b = createArcaneStateStore({ path });
+    assert.equal(b.isChecksKnown('pi-1'), true);
+    assert.equal(b.isChecksKnown('vm-101'), true, 'an empty baseline still counts');
+    for (const id of ['c1', 'c2', 'c3']) assert.equal(b.hasCheck('pi-1', id), true, id);
+    assert.equal(b.hasActivity('pi-1', 'c1'), false, 'checks are not activities');
+    assert.equal(b.hasCheck('pi-2', 'c1'), false);
+    const j = JSON.parse(readFileSync(path, 'utf8'));
+    assert.deepEqual(j.envs['pi-1'].checks, ['c1', 'c2', 'c3']);
+    assert.deepEqual(j.envs['vm-101'].checks, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('image checks: a file without them is not baselined; the list is bounded and sanitised', () => {
+  const { path, dir } = tmp();
+  try {
+    writeFileSync(path, JSON.stringify({ envs: {
+      'vm-103': { known: true, agent: null, activities: ['a1'] },
+      'pi-1': { known: true, agent: null, activities: [], checks: 'nope' },
+      'pi-2': { known: true, agent: null, activities: [], checks: [1, '', 'ok', 'ok'] },
+    } }));
+    const s = createArcaneStateStore({ path });
+    assert.equal(s.isKnownEnv('vm-103'), true);
+    assert.equal(s.isChecksKnown('vm-103'), false, 'a 2.1.0 state file');
+    assert.equal(s.isChecksKnown('pi-1'), false);
+    assert.equal(s.isChecksKnown('pi-2'), true);
+    assert.equal(s.hasCheck('pi-2', 'ok'), true);
+    s.baselineChecks('vm-103', []);
+    for (let i = 0; i < 105; i++) s.addCheck('vm-103', `c${i}`);
+    assert.equal(s.hasCheck('vm-103', 'c4'), false, 'oldest evicted past 100');
+    assert.equal(s.hasCheck('vm-103', 'c5'), true);
+    assert.equal(s.hasActivity('vm-103', 'a1'), true, 'activities untouched');
+    const j = JSON.parse(readFileSync(path, 'utf8'));
+    assert.equal(j.envs['vm-103'].checks.length, 100);
+    assert.deepEqual(j.envs['pi-2'].checks, ['ok']);
+    assert.equal('checks' in j.envs['pi-1'], false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('image checks: an unchanged baseline does not rewrite the file', () => {
+  const { path, dir } = tmp();
+  try {
+    const s = createArcaneStateStore({ path });
+    s.baselineChecks('pi-1', ['c1']);
+    const before = readFileSync(path, 'utf8');
+    const old = new Date('2020-01-01T00:00:00Z');
+    utimesSync(path, old, old);
+    s.baselineChecks('pi-1', ['c1']);
+    s.addCheck('pi-1', 'c1');
+    assert.equal(statSync(path).mtimeMs, old.getTime());
+    assert.equal(readFileSync(path, 'utf8'), before);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

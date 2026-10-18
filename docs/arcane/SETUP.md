@@ -20,8 +20,8 @@ JagHelm calls only these endpoints, with the key in the `X-API-Key` header:
 
 - `GET /api/environments`
 - `GET /api/environments/{id}/containers` (all containers, with their update check)
-- `GET /api/environments/{id}/activities` (`auto_update` and `system_prune`, plus `job_run`
-  to tell scheduled runs from manual ones; see §6)
+- `GET /api/environments/{id}/activities` (`auto_update`, `system_prune` and
+  `image_update_check`, plus `job_run` to tell scheduled runs from manual ones; see §6)
 - `GET /api/environments/{id}/updater/history`
 - `GET /api/app-version`
 
@@ -39,6 +39,7 @@ Set these in the JagHelm env file on vm-103 (`/opt/stacks/jaghelm/.env`; the tem
 | `ARCANE_CHECK_ONLY_ENVS` | Comma list of environment names that are check-only (see below). Default empty. |
 | `ARCANE_POLL_SECONDS` | Poll interval. Default 300, minimum 60. |
 | `ARCANE_RELEASE_CHECK_HOURS` | Arcane release check interval. Default 6, minimum 1. |
+| `ARCANE_IMAGE_CHECK_HOURS` | How often Arcane's image watcher checks for updates (its **Polling** schedule), used as the `arcane-check` job's expected interval (§6). Default 6, for a schedule of `0 0 */6 * * *`; minimum 1, maximum 744 (31 days). |
 | `NODE_EXTRA_CA_CERTS` | Path to the manager's CA or self-signed certificate (step 3). |
 
 Both intervals are capped at the timer limit of about 24.8 days (2^31-1 ms), so a very large
@@ -156,6 +157,32 @@ waiting after 30 minutes, or pushed out by more than 50 waiting runs in one envi
 counts as manual (no cron run, one log line). A failed job-run read leaves the waiting runs
 as they are.
 
+### Image watcher checks (`arcane-check`)
+
+Held-back pushes depend on Arcane's image watcher checking the registries, on every
+environment (on check-only environments it is the only thing that looks for updates). So
+each finished `image_update_check` the watcher ran on its own is recorded as a run of the
+cron job `arcane-check` for that environment, with an expected interval of
+`ARCANE_IMAGE_CHECK_HOURS` (default 6 hours). If checks stop, the job goes overdue after the
+interval plus a quarter of it (7.5 hours by default). A check pushes nothing itself.
+
+The watcher runs on its schedule, and also once when its Arcane container starts (and on
+Docker image events, if Arcane's image event watcher is enabled). Through a read-only key
+these look the same, so both count. Manual checks never count: the **Check Updates** button
+(it runs outside the job runner, so its activity carries no run id) and the Jobs page's
+**Run now** for image polling (its `job_run` has trigger `manual`). Arcane writes a `job_run`
+for image polling only when it is started by hand, so a job-runner check without one counts
+as scheduled.
+
+A check is `success` even when Arcane marks it failed because some images could not be
+checked (`Image update check completed: 34 checked, 2 errors`); those containers keep their
+held-back state silently (§5). It is a `failure` only when every image errored or the check
+failed before checking anything; the error text is Arcane's.
+
+The first poll that sees an environment's checks, including the first poll after upgrading
+from 2.1.0, marks the checks already listed as seen without recording them, so the job
+appears after the next check.
+
 ## 7. Keep Arcane away from JagHelm itself
 
 `compose.yaml` labels the JagHelm container `com.getarcaneapp.arcane.updater=false` and
@@ -185,7 +212,8 @@ JagHelm reads (labels, environment variables and everything else are dropped) an
 container names, image references, tags, digests and every id (environment, activity, batch,
 history) become stable placeholders (`ctr-01`, `registry.example/img-01:latest`, fake `sha256:`
 values, fake UUIDs, `id-01`),
-and error text becomes `redacted`. Environment names and the Arcane version are kept.
+and error text becomes `redacted` (an image check's count summary is kept: it names nothing).
+Environment names and the Arcane version are kept.
 Per-environment files come from the first environment (by name) whose response has rows,
 otherwise the first environment. Review the files before committing them anywhere. In the
 JagHelm repository, live recordings belong in `server/arcane/fixtures/live/`; the files
@@ -195,8 +223,8 @@ never record over them.
 ## 9. Files JagHelm keeps
 
 In the data volume: `arcane-state.json` (which environments are baselined, agent down
-counters, recent activity ids, each environment's pending updates, runs waiting on their job
-run, last notified release) and `arcane-held-back.json` (held-back containers per
+counters, recent activity ids, recent image check ids, each environment's pending updates,
+runs waiting on their job run, last notified release) and `arcane-held-back.json` (held-back containers per
 environment). Deleting both makes the next poll a fresh silent baseline. Deleting only
 `arcane-held-back.json` is silent too while each container's latest image is unchanged: the
 pending updates in `arcane-state.json` show the backlog is not news, so the set is rebuilt
@@ -215,7 +243,7 @@ updates in it) would announce every held-back container again.
    moves into the held-back set as a policy-only change (§5), so it is silent: no state
    files to delete, and only a genuinely new image pushes afterwards.
 3. **Rollback** to Watchtower: unset `ARCANE_URL` and recreate the container, so Watchtower is
-   again the only source of update pushes. The `arcane-update` and `arcane-prune` jobs then
-   stop reporting and go overdue after about 30 hours; delete them from the scheduled-jobs
-   dashboard if the rollback lasts. To start again later from a silent baseline, delete both
+   again the only source of update pushes. The `arcane-check` job then stops reporting and
+   goes overdue after about 7.5 hours, and `arcane-update` and `arcane-prune` after about 30
+   hours; delete them from the scheduled-jobs dashboard if the rollback lasts. To start again later from a silent baseline, delete both
    Arcane state files (§9) before setting `ARCANE_URL` again.

@@ -181,6 +181,67 @@ export function runOrigin(activity, jobRuns) {
   return !linked && unfinished ? 'pending' : 'manual';
 }
 
+/*
+ * Who started a finished image_update_check (the image watcher's check). Arcane v2.16.1
+ * runs it in three ways, all with the same activity type:
+ *   - Through the job runner (job "image-polling"): on the POLLING schedule ("scheduled",
+ *     or "recovery" for a late slot), when the watcher wakes on its own (trigger "watcher":
+ *     at startup and, if enabled, on Docker image events), or from the Jobs page's
+ *     "Run now" ("manual"). The workflow instance is bound to the run, so the activity id
+ *     is image-check-<run id>-<attempt> and its batchId is the run id
+ *     (scheduler/flow/flow.go startInstance; scheduler/image_update_watcher.go).
+ *   - Directly, from the Check Updates button or the image-updates API
+ *     (imageupdate/handler.go CheckImages): unbound, id image-check-<uuid>, no batchId.
+ * Only a "manual" image-polling run gets a job_run summary (job/service.go ActivityID); a
+ * scheduled or watcher run has none. A run delivered from the manager to an agent keeps
+ * its run id (job/children/remote/service.go), so its job_run on the manager shares the
+ * batchId from the start, and its trigger is recorded when the job run is created.
+ * So: unbound is manual; bound with a job_run is judged by that job_run's trigger; bound
+ * without one was started by the scheduler or the watcher. The two cannot be told apart
+ * through activities:read, so a watcher run counts as scheduled.
+ */
+const BOUND_CHECK_RE = /^image-check-(.+)-\d+$/;
+
+/** 'scheduled' | 'manual' for a finished image_update_check, given the env's job_run rows. */
+export function checkOrigin(activity, jobRuns) {
+  const id = activity?.id == null ? '' : String(activity.id);
+  const batch = str(activity?.batchId);
+  const m = BOUND_CHECK_RE.exec(id);
+  if (!batch || !m || m[1] !== batch) return 'manual';
+  for (const j of Array.isArray(jobRuns) ? jobRuns : []) {
+    if (j?.type !== 'job_run') continue;
+    const md = j.metadata && typeof j.metadata === 'object' ? j.metadata : {};
+    if (md.domainActivityId === id || j.batchId === batch) {
+      return SCHEDULER_TRIGGERS.has(md.trigger) ? 'scheduled' : 'manual';
+    }
+  }
+  return 'scheduled';
+}
+
+// The check's own summary (imageupdate/service.go finalizeImageCheckInternal). Arcane
+// marks a check failed when any image errored; it reaches this summary even then.
+const CHECK_SUMMARY_RE = /^Image update check completed: (\d+) checked, (\d+) errors\b/;
+
+/**
+ * Cron outcome of a finished image_update_check. Like an update run, a check is a failure
+ * only when nothing came of it: it failed before its summary, or every image errored.
+ * Some images erroring (a registry outage, a private image) is a success; those
+ * containers already keep their held-back state silently (nextUpdateState).
+ */
+export function summarizeCheckRun(activity) {
+  if (activity.status !== 'failed') return { id: activity.id, cronStatus: 'success', error: '' };
+  const m =
+    CHECK_SUMMARY_RE.exec(str(activity.latestMessage)) || CHECK_SUMMARY_RE.exec(str(activity.error));
+  if (m && Number(m[1]) > Number(m[2])) {
+    return { id: activity.id, cronStatus: 'success', error: '' };
+  }
+  return {
+    id: activity.id,
+    cronStatus: 'failure',
+    error: str(activity.error).slice(0, CRON_ERROR_MAX),
+  };
+}
+
 /**
  * Summarise a finished auto_update activity using updater-history rows in its time window:
  * [startedAt, endedAt + 60 s], ending before `until` (the next same-type run's startedAt,
