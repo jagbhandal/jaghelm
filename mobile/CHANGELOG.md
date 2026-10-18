@@ -4,6 +4,9 @@ All notable changes to the JagHelm Android app are documented here. The format i
 
 ## [Unreleased]
 
+### Changed
+- The Watchtower notification toggle is now labelled Updates, since it covers every update notification, including Arcane's. The setting itself is unchanged, so older app versions and the server keep working.
+
 ## [1.1.0] — 2026-10-16
 
 A connection screen when the server can't be reached, overdue scheduled jobs on the Overview, and Watchtower notification settings.

@@ -6,6 +6,9 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- Overdue detection for Arcane's image watcher: each check it runs on its own is recorded as a run of the `arcane-check` scheduled job per environment, which goes overdue when checks stop. The expected interval is `ARCANE_IMAGE_CHECK_HOURS` (default 6); see `docs/arcane/SETUP.md`.
+
 ### Fixed
 - Arcane's short-lived internal helper containers (volume, backup and scan helpers) are no longer discovered, so they no longer appear as grey "unknown" cards or turn a node's health dot yellow after they exit.
 

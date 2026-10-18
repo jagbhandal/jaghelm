@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": "00000000-0000-4000-8000-000000000018",
+      "type": "job_run",
+      "status": "failed",
+      "startedAt": "2026-10-18T00:28:30.194662039Z",
+      "endedAt": "2026-10-18T00:29:00.298613909Z",
+      "batchId": "00000000-0000-4000-8000-000000000019",
+      "error": "redacted",
+      "metadata": {
+        "trigger": "manual",
+        "domainActivityId": "auto-update-00000000-0000-4000-8000-000000000019-1"
+      }
+    }
+  ]
+}

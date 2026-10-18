@@ -1,0 +1,40 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": "image-check-00000000-0000-4000-8000-000000000020-1",
+      "type": "image_update_check",
+      "status": "success",
+      "startedAt": "2026-10-18T00:59:09.96394612Z",
+      "endedAt": "2026-10-18T01:00:05.994502353Z",
+      "batchId": "00000000-0000-4000-8000-000000000020",
+      "latestMessage": "Image update check completed: 39 checked, 0 errors"
+    },
+    {
+      "id": "image-check-00000000-0000-4000-8000-000000000021-1",
+      "type": "image_update_check",
+      "status": "success",
+      "startedAt": "2026-10-18T00:00:00.082044412Z",
+      "endedAt": "2026-10-18T00:01:05.421270627Z",
+      "batchId": "00000000-0000-4000-8000-000000000021",
+      "latestMessage": "Image update check completed: 41 checked, 0 errors"
+    },
+    {
+      "id": "image-check-00000000-0000-4000-8000-000000000022",
+      "type": "image_update_check",
+      "status": "success",
+      "startedAt": "2026-10-17T22:14:10.626790211Z",
+      "endedAt": "2026-10-17T22:15:04.266195808Z",
+      "latestMessage": "Image update check completed: 40 checked, 0 errors"
+    },
+    {
+      "id": "image-check-00000000-0000-4000-8000-000000000023-1",
+      "type": "image_update_check",
+      "status": "success",
+      "startedAt": "2026-10-17T21:09:24.25735448Z",
+      "endedAt": "2026-10-17T21:10:17.79419757Z",
+      "batchId": "00000000-0000-4000-8000-000000000023",
+      "latestMessage": "Image update check completed: 41 checked, 0 errors"
+    }
+  ]
+}

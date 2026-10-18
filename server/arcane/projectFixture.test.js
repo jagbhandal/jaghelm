@@ -160,6 +160,47 @@ test('activity and history error text is redacted like container errors', () => 
   assert.equal(hist[0].error, 'redacted');
 });
 
+test('an image check keeps its count summary; any other text is still redacted', () => {
+  const sum = 'Image update check completed: 34 checked, 2 errors';
+  const acts = projectFixture(
+    'activities',
+    wrap([
+      {
+        id: 'a1',
+        type: 'image_update_check',
+        status: 'failed',
+        startedAt: 't',
+        latestMessage: sum,
+        error: sum,
+      },
+      {
+        id: 'a2',
+        type: 'image_update_check',
+        status: 'failed',
+        startedAt: 't',
+        latestMessage: 'Checking registry.internal.lan/bob/app:1',
+        error: `${sum}: registry.internal.lan`,
+      },
+      {
+        id: 'a3',
+        type: 'image_update_check',
+        status: 'success',
+        startedAt: 't',
+        latestMessage: `${sum}, 1 tag policy errors`,
+      },
+    ])
+  ).data;
+  assert.deepEqual(
+    acts.map((a) => [a.latestMessage, a.error]),
+    [
+      [sum, sum],
+      [undefined, 'redacted'],
+      [`${sum}, 1 tag policy errors`, undefined],
+    ]
+  );
+  assert.equal('latestMessage' in acts[1], false);
+});
+
 test('every id is anonymized; a job run still links to its activity across files', () => {
   const U1 = 'aaaaaaaa-1111-4222-8333-bbbbbbbbbbbb'; // a batch (job run) id
   const U2 = 'cccccccc-4444-4555-8666-dddddddddddd'; // an activity id

@@ -5,19 +5,23 @@
  * baseline, each agent's down-poll counter and alerted flag, the last
  * activity ids seen per environment, each environment's pending map (every
  * container with an update, any tier, name -> latest), the finished runs whose
- * cron decision waits on their job run ("awaiting"), and the last Arcane release
- * notified. Without it a restart would re-announce standing state as new.
+ * cron decision waits on their job run ("awaiting"), the image watcher checks seen
+ * ("checks"), and the last Arcane release notified. Without it a restart would
+ * re-announce standing state as new.
  *
  * Mirrors heldBackStore's idiom: null-prototype maps (environment names are
  * untrusted), a tolerant load() that never throws, and atomicWriteFileSync
  * only when something actually changed.
- * Persisted shape: { envs: { [name]: { known, agent, activities, pending?, awaiting? } },
+ * Persisted shape: { envs: { [name]: { known, agent, activities, pending?, awaiting?, checks? } },
  * release: { notified }, order: string[] }. `order` is true insertion order, since JSON
  * object key order puts integer-like names first; files without it load fine. `pending`
  * ({ [container]: latest }) is absent until first recorded; a file without it loads as
  * "no pending map" for that environment. `awaiting` (a list of
  * { id, batchId, job, cronStatus, error, startedMs, firstSeenMs }) is left out when
- * empty; a file without it has none.
+ * empty; a file without it has none. `checks` (image_update_check ids seen) is kept apart
+ * from `activities` so the watcher's frequent checks never push an update or prune id out
+ * of the seen list; it is absent until the environment's checks are baselined, so a file
+ * from before it baselines them silently instead of recording old checks as cron runs.
  */
 import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
@@ -31,6 +35,7 @@ const DEFAULT_PATH = join(DATA_DIR, 'arcane-state.json');
 
 const MAX_ENVS = 50;
 const MAX_ACTIVITIES = 200;
+const MAX_CHECKS = 100; // ~25 days of 6-hourly checks; the poller reads the newest 20
 const MAX_PENDING = 500; // containers per environment
 // Runs per environment waiting on their job run. The poller evicts (judges manual) beyond it.
 export const MAX_AWAITING = 50;
@@ -106,22 +111,31 @@ function sanitizeAwaiting(list) {
 
 const sameAwaiting = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
+/** Unique non-empty ids, capped in length, newest `max` kept. */
+function sanitizeIds(list, max) {
+  const out = [];
+  const seen = new Set();
+  for (const x of list) {
+    if (!isStr(x)) continue;
+    const id = norm(x);
+    if (!seen.has(id)) { seen.add(id); out.push(id); }
+  }
+  return out.slice(-max);
+}
+
+function newEnv() {
+  return { known: false, agent: null, activities: [], pending: null, awaiting: [], checks: null };
+}
+
 function sanitizeEnv(e) {
-  const rec = { known: false, agent: null, activities: [], pending: null, awaiting: [] };
+  const rec = newEnv();
   if (!e || typeof e !== 'object' || Array.isArray(e)) return rec;
   rec.known = e.known === true;
   rec.agent = sanitizeAgent(e.agent);
-  if (Array.isArray(e.activities)) {
-    const seen = new Set();
-    for (const x of e.activities) {
-      if (!isStr(x)) continue;
-      const id = norm(x);
-      if (!seen.has(id)) { seen.add(id); rec.activities.push(id); }
-    }
-    rec.activities = rec.activities.slice(-MAX_ACTIVITIES);
-  }
+  if (Array.isArray(e.activities)) rec.activities = sanitizeIds(e.activities, MAX_ACTIVITIES);
   rec.pending = sanitizePending(pendingEntries(e.pending));
   rec.awaiting = sanitizeAwaiting(e.awaiting);
+  rec.checks = Array.isArray(e.checks) ? sanitizeIds(e.checks, MAX_CHECKS) : null;
   return rec;
 }
 
@@ -131,6 +145,7 @@ function serializeEnv(rec) {
   // fromEntries defines own properties, so a '__proto__' container stays a plain key.
   if (rec.pending) out.pending = Object.fromEntries(rec.pending);
   if (rec.awaiting.length > 0) out.awaiting = rec.awaiting;
+  if (rec.checks) out.checks = rec.checks;
   return out;
 }
 
@@ -193,7 +208,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
   function ensureEnv(name) {
     let rec = envs.get(name);
     if (rec) return rec;
-    rec = { known: false, agent: null, activities: [], pending: null, awaiting: [] };
+    rec = newEnv();
     envs.set(name, rec);
     for (const k of envs.keys()) {
       if (envs.size <= MAX_ENVS) break;
@@ -271,6 +286,34 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
     save();
   }
 
+  /** Whether the environment's image watcher checks have had their silent baseline. */
+  function isChecksKnown(name) {
+    return Array.isArray(envs.get(name)?.checks);
+  }
+
+  /** Silent baseline: these check ids are seen, and later checks are news. One write. */
+  function baselineChecks(name, ids) {
+    if (!isStr(name)) return;
+    const next = sanitizeIds(Array.isArray(ids) ? ids : [], MAX_CHECKS);
+    const prev = envs.get(name)?.checks;
+    if (prev && prev.length === next.length && prev.every((id, i) => id === next[i])) return;
+    ensureEnv(name).checks = next;
+    save();
+  }
+
+  function hasCheck(name, id) {
+    return isStr(id) && !!envs.get(name)?.checks?.includes(norm(id));
+  }
+
+  /** Mark one check seen. Only after the baseline: before it, there is nothing to add to. */
+  function addCheck(name, id) {
+    if (!isStr(name) || !isStr(id) || !isChecksKnown(name) || hasCheck(name, id)) return;
+    const checks = envs.get(name).checks;
+    checks.push(norm(id));
+    if (checks.length > MAX_CHECKS) checks.splice(0, checks.length - MAX_CHECKS);
+    save();
+  }
+
   function getReleaseNotified() {
     return notified;
   }
@@ -286,6 +329,7 @@ export function createArcaneStateStore({ path = DEFAULT_PATH } = {}) {
   return {
     isKnownEnv, markKnownEnv, getAgent, setAgent,
     hasActivity, addActivity, getPending, setPending, getAwaiting, setAwaiting,
+    isChecksKnown, baselineChecks, hasCheck, addCheck,
     getReleaseNotified, setReleaseNotified,
   };
 }

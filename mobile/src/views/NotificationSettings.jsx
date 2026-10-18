@@ -7,12 +7,14 @@ import { PUSH_TOKEN_KEY } from '../runtimeConfig.js';
 import { logout, forgetDevice } from '../auth/authState.js';
 
 // Plural UI label -> singular pref key (the server prefs schema is singular).
+// 'watchtower' carries every update push (Arcane and the deprecated Watchtower webhook).
+// Only its label changed to "Updates": the key stays, so older apps and the server agree.
 const CATEGORIES = [
   ['service', 'Services'],
   ['host', 'Hosts'],
   ['ups', 'UPS'],
   ['cron', 'Cron'],
-  ['watchtower', 'Watchtower'],
+  ['watchtower', 'Updates'],
 ];
 
 /**

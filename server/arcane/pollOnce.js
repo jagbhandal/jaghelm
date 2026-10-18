@@ -99,6 +99,7 @@ export async function runPollOnce({
     pushStore: null,
     fcm: null,
     checkOnlyEnvs: cfg.checkOnlyEnvs,
+    checkEverySeconds: cfg.checkEverySeconds,
     logger: { debug() {}, info() {}, warn: (...a) => err(JSON.stringify(a[1] ?? a[0])), error: (...a) => err(JSON.stringify(a[1] ?? a[0])) },
   });
 
