@@ -80,6 +80,22 @@ describe('App routing', () => {
     expect(await screen.findByText('LOGIN askUrl=true')).toBeInTheDocument();
     expect(removeItem).toHaveBeenCalledWith('jaghelm-token');
     expect(removeItem).toHaveBeenCalledWith('jaghelm-base-url');
+    expect(setPref).toHaveBeenCalledWith('jaghelm-remember', 'false');
+    expect(setPref).toHaveBeenCalledWith('jaghelm-base-url-present', 'false');
+    expect(setAuthToken).toHaveBeenCalledWith('');
+  });
+
+  it('forgetDevice that fails removing the URL still leaves the app signed out', async () => {
+    removeItem.mockImplementation(async (k) => {
+      if (k === 'jaghelm-base-url') throw new Error('delete failed');
+    });
+    render(<App initial={{ hasUrl: true, hasToken: true }} />);
+    await act(async () => {
+      await expect(forgetDevice()).rejects.toThrow('delete failed');
+    });
+    expect(screen.getByText('LOGIN askUrl=false')).toBeInTheDocument();
+    expect(setPref).toHaveBeenCalledWith('jaghelm-remember', 'false');
+    expect(setPref).not.toHaveBeenCalledWith('jaghelm-base-url-present', 'false');
   });
 
   it('a 401 auth-expired event drops an authed app to re-auth', async () => {
