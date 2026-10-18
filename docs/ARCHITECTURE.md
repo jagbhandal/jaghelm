@@ -201,10 +201,16 @@ Key properties:
   construction -- blocking cloud-metadata IPs, decimal/hex/octal IPv4, and
   IPv4-mapped IPv6, with a `trusted` flag exempting operator infra (Prometheus/
   Kuma) from the strict private-network block.
-- **Credentials stay on their origin.** Redirects are followed in code
+- **Credential headers stay on their origin.** Redirects are followed in code
   (`util/safeFetchCore.js`), and a hop to a different origin (scheme, host or
   port) forwards only `Accept`, `Accept-Encoding`, `Content-Type` and
-  `User-Agent`. Every other header, so every preset's auth header, is dropped.
+  `User-Agent`. Every other header, so every preset's auth header, is dropped
+  and stays dropped for the rest of the chain. The one exception is an
+  `http://` to `https://` upgrade on the same host and port (a reverse proxy's
+  force-SSL), which keeps them because they were just sent to that host. Both
+  cases are logged once per origin pair, with header names and no values.
+  Keys in the URL query string are not covered: see the residual in
+  `docs/security/STRIDE.md` and #224.
 - **Credentials are redacted** (`util/redact.js`) before any error is logged *or*
   returned to the browser -- query-auth presets put the key in the URL, which
   fetch errors would otherwise echo.

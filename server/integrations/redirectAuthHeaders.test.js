@@ -6,17 +6,19 @@
  * extraHeaders, a session preset's tokenHeader for its data calls), so a preset
  * added later is covered without editing this file.
  */
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // Point the secrets store at a scratch dir before anything imports it.
-process.env.JAGHELM_DATA_DIR = mkdtempSync(join(tmpdir(), 'jh-redirect-'));
+const dataDir = mkdtempSync(join(tmpdir(), 'jh-redirect-'));
+process.env.JAGHELM_DATA_DIR = dataDir;
+after(() => rmSync(dataDir, { recursive: true, force: true }));
 const { buildAuthHeaders } = await import('./lib/auth.js');
 const { safeFetch } = await import('./lib/http.js');
 const { testIntegration } = await import('./handler.js');

@@ -139,17 +139,20 @@ test('a same-origin redirect keeps every header, credentials included', async ()
 });
 
 /**
- * Drive fetchSafe against a stubbed global fetch: the first hop answers 302 to
- * `location`, the next 200. Returns the headers each hop was sent. Lets us test
- * origins a local listener can't stand up (https, other hostnames, port 80).
+ * Drive fetchSafe against a stubbed global fetch: hop i answers 302 to
+ * locations[i], the hop after the last one 200. Returns the URL and headers each
+ * hop was sent. Lets us test origins a local listener can't stand up (https,
+ * other hostnames, port 80).
  */
-async function hopsVia(start, location, headers) {
+async function hopsVia(start, locations, headers) {
+  const locs = [].concat(locations);
   const realFetch = globalThis.fetch;
   /** @type {Array<{url: string, headers: Headers}>} */
   const hops = [];
   globalThis.fetch = async (url, init) => {
     hops.push({ url: String(url), headers: new Headers(init.headers) });
-    return hops.length === 1
+    const location = locs[hops.length - 1];
+    return location
       ? new Response(null, { status: 302, headers: { location } })
       : new Response('ok', { status: 200 });
   };
@@ -158,36 +161,143 @@ async function hopsVia(start, location, headers) {
   } finally {
     globalThis.fetch = realFetch;
   }
+  assert.equal(hops.length, locs.length + 1, 'every redirect was followed');
   return hops;
 }
 
+const SVC = 'svc.example.test';
+const CREDS = { 'X-Gotify-Key': 'k1', Authorization: 'Bearer k2', Accept: 'application/json' }; // pragma: allowlist secret
+const hasCreds = (hop) => [hop.headers.get('x-gotify-key'), hop.headers.get('authorization')];
+
 // Origin = scheme + host + port, compared as the WHATWG URL parser normalizes them
-// (lowercase host, default port elided).
-for (const [what, location] of [
-  ['an http -> https upgrade on the same host', 'https://svc.example.test/next'],
-  ['another port on the same host', 'http://svc.example.test:8080/next'],
-  ['another host', 'http://other.example.test/next'],
-  ['a subdomain of the same host', 'http://api.svc.example.test/next'],
+// (lowercase host, default port elided). An origin change drops every header but
+// the allowlisted ones.
+for (const [what, start, location] of [
+  ['another port on the same host', `http://${SVC}/`, `http://${SVC}:8080/next`],
+  ['another host', `http://${SVC}/`, 'http://other.example.test/next'],
+  ['a subdomain of the same host', `http://${SVC}/`, `http://api.${SVC}/next`],
+  ['an https upgrade that adds a port', `http://${SVC}/`, `https://${SVC}:8443/next`],
+  ['an https upgrade that changes the port', `http://${SVC}:8080/`, `https://${SVC}:8443/next`],
+  ['an https upgrade from http on port 443', `http://${SVC}:443/`, `https://${SVC}/next`],
+  ['an https upgrade to another host', `http://${SVC}/`, 'https://other.example.test/next'],
+  ['an https upgrade to a subdomain', `http://${SVC}/`, `https://api.${SVC}/next`],
+  ['an https -> http downgrade on the same host', `https://${SVC}/`, `http://${SVC}/next`],
 ]) {
   test(`origin change: ${what} drops credentials`, async () => {
-    const hops = await hopsVia('http://svc.example.test/', location,
-      { 'X-Gotify-Key': 'k1', Accept: 'application/json' }); // pragma: allowlist secret
-    assert.equal(hops.length, 2);
-    assert.equal(hops[1].url, location);
-    assert.equal(hops[1].headers.get('x-gotify-key'), null);
+    const hops = await hopsVia(start, location, CREDS);
+    assert.equal(hops[1].url, new URL(location, start).href);
+    assert.deepEqual(hasCreds(hops[1]), [null, null]);
     assert.equal(hops[1].headers.get('accept'), 'application/json');
   });
 }
 
-for (const [what, location] of [
-  ['a relative location', '/next'],
-  ['the explicit default port', 'http://svc.example.test:80/next'],
-  ['an upper-case host', 'http://SVC.EXAMPLE.TEST/next'],
+// Same origin keeps every header. So does the one exception: an http -> https
+// upgrade to the same host and port (default ports 80 -> 443, or an explicit
+// port kept), a reverse proxy's force-SSL.
+for (const [what, start, location] of [
+  ['a relative location', `http://${SVC}/`, '/next'],
+  ['the explicit default port', `http://${SVC}/`, `http://${SVC}:80/next`],
+  ['an upper-case host', `http://${SVC}/`, `http://${SVC.toUpperCase()}/next`],
+  ['an http -> https upgrade on the same host', `http://${SVC}/`, `https://${SVC}/next`],
+  ['an https upgrade to the explicit default port', `http://${SVC}/`, `https://${SVC}:443/next`],
+  ['an https upgrade from the explicit default port', `http://${SVC}:80/`, `https://${SVC.toUpperCase()}/next`],
+  ['an https upgrade keeping a non-default port', `http://${SVC}:8443/`, `https://${SVC}:8443/next`],
 ]) {
-  test(`same origin: ${what} keeps credentials`, async () => {
-    const hops = await hopsVia('http://svc.example.test/', location,
-      { 'X-Gotify-Key': 'k1' }); // pragma: allowlist secret
-    assert.equal(hops.length, 2);
-    assert.equal(hops[1].headers.get('x-gotify-key'), 'k1');
+  test(`same origin or same-host upgrade: ${what} keeps credentials`, async () => {
+    const hops = await hopsVia(start, location, CREDS);
+    assert.deepEqual(hasCreds(hops[1]), ['k1', 'Bearer k2']);
   });
 }
+
+// Headers dropped on one hop stay dropped for the rest of the chain: neither a
+// return to the first origin nor the same-host upgrade exception brings them back.
+test('multi-hop: a return to the first origin does not restore dropped headers', async () => {
+  const hops = await hopsVia('http://a.example.test/',
+    ['http://b.example.test/', 'http://a.example.test/'], CREDS);
+  assert.deepEqual(hasCreds(hops[2]), [null, null]);
+});
+
+// The CVE-2024-45336 shape (Go net/http): a same-origin hop after a cross-origin
+// one must not restore what the cross-origin hop dropped.
+test('multi-hop: a same-origin hop after a cross-origin one does not restore them', async () => {
+  const hops = await hopsVia('http://a.example.test/',
+    ['http://b.example.test/1', 'http://b.example.test/2'], CREDS);
+  assert.deepEqual(hasCreds(hops[1]), [null, null]);
+  assert.deepEqual(hasCreds(hops[2]), [null, null]);
+});
+
+test('multi-hop: an https -> http -> https bounce does not restore dropped headers', async () => {
+  const hops = await hopsVia(`https://${SVC}/`, [`http://${SVC}/`, `https://${SVC}/`], CREDS);
+  assert.deepEqual(hasCreds(hops[1]), [null, null]);
+  assert.deepEqual(hasCreds(hops[2]), [null, null]);
+});
+
+test('multi-hop: upgrade keeps them, a cross-origin hop drops them, and they stay dropped', async () => {
+  const hops = await hopsVia(`http://${SVC}/`,
+    [`https://${SVC}/`, 'https://evil.example.test/', `https://${SVC}/`], CREDS);
+  assert.deepEqual(hasCreds(hops[1]), ['k1', 'Bearer k2']);
+  assert.deepEqual(hasCreds(hops[2]), [null, null]);
+  assert.deepEqual(hasCreds(hops[3]), [null, null]);
+});
+
+/** Run fn, returning the safeFetch log entries it wrote (warn goes to stderr). */
+async function safeFetchWarnings(fn) {
+  const lines = [];
+  const orig = process.stderr.write;
+  process.stderr.write = (chunk) => { lines.push(String(chunk)); return true; };
+  try {
+    await fn();
+  } finally {
+    process.stderr.write = orig;
+  }
+  return lines.map((l) => JSON.parse(l)).filter((e) => e.module === 'safeFetch');
+}
+
+test('dropping headers warns once per origin pair, with names and a count but no values', async () => {
+  const host = `h${randomBytes(4).toString('hex')}.example.test`;
+  const secrets = [randomBytes(8).toString('hex'), randomBytes(8).toString('hex')];
+  const headers = { 'X-Gotify-Key': secrets[0], Authorization: `Bearer ${secrets[1]}`, Accept: 'application/json' };
+  const run = (to) => safeFetchWarnings(() => hopsVia(`http://${host}/`, to, headers));
+
+  const first = await run(`http://other.${host}/x`);
+  assert.equal(first.length, 1);
+  assert.equal(first[0].level, 'warn');
+  assert.equal(first[0].from, `http://${host}`);
+  assert.equal(first[0].to, `http://other.${host}`);
+  assert.equal(first[0].dropped, 2);
+  assert.deepEqual([...first[0].headers].sort(), ['authorization', 'x-gotify-key']);
+  assert.match(first[0].msg, /redirected http:\/\/\S+ → http:\/\/\S+; 2 headers not forwarded/);
+
+  assert.equal((await run(`http://other.${host}/y`)).length, 0, 'same pair warns once');
+  const third = await run(`http://third.${host}/`);
+  assert.equal(third.length, 1, 'a new pair warns again');
+
+  const logged = JSON.stringify([...first, ...third]);
+  for (const v of secrets) assert.ok(!logged.includes(v), 'a header value reached the log');
+});
+
+test('the same-host https upgrade warns once per pair to configure https://, without values', async () => {
+  const host = `h${randomBytes(4).toString('hex')}.example.test`;
+  const secret = randomBytes(8).toString('hex');
+  const run = () => safeFetchWarnings(() =>
+    hopsVia(`http://${host}/`, `https://${host}/next`, { 'X-Gotify-Key': secret }));
+
+  const first = await run();
+  assert.equal(first.length, 1);
+  assert.equal(first[0].from, `http://${host}`);
+  assert.equal(first[0].to, `https://${host}`);
+  assert.match(first[0].msg, new RegExp(`configure https://${host.replace(/\./g, '\\.')}`));
+  assert.match(first[0].msg, /clear text on the first hop/);
+  assert.equal(first[0].kept, 1);
+  assert.deepEqual(first[0].headers, ['x-gotify-key']);
+  assert.equal((await run()).length, 0, 'same pair warns once');
+  assert.ok(!JSON.stringify(first).includes(secret), 'a header value reached the log');
+});
+
+test('no warning when only allowlisted headers were on the request', async () => {
+  const host = `h${randomBytes(4).toString('hex')}.example.test`;
+  const logged = await safeFetchWarnings(() =>
+    hopsVia(`http://${host}/`, [`http://other.${host}/`, `https://other.${host}/`],
+      { Accept: 'application/json' }));
+  assert.equal(logged.length, 0);
+});
