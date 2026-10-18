@@ -28,7 +28,7 @@ It's a demo, not a dashboard — there is no persistence and no live data.
 You do **not** need Prometheus to use JagHelm. Without it, the metrics panels are
 simply empty and the dashboard still gives you:
 
-- **Quick-launch links** and the **42 app integrations** (AdGuard, Proxmox,
+- **Quick-launch links** and the **35+ app integrations** (AdGuard, Proxmox,
   Grafana, *arr stack, …) — these talk to each app's own API, independent of
   Prometheus.
 - Service **status** via Uptime Kuma (also optional).
