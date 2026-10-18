@@ -83,3 +83,42 @@ export function buildReleasePush({ current, newest }) {
     severity: 'info',
   };
 }
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const topLabel = ({ name, critical, high }) => {
+  const counts = [critical ? `${critical}C` : '', high ? `${high}H` : ''].filter(Boolean);
+  return `${capName(name)} ${counts.join(' ')}`;
+};
+
+/**
+ * Weekly vulnerability digest for one environment (vulnDerive buildDigest). New
+ * critical/high findings first, then KEV, fixed and scan health.
+ */
+export function buildVulnDigestPush({ env, digest }) {
+  const { newCritical, newHigh, images, top, kev, kevNew, fixed, stale, failed } = digest;
+  const parts = [];
+  if (newCritical + newHigh > 0) {
+    const counts = [];
+    if (newCritical) counts.push(`${newCritical} new critical`);
+    if (newHigh) counts.push(`${newHigh} new high`);
+    parts.push(`${counts.join(', ')} (fix available)`);
+    parts.push(plural(images, 'image', 'images'));
+    if (top.length) parts.push(`top: ${top.map(topLabel).join(', ')}`);
+  }
+  if (kev > 0) parts.push(kevNew > 0 ? `KEV ${kev} (${kevNew} new)` : `KEV ${kev}`);
+  if (fixed > 0) parts.push(`${fixed} fixed`);
+  if (stale.length) {
+    parts.push(`${plural(stale.length, 'image', 'images')} not scanned in 9 days: ${join(stale)}`);
+  }
+  if (failed.length) {
+    parts.push(`${plural(failed.length, 'scan', 'scans')} failed: ${join(failed)}`);
+  }
+  return {
+    type: 'arcane_vulns',
+    id: `arcane:${env}:vulns`,
+    node: env,
+    title: `Vulnerabilities · ${env}`,
+    body: parts.join(' · '),
+    severity: digest.severity,
+  };
+}

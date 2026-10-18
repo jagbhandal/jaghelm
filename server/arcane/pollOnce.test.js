@@ -166,3 +166,97 @@ test('the script entry turns a rejection into its message and exit code 2', asyn
   assert.equal(stderr.text, 'arcane-poll-once: unexpected failure\n');
   assert.equal(await main({ argv: [], stderr, run: async () => 0 }), 0);
 });
+
+/** Fake Arcane for --vuln-digest: per env id, 'ok' (fixture results), 'denied' (403) or 'boom' (500). */
+async function vulnFake(modes) {
+  const seen = [];
+  const srv = http.createServer((q, r) => {
+    let raw = '';
+    q.on('data', (c) => (raw += c));
+    q.on('end', () => {
+      seen.push(`${q.method} ${q.url}`);
+      const send = (code, body) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(body));
+      };
+      if (q.url.startsWith('/api/environments?')) {
+        return send(200, wrap(Object.keys(modes).map((id) => ({ id, name: `env-${id}`, status: 'online' }))));
+      }
+      const m = q.url.match(/^\/api\/environments\/([^/]+)\/(.+)$/);
+      if (!m) return send(404, {});
+      const [, id, rest] = m;
+      if (rest.startsWith('containers')) return send(200, fx('containers.json'));
+      if (modes[id] === 'denied') return send(403, { error: 'permission denied: vulnerabilities:read' });
+      if (modes[id] === 'boom') return send(500, { error: `boom ${KEY}` });
+      if (rest === 'images/vulnerabilities/summaries' && q.method === 'POST') {
+        assert.ok(Array.isArray(JSON.parse(raw).imageIds));
+        return send(200, fx('vulnerabilities-summaries.json'));
+      }
+      if (rest === 'vulnerabilities/overview') return send(200, fx('vulnerabilities-overview.json'));
+      if (rest.startsWith('vulnerabilities/all?')) return send(200, fx('vulnerabilities-all.json'));
+      return send(404, {});
+    });
+  });
+  await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
+  return { url: `http://127.0.0.1:${srv.address().port}`, seen, close: () => srv.close() };
+}
+
+test('--vuln-digest: baseline, then what would push, a preview; nothing sent, nothing kept', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'vulnonce-test-'));
+  const prev = process.env.TMPDIR;
+  process.env.TMPDIR = tmp;
+  const f = await vulnFake({ 0: 'ok', 2: 'denied' });
+  try {
+    const { code, stdout, stderr } = await run(f, ['--vuln-digest']);
+    assert.equal(code, 0);
+    const text = stdout.text;
+    assert.match(text, /--- vulnerability digest, pass 1 \(baseline\) ---/);
+    assert.match(text, /--- vulnerability digest, pass 2 ---/);
+    assert.match(text, /"outcome": "baseline"/);
+    assert.match(text, /"outcome": "no-permission"/);
+    assert.match(text, /grant vulnerabilities:read/);
+    // Pass 2: the fixture's stale and failed scans would push.
+    assert.match(text, /would push: .*"title":"Vulnerabilities · env-0".*1 image not scanned in 9 days: redis/);
+    assert.match(text, /"job": "arcane-vuln-digest"/);
+    assert.match(text, /--- preview: env-0 if every current finding were new ---/);
+    assert.match(text, /1 new critical, 4 new high \(fix available\) · 3 images · top: immich-server 1C 1H/);
+    assert.match(text, /next scheduled digest: \d{4}-\d\d-\d\dT14:00:00\.000Z/);
+    // Never any poller pass, never a scan, and the key is never printed.
+    assert.equal(text.includes('--- pass 1'), false);
+    assert.equal(f.seen.some((u) => /scan/.test(u)), false);
+    assert.equal(text.includes(KEY) || stderr.text.includes(KEY), false);
+    assert.deepEqual(readdirSync(tmp), []);
+  } finally {
+    f.close();
+    if (prev === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = prev;
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('--vuln-digest exits 1 when no environment could be read, or on a read error', async () => {
+  for (const modes of [{ 0: 'denied', 2: 'denied' }, { 0: 'ok', 2: 'boom' }]) {
+    const f = await vulnFake(modes);
+    try {
+      const { code, stdout, stderr } = await run(f, ['--vuln-digest']);
+      assert.equal(code, 1, JSON.stringify(modes));
+      assert.match(stdout.text, /--- vulnerability digest, pass 2 ---/);
+      assert.equal(stdout.text.includes(KEY) || stderr.text.includes(KEY), false);
+    } finally {
+      f.close();
+    }
+  }
+});
+
+test('--vuln-digest does not take --record', async () => {
+  const stderr = sink();
+  const code = await runPollOnce({
+    argv: ['--vuln-digest', '--record', '/tmp/x'],
+    env: { ARCANE_URL: 'http://127.0.0.1:9', ARCANE_API_KEY: KEY },
+    stdout: sink(),
+    stderr,
+  });
+  assert.equal(code, 2);
+  assert.match(stderr.text, /--record does not apply to --vuln-digest/);
+});

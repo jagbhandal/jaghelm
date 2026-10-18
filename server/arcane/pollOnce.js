@@ -1,6 +1,7 @@
 /**
  * Arcane dry run (the logic behind scripts/arcane-poll-once.js).
  * Runs the real poller twice over throwaway temp stores; sends no push.
+ * With --vuln-digest, runs the weekly vulnerability digest instead (vulnDigestOnce.js).
  * With --record <dir>, writes responses projected to the fields the client
  * reads, anonymized (one anonymizer for the whole recording, so a container keeps
  * one placeholder across files). Per-environment files record the first
@@ -18,6 +19,7 @@ import { createArcanePoller } from './poller.js';
 import { createHeldBackStore } from '../watchtower/heldBackStore.js';
 import { envKey, envHealth } from './derive.js';
 import { projectFixture, createAnonymizer } from './projectFixture.js';
+import { runVulnDigestOnce } from './vulnDigestOnce.js';
 
 export async function runPollOnce({
   argv = [],
@@ -29,6 +31,11 @@ export async function runPollOnce({
   const err = (...a) => stderr.write(a.join(' ') + '\n');
 
   const ri = argv.indexOf('--record');
+  const vuln = argv.includes('--vuln-digest');
+  if (vuln && ri >= 0) {
+    err('--record does not apply to --vuln-digest');
+    return 2;
+  }
   if (ri >= 0 && !argv[ri + 1]) {
     err('--record needs a directory');
     return 2;
@@ -43,6 +50,7 @@ export async function runPollOnce({
     return 2;
   }
   if (cfg.cleartext) err('warning: ARCANE_URL is cleartext http://');
+  if (vuln) return runVulnDigestOnce({ cfg, out, err });
 
   const real = createArcaneClient({ baseUrl: cfg.url, apiKey: cfg.apiKey });
 

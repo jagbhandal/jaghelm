@@ -7,6 +7,7 @@ import {
   buildAgentOfflinePush,
   buildAgentRecoveredPush,
   buildReleasePush,
+  buildVulnDigestPush,
 } from './format.js';
 
 test('buildUpdatePush: updated and failed', () => {
@@ -106,4 +107,95 @@ test('push bodies cap each name at 64 characters and list at most 10 names', () 
   const ten = many.slice(0, 10);
   assert.equal(buildClearedPush({ env: 'e', cleared: ten }).body, `10 caught up: ${ten.join(', ')}`);
   assert.equal(buildClearedPush({ env: 'e', cleared: ['y'.repeat(64)] }).body, `1 caught up: ${'y'.repeat(64)}`);
+});
+
+const digest = (over = {}) => ({
+  newCritical: 0,
+  newHigh: 0,
+  images: 0,
+  top: [],
+  kev: null,
+  kevNew: 0,
+  fixed: 0,
+  stale: [],
+  failed: [],
+  push: true,
+  severity: 'info',
+  ...over,
+});
+
+test('buildVulnDigestPush: new findings, top images, KEV', () => {
+  const d = digest({
+    newCritical: 3,
+    newHigh: 11,
+    images: 9,
+    top: [
+      { name: 'nextcloud', critical: 2, high: 0 },
+      { name: 'immich-server', critical: 1, high: 0 },
+    ],
+    kev: 1,
+    severity: 'warning',
+  });
+  assert.deepEqual(buildVulnDigestPush({ env: 'vm-103', digest: d }), {
+    type: 'arcane_vulns',
+    id: 'arcane:vm-103:vulns',
+    node: 'vm-103',
+    title: 'Vulnerabilities · vm-103',
+    body: '3 new critical, 11 new high (fix available) · 9 images · top: nextcloud 2C, immich-server 1C · KEV 1',
+    severity: 'warning',
+  });
+});
+
+test('buildVulnDigestPush: highs only, mixed top entries, fixed and new KEV', () => {
+  const d = digest({
+    newHigh: 1,
+    images: 1,
+    top: [{ name: 'redis', critical: 0, high: 1 }],
+    kev: 3,
+    kevNew: 2,
+    fixed: 12,
+  });
+  assert.equal(
+    buildVulnDigestPush({ env: 'vm-103', digest: d }).body,
+    '1 new high (fix available) · 1 image · top: redis 1H · KEV 3 (2 new) · 12 fixed'
+  );
+  const both = digest({ newCritical: 1, newHigh: 2, images: 1, top: [{ name: 'a', critical: 1, high: 2 }] });
+  assert.equal(
+    buildVulnDigestPush({ env: 'e', digest: both }).body,
+    '1 new critical, 2 new high (fix available) · 1 image · top: a 1C 2H'
+  );
+});
+
+test('buildVulnDigestPush: scan health only', () => {
+  const d = digest({ stale: ['redis', 'gitea'], failed: ['nextcloud'], kev: 0, fixed: 1 });
+  const e = buildVulnDigestPush({ env: 'vm-103', digest: d });
+  assert.equal(
+    e.body,
+    '1 fixed · 2 images not scanned in 9 days: redis, gitea · 1 scan failed: nextcloud'
+  );
+  assert.equal(e.severity, 'info');
+  assert.equal(
+    buildVulnDigestPush({ env: 'e', digest: digest({ stale: ['a'] }) }).body,
+    '1 image not scanned in 9 days: a'
+  );
+  assert.equal(
+    buildVulnDigestPush({ env: 'e', digest: digest({ failed: ['a', 'b'] }) }).body,
+    '2 scans failed: a, b'
+  );
+});
+
+test('buildVulnDigestPush caps names and lists like the other pushes', () => {
+  const many = Array.from({ length: 12 }, (_, i) => `img${i}`);
+  const long = 'n'.repeat(100);
+  const d = digest({
+    newCritical: 1,
+    images: 1,
+    top: [{ name: long, critical: 1, high: 0 }],
+    stale: many,
+  });
+  assert.equal(
+    buildVulnDigestPush({ env: 'e', digest: d }).body,
+    `1 new critical (fix available) · 1 image · top: ${'n'.repeat(63)}… 1C · ` +
+      '12 images not scanned in 9 days: img0, img1, img2, img3, img4, img5, img6, img7, img8, img9 +2 more'
+  );
 });

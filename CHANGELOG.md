@@ -6,6 +6,9 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- A weekly Arcane vulnerability digest by mobile push. Once a week (Sunday 14:00 UTC by default; `ARCANE_VULN_DIGEST_DAY` and `ARCANE_VULN_DIGEST_HOUR`) JagHelm reads the scan results Arcane has stored and pushes per environment only when something is new: critical or high findings with a fix, known-exploited (KEV) entries, or image scans that are stale or failed. Each digest is recorded as a run of the `arcane-vuln-digest` scheduled job, which goes overdue when digests stop. It needs scanning turned on in Arcane and the `vulnerabilities:read` grant on JagHelm's Arcane key; preview it with `node scripts/arcane-poll-once.js --vuln-digest`. See `docs/arcane/SETUP.md`.
+
 ## [2.2.0] — 2026-10-18
 
 Overdue detection for Arcane's image watcher, no more ghost cards from Arcane's helper containers, and the deprecated Watchtower webhook is removed.

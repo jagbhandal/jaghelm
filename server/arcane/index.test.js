@@ -54,14 +54,20 @@ test('projectFixture drops labels and unknown fields', () => {
 
 function fakes() {
   const made = [];
+  const digests = [];
   const warns = [];
   const createPoller = () => {
     const p = { started: 0, stopped: 0, start() { p.started++; }, stop() { p.stopped++; } };
     made.push(p);
     return p;
   };
+  const createDigest = (opts) => {
+    const d = { opts, started: 0, stopped: 0, start() { d.started++; }, stop() { d.stopped++; } };
+    digests.push(d);
+    return d;
+  };
   const logger = { info() {}, debug() {}, error() {}, warn: (...a) => warns.push(a) };
-  return { made, warns, deps: { createPoller, logger } };
+  return { made, digests, warns, deps: { createPoller, createDigest, logger } };
 }
 const ON = { ARCANE_URL: 'https://a.test', ARCANE_API_KEY: KEY };
 
@@ -147,4 +153,35 @@ test('projectFixture keeps only whether a container check errored', () => {
     { hasUpdate: false, error: '' },
     undefined,
   ]);
+});
+
+test('startArcane also starts the weekly vulnerability digest, and stopArcane stops it', () => {
+  const f = fakes();
+  startArcane({
+    env: { ...ON, ARCANE_VULN_DIGEST_DAY: '3', ARCANE_VULN_DIGEST_HOUR: '9' },
+    demo: false,
+    deps: f.deps,
+  });
+  const [d] = f.digests;
+  assert.equal(d.started, 1);
+  assert.equal(d.opts.day, 3);
+  assert.equal(d.opts.hour, 9);
+  assert.equal(typeof d.opts.client.vulnSummaries, 'function');
+  assert.equal(typeof d.opts.stateStore.getLastRun, 'function');
+  assert.equal(typeof d.opts.recordRun, 'function');
+  assert.equal(typeof d.opts.dispatch, 'function');
+  // A restart leaves exactly one digest running.
+  startArcane({ env: ON, demo: false, deps: f.deps });
+  assert.equal(d.stopped, 1);
+  stopArcane();
+  stopArcane();
+  assert.equal(f.digests[1].stopped, 1);
+});
+
+test('no digest without the integration or in demo mode', () => {
+  const f = fakes();
+  startArcane({ env: { ARCANE_API_KEY: KEY }, demo: false, deps: f.deps });
+  startArcane({ env: ON, demo: true, deps: f.deps });
+  assert.equal(f.digests.length, 0);
+  stopArcane();
 });

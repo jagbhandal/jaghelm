@@ -1,0 +1,13 @@
+{"success":true,"data":{
+"riskScore":72,"riskBand":"high","scoreStatus":"complete","delta7d":-3,
+"trend":[{"date":"2026-10-17","riskScore":75},{"date":"2026-10-18","riskScore":72}],
+"drivers":{"knownExploited":1,"overdueKnownExploited":0,"highEpss":1,"exposedCriticalHigh":4,"fixable":19,"findings":19,"imagesScanned":3,"imagesTotal":5,"scoredImages":3},
+"summary":{"critical":1,"high":4,"medium":5,"low":5,"unknown":0,"total":15},
+"exposure":{"running":15,"stopped":0,"unused":0,"unknown":0},
+"scoreDriver":{"vulnerabilityId":"CVE-2099-0001","imageName":"ghcr.io/immich-app/immich-server:release","pkgName":"openssl","fixedVersion":"3.0.9","exposure":"running","knownExploited":true,"risk":9.4},
+"riskiestImages":[{"riskScore":94,"riskBand":"critical","scoreStatus":"complete","imageId":"sha256:aaa111","imageName":"ghcr.io/immich-app/immich-server:release","exposure":"running","runningContainers":1,"knownExploited":1,"critical":1,"high":1,"fixable":8,"findings":8}],
+"riskiestFindings":[{"vulnerabilityId":"CVE-2099-0001","pkgName":"openssl","severity":"CRITICAL","cvss":9.8,"risk":9.4,"knownExploited":true,"ransomware":false,"imagesAffected":1,"runningImagesAffected":1,"fixedVersion":"3.0.9"}],
+"prevalentFindings":[],
+"threatIntel":{"enabled":true,"lastSyncedAt":"2026-10-18T08:00:00Z","stale":false},
+"computedAt":"2026-10-18T13:59:00Z"
+}}

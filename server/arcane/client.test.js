@@ -127,3 +127,52 @@ test('network error carries the cause code, never the key', async () => {
   const plain = createArcaneClient({ baseUrl: 'https://m', apiKey: KEY, fetchImpl: async () => { throw new Error('boom'); } });
   await assert.rejects(plain.listEnvironments(), { message: 'Arcane request failed: boom' });
 });
+
+test('vulnerability reads: exact paths, POST body for summaries, key in the header only', async () => {
+  const { calls, client } = mk(fx('vulnerabilities-summaries'));
+  const sums = await client.vulnSummaries('a/b', ['sha256:aaa111', 'sha256:ccc333']);
+  assert.equal(sums['sha256:fff666'].status, 'failed');
+  assert.equal(calls[0].url, 'https://m:3552/api/environments/a%2Fb/images/vulnerabilities/summaries');
+  assert.equal(calls[0].opts.method, 'POST');
+  assert.equal(calls[0].opts.headers['Content-Type'], 'application/json');
+  assert.equal(calls[0].opts.headers['X-API-Key'], KEY);
+  assert.deepEqual(JSON.parse(calls[0].opts.body), { imageIds: ['sha256:aaa111', 'sha256:ccc333'] });
+  assert.equal(calls[0].opts.body.includes(KEY), false);
+
+  const page = mk(fx('vulnerabilities-all'));
+  const got = await page.client.listVulnerabilities('0', { start: 200, limit: 100 });
+  assert.equal(got.data.length, 5);
+  assert.equal(got.totalItems, 5);
+  assert.equal(
+    page.calls[0].url,
+    'https://m:3552/api/environments/0/vulnerabilities/all?severity=CRITICAL,HIGH&fixAvailable=true&start=200&limit=100'
+  );
+  assert.equal(page.calls[0].opts.method, 'GET');
+  assert.equal(page.calls[0].opts.body, undefined);
+
+  const ov = mk(fx('vulnerabilities-overview'));
+  assert.equal((await ov.client.vulnOverview('0')).drivers.knownExploited, 1);
+  assert.equal(ov.calls[0].url, 'https://m:3552/api/environments/0/vulnerabilities/overview');
+});
+
+test('vulnerability reads reject malformed payloads', async () => {
+  const bad = async (body, call) =>
+    assert.rejects(call(mk(body).client), (e) => e instanceof ArcaneError && e.status === null);
+  await bad({ success: true, data: { summaries: [] } }, (c) => c.vulnSummaries('0', ['x']));
+  await bad({ success: true, data: {} }, (c) => c.vulnSummaries('0', ['x']));
+  await bad({ success: true, data: [] }, (c) => c.listVulnerabilities('0'));
+  await bad({ success: true, data: [], pagination: { totalItems: -1 } }, (c) => c.listVulnerabilities('0'));
+  await bad({ success: true, data: [], pagination: { totalItems: 1.5 } }, (c) => c.listVulnerabilities('0'));
+  await bad({ success: false, data: [], pagination: { totalItems: 0 } }, (c) => c.listVulnerabilities('0'));
+  await bad({ success: true, data: [1] }, (c) => c.vulnOverview('0'));
+});
+
+test('a missing grant is an ArcaneError with status 403 and the path without the query', async () => {
+  const { client } = mk({ error: 'permission denied: vulnerabilities:read' }, { ok: false, status: 403 });
+  await assert.rejects(client.listVulnerabilities('0', { start: 0, limit: 100 }), (e) => {
+    assert.equal(e.status, 403);
+    assert.equal(e.message, 'Arcane HTTP 403 for /api/environments/0/vulnerabilities/all');
+    return true;
+  });
+  await assert.rejects(client.vulnSummaries('0', []), { status: 403 });
+});

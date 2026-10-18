@@ -1,0 +1,7 @@
+{"success":true,"data":[
+{"vulnerabilityId":"CVE-2099-0001","pkgName":"openssl","installedVersion":"3.0.1","fixedVersion":"3.0.9","severity":"CRITICAL","class":"os-pkgs","type":"debian","title":"example title","description":"example description","references":["https://example.invalid/CVE-2099-0001"],"cvss":{"v3Score":9.8,"v3Vector":"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"},"imageId":"sha256:aaa111","imageName":"ghcr.io/immich-app/immich-server:release"},
+{"vulnerabilityId":"CVE-2099-0002","pkgName":"libcurl","installedVersion":"7.88.1","fixedVersion":"7.88.2","severity":"HIGH","class":"os-pkgs","type":"debian","imageId":"sha256:aaa111","imageName":"ghcr.io/immich-app/immich-server:release"},
+{"vulnerabilityId":"CVE-2099-0002","pkgName":"libcurl","installedVersion":"7.88.1","fixedVersion":"7.88.2","severity":"HIGH","class":"os-pkgs","type":"alpine","imageId":"sha256:ccc333","imageName":"gitea/gitea:1.22"},
+{"vulnerabilityId":"GHSA-0000-0000-0001","pkgName":"golang.org/x/net","installedVersion":"0.1.0","fixedVersion":"0.2.0","severity":"HIGH","class":"lang-pkgs","type":"gobinary","imageId":"sha256:ccc333","imageName":"gitea/gitea:1.22"},
+{"vulnerabilityId":"CVE-2099-0003","pkgName":"zlib","installedVersion":"1.2.13","fixedVersion":"1.3.1","severity":"HIGH","class":"os-pkgs","type":"debian","imageId":"sha256:eee555","imageName":"redis:7"}
+],"pagination":{"totalPages":1,"totalItems":5,"currentPage":1,"itemsPerPage":100,"grandTotalItems":19}}

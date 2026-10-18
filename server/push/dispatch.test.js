@@ -164,3 +164,11 @@ test('watchtower pref off suppresses arcane events', () => {
   const prefs = { enabled: true, notifyRecoveries: true, categories: { service: true, host: true, ups: true, cron: true, watchtower: false } };
   assert.equal(shouldDeliver({ type: 'arcane_update' }, prefs), false);
 });
+
+test('the Arcane vulnerability digest maps to the watchtower (Updates) category', () => {
+  assert.equal(categoryOf('arcane_vulns'), 'watchtower');
+  const prefs = { enabled: true, notifyRecoveries: false, categories: { watchtower: false } };
+  assert.equal(shouldDeliver({ type: 'arcane_vulns' }, prefs), false);
+  // Not a recovery: delivered with recoveries off.
+  assert.equal(shouldDeliver({ type: 'arcane_vulns' }, { ...prefs, categories: {} }), true);
+});
