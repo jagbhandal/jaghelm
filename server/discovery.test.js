@@ -21,12 +21,14 @@ initDiscovery('http://localhost:9998');
 const realFetch = globalThis.fetch;
 
 // One Prometheus instant-query response envelope, shared by the stubs below.
+// Discovery asks for every node in one query and splits the answer by its
+// `node` label (#234), so each sample carries the node the tests ask for.
 const promResult = (samples) => ({
   ok: true,
   status: 200,
   headers: { get: () => null },
   body: null,
-  json: async () => ({ data: { result: samples } }),
+  json: async () => ({ data: { result: samples.map((s) => ({ ...s, metric: { node: 'vm-test', ...s.metric } })) } }),
 });
 
 // Return a Prometheus instant-query response for whichever metric the URL asks for.
@@ -201,11 +203,11 @@ test('getNodeData: reachable is up{node} — true if any target answered, false 
     globalThis.fetch = async (url) => {
       const q = decodeURIComponent(url);
       seen.push(q);
-      return q.includes('max(up{node="vm-test"})') ? promResult([{ metric: {}, value: [0, up] }]) : promResult([]);
+      return q.includes('max by (node) (up{node=~"vm-test"})') ? promResult([{ metric: {}, value: [0, up] }]) : promResult([]);
     };
     try {
       assert.equal((await getNodeData('vm-test')).reachable, reachable);
-      assert.ok(seen.some((q) => q.includes('max(up{node="vm-test"})')));
+      assert.ok(seen.some((q) => q.includes('max by (node) (up{node=~"vm-test"})')));
     } finally {
       globalThis.fetch = realFetch;
     }
@@ -221,7 +223,7 @@ test('getNodeData: failedReads names the parts whose queries failed', async () =
     return match(q) ? answer(400, { status: 'error', error: 'bad_data' }) : promResponse(url);
   };
   const cases = [
-    [(q) => q.includes('max(up{'), ['reachable']],
+    [(q) => q.includes('max by (node) (up{'), ['reachable']],
     [(q) => q.includes('node_hwmon_temp_celsius'), ['temp']],
     [(q) => q.includes('MemAvailable'), ['mem']],
     [(q) => q.includes('node_filesystem_size_bytes'), ['disk']],

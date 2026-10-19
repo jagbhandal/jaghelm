@@ -14,12 +14,14 @@ const realFetch = globalThis.fetch;
 const LABEL = 'container_label_com_getarcaneapp_internal_resource';
 const EVAL = 1700000000;
 
+// Each sample carries the node asked for: discovery splits a batched answer by
+// its `node` label (#234).
 const envelope = (samples) => ({
   ok: true,
   status: 200,
   headers: { get: () => null },
   body: null,
-  json: async () => ({ data: { result: samples } }),
+  json: async () => ({ data: { result: samples.map((s) => ({ ...s, metric: { node: 'vm-test', ...s.metric } })) } }),
 });
 
 const SERIES = [
