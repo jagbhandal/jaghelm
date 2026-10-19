@@ -266,6 +266,16 @@ integration connection-test endpoint.
 ### 4.6 Observability
 
 - **Structured logging** (`util/logger.js`) with redaction -- no secrets in logs.
+  `LOG_LEVEL` (`debug|info|warn|error|silent`, default `info`) filters it.
+  Success lines every refresh cycle would repeat are debug, while a refresh
+  that keeps failing still logs its own error each cycle. At info: a cycle that
+  took 5 s or more; a change in the cycle's set of failed refreshes (a refresh
+  that returned null, or an integration with an `_error`; a Prometheus outage
+  does not show up here, since node and UPS queries swallow their errors); a
+  Kuma load whose monitor count or source changed, or the first load after a
+  failed one; and one line per boot for containers no monitor matches. Kuma
+  answering with no monitors warns once per outage; a Kuma that can't be
+  reached logs an error every cycle.
 - **Access log** (`accessLog.js`): one line per request with its full path and no
   query string or fragment; 5xx at `error`, 4xx and requests of 300 ms or more at
   `info`, the rest at `debug`. `/metrics`, `/api/health` and `/api/readyz` are not

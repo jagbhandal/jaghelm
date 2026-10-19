@@ -16,7 +16,12 @@ import { join } from 'path';
 import { getConfig } from './config.js';
 import { getNodeData } from './discovery.js';
 import { recordSamples } from './history.js';
-import { fetchMonitors, matchMonitor, markMonitorLogDone, selectOutageMonitors } from './monitors.js';
+import {
+  fetchMonitors,
+  matchMonitor,
+  logUnmatchedContainers,
+  selectOutageMonitors,
+} from './monitors.js';
 import { serviceRegistry } from './serviceRegistry.js';
 import { containerRegistry } from './containerRegistry.js';
 import { fetchIntegration } from './integrations/handler.js';
@@ -147,12 +152,18 @@ function serviceRank(s) {
  * BOTH frontends read this single server value for their global dot, so they are
  * symmetric and deterministic (no client re-derivation).
  *
- * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown' }}
+ * `unmatched` (unique names of the shown, running containers no monitor matched)
+ * and `containerCount` (how many shown, running containers there were) feed the
+ * once-per-boot "no matching monitor" log line.
+ *
+ * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown', unmatched: string[], containerCount: number }}
  */
 export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf, lastSeenContainerOf, containerRegistry, now = Date.now }) {
   const consumed = new Set();
   const seen = [];
   const runningNames = new Set();
+  const unmatched = new Set();
+  let containerCount = 0;
   const nowMs = now();
 
   // (a) Running-container cards.
@@ -165,6 +176,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
       (c) => !hideList.some((h) => c.container.toLowerCase().includes(h))
     );
 
+    containerCount += containers.length;
     const services = containers.map((c) => {
       runningNames.add(c.container);
       if (containerRegistry) containerRegistry.recordSeen(c.container, nodeKey, nowMs);
@@ -177,6 +189,8 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
         // Remember the container too, so a later outage's synth card can reuse
         // this exact uid (keeps down→recovery on ONE key for the push differ).
         seen.push({ monitorId: monitor.id, nodeKey, container: c.container });
+      } else {
+        unmatched.add(c.container);
       }
       const rawStatus = monitor?.status || c.status || 'unknown';
       // Normalise Docker's 'running' to the Kuma-aligned 'up' so the status
@@ -301,7 +315,15 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   }
   const overallHealth = anyDown ? 'down' : anyUnknown ? 'degraded' : anyCard ? 'up' : 'unknown';
 
-  return { nodes, seen, outageCount: outages.length, breadcrumbCount, overallHealth };
+  return {
+    nodes,
+    seen,
+    outageCount: outages.length,
+    breadcrumbCount,
+    overallHealth,
+    unmatched: [...unmatched].sort(),
+    containerCount,
+  };
 }
 
 async function _refreshServices() {
@@ -347,7 +369,7 @@ async function _refreshServices() {
       }
     }
 
-    const { nodes, seen, overallHealth } = assembleServices({
+    const { nodes, seen, overallHealth, unmatched, containerCount } = assembleServices({
       nodeResults,
       monitors,
       config,
@@ -385,7 +407,7 @@ async function _refreshServices() {
       });
     }
 
-    markMonitorLogDone();
+    logUnmatchedContainers({ unmatched, containerCount, monitors });
     return result;
   } catch (err) {
     log.error({ err }, 'services refresh error');
@@ -557,19 +579,78 @@ async function _refreshIntegrations() {
 
 // ── Background loop ──────────────────────────────────────────────────────
 
+// A cycle this slow logs at info: half the shortest interval allowed
+// (MIN_INTERVAL_SECONDS), so it fires before a cycle can overrun any cadence.
+// A healthy cycle takes well under a second, so this catches only outliers.
+const SLOW_CYCLE_MS = (MIN_INTERVAL_SECONDS * 1000) / 2;
+
+// The refreshes one background cycle runs, each with the name it goes by in the
+// cycle's error set. One list, so a name can't drift from its function.
+export const CYCLE_REFRESHES = [
+  ['services', refreshServices],
+  ['ups', refreshUPS],
+  ['gitea', refreshGitea],
+  ['integrations', refreshIntegrations],
+];
+
+/**
+ * Run the refreshes in parallel and return the cycle's error set: the name of
+ * every refresh that failed (each returns null after logging its own error) and
+ * `integration:<key>` for every integration that came back with an `_error`.
+ * Keys only, not messages, so an error whose text varies doesn't read as a
+ * change. Sorted.
+ */
+export async function runCycleRefreshes(refreshes = CYCLE_REFRESHES) {
+  const settled = await Promise.allSettled(refreshes.map(([, fn]) => fn()));
+  const errors = [];
+  settled.forEach((r, i) => {
+    const name = refreshes[i][0];
+    if (r.status === 'rejected' || r.value == null) {
+      errors.push(name);
+      return;
+    }
+    if (name === 'integrations') {
+      for (const [key, entry] of Object.entries(r.value)) {
+        if (entry && entry._error) errors.push(`integration:${key}`);
+      }
+    }
+  });
+  return errors.sort();
+}
+
+/**
+ * Logs one line per background cycle, at debug in steady state. At info only
+ * when the cycle was slow (`slow: true`), or when its error set differs from the
+ * previous cycle's (`added` / `cleared`): a new failure, or a recovery when the
+ * set empties. A failure that persists stays quiet here; its own refresh
+ * function keeps logging it.
+ */
+export function createCycleReporter(logger = log) {
+  let prevErrors = [];
+  return function reportCycle({ ms, errors }) {
+    const current = [...new Set(errors)].sort();
+    const added = current.filter((e) => !prevErrors.includes(e));
+    const cleared = prevErrors.filter((e) => !current.includes(e));
+    prevErrors = current;
+    const slow = ms >= SLOW_CYCLE_MS;
+    const changed = added.length > 0 || cleared.length > 0;
+    const fields = { ms, errors: current };
+    if (slow) fields.slow = true;
+    if (changed) Object.assign(fields, { added, cleared });
+    (slow || changed ? logger.info : logger.debug)(fields, 'background cycle complete');
+  };
+}
+
+const reportCycle = createCycleReporter();
+
 async function runBackgroundRefresh() {
   if (bgRefreshRunning) return; // Skip if previous cycle hasn't finished
   bgRefreshRunning = true;
   const start = Date.now();
   let ok = true;
   try {
-    await Promise.allSettled([
-      refreshServices(),
-      refreshUPS(),
-      refreshGitea(),
-      refreshIntegrations(),
-    ]);
-    log.info({ ms: Date.now() - start }, 'background cycle complete');
+    const errors = await runCycleRefreshes();
+    reportCycle({ ms: Date.now() - start, errors });
 
     // Push cycle: diff this cycle's state vs the last and notify mobile
     // tokens. Self-contained — it can NEVER reject (see runPushCycle), so it
