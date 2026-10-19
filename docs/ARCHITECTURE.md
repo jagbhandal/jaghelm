@@ -477,7 +477,9 @@ It also preloads `scripts/test-exit-guard.mjs`. From Node 26, `--test-timeout`
 bounds each test but no longer a test file's process, so a file that leaves a
 server, interval or socket open would keep `npm test` running forever. The
 guard fails such a file once it is still running `--test-timeout` ms after its
-last test (`scripts/test-exit-guard.test.mjs`).
+last test, its after hooks included (`scripts/test-exit-guard.test.mjs`). It
+only bounds files that register a test: one that hangs before registering any
+still hangs.
 
 The Vitest configs (`vite.config.js`, `mobile/vite.config.mobile.js`) start
 their workers with `--no-experimental-webstorage`: Node 25 and later ship a

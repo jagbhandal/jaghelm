@@ -143,6 +143,8 @@ test('CLI fails a file that leaks an open handle once the exit guard stops it', 
   const r = run('--min=1', process.execPath, '--import', EXIT_GUARD, '--test', '--test-timeout=500', LEAKING);
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /1 test\(s\) (?:failed|cancelled)/);
+  // The failure is the guard stopping the leak, not some other error in the fixture.
+  assert.match(r.stdout + r.stderr, /still running 500 ms after its tests finished/);
 });
 
 test('CLI exits 1 when the command prints no summary', () => {
