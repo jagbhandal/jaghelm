@@ -53,9 +53,9 @@ services:
       # written here, so it is fine to lose on restart. Capped + noexec/nosuid.
       - /tmp:rw,noexec,nosuid,size=64m
 
-    # Run as the unprivileged `node` user (UID/GID 1000 in node:alpine). The
-    # image already drops to this user, but stating it here is explicit and
-    # survives a future base-image change. The data/uploads host dirs must be
+    # Run as the unprivileged `node` user (UID/GID 1000, created by the
+    # Dockerfile). The image already drops to this user, but stating it here is
+    # explicit and survives a future base-image change. The data/uploads host dirs must be
     # writable by UID 1000 (see Dockerfile note).
     user: "1000:1000"
 
