@@ -583,8 +583,12 @@ flowchart TD
   (arrow move / Shift+arrow resize, with a live region) reposition them.
 - **Data fetching.** `useDashboardData` holds a **304-stable identity contract**:
   on an unchanged poll `fetchJson` returns the same reference and `setState`
-  bails via `Object.is`, so an all-304 tick triggers zero re-renders. Per-source
-  health (error / stale / retry) is derived at render without per-tick state.
+  bails via `Object.is`, so an all-304 tick triggers zero re-renders. It stores
+  a response's ETag and body together, only once the body has parsed, so the
+  `If-None-Match` it sends always describes the body a 304 hands back; a 200
+  with an empty, malformed or cut-off body fails and keeps the last good pair.
+  Per-source health (error / stale / retry) is derived at render without
+  per-tick state.
 - **Polling.** `App.jsx` drives one tick per refresh interval (30 s by default),
   and only while the dashboard is on screen: a hidden browser tab, Settings or an
   iframe tab pauses it, and returning refreshes every source at once. The board

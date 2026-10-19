@@ -262,15 +262,16 @@ describe('conditional polling end to end (shared useData.js over this transport)
     );
     const first = await getServices(true);
 
+    // The bad 200 carries a new ETag (#383): it must not be stored either.
     request.mockResolvedValueOnce({
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ETag: '"new"' },
       data: raw,
     });
     await expect(getServices(false)).rejects.toThrow();
 
-    // The bad body was not stored: the next unchanged poll still asks with the
-    // old ETag and gets the last good body back.
+    // Neither the bad body nor its ETag was stored: the next unchanged poll
+    // still asks with the old ETag and gets the last good body back.
     request.mockResolvedValueOnce({ status: 304, headers: { ETag: ETAG }, data: '' });
     const third = await getServices(false);
     expect(request.mock.calls[1][0].headers['if-none-match']).toBe(ETAG);
