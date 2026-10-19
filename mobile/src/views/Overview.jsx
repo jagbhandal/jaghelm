@@ -6,9 +6,9 @@ import StatusBanner from '../components/StatusBanner.jsx';
 import {
   overallSeverity, deriveSubsystems, deriveIncidents, deriveHero,
 } from '../data/derive.js';
-import { openTarget } from '../open.js';
+import { issueRoute } from '../nav/issueRoute.js';
 
-export default function Overview({ data }) {
+export default function Overview({ data, nav }) {
   const { servicesBody, ups, cron, loading, error } = data;
   // Bug #4: a live fetch error means we can't trust the (possibly stale) body.
   // Thread `unreachable` into BOTH overallSeverity and deriveSubsystems so a
@@ -48,9 +48,18 @@ export default function Overview({ data }) {
 
         {!error && !loading && incidents.length > 0 && (
           <div className="overview-issues__list">
-            {incidents.map((inc) => (
-              <IssueRow key={inc.id} incident={inc} onOpen={openTarget} />
-            ))}
+            {/* A row opens the detail screen of what it refers to (#279); a
+                row with nothing to open renders as plain content. */}
+            {incidents.map((inc) => {
+              const route = issueRoute(inc);
+              return (
+                <IssueRow
+                  key={inc.id}
+                  incident={inc}
+                  onOpen={route ? () => nav.push(route.screen, route.params) : undefined}
+                />
+              );
+            })}
           </div>
         )}
 
