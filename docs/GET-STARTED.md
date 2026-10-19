@@ -308,7 +308,7 @@ volumes:
 docker compose up -d
 ```
 
-Then set up monitors in Uptime Kuma for each service you want to track. JagHelm auto-matches Kuma monitors to containers by name — if your container is called `gitea` and your Kuma monitor is called "Gitea", they'll match automatically.
+Then set up monitors in Uptime Kuma for each service you want to track. JagHelm auto-matches Kuma monitors to containers by name — if your container is called `gitea` and your Kuma monitor is called "Gitea", they'll match automatically. Each monitor goes to one container, the best match: "Gitea" goes to `gitea`, not to `gitea-runner` as well.
 
 Make sure `KUMA_URL` in your JagHelm `.env` file points to your Uptime Kuma instance, then restart JagHelm:
 
@@ -442,9 +442,9 @@ If this works but JagHelm doesn't show stats, verify cAdvisor has the same `node
 
 ### Uptime Kuma monitors not matching
 
-JagHelm matches Kuma monitors to containers by checking if the monitor name contains the container name (case-insensitive). If your container is named `gateway-npm` and your Kuma monitor is named "NPM Proxy", they won't auto-match.
+JagHelm matches Kuma monitors to containers by name, ignoring case and punctuation: the same name first, then a monitor named after a hostname whose first part is the container name (`grafana.example.com`), then one name containing the other, then a shared word of 4 letters or more. Each monitor goes to one container, the best match; when the same container runs on two machines, or a stack's containers all contain the monitor's name (`immich-server`, `immich-redis`, …), only one of them gets it. If your container is named `gateway-npm` and your Kuma monitor is named "NPM Proxy", they won't auto-match.
 
-**Fix:** Go to Settings > Services, find the container, and select the correct Kuma monitor from the dropdown.
+**Fix:** Go to Settings > Services, find the container, and select the correct Kuma monitor from the dropdown. The mapping is by container name, so it applies on every machine that container runs on, and a monitor you map goes only to the containers mapped to it. If the mapped monitor is renamed or deleted in Kuma, the container shows no monitor and JagHelm's log warns about the mapping once; pick the monitor again.
 
 ### Embedded tab shows "Embedding Blocked"
 

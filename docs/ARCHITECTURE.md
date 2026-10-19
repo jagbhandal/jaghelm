@@ -78,7 +78,8 @@ server/                     Express API (Node 26, ESM)
                             across all nodes (see 4.2) (ignores containers labelled as Arcane
                             internal helpers, so short-lived helpers never become cards or
                             presence breadcrumbs)
-  monitors.js               Uptime Kuma monitor matching
+  monitors.js               Uptime Kuma: loads the monitors and assigns them to containers,
+                            one container per monitor unless mapped (see 4.2)
   icons.js                  icon picker search index: names only, persisted in the data dir,
                             refreshed from GitHub by the first search when a day old (see 6)
   icon-cache.js             public /api/icons/cached: icon-repository icons on disk, size-capped
@@ -262,6 +263,66 @@ Prometheus fails with no host read. So an outage of Prometheus or Kuma sends no 
 hosts and services they watch ([mobile/DESIGN.md](mobile/DESIGN.md),
 "Deterministic state-change detection").
 
+#### Kuma monitors and containers
+
+A Kuma monitor is one service, so it marks one container (#240): a down monitor
+paints one card red and sends one push, unless `services.yaml` maps it to
+several containers. Each cycle `assembleServices` (`refresh.js`) hands
+`assignMonitors` (`monitors.js`) every shown, running container (the same name
+on two nodes is two containers), plus the containers that stopped in the last
+24 hours (the container registry's missing ones), and the monitors are assigned
+to them all at once:
+
+1. **Explicit mapping.** A container whose `services.yaml` entry has
+   `monitor: <name>` gets the monitor of that name (compared case-insensitively;
+   with two of one name, the lower id), however unlike the names are. The
+   mapping is keyed by container name, so it applies on every node the
+   container runs on. A monitor mapped explicitly goes only to the containers
+   mapped to it. When the mapping names a monitor Kuma does not have, the
+   container gets no monitor and is left out of name matching, so it takes
+   nothing another container would have had. (It used to fall back to a name
+   match: on 2026-10-19 the four gateway containers on the Pis, mapped to
+   monitors Kuma lacks, all took "Pi Gateway (Ping)" that way.) It warns once
+   per mapping per boot, and not while Kuma has given no monitors at all.
+2. **By name, one container per monitor.** Every pair of a container and a
+   monitor whose names match is ranked, and pairs are taken best first, each
+   only while its container and its monitor are both free. Names compare
+   lowercased with everything but letters and digits removed. A pair ranks by
+   the kind of match: exact; then URL, a monitor named as a URL or hostname
+   whose first label is the container name (`grafana.example.com`); then
+   contains, one name inside the other (scored by the shorter one's length);
+   then a shared word of 4 letters or more (scored by the total length of the
+   shared words of 3 or more). Between equally good matches: a container that
+   is not a stack's helper (its own words include none of `redis`, `db`,
+   `postgres`, `cron`, `runner`, `proxy` and the like, so "Immich" goes to
+   `immich-server`); then the monitor's home node; then the board's node order;
+   then the container name; then the monitor id. That is a total order, so the
+   result does not depend on the order discovery or Kuma listed things in.
+
+The home node is the node the matcher last gave the monitor to (the service
+registry's `getHomeNode`), so a monitor stays put when another container of its
+name starts on an earlier node. It only breaks ties: ranked above the kind of
+match, a lookalike left on a monitor's node (gitea-runner) would keep the
+monitor after the service moved to another node. Registry records written
+before #240 carry no `assigned` marker and give no home: the old matcher kept
+the last node of its pass for a monitor it matched on several nodes
+(Vaultwarden on pi2, not vm103, on 2026-10-19). Each is marked the first time
+its monitor is matched again.
+
+A stopped container competes for its monitor as it did while running. A down
+monitor therefore stays with the container that stopped (a red card under its
+name, the uid its running card had) rather than passing to a running lookalike,
+and only a stopped container that got no monitor leaves a grey presence
+breadcrumb. A down monitor no running container got is drawn on the stopped
+container's node, else its last-seen node; its card never takes the uid of a
+card already on that node (its last container still running there, matched to
+nothing or to something else now), and then goes under the monitor's name.
+
+The service registry's `seen` list has one record per monitor, the last node in
+the pass for one mapped explicitly to a container on several nodes. A record is
+written only when a monitor's node or container changes, so cycles that match
+the same way write nothing, whatever order discovery returns containers in.
+
 ```mermaid
 flowchart TD
   subgraph Loop["refresh loop (~30s)"]
@@ -383,7 +444,8 @@ integration connection-test endpoint.
   took 5 s or more; a change in the cycle's set of failed refreshes (a refresh
   that returned null, or an integration with an `_error`); a Kuma load whose
   monitor count or source changed; and one line per boot for containers no
-  monitor matches. Prometheus failing (any node query of the cycle, or an
+  monitor went to. A `services.yaml` mapping to a monitor Kuma does not have
+  warns once per mapping per boot. Prometheus failing (any node query of the cycle, or an
   answer with no `up` series after one with some) and Kuma failing (no
   monitors loaded: unreachable, non-2xx, or a status page with none) each warn
   once, with the error, and their recovery logs once at info with how long it
