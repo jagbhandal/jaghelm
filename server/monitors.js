@@ -646,12 +646,18 @@ export function logUnmatchedContainers({ unmatched, containerCount, monitors }) 
 }
 
 /**
- * Select the monitors that represent a live OUTAGE: reporting `down`, with a
- * FRESH heartbeat (a paused/retired monitor stops beating → goes stale →
- * excluded, so it can't leave a phantom red card — the status-page `active`
- * flag is unreliable for this), and NOT already claimed by a running container
- * this cycle. These become synthesised red "down" cards on the board so an
- * outage stays visible after the container disappears from cAdvisor.
+ * The monitors no running container got this cycle that are `up` or `down`, in
+ * the map's order. assembleServices places all of them in one pass (#390): a
+ * down one becomes a synthesised red card, so an outage stays visible after the
+ * container disappears from cAdvisor; an up one is an entry only the push
+ * snapshot reads, under the same uid, so its recovery is sent.
+ *
+ * Each has a FRESH heartbeat: a paused/retired monitor stops beating, goes
+ * stale and is excluded, so it can't leave a phantom red card or send a false
+ * recovery (the status-page `active` flag is unreliable for this, though
+ * `active: false` excludes one too). A pending one (`unknown`) and one Kuma no
+ * longer has are not in it either, and nor is one already claimed by a running
+ * container this cycle.
  *
  * `monitors` is the id→monitor map from fetchMonitors (an array works too:
  * Object.values handles both). `consumedIds` is a Set of
@@ -662,19 +668,6 @@ export function logUnmatchedContainers({ unmatched, containerCount, monitors }) 
  * `lastBeatAt: null` + `active: true` by construction — paused monitors are
  * absent from /metrics entirely, so this staleness guard is intentionally INERT
  * for that source.
- */
-export function selectOutageMonitors(monitors, consumedIds, options) {
-  return selectUnclaimedMonitors(monitors, consumedIds, options).filter((m) => m.status === 'down');
-}
-
-/**
- * The monitors no running container got this cycle that are `up` or `down`,
- * with the same freshness and `active` rules as selectOutageMonitors, in the
- * map's order. assembleServices places all of them in one pass (#390): a down
- * one becomes a red card, an up one an entry only the push snapshot reads, both
- * under the same uid. A paused monitor (stale heartbeat, `active: false`, or
- * absent from /metrics), a pending one, and one Kuma no longer has are in
- * neither, so none of them sends a recovery.
  */
 export function selectUnclaimedMonitors(
   monitors,
