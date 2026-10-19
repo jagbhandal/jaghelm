@@ -1,6 +1,9 @@
 import { apiFetch } from '../api/client.js';
 import { iconSlugUrl } from '../utils/iconCdn.js';
 import { getApiBase } from '../api/baseUrl.js';
+// The server's own allowlist (dependency-free), so the client sends the cache
+// exactly the URLs it accepts.
+import { canonicalIconUrl } from '../../server/icon-sources.js';
 
 const etagStore = new Map();
 const resultStore = new Map();
@@ -171,28 +174,25 @@ export async function uploadFile(file, type) {
 }
 
 /**
- * Convert an external CDN icon URL to a locally-cached URL.
- * Icons are fetched from the CDN once, saved to data/icon-cache/,
+ * Convert an icon-repository URL to a locally-cached URL.
+ * Icons are fetched from the CDN once, saved to icon-cache/ in the data dir,
  * and served locally on all subsequent loads. Eliminates 20-30
  * cross-origin CDN round-trips on every cold page load.
  *
- * Non-CDN URLs (local paths, data URIs) pass through unchanged.
- * Emojis and empty strings return null.
+ * Only the URLs the server caches go through it: Dashboard Icons and selfh.st
+ * icons on jsDelivr or raw.githubusercontent.com (server/icon-sources.js, #255).
+ * Every other URL — another repository, a pinned version, any other host,
+ * local paths, data URIs — passes through unchanged and loads directly.
+ * Empty strings return null.
  *
  * Base-aware: the proxied URL is built from getApiBase() so on mobile it is an
- * absolute same-base URL that reaches Express over Tailscale and gets the
- * x-auth-token injected (the icon route is protected). Web is unchanged ('/api').
+ * absolute same-base URL that reaches Express over Tailscale. Web is unchanged ('/api').
  */
 export function cachedIconUrl(url) {
   if (!url || typeof url !== 'string') return null;
-  // Only proxy external CDN URLs
-  if (
-    url.startsWith('https://cdn.jsdelivr.net/') ||
-    url.startsWith('https://raw.githubusercontent.com/')
-  ) {
+  if (canonicalIconUrl(url)) {
     return `${getApiBase()}/icons/cached?url=${encodeURIComponent(url)}`;
   }
-  // Local paths, data URIs, etc. — pass through
   return url;
 }
 
