@@ -42,14 +42,19 @@ test('GET /api/secrets/keys → 403 when no password is set (fail-closed)', asyn
   assert.match(r.headers['content-type'], /json/);
 });
 
-test('raw infra passthroughs → 403 when no password is set (fail-closed)', async () => {
+test('raw infra passthroughs → JSON 404 (removed, #264)', async () => {
+  // Their fail-closed gate answered 403 in this no-auth mode, so a 404 is the
+  // route being gone, not the gate.
   for (const path of ['/api/prometheus/query?q=up', '/api/docker/containers',
                       '/api/adguard/stats', '/api/npm/stats', '/api/uptime/monitors']) {
     const r = await request(app).get(path);
-    assert.equal(r.status, 403, `${path} should be gated in no-auth mode`);
+    assert.equal(r.status, 404, `${path} should be gone`);
+    assert.match(r.headers['content-type'], /json/, `${path} should answer JSON`);
+    assert.ok(r.body.error, `${path} should carry an error`);
   }
-  // aggregated/benign routes stay open (not 403)
+  // aggregated/benign routes on the same router stay (not 404, not 403)
   const ups = await request(app).get('/api/ups');
+  assert.notEqual(ups.status, 404, '/api/ups should remain');
   assert.notEqual(ups.status, 403, '/api/ups should remain open');
 });
 

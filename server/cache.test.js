@@ -224,7 +224,7 @@ test('neither cache nor refresh has data: the fallback answers', async () => {
 test('a value nobody requests is never serialized', () => {
   const payload = sample(10);
   const work = countWork(payload);
-  setCache(freshKey(), payload); // a refresh cycle with no dashboard open, or prom-<q> (res.json)
+  setCache(freshKey(), payload); // a refresh cycle with no dashboard open, or weather-<lat>-<lon> (res.json)
   assert.equal(work.serialized(), 0);
   assert.equal(work.hashed(), 0);
 });
@@ -235,7 +235,7 @@ test('a key the refresh loop rewrites is never the one evicted', () => {
   const warm = freshKey();
   setCache(warm, { v: 0 });
   for (let i = 1; i <= 1000; i++) {
-    setCache(freshKey(), { i }); // one-off keys (prom-<q>, weather-<lat>-<lon>)
+    setCache(freshKey(), { i }); // one-off keys (weather-<lat>-<lon>)
     assert.notEqual(getCached(warm), null, `evicted after ${i} one-off keys`);
     if (i % 100 === 0) setCache(warm, { v: i }); // a refresh cycle
   }

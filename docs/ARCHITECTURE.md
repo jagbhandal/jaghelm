@@ -142,7 +142,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/display-config` | token | the display config blob |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
-| `/api/...` (infrastructure) | token | Prometheus query proxy, UPS, etc. |
+| `/api/...` (infrastructure) | token | UPS, Gitea activity, etc., read from the refresh loop |
 
 Auth is a **header token**, not a cookie (so permissive CORS is not a CSRF
 vector). `/api/secrets` additionally goes through `requireAuthEnabled` -- it
