@@ -152,10 +152,15 @@ function stripShellComments(script) {
   }).join('\n');
 }
 
+/** Every step's `run:` script in a workflow's source, with comments removed. */
+function stepRuns(source) {
+  const doc = yaml.load(source); // throws (fails) on invalid YAML
+  return Object.values(doc?.jobs ?? {}).flatMap((job) => (job?.steps ?? []).map((s) => stripShellComments(String(s?.run ?? ''))));
+}
+
 /** What is missing from the secret-floor wiring in check.yml's source ([] = wired). */
 function floorWiringProblems(source) {
-  const doc = yaml.load(source); // throws (fails) on invalid YAML
-  const runs = Object.values(doc?.jobs ?? {}).flatMap((job) => (job?.steps ?? []).map((s) => stripShellComments(String(s?.run ?? ''))));
+  const runs = stepRuns(source);
   const problems = [];
   if (!runs.some((r) => r.includes('scripts/secret-scan.py'))) problems.push('no step runs scripts/secret-scan.py');
   const tracked = runs.find((r) => r.includes('git ls-files --error-unmatch'));
@@ -182,6 +187,16 @@ test('floor-wiring checker: a commented-out command does not count', () => {
 test('check.yml runs the secret scan and the template-tracked assertion', () => {
   const problems = floorWiringProblems(read(CHECK_WORKFLOW));
   assert.equal(problems.length, 0, `${CHECK_WORKFLOW}: ${problems.join('; ')}`);
+});
+
+// ── check.yml lints both CHANGELOGs ─────────────────────────────────────────
+// changelog-lint.mjs also lints the changes/ fragments next to the file it is given (#357),
+// so these two commands are the fragment lint as well.
+test('check.yml lints both CHANGELOGs and their fragments', () => {
+  const runs = stepRuns(read(CHECK_WORKFLOW)).join('\n');
+  for (const cmd of ['node scripts/changelog-lint.mjs CHANGELOG.md', 'node scripts/changelog-lint.mjs --mobile mobile/CHANGELOG.md']) {
+    assert.ok(runs.includes(cmd), `${CHECK_WORKFLOW}: no step runs "${cmd}"`);
+  }
 });
 
 // ── no tests outside npm test ───────────────────────────────────────────────
