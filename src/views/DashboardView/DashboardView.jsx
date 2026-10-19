@@ -18,6 +18,7 @@ import { DEFAULT_LAYOUTS, migrateLayouts } from './layouts';
 import { useDashboardData, pollPeriodMs } from './useDashboardData';
 import { useAppDataMatching } from './useAppDataMatching';
 import { useEffectiveLayouts } from './useEffectiveLayouts';
+import { useConfiguredPanels, SOURCE_PANEL_KEYS } from './configuredPanels';
 import { sourceBanner } from './sourceHealth';
 
 /**
@@ -188,11 +189,22 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
     return { lg, md: Math.min(lg, 20), sm: 1 };
   }, [config.gridColumns]);
 
+  // UPS and Pipeline show only once their source is configured (#272); the
+  // rule is in configuredPanels.js.
+  const configured = useConfiguredPanels({
+    config,
+    ups,
+    commits,
+    commitsLastSuccessMs: sources.commits?.lastSuccessMs,
+  });
+  const unconfigured = useMemo(() => SOURCE_PANEL_KEYS.filter((k) => !configured[k]), [configured]);
+
   const effectiveLayouts = useEffectiveLayouts(
     layouts,
     serviceData,
     customGroups,
-    config.gridColumns
+    config.gridColumns,
+    unconfigured
   );
 
   const handleLayoutChange = useCallback(
@@ -504,7 +516,7 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
             {nodePlaceholders}
             {customGroupElements}
 
-            {sc.ups?.visible !== false && (
+            {configured.ups && sc.ups?.visible !== false && (
               <div key="ups">
                 <ErrorBoundary inline itemId="ups" label="UPS panel failed to render">
                   <UPSCard
@@ -515,7 +527,7 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
                 </ErrorBoundary>
               </div>
             )}
-            {sc.pipeline?.visible !== false && (
+            {configured.pipeline && sc.pipeline?.visible !== false && (
               <div key="pipeline">
                 <ErrorBoundary inline itemId="pipeline" label="Pipeline panel failed to render">
                   <GiteaActivity commits={commits} banner={bannerEl(banners.commits)} />

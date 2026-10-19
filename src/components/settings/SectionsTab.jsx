@@ -127,8 +127,8 @@ export default function SectionsTab() {
   return (
     <div className="settings-section">
       <p className="settings-desc" style={{ marginBottom: 16 }}>
-        Customize the appearance of dashboard sections. Node sections (Gateway, Production, Staging)
-        are managed in the Nodes tab.
+        Customize the appearance of dashboard sections. Node sections are managed in the Nodes tab.
+        The UPS and Pipeline sections appear on the dashboard once their source reports.
       </p>
 
       {colorTarget && (

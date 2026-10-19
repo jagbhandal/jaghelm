@@ -1,16 +1,28 @@
 import { useMemo, useRef } from 'react';
-import { MOBILE_PANEL_ORDER, STATIC_PANEL_KEYS } from './layouts';
+import { STATIC_PANEL_KEYS, orderForMobile } from './layouts';
+
+const NONE = [];
 
 /**
  * Reconciles the saved/default layout with the actual set of dynamic panels
  * (nodes + custom groups), enforces min-size constraints, and auto-generates
  * the mobile (sm) breakpoint when missing.
  *
+ * `unconfigured` lists static panels whose source isn't configured (#272): they
+ * are not added to a layout that lacks them, so they hold no slot in the grid.
+ * A layout that already has one keeps it.
+ *
  * Stability: returns the previous object reference whenever the layout
  * content is unchanged, preventing react-grid-layout's compactor from
  * re-running on every 30-second data refresh.
  */
-export function useEffectiveLayouts(layouts, serviceData, customGroups, gridColumns) {
+export function useEffectiveLayouts(
+  layouts,
+  serviceData,
+  customGroups,
+  gridColumns,
+  unconfigured = NONE
+) {
   const prevRef = useRef(null);
 
   return useMemo(() => {
@@ -31,7 +43,9 @@ export function useEffectiveLayouts(layouts, serviceData, customGroups, gridColu
 
       const existingKeys = new Set(constrained.map((i) => i.i));
       const missingDynamic = allDynamicKeys.filter((k) => !existingKeys.has(k));
-      const missingStatic = STATIC_PANEL_KEYS.filter((k) => !existingKeys.has(k));
+      const missingStatic = STATIC_PANEL_KEYS.filter(
+        (k) => !existingKeys.has(k) && !unconfigured.includes(k)
+      );
 
       let maxY = constrained.reduce((max, i) => Math.max(max, i.y + i.h), 0);
       const newItems = [...missingDynamic, ...missingStatic].map((k) => ({
@@ -51,11 +65,8 @@ export function useEffectiveLayouts(layouts, serviceData, customGroups, gridColu
       const lgItems = result.lg || result.md || [];
       const allKeys = lgItems.map((i) => i.i);
 
-      // Explicit-order keys first, then anything custom (groups, unknown nodes)
-      const orderedKeys = [
-        ...MOBILE_PANEL_ORDER.filter((k) => allKeys.includes(k)),
-        ...allKeys.filter((k) => !MOBILE_PANEL_ORDER.includes(k)),
-      ];
+      // MOBILE_PANEL_ORDER first (nodes in desktop order), then custom groups.
+      const orderedKeys = orderForMobile(allKeys);
 
       const heightByKey = {};
       for (const item of lgItems) heightByKey[item.i] = item.h || 4;
@@ -91,5 +102,5 @@ export function useEffectiveLayouts(layouts, serviceData, customGroups, gridColu
 
     prevRef.current = result;
     return result;
-  }, [layouts, serviceData, customGroups, gridColumns]);
+  }, [layouts, serviceData, customGroups, gridColumns, unconfigured]);
 }
