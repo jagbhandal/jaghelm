@@ -27,9 +27,36 @@ publishes `:latest` and `:sha-<short>`. A release never rebuilds: `release.yml`
 adds `:X.Y.Z` to the image that `main` already built, so the released bytes are
 the ones that were deployed from that commit.
 
+## Changelog entries during development
+
+A PR never edits `CHANGELOG.md` or `mobile/CHANGELOG.md`. It writes its entry
+as a fragment, a file of its own that the release PR folds in, so open PRs never
+conflict over `## [Unreleased]`:
+
+- `changes/<issue>-<slug>.md` for a server change,
+  `mobile/changes/<issue>-<slug>.md` for an Android app change.
+- The content is one or more subsections from
+  [The CHANGELOG format](#the-changelog-format), in that order, each with its
+  bullets, and nothing else (no summary or requirement line). For example,
+  `changes/245-access-log.md`:
+
+  ```markdown
+  ### Fixed
+  - The server's access log now records API requests with their full path.
+  ```
+
+- A PR with no user-facing change (internal CI, tests, refactors) adds no
+  fragment.
+
+`changes/README.md` and `mobile/changes/README.md` describe the same rules next
+to the files. The CHANGELOG lint (step 6 below, and `check.yml` on every PR)
+also checks each fragment, naming the file and line of a problem, and checks the
+CHANGELOG as it would be once the fragments are folded in.
+
 ## When to release
 
-Release when `## [Unreleased]` holds user-facing changes worth shipping. Pick
+Release when `## [Unreleased]` and the fragments in `changes/` (or
+`mobile/changes/`) hold user-facing changes worth shipping. Pick
 the version by [Semantic Versioning](https://semver.org/): a breaking change
 (anything under "Breaking changes") is a major bump, a new feature a minor
 bump, and fixes only a patch bump. Before 2.0.0, breaking changes shipped in
@@ -42,20 +69,34 @@ first and give the Android section a requirement line (see below).
 
 One PR per release, from a branch off `main`:
 
-1. Bump the version file: `package.json` for the server, `mobile/package.json`
+1. Fold the fragments into the CHANGELOG, for each CHANGELOG that has any:
+
+   ```bash
+   node scripts/changelog-fold.mjs            # changes/ into CHANGELOG.md
+   node scripts/changelog-fold.mjs --mobile   # mobile/changes/ into mobile/CHANGELOG.md
+   ```
+
+   It adds every fragment's bullets to `## [Unreleased]`, subsection by
+   subsection in the canonical order, after the entries already there and in
+   ascending issue-number order, then deletes the fragment files (the READMEs
+   stay). Nothing else in the file changes, and with no fragments it changes
+   nothing. If a fragment or the result would fail the lint, it prints the
+   problems and changes nothing. Commit the CHANGELOG and the deletions
+   together, and edit the folded bullets in the CHANGELOG if they need it.
+2. Bump the version file: `package.json` for the server, `mobile/package.json`
    for the Android app. The workflows refuse a tag whose version differs from
    the version file at the tagged commit.
-2. In the CHANGELOG, turn `## [Unreleased]` into `## [X.Y.Z] — YYYY-MM-DD`
+3. In the CHANGELOG, turn `## [Unreleased]` into `## [X.Y.Z] — YYYY-MM-DD`
    (em dash) and add a one-sentence summary directly under the heading. Start a
    new, empty `## [Unreleased]` above it.
-3. Android only, optional: directly under the summary, add
+4. Android only, optional: directly under the summary, add
    `Requires JagHelm server X.Y.Z or later.` The release page shows it in its
    header.
-4. Update the link references at the bottom of the file: add
+5. Update the link references at the bottom of the file: add
    `[X.Y.Z]: https://github.com/jagbhandal/jaghelm/compare/vPREV...vX.Y.Z`
    (`mobile-vPREV...mobile-vX.Y.Z` for Android) and change `[Unreleased]` to
    compare from the new tag to `HEAD`.
-5. Lint and preview locally (Node built-ins only, no install needed):
+6. Lint and preview locally (Node built-ins only, no install needed):
 
    ```bash
    node scripts/changelog-lint.mjs CHANGELOG.md
@@ -64,9 +105,9 @@ One PR per release, from a branch off `main`:
    node scripts/release-notes.mjs android X.Y.Z --apk jaghelm-android-X.Y.Z.apk --sha256 pending
    ```
 
-   The lint prints nothing and exits 0 when the file is valid. `check.yml`
-   runs the same lint on every PR to `main`.
-6. Server only: run `npm run test:ci` and raise `MIN_PASSING` in
+   The lint prints nothing and exits 0 when the file and the fragments next to
+   it are valid. `check.yml` runs the same lint on every PR to `main`.
+7. Server only: run `npm run test:ci` and raise `MIN_PASSING` in
    `scripts/test-floor.mjs` to the `# pass` count it prints. CI fails a run that
    passes fewer tests than this floor, so keeping it current means a silently
    dropped test is caught.
@@ -81,7 +122,8 @@ Breaking changes include the migration step. No emoji, marketing headlines,
 test counts or notes on how the work was produced, and no internal CI or
 deploy-pipeline changes (those are in the git history). Bullets may be
 hard-wrapped; do not use nested bullets or code blocks inside bullets. The lint
-checks structure and emoji; tone is a review concern.
+checks structure and emoji; tone is a review concern. A fragment follows the
+same rules for its subsections and bullets, and has no summary line.
 
 ## 2. Dry run
 
