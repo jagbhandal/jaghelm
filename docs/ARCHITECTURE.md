@@ -349,10 +349,13 @@ flowchart TD
   loads every source once on mount; a tick then fetches the live sources
   (`/api/services`, `/api/ups`, `/api/integrations`) plus one slow source in turn
   (`/api/history`, `/api/cron/status`, `/api/gitea/activity`), so four requests
-  per tick. The navbar health dot reads `overallHealth` from the board's own
-  `/api/services` result, and the navbar refetches weather at most every 10
-  minutes. The Settings preview loads once when shown and refreshes only on its
-  button.
+  per tick. A panel shows its "updated ... ago" stale note after 2 missed polls
+  of its own source (`pollPeriodMs` in `useDashboardData`): 1 minute for a live
+  source and 3 minutes for a slow one at 30 s. The navbar health dot reads
+  `overallHealth` from the board's own `/api/services` result, so it holds its
+  last value while polling is paused (the "Updated" clock keeps counting) and
+  catches up on return. The navbar refetches weather at most every 10 minutes.
+  The Settings preview loads once when shown and refreshes only on its button.
 - **Design system.** 10 themes (`themes.js` + `[data-theme]` token blocks),
   generic `--space-*` / `--text-*` scales plus semantic `--fs-*` card tokens,
   and a global `:focus-visible` ring + reduced-motion handling.
