@@ -17,7 +17,9 @@ export const servicesConfigSchema = z
     nodes: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).optional(),
     services: z.record(z.string(), z.unknown()).optional(),
     integrations: z.record(z.string(), z.unknown()).optional(),
-    links: z.array(z.unknown()).optional(),
+    // No `links` rule: services.yaml has no links (they live in display-config.json).
+    // Files generated before #265 carry a `links` object, which must still save;
+    // scanConfig below still rejects an unsafe URL inside it.
   })
   .passthrough();
 
