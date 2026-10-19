@@ -246,6 +246,8 @@ bullets from `[Unreleased]` into `[X.Y.Z]`, then tag that merge commit.
 
 - `/api/health` on the deployed server returns `"version":"X.Y.Z"` and the
   tagged commit's short SHA as `revision`.
+- The server's `listening` startup log line (in Loki) shows the Node version the
+  image runs as `node`, such as `"node":"v26.12.0"`.
 - The GitHub Releases page shows the new release; Latest is the newest server
   release.
 - The APK downloads from the Android release, its SHA-256 (`sha256sum`) matches

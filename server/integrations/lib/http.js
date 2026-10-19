@@ -18,6 +18,11 @@ import { redactError } from '../../util/redact.js';
  *
  * Currently `tlsSkip: true` is set only by the Proxmox preset, but the per-request
  * dispatcher pattern means any number of presets can use TLS skip safely.
+ *
+ * The Agent comes from the undici package but is driven by Node's built-in fetch,
+ * which is the undici bundled with Node (process.versions.undici). An Agent from
+ * another major fails every request with "fetch failed", so bump the undici
+ * dependency together with Node (#375; http.test.js checks the majors match).
  */
 
 const tlsSkipAgent = new Agent({ connect: { rejectUnauthorized: false } });

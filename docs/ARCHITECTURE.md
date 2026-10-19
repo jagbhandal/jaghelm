@@ -70,7 +70,7 @@ on an interval into an in-memory cache, so API reads are fast and ETag-enabled
 ## 3. Repository layout
 
 ```
-server/                     Express API (Node 22, ESM)
+server/                     Express API (Node 26, ESM)
   index.js                  app wiring: middleware chain + route mounts + SPA fallback
   refresh.js                background refresh loop (start/stop)
   cache.js                  bounded in-memory cache (evicts least recently written, ETags)
@@ -521,6 +521,18 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
 `npm test` preloads `scripts/test-data-dir.mjs`, which gives every test process
 its own temp `JAGHELM_DATA_DIR`, so the suite never reads or writes the
 checkout's `data/` (`scripts/test-data-dir.test.mjs` guards the wiring).
+
+It also preloads `scripts/test-exit-guard.mjs`. From Node 26, `--test-timeout`
+bounds each test but no longer a test file's process, so a file that leaves a
+server, interval or socket open would keep `npm test` running forever. The
+guard fails such a file once it is still running `--test-timeout` ms after its
+last test, its after hooks included (`scripts/test-exit-guard.test.mjs`). It
+only bounds files that register a test: one that hangs before registering any
+still hangs.
+
+The Vitest configs (`vite.config.js`, `mobile/vite.config.mobile.js`) start
+their workers with `--no-experimental-webstorage`: Node 25 and later ship a
+`localStorage` global of their own, which hides jsdom's.
 
 `npm run test:ci` also fails a run that passes fewer backend tests than the
 floor in `scripts/test-floor.mjs`, so a silently dropped test is caught. The

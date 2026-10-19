@@ -229,7 +229,7 @@ jobs:
         if: env.RENDER_NOTES == 'true'
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: '22'
+          node-version: '26'
 
       - name: Render release notes from the CHANGELOG
         if: env.RENDER_NOTES == 'true'

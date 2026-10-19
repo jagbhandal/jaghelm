@@ -4,10 +4,11 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkSummary, parseSummary, staleFloorNotice } from './test-floor.mjs';
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'test-floor.mjs');
+const EXIT_GUARD = pathToFileURL(path.join(path.dirname(SCRIPT), 'test-exit-guard.mjs')).href;
 
 const TAP_TAIL = [
   'ok 765 - last test',
@@ -112,7 +113,8 @@ const run = (...args) => runScript(SCRIPT, args);
 test('CLI exits 0 and passes the output through when the floor is met', () => {
   const r = run('--min=3', process.execPath, '--test', PASSING);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^# pass 3$/m);
+  // TAP up to Node 22 when stdout is not a terminal, spec from Node 23.
+  assert.match(r.stdout, /^(?:#|ℹ) pass 3$/m);
   assert.match(r.stderr, /3 passed \(floor 3\)/);
   assert.doesNotMatch(r.stderr, /consider raising/);
 });
@@ -135,10 +137,14 @@ test('CLI keeps the command\'s failing exit code', () => {
   assert.match(r.stderr, /1 test\(s\) failed/);
 });
 
-test('CLI fails a file that leaks an open handle once --test-timeout cancels it', () => {
-  const r = run('--min=1', process.execPath, '--test', '--test-timeout=500', LEAKING);
+// From Node 26, --test-timeout no longer stops a file's process; npm test preloads
+// scripts/test-exit-guard.mjs to do it (#375), so this runs with it too.
+test('CLI fails a file that leaks an open handle once the exit guard stops it', () => {
+  const r = run('--min=1', process.execPath, '--import', EXIT_GUARD, '--test', '--test-timeout=500', LEAKING);
   assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /cancelled/);
+  assert.match(r.stderr, /1 test\(s\) (?:failed|cancelled)/);
+  // The failure is the guard stopping the leak, not some other error in the fixture.
+  assert.match(r.stdout + r.stderr, /still running 500 ms after its tests finished/);
 });
 
 test('CLI exits 1 when the command prints no summary', () => {

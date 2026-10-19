@@ -119,9 +119,10 @@ Honest about where the engineering floor sits today:
   plus a minimum-test-count floor, so a run that silently drops tests fails),
   the client suite (`npm run test:client`), and the mobile suite — all required
   before merge.
-  Node 22 is the validated toolchain (matching the Docker base image); newer
-  Node majors can break the jsdom-based client tests, which is why
-  `package.json` now declares a supported `engines` range.
+  Node 26 is the validated toolchain (matching the Docker base image and
+  `.nvmrc`), and `package.json` declares it in `engines`. Node 25 and later
+  ship their own `localStorage` global, which hides jsdom's, so both Vitest
+  configs turn it off in their test workers (`--no-experimental-webstorage`).
 - **Accessibility gaps.** Focus indicators, reduced-motion handling, form-label
   associations, and keyboard-driven panel reordering are incomplete. Tracked in
   Phase 4 of the plan.

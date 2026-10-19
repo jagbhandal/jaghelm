@@ -43,6 +43,10 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     unstubGlobals: true,
+    // Node 25+ ships its own `localStorage` global, which shadows jsdom's and is
+    // undefined without --localstorage-file. Turn it off in the test workers so
+    // the tests get jsdom's, as the WebView would (#375).
+    execArgv: ['--no-experimental-webstorage'],
     setupFiles: ['./src/testing/setup.js'],
     include: ['*.test.{js,jsx}', 'src/**/*.test.{js,jsx}'],
     css: false,
