@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTokenStore, DEFAULT_PREFS } from './tokenStore.js';
@@ -216,6 +216,25 @@ test('markDelivered ignores unknown tokens and writes nothing when nothing chang
   cleanup();
 });
 
+test('markDelivered skips a token already seen within the last day, without a write', () => {
+  const { path, store, setNow, cleanup } = freshStore();
+  const HOUR = 60 * 60 * 1000;
+  setNow(1000);
+  store.registerToken('tok', { platform: 'android', appVersion: '1.0.0' });
+  const inode = statSync(path).ino; // every save is an atomic rename: a write changes the inode
+
+  setNow(1000 + 23 * HOUR); // a flapping service: another accepted push the same day
+  assert.equal(store.markDelivered(['tok']), 0);
+  assert.equal(store.getToken('tok').lastSeenAt, 1000);
+  assert.equal(statSync(path).ino, inode, 'push-tokens.json not rewritten');
+
+  setNow(1000 + 25 * HOUR);
+  assert.equal(store.markDelivered(['tok']), 1);
+  assert.equal(store.getToken('tok').lastSeenAt, 1000 + 25 * HOUR);
+  assert.notEqual(statSync(path).ino, inode, 'written once a day has passed');
+  cleanup();
+});
+
 test('deliveries alone keep a never-reopened token past the prune window (#247)', () => {
   const { store, setNow, cleanup } = freshStore();
   setNow(1000);
@@ -290,6 +309,33 @@ test('construct tolerates a corrupt JSON file (falls back to empty store)', () =
   // And it can recover by registering anew.
   store.registerToken('recover', { platform: 'android', appVersion: '1.0.0' });
   assert.equal(createTokenStore({ path, now: () => 1 }).getToken('recover').platform, 'android');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('load drops records that are not objects, so one bad record cannot stop every push cycle', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jaghelm-tokens-'));
+  const path = join(dir, 'push-tokens.json');
+  const good = { platform: 'android', appVersion: '1.0.0', registeredAt: 1000, lastSeenAt: 1000, prefs: DEFAULT_PREFS };
+  writeFileSync(path, JSON.stringify({ good, nul: null, str: 'x', num: 5, arr: [1] }), 'utf8');
+  const store = createTokenStore({ path, now: () => 2000 });
+  assert.deepEqual(store.getAllTokens().map((r) => r.token), ['good']);
+  assert.equal(store.pruneStale(), 0);
+  assert.equal(store.getToken('nul'), null);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('load repairs a record with a non-number lastSeenAt (kept, not pruned) or no prefs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jaghelm-tokens-'));
+  const path = join(dir, 'push-tokens.json');
+  writeFileSync(path, JSON.stringify({
+    iso: { platform: 'android', registeredAt: 1000, lastSeenAt: '2026-06-25T00:00:00Z', prefs: DEFAULT_PREFS },
+    noprefs: { platform: 'android', registeredAt: 1000, lastSeenAt: 4000 },
+  }), 'utf8');
+  const store = createTokenStore({ path, now: () => 5000 });
+  assert.equal(store.getToken('iso').lastSeenAt, 5000, 'an unreadable lastSeenAt is not evidence the token is dead');
+  assert.equal(store.pruneStale(), 0);
+  assert.deepEqual(store.getToken('noprefs').prefs, DEFAULT_PREFS);
+  assert.equal(store.getAllTokens().length, 2);
   rmSync(dir, { recursive: true, force: true });
 });
 

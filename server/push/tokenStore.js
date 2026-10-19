@@ -16,12 +16,10 @@ import { createLogger } from '../util/logger.js';
 const log = createLogger('push-tokens');
 
 const DEFAULT_PATH = join(DATA_DIR, 'push-tokens.json');
-// Tokens are removed when FCM rejects them on send (see dispatchEvents). This age
-// backstop only clears tokens with no sign of life for longer than FCM itself keeps
-// an inactive Android registration (270 days). `lastSeenAt` is the last sign of
-// life: an app launch (registerToken) or a send FCM accepted (markDelivered). A
-// phone used only to receive alerts is never pruned while FCM accepts its pushes.
-const STALE_AFTER_MS = 270 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Pruned when FCM names a token dead on send, or after 270 days with no app start and
+// no accepted push (lastSeenAt): no sooner than FCM's own 270-day expiry.
+const STALE_AFTER_MS = 270 * DAY_MS;
 
 /** Default notification preferences seeded for every newly-registered token. */
 export const DEFAULT_PREFS = Object.freeze({
@@ -66,9 +64,18 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
       const parsed = JSON.parse(readFileSync(path, 'utf8'));
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         // Rebuild into a null-proto map so inherited keys (__proto__ etc.) can
-        // never be accessed via a bare store[key] lookup.
+        // never be accessed via a bare store[key] lookup. One damaged record must not
+        // throw in getAllTokens/pruneStale (that stops every push cycle): drop
+        // non-objects, repair the rest.
         const safe = Object.create(null);
-        for (const k of Object.keys(parsed)) safe[k] = parsed[k];
+        for (const k of Object.keys(parsed)) {
+          const rec = parsed[k];
+          if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue;
+          // An unreadable lastSeenAt is not evidence the token is dead: restart its clock.
+          if (!Number.isFinite(rec.lastSeenAt)) rec.lastSeenAt = now();
+          rec.prefs = normalizePrefs(rec.prefs);
+          safe[k] = rec;
+        }
         return safe;
       }
       return Object.create(null);
@@ -152,8 +159,9 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
 
   /**
    * Record that FCM accepted a send to each of these tokens: bump lastSeenAt to now.
-   * Unknown tokens are ignored (never re-created). One write for the whole batch,
-   * none when nothing matched. Returns how many tokens were bumped.
+   * Unknown tokens are ignored (never re-created). A token seen within the last day
+   * is left alone, so a flapping service does not rewrite the file every dispatch.
+   * One write for the whole batch, none when nothing changed. Returns the count bumped.
    */
   function markDelivered(tokens) {
     const ts = now();
@@ -161,7 +169,7 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
     for (const token of tokens) {
       if (!Object.prototype.hasOwnProperty.call(store, token)) continue;
       const rec = store[token];
-      if (!rec) continue;
+      if (!rec || ts - rec.lastSeenAt < DAY_MS) continue;
       rec.lastSeenAt = ts;
       bumped += 1;
     }
@@ -173,10 +181,8 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
     const cutoff = now() - maxAgeMs;
     let removed = 0;
     for (const token of Object.keys(store)) {
-      const rec = store[token];
-      // Defensive: a record with a non-numeric lastSeenAt is treated as stale.
-      const seen = typeof rec.lastSeenAt === 'number' ? rec.lastSeenAt : -Infinity;
-      if (seen < cutoff) {
+      // load() guarantees a numeric lastSeenAt; register/markDelivered only set numbers.
+      if (store[token].lastSeenAt < cutoff) {
         delete store[token];
         removed += 1;
       }
