@@ -9,7 +9,7 @@ import { sourceBanner } from './sourceHealth';
 // re-render. This test stubs fetch to answer 200-then-304 for /api/services and
 // asserts the hook's serviceData reference is stable across the 304 tick.
 //
-// NOTE: useData.js keeps a module-level etagStore/resultStore keyed by URL. The
+// NOTE: useData.js keeps a module-level map of { etag, body } keyed by URL. The
 // first request the hook makes is skipEtag (no If-None-Match), which the stub
 // answers 200; later requests carry If-None-Match and get 304.
 

@@ -5,10 +5,15 @@ import { getApiBase } from '../api/baseUrl.js';
 // exactly the URLs it accepts.
 import { canonicalIconUrl } from '../../server/icon-sources.js';
 
-// url → { etag, body }: the last 200 whose body parsed, and the ETag it came
-// with (null when it had none). Written in one step, after the parse, so the
-// ETag sent as If-None-Match always describes the body a 304 hands back.
+// url → { etag, body, seq }: the last 200 whose body parsed, the ETag it came
+// with (null when it had none), and the request's place in send order. Written
+// in one step, after the parse, so the ETag sent as If-None-Match always
+// describes the body a 304 hands back.
 const held = new Map();
+// Send order: each fetchJson call takes the next number. When requests for one
+// URL overlap, the pair from the one sent last is kept, whichever body finishes
+// last.
+let lastSent = 0;
 
 /**
  * Sentinel for the 304 cold-start edge (304 with no cached 200 body). Distinct
@@ -36,7 +41,9 @@ export const NOT_MODIFIED_NO_BODY = Object.freeze({ __jaghelm304NoBody: true });
  * the stored ETag always describes the body held. A 200 whose body is empty,
  * malformed or cut off by the timeout throws and leaves the held pair as it was
  * (with none held, the next request stays unconditional). A 200 without an ETag
- * replaces the pair with no ETag, so the next request is unconditional.
+ * replaces the pair with no ETag, so the next request is unconditional. When
+ * requests for one URL overlap, the newest request's pair wins: an older one
+ * that finishes later stores nothing and returns the newer body.
  *
  * Pass skipEtag=true to force a full fetch (used on first load when state is empty).
  * A forced fetch also bypasses AND refreshes the browser's HTTP cache, which may
@@ -46,6 +53,7 @@ export const NOT_MODIFIED_NO_BODY = Object.freeze({ __jaghelm304NoBody: true });
  * job reappearing for up to max-age).
  */
 async function fetchJson(url, skipEtag = false) {
+  const seq = ++lastSent;
   const headers = {};
   const storedEtag = held.get(url)?.etag;
   if (storedEtag && !skipEtag) {
@@ -67,7 +75,11 @@ async function fetchJson(url, skipEtag = false) {
   // Parse before storing anything: a failed parse throws here and leaves the
   // held pair untouched.
   const body = await r.json();
-  held.set(url, { etag: r.headers.get('ETag') || null, body });
+  const cur = held.get(url);
+  // A request sent later already stored its pair: keep it and hand back its
+  // body, so the caller doesn't step back to this older one.
+  if (cur && cur.seq > seq) return cur.body;
+  held.set(url, { etag: r.headers.get('ETag') || null, body, seq });
   return body;
 }
 

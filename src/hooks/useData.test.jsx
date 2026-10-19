@@ -299,32 +299,62 @@ describe('fetchJson — the stored ETag always describes the body held', () => {
     expect(sent).toEqual([null, '"v1"', null]);
   });
 
-  it('overlapping fetches whose bodies finish out of order store a matching pair', async () => {
+  // A 200 whose body loads slowly: json() waits until `finish` is called.
+  const slow200 = (body, etag) => {
+    let finish;
+    const parsed = new Promise((r) => (finish = () => r(body)));
+    const response = { ok: true, status: 200, headers: new Headers({ ETag: etag }), json: () => parsed };
+    return { response, finish: () => finish() };
+  };
+
+  it('overlapping fetches: the request sent last wins, whichever body finishes last', async () => {
     serve('"v1"', A);
     await getServices(true);
 
-    // Two polls in flight: X gets v2 headers first, Y gets v3 headers second,
-    // and Y's body finishes before X's.
-    const bodies = [];
-    const pending = (body, etag) => {
-      let resolve;
-      const promise = new Promise((r) => (resolve = r));
-      bodies.push(() => resolve(body));
-      return { ok: true, status: 200, headers: new Headers({ ETag: etag }), json: () => promise };
-    };
-    fetch.mockImplementationOnce(() => Promise.resolve(pending(B, '"v2"')));
-    fetch.mockImplementationOnce(() => Promise.resolve(pending(C, '"v3"')));
+    // Two polls in flight: X is sent first and gets v2 (B), Y is sent second and
+    // gets v3 (C), and Y's body finishes before X's.
+    const x200 = slow200(B, '"v2"');
+    const y200 = slow200(C, '"v3"');
+    fetch.mockImplementationOnce(() => Promise.resolve(x200.response));
+    fetch.mockImplementationOnce(() => Promise.resolve(y200.response));
     const x = getServices(false);
     const y = getServices(false);
-    await vi.waitFor(() => expect(bodies).toHaveLength(2));
-    bodies[1]();
-    await expect(y).resolves.toEqual(C);
-    bodies[0]();
-    await expect(x).resolves.toEqual(B);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    y200.finish();
+    const newer = await y;
+    expect(newer).toBe(C);
 
-    // Whatever is held, its ETag must match it: the server is at v3 (C), and a
-    // poll must not get a 304 for v3 that hands back B.
+    // X finishes last but was sent first: it keeps Y's pair and hands its
+    // caller Y's body, so the dashboard does not step back to B.
+    x200.finish();
+    await expect(x).resolves.toBe(newer);
+
+    // Still holding v3 (C): the next poll asks with v3 and gets C back.
     serve('"v3"', C);
-    await expect(getServices(false)).resolves.toEqual(C);
+    await expect(getServices(false)).resolves.toBe(newer);
+    expect(sent.at(-1)).toBe('"v3"');
+  });
+
+  it('overlapping fetches: a later request that fails does not stop an earlier one storing', async () => {
+    serve('"v1"', A);
+    await getServices(true);
+
+    // X is sent first and its body is still loading; Y is sent second and its
+    // body is broken, so Y fails before X finishes.
+    const x200 = slow200(B, '"v2"');
+    fetch.mockImplementationOnce(() => Promise.resolve(x200.response));
+    fetch.mockImplementationOnce(() =>
+      Promise.resolve(new Response('{"nodes":', { status: 200, headers: { ETag: '"v3"' } }))
+    );
+    const x = getServices(false);
+    const y = getServices(false);
+    await expect(y).rejects.toThrow();
+    x200.finish();
+    await expect(x).resolves.toBe(B);
+
+    // X's pair is held: the next poll asks with v2 and gets B back.
+    serve('"v2"', B);
+    await expect(getServices(false)).resolves.toBe(B);
+    expect(sent.at(-1)).toBe('"v2"');
   });
 });
