@@ -62,6 +62,13 @@ anywhere reachable from outside your network.
   open. Still: set `DASH_USER` / `DASH_PASS` (and ideally a reverse proxy with
   its own auth) before exposing it. **Do not put a no-password instance on the
   public internet.**
+- **The icon cache is public, even with a password set.** Icons are `<img>`
+  tags, which can't send the login token, so `/api/icons/cached` needs none. It
+  only fetches icons of the two icon repositories the picker uses (Dashboard
+  Icons and selfh.st), keeps at most 50 MB of them (`JAGHELM_ICON_CACHE_MAX_MB`)
+  and drops the least recently used past that, so anyone who can reach the port
+  can make it fetch those icons and churn the cache, but not fill the disk or
+  fetch anything else.
 - **Bridge network by default; host networking is opt-in.** The published
   `compose.yaml` uses a bridge network and publishes only the app port — the
   safer, isolated default. If JagHelm can't reach LAN exporters/services that
