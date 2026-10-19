@@ -263,6 +263,11 @@ integration connection-test endpoint.
 ### 4.6 Observability
 
 - **Structured logging** (`util/logger.js`) with redaction -- no secrets in logs.
+  `LOG_LEVEL` (`debug|info|warn|error|silent`, default `info`) filters it. Lines
+  every refresh cycle would repeat are debug; info and above are kept for
+  changes, failures and recoveries (a slow cycle or a change in its set of
+  failing refreshes, Kuma's monitors changing or becoming unreachable, and one
+  line per boot for containers no monitor matches).
 - **Prometheus metrics** at `/metrics` via `prom-client` (`metrics.js`): request
   rate, latency histograms, refresh-loop health.
 - **Two probes**: `/api/health` (liveness; reflects refresh-loop liveness -- 503

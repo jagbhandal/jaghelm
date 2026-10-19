@@ -6,6 +6,9 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- The server no longer writes two log lines on every refresh cycle, which were most of what it logged. "background cycle complete" and "Loaded monitors from Kuma" are now debug lines (set `LOG_LEVEL=debug` to see them). A cycle is still logged at info when it takes 5 seconds or more, or when the set of failing refreshes changes (services, UPS, Gitea, integrations, and each integration on its own), so a new failure and its recovery each get one line. Loading Kuma's monitors is logged at info when the number of monitors or where they are read from changes, and on the first load after Kuma was unreachable; Kuma becoming unreachable now logs one warning. Containers with no matching Kuma monitor are listed in one line per boot instead of one line each.
+
 ### Fixed
 - A request redirected with `307` or `308` now keeps its method and body, as those codes require, instead of being turned into a `GET` without a body. A session login (Nginx Proxy Manager, Portainer, PhotoPrism) behind such a redirect on the same host and port, or from `http://` to `https://` on it, now works. A login redirected to another origin (host, port or scheme, apart from that upgrade) is refused instead of being re-sent there. `301` and `302` still turn any method but `GET` and `HEAD` into a `GET` without a body, and `303` turns every method, `HEAD` included, into one.
 - The server no longer loads the integration presets' test files as presets at startup, so it no longer logs two "Skipping invalid preset" errors (for `gitlab.test.js` and `nextcloud.test.js`) or prints their test output in its logs. Test files are also left out of the image.
