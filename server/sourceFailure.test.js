@@ -541,6 +541,20 @@ test('a monitor no container has: its up entry is in the push snapshot, not in t
   }
 });
 
+test('a monitor no container has: upWithoutCard is kept beside the cached payload, at no level inside it', async () => {
+  reset();
+  const p = pipeline();
+  try {
+    await p.cycle(); // NAS (Ping) up
+    // What /api/services serves and takes its ETag from.
+    const keysOf = (v) => (v && typeof v === 'object' ? Object.entries(v).flatMap(([k, x]) => [k, ...keysOf(x)]) : []);
+    assert.equal(keysOf(getCached('services')).includes('upWithoutCard'), false, 'not in the served data');
+    assert.ok(getCachedInternal('services').upWithoutCard.includes(NAS_PING), 'kept beside it for push');
+  } finally {
+    p.done();
+  }
+});
+
 test('a monitor no container has: a restart while it is down sends exactly one recovery', async () => {
   reset();
   const before = pipeline();
