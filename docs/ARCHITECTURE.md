@@ -387,7 +387,12 @@ flowchart TD
   and a global `:focus-visible` ring + reduced-motion handling.
 - **PWA.** `public/sw.js` precaches the app shell **and** the hashed first-paint
   bundles (the precache list + version are injected at build by
-  `scripts/inject-sw-precache.mjs`); immutable `/assets/` are served cache-first.
+  `scripts/inject-sw-precache.mjs`); immutable `/assets/` are served cache-first,
+  and other same-origin GETs outside `/api/` network-first with a cached copy for
+  offline. Both runtime paths store into the same versioned cache. On activate
+  the worker deletes every other cache and trims its own back to the precache
+  list, so a redeploy at the same version doesn't leave its old bundles behind;
+  runtime entries are fetched and cached again on their next use.
 
 ## 6. Data model
 
@@ -499,7 +504,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   tamper, the SSRF guard vectors, credential redaction, the upload allowlist,
   config schema/copy-on-read (incl. a `SIGKILL`-mid-write chaos test), route
   contracts, rate limiting, `/health` + `/readyz`, and the pure HelmGrid
-  `gridMath` + service-worker precache injector.
+  `gridMath`, the service-worker precache injector, and the worker's install and
+  activate handlers run against a fake cache (`scripts/sw.test.mjs`).
 - **Client** (`npm run test:client`, Vitest + jsdom + React Testing Library):
   NavBar/config-driven rendering, settings primitives, the keyboard grid handle,
   per-source health banners, overlay/confirm semantics, and the 304-stable data
