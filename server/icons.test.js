@@ -15,12 +15,13 @@ import request from 'supertest';
 const root = mkdtempSync(join(tmpdir(), 'jh-icons-'));
 process.env.JAGHELM_DATA_DIR = root; // no auth.json here, so auth is off for the route test
 delete process.env.DASH_PASS;
+process.env.LOG_LEVEL = 'info'; // the logger reads it at import; the log-once test counts warnings
 
 const icons = await import('./icons.js');
 const { iconRoutes } = await import('./routes/icons.js');
 const {
   initIconIndex, ensureIconIndex, searchIcons, getIconCount, _iconRefreshSettled,
-  ICON_INDEX_FILE, REFRESH_INTERVAL_MS, RETRY_AFTER_FAILURE_MS, MAX_LISTING_BYTES,
+  ICON_INDEX_FILE, REFRESH_INTERVAL_MS, RETRY_AFTER_FAILURE_MS, RETRY_EMPTY_INDEX_MS, MAX_LISTING_BYTES,
 } = icons;
 
 const realFetch = globalThis.fetch;
@@ -39,9 +40,9 @@ const SELF = 'selfhst';
 const repoOf = (url) => (url.includes('homarr-labs/dashboard-icons') ? DASH : SELF);
 
 /** A git-trees listing of one repo's svg/ directory, as GitHub returns it. */
-function listing(files, etag) {
+function listing(files, etag, { truncated = false } = {}) {
   const tree = files.map((path) => ({ path, mode: '100644', type: 'blob', sha: 'x', size: 1 }));
-  return new Response(JSON.stringify({ sha: 'x', url: 'x', tree, truncated: false }), {
+  return new Response(JSON.stringify({ sha: 'x', url: 'x', tree, truncated }), {
     status: 200, headers: { 'content-type': 'application/json', etag },
   });
 }
@@ -99,9 +100,9 @@ test('boot with no index makes no request; the first search builds and persists 
 
   await ensureIconIndex(); // no index at all: the first search waits for it
   assert.deepEqual(calls.map((c) => c.url).sort(), [
-    'https://api.github.com/repos/homarr-labs/dashboard-icons/git/trees/main:svg',
-    'https://api.github.com/repos/selfhst/icons/git/trees/main:svg',
-  ], 'lists only the svg/ directory, not the whole repository recursively');
+    'https://api.github.com/repos/homarr-labs/dashboard-icons/git/trees/HEAD:svg',
+    'https://api.github.com/repos/selfhst/icons/git/trees/HEAD:svg',
+  ], 'lists only the svg/ directory of the default branch, not the whole repository recursively');
   for (const c of calls) assert.equal(c.headers.get('if-none-match'), null);
 
   assert.deepEqual(searchIcons('').map((i) => [i.slug, i.repo]),
@@ -265,7 +266,7 @@ test('a corrupt or tampered index file is ignored, not trusted', async () => {
   assert.deepEqual(searchIcons('').map((i) => i.slug), ['immich', 'ok', 'plex']);
 });
 
-test('a listing with no icons, or not a listing at all, keeps the old index', async () => {
+test('a listing with no icons, a truncated one, or not a listing at all, keeps the old index', async () => {
   const dir = freshDir();
   const stale = clock - REFRESH_INTERVAL_MS - 1;
   persist(dir, {
@@ -281,6 +282,85 @@ test('a listing with no icons, or not a listing at all, keeps the old index', as
   await _iconRefreshSettled();
   assert.deepEqual(searchIcons('').map((i) => i.slug), ['jellyseerr', 'plex']);
   assert.equal(readPersisted(dir).repos[DASH].checkedAt, stale);
+
+  // A truncated listing would drop the icons past the cut: keep the old one instead.
+  const calls = mockGitHub({
+    [DASH]: () => listing(['plex.svg', 'sonarr.svg'], 'W/"d3"', { truncated: true }),
+    [SELF]: () => listing(['jellyseerr.svg', 'immich.svg'], 'W/"s3"', { truncated: true }),
+  });
+  clock += RETRY_AFTER_FAILURE_MS;
+  await ensureIconIndex();
+  await _iconRefreshSettled();
+  assert.equal(calls.length, 2);
+  assert.deepEqual(searchIcons('').map((i) => i.slug), ['jellyseerr', 'plex']);
+  assert.equal(readPersisted(dir).repos[DASH].checkedAt, stale, 'a truncated listing was saved');
+});
+
+test('a malformed ETag is neither kept nor sent, and one sent with a request that threw is dropped', async () => {
+  const dir = freshDir();
+  const stale = clock - REFRESH_INTERVAL_MS - 1;
+  persist(dir, {
+    [DASH]: { etag: 'W/"a\nb"', checkedAt: clock, slugs: ['plex'] }, // Headers would throw on it
+    [SELF]: { etag: 'W/"s1"', checkedAt: stale, slugs: ['jellyseerr'] },
+  });
+  let calls = mockGitHub({ [SELF]: () => { throw new TypeError('fetch failed'); } });
+  await initIconIndex({ dataDir: dir, now });
+  await ensureIconIndex();
+  await _iconRefreshSettled();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].headers.get('if-none-match'), 'W/"s1"');
+
+  calls = mockGitHub({ [SELF]: () => listing(['jellyseerr.svg', 'immich.svg'], 'not-an-etag') });
+  clock += RETRY_AFTER_FAILURE_MS;
+  await ensureIconIndex();
+  await _iconRefreshSettled();
+  assert.equal(calls.length, 1, 'only the repository that failed is retried');
+  assert.equal(calls[0].headers.get('if-none-match'), null, 'the ETag of the request that threw was sent again');
+  assert.deepEqual(searchIcons('').map((i) => i.slug), ['immich', 'jellyseerr', 'plex']);
+  const saved = readPersisted(dir).repos;
+  assert.equal(saved[DASH].etag, null, 'the malformed ETag loaded from the file was kept');
+  assert.equal(saved[SELF].etag, null, 'a malformed response ETag was stored');
+
+  calls = mockGitHub({
+    [DASH]: () => listing(['plex.svg'], 'W/"d2"'),
+    [SELF]: () => listing(['immich.svg'], 'W/"s2"'),
+  });
+  clock += REFRESH_INTERVAL_MS;
+  await ensureIconIndex();
+  await _iconRefreshSettled();
+  assert.deepEqual(calls.map((c) => c.headers.get('if-none-match')), [null, null]);
+});
+
+test('with no index to serve, a failed build is retried after 5 minutes, not an hour', async () => {
+  const dir = freshDir();
+  let calls = mockGitHub({ [DASH]: () => { throw new TypeError('fetch failed'); }, [SELF]: () => { throw new TypeError('fetch failed'); } });
+  await initIconIndex({ dataDir: dir, now });
+  await ensureIconIndex();
+  assert.equal(calls.length, 2);
+  assert.equal(getIconCount(), 0);
+
+  clock += RETRY_EMPTY_INDEX_MS - 1;
+  await ensureIconIndex();
+  assert.equal(calls.length, 2, 'retried within 5 minutes');
+
+  calls = mockGitHub({
+    [DASH]: () => listing(['plex.svg'], 'W/"d1"'),
+    [SELF]: () => { throw new TypeError('fetch failed'); },
+  });
+  clock += 1;
+  await ensureIconIndex(); // still empty, so this search waits for it
+  assert.equal(calls.length, 2, 'not retried after 5 minutes');
+  assert.deepEqual(searchIcons('').map((i) => i.slug), ['plex']);
+
+  // Now there is an index to serve, so the repository that failed waits the full hour.
+  clock += RETRY_EMPTY_INDEX_MS;
+  await ensureIconIndex();
+  await _iconRefreshSettled();
+  assert.equal(calls.length, 2, 'retried within the hour though an index is served');
+  clock += RETRY_AFTER_FAILURE_MS;
+  await ensureIconIndex();
+  await _iconRefreshSettled();
+  assert.equal(calls.length, 3);
 });
 
 test('GET /api/icons: the first search waits for the index, a failure answers empty', async () => {

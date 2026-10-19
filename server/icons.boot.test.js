@@ -44,6 +44,7 @@ async function bootAndRecord(name, extraEnv) {
   child.stderr.on('data', (d) => { out += d; });
   const exited = new Promise((resolve) => child.once('exit', resolve));
   let timer;
+  let deadline;
   try {
     const listening = await Promise.race([
       new Promise((resolve) => {
@@ -54,12 +55,15 @@ async function bootAndRecord(name, extraEnv) {
         check();
       }),
       exited.then(() => false),
+      // A hung boot must not be left running (auth off, on 0.0.0.0): give up and kill it.
+      new Promise((resolve) => { deadline = setTimeout(() => resolve(false), 30000); }),
     ]);
-    assert.ok(listening, `server exited before it listened:\n${out}`);
+    assert.ok(listening, `server exited, or did not listen within 30 s:\n${out}`);
     // The old index fetch started before listen; give anything deferred a moment too.
     await new Promise((resolve) => setTimeout(resolve, 1000));
   } finally {
     clearTimeout(timer);
+    clearTimeout(deadline);
     child.kill('SIGKILL');
     await exited;
   }

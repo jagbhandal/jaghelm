@@ -16,7 +16,7 @@
  *   server/secrets.js    — AES-256-GCM encrypted credentials
  *   server/discovery.js  — Prometheus node + container discovery
  *   server/monitors.js   — Uptime Kuma monitor matching
- *   server/icons.js      — bundled icon search index
+ *   server/icons.js      — icon search index (persisted names, fetched lazily)
  *   server/icon-cache.js — local disk cache for CDN icons
  *   server/cron-store.js — cron job execution history
  *   server/integrations/ — preset gallery + fetch handler
@@ -284,7 +284,7 @@ async function boot() {
 
   await initRegistry();
 
-  // Non-blocking — icon search returns empty until the index is ready
+  // Non-blocking, disk only: reads the persisted icon index; the first icon search builds it lazily
   initIconIndex().catch((err) => log.warn({ err }, 'icon index background init failed'));
 
   // Load services.yaml or auto-generate one from discovery on first boot

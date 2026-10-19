@@ -16,11 +16,12 @@
  * directory costs a bodyless 304. A search waits for that only when there is no
  * index at all; otherwise it is answered from the index it has while the
  * refresh runs. A refresh that fails (network error, rate limit, a body over
- * the cap, or a listing with no icons) keeps the index it had, logs once, and
- * is not retried for an hour. The unauthenticated API allows 60 requests an
- * hour per IP and counts a 304 too; this makes two a day at most, or two an
- * hour while refreshes fail and icons are being searched. Demo mode never
- * reaches the search route, so it never asks GitHub at all.
+ * the cap, a truncated listing or one with no icons) keeps the index it had,
+ * logs once, and is not retried for an hour, or for 5 minutes while there is no
+ * index to serve. The unauthenticated API allows 60 requests an hour per IP and
+ * counts a 304 too; this makes two a day at most, or two an hour (24 while the
+ * index is empty) while refreshes fail and icons are being searched. Demo mode
+ * never reaches the search route, so it never asks GitHub at all.
  */
 
 import { readFile } from 'fs/promises';
@@ -38,17 +39,23 @@ export const ICON_INDEX_FILE = 'icon-index.json';
 const FILE_VERSION = 1;
 export const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const RETRY_AFTER_FAILURE_MS = 60 * 60 * 1000;
+/** The retry delay instead while a failed build left no index to serve at all. */
+export const RETRY_EMPTY_INDEX_MS = 5 * 60 * 1000;
 /** A listing's body cap. selfhst's svg/ listing, the larger, is 1.6 MB today. */
 export const MAX_LISTING_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 15000;
 const MAX_ICONS_PER_REPO = 50000;
-const MAX_ETAG = 256;
+// An entity tag as RFC 9110 defines it, weak or strong. Anything else (a newline,
+// say) is neither stored nor sent: Headers would throw on it at every refresh.
+const ETAG_RE = /^(W\/)?"[\x21\x23-\x7e]{0,250}"$/;
+/** @param {unknown} v @returns {v is string} */
+const isEtag = (v) => typeof v === 'string' && ETAG_RE.test(v);
 // Every name in both repositories today matches; anything else (a path, a space,
 // markup) is dropped rather than built into a CDN URL.
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
 
 /**
- * @typedef {{ id: string, label: string, repo: string, branch: string, dir: string, cdnBase: string, ext: string }} IconRepo
+ * @typedef {{ id: string, label: string, repo: string, ref: string, dir: string, cdnBase: string, ext: string }} IconRepo
  * @typedef {{ etag: string | null, checkedAt: number, slugs: string[] }} RepoState
  * @typedef {{ slug: string, name: string, repo: IconRepo }} IconEntry
  * @typedef {{ ok: true, etag: string | null, slugs: string[] | null } | { ok: false, repo: string, status?: number, error: string }} ListingResult
@@ -60,7 +67,7 @@ const ICON_REPOS = [
     id: 'dashboard-icons',
     label: 'Dashboard Icons',
     repo: 'homarr-labs/dashboard-icons',
-    branch: 'main',
+    ref: 'HEAD',
     dir: 'svg',
     cdnBase: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg',
     ext: '.svg',
@@ -69,7 +76,7 @@ const ICON_REPOS = [
     id: 'selfhst',
     label: 'selfh.st Icons',
     repo: 'selfhst/icons',
-    branch: 'main',
+    ref: 'HEAD',
     dir: 'svg',
     cdnBase: 'https://cdn.jsdelivr.net/gh/selfhst/icons@latest/svg',
     ext: '.svg',
@@ -149,7 +156,7 @@ async function loadPersisted() {
     if (!r || typeof r !== 'object') continue;
     const slugs = cleanSlugs(r.slugs);
     if (!slugs.length) continue;
-    const etag = typeof r.etag === 'string' && r.etag.length <= MAX_ETAG ? r.etag : null;
+    const etag = isEtag(r.etag) ? r.etag : null;
     // A checkedAt from the future would postpone the refresh indefinitely: count it as stale.
     const checkedAt = Number.isFinite(r.checkedAt) && r.checkedAt <= t ? r.checkedAt : 0;
     repoState.set(repo.id, { etag, checkedAt, slugs });
@@ -180,19 +187,20 @@ async function fetchListing(repo) {
   const prev = repoState.get(repo.id);
   /** @type {Record<string, string>} */
   const headers = { Accept: 'application/vnd.github+json', 'User-Agent': `JagHelm/${VERSION}` };
-  if (prev?.etag) headers['If-None-Match'] = prev.etag;
+  if (isEtag(prev?.etag)) headers['If-None-Match'] = prev.etag;
   /** @type {(error: string, status?: number) => ListingResult} */
   const fail = (error, status) => ({ ok: false, repo: repo.repo, error, ...(status ? { status } : {}) });
   try {
-    // `<branch>:<dir>` names the directory's own tree, so this lists svg/ alone
-    // instead of the whole repository's recursive tree.
+    // `<ref>:<dir>` names the directory's own tree, so this lists svg/ alone
+    // instead of the whole repository's recursive tree. HEAD follows the default
+    // branch. A fixed public host, so not `trusted`: strict-mode checks stay on.
     const res = await fetchSafe(
-      `https://api.github.com/repos/${repo.repo}/git/trees/${repo.branch}:${repo.dir}`,
+      `https://api.github.com/repos/${repo.repo}/git/trees/${repo.ref}:${repo.dir}`,
       { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
-      { trusted: true, maxBytes: MAX_LISTING_BYTES }
+      { trusted: false, maxBytes: MAX_LISTING_BYTES }
     );
     const etag = res.headers.get('etag');
-    const keepEtag = etag && etag.length <= MAX_ETAG ? etag : null;
+    const keepEtag = isEtag(etag) ? etag : null;
     if (res.status === 304) {
       if (!prev) return fail('304 for a listing it does not have', 304);
       return { ok: true, etag: keepEtag ?? prev.etag, slugs: null };
@@ -203,6 +211,7 @@ async function fetchListing(repo) {
     }
     const data = await res.json();
     if (!data || !Array.isArray(data.tree)) return fail('response is not a directory listing');
+    if (data.truncated === true) return fail('listing truncated');
     /** @type {Array<{ type?: unknown, path?: unknown } | null>} */
     const tree = data.tree;
     const slugs = cleanSlugs(tree.flatMap((item) =>
@@ -212,8 +221,25 @@ async function fetchListing(repo) {
     if (!slugs.length) return fail('listing has no icons');
     return { ok: true, etag: keepEtag, slugs };
   } catch (err) {
+    // Go unconditional next time, in case the sent ETag was what failed.
+    if (prev) prev.etag = null;
     return fail(err instanceof Error ? err.message : String(err));
   }
+}
+
+/**
+ * A refresh failed: hold off retrying, and warn once per run of failures, so a
+ * search every few seconds doesn't log every time.
+ * @param {Record<string, unknown>} fields
+ */
+function noteFailure(fields) {
+  retryAt = now() + (iconIndex.length ? RETRY_AFTER_FAILURE_MS : RETRY_EMPTY_INDEX_MS);
+  if (failureLogged) return;
+  failureLogged = true;
+  log.warn(
+    { ...fields, count: iconIndex.length, retryAt: new Date(retryAt).toISOString() },
+    'icon index refresh failed; serving the index it has'
+  );
 }
 
 /** @param {IconRepo[]} repos the stale ones. Never rejects. */
@@ -236,15 +262,7 @@ async function refresh(repos) {
     persist();
   }
   if (failures.length) {
-    retryAt = t + RETRY_AFTER_FAILURE_MS;
-    // Once per run of failures: a search every few seconds must not log every time.
-    if (!failureLogged) {
-      failureLogged = true;
-      log.warn(
-        { failures, count: iconIndex.length, retryAt: new Date(retryAt).toISOString() },
-        'icon index refresh failed; serving the index it has'
-      );
-    }
+    noteFailure({ failures });
     return;
   }
   if (failureLogged) log.info('icon index refresh recovered');
@@ -272,7 +290,7 @@ export async function initIconIndex(opts = {}) {
 /**
  * Called before each icon search. Loads the persisted index if boot hasn't, and
  * starts a refresh of the repositories that are missing or a day old (unless one
- * is running or failed within the hour). Waits for it only while the index is
+ * is running or one failed recently). Waits for it only while the index is
  * empty. Never rejects.
  */
 export async function ensureIconIndex() {
@@ -283,9 +301,11 @@ export async function ensureIconIndex() {
     return !s || t - s.checkedAt >= REFRESH_INTERVAL_MS;
   });
   if (stale.length && !refreshing && t >= retryAt) {
-    refreshing = refresh(stale).finally(() => {
-      refreshing = null;
-    });
+    refreshing = refresh(stale)
+      .catch((err) => noteFailure({ err })) // refresh() doesn't reject; a bug mustn't fail the search
+      .finally(() => {
+        refreshing = null;
+      });
   }
   if (!iconIndex.length && refreshing) await refreshing;
 }

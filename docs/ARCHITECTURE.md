@@ -335,8 +335,9 @@ All state is files under the data dir (no DB):
   it was last checked; about 170 KB, atomic writes, tolerant load. A cache, so
   deleting it is safe. Boot only reads it and never calls GitHub; the first icon
   search after it is missing or a day old lists each repository's `svg/`
-  directory (conditional on the ETag, 8 MB body cap). A failed refresh keeps the
-  index it has and is retried after an hour.
+  directory on its default branch (conditional on the ETag, 8 MB body cap). A
+  failed or truncated refresh keeps the index it has and is retried after an
+  hour, or after 5 minutes while there is no index to serve.
 
 ## 7. CI/CD pipeline
 

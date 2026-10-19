@@ -323,13 +323,14 @@ JagHelm leans on a number of well-maintained open-source projects.
  
 ### Icons
  
-Searchable picker draws from three community-maintained collections:
+The icon picker searches two community-maintained collections. JagHelm keeps only the icon names; the icons themselves are served unchanged from the jsDelivr CDN (through JagHelm's local icon cache).
  
 | Collection | Maintainers | License |
 |------------|-------------|---------|
-| [Dashboard Icons](https://github.com/walkxcode/dashboard-icons) | walkxcode & contributors | MIT |
-| [selfh.st icons](https://selfh.st/icons/) | Ethan Ham (selfh.st) | MIT |
-| [Simple Icons](https://simpleicons.org/) | Simple Icons collective | CC0 1.0 |
+| [Dashboard Icons](https://github.com/homarr-labs/dashboard-icons) | Bjorn Lammers, Meier Lukas, Thomas Camlong and Homarr Labs | [Apache-2.0](https://github.com/homarr-labs/dashboard-icons/blob/main/LICENSE) |
+| [selfh.st icons](https://github.com/selfhst/icons) | selfh.st | [CC BY 4.0](https://github.com/selfhst/icons/blob/main/LICENSE) |
+ 
+The selfh.st icons are from [selfh.st/icons](https://selfh.st/icons) by selfh.st, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), and are shown without modification.
  
 ### Inspiration
  
