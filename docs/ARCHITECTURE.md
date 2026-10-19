@@ -447,7 +447,11 @@ stack sits beside today's CSS and must not restyle it.
   neutral palette, kept as marked placeholders scoped to `.jh-ui` (today's CSS owns
   `--accent`, `--border`, `--card` and `--muted` on `:root` and the Android shell).
   Card #283 replaces them with the signed-off mock's tokens; the `dark` variant
-  (a `.dark` ancestor) is a placeholder too.
+  (a `.dark` ancestor) is a placeholder too. One trap: when a class reads a
+  theme variable with `var()` (the Button's `rounded-[min(var(--radius-md),10px)]`),
+  Tailwind writes that variable onto `:root`, where the scoped tokens don't exist,
+  so it inherits as invalid. Such variables are declared again under `.jh-ui` (the
+  radius scale), and `scripts/ui-stack.test.mjs` names any that are missing.
 - **When the old CSS is gone,** drop the `legacy` layer and the scoping: import
   Tailwind's own preflight and move the tokens to `:root`.
 
