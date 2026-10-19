@@ -10,29 +10,48 @@ const APP_VERSION = '1.3.0';
 const PRECACHE_ASSETS = [];
 const CACHE_NAME = `jaghelm-v${APP_VERSION}`;
 
-// Precache the app shell + the hashed first-paint bundles, so the dashboard can
-// boot offline immediately — not only after a prior online visit happened to
-// warm the runtime cache.
+// The precache manifest: the app shell + the hashed first-paint bundles. Install
+// fetches exactly this list and activate trims the cache back to it, so it is
+// the one list of what the cache keeps from one worker to the next.
+const PRECACHE_MANIFEST = ['/', '/logo.svg', '/favicon.svg', ...PRECACHE_ASSETS];
+
+// Precache the manifest, so the dashboard can boot offline immediately — not
+// only after a prior online visit happened to warm the runtime cache.
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => cache.addAll(['/', '/logo.svg', '/favicon.svg', ...PRECACHE_ASSETS]))
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_MANIFEST)));
   self.skipWaiting();
 });
 
-// Clean up old caches on activate (a version bump changes CACHE_NAME).
+// On activate, delete every other cache (a version bump changes CACHE_NAME) and
+// trim this one back to the manifest. A redeploy at the same version keeps
+// CACHE_NAME, so without the trim each deploy's old hashed bundles would stay
+// in it for good. Runtime fills (lazy chunks, network-first copies) go too, and
+// are fetched and cached again on their next use.
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
-      )
-  );
+  event.waitUntil(Promise.all([deleteOtherCaches(), trimToManifest()]));
   self.clients.claim();
 });
+
+function deleteOtherCaches() {
+  return caches
+    .keys()
+    .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))));
+}
+
+// Cache keys are full URLs, so resolve the manifest's paths the same way. A
+// query string makes a different URL, so `/?x=1` is trimmed even though `/` stays.
+function trimToManifest() {
+  const keep = new Set(PRECACHE_MANIFEST.map((path) => new URL(path, self.location.href).href));
+  return caches
+    .open(CACHE_NAME)
+    .then((cache) =>
+      cache
+        .keys()
+        .then((requests) =>
+          Promise.all(requests.filter((request) => !keep.has(request.url)).map((request) => cache.delete(request)))
+        )
+    );
+}
 
 // Fetch and, on a successful response, store a clone in the cache. Shared by the
 // cache-first and network-first branches below.
