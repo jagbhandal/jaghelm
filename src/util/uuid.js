@@ -5,8 +5,7 @@
  * on the default `http://<lan-ip>:3099` deployment it is undefined. Use it when
  * present, otherwise build the same RFC 9562 v4 layout from
  * `crypto.getRandomValues()`, which every browser exposes in any context.
- * Never falls back to Math.random. Pure and dependency-free, so the Android app
- * can import it via `@shared` as well.
+ * Never falls back to Math.random.
  */
 export function uuidV4() {
   const c = globalThis.crypto;

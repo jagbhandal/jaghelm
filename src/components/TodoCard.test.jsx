@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import TodoCard from './TodoCard.jsx';
+import { OverlayProvider } from '../context/OverlayContext.jsx';
 import { getTodos, saveTodos } from '../hooks/useData';
 
 vi.mock('../hooks/useData', () => ({
@@ -23,12 +24,19 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  vi.clearAllMocks(); // restoreMocks doesn't reset the module mocks' call history
   getTodos.mockResolvedValue([]);
   saveTodos.mockResolvedValue(undefined);
 });
 afterEach(() => vi.useRealTimers());
 
-const renderCard = () => render(<TodoCard config={{ sections: {} }} />);
+// TodoCard toasts a failed save, and useToast needs the provider the app wraps it in.
+const renderCard = () =>
+  render(
+    <OverlayProvider>
+      <TodoCard config={{ sections: {} }} />
+    </OverlayProvider>
+  );
 
 const addTodo = (text) => {
   fireEvent.change(screen.getByPlaceholderText('Add a task...'), { target: { value: text } });
@@ -68,6 +76,22 @@ describe('TodoCard on a plain-HTTP origin (no crypto.randomUUID)', () => {
     const saved = saveTodos.mock.calls.at(-1)[0];
     expect(saved.map((t) => t.text)).toEqual(['one', 'two']);
     expect(saved[0].id).not.toBe(saved[1].id);
+  });
+});
+
+describe('TodoCard when a save fails', () => {
+  it('says so and shows what the server holds instead of the unsaved change', async () => {
+    renderCard();
+    await waitFor(() => expect(getTodos).toHaveBeenCalledTimes(1));
+    saveTodos.mockRejectedValue(new Error('HTTP 500'));
+
+    addTodo('Never saved');
+
+    expect(screen.getByText('Never saved')).toBeInTheDocument();
+    expect(await screen.findByText("Couldn't save the checklist")).toBeInTheDocument();
+    // The re-read returns the server's list ([]), so the unsaved todo goes away.
+    await waitFor(() => expect(screen.queryByText('Never saved')).not.toBeInTheDocument());
+    expect(getTodos).toHaveBeenCalledTimes(2);
   });
 });
 

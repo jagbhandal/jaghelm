@@ -4,7 +4,6 @@
  * midnight, which is the evening of Oct 19 anywhere west of UTC, and
  * `toISOString().slice(0, 10)` names the UTC day, which is tomorrow there in the
  * evening. These helpers keep such values on the local calendar instead.
- * Pure and dependency-free, so the Android app can import them via `@shared`.
  */
 
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
