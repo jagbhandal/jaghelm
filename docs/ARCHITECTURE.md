@@ -78,6 +78,8 @@ server/                     Express API (Node 22, ESM)
                             (ignores containers labelled as Arcane internal helpers, so
                             short-lived helpers never become cards or presence breadcrumbs)
   monitors.js               Uptime Kuma monitor matching
+  icons.js                  icon picker search index: names only, persisted in the data dir,
+                            refreshed from GitHub by the first search when a day old (see 6)
   config.js                 services.yaml: load, hot-reload watch, copy-on-read + atomic save
   secrets.js                AES-256-GCM secret store (per-install KDF salt)
   cron-store.js             cron history (bounded)
@@ -350,6 +352,14 @@ All state is files under the data dir (no DB):
   stale or failed images at the last vulnerability digest, and when it last ran); atomic writes, tolerant load.
 - **cron history**, **todos**, **auth** (password hash + salt) -- small files,
   atomic writes.
+- **icon index** -- `icon-index.json`: the SVG names of the two icon repositories
+  (homarr-labs/dashboard-icons, selfhst/icons) with each listing's ETag and when
+  it was last checked; about 170 KB, atomic writes, tolerant load. A cache, so
+  deleting it is safe. Boot only reads it and never calls GitHub; the first icon
+  search after it is missing or a day old lists each repository's `svg/`
+  directory on its default branch (conditional on the ETag, 8 MB body cap). A
+  failed or truncated refresh keeps the index it has and is retried after an
+  hour, or after 5 minutes while there is no index to serve.
 
 ## 7. CI/CD pipeline
 

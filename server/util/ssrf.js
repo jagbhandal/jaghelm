@@ -4,7 +4,7 @@
  * (server/integrations/lib/http.js and server/httpClient.js), which cover all
  * integration, session-auth, and infra-proxy requests. A few internal calls
  * still use raw fetch to hardcoded/operator-configured endpoints (Prometheus
- * discovery, Kuma monitors, the icon CDN index); folding those into one shared
+ * discovery, Kuma monitors, the icon CDN proxy); folding those into one shared
  * client is a tracked follow-up (see docs/IMPROVEMENT-PLAN.md).
  *
  * JagHelm is a homelab dashboard, so private/loopback hosts ARE legitimate
