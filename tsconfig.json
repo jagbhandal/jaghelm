@@ -12,7 +12,8 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "jsx": "react-jsx",
-    "types": ["node"]
+    "types": ["node"],
+    "paths": { "@ui": ["./src/ui"], "@ui/*": ["./src/ui/*"] }
   },
   "include": ["types.d.ts", "src/**/*", "server/**/*", "vite.config.js"],
   "exclude": ["node_modules", "dist", "coverage"]
