@@ -293,7 +293,8 @@ as pending. JagHelm's own deploys go through the pin, health-gate and rollback w
 
 `scripts/arcane-poll-once.js` runs the real poller twice against the live manager over
 throwaway temp stores. It sends no push and never touches JagHelm's data directory. Pass 1
-is the silent baseline; pass 2 shows what would push. Run it under Node 22:
+is the silent baseline; pass 2 shows what would push. Run it from a checkout of this
+repository under Node 22 (the image leaves the dry run out, so it can't run in the container):
 
 ```bash
 ARCANE_URL=https://arcane.example:3552 ARCANE_API_KEY=... \

@@ -6,6 +6,12 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- The server image is smaller: 235 MB unpacked instead of 270 MB, and 69 MB to pull instead of 75 MB. It now runs on plain Alpine with only the Node binary taken from the Node image, so npm, npx, yarn and corepack are no longer in it (the server and its health check only ever run `node`), and the image build fails if one comes back. The Arcane dry run (`scripts/arcane-poll-once.js`) is left out of the image too; it runs from a checkout, as `docs/arcane/SETUP.md` describes.
+
+### Removed
+- The server no longer serves `/dashboard.jpg` and `/settings.jpg`, two README screenshots that nothing in the app uses. They moved to `docs/images/`.
+
 ### Fixed
 - A request redirected with `307` or `308` now keeps its method and body, as those codes require, instead of being turned into a `GET` without a body. A session login (Nginx Proxy Manager, Portainer, PhotoPrism) behind such a redirect on the same host and port, or from `http://` to `https://` on it, now works. A login redirected to another origin (host, port or scheme, apart from that upgrade) is refused instead of being re-sent there. `301` and `302` still turn any method but `GET` and `HEAD` into a `GET` without a body, and `303` turns every method, `HEAD` included, into one.
 - The server no longer loads the integration presets' test files as presets at startup, so it no longer logs two "Skipping invalid preset" errors (for `gitlab.test.js` and `nextcloud.test.js`) or prints their test output in its logs. Test files are also left out of the image.
