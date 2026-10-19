@@ -4,11 +4,15 @@ import UsageBar from '../components/UsageBar.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import StatusLamp from '../components/StatusLamp.jsx';
 import StatusWord from '../components/StatusWord.jsx';
-import { nodeSeverity, nodeUpDown, sortProblemsFirst, parseMetricPct, thirdMetric, severityToShape, nodeSeverityWord } from '../data/derive.js';
+import { nodeSeverity, nodeUpDown, sortProblemsFirst, parseMetricPct, severityToShape, nodeSeverityWord } from '../data/derive.js';
 
 /**
- * NodeDetail — status header (resource lamp + word + up/down count) + 3 metric
- * bars (CPU / MEM / TEMP-or-DISK via thirdMetric) + worst-first service list.
+ * NodeDetail — status header (resource lamp + word + up/down count) + metric
+ * bars + worst-first service list. Bars: CPU, MEM, TEMP when the node reports a
+ * temperature, and DISK when it reports disk (or reports no temperature, so the
+ * screen always has a third bar). Unlike the card, which has room for three
+ * bars and swaps TEMP for DISK at DISK_HOT (thirdMetric), the detail screen
+ * shows both, so the temperature behind an amber lamp is never hidden (#273).
  * Missing node → "This node is no longer reported."
  */
 export default function NodeDetail({ data, nav, params }) {
@@ -26,7 +30,8 @@ export default function NodeDetail({ data, nav, params }) {
   const sevWord = nodeSeverityWord(sev);
   const { up, down } = nodeUpDown(node);
   const m = node.metrics || {};
-  const third = thirdMetric(m);
+  const tempPct = parseMetricPct(m.temp);
+  const diskPct = parseMetricPct(m.diskPercent);
   const services = sortProblemsFirst((node.services || []).map((s) => ({ ...s, nodeKey: params.nodeKey, nodeName: node.display_name || params.nodeKey })));
   return (
     <section className="mobile-view" aria-label="Node detail">
@@ -43,7 +48,8 @@ export default function NodeDetail({ data, nav, params }) {
       <div className="node-detail__bars">
         <UsageBar label="CPU" value={m.cpu} unit="%" percent={parseMetricPct(m.cpu)} />
         <UsageBar label="MEM" value={m.memPercent} unit="%" percent={parseMetricPct(m.memPercent)} />
-        <UsageBar label={third.label} value={third.value} unit={third.unit} percent={third.percent} />
+        {tempPct != null && <UsageBar label="TEMP" value={m.temp} unit="°C" percent={tempPct} />}
+        {(diskPct != null || tempPct == null) && <UsageBar label="DISK" value={m.diskPercent} unit="%" percent={diskPct} />}
       </div>
       <div className="svc-list">
         {services.map((s) => (

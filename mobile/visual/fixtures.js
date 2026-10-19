@@ -59,7 +59,7 @@ export const multiIncident = {
       },
     },
   },
-  ups: { status: 0, charge: 76, runtime: 1200, load: 40 },
+  ups: { status: 2, charge: 76, runtime: 1200, load: 40 },
 };
 
 export const downService = {
