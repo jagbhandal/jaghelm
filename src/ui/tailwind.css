@@ -51,17 +51,21 @@
  * reads var(--jh-surface-1) where it is used; reference, so none of these is
  * written to :root. docs/design-system.md lists every name.
  *
- * Tailwind's default colours, type sizes, radii, shadows and blurs are cleared,
- * so a class can only reach JagHelm's values: `bg-red-500`, `text-sm`,
- * `shadow-md` and `backdrop-blur` produce nothing.
+ * Tailwind's default colours, type sizes, font families, radii, shadows, text
+ * shadows and blurs are cleared, so a class can only reach JagHelm's values:
+ * `bg-red-500`, `text-sm`, `font-serif`, `shadow-md`, `text-shadow-sm` and
+ * `backdrop-blur` produce nothing. Gradient text (`bg-clip-text`) can't be
+ * cleared here; scripts/ui-tokens.test.mjs fails the build that uses it.
  */
 @theme inline reference {
   --color-*: initial;
   --text-*: initial;
+  --font-*: initial;
   --radius-*: initial;
   --shadow-*: initial;
   --inset-shadow-*: initial;
   --drop-shadow-*: initial;
+  --text-shadow-*: initial;
   --blur-*: initial;
 
   /* Surfaces and borders. The page background is `bg-background`. */
@@ -133,7 +137,11 @@
   /*
    * shadcn/ui's role names, so a generated component compiles in JagHelm's
    * colours. Shape it with the names above when it is adopted. shadcn's own
-   * `accent` (a hover surface) is not offered: here `accent` is the violet.
+   * `accent` (a hover surface) is not offered: here `accent` is the violet, and
+   * `accent-foreground` compiles to nothing. A stock menu's
+   * `focus:bg-accent focus:text-accent-foreground` would paint a solid violet
+   * item with text-1 on it (3.05:1 in light), so scripts/ui-tokens.test.mjs
+   * fails on any `accent-foreground` in src/ui/.
    */
   --color-foreground: var(--jh-text-1);
   --color-card: var(--jh-surface-1);

@@ -1,7 +1,8 @@
 // Guards the shape of JagHelm's design tokens (src/ui/tokens.css, #283) and how
 // tailwind.css offers them: every token in every theme and accent, the accent
-// values Jag signed off, roles (never the palette) as utilities, and nothing of
-// Tailwind's defaults or blur left to reach for (epic #333 rule 9).
+// values Jag signed off, roles (never the palette) as utilities, nothing of
+// Tailwind's defaults, blur, text shadow or gradient text left to reach for
+// (epic #333 rule 9), and no stock shadcn highlight (accent-foreground).
 // scripts/ui-contrast.test.mjs checks their contrast.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -129,28 +130,69 @@ test('no component reads a palette step', () => {
   }
 });
 
-test("Tailwind's default palette, sizes, radii, shadows and blurs are gone (rule 9)", async () => {
-  const compiler = await compile(readFileSync(STACK, 'utf8'), {
-    base: path.join(ROOT, 'src/ui'),
-    onDependency() {},
-  });
-  const empty = compiler.build([]).length;
+test("Tailwind's default palette, sizes, fonts, radii, shadows and blurs are gone (rule 9)", async () => {
+  const fresh = () =>
+    compile(readFileSync(STACK, 'utf8'), { base: path.join(ROOT, 'src/ui'), onDependency() {} });
+  // A compiler keeps every class it has seen, so each class gets its own.
+  const compiles = async (cls) => {
+    const compiler = await fresh();
+    const empty = compiler.build([]).length;
+    return compiler.build([cls]).length > empty;
+  };
   for (const cls of [
     'bg-red-500',
     'text-white',
     'text-sm',
+    'font-serif',
     'rounded-2xl',
     'shadow-md',
+    'text-shadow-sm',
+    'text-shadow-lg',
     'blur-sm',
     'backdrop-blur-md',
   ]) {
-    assert.equal(compiler.build([cls]).length, empty, `${cls} still compiles`);
+    assert.equal(await compiles(cls), false, `${cls} still compiles`);
   }
-  // The stack as built: no blurred or frosted surface anywhere.
+  for (const cls of [
+    'bg-surface-1',
+    'text-text-2',
+    'text-crit-fg',
+    'font-sans',
+    'font-mono',
+    'font-bold',
+    'rounded-xl',
+    'shadow-pop',
+  ]) {
+    assert.equal(await compiles(cls), true, `${cls} should compile`);
+  }
+  // The stack as built: no blurred or frosted surface, text shadow or gradient
+  // text (text clipped to its background) anywhere.
+  const compiler = await fresh();
   const css = compiler.build(new Scanner({ sources: compiler.sources }).scan());
   assert.doesNotMatch(css, /backdrop-filter|blur\(/);
-  for (const cls of ['bg-surface-1', 'text-text-2', 'text-crit-fg', 'rounded-xl', 'shadow-pop']) {
-    assert.ok(compiler.build([cls]).length > empty, `${cls} should compile`);
+  assert.doesNotMatch(css, /(?<![-\w])text-shadow\s*:/);
+  assert.doesNotMatch(css, /background-clip\s*:\s*text/);
+  // The guards bite: each banned effect, built, matches them.
+  const banned = (await fresh()).build(['text-shadow-[0_1px_0_red]', 'bg-clip-text']);
+  assert.match(banned, /(?<![-\w])text-shadow\s*:/);
+  assert.match(banned, /background-clip\s*:\s*text/);
+});
+
+test("shadcn's accent-foreground is never used: here accent is the violet, not a hover surface", () => {
+  const files = readdirSync(path.join(ROOT, 'src/ui'), { recursive: true }).filter(
+    (f) => /\.(jsx?|css)$/.test(f) && !/\.test\.jsx?$/.test(f) && f !== 'tailwind.css'
+  );
+  assert.ok(files.length > 0);
+  for (const f of files) {
+    const hit = readFileSync(path.join(ROOT, 'src/ui', f), 'utf8').match(
+      /[\w:[\]=-]*accent-foreground\b/
+    );
+    assert.equal(
+      hit,
+      null,
+      `src/ui/${f} uses ${hit?.[0]}: a stock shadcn highlight. Use bg-row-hover or ` +
+        'bg-surface-2 with text-text-1 (docs/design-system.md, "shadcn/ui names")'
+    );
   }
 });
 
