@@ -177,7 +177,7 @@ data/
 ├── cron-jobs.json         # cron job execution history
 ├── todos.json             # checklist data
 ├── icon-index.json        # icon picker's names-only index (a cache; safe to delete)
-└── icon-cache/            # CDN icons served locally after the first load (a cache; safe to delete)
+└── icon-cache/            # CDN icons served locally after the first load (a cache, at most 50 MB; safe to delete)
 ```
  
 `services.yaml` is hot-reloaded — edit it on disk and JagHelm picks up the change without restarting.

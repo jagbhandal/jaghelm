@@ -41,6 +41,17 @@ test('atomicWriteFileSync supports Buffer payloads', () => {
   }
 });
 
+test('atomicWriteFileSync writes an array of chunks in order', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aw-'));
+  try {
+    const target = join(dir, 'chunks');
+    atomicWriteFileSync(target, [Buffer.from('ab'), new Uint8Array([0x63]), Buffer.alloc(0), Buffer.from('de')]);
+    assert.equal(readFileSync(target, 'utf8'), 'abcde');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('atomicWriteFileSync cleans up temp file when rename fails', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aw-'));
   try {
