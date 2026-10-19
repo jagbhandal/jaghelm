@@ -6,6 +6,9 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- The server no longer serializes and hashes the `/api/services`, `/api/integrations`, `/api/ups` and `/api/gitea/activity` responses on every request, and no longer keeps a second, unused copy of each of them. A value is serialized and its ETag computed once, when the background refresh stores it, so a request, a `200` or a `304 Not Modified`, only sends what is already in memory: about 145 µs less work per request for a 72 KiB payload. The ETags themselves are unchanged. A `304` now carries the `ETag` header, as HTTP requires, and `If-None-Match` now also matches a weak tag (`W/"…"`), a list of tags or `*` from any client; before, a browser got a `304` only when it sent back the exact tag.
+
 ### Fixed
 - A request redirected with `307` or `308` now keeps its method and body, as those codes require, instead of being turned into a `GET` without a body. A session login (Nginx Proxy Manager, Portainer, PhotoPrism) behind such a redirect on the same host and port, or from `http://` to `https://` on it, now works. A login redirected to another origin (host, port or scheme, apart from that upgrade) is refused instead of being re-sent there. `301` and `302` still turn any method but `GET` and `HEAD` into a `GET` without a body, and `303` turns every method, `HEAD` included, into one.
 - The server no longer loads the integration presets' test files as presets at startup, so it no longer logs two "Skipping invalid preset" errors (for `gitlab.test.js` and `nextcloud.test.js`) or prints their test output in its logs. Test files are also left out of the image.

@@ -5,8 +5,11 @@
  * for when a refresh cycle is slow or fails. Routes read from the cache and
  * fall back to on-demand refresh on cold start.
  *
- * jsonWithEtag() hashes the response body so clients can revalidate cheaply
- * via If-None-Match → 304 Not Modified.
+ * jsonWithEtag() sends a cached value with an ETag (an MD5 of its JSON body) so
+ * clients can revalidate cheaply via If-None-Match → 304 Not Modified. The body
+ * and ETag are computed once per cached value, never per request: setCache
+ * serializes the keys served this way (respondWarmCached registers them) when
+ * it writes them, and every request after that reads both from the entry.
  */
 
 import crypto from 'crypto';
@@ -19,7 +22,10 @@ const CACHE_TTL_MS = 120_000;
 const MAX_ENTRIES = 500;
 
 const cache = new Map();
-const etagCache = new Map();
+// Keys served through respondWarmCached (a constant handful). setCache serializes
+// these when it writes them; the rest (prom-<q>, weather-<lat>-<lon>, ...) are
+// served with res.json and never pay for a body or an ETag.
+const etagKeys = new Set();
 
 function boundedSet(map, key, value) {
   if (!map.has(key) && map.size >= MAX_ENTRIES) {
@@ -37,9 +43,21 @@ export function getCached(key) {
   return entry.data;
 }
 
-/** Store a value in the cache with the current timestamp. */
+/**
+ * Store a value in the cache with the current timestamp. The value must not be
+ * mutated afterwards: a key served with an ETag keeps the JSON it had when written.
+ */
 export function setCache(key, data) {
-  boundedSet(cache, key, { data, ts: Date.now() });
+  const entry = { data, ts: Date.now(), body: null, etag: null };
+  if (etagKeys.has(key)) serialize(entry);
+  boundedSet(cache, key, entry);
+}
+
+/** Fill in `entry.body` (the JSON as a Buffer) and its strong `entry.etag`. */
+function serialize(entry) {
+  entry.body = Buffer.from(JSON.stringify(entry.data));
+  entry.etag = `"${crypto.createHash('md5').update(entry.body).digest('hex')}"`;
+  return entry;
 }
 
 /**
@@ -54,25 +72,42 @@ export function getCacheAgeMs(key) {
 }
 
 /**
+ * Whether an If-None-Match header matches `etag` (RFC 9110 §13.1.2): `*`, or a
+ * list of entity-tags compared weakly (a `W/` prefix is ignored). The request's
+ * Cache-Control is deliberately not consulted: browsers add `no-cache` to every
+ * fetch that sets its own If-None-Match (useData.js does), and the server is the
+ * origin, so answering 304 is the revalidation that header asks for.
+ */
+function ifNoneMatchHits(header, etag) {
+  if (typeof header !== 'string') return false;
+  if (header.trim() === '*') return true;
+  for (const part of header.split(',')) {
+    const tag = part.trim();
+    if (tag === etag || tag === `W/${etag}`) return true;
+  }
+  return false;
+}
+
+/**
  * Send a JSON response with ETag/304 support.
  *
  * Clients that send a matching If-None-Match header receive a 304 and skip
- * the response body entirely.
+ * the response body entirely. When `data` is the value cached under
+ * `cacheKey`, the entry's body and ETag are used (and kept, if this is the
+ * first time it is served); any other value is serialized for this response.
  */
 export function jsonWithEtag(res, req, cacheKey, data) {
-  const json = JSON.stringify(data);
-  const hash = crypto.createHash('md5').update(json).digest('hex');
-  const etag = `"${hash}"`;
-  boundedSet(etagCache, cacheKey, { hash, json });
+  const entry = cache.get(cacheKey);
+  const { body, etag } =
+    entry && entry.data === data ? (entry.body ? entry : serialize(entry)) : serialize({ data });
 
-  const clientEtag = req.headers['if-none-match'];
-  if (clientEtag === etag) {
+  res.set('ETag', etag);
+  if (ifNoneMatchHits(req.headers['if-none-match'], etag)) {
     return res.status(304).end();
   }
 
-  res.set('ETag', etag);
   res.set('Content-Type', 'application/json');
-  res.send(json);
+  res.send(body);
 }
 
 /**
@@ -84,13 +119,15 @@ export function jsonWithEtag(res, req, cacheKey, data) {
  * @param {import('express').Request} req
  * @param {import('express').Response} res
  * @param {object} opts
- * @param {string} opts.key            cache key (also the ETag key)
+ * @param {string} opts.key            cache key (also the ETag key); a constant,
+ *   since setCache serializes this key on every write from then on
  * @param {() => Promise<*>} opts.refresh  cold-start refresh; returns the
  *   payload or a falsy value if data isn't available yet.
  * @param {(res: import('express').Response) => *} opts.fallback  invoked when
  *   neither the cache nor the refresh produced data.
  */
 export async function respondWarmCached(req, res, { key, refresh, fallback }) {
+  etagKeys.add(key); // before refresh(), so its setCache serializes the value
   const cached = getCached(key);
   if (cached) return jsonWithEtag(res, req, key, cached);
 
