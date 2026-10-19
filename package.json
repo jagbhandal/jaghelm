@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22 <25"
+    "node": ">=26 <27"
   },
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
@@ -13,7 +13,7 @@
     "dev:client": "vite",
     "build": "vite build && node scripts/inject-sw-precache.mjs",
     "start": "node server/index.js",
-    "test": "node --import ./scripts/test-data-dir.mjs --test --test-timeout=60000 \"server/**/*.test.{js,mjs,cjs}\" \"src/**/*.test.{js,mjs,cjs}\" \"scripts/**/*.test.{js,mjs,cjs}\"",
+    "test": "node --import ./scripts/test-data-dir.mjs --import ./scripts/test-exit-guard.mjs --test --test-timeout=60000 \"server/**/*.test.{js,mjs,cjs}\" \"src/**/*.test.{js,mjs,cjs}\" \"scripts/**/*.test.{js,mjs,cjs}\"",
     "test:ci": "node scripts/test-floor.mjs npm test",
     "test:watch": "node --import ./scripts/test-data-dir.mjs --test --watch",
     "test:client": "vitest run",
@@ -41,7 +41,7 @@
     "js-yaml": "^4.1.0",
     "multer": "^2.2.0",
     "prom-client": "^15.1.3",
-    "undici": "^6.27.0",
+    "undici": "^8.12.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {

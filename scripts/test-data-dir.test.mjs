@@ -34,7 +34,7 @@ function dataDirUnderPreload(env) {
 
 test('npm test preloads scripts/test-data-dir.mjs', () => {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-  assert.match(pkg.scripts.test, /^node --import \.\/scripts\/test-data-dir\.mjs --test /);
+  assert.match(pkg.scripts.test, /^node --import \.\/scripts\/test-data-dir\.mjs (?:--import \S+ )*--test /);
 });
 
 test('the preload points the data dir at a temp dir, and removes it on exit', () => {

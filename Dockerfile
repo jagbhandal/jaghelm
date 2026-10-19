@@ -7,10 +7,10 @@
 # binary copied out of the Node image, so npm, npx, yarn and corepack never
 # reach it (nothing at runtime uses them: the healthcheck and CMD call `node`).
 # The Alpine pin must be the Alpine release the Node image is built on, because
-# its Node binary links against that release's libstdc++; the runtime stage
-# refuses to build when the two differ.
-# Tags for readability: node:22-alpine, alpine:3.24.1
-FROM node:22-alpine@sha256:ab07539e0988b63558ff621f5fbe1077054c39d9809112974fb79993949d41cd AS node-base
+# its Node binary links against that release's libstdc++ and libatomic; the
+# runtime stage refuses to build when the two differ.
+# Tags for readability: node:26-alpine (built on alpine:3.24.2), alpine:3.24.2
+FROM node:26-alpine@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5 AS node-base
 
 # ─── Build stage ──────────────────────────────────────────────────────────
 FROM node-base AS builder
@@ -49,7 +49,7 @@ RUN mkdir -p /node/bin \
     && touch -r /usr/local/bin/node /node/bin /node
 
 # ─── Runtime stage ────────────────────────────────────────────────────────
-FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 # The Node binary and its LICENSE first, straight onto the Alpine layer (see
 # above): /usr/local/bin/node and /usr/local/LICENSE, as in the Node image.
@@ -58,7 +58,9 @@ COPY --from=node-bin /node/ /usr/local/
 # One layer for the system setup:
 #   - refuse an Alpine release other than the Node image's (see the top);
 #   - the unprivileged `node` user, UID/GID 1000 as in the Node image;
-#   - libstdc++ (and libgcc), the Node binary's only libraries beyond musl;
+#   - libstdc++ (and libgcc) and libatomic, the Node binary's only libraries
+#     beyond musl (`ldd /usr/local/bin/node` in the Node image; Node 26 added
+#     libatomic);
 #   - smoke-test the binary, and fail the build if a package manager is on PATH;
 #   - pre-create the mount points so the container has them even when running
 #     without bind mounts, writable by the unprivileged user.
@@ -72,7 +74,7 @@ RUN --mount=type=bind,from=node-base,source=/etc/alpine-release,target=/tmp/node
     fi; \
     addgroup -g 1000 node; \
     adduser -u 1000 -G node -s /bin/sh -D node; \
-    apk add --no-cache libstdc++; \
+    apk add --no-cache libstdc++ libatomic; \
     node --version; \
     for tool in npm npx yarn yarnpkg corepack; do \
       if command -v "$tool" >/dev/null; then echo "$tool must not be in the runtime image" >&2; exit 1; fi; \

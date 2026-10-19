@@ -146,7 +146,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: '22'
+          node-version: '26'
           cache: 'npm'
           cache-dependency-path: mobile/package-lock.json
 
@@ -471,7 +471,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: '22'
+          node-version: '26'
 
       - name: Download the signed APK
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4

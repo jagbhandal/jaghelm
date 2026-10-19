@@ -293,7 +293,7 @@ async function boot() {
   startArcane();
 
   const server = app.listen(PORT, HOST, () => {
-    log.info({ version: VERSION, host: HOST, port: PORT }, 'listening');
+    log.info({ version: VERSION, node: process.version, host: HOST, port: PORT }, 'listening');
     log.info({ nodes: Object.keys(config.nodes || {}) }, 'active nodes');
     if (isDemoMode()) logDemoBanner(PORT);
     if (!authEnabled()) {
