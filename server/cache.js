@@ -30,21 +30,35 @@ function boundedSet(map, key, value) {
   map.set(key, value);
 }
 
+function freshEntry(key) {
+  const entry = cache.get(key);
+  if (!entry || Date.now() - entry.ts >= CACHE_TTL_MS) return null;
+  return entry;
+}
+
 /** Get a cached value or null if expired/absent. */
 export function getCached(key) {
-  const entry = cache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.ts >= CACHE_TTL_MS) return null;
-  return entry.data;
+  const entry = freshEntry(key);
+  return entry ? entry.data : null;
+}
+
+/**
+ * What setCache kept beside a value for readers in this process, or null if
+ * expired/absent. It is never served: it is in neither the JSON nor its ETag.
+ */
+export function getCachedInternal(key) {
+  const entry = freshEntry(key);
+  return entry ? entry.internal : null;
 }
 
 /**
  * Store a value in the cache with the current timestamp. The value must not be
  * mutated afterwards: once served with an ETag, its JSON is kept until the next
- * setCache for the key.
+ * setCache for the key. `internal` is kept beside it, unserved, for
+ * getCachedInternal, and expires with it.
  */
-export function setCache(key, data) {
-  boundedSet(cache, key, { data, ts: Date.now(), body: null, etag: null });
+export function setCache(key, data, internal = null) {
+  boundedSet(cache, key, { data, internal, ts: Date.now(), body: null, etag: null });
 }
 
 /** Fill in `entry.body` (the JSON as a Buffer) and its strong `entry.etag`. */
