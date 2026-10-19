@@ -3,7 +3,6 @@
  *
  *   GET    /api/integrations           → all configured integrations' data
  *   GET    /api/integrations/presets   → built-in preset gallery
- *   GET    /api/integrations/:type     → one integration's live data
  *   POST   /api/integrations/test      → connection test before save
  *   POST   /api/integrations/save      → encrypt creds + write config
  *   DELETE /api/integrations/:type     → remove a configured integration
@@ -11,6 +10,9 @@
  * Multiple instances of the same preset are supported via the optional
  * `instance` field, which gets folded into the storage key
  * (e.g. type=adguard, instance=primary → adguard_primary).
+ *
+ * There is no GET /:type: it returned one integration's data with the whole
+ * upstream response and had no caller (#254). The dashboard reads GET /.
  */
 
 import { Router } from 'express';
@@ -18,7 +20,7 @@ import { Router } from 'express';
 import { getConfig, saveConfig } from '../config.js';
 import { setSecret } from '../secrets.js';
 import { getPreset, listPresets } from '../integrations/registry.js';
-import { fetchIntegration, testIntegration } from '../integrations/handler.js';
+import { testIntegration } from '../integrations/handler.js';
 import { refreshIntegrations } from '../refresh.js';
 import { respondWarmCached } from '../cache.js';
 import { apiError } from '../errors.js';
@@ -198,28 +200,5 @@ router.delete('/:type', (req, res) => {
   if (!saveConfig(config)) return apiError(res, 500, 'Failed to persist config');
   res.json({ ok: true });
 });
-
-// ── Fetch one integration's data on demand ───────────────────────────────
-// Note: this is the catch-all GET; declared LAST so /presets and / stay distinct.
-
-router.get(
-  '/:type',
-  asyncHandler(async (req, res) => {
-    const { type } = req.params;
-    const config = getConfig();
-    const integrations = config?.integrations || {};
-    const yamlConfig = integrations[type];
-
-    if (!yamlConfig && !getPreset(type)) {
-      return apiError(res, 404, `Integration '${type}' not found`);
-    }
-
-    const result = await fetchIntegration(type, yamlConfig || {}, false);
-    if (result.error) {
-      return res.status(502).json({ error: result.error, fields: result.fields });
-    }
-    res.json(result);
-  })
-);
 
 export { router as integrationRoutes };

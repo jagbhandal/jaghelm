@@ -95,7 +95,7 @@ test('fetchIntegration: rejects non-2xx responses with HTTP status', async (t) =
     url: 'https://api.example.com',
     endpoint: '/status',
     fields: [],
-  }, /* bustCache */ true);
+  });
 
   assert.equal(result.error?.startsWith('HTTP 502'), true,
     `Expected error to start with "HTTP 502", got: ${result.error}`);

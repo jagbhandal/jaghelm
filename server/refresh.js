@@ -540,7 +540,7 @@ async function _refreshIntegrations() {
     const fetchOne = async ([key, cfg]) => {
       try {
         const handlerType = cfg.preset || key;
-        const result = await fetchIntegration(handlerType, { ...cfg, _storageKey: key }, true);
+        const result = await fetchIntegration(handlerType, { ...cfg, _storageKey: key });
         const entry = { ...(result.fields || {}) };
         // Surface fetch/auth failures instead of dropping them — otherwise a
         // down integration renders as silent zeros, not an error state.

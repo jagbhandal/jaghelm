@@ -47,7 +47,7 @@ const uniqueKey = (type) => `${type}_${hex()}`;
 const PATHS = {
   test: (type, url) => testIntegration(type, { url, ...CREDS }),
   poll: async (type, url) => {
-    const { error } = await fetchIntegration(type, { url, ...CREDS, _storageKey: uniqueKey(type) }, true);
+    const { error } = await fetchIntegration(type, { url, ...CREDS, _storageKey: uniqueKey(type) });
     return { ok: !error, error };
   },
 };
@@ -180,7 +180,7 @@ for (const endpoint of ['/status?key={token}', '/api/{token}/status', '/status?p
     const o = await twoOrigins();
     try {
       const polled = await fetchIntegration(`custom-${hex()}`,
-        { url: o.fromUrl, endpoint, auth: 'none', ...CREDS, fields: [] }, true);
+        { url: o.fromUrl, endpoint, auth: 'none', ...CREDS, fields: [] });
       assert.match(polled.error, REFUSED);
       assert.equal(o.state.to, 0, 'the other origin received a request');
     } finally { o.close(); }
@@ -191,7 +191,7 @@ test('a custom integration with no credential in its endpoint follows a cross-or
   const o = await twoOrigins();
   try {
     const polled = await fetchIntegration(`custom-${hex()}`,
-      { url: o.fromUrl, endpoint: '/status?key=value', auth: 'header', ...CREDS, fields: [] }, true);
+      { url: o.fromUrl, endpoint: '/status?key=value', auth: 'header', ...CREDS, fields: [] });
     assert.equal(polled.error, null);
     assert.equal(o.state.to, 1);
   } finally { o.close(); }
