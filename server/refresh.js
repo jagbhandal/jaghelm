@@ -15,7 +15,7 @@ import { readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
 import { getConfig } from './config.js';
-import { getNodeData, promQuery, NODE_READS } from './discovery.js';
+import { getNodesData, promQuery, NODE_READS } from './discovery.js';
 import { recordSamples } from './history.js';
 import {
   fetchMonitors,
@@ -378,42 +378,33 @@ async function _refreshServices() {
       log.warn({ err }, 'monitors fetch failed');
       return { ok: false, monitors: {} };
     });
-    const nodeDataPromises = Object.entries(config.nodes).map(async ([nodeKey, nodeCfg]) => {
-      if (nodeCfg.visible === false) return null;
-      const promLabel = nodeCfg.prometheus_node || nodeKey;
-      const nodeData = await getNodeData(promLabel);
-      return [nodeKey, nodeCfg, nodeData];
-    });
-
-    // allSettled (not all) so one unreachable node doesn't sink the whole
-    // dashboard. Rejected node results are logged and dropped; the surviving
-    // nodes still render.
-    const [kuma, ...nodeOutcomes] = await Promise.all([
-      monitorsSettled,
-      ...nodeDataPromises.map((p) =>
-        p.then(
-          (val) => ({ status: 'fulfilled', value: val }),
-          (reason) => ({ status: 'rejected', reason })
-        )
-      ),
-    ]);
+    // Every visible node is read in one batch, one query per reading across all
+    // of them (#234). Should the batch throw, Kuma's result is still used, no
+    // node is in the payload, and Prometheus counts as failed.
+    const visibleNodes = Object.entries(config.nodes).filter(([, nodeCfg]) => nodeCfg.visible !== false);
+    const promLabelOf = ([nodeKey, nodeCfg]) => nodeCfg.prometheus_node || nodeKey;
+    const nodesSettled = getNodesData(visibleNodes.map(promLabelOf)).then(
+      (byLabel) => ({ ok: true, byLabel }),
+      (err) => ({ ok: false, err })
+    );
+    const [kuma, nodesOutcome] = await Promise.all([monitorsSettled, nodesSettled]);
     const monitors = kuma.monitors;
 
-    // Prometheus failed this cycle if any node's queries did (getNodeData's
-    // `ok`; its `failedReads` say which parts of the node they feed), or a
-    // node's refresh threw and left it out of the payload.
+    // Prometheus failed this cycle if any query did: every node's `ok` is then
+    // false, with the same `failedReads` naming what the failed queries feed.
     let nodeResults = [];
     const promErrors = [];
-    for (const outcome of nodeOutcomes) {
-      if (outcome.status === 'fulfilled') {
-        nodeResults.push(outcome.value);
-        const nodeData = outcome.value?.[2];
-        if (nodeData && nodeData.ok === false) promErrors.push(nodeData.error);
-      } else {
-        const msg = outcome.reason?.message || String(outcome.reason);
-        log.warn({ err: msg }, 'node refresh failed');
-        promErrors.push(msg);
+    if (nodesOutcome.ok) {
+      for (const entry of visibleNodes) {
+        const nodeData = nodesOutcome.byLabel.get(promLabelOf(entry));
+        nodeResults.push([entry[0], entry[1], nodeData]);
       }
+      const failed = [...nodesOutcome.byLabel.values()].find((nodeData) => nodeData.ok === false);
+      if (failed) promErrors.push(failed.error);
+    } else {
+      const msg = nodesOutcome.err?.message || String(nodesOutcome.err);
+      log.warn({ err: msg }, 'node refresh failed');
+      promErrors.push(msg);
     }
     // Every query answered, but no node has an `up` series where an earlier
     // answer had some: a Prometheus that has just started (after an outage
@@ -488,42 +479,39 @@ export async function refreshUPS() {
   return dedupe('ups', _refreshUPS);
 }
 
+// The NUT exporter series each UPS payload field reads.
+const UPS_METRICS = {
+  status: 'nut_status',
+  charge: 'nut_battery_charge',
+  runtime: 'nut_battery_runtime_seconds',
+  load: 'nut_load',
+};
+
 /**
- * The payload is `{ status, charge, runtime, load, ok }`. A value is null when
- * Prometheus has no series for it (no UPS) or its query failed; `ok` is false
- * when any query failed (#232), so the push snapshot keeps the last UPS state
- * instead of reading the failure as "unknown". A Prometheus outage is logged by
- * the services refresh, which queries the same Prometheus every cycle.
+ * The payload is `{ status, charge, runtime, load, ok }`, read with one query
+ * for all four series (#234). A value is null when Prometheus has no series for
+ * it (no UPS) or the query failed; `ok` is false when it failed (#232), so the
+ * push snapshot keeps the last UPS state instead of reading the failure as
+ * "unknown". A Prometheus outage is logged by the services refresh, which
+ * queries the same Prometheus every cycle.
  */
 async function _refreshUPS() {
   try {
-    const queryMap = {
-      status: 'nut_status{ups="apcups"}',
-      charge: 'nut_battery_charge{ups="apcups"}',
-      runtime: 'nut_battery_runtime_seconds{ups="apcups"}',
-      load: 'nut_load{ups="apcups"}',
-    };
-    const keys = Object.keys(queryMap);
-    const settled = await Promise.allSettled(keys.map((k) => promQuery(queryMap[k])));
+    let series = null;
+    try {
+      series = await promQuery(`{__name__=~"${Object.values(UPS_METRICS).join('|')}",ups="apcups"}`);
+    } catch (err) {
+      log.debug({ err }, 'UPS read failed');
+    }
 
     const results = {};
-    let ok = true;
-    keys.forEach((k, i) => {
-      let val = null;
-      if (settled[i].status === 'fulfilled') {
-        const raw = settled[i].value[0]?.value?.[1];
-        val = raw != null ? parseFloat(raw) : null;
-        if (val !== null && (k === 'charge' || k === 'load')) val = val * 100;
-      } else {
-        ok = false;
-      }
+    for (const [k, name] of Object.entries(UPS_METRICS)) {
+      const raw = series?.find((r) => r.metric?.__name__ === name)?.value?.[1];
+      let val = raw != null ? parseFloat(raw) : null;
+      if (val !== null && (k === 'charge' || k === 'load')) val = val * 100;
       results[k] = val;
-    });
-    if (!ok) {
-      const failed = settled.find((r) => r.status === 'rejected');
-      log.debug({ err: failed.reason }, 'UPS read failed');
     }
-    results.ok = ok;
+    results.ok = series !== null;
     setCache('ups', results);
     return results;
   } catch (err) {

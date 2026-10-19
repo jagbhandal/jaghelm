@@ -7,19 +7,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { initDiscovery, getNodeData } = await import('./discovery.js');
+const { initDiscovery, getNodesData } = await import('./discovery.js');
+
+/** One node's data: getNodesData() for that node alone. */
+const nodeData = async (label) => (await getNodesData([label])).get(label);
 
 initDiscovery('http://localhost:9998');
 const realFetch = globalThis.fetch;
 const LABEL = 'container_label_com_getarcaneapp_internal_resource';
 const EVAL = 1700000000;
 
+// Each sample carries the node asked for: discovery splits a batched answer by
+// its `node` label (#234).
 const envelope = (samples) => ({
   ok: true,
   status: 200,
   headers: { get: () => null },
   body: null,
-  json: async () => ({ data: { result: samples } }),
+  json: async () => ({ data: { result: samples.map((s) => ({ ...s, metric: { node: 'vm-test', ...s.metric } })) } }),
 });
 
 const SERIES = [
@@ -48,7 +53,7 @@ for (const honourSelector of [true, false]) {
     const seen = [];
     globalThis.fetch = stub({ honourSelector, seen });
     try {
-      const { containers } = await getNodeData('vm-test');
+      const { containers } = await nodeData('vm-test');
       const names = containers.map((c) => c.container).sort();
       assert.deepEqual(names, ['other_label', 'plain_app']);
     } finally {
@@ -61,7 +66,7 @@ test('discovery: every container_* query carries the exclusion selector', async 
   const seen = [];
   globalThis.fetch = stub({ honourSelector: true, seen });
   try {
-    await getNodeData('vm-test');
+    await nodeData('vm-test');
     assert.ok(seen.length >= 5);
     for (const q of seen) assert.ok(q.includes(`${LABEL}!="true"`), `missing in: ${q}`);
   } finally {

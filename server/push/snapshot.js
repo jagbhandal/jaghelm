@@ -207,10 +207,13 @@ function unreadHostFields(node, prometheusOk) {
 /**
  * The hosts map to diff. Each host keeps its previous value for every field it
  * could not read this cycle (unreadHostFields) and takes this cycle's for the
- * rest, so one failed query holds only what it feeds: a failed temperature or
- * container query on one node holds nothing, and another node's `up` at 0 still
- * pages. A host in `prev` but missing from this cycle while Prometheus failed
- * (its refresh threw, or the services payload is missing) is kept whole.
+ * rest, so one failed query holds only what it feeds. Each query covers every
+ * node (#234): a failed CPU query holds every host's cpu (and the reachability
+ * of a host with no `up` series), a failed temperature or container query no
+ * host field, and a host's `up` at 0 still pages. A
+ * host in `prev` but missing from this cycle while Prometheus failed (the
+ * refresh threw and dropped every host, or the services payload is missing) is
+ * kept whole.
  */
 function keepHosts(prevHosts, hosts, servicesCache, ok) {
   const nodes = servicesCache?.nodes ?? {};

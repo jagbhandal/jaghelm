@@ -90,26 +90,42 @@ function promAnswer(q) {
   }
   if (world.rejects?.(q)) return json(400, { status: 'error', errorType: 'bad_data', error: 'parse error' });
   if (world.prometheus === 'fresh') return vector([]);
-  if (q.includes('nut_status')) return vector([sample(world.ups)]);
-  if (q.includes('nut_')) return vector([sample(1)]);
+  // One query reads the four UPS series, told apart by name (#234).
+  if (q.includes('nut_')) {
+    return vector([
+      sample(world.ups, { __name__: 'nut_status' }),
+      ...['nut_battery_charge', 'nut_battery_runtime_seconds', 'nut_load'].map((n) => sample(1, { __name__: n })),
+    ]);
+  }
 
-  const node = /node="([^"]+)"/.exec(q)?.[1];
+  // One query covers every node, node=~"vm103|pi|nas" (#234): each sample
+  // carries its `node` label, and series that share a query their name.
+  const nodes = [...q.matchAll(/node=~"([^"]+)"/g)].flatMap((m) => m[1].split('|'));
+  const perNode = (fn) => vector(nodes.flatMap((node) => fn(node).map((s) => ({ ...s, metric: { node, ...s.metric } }))));
   if (q.includes('container_')) {
     if (world.prometheus === 'containers500') {
       return json(500, { status: 'error', errorType: 'internal', error: 'boom' });
     }
-    const names = CONTAINERS[node] || [];
-    if (q.includes('container_last_seen')) return vector(names.map((name) => sample(EVAL - 5, { name })));
-    return vector(names.map((name) => sample(1, { name })));
+    const names = (node) => CONTAINERS[node] || [];
+    if (q.includes('container_last_seen')) return perNode((node) => names(node).map((name) => sample(EVAL - 5, { name })));
+    return perNode((node) => names(node).map((name) => sample(1, { name })));
   }
-  if (q.includes('up{')) return vector([sample(world.up[node])]);
-  if (q.includes('node_cpu_seconds_total')) return vector([sample(25)]);
-  if (q.includes('MemTotal')) return vector([sample(8 * GiB)]);
-  if (q.includes('MemAvailable')) return vector([sample(4 * GiB)]);
-  if (q.includes('MemFree')) return vector([sample(2 * GiB)]);
-  if (q.includes('node_time_seconds')) return vector([sample(3600)]);
-  if (q.includes('node_filesystem_size_bytes')) return vector([sample(100 * GiB, { mountpoint: '/' })]);
-  if (q.includes('node_filesystem_free_bytes')) return vector([sample(50 * GiB, { mountpoint: '/' })]);
+  if (q.includes('up{')) return perNode((node) => [sample(world.up[node])]);
+  if (q.includes('node_cpu_seconds_total')) return perNode(() => [sample(25)]);
+  if (q.includes('MemTotal')) {
+    return perNode(() => [
+      sample(8 * GiB, { __name__: 'node_memory_MemTotal_bytes' }),
+      sample(4 * GiB, { __name__: 'node_memory_MemAvailable_bytes' }),
+      sample(2 * GiB, { __name__: 'node_memory_MemFree_bytes' }),
+    ]);
+  }
+  if (q.includes('node_time_seconds')) return perNode(() => [sample(3600)]);
+  if (q.includes('node_filesystem_size_bytes')) {
+    return perNode(() => [
+      sample(100 * GiB, { __name__: 'node_filesystem_size_bytes', mountpoint: '/' }),
+      sample(50 * GiB, { __name__: 'node_filesystem_free_bytes', mountpoint: '/' }),
+    ]);
+  }
   return vector([]);
 }
 
@@ -329,14 +345,15 @@ test('a node whose up{node} is 0 while Prometheus is healthy still pages host_un
 
 // ── #232 review ──────────────────────────────────────────────────────────
 
-test('one query failing on one node does not hold host_unreachable for another node', async () => {
+test('one metric query failing does not hold host_unreachable for any node', async () => {
   reset();
   const p = pipeline();
   try {
     await p.cycle();
-    // Every cycle from now on, nas's temperature query is a 400 (a query that
-    // always fails: a bad label, or one that always times out).
-    world.rejects = (q) => q.includes('node_hwmon_temp_celsius') && q.includes('node="nas"');
+    // Every cycle from now on, the temperature query is a 400 (a query that
+    // always fails: a bad label, or one that always times out). It covers every
+    // node (#234), so every node's temperature read fails, and nothing else.
+    world.rejects = (q) => q.includes('node_hwmon_temp_celsius');
     await p.cycle();
     world.up.pi = 0;
     for (let i = 0; i < 5; i += 1) await p.cycle();
