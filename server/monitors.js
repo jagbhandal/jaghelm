@@ -4,6 +4,7 @@
  */
 
 import { createLogger } from './util/logger.js';
+import { createSourceHealthLog } from './util/sourceHealthLog.js';
 import { safeFetch } from './httpClient.js';
 import { positiveMs } from './util/env.js';
 import { parseKumaMetrics, statusFromValue } from './kumaMetrics.js';
@@ -17,10 +18,10 @@ let kumaApiKey = '';
 let cachedMonitors = null;
 let cacheTime = 0;
 // What the last successful load looked like, so a reload logs at info only when
-// it differs (or follows an outage); null before the first load and after a
-// failed one. `kumaUnavailableWarned` keeps an outage to one warning.
+// it differs; null before the first load. A Kuma outage and its recovery are
+// logged once each by `reportKuma` (#232), not on every failed load.
 let lastLoad = null;
-let kumaUnavailableWarned = false;
+const reportKuma = createSourceHealthLog('kuma', log);
 const CACHE_TTL = 15000;
 // Ceiling on how long we'll keep serving the last-known statuses while Kuma is
 // unreachable. Past this, a sustained Kuma outage would otherwise freeze the
@@ -115,21 +116,19 @@ async function fetchFromMetrics() {
  * the fallback when no API key is set. Two calls:
  *   1. /api/status-page/default → monitor names + IDs from publicGroupList
  *   2. /api/status-page/heartbeat/default → heartbeat status, ping, uptime
- * Returns the monitor map, or `null` on a failed/empty fetch.
+ * Returns the monitor map. Throws when no monitors could be loaded: the request
+ * failed, Kuma answered non-2xx, or the status page lists no monitors.
  */
 async function fetchFromStatusPage() {
   const pageR = await safeFetch(`${kumaUrl}/api/status-page/default`, {
     trusted: true,
     timeoutMs: KUMA_TIMEOUT,
   });
-  if (!pageR.ok) return null;
+  if (!pageR.ok) throw new Error(`Kuma status page answered HTTP ${pageR.status}`);
   const pageData = await pageR.json();
 
-  const monitorList = (pageData.publicGroupList || []).flatMap((g) => g.monitorList || []);
-  if (monitorList.length === 0) {
-    log.warn('No monitors found in status page');
-    return null;
-  }
+  const monitorList = (pageData?.publicGroupList || []).flatMap((g) => g.monitorList || []);
+  if (monitorList.length === 0) throw new Error('Kuma status page lists no monitors');
 
   // Fetch heartbeat data (separate endpoint in newer Kuma versions)
   let heartbeatList = pageData.heartbeatList || {};
@@ -177,70 +176,74 @@ async function fetchFromStatusPage() {
  * status-page API otherwise (or when /metrics is unavailable). Both sources
  * produce the SAME monitor-map shape, so every downstream consumer is identical.
  *
- * The stale-serving ceiling (staleOrEmpty) applies to BOTH paths: a sustained
- * Kuma outage surfaces "unknown" rather than freezing the board on stale "up"s.
+ * Resolves to `{ ok, monitors }`. `ok` is false when no monitors were loaded on
+ * this call (#232): the request failed, Kuma answered non-2xx, or it answered
+ * with no monitors (Kuma still starting, or nothing on the status page). The
+ * caller can then tell "Kuma is down" from "these services are up".
+ *
+ * On a failed load `monitors` holds the last-known statuses until they are
+ * STALE_CEILING_MS old, then {}: the stale-serving ceiling applies to BOTH
+ * paths, so a sustained Kuma outage surfaces "unknown" rather than freezing the
+ * board on stale "up"s. `error` says why it failed.
+ *
+ * A failed load logs at debug. The outage is logged once, as a warning on the
+ * first failed load and an info line on the first load after it (reportKuma),
+ * the same pair as Prometheus.
  */
 export async function fetchMonitors(bustCache = false) {
-  if (!kumaUrl) return {};
+  if (!kumaUrl) return { ok: true, monitors: {} };
 
   if (!bustCache && cachedMonitors && Date.now() - cacheTime < CACHE_TTL) {
-    return cachedMonitors;
+    return { ok: true, monitors: cachedMonitors };
   }
 
+  let monitors = null;
+  let source = null;
   try {
-    let monitors = null;
-    let source = null;
-
+    let metricsErr = null;
     if (kumaApiKey) {
       try {
         monitors = await fetchFromMetrics();
         if (monitors) source = 'metrics';
       } catch (err) {
-        log.warn({ err }, 'Kuma /metrics path errored — falling back to status-page API');
+        metricsErr = err;
       }
     }
 
     if (!monitors) {
       monitors = await fetchFromStatusPage();
-      if (monitors) source = 'status-page';
+      source = 'status-page';
+      // Warned only once the fallback has loaded: with both paths failing it
+      // is a Kuma outage, logged once below.
+      if (metricsErr) log.warn({ err: metricsErr }, 'Kuma /metrics path errored — falling back to status-page API');
     }
-
-    if (!monitors) {
-      // Some of these paths (a non-2xx status page) log nothing on their own,
-      // and the per-cycle load line is debug now, so say it once per outage.
-      if (!kumaUnavailableWarned) {
-        log.warn(
-          { staleCeilingMin: STALE_CEILING_MS / 60_000 },
-          'No monitors loaded from Kuma — serving last-known statuses, if any, until they go stale'
-        );
-        kumaUnavailableWarned = true;
-      }
-      lastLoad = null;
-      return staleOrEmpty();
-    }
-
-    // Runs every refresh cycle: info only for the first load, a change in what
-    // Kuma returned, or the first load after an outage; debug otherwise.
-    const load = { count: Object.keys(monitors).length, source };
-    const changed = !lastLoad || lastLoad.count !== load.count || lastLoad.source !== load.source;
-    (changed ? log.info : log.debug)(load, 'Loaded monitors from Kuma');
-    lastLoad = load;
-    kumaUnavailableWarned = false;
-    cachedMonitors = monitors;
-    cacheTime = Date.now();
-    return monitors;
   } catch (err) {
-    log.error({ err }, 'Failed to fetch Kuma monitors');
-    lastLoad = null;
-    return staleOrEmpty();
+    const error = err?.message || String(err);
+    log.debug(
+      { err, staleCeilingMin: STALE_CEILING_MS / 60_000 },
+      'No monitors loaded from Kuma — serving last-known statuses, if any, until they go stale'
+    );
+    reportKuma({ ok: false, error });
+    return { ok: false, error, monitors: staleOrEmpty() };
   }
+
+  reportKuma({ ok: true });
+  // Runs every refresh cycle: info only for the first load or a change in what
+  // Kuma returned; debug otherwise.
+  const load = { count: Object.keys(monitors).length, source };
+  const changed = !lastLoad || lastLoad.count !== load.count || lastLoad.source !== load.source;
+  (changed ? log.info : log.debug)(load, 'Loaded monitors from Kuma');
+  lastLoad = load;
+  cachedMonitors = monitors;
+  cacheTime = Date.now();
+  return { ok: true, monitors };
 }
 
 /**
  * Get a flat array of all monitor names (for Settings UI dropdowns).
  */
 export async function getMonitorNames() {
-  const monitors = await fetchMonitors();
+  const { monitors } = await fetchMonitors();
   return Object.values(monitors)
     .map((m) => m.name)
     .sort();
@@ -387,8 +390,8 @@ export function logUnmatchedContainers({ unmatched, containerCount, monitors }) 
  * this cycle. These become synthesised red "down" cards on the board so an
  * outage stays visible after the container disappears from cAdvisor.
  *
- * `monitors` is the id→monitor map from fetchMonitors (or the `[]` fallback a
- * failed fetch returns — Object.values handles both). `consumedIds` is a Set of
+ * `monitors` is the id→monitor map from fetchMonitors (an array works too:
+ * Object.values handles both). `consumedIds` is a Set of
  * monitor ids already rendered as a running container's card. A monitor whose
  * heartbeat time is missing/unparseable (`lastBeatAt == null`) is treated as
  * fresh: we only EXCLUDE on a positively-stale beat, never miss a real outage
