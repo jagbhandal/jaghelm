@@ -283,3 +283,23 @@ test('assemble: overallHealth is "unknown" when there are no cards', () => {
   });
   assert.equal(overallHealth, 'unknown');
 });
+
+test('assemble: unmatched[] lists running, shown containers no monitor matched (for the once-per-boot summary)', () => {
+  const { unmatched, containerCount } = run({
+    nodeResults: [
+      ['vm103', { ...nodeCfg, hide: ['cadvisor'] }, nodeData([
+        { container: 'gitea', status: 'running', docker: {} },
+        { container: 'watchtower', status: 'running', docker: {} },
+        { container: 'cadvisor', status: 'running', docker: {} }, // hidden: not on the board
+        { container: 'alloy', status: 'running', docker: {} },
+      ])],
+      ['pi-1', nodeCfg, nodeData([{ container: 'alloy', status: 'running', docker: {} }])],
+    ],
+    monitors: { 1: { id: 1, name: 'gitea', status: 'up', active: true } },
+    containerRegistry: fakeRegistry([
+      { container: 'postgres', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 }, // breadcrumb, not running
+    ]),
+  });
+  assert.deepEqual(unmatched, ['alloy', 'watchtower']); // unique, sorted
+  assert.equal(containerCount, 4);
+});
