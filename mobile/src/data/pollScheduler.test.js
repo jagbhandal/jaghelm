@@ -98,6 +98,39 @@ describe('createPollScheduler', () => {
     s.stop();
   });
 
+  it('stop() then start() while a round is in flight: one follow-up round, then one timer', async () => {
+    const { run, calls, settle } = manualRun();
+    const s = createPollScheduler(run, { intervalMs: 1000 });
+    s.start('force');
+    s.stop();
+    s.start('resume');
+    expect(run).toHaveBeenCalledTimes(1); // no second round alongside the first
+    await settle(0);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(calls[1].reason).toBe('resume');
+    await settle(1);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(run).toHaveBeenLastCalledWith('poll');
+    s.stop();
+  });
+
+  it('stop(), start(), stop() inside one round: the last stop wins, nothing runs after', async () => {
+    const { run, settle } = manualRun();
+    const s = createPollScheduler(run, { intervalMs: 1000 });
+    s.start('force');
+    s.stop();
+    s.start('resume');
+    s.stop();
+    await settle(0);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
   it('never overlaps rounds: triggers during a round fold into one follow-up', async () => {
     const { run, calls, settle } = manualRun();
     const s = createPollScheduler(run, { intervalMs: 1000 });
