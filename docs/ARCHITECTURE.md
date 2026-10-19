@@ -566,6 +566,19 @@ flowchart TD
   `/assets/` entries not in the current build's asset list, so a redeploy at the
   same version doesn't leave its old bundles behind. The current build's lazy
   chunks, the shell, `/uploads/` and public files stay cached for offline use.
+- **Old tab after a deploy.** A tab still on an older build that opens Settings
+  or an iframe tab asks for a chunk the deploy removed, and gets a 404.
+  `src/chunkReload.js`, installed by `main.jsx`, listens for Vite's
+  `vite:preloadError` (fired for every failed lazy import in a build), cancels
+  it and reloads the page once, onto the new build. A sessionStorage timestamp
+  guards it: a failure within 60 s of the last reload in that tab goes through
+  to the root `ErrorBoundary`'s error screen, so a chunk broken in the current
+  build can't loop, and later deploys can reload the tab again. Blocked
+  sessionStorage means no reload. While the reload is under way, `ErrorBoundary`
+  renders nothing, because the cancelled import resolves empty and the lazy view
+  throws. The Android app doesn't need this: its only lazy chunks are
+  Capacitor's browser fallbacks for its plugins, bundled in the APK, which
+  can't change while the app runs.
 
 ### 5.1 UI stack (Tailwind CSS v4, shadcn/ui, Lucide)
 
@@ -779,7 +792,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
 - **Client** (`npm run test:client`, Vitest + jsdom + React Testing Library):
   NavBar/config-driven rendering, settings primitives, the keyboard grid handle,
   per-source health banners, overlay/confirm semantics, the 304-stable data
-  hook, and the `src/ui/` components.
+  hook, the old-tab chunk reload and its loop guard (`src/chunkReload.test.jsx`),
+  and the `src/ui/` components.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through
   the Android build's `@ui` alias.
