@@ -1,6 +1,23 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import IssueRow from './IssueRow.jsx';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+// The issue-row rules in MobileApp.css as [selector, declarations] pairs. The
+// stylesheet is read as text, not imported (scripts/ui-stack.test.mjs).
+function issueRowRules() {
+  const css = readFileSync(resolve(HERE, '..', 'MobileApp.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  // The last two parts of each chunk are a rule's selector and body, even when an
+  // @media block opens in front of it.
+  return css.split('}')
+    .map((chunk) => chunk.split('{').slice(-2).map((part) => part.trim()))
+    .filter(([selector, body]) => body !== undefined && selector.includes('.issue-row'));
+}
 
 /** A service that is DOWN (severity=critical, shape=slash). */
 const downIncident = {
@@ -187,12 +204,14 @@ describe('IssueRow', () => {
   });
 
   describe('onOpen callback', () => {
-    it('calls onOpen with incident.target when the row is clicked', () => {
+    // The caller owns the route (Overview, via nav/issueRoute.js), so the row
+    // passes nothing back.
+    it('calls onOpen with no argument when the row is clicked', () => {
       const onOpen = vi.fn();
       render(<IssueRow incident={downIncident} onOpen={onOpen} />);
       fireEvent.click(screen.getByRole('button'));
       expect(onOpen).toHaveBeenCalledOnce();
-      expect(onOpen).toHaveBeenCalledWith(downIncident.target);
+      expect(onOpen).toHaveBeenCalledWith();
     });
   });
 
@@ -206,9 +225,22 @@ describe('IssueRow', () => {
       expect(row).toHaveFocus();
     });
 
+    it('the accessible name spells out UNKN; the visible word stays UNKN', () => {
+      const { container } = render(<IssueRow incident={unknownIncident} onOpen={vi.fn()} />);
+      expect(screen.getByRole('button', { name: 'vaultwarden, unknown, vm-101 · no signal' })).toBeInTheDocument();
+      expect(container.querySelector('.status-word').textContent).toBe('UNKN');
+    });
+
     it('the accessible name leaves out an empty readout', () => {
       render(<IssueRow incident={{ ...upsIncident, readout: '' }} onOpen={vi.fn()} />);
       expect(screen.getByRole('button', { name: 'UPS on battery, ON BATTERY' })).toBeInTheDocument();
+    });
+
+    it('only the button variant gets the pointer cursor and the pressed tint', () => {
+      const rules = issueRowRules();
+      const tappable = rules.filter(([sel, body]) => sel.includes(':active') || /cursor:\s*pointer/.test(body));
+      expect(tappable.length).toBeGreaterThan(0);
+      for (const [sel] of tappable) expect(sel).toMatch(/^#mobile-root button\.issue-row/);
     });
 
     it('without onOpen the row is not a button and keeps its content', () => {

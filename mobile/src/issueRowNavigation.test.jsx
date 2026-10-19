@@ -55,9 +55,16 @@ beforeEach(() => {
   addListener.mockImplementation((evt, cb) => { if (evt === 'backButton') backHandler = cb; return { remove() {} }; });
 });
 
+let view;
 async function renderOverview() {
-  await act(async () => { render(<MobileApp />); });
+  await act(async () => { view = render(<MobileApp />); });
   return screen.getByRole('region', { name: 'Active issues' });
+}
+
+// The next poll returns `data`; the app re-renders with it on whatever screen is up.
+async function nextPoll(data) {
+  useDashboard.mockReturnValue({ ...data, refresh: vi.fn() });
+  await act(async () => { view.rerender(<MobileApp />); });
 }
 
 function issueRow(issues, name) {
@@ -116,6 +123,43 @@ describe('Overview issue rows open their detail screen (#279)', () => {
     expect(within(detail).getByText('Active — vm-103')).toBeInTheDocument();
   });
 
+  it('a service that stops being reported after its row was tapped shows so, and Back returns to the Overview', async () => {
+    const issues = await renderOverview();
+    fireEvent.click(issueRow(issues, /nginx.*VM 103/));
+    expect(screen.getByRole('heading', { name: 'nginx' })).toBeInTheDocument();
+
+    const nodes = DATA.servicesBody.nodes;
+    await nextPoll({ ...DATA, servicesBody: { nodes: { ...nodes, 'vm-103': { ...nodes['vm-103'], services: [] } } } });
+
+    const detail = screen.getByRole('region', { name: 'Service detail' });
+    expect(within(detail).getByText('This service is no longer reported.')).toBeInTheDocument();
+    expect(within(detail).queryByRole('heading', { name: 'nginx' })).toBeNull();
+
+    fireEvent.click(within(detail).getByRole('button', { name: 'Back' }));
+    const back = screen.getByRole('region', { name: 'Active issues' });
+    expect(screen.queryByRole('region', { name: 'Service detail' })).toBeNull();
+    expect(within(back).queryByRole('button', { name: /nginx.*VM 103/ })).toBeNull();
+    expect(issueRow(back, /nginx.*VM 101/)).toBeInTheDocument();
+  });
+
+  it('an incident that resolves after its row was tapped shows so, and hardware back returns to the Overview', async () => {
+    const issues = await renderOverview();
+    fireEvent.click(issueRow(issues, /UPS on battery/));
+    expect(screen.getByRole('heading', { name: 'UPS on battery' })).toBeInTheDocument();
+
+    await nextPoll({ ...DATA, ups: { status: 1, charge: 100, runtime: 1800 } });
+
+    const detail = screen.getByRole('region', { name: 'Incident detail' });
+    expect(within(detail).getByText('This incident has resolved.')).toBeInTheDocument();
+    expect(within(detail).queryByRole('heading', { name: 'UPS on battery' })).toBeNull();
+
+    await act(async () => { backHandler(); });
+    const back = screen.getByRole('region', { name: 'Active issues' });
+    expect(screen.queryByRole('region', { name: 'Incident detail' })).toBeNull();
+    expect(within(back).queryByRole('button', { name: /UPS on battery/ })).toBeNull();
+    expect(exitApp).not.toHaveBeenCalled();
+  });
+
   it('every issue row is a focusable button named after what it opens', async () => {
     const issues = await renderOverview();
     const names = within(issues).getAllByRole('button').map((b) => b.getAttribute('aria-label'));
@@ -125,7 +169,7 @@ describe('Overview issue rows open their detail screen (#279)', () => {
       'UPS on battery, ON BATTERY, 47% · 8m',
       'backup failed, FAILED, vm-101',
       'backup failed, FAILED, vm-103',
-      'vaultwarden, UNKN, VM 101 · no signal',
+      'vaultwarden, unknown, VM 101 · no signal',
     ]);
     const first = issueRow(issues, 'nginx, DOWN, VM 101');
     first.focus();
