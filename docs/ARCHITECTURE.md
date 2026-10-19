@@ -111,7 +111,9 @@ src/                        React 19 SPA (Vite 8)
 
 public/sw.js                service worker (precache injected at build)
 scripts/                    inject-sw-precache.mjs, check-assets.mjs, changelog-lint.mjs,
-                            release-notes.mjs (build/CI/release helpers)
+                            changelog-fold.mjs, release-notes.mjs (build/CI/release helpers)
+changes/                    CHANGELOG fragments, one per PR (mobile/changes/ for Android);
+                            the release PR folds them into the CHANGELOG (RELEASING.md)
 .github/workflows/          build-push.yml (test -> build -> sign -> GHCR), release.yml (tag ->
                             promote by digest -> GitHub Release), build-apk.yml (signed APK)
 .gitea/workflows/           check.yml (PR gate), deploy.yml (pin -> health-gate -> rollback)
@@ -390,7 +392,8 @@ flowchart LR
 
 - **PR gate** ([check.yml](../.gitea/workflows/check.yml)) runs on the
   self-hosted Gitea runner for every PR to `main`: secret scan, CHANGELOG
-  format, lint, typecheck, server, web and mobile tests, and the asset check.
+  format (both CHANGELOGs and their `changes/` fragments), lint, typecheck,
+  server, web and mobile tests, and the asset check.
 - **Build** ([build-push.yml](../.github/workflows/build-push.yml)) runs on
   GitHub for every push to `main`: a test gate (so a red `main` can't ship),
   then build and push `:latest` and the immutable `:sha-<short>` with OCI
