@@ -98,6 +98,26 @@ test('POST /api/services/config → 200 on a valid config', async () => {
   assert.equal(r.body.ok, true);
 });
 
+test('POST /api/services/config → 200 on a services.yaml generated before #265 (links object)', async () => {
+  // First-boot files carried `links` as a map of groups; the schema used to
+  // demand an array, so every Settings → Nodes/Services save of one got a 400.
+  const r = await request(app)
+    .post('/api/services/config')
+    .send({
+      nodes: { pi1: { display_name: 'Gateway Primary' } },
+      services: {},
+      integrations: {},
+      custom_integrations: {},
+      display: { title: 'JAGHELM' },
+      links: { personal: [], management: [], devops: [] },
+      tabs: [],
+      grid_layout: null,
+      grid_columns: 12,
+    });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.ok, true);
+});
+
 test('POST /api/services/config → 400 on a reserved key (prototype-pollution guard)', async () => {
   const r = await request(app)
     .post('/api/services/config')
