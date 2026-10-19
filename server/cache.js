@@ -18,7 +18,8 @@ const CACHE_TTL_MS = 120_000;
 // Hard cap on distinct keys. Cache keys include user-influenced strings
 // (`prom-<q>`, `weather-<lat>-<lon>`), so an unbounded Map is a trivial
 // memory-exhaustion DoS for an authenticated user. Map preserves insertion
-// order, so evicting the first key is a simple FIFO bound.
+// order and boundedSet re-inserts on every write, so the first key is the least
+// recently written one: the keys the refresh loop rewrites are never evicted.
 const MAX_ENTRIES = 500;
 
 const cache = new Map();
@@ -28,10 +29,8 @@ const cache = new Map();
 const etagKeys = new Set();
 
 function boundedSet(map, key, value) {
-  if (!map.has(key) && map.size >= MAX_ENTRIES) {
-    const oldest = map.keys().next().value;
-    map.delete(oldest);
-  }
+  map.delete(key); // re-insert: Map order = last-write order, so rewritten keys stay newest
+  if (map.size >= MAX_ENTRIES) map.delete(map.keys().next().value);
   map.set(key, value);
 }
 

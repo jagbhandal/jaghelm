@@ -12,7 +12,7 @@ import crypto from 'node:crypto';
 import express from 'express';
 import request from 'supertest';
 
-import { setCache, respondWarmCached } from './cache.js';
+import { getCached, setCache, respondWarmCached } from './cache.js';
 
 afterEach(() => mock.restoreAll());
 
@@ -225,4 +225,16 @@ test('setCache on a key no route serves with an ETag does no serialization', () 
   setCache(freshKey(), payload); // e.g. prom-<q>, weather-<lat>-<lon>: served with res.json
   assert.equal(work.serialized(), 0);
   assert.equal(work.hashed(), 0);
+});
+
+test('a key the refresh loop rewrites is never the one evicted', () => {
+  // Assert after every one-off key, BEFORE the periodic rewrite: checking only
+  // after a rewrite would re-add the key and hide its eviction.
+  const warm = freshKey();
+  setCache(warm, { v: 0 });
+  for (let i = 1; i <= 1000; i++) {
+    setCache(freshKey(), { i }); // one-off keys (prom-<q>, weather-<lat>-<lon>)
+    assert.notEqual(getCached(warm), null, `evicted after ${i} one-off keys`);
+    if (i % 100 === 0) setCache(warm, { v: i }); // a refresh cycle
+  }
 });
