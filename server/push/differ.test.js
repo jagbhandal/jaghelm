@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { diffSnapshots, RECOVERY_TYPES, SEVERITY } from './differ.js';
+import { alertStateKey, diffSnapshots, RECOVERY_TYPES, SEVERITY } from './differ.js';
 
 const EMPTY = { services: {}, hosts: {}, ups: { state: 'unknown' }, cron: {} };
 const THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
@@ -535,4 +535,21 @@ test('arcane recoveries honour notifyRecoveries', () => {
   assert.ok(RECOVERY_TYPES.has('arcane_cleared'));
   assert.ok(RECOVERY_TYPES.has('arcane_agent_recovered'));
   assert.ok(!RECOVERY_TYPES.has('arcane_agent_offline'));
+});
+
+test('alertStateKey: readings that stay on the same side of their threshold give the same key', () => {
+  const [a, b] = hostM({ cpu: 0.42, mem: 0.95 }, { cpu: 0.61, mem: 0.99 });
+  assert.equal(alertStateKey(a, THRESHOLDS), alertStateKey(b, THRESHOLDS));
+});
+
+test('alertStateKey: a threshold crossing, reachability or status change gives a new key', () => {
+  const base = host({ n1: { reachable: true, cpu: 0.5, mem: 0.1, disk: 0.1 } });
+  const key = alertStateKey(base, THRESHOLDS);
+  const [, crossed] = hostM({}, { cpu: 0.95 });
+  assert.notEqual(alertStateKey(crossed, THRESHOLDS), key);
+  assert.notEqual(alertStateKey(host({ n1: { ...base.hosts.n1, reachable: false } }), THRESHOLDS), key);
+  assert.notEqual(alertStateKey({ ...base, services: { 'n1:svc': 'down' } }, THRESHOLDS), key);
+  assert.notEqual(alertStateKey({ ...base, ups: { state: 'on_battery' } }, THRESHOLDS), key);
+  assert.notEqual(alertStateKey({ ...base, cron: { 'n1:backup': 'failure' } }, THRESHOLDS), key);
+  assert.notEqual(alertStateKey(base, { ...THRESHOLDS, cpu: 0.4 }), key, 'same reading, new threshold');
 });

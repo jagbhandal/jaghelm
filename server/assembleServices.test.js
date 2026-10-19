@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { existsSync, rmSync } from 'node:fs';
 import { assembleServices } from './refresh.js';
 import { createContainerRegistry } from './containerRegistry.js';
+import { createServiceRegistry } from './serviceRegistry.js';
 import { buildServices } from './push/snapshot.js';
 import { diffSnapshots } from './push/differ.js';
 
@@ -302,4 +303,58 @@ test('assemble: unmatched[] lists running, shown containers no monitor matched (
   });
   assert.deepEqual(unmatched, ['alloy', 'watchtower']); // unique, sorted
   assert.equal(containerCount, 4);
+});
+
+// ---- one record per name per cycle (#241) ----
+// The same container name runs on several hosts (cadvisor, alloy,
+// node-exporter on every node). Recording it once per node flipped its
+// lastSeenNode within every pass, so the registries wrote every cycle.
+
+function countingWrite() {
+  const spy = { writes: 0, write: () => { spy.writes += 1; } };
+  return spy;
+}
+
+const twoNodes = [
+  ['vm103', nodeCfg, nodeData([{ container: 'cadvisor', status: 'running', docker: {} }, { container: 'haproxy', status: 'running', docker: {} }])],
+  ['pi1', nodeCfg, nodeData([{ container: 'cadvisor', status: 'running', docker: {} }, { container: 'haproxy', status: 'running', docker: {} }])],
+];
+
+test('assemble: a container name on two nodes is recorded once a cycle, so steady cycles write nothing', () => {
+  const path = join(tmpdir(), `jaghelm-assemble-${process.pid}-dupname.json`);
+  const spy = countingWrite();
+  let t = 0;
+  try {
+    const reg = createContainerRegistry({ path, now: () => t, write: spy.write });
+    const perCycle = [];
+    for (let i = 0; i < 9; i += 1) {
+      t = i * 30_000;
+      const before = spy.writes;
+      run({ nodeResults: twoNodes, monitors: {}, containerRegistry: reg, now: () => t });
+      reg.prune();
+      reg.save();
+      perCycle.push(spy.writes - before);
+    }
+    // New containers at 0 s, established at 60 s, then nothing.
+    assert.deepEqual(perCycle, [1, 0, 1, 0, 0, 0, 0, 0, 0]);
+    assert.equal(reg.snapshot().cadvisor.lastSeenNode, 'pi1', 'the last node in the pass, as before');
+  } finally { if (existsSync(path)) rmSync(path); }
+});
+
+test('assemble: a monitor matched on two nodes is in seen[] once, so the service registry writes nothing in steady cycles', () => {
+  const path = join(tmpdir(), `jaghelm-assemble-${process.pid}-dupmonitor.json`);
+  const spy = countingWrite();
+  try {
+    const reg = createServiceRegistry({ path, now: () => 0, write: spy.write });
+    const perCycle = [];
+    for (let i = 0; i < 5; i += 1) {
+      const before = spy.writes;
+      const { seen } = run({ nodeResults: twoNodes, monitors: { 7: { id: 7, name: 'haproxy', status: 'up', active: true } } });
+      assert.deepEqual(seen, [{ monitorId: 7, nodeKey: 'pi1', container: 'haproxy' }]);
+      for (const { monitorId, nodeKey, container } of seen) reg.recordSeen(monitorId, nodeKey, container);
+      reg.save();
+      perCycle.push(spy.writes - before);
+    }
+    assert.deepEqual(perCycle, [1, 0, 0, 0, 0]);
+  } finally { if (existsSync(path)) rmSync(path); }
 });

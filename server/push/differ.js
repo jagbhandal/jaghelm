@@ -172,6 +172,22 @@ function diffHosts(prev, next, thresholds, events) {
   }
 }
 
+/**
+ * What diffSnapshots reads from a snapshot when it is `prev`: the service, cron
+ * and UPS states, each host's reachability, and which side of its threshold
+ * each host metric is on, not the reading itself. Two snapshots with the same
+ * key give the same alerts against any `next`, so the persisted snapshot is
+ * rewritten only when this changes (createPushSnapshot). Keep it in step with
+ * the reads in diffServices, diffHosts, diffUps and diffCron.
+ */
+export function alertStateKey(snapshot, thresholds) {
+  const hosts = {};
+  for (const [node, h] of Object.entries(snapshot?.hosts || {})) {
+    hosts[node] = [h?.reachable === true, ...HOST_METRICS.map((metric) => h?.[metric] >= thresholds[metric])];
+  }
+  return JSON.stringify({ services: snapshot?.services, hosts, ups: snapshot?.ups?.state, cron: snapshot?.cron });
+}
+
 function diffCron(prev, next, events) {
   for (const key of Object.keys(next)) {
     const before = prev[key] === undefined ? 'unknown' : prev[key];

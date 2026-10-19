@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { runPushCycle } from './dispatch.js';
+import { createPushSnapshot, runPushCycle } from './dispatch.js';
 
 const silentLog = { info() {}, warn() {}, error() {}, debug() {} };
 
@@ -42,7 +42,7 @@ test('refresh-loop shape: a throwing push cycle keeps the cycle ok and reaches f
       },
       store,
       fcm: throwingFcm,
-      snapshotPath: path,
+      snapshot: createPushSnapshot({ path, logger: silentLog }),
       thresholds: { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 },
       logger: silentLog,
     });
