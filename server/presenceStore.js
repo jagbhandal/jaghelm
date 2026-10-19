@@ -11,7 +11,7 @@
  *   - explicit dirty flag — save() is a no-op unless markDirty() was called, so
  *     unchanged cycles never touch the disk
  *   - atomicWriteFileSync for crash-safety
- *   - injectable `path` + `now` for test isolation
+ *   - injectable `path` + `now` (and `write`, the atomic writer) for test isolation
  */
 import { existsSync, readFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
@@ -20,7 +20,7 @@ import { createLogger } from './util/logger.js';
 
 const log = createLogger('presenceStore');
 
-export function createPresenceStore({ path, now = Date.now, sanitize = (v) => v } = {}) {
+export function createPresenceStore({ path, now = Date.now, sanitize = (v) => v, write = atomicWriteFileSync } = {}) {
   function load() {
     try {
       if (!existsSync(path)) return Object.create(null);
@@ -58,7 +58,7 @@ export function createPresenceStore({ path, now = Date.now, sanitize = (v) => v 
       try {
         const dir = dirname(path);
         if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-        atomicWriteFileSync(path, JSON.stringify(store, null, 2));
+        write(path, JSON.stringify(store, null, 2));
         dirty = false;
       } catch (err) {
         log.error({ err }, 'Failed to save presence store');

@@ -3,13 +3,33 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { existsSync, rmSync, writeFileSync } from 'node:fs';
-import { createContainerRegistry } from './containerRegistry.js';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createContainerRegistry, PRESENCE_FLUSH_MS } from './containerRegistry.js';
+import { atomicWriteFileSync } from './util/atomicWrite.js';
 
 function tmpPath(name) {
   return join(tmpdir(), `jaghelm-cregistry-${process.pid}-${name}.json`);
 }
 const WINDOW = { graceMs: 90_000, ttlMs: 86_400_000, establishMs: 60_000 };
+
+// Spies on the atomic writer: counts every write attempt, then really writes
+// (so a fresh instance can reload it). `failFirst` makes the first attempt throw.
+function writeSpy({ failFirst = false } = {}) {
+  const spy = {
+    calls: 0,
+    write(path, data) {
+      spy.calls += 1;
+      if (failFirst && spy.calls === 1) throw new Error('disk full');
+      atomicWriteFileSync(path, data);
+    },
+  };
+  return spy;
+}
+
+// An established redis on vm103, last seen at `lastSeenAt`, as a file on disk.
+function seedEstablished(path, lastSeenAt) {
+  writeFileSync(path, JSON.stringify({ redis: { lastSeenNode: 'vm103', firstSeenAt: 0, lastSeenAt } }));
+}
 
 test('containerRegistry: recordSeen sets firstSeenAt once, updates lastSeen*', () => {
   const path = tmpPath('record');
@@ -99,5 +119,95 @@ test('containerRegistry: corrupt file loads as empty (no throw)', () => {
     writeFileSync(path, 'definitely not json');
     const r = createContainerRegistry({ path });
     assert.deepEqual(r.getMissing({ now: 1e9, ...WINDOW }), []);
+  } finally { if (existsSync(path)) rmSync(path); }
+});
+
+test('containerRegistry: steady-state cycles write nothing until the flush interval', () => {
+  const path = tmpPath('steady');
+  const start = 600_000;
+  let clock = start;
+  const spy = writeSpy();
+  try {
+    seedEstablished(path, start);
+    const r = createContainerRegistry({ path, now: () => clock, write: spy.write });
+    // The refresh loop's per-cycle calls: recordSeen, prune, save.
+    for (clock = start + 30_000; clock < start + PRESENCE_FLUSH_MS; clock += 30_000) {
+      r.recordSeen('redis', 'vm103', clock);
+      r.prune();
+      r.save();
+    }
+    assert.equal(spy.calls, 0, 'same container, same node: no write');
+    clock = start + PRESENCE_FLUSH_MS;
+    r.recordSeen('redis', 'vm103', clock);
+    r.save();
+    assert.equal(spy.calls, 1, 'the refreshed lastSeenAt is written once per PRESENCE_FLUSH_MS');
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).redis.lastSeenAt, clock);
+  } finally { if (existsSync(path)) rmSync(path); }
+});
+
+test('containerRegistry: a new container, a node move or becoming established is written at once', () => {
+  const path = tmpPath('changes');
+  const spy = writeSpy();
+  try {
+    const r = createContainerRegistry({ path, now: () => 0, write: spy.write });
+    r.recordSeen('redis', 'vm103', 0);
+    r.save();
+    assert.equal(spy.calls, 1, 'new container');
+    r.recordSeen('redis', 'vm103', 30_000);
+    r.save();
+    assert.equal(spy.calls, 1, 'seen again, not yet established: no write');
+    r.recordSeen('redis', 'vm103', 60_000);
+    r.save();
+    assert.equal(spy.calls, 2, 'established (ran 60s)');
+    r.recordSeen('redis', 'pi1', 90_000);
+    r.save();
+    assert.equal(spy.calls, 3, 'moved node');
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).redis.lastSeenNode, 'pi1');
+  } finally { if (existsSync(path)) rmSync(path); }
+});
+
+test('containerRegistry: a prune that drops an entry is written at once', () => {
+  const path = tmpPath('prune-write');
+  const spy = writeSpy();
+  try {
+    seedEstablished(path, 60_000);
+    const r = createContainerRegistry({ path, now: () => 60_000, write: spy.write });
+    r.prune(100_000, 60_000 + 200_000);
+    r.save();
+    assert.equal(spy.calls, 1);
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {});
+  } finally { if (existsSync(path)) rmSync(path); }
+});
+
+test('containerRegistry: a failed write is retried on the next save', () => {
+  const path = tmpPath('retry');
+  const spy = writeSpy({ failFirst: true });
+  try {
+    const r = createContainerRegistry({ path, now: () => 0, write: spy.write });
+    r.recordSeen('redis', 'vm103', 0);
+    r.save();                                   // throws inside, logged
+    assert.equal(existsSync(path), false);
+    r.save();                                   // nothing new, but the change is still unwritten
+    assert.equal(spy.calls, 2);
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).redis.lastSeenNode, 'vm103');
+  } finally { if (existsSync(path)) rmSync(path); }
+});
+
+test('containerRegistry: flush writes a refreshed lastSeenAt at once, and a restart sees it', () => {
+  const path = tmpPath('flush');
+  const spy = writeSpy();
+  try {
+    seedEstablished(path, 600_000);
+    const a = createContainerRegistry({ path, now: () => 630_000, write: spy.write });
+    a.flush();
+    assert.equal(spy.calls, 0, 'nothing pending: no write');
+    a.recordSeen('redis', 'vm103', 630_000);
+    a.save();
+    assert.equal(spy.calls, 0, 'inside the flush interval');
+    a.flush();                                  // shutdown
+    assert.equal(spy.calls, 1);
+    const b = createContainerRegistry({ path });
+    const missing = b.getMissing({ now: 630_000 + 120_000, ...WINDOW });
+    assert.equal(missing[0].lastSeenAt, 630_000, 'restart reads the last sighting, not the stale one');
   } finally { if (existsSync(path)) rmSync(path); }
 });
