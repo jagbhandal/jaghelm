@@ -350,7 +350,9 @@ export function deriveSubsystems(ctx) {
  * Derive active incidents from down services + on-battery UPS + failing cron +
  * tracked-unknown services. Sorted down → ups → cron → unknown, then by id
  * (deterministic & stable across input reordering). Each incident carries
- * presentational fields { severity, word, shape, readout } and an open `target`.
+ * presentational fields { severity, word, shape, readout } and a `target`
+ * naming what the row refers to by key (service uid; cron node + job), never by
+ * display text; nav/issueRoute.js maps it to a detail screen (#279).
  *
  * Honest numbers: the snapshot has NO real detection time for derived incidents
  * (no `downSince`; `ping` is latency, not age), so NO timestamp/age field is
@@ -395,7 +397,7 @@ export function deriveIncidents({ services, ups, cron } = {}) {
       id: `cron:${cf.node}:${cf.job}`, kind: 'cron', title: `${cf.job} ${cf.overdue ? 'overdue' : 'failed'}`, node: cf.node,
       cause: cf.cause, uptime24: null, status: 'down', severity: 'caution', word: cf.overdue ? 'OVERDUE' : 'FAILED', shape: 'slash',
       readout: cf.node,
-      target: { kind: 'cron', job: cf.job },
+      target: { kind: 'cron', node: cf.node, job: cf.job },
     });
   }
 

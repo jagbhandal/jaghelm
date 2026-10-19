@@ -6,7 +6,10 @@
  *             — from deriveIncidents(). All presentational fields are
  *             pre-derived; this component is a pure renderer.
  *   onOpen    function (optional) — called when the row is tapped with
- *             `incident.target` as the argument.
+ *             `incident.target` as the argument. With it the row is a button
+ *             named "{title}, {word}, {readout}"; without it (nothing to open)
+ *             the row is plain content, so it neither looks nor announces as
+ *             tappable (#279).
  *
  * Honest-numbers rule (spec §7.2):
  *   `incident.readout` is passed through verbatim. This component NEVER
@@ -29,17 +32,10 @@ import StatusWord from './StatusWord.jsx';
 
 export default function IssueRow({ incident, onOpen }) {
   const showCause = incident.severity === 'critical' && Boolean(incident.cause);
+  const className = `issue-row issue-row--${incident.severity}`;
 
-  function handleClick() {
-    if (onOpen) onOpen(incident.target);
-  }
-
-  return (
-    <button
-      type="button"
-      className={`issue-row issue-row--${incident.severity}`}
-      onClick={handleClick}
-    >
+  const content = (
+    <>
       <div className="issue-row__main">
         <StatusLamp
           shape={incident.shape}
@@ -56,6 +52,22 @@ export default function IssueRow({ incident, onOpen }) {
       {showCause && (
         <p className="issue-row__cause">{incident.cause}</p>
       )}
+    </>
+  );
+
+  if (!onOpen) return <div className={className}>{content}</div>;
+
+  // One clean name instead of the lamp label + word + text run together.
+  const name = [incident.title, incident.word, incident.readout].filter(Boolean).join(', ');
+
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={() => onOpen(incident.target)}
+      aria-label={name}
+    >
+      {content}
     </button>
   );
 }

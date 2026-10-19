@@ -59,10 +59,13 @@ describe('Overview', () => {
     expect(within(row).getByText('Service is down')).toBeInTheDocument();
   });
 
-  it('tapping a down issue row opens its target', () => {
-    render(<Overview data={makeData(1)} nav={{ push: vi.fn() }} />);
-    fireEvent.click(document.querySelector('.issue-row'));
-    expect(openTarget).toHaveBeenCalled();
+  it('tapping a down issue row pushes that service\'s detail screen (#279)', () => {
+    const push = vi.fn();
+    render(<Overview data={makeData(2)} nav={{ push }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Svc 1, DOWN, VM 101' }));
+    expect(push).toHaveBeenCalledOnce();
+    expect(push).toHaveBeenCalledWith('serviceDetail', { uid: 'vm-101:s1' });
+    expect(openTarget).not.toHaveBeenCalled();
   });
 
   it('healthy → green hero + the 🌙 clear state, no issue rows', () => {

@@ -195,4 +195,30 @@ describe('IssueRow', () => {
       expect(onOpen).toHaveBeenCalledWith(downIncident.target);
     });
   });
+
+  // #279: a row that opens something is a button named after what it opens; a
+  // row with nothing to open must not look or announce as tappable.
+  describe('interactive vs non-interactive (#279)', () => {
+    it('with onOpen the row is a focusable button named title, word, readout', () => {
+      render(<IssueRow incident={downIncident} onOpen={vi.fn()} />);
+      const row = screen.getByRole('button', { name: 'jellyfin, DOWN, vm-103' });
+      row.focus();
+      expect(row).toHaveFocus();
+    });
+
+    it('the accessible name leaves out an empty readout', () => {
+      render(<IssueRow incident={{ ...upsIncident, readout: '' }} onOpen={vi.fn()} />);
+      expect(screen.getByRole('button', { name: 'UPS on battery, ON BATTERY' })).toBeInTheDocument();
+    });
+
+    it('without onOpen the row is not a button and keeps its content', () => {
+      const { container } = render(<IssueRow incident={cronIncident} />);
+      expect(screen.queryByRole('button')).toBeNull();
+      const row = container.querySelector('.issue-row');
+      expect(row).not.toBeNull();
+      expect(row.tagName).toBe('DIV');
+      expect(row.className).toMatch(/issue-row--caution/);
+      expect(screen.getByText('backup-daily failed')).toBeInTheDocument();
+    });
+  });
 });
