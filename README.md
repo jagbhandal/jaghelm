@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/ghcr.io-jagbhandal%2Fjaghelm-blue?style=flat-square&logo=github" alt="GHCR">
 </p>
 <p align="center">
-  <img src="public/dashboard.jpg" alt="JagHelm — live homelab dashboard with real Prometheus metrics and 35+ service integrations on a drag-and-resize grid">
+  <img src="docs/images/dashboard.jpg" alt="JagHelm — live homelab dashboard with real Prometheus metrics and 35+ service integrations on a drag-and-resize grid">
 </p>
 
 ## Try it in 10 seconds — no Prometheus needed
