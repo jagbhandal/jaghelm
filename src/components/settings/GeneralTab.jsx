@@ -61,7 +61,7 @@ export default function GeneralTab() {
               </button>
               {config.logoUrl && (
                 <button
-                  className="settings-btn-sm text-muted"
+                  className="settings-btn-sm muted-text"
                   onClick={() => update('logoUrl', '')}
                 >
                   Restore Default

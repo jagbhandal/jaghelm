@@ -30,6 +30,12 @@ export default [
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^[A-Z_]' }],
     },
   },
+  // shadcn/ui components export their variant helpers (buttonVariants and the
+  // like) beside the component, by design; Fast Refresh just reloads those files.
+  {
+    files: ['src/ui/**/*.jsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
   // Backend + tooling — Node
   {
     files: ['server/**/*.js', 'scripts/**/*.mjs', 'scripts/**/*.js', 'vite.config.js', 'eslint.config.js'],

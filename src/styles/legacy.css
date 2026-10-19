@@ -1,0 +1,13 @@
+/*
+ * Today's stylesheet, in the `legacy` cascade layer: the lowest, so the new UI
+ * stack (src/ui/tailwind.css, imported after this) wins wherever both style an
+ * element, and today's screens keep their look because nothing else in the
+ * bundle targets their elements. Remove a file from here when no screen uses
+ * it. See docs/ARCHITECTURE.md, "UI stack".
+ *
+ * The layer order matches src/ui/tailwind.css, so it holds whichever file a
+ * bundle loads first.
+ */
+@layer legacy, properties, theme, base, components, utilities;
+
+@import './global.css' layer(legacy);

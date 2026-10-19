@@ -214,7 +214,7 @@ export default function SectionsTab() {
                   onClear={() => update(`sections.${key}.icon`, '')}
                 />
               </Field>
-              <div className="settings-row text-mono text-muted" style={{ fontSize: 11 }}>
+              <div className="settings-row text-mono muted-text" style={{ fontSize: 11 }}>
                 <span>Background Opacity: {((s.bgOpacity ?? 0) * 100).toFixed(0)}%</span>
                 <input
                   type="range"
