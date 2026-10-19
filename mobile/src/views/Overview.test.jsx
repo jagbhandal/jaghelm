@@ -1,8 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 
-const { openTarget } = vi.hoisted(() => ({ openTarget: vi.fn() }));
-vi.mock('../open.js', () => ({ openTarget }));
 vi.mock('@shared/hooks/useData.js', () => ({ getServiceIcon: () => null }));
 
 import Overview from './Overview.jsx';
@@ -21,8 +19,6 @@ function makeData(downCount, extra = {}) {
 }
 
 describe('Overview', () => {
-  beforeEach(() => openTarget.mockReset());
-
   it('renders hero + 2×2 cells + Active issues (no per-node bar list — Bug #10)', () => {
     render(<Overview data={makeData(1)} nav={{ push: vi.fn() }} />);
     // Hero
@@ -59,10 +55,12 @@ describe('Overview', () => {
     expect(within(row).getByText('Service is down')).toBeInTheDocument();
   });
 
-  it('tapping a down issue row opens its target', () => {
-    render(<Overview data={makeData(1)} nav={{ push: vi.fn() }} />);
-    fireEvent.click(document.querySelector('.issue-row'));
-    expect(openTarget).toHaveBeenCalled();
+  it('tapping a down issue row pushes that service\'s detail screen (#279)', () => {
+    const push = vi.fn();
+    render(<Overview data={makeData(2)} nav={{ push }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Svc 1, DOWN, VM 101' }));
+    expect(push).toHaveBeenCalledOnce();
+    expect(push).toHaveBeenCalledWith('serviceDetail', { uid: 'vm-101:s1' });
   });
 
   it('healthy → green hero + the 🌙 clear state, no issue rows', () => {

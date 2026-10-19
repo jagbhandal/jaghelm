@@ -670,19 +670,21 @@
   border: 1px solid var(--border);
   border-radius: var(--card-radius-sm);
   min-height: 44px;
-  cursor: pointer;
   /* Reset browser button styles */
   font-family: inherit;
   font-size: inherit;
   color: inherit;
 }
-#mobile-root .issue-row:active { background: var(--bg-card-hover); }
+/* Only a row that opens something looks tappable; a row with nothing to open
+   renders as a <div> and gets neither the pointer nor the pressed tint (#279). */
+#mobile-root button.issue-row { cursor: pointer; }
+#mobile-root button.issue-row:active { background: var(--bg-card-hover); }
 
 /* Severity tint */
 #mobile-root .issue-row--critical { background: var(--red-bg);   border-color: var(--red-bd);   }
 #mobile-root .issue-row--caution  { background: var(--amber-bg); border-color: var(--amber-bd); }
-#mobile-root .issue-row--critical:active { background: var(--red-bg);   }
-#mobile-root .issue-row--caution:active  { background: var(--amber-bg); }
+#mobile-root button.issue-row--critical:active { background: var(--red-bg);   }
+#mobile-root button.issue-row--caution:active  { background: var(--amber-bg); }
 
 /* Main row: lamp + word + name (ellipsis) + readout */
 #mobile-root .issue-row__main {

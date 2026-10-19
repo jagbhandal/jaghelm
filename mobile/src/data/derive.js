@@ -350,7 +350,9 @@ export function deriveSubsystems(ctx) {
  * Derive active incidents from down services + on-battery UPS + failing cron +
  * tracked-unknown services. Sorted down → ups → cron → unknown, then by id
  * (deterministic & stable across input reordering). Each incident carries
- * presentational fields { severity, word, shape, readout } and an open `target`.
+ * presentational fields { severity, word, shape, readout } and a `target`.
+ * nav/issueRoute.js maps a row to a detail screen by key, never by display
+ * text: a service by its target's uid, a UPS or cron row by its id (#279).
  *
  * Honest numbers: the snapshot has NO real detection time for derived incidents
  * (no `downSince`; `ping` is latency, not age), so NO timestamp/age field is
