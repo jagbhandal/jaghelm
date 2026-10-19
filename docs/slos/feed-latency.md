@@ -24,8 +24,11 @@ slow `services.yaml` reload, or GC pause).
 
 ### Why 300 ms and why a cache-warm endpoint
 
-The cache hit path is `getCached()` + `JSON.stringify` + an MD5 ETag hash
-(`cache.js`) — sub-millisecond for a typical payload. The 300 ms threshold is
+The cache hit path is `getCached()` plus sending a body and ETag that `cache.js`
+computed once per cached value, on its first request; a `304` sends no body at
+all. Only that first request after each refresh pays for `JSON.stringify` + an
+MD5 hash (sub-millisecond for a typical payload); every other request is
+microseconds of cache work, whatever the payload size. The 300 ms threshold is
 generous *on purpose*: it absorbs cold-start inline refreshes (which fan out to
 Prometheus/cAdvisor/Kuma) and a node or two being slow, while still catching a
 real regression (e.g. someone makes the route block on a synchronous disk read).

@@ -73,7 +73,7 @@ on an interval into an in-memory cache, so API reads are fast and ETag-enabled
 server/                     Express API (Node 22, ESM)
   index.js                  app wiring: middleware chain + route mounts + SPA fallback
   refresh.js                background refresh loop (start/stop)
-  cache.js                  bounded in-memory cache (FIFO, ETag tags)
+  cache.js                  bounded in-memory cache (evicts least recently written, ETags)
   discovery.js              Prometheus/cAdvisor -> nodes + services
                             (ignores containers labelled as Arcane internal helpers, so
                             short-lived helpers never become cards or presence breadcrumbs)
@@ -149,8 +149,13 @@ credentials ([KNOWN-ISSUES](../KNOWN-ISSUES.md) covers the open-by-default model
 
 `refresh.js` runs a single in-process interval that re-fetches node/service
 metrics and every configured integration into the bounded `cache.js`
-(FIFO-evicted, max entries, so user-influenced keys can't exhaust memory). API
-reads serve from the cache and attach an ETag; an unchanged poll returns `304`.
+(it evicts the least recently written key at max entries, so user-influenced
+keys can't exhaust memory). API reads serve from the cache and attach an ETag;
+an unchanged poll returns `304`.
+Each cached value is serialized and hashed once, on its first request, and kept
+with it, so later requests (`200` or `304`) only send what is already in memory
+until the next refresh replaces the value.
+`If-None-Match` is matched per RFC 9110: weak comparison, a list of tags, or `*`.
 The loop is cancelled cleanly on shutdown (no leaking timer).
 
 ```mermaid
