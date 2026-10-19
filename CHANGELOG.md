@@ -11,6 +11,7 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ### Fixed
 - A request redirected with `307` or `308` now keeps its method and body, as those codes require, instead of being turned into a `GET` without a body. A session login (Nginx Proxy Manager, Portainer, PhotoPrism) behind such a redirect on the same host and port, or from `http://` to `https://` on it, now works. A login redirected to another origin (host, port or scheme, apart from that upgrade) is refused instead of being re-sent there. `301` and `302` still turn any method but `GET` and `HEAD` into a `GET` without a body, and `303` turns every method, `HEAD` included, into one.
+- The server's access log now records API requests. It logged each request's path as seen from inside the router that answered it (`/gitea/activity` for `/api/gitea/activity`), so no routed API request was logged at info and error lines showed a shortened path. Each request now logs one line with its full path, without the query string: at error for a `5xx`, at info for a `4xx` or a request that took 300 ms or more, and at debug otherwise. `/metrics` and the `/api/health` and `/api/readyz` probes are not logged unless they fail with a `5xx`; before, the probes were also logged at debug when healthy.
 - The server no longer loads the integration presets' test files as presets at startup, so it no longer logs two "Skipping invalid preset" errors (for `gitlab.test.js` and `nextcloud.test.js`) or prints their test output in its logs. Test files are also left out of the image.
 
 ### Security
