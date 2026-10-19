@@ -110,10 +110,11 @@ src/                        React 19 SPA (Vite 8)
   components/                NodeCard, ServiceCard, Widgets, NavBar, overlays, etc.
   views/DashboardView/       grid + panels + useDashboardData (304-stable) + per-source health
   views/SettingsView.jsx     13-tab settings shell + collapsible live preview
-  styles/global.css          themes (10) + design tokens + component styles
+  styles/global.css          today's themes (10) + their tokens + component styles
   styles/legacy.css          imports global.css into the `legacy` cascade layer (see 5.1)
   ui/                        the redesign's component library, shared with Android (see 5.1):
-                             tailwind.css (the stack's stylesheet), preflight.css (generated),
+                             tailwind.css (the stack's stylesheet), tokens.css (the design
+                             tokens, docs/design-system.md), preflight.css (generated),
                              shadcn/ui components (button.jsx, a stock placeholder until #285),
                              lib/utils.js
 
@@ -121,7 +122,8 @@ public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
 scripts/                    inject-sw-precache.mjs, check-assets.mjs, changelog-lint.mjs,
                             changelog-fold.mjs, release-notes.mjs (build/CI/release helpers),
-                            ui-preflight.mjs (writes src/ui/preflight.css)
+                            ui-preflight.mjs (writes src/ui/preflight.css),
+                            ui-contrast.mjs (the design tokens' contrast check)
 changes/                    CHANGELOG fragments, one per PR (mobile/changes/ for Android);
                             the release PR folds them into the CHANGELOG (RELEASING.md)
 .github/workflows/          build-push.yml (test -> build -> sign -> GHCR), release.yml (tag ->
@@ -459,25 +461,34 @@ stack sits beside today's CSS and must not restyle it.
   `position: absolute !important`, which also beats a new component's
   `not-sr-only` (for `!important` the lowest layer wins): drop that `!important`
   when a component first needs `not-sr-only`.
-- **Tokens.** Tailwind's default theme and shadcn's colour and radius roles are
-  inline and reference-only (`theme(inline reference)`, `@theme inline
-  reference`): utilities carry their values, and Tailwind writes no variable to
-  `:root`. That matters because today's CSS owns `--text-*`, `--font-mono`,
-  `--font-body`, `--font-display`, `--accent`, `--border`, `--card` and `--muted`
-  on `:root` and the Android shell, and anything Tailwind wrote there would land
-  in the `theme` layer, above `legacy`. The token values are shadcn's stock
-  neutral palette, kept as marked placeholders scoped to `.jh-ui`; card #283
-  replaces them with the signed-off mock's tokens, and the `dark` variant (a
-  `.dark` ancestor, while the app switches themes with `data-theme` on `<html>`)
-  is a placeholder too. Every variable a class reads with `var()` must be
-  declared under `.jh-ui`: a role reads its token (`bg-primary` reads
-  `--primary`), and a class that reads a theme variable itself (the Button's
-  `rounded-[min(var(--radius-md),10px)]`) needs that variable there too, which is
-  why the radius scale appears twice in `tailwind.css`. Never add a `:root`,
-  `html` or `body` rule or a `@theme` block without `reference`.
-  `scripts/ui-stack.test.mjs` compiles the stack and fails on an unlayered rule, a
-  root selector, a base rule outside `@scope (.jh-ui)`, a `var()` read that
-  `.jh-ui` doesn't declare, or the two radius scales drifting apart.
+- **Tokens.** JagHelm's design tokens are in `src/ui/tokens.css`, from the
+  signed-off mock: a palette of OKLCH ramps, the roles components use, and a few
+  component tokens, in dark and light, with five accents and two densities
+  switched by `data-theme`, `data-accent` and `data-density` on the `.jh-ui`
+  root. [design-system.md](design-system.md) lists them with the rules for using
+  them, and `scripts/ui-contrast.mjs` checks every text/background pairing in
+  every theme and accent against the spec's floors (`ui-contrast.test.mjs`).
+  They are custom properties on `.jh-ui`, prefixed `--jh-`, never on `:root`:
+  today's CSS owns `--bg`, `--accent`, `--border`, `--card`, `--muted`,
+  `--text-*`, `--font-mono`, `--font-body` and `--font-display` there and in the
+  Android shell, and the prefix keeps an old widget inside a new screen on its
+  own values. `tailwind.css` offers the roles as utilities (`bg-surface-1`,
+  `text-text-2`, `text-crit-fg`), plus shadcn's role names mapped onto them so a
+  generated component compiles, and clears Tailwind's default palette, type
+  sizes, radii, shadows and blurs (`ui-tokens.test.mjs`). The theme is inline
+  and reference-only (`theme(inline reference)`, `@theme inline reference`):
+  utilities carry their values, and Tailwind writes no variable to `:root`,
+  where anything it wrote would land in the `theme` layer, above `legacy`. The
+  `dark` variant applies inside a `.jh-ui` root without `data-theme="light"`.
+  Every variable a class reads with `var()` must be declared under `.jh-ui`: a
+  role reads its token (`bg-surface-1` reads `--jh-surface-1`), and a class that
+  reads a variable itself (the Button's `rounded-[min(var(--radius-md),10px)]`)
+  needs that variable there too, which is why the radius scale is in both
+  `tokens.css` and `tailwind.css`. Never add a `:root`, `html` or `body` rule or
+  a `@theme` block without `reference`. `scripts/ui-stack.test.mjs` compiles the
+  stack and fails on an unlayered rule, a root selector, a base rule outside
+  `@scope (.jh-ui)`, a `var()` read that `.jh-ui` doesn't declare, or the two
+  radius scales drifting apart.
 - **When the old CSS is gone,** drop the `legacy` layer and the scoping: import
   Tailwind's own preflight, move the tokens to `:root` and drop `reference`.
 
@@ -605,7 +616,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   planted key) and its wiring in `check.yml`, the docs' preset and test
   counts (`doc-counts.test.mjs`), and the UI stack's separation from today's
   CSS and its reach into the Android build (`ui-stack.test.mjs`,
-  `ui-preflight.test.mjs`). Write new repo checks this way, not as shell
+  `ui-preflight.test.mjs`), and the design tokens' shape and contrast
+  (`ui-tokens.test.mjs`, `ui-contrast.test.mjs`). Write new repo checks this way, not as shell
   scripts: `npm test` only collects `*.test.{js,mjs,cjs}`.
 
 `npm test` preloads `scripts/test-data-dir.mjs`, which gives every test process
