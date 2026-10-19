@@ -169,6 +169,20 @@ until the next refresh replaces the value.
 `If-None-Match` is matched per RFC 9110: weak comparison, a list of tags, or `*`.
 The loop is cancelled cleanly on shutdown (no leaking timer).
 
+A failed upstream poll is never read as an empty answer. A Prometheus query
+that errors, times out or returns no query result rejects (`promQuery` in
+`discovery.js`), and Kuma's `fetchMonitors` returns `ok: false` when it loaded
+no monitors. The `/api/services` payload says which answered this cycle,
+`sources: { prometheus: { ok }, kuma: { ok } }`, and `/api/ups` carries its own
+`ok`. Each node also carries `reachable`, from Prometheus' `up` series for that
+node: true when any of its targets answered the last scrape, false when none
+did, null when no `up` series has the node's label. While Prometheus fails, no
+presence breadcrumbs are drawn, since a container missing from the list may
+still be running. The push snapshot keeps its last state for a source that
+failed, so an outage of Prometheus or Kuma sends no alerts about the hosts and
+services they watch ([mobile/DESIGN.md](mobile/DESIGN.md), "Deterministic
+state-change detection").
+
 ```mermaid
 flowchart TD
   subgraph Loop["refresh loop (~30s)"]
@@ -288,12 +302,13 @@ integration connection-test endpoint.
   Success lines every refresh cycle would repeat are debug, while a refresh
   that keeps failing still logs its own error each cycle. At info: a cycle that
   took 5 s or more; a change in the cycle's set of failed refreshes (a refresh
-  that returned null, or an integration with an `_error`; a Prometheus outage
-  does not show up here, since node and UPS queries swallow their errors); a
-  Kuma load whose monitor count or source changed, or the first load after a
-  failed one; and one line per boot for containers no monitor matches. Kuma
-  answering with no monitors warns once per outage; a Kuma that can't be
-  reached logs an error every cycle.
+  that returned null, or an integration with an `_error`); a Kuma load whose
+  monitor count or source changed, or the first load after a failed one; and
+  one line per boot for containers no monitor matches. Prometheus failing
+  (any node query of the cycle) warns once, with the error, and its recovery
+  logs once at info with how long it was down; the failed cycles in between
+  log at debug. Kuma answering with no monitors warns once per outage; a Kuma
+  that can't be reached logs an error every cycle.
 - **Access log** (`accessLog.js`): one line per request with its full path and no
   query string or fragment; 5xx at `error`, 4xx and requests of 300 ms or more at
   `info`, the rest at `debug`. `/metrics`, `/api/health` and `/api/readyz` are not

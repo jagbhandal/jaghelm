@@ -45,9 +45,11 @@ Error budget policy that governs all three: [`error-budget-policy.md`](error-bud
 
 - **Upstream availability (Prometheus / Kuma / app APIs).** JagHelm can't fix a
   down exporter. The feed-success SLO measures whether *JagHelm* answers, not
-  whether every upstream is healthy — a node that's unreachable is logged and
-  dropped (`Promise.allSettled` in `refresh.js`), the surviving nodes still
-  render, and the request is still a 2xx. That is the intended behaviour.
+  whether every upstream is healthy — a node Prometheus can't scrape stays on
+  the board as unreachable, a failed Prometheus or Kuma poll is flagged in the
+  payload (`sources`), a node whose refresh throws is logged and dropped
+  (`Promise.allSettled` in `refresh.js`), the surviving nodes still render, and
+  the request is still a 2xx. That is the intended behaviour.
 - **Per-integration correctness.** 35+ presets, each with its own auth shape and
   upstream. A `correctness` SLO per preset is more bookkeeping than a one-user
   homelab warrants. Re-evaluate if/when JagHelm grows a test suite.

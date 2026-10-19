@@ -372,8 +372,9 @@ recordRefreshCycle();
 export async function runPushCycle() {
   if (!isPushEnabled()) return;        // zero cost when push disabled
   try {
-    const next = buildSnapshot(readCaches());
-    const events = diffSnapshots(loadPrevSnapshot(), next, thresholds);
+    const prev = loadPrevSnapshot();
+    const next = buildSnapshot(readCaches(), prev); // keeps what a failed source feeds (#232)
+    const events = diffSnapshots(prev, next, thresholds);
     await dispatchEvents(events);
     persistSnapshot(next);             // must complete before return
   } catch (err) { log.warn({ err }, 'push cycle failed — skipped this round'); }
@@ -397,7 +398,9 @@ The detector hooks in as the **last data step of the cycle**, after `Promise.all
 ```
 > **API name (ground truth):** the cache accessor is `getCached(key)` (`server/cache.js`), **not** `getCache`. Use `getCached`.
 
-Status normalization is explicit and total: Kuma/Docker → `up|down|unknown`; a node whose `refreshServices` outcome was `rejected` (or all-null metrics) → `reachable:false`; NUT → `online|on_battery|unknown`. Anything unrecognized → `unknown` and **never emits** (no false alarms on novel states).
+Status normalization is explicit and total: Kuma/Docker → `up|down|unknown`; a host's `reachable` comes from Prometheus' `up{node=…}` via the node's flag in the services payload (true when any of its targets answered the last scrape, false when none did); a node with no `up` series carrying its label falls back to its metrics, all-null → `reachable:false`; NUT → `online|on_battery|unknown`. Anything unrecognized → `unknown` and **never emits** (no false alarms on novel states).
+
+**A failed source is not an outage of what it watches (#232).** The services payload says whether Prometheus and Kuma answered this cycle (`sources.prometheus.ok`, `sources.kuma.ok`) and the UPS payload carries its own `ok`. `buildSnapshot(caches, prev)` keeps the part a failed source feeds from the previous snapshot instead of reading the failure as every host or service going away: while Prometheus fails, `hosts` is kept, and a service missing from this cycle keeps its previous status while one present (a Kuma outage card) takes this cycle's, so Kuma keeps paging and a recovery during the outage is sent once the container is seen again; while Kuma fails, all of `services` is kept, since Kuma sets every status that can page; while the UPS read fails, `ups` is kept. `runPushCycle` hands the builder its `prev` and advances to the result, so the kept state lasts however long the failure does, and its recovery diffs against the last real reading. On the baseline (no `prev`) there is nothing to keep, and this cycle's values are used.
 
 **Differ** — `diffSnapshots(prev, next, thresholds) → Event[]`. No I/O, no `Date.now()`, no randomness. The previous snapshot is held in memory (`createPushSnapshot` in `dispatch.js`) and **persisted to `data/push-snapshot.json`** so a restart doesn't re-fire every active incident as "new". The file is read once, on the first cycle; it is rewritten only when the snapshot's alert state (`alertStateKey` in `differ.js`: every status, each host's reachability, and which side of its threshold each metric is on) differs from the file's, so a steady cycle writes nothing. Shutdown writes the latest snapshot (`flush`), so a threshold edited while JagHelm is stopped is judged against the last reading; after a crash it is judged against the last written one, and a reading between the old and the new threshold can add or drop one threshold alert. A failed write is retried every cycle; until it lands, a restart can re-send an alert, or miss the recovery of one already sent. With no file, or an unreadable one, the first cycle establishes a baseline and emits nothing.
 
