@@ -10,7 +10,8 @@
  * the real snapshot builder, differ and push cycle, sending to a recording FCM.
  *
  * Tests share module state (cache, registries, the Kuma cache) and run in order;
- * each starts its own push snapshot, so its first cycle is a fresh baseline.
+ * each starts its own push snapshot, so its first cycle with every source
+ * answering is a fresh baseline.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -48,11 +49,13 @@ const CONTAINERS = { vm103: ['gitea', 'radarr', 'postgres'], pi: ['adguard'], na
 
 // What each upstream does this cycle. Tests change it between cycles.
 const world = {
-  prometheus: 'ok', // 'ok' | 'http500' | 'timeout' | 'containers500'
+  // 'fresh': Prometheus answers every query, but has scraped nothing yet.
+  prometheus: 'ok', // 'ok' | 'http500' | 'timeout' | 'containers500' | 'fresh'
   kuma: 'ok', // 'ok' | 'http500' | 'refused'
   up: { vm103: 1, pi: 1, nas: 1 },
   radarr: 'down', // Kuma's status for radarr
   ups: 1, // nut_status: 1 online, 2 on battery
+  rejects: null, // (query) => true for a query Prometheus answers with HTTP 400
 };
 
 function reset() {
@@ -62,6 +65,7 @@ function reset() {
     up: { vm103: 1, pi: 1, nas: 1 },
     radarr: 'down',
     ups: 1,
+    rejects: null,
   });
 }
 
@@ -84,6 +88,8 @@ function promAnswer(q) {
     // What AbortSignal.timeout makes fetch reject with.
     throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
   }
+  if (world.rejects?.(q)) return json(400, { status: 'error', errorType: 'bad_data', error: 'parse error' });
+  if (world.prometheus === 'fresh') return vector([]);
   if (q.includes('nut_status')) return vector([sample(world.ups)]);
   if (q.includes('nut_')) return vector([sample(1)]);
 
@@ -147,10 +153,12 @@ const store = {
   markDelivered: () => 0,
 };
 
-// A fresh push pipeline: its first cycle is the baseline.
-function pipeline() {
+// A fresh push pipeline: its first cycle is the baseline. Given the `path` of
+// another pipeline's snapshot file, it is that pipeline after a restart.
+function pipeline({ path } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'jaghelm-232-'));
-  const snapshot = createPushSnapshot({ path: join(dir, 'push-snapshot.json'), logger: silentLog });
+  const snapshotPath = path ?? join(dir, 'push-snapshot.json');
+  const snapshot = createPushSnapshot({ path: snapshotPath, logger: silentLog });
   const sent = [];
   const fcm = {
     isPushEnabled: () => true,
@@ -160,12 +168,15 @@ function pipeline() {
     },
   };
   return {
+    path: snapshotPath,
     snapshot,
     sent,
-    async cycle() {
-      await Promise.all([refreshServices(), refreshUPS()]);
+    // `refresh: false` runs the push side only, as when the refreshes failed;
+    // `from` replaces the caches the snapshot is built from.
+    async cycle({ refresh = true, from = caches } = {}) {
+      if (refresh) await Promise.all([refreshServices(), refreshUPS()]);
       await runPushCycle({
-        buildSnapshotFn: (prev) => buildSnapshot(caches, prev),
+        buildSnapshotFn: (prev) => buildSnapshot(from, prev),
         store,
         fcm,
         snapshot,
@@ -311,6 +322,108 @@ test('a node whose up{node} is 0 while Prometheus is healthy still pages host_un
     world.up.pi = 1;
     await p.cycle();
     assert.deepEqual(p.sent, ['host_unreachable pi', 'host_recovered pi']);
+  } finally {
+    p.done();
+  }
+});
+
+// ── #232 review ──────────────────────────────────────────────────────────
+
+test('one query failing on one node does not hold host_unreachable for another node', async () => {
+  reset();
+  const p = pipeline();
+  try {
+    await p.cycle();
+    // Every cycle from now on, nas's temperature query is a 400 (a query that
+    // always fails: a bad label, or one that always times out).
+    world.rejects = (q) => q.includes('node_hwmon_temp_celsius') && q.includes('node="nas"');
+    await p.cycle();
+    world.up.pi = 0;
+    for (let i = 0; i < 5; i += 1) await p.cycle();
+    assert.equal(getCached('services').sources.prometheus.ok, false, 'Prometheus counts as failing');
+    assert.deepEqual(getCached('services').nodes.nas.failedReads, ['temp']);
+    assert.deepEqual(p.sent, ['host_unreachable pi'], 'pi still pages');
+
+    world.up.pi = 1;
+    await p.cycle();
+    assert.deepEqual(p.sent, ['host_unreachable pi', 'host_recovered pi']);
+  } finally {
+    p.done();
+  }
+});
+
+test('a cold cache after a restart is a failed source: nothing is re-sent on the next good cycle', async () => {
+  reset();
+  const before = pipeline();
+  let after = null;
+  try {
+    await before.cycle(); // baseline written: three reachable hosts, radarr down (already paged)
+    after = pipeline({ path: before.path }); // the restart
+    const cold = { ...caches, getCached: () => null };
+    await after.cycle({ refresh: false, from: cold }); // the first refresh threw
+    await after.cycle();
+    assert.deepEqual(after.sent, [], 'no host_recovered, no repeat service_down');
+  } finally {
+    after?.done();
+    before.done();
+  }
+});
+
+test('a cache past its TTL is a failed source: nothing is re-sent, and the UPS going on battery is', async () => {
+  reset();
+  const p = pipeline();
+  try {
+    await p.cycle();
+    Date.now = () => realNow() + 121_000; // the refreshes failed for longer than the 120 s TTL
+    assert.equal(getCached('services'), null);
+    await p.cycle({ refresh: false });
+    clockBack();
+
+    world.ups = 2;
+    await p.cycle();
+    assert.deepEqual(p.sent, ['ups_on_battery ups'], 'online was held, so on battery is a change');
+  } finally {
+    clockBack();
+    p.done();
+  }
+});
+
+test('booting during a Prometheus outage takes no baseline until it answers, so its recovery sends nothing', async () => {
+  reset();
+  world.prometheus = 'http500';
+  const p = pipeline();
+  try {
+    await p.cycle();
+    await p.cycle();
+    assert.equal(p.snapshot.prev(), null, 'no baseline from a failed cycle');
+
+    world.prometheus = 'ok';
+    await p.cycle(); // the baseline
+    await p.cycle();
+    assert.equal(p.snapshot.prev().hosts.pi.reachable, true);
+    assert.deepEqual(p.sent, [], 'no host_recovered');
+  } finally {
+    p.done();
+  }
+});
+
+test('Prometheus answering with no up series after it had some counts as failed, so no host pages', async () => {
+  reset();
+  const p = pipeline();
+  try {
+    await p.cycle();
+    // Back after an outage longer than its lookback, before its first scrape:
+    // every query answers, with no series at all.
+    world.prometheus = 'fresh';
+    await p.cycle();
+    await p.cycle();
+    assert.equal(getCached('services').sources.prometheus.ok, false);
+    assert.deepEqual(p.snapshot.prev().hosts.pi, { reachable: true, cpu: 0.25, mem: 0.5, disk: 0.5 });
+
+    world.prometheus = 'ok';
+    await p.cycle();
+    assert.equal(getCached('services').sources.prometheus.ok, true, 'the up series are back');
+    assert.deepEqual(p.sent, [], 'no host_unreachable, no host_recovered');
   } finally {
     p.done();
   }

@@ -174,6 +174,7 @@ test('getNodeData: a failing query makes the result ok:false with its error', as
     const data = await getNodeData('vm-test');
     assert.equal(data.ok, false);
     assert.match(data.error, /HTTP 503/);
+    assert.deepEqual(data.failedReads, ['containers'], 'only what the failed queries feed');
     assert.equal(data.metrics.temp, '0.0', 'what the other queries returned is kept');
     assert.deepEqual(data.containers, []);
   } finally {
@@ -187,6 +188,7 @@ test('getNodeData: every query answering, even with no series, is ok:true', asyn
     const data = await getNodeData('vm-test');
     assert.equal(data.ok, true);
     assert.equal(data.error, null);
+    assert.deepEqual(data.failedReads, []);
     assert.equal(data.reachable, null, 'no up series for the node: reachability unknown');
   } finally {
     globalThis.fetch = realFetch;
@@ -204,6 +206,34 @@ test('getNodeData: reachable is up{node} — true if any target answered, false 
     try {
       assert.equal((await getNodeData('vm-test')).reachable, reachable);
       assert.ok(seen.some((q) => q.includes('max(up{node="vm-test"})')));
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+});
+
+// #232 review: one failed query is not the whole node. failedReads names what
+// the failed queries feed, so the push snapshot holds only that.
+test('getNodeData: failedReads names the parts whose queries failed', async () => {
+  const { NODE_READS } = await import('./discovery.js');
+  const failing = (match) => async (url) => {
+    const q = decodeURIComponent(url);
+    return match(q) ? answer(400, { status: 'error', error: 'bad_data' }) : promResponse(url);
+  };
+  const cases = [
+    [(q) => q.includes('max(up{'), ['reachable']],
+    [(q) => q.includes('node_hwmon_temp_celsius'), ['temp']],
+    [(q) => q.includes('MemAvailable'), ['mem']],
+    [(q) => q.includes('node_filesystem_size_bytes'), ['disk']],
+    [(q) => q.includes('node_cpu_seconds_total') || q.includes('node_boot_time_seconds'), ['cpu', 'uptime']],
+    [() => true, [...NODE_READS]],
+  ];
+  for (const [match, failedReads] of cases) {
+    globalThis.fetch = failing(match);
+    try {
+      const data = await getNodeData('vm-test');
+      assert.equal(data.ok, false);
+      assert.deepEqual(data.failedReads, failedReads);
     } finally {
       globalThis.fetch = realFetch;
     }

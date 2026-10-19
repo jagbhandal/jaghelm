@@ -15,7 +15,7 @@ import { readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
 import { getConfig } from './config.js';
-import { getNodeData, promQuery } from './discovery.js';
+import { getNodeData, promQuery, NODE_READS } from './discovery.js';
 import { recordSamples } from './history.js';
 import {
   fetchMonitors,
@@ -31,6 +31,7 @@ import { safeFetch } from './httpClient.js';
 import { dedupe } from './util/dedupe.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { createLogger } from './util/logger.js';
+import { createSourceHealthLog } from './util/sourceHealthLog.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
 import { buildSnapshot, liveCaches } from './push/snapshot.js';
@@ -122,29 +123,12 @@ function getRefreshIntervalMs() {
   return DEFAULT_INTERVAL_MS;
 }
 
-/**
- * Logs a data source failing and recovering, once each (#232): a warning on the
- * first cycle it fails, with the error, and an info line on the first cycle it
- * answers again. The cycles in between log at debug only.
- */
-export function createSourceHealthLog(source, logger = log) {
-  let failingSince = null; // ms epoch of the first failed cycle; null while ok
-  return function report({ ok, error }, now = Date.now()) {
-    if (!ok) {
-      if (failingSince === null) {
-        failingSince = now;
-        logger.warn({ source, error }, 'data source failed; push alerts keep its last known state until it recovers');
-      } else {
-        logger.debug({ source, error }, 'data source still failing');
-      }
-    } else if (failingSince !== null) {
-      logger.info({ source, downSec: Math.round((now - failingSince) / 1000) }, 'data source recovered');
-      failingSince = null;
-    }
-  };
-}
+const reportPrometheus = createSourceHealthLog('prometheus', log);
 
-const reportPrometheus = createSourceHealthLog('prometheus');
+// Whether Prometheus has answered with an `up` series for some node since boot.
+// After that, an answer with none for any node is a Prometheus that has just
+// started and not scraped yet, not every host going down (#232).
+let upSeriesSeen = false;
 
 // ── Domain refresh functions ─────────────────────────────────────────────
 
@@ -190,7 +174,10 @@ function serviceRank(s) {
  *      breadcrumb beats a false one (#232).
  *
  * Each node carries `reachable` from discovery (Prometheus' `up` for the node:
- * true, false, or null when Prometheus has no `up` series for it).
+ * true, false, or null when Prometheus has no `up` series for it), and
+ * `failedReads`: the parts of the node whose queries failed this cycle
+ * (discovery's NODE_READS names; [] when they all answered). The push snapshot
+ * keeps its previous value for each of those.
  *
  * Every node's cards are ordered down → unknown → up.
  *
@@ -267,6 +254,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
         icon: nodeCfg.icon || '🖥',
         border_color: nodeCfg.border_color || '#6366f1',
         reachable: typeof nodeData.reachable === 'boolean' ? nodeData.reachable : null,
+        failedReads: Array.isArray(nodeData.failedReads) ? nodeData.failedReads : [],
         metrics,
         services,
       },
@@ -412,8 +400,9 @@ async function _refreshServices() {
     const monitors = kuma.monitors;
 
     // Prometheus failed this cycle if any node's queries did (getNodeData's
-    // `ok`), or a node's refresh threw and left it out of the payload.
-    const nodeResults = [];
+    // `ok`; its `failedReads` say which parts of the node they feed), or a
+    // node's refresh threw and left it out of the payload.
+    let nodeResults = [];
     const promErrors = [];
     for (const outcome of nodeOutcomes) {
       if (outcome.status === 'fulfilled') {
@@ -424,6 +413,20 @@ async function _refreshServices() {
         const msg = outcome.reason?.message || String(outcome.reason);
         log.warn({ err: msg }, 'node refresh failed');
         promErrors.push(msg);
+      }
+    }
+    // Every query answered, but no node has an `up` series where an earlier
+    // answer had some: a Prometheus that has just started (after an outage
+    // longer than its lookback) and not scraped yet. Its empty answers say
+    // nothing about the hosts, so the cycle counts as failed and every node's
+    // reads as unread, until an `up` series is back.
+    const answered = nodeResults.filter(Boolean);
+    if (promErrors.length === 0 && answered.length > 0) {
+      if (answered.some(([, , nodeData]) => typeof nodeData?.reachable === 'boolean')) {
+        upSeriesSeen = true;
+      } else if (upSeriesSeen) {
+        promErrors.push('Prometheus answered, but with no up series for any node');
+        nodeResults = nodeResults.map((r) => r && [r[0], r[1], { ...r[2], ok: false, failedReads: NODE_READS }]);
       }
     }
     const prometheusOk = promErrors.length === 0;

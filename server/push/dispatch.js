@@ -188,6 +188,9 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, logger =
  * The builder is handed the previous snapshot, so the parts fed by a source
  * that failed this cycle can be kept from it (buildSnapshot, #232). Advancing to
  * that snapshot keeps them for the next cycle too, however long the failure.
+ * A builder that returns null has no snapshot to give (a baseline taken while a
+ * source fails would record its failure as state): the cycle is skipped, and
+ * nothing is diffed, sent or advanced.
  *
  * Total error isolation: the entire body is wrapped so it can NEVER reject.
  * It runs inside the background refresh loop and must never break that loop.
@@ -195,7 +198,7 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, logger =
  * not even read or write the snapshot file.
  *
  * @param {object} deps
- * @param {Function} deps.buildSnapshotFn  (prev) => Snapshot (injected; fakeable)
+ * @param {Function} deps.buildSnapshotFn  (prev) => Snapshot | null (injected; fakeable)
  * @param {object}   deps.store            token store
  * @param {object}   deps.fcm              fcm module
  * @param {object}   deps.snapshot         prev-snapshot memory (createPushSnapshot)
@@ -210,6 +213,10 @@ export async function runPushCycle({ buildSnapshotFn, store, fcm, snapshot, thre
 
     const prev = snapshot.prev();
     const snap = buildSnapshotFn(prev);
+    if (snap === null) {
+      logger.debug({ baseline: prev === null }, 'push cycle skipped: no snapshot while a source fails');
+      return;
+    }
 
     if (prev !== null) {
       const events = diffSnapshots(prev, snap, thresholds);

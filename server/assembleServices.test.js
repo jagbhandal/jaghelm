@@ -392,3 +392,15 @@ test('assemble: each node carries reachable from discovery, null when it has non
   });
   assert.deepEqual([nodes.a.reachable, nodes.b.reachable, nodes.c.reachable], [true, false, null]);
 });
+
+test('assemble: each node carries the failedReads discovery reported, [] when it has none', () => {
+  const { nodes } = run({
+    nodeResults: [
+      ['a', nodeCfg, { ...nodeData([]), failedReads: ['cpu', 'temp'] }],
+      ['b', nodeCfg, nodeData([])],
+    ],
+    monitors: {},
+  });
+  assert.deepEqual(nodes.a.failedReads, ['cpu', 'temp']);
+  assert.deepEqual(nodes.b.failedReads, []);
+});

@@ -107,13 +107,22 @@ export async function discoverNodes() {
 }
 
 /**
+ * The parts of a node getNodeData reads, each from its own queries: `reachable`
+ * (the `up` query), the `cpu`, `mem`, `disk`, `uptime` and `temp` metrics, and
+ * the `containers` list. `failedReads` names the ones whose queries failed.
+ */
+export const NODE_READS = Object.freeze(['containers', 'cpu', 'disk', 'mem', 'reachable', 'temp', 'uptime']);
+
+/**
  * Get node metrics AND container data in a single parallel batch.
  * Fires all 14 Prometheus queries simultaneously instead of two sequential batches.
  *
- * Returns { ok, error, reachable, metrics, containers }:
+ * Returns { ok, error, failedReads, reachable, metrics, containers }:
  * - `ok` is false when any query failed (PromQueryError). The failed queries
  *   read as empty, so `metrics` and `containers` hold what the others returned,
  *   and `error` is the first failure's message (null when ok).
+ * - `failedReads` names the parts those failed queries feed (NODE_READS, sorted;
+ *   [] when ok), so one failed metric query is not taken for the whole node.
  * - `reachable` is from Prometheus' own scrape status, `up{node=…}`: true when
  *   any target of the node answered its last scrape, false when none did, null
  *   when Prometheus has no `up` series with that node label (or the query failed).
@@ -121,9 +130,12 @@ export async function discoverNodes() {
 export async function getNodeData(nodeLabel) {
   const l = `node="${nodeLabel}"`;
   const failures = [];
-  const query = (q) =>
+  const failedReads = new Set();
+  // `read` is the NODE_READS part the query feeds.
+  const query = (q, read) =>
     promQuery(q).catch((err) => {
       failures.push(err);
+      failedReads.add(read);
       return [];
     });
 
@@ -135,21 +147,21 @@ export async function getNodeData(nodeLabel) {
     namesR, cCpuR, cMemR, cRxR, cTxR,
   ] = await Promise.all([
     // Node metrics queries
-    query(`max(up{${l}})`),
-    query(`100 - (avg by(instance)(irate(node_cpu_seconds_total{${l},mode="idle"}[5m])) * 100)`),
-    query(`node_memory_MemTotal_bytes{${l}}`),
-    query(`node_memory_MemAvailable_bytes{${l}}`),
-    query(`node_memory_MemFree_bytes{${l}}`),
-    query(`node_time_seconds{${l}} - node_boot_time_seconds{${l}}`),
-    query(`node_hwmon_temp_celsius{${l}}`),
-    query(`node_filesystem_size_bytes{${l},mountpoint="/",fstype!="tmpfs"}`),
-    query(`node_filesystem_free_bytes{${l},mountpoint="/",fstype!="tmpfs"}`),
+    query(`max(up{${l}})`, 'reachable'),
+    query(`100 - (avg by(instance)(irate(node_cpu_seconds_total{${l},mode="idle"}[5m])) * 100)`, 'cpu'),
+    query(`node_memory_MemTotal_bytes{${l}}`, 'mem'),
+    query(`node_memory_MemAvailable_bytes{${l}}`, 'mem'),
+    query(`node_memory_MemFree_bytes{${l}}`, 'mem'),
+    query(`node_time_seconds{${l}} - node_boot_time_seconds{${l}}`, 'uptime'),
+    query(`node_hwmon_temp_celsius{${l}}`, 'temp'),
+    query(`node_filesystem_size_bytes{${l},mountpoint="/",fstype!="tmpfs"}`, 'disk'),
+    query(`node_filesystem_free_bytes{${l},mountpoint="/",fstype!="tmpfs"}`, 'disk'),
     // Container stats queries
-    query(`container_last_seen{${l},name!="",${NOT_HELPER}}`),
-    query(`rate(container_cpu_usage_seconds_total{${l},name!="",${NOT_HELPER}}[5m]) * 100`),
-    query(`container_memory_usage_bytes{${l},name!="",${NOT_HELPER}}`),
-    query(`container_network_receive_bytes_total{${l},name!="",${NOT_HELPER}}`),
-    query(`container_network_transmit_bytes_total{${l},name!="",${NOT_HELPER}}`),
+    query(`container_last_seen{${l},name!="",${NOT_HELPER}}`, 'containers'),
+    query(`rate(container_cpu_usage_seconds_total{${l},name!="",${NOT_HELPER}}[5m]) * 100`, 'containers'),
+    query(`container_memory_usage_bytes{${l},name!="",${NOT_HELPER}}`, 'containers'),
+    query(`container_network_receive_bytes_total{${l},name!="",${NOT_HELPER}}`, 'containers'),
+    query(`container_network_transmit_bytes_total{${l},name!="",${NOT_HELPER}}`, 'containers'),
   ]);
 
   // ── Build node metrics ──
@@ -167,8 +179,8 @@ export async function getNodeData(nodeLabel) {
   // Fallback: if no mountpoint="/" data (e.g. NAS devices), find the largest filesystem
   if (diskTotal == null) {
     const [allDiskT, allDiskF] = await Promise.all([
-      query(`node_filesystem_size_bytes{${l},fstype!="tmpfs",fstype!=""}`),
-      query(`node_filesystem_free_bytes{${l},fstype!="tmpfs",fstype!=""}`),
+      query(`node_filesystem_size_bytes{${l},fstype!="tmpfs",fstype!=""}`, 'disk'),
+      query(`node_filesystem_free_bytes{${l},fstype!="tmpfs",fstype!=""}`, 'disk'),
     ]);
     // Pick the largest filesystem by total size
     let maxSize = 0;
@@ -288,7 +300,14 @@ export async function getNodeData(nodeLabel) {
   const containers = Array.from(containerMap.values());
 
   const ok = failures.length === 0;
-  return { ok, error: ok ? null : failures[0].message, reachable, metrics, containers };
+  return {
+    ok,
+    error: ok ? null : failures[0].message,
+    failedReads: [...failedReads].sort(),
+    reachable,
+    metrics,
+    containers,
+  };
 }
 
 function formatUptime(s) {

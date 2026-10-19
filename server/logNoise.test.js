@@ -204,25 +204,39 @@ test('monitors: a changed monitor count logs at info', async () => {
   assert.equal(loaded[0].count, 2);
 });
 
-test('monitors: Kuma going unavailable warns once per outage, and the recovery logs at info', async () => {
+// #232: a Kuma outage logs the same pair as a Prometheus one, through the same
+// source health log: one warning when it starts, one info line when it ends.
+test('monitors: Kuma going unavailable warns once per outage, and the recovery logs one info line', async () => {
   const down1 = await loadMonitors({ ok: false, body: {} });
   const down2 = await loadMonitors({ ok: false, body: {} });
-  const warns = [...down1, ...down2].filter((l) => l.level === 'warn');
+  const warns = atOrAbove([...down1, ...down2], 'warn');
   assert.equal(warns.length, 1, 'one warning for the whole outage');
+  assert.equal(warns[0].source, 'kuma');
+  assert.match(warns[0].error, /HTTP 503/);
 
   const back = await loadMonitors({ ok: true, body: statusPage(['grafana', 'gitea']) });
-  const loaded = back.filter((l) => l.msg === 'Loaded monitors from Kuma');
-  assert.equal(loaded.length, 1);
-  assert.equal(loaded[0].level, 'info', 'same count as before the outage, but a recovery is news');
+  const news = atOrAbove(back, 'info');
+  assert.equal(news.length, 1, 'one line for the recovery');
+  assert.equal(news[0].level, 'info');
+  assert.equal(news[0].source, 'kuma');
+  assert.equal(news[0].msg, 'data source recovered');
+});
 
-  // A thrown fetch still logs its error every time (unchanged), and also counts
-  // as an outage, so the next good load logs at info.
-  const threw = await loadMonitors(async () => {
-    throw new Error('ECONNREFUSED');
-  });
-  assert.ok(threw.some((l) => l.level === 'error'));
-  const back2 = await loadMonitors({ ok: true, body: statusPage(['grafana', 'gitea']) });
-  assert.equal(back2.find((l) => l.msg === 'Loaded monitors from Kuma')?.level, 'info');
+test('monitors: Kuma refusing every load logs one warning, not an error per cycle', async () => {
+  const refused = async () => {
+    throw new TypeError('fetch failed');
+  };
+  const lines = [...(await loadMonitors(refused)), ...(await loadMonitors(refused)), ...(await loadMonitors(refused))];
+  const loud = atOrAbove(lines, 'warn');
+  assert.equal(loud.length, 1, 'a second thrown fetch logs nothing at warn or above');
+  assert.equal(loud[0].level, 'warn');
+  assert.equal(loud[0].source, 'kuma');
+
+  const back = await loadMonitors({ ok: true, body: statusPage(['grafana', 'gitea']) });
+  assert.deepEqual(
+    atOrAbove(back, 'info').map((l) => `${l.level} ${l.msg}`),
+    ['info data source recovered']
+  );
 });
 
 // ── unmatched containers ─────────────────────────────────────────────────
