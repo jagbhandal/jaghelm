@@ -167,6 +167,10 @@ Each cached value is serialized and hashed once, on its first request, and kept
 with it, so later requests (`200` or `304`) only send what is already in memory
 until the next refresh replaces the value.
 `If-None-Match` is matched per RFC 9110: weak comparison, a list of tags, or `*`.
+Two reads served outside the cache have their own reuse rules: `/api/history`
+(the sparkline series, which changes every cycle) carries an ETag of its
+response, and `/api/cron/status` (whose `seconds_since_report` changes every
+second, so an ETag would never match) sends `Cache-Control: private, max-age=60`.
 The loop is cancelled cleanly on shutdown (no leaking timer).
 
 ```mermaid
@@ -339,6 +343,19 @@ flowchart TD
   on an unchanged poll `fetchJson` returns the same reference and `setState`
   bails via `Object.is`, so an all-304 tick triggers zero re-renders. Per-source
   health (error / stale / retry) is derived at render without per-tick state.
+- **Polling.** `App.jsx` drives one tick per refresh interval (30 s by default),
+  and only while the dashboard is on screen: a hidden browser tab, Settings or an
+  iframe tab pauses it, and returning refreshes every source at once. The board
+  loads every source once on mount; a tick then fetches the live sources
+  (`/api/services`, `/api/ups`, `/api/integrations`) plus one slow source in turn
+  (`/api/history`, `/api/cron/status`, `/api/gitea/activity`), so four requests
+  per tick. A panel shows its "updated ... ago" stale note after 2 missed polls
+  of its own source (`pollPeriodMs` in `useDashboardData`): 1 minute for a live
+  source and 3 minutes for a slow one at 30 s. The navbar health dot reads
+  `overallHealth` from the board's own `/api/services` result, so it holds its
+  last value while polling is paused (the "Updated" clock keeps counting) and
+  catches up on return. The navbar refetches weather at most every 10 minutes.
+  The Settings preview loads once when shown and refreshes only on its button.
 - **Design system.** 10 themes (`themes.js` + `[data-theme]` token blocks),
   generic `--space-*` / `--text-*` scales plus semantic `--fs-*` card tokens,
   and a global `:focus-visible` ring + reduced-motion handling.

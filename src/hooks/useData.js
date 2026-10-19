@@ -30,6 +30,11 @@ export const NOT_MODIFIED_NO_BODY = Object.freeze({ __jaghelm304NoBody: true });
  *   network error / non-2xx / non-304 → THROWS; the only path a caller reads as error.
  *
  * Pass skipEtag=true to force a full fetch (used on first load when state is empty).
+ * A forced fetch also bypasses AND refreshes the browser's HTTP cache, which may
+ * hold a copy of a response the server marked cacheable (/cron/status sends a
+ * max-age). `reload` (not `no-store`) writes the fresh response back, so a later
+ * polled fetch can't be served the older cached copy (e.g. a just-deleted cron
+ * job reappearing for up to max-age).
  */
 async function fetchJson(url, skipEtag = false) {
   const headers = {};
@@ -38,7 +43,11 @@ async function fetchJson(url, skipEtag = false) {
     headers['If-None-Match'] = storedEtag;
   }
 
-  const r = await apiFetch(url, { headers, signal: AbortSignal.timeout(12000) });
+  const r = await apiFetch(url, {
+    headers,
+    signal: AbortSignal.timeout(12000),
+    ...(skipEtag && { cache: 'reload' }),
+  });
 
   if (r.status === 304) {
     return resultStore.has(url) ? resultStore.get(url) : NOT_MODIFIED_NO_BODY;
@@ -85,10 +94,10 @@ export async function getDisplayConfig(skipEtag) {
   return fetchJson(`${getApiBase()}/display-config`, skipEtag);
 }
 
-// Metric history (sparklines). Not ETag-cached server-side — it changes every
-// cycle by design — so this always returns a fresh body.
-export async function getMetricHistory() {
-  return fetchJson(`${getApiBase()}/history`);
+// Metric history (sparklines). It changes every refresh cycle, so a 304 only
+// comes back when no cycle has run since the last fetch.
+export async function getMetricHistory(skipEtag) {
+  return fetchJson(`${getApiBase()}/history`, skipEtag);
 }
 
 // Dedicated section data (not covered by /api/services or /api/integrations).

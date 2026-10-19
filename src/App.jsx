@@ -5,8 +5,8 @@ import CommandPalette from './components/CommandPalette';
 import DashboardView from './views/DashboardView';
 import { ConfigProvider } from './context/ConfigContext.jsx';
 import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
-import { getServices } from './hooks/useData';
 import { useThemeVars } from './hooks/useThemeVars.js';
+import { usePageVisible } from './hooks/usePageVisible.js';
 import { useConfigPersistence } from './hooks/useConfigPersistence.js';
 
 // Settings (13-tab tree) and the iframe view aren't needed for the default
@@ -112,7 +112,7 @@ function AppMain({ authRequired, onLogout }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('jaghelm-theme') || 'dark');
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [overallHealth, setOverallHealth] = useState('up');
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [tick, setTick] = useState(0);
   // Start with localStorage for instant render; the server fetch overrides it.
   // `migrate` upgrades the legacy `jagnet-config` key to the current one.
   const [config, setConfig] = useState(() => readStoredConfig({ migrate: true }));
@@ -145,39 +145,32 @@ function AppMain({ authRequired, onLogout }) {
   useThemeVars(config);
 
   const intervalMs = (config.refreshInterval || 30) * 1000;
+  // One tick = one DashboardView fetch round. The navbar health dot reads the
+  // SERVER-computed overallHealth off that round's /api/services payload
+  // (DashboardView reports it through onHealth), so the web header dot and the
+  // mobile Overview dot stay symmetric without a second /api/services fetch.
   const doRefresh = useCallback(() => {
-    // Bump refreshKey IMMEDIATELY so DashboardView starts fetching right away.
-    // The health read runs in parallel — it updates the navbar health dot but
-    // does NOT block the dashboard data load.
     setLastUpdated(new Date());
-    setRefreshKey((k) => k + 1);
-
-    // Navbar health dot — fire and forget, non-blocking. Read the SERVER-computed
-    // overallHealth off the same /api/services payload the dashboard renders, so
-    // the web header dot and the mobile Overview dot are symmetric (one server
-    // truth, no client re-derivation). getServices shares useData's ETag/result
-    // cache with DashboardView's fetch: on an unchanged (304) cycle both resolve
-    // to the same cached object; on a changed cycle both pull the full 200 body
-    // (one redundant fetch — acceptable for an infrequent flip on a 30s poll; a
-    // follow-up could lift overallHealth from the dashboard fetch instead). A
-    // 304-no-body / missing field keeps the current value; a thrown fetch → 'unknown'.
-    getServices()
-      .then((body) => {
-        if (body && typeof body.overallHealth === 'string') setOverallHealth(body.overallHealth);
-      })
-      .catch(() => setOverallHealth('unknown'));
+    setTick((t) => t + 1);
   }, []);
 
-  // Initial fetch on mount
-  const didInitialFetch = useRef(false);
+  // Poll only while the dashboard is on screen: not in a hidden browser tab, and
+  // not on Settings or an iframe tab (the dashboard stays mounted there, hidden).
+  // DashboardView loads on mount and refreshes at once when it becomes active.
+  const pageVisible = usePageVisible();
+  const dashboardActive = activeTab === 'dashboard' && pageVisible;
+
+  // Back on the dashboard: DashboardView's resume refresh starts now, so restart
+  // the "Updated" clock with it.
+  const wasActiveRef = useRef(dashboardActive);
   useEffect(() => {
-    if (didInitialFetch.current) return;
-    didInitialFetch.current = true;
-    doRefresh();
-  }, [doRefresh]);
+    if (dashboardActive && !wasActiveRef.current) setLastUpdated(new Date());
+    wasActiveRef.current = dashboardActive;
+  }, [dashboardActive]);
 
   // Set up refresh interval — debounced so slider dragging doesn't spam intervals
   useEffect(() => {
+    if (!dashboardActive) return;
     const timer = setTimeout(() => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = setInterval(doRefresh, intervalMs);
@@ -186,7 +179,7 @@ function AppMain({ authRequired, onLogout }) {
       clearTimeout(timer);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [doRefresh, intervalMs]);
+  }, [doRefresh, intervalMs, dashboardActive]);
 
   const allTabs = [
     { id: 'dashboard', label: 'Dashboard', type: 'dashboard' },
@@ -221,7 +214,6 @@ function AppMain({ authRequired, onLogout }) {
                 }
               : null
           }
-          refreshKey={refreshKey}
         />
         <CommandPalette
           open={paletteOpen}
@@ -247,7 +239,12 @@ function AppMain({ authRequired, onLogout }) {
               : { visibility: 'hidden', height: 0, overflow: 'hidden' }
           }
         >
-          <DashboardView refreshKey={refreshKey} onOpenSettings={() => setActiveTab('settings')} />
+          <DashboardView
+            tick={tick}
+            active={dashboardActive}
+            onHealth={setOverallHealth}
+            onOpenSettings={() => setActiveTab('settings')}
+          />
         </div>
         <Suspense
           fallback={

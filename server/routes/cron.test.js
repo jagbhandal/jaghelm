@@ -82,6 +82,13 @@ test('a job reported long ago with a 60 s interval is overdue', async () => {
   assert.ok(j.seconds_since_report >= 3600);
 });
 
+test('GET /status may be reused for 60 s (Cache-Control), as an ETag would never match', async () => {
+  // seconds_since_report changes every second, so the body is never byte-identical.
+  const r = await getStatus();
+  assert.equal(r.status, 200);
+  assert.equal(r.headers['cache-control'], 'private, max-age=60');
+});
+
 test('DELETE without a session → 401', async () => {
   const r = await request(app).delete('/api/cron/jobs/n1/num');
   assert.equal(r.status, 401);

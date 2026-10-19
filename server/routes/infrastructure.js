@@ -6,13 +6,14 @@
  *
  *   GET /api/ups              → battery + load (warm-cached via refresh loop)
  *   GET /api/gitea/activity   → recent commits (warm-cached via refresh loop)
+ *   GET /api/history          → sparkline series (ETag, not cached)
  */
 
 import { Router } from 'express';
 
 import { refreshUPS, refreshGitea } from '../refresh.js';
 import { getHistory } from '../history.js';
-import { respondWarmCached } from '../cache.js';
+import { respondWarmCached, jsonWithEtag } from '../cache.js';
 import { apiError } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 
@@ -40,12 +41,12 @@ router.get('/gitea/activity', asyncHandler((req, res) =>
 
 // ── Metric history (sparklines) ──────────────────────────────────────────
 // The last ~1h of each node's CPU/RAM/disk usage, recorded by the refresh loop.
-// Deliberately NOT ETag-cached: it changes every cycle (that's the point), and a
-// 304 path would defeat the live sparkline. Kept off /api/services so the main
-// board stays 304-stable.
+// It changes every cycle (that's the point), so it is not cached; the ETag is a
+// hash of this response, so a poll that lands before the next cycle gets a 304.
+// Kept off /api/services so the main board stays 304-stable.
 
 router.get('/history', (req, res) => {
-  res.json(getHistory());
+  jsonWithEtag(res, req, 'history', getHistory());
 });
 
 export { router as infrastructureRoutes };

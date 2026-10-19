@@ -15,7 +15,7 @@ import NodePanel from './NodePanel';
 import { toServiceCard } from './serviceCard';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { DEFAULT_LAYOUTS, migrateLayouts } from './layouts';
-import { useDashboardData } from './useDashboardData';
+import { useDashboardData, pollPeriodMs } from './useDashboardData';
 import { useAppDataMatching } from './useAppDataMatching';
 import { useEffectiveLayouts } from './useEffectiveLayouts';
 import { sourceBanner } from './sourceHealth';
@@ -32,7 +32,7 @@ import { sourceBanner } from './sourceHealth';
  *   - HelmGrid              → drag/resize-aware responsive grid
  *   - DndContext            → service-card drag between panels
  */
-export default function DashboardView({ refreshKey, onOpenSettings }) {
+export default function DashboardView({ refreshKey, tick, active, onHealth, onOpenSettings }) {
   const { config, setConfig } = useConfig();
   // Mobile detection — used to disable drag/resize on small screens
   const mobileRef = useRef(null);
@@ -55,8 +55,14 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
     history,
     servicesLoaded,
     sources,
+    overallHealth,
     retry,
-  } = useDashboardData(refreshKey);
+  } = useDashboardData(refreshKey, { tick, active });
+
+  // The navbar health dot reads this board's own /api/services result.
+  useEffect(() => {
+    if (overallHealth) onHealth?.(overallHealth);
+  }, [overallHealth, onHealth]);
 
   const removeCronJob = useCallback(
     async (node, job) => {
@@ -83,7 +89,8 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
     const now = nowBucket * Math.max(refreshIntervalMs / 2, 1000);
     const out = {};
     for (const key of Object.keys(sources)) {
-      out[key] = sourceBanner(sources[key], key, refreshIntervalMs, now);
+      // Each source goes stale on its own poll period (slow sources poll less often).
+      out[key] = sourceBanner(sources[key], key, pollPeriodMs(key, refreshIntervalMs), now);
     }
     return out;
   }, [sources, refreshIntervalMs, nowBucket]);
