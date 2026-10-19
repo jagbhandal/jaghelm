@@ -3,6 +3,7 @@ import {
   getServiceIcon,
   cachedIconUrl,
   getCronStatus,
+  getServices,
   saveTodos,
   saveIntegration,
   testIntegration,
@@ -10,6 +11,7 @@ import {
   SERVICE_ICONS,
 } from './useData.js';
 import { iconSlugUrl } from '../utils/iconCdn.js';
+import { setApiBase } from '../api/baseUrl.js';
 
 // getServiceIcon resolves a slug to the CDN URL then proxies it via
 // cachedIconUrl (jaghelm is a local path). To assert WHICH key matched, mirror
@@ -154,5 +156,175 @@ describe('fetchJson — cache mode', () => {
     vi.stubGlobal('fetch', spy);
     await getCronStatus();
     expect(spy.mock.calls[0][1].cache).toBeUndefined();
+  });
+});
+
+// ── the stored ETag always describes the body the client holds ────────────
+//
+// Bug (#383): fetchJson stored a 200's ETag before parsing its body. A 200 with
+// an ETag but an empty or malformed body (a truncated response, a proxy's error
+// page, a body read cut off by the timeout) failed to parse with its ETag
+// already stored. The next poll sent that ETag, the server answered 304, and the
+// client handed back the OLD body (or, holding none, the no-body sentinel): the
+// dashboard stuck on old data until the server's ETag changed. The fix stores
+// the ETag and the body together, in one step, once the body has parsed.
+describe('fetchJson — the stored ETag always describes the body held', () => {
+  const A = { nodes: { a: { display_name: 'A' } } };
+  const B = { nodes: { b: { display_name: 'B' } } };
+  const C = { nodes: { c: { display_name: 'C' } } };
+  const brokenBodies = [
+    ['an empty body', ''],
+    ['malformed JSON', '{"nodes":'],
+  ];
+
+  let n = 0;
+  let sent; // the If-None-Match of each request, in order (null when absent)
+  let server;
+
+  const json200 = (body, etag) =>
+    new Response(JSON.stringify(body), { status: 200, headers: etag ? { ETag: etag } : {} });
+
+  // A stand-in for the server: a 304 when If-None-Match names its current ETag,
+  // otherwise a 200 with its current body and ETag. A queued `glitch` replaces
+  // the next 200 (same status and ETag, broken body).
+  function serve(etag, body) {
+    server.etag = etag;
+    server.body = body;
+  }
+
+  beforeEach(() => {
+    if (!AbortSignal.timeout) {
+      AbortSignal.timeout = () => new AbortController().signal;
+    }
+    // Each test gets its own URL, so it starts with nothing cached.
+    setApiBase(`/etag-${++n}/api`);
+    sent = [];
+    server = { etag: null, body: null, glitch: null };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url, opts) => {
+        const inm = opts?.headers?.['If-None-Match'] ?? null;
+        sent.push(inm);
+        if (inm && inm === server.etag) {
+          const notModified = new Response(null, { status: 304, headers: { ETag: server.etag } });
+          return Promise.resolve(notModified);
+        }
+        const glitch = server.glitch;
+        server.glitch = null;
+        return Promise.resolve(glitch ? glitch(server.etag) : json200(server.body, server.etag));
+      })
+    );
+  });
+
+  afterEach(() => {
+    setApiBase('/api');
+    vi.unstubAllGlobals();
+  });
+
+  it.each(brokenBodies)(
+    'a 200 with a new ETag and %s keeps the last good pair, so the next poll gets the new data',
+    async (_, text) => {
+      serve('"v1"', A);
+      const first = await getServices(true);
+      expect(first).toEqual(A);
+
+      serve('"v2"', B);
+      server.glitch = (etag) => new Response(text, { status: 200, headers: { ETag: etag } });
+      await expect(getServices(false)).rejects.toThrow();
+
+      // Still asking about A (v1), so the server sends B instead of a 304 that
+      // would hand A back again.
+      await expect(getServices(false)).resolves.toEqual(B);
+      expect(sent).toEqual([null, '"v1"', '"v1"']);
+    }
+  );
+
+  it.each(brokenBodies)(
+    'with nothing held, a 200 with an ETag and %s leaves the next poll unconditional',
+    async (_, text) => {
+      serve('"v1"', A);
+      server.glitch = (etag) => new Response(text, { status: 200, headers: { ETag: etag } });
+      await expect(getServices(false)).rejects.toThrow();
+
+      // No If-None-Match, so the answer is the body, not a 304 with no body held.
+      await expect(getServices(false)).resolves.toEqual(A);
+      expect(sent).toEqual([null, null]);
+    }
+  );
+
+  it('a body read cut off by the timeout keeps the last good pair', async () => {
+    serve('"v1"', A);
+    await getServices(true);
+
+    serve('"v2"', B);
+    server.glitch = (etag) => {
+      const cutOff = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"nodes":{"b":'));
+          controller.error(new DOMException('The operation timed out.', 'TimeoutError'));
+        },
+      });
+      return new Response(cutOff, { status: 200, headers: { ETag: etag } });
+    };
+    await expect(getServices(false)).rejects.toMatchObject({ name: 'TimeoutError' });
+
+    await expect(getServices(false)).resolves.toEqual(B);
+    expect(sent).toEqual([null, '"v1"', '"v1"']);
+  });
+
+  it('a forced fetch (skipEtag) whose body fails to parse keeps the last good pair', async () => {
+    serve('"v1"', A);
+    await getServices(true);
+
+    serve('"v2"', B);
+    server.glitch = (etag) => new Response('{"nodes":', { status: 200, headers: { ETag: etag } });
+    await expect(getServices(true)).rejects.toThrow();
+
+    await expect(getServices(false)).resolves.toEqual(B);
+    expect(sent).toEqual([null, null, '"v1"']);
+  });
+
+  it('a 200 without an ETag drops the old one, so the next poll is unconditional', async () => {
+    serve('"v1"', A);
+    await getServices(true);
+
+    // B arrives with no ETag (say, a proxy stripped it): v1 describes A, not B.
+    serve(null, B);
+    await expect(getServices(false)).resolves.toEqual(B);
+
+    // The server's data goes back to A, whose ETag is v1 again. Asking with v1
+    // would get a 304 and hand back B.
+    serve('"v1"', A);
+    await expect(getServices(false)).resolves.toEqual(A);
+    expect(sent).toEqual([null, '"v1"', null]);
+  });
+
+  it('overlapping fetches whose bodies finish out of order store a matching pair', async () => {
+    serve('"v1"', A);
+    await getServices(true);
+
+    // Two polls in flight: X gets v2 headers first, Y gets v3 headers second,
+    // and Y's body finishes before X's.
+    const bodies = [];
+    const pending = (body, etag) => {
+      let resolve;
+      const promise = new Promise((r) => (resolve = r));
+      bodies.push(() => resolve(body));
+      return { ok: true, status: 200, headers: new Headers({ ETag: etag }), json: () => promise };
+    };
+    fetch.mockImplementationOnce(() => Promise.resolve(pending(B, '"v2"')));
+    fetch.mockImplementationOnce(() => Promise.resolve(pending(C, '"v3"')));
+    const x = getServices(false);
+    const y = getServices(false);
+    await vi.waitFor(() => expect(bodies).toHaveLength(2));
+    bodies[1]();
+    await expect(y).resolves.toEqual(C);
+    bodies[0]();
+    await expect(x).resolves.toEqual(B);
+
+    // Whatever is held, its ETag must match it: the server is at v3 (C), and a
+    // poll must not get a 304 for v3 that hands back B.
+    serve('"v3"', C);
+    await expect(getServices(false)).resolves.toEqual(C);
   });
 });
