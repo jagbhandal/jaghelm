@@ -30,8 +30,11 @@ export const NOT_MODIFIED_NO_BODY = Object.freeze({ __jaghelm304NoBody: true });
  *   network error / non-2xx / non-304 → THROWS; the only path a caller reads as error.
  *
  * Pass skipEtag=true to force a full fetch (used on first load when state is empty).
- * A forced fetch also bypasses the browser's HTTP cache, which may hold a copy of
- * a response the server marked cacheable (/cron/status sends a max-age).
+ * A forced fetch also bypasses AND refreshes the browser's HTTP cache, which may
+ * hold a copy of a response the server marked cacheable (/cron/status sends a
+ * max-age). `reload` (not `no-store`) writes the fresh response back, so a later
+ * polled fetch can't be served the older cached copy (e.g. a just-deleted cron
+ * job reappearing for up to max-age).
  */
 async function fetchJson(url, skipEtag = false) {
   const headers = {};
@@ -43,7 +46,7 @@ async function fetchJson(url, skipEtag = false) {
   const r = await apiFetch(url, {
     headers,
     signal: AbortSignal.timeout(12000),
-    ...(skipEtag && { cache: 'no-store' }),
+    ...(skipEtag && { cache: 'reload' }),
   });
 
   if (r.status === 304) {

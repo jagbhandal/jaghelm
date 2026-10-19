@@ -126,7 +126,9 @@ describe('mutator helpers — fail on non-2xx (r.ok check)', () => {
 //
 // /cron/status sends Cache-Control: max-age, so the browser may hold a copy. A
 // forced fetch (first load, retry, the retry after deleting a cron job) must
-// reach the server; a polled fetch leaves caching to the server's headers.
+// reach the server AND replace that copy (`reload`, not `no-store`, which would
+// leave the older copy for the next polled fetch to serve); a polled fetch
+// leaves caching to the server's headers.
 describe('fetchJson — cache mode', () => {
   const ok = () =>
     Promise.resolve({
@@ -140,11 +142,11 @@ describe('fetchJson — cache mode', () => {
     vi.unstubAllGlobals();
   });
 
-  it('sends a forced fetch with cache: no-store', async () => {
+  it('sends a forced fetch with cache: reload, so it refreshes the cached copy', async () => {
     const spy = vi.fn(ok);
     vi.stubGlobal('fetch', spy);
     await getCronStatus(true);
-    expect(spy.mock.calls[0][1].cache).toBe('no-store');
+    expect(spy.mock.calls[0][1].cache).toBe('reload');
   });
 
   it('leaves a polled fetch on the default cache mode', async () => {
