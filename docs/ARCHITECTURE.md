@@ -357,9 +357,28 @@ matched to nothing or to something else now), and then goes under the
 monitor's name.
 
 Such a card, of a monitor no container has ("Pi Gateway (Ping)", "NAS (Ping)"),
-exists only while the monitor is down, and the push differ compares the
-statuses of cards in the new snapshot only. So the monitor sends a down push,
-but no recovery push when its card goes away.
+exists only while the monitor is down: up, it draws nothing on the board. The
+push snapshot still has it (#390). Every active monitor no running container
+got, up or down, is placed in one pass by `placeMonitor` (`refresh.js`), so its
+uid does not depend on its status. A down one is the red card; the uid of an up
+one goes in the `/api/services` payload's `upWithoutCard`, which `buildServices`
+(`push/snapshot.js`) reads as `up` unless a card on the board has that uid (a
+grey breadcrumb, say). So the monitor sends `service_down`, then
+`service_recovered` on the same id. A paused monitor (stale heartbeat, or
+`active: false`) and one Kuma no longer has are in neither, so they send
+nothing. The entries come from Kuma in the services payload, so the source
+failure rules above apply to them unchanged: while Kuma fails, the whole
+services map is held.
+
+A monitor feeds one key of the push snapshot a cycle: the card of the running
+container that has it, else its own uid. When a container takes it (one appears
+whose name matches), its own key leaves the snapshot without an event and the
+container's card starts with no previous status: up, nothing is sent; down,
+`service_down` is sent on the container's card, a second down push for an
+outage already pushed under the monitor's own uid, since the snapshot has no
+monitor identity (push on the status model, #292, is to carry one). When that
+container goes, the service registry
+remembers it, so the monitor's own uid is the container's from then on.
 
 The service registry's `seen` list has one record per monitor, the last node in
 the pass for one mapped explicitly to a container on several nodes. A record is
