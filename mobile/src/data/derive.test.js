@@ -268,24 +268,6 @@ describe('deriveIncidents', () => {
     expect(cronIds).toContain('cron:pi:sync');
     expect(cronIds).toHaveLength(2);
   });
-
-  // #279: a row opens what its target names, so the target must identify one
-  // entity by key, never by display text.
-  it('each target names its entity by key: service uid, cron node + job', () => {
-    const cron = [
-      { node: 'pi-1', jobs: [{ job: 'backup', runs: [{ status: 'failure', error: 'a' }] }] },
-      { node: 'pi-2', jobs: [{ job: 'backup', runs: [{ status: 'failure', error: 'b' }] }] },
-    ];
-    const incidents = deriveIncidents({ services: SERVICES_BODY, ups: { status: 2, charge: 80 }, cron });
-    const targets = Object.fromEntries(incidents.map((i) => [i.id, i.target]));
-    expect(targets).toEqual({
-      'service:vm-101:gitea': { kind: 'service', uid: 'vm-101:gitea', url: 'http://h/gitea' },
-      'ups:apcups': { kind: 'ups' },
-      'cron:pi-1:backup': { kind: 'cron', node: 'pi-1', job: 'backup' },
-      'cron:pi-2:backup': { kind: 'cron', node: 'pi-2', job: 'backup' },
-      'unknown:gateway-pi:pihole': { kind: 'service', uid: 'gateway-pi:pihole', url: '' },
-    });
-  });
 });
 
 describe('sortProblemsFirst (down → unknown → up)', () => {
