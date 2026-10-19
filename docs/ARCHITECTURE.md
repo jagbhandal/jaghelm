@@ -194,22 +194,37 @@ with no `/` filesystem, and 4 for the UPS (90 a cycle with the homelab's six
 nodes). The queries: `up` (max by node), CPU, memory (MemTotal, MemAvailable
 and MemFree in one selector), uptime, temperature, disk (size and free in one
 selector), and the containers' last-seen, CPU, memory, RX and TX rates, and RX
-and TX counters. What they read:
+and TX counters (the four network ones per interface). What they read:
 
 - **Temperature** is the hottest sensor, `max by (node)` over
-  `node_hwmon_temp_celsius` (a node has 3 to 14 such series).
+  `node_hwmon_temp_celsius` (a node has 0 to 14 such series; the VMs have
+  none). On pve at idle that is the r8169 NIC, not the CPU.
 - **Container memory** (`docker.memMB`) is `container_memory_working_set_bytes`,
   which leaves out page cache the kernel can reclaim.
-- **Container RX/TX** is `sum by (node, name)` over the container's interfaces,
-  leaving out `VIRTUAL_INTERFACES`: lo, veth\*, docker\*, br-\*, virbr\*,
-  tailscale\*, wg\* and VLAN subinterfaces (`eth0.10`). A container on the host
-  network gets every host interface from cAdvisor, and those carry traffic the
-  physical interface already counts; what remains is a bridged container's own
-  eth\* and the host's physical interface. `docker.rxBytesPerSec` /
-  `txBytesPerSec` are the 5-minute rate in bytes per second. `docker.rxMB` /
-  `txMB` keep their meaning, the cumulative counter in MiB (now summed over those
-  interfaces, where it used to be whichever interface came last), until the old
-  endpoints are removed (overhaul P4-4); their two queries go with them.
+- **Container RX/TX** comes `sum by (node, name, interface)`, and `discovery.js`
+  sums each container's interfaces, leaving out `VIRTUAL_INTERFACES`: lo,
+  veth\*, docker\*, br-\*, virbr\*, VPN tunnels (tailscale\*, wg\*, tun\*,
+  tap\*) and VLAN subinterfaces (`eth0.10`), which carry traffic another
+  interface already counts. What remains is the container's own eth0, eth1, ….
+  `docker.rxBytesPerSec` / `txBytesPerSec` are the 5-minute rate in bytes per
+  second; for up to 5 minutes after a container is recreated, the rate also
+  counts the replaced container's series and reads high. `docker.rxMB` / `txMB`
+  keep their meaning, the cumulative counter in MiB (now summed over those
+  interfaces, where it used to be the alphabetically last interface), until the
+  old endpoints are removed (overhaul P4-4); their two queries go with them.
+- **Host-network containers** have no traffic counters of their own: cAdvisor
+  reports the host's interfaces for them, so each would show the host's
+  traffic. One is told by an interface outside `OWN_NAMESPACE_INTERFACES`
+  (eth\<N\>, and the tunnels tun\*, tap\*, wg\* and tailscale\* a container can
+  bring up itself): a physical interface not named eth\<N\> (ens18), a Docker
+  bridge (br-\*) or a VLAN (eth0.10). It gets `docker.networkMode: 'host'`
+  (null for every other container), and all four RX/TX fields are null, which
+  the web card shows as "—". Live on 2026-10-19 that is jaghelm,
+  omada-controller and tailscale on vm103 (ens18, ens18.10, tailscale0, 15
+  br-\*) and adguard-secondary and tailscale on pi2 (eth0, eth0.10, tailscale0,
+  9 br-\*); every other container reports only eth0 to eth2. The limit: on a
+  host whose only interfaces are eth\<N\>, with no VLAN and no Docker network
+  but the default bridge, a host-network container looks like a bridged one.
 - **Disk** is `/`, or for a node without one (the NAS) its largest filesystem.
   Which a node has is decided from the first answer that lists its
   filesystems: after that, the disk query asks a node with `/` for `/` alone and
@@ -240,8 +255,8 @@ answers mark every node's reads failed. While Prometheus fails, no presence
 breadcrumbs are drawn, since a container missing from the list may still be
 running. The push snapshot keeps its last state for what a failed source feeds,
 and only that: for a host, only the readings whose queries failed, so a metric
-query that keeps failing holds only that metric, and a host's `up` at 0 still
-pages. A missing payload (a cold cache after a restart, or one past its TTL)
+query that keeps failing holds that metric on every host (and, for a host with
+no `up` series, its reachability), and a host's `up` at 0 still pages. A missing payload (a cold cache after a restart, or one past its TTL)
 counts as failed, and no baseline is taken while the UPS read fails or
 Prometheus fails with no host read. So an outage of Prometheus or Kuma sends no alerts about the
 hosts and services they watch ([mobile/DESIGN.md](mobile/DESIGN.md),
