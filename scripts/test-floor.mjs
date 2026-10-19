@@ -16,16 +16,11 @@
 // breaks CI. When the count is more than 2% above it, each run prints a notice to raise
 // it, and the release PR raises it to the current `# pass` (docs/RELEASING.md). When a
 // change removes tests on purpose, lower it in the same commit and say why.
-//
-// A run reports 785 today, 9 of them duplicates: registry.js loads every .js file in
-// presets/, test files included, so the gitlab and nextcloud preset tests run twice
-// (#223). Merged with the fix for #223, the suite passes 778. The floor (773) is below
-// both, so either can merge first; raise it as tests land.
 import { spawn } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export const MIN_PASSING = 782;
+export const MIN_PASSING = 784;
 const STALE_MARGIN = 0.02;
 
 const KEYS = ['tests', 'suites', 'pass', 'fail', 'cancelled', 'skipped', 'todo'];

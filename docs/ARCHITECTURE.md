@@ -265,8 +265,9 @@ integration connection-test endpoint.
 
 - **Structured logging** (`util/logger.js`) with redaction -- no secrets in logs.
 - **Access log** (`accessLog.js`): one line per request with its full path and no
-  query string; 5xx at `error`, 4xx and requests of 300 ms or more at `info`, the
-  rest at `debug`. `/metrics`, `/api/health` and `/api/readyz` are not logged.
+  query string or fragment; 5xx at `error`, 4xx and requests of 300 ms or more at
+  `info`, the rest at `debug`. `/metrics`, `/api/health` and `/api/readyz` are not
+  logged unless they fail (5xx).
 - **Prometheus metrics** at `/metrics` via `prom-client` (`metrics.js`): request
   rate, latency histograms, refresh-loop health.
 - **Two probes**: `/api/health` (liveness; reflects refresh-loop liveness -- 503

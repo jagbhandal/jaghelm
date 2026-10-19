@@ -1,7 +1,8 @@
 /**
  * Access log contract (#245): one line per request with the full path (router
- * mount prefix included, query string dropped). 5xx log at error, 4xx and slow
- * requests at info, everything else at debug. Probe endpoints are not logged.
+ * mount prefix included; query string, fragment and absolute-form authority
+ * dropped). 5xx log at error, 4xx and slow requests at info, everything else at
+ * debug. Probe endpoints are logged only when they fail.
  *
  * The unit tests drive createAccessLog() on a small app with mounted routers
  * (the mount is what stripped req.path before) and a capturing logger; the last
@@ -12,6 +13,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import net from 'node:net';
 import express from 'express';
 import request from 'supertest';
 
@@ -137,14 +139,54 @@ test('the query string is never logged (an FCM token rides in ?token= on /api/pu
   assert.doesNotMatch(JSON.stringify(lines), /SECRET|token=|\?/);
 });
 
-test('health, readiness and metrics probes are not logged, even when mounted or failing', async () => {
+/**
+ * Send one raw request line. supertest never sends a fragment or an
+ * absolute-form target, but Node accepts both and Express routes them.
+ */
+function rawGet(app, target) {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(0, '127.0.0.1', () => {
+      const sock = net.connect(server.address().port, '127.0.0.1', () =>
+        sock.write(`GET ${target} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n`)
+      );
+      let head = '';
+      sock.on('data', (d) => (head += d));
+      sock.on('error', reject);
+      sock.on('close', () => server.close(() => resolve(head.split('\r\n')[0])));
+    });
+  });
+}
+
+test('the fragment is never logged', async () => {
+  const { app, lines } = makeApp();
+  await rawGet(app, '/api/push/x#token=SECRET');
+  await settle();
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].path, '/api/push/x');
+  assert.doesNotMatch(JSON.stringify(lines), /SECRET|#/);
+});
+
+test('an absolute-form request logs only its path, not the userinfo, host or query', async () => {
+  const { app, lines } = makeApp();
+  const status = await rawGet(app, 'http://user:pw-SECRET@example.test:99/api/items/list?token=S2');
+  await settle();
+  assert.match(status, / 200 /, 'Express routes an absolute-form target on its path');
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].path, '/api/items/list');
+  assert.doesNotMatch(JSON.stringify(lines), /SECRET|user|example|token|S2/);
+});
+
+test('health, readiness and metrics probes are logged only when they fail', async () => {
   const { app, lines } = makeApp();
   await request(app).get('/api/health').expect(200);
-  await request(app).get('/api/readyz').expect(503);
   await request(app).get('/metrics').expect(200);
   await request(app).get('/api/health?probe=1').expect(200);
+  await request(app).get('/api/readyz').expect(503);
   await settle();
-  assert.deepEqual(lines, []);
+  assert.deepEqual(
+    lines.map((l) => [l.level, l.path, l.status]),
+    [['error', '/api/readyz', 503]]
+  );
 });
 
 test('accessLogLevel: 5xx error; 4xx and slow info; the rest debug', () => {
@@ -203,7 +245,7 @@ test('wired into the app: a 4xx from a mounted route logs its full path at info'
   assert.equal(lines[0].status, 403);
 });
 
-test('wired into the app: the /api/health probe is not logged', async () => {
-  const lines = await captureRequestLines(() => request(realApp).get('/api/health'));
+test('wired into the app: a healthy /api/health probe is not logged', async () => {
+  const lines = await captureRequestLines(() => request(realApp).get('/api/health').expect(200));
   assert.deepEqual(lines, []);
 });

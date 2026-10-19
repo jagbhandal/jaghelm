@@ -5,14 +5,17 @@
  * Path: req.originalUrl, not req.path. By 'finish', a response sent from inside
  * a mounted router still has req.url/req.path relative to the mount
  * ("/gitea/activity" for GET /api/gitea/activity), so req.path would drop the
- * /api prefix (#245). The query string is dropped: GET /api/push/prefs carries
- * the device's FCM token in ?token=, and any client can put a credential in a
- * query string, so the log keeps the path only.
+ * /api prefix (#245). The query string and fragment are dropped: GET
+ * /api/push/prefs carries the device's FCM token in ?token=, and any client can
+ * put a credential in a query string, so the log keeps the path only. The scheme
+ * and authority of an absolute-form request (GET http://user:pass@host/x), which
+ * Node accepts and Express routes on its path, are dropped too.
  *
  * Level: 5xx at error, 4xx and slow requests at info, the rest at debug, so the
  * default LOG_LEVEL=info shows what went wrong without one line per poll. The
- * scrape and probe endpoints are not logged at all (Prometheus, the Docker
- * HEALTHCHECK and the deploy gate hit them on a timer).
+ * scrape and probe endpoints (Prometheus, the Docker HEALTHCHECK and the deploy
+ * gate hit them on a timer) are logged only when they fail: a wedged refresh
+ * loop turns /api/health into a 503, and that must still leave a line.
  */
 import { createLogger } from './util/logger.js';
 
@@ -20,13 +23,16 @@ import { createLogger } from './util/logger.js';
 // le="0.3" bucket in metrics.js: a request that slow is worth an info line.
 export const SLOW_REQUEST_MS = 300;
 
-const SKIP_PATHS = new Set(['/metrics', '/api/health', '/api/readyz']);
+// Logged only when they answer 5xx.
+const PROBE_PATHS = new Set(['/metrics', '/api/health', '/api/readyz']);
 
-/** Full request path (mount prefix included), without the query string. */
+// Scheme + authority (userinfo included) of an absolute-form request target.
+const ABSOLUTE_FORM = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i;
+
+/** Full request path (mount prefix included), without query, fragment or authority. */
 function requestPath(req) {
-  const url = req.originalUrl || req.url || '';
-  const q = url.indexOf('?');
-  return q === -1 ? url : url.slice(0, q);
+  const url = (req.originalUrl || req.url || '').replace(ABSOLUTE_FORM, '');
+  return url.split(/[?#]/, 1)[0] || '/';
 }
 
 /** Log level for a finished request. */
@@ -45,7 +51,7 @@ export function createAccessLog({
     const start = process.hrtime.bigint();
     res.on('finish', () => {
       const path = requestPath(req);
-      if (SKIP_PATHS.has(path)) return;
+      if (PROBE_PATHS.has(path) && res.statusCode < 500) return;
       const ms = Math.round(Number(process.hrtime.bigint() - start) / 1e6);
       const fields = { method: req.method, path, status: res.statusCode, ms };
       logger[accessLogLevel(res.statusCode, ms, slowMs)](fields, 'request');
