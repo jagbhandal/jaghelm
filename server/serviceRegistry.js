@@ -7,15 +7,6 @@
  * (its panel), so an outage shows where the service normally lives. Source of
  * truth for up/down stays Kuma; this only answers "which panel".
  *
- * It also gives the monitor matcher a monitor's home node (#240): when equally
- * good matches run on several nodes (one container name on two hosts), the
- * monitor stays on the node it was matched on. A record carries `assigned:
- * true` once this version has written it. Records without it were left by the
- * earlier matcher, which matched a monitor to every lookalike and kept the last
- * node in its pass, an accident of node order that is no preference: they still
- * place an outage's card, but give no home node until the monitor is matched
- * again.
- *
  * Now a thin wrapper over the shared createPresenceStore core (persistence +
  * corruption-safe load + dirty-flag save), with a monitor-id record shape.
  */
@@ -31,7 +22,6 @@ function sanitizeServiceEntry(v) {
     // Optional: the container name this monitor was last matched to, so an
     // outage's synthesized down card can reuse the SAME uid the running card had.
     if (typeof v.lastSeenContainer === 'string') out.lastSeenContainer = v.lastSeenContainer;
-    if (v.assigned === true) out.assigned = true;
     return out;
   }
   return null;
@@ -47,22 +37,13 @@ export function createServiceRegistry({ path = DEFAULT_PATH, now = Date.now, wri
     // Keep any previously-remembered container if this call omits it (backward
     // compatible with 2-arg callers).
     const container = typeof containerName === 'string' ? containerName : prev?.lastSeenContainer;
-    // A changed NODE or CONTAINER is a meaningful write, and so is a record the
-    // earlier matcher left (once, to mark it) — a refreshed lastSeenAt for the
-    // same (node, container) never dirties the store (keeps disk churn off the
-    // hot loop).
-    if (!prev || prev.lastSeenNode !== nodeKey || prev.lastSeenContainer !== container || !prev.assigned) {
-      core.markDirty();
-    }
-    const record = { lastSeenNode: nodeKey, lastSeenAt: core.now(), assigned: true };
+    // A changed NODE or CONTAINER is a meaningful write — a refreshed lastSeenAt
+    // for the same (node, container) never dirties the store (keeps disk churn
+    // off the hot loop).
+    if (!prev || prev.lastSeenNode !== nodeKey || prev.lastSeenContainer !== container) core.markDirty();
+    const record = { lastSeenNode: nodeKey, lastSeenAt: core.now() };
     if (container != null) record.lastSeenContainer = container;
     core.set(key, record);
-  }
-
-  /** The node the monitor was last matched on by this matcher, or null (#240). */
-  function getHomeNode(monitorId) {
-    const e = core.get(monitorId);
-    return e && e.assigned ? e.lastSeenNode : null;
   }
 
   function getLastSeenNode(monitorId) {
@@ -75,7 +56,7 @@ export function createServiceRegistry({ path = DEFAULT_PATH, now = Date.now, wri
     return e && typeof e.lastSeenContainer === 'string' ? e.lastSeenContainer : null;
   }
 
-  return { recordSeen, getLastSeenNode, getLastSeenContainer, getHomeNode, save: core.save, snapshot: core.snapshot };
+  return { recordSeen, getLastSeenNode, getLastSeenContainer, save: core.save, snapshot: core.snapshot };
 }
 
 export const serviceRegistry = createServiceRegistry();

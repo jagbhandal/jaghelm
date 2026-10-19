@@ -187,9 +187,12 @@ export function generateDefaultConfig(discoveredNodes) {
   }
 
   // No hardcoded service defaults — let auto-matching handle naming.
-  // Users with multi-instance containers (same container name on multiple nodes)
-  // can configure per-node monitor mapping via the Settings UI, which writes
-  // `monitor_per_node:` blocks to services.yaml.
+  // A container name that runs on several nodes (a replica) can be mapped to a
+  // different Kuma monitor on each with a `monitor_per_node:` block in
+  // services.yaml, keyed by the node keys above, and `monitor: false` opts a
+  // container out of monitors (monitors.js mappingOf, #240). Both are written
+  // by hand: the Settings UI edits `monitor` only, and keeps the rest of an
+  // entry when it saves.
   cfg.services = {};
 
   return cfg;

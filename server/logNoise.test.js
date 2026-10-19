@@ -14,7 +14,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.LOG_LEVEL = 'debug';
-const { initMonitors, fetchMonitors, assignMonitors, logUnmatchedContainers } =
+const { initMonitors, fetchMonitors, assignMonitors, checkMonitorMappings, logUnmatchedContainers } =
   await import('./monitors.js');
 const {
   createCycleReporter,
@@ -258,19 +258,57 @@ test('assignMonitors: a container with no monitor logs nothing itself', async ()
 // #240: a mapping to a monitor Kuma lacks is one problem, so one warning,
 // however many refresh cycles it stays broken.
 test('assignMonitors: a mapping to a missing monitor warns once per mapping, not per cycle', async () => {
-  const mapped = { tailscale: 'Tailscale', 'gateway-npm': 'Nginx Proxy Manager', gitea: 'gitea' };
-  const cycle = (...names) =>
-    assignMonitors({ candidates: candidates(...names), monitors: MONITORS, explicitOf: (n) => mapped[n] ?? null });
+  const services = {
+    tailscale: { monitor: 'Tailscale' },
+    'gateway-npm': { monitor: 'Nginx Proxy Manager' },
+    gitea: { monitor: 'gitea' },
+  };
+  const cycle = (...names) => assignMonitors({ candidates: candidates(...names), monitors: MONITORS, services });
   const lines = await captureLogs(async () => {
     for (let i = 0; i < 3; i += 1) cycle('tailscale', 'gitea', 'grafana');
     cycle('tailscale', 'gateway-npm'); // a second broken mapping appears
     cycle('tailscale', 'gateway-npm');
+    // One plain mapping on two nodes is one mapping: no second warning.
+    assignMonitors({ candidates: [{ container: 'tailscale', nodeKey: 'pi2' }], monitors: MONITORS, services });
   });
   assert.deepEqual(
-    lines.map((l) => `${l.level} ${l.containerName} -> ${l.explicitMonitor}`),
-    ['warn tailscale -> Tailscale', 'warn gateway-npm -> Nginx Proxy Manager']
+    lines.map((l) => `${l.level} ${l.containerName} -> ${l.explicitMonitor} (${l.setting})`),
+    ['warn tailscale -> Tailscale (monitor)', 'warn gateway-npm -> Nginx Proxy Manager (monitor)']
   );
-  assert.match(lines[0].msg, /shows no monitor until the mapping is fixed/);
+  assert.match(lines[0].msg, /names no Kuma monitor, or a paused one/);
+  assert.match(lines[0].msg, /shows no monitor until/);
+});
+
+test('assignMonitors: a per-node mapping to a missing monitor warns once, naming its node', async () => {
+  const services = { 'gateway-npm': { monitor_per_node: { pi1: 'NPM Pi Primary', pi2: 'NPM Pi Second' } } };
+  const lines = await captureLogs(async () => {
+    for (let i = 0; i < 3; i += 1) {
+      assignMonitors({
+        candidates: [
+          { container: 'gateway-npm', nodeKey: 'pi1' },
+          { container: 'gateway-npm', nodeKey: 'pi2' },
+        ],
+        monitors: { 1: { id: 1, name: 'NPM Pi Primary', status: 'up' } },
+        services,
+      });
+    }
+  });
+  assert.deepEqual(
+    lines.map((l) => `${l.containerName} -> ${l.explicitMonitor} (${l.setting})`),
+    ['gateway-npm -> NPM Pi Second (monitor_per_node.pi2)']
+  );
+});
+
+test('assignMonitors: monitor: false is quiet', async () => {
+  const lines = await captureLogs(async () => {
+    const result = assignMonitors({
+      candidates: candidates('gateway-tunnel'),
+      monitors: MONITORS,
+      services: { 'gateway-tunnel': { monitor: false } },
+    });
+    assert.deepEqual(result, [null]);
+  });
+  assert.deepEqual(lines, []);
 });
 
 test('assignMonitors: no mapping warning while Kuma has given no monitors', async () => {
@@ -278,11 +316,42 @@ test('assignMonitors: no mapping warning while Kuma has given no monitors', asyn
     const result = assignMonitors({
       candidates: candidates('radarr'),
       monitors: {},
-      explicitOf: () => 'Radarr',
+      services: { radarr: { monitor: 'Radarr' } },
     });
     assert.deepEqual(result, [null]);
   });
   assert.deepEqual(lines, [], 'every mapping would look broken during a Kuma outage');
+});
+
+// A hand-edited services.yaml: the save route's schema never saw it.
+test('checkMonitorMappings: an unknown node key or a wrong type warns once each', async () => {
+  const services = {
+    'gateway-npm': { monitor_per_node: { pi1: 'NPM Pi Primary', pi3: 'NPM Pi Secondary' } },
+    vaultwarden: { monitor_per_node: { vm103: 'Vaultwarden' } },
+    dockge: { monitor: 7, monitor_per_node: 'vm101' },
+    gitea: { monitor: false, monitor_per_node: { vm103: ['Gitea'] } },
+    tailscale: null,
+  };
+  const lines = await captureLogs(async () => {
+    for (let i = 0; i < 3; i += 1) checkMonitorMappings(services, ['vm101', 'vm103', 'pi2', 'pi1']);
+  });
+  assert.deepEqual(
+    lines.map((l) => `${l.level} ${l.containerName} ${l.nodeKey ?? l.setting}`),
+    [
+      'warn gateway-npm pi3',
+      'warn dockge monitor',
+      'warn dockge monitor_per_node',
+      'warn gitea monitor_per_node.vm103',
+    ]
+  );
+  assert.match(lines[0].msg, /not under nodes:/);
+});
+
+test('checkMonitorMappings: with no node list, only the types are checked', async () => {
+  const lines = await captureLogs(async () => {
+    checkMonitorMappings({ haproxy: { monitor_per_node: { 'no-such-node': 'HAProxy' } } }, null);
+  });
+  assert.deepEqual(lines, []);
 });
 
 test('unmatched containers: the summary waits until monitors and containers have loaded', async () => {
