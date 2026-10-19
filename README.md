@@ -288,7 +288,7 @@ Push notifications are tied to the Firebase project an APK is built with. The pu
  
 ### Stack
  
-- **Frontend:** React 19, Vite 8 (Rolldown), HelmGrid (custom layout engine), @dnd-kit, react-colorful; for the redesign, Tailwind CSS v4, shadcn/ui on Base UI and Lucide icons in `src/ui/`, shared with the Android app
+- **Frontend:** React 19, Vite 8 (Rolldown), HelmGrid (custom layout engine), @dnd-kit, react-colorful; for the redesign, Tailwind CSS v4, shadcn/ui on Base UI and Lucide icons in `src/ui/`, shared with the Android app; self-hosted fonts (Manrope by default)
 - **Backend:** Express, undici, helmet, multer, js-yaml, dotenv
 - **Container:** Node 26 Alpine, runs as non-root, healthcheck via native fetch
 - **Encryption:** AES-256-GCM with PBKDF2 (100k iterations); scrypt for password hashing
@@ -342,4 +342,13 @@ The self-hosted dashboard space has a lot of good options — [Homepage](https:/
 ## License
  
 [MIT](LICENSE).
+
+The fonts JagHelm ships are not covered by the MIT licence: each is under the
+[SIL Open Font License 1.1](https://openfontlicense.org), and its licence text is
+in [`src/fonts/licences/`](src/fonts/licences/), which also covers the Android
+app's copies of Outfit, DM Sans and JetBrains Mono in
+[`mobile/src/fonts/`](mobile/src/fonts/). They are Manrope, Plus Jakarta Sans,
+Montserrat and JetBrains Mono for the redesign, and Outfit, DM Sans, Inter, Fira
+Code, Nunito, Source Code Pro, Rajdhani, Roboto and Roboto Mono for today's
+screens. All are served by JagHelm itself; nothing is fetched from Google Fonts.
  
