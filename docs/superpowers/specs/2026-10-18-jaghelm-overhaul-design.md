@@ -88,7 +88,7 @@ Three layers: a raw palette (OKLCH ramps), semantic roles (what components consu
 | `accent-tint` | accent at ~12–16 % | accent at ~8–10 % | selected row, hover on accent items |
 | `focus-ring` | `oklch(0.606 0.25 292.717)` (≈ #8b5cf6) | same | 2px ring + 2px offset, ≥ 3:1 against the surface |
 
-Purple means "interactive or selected", and it also tints section icon chips and fills meters below their threshold (signed off in the mock, 2026-10-19). It never appears in status or charts' threshold colours. Settings → Appearance offers four other accents, none in a status hue: Indigo, Blue, Fuchsia and Graphite.
+Purple means "interactive or selected", and it also tints section icon chips and fills meters below their threshold (signed off in the mock, 2026-10-19). It never appears in status or charts' threshold colours. Settings → Appearance offers two other accents, Fuchsia and Cyan, and no accent may read as a status colour (§15).
 
 **Surfaces and text.** Dark: graphite tinted toward the accent hue (background `oklch(0.155 0.006 286)`, `surface-1/2/3` at L 0.198 / 0.238 / 0.285, chroma ≤ 0.01), which keeps Arcane's dark-neutral feel without copying its pure greys; light: near-white with the same faint tint. The values are the mock's Tokens board. Borders `border-subtle` and `border-strong`. Text `text-1` (≥ 7:1), `text-2` (≥ 4.5:1), `text-3` (≥ 4.5:1, sparing), `text-disabled`.
 
@@ -190,7 +190,7 @@ Phones may run a sideloaded 1.2.x for months. `/api/status` sits beside the exis
 | Integrations | gallery, configure, test, live status per integration |
 | Apps & links | embedded apps (name, URL, icon, order, open in a new tab instead, an embedding check on add) and Quick Launch links; link target; the Launch page's search engine |
 | Notifications | push categories, thresholds, registered devices and "Send test push" (#268) |
-| Appearance | theme (dark / light / system), accent (violet by default, four others), typeface (three), text size, density, Overview sections (show/hide), branding, temperature unit |
+| Appearance | theme (dark / light / system), accent (violet by default, Fuchsia, Cyan; §15), typeface (three), text size, density, Overview sections (show/hide), branding, temperature unit |
 | System | auth and sessions, backup, about |
 
 The live preview goes (M10): changes apply to the real board.
@@ -299,7 +299,8 @@ Jag reviewed the clickable mock (private: https://claude.ai/artifact/Dv7EGVXZLe4
 | Embedded apps become a sidebar group, open under the header, stay loaded | Jag: the embedded tabs are one of the best things about JagHelm today; this spec had moved them into Launch and the first mock had none | §2, §7, §8 | #296, #269, #301, #362 |
 | Settings has seven sections, adding Apps & links | Today's Tabs and Links tabs need a home; the map of all 13 current tabs is in the mock | §7, §11 | #317, #362 |
 | Manrope is the typeface; Plus Jakarta Sans and Montserrat are options; one text-size setting | Chosen in the mock (Montserrat is Arcane's face, offered but not the default) | §5.3 | #244, #284, #321 |
-| Violet also tints section icon chips and below-threshold meters; four more accents are offered | As the mock shows; status hues stay reserved for status | §5.2 | #283, #321 |
+| Violet also tints section icon chips and below-threshold meters | As the mock shows; status hues stay reserved for status | §5.2 | #283, #321 |
+| Accents: Violet (default), Fuchsia, Cyan; Blue, Indigo and Graphite dropped because they read as status colours (Jag, 2026-10-19) | The mock offered five. Blue sat on maintenance's blue, Indigo nearly did in light, and Graphite's meter was the "no signal" grey. Cyan (hue 215) is new. An accent's colours stay at least ΔE OK 0.05 from every status colour in both themes, and a test enforces it | §5.2, §7 | #283, #321 |
 | Dark neutrals are graphite tinted toward hue 286 | JagHelm's own identity next to Arcane's pure greys; with flat 12px panels, the shaped lamps and the helm mark, it keeps JagHelm from reading as an Arcane clone | §5.2 | #283 |
 | Removed from Settings: the welcome message, background image and dot grid, the nine per-element font sizes, per-section titles, icons and colours | Proposed in the settings map; accepted with the sign-off; any can come back | §7 | #317, #321 |
 

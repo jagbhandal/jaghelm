@@ -3,7 +3,10 @@
  * base-nova), kept as the proof that the stack builds, tests and reaches the
  * Android app. It is not JagHelm's button: card #285 reshapes it to the spec's
  * variants (primary, secondary, ghost, danger at sm and md). Do not use it on a
- * screen before then.
+ * screen before then. Its colours come from JagHelm's tokens through shadcn's
+ * role names (#283); its one var() in a class reads the tokens directly. Its
+ * text-sm and text-xs compile to nothing: JagHelm's type scale (text-body-sm,
+ * text-caption...) replaced Tailwind's sizes, so it takes the root's 14px.
  */
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { cva } from 'class-variance-authority';
@@ -18,7 +21,7 @@ const buttonVariants = cva(
         outline:
           'border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50',
         secondary:
-          'bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',
+          'bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--jh-surface-2),var(--jh-text-1)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',
         ghost:
           'hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50',
         destructive:

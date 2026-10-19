@@ -21,8 +21,10 @@
  *    `@theme inline reference`): utilities carry their values, and Tailwind
  *    writes no variable to :root, where global.css already defines its own
  *    `--text-*`, `--font-mono`, `--accent`, `--border`, `--card` and `--muted`.
- *    So every variable a class reads with var() must be declared in the .jh-ui
- *    block below. scripts/ui-stack.test.mjs checks the compiled CSS for both.
+ *    So every variable a class reads with var() must be declared on .jh-ui, in
+ *    tokens.css. scripts/ui-stack.test.mjs checks the compiled CSS for both.
+ *  - The tokens (tokens.css, docs/design-system.md) are the signed-off mock's,
+ *    and scripts/ui-contrast.mjs checks their contrast in CI.
  *
  * The same layer order opens the legacy stylesheets, so it holds whichever file
  * a bundle loads first.
@@ -30,166 +32,226 @@
 @layer legacy, properties, theme, base, components, utilities;
 
 @import 'tailwindcss/theme.css' layer(theme) theme(inline reference);
+@import './tokens.css' layer(theme);
 @import './preflight.css' layer(base);
 @import 'tailwindcss/utilities.css' layer(utilities) source(none);
 
 @source './';
 @source not './**/*.test.{js,jsx}';
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * The dark variant follows the token switch: dark is the default, so `dark:`
+ * applies inside any .jh-ui root without data-theme="light". Don't nest roots
+ * of different themes.
+ */
+@custom-variant dark (&:where(.jh-ui:not([data-theme='light']), .jh-ui:not([data-theme='light']) *));
 
 /*
- * shadcn/ui's semantic colour and radius roles, mapped to the tokens below.
- * Inline, so `bg-primary` reads var(--primary) where it is used; reference, so
- * none of these is written to :root.
+ * JagHelm's tokens (tokens.css) as Tailwind's theme. Inline, so `bg-surface-1`
+ * reads var(--jh-surface-1) where it is used; reference, so none of these is
+ * written to :root. docs/design-system.md lists every name.
+ *
+ * Tailwind's default colours, type sizes, font families, radii, shadows, text
+ * shadows and blurs are cleared, so a class can only reach JagHelm's values:
+ * `bg-red-500`, `text-sm`, `font-serif`, `shadow-md`, `text-shadow-sm` and
+ * `backdrop-blur` produce nothing. Gradient text (`bg-clip-text`) can't be
+ * cleared here; scripts/ui-tokens.test.mjs fails the build that uses it.
  */
 @theme inline reference {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+  --color-*: initial;
+  --text-*: initial;
+  --font-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --text-shadow-*: initial;
+  --blur-*: initial;
+
+  /* Surfaces and borders. The page background is `bg-background`. */
+  --color-background: var(--jh-bg);
+  --color-sidebar: var(--jh-sidebar);
+  --color-surface-1: var(--jh-surface-1);
+  --color-surface-2: var(--jh-surface-2);
+  --color-surface-3: var(--jh-surface-3);
+  --color-border-subtle: var(--jh-border-subtle);
+  --color-border-strong: var(--jh-border-strong);
+
+  /* Text: text-text-1 (headings, values), -2 (secondary), -3 (sparing). */
+  --color-text-1: var(--jh-text-1);
+  --color-text-2: var(--jh-text-2);
+  --color-text-3: var(--jh-text-3);
+  --color-text-disabled: var(--jh-text-disabled);
+
+  /* Accent: interactive or selected, never status. */
+  --color-accent: var(--jh-accent);
+  --color-accent-hover: var(--jh-accent-hover);
+  --color-on-accent: var(--jh-on-accent);
+  --color-accent-text: var(--jh-accent-text);
+  --color-accent-tint: var(--jh-accent-tint);
+  --color-accent-border: var(--jh-accent-border);
+  --color-focus-ring: var(--jh-focus-ring);
+  --color-row-hover: var(--jh-row-hover);
+
+  /* Status: text-crit-fg, bg-crit-tint, border-crit-border, bg-crit-solid,
+     text-crit-on-solid, and the same for ok, warn, unknown, maintenance, info. */
+  --color-ok-fg: var(--jh-ok-fg);
+  --color-ok-tint: var(--jh-ok-tint);
+  --color-ok-border: var(--jh-ok-border);
+  --color-ok-solid: var(--jh-ok-solid);
+  --color-ok-on-solid: var(--jh-ok-on-solid);
+  --color-warn-fg: var(--jh-warn-fg);
+  --color-warn-tint: var(--jh-warn-tint);
+  --color-warn-border: var(--jh-warn-border);
+  --color-warn-solid: var(--jh-warn-solid);
+  --color-warn-on-solid: var(--jh-warn-on-solid);
+  --color-crit-fg: var(--jh-crit-fg);
+  --color-crit-tint: var(--jh-crit-tint);
+  --color-crit-border: var(--jh-crit-border);
+  --color-crit-solid: var(--jh-crit-solid);
+  --color-crit-on-solid: var(--jh-crit-on-solid);
+  --color-unknown-fg: var(--jh-unknown-fg);
+  --color-unknown-tint: var(--jh-unknown-tint);
+  --color-unknown-border: var(--jh-unknown-border);
+  --color-unknown-solid: var(--jh-unknown-solid);
+  --color-unknown-on-solid: var(--jh-unknown-on-solid);
+  --color-maintenance-fg: var(--jh-maintenance-fg);
+  --color-maintenance-tint: var(--jh-maintenance-tint);
+  --color-maintenance-border: var(--jh-maintenance-border);
+  --color-maintenance-solid: var(--jh-maintenance-solid);
+  --color-maintenance-on-solid: var(--jh-maintenance-on-solid);
+  --color-info-fg: var(--jh-info-fg);
+  --color-info-tint: var(--jh-info-tint);
+  --color-info-border: var(--jh-info-border);
+  --color-info-solid: var(--jh-info-solid);
+  --color-info-on-solid: var(--jh-info-on-solid);
+
+  /* Component tokens. */
+  --color-meter: var(--jh-meter);
+  --color-track: var(--jh-track);
+  --color-tick: var(--jh-tick);
+  --color-beat-ok: var(--jh-beat-ok);
+  --color-lamp-cut: var(--jh-lamp-cut);
+  --color-scrim: var(--jh-scrim);
+
+  /*
+   * shadcn/ui's role names, so a generated component compiles in JagHelm's
+   * colours. Shape it with the names above when it is adopted. shadcn's own
+   * `accent` (a hover surface) is not offered: here `accent` is the violet, and
+   * `accent-foreground` compiles to nothing. A stock menu's
+   * `focus:bg-accent focus:text-accent-foreground` would paint a solid violet
+   * item with text-1 on it (3.05:1 in light), so scripts/ui-tokens.test.mjs
+   * fails on any `accent-foreground` in src/ui/.
+   */
+  --color-foreground: var(--jh-text-1);
+  --color-card: var(--jh-surface-1);
+  --color-card-foreground: var(--jh-text-1);
+  --color-popover: var(--jh-surface-2);
+  --color-popover-foreground: var(--jh-text-1);
+  --color-primary: var(--jh-accent);
+  --color-primary-foreground: var(--jh-on-accent);
+  --color-secondary: var(--jh-surface-2);
+  --color-secondary-foreground: var(--jh-text-1);
+  --color-muted: var(--jh-surface-2);
+  --color-muted-foreground: var(--jh-text-2);
+  --color-destructive: var(--jh-crit-fg);
+  --color-border: var(--jh-border-subtle);
+  --color-input: var(--jh-border-strong);
+  --color-ring: var(--jh-focus-ring);
+
+  /* Type scale (§5.3, and the mock's headline). Families: #284. */
+  --font-sans: var(--jh-font-sans);
+  --font-mono: var(--jh-font-mono);
+  --text-overline: 11px;
+  --text-overline--line-height: 16px;
+  --text-overline--font-weight: 700;
+  --text-overline--letter-spacing: 0.07em;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 18px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-title-sm: 16px;
+  --text-title-sm--line-height: 22px;
+  --text-title-sm--font-weight: 700;
+  --text-title: 20px;
+  --text-title--line-height: 26px;
+  --text-title--font-weight: 700;
+  --text-headline: 24px;
+  --text-headline--line-height: 30px;
+  --text-headline--font-weight: 700;
+  --text-headline--letter-spacing: -0.015em;
+  --text-display: 28px;
+  --text-display--line-height: 32px;
+  --text-display--font-weight: 800;
+  --text-display--letter-spacing: -0.02em;
+  --text-metric: 24px;
+  --text-metric--line-height: 28px;
+  --text-metric--font-weight: 700;
+  --text-metric-lg: 32px;
+  --text-metric-lg--line-height: 36px;
+  --text-metric-lg--font-weight: 700;
+
+  /* Radius: one token, mapped (tokens.css). rounded-full for pills and lamps. */
+  --radius-xs: calc(var(--radius) - 6px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Elevation: panels are flat; only popovers, dialogs and drawers cast a shadow. */
+  --shadow-control: var(--jh-shadow-control);
+  --shadow-pop: var(--jh-shadow-pop);
+
+  /* Density and gutter: h-row, p-panel, px-gutter. */
+  --spacing-row: var(--jh-row-h);
+  --spacing-panel: var(--jh-pad);
+  --spacing-gutter: var(--jh-gutter);
+
+  --z-index-sticky: 20;
+  --z-index-header: 40;
+  --z-index-overlay: 50;
+  --z-index-dialog: 60;
+  --z-index-toast: 80;
+
+  --default-transition-duration: var(--jh-duration);
+  --default-transition-timing-function: var(--jh-ease);
+  --transition-duration-standard: var(--jh-duration);
+  --ease-standard: var(--jh-ease);
 }
 
 /*
- * PLACEHOLDER TOKENS: shadcn/ui's stock neutral palette, as `shadcn init` writes
- * it. This is not JagHelm's look, and nothing on screen uses it: no element
- * carries .jh-ui yet. Card #283 replaces these values with the signed-off
- * mock's tokens (spec §5.2).
- *
- * They are scoped to .jh-ui, not :root, because global.css and MobileApp.css
- * already define --accent, --border, --card and --muted for today's screens.
+ * Base rules, scoped like preflight: the root's page colours and body text, a
+ * full-strength focus ring (2px, offset 2px: §5.2 checks it at 3:1 against the
+ * surface), and no motion for those who ask for none.
  */
-@layer theme {
-  .jh-ui {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
-
-    /*
-     * The radius scale again, as variables. `rounded-md` carries its value from
-     * the @theme block above, but a class that reads the variable itself, as
-     * the Button's rounded-[min(var(--radius-md),10px)] does, needs it declared
-     * here: the theme is reference-only, so Tailwind declares nothing. Keep the
-     * two lists the same; scripts/ui-stack.test.mjs checks both.
-     */
-    --radius-sm: calc(var(--radius) * 0.6);
-    --radius-md: calc(var(--radius) * 0.8);
-    --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
-  }
-
-  .dark .jh-ui,
-  .jh-ui.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
-  }
-}
-
-/* shadcn/ui's base rules, scoped like preflight. */
 @layer base {
   @scope (.jh-ui) {
     :scope,
     * {
-      @apply border-border outline-ring/50;
+      @apply border-border outline-focus-ring;
     }
 
     :scope {
-      @apply bg-background text-foreground;
+      @apply bg-background font-sans text-body text-text-1;
+    }
+
+    :focus-visible {
+      outline-style: solid;
+      outline-width: 2px;
+      outline-offset: 2px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      ::before,
+      ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
     }
   }
 }
