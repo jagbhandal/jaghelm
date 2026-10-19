@@ -96,9 +96,6 @@ which changes independently — expect occasional drift.
   may need additional auth or an endpoint that varies by version.
 - **PhotoPrism** preset auth was corrected recently; if metrics don't appear,
   re-save the integration in Settings to pick up the fix.
-- **Two instances of the same preset** (e.g. a primary and secondary AdGuard)
-  can collide in the response cache under some builds and serve each other's
-  data. Fixing the cache key is tracked in `docs/IMPROVEMENT-PLAN.md`.
 - **Custom integrations** point at a JSON endpoint and extract paths you choose.
   If the upstream JSON shape changes, the card will show blanks until you update
   the extraction paths.

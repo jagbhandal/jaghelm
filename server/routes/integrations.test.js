@@ -96,11 +96,16 @@ test('DELETE /:type → 404 on an unknown integration (no false success)', async
 // `raw`, and had no web or Android caller. The dashboard reads GET / instead.
 test('GET /:type → 404 without an upstream request, configured or not', async (t) => {
   const app = makeApp();
-  const saved = await request(app)
-    .post('/api/integrations/save')
-    .send({ type: 'custom', instance: 'rawcheck', url: 'http://example.test' });
-  assert.equal(saved.status, 200);
-  t.after(() => request(app).delete('/api/integrations/custom_rawcheck'));
+  // A custom integration with no endpoint, and a preset that is fully set up:
+  // the old route answered vaultwarden with a 200 after one upstream request.
+  for (const body of [
+    { type: 'custom', instance: 'rawcheck', url: 'http://example.test' },
+    { type: 'vaultwarden', url: 'http://vault.example.test' },
+  ]) {
+    const saved = await request(app).post('/api/integrations/save').send(body);
+    assert.equal(saved.status, 200);
+    t.after(() => request(app).delete(`/api/integrations/${saved.body.type}`));
+  }
 
   const realFetch = globalThis.fetch;
   let upstreamCalls = 0;
@@ -110,9 +115,9 @@ test('GET /:type → 404 without an upstream request, configured or not', async 
   };
   t.after(() => { globalThis.fetch = realFetch; });
 
-  // A configured integration, and a preset nobody configured (the old route
-  // fetched those too, from their .env credentials).
-  for (const type of ['custom_rawcheck', 'proxmox']) {
+  // The configured ones, and a preset nobody configured (the old route fetched
+  // those too, from their .env credentials).
+  for (const type of ['custom_rawcheck', 'vaultwarden', 'proxmox']) {
     const r = await request(app).get(`/api/integrations/${type}`);
     assert.equal(r.status, 404, `GET /api/integrations/${type}`);
   }

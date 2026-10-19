@@ -1,15 +1,18 @@
 /**
- * #254: a poll keeps what the preset computes from the upstream response, never
+ * #254: a poll returns what the preset computes from the upstream response, never
  * the response itself. fetchIntegration used to return and cache
  * { fields, ...structured, raw: <the whole upstream body>, error }; the only
- * reader of `raw` was GET /api/integrations/:type, which had no caller and is gone.
+ * reader of `raw` was GET /api/integrations/:type, which had no caller and is
+ * gone, and the only reader of the cache was that route, so the cache is gone too.
  *
  * Every preset in the gallery is polled once against a stubbed fetch that answers
- * with a body shaped for it, then read back from the integration cache. Both
- * copies must equal what the preset's fields and structuredTransform compute from
- * that body, with nothing of the body beyond it. Presets that compute in
- * structuredTransform get a hand-made body below; any other preset gets one built
- * from its field paths, so a preset added later is covered without editing this.
+ * with a body shaped for it. The result must equal what the preset's fields and
+ * structuredTransform compute from that body, with nothing of the body beyond it:
+ * every object in the body carries a marker, so a result that keeps any part of
+ * it (not only the whole body) fails. Presets that compute in structuredTransform
+ * get a hand-made body below, and a new one fails until it has one; any other
+ * preset gets a body built from its field paths, so it is covered without editing
+ * this file.
  */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -109,11 +112,19 @@ function bodyFromFields(preset) {
   return body;
 }
 
-/** The upstream body for one request, carrying MARK. */
+/** Put MARK on every object in a body, nested ones included. */
+const mark = (n) => {
+  if (Array.isArray(n)) n.forEach(mark);
+  else if (n && typeof n === 'object') {
+    Object.values(n).forEach(mark);
+    n.note = MARK;
+  }
+};
+
+/** The upstream body for one request, every object in it carrying MARK. */
 function upstream(preset, url) {
   const body = STRUCTURED[preset.type] ? STRUCTURED[preset.type](url) : bodyFromFields(preset);
-  if (Array.isArray(body)) for (const item of body) item.note = MARK;
-  else body.note = MARK;
+  mark(body);
   return body;
 }
 
@@ -142,29 +153,41 @@ async function withFetch(fake, fn) {
   }
 }
 
-test('every gallery preset is polled', () => {
+test('every gallery preset is polled, each structured one with a body made for it', () => {
   assert.ok(presets.length >= 30, `only ${presets.length} presets loaded`);
   for (const t of Object.keys(STRUCTURED)) assert.ok(presets.some((p) => p.type === t), `${t} not in the gallery`);
+  // A body built from field paths is empty for a preset that computes in
+  // structuredTransform, so its test would pass without exercising anything.
+  for (const p of presets) {
+    if (p.structuredTransform) assert.ok(STRUCTURED[p.type], `${p.type} has a structuredTransform: add a body to STRUCTURED`);
+  }
+});
+
+test('each poll fetches: a second poll of a down upstream reports the error, not the first result', async () => {
+  const cfg = {
+    url: 'http://svc.example.test', endpoint: '/status', auth: 'none',
+    fields: [{ key: 'up', label: 'Up', path: 'up' }], _storageKey: `custom_${hex()}`,
+  };
+  const first = await withFetch(async () => json({ up: 'yes' }), () => fetchIntegration('custom', cfg));
+  assert.deepEqual(first, { fields: { Up: 'yes' }, error: null });
+  const second = await withFetch(async () => { throw new Error('upstream down'); }, () => fetchIntegration('custom', cfg));
+  assert.match(second.error || '', /upstream down/);
+  assert.deepEqual(second.fields, {});
 });
 
 for (const preset of presets) {
-  test(`${preset.type}: the poll and its cached copy hold the computed result, not the upstream body`, async () => {
+  test(`${preset.type}: the poll returns the computed result, not the upstream body`, async () => {
     const cfg = { url: 'http://svc.example.test', username: 'u', password: 'p', token: 't', _storageKey: `${preset.type}_${hex()}` };
     const polled = await withFetch(async (url, init = {}) =>
       // A session preset logs in first; answer with a token where it looks.
       json(init.method === 'POST' ? setPath({}, preset.session.tokenPath, 'session-token') : upstream(preset, String(url))),
-    () => fetchIntegration(preset.type, cfg, true));
-
-    // Read it back: an upstream that is now down proves this one is the cached copy.
-    const cached = await withFetch(async () => { throw new Error('upstream down'); },
-      () => fetchIntegration(preset.type, cfg, false));
+    () => fetchIntegration(preset.type, cfg));
 
     const want = expected(preset);
     assert.equal(polled.error, null, `poll failed: ${polled.error}`);
     assert.deepEqual(polled, want, 'the poll returns exactly what the preset computes');
-    assert.deepEqual(cached, want, 'the cache holds exactly what the preset computes');
-    assert.ok(!('raw' in polled) && !('raw' in cached), 'no raw payload');
-    assert.ok(!JSON.stringify(cached).includes(MARK), 'nothing of the upstream body beyond the computed values');
+    assert.ok(!('raw' in polled), 'no raw payload');
+    assert.ok(!JSON.stringify(polled).includes(MARK), 'nothing of the upstream body beyond the computed values');
     // The fixture reached the preset's computation: some field is not a placeholder.
     assert.ok(Object.values(want.fields).some((v) => v !== '—' && v !== '0%'),
       `fixture produced only placeholders: ${JSON.stringify(want.fields)}`);

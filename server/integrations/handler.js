@@ -1,19 +1,17 @@
 /**
  * JagHelm Integration Handler — all integrations, preset and custom, flow
  * through this single handler. Pipeline: resolve config → auth → fetch →
- * transform → cache. Owns the two orchestrators fetchIntegration + testIntegration.
- * Only the transformed result is returned and cached; the upstream response is
- * dropped once the fields and structuredTransform have read it (#254).
+ * transform. Owns the two orchestrators fetchIntegration + testIntegration.
+ * Only the transformed result is returned; the upstream response is dropped
+ * once the fields and structuredTransform have read it (#254).
  *
- * lib/ map: cache.js (response cache+TTL), http.js (safeFetch), extract.js (JSON
- * path DSL + URL templating), format.js (formatValue+computeField), auth.js
- * (buildAuthHeaders), session.js (session token cache+login), config.js (cred
- * resolution + config merging).
+ * lib/ map: http.js (safeFetch), extract.js (JSON path DSL + URL templating),
+ * format.js (formatValue+computeField), auth.js (buildAuthHeaders), session.js
+ * (session token cache+login), config.js (cred resolution + config merging).
  */
 
 import { getPresetFull } from './registry.js';
 
-import { getCached, setCache } from './lib/cache.js';
 import { safeFetch } from './lib/http.js';
 import { extractValue, resolveEndpoint } from './lib/extract.js';
 import { formatValue, computeField } from './lib/format.js';
@@ -51,17 +49,7 @@ export { resolveIntegrationConfig };
 export { assertSafeUrl };
 
 // ── Main fetch function for any integration ──
-export async function fetchIntegration(type, yamlConfig, bustCache = false) {
-  // Key by the unique storage key, not the preset type — otherwise two
-  // instances of one preset (adguard_primary / adguard_secondary) share a key
-  // and serve each other's data. refresh.js threads _storageKey through.
-  const cacheKey = `integration:${yamlConfig?._storageKey || type}`;
-
-  if (!bustCache) {
-    const cached = getCached(cacheKey);
-    if (cached) return cached;
-  }
-
+export async function fetchIntegration(type, yamlConfig) {
   const config = resolveIntegrationConfig(type, yamlConfig);
   if (!config || !config.url || !config.endpoint) {
     return { error: 'Integration not configured', fields: {} };
@@ -148,11 +136,7 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       extra = config.structuredTransform(rawData);
     }
 
-    // No `raw: rawData`: nothing reads the upstream body after this, and keeping
-    // it held a copy of every integration's response in the cache (#254).
-    const result = { fields, ...extra, error: null };
-    setCache(cacheKey, result);
-    return result;
+    return { fields, ...extra, error: null };
 
   } catch (err) {
     // Redact before logging AND returning: query-auth presets put the API key
