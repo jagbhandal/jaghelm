@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { runPushCycle } from './dispatch.js';
+import { createTokenStore } from './tokenStore.js';
 
 const silentLog = { info() {}, warn() {}, error() {}, debug() {} };
 
@@ -40,6 +41,7 @@ function oneTokenStore() {
     }),
     removeToken: () => true,
     pruneStale: () => 0,
+    markDelivered: () => 0,
   };
 }
 
@@ -154,6 +156,31 @@ test('runPushCycle RETENTION: pruneStale called on every cycle, even when push i
       logger: silentLog,
     });
     assert.equal(pruneCallCount, 1, 'pruneStale must be called once per cycle regardless of push-enabled state');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runPushCycle #247: a phone not opened for 31 days still gets the alert, and the send keeps it alive', async () => {
+  const { dir, path } = tmpSnapshotPath();
+  writeFileSync(path, JSON.stringify(SNAP_UP)); // prev = service up
+  const DAY = 24 * 60 * 60 * 1000;
+  let clock = 1_000_000;
+  const store = createTokenStore({ path: join(dir, 'push-tokens.json'), now: () => clock });
+  store.registerToken('phone', { platform: 'android', appVersion: '1.0.0' }); // last app launch
+  clock += 31 * DAY; // never opened since
+  const fcm = enabledFcm();
+  try {
+    await runPushCycle({
+      buildSnapshotFn: () => SNAP_DOWN,
+      store,
+      fcm,
+      snapshotPath: path,
+      thresholds: THRESHOLDS,
+      logger: silentLog,
+    });
+    assert.deepEqual(fcm.calls, [{ token: 'phone', type: 'service_down' }], 'the alert reached the phone');
+    assert.equal(store.getToken('phone').lastSeenAt, clock, 'the accepted send bumped lastSeenAt');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

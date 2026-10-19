@@ -169,19 +169,32 @@ export function buildMessage(token, event) {
   };
 }
 
-// FCM error codes that mean the token is permanently dead and should be
-// pruned from the store. Everything else (network/quota/internal) is transient.
-const PRUNE_CODES = new Set([
-  'messaging/registration-token-not-registered',
-  'messaging/invalid-argument',
+// FCM error codes that always mean the token is permanently dead.
+const DEAD_TOKEN_CODES = new Set([
+  'messaging/registration-token-not-registered', // v1 UNREGISTERED / NOT_FOUND
+  'messaging/invalid-registration-token', // legacy InvalidRegistration
 ]);
+const INVALID_ARGUMENT = 'messaging/invalid-argument';
+
+/**
+ * Whether a send error means the token is dead and should be pruned. v1 answers a
+ * malformed token with INVALID_ARGUMENT, the same code as a bad payload (too big, bad
+ * data, bad TTL), and firebase-admin maps any non-JSON 400 to it too: so an
+ * invalid-argument prunes only when FCM's message names the registration token.
+ * Everything else (payload, network, quota, internal) keeps the token.
+ */
+function isDeadToken(err) {
+  const code = err && err.code;
+  if (DEAD_TOKEN_CODES.has(code)) return true;
+  return code === INVALID_ARGUMENT && /registration token/i.test(String(err.message ?? ''));
+}
 
 /**
  * Send one event to one token. NEVER throws — classifies the outcome:
- *  - resolve              => { ok: true,  prune: false }
- *  - reject + prune code  => { ok: false, prune: true, error }
- *  - reject (transient)   => { ok: false, prune: false, error }
- *  - push disabled        => { ok: false, prune: false }
+ *  - resolve                 => { ok: true,  prune: false }
+ *  - reject, token dead      => { ok: false, prune: true, error }
+ *  - reject (anything else)  => { ok: false, prune: false, error }
+ *  - push disabled           => { ok: false, prune: false }
  * @param {string} token
  * @param {object} event
  * @returns {Promise<{ok:boolean, prune:boolean, error?:string}>}
@@ -192,11 +205,12 @@ export async function sendToToken(token, event) {
     await messaging.send(buildMessage(token, event));
     return { ok: true, prune: false };
   } catch (err) {
-    const prune = PRUNE_CODES.has(err && err.code);
-    log.warn(
-      { token: String(token).slice(0, 12), code: err && err.code, prune },
-      'fcm send failed',
-    );
-    return { ok: false, prune, error: err && err.code };
+    const code = err && err.code;
+    const prune = isDeadToken(err);
+    const fields = { token: String(token).slice(0, 12), code, prune };
+    // A kept invalid-argument is a payload problem: log FCM's reason, truncated.
+    if (code === INVALID_ARGUMENT && !prune) fields.message = String(err.message ?? '').slice(0, 200);
+    log.warn(fields, 'fcm send failed');
+    return { ok: false, prune, error: code };
   }
 }
