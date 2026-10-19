@@ -310,6 +310,28 @@ docker compose up -d
 
 Then set up monitors in Uptime Kuma for each service you want to track. JagHelm auto-matches Kuma monitors to containers by name — if your container is called `gitea` and your Kuma monitor is called "Gitea", they'll match automatically. Each monitor goes to one container, the best match: "Gitea" goes to `gitea`, not to `gitea-runner` as well.
 
+When a name doesn't match, or the same container runs on two machines, map the monitor yourself under `services:` in `data/services.yaml`, keyed by container name:
+
+```yaml
+services:
+  immich-server:
+    monitor: Immich              # this monitor, on every machine the container runs on
+  gateway-npm:
+    monitor_per_node:            # a different monitor on each machine
+      pi1: NPM Pi Primary        # keys are the node keys under `nodes:`
+      pi2: NPM Pi Secondary
+  vaultwarden:
+    monitor_per_node:
+      vm103: Vaultwarden         # only vm103's copy gets the monitor; the replica gets none
+  gateway-tunnel:
+    monitor: false               # no monitor, and no matching by name
+```
+
+- `monitor` is the monitor's name as Uptime Kuma shows it (any case). Settings > Services sets it from a dropdown.
+- `monitor_per_node` maps a node key to a monitor name, and wins over `monitor` on that node. A node with no entry there uses `monitor`, or matching by name when `monitor` isn't set either. Edit it in the file; Settings keeps it when it saves.
+- `false` (in either) means no monitor at all: the card shows its Docker status, and no monitor is matched to it by name.
+- A monitor named in any mapping goes only to the containers mapped to it, even while they're stopped, so a container with a similar name never takes it.
+
 Make sure `KUMA_URL` in your JagHelm `.env` file points to your Uptime Kuma instance, then restart JagHelm:
 
 ```bash
@@ -444,7 +466,7 @@ If this works but JagHelm doesn't show stats, verify cAdvisor has the same `node
 
 JagHelm matches Kuma monitors to containers by name, ignoring case and punctuation: the same name first, then a monitor named after a hostname whose first part is the container name (`grafana.example.com`), then one name containing the other, then a shared word of 4 letters or more. Each monitor goes to one container, the best match; when the same container runs on two machines, or a stack's containers all contain the monitor's name (`immich-server`, `immich-redis`, …), only one of them gets it. If your container is named `gateway-npm` and your Kuma monitor is named "NPM Proxy", they won't auto-match.
 
-**Fix:** Go to Settings > Services, find the container, and select the correct Kuma monitor from the dropdown. The mapping is by container name, so it applies on every machine that container runs on, and a monitor you map goes only to the containers mapped to it. If the mapped monitor is renamed or deleted in Kuma, the container shows no monitor and JagHelm's log warns about the mapping once; pick the monitor again.
+**Fix:** Go to Settings > Services, find the container, and select the correct Kuma monitor from the dropdown. That sets `monitor:`, which applies on every machine the container runs on; for a different monitor on each machine, use `monitor_per_node:` in `services.yaml`, and to keep a container off monitors altogether, `monitor: false` (see [Step 5](#6-step-5-add-uptime-kuma-optional)). A monitor you map goes only to the containers mapped to it. If the mapped monitor is renamed, deleted or paused in Kuma, the container shows no monitor and JagHelm's log warns about the mapping once; pick the monitor again, or resume it.
 
 ### Embedded tab shows "Embedding Blocked"
 

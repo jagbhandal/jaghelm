@@ -76,8 +76,9 @@ server/                     Express API (Node 26, ESM)
   cache.js                  bounded in-memory cache (evicts least recently written, ETags)
   discovery.js              Prometheus/cAdvisor -> nodes + services, one query per reading
                             across all nodes (see 4.2) (ignores containers labelled as Arcane
-                            internal helpers, so short-lived helpers never become cards or
-                            presence breadcrumbs)
+                            internal helpers, and CI job containers named GITEA-ACTIONS-TASK-…,
+                            so short-lived helpers and jobs never become cards or presence
+                            breadcrumbs, or take a monitor)
   monitors.js               Uptime Kuma: loads the monitors and assigns them to containers,
                             one container per monitor unless mapped (see 4.2)
   icons.js                  icon picker search index: names only, persisted in the data dir,
@@ -270,20 +271,49 @@ paints one card red and sends one push, unless `services.yaml` maps it to
 several containers. Each cycle `assembleServices` (`refresh.js`) hands
 `assignMonitors` (`monitors.js`) every shown, running container (the same name
 on two nodes is two containers), plus the containers that stopped in the last
-24 hours (the container registry's missing ones), and the monitors are assigned
-to them all at once:
+24 hours (the container registry's missing ones, kept for
+`JAGHELM_PRESENCE_TTL_MS`, 24 hours by default), and the monitors are assigned
+to them all at once. CI job containers take no part: discovery drops them, and
+records of them the container registry already holds are skipped too.
 
-1. **Explicit mapping.** A container whose `services.yaml` entry has
-   `monitor: <name>` gets the monitor of that name (compared case-insensitively;
-   with two of one name, the lower id), however unlike the names are. The
-   mapping is keyed by container name, so it applies on every node the
-   container runs on. A monitor mapped explicitly goes only to the containers
-   mapped to it. When the mapping names a monitor Kuma does not have, the
-   container gets no monitor and is left out of name matching, so it takes
-   nothing another container would have had. (It used to fall back to a name
-   match: on 2026-10-19 the four gateway containers on the Pis, mapped to
-   monitors Kuma lacks, all took "Pi Gateway (Ping)" that way.) It warns once
-   per mapping per boot, and not while Kuma has given no monitors at all.
+1. **Explicit mapping.** A container's entry under `services:` in
+   `services.yaml` can name its monitor, as a Kuma monitor's name (compared
+   case-insensitively; with two of one name, the lower id), however unlike the
+   names are:
+
+   ```yaml
+   services:
+     immich-server:
+       monitor: Immich              # on every node the container runs on
+     gateway-npm:
+       monitor_per_node:            # keyed by the node keys under `nodes:`
+         pi1: NPM Pi Primary
+         pi2: NPM Pi Secondary
+     vaultwarden:
+       monitor_per_node:
+         vm103: Vaultwarden         # the pi2 replica gets no monitor
+     gateway-tunnel:
+       monitor: false               # no monitor, and no name matching
+   ```
+
+   `monitor_per_node[<node>]` comes first, then `monitor`; a node with no entry
+   in `monitor_per_node` falls back to `monitor`, and to name matching when
+   there is none. `false`, in either place, gives the container no monitor and
+   keeps it out of name matching and out of the "no matching monitor" log line;
+   `null` or an empty name is no mapping. Every monitor named anywhere in these
+   mappings goes only to the containers mapped to it, whether or not they are
+   on the board this cycle: while they are all absent, nobody has it, and an
+   outage is drawn on its last-seen node. When a mapping names a monitor Kuma
+   does not have, or a paused one (the `/metrics` source leaves paused monitors
+   out), the container gets no monitor and is left out of name matching, so it
+   takes nothing another container would have had. (It used to fall back to a
+   name match: on 2026-10-19 the four gateway containers on the Pis, mapped to
+   monitors Kuma lacks, all took "Pi Gateway (Ping)" that way.) That warns once
+   per mapping per boot, and not while Kuma has given no monitors at all; a
+   `monitor_per_node` key that is no node, or a value that is neither a name nor
+   `false`, warns once too. `POST /api/services/config` refuses a mapping of
+   the wrong type (`util/configSchema.js`). The Settings UI edits `monitor`
+   only, and keeps `monitor_per_node` when it saves.
 2. **By name, one container per monitor.** Every pair of a container and a
    monitor whose names match is ranked, and pairs are taken best first, each
    only while its container and its monitor are both free. Names compare
@@ -295,28 +325,38 @@ to them all at once:
    shared words of 3 or more). Between equally good matches: a container that
    is not a stack's helper (its own words include none of `redis`, `db`,
    `postgres`, `cron`, `runner`, `proxy` and the like, so "Immich" goes to
-   `immich-server`); then the monitor's home node; then the board's node order;
-   then the container name; then the monitor id. That is a total order, so the
-   result does not depend on the order discovery or Kuma listed things in.
+   `immich-server`); then the board's node order; then the container name;
+   then the monitor id. That is a total order, so the result does not depend on
+   the order discovery or Kuma listed things in.
 
-The home node is the node the matcher last gave the monitor to (the service
-registry's `getHomeNode`), so a monitor stays put when another container of its
-name starts on an earlier node. It only breaks ties: ranked above the kind of
-match, a lookalike left on a monitor's node (gitea-runner) would keep the
-monitor after the service moved to another node. Registry records written
-before #240 carry no `assigned` marker and give no home: the old matcher kept
-the last node of its pass for a monitor it matched on several nodes
-(Vaultwarden on pi2, not vm103, on 2026-10-19). Each is marked the first time
-its monitor is matched again.
+   A monitor goes only to a container with the best kind of match any container
+   has with it. When that container holds a better monitor, the monitor is left
+   unassigned rather than taken by a weaker lookalike: with monitors "Gitea" and
+   "Gitea SSH", `gitea` takes "Gitea", and "Gitea SSH" goes to nobody, not to
+   `gitea-runner` by the shared word.
 
-A stopped container competes for its monitor as it did while running. A down
-monitor therefore stays with the container that stopped (a red card under its
-name, the uid its running card had) rather than passing to a running lookalike,
-and only a stopped container that got no monitor leaves a grey presence
-breadcrumb. A down monitor no running container got is drawn on the stopped
-container's node, else its last-seen node; its card never takes the uid of a
-card already on that node (its last container still running there, matched to
-nothing or to something else now), and then goes under the monitor's name.
+Ties between nodes go by the board's node order, so the assignment depends only
+on the current cycle's inputs and corrects itself after a container misses a
+cycle. No memory of the last node is kept: one that only broke ties drifted to
+a replica for good after one missed cycle (vaultwarden runs on vm103 and pi2).
+Pin a replica's monitor to its node with `monitor_per_node` instead.
+
+A stopped container competes only for a monitor that is down: that outage then
+stays with the container that stopped (a red card under its name, the uid its
+running card had) rather than passing to a running lookalike. Once the monitor
+is up, or the container has been gone longer than `JAGHELM_PRESENCE_TTL_MS`, it
+holds nothing: a running container can have the monitor (`nextcloud` renamed to
+`nextcloud-app`), and the stopped one leaves a grey presence breadcrumb like any
+container with no monitor. A down monitor no running container got is drawn on
+the stopped container's node, else its last-seen node; its card never takes the
+uid of a card already on that node (its last container still running there,
+matched to nothing or to something else now), and then goes under the
+monitor's name.
+
+Such a card, of a monitor no container has ("Pi Gateway (Ping)", "NAS (Ping)"),
+exists only while the monitor is down, and the push differ compares the
+statuses of cards in the new snapshot only. So the monitor sends a down push,
+but no recovery push when its card goes away.
 
 The service registry's `seen` list has one record per monitor, the last node in
 the pass for one mapped explicitly to a container on several nodes. A record is
@@ -445,7 +485,8 @@ integration connection-test endpoint.
   that returned null, or an integration with an `_error`); a Kuma load whose
   monitor count or source changed; and one line per boot for containers no
   monitor went to. A `services.yaml` mapping to a monitor Kuma does not have
-  warns once per mapping per boot. Prometheus failing (any node query of the cycle, or an
+  (or a paused one), a `monitor_per_node` key that is no node, and a mapping of
+  the wrong type each warn once per boot. Prometheus failing (any node query of the cycle, or an
   answer with no `up` series after one with some) and Kuma failing (no
   monitors loaded: unreachable, non-2xx, or a status page with none) each warn
   once, with the error, and their recovery logs once at info with how long it
@@ -604,8 +645,9 @@ stack sits beside today's CSS and must not restyle it.
 
 All state is files under the data dir (no DB):
 
-- **services.yaml** -- nodes, per-service overrides and integration configs
-  (each secret value stored separately, encrypted). Hot-reloaded on an
+- **services.yaml** -- nodes, per-service overrides (display name, icon, and
+  the Kuma monitor mapping `monitor` / `monitor_per_node`, see 4.2) and
+  integration configs (each secret value stored separately, encrypted). Hot-reloaded on an
   external edit; read copy-on-read; `POST /api/services/config` validated by Zod.
 - **display config** -- title, theme, layout (`{lg,md,sm}` grid item arrays),
   sections (per-panel visibility/order/colour), nav/search/weather flags,
