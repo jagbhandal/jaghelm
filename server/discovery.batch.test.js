@@ -14,12 +14,42 @@ import assert from 'node:assert/strict';
 import { createMockPrometheus, homelabSeries, EVAL_TS } from './testing/mockPrometheus.js';
 import { legacyGetNodeData } from './testing/legacyNodeData.js';
 
-const { initDiscovery, getNodesData, promQuery, NODE_QUERIES, VIRTUAL_INTERFACES } = await import('./discovery.js');
+const { initDiscovery, getNodesData, promQuery, NODE_QUERIES, VIRTUAL_INTERFACES, OWN_NAMESPACE_INTERFACES } = await import(
+  './discovery.js'
+);
 
 const realFetch = globalThis.fetch;
 process.on('exit', () => {
   globalThis.fetch = realFetch;
 });
+
+/** The JSON log lines `fn` writes. */
+async function captureLogs(fn) {
+  const lines = [];
+  const orig = { out: process.stdout.write, err: process.stderr.write };
+  const tap = (write) =>
+    function (chunk, ...rest) {
+      try {
+        const obj = JSON.parse(String(chunk));
+        if (obj?.module && obj.level) {
+          lines.push(obj);
+          return true;
+        }
+      } catch {
+        // not a log line
+      }
+      return write.call(this, chunk, ...rest);
+    };
+  process.stdout.write = tap(orig.out);
+  process.stderr.write = tap(orig.err);
+  try {
+    await fn();
+  } finally {
+    process.stdout.write = orig.out;
+    process.stderr.write = orig.err;
+  }
+  return lines;
+}
 
 /** A fresh mock Prometheus with `nodes` homelab nodes, wired in. */
 function homelab(nodes = 6) {
@@ -74,38 +104,49 @@ test('a node label is matched literally, whatever characters it has', async () =
 // ── The same values as before, but for the three corrected ones ──────────
 
 // The fields #234 corrects (temperature, container memory, RX/TX), and the new
-// rate fields, which the old implementation did not have.
+// rate and network-mode fields, which the old implementation did not have.
 function withoutCorrected(nodeData) {
   const copy = structuredClone(nodeData);
   delete copy.metrics.temp;
   for (const c of copy.containers) {
-    for (const f of ['memMB', 'rxMB', 'txMB', 'rxBytesPerSec', 'txBytesPerSec']) delete c.docker[f];
+    for (const f of ['memMB', 'rxMB', 'txMB', 'rxBytesPerSec', 'txBytesPerSec', 'networkMode']) delete c.docker[f];
   }
   return copy;
 }
 
 for (const nodes of [6, 12]) {
-  test(`equivalence (${nodes} nodes): batched results equal the old per-node ones but for temp, memory and RX/TX`, async () => {
-    const { labels } = homelab(nodes);
-    const batched = await getNodesData(labels);
-    const differs = { temp: 0, memMB: 0, rxMB: 0 };
-    for (const label of labels) {
-      const old = await legacyGetNodeData(promQuery, label);
-      const now = batched.get(label);
-      assert.deepEqual(withoutCorrected(now), withoutCorrected(old), label);
+  test(`equivalence (${nodes} nodes): batched results equal the old per-node ones but for temp, memory and RX/TX, the first cycle and the steady one`, async () => {
+    const { labels, mock } = homelab(nodes);
+    // The first cycle lists every node's filesystems; from the second on, the
+    // nodes with `/` are asked for `/` alone (the query production runs).
+    for (const pass of ['first', 'steady']) {
+      const before = mock.queries.length;
+      const batched = await getNodesData(labels);
+      const disk = mock.queries.slice(before).filter((q) => q.includes('node_filesystem_size_bytes'));
+      assert.equal(disk.length, 1, pass);
+      assert.equal(disk[0].includes(' or '), pass === 'steady', `${pass}: ${disk[0]}`);
 
-      // The mock exercises what the three corrections fix.
-      if (now.metrics.temp !== old.metrics.temp) differs.temp += 1;
-      now.containers.forEach((c, i) => {
-        if (c.docker.memMB !== old.containers[i].docker.memMB) differs.memMB += 1;
-        if (c.docker.rxMB !== old.containers[i].docker.rxMB) differs.rxMB += 1;
-      });
-      // and they read real data: every node has its metrics, a pi or vm its containers.
-      for (const field of ['cpu', 'memPercent', 'diskPercent', 'uptime']) assert.ok(now.metrics[field] != null, `${label} ${field}`);
-      if (/^(pi|vm)/.test(label)) assert.ok(now.containers.length >= 3, label);
-      assert.equal(now.reachable, true);
+      const differs = { temp: 0, memMB: 0, rxMB: 0 };
+      for (const label of labels) {
+        const old = await legacyGetNodeData(promQuery, label);
+        const now = batched.get(label);
+        assert.deepEqual(withoutCorrected(now), withoutCorrected(old), `${pass} ${label}`);
+
+        // The mock exercises what the three corrections fix.
+        if (now.metrics.temp !== old.metrics.temp) differs.temp += 1;
+        now.containers.forEach((c, i) => {
+          if (c.docker.memMB !== old.containers[i].docker.memMB) differs.memMB += 1;
+          if (c.docker.rxMB !== old.containers[i].docker.rxMB) differs.rxMB += 1;
+        });
+        // and they read real data: every node has its metrics, a pi or vm its containers.
+        for (const field of ['cpu', 'memPercent', 'diskUsed', 'diskTotal', 'diskPercent', 'uptime']) {
+          assert.ok(now.metrics[field] != null, `${pass} ${label} ${field}`);
+        }
+        if (/^(pi|vm)/.test(label)) assert.ok(now.containers.length >= 3, label);
+        assert.equal(now.reachable, true);
+      }
+      assert.ok(differs.temp > 0 && differs.memMB > 0 && differs.rxMB > 0, `${pass}: ${JSON.stringify(differs)}`);
     }
-    assert.ok(differs.temp > 0 && differs.memMB > 0 && differs.rxMB > 0, JSON.stringify(differs));
   });
 }
 
@@ -136,41 +177,112 @@ test('container memory is the working set, not usage with its page cache', async
   assert.ok(!mock.queries.some((q) => q.includes('container_memory_usage_bytes')));
 });
 
+const sum = (series, f) => series.reduce((acc, s) => acc + f(s), 0);
+const NET_FIELDS = ['rxBytesPerSec', 'txBytesPerSec', 'rxMB', 'txMB'];
+const HOST_NETWORK = [
+  ['vm1', 'jaghelm'],
+  ['vm2', 'jaghelm'],
+  ['pi1', 'tailscale'],
+  ['pi2', 'tailscale'],
+];
+
 test('RX/TX: a rate summed over the container\'s own interfaces, and the old counter fields over the same ones', async () => {
   const { labels, mock } = homelab(6);
   const data = await getNodesData(labels);
-  const physical = (node, name, metric) =>
-    valuesOf(mock, metric, { node, name }).filter((s) => ['eth0', 'eth1', 'eth2', 'ens18'].includes(s.labels.interface));
-  const sum = (series, f) => series.reduce((acc, s) => acc + f(s), 0);
 
   for (const [node, name, interfaces] of [
     ['vm1', 'grafana', ['eth0', 'eth1', 'eth2']], // on three Docker networks: all three count
-    ['vm1', 'jaghelm', ['ens18']], // host network: ens18, not its VLAN, tailscale0 or the bridges
-    ['pi1', 'tailscale', ['eth0']], // host network on a Pi: eth0, not eth0.10, tailscale0 or br-*
+    ['vm1', 'gitea', ['eth0']],
     ['pi1', 'adguard', ['eth0']],
   ]) {
     const c = data.get(node).containers.find((x) => x.container === name);
-    const rx = physical(node, name, 'container_network_receive_bytes_total');
-    const tx = physical(node, name, 'container_network_transmit_bytes_total');
+    const rx = valuesOf(mock, 'container_network_receive_bytes_total', { node, name });
+    const tx = valuesOf(mock, 'container_network_transmit_bytes_total', { node, name });
     assert.deepEqual(rx.map((s) => s.labels.interface), interfaces, `${node} ${name}`);
+    assert.equal(c.docker.networkMode, null, `${name} has its own namespace`);
     assert.equal(c.docker.rxBytesPerSec, Math.round(sum(rx, (s) => s.rate)), `${name} rx rate`);
     assert.equal(c.docker.txBytesPerSec, Math.round(sum(tx, (s) => s.rate)), `${name} tx rate`);
     // The old fields keep their meaning (a cumulative counter, in MiB) until P4-4.
     assert.equal(c.docker.rxMB, parseFloat((sum(rx, (s) => s.value) / MiB).toFixed(1)), `${name} rxMB`);
     assert.equal(c.docker.txMB, parseFloat((sum(tx, (s) => s.value) / MiB).toFixed(1)), `${name} txMB`);
   }
-  assert.ok(mock.queries.some((q) => q.startsWith('sum by (node, name) (rate(container_network_receive_bytes_total{')));
+  assert.ok(mock.queries.includes(
+    'sum by (node, name, interface) (rate(container_network_receive_bytes_total{node=~"pi1|pi2|vm1|vm2|nas1|pve1",name!="",container_label_com_getarcaneapp_internal_resource!="true"}[5m]))'
+  ));
+});
+
+test('a container on the host network has no RX/TX of its own: all four fields null, networkMode host', async () => {
+  const { labels, mock } = homelab(6);
+  const data = await getNodesData(labels);
+  for (const [node, name] of HOST_NETWORK) {
+    const c = data.get(node).containers.find((x) => x.container === name);
+    // cAdvisor reports the host's interfaces for it: the physical one (eth0 on a
+    // Pi, ens18 on a VM), a VLAN, tailscale0 and the Docker bridges.
+    const ifaces = valuesOf(mock, 'container_network_receive_bytes_total', { node, name }).map((s) => s.labels.interface);
+    assert.ok(ifaces.some((i) => i.startsWith('br-')), `${node} ${name}: ${ifaces}`);
+    assert.equal(c.docker.networkMode, 'host', `${node} ${name}`);
+    for (const f of NET_FIELDS) assert.equal(c.docker[f], null, `${node} ${name} ${f}`);
+    assert.ok(c.docker.cpu != null && c.docker.memMB != null, 'its other stats are read');
+  }
+  // Every other container has its own namespace.
+  for (const label of labels) {
+    for (const c of data.get(label).containers) {
+      if (HOST_NETWORK.some(([n, name]) => n === label && name === c.container)) continue;
+      assert.equal(c.docker.networkMode, null, `${label} ${c.container}`);
+      assert.ok(c.docker.rxBytesPerSec != null && c.docker.rxMB != null, `${label} ${c.container}`);
+    }
+  }
+});
+
+test('a container with a tunnel of its own is not on the host network, and its tunnel is not counted', async () => {
+  const { labels, mock } = homelab(6);
+  const vpn = { __name__: 'container_network_receive_bytes_total', node: 'vm1', instance: 'vm1:8080', job: 'cadvisor-vm1', name: 'vpn', id: '/system.slice/docker-vpn.scope', image: 'example/vpn:latest' };
+  mock.series.push(
+    { labels: { ...vpn, __name__: 'container_last_seen' }, value: EVAL_TS },
+    { labels: { ...vpn, interface: 'eth0' }, value: 5 * MiB, rate: 300 },
+    { labels: { ...vpn, interface: 'tun0' }, value: 4 * MiB, rate: 250 },
+    { labels: { ...vpn, interface: 'wg0' }, value: 3 * MiB, rate: 200 }
+  );
+  const c = (await getNodesData(labels)).get('vm1').containers.find((x) => x.container === 'vpn');
+  assert.equal(c.docker.networkMode, null);
+  assert.equal(c.docker.rxBytesPerSec, 300, 'eth0 alone: the tunnels are carried over it');
+  assert.equal(c.docker.rxMB, 5);
 });
 
 test('the interfaces left out of RX/TX, against the names in the homelab', () => {
   const virtual = new RegExp(`^(?:${VIRTUAL_INTERFACES})$`);
   // Every interface cAdvisor reports there (2026-10-19), plus what it drops itself.
-  for (const name of ['br-0595e3e371ec', 'br-15956eedb25f', 'eth0.10', 'ens18.10', 'tailscale0', 'lo', 'veth1a2b3c', 'docker0', 'virbr0', 'wg0']) {
+  for (const name of ['br-0595e3e371ec', 'br-15956eedb25f', 'eth0.10', 'ens18.10', 'tailscale0', 'lo', 'veth1a2b3c', 'docker0', 'virbr0', 'wg0', 'tun0']) {
     assert.ok(virtual.test(name), `${name} is left out`);
   }
   for (const name of ['eth0', 'eth1', 'eth2', 'ens18', 'enp3s0', 'eno1', 'wlan0']) {
     assert.ok(!virtual.test(name), `${name} counts`);
   }
+});
+
+test('the host network, told by an interface only the host has, against the names in the homelab', () => {
+  const own = new RegExp(`^(?:${OWN_NAMESPACE_INTERFACES})$`);
+  // What a container in its own namespace reports there (2026-10-19: eth0 to
+  // eth2), and a tunnel a container can bring up itself.
+  for (const name of ['eth0', 'eth1', 'eth2', 'tun0', 'wg0', 'tailscale0']) assert.ok(own.test(name), `${name} can be a container's`);
+  // The host's alone: a physical interface not named eth<N>, a Docker bridge, a VLAN.
+  for (const name of ['ens18', 'ens18.10', 'eth0.10', 'br-0595e3e371ec', 'br-15956eedb25f', 'enp3s0', 'eno1', 'wlan0', 'virbr0']) {
+    assert.ok(!own.test(name), `${name} is the host's`);
+  }
+});
+
+test('a Prometheus warning is logged at warn once, however often it comes back', async () => {
+  const { labels, mock } = homelab(6);
+  mock.warnings = (q) => (q.includes('node_hwmon_temp_celsius') ? ['partial response: store b down', 'another'] : ['partial response: store a down']);
+  const lines = await captureLogs(async () => {
+    await getNodesData(labels);
+    await getNodesData(labels);
+  });
+  const warned = lines.filter((l) => l.level === 'warn' && l.source === 'prometheus');
+  assert.deepEqual(warned.map((l) => l.warning).sort(), ['another', 'partial response: store a down', 'partial response: store b down']);
+  assert.ok(warned.every((l) => typeof l.query === 'string'));
+  const data = await getNodesData(labels);
+  assert.equal(data.get('pi1').ok, true, 'an answer with warnings is still an answer');
 });
 
 // ── The NAS's missing `/`, decided once ──────────────────────────────────

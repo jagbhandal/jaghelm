@@ -39,8 +39,9 @@ let promUrl = null;
 
 export function initDiscovery(prometheusUrl) {
   promUrl = prometheusUrl;
-  // Another Prometheus may list other filesystems.
+  // Another Prometheus may list other filesystems, and warn about other things.
   rootFs.clear();
+  loggedWarnings.clear();
   log.info({ promUrl }, 'Prometheus URL');
 }
 
@@ -77,7 +78,33 @@ export async function promQuery(query) {
   if (data?.status === 'error' || !Array.isArray(result)) {
     throw new PromQueryError(`Prometheus returned no query result${data?.error ? `: ${data.error}` : ''}`);
   }
+  if (Array.isArray(data.warnings)) logWarnings(data.warnings, query);
   return result;
+}
+
+// The Prometheus warnings logged so far, so each distinct one is logged once.
+const loggedWarnings = new Set();
+const MAX_LOGGED_WARNINGS = 100;
+
+/**
+ * Log each warning Prometheus attaches to an answer, at warn once per distinct
+ * text (#234). A warning can mean a partial answer (remote read, or Thanos and
+ * Mimir partial responses), in which a node left out reads as "no data"; one
+ * query now covers every node. The homelab's single Prometheus sends none.
+ * Past MAX_LOGGED_WARNINGS distinct texts, new ones log at debug, so warnings
+ * that vary (a count, a time) cannot grow the set without bound.
+ */
+function logWarnings(warnings, query) {
+  for (const w of warnings) {
+    const warning = String(w);
+    if (loggedWarnings.has(warning)) continue;
+    if (loggedWarnings.size >= MAX_LOGGED_WARNINGS) {
+      log.debug({ source: 'prometheus', warning, query }, 'Prometheus answered with a warning');
+      continue;
+    }
+    loggedWarnings.add(warning);
+    log.warn({ source: 'prometheus', warning, query }, 'Prometheus answered with a warning; its result may be partial');
+  }
 }
 
 /**
@@ -144,14 +171,34 @@ const FS_FREE = 'node_filesystem_free_bytes';
 /**
  * Network interfaces left out of a container's RX/TX: loopback, Docker's own
  * (veth*, docker*, br-* bridges), libvirt's virbr*, VPN tunnels (tailscale*,
- * wg*) and VLAN subinterfaces (eth0.10). cAdvisor already drops lo, veth* and
- * docker*. A container on the host network gets every host interface, and the
- * rest carry traffic the physical interface counts too: bridged container
- * traffic leaves through it, tunnels are encapsulated over it, and a VLAN's
- * frames cross its parent. What remains is eth*, ens* and the like: a bridged
- * container's own interfaces, and the host's physical ones.
+ * wg*, tun*, tap*) and VLAN subinterfaces (eth0.10). cAdvisor already drops
+ * lo, veth* and docker*. They carry traffic another interface counts too: a
+ * tunnel is encapsulated over the container's eth0, and a VLAN's frames cross
+ * its parent. What remains is a container's own eth0, eth1, …
  */
-export const VIRTUAL_INTERFACES = 'lo|veth.*|docker.*|br-.*|virbr.*|tailscale.*|wg.*|.+\\.[0-9]+';
+export const VIRTUAL_INTERFACES = 'lo|veth.*|docker.*|br-.*|virbr.*|tailscale.*|wg.*|tun.*|tap.*|.+\\.[0-9]+';
+
+/**
+ * The interfaces a container in its own network namespace can have: the eth0,
+ * eth1, … Docker gives it, one per network (cAdvisor drops lo), and a tunnel it
+ * brings up itself (a VPN client's tun0 or wg0, a tailscale0).
+ *
+ * A container on the host network has no traffic counters of its own: cAdvisor
+ * reports the host's interfaces for it, so every such container on a host
+ * would show the host's traffic. It is told apart by an interface outside this
+ * list, one only the host's namespace has: a physical interface not named
+ * eth<N> (ens18, enp3s0, wlan0), a Docker bridge (br-*; every Compose project
+ * creates one), or a VLAN subinterface (eth0.10). In the homelab (2026-10-19)
+ * the host-network containers on vm103 report ens18, ens18.10, tailscale0 and
+ * 15 br-* bridges, those on pi2 eth0, eth0.10, tailscale0 and 9 bridges, and
+ * every other container only eth0 to eth2. Its limit: on a host whose only
+ * interfaces are eth<N>, with no VLAN and no Docker network but the default
+ * bridge, a host-network container looks like a bridged one.
+ */
+export const OWN_NAMESPACE_INTERFACES = 'eth[0-9]+|tun.*|tap.*|wg.*|tailscale.*';
+
+const virtualInterface = new RegExp(`^(?:${VIRTUAL_INTERFACES})$`);
+const ownNamespaceInterface = new RegExp(`^(?:${OWN_NAMESPACE_INTERFACES})$`);
 
 /**
  * Whether each node has a `/` filesystem, by node label: true reads `/`, false
@@ -279,6 +326,12 @@ function buildMetrics(s) {
  *   out).
  * - `rxMB` / `txMB`: the cumulative counters, over the same interfaces, in MiB.
  *   Kept for clients that read them until the old endpoints go (overhaul P4-4).
+ * - `networkMode`: 'host' for a container on the host network (see
+ *   OWN_NAMESPACE_INTERFACES), else null. Such a container has no traffic of
+ *   its own to show, so its four RX/TX fields are null.
+ *
+ * `s.rx`, `s.tx`, `s.rxTotal` and `s.txTotal` are per interface; the others
+ * one series per container.
  */
 function buildContainers(s) {
   // `container_last_seen` is cAdvisor's freshness stamp (epoch seconds it last saw
@@ -309,25 +362,60 @@ function buildContainers(s) {
       containerMap.set(name, {
         container: name,
         status: 'running',
-        docker: { cpu: null, memMB: null, rxMB: null, txMB: null, rxBytesPerSec: null, txBytesPerSec: null },
+        docker: {
+          cpu: null,
+          memMB: null,
+          rxMB: null,
+          txMB: null,
+          rxBytesPerSec: null,
+          txBytesPerSec: null,
+          networkMode: null,
+        },
       });
     }
   }
 
   // Fill each container's stats from its matching result set.
+  const oneDecimal = (n) => parseFloat(n.toFixed(1));
+  const toMiB = (n) => oneDecimal(n / MiB);
   const fill = (results, field, toValue) => {
     for (const r of results) {
       const c = containerMap.get(r.metric?.name);
       if (c && r.value?.[1] != null) c.docker[field] = toValue(parseFloat(r.value[1]));
     }
   };
-  const oneDecimal = (n) => parseFloat(n.toFixed(1));
   fill(s.cpu, 'cpu', oneDecimal);
-  fill(s.mem, 'memMB', (n) => oneDecimal(n / MiB));
-  fill(s.rx, 'rxBytesPerSec', Math.round);
-  fill(s.tx, 'txBytesPerSec', Math.round);
-  fill(s.rxTotal, 'rxMB', (n) => oneDecimal(n / MiB));
-  fill(s.txTotal, 'txMB', (n) => oneDecimal(n / MiB));
+  fill(s.mem, 'memMB', toMiB);
+
+  // RX/TX: each container's interfaces summed, VIRTUAL_INTERFACES left out; any
+  // interface outside OWN_NAMESPACE_INTERFACES puts it on the host network.
+  const NET = [
+    [s.rx, 'rxBytesPerSec', Math.round],
+    [s.tx, 'txBytesPerSec', Math.round],
+    [s.rxTotal, 'rxMB', toMiB],
+    [s.txTotal, 'txMB', toMiB],
+  ];
+  const onHost = new Set();
+  const sums = NET.map(() => new Map()); // per field: container name → sum
+  NET.forEach(([results], i) => {
+    for (const r of results) {
+      const name = r.metric?.name;
+      const iface = r.metric?.interface;
+      if (!containerMap.has(name)) continue;
+      if (iface && !ownNamespaceInterface.test(iface)) onHost.add(name);
+      if ((iface && virtualInterface.test(iface)) || r.value?.[1] == null) continue;
+      sums[i].set(name, (sums[i].get(name) ?? 0) + parseFloat(r.value[1]));
+    }
+  });
+  for (const [name, c] of containerMap) {
+    if (onHost.has(name)) {
+      c.docker.networkMode = 'host';
+      continue;
+    }
+    NET.forEach(([, field, toValue], i) => {
+      if (sums[i].has(name)) c.docker[field] = toValue(sums[i].get(name));
+    });
+  }
 
   return Array.from(containerMap.values());
 }
@@ -372,7 +460,9 @@ export async function getNodesData(nodeLabels) {
 
   const n = nodeMatcher(labels);
   const c = `${n},name!="",${NOT_HELPER}`;
-  const net = `${c},interface!~${promString(VIRTUAL_INTERFACES)}`;
+  // Network readings come per interface: buildContainers() needs every
+  // interface to tell a host-network container, and sums the others itself.
+  const perInterface = (expr) => `sum by (node, name, interface) (${expr})`;
   const queries = {
     // Node metrics
     up: query(`max by (node) (up{${n}})`, 'reachable'),
@@ -385,10 +475,10 @@ export async function getNodesData(nodeLabels) {
     seen: query(`container_last_seen{${c}}`, 'containers'),
     cCpu: query(`rate(container_cpu_usage_seconds_total{${c}}[5m]) * 100`, 'containers'),
     cMem: query(`container_memory_working_set_bytes{${c}}`, 'containers'),
-    rx: query(`sum by (node, name) (rate(container_network_receive_bytes_total{${net}}[5m]))`, 'containers'),
-    tx: query(`sum by (node, name) (rate(container_network_transmit_bytes_total{${net}}[5m]))`, 'containers'),
-    rxTotal: query(`sum by (node, name) (container_network_receive_bytes_total{${net}})`, 'containers'),
-    txTotal: query(`sum by (node, name) (container_network_transmit_bytes_total{${net}})`, 'containers'),
+    rx: query(perInterface(`rate(container_network_receive_bytes_total{${c}}[5m])`), 'containers'),
+    tx: query(perInterface(`rate(container_network_transmit_bytes_total{${c}}[5m])`), 'containers'),
+    rxTotal: query(perInterface(`container_network_receive_bytes_total{${c}}`), 'containers'),
+    txTotal: query(perInterface(`container_network_transmit_bytes_total{${c}}`), 'containers'),
   };
   const keys = Object.keys(queries);
   const answers = await Promise.all(Object.values(queries));
@@ -419,11 +509,6 @@ export async function getNodesData(nodeLabels) {
     });
   }
   return out;
-}
-
-/** One node's data: getNodesData() for that node alone. */
-export async function getNodeData(nodeLabel) {
-  return (await getNodesData([nodeLabel])).get(nodeLabel);
 }
 
 function formatUptime(s) {

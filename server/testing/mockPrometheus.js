@@ -10,7 +10,9 @@
  *
  * Supported: selectors with =, !=, =~ and !~ (regexes anchored, as Prometheus
  * does; strings in "…" with only \\ and \" escapes, which Prometheus also
- * accepts); rate(sel[d]) and irate(sel[d]); sum, max, min, avg and count, each
+ * accepts), answering their series sorted by label set as Prometheus does, so
+ * code that keeps the first or the last series reads what it would live;
+ * rate(sel[d]) and irate(sel[d]); sum, max, min, avg and count, each
  * with an optional `by (…)` before or after its argument; numbers; - + * /
  * between scalars and vectors (vector with vector matched one to one on every
  * label but the name, which arithmetic drops); `or` (which matches label sets
@@ -74,7 +76,24 @@ const withoutName = (labels) => {
   delete rest.__name__;
   return rest;
 };
-const labelKey = (labels) => JSON.stringify(Object.entries(labels).sort(([a], [b]) => a.localeCompare(b)));
+const byteOrder = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const sortedPairs = (labels) => Object.entries(labels).sort(([a], [b]) => byteOrder(a, b));
+const labelKey = (labels) => JSON.stringify(sortedPairs(labels));
+
+/**
+ * Prometheus' order of label sets (labels.Compare): pair by pair in label-name
+ * order, by name and then by value, a set that runs out first sorting first.
+ * A selector answers its series in this order.
+ */
+function compareLabels(a, b) {
+  const x = sortedPairs(a);
+  const y = sortedPairs(b);
+  for (let i = 0; i < Math.min(x.length, y.length); i += 1) {
+    const d = byteOrder(x[i][0], y[i][0]) || byteOrder(x[i][1], y[i][1]);
+    if (d !== 0) return d;
+  }
+  return x.length - y.length;
+}
 
 const ARITHMETIC = {
   '+': (a, b) => a + b,
@@ -233,6 +252,7 @@ class Parser {
     return {
       vector: this.series
         .filter((s) => matchers.every((m) => matches(s.labels[m.label] ?? '', m)))
+        .sort((a, b) => compareLabels(a.labels, b.labels))
         .map((s) => ({ labels: s.labels, value: s.value, rate: s.rate })),
     };
   }
@@ -277,7 +297,8 @@ const answer = (status, body) => ({
  * A mock Prometheus at `url` serving `series`. `fetch` is a drop-in for
  * globalThis.fetch. `queries` lists every instant query asked, in order;
  * `parseErrors` the ones the mock could not evaluate. Set `fail` to a
- * predicate to answer the queries it matches with HTTP 500.
+ * predicate to answer the queries it matches with HTTP 500, and `warnings` to
+ * a function of the query giving the `warnings` to attach to its answer.
  */
 export function createMockPrometheus(series, { url = 'http://localhost:9997' } = {}) {
   const mock = {
@@ -286,6 +307,7 @@ export function createMockPrometheus(series, { url = 'http://localhost:9997' } =
     queries: [],
     parseErrors: [],
     fail: null,
+    warnings: null,
     async fetch(requestUrl) {
       const u = new URL(String(requestUrl));
       if (!String(requestUrl).startsWith(url) || u.pathname !== '/api/v1/query') {
@@ -301,7 +323,12 @@ export function createMockPrometheus(series, { url = 'http://localhost:9997' } =
         mock.parseErrors.push(`${err.message} in: ${q}`);
         return answer(400, { status: 'error', errorType: 'bad_data', error: err.message });
       }
-      return answer(200, { status: 'success', data: { resultType: 'vector', result } });
+      const warnings = mock.warnings?.(q);
+      return answer(200, {
+        status: 'success',
+        data: { resultType: 'vector', result },
+        ...(warnings?.length ? { warnings } : {}),
+      });
     },
   };
   return mock;
@@ -319,7 +346,7 @@ const TiB = 1024 * GiB;
  * - `pi`: node-exporter and cAdvisor; hwmon on an ADC and a thermal zone, the
  *   ADC listed first and cooler; `/` and /boot/firmware; containers on Docker
  *   bridges (eth0) and one on the host network (eth0, the eth0.10 VLAN,
- *   tailscale0 and br-* bridges).
+ *   tailscale0 and br-* bridges; tailscale0 reads 0, as it does live).
  * - `vm`: node-exporter and cAdvisor (the first also has an extra target); no
  *   hwmon; `/`, /boot and an NFS mount larger than `/`; containers on one
  *   bridge, on three (eth0, eth1, eth2), and on the host network (ens18, the
@@ -467,15 +494,17 @@ function addNode(add, { node, kind, i, first }) {
     add({ __name__: 'container_memory_working_set_bytes', ...cl }, ws);
     ifaces.forEach((iface, j) => {
       const host = ifaces === hostIfaces;
+      // tailscale0 reads 0 there, as it does live.
+      const scale = iface === 'tailscale0' ? 0 : 1;
       add(
         { __name__: 'container_network_receive_bytes_total', ...cl, interface: iface },
-        (host ? 9e9 : 3e8) * (j + 1) + k * 1e6,
-        (host ? 40000 : 1500) / (j + 1) + k
+        scale * ((host ? 9e9 : 3e8) * (j + 1) + k * 1e6),
+        scale * ((host ? 40000 : 1500) / (j + 1) + k)
       );
       add(
         { __name__: 'container_network_transmit_bytes_total', ...cl, interface: iface },
-        (host ? 4e9 : 1e8) * (j + 1) + k * 1e6,
-        (host ? 20000 : 700) / (j + 1) + k
+        scale * ((host ? 4e9 : 1e8) * (j + 1) + k * 1e6),
+        scale * ((host ? 20000 : 700) / (j + 1) + k)
       );
     });
   });

@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 
 import { createMockPrometheus, homelabSeries } from './testing/mockPrometheus.js';
 
-const { initDiscovery } = await import('./discovery.js');
+const { initDiscovery, NODE_QUERIES } = await import('./discovery.js');
 const { saveConfig } = await import('./config.js');
 const { getCached } = await import('./cache.js');
 const { refreshServices, refreshUPS } = await import('./refresh.js');
@@ -56,11 +56,13 @@ async function cycle(mock) {
 }
 
 for (const nodes of [6, 12]) {
-  test(`a refresh cycle with ${nodes} nodes asks at most 14 queries, and 1 for the UPS`, async () => {
+  test(`a refresh cycle with ${nodes} nodes asks NODE_QUERIES (at most 14) queries, and 1 for the UPS`, async () => {
     const { labels, mock } = homelab(nodes);
+    assert.ok(NODE_QUERIES <= 14, `${NODE_QUERIES} node queries`);
     for (let i = 0; i < 3; i += 1) {
       const asked = await cycle(mock);
-      assert.ok(asked.services <= 14, `cycle ${i}: ${asked.services} queries`);
+      // Exactly: a cycle that asked nothing (or skipped the nodes) fails too.
+      assert.equal(asked.services, NODE_QUERIES, `cycle ${i}`);
       assert.equal(asked.ups, 1, `cycle ${i}`);
     }
     assert.deepEqual(mock.parseErrors, []);

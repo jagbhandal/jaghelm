@@ -8,13 +8,16 @@
  * presence: `r.value?.[1] != null ? parseFloat(...) : null`.
  *
  * scalar() is internal, so we exercise it (and the container fill loops) through
- * the exported getNodeData() with a stubbed globalThis.fetch returning "0" values.
+ * the exported getNodesData() for one node with a stubbed globalThis.fetch returning "0" values.
  * Runs in its own process; safeFetch ultimately calls globalThis.fetch.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { initDiscovery, getNodeData } = await import('./discovery.js');
+const { initDiscovery, getNodesData } = await import('./discovery.js');
+
+/** One node's data: getNodesData() for that node alone. */
+const nodeData = async (label) => (await getNodesData([label])).get(label);
 
 initDiscovery('http://localhost:9998');
 
@@ -56,7 +59,7 @@ function promResponse(url) {
 test('discovery: a 0°C temp reading is preserved as "0.0", not dropped to null', async () => {
   globalThis.fetch = async (url) => promResponse(url);
   try {
-    const { metrics } = await getNodeData('vm-test');
+    const { metrics } = await nodeData('vm-test');
     assert.equal(metrics.temp, '0.0', 'scalar() returns 0 for a "0" string value');
   } finally {
     globalThis.fetch = realFetch;
@@ -66,7 +69,7 @@ test('discovery: a 0°C temp reading is preserved as "0.0", not dropped to null'
 test('discovery: a container idle at 0% CPU shows 0, not null', async () => {
   globalThis.fetch = async (url) => promResponse(url);
   try {
-    const { containers } = await getNodeData('vm-test');
+    const { containers } = await nodeData('vm-test');
     const c = containers.find((x) => x.container === 'idlebox');
     assert.ok(c, 'idle container is discovered');
     assert.equal(c.docker.cpu, 0, 'a genuine 0% CPU is kept, not coerced to null');
@@ -106,7 +109,7 @@ test('discovery: a container with a STALE container_last_seen is dropped from th
   const EVAL = 1700000000;
   globalThis.fetch = async (url) => freshnessResponse(url, EVAL);
   try {
-    const { containers } = await getNodeData('vm-test');
+    const { containers } = await nodeData('vm-test');
     const names = containers.map((c) => c.container);
     assert.ok(names.includes('livebox'), 'a freshly-seen container stays in the running set');
     assert.ok(!names.includes('deadbox'), 'a stale-last_seen (stopped) container is dropped');
@@ -167,13 +170,13 @@ test('promQuery: a query no series match resolves to [], not an error', async ()
   }
 });
 
-test('getNodeData: a failing query makes the result ok:false with its error', async () => {
+test('getNodesData, one node: a failing query makes the result ok:false with its error', async () => {
   globalThis.fetch = async (url) =>
     decodeURIComponent(url).includes('container_')
       ? answer(503, { status: 'error', error: 'unavailable' })
       : promResponse(url);
   try {
-    const data = await getNodeData('vm-test');
+    const data = await nodeData('vm-test');
     assert.equal(data.ok, false);
     assert.match(data.error, /HTTP 503/);
     assert.deepEqual(data.failedReads, ['containers'], 'only what the failed queries feed');
@@ -184,10 +187,10 @@ test('getNodeData: a failing query makes the result ok:false with its error', as
   }
 });
 
-test('getNodeData: every query answering, even with no series, is ok:true', async () => {
+test('getNodesData, one node: every query answering, even with no series, is ok:true', async () => {
   globalThis.fetch = async () => promResult([]);
   try {
-    const data = await getNodeData('vm-test');
+    const data = await nodeData('vm-test');
     assert.equal(data.ok, true);
     assert.equal(data.error, null);
     assert.deepEqual(data.failedReads, []);
@@ -197,7 +200,7 @@ test('getNodeData: every query answering, even with no series, is ok:true', asyn
   }
 });
 
-test('getNodeData: reachable is up{node} — true if any target answered, false if none did', async () => {
+test('getNodesData, one node: reachable is up{node} — true if any target answered, false if none did', async () => {
   for (const [up, reachable] of [['1', true], ['0', false]]) {
     const seen = [];
     globalThis.fetch = async (url) => {
@@ -206,7 +209,7 @@ test('getNodeData: reachable is up{node} — true if any target answered, false 
       return q.includes('max by (node) (up{node=~"vm-test"})') ? promResult([{ metric: {}, value: [0, up] }]) : promResult([]);
     };
     try {
-      assert.equal((await getNodeData('vm-test')).reachable, reachable);
+      assert.equal((await nodeData('vm-test')).reachable, reachable);
       assert.ok(seen.some((q) => q.includes('max by (node) (up{node=~"vm-test"})')));
     } finally {
       globalThis.fetch = realFetch;
@@ -216,7 +219,7 @@ test('getNodeData: reachable is up{node} — true if any target answered, false 
 
 // #232 review: one failed query is not the whole node. failedReads names what
 // the failed queries feed, so the push snapshot holds only that.
-test('getNodeData: failedReads names the parts whose queries failed', async () => {
+test('getNodesData, one node: failedReads names the parts whose queries failed', async () => {
   const { NODE_READS } = await import('./discovery.js');
   const failing = (match) => async (url) => {
     const q = decodeURIComponent(url);
@@ -233,7 +236,7 @@ test('getNodeData: failedReads names the parts whose queries failed', async () =
   for (const [match, failedReads] of cases) {
     globalThis.fetch = failing(match);
     try {
-      const data = await getNodeData('vm-test');
+      const data = await nodeData('vm-test');
       assert.equal(data.ok, false);
       assert.deepEqual(data.failedReads, failedReads);
     } finally {
