@@ -8,4 +8,6 @@
   container's CPU and memory come with it in `GET /api/services`, and an ad-hoc PromQL
   query goes to Prometheus itself. `JAGHELM_ALLOW_OPEN_INFRA`, which only opened these
   endpoints on a dashboard without a password, no longer does anything and can be
-  removed from your environment.
+  removed from your environment, and so can `ADGUARD_URL`, `ADGUARD_USER` and
+  `ADGUARD_PASS`, which only `/api/adguard/stats` read (the AdGuard Home preset reads
+  `JAGHELM_ADGUARD_*`).
