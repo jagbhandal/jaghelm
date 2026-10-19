@@ -52,7 +52,9 @@ export function shouldDeliver(event, prefs) {
 /**
  * Fan a list of events across every registered token, honoring each token's
  * prefs. A token whose send asks to be pruned (dead/invalid registration) is
- * removed exactly once at the end. Returns delivery counts.
+ * removed exactly once at the end. Tokens FCM accepted a send for (and that are
+ * not being pruned) are marked delivered in one batch, which keeps a phone that
+ * only receives alerts from aging out of the store (#247). Returns counts.
  *
  * @param {Array} events  events from diffSnapshots (already canonically sorted)
  * @param {object} deps   { store, fcm, logger }
@@ -62,6 +64,7 @@ export async function dispatchEvents(events, { store, fcm, logger = defaultLog }
   let sent = 0;
   let suppressed = 0;
   const toPrune = new Set();
+  const delivered = new Set();
 
   // Build a single prefs map before iterating events — prefs don't change
   // mid-dispatch, so calling store.getPrefs() once per token (not per event×token)
@@ -79,6 +82,16 @@ export async function dispatchEvents(events, { store, fcm, logger = defaultLog }
       const result = await fcm.sendToToken(token, event);
       sent += 1;
       if (result && result.prune) toPrune.add(token);
+      else if (result && result.ok) delivered.add(token);
+    }
+  }
+
+  for (const token of toPrune) delivered.delete(token);
+  if (delivered.size > 0) {
+    try {
+      store.markDelivered([...delivered]);
+    } catch (err) {
+      logger.warn({ err }, 'failed to record push deliveries');
     }
   }
 
