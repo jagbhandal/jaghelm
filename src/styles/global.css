@@ -164,7 +164,10 @@
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* Visually-hidden but exposed to assistive tech (screen readers). */
+/* Visually-hidden but exposed to assistive tech (screen readers).
+   The !important beats the new UI's `not-sr-only` too: legacy is the lowest cascade
+   layer, and for !important the lowest layer wins. Drop it when a src/ui component
+   first needs not-sr-only (docs/ARCHITECTURE.md, "UI stack"). */
 .sr-only {
   position: absolute !important;
   width: 1px; height: 1px;
@@ -406,8 +409,8 @@ body { font-family: var(--font-body); font-size: var(--text-lg); line-height: 1.
 .icon-img-lg { width: 24px; height: 24px; border-radius: 4px; object-fit: contain; }
 .grab-handle { cursor: grab; }
 .text-mono { font-family: var(--font-mono); }
-.text-muted { color: var(--text-muted); }
-.text-secondary { color: var(--text-secondary); }
+.muted-text { color: var(--text-muted); }
+.secondary-text { color: var(--text-secondary); }
 .flex-1 { flex: 1; min-width: 0; }
 
 /* Proxmox VM cards in dashboard */
