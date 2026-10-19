@@ -6,13 +6,14 @@
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
 import express from 'express';
-import { createPushRoutes } from './push.js';
 
+// Before any server module loads: a static import of ./push.js would load the
+// token store, and fix its path in the checkout's data/, before this line ran (#261).
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-push-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
 delete process.env.DASH_PASS; // auth disabled
@@ -21,6 +22,7 @@ delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
 process.env.PROMETHEUS_URL = 'http://127.0.0.1:1';
 process.env.KUMA_URL = 'http://127.0.0.1:1';
 
+const { createPushRoutes } = await import('./push.js');
 const { app } = await import('../index.js');
 const { stopBackgroundRefresh } = await import('../refresh.js');
 
@@ -54,6 +56,9 @@ test('POST /api/push/register → { stored:true, deliveryEnabled:false } and per
     .send({ token: 'tok-aaa', platform: 'android', appVersion: '1.1.0' });
   assert.equal(again.status, 200);
   assert.equal(again.body.stored, true);
+  // Persisted in this file's temp data dir, not the checkout's data/ (#261).
+  const saved = JSON.parse(readFileSync(join(dataDir, 'push-tokens.json'), 'utf8'));
+  assert.equal(saved['tok-aaa'].appVersion, '1.1.0');
 });
 
 test('POST /api/push/register → 400 when token is missing or blank', async () => {

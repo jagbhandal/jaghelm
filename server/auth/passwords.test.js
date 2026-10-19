@@ -15,38 +15,19 @@ import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { writeFileSync, mkdirSync, rmSync } from 'fs';
-
-// passwords.js reads data/auth.json relative to server/. We don't want to
-// stomp on the dev file, so we point the module at a temp data dir before
-// import by setting DASH_USER + DASH_PASS to known values for the env path,
-// and we exercise legacy SHA-256 via a manually-written auth.json sibling.
+import { writeFileSync, mkdtempSync, rmSync } from 'fs';
 
 const password = 'correct horse battery staple'; // pragma: allowlist secret
 const wrongPassword = 'tr0ub4dor&3';
 const sha256Hex = crypto.createHash('sha256').update(password).digest('hex');
 
 // The legacy-SHA-256 branch isn't reachable via the public API (setPassword
-// always writes scrypt), so we stage auth.json directly in the real data/ dir,
-// import passwords.js, run checkPassword, and restore the prior file at the end.
-
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import { existsSync, readFileSync, unlinkSync } from 'fs';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const AUTH_FILE = join(__dirname, '..', '..', 'data', 'auth.json');
-const DATA_DIR = dirname(AUTH_FILE);
-
-// Backup any existing auth.json so we don't disturb dev state.
-let backup = null;
-if (existsSync(AUTH_FILE)) {
-  backup = readFileSync(AUTH_FILE, 'utf8');
-}
-
-// Stage the legacy SHA-256 hash before importing the module.
-mkdirSync(DATA_DIR, { recursive: true });
-writeFileSync(AUTH_FILE, JSON.stringify({
+// always writes scrypt), so we stage auth.json in a temp data dir
+// (JAGHELM_DATA_DIR, set before passwords.js is imported), never in the
+// checkout's own data/ (#261).
+const DATA_DIR = mkdtempSync(join(tmpdir(), 'jh-passwords-'));
+process.env.JAGHELM_DATA_DIR = DATA_DIR;
+writeFileSync(join(DATA_DIR, 'auth.json'), JSON.stringify({
   passwordHash: sha256Hex,
   updatedAt: new Date().toISOString(),
 }, null, 2));
@@ -57,16 +38,7 @@ process.env.DASH_PASS = '';
 // Dynamic import after staging the file.
 const { checkPassword, authEnabled } = await import('./passwords.js');
 
-test.after(() => {
-  // Restore prior auth.json (if any) so dev sessions don't break.
-  if (backup !== null) {
-    writeFileSync(AUTH_FILE, backup);
-  } else if (existsSync(AUTH_FILE)) {
-    // The module's migration logic may have rewritten this to scrypt during
-    // our match-test. Either way, clean it up since we created it.
-    unlinkSync(AUTH_FILE);
-  }
-});
+test.after(() => rmSync(DATA_DIR, { recursive: true, force: true }));
 
 test('legacy SHA-256: mismatched password returns false', () => {
   assert.equal(authEnabled(), true, 'auth should be enabled when hash is staged');

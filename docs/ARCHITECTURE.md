@@ -441,6 +441,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   counts (`doc-counts.test.mjs`). Write new repo checks this way, not as shell
   scripts: `npm test` only collects `*.test.{js,mjs,cjs}`.
 
+`npm test` preloads `scripts/test-data-dir.mjs`, which gives every test process
+its own temp `JAGHELM_DATA_DIR`, so the suite never reads or writes the
+checkout's `data/` (`scripts/test-data-dir.test.mjs` guards the wiring).
+
 `npm run test:ci` also fails a run that passes fewer backend tests than the
 floor in `scripts/test-floor.mjs`, so a silently dropped test is caught. The
 docs give no exact test or preset count, since one goes stale with the next
