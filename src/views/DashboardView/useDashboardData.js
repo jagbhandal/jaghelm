@@ -58,7 +58,7 @@ export function useDashboardData(refreshKey, { tick, active = true } = {}) {
   const hasLoadedRef = useRef(false);
 
   // Bumping retryNonce re-runs the fetch effect immediately, independent of the
-  // parent's interval-driven refreshKey; forceFullRef makes that fetch skip ETags.
+  // parent's interval-driven `tick`; forceFullRef makes that fetch skip ETags.
   const [retryNonce, setRetryNonce] = useState(0);
   const forceFullRef = useRef(false);
   const retry = useCallback(() => {

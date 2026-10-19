@@ -17,7 +17,8 @@
 export const SOURCE_MESSAGES = {
   services: 'Live metrics unavailable — Prometheus unreachable',
   // The per-service up/down state on /api/services is sourced from Uptime Kuma
-  // server-side; the navbar health dot polls it directly. Kept here so the same
+  // server-side; the navbar health dot reads its overallHealth off the dashboard's
+  // own /api/services result (no fetch of its own). Kept here so the same
   // distinct wording is available wherever monitor health is surfaced.
   monitors: 'Service status unavailable — Uptime Kuma unreachable',
   ups: 'UPS telemetry unavailable — NUT unreachable',
