@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { useConfirm, useToast } from '../../context/OverlayContext.jsx';
 import { Card } from './primitives.jsx';
+import { localDateKey } from '../../util/localDate.js';
 
 // Top-level keys that must never be carried in from an imported file — assigning
 // to these can poison the prototype chain. A valid config never contains them.
@@ -29,7 +30,8 @@ export default function BackupTab() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `jaghelm-config-${new Date().toISOString().slice(0, 10)}.json`;
+    // The local day: toISOString() names the UTC day, tomorrow west of UTC in the evening.
+    a.download = `jaghelm-config-${localDateKey()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
