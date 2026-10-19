@@ -64,9 +64,9 @@ describe('NavBar', () => {
     expect(screen.getByText('MY HELM')).toBeInTheDocument();
   });
 
-  it('falls back to JAG-NET when config has no title', () => {
+  it('falls back to the product name when config has no title', () => {
     renderNav({}, baseConfig({ title: '' }));
-    expect(screen.getByText('JAG-NET')).toBeInTheDocument();
+    expect(screen.getByText('JAGHELM')).toBeInTheDocument();
   });
 
   it('renders one tab per config-driven tab, marking the active one selected', () => {
