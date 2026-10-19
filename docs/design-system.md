@@ -12,17 +12,20 @@ the sign-off amendments in §15).
 - **Utilities:** [`src/ui/tailwind.css`](../src/ui/tailwind.css) maps each role to a
   Tailwind utility (`bg-surface-1`, `text-text-2`, `text-crit-fg`).
 - **Contrast:** [`scripts/ui-contrast.mjs`](../scripts/ui-contrast.mjs) checks every
-  pairing below in both themes and all five accents, in `npm test`. Run
-  `node scripts/ui-contrast.mjs` to see the lowest ratio per rule.
+  pairing below in both themes and all five accents, on sRGB and Display P3
+  screens, and each accent's hover against its rest state, in `npm test`. Run
+  `node scripts/ui-contrast.mjs` to see the lowest ratio per rule on each screen.
 - How the stack sits beside today's CSS: [ARCHITECTURE.md §5.1](ARCHITECTURE.md#51-ui-stack-tailwind-css-v4-shadcnui-lucide).
 
 ## The rules
 
 1. **JagHelm looks like JagHelm** (epic #333, rule 9). Graphite neutrals tinted
    toward hue 286, one violet accent, flat panels with a 1px border and a 12px
-   radius, the shaped status lamps. No blur, frosted glass, mesh, dot grid or
-   gradient text: the theme has no blur utilities, and a test fails if the
-   built stack contains a blur. Check visual work against the signed-off mock,
+   radius, the shaped status lamps. No blur, frosted glass, mesh, dot grid,
+   text shadow or gradient text: the theme has no blur or text-shadow
+   utilities, and a test fails if the built stack contains a blur, a text
+   shadow or text clipped to its background (`bg-clip-text`, how gradient text
+   is made). Check visual work against the signed-off mock,
    never against Arcane. Arcane is a benchmark for craft (crisp type, polish),
    never a source: no code, components, assets or layouts come from it, and
    Montserrat (Arcane's face) is offered but never the default (Manrope is,
@@ -33,7 +36,11 @@ the sign-off amendments in §15).
    tints section icon chips (`bg-accent-tint`, `text-accent-text`,
    `border-accent-border`) and fills meters below their threshold
    (`bg-meter`), as the mock shows (§15). It is never a status and never a
-   threshold colour. The other four accents follow the same rule.
+   threshold colour. The other four accents follow the same rule. Blue is
+   the exception still open: at hue 255 it sits on maintenance's blue (hue
+   254–260), so a Blue link or meter reads like the word or bar for
+   Maintenance. Jag decides whether it stays before Settings offers accents
+   (#321).
 3. **Status hues mean status only.** Green ok, amber warn, red crit, steel
    unknown, blue maintenance and info. Status is always a word, a colour and a
    shape together (filled disc, slashed disc, disc with a bar, hollow ring,
@@ -43,12 +50,15 @@ the sign-off amendments in §15).
 4. **Roles, never raw colours.** Components use the role utilities. Palette
    steps (`--jh-graphite-198`) exist for the roles to read; no component and no
    utility reads one (a test checks both). Tailwind's default palette, type
-   sizes, radii, shadows and blurs are cleared, so `bg-red-500`, `text-sm`,
-   `shadow-md` and `backdrop-blur` produce nothing.
+   sizes, font families, radii, shadows, text shadows and blurs are cleared,
+   so `bg-red-500`, `text-sm`, `font-serif`, `shadow-md`, `text-shadow-sm` and
+   `backdrop-blur` produce nothing.
 5. **Text sits only where its contrast was checked** (the pairings below). On
    a violet fill use `text-on-accent`; on a status fill use that status's
-   `on-solid`. `text-3` is for sparing captions: never on `surface-3`, never in
-   a selected nav item.
+   `on-solid`. Status words may sit in hovered and selected rows. `text-3` is
+   for sparing captions: never on `surface-3`, never in a selected nav item,
+   and never on a selected item in a popover or menu (`accent-tint` over
+   `surface-2`). The check names these three as ruled out and refuses them.
 6. **In the light theme lamps stay bright and the words darken.** A status's
    `solid` is the lamp; its `fg` is the word, darkened to carry 4.5:1.
 7. **Panels are flat.** Only popovers, the command palette, dialogs and drawers
@@ -71,22 +81,46 @@ job: it sets `data-theme` from `prefers-color-scheme`.
 
 ## Contrast floors
 
-| Rule | Floor | Checked on |
-| --- | --- | --- |
-| `text-1` | 7:1 | bg, sidebar, surface-1/2/3; accent-tint, row-hover and every status tint over the surfaces they're used on |
-| `text-2` | 4.5:1 | as text-1 |
-| `text-3` | 4.5:1 | bg, sidebar, surface-1/2; accent-tint over bg and surface-1; row-hover; status tints |
-| `accent-text` | 4.5:1 | bg, sidebar, surface-1/2; accent-tint; row-hover |
-| `on-accent` | 4.5:1 | accent, and accent-hover |
-| status `fg` | 4.5:1 | bg, sidebar, surface-1/2; its own tint over bg and surface-1 |
-| status `on-solid` | 4.5:1 | its own solid |
-| `focus-ring` | 3:1 | bg, sidebar, surface-1/2/3 (the ring sits 2px outside the control) |
+Each foreground is checked on exactly these backgrounds. "Over" means a
+translucent token painted over that surface.
 
-Translucent tokens are painted over the surface beneath before measuring.
+| Foreground | Floor | Opaque backgrounds | Translucent backgrounds |
+| --- | --- | --- | --- |
+| `text-1` | 7:1 | bg, sidebar, surface-1, surface-2, surface-3 | accent-tint over bg, sidebar and surface-1; row-hover over bg and surface-1; each status tint over bg and surface-1 |
+| `text-2` | 4.5:1 | bg, sidebar, surface-1, surface-2, surface-3 | the same as `text-1` |
+| `text-3` | 4.5:1 | bg, sidebar, surface-1, surface-2 | accent-tint over bg and surface-1; row-hover over bg and surface-1; each status tint over bg and surface-1 |
+| `accent-text` | 4.5:1 | bg, sidebar, surface-1, surface-2 | accent-tint over bg, sidebar and surface-1; row-hover over bg and surface-1 |
+| `on-accent` | 4.5:1 | accent, accent-hover | none |
+| status `fg` | 4.5:1 | bg, sidebar, surface-1, surface-2 | its own tint, row-hover and accent-tint, each over bg and surface-1 |
+| status `on-solid` | 4.5:1 | its own solid | none |
+| `focus-ring` | 3:1 | bg, sidebar, surface-1, surface-2, surface-3 (the ring sits 2px outside the control) | none |
+
+Ruled out by name, because they fall below 4.5:1 somewhere and the mock never
+draws them (`FORBIDDEN` in the script):
+
+| Pairing | Where it would appear | Worst ratio |
+| --- | --- | --- |
+| `text-3` on surface-3 | a chip or segmented-control track | 4.49:1 (light) |
+| `text-3` on accent-tint over sidebar | a selected nav item | 4.42:1 (light) |
+| `text-3` on accent-tint over surface-2 | a selected item in a popover or menu | 4.21:1 (dark, Graphite) |
+
 Contrast is WCAG 2's, computed from the OKLCH values as CSS Color 4 converts
-them to sRGB; a colour outside sRGB scores the lower of clipping and CSS gamut
-mapping. `text-disabled` is not checked (WCAG exempts disabled controls); it
-sits near 3:1 on surface-1.
+them, and compared unrounded (4.4999:1 fails 4.5:1; the report never rounds a
+miss up to its floor). Every pairing must pass on two kinds of screen:
+
+- **sRGB.** A colour outside sRGB scores the lower of clipping (what browsers
+  do today) and CSS Color 4's gamut mapping.
+- **Display P3** (Macs, iPhones, many Android phones). A colour outside sRGB
+  but inside P3 shows at its true value there, not clipped, and luminance is
+  P3's own. Vivid violets can be lighter on P3 than on sRGB.
+
+`text-disabled` is not checked (WCAG exempts disabled controls); it sits near
+3:1 on surface-1.
+
+**Hover.** Each accent's `accent-hover` must differ from its `accent` by at
+least ΔE OK 0.02 (distance in OKLab, CSS Color 4's just-noticeable difference),
+as either screen paints them, so a primary button always shows that it is
+under the pointer. The check reports the closest pair.
 
 ## Tokens
 
@@ -114,7 +148,7 @@ listed first.
 | Role | Utility | Use |
 | --- | --- | --- |
 | `accent` | `bg-accent` | primary buttons, selected nav app chip, toggles on |
-| `accent-hover` | `hover:bg-accent-hover` | a primary button under the pointer |
+| `accent-hover` | `hover:bg-accent-hover` | a primary button under the pointer (at least ΔE OK 0.02 from `accent`) |
 | `on-accent` | `text-on-accent` | text and icons on `accent` |
 | `accent-text` | `text-accent-text` | links, active tab label, accent icons |
 | `accent-tint` | `bg-accent-tint` | selected nav item, selected row, section icon chip |
@@ -183,7 +217,8 @@ Nothing is smaller than 12px except the 11px uppercase overline.
 - **Radius**, one token (`--radius`, 8px) mapped: `rounded-xs` 2 (heartbeat
   bars), `rounded-sm` 4 (badges), `rounded-md` 6 (segments inside a control),
   `rounded-lg` 8 (controls, rows), `rounded-xl` 12 (panels, dialogs, drawers),
-  `rounded-full` (pills, lamps).
+  `rounded-full` (pills, lamps). There is no other radius: the mock's few
+  off-scale ones map onto these (below).
 - **Spacing:** Tailwind's 4px steps; prefer 4, 8, 12, 16, 24, 32, 48 (`1`, `2`,
   `3`, `4`, `6`, `8`, `12`).
 - **Density:** `h-row` is 40px (comfortable) or 32px (compact); `p-panel` is 20
@@ -205,7 +240,13 @@ map onto these: `background` bg, `foreground` text-1, `card` surface-1,
 `secondary` and `muted` surface-2, `muted-foreground` text-2, `destructive`
 crit-fg, `border` border-subtle, `input` border-strong, `ring` focus-ring.
 shadcn's own `accent` (a hover surface) is not offered: `accent` here is the
-violet. When a component is shaped for a screen, switch it to the JagHelm names.
+violet, and `accent-foreground` compiles to nothing. Stock menus, selects and
+command lists highlight an item with `focus:bg-accent
+focus:text-accent-foreground`; pasted as-is, that paints the item solid violet
+with `text-1` on it (3.05:1 in light). A test fails on any `accent-foreground`
+in `src/ui/`: highlight with `bg-row-hover` or `bg-surface-2` and
+`text-text-1` instead. When a component is shaped for a screen, switch it to the
+JagHelm names.
 
 ## Changing a token
 
@@ -216,20 +257,33 @@ mock first.
   comfortable); the switches only override. Each accent sets the same eight
   roles in its dark and light blocks.
 - A new colour role needs a utility in `tailwind.css`'s `@theme` block, and its
-  pairings in `PAIRINGS` in `scripts/ui-contrast.mjs`. A new switch needs
-  teaching to that script's reader, which refuses selectors it doesn't know.
-- `node scripts/ui-contrast.mjs` must report nothing below its floor.
+  pairings in `PAIRINGS` in `scripts/ui-contrast.mjs`. A plausible pairing
+  that fails and that the mock never draws goes in `FORBIDDEN` instead, and in
+  rule 5 above. A new switch needs teaching to that script's reader, which
+  refuses selectors it doesn't know.
+- `node scripts/ui-contrast.mjs` must report nothing below its floor on either
+  screen, and no hover too close to its rest state.
 
-Where the tokens differ from the mock, contrast required it:
+Where the tokens differ from the mock, and why:
 
-- **Hover on dark accents.** The mock lightens a primary button on hover, which
-  took the label below 4.5:1 for four accents. Each dark hover is now the
-  lightest that keeps 4.5:1: indigo L 0.555 (mock 0.565), blue 0.545 (0.605),
-  fuchsia 0.57 (0.6), graphite 0.545 (0.55). Violet keeps the mock's 0.585, at
-  4.50:1.
+- **Hover on dark accents.** The mock lightens a primary button on hover. That
+  took the label below 4.5:1 for four accents (indigo 4.40:1, blue 3.57,
+  fuchsia 4.05, graphite 4.45), and violet's L 0.585 passed only on sRGB
+  screens: clipping darkens it to 4.50:1, while a P3 screen shows it at 4.37:1.
+  - Violet, indigo and graphite still lighten, to the lightest L that keeps
+    4.5:1 on both screens: violet 0.575 (mock 0.585; 4.65:1 sRGB, 4.57:1 P3),
+    indigo 0.555 (0.565), graphite 0.545 (0.55).
+  - Blue and fuchsia darken instead, to L 0.49 (mock 0.605) and 0.52 (0.6). The
+    lightest hover that kept 4.5:1 sat only ΔE OK 0.015 and 0.014 from rest, a
+    hover nobody could see; darkened, they are 0.041 from rest at 5.76:1 and
+    5.69:1. The light theme already darkens every hover.
 - **Blue, dark.** The mock's dark blue (`oklch(0.56 0.19 255)`) carries its label
   at 4.3:1; the dark theme uses the light theme's `oklch(0.53 0.19 255)`, and its
   tint and row hover follow.
+- **Radii off the scale.** The mock draws four radii that aren't on it. They map
+  onto the scale: 5px (kbd) to `rounded-sm` 4; 7px (28px icon chips) and 9px
+  (the helm mark) to `rounded-lg` 8; 10px (phone touch targets and inputs) to
+  `rounded-lg` 8, as every control.
 - **Tokens the mock didn't draw** are derived from it: `text-disabled`; `tint`
   for ok, maintenance and info (10 %); every status `border` (solid at 38 % dark,
   32 % light, as the accent's); every `on-solid`; `info`, which shares

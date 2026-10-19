@@ -467,7 +467,9 @@ stack sits beside today's CSS and must not restyle it.
   switched by `data-theme`, `data-accent` and `data-density` on the `.jh-ui`
   root. [design-system.md](design-system.md) lists them with the rules for using
   them, and `scripts/ui-contrast.mjs` checks every text/background pairing in
-  every theme and accent against the spec's floors (`ui-contrast.test.mjs`).
+  every theme and accent against the spec's floors, as sRGB and Display P3
+  screens paint them, and that each accent's hover is visibly different from
+  its rest state (`ui-contrast.test.mjs`).
   They are custom properties on `.jh-ui`, prefixed `--jh-`, never on `:root`:
   today's CSS owns `--bg`, `--accent`, `--border`, `--card`, `--muted`,
   `--text-*`, `--font-mono`, `--font-body` and `--font-display` there and in the
@@ -475,7 +477,9 @@ stack sits beside today's CSS and must not restyle it.
   own values. `tailwind.css` offers the roles as utilities (`bg-surface-1`,
   `text-text-2`, `text-crit-fg`), plus shadcn's role names mapped onto them so a
   generated component compiles, and clears Tailwind's default palette, type
-  sizes, radii, shadows and blurs (`ui-tokens.test.mjs`). The theme is inline
+  sizes, font families, radii, shadows, text shadows and blurs
+  (`ui-tokens.test.mjs`, which also fails on gradient text and on shadcn's
+  `accent-foreground`). The theme is inline
   and reference-only (`theme(inline reference)`, `@theme inline reference`):
   utilities carry their values, and Tailwind writes no variable to `:root`,
   where anything it wrote would land in the `theme` layer, above `legacy`. The
