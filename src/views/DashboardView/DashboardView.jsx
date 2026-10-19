@@ -15,7 +15,7 @@ import NodePanel from './NodePanel';
 import { toServiceCard } from './serviceCard';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { DEFAULT_LAYOUTS, migrateLayouts } from './layouts';
-import { useDashboardData, SLOW_SOURCES } from './useDashboardData';
+import { useDashboardData, pollPeriodMs } from './useDashboardData';
 import { useAppDataMatching } from './useAppDataMatching';
 import { useEffectiveLayouts } from './useEffectiveLayouts';
 import { sourceBanner } from './sourceHealth';
@@ -89,9 +89,8 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
     const now = nowBucket * Math.max(refreshIntervalMs / 2, 1000);
     const out = {};
     for (const key of Object.keys(sources)) {
-      // A slow source refreshes once every few ticks, so it goes stale on that cadence.
-      const every = SLOW_SOURCES.includes(key) ? SLOW_SOURCES.length : 1;
-      out[key] = sourceBanner(sources[key], key, refreshIntervalMs * every, now);
+      // Each source goes stale on its own poll period (slow sources poll less often).
+      out[key] = sourceBanner(sources[key], key, pollPeriodMs(key, refreshIntervalMs), now);
     }
     return out;
   }, [sources, refreshIntervalMs, nowBucket]);

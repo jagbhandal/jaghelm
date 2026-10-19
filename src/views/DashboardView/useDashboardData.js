@@ -38,7 +38,18 @@ const SOURCE_KEYS = ['services', 'ups', 'commits', 'cron', 'integrations'];
 // a scheduled tick refreshes one of them, in this order, so each refreshes once
 // every SLOW_SOURCES.length ticks. Live sources (services, UPS, integrations)
 // refresh on every tick.
-export const SLOW_SOURCES = ['history', 'cron', 'commits'];
+const SLOW_SOURCES = ['history', 'cron', 'commits'];
+
+/**
+ * The time between two scheduled polls of `key` at a given refresh interval.
+ * Read off the same SLOW_SOURCES rotation the fetch effect below walks (one slow
+ * source per tick), so the dashboard's stale threshold, which is a number of
+ * missed polls of each source, moves with any change to the rotation.
+ */
+export function pollPeriodMs(key, refreshIntervalMs) {
+  const everyTicks = SLOW_SOURCES.includes(key) ? SLOW_SOURCES.length : 1;
+  return refreshIntervalMs * everyTicks;
+}
 
 export function useDashboardData(refreshKey, { tick, active = true } = {}) {
   const [serviceData, setServiceData] = useState({ nodes: {} });

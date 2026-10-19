@@ -1,6 +1,7 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { useDashboardData } from './useDashboardData';
+import { useDashboardData, pollPeriodMs } from './useDashboardData';
+import { sourceBanner } from './sourceHealth';
 
 // The 304-stable-identity contract: a refresh tick that produces an all-304
 // /api/services response must return the SAME object reference as the prior 200,
@@ -219,8 +220,12 @@ describe('useDashboardData — polling schedule', () => {
       await settle();
       const got = take();
       expect(got).toHaveLength(4);
-      expect(got).toEqual(expect.arrayContaining(['/api/services', '/api/ups', '/api/integrations']));
-      slowSeen.push(got.find((p) => ['/api/history', '/api/cron/status', '/api/gitea/activity'].includes(p)));
+      expect(got).toEqual(
+        expect.arrayContaining(['/api/services', '/api/ups', '/api/integrations'])
+      );
+      slowSeen.push(
+        got.find((p) => ['/api/history', '/api/cron/status', '/api/gitea/activity'].includes(p))
+      );
     }
     expect(slowSeen).toEqual(['/api/history', '/api/cron/status', '/api/gitea/activity']);
   });
@@ -256,12 +261,83 @@ describe('useDashboardData — polling schedule', () => {
     expect(take()).toEqual([...SOURCE_PATHS].sort());
   });
 
+  it('shows no stale notes on the first render back after a long pause', async () => {
+    // Only Date is faked, so fetch promises and act() still run normally.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const T0 = 1_000_000_000_000;
+      vi.setSystemTime(T0);
+      const { result, rerender } = render();
+      await settle();
+      rerender({ refreshKey: 0, tick: 0, active: false });
+      await settle();
+
+      // Five minutes away, far past every source's stale threshold.
+      vi.setSystemTime(T0 + 5 * 60_000);
+      rerender({ refreshKey: 0, tick: 0, active: true });
+      // The resume render itself, before its refresh lands.
+      const { sources } = result.current;
+      for (const key of ['services', 'ups', 'commits', 'cron', 'integrations']) {
+        const { staleNote } = sourceBanner(
+          sources[key],
+          key,
+          pollPeriodMs(key, 30_000),
+          Date.now()
+        );
+        expect(staleNote, key).toBeNull();
+      }
+      await settle();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('exposes overallHealth from the services body, and unknown when the fetch fails', async () => {
     const { result, rerender } = render();
     await waitFor(() => expect(result.current.overallHealth).toBe('down'));
 
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Network down'))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new Error('Network down')))
+    );
     rerender({ refreshKey: 0, tick: 1, active: true });
     await waitFor(() => expect(result.current.overallHealth).toBe('unknown'));
+  });
+});
+
+// The stale rule is "2 missed polls of that source", built on the hook's own poll
+// period (pollPeriodMs reads the slow-source rotation), so it can't drift from
+// the schedule.
+describe("useDashboardData — stale threshold follows each source's poll period", () => {
+  const NOW = 1_000_000_000_000;
+  const staleAt = (key, intervalMs, ageMs) =>
+    sourceBanner(
+      { error: null, lastSuccessMs: NOW - ageMs, watchedSinceMs: null },
+      key,
+      pollPeriodMs(key, intervalMs),
+      NOW
+    ).staleNote !== null;
+
+  it('history, cron and Gitea go stale after 3 minutes at the default 30 s interval', () => {
+    for (const key of ['history', 'cron', 'commits']) {
+      expect(pollPeriodMs(key, 30_000), key).toBe(90_000);
+      expect(staleAt(key, 30_000, 180_000), key).toBe(false);
+      expect(staleAt(key, 30_000, 181_000), key).toBe(true);
+    }
+  });
+
+  it('live sources go stale after 1 minute at the default 30 s interval', () => {
+    for (const key of ['services', 'ups', 'integrations']) {
+      expect(staleAt(key, 30_000, 60_000), key).toBe(false);
+      expect(staleAt(key, 30_000, 61_000), key).toBe(true);
+    }
+  });
+
+  it('moves with the refresh interval (60 s: 6 minutes for slow sources, 2 for live)', () => {
+    expect(staleAt('cron', 60_000, 360_000)).toBe(false);
+    expect(staleAt('cron', 60_000, 361_000)).toBe(true);
+    expect(staleAt('commits', 60_000, 361_000)).toBe(true);
+    expect(staleAt('services', 60_000, 120_000)).toBe(false);
+    expect(staleAt('services', 60_000, 121_000)).toBe(true);
   });
 });
