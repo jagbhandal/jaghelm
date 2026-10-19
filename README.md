@@ -175,7 +175,8 @@ data/
 ├── secrets.json           # AES-256-GCM encrypted credentials
 ├── auth.json              # password hash (if changed via UI)
 ├── cron-jobs.json         # cron job execution history
-└── todos.json             # checklist data
+├── todos.json             # checklist data
+└── icon-index.json        # icon picker's names-only index (a cache; safe to delete)
 ```
  
 `services.yaml` is hot-reloaded — edit it on disk and JagHelm picks up the change without restarting.

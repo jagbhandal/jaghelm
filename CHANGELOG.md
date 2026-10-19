@@ -6,6 +6,9 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- JagHelm no longer downloads the icon picker's index from GitHub every time it starts. It fetched 12.4 MB from the GitHub API on each start, which took its peak memory from about 100 MB to about 160 MB and used two of the 60 requests an hour GitHub allows without a token. The index is now kept in `icon-index.json` in the data dir: starting only reads it, and the first icon search when it is missing or a day old fetches the icon repositories' `svg/` listings (2.5 MB, about 0.5 MB compressed), or only checks that they are unchanged. If GitHub can't be reached or refuses the request, the picker keeps the index it has and tries again an hour later. On a new install, and once after upgrading, the first icon search takes a moment while the index is built.
+
 ### Fixed
 - A request redirected with `307` or `308` now keeps its method and body, as those codes require, instead of being turned into a `GET` without a body. A session login (Nginx Proxy Manager, Portainer, PhotoPrism) behind such a redirect on the same host and port, or from `http://` to `https://` on it, now works. A login redirected to another origin (host, port or scheme, apart from that upgrade) is refused instead of being re-sent there. `301` and `302` still turn any method but `GET` and `HEAD` into a `GET` without a body, and `303` turns every method, `HEAD` included, into one.
 - The server no longer loads the integration presets' test files as presets at startup, so it no longer logs two "Skipping invalid preset" errors (for `gitlab.test.js` and `nextcloud.test.js`) or prints their test output in its logs. Test files are also left out of the image.
