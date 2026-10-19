@@ -114,7 +114,8 @@ src/                        React 19 SPA (Vite 8)
   styles/legacy.css          imports global.css into the `legacy` cascade layer (see 5.1)
   ui/                        the redesign's component library, shared with Android (see 5.1):
                              tailwind.css (the stack's stylesheet), preflight.css (generated),
-                             shadcn/ui components (button.jsx), lib/utils.js
+                             shadcn/ui components (button.jsx, a stock placeholder until #285),
+                             lib/utils.js
 
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
@@ -444,24 +445,41 @@ stack sits beside today's CSS and must not restyle it.
   screens are unaffected either way.
 - **Only `src/ui/` is scanned** for class names (`source(none)` plus `@source`,
   tests excluded), and every class found there ships whether a screen uses it or
-  not. Utilities are global classes, so a legacy class name that is also a utility
-  would gain its rule once `src/ui/` uses it: today only `flex-1` and `sr-only`
-  overlap, with the same meaning. Add an `@source` line for each new folder of
-  screens.
-- **Tokens.** Tailwind's default theme is inlined (`theme(inline)`): utilities
-  carry their values instead of setting `--text-sm` and the like on `:root`, where
-  `global.css` defines its own `--text-*` and `--font-mono`. shadcn's colour and
-  radius roles are mapped in `@theme inline`; their values are shadcn's stock
-  neutral palette, kept as marked placeholders scoped to `.jh-ui` (today's CSS owns
-  `--accent`, `--border`, `--card` and `--muted` on `:root` and the Android shell).
-  Card #283 replaces them with the signed-off mock's tokens; the `dark` variant
-  (a `.dark` ancestor) is a placeholder too. One trap: when a class reads a
-  theme variable with `var()` (the Button's `rounded-[min(var(--radius-md),10px)]`),
-  Tailwind writes that variable onto `:root`, where the scoped tokens don't exist,
-  so it inherits as invalid. Such variables are declared again under `.jh-ui` (the
-  radius scale), and `scripts/ui-stack.test.mjs` names any that are missing.
+  not. Add an `@source` line for each new folder of screens. Utilities are global
+  classes in a layer above `legacy`, so a legacy class name that is also a utility
+  (under this theme, not just Tailwind's defaults) would be restyled on today's
+  screens as soon as any file in `src/ui/` mentions it, even in a comment.
+  `scripts/ui-stack.test.mjs` compiles every legacy class name (selectors in the
+  legacy stylesheets, `className` strings outside `src/ui/`) and fails on any
+  utility except `flex-1` and `sr-only`. That is why `.text-muted` and
+  `.text-secondary` became `.muted-text` and `.secondary-text`: shadcn's `muted`
+  and `secondary` roles make `text-muted` and `text-secondary` colour utilities.
+  When the test fires, rename the legacy class or pick another role name. Of the
+  two shared names, `flex-1` sets the same `flex: 1`. Legacy `.sr-only` sets
+  `position: absolute !important`, which also beats a new component's
+  `not-sr-only` (for `!important` the lowest layer wins): drop that `!important`
+  when a component first needs `not-sr-only`.
+- **Tokens.** Tailwind's default theme and shadcn's colour and radius roles are
+  inline and reference-only (`theme(inline reference)`, `@theme inline
+  reference`): utilities carry their values, and Tailwind writes no variable to
+  `:root`. That matters because today's CSS owns `--text-*`, `--font-mono`,
+  `--font-body`, `--font-display`, `--accent`, `--border`, `--card` and `--muted`
+  on `:root` and the Android shell, and anything Tailwind wrote there would land
+  in the `theme` layer, above `legacy`. The token values are shadcn's stock
+  neutral palette, kept as marked placeholders scoped to `.jh-ui`; card #283
+  replaces them with the signed-off mock's tokens, and the `dark` variant (a
+  `.dark` ancestor, while the app switches themes with `data-theme` on `<html>`)
+  is a placeholder too. Every variable a class reads with `var()` must be
+  declared under `.jh-ui`: a role reads its token (`bg-primary` reads
+  `--primary`), and a class that reads a theme variable itself (the Button's
+  `rounded-[min(var(--radius-md),10px)]`) needs that variable there too, which is
+  why the radius scale appears twice in `tailwind.css`. Never add a `:root`,
+  `html` or `body` rule or a `@theme` block without `reference`.
+  `scripts/ui-stack.test.mjs` compiles the stack and fails on an unlayered rule, a
+  root selector, a base rule outside `@scope (.jh-ui)`, a `var()` read that
+  `.jh-ui` doesn't declare, or the two radius scales drifting apart.
 - **When the old CSS is gone,** drop the `legacy` layer and the scoping: import
-  Tailwind's own preflight and move the tokens to `:root`.
+  Tailwind's own preflight, move the tokens to `:root` and drop `reference`.
 
 ## 6. Data model
 

@@ -1,3 +1,10 @@
+/*
+ * PLACEHOLDER COMPONENT: stock shadcn/ui output (`npx shadcn add button`, style
+ * base-nova), kept as the proof that the stack builds, tests and reaches the
+ * Android app. It is not JagHelm's button: card #285 reshapes it to the spec's
+ * variants (primary, secondary, ghost, danger at sm and md). Do not use it on a
+ * screen before then.
+ */
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { cva } from 'class-variance-authority';
 import { cn } from 'cn';
