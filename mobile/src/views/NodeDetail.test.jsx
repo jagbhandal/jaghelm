@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 vi.mock('@shared/hooks/useData.js', () => ({ getServiceIcon: () => null }));
 import NodeDetail from './NodeDetail.jsx';
+import NodeCard from '../components/NodeCard.jsx';
 
 // Non-Pi VM node: no temperature → third bar = DISK
 const DATA = { servicesBody: { nodes: { 'vm-101': {
@@ -12,7 +13,7 @@ const DATA = { servicesBody: { nodes: { 'vm-101': {
   ],
 } } } };
 
-// Pi node: reports temperature → third bar = TEMP
+// Pi node: reports temperature and disk → detail shows both bars
 const PI_DATA = { servicesBody: { nodes: { 'gateway-pi': {
   display_name: 'Gateway Pi', subtitle: 'edge', metrics: { cpu: '8', memPercent: '40', temp: '52', diskPercent: '10' },
   services: [
@@ -48,10 +49,36 @@ describe('NodeDetail', () => {
     expect(screen.queryByText('TEMP')).toBeNull();
   });
 
-  it('renders TEMP bar (not DISK) for a Pi node reporting temperature', () => {
+  it('renders both TEMP and DISK bars for a Pi node reporting temperature and disk', () => {
     render(<NodeDetail data={PI_DATA} nav={{ pop: vi.fn(), push: vi.fn() }} params={{ nodeKey: 'gateway-pi' }} />);
     expect(screen.getByText('TEMP')).toBeInTheDocument();
-    expect(screen.queryByText('DISK')).toBeNull();
+    expect(screen.getByText('52°C')).toBeInTheDocument();
+    expect(screen.getByText('DISK')).toBeInTheDocument();
+    expect(screen.getByText('10%')).toBeInTheDocument();
+  });
+
+  it('at 94 % disk and 80 °C the detail screen shows both bars while the card shows DISK (#273)', () => {
+    const hot = { ...PI_DATA.servicesBody.nodes['gateway-pi'], metrics: { cpu: '8', memPercent: '40', temp: '80', diskPercent: '94' } };
+    const data = { servicesBody: { nodes: { 'gateway-pi': hot } } };
+    const detail = render(<NodeDetail data={data} nav={{ pop: vi.fn(), push: vi.fn() }} params={{ nodeKey: 'gateway-pi' }} />);
+    expect(screen.getByText('TEMP')).toBeInTheDocument();
+    expect(screen.getByText('80°C')).toBeInTheDocument();
+    expect(screen.getByText('DISK')).toBeInTheDocument();
+    expect(screen.getByText('94%')).toBeInTheDocument();
+    detail.unmount();
+
+    render(<NodeCard nodeKey="gateway-pi" node={hot} onTap={() => {}} />);
+    expect(screen.getByText('DISK')).toBeInTheDocument();
+    expect(screen.getByText('94%')).toBeInTheDocument();
+    expect(screen.queryByText('TEMP')).toBeNull();
+  });
+
+  it('keeps a DISK placeholder when the node reports neither temperature nor disk', () => {
+    const bare = { ...DATA.servicesBody.nodes['vm-101'], metrics: { cpu: '45', memPercent: '31', diskPercent: null, temp: null } };
+    const { container } = render(<NodeDetail data={{ servicesBody: { nodes: { 'vm-101': bare } } }} nav={{ pop: vi.fn(), push: vi.fn() }} params={{ nodeKey: 'vm-101' }} />);
+    expect(screen.getByText('DISK')).toBeInTheDocument();
+    expect(screen.queryByText('TEMP')).toBeNull();
+    expect(container.querySelectorAll('.usage-bar')).toHaveLength(3);
   });
 
   it('renders "This node is no longer reported." for a missing node', () => {

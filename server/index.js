@@ -241,7 +241,15 @@ const distPath = join(__dirname, '..', 'dist');
 // Vite emits content-hashed filenames under /assets, so they can be cached
 // forever — serve them immutable to avoid a revalidation round-trip on every
 // reload. index.html and other root files keep the default (revalidated) cache.
-app.use('/assets', express.static(join(distPath, 'assets'), { maxAge: '1y', immutable: true }));
+// fallthrough:false makes a missing file a 404 here: falling through to the SPA
+// catch-all would answer an old tab's request for a removed chunk with
+// index.html and a 200, which the browser then fails to load as code (#256).
+// The 404 is answered here, so it doesn't reach errorHandler's error-level log.
+app.use(
+  '/assets',
+  express.static(join(distPath, 'assets'), { maxAge: '1y', immutable: true, fallthrough: false }),
+  (err, _req, res, next) => (err.status === 404 ? res.sendStatus(404) : next(err))
+);
 app.use(express.static(distPath));
 app.all('/api/*', (req, res) => res.status(404).json({ error: 'Endpoint not found' }));
 app.get('*', (req, res) => res.sendFile(join(distPath, 'index.html')));
