@@ -302,6 +302,16 @@ describe('useDashboard: background and foreground (appStateChange)', () => {
     unmount();
   });
 
+  it('exposes foreground from the same event, for the status bar countdown', async () => {
+    const { result, unmount } = await mount();
+    expect(result.current.foreground).toBe(true);
+    await setAppActive(false);
+    expect(result.current.foreground).toBe(false);
+    await setAppActive(true);
+    expect(result.current.foreground).toBe(true);
+    unmount();
+  });
+
   it('a foreground event while already polling fetches nothing', async () => {
     const { unmount } = await mount();
     await setAppActive(true);

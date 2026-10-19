@@ -37,7 +37,8 @@ const hasBody = (v) => v != null && v !== NOT_MODIFIED_NO_BODY;
  *              /cron/status, which has no ETag and a 60 s max-age, is fetched
  *              past the cache so a copy from before the trip can't come back.
  * The scheduler stops when the app goes to the background (Capacitor
- * `appStateChange`) and runs one round at once on return.
+ * `appStateChange`) and runs one round at once on return. The same event sets
+ * `foreground`, which pauses the status bar's 1 s countdown in the background.
  *
  * The refresh cadence is read from the server's dashboard config so the mobile
  * countdown stays in lockstep with the web app's auto-refresh. `lastUpdated`
@@ -53,6 +54,7 @@ export function useDashboard() {
   const [error, setError] = useState(null);
   const [intervalMs, setIntervalMs] = useState(DEFAULT_REFRESH_MS);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [foreground, setForeground] = useState(true);
   const schedulerRef = useRef(null);
 
   useEffect(() => {
@@ -98,6 +100,7 @@ export function useDashboard() {
     const listener = Promise.resolve(
       App.addListener('appStateChange', ({ isActive }) => {
         if (!live) return;
+        setForeground(isActive);
         if (isActive) scheduler.start('resume');
         else scheduler.stop();
       })
@@ -113,5 +116,5 @@ export function useDashboard() {
 
   const refresh = useCallback(() => schedulerRef.current?.refresh('force') ?? Promise.resolve(), []);
 
-  return { servicesBody, ups, cron, loading, error, refresh, intervalMs, lastUpdated };
+  return { servicesBody, ups, cron, loading, error, refresh, intervalMs, lastUpdated, foreground };
 }
