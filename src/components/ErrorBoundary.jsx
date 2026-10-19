@@ -1,4 +1,5 @@
 import React from 'react';
+import { chunkReloadPending } from '../chunkReload.js';
 
 /**
  * ErrorBoundary — catches render errors in its subtree.
@@ -8,6 +9,9 @@ import React from 'react';
  *   - inline (`inline` prop): a compact in-place card, so one throwing panel
  *     degrades inline instead of blanking the whole dashboard. The root
  *     boundary stays the last resort for anything the inline ones don't cover.
+ *
+ * While the page is reloading for a chunk a deploy removed (chunkReload.js),
+ * it renders nothing instead, so the error screen doesn't flash first.
  *
  * `itemId` is logged with the caught error to identify the failing panel/item.
  */
@@ -28,6 +32,7 @@ export default class ErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
+      if (chunkReloadPending()) return null;
       if (this.props.inline) {
         return (
           <div
