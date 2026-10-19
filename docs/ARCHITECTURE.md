@@ -176,12 +176,22 @@ no monitors. The `/api/services` payload says which answered this cycle,
 `sources: { prometheus: { ok }, kuma: { ok } }`, and `/api/ups` carries its own
 `ok`. Each node also carries `reachable`, from Prometheus' `up` series for that
 node: true when any of its targets answered the last scrape, false when none
-did, null when no `up` series has the node's label. While Prometheus fails, no
-presence breadcrumbs are drawn, since a container missing from the list may
-still be running. The push snapshot keeps its last state for a source that
-failed, so an outage of Prometheus or Kuma sends no alerts about the hosts and
-services they watch ([mobile/DESIGN.md](mobile/DESIGN.md), "Deterministic
-state-change detection").
+did, null when no `up` series has the node's label. It carries `failedReads`
+too: the parts of the node whose queries failed this cycle (`NODE_READS`:
+`reachable` for the `up` query, `cpu`, `mem`, `disk`, `uptime`, `temp`,
+`containers`). Prometheus counts as failed for the cycle when any node query
+fails, and also when every query answers but no node has an `up` series after
+an earlier answer had some: a Prometheus that has just started and not scraped
+yet, whose empty answers mark every node's reads failed. While Prometheus
+fails, no presence breadcrumbs are drawn, since a container missing from the
+list may still be running. The push snapshot keeps its last state for what a
+failed source feeds, and only that: for a host, only the readings whose queries
+failed, so one failing query on one node holds nothing for the others. A
+missing payload (a cold cache after a restart, or one past its TTL) counts as
+failed, and no baseline is taken while the UPS read fails or Prometheus fails
+with no host read. So an outage of Prometheus or Kuma sends no alerts about the
+hosts and services they watch ([mobile/DESIGN.md](mobile/DESIGN.md),
+"Deterministic state-change detection").
 
 ```mermaid
 flowchart TD
@@ -303,12 +313,13 @@ integration connection-test endpoint.
   that keeps failing still logs its own error each cycle. At info: a cycle that
   took 5 s or more; a change in the cycle's set of failed refreshes (a refresh
   that returned null, or an integration with an `_error`); a Kuma load whose
-  monitor count or source changed, or the first load after a failed one; and
-  one line per boot for containers no monitor matches. Prometheus failing
-  (any node query of the cycle) warns once, with the error, and its recovery
-  logs once at info with how long it was down; the failed cycles in between
-  log at debug. Kuma answering with no monitors warns once per outage; a Kuma
-  that can't be reached logs an error every cycle.
+  monitor count or source changed; and one line per boot for containers no
+  monitor matches. Prometheus failing (any node query of the cycle, or an
+  answer with no `up` series after one with some) and Kuma failing (no
+  monitors loaded: unreachable, non-2xx, or a status page with none) each warn
+  once, with the error, and their recovery logs once at info with how long it
+  was down; the failed cycles in between log at debug
+  (`util/sourceHealthLog.js`).
 - **Access log** (`accessLog.js`): one line per request with its full path and no
   query string or fragment; 5xx at `error`, 4xx and requests of 300 ms or more at
   `info`, the rest at `debug`. `/metrics`, `/api/health` and `/api/readyz` are not
