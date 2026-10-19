@@ -3,11 +3,13 @@
  * api.github.com, in normal and in demo mode. Each boot runs in a child process
  * with a preload that records every global fetch and fails it, so the test needs
  * no network and can't reach GitHub even when the code under test tries.
+ * #261: the same boot puts the icon cache in JAGHELM_DATA_DIR and listens on
+ * JAGHELM_HOST (loopback here, so the unauthenticated test server stays local).
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -25,14 +27,14 @@ globalThis.fetch = async (input) => {
 };
 `);
 
-/** Boot the server, wait until it listens and a little after, stop it; returns the fetched URLs. */
+/** Boot the server, wait until it listens and a little after, stop it; returns the fetched URLs, its output and its data dir. */
 async function bootAndRecord(name, extraEnv) {
   const dataDir = mkdtempSync(join(root, `${name}-`));
   const fetchLog = join(dataDir, 'fetches.log');
   writeFileSync(fetchLog, '');
   const env = {
     ...process.env, ...extraEnv,
-    JAGHELM_DATA_DIR: dataDir, FETCH_LOG: fetchLog, PORT: '0', LOG_LEVEL: 'info',
+    JAGHELM_DATA_DIR: dataDir, JAGHELM_HOST: '127.0.0.1', FETCH_LOG: fetchLog, PORT: '0', LOG_LEVEL: 'info',
     PROMETHEUS_URL: 'http://127.0.0.1:1', KUMA_URL: 'http://127.0.0.1:1',
   };
   delete env.DASH_PASS;
@@ -55,7 +57,7 @@ async function bootAndRecord(name, extraEnv) {
         check();
       }),
       exited.then(() => false),
-      // A hung boot must not be left running (auth off, on 0.0.0.0): give up and kill it.
+      // A hung boot must not be left running (auth off): give up and kill it.
       new Promise((resolve) => { deadline = setTimeout(() => resolve(false), 30000); }),
     ]);
     assert.ok(listening, `server exited, or did not listen within 30 s:\n${out}`);
@@ -67,13 +69,22 @@ async function bootAndRecord(name, extraEnv) {
     child.kill('SIGKILL');
     await exited;
   }
-  return readFileSync(fetchLog, 'utf8').split('\n').filter(Boolean);
+  const urls = readFileSync(fetchLog, 'utf8').split('\n').filter(Boolean);
+  return { urls, out, dataDir };
 }
 
 for (const [mode, env] of [['normal', {}], ['demo', { DEMO_MODE: 'true' }]]) {
   test(`boot makes no request to api.github.com (${mode} mode)`, async () => {
-    const urls = await bootAndRecord(mode, env);
+    const { urls } = await bootAndRecord(mode, env);
     const github = urls.filter((u) => new URL(u).hostname === 'api.github.com');
     assert.deepEqual(github, [], `boot requested ${github.join(', ')}`);
   });
 }
+
+test('boot keeps the icon cache in JAGHELM_DATA_DIR and listens on JAGHELM_HOST (#261)', async () => {
+  const { out, dataDir } = await bootAndRecord('hygiene', {});
+  assert.ok(existsSync(join(dataDir, 'icon-cache')), `no icon-cache/ in ${dataDir}`);
+  const listening = out.split('\n').filter((l) => l.includes('"msg":"listening"')).map((l) => JSON.parse(l));
+  assert.equal(listening.length, 1, out);
+  assert.equal(listening[0].host, '127.0.0.1');
+});

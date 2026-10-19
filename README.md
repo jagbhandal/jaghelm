@@ -166,7 +166,7 @@ Open `http://your-host:3099`. JagHelm will discover nodes from Prometheus on fir
  
 ## Configuration
  
-Most things are configurable from the Settings UI (sidebar nav, 13 sections). For people who prefer files, everything is on disk too:
+Most things are configurable from the Settings UI (sidebar nav, 13 sections). For people who prefer files, everything is on disk too, in `data/` (or the directory `JAGHELM_DATA_DIR` names):
  
 ```
 data/
@@ -176,7 +176,8 @@ data/
 ├── auth.json              # password hash (if changed via UI)
 ├── cron-jobs.json         # cron job execution history
 ├── todos.json             # checklist data
-└── icon-index.json        # icon picker's names-only index (a cache; safe to delete)
+├── icon-index.json        # icon picker's names-only index (a cache; safe to delete)
+└── icon-cache/            # CDN icons served locally after the first load (a cache; safe to delete)
 ```
  
 `services.yaml` is hot-reloaded — edit it on disk and JagHelm picks up the change without restarting.
@@ -196,6 +197,8 @@ JAGHELM_NPM_URL=http://192.168.x.x:81
 JAGHELM_GITEA_TOKEN=...
 ```
  
+The server listens on every IPv4 interface (`0.0.0.0`) on `PORT` (default 3099). Set `JAGHELM_HOST` to listen on one address instead, such as `127.0.0.1` for a reverse proxy on the same host with `network_mode: host`. In a bridge-network container keep the default (see `env.example`).
+
 See [`env.example`](env.example) for the full list.
  
 ### Cron job reporting

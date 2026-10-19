@@ -2,9 +2,10 @@
  * JagHelm Icon Cache
  * 
  * Proxies external icon URLs (jsdelivr CDN) on first request,
- * saves them to data/icon-cache/, and serves locally on all
- * subsequent requests. Icons are set-and-forget — this eliminates
- * 20-30 CDN round-trips on every cold page load.
+ * saves them to icon-cache/ in the data dir (JAGHELM_DATA_DIR, default
+ * data/), and serves locally on all subsequent requests. Icons are
+ * set-and-forget — this eliminates 20-30 CDN round-trips on every cold
+ * page load.
  * 
  * Cache key: SHA-256 hash of the original URL → {hash}.{ext}
  * 
@@ -18,8 +19,9 @@
  */
 
 import { existsSync, mkdirSync, writeFileSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import crypto from 'crypto';
+import { DATA_DIR } from './util/dataDir.js';
 import { createLogger } from './util/logger.js';
 
 const log = createLogger('icon-cache');
@@ -41,14 +43,16 @@ function setIconHeaders(res, mime, cacheState) {
   res.setHeader('Content-Disposition', 'inline');
 }
 
-let cacheDir = '';
+// Absolute: res.sendFile() refuses a relative path, and JAGHELM_DATA_DIR may be one.
+const cacheDirIn = (dataDir) => resolve(dataDir, 'icon-cache');
+let cacheDir = cacheDirIn(DATA_DIR);
 
 /**
  * Initialize the icon cache directory.
- * Call once at boot with the data directory path.
+ * Call once at boot; the data dir defaults to JAGHELM_DATA_DIR, like every store.
  */
-export function initIconCache(dataDir) {
-  cacheDir = join(dataDir, 'icon-cache');
+export function initIconCache(dataDir = DATA_DIR) {
+  cacheDir = cacheDirIn(dataDir);
   if (!existsSync(cacheDir)) {
     mkdirSync(cacheDir, { recursive: true });
   }

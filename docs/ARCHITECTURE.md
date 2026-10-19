@@ -129,6 +129,9 @@ logger -> Helmet security headers + **Content-Security-Policy (report-only)** ->
 CORS -> `express.json({ limit: '1mb' })` -> `/uploads` static -> `/metrics` ->
 (optional `DEMO_MODE` middleware) -> the API routers -> hashed-asset static
 (`immutable, 1y`) -> SPA fallback (`index.html`) -> the global JSON error handler.
+It listens on `JAGHELM_HOST` (default `0.0.0.0`, every IPv4 interface) and `PORT`
+(default 3099); if it can't (an address the machine doesn't have, a port in use),
+it logs `cannot listen` and exits 1.
 
 Routers (each `server/routes/*.js`), mounted under `/api`:
 
@@ -265,7 +268,7 @@ Key properties:
   random KDF salt** (`data/.secrets-salt`, legacy-static-salt fallback). All
   credential stores write `0600`.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
-  secrets/auth/config/cron never split across locations.
+  secrets/auth/config/cron and the icon cache never split across locations.
 
 ### 4.5 Auth & rate limiting
 
@@ -366,6 +369,9 @@ All state is files under the data dir (no DB):
   directory on its default branch (conditional on the ETag, 8 MB body cap). A
   failed or truncated refresh keeps the index it has and is retried after an
   hour, or after 5 minutes while there is no index to serve.
+- **icon cache** -- `icon-cache/`: each CDN icon `/api/icons/cached` has served,
+  one file named by the SHA-256 of its URL. A cache, so deleting it is safe; icons
+  are fetched again as they are shown.
 
 ## 7. CI/CD pipeline
 
