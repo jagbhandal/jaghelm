@@ -288,7 +288,7 @@ Push notifications are tied to the Firebase project an APK is built with. The pu
  
 ### Stack
  
-- **Frontend:** React 19, Vite 8 (Rolldown), HelmGrid (custom layout engine), @dnd-kit, react-colorful
+- **Frontend:** React 19, Vite 8 (Rolldown), HelmGrid (custom layout engine), @dnd-kit, react-colorful; for the redesign, Tailwind CSS v4, shadcn/ui on Base UI and Lucide icons in `src/ui/`, shared with the Android app
 - **Backend:** Express, undici, helmet, multer, js-yaml, dotenv
 - **Container:** Node 26 Alpine, runs as non-root, healthcheck via native fetch
 - **Encryption:** AES-256-GCM with PBKDF2 (100k iterations); scrypt for password hashing
