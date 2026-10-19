@@ -91,6 +91,40 @@ test('DELETE /:type → 404 on an unknown integration (no false success)', async
   assert.equal(r.status, 404);
 });
 
+// ── GET /:type is gone (#254) ─────────────────────────────────────────────
+// It returned one integration's live data, with the whole upstream response as
+// `raw`, and had no web or Android caller. The dashboard reads GET / instead.
+test('GET /:type → 404 without an upstream request, configured or not', async (t) => {
+  const app = makeApp();
+  const saved = await request(app)
+    .post('/api/integrations/save')
+    .send({ type: 'custom', instance: 'rawcheck', url: 'http://example.test' });
+  assert.equal(saved.status, 200);
+  t.after(() => request(app).delete('/api/integrations/custom_rawcheck'));
+
+  const realFetch = globalThis.fetch;
+  let upstreamCalls = 0;
+  globalThis.fetch = async () => {
+    upstreamCalls++;
+    return new Response('{}');
+  };
+  t.after(() => { globalThis.fetch = realFetch; });
+
+  // A configured integration, and a preset nobody configured (the old route
+  // fetched those too, from their .env credentials).
+  for (const type of ['custom_rawcheck', 'proxmox']) {
+    const r = await request(app).get(`/api/integrations/${type}`);
+    assert.equal(r.status, 404, `GET /api/integrations/${type}`);
+  }
+  assert.equal(upstreamCalls, 0, 'no integration was fetched');
+});
+
+test('GET /presets still lists the gallery', async () => {
+  const r = await request(makeApp()).get('/api/integrations/presets');
+  assert.equal(r.status, 200);
+  assert.ok(r.body.some((p) => p.type === 'proxmox'));
+});
+
 // ── unsupported-preset gate enforced server-side (security review) ─────────
 // The `unsupported` flag (e.g. qbittorrent's cookie-session requirement) must be
 // blocked at the routes + resolution chokepoint, not only hidden from the

@@ -236,6 +236,10 @@ Key properties:
 - **Credentials are redacted** (`util/redact.js`) before any error is logged *or*
   returned to the browser -- query-auth presets put the key in the URL, which
   fetch errors would otherwise echo.
+- **Only the computed result is kept.** A poll returns and caches what the
+  preset computes (its fields, plus structured data such as Proxmox's VMs,
+  storage pools and last backup), and drops the upstream response once the
+  preset has read it. No route returns an integration's upstream response.
 - **Session-auth presets** (e.g. Proxmox) get a managed login session via
   `lib/session.js`; the same SSRF guard still applies.
 

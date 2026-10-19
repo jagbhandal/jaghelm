@@ -2,6 +2,8 @@
  * JagHelm Integration Handler — all integrations, preset and custom, flow
  * through this single handler. Pipeline: resolve config → auth → fetch →
  * transform → cache. Owns the two orchestrators fetchIntegration + testIntegration.
+ * Only the transformed result is returned and cached; the upstream response is
+ * dropped once the fields and structuredTransform have read it (#254).
  *
  * lib/ map: cache.js (response cache+TTL), http.js (safeFetch), extract.js (JSON
  * path DSL + URL templating), format.js (formatValue+computeField), auth.js
@@ -52,8 +54,7 @@ export { assertSafeUrl };
 export async function fetchIntegration(type, yamlConfig, bustCache = false) {
   // Key by the unique storage key, not the preset type — otherwise two
   // instances of one preset (adguard_primary / adguard_secondary) share a key
-  // and serve each other's data. refresh.js threads _storageKey through; the
-  // GET /:type route passes the storage key as `type` directly.
+  // and serve each other's data. refresh.js threads _storageKey through.
   const cacheKey = `integration:${yamlConfig?._storageKey || type}`;
 
   if (!bustCache) {
@@ -147,7 +148,9 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       extra = config.structuredTransform(rawData);
     }
 
-    const result = { fields, ...extra, raw: rawData, error: null };
+    // No `raw: rawData`: nothing reads the upstream body after this, and keeping
+    // it held a copy of every integration's response in the cache (#254).
+    const result = { fields, ...extra, error: null };
     setCache(cacheKey, result);
     return result;
 

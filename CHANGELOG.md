@@ -6,6 +6,9 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Removed
+- `GET /api/integrations/:type`, which returned one integration's data along with the whole response from its app's API. Neither the web app nor the Android app called it: the dashboard reads every integration from `GET /api/integrations`, which is unchanged, as are `/api/integrations/presets`, `/test`, `/save` and `DELETE /api/integrations/:type`. The server also no longer keeps each integration's full API response in memory between polls, only what the dashboard shows.
+
 ### Fixed
 - A request redirected with `307` or `308` now keeps its method and body, as those codes require, instead of being turned into a `GET` without a body. A session login (Nginx Proxy Manager, Portainer, PhotoPrism) behind such a redirect on the same host and port, or from `http://` to `https://` on it, now works. A login redirected to another origin (host, port or scheme, apart from that upgrade) is refused instead of being re-sent there. `301` and `302` still turn any method but `GET` and `HEAD` into a `GET` without a body, and `303` turns every method, `HEAD` included, into one.
 - The server no longer loads the integration presets' test files as presets at startup, so it no longer logs two "Skipping invalid preset" errors (for `gitlab.test.js` and `nextcloud.test.js`) or prints their test output in its logs. Test files are also left out of the image.

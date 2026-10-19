@@ -60,6 +60,21 @@ test('unknown /api/* route → JSON 404, not an HTML page', async () => {
   assert.ok(r.body.error);
 });
 
+test('GET /api/integrations/:type → JSON 404 (removed, #254); the list stays', async (t) => {
+  // A configured integration, so the 404 is the route being gone, not a miss.
+  const saved = await request(app)
+    .post('/api/integrations/save')
+    .send({ type: 'custom', instance: 'rawcheck', url: 'http://example.test' });
+  assert.equal(saved.status, 200);
+  t.after(() => request(app).delete('/api/integrations/custom_rawcheck'));
+
+  const one = await request(app).get('/api/integrations/custom_rawcheck');
+  assert.equal(one.status, 404);
+  assert.match(one.headers['content-type'], /json/);
+  const all = await request(app).get('/api/integrations');
+  assert.equal(all.status, 200);
+});
+
 test('POST /api/services/config → 400 on a non-object body', async () => {
   const r = await request(app)
     .post('/api/services/config')
