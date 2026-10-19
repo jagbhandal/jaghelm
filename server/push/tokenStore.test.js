@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTokenStore, DEFAULT_PREFS } from './tokenStore.js';
@@ -153,20 +153,79 @@ test('setPrefs with an empty/garbage object yields full DEFAULT_PREFS', () => {
   cleanup();
 });
 
-test('pruneStale removes tokens older than maxAge using the injected now', () => {
-  const { store, setNow, cleanup } = freshStore();
-  const DAY = 24 * 60 * 60 * 1000;
-  setNow(1000);
-  store.registerToken('fresh', { platform: 'android', appVersion: '1.0.0' }); // lastSeenAt 1000
+const DAY = 24 * 60 * 60 * 1000;
 
-  setNow(1000 + 40 * DAY);
+test('pruneStale removes tokens unseen for longer than the 270-day default', () => {
+  const { store, setNow, cleanup } = freshStore();
+  setNow(1000);
+  store.registerToken('old', { platform: 'android', appVersion: '1.0.0' }); // lastSeenAt 1000
+
+  setNow(1000 + 280 * DAY);
   store.registerToken('recent', { platform: 'android', appVersion: '1.0.0' }); // lastSeenAt now
 
-  // now = 1000 + 40d. Default maxAge 30d => cutoff = 1000 + 10d. `fresh` (1000) is older => pruned.
+  // now = 1000 + 280d. Default maxAge 270d => cutoff = 1000 + 10d. `old` (1000) is older => pruned.
   const removed = store.pruneStale();
   assert.equal(removed, 1);
-  assert.equal(store.getToken('fresh'), null);
+  assert.equal(store.getToken('old'), null);
   assert.ok(store.getToken('recent'), 'recent token survives');
+  cleanup();
+});
+
+test('pruneStale keeps a token whose app has not launched for 31 or 269 days (#247)', () => {
+  const { store, setNow, cleanup } = freshStore();
+  setNow(1000);
+  store.registerToken('quiet-phone', { platform: 'android', appVersion: '1.0.0' });
+
+  setNow(1000 + 31 * DAY);
+  assert.equal(store.pruneStale(), 0, 'a month without an app launch is not evidence the token is dead');
+  setNow(1000 + 269 * DAY);
+  assert.equal(store.pruneStale(), 0, 'still inside the 270-day window');
+  assert.ok(store.getToken('quiet-phone'));
+  cleanup();
+});
+
+test('markDelivered bumps lastSeenAt for known tokens and persists it', () => {
+  const { path, store, setNow, cleanup } = freshStore();
+  setNow(1000);
+  store.registerToken('tok-a', { platform: 'android', appVersion: '1.0.0' });
+  store.registerToken('tok-b', { platform: 'android', appVersion: '1.0.0' });
+  store.setPrefs('tok-a', { ...DEFAULT_PREFS, notifyRecoveries: false });
+
+  setNow(1000 + 40 * DAY);
+  assert.equal(store.markDelivered(['tok-a']), 1);
+  const rec = store.getToken('tok-a');
+  assert.equal(rec.lastSeenAt, 1000 + 40 * DAY, 'an FCM-accepted send counts as seen');
+  assert.equal(rec.registeredAt, 1000, 'registeredAt untouched');
+  assert.equal(rec.appVersion, '1.0.0', 'appVersion untouched');
+  assert.equal(rec.prefs.notifyRecoveries, false, 'prefs untouched');
+  assert.equal(store.getToken('tok-b').lastSeenAt, 1000, 'tokens not delivered to are not bumped');
+  // Survives a reload from disk.
+  assert.equal(createTokenStore({ path, now: () => 0 }).getToken('tok-a').lastSeenAt, 1000 + 40 * DAY);
+  cleanup();
+});
+
+test('markDelivered ignores unknown tokens and writes nothing when nothing changed', () => {
+  const { path, store, setNow, cleanup } = freshStore();
+  setNow(1000);
+  // A token pruned or deleted mid-dispatch must not be re-created by a late delivery.
+  assert.equal(store.markDelivered(['ghost', '__proto__']), 0);
+  assert.equal(store.markDelivered([]), 0);
+  assert.equal(store.getToken('ghost'), null);
+  assert.equal(existsSync(path), false, 'no file write for a no-op');
+  assert.equal(({}).lastSeenAt, undefined, 'Object.prototype not touched');
+  cleanup();
+});
+
+test('deliveries alone keep a never-reopened token past the prune window (#247)', () => {
+  const { store, setNow, cleanup } = freshStore();
+  setNow(1000);
+  store.registerToken('alert-receiver', { platform: 'android', appVersion: '1.0.0' });
+  // The app is never opened again, but FCM keeps accepting pushes to it.
+  setNow(1000 + 200 * DAY);
+  store.markDelivered(['alert-receiver']);
+  setNow(1000 + 400 * DAY); // 400 days since the last launch, 200 since the last delivery
+  assert.equal(store.pruneStale(), 0);
+  assert.ok(store.getToken('alert-receiver'));
   cleanup();
 });
 

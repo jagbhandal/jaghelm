@@ -19,13 +19,13 @@
 //
 // A run reports 785 today, 9 of them duplicates: registry.js loads every .js file in
 // presets/, test files included, so the gitlab and nextcloud preset tests run twice
-// (#223). Merged with the fix for #223, the suite passes 778. The floor (773) is below
-// both, so either can merge first; raise it as tests land.
+// (#223). Merged with the fix for #223, the suite passes 778. The floor started at 773,
+// below both, so either could merge first; raise it as tests land.
 import { spawn } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export const MIN_PASSING = 773;
+export const MIN_PASSING = 779;
 const STALE_MARGIN = 0.02;
 
 const KEYS = ['tests', 'suites', 'pass', 'fail', 'cancelled', 'skipped', 'todo'];

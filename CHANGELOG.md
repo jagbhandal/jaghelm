@@ -8,6 +8,7 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ### Fixed
 - A request redirected with `307` or `308` now keeps its method and body, as those codes require, instead of being turned into a `GET` without a body. A session login (Nginx Proxy Manager, Portainer, PhotoPrism) behind such a redirect on the same host and port, or from `http://` to `https://` on it, now works. A login redirected to another origin (host, port or scheme, apart from that upgrade) is refused instead of being re-sent there. `301` and `302` still turn any method but `GET` and `HEAD` into a `GET` without a body, and `303` turns every method, `HEAD` included, into one.
+- A phone that receives push alerts but where the JagHelm app had not been opened for 30 days no longer silently stops getting them. The server used to forget a device 30 days after the app last started; now every push Firebase accepts for a device also counts as a sign of life, and a device is dropped when Firebase rejects its token as no longer registered or invalid, or after 270 days with neither an app start nor an accepted push (Firebase's own limit for an inactive token).
 - The server no longer loads the integration presets' test files as presets at startup, so it no longer logs two "Skipping invalid preset" errors (for `gitlab.test.js` and `nextcloud.test.js`) or prints their test output in its logs. Test files are also left out of the image.
 
 ### Security

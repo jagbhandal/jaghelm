@@ -16,7 +16,12 @@ import { createLogger } from '../util/logger.js';
 const log = createLogger('push-tokens');
 
 const DEFAULT_PATH = join(DATA_DIR, 'push-tokens.json');
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+// Tokens are removed when FCM rejects them on send (see dispatchEvents). This age
+// backstop only clears tokens with no sign of life for longer than FCM itself keeps
+// an inactive Android registration (270 days). `lastSeenAt` is the last sign of
+// life: an app launch (registerToken) or a send FCM accepted (markDelivered). A
+// phone used only to receive alerts is never pruned while FCM accepts its pushes.
+const STALE_AFTER_MS = 270 * 24 * 60 * 60 * 1000;
 
 /** Default notification preferences seeded for every newly-registered token. */
 export const DEFAULT_PREFS = Object.freeze({
@@ -145,7 +150,26 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
     return { ...rec, prefs: clonePrefs(rec.prefs) };
   }
 
-  function pruneStale(maxAgeMs = THIRTY_DAYS_MS) {
+  /**
+   * Record that FCM accepted a send to each of these tokens: bump lastSeenAt to now.
+   * Unknown tokens are ignored (never re-created). One write for the whole batch,
+   * none when nothing matched. Returns how many tokens were bumped.
+   */
+  function markDelivered(tokens) {
+    const ts = now();
+    let bumped = 0;
+    for (const token of tokens) {
+      if (!Object.prototype.hasOwnProperty.call(store, token)) continue;
+      const rec = store[token];
+      if (!rec) continue;
+      rec.lastSeenAt = ts;
+      bumped += 1;
+    }
+    if (bumped > 0) save(store);
+    return bumped;
+  }
+
+  function pruneStale(maxAgeMs = STALE_AFTER_MS) {
     const cutoff = now() - maxAgeMs;
     let removed = 0;
     for (const token of Object.keys(store)) {
@@ -161,5 +185,5 @@ export function createTokenStore({ path = DEFAULT_PATH, now = Date.now } = {}) {
     return removed;
   }
 
-  return { registerToken, getToken, removeToken, getAllTokens, getPrefs, setPrefs, pruneStale };
+  return { registerToken, getToken, removeToken, getAllTokens, getPrefs, setPrefs, markDelivered, pruneStale };
 }
