@@ -294,7 +294,7 @@ as pending. JagHelm's own deploys go through the pin, health-gate and rollback w
 `scripts/arcane-poll-once.js` runs the real poller twice against the live manager over
 throwaway temp stores. It sends no push and never touches JagHelm's data directory. Pass 1
 is the silent baseline; pass 2 shows what would push. Run it from a checkout of this
-repository under Node 22 (the image leaves the dry run out, so it can't run in the container),
+repository under Node 26 (the image leaves the dry run out, so it can't run in the container),
 after `npm ci --omit=dev` there: the server code it runs needs the runtime dependencies (a
 fresh checkout without them fails with `ERR_MODULE_NOT_FOUND`):
 

@@ -9,7 +9,7 @@ name: check
 #
 # Mirrors the homelab-infra CI runner pattern: a self-hosted runner + a toolchain
 # container + a manual clone (the act_runner host lacks Node for actions/checkout;
-# the node:22 container supplies Node + git).
+# the node:26 container supplies Node + git).
 on:
   pull_request:
     branches:
@@ -22,7 +22,7 @@ jobs:
   check:
     runs-on: self-hosted
     container:
-      image: node:22
+      image: node:26
     defaults:
       run:
         shell: bash

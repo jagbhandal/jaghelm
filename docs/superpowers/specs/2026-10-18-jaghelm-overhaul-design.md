@@ -60,7 +60,7 @@ Jag, 2026-10-18: agreed to every recommendation in both audits, and chose Arcane
 ## 4. Constraints
 
 - **Stack today.** Web: React 19 + Vite 8, plain CSS (`src/styles/global.css`, 427 inline style objects). Android: Capacitor + React in `mobile/`, importing web code through the `@shared` → `src` alias. Server: Node/Express, file-backed config (ADR 0001), single instance (ADR 0002).
-- **Tests.** `npm run test:ci` with the floor in `scripts/test-floor.mjs` (raise it as tests are added; never lower it). Node 22 for local runs.
+- **Tests.** `npm run test:ci` with the floor in `scripts/test-floor.mjs` (raise it as tests are added; never lower it). Node 26 for local runs (`.nvmrc`).
 - **Releases.** Each phase ships as a release through `docs/RELEASING.md`. Each phase must leave `main` releasable; no long-lived branch.
 - **Self-hosted.** No runtime calls to third parties for the UI: fonts and icons ship in the bundle (#244), and the CSP stays strict.
 - **Android.** The app is distributed as an APK; push stays on FCM (transport changes are #235/#194, not this design).

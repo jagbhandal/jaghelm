@@ -36,6 +36,10 @@ export default defineConfig({
     globals: true,
     // Undo vi.stubGlobal between tests so a stubbed fetch can't leak across files.
     unstubGlobals: true,
+    // Node 25+ ships its own `localStorage` global, which shadows jsdom's and is
+    // undefined without --localstorage-file. Turn it off in the test workers so
+    // the tests get jsdom's, as a browser would (#375).
+    execArgv: ['--no-experimental-webstorage'],
     setupFiles: ['./src/testing/setup.js'],
     include: ['src/**/*.test.{js,jsx}'],
     // These are pure node:test suites; they run under `npm test`, not vitest
