@@ -202,8 +202,8 @@ const corsOrigins = corsOriginEnv
 // default — bypasses CORS entirely and needs none of this.)
 app.use(cors({ origin: corsOrigins, exposedHeaders: ['ETag'] }));
 
-// gzip responses. The big win is /api/history — intentionally non-304 (it changes
-// every poll) and the largest repeatedly-fetched JSON; numeric JSON gzips ~80-90%.
+// gzip responses. The big win is /api/history — it changes every cycle (so it
+// rarely 304s) and is the largest repeatedly-fetched JSON; numeric JSON gzips ~80-90%.
 app.use(compression());
 
 // 1 MB request bodies are plenty for JSON config + small uploads (binary

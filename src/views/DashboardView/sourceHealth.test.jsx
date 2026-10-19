@@ -92,6 +92,33 @@ describe('sourceHealth — sourceBanner', () => {
     expect(both.staleNote).toMatch(/updated/);
   });
 
+  it('does not count time spent paused as silence, but reports the real age', () => {
+    // Last success 10 intervals ago, polling resumed 1 interval ago → not stale yet.
+    const resumed = {
+      error: null,
+      lastSuccessMs: NOW - 10 * INTERVAL,
+      watchedSinceMs: NOW - INTERVAL,
+    };
+    expect(sourceBanner(resumed, 'services', INTERVAL, NOW).staleNote).toBeNull();
+
+    // Still no success 3 intervals after resuming → stale, with the true age.
+    const still = { ...resumed, watchedSinceMs: NOW - 3 * INTERVAL };
+    expect(sourceBanner(still, 'services', INTERVAL, NOW).staleNote).toBe('updated 5m ago');
+  });
+
+  it('keeps the age note of a source still failing after a return', () => {
+    // Failing for 2 hours; polling resumed 1 interval ago. The pause doesn't
+    // reset its silence: it still fails, so the note keeps the real age.
+    const failing = {
+      error: 'HTTP 502',
+      lastSuccessMs: NOW - 2 * 3_600_000,
+      watchedSinceMs: NOW - INTERVAL,
+    };
+    const out = sourceBanner(failing, 'cron', INTERVAL, NOW);
+    expect(out.message).toMatch(/cron/i);
+    expect(out.staleNote).toBe('updated 2h ago');
+  });
+
   it('never reports staleness when there has been no success yet', () => {
     const out = sourceBanner({ error: 'HTTP 502', lastSuccessMs: null }, 'services', INTERVAL, NOW);
     expect(out.staleNote).toBeNull();

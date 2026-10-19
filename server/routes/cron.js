@@ -48,7 +48,11 @@ router.post('/report', (req, res) => {
   res.json({ ok: true });
 });
 
+// seconds_since_report changes every second, so an ETag would never match.
+// Instead the response may be reused for a minute: overdue has at least 10
+// minutes' grace, and the web dashboard reads cron every few ticks anyway.
 router.get('/status', authMiddleware, (req, res) => {
+  res.set('Cache-Control', 'private, max-age=60');
   res.json(decorateStatuses(getAllStatuses(), Date.now()));
 });
 

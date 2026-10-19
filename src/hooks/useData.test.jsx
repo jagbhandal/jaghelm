@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   getServiceIcon,
   cachedIconUrl,
+  getCronStatus,
   saveTodos,
   saveIntegration,
   testIntegration,
@@ -118,5 +119,40 @@ describe('mutator helpers — fail on non-2xx (r.ok check)', () => {
   it('deleteIntegration rejects on a non-2xx', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response('nope', { status: 404 }))));
     await expect(deleteIntegration('x')).rejects.toThrow(/HTTP 404/);
+  });
+});
+
+// ── forced fetches bypass the browser's HTTP cache ────────────────────────
+//
+// /cron/status sends Cache-Control: max-age, so the browser may hold a copy. A
+// forced fetch (first load, retry, the retry after deleting a cron job) must
+// reach the server AND replace that copy (`reload`, not `no-store`, which would
+// leave the older copy for the next polled fetch to serve); a polled fetch
+// leaves caching to the server's headers.
+describe('fetchJson — cache mode', () => {
+  const ok = () =>
+    Promise.resolve({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: () => Promise.resolve([]),
+    });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends a forced fetch with cache: reload, so it refreshes the cached copy', async () => {
+    const spy = vi.fn(ok);
+    vi.stubGlobal('fetch', spy);
+    await getCronStatus(true);
+    expect(spy.mock.calls[0][1].cache).toBe('reload');
+  });
+
+  it('leaves a polled fetch on the default cache mode', async () => {
+    const spy = vi.fn(ok);
+    vi.stubGlobal('fetch', spy);
+    await getCronStatus();
+    expect(spy.mock.calls[0][1].cache).toBeUndefined();
   });
 });

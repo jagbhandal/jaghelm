@@ -33,7 +33,6 @@ const baseProps = () => ({
   onToggleTheme: vi.fn(),
   health: 'up',
   lastUpdated: new Date(),
-  refreshKey: 0,
 });
 
 // Render NavBar inside a ConfigProvider seeded with the given config.

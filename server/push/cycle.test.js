@@ -449,3 +449,60 @@ test('createPushSnapshot flush: a failed write is logged, not thrown', async () 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// #232: the builder is handed the previous snapshot, so it can keep the parts a
+// failed source feeds; advancing to what it returns keeps them across cycles.
+test('runPushCycle hands buildSnapshotFn the previous snapshot (null on the baseline)', async () => {
+  const { dir, path } = tmpSnapshotPath();
+  const seen = [];
+  const build = (prev) => {
+    seen.push(prev);
+    return SNAP_UP;
+  };
+  try {
+    const snapshot = createPushSnapshot({ path, logger: silentLog });
+    for (let i = 0; i < 2; i += 1) {
+      await runPushCycle({
+        buildSnapshotFn: build,
+        store: oneTokenStore(),
+        fcm: enabledFcm(),
+        snapshot,
+        thresholds: THRESHOLDS,
+        logger: silentLog,
+      });
+    }
+    assert.deepEqual(seen, [null, SNAP_UP]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// #232 review: a builder with no snapshot to give (a baseline while a source
+// fails) returns null, and the cycle neither sends nor advances.
+test('runPushCycle: a null snapshot skips the cycle, so the baseline waits for one', async () => {
+  const { dir, path } = tmpSnapshotPath();
+  const fcm = enabledFcm();
+  const snapshot = createPushSnapshot({ path, logger: silentLog });
+  const cycle = (build) =>
+    runPushCycle({
+      buildSnapshotFn: build,
+      store: oneTokenStore(),
+      fcm,
+      snapshot,
+      thresholds: THRESHOLDS,
+      logger: silentLog,
+    });
+  try {
+    await cycle(() => null);
+    assert.equal(snapshot.prev(), null, 'no baseline taken');
+    assert.equal(existsSync(path), false, 'nothing written');
+
+    await cycle(() => SNAP_DOWN); // the baseline
+    await cycle(() => null); // skipped: prev stays the baseline
+    await cycle(() => SNAP_UP);
+    assert.deepEqual(fcm.calls, [{ token: 'a', type: 'service_recovered' }]);
+    assert.deepEqual(snapshot.prev(), SNAP_UP);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -112,3 +112,130 @@ test('discovery: a container with a STALE container_last_seen is dropped from th
     globalThis.fetch = realFetch;
   }
 });
+
+// ── #232: a failed query is not an empty result ──────────────────────────
+// promQuery used to swallow every error and return [], the same as "no series",
+// so a Prometheus outage read as every host losing its metrics.
+
+const { promQuery, PromQueryError } = await import('./discovery.js');
+
+const answer = (status, body) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  headers: { get: () => null },
+  body: null,
+  json: async () => body,
+});
+
+const FAILURES = {
+  'an HTTP 500': async () => answer(500, { status: 'error', errorType: 'internal', error: 'boom' }),
+  'a timeout': async () => {
+    throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+  },
+  'a refused connection': async () => {
+    throw new TypeError('fetch failed');
+  },
+  'a 200 with an error status': async () => answer(200, { status: 'error', error: 'query timed out' }),
+  'a 200 that is not a query result': async () => answer(200, { hello: 'proxy login page' }),
+  'a body that is not JSON': async () => ({
+    ...answer(200, null),
+    json: async () => {
+      throw new SyntaxError('Unexpected token <');
+    },
+  }),
+};
+
+for (const [name, stub] of Object.entries(FAILURES)) {
+  test(`promQuery: ${name} rejects with a PromQueryError`, async () => {
+    globalThis.fetch = stub;
+    try {
+      await assert.rejects(promQuery('up'), PromQueryError);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+}
+
+test('promQuery: a query no series match resolves to [], not an error', async () => {
+  globalThis.fetch = async () => answer(200, { status: 'success', data: { resultType: 'vector', result: [] } });
+  try {
+    assert.deepEqual(await promQuery('up{node="nope"}'), []);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('getNodeData: a failing query makes the result ok:false with its error', async () => {
+  globalThis.fetch = async (url) =>
+    decodeURIComponent(url).includes('container_')
+      ? answer(503, { status: 'error', error: 'unavailable' })
+      : promResponse(url);
+  try {
+    const data = await getNodeData('vm-test');
+    assert.equal(data.ok, false);
+    assert.match(data.error, /HTTP 503/);
+    assert.deepEqual(data.failedReads, ['containers'], 'only what the failed queries feed');
+    assert.equal(data.metrics.temp, '0.0', 'what the other queries returned is kept');
+    assert.deepEqual(data.containers, []);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('getNodeData: every query answering, even with no series, is ok:true', async () => {
+  globalThis.fetch = async () => promResult([]);
+  try {
+    const data = await getNodeData('vm-test');
+    assert.equal(data.ok, true);
+    assert.equal(data.error, null);
+    assert.deepEqual(data.failedReads, []);
+    assert.equal(data.reachable, null, 'no up series for the node: reachability unknown');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('getNodeData: reachable is up{node} — true if any target answered, false if none did', async () => {
+  for (const [up, reachable] of [['1', true], ['0', false]]) {
+    const seen = [];
+    globalThis.fetch = async (url) => {
+      const q = decodeURIComponent(url);
+      seen.push(q);
+      return q.includes('max(up{node="vm-test"})') ? promResult([{ metric: {}, value: [0, up] }]) : promResult([]);
+    };
+    try {
+      assert.equal((await getNodeData('vm-test')).reachable, reachable);
+      assert.ok(seen.some((q) => q.includes('max(up{node="vm-test"})')));
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+});
+
+// #232 review: one failed query is not the whole node. failedReads names what
+// the failed queries feed, so the push snapshot holds only that.
+test('getNodeData: failedReads names the parts whose queries failed', async () => {
+  const { NODE_READS } = await import('./discovery.js');
+  const failing = (match) => async (url) => {
+    const q = decodeURIComponent(url);
+    return match(q) ? answer(400, { status: 'error', error: 'bad_data' }) : promResponse(url);
+  };
+  const cases = [
+    [(q) => q.includes('max(up{'), ['reachable']],
+    [(q) => q.includes('node_hwmon_temp_celsius'), ['temp']],
+    [(q) => q.includes('MemAvailable'), ['mem']],
+    [(q) => q.includes('node_filesystem_size_bytes'), ['disk']],
+    [(q) => q.includes('node_cpu_seconds_total') || q.includes('node_boot_time_seconds'), ['cpu', 'uptime']],
+    [() => true, [...NODE_READS]],
+  ];
+  for (const [match, failedReads] of cases) {
+    globalThis.fetch = failing(match);
+    try {
+      const data = await getNodeData('vm-test');
+      assert.equal(data.ok, false);
+      assert.deepEqual(data.failedReads, failedReads);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+});

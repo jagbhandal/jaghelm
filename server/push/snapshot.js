@@ -12,6 +12,13 @@
  *
  * Normalization law: anything unrecognized => "unknown" (services/cron),
  * "unknown" ups, or reachable:false (hosts). "unknown" never produces an event.
+ *
+ * Failed sources (#232): a payload says whether its upstream answered this
+ * cycle (services: `sources.prometheus.ok` / `sources.kuma.ok`, and per node
+ * `failedReads`; ups: `ok`), and a missing payload means it did not. A source
+ * that failed has nothing to say about what it watches, so the part of the
+ * snapshot it feeds is kept from the previous snapshot (see buildSnapshot)
+ * rather than read as every host, service or the UPS going away.
  */
 
 // At top of file (after header comment), for the default production seam only.
@@ -128,9 +135,11 @@ export function buildCron(cronStatuses, nowMs = null) {
 
 /**
  * Project the cached /api/services node metrics into the snapshot hosts map.
- * A node is `reachable` iff at least one of its three metrics parses finite;
- * an all-null/absent-metrics node is treated as unreachable (per the
- * normalization law). Metrics are 0..1 fractions.
+ * A node's `reachable` is the payload's own (Prometheus' `up` for the node)
+ * when it is a boolean. Without one (no `up` series carries the node's label,
+ * or an older payload) a node is reachable iff at least one of its three
+ * metrics parses finite; an all-null/absent-metrics node is treated as
+ * unreachable (per the normalization law). Metrics are 0..1 fractions.
  */
 export function buildHosts(servicesCache) {
   const nodes = servicesCache?.nodes;
@@ -139,7 +148,10 @@ export function buildHosts(servicesCache) {
   for (const [node, data] of Object.entries(nodes)) {
     const m = data?.metrics || {};
     const hasMetric = (v) => Number.isFinite(typeof v === 'number' ? v : parseFloat(v));
-    const reachable = hasMetric(m.cpu) || hasMetric(m.memPercent) || hasMetric(m.diskPercent);
+    const reachable =
+      typeof data?.reachable === 'boolean'
+        ? data.reachable
+        : hasMetric(m.cpu) || hasMetric(m.memPercent) || hasMetric(m.diskPercent);
     entries.push([
       node,
       {
@@ -158,9 +170,101 @@ export function buildUps(upsCache) {
   return { state: normalizeUpsStatus(upsCache?.status) };
 }
 
+/**
+ * Which upstreams answered this cycle, from the flags their payloads carry. A
+ * missing payload (a cold cache after a restart, or one past its TTL because
+ * the refresh failed) did not answer. A payload without a flag (an older one, or
+ * the one written when no nodes are configured) did.
+ */
+export function sourcesOk(servicesCache, upsCache) {
+  const services = servicesCache != null;
+  return {
+    prometheus: services && servicesCache.sources?.prometheus?.ok !== false,
+    kuma: services && servicesCache.sources?.kuma?.ok !== false,
+    ups: upsCache != null && upsCache.ok !== false,
+  };
+}
+
+const HOST_METRIC_FIELDS = ['cpu', 'mem', 'disk'];
+
+/**
+ * The fields of a host's snapshot entry its node's failed reads leave unread
+ * this cycle. A metric is unread when its query failed. `reachable` is unread
+ * when the `up` query failed, or, for a node with no `up` series (judged by
+ * metric presence), when one of its metric queries did. A node without
+ * `failedReads` (an older payload) is all read, or all unread while Prometheus
+ * failed.
+ */
+function unreadHostFields(node, prometheusOk) {
+  const failed = node?.failedReads;
+  if (!Array.isArray(failed)) return prometheusOk ? [] : ['reachable', ...HOST_METRIC_FIELDS];
+  const metrics = HOST_METRIC_FIELDS.filter((f) => failed.includes(f));
+  const byPresence = typeof node.reachable !== 'boolean';
+  const reachable = failed.includes('reachable') || (byPresence && metrics.length > 0);
+  return reachable ? ['reachable', ...metrics] : metrics;
+}
+
+/**
+ * The hosts map to diff. Each host keeps its previous value for every field it
+ * could not read this cycle (unreadHostFields) and takes this cycle's for the
+ * rest, so one failed query holds only what it feeds: a failed temperature or
+ * container query on one node holds nothing, and another node's `up` at 0 still
+ * pages. A host in `prev` but missing from this cycle while Prometheus failed
+ * (its refresh threw, or the services payload is missing) is kept whole.
+ */
+function keepHosts(prevHosts, hosts, servicesCache, ok) {
+  const nodes = servicesCache?.nodes ?? {};
+  const entries = Object.entries(hosts).map(([node, host]) => {
+    const before = prevHosts[node];
+    if (!before) return [node, host];
+    const kept = { ...host };
+    for (const field of unreadHostFields(nodes[node], ok.prometheus)) kept[field] = before[field];
+    return [node, kept];
+  });
+  if (!ok.prometheus) {
+    for (const [node, before] of Object.entries(prevHosts)) {
+      if (!Object.hasOwn(hosts, node)) entries.push([node, before]);
+    }
+  }
+  return sortedObject(entries);
+}
+
+/**
+ * Whether this cycle can be the baseline (the first snapshot, with no `prev`).
+ * A baseline is never diffed, so what it records for a host or the UPS is only
+ * ever compared against later: a host recorded unreachable because Prometheus
+ * was down sends host_recovered once it answers, and an "unknown" UPS keeps a
+ * later on_battery silent. So the baseline waits while the UPS read fails, or
+ * while Prometheus fails with no host's reachability read. It does not wait for
+ * Kuma, or for a Prometheus failure some host was still read through: either
+ * can last as long as JagHelm runs (no Kuma at KUMA_URL, a query that always
+ * times out), and waiting would leave push without a baseline the whole time.
+ */
+function baselineReady(hosts, servicesCache, ok) {
+  if (!ok.ups) return false;
+  if (ok.prometheus) return true;
+  const nodes = servicesCache?.nodes ?? {};
+  return Object.keys(hosts).some((node) => !unreadHostFields(nodes[node], false).includes('reachable'));
+}
+
+/**
+ * The services map to diff, given which sources answered. Kuma sets every
+ * service status that can page (a container's own status is only ever `up`), so
+ * while it fails the previous map is kept whole. While Prometheus fails, the
+ * running-container list is incomplete: a service missing from this cycle keeps
+ * its previous status, and one present (a Kuma outage card) takes this cycle's,
+ * so Kuma keeps paging through a Prometheus outage and a recovery during it is
+ * still sent once the container is seen again.
+ */
+function keepServices(prev, services, ok) {
+  if (!ok.kuma) return prev.services ?? {};
+  if (!ok.prometheus) return sortedObject(Object.entries({ ...(prev.services ?? {}), ...services }));
+  return services;
+}
+
 // Default seam: real warm caches + cron store. Kept thin so production wiring
 // is parameterless; every test injects fakes instead.
-const _defaultCaches = {
+export const liveCaches = {
   getCached,
   getAllCronStatuses: getAllStatuses,
   now: () => Date.now(),
@@ -168,19 +272,36 @@ const _defaultCaches = {
 
 /**
  * Build the canonical, byte-deterministic Snapshot from the warm caches.
- * PURE given its injected `caches`. The four top-level keys are emitted in a
- * fixed order; every sub-map is ascending-sorted by key.
+ * PURE given its injected `caches` and `prev`. The four top-level keys are
+ * emitted in a fixed order; every sub-map is ascending-sorted by key.
+ *
+ * `prev` is the snapshot the result will be diffed against. For a source that
+ * failed this cycle (sourcesOk) the part it feeds is kept from `prev`: each
+ * host's unread fields (keepHosts) and, as keepServices describes, services
+ * while Prometheus fails; services while Kuma fails; the UPS state while its
+ * read fails. Cron is pushed to JagHelm and has no upstream to fail.
+ *
+ * With no `prev` this cycle is the baseline, and its values are all there is.
+ * When it cannot be one (baselineReady) the result is null, and the push cycle
+ * skips it without taking a baseline.
  *
  * @param {{ getCached: (key: string) => *, getAllCronStatuses: () => *, now?: () => number }} [caches]
+ * @param {object|null} [prev]
+ * @returns {object|null}
  */
-export function buildSnapshot(caches = _defaultCaches) {
+export function buildSnapshot(caches = liveCaches, prev = null) {
   const servicesCache = caches.getCached('services');
   const upsCache = caches.getCached('ups');
   const cronStatuses = caches.getAllCronStatuses();
+  const ok = sourcesOk(servicesCache, upsCache);
+  const services = buildServices(servicesCache);
+  const hosts = buildHosts(servicesCache);
+  const ups = buildUps(upsCache);
+  if (!prev && !baselineReady(hosts, servicesCache, ok)) return null;
   return {
-    services: buildServices(servicesCache),
-    hosts: buildHosts(servicesCache),
-    ups: buildUps(upsCache),
+    services: prev ? keepServices(prev, services, ok) : services,
+    hosts: prev ? keepHosts(prev.hosts ?? {}, hosts, servicesCache, ok) : hosts,
+    ups: prev && !ok.ups ? (prev.ups ?? { state: 'unknown' }) : ups,
     cron: buildCron(cronStatuses, typeof caches.now === 'function' ? caches.now() : null),
   };
 }

@@ -167,7 +167,35 @@ Each cached value is serialized and hashed once, on its first request, and kept
 with it, so later requests (`200` or `304`) only send what is already in memory
 until the next refresh replaces the value.
 `If-None-Match` is matched per RFC 9110: weak comparison, a list of tags, or `*`.
+Two reads served outside the cache have their own reuse rules: `/api/history`
+(the sparkline series, which changes every cycle) carries an ETag of its
+response, and `/api/cron/status` (whose `seconds_since_report` changes every
+second, so an ETag would never match) sends `Cache-Control: private, max-age=60`.
 The loop is cancelled cleanly on shutdown (no leaking timer).
+
+A failed upstream poll is never read as an empty answer. A Prometheus query
+that errors, times out or returns no query result rejects (`promQuery` in
+`discovery.js`), and Kuma's `fetchMonitors` returns `ok: false` when it loaded
+no monitors. The `/api/services` payload says which answered this cycle,
+`sources: { prometheus: { ok }, kuma: { ok } }`, and `/api/ups` carries its own
+`ok`. Each node also carries `reachable`, from Prometheus' `up` series for that
+node: true when any of its targets answered the last scrape, false when none
+did, null when no `up` series has the node's label. It carries `failedReads`
+too: the parts of the node whose queries failed this cycle (`NODE_READS`:
+`reachable` for the `up` query, `cpu`, `mem`, `disk`, `uptime`, `temp`,
+`containers`). Prometheus counts as failed for the cycle when any node query
+fails, and also when every query answers but no node has an `up` series after
+an earlier answer had some: a Prometheus that has just started and not scraped
+yet, whose empty answers mark every node's reads failed. While Prometheus
+fails, no presence breadcrumbs are drawn, since a container missing from the
+list may still be running. The push snapshot keeps its last state for what a
+failed source feeds, and only that: for a host, only the readings whose queries
+failed, so one failing query on one node holds nothing for the others. A
+missing payload (a cold cache after a restart, or one past its TTL) counts as
+failed, and no baseline is taken while the UPS read fails or Prometheus fails
+with no host read. So an outage of Prometheus or Kuma sends no alerts about the
+hosts and services they watch ([mobile/DESIGN.md](mobile/DESIGN.md),
+"Deterministic state-change detection").
 
 ```mermaid
 flowchart TD
@@ -288,12 +316,14 @@ integration connection-test endpoint.
   Success lines every refresh cycle would repeat are debug, while a refresh
   that keeps failing still logs its own error each cycle. At info: a cycle that
   took 5 s or more; a change in the cycle's set of failed refreshes (a refresh
-  that returned null, or an integration with an `_error`; a Prometheus outage
-  does not show up here, since node and UPS queries swallow their errors); a
-  Kuma load whose monitor count or source changed, or the first load after a
-  failed one; and one line per boot for containers no monitor matches. Kuma
-  answering with no monitors warns once per outage; a Kuma that can't be
-  reached logs an error every cycle.
+  that returned null, or an integration with an `_error`); a Kuma load whose
+  monitor count or source changed; and one line per boot for containers no
+  monitor matches. Prometheus failing (any node query of the cycle, or an
+  answer with no `up` series after one with some) and Kuma failing (no
+  monitors loaded: unreachable, non-2xx, or a status page with none) each warn
+  once, with the error, and their recovery logs once at info with how long it
+  was down; the failed cycles in between log at debug
+  (`util/sourceHealthLog.js`).
 - **Access log** (`accessLog.js`): one line per request with its full path and no
   query string or fragment; 5xx at `error`, 4xx and requests of 300 ms or more at
   `info`, the rest at `debug`. `/metrics`, `/api/health` and `/api/readyz` are not
@@ -339,6 +369,19 @@ flowchart TD
   on an unchanged poll `fetchJson` returns the same reference and `setState`
   bails via `Object.is`, so an all-304 tick triggers zero re-renders. Per-source
   health (error / stale / retry) is derived at render without per-tick state.
+- **Polling.** `App.jsx` drives one tick per refresh interval (30 s by default),
+  and only while the dashboard is on screen: a hidden browser tab, Settings or an
+  iframe tab pauses it, and returning refreshes every source at once. The board
+  loads every source once on mount; a tick then fetches the live sources
+  (`/api/services`, `/api/ups`, `/api/integrations`) plus one slow source in turn
+  (`/api/history`, `/api/cron/status`, `/api/gitea/activity`), so four requests
+  per tick. A panel shows its "updated ... ago" stale note after 2 missed polls
+  of its own source (`pollPeriodMs` in `useDashboardData`): 1 minute for a live
+  source and 3 minutes for a slow one at 30 s. The navbar health dot reads
+  `overallHealth` from the board's own `/api/services` result, so it holds its
+  last value while polling is paused (the "Updated" clock keeps counting) and
+  catches up on return. The navbar refetches weather at most every 10 minutes.
+  The Settings preview loads once when shown and refreshes only on its button.
 - **Design system.** 10 themes (`themes.js` + `[data-theme]` token blocks),
   generic `--space-*` / `--text-*` scales plus semantic `--fs-*` card tokens,
   and a global `:focus-visible` ring + reduced-motion handling.

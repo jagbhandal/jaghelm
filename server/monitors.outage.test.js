@@ -63,7 +63,7 @@ test('fetchMonitors: carries lastBeatAt parsed from the LATEST heartbeat time', 
       },
     });
   try {
-    const m = await fetchMonitors(true);
+    const { monitors: m } = await fetchMonitors(true);
     assert.equal(m[20].lastBeatAt, Date.parse('2026-06-27T06:01:00.000Z'));
   } finally {
     globalThis.fetch = realFetch;
@@ -90,7 +90,7 @@ test('fetchMonitors: carries active flag (false when Kuma marks inactive, true b
       },
     });
   try {
-    const m = await fetchMonitors(true);
+    const { monitors: m } = await fetchMonitors(true);
     assert.equal(m[10].active, false);
     assert.equal(m[11].active, true);
     assert.equal(m[10].status, 'down');           // heartbeat 0 → down
