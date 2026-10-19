@@ -536,6 +536,15 @@ flowchart TD
   rendering in `GridItem.jsx`, and lifecycle (breakpoints, drag/resize, commit)
   in `HelmGrid.jsx`. Panels auto-grow to fit content; pointer **and keyboard**
   (arrow move / Shift+arrow resize, with a live region) reposition them.
+- **Panels and first run.** The board has a panel per discovered node and custom
+  group, plus the Checklist, Scheduled Jobs and Quick Launch panels. Without a
+  saved layout it starts from `DEFAULT_LAYOUTS` (`layouts.js`), which names no
+  node, so a fresh install with no node shows the "Connect your first node"
+  empty state. The UPS and Pipeline panels show only once their source is
+  configured (`configuredPanels.js`): the saved layout names the panel or
+  Settings → Sections switched it on, or `/api/ups` has carried a reading or
+  `/api/gitea/activity` has answered with a list this session. A configured
+  panel stays and shows its down state when its source fails.
 - **Data fetching.** `useDashboardData` holds a **304-stable identity contract**:
   on an unchanged poll `fetchJson` returns the same reference and `setState`
   bails via `Object.is`, so an all-304 tick triggers zero re-renders. Per-source

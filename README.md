@@ -245,7 +245,7 @@ Ten themes (six dark, four light) inspired by common editor schemes — One Dark
  
 ### UPS power monitoring
  
-If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, JagHelm shows battery percentage, runtime, and load in a dedicated panel.
+If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, JagHelm shows battery percentage, runtime, and load in a dedicated panel. The panel appears once the exporter reports a UPS; without one the dashboard has no UPS panel. The Pipeline panel (recent Gitea commits) likewise appears once Gitea answers.
  
 ### UI configuration with file escape hatch
  
