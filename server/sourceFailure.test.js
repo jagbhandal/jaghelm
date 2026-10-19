@@ -18,14 +18,17 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import express from 'express';
+import request from 'supertest';
 
 const { initDiscovery } = await import('./discovery.js');
 const { initMonitors } = await import('./monitors.js');
 const { saveConfig } = await import('./config.js');
-const { getCached } = await import('./cache.js');
+const { getCached, getCachedInternal } = await import('./cache.js');
 const { refreshServices, refreshUPS } = await import('./refresh.js');
 const { buildSnapshot } = await import('./push/snapshot.js');
 const { createPushSnapshot, runPushCycle } = await import('./push/dispatch.js');
+const { servicesRoutes } = await import('./routes/services.js');
 
 const PROM = 'http://localhost:9998';
 const KUMA = 'http://localhost:9999';
@@ -161,7 +164,7 @@ process.on('exit', () => {
 
 const THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
 const silentLog = { debug() {}, info() {}, warn() {}, error() {} };
-const caches = { getCached, getAllCronStatuses: () => [], now: () => 0 };
+const caches = { getCached, getCachedInternal, getAllCronStatuses: () => [], now: () => 0 };
 
 const store = {
   getAllTokens: () => [{ token: 'phone' }],
@@ -280,6 +283,9 @@ test('a Kuma outage during a Prometheus failure still pages, and so does its rec
 
     world.radarr = 'up'; // recovers while Prometheus is still failing
     await p.cycle();
+    // Sent when Kuma reports it (#390): no container is seen, so the up monitor
+    // is an up entry under its card's uid.
+    assert.deepEqual(p.sent, ['service_down vm103:radarr', 'service_recovered vm103:radarr'], 'in the outage cycle');
     world.prometheus = 'ok';
     await p.cycle();
     assert.deepEqual(p.sent, ['service_down vm103:radarr', 'service_recovered vm103:radarr']);
@@ -515,6 +521,48 @@ test('a monitor no container has: Kuma failing and recovering while it is down s
   } finally {
     clockBack();
     p.done();
+  }
+});
+
+test('a monitor no container has: its up entry is in the push snapshot, not in the served /api/services', async () => {
+  reset();
+  const p = pipeline();
+  try {
+    await p.cycle(); // NAS (Ping) up
+    assert.equal(p.snapshot.prev().services[NAS_PING], 'up');
+    const app = express();
+    app.use('/api/services', servicesRoutes);
+    const r = await request(app).get('/api/services');
+    assert.equal(r.status, 200);
+    assert.deepEqual(Object.keys(r.body).sort(), ['nodes', 'overallHealth', 'sources']);
+    assert.equal(r.text.includes('NAS (Ping)'), false, 'up, the monitor is nowhere in the payload');
+  } finally {
+    p.done();
+  }
+});
+
+test('a monitor no container has: a restart while it is down sends exactly one recovery', async () => {
+  reset();
+  const before = pipeline();
+  let after = null;
+  try {
+    await before.cycle(); // baseline: NAS (Ping) up
+    world.nasPing = 'down';
+    await before.cycle();
+    assert.deepEqual(before.sent, [`service_down ${NAS_PING}`]);
+    before.snapshot.flush(); // the shutdown
+
+    after = pipeline({ path: before.path }); // the restart
+    const cold = { ...caches, getCached: () => null, getCachedInternal: () => null };
+    await after.cycle({ refresh: false, from: cold }); // the first refresh threw
+    await after.cycle(); // still down
+    assert.deepEqual(after.sent, [], 'no repeat service_down');
+    world.nasPing = 'up';
+    await after.cycle();
+    assert.deepEqual(after.sent, [`service_recovered ${NAS_PING}`]);
+  } finally {
+    after?.done();
+    before.done();
   }
 });
 

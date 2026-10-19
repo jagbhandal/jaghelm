@@ -93,19 +93,26 @@ test('buildServices: missing/empty cache -> empty map', () => {
   assert.deepEqual(buildServices({ nodes: { pi: {} } }), {});
 });
 
-test('buildServices: the up monitors no card is drawn for read as up, and a card with their uid wins (#390)', () => {
+test('buildServices: the up monitors no card is drawn for read as up; a card with their uid wins, a breadcrumb does not (#390)', () => {
   const cache = {
     nodes: {
-      vm103: { services: [{ uid: 'vm103:nas-ui', status: 'unknown' }, { uid: 'vm103:gitea', status: 'up' }] },
+      vm103: {
+        services: [
+          { uid: 'vm103:nas-ui', status: 'unknown', source: 'presence' },
+          { uid: 'vm103:grafana', status: 'down', source: 'monitor' },
+          { uid: 'vm103:gitea', status: 'up' },
+        ],
+      },
     },
-    upWithoutCard: ['vm103:NAS (Ping)', 'vm103:nas-ui'],
   };
-  assert.deepEqual(buildServices(cache), {
+  assert.deepEqual(buildServices(cache, ['vm103:NAS (Ping)', 'vm103:nas-ui', 'vm103:grafana']), {
     'vm103:gitea': 'up',
+    'vm103:grafana': 'down', // the card, not the entry
     'vm103:NAS (Ping)': 'up',
-    'vm103:nas-ui': 'unknown', // the card, not the entry
+    'vm103:nas-ui': 'up', // the entry, not the grey breadcrumb
   });
-  assert.deepEqual(buildServices({ nodes: {}, upWithoutCard: 'junk' }), {}, 'a payload with no list');
+  assert.deepEqual(buildServices({ nodes: {} }, 'junk'), {}, 'no list');
+  assert.deepEqual(buildServices({ nodes: {}, upWithoutCard: ['vm103:x'] }), {}, 'the served payload has none');
 });
 
 test('buildServices: byte-identical regardless of insertion order', () => {

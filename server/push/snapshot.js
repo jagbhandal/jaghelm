@@ -23,7 +23,7 @@
 
 // At top of file (after header comment), for the default production seam only.
 // Tests NEVER hit this path — they inject `caches`.
-import { getCached } from '../cache.js';
+import { getCached, getCachedInternal } from '../cache.js';
 import { getAllStatuses } from '../cron-store.js';
 import { isOverdue } from '../cron-overdue.js';
 
@@ -94,29 +94,32 @@ function sortedObject(entries) {
  * Project the cached /api/services payload into the snapshot services map.
  * Keys are the per-service `uid` ("NODE:ID"); values are normalized statuses.
  *
- * The payload's `upWithoutCard` (#390) adds the up Kuma monitors no card is
- * drawn for, each as "up" under the uid its red card has while it is down, so
- * its recovery diffs on the key of its down push. A card with the same uid
- * wins.
+ * `upWithoutCard` (#390), the uids of the up Kuma monitors no card is drawn
+ * for, is kept beside the payload (it is not served). Each is added as "up"
+ * under the uid its red card has while it is down, so its recovery diffs on the
+ * key of its down push. A card with the same uid wins, except a grey presence
+ * breadcrumb: placement skips every other card's uid, so the only one that can
+ * share it is a breadcrumb, normally of the monitor's own stopped container,
+ * and letting that win would only ever lose the recovery (unknown never emits).
  */
-export function buildServices(servicesCache) {
+export function buildServices(servicesCache, upWithoutCard = []) {
   const nodes = servicesCache?.nodes;
   if (!nodes || typeof nodes !== 'object') return {};
-  const entries = [];
+  const statusOf = new Map();
+  const cards = new Set(); // the uids an up entry does not override
   for (const node of Object.values(nodes)) {
     const services = node?.services;
     if (!Array.isArray(services)) continue;
     for (const svc of services) {
       if (!svc || typeof svc.uid !== 'string') continue;
-      entries.push([svc.uid, normalizeServiceStatus(svc.status)]);
+      statusOf.set(svc.uid, normalizeServiceStatus(svc.status));
+      if (svc.source !== 'presence') cards.add(svc.uid);
     }
   }
-  const upWithoutCard = Array.isArray(servicesCache.upWithoutCard) ? servicesCache.upWithoutCard : [];
-  const cards = new Set(entries.map(([uid]) => uid));
-  for (const uid of upWithoutCard) {
-    if (typeof uid === 'string' && !cards.has(uid)) entries.push([uid, 'up']);
+  for (const uid of Array.isArray(upWithoutCard) ? upWithoutCard : []) {
+    if (typeof uid === 'string' && !cards.has(uid)) statusOf.set(uid, 'up');
   }
-  return sortedObject(entries);
+  return sortedObject([...statusOf]);
 }
 
 /**
@@ -265,9 +268,12 @@ function baselineReady(hosts, servicesCache, ok) {
  * service status that can page (a container's own status is only ever `up`), so
  * while it fails the previous map is kept whole. While Prometheus fails, the
  * running-container list is incomplete: a service missing from this cycle keeps
- * its previous status, and one present (a Kuma outage card) takes this cycle's,
- * so Kuma keeps paging through a Prometheus outage and a recovery during it is
- * still sent once the container is seen again.
+ * its previous status, and one present (a Kuma outage card, or the up entry of a
+ * monitor whose container wasn't seen) takes this cycle's, so Kuma keeps paging
+ * through a Prometheus outage. A recovery during it is sent when Kuma reports
+ * it, since with no container seen the up monitor is an entry under its card's
+ * uid (#390), unless no node could be read at all: then nothing is placed, and
+ * it is sent once the container is seen again.
  */
 function keepServices(prev, services, ok) {
   if (!ok.kuma) return prev.services ?? {};
@@ -279,6 +285,7 @@ function keepServices(prev, services, ok) {
 // is parameterless; every test injects fakes instead.
 export const liveCaches = {
   getCached,
+  getCachedInternal,
   getAllCronStatuses: getAllStatuses,
   now: () => Date.now(),
 };
@@ -298,7 +305,7 @@ export const liveCaches = {
  * When it cannot be one (baselineReady) the result is null, and the push cycle
  * skips it without taking a baseline.
  *
- * @param {{ getCached: (key: string) => *, getAllCronStatuses: () => *, now?: () => number }} [caches]
+ * @param {{ getCached: (key: string) => *, getCachedInternal?: (key: string) => *, getAllCronStatuses: () => *, now?: () => number }} [caches]
  * @param {object|null} [prev]
  * @returns {object|null}
  */
@@ -307,7 +314,7 @@ export function buildSnapshot(caches = liveCaches, prev = null) {
   const upsCache = caches.getCached('ups');
   const cronStatuses = caches.getAllCronStatuses();
   const ok = sourcesOk(servicesCache, upsCache);
-  const services = buildServices(servicesCache);
+  const services = buildServices(servicesCache, caches.getCachedInternal?.('services')?.upWithoutCard);
   const hosts = buildHosts(servicesCache);
   const ups = buildUps(upsCache);
   if (!prev && !baselineReady(hosts, servicesCache, ok)) return null;

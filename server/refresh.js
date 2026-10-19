@@ -334,10 +334,11 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   // heartbeat goes stale and is excluded, so a retired-while-down service can't
   // leave a phantom red card or send a false recovery — `active` reads null on
   // real Kuma and can't be relied on). Each one gets its uid from placeMonitor,
-  // in one pass whatever its status, so a monitor keeps its uid from down to
-  // up. A down one becomes a red card; an up one draws nothing and is listed in
-  // `upWithoutCard`, which the push snapshot reads as up, so its recovery is
-  // sent on the uid its down push had.
+  // in one pass whatever its status, so a monitor keeps its uid from down to up
+  // while its last container isn't in the stopped list (#395: a stopped owner
+  // only competes for a down monitor). A down one becomes a red card; an up one
+  // draws nothing and is listed in `upWithoutCard`, which the push snapshot
+  // reads as up, so its recovery is sent on the uid its down push had.
   const taken = new Set(nodeKeys.flatMap((k) => nodes[k].services.map((s) => s.uid)));
   const upWithoutCard = [];
   let outageCount = 0;
@@ -436,7 +437,9 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
  * Where a monitor no running container got goes, down or up (#390): its node
  * and the uid its card has, `{ nodeKey, idPart, uid, remembered }`, or null with
  * no node to attach to. Pass (b) of assembleServices is its only caller, for
- * both statuses, so a monitor's up entry has the uid its red card had.
+ * both statuses, so a monitor's up entry has the uid its red card had while its
+ * last container isn't in the stopped list (#395): `owner` is only ever set for
+ * a down monitor.
  *
  * The node is that of the stopped container that got the (down) monitor
  * (`owner`), else the monitor's last-seen node, else the first node. The uid
@@ -542,11 +545,12 @@ async function _refreshServices() {
     // BOTH frontends' global dots read one truth (web NavBar + mobile Overview).
     // `sources` says whether each upstream answered this cycle (#232): the push
     // snapshot keeps its last state for one that didn't, so a failed poll is not
-    // read as every host or service going down. `upWithoutCard` is for the push
-    // snapshot too: the uids of the up monitors no card is drawn for (#390).
+    // read as every host or service going down. `upWithoutCard`, the uids of
+    // the up monitors no card is drawn for (#390), is for the push snapshot
+    // only, so it is kept beside the payload, not in the served JSON.
     const sources = { prometheus: { ok: prometheusOk }, kuma: { ok: kuma.ok } };
-    const result = { nodes, overallHealth, sources, upWithoutCard };
-    setCache('services', result);
+    const result = { nodes, overallHealth, sources };
+    setCache('services', result, { upWithoutCard });
 
     // Record this cycle's usage into the ring buffer so the UI can draw a
     // glance-context sparkline. Only the bounded usage percents (CPU/RAM/disk);
