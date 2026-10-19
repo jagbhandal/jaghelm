@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getTodos, saveTodos } from '../hooks/useData';
+import { uuidV4 } from '../util/uuid.js';
+import { formatLocalDate, isPastLocalDate } from '../util/localDate.js';
 
 export default function TodoCard({ borderColor, config, setConfig }) {
   const [todos, setTodos] = useState([]);
@@ -13,18 +15,21 @@ export default function TodoCard({ borderColor, config, setConfig }) {
 
   const add = () => {
     if (!newText.trim()) return;
-    // crypto.randomUUID is universal in modern browsers (Vite/React 19 target,
-    // all evergreen browsers + secure contexts). Avoids collisions from
-    // Date.now() when multiple todos are added in the same millisecond.
-    save([...todos, { id: crypto.randomUUID(), text: newText.trim(), done: false, due: newDate || null, created: new Date().toISOString() }]);
+    // A random UUID (not Date.now(), which collides when two todos land in the
+    // same millisecond). uuidV4 also works on a plain-HTTP origin, where
+    // crypto.randomUUID is undefined.
+    save([...todos, { id: uuidV4(), text: newText.trim(), done: false, due: newDate || null, created: new Date().toISOString() }]);
     setNewText(''); setNewDate('');
   };
 
   const toggle = (id) => save(todos.map(t => t.id === id ? { ...t, done: !t.done } : t));
   const remove = (id) => save(todos.filter(t => t.id !== id));
 
-  const isOverdue = (due) => due && new Date(due) < new Date() && new Date(due).toDateString() !== new Date().toDateString();
-  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+  // `due` is a calendar day ("YYYY-MM-DD" from the date input), so read it on the
+  // local calendar: new Date('YYYY-MM-DD') is UTC midnight, a day early west of UTC.
+  // Overdue from the day after the due day, never on the day itself.
+  const isOverdue = (due) => isPastLocalDate(due);
+  const fmtDate = (d) => formatLocalDate(d) ?? String(d);
 
   return (
     <div className="glass-card node-card" style={{ borderTop: `2px solid ${borderColor || 'var(--amber)'}` }}>
