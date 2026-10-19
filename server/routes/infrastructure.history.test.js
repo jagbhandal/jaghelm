@@ -13,6 +13,7 @@ import request from 'supertest';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'jh-history-'));
 process.env.JAGHELM_DATA_DIR = dataDir;
+delete process.env.DASH_PASS; // auth disabled
 process.env.PROMETHEUS_URL = 'http://127.0.0.1:1';
 process.env.KUMA_URL = 'http://127.0.0.1:1';
 
