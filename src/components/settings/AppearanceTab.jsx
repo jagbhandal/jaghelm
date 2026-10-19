@@ -98,7 +98,7 @@ export default function AppearanceTab({ theme, setTheme }) {
               <span className="text-mono" style={{ fontSize: 14, color: 'var(--text-primary)' }}>
                 {config.accentColor || '#6366f1'}
               </span>
-              <div className="text-muted" style={{ fontSize: 12, marginTop: 2 }}>
+              <div className="muted-text" style={{ fontSize: 12, marginTop: 2 }}>
                 Click swatch to change
               </div>
             </div>
@@ -124,7 +124,7 @@ export default function AppearanceTab({ theme, setTheme }) {
               </button>
               {config.bgImage && (
                 <button
-                  className="settings-btn-sm text-muted"
+                  className="settings-btn-sm muted-text"
                   onClick={() => update('bgImage', '')}
                   style={{ color: 'var(--red)' }}
                 >

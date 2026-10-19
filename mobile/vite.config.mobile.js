@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -26,7 +27,8 @@ const appVersion = JSON.parse(
 ).version;
 
 export default defineConfig({
-  plugins: [react()],
+  // Tailwind CSS v4 compiles the shared src/ui/tailwind.css (docs/ARCHITECTURE.md, "UI stack").
+  plugins: [react(), tailwindcss()],
   define: {
     __PUSH_ENABLED__: JSON.stringify(pushConfigured),
     __APP_VERSION__: JSON.stringify(appVersion),
@@ -34,7 +36,22 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shared': fileURLToPath(new URL('../src', import.meta.url)),
+      // The shared component library, under the same name as on the web.
+      '@ui': fileURLToPath(new URL('../src/ui', import.meta.url)),
     },
+    // Code under ../src (src/ui/ above all) must use THIS app's copies of these
+    // packages. Without dedupe, an import from ../src resolves to the root
+    // node_modules: a second React when it is installed (hooks break), and
+    // nothing at all in the APK build, which installs mobile/ only.
+    dedupe: [
+      'react',
+      'react-dom',
+      '@base-ui/react',
+      'class-variance-authority',
+      'cn',
+      'lucide-react',
+      'tailwindcss',
+    ],
   },
   // mobile/dist is the Capacitor webDir — NOT served by Express.
   build: { outDir: 'dist', assetsDir: 'assets', minify: true },

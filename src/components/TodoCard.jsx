@@ -65,7 +65,7 @@ export default function TodoCard({ borderColor, config, setConfig }) {
             <button onClick={() => remove(t.id)} className="todo-remove">×</button>
           </div>
         ))}
-        {todos.length === 0 && <div className="text-muted" style={{ fontSize: '12px', padding: '8px', textAlign: 'center' }}>No tasks yet</div>}
+        {todos.length === 0 && <div className="muted-text" style={{ fontSize: '12px', padding: '8px', textAlign: 'center' }}>No tasks yet</div>}
       </div>
     </div>
   );

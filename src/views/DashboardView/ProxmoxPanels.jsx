@@ -123,7 +123,7 @@ export function ProxmoxVMList({ vms, borderColor }) {
                     }}
                   >
                     <span className="stat-label">RAM</span>
-                    <span className="text-mono text-secondary" style={{ fontSize: 10 }}>
+                    <span className="text-mono secondary-text" style={{ fontSize: 10 }}>
                       {vm.memUsedGB}/{vm.memTotalGB} GB
                     </span>
                   </div>

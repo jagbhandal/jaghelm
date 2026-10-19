@@ -3,7 +3,7 @@ import { login } from './login.js';
 import { validateLogin, normalizeBaseUrl, BASE_URL_KEY, TOKEN_KEY, URL_PRESENT_KEY, REMEMBER_KEY } from './runtimeConfig.js';
 import { secureStore } from '@shared/storage/index.js';
 import { setPref } from './storage/prefsAdapter.js';
-import './Login.css';
+// Login.css loads through styles/legacy.css, in the `legacy` cascade layer.
 
 /**
  * Login screen for Path A (direct-over-tailnet). Two modes:

@@ -126,7 +126,7 @@ export default function TabsTab() {
                   {tab.url.replace('https://', '').replace('http://', '')}
                 </div>
               </div>
-              <span className="text-muted" style={{ fontSize: 12 }}>
+              <span className="muted-text" style={{ fontSize: 12 }}>
                 Click to edit
               </span>
             </div>

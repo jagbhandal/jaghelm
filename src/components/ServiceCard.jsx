@@ -323,7 +323,7 @@ function CompactStats({ docker }) {
   if (docker.memMB != null) parts.push(formatMem(docker.memMB));
   if (!parts.length) return null;
   return (
-    <span className="text-mono text-muted" style={{ fontSize: 10, flexShrink: 0 }}>{parts.join(' · ')}</span>
+    <span className="text-mono muted-text" style={{ fontSize: 10, flexShrink: 0 }}>{parts.join(' · ')}</span>
   );
 }
 

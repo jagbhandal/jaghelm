@@ -1,7 +1,19 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import { fileURLToPath } from 'node:url';
+
 export default defineConfig({
-  plugins: [react()],
+  // Tailwind CSS v4 compiles src/ui/tailwind.css, the new UI stack's stylesheet
+  // (docs/ARCHITECTURE.md, "UI stack").
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      // The shared component library (shadcn/ui, components.json). The Android
+      // build maps the same alias, so both apps import `@ui/...` alike.
+      '@ui': fileURLToPath(new URL('./src/ui', import.meta.url)),
+    },
+  },
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
@@ -14,7 +26,13 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             // Only split the EAGER vendors (loaded on first paint) into stable,
             // cacheable chunks. React + dnd-kit are used by the dashboard itself.
-            if (id.includes('react-dom') || id.includes('/react/') || id.includes('/scheduler/'))
+            // Match whole package directories: a bare '/react/' would also catch
+            // '@base-ui/react/' and pull the UI library into the eager chunk.
+            if (
+              id.includes('/node_modules/react/') ||
+              id.includes('/node_modules/react-dom/') ||
+              id.includes('/node_modules/scheduler/')
+            )
               return 'vendor-react';
             if (id.includes('@dnd-kit')) return 'vendor-dnd';
             // Everything else (e.g. react-colorful, used only by the lazy Settings
