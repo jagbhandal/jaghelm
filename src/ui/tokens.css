@@ -21,6 +21,8 @@
  *   data-accent="fuchsia|cyan"                   violet is the default
  *                                                (src/ui/accents.js lists them)
  *   data-density="compact"                       comfortable is the default
+ *   data-typeface="plus-jakarta-sans|montserrat" manrope is the default
+ *                                                (src/ui/typefaces.js lists them)
  *
  * The contrast check reads this file as CSS does: by specificity, then order.
  * It understands only the selectors used here, and fails on any other, so a
@@ -164,14 +166,18 @@
 
   /* ---- Type, shape, space, motion (§5.3) ------------------------------- */
 
-  /* Families only by name here: #284 puts the self-hosted Manrope (default),
-     Plus Jakarta Sans, Montserrat and JetBrains Mono in front of these. */
+  /* Families (§5.3, §15), self-hosted in src/ui/fonts.css. The sans face is a
+     switch, like the accent: each data-typeface block below sets only
+     --jh-font-face, and a browser downloads only the face it names. The
+     system faces behind it show until it arrives and for characters outside
+     its latin subset. JetBrains Mono is the one monospace face. */
+  --jh-font-face: 'Manrope Variable';
   --jh-font-sans:
-    ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-    'Noto Color Emoji';
+    var(--jh-font-face), ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
   --jh-font-mono:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
-    monospace;
+    'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
 
   /* One radius token, mapped (§5.3): 2 heartbeat bars, 4 badges, 6 segments
      inside a control, 8 controls and rows, 12 panels and dialogs. The scale
@@ -211,6 +217,18 @@
 .jh-ui[data-density='compact'] {
   --jh-row-h: 32px;
   --jh-pad: 16px;
+}
+
+/* The other two typefaces (Settings → Appearance, §15). src/ui/typefaces.js
+   lists every face; each but Manrope has a block here, and src/ui/fonts.css
+   declares each one's file. */
+
+.jh-ui[data-typeface='plus-jakarta-sans'] {
+  --jh-font-face: 'Plus Jakarta Sans Variable';
+}
+
+.jh-ui[data-typeface='montserrat'] {
+  --jh-font-face: 'Montserrat Variable';
 }
 
 /* ---- Roles: light ------------------------------------------------------ */
