@@ -166,7 +166,7 @@ Open `http://your-host:3099`. JagHelm will discover nodes from Prometheus on fir
  
 ## Configuration
  
-Most things are configurable from the Settings UI (sidebar nav, 13 sections). For people who prefer files, everything is on disk too, in `data/` (or the directory `JAGHELM_DATA_DIR` names):
+Most things are configurable from the Settings UI (sidebar nav, 13 sections). For people who prefer files, everything is on disk too, in `data/` (or the directory `JAGHELM_DATA_DIR` names). Set `JAGHELM_DATA_DIR` in the process environment: in Docker, `environment:` or `env_file` both work; running `node server/index.js` directly, use systemd `Environment=` or the shell, not the `.env` the server loads itself, which it reads too late for this setting.
  
 ```
 data/
