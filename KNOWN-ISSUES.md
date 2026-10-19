@@ -56,13 +56,22 @@ anywhere reachable from outside your network.
 
 - **Ships open by default.** If you leave `DASH_PASS` empty, login is disabled
   and the dashboard is reachable by anyone who can reach the port. The most
-  sensitive endpoints are fail-closed even in this mode — the standalone secrets
-  API and the raw infrastructure passthroughs (PromQL query, Docker-socket
-  container list) refuse to serve until a password is set, unless you explicitly
-  opt back in with `JAGHELM_ALLOW_OPEN_SECRETS=true` / `JAGHELM_ALLOW_OPEN_INFRA=true`.
-  Aggregated/benign endpoints stay open. Still: set `DASH_USER` / `DASH_PASS`
-  (and ideally a reverse proxy with its own auth) before exposing it. **Do not
-  put a no-password instance on the public internet.**
+  sensitive endpoint is fail-closed even in this mode — the standalone secrets
+  API refuses to serve until a password is set, unless you explicitly opt back
+  in with `JAGHELM_ALLOW_OPEN_SECRETS=true`. Aggregated/benign endpoints stay
+  open. Still: set `DASH_USER` / `DASH_PASS` (and ideally a reverse proxy with
+  its own auth) before exposing it. **Do not put a no-password instance on the
+  public internet.**
+- **The icon cache is public, even with a password set.** Icons are `<img>`
+  tags, which can't send the login token, so `/api/icons/cached` needs none. It
+  only fetches icons of the two icon repositories the picker uses (Dashboard
+  Icons and selfh.st), keeps at most 50 MB of them (`JAGHELM_ICON_CACHE_MAX_MB`)
+  and drops the least recently used past that, and fetches at most 8 at a time
+  with 256 more waiting (a `503` past that), holding at most 4 MB of icons in
+  memory. So anyone who can reach the port can make it fetch those icons, churn
+  the cache, keep the fetch queue full so new icons fail to load for a while,
+  and see which icons are cached (and so roughly which services you run), but
+  not fill the disk or memory or fetch anything else.
 - **Bridge network by default; host networking is opt-in.** The published
   `compose.yaml` uses a bridge network and publishes only the app port — the
   safer, isolated default. If JagHelm can't reach LAN exporters/services that
@@ -123,8 +132,6 @@ Lower-stakes items the maintainer is aware of:
 
 - A `SERVICE_ICONS` constant hardcodes 40+ CDN icon URLs in the frontend —
   should move to config.
-- A legacy `/api/docker/containers` endpoint duplicates the discovery logic and
-  is a removal candidate.
 - The Settings live-preview spins up a second dashboard instance with its own
   state and fetch cycle, which is wasteful.
 

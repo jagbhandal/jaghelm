@@ -14,7 +14,8 @@ import { openSync, writeSync, fsyncSync, closeSync, renameSync, unlinkSync } fro
  * Synchronously write `data` to `targetPath` atomically.
  *
  * @param {string} targetPath  Final destination path
- * @param {string|Buffer} data Contents to write
+ * @param {string|Buffer|Uint8Array[]} data Contents to write; an array is
+ *   written chunk by chunk, in order, without joining it into one buffer first
  * @param {object} [options]
  * @param {number} [options.mode=0o644] File mode for the temp file
  */
@@ -27,8 +28,12 @@ export function atomicWriteFileSync(targetPath, data, options = {}) {
   let fd;
   try {
     fd = openSync(tmpPath, 'w', mode);
-    const buf = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
-    writeSync(fd, buf, 0, buf.length, 0);
+    const chunks = Array.isArray(data) ? data : [Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8')];
+    let position = 0;
+    for (const chunk of chunks) {
+      writeSync(fd, chunk, 0, chunk.length, position);
+      position += chunk.length;
+    }
     fsyncSync(fd);
     closeSync(fd);
     fd = undefined;

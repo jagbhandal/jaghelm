@@ -4,8 +4,9 @@
  * (server/integrations/lib/http.js and server/httpClient.js), which cover all
  * integration, session-auth, and infra-proxy requests. A few internal calls
  * still use raw fetch to hardcoded/operator-configured endpoints (Prometheus
- * discovery, Kuma monitors, the icon CDN proxy); folding those into one shared
- * client is a tracked follow-up (see docs/IMPROVEMENT-PLAN.md).
+ * discovery, Kuma monitors, and the icon cache, which fetches only URLs it
+ * rebuilds from its own allowlist, server/icon-sources.js); folding those into
+ * one shared client is a tracked follow-up (see docs/IMPROVEMENT-PLAN.md).
  *
  * JagHelm is a homelab dashboard, so private/loopback hosts ARE legitimate
  * integration targets (192.168/16 Proxmox, 10/8 NAS, localhost services). By
@@ -18,8 +19,8 @@
  * RFC1918 + loopback + link-local + ULA — for multi-tenant deployments that
  * accept integration URLs from untrusted users.
  *
- * `trusted: true` callers (operator-configured infra: Prometheus, Kuma, the
- * icon CDN) are exempt from the strict-mode private block — those endpoints are
+ * `trusted: true` callers (operator-configured infra: Prometheus, Kuma) are
+ * exempt from the strict-mode private block — those endpoints are
  * SUPPOSED to be private, so strict mode must not break them — but the baseline
  * scheme/metadata checks still apply.
  *

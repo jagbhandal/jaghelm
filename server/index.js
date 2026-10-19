@@ -41,6 +41,8 @@ import { initMonitors } from './monitors.js';
 import { initRegistry } from './integrations/registry.js';
 import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
+import { DATA_DIR } from './util/dataDir.js';
+import { resolveBindHost } from './util/env.js';
 import { startBackgroundRefresh, stopBackgroundRefresh } from './refresh.js';
 import * as fcmModule from './push/fcm.js';
 import { startArcane, stopArcane } from './arcane/index.js';
@@ -74,17 +76,15 @@ import { cronRoutes } from './routes/cron.js';
 import { systemRoutes } from './routes/system.js';
 import { createPushRoutes } from './routes/push.js';
 import { getPushStore } from './push/store.js';
-import { dispatchEvents } from './push/dispatch.js';
-import { getHeldBackStore } from './watchtower/heldBackStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PORT = process.env.PORT || 3099;
+const HOST = resolveBindHost(); // JAGHELM_HOST, default 0.0.0.0
 
 const uploadsDir = join(__dirname, '..', 'uploads');
-const dataDir = join(__dirname, '..', 'data');
 if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
-if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
+if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
 const app = express();
 // Trust proxy: behind a reverse proxy, X-Forwarded-For determines req.ip — which the
@@ -267,7 +267,7 @@ async function boot() {
   initSecrets();
   initDiscovery(promUrl);
   initMonitors(kumaUrl, process.env.KUMA_API_KEY || '');
-  initIconCache(dataDir);
+  initIconCache(DATA_DIR);
 
   // Push (FCM) — graceful-disable when no service-account creds are present.
   // Never throws; isPushEnabled() stays false and the pipeline no-ops.
@@ -292,8 +292,8 @@ async function boot() {
   startBackgroundRefresh();
   startArcane();
 
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    log.info({ version: VERSION, port: PORT }, 'listening');
+  const server = app.listen(PORT, HOST, () => {
+    log.info({ version: VERSION, host: HOST, port: PORT }, 'listening');
     log.info({ nodes: Object.keys(config.nodes || {}) }, 'active nodes');
     if (isDemoMode()) logDemoBanner(PORT);
     if (!authEnabled()) {
@@ -304,6 +304,13 @@ async function boot() {
           'and avoid exposing this port beyond a trusted LAN.'
       );
     }
+  });
+  // A JAGHELM_HOST that isn't an address of this machine, or a port in use, fails
+  // listen(). Exit so it shows (the restart policy retries), rather than running on
+  // with nothing listening: uncaughtException above would keep it alive.
+  server.on('error', (err) => {
+    log.error({ err, host: HOST, port: PORT }, 'cannot listen');
+    process.exit(1);
   });
 
   // Graceful shutdown: stop accepting connections, cancel the background refresh timer so it can't

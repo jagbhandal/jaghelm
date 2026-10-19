@@ -16,7 +16,7 @@ import crypto from 'crypto';
 
 const CACHE_TTL_MS = 120_000;
 // Hard cap on distinct keys. Cache keys include user-influenced strings
-// (`prom-<q>`, `weather-<lat>-<lon>`), so an unbounded Map is a trivial
+// (`weather-<lat>-<lon>`), so an unbounded Map is a trivial
 // memory-exhaustion DoS for an authenticated user. Map preserves insertion
 // order and boundedSet re-inserts on every write, so the first key is the least
 // recently written one: the keys the refresh loop rewrites are never evicted.

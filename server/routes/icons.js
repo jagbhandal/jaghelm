@@ -4,10 +4,12 @@
  *   GET /api/icons          → search the icon index (auth required; called
  *                             from the Settings UI). The first search with no
  *                             index waits while it is fetched (server/icons.js).
- *   GET /api/icons/cached   → public proxy for jsdelivr/raw.githubusercontent
- *                             icon URLs, served from local disk after first
- *                             fetch. No auth — <img> tags can't set headers,
- *                             and the SSRF allowlist limits what can be fetched.
+ *   GET /api/icons/cached   → public cache of icon-repository icons (Dashboard
+ *                             Icons, selfh.st on jsDelivr/raw.githubusercontent),
+ *                             served from local disk after first fetch. No auth —
+ *                             <img> tags can't set headers; the allowlist
+ *                             (icon-sources.js) and the size caps in
+ *                             icon-cache.js bound what it fetches and keeps.
  */
 
 import { Router } from 'express';
@@ -27,6 +29,6 @@ router.get('/', authMiddleware, asyncHandler(async (req, res) => {
   res.json({ count: getIconCount(), results });
 }));
 
-router.get('/cached', handleCachedIcon);
+router.get('/cached', asyncHandler(handleCachedIcon));
 
 export { router as iconRoutes };

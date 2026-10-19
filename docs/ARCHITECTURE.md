@@ -80,6 +80,9 @@ server/                     Express API (Node 22, ESM)
   monitors.js               Uptime Kuma monitor matching
   icons.js                  icon picker search index: names only, persisted in the data dir,
                             refreshed from GitHub by the first search when a day old (see 6)
+  icon-cache.js             public /api/icons/cached: icon-repository icons on disk, size-capped
+                            with LRU eviction (see 6)
+  icon-sources.js           the icon repositories it may fetch from; the web client imports it too
   config.js                 services.yaml: load, hot-reload watch, copy-on-read + atomic save
   secrets.js                AES-256-GCM secret store (per-install KDF salt)
   cron-store.js             cron history (bounded)
@@ -129,6 +132,9 @@ logger -> Helmet security headers + **Content-Security-Policy (report-only)** ->
 CORS -> `express.json({ limit: '1mb' })` -> `/uploads` static -> `/metrics` ->
 (optional `DEMO_MODE` middleware) -> the API routers -> hashed-asset static
 (`immutable, 1y`) -> SPA fallback (`index.html`) -> the global JSON error handler.
+It listens on `JAGHELM_HOST` (default `0.0.0.0`, every IPv4 interface) and `PORT`
+(default 3099); if it can't (an address the machine doesn't have, a port in use),
+it logs `cannot listen` and exits 1.
 
 Routers (each `server/routes/*.js`), mounted under `/api`:
 
@@ -142,7 +148,8 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/display-config` | token | the display config blob |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
-| `/api/...` (infrastructure) | token | Prometheus query proxy, UPS, etc. |
+| `/api/icons/cached` | public | icon-repository icons from the local icon cache (an `<img>` can't send the token; see 6) |
+| `/api/...` (infrastructure) | token | UPS, Gitea activity, etc., read from the refresh loop |
 
 Auth is a **header token**, not a cookie (so permissive CORS is not a CSRF
 vector). `/api/secrets` additionally goes through `requireAuthEnabled` -- it
@@ -265,7 +272,7 @@ Key properties:
   random KDF salt** (`data/.secrets-salt`, legacy-static-salt fallback). All
   credential stores write `0600`.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
-  secrets/auth/config/cron never split across locations.
+  secrets/auth/config/cron and the icon cache never split across locations.
 
 ### 4.5 Auth & rate limiting
 
@@ -366,6 +373,27 @@ All state is files under the data dir (no DB):
   directory on its default branch (conditional on the ETag, 8 MB body cap). A
   failed or truncated refresh keeps the index it has and is retried after an
   hour, or after 5 minutes while there is no index to serve.
+- **icon cache** -- `icon-cache/`: each icon `/api/icons/cached` has served, one
+  file named by the SHA-256 of its canonical URL. The route is public, so it
+  fetches only icons of the two icon repositories (Dashboard Icons, selfh.st) as
+  SVG, PNG or WebP at a moving ref, on jsDelivr or raw.githubusercontent.com
+  (`icon-sources.js`); it rebuilds the URL from that allowlist, so a query string
+  or another spelling of one icon is the same file, and follows a redirect only to
+  another such URL. An icon must be the image type its extension names and at
+  most 512 KB; a larger one is not cached and the browser is redirected to the
+  CDN for it. The whole cache is capped at `JAGHELM_ICON_CACHE_MAX_MB` (50 MB)
+  and drops the least recently used icon to stay under it; the files on disk
+  are counted at boot, oldest written first, and the count is kept in memory.
+  At most 8 fetches from the CDN run at once (a browser opens 6 connections to an
+  HTTP/1.1 origin, so one page load never waits) and 256 more wait; past that a
+  miss is a 503 with `Retry-After`. Concurrent requests for one icon share one
+  fetch. A body is held only until it is written; every response, a miss's
+  too, streams from the file, and one that wasn't stored is a 302 to the CDN,
+  so icon bodies in memory stay under 4 MB.
+  Served with `Content-Security-Policy: default-src 'none'; style-src
+  'unsafe-inline'; sandbox` and `nosniff`. The web client sends only these URLs
+  through it and loads any other icon URL directly. A cache, so deleting it is
+  safe; icons are fetched again as they are shown.
 
 ## 7. CI/CD pipeline
 
@@ -440,6 +468,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   planted key) and its wiring in `check.yml`, and the docs' preset and test
   counts (`doc-counts.test.mjs`). Write new repo checks this way, not as shell
   scripts: `npm test` only collects `*.test.{js,mjs,cjs}`.
+
+`npm test` preloads `scripts/test-data-dir.mjs`, which gives every test process
+its own temp `JAGHELM_DATA_DIR`, so the suite never reads or writes the
+checkout's `data/` (`scripts/test-data-dir.test.mjs` guards the wiring).
 
 `npm run test:ci` also fails a run that passes fewer backend tests than the
 floor in `scripts/test-floor.mjs`, so a silently dropped test is caught. The

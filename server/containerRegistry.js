@@ -26,6 +26,12 @@ export const PRESENCE_GRACE_MS = positiveMs(process.env.JAGHELM_PRESENCE_GRACE_M
 export const PRESENCE_TTL_MS = positiveMs(process.env.JAGHELM_PRESENCE_TTL_MS, 86_400_000);        // 24h decommission fade
 export const PRESENCE_ESTABLISH_MS = positiveMs(process.env.JAGHELM_PRESENCE_ESTABLISH_MS, 60_000); // 60s min run span
 
+// A change to what getMissing can answer (a new container, a node move, one
+// becoming established, a prune) is written the cycle it happens. A running
+// container's advancing lastSeenAt only matters after a restart, so it is
+// written at most this often, and by flush() on shutdown.
+export const PRESENCE_FLUSH_MS = 5 * 60_000;
+
 function sanitizeContainerEntry(v) {
   if (v && typeof v === 'object' && typeof v.lastSeenNode === 'string') {
     return {
@@ -37,8 +43,10 @@ function sanitizeContainerEntry(v) {
   return null;
 }
 
-export function createContainerRegistry({ path = DEFAULT_PATH, now = Date.now } = {}) {
-  const core = createPresenceStore({ path, now, sanitize: sanitizeContainerEntry });
+export function createContainerRegistry({ path = DEFAULT_PATH, now = Date.now, write } = {}) {
+  const core = createPresenceStore({ path, now, sanitize: sanitizeContainerEntry, write });
+  let pending = false; // a lastSeenAt advanced since the last write
+  let lastWriteAt = core.now();
 
   function recordSeen(name, nodeKey, at = core.now()) {
     if (!name || !nodeKey) return;
@@ -46,7 +54,10 @@ export function createContainerRegistry({ path = DEFAULT_PATH, now = Date.now } 
     const prev = core.get(key);
     const firstSeenAt = prev ? prev.firstSeenAt : at;
     core.set(key, { lastSeenNode: nodeKey, firstSeenAt, lastSeenAt: at });
-    core.markDirty();
+    const wasEstablished = prev && prev.lastSeenAt - prev.firstSeenAt >= PRESENCE_ESTABLISH_MS;
+    const established = at - firstSeenAt >= PRESENCE_ESTABLISH_MS;
+    if (!prev || prev.lastSeenNode !== nodeKey || established !== wasEstablished) core.markDirty();
+    else pending = true;
   }
 
   function getMissing({
@@ -75,11 +86,28 @@ export function createContainerRegistry({ path = DEFAULT_PATH, now = Date.now } 
     }
   }
 
-  function save() {
+  // A failed write leaves the store dirty, so the next save retries it.
+  function persist() {
+    if (!core.isDirty()) return;
     core.save();
+    if (core.isDirty()) return;
+    pending = false;
+    lastWriteAt = core.now();
   }
 
-  return { recordSeen, getMissing, prune, save, snapshot: core.snapshot };
+  /** Called every refresh cycle: writes changes, and a refreshed lastSeenAt every PRESENCE_FLUSH_MS. */
+  function save() {
+    if (pending && core.now() - lastWriteAt >= PRESENCE_FLUSH_MS) core.markDirty();
+    persist();
+  }
+
+  /** Writes a refreshed lastSeenAt now, without waiting for the interval (shutdown). */
+  function flush() {
+    if (pending) core.markDirty();
+    persist();
+  }
+
+  return { recordSeen, getMissing, prune, save, flush, snapshot: core.snapshot };
 }
 
 export const containerRegistry = createContainerRegistry();

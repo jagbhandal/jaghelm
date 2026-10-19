@@ -1,7 +1,7 @@
 # JagHelm overhaul — design
 
 - **Date:** 2026-10-18
-- **Status:** Approved by Jag, 2026-10-18 ("lock and finalize"). The work is split into story cards on the JagHelm "Overhaul" board, ordered in epic #333.
+- **Status:** Approved by Jag, 2026-10-18 ("lock and finalize"). Amended 2026-10-19 after Jag signed off the clickable mock (#295); the changes are listed in §15. The work is split into story cards on the JagHelm "Overhaul" board, ordered in epic #333.
 - **Inputs:** the independent UX and design audit (private doc https://claude.ai/artifact/2DzwZHtNaShc8vobePMXuZ) and the independent performance, functionality and bloat audit (private doc https://claude.ai/artifact/Mbzzvib9uyY8o4mCWK3dks), both run against `main` @ 2587fce. The performance findings are already filed as issues #232–#269, tracked in #270.
 - **Supersedes:** the visual parts of `docs/UI-UX-ANALYSIS.md` and the indigo identity in `2026-06-27-jaghelm-mobile-ui-refresh-design.md`. That spec's annunciator language (worst-of lamp, word + colour + shape, calm status colours) is kept and becomes the shared system.
 
@@ -23,6 +23,7 @@ Jag, 2026-10-18: agreed to every recommendation in both audits, and chose Arcane
 | Phone web? | Phone-width web renders the same screens as the Android app, from shared code. |
 | Per-container RX/TX and Docker CPU/MEM? | Drill-down only. |
 | Quick Launch, todos, pipeline? | Utilities: a right rail at ≥ 1440px, otherwise a Launch tab. |
+| Embedded app tabs? | First-class: an **Apps** group in the sidebar, one entry per app, opened inside JagHelm under the header and kept loaded. (Jag, 2026-10-19: one of the best things about JagHelm today.) |
 | Many-to-one Kuma monitor matching (#240)? | Not intended. One container per monitor unless explicitly mapped. |
 | Layout per device or shared (#233)? | Shared through the server, versioned. |
 | Sessions across restarts (#250)? | They survive restarts; ADR 0002 is amended. |
@@ -87,9 +88,9 @@ Three layers: a raw palette (OKLCH ramps), semantic roles (what components consu
 | `accent-tint` | accent at ~12–16 % | accent at ~8–10 % | selected row, hover on accent items |
 | `focus-ring` | `oklch(0.606 0.25 292.717)` (≈ #8b5cf6) | same | 2px ring + 2px offset, ≥ 3:1 against the surface |
 
-Purple means "interactive or selected". It never appears in status, charts' threshold colours, or decoration.
+Purple means "interactive or selected", and it also tints section icon chips and fills meters below their threshold (signed off in the mock, 2026-10-19). It never appears in status or charts' threshold colours. Settings → Appearance offers four other accents, none in a status hue: Indigo, Blue, Fuchsia and Graphite.
 
-**Surfaces and text.** Dark: carbon near-black background (Android's `#0A0D0C`) with `surface-1/2/3` stepped neutrals; light: true neutral white/grey. Borders `border-subtle` and `border-strong`. Text `text-1` (≥ 7:1), `text-2` (≥ 4.5:1), `text-3` (≥ 4.5:1, sparing), `text-disabled`.
+**Surfaces and text.** Dark: graphite tinted toward the accent hue (background `oklch(0.155 0.006 286)`, `surface-1/2/3` at L 0.198 / 0.238 / 0.285, chroma ≤ 0.01), which keeps Arcane's dark-neutral feel without copying its pure greys; light: near-white with the same faint tint. The values are the mock's Tokens board. Borders `border-subtle` and `border-strong`. Text `text-1` (≥ 7:1), `text-2` (≥ 4.5:1), `text-3` (≥ 4.5:1, sparing), `text-disabled`.
 
 **Status roles**, each with `fg`, `bg-tint`, `border`, `solid` and `on-solid`:
 
@@ -106,7 +107,7 @@ The UX audit proposed violet for maintenance; with purple now the accent, mainte
 
 ### 5.3 Type, spacing, shape, motion
 
-- **Type.** One UI sans with tabular figures, self-hosted (Inter recommended for numerals; the builder may keep DM Sans if Inter's weight hurts the budget). Monospace (JetBrains Mono, self-hosted) only for hostnames, SHAs, paths and code. The display face goes. Scale: caption 12/16 · body-sm 13/18 · body 14/20 · title-sm 16/22 · title 20/26 · display 28/32 · metric 24/28 tabular · metric-lg 32/36 tabular. Minimum 12px; 11px uppercase overlines only at ≥ 4.5:1.
+- **Type.** Manrope, self-hosted, with tabular figures (signed off in the mock, 2026-10-19). Settings → Appearance also offers Plus Jakarta Sans and Montserrat; all three ship with JagHelm and only the chosen one is downloaded. Monospace (JetBrains Mono, self-hosted) only for hostnames, SHAs, paths and code. One text-size setting (Default or Large) replaces today's nine per-element font sizes. The display face goes. Scale: caption 12/16 · body-sm 13/18 · body 14/20 · title-sm 16/22 · title 20/26 · display 28/32 · metric 24/28 tabular · metric-lg 32/36 tabular. Minimum 12px; 11px uppercase overlines only at ≥ 4.5:1.
 - **Spacing.** 4, 8, 12, 16, 24, 32, 48. Panel padding 16 (compact) or 20 (comfortable). Page gutter 16 / 24 / 32 by breakpoint.
 - **Radius.** Arcane's single radius token, mapped: 4 badges, 8 controls and rows, 12 panels and dialogs, full for pills and lamps.
 - **Elevation.** Flat panels with a 1px border; popovers and dialogs get a shadow and a scrim. No blur, mesh, dot grid or gradient text.
@@ -176,19 +177,20 @@ Phones may run a sideloaded 1.2.x for months. `/api/status` sits beside the exis
 
 ## 7. Information architecture
 
-**Navigation:** Overview · Services · Infrastructure · Alerts · Launch · Settings. Desktop: a slim grouped sidebar (collapsible to icons) plus the 48px header. Phones: a bottom tab bar (Overview, Services, Infrastructure, Alerts, More). Every service and node has its own URL, so a push notification and a palette result open the right place.
+**Navigation:** Overview · Services · Infrastructure · Alerts · **Apps** (one entry per embedded app) · Launch · Settings. Desktop: a slim grouped sidebar (collapsible to icons) plus the 48px header. Phones: a bottom tab bar (Overview, Services, Infrastructure, Alerts, More). Every service and node has its own URL, so a push notification and a palette result open the right place.
 
 **Header (annunciator),** full width, 48px: logo and instance name; lamp and the overall sentence; "updated 12s ago"; command palette (⌘K); settings; account. A "No signal" steel state when the backend is unreachable — the same word and colour on both clients.
 
-**Settings,** six sections behind a searchable card index (Arcane's pattern):
+**Settings,** seven sections behind a searchable card index (Arcane's pattern). Search also finds individual settings inside sections ("font" finds Appearance → Typeface and Text size):
 
 | Section | Contents |
 | --- | --- |
 | Sources | Prometheus, Kuma, NUT, Gitea, cron reporters, each with live health |
 | Nodes & Services | names, URLs, monitor mapping (with match suggestions, #240), groups |
-| Integrations | gallery, configure, test |
+| Integrations | gallery, configure, test, live status per integration |
+| Apps & links | embedded apps (name, URL, icon, order, open in a new tab instead, an embedding check on add) and Quick Launch links; link target; the Launch page's search engine |
 | Notifications | push categories, thresholds, registered devices and "Send test push" (#268) |
-| Appearance | theme (dark / light / system), accent (default violet), density, branding |
+| Appearance | theme (dark / light / system), accent (violet by default, four others), typeface (three), text size, density, Overview sections (show/hide), branding, temperature unit |
 | System | auth and sessions, backup, about |
 
 The live preview goes (M10): changes apply to the real board.
@@ -215,7 +217,9 @@ Today's extras keep a home: weather and the clock move from the header to the ut
 
 **Alerts:** active issues (the model's issue list) and history (persisted events from #267), filterable by entity and severity; the same view on Android.
 
-**Launch:** Quick Launch link groups (every group renders), embedded iframe tabs that keep their state between switches and tell a slow load from a blocked one (#269).
+**Apps:** each embedded app opens in the content area under the header, so status stays in view; it stays loaded when you switch away (a dot in the sidebar marks the loaded ones) and tells a slow load from a blocked one, offering "Open in new tab" when the site forbids embedding (#269, #296). Apps are in the command palette. On phones they sit under More.
+
+**Launch:** Quick Launch link groups (every group renders) and the web search.
 
 **First run:** a guided setup — connect Prometheus, pick nodes, optionally add Kuma, NUT and integrations — ending on a populated Overview. No author-specific defaults anywhere (node names, UPS model, weather location).
 
@@ -253,11 +257,11 @@ Each phase is a release and ends with Jag's hands-on check on staging (a ~10-ite
 | **0 — Foundations** | Tailwind v4 + shadcn/ui set-up; tokens (§5) with CI contrast checks; self-hosted fonts and Lucide; `src/ui/` with the components in §5.4; the server status model (§6) and its cross-client fixture test | Fixture test green; axe contrast checks green on a component gallery page in both themes; Android still renders correctly on the old screens |
 | **1 — Web Overview** | Header, attention panel, subsystem strip, reflowing Infrastructure and Services, utilities rail; phone web renders the Android screens; Android moves to the status model (APK); section show/hide; the ten old themes retired (saved choices map to dark or light) | 3-second test passes on the incident fixture at 390 / 1024 / 1440 / 2560; no clipping or sideways scroll at any width; budgets in §4 met; the cross-client fixture test covers Android |
 | **2 — Drill-down** | Entity URLs; detail drawer with charts and heartbeat history; Services, Infrastructure and Alerts pages; command palette over services, nodes and issues | Every issue row and push notification opens its entity |
-| **3 — Settings and first run** | Six-section searchable Settings; guided first run; demo mode fixed; density presets; no live preview | A fresh install reaches a populated Overview without editing files; demo render test green |
+| **3 — Settings and first run** | Seven-section searchable Settings; guided first run; demo mode fixed; density presets; no live preview | A fresh install reaches a populated Overview without editing files; demo render test green |
 | **4 — Android parity** | Android screens rebuilt on `src/ui/`; account entry; copy fixes; violet; the old endpoints retired one release later (§6.3) | Jag's check on the phone |
 | **5 — Customisation** | Edit layout mode; themes as validated data | Arrangement round-trips across two devices without loss |
 
-Before Phase 1 is built, a clickable static mock of the Overview (healthy and incident; dark and light; desktop and phone) is shown to Jag to lock the visual direction, as the 2026-06-27 mobile refresh did.
+Before Phase 1 is built, a clickable static mock of the Overview (healthy and incident; dark and light; desktop and phone) is shown to Jag to lock the visual direction, as the 2026-06-27 mobile refresh did. Done: signed off 2026-10-19 (#295, §15).
 
 ## 12. Verification
 
@@ -285,3 +289,19 @@ File and folder structure inside `src/ui/` and the shared screens; the headless 
 10. Backups = Proxmox vzdump results plus cron jobs marked as backups in JagHelm's config; Arcane agent-offline is a state, Arcane updates and vulnerabilities are events (§6.2).
 11. Weather and clock move to the utilities rail, web search to Launch, Proxmox VMs and pools to drill-down; show/hide sections from Phase 1 (§8).
 12. The old endpoints stay unchanged until one release after Phase 4 (§6.3).
+
+## 15. Amendments after the mock sign-off (2026-10-19)
+
+Jag reviewed the clickable mock (private: https://claude.ai/artifact/Dv7EGVXZLe4ocsssZrwmkf, version 8: Overview desktop and phone, Tokens, Settings, and where today's settings go) and signed it off: "I'm good to build the new design. It's a great first step and we can improve the nitty gritty details as we go along." Earlier the same day he said it is "mature, easy to understand and gives me relevant information right away".
+
+| Change | Why | Sections | Cards |
+| --- | --- | --- | --- |
+| Embedded apps become a sidebar group, open under the header, stay loaded | Jag: the embedded tabs are one of the best things about JagHelm today; this spec had moved them into Launch and the first mock had none | §2, §7, §8 | #296, #269, #301, #362 |
+| Settings has seven sections, adding Apps & links | Today's Tabs and Links tabs need a home; the map of all 13 current tabs is in the mock | §7, §11 | #317, #362 |
+| Manrope is the typeface; Plus Jakarta Sans and Montserrat are options; one text-size setting | Chosen in the mock (Montserrat is Arcane's face, offered but not the default) | §5.3 | #244, #284, #321 |
+| Violet also tints section icon chips and below-threshold meters; four more accents are offered | As the mock shows; status hues stay reserved for status | §5.2 | #283, #321 |
+| Dark neutrals are graphite tinted toward hue 286 | JagHelm's own identity next to Arcane's pure greys; with flat 12px panels, the shaped lamps and the helm mark, it keeps JagHelm from reading as an Arcane clone | §5.2 | #283 |
+| Removed from Settings: the welcome message, background image and dot grid, the nine per-element font sizes, per-section titles, icons and colours | Proposed in the settings map; accepted with the sign-off; any can come back | §7 | #317, #321 |
+
+The open calls were taken as the mock shows them; Jag can revisit any of them as the phases land.
+

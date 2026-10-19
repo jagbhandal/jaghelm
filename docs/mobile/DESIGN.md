@@ -138,9 +138,11 @@ export function cachedIconUrl(url) {
   return `${getApiBase()}/icons/cached?url=${encodeURIComponent(url)}`;
 }
 ```
-This makes the proxied icon URL absolute and same-base on mobile, so it reaches Express over Tailscale and the auth guard injects `x-auth-token` (the icon route is protected). Web is byte-for-byte identical (`getApiBase()` → `/api`).
+This makes the proxied icon URL absolute and same-base on mobile, so it reaches Express over Tailscale. Web is byte-for-byte identical (`getApiBase()` → `/api`).
 
-**Fallback (b):** if a deployment routes via the env-CORS allow-list and prefers not to proxy, mobile presentation may render icons **directly from the CDN** (already permitted in `connect-src`/`img-src`: `https://cdn.jsdelivr.net`), skipping the proxy. Default is (a).
+> **Correction (2026-10, #255):** no token is involved. An `<img>` is loaded by the WebView, not through `apiFetch`, so nothing injects `x-auth-token`, and `/api/icons/cached` is a public route because of that. Since #255, `cachedIconUrl()` also routes only Dashboard Icons and selfh.st URLs through the cache (`server/icon-sources.js`); any other URL is returned unchanged. Whether the app can load the absolute backend URL at all under its CSP (`img-src 'self' data: blob:`) is the Android icons issue, #373.
+
+**Fallback (b):** if a deployment routes via the env-CORS allow-list and prefers not to proxy, mobile presentation may render icons **directly from the CDN**, skipping the proxy. Default is (a). That would need `https://cdn.jsdelivr.net` added to the mobile CSP's `img-src`: the shipped `mobile/index.html` allows only `'self' data: blob:` there and `'self'` in `connect-src` (corrected 2026-10; see #373).
 
 **`uploadFile()`** stays relative (web-only; mobile does no uploads) — but it is **explicitly captured as a harness gap** (the one remaining raw `/api` literal that bypasses the resolver), with the correct file attribution (`src/hooks/useData.js`, not `client.js`).
 
@@ -268,10 +270,11 @@ Add a `<meta http-equiv="Content-Security-Policy">` to `mobile/index.html`. **CS
 <!-- Default (native-HTTP transport): connect-src stays tight; native calls bypass it. -->
 <meta http-equiv="Content-Security-Policy"
   content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
-           font-src 'self' data:; img-src 'self' data: blob: https://cdn.jsdelivr.net;
+           font-src 'self' data:; img-src 'self' data: blob:;
            connect-src 'self';">
 ```
-Fonts are **bundled locally**, so `font-src 'self'` holds and no `fonts.googleapis.com` / `fonts.gstatic.com` allowance is needed. Glassmorphism `backdrop-filter` and the theme CSS need **no** CSP relaxation. If the WebView-fetch fallback is chosen, widen `connect-src` to `'self' http://*:* https://*:*` with the honest "not the boundary" note; if CDN icons are used (Icon fallback b), keep `https://cdn.jsdelivr.net` in `img-src`/`connect-src`.
+(As shipped in `mobile/index.html`; corrected 2026-10, the snippet used to list `https://cdn.jsdelivr.net` in `img-src`, which the shipped CSP never had. See #373.)
+Fonts are **bundled locally**, so `font-src 'self'` holds and no `fonts.googleapis.com` / `fonts.gstatic.com` allowance is needed. Glassmorphism `backdrop-filter` and the theme CSS need **no** CSP relaxation. If the WebView-fetch fallback is chosen, widen `connect-src` to `'self' http://*:* https://*:*` with the honest "not the boundary" note; if CDN icons are used (Icon fallback b), add `https://cdn.jsdelivr.net` to `img-src`.
 
 ### Build chain
 
@@ -339,7 +342,7 @@ runBackgroundRefresh()  ──▶ refreshServices/refreshUPS/refreshGitea/...   
         ▼
   dispatchEvents(events) ──▶ per event × per registered token   server/push/fcm.js (HTTP v1, Admin SDK)
         ▼
-  persist next snapshot → data/push-snapshot.json (completes before cycle ends)
+  advance prev snapshot (memory); write data/push-snapshot.json if its alert state changed
         ▼
   prune UNREGISTERED/INVALID tokens   server/push/tokenStore.js
 ```
@@ -396,7 +399,7 @@ The detector hooks in as the **last data step of the cycle**, after `Promise.all
 
 Status normalization is explicit and total: Kuma/Docker → `up|down|unknown`; a node whose `refreshServices` outcome was `rejected` (or all-null metrics) → `reachable:false`; NUT → `online|on_battery|unknown`. Anything unrecognized → `unknown` and **never emits** (no false alarms on novel states).
 
-**Differ** — `diffSnapshots(prev, next, thresholds) → Event[]`. No I/O, no `Date.now()`, no randomness. The previous snapshot is held in a module-level var in `dispatch.js` and **persisted to `data/push-snapshot.json`** so a restart doesn't re-fire every active incident as "new". The first cycle after boot establishes a baseline and emits nothing.
+**Differ** — `diffSnapshots(prev, next, thresholds) → Event[]`. No I/O, no `Date.now()`, no randomness. The previous snapshot is held in memory (`createPushSnapshot` in `dispatch.js`) and **persisted to `data/push-snapshot.json`** so a restart doesn't re-fire every active incident as "new". The file is read once, on the first cycle; it is rewritten only when the snapshot's alert state (`alertStateKey` in `differ.js`: every status, each host's reachability, and which side of its threshold each metric is on) differs from the file's, so a steady cycle writes nothing. Shutdown writes the latest snapshot (`flush`), so a threshold edited while JagHelm is stopped is judged against the last reading; after a crash it is judged against the last written one, and a reading between the old and the new threshold can add or drop one threshold alert. A failed write is retried every cycle; until it lands, a restart can re-send an alert, or miss the recovery of one already sent. With no file, or an unreadable one, the first cycle establishes a baseline and emits nothing.
 
 **Canonical ordering (REQUIRED for the byte-identical promise).** "Same input ⇒ same event set" is necessary but not sufficient for "byte-identical array": JS object key iteration is insertion-order, and cache-population order across refreshes is not pinned. The differ therefore applies a **total, deterministic sort** to the emitted array before returning:
 > **Sort key:** ascending `(type, id)` — string-compare `type`, tiebreak by `id`. This is the canonical order; it is stated here and **asserted in the table-driven test** (the test compares the full serialized array, not a set). `buildSnapshot` also emits sorted keyed maps as belt-and-suspenders. Without this, the "byte-identical array" promise does not hold.
@@ -421,7 +424,7 @@ Each `Event` is a plain serializable record:
   prev: "up", next: "down" }
 ```
 
-**Determinism guards (by construction):** pure exported function unit-tested with fixture snapshot pairs (same input ⇒ **byte-identical, canonically-sorted** event array, table-driven test covering every row + the no-change → `[]` case + an order-stability case where two unsorted inputs yield identical arrays); thresholds (`{ cpu: 0.90, mem: 0.90, disk: 0.90, hysteresis: 0.05 }`) are explicit config read from `display-config.json`, not magic numbers; hysteresis (the only stateful nuance) lives in the comparison, not in timers; new/removed keys handled by one documented baseline rule; no model call anywhere. This satisfies the determinism-by-construction law — atomic deterministic execution, judgment (thresholds/severities/sort key) lives in config/spec.
+**Determinism guards (by construction):** pure exported function unit-tested with fixture snapshot pairs (same input ⇒ **byte-identical, canonically-sorted** event array, table-driven test covering every row + the no-change → `[]` case + an order-stability case where two unsorted inputs yield identical arrays); thresholds (`{ cpu: 0.90, mem: 0.90, disk: 0.90, hysteresis: 0.05 }`) are explicit config read from `display-config.json` (cached; parsed again when the file changes), not magic numbers; hysteresis (the only stateful nuance) lives in the comparison, not in timers; new/removed keys handled by one documented baseline rule; no model call anywhere. This satisfies the determinism-by-construction law — atomic deterministic execution, judgment (thresholds/severities/sort key) lives in config/spec.
 
 ### Device-token registration + storage
 

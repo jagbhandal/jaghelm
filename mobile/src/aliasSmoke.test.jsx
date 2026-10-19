@@ -10,11 +10,10 @@ describe('@shared alias → desktop data layer', () => {
 
   it('setApiBase makes cachedIconUrl base-aware for CDN urls', () => {
     setApiBase('http://vm-101:3099/api');
-    const u = cachedIconUrl('https://cdn.jsdelivr.net/x/icon.svg');
-    expect(u).toBe(
-      'http://vm-101:3099/api/icons/cached?url=' +
-        encodeURIComponent('https://cdn.jsdelivr.net/x/icon.svg')
-    );
+    // An icon-repository URL: the only kind the server caches (#255).
+    const cdn = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/gitea.svg';
+    const u = cachedIconUrl(cdn);
+    expect(u).toBe('http://vm-101:3099/api/icons/cached?url=' + encodeURIComponent(cdn));
     setApiBase('/api'); // restore
   });
 });

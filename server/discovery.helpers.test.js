@@ -8,7 +8,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 const { initDiscovery, getNodeData } = await import('./discovery.js');
-const { getDockerContainers } = await import('./docker.js');
 
 initDiscovery('http://localhost:9998');
 const realFetch = globalThis.fetch;
@@ -69,17 +68,3 @@ test('discovery: every container_* query carries the exclusion selector', async 
     globalThis.fetch = realFetch;
   }
 });
-
-for (const honourSelector of [true, false]) {
-  test(`docker: helper containers are ignored (selector honoured=${honourSelector})`, async () => {
-    const seen = [];
-    globalThis.fetch = stub({ honourSelector, seen });
-    try {
-      const list = await getDockerContainers();
-      assert.deepEqual(list.map((c) => c.name), ['other_label', 'plain_app']);
-      for (const q of seen) assert.ok(q.includes(`${LABEL}!="true"`), `missing in: ${q}`);
-    } finally {
-      globalThis.fetch = realFetch;
-    }
-  });
-}
