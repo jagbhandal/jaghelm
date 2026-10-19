@@ -10,6 +10,7 @@
  *   server/refresh.js    — background refresh loop + per-domain refresh fns
  *   server/cache.js      — in-memory response cache + ETag helper
  *   server/errors.js     — apiError() wrapper for uniform error responses
+ *   server/accessLog.js  — one structured log line per request
  *   server/upload.js     — multer config for logo/background uploads
  *   server/httpClient.js — safeFetch with default timeout
  *   server/config.js     — services.yaml load/save/watch
@@ -55,6 +56,7 @@ import { errorHandler } from './errors.js';
 import { VERSION } from './version.js';
 import { createLogger } from './util/logger.js';
 import { metricsMiddleware, metricsHandler } from './metrics.js';
+import { createAccessLog } from './accessLog.js';
 import { isDemoMode, demoMiddleware, logDemoBanner } from './demo.js';
 
 const log = createLogger('jaghelm');
@@ -105,20 +107,9 @@ if (trustProxy.length > 0) {
 
 // Count + time every request (Prometheus metrics) and emit a structured access
 // log line on completion. Mounted first so it brackets the whole pipeline.
-// The scrape/health endpoints are skipped in the access log to avoid spam.
+// Levels, the logged path and the skipped probe endpoints: see accessLog.js.
 app.use(metricsMiddleware);
-app.use((req, res, next) => {
-  const start = process.hrtime.bigint();
-  res.on('finish', () => {
-    if (req.path === '/metrics' || req.path === '/api/health' || req.path === '/api/readyz') return;
-    const ms = Math.round(Number(process.hrtime.bigint() - start) / 1e6);
-    const fields = { method: req.method, path: req.path, status: res.statusCode, ms };
-    if (res.statusCode >= 500) log.error(fields, 'request');
-    else if (req.path.startsWith('/api/')) log.info(fields, 'request');
-    else log.debug(fields, 'request');
-  });
-  next();
-});
+app.use(createAccessLog({ logger: log }));
 
 // Content-Security-Policy. The frontend uses React inline styles + dynamic
 // theme CSS-var injection (style ATTRIBUTES, which can't be nonced), Google

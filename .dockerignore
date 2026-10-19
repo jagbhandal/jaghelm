@@ -42,5 +42,13 @@ docs
 **/*.test.*
 server/arcane/fixtures
 
+# Arcane dry-run CLI (docs/arcane/SETUP.md §9) — a dev tool run from a checkout
+# with `node scripts/arcane-poll-once.js`; the server never loads these
+# (scripts/docker-image.test.mjs checks the import graph)
+scripts/arcane-poll-once.js
+server/arcane/pollOnce.js
+server/arcane/projectFixture.js
+server/arcane/vulnDigestOnce.js
+
 # Archives
 *.tar.gz
