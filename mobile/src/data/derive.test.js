@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseMetricPct, serviceIsProblem, flattenServices, sortProblemsFirst,
-  groupByNode, thirdMetric, nodeUpDown, upsDegraded, cronDegraded,
+  groupByNode, thirdMetric, nodeUpDown, upsState, upsDegraded, cronDegraded,
   deriveSubsystems, deriveIncidents,
-  SEVERITY, severityRank, maxSeverity, CPU_HOT, TEMP_HOT,
+  SEVERITY, severityRank, maxSeverity, CPU_HOT, TEMP_HOT, DISK_HOT,
   statusToSeverity, statusToShape, formatRuntime,
   overallSeverity, nodeSeverity, hasUnknownService, subsystemSeverity,
   activeIncidentIds,
@@ -109,11 +109,19 @@ describe('thirdMetric', () => {
     expect(result.unit).toBe('%');
     expect(result.percent).toBeCloseTo(30.0);
   });
+  // #273: a near-full disk must not hide behind TEMP on a node that reports both.
+  it('returns DISK instead of TEMP when disk is at or above DISK_HOT', () => {
+    expect(thirdMetric({ temp: '52.1', diskPercent: '94' })).toEqual({ label: 'DISK', value: '94', unit: '%', percent: 94 });
+    expect(thirdMetric({ temp: '52.1', diskPercent: String(DISK_HOT) }).label).toBe('DISK');
+  });
+  it('keeps TEMP while disk is below DISK_HOT', () => {
+    expect(thirdMetric({ temp: '52.1', diskPercent: String(DISK_HOT - 0.1) }).label).toBe('TEMP');
+  });
 });
 
 describe('upsDegraded / cronDegraded', () => {
   it('ups on battery is degraded; online or null is not', () => {
-    expect(upsDegraded({ status: 0 })).toBe(true);
+    expect(upsDegraded({ status: 2 })).toBe(true);
     expect(upsDegraded({ status: 1 })).toBe(false);
     expect(upsDegraded({ status: null })).toBe(false);
   });
@@ -123,6 +131,73 @@ describe('upsDegraded / cronDegraded', () => {
     expect(cronDegraded(ok)).toBe(false);
     expect(cronDegraded(bad)).toBe(true);
     expect(cronDegraded(null)).toBe(false);
+  });
+});
+
+// #273: one test per nut_status value, as server/push/snapshot.js maps it:
+// 0 = unknown, 1 = online, 2 = on battery, 3 = low battery (= on battery).
+// upsStatusParity.test.js holds the map itself to the server's.
+describe('UPS nut_status values (same map as server/push/snapshot.js)', () => {
+  const CALM = { nodes: { n: { display_name: 'N', metrics: { cpu: '10', memPercent: '20' }, services: [{ uid: 'n:a', status: 'up', display_name: 'A' }] } } };
+  const NO_SIGNAL = { severity: 'unknown', word: 'NO SIGNAL', detail: '—' };
+  const ON_BATTERY = {
+    onBattery: true,
+    cell: { severity: 'caution', word: 'ON BATTERY', detail: '47% · 8m' },
+    incidents: ['ups:apcups'],
+    severity: 'caution',
+    hero: { headline: 'UPS on battery', subline: 'On battery power — 47% charge.' },
+  };
+  // Everything the app derives from one UPS reading on an otherwise calm homelab.
+  function upsView(status) {
+    const ctx = { services: CALM, ups: { status, charge: 47, runtime: 480 }, cron: [] };
+    const severity = overallSeverity(ctx);
+    const { headline, subline } = deriveHero(severity, ctx);
+    return {
+      onBattery: upsDegraded(ctx.ups),
+      cell: subsystemSeverity('ups', ctx),
+      incidents: deriveIncidents(ctx).map((i) => i.id),
+      severity,
+      hero: { headline, subline },
+    };
+  }
+
+  it('0 = unknown: no battery alarm, the UPS cell reads NO SIGNAL, the hero claims no mains', () => {
+    expect(upsView(0)).toEqual({
+      onBattery: false,
+      cell: NO_SIGNAL,
+      incidents: [],
+      severity: 'healthy',
+      hero: { headline: "Everything's healthy", subline: '1 service up across 1 node' },
+    });
+    expect(upsState({ status: 0 })).toBe('unknown');
+  });
+
+  it('1 = online: MAINS, no incident, the hero says UPS on mains', () => {
+    expect(upsView(1)).toEqual({
+      onBattery: false,
+      cell: { severity: 'healthy', word: 'MAINS', detail: '47%' },
+      incidents: [],
+      severity: 'healthy',
+      hero: { headline: "Everything's healthy", subline: '1 service up across 1 node — UPS on mains' },
+    });
+    expect(upsState({ status: 1 })).toBe('online');
+  });
+
+  it('2 = on battery: ON BATTERY cell, an incident and an amber hero', () => {
+    expect(upsView(2)).toEqual(ON_BATTERY);
+    expect(upsState({ status: 2 })).toBe('on_battery');
+  });
+
+  it('3 = low battery: folds into on battery, as push does', () => {
+    expect(upsView(3)).toEqual(ON_BATTERY);
+    expect(upsState({ status: 3 })).toBe('on_battery');
+  });
+
+  it('no reading, or a value the server does not know, is unknown', () => {
+    for (const ups of [null, {}, { status: null }, { status: 4 }, { status: Number.NaN }]) {
+      expect(upsState(ups)).toBe('unknown');
+      expect(subsystemSeverity('ups', { services: CALM, ups, cron: [] })).toEqual(NO_SIGNAL);
+    }
   });
 });
 
@@ -144,7 +219,7 @@ describe('deriveSubsystems (per-cell severity/word/detail shape)', () => {
   });
 
   it('unreachable → every cell NO SIGNAL / unknown / — (never green)', () => {
-    const cells = deriveSubsystems({ services: SERVICES_BODY, ups: { status: 0 }, cron: [], unreachable: true });
+    const cells = deriveSubsystems({ services: SERVICES_BODY, ups: { status: 2 }, cron: [], unreachable: true });
     expect(cells.map((c) => c.key)).toEqual(['services', 'nodes', 'ups', 'cron']);
     for (const c of cells) {
       expect(c.severity).toBe('unknown');
@@ -157,7 +232,7 @@ describe('deriveSubsystems (per-cell severity/word/detail shape)', () => {
 describe('deriveIncidents', () => {
   it('emits one incident per down service, on-battery UPS, failing cron — ordered + stable', () => {
     const cron = [{ node: 'pi', jobs: [{ job: 'backup', runs: [{ status: 'failure', timestamp: 't', error: 'disk full' }] }] }];
-    const incidents = deriveIncidents({ services: SERVICES_BODY, ups: { status: 0, charge: 80 }, cron });
+    const incidents = deriveIncidents({ services: SERVICES_BODY, ups: { status: 2, charge: 80 }, cron });
     // SERVICES_BODY's pihole is status 'unknown' with no source → a tracked-unknown UNKN row
     // (new contract: deriveIncidents now also emits tracked-unknown services).
     expect(incidents.map((i) => i.kind)).toEqual(['service', 'ups', 'cron', 'unknown']);
@@ -168,7 +243,7 @@ describe('deriveIncidents', () => {
     expect(incidents.find((i) => i.kind === 'cron').cause).toBe('disk full');
     // Sort = down → ups → cron → unknown (stable by id within a kind).
     // Services: only vm-101:gitea is 'down' → 'service:vm-101:gitea'
-    // UPS: status=0 → 'ups:apcups'
+    // UPS: status=2 (on battery) → 'ups:apcups'
     // Cron: node='pi', job='backup' fails → 'cron:pi:backup'
     // Unknown: gateway-pi:pihole (status 'unknown', no source) → 'unknown:gateway-pi:pihole'
     expect(incidents.map((i) => i.id)).toEqual([
@@ -319,7 +394,7 @@ describe('overallSeverity (strict worst-of)', () => {
     expect(overallSeverity({ services: body([{ uid: 'n:a', status: 'down' }]), ups: { status: 1 }, cron: [] })).toBe('critical');
   });
   it('UPS on battery only → caution', () => {
-    expect(overallSeverity({ services: body([up('n:a')]), ups: { status: 0 }, cron: [] })).toBe('caution');
+    expect(overallSeverity({ services: body([up('n:a')]), ups: { status: 2 }, cron: [] })).toBe('caution');
   });
   it('cron failure only → caution', () => {
     const cron = [{ node: 'p', jobs: [{ job: 'j', runs: [{ status: 'failure', error: 'x' }] }] }];
@@ -341,7 +416,7 @@ describe('overallSeverity (strict worst-of)', () => {
     expect(overallSeverity({ services: body([up('n:a')]), ups: { status: 1 }, cron: [], unreachable: true })).toBe('unknown');
   });
   it('mixed down + battery → critical (worst-of, not averaged)', () => {
-    expect(overallSeverity({ services: body([{ uid: 'n:a', status: 'down' }]), ups: { status: 0 }, cron: [] })).toBe('critical');
+    expect(overallSeverity({ services: body([{ uid: 'n:a', status: 'down' }]), ups: { status: 2 }, cron: [] })).toBe('critical');
   });
   it('a presence breadcrumb (unknown) does NOT raise caution', () => {
     expect(overallSeverity({ services: body([{ uid: 'n:a', status: 'unknown', source: 'presence' }]), ups: { status: 1 }, cron: [] })).toBe('healthy');
@@ -379,9 +454,9 @@ describe('subsystemSeverity (§5 per-cell word/detail table)', () => {
   });
 
   it('UPS cell: ON BATTERY (charge · runtime) / charge-only / MAINS / NO SIGNAL', () => {
-    const batt = subsystemSeverity('ups', { services: SERVICES_BODY, ups: { status: 0, charge: 47, runtime: 480 }, cron: [] });
+    const batt = subsystemSeverity('ups', { services: SERVICES_BODY, ups: { status: 2, charge: 47, runtime: 480 }, cron: [] });
     expect(batt).toMatchObject({ severity: 'caution', word: 'ON BATTERY', detail: '47% · 8m' });
-    const battNoRt = subsystemSeverity('ups', { services: SERVICES_BODY, ups: { status: 0, charge: 47 }, cron: [] });
+    const battNoRt = subsystemSeverity('ups', { services: SERVICES_BODY, ups: { status: 2, charge: 47 }, cron: [] });
     expect(battNoRt.detail).toBe('47%');
     const mains = subsystemSeverity('ups', { services: SERVICES_BODY, ups: { status: 1, charge: 100 }, cron: [] });
     expect(mains).toMatchObject({ severity: 'healthy', word: 'MAINS', detail: '100%' });
@@ -407,7 +482,7 @@ describe('subsystemSeverity (§5 per-cell word/detail table)', () => {
   it('Nodes / UPS / Cron never emit a critical (red) severity, even amid a down service', () => {
     const failCron = [{ node: 'pi', jobs: [{ job: 'b', runs: [{ status: 'failure', error: 'x' }] }] }];
     for (const key of ['nodes', 'ups', 'cron']) {
-      const cell = subsystemSeverity(key, { services: SERVICES_BODY, ups: { status: 0 }, cron: failCron });
+      const cell = subsystemSeverity(key, { services: SERVICES_BODY, ups: { status: 2 }, cron: failCron });
       expect(cell.severity).not.toBe('critical');
     }
   });
@@ -425,12 +500,12 @@ describe('deriveIncidents — per-incident severity/word/shape/readout (honest n
     expect(inc.since).toBeUndefined();
   });
   it('ups → bolt / caution / ON BATTERY, readout = {charge}% · {runtime}', () => {
-    const inc = deriveIncidents({ services: null, ups: { status: 0, charge: 47, runtime: 480 }, cron: [] })
+    const inc = deriveIncidents({ services: null, ups: { status: 2, charge: 47, runtime: 480 }, cron: [] })
       .find((i) => i.kind === 'ups');
     expect(inc).toMatchObject({ severity: 'caution', word: 'ON BATTERY', shape: 'bolt', readout: '47% · 8m' });
   });
   it('ups readout is charge-only when runtime is absent', () => {
-    const inc = deriveIncidents({ services: null, ups: { status: 0, charge: 47 }, cron: [] })
+    const inc = deriveIncidents({ services: null, ups: { status: 2, charge: 47 }, cron: [] })
       .find((i) => i.kind === 'ups');
     expect(inc.readout).toBe('47%');
   });
@@ -455,14 +530,14 @@ describe('deriveIncidents — per-incident severity/word/shape/readout (honest n
   });
   it('sort order is down → ups → cron → unknown', () => {
     const cron = [{ node: 'pi', jobs: [{ job: 'j', runs: [{ status: 'failure', error: 'x' }] }] }];
-    const kinds = deriveIncidents({ services: SERVICES_BODY, ups: { status: 0, charge: 50 }, cron }).map((i) => i.kind);
+    const kinds = deriveIncidents({ services: SERVICES_BODY, ups: { status: 2, charge: 50 }, cron }).map((i) => i.kind);
     expect(kinds).toEqual(['service', 'ups', 'cron', 'unknown']);
   });
 });
 
 describe('activeIncidentIds', () => {
   it('returns the Set of incident ids', () => {
-    const incidents = deriveIncidents({ services: SERVICES_BODY, ups: { status: 0, charge: 50 }, cron: [] });
+    const incidents = deriveIncidents({ services: SERVICES_BODY, ups: { status: 2, charge: 50 }, cron: [] });
     const ids = activeIncidentIds(incidents);
     expect(ids).toBeInstanceOf(Set);
     expect(ids.has('service:vm-101:gitea')).toBe(true);
@@ -470,7 +545,7 @@ describe('activeIncidentIds', () => {
     expect(ids.has('unknown:gateway-pi:pihole')).toBe(true);
   });
   it('all-active → history (ids not in the set) is empty', () => {
-    const incidents = deriveIncidents({ services: SERVICES_BODY, ups: { status: 0, charge: 50 }, cron: [] });
+    const incidents = deriveIncidents({ services: SERVICES_BODY, ups: { status: 2, charge: 50 }, cron: [] });
     const ids = activeIncidentIds(incidents);
     const history = incidents.filter((i) => !ids.has(i.id));
     expect(history).toEqual([]);
@@ -545,7 +620,7 @@ describe('worstCaution', () => {
     expect(worstCaution({ services: { nodes: {} }, ups: { status: 1 }, cron: [] })).toBeNull();
   });
   it('UPS on battery wins outright (headline)', () => {
-    const w = worstCaution({ services: { nodes: {} }, ups: { status: 0, charge: 55 }, cron: CRON_FAIL });
+    const w = worstCaution({ services: { nodes: {} }, ups: { status: 2, charge: 55 }, cron: CRON_FAIL });
     expect(w.kind).toBe('ups');
     expect(w.headline).toBe('UPS on battery');
   });
@@ -615,7 +690,7 @@ describe('deriveHero (spec §7.2 deterministic wording)', () => {
   });
 
   it('critical + UPS on battery → "— plus UPS on battery" tail', () => {
-    const d = downData(1); d.ups = { status: 0, charge: 80 };
+    const d = downData(1); d.ups = { status: 2, charge: 80 };
     expect(deriveHero('critical', d).subline).toBe('Svc 0 — plus UPS on battery');
   });
 
@@ -625,7 +700,7 @@ describe('deriveHero (spec §7.2 deterministic wording)', () => {
   });
 
   it('caution UPS → battery headline + charge prose', () => {
-    const ctx = { services: { nodes: { n: { display_name: 'N', metrics: { cpu: '10', memPercent: '20' }, services: [{ uid: 'n:a', status: 'up' }] } } }, ups: { status: 0, charge: 55 }, cron: [] };
+    const ctx = { services: { nodes: { n: { display_name: 'N', metrics: { cpu: '10', memPercent: '20' }, services: [{ uid: 'n:a', status: 'up' }] } } }, ups: { status: 2, charge: 55 }, cron: [] };
     const h = deriveHero('caution', ctx);
     expect(h.headline).toBe('UPS on battery');
     expect(h.word).toBe('battery');

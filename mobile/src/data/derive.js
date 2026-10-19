@@ -64,15 +64,19 @@ export function groupByNode(servicesBody) {
 
 /**
  * Return the third metric bar descriptor for a node: TEMP when temp is present
- * (non-null, numeric), else DISK. Returns { label, value, unit, percent }.
+ * (non-null, numeric), else DISK. Disk at or above DISK_HOT wins over TEMP, so
+ * a near-full disk never hides behind the temperature (#273).
+ * Returns { label, value, unit, percent }.
  */
 export function thirdMetric(metrics) {
   const m = metrics || {};
   const tempPct = parseMetricPct(m.temp);
-  if (tempPct != null) {
+  const diskPct = parseMetricPct(m.diskPercent);
+  const diskHot = diskPct != null && diskPct >= DISK_HOT;
+  if (tempPct != null && !diskHot) {
     return { label: 'TEMP', value: m.temp, unit: '°C', percent: tempPct };
   }
-  return { label: 'DISK', value: m.diskPercent, unit: '%', percent: parseMetricPct(m.diskPercent) };
+  return { label: 'DISK', value: m.diskPercent, unit: '%', percent: diskPct };
 }
 
 /** Count up vs down for a node. down = explicit 'down'; up = everything else. */
@@ -83,8 +87,26 @@ export function nodeUpDown(node) {
   return { up: services.length - down, down };
 }
 
+// nut_status -> UPS state, the map the server's push snapshot uses
+// (normalizeUpsStatus in server/push/snapshot.js) and the web UPS card reads:
+// 0 = unknown, 1 = online (OL), 2 = on battery (OB), 3 = low battery (LB,
+// folded into on battery so it is never quieter). Any other value, or no
+// reading, is unknown. upsStatusParity.test.js fails if this drifts from the
+// server's map; mobile can't import it, since snapshot.js pulls in server code.
+const UPS_STATE_BY_NUT_STATUS = new Map([
+  [1, 'online'],
+  [2, 'on_battery'],
+  [3, 'on_battery'],
+]);
+
+/** State of an /api/ups body: 'online' | 'on_battery' | 'unknown'. */
+export function upsState(ups) {
+  return UPS_STATE_BY_NUT_STATUS.get(ups && ups.status) ?? 'unknown';
+}
+
+/** The UPS is on battery (low battery included). Unknown is not degraded. */
 export function upsDegraded(ups) {
-  return !!ups && ups.status === 0;
+  return upsState(ups) === 'on_battery';
 }
 
 export function cronDegraded(cronBody) {
@@ -139,6 +161,9 @@ export const SEVERITY = { unknown: -1, healthy: 0, caution: 1, critical: 2 };
 /** Resource thresholds (mirror the UsageBar 75/90 ramp). cpu% and temp°C. */
 export const CPU_HOT = 90;
 export const TEMP_HOT = 75;
+/** Disk% at which the node card shows DISK over TEMP: the same 90 % usage line
+ *  as CPU_HOT, which push also pages disk at. Not a lamp input (#290/#292). */
+export const DISK_HOT = CPU_HOT;
 
 /** Numeric rank for a severity string (unrecognised → unknown's rank). */
 export function severityRank(sev) {
@@ -280,9 +305,10 @@ export function subsystemSeverity(key, ctx = {}) {
   }
 
   if (key === 'ups') {
-    if (!ups || ups.status == null) return { ...NO_SIGNAL_CELL };
+    const state = upsState(ups);
+    if (state === 'unknown') return { ...NO_SIGNAL_CELL };
     const charge = ups.charge != null ? Math.round(ups.charge) : null;
-    if (ups.status === 0) {
+    if (state === 'on_battery') {
       const rt = formatRuntime(ups.runtime);
       const detail = charge != null
         ? (rt ? `${charge}% · ${rt}` : `${charge}%`)
@@ -476,7 +502,8 @@ export function deriveHero(severity, { services, ups, cron } = {}) {
   const downCount = downServices.length;
   const unknownCount = flat.filter((s) => s.status === 'unknown' && s.source !== 'presence').length;
   const nodeCount = Object.keys((services && services.nodes) || {}).length;
-  const onBattery = upsDegraded(ups);
+  const power = upsState(ups);
+  const onBattery = power === 'on_battery';
 
   // Mono counts footer — shared across non-unknown states.
   const counts = [
@@ -488,7 +515,8 @@ export function deriveHero(severity, { services, ups, cron } = {}) {
 
   // healthy
   if (severity === 'healthy') {
-    const upsTail = ups ? ` — UPS on ${onBattery ? 'battery' : 'mains'}` : '';
+    // An unknown UPS (no reading, nut_status 0) claims neither mains nor battery.
+    const upsTail = power === 'unknown' ? '' : ` — UPS on ${onBattery ? 'battery' : 'mains'}`;
     return {
       severity,
       headline: "Everything's healthy",
