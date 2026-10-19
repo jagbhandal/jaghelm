@@ -46,8 +46,8 @@ vi.mock('./views/NotificationSettings.jsx', () => ({
 }));
 // Task 6: stub RefreshStatus to capture the severity/summary MobileApp computes.
 vi.mock('./components/RefreshStatus.jsx', () => ({
-  default: ({ severity, summary }) => (
-    <div data-testid="refresh-status">{severity}::{summary}</div>
+  default: ({ severity, summary, foreground }) => (
+    <div data-testid="refresh-status" data-foreground={String(foreground)}>{severity}::{summary}</div>
   ),
 }));
 
@@ -144,6 +144,15 @@ describe('MobileApp — Task 6 annunciator severity wiring', () => {
     });
     await act(async () => { render(<MobileApp />); });
     expect(screen.getByTestId('refresh-status').textContent.startsWith('unknown::')).toBe(true);
+  });
+
+  it('hands the status bar the foreground flag, so its countdown pauses in the background', async () => {
+    useDashboard.mockReturnValue({
+      servicesBody: { nodes: {} }, ups: {}, cron: [], loading: false, error: null,
+      lastUpdated: Date.now(), intervalMs: 30000, refresh: vi.fn(), foreground: false,
+    });
+    await act(async () => { render(<MobileApp />); });
+    expect(screen.getByTestId('refresh-status').dataset.foreground).toBe('false');
   });
 });
 
