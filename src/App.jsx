@@ -140,8 +140,8 @@ function AppMain({ authRequired, onLogout }) {
   // flush-on-unload, authoritative server load on mount).
   useConfigPersistence(config, setConfig, setTheme, toast);
 
-  // Apply config to the document as CSS custom properties + lazy webfont
-  // injection (accent/opacity/font family/font sizes/blur).
+  // Apply config to the document as CSS custom properties
+  // (accent/opacity/font family/font sizes/blur).
   useThemeVars(config);
 
   const intervalMs = (config.refreshInterval || 30) * 1000;
