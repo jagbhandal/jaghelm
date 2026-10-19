@@ -66,9 +66,12 @@ anywhere reachable from outside your network.
   tags, which can't send the login token, so `/api/icons/cached` needs none. It
   only fetches icons of the two icon repositories the picker uses (Dashboard
   Icons and selfh.st), keeps at most 50 MB of them (`JAGHELM_ICON_CACHE_MAX_MB`)
-  and drops the least recently used past that, so anyone who can reach the port
-  can make it fetch those icons and churn the cache, but not fill the disk or
-  fetch anything else.
+  and drops the least recently used past that, and fetches at most 8 at a time
+  with 256 more waiting (a `503` past that), holding at most 4 MB of icons in
+  memory. So anyone who can reach the port can make it fetch those icons, churn
+  the cache, keep the fetch queue full so new icons fail to load for a while,
+  and see which icons are cached (and so roughly which services you run), but
+  not fill the disk or memory or fetch anything else.
 - **Bridge network by default; host networking is opt-in.** The published
   `compose.yaml` uses a bridge network and publishes only the app port — the
   safer, isolated default. If JagHelm can't reach LAN exporters/services that

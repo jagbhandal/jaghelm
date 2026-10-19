@@ -138,9 +138,11 @@ export function cachedIconUrl(url) {
   return `${getApiBase()}/icons/cached?url=${encodeURIComponent(url)}`;
 }
 ```
-This makes the proxied icon URL absolute and same-base on mobile, so it reaches Express over Tailscale and the auth guard injects `x-auth-token` (the icon route is protected). Web is byte-for-byte identical (`getApiBase()` → `/api`).
+This makes the proxied icon URL absolute and same-base on mobile, so it reaches Express over Tailscale. Web is byte-for-byte identical (`getApiBase()` → `/api`).
 
-**Fallback (b):** if a deployment routes via the env-CORS allow-list and prefers not to proxy, mobile presentation may render icons **directly from the CDN** (already permitted in `connect-src`/`img-src`: `https://cdn.jsdelivr.net`), skipping the proxy. Default is (a).
+> **Correction (2026-10, #255):** no token is involved. An `<img>` is loaded by the WebView, not through `apiFetch`, so nothing injects `x-auth-token`, and `/api/icons/cached` is a public route because of that. Since #255, `cachedIconUrl()` also routes only Dashboard Icons and selfh.st URLs through the cache (`server/icon-sources.js`); any other URL is returned unchanged. Whether the app can load the absolute backend URL at all under its CSP (`img-src 'self' data: blob:`) is the Android icons issue, #373.
+
+**Fallback (b):** if a deployment routes via the env-CORS allow-list and prefers not to proxy, mobile presentation may render icons **directly from the CDN**, skipping the proxy. Default is (a). That would need `https://cdn.jsdelivr.net` added to the mobile CSP's `img-src`: the shipped `mobile/index.html` allows only `'self' data: blob:` there and `'self'` in `connect-src` (corrected 2026-10; see #373).
 
 **`uploadFile()`** stays relative (web-only; mobile does no uploads) — but it is **explicitly captured as a harness gap** (the one remaining raw `/api` literal that bypasses the resolver), with the correct file attribution (`src/hooks/useData.js`, not `client.js`).
 
@@ -268,10 +270,11 @@ Add a `<meta http-equiv="Content-Security-Policy">` to `mobile/index.html`. **CS
 <!-- Default (native-HTTP transport): connect-src stays tight; native calls bypass it. -->
 <meta http-equiv="Content-Security-Policy"
   content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
-           font-src 'self' data:; img-src 'self' data: blob: https://cdn.jsdelivr.net;
+           font-src 'self' data:; img-src 'self' data: blob:;
            connect-src 'self';">
 ```
-Fonts are **bundled locally**, so `font-src 'self'` holds and no `fonts.googleapis.com` / `fonts.gstatic.com` allowance is needed. Glassmorphism `backdrop-filter` and the theme CSS need **no** CSP relaxation. If the WebView-fetch fallback is chosen, widen `connect-src` to `'self' http://*:* https://*:*` with the honest "not the boundary" note; if CDN icons are used (Icon fallback b), keep `https://cdn.jsdelivr.net` in `img-src`/`connect-src`.
+(As shipped in `mobile/index.html`; corrected 2026-10, the snippet used to list `https://cdn.jsdelivr.net` in `img-src`, which the shipped CSP never had. See #373.)
+Fonts are **bundled locally**, so `font-src 'self'` holds and no `fonts.googleapis.com` / `fonts.gstatic.com` allowance is needed. Glassmorphism `backdrop-filter` and the theme CSS need **no** CSP relaxation. If the WebView-fetch fallback is chosen, widen `connect-src` to `'self' http://*:* https://*:*` with the honest "not the boundary" note; if CDN icons are used (Icon fallback b), add `https://cdn.jsdelivr.net` to `img-src`.
 
 ### Build chain
 

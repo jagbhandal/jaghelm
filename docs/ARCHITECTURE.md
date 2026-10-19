@@ -384,6 +384,12 @@ All state is files under the data dir (no DB):
   CDN for it. The whole cache is capped at `JAGHELM_ICON_CACHE_MAX_MB` (50 MB)
   and drops the least recently used icon to stay under it; the files on disk
   are counted at boot, oldest written first, and the count is kept in memory.
+  At most 8 fetches from the CDN run at once (a browser opens 6 connections to an
+  HTTP/1.1 origin, so one page load never waits) and 256 more wait; past that a
+  miss is a 503 with `Retry-After`. Concurrent requests for one icon share one
+  fetch. A body is held only until it is written; every response, a miss's
+  too, streams from the file, and one that wasn't stored is a 302 to the CDN,
+  so icon bodies in memory stay under 4 MB.
   Served with `Content-Security-Policy: default-src 'none'; style-src
   'unsafe-inline'; sandbox` and `nosniff`. The web client sends only these URLs
   through it and loads any other icon URL directly. A cache, so deleting it is
