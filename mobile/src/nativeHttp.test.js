@@ -28,6 +28,7 @@ beforeEach(() => {
   window.fetch = patchedFetch;
   isNativePlatform.mockReturnValue(false);
   request.mockReset();
+  setApiBase(BASE);
 });
 afterEach(() => {
   window.fetch = originalFetch;
@@ -77,6 +78,8 @@ describe('installNativeHttp', () => {
     expect(opts.method).toBe('GET');
     expect(opts.headers['if-none-match']).toBe(ETAG);
     expect(opts.headers['x-auth-token']).toBe('tok');
+    // Redirects are followed, as on the interceptor path (no instanceFollowRedirects change there).
+    expect(opts.disableRedirects).toBe(false);
     expect(r.status).toBe(304);
     expect(r.body).toBeNull();
     expect(r.headers.get('ETag')).toBe(ETAG);
@@ -96,15 +99,21 @@ describe('installNativeHttp', () => {
     expect(await r.json()).toEqual({ nodes: { a: 1 } });
   });
 
-  it('keeps a JSON string body valid JSON', async () => {
+  // HttpRequestHandler.parseJSON hands an empty JSON body back as "" and a
+  // malformed one as the raw string. Real fetch's json() throws on both.
+  it.each([
+    ['an empty body', ''],
+    ['malformed JSON', '{"nodes":'],
+  ])('a JSON 200 with %s makes json() reject, as the browser does', async (_, raw) => {
     nativeInstall();
     request.mockResolvedValue({
       status: 200,
-      headers: { 'content-type': 'application/json' },
-      data: 'hello',
+      headers: { 'Content-Type': 'application/json' },
+      data: raw,
     });
-    const r = await window.fetch(`${BASE}/x`, { headers: { 'If-None-Match': ETAG } });
-    expect(await r.json()).toBe('hello');
+    const r = await window.fetch(`${BASE}/services`, { headers: { 'If-None-Match': ETAG } });
+    expect(r.status).toBe(200);
+    await expect(r.json()).rejects.toThrow();
   });
 
   it('passes a non-JSON body through as text', async () => {
@@ -175,6 +184,37 @@ describe('installNativeHttp', () => {
     expect(patchedFetch).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['another host', 'https://elsewhere.example/api/services'],
+    ['the backend host on another scheme', 'http://helm.tail1234.ts.net/api/services'],
+    ['the backend host on another port', 'https://helm.tail1234.ts.net:8443/api/services'],
+  ])('leaves a conditional GET to %s on the normal path', async (_, url) => {
+    nativeInstall();
+    const opts = { headers: { 'If-None-Match': ETAG } };
+    await window.fetch(url, opts);
+    expect(request).not.toHaveBeenCalled();
+    expect(patchedFetch).toHaveBeenCalledWith(url, opts);
+  });
+
+  it('sends nothing native while the API base is still the relative default', async () => {
+    nativeInstall();
+    setApiBase('');
+    await window.fetch(`${BASE}/services`, { headers: { 'If-None-Match': ETAG } });
+    expect(request).not.toHaveBeenCalled();
+    expect(patchedFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends native the resolved absolute URL, never a relative one', async () => {
+    nativeInstall();
+    // Same scheme as the page, so a protocol-relative URL lands on the backend origin.
+    const base = `${window.location.protocol}//helm.tail1234.ts.net/api`;
+    setApiBase(base);
+    request.mockResolvedValue({ status: 304, headers: {}, data: '' });
+    await window.fetch('//helm.tail1234.ts.net/api/./services', { headers: { 'If-None-Match': ETAG } });
+    await window.fetch(new URL(`${base}/ups`), { headers: { 'If-None-Match': ETAG } });
+    expect(request.mock.calls.map(([o]) => o.url)).toEqual([`${base}/services`, `${base}/ups`]);
+  });
+
   it("leaves a request to the app's own origin on the normal path", async () => {
     nativeInstall();
     await window.fetch('/assets/x.json', { headers: { 'If-None-Match': ETAG } });
@@ -205,6 +245,36 @@ describe('conditional polling end to end (shared useData.js over this transport)
     expect(request).toHaveBeenCalledTimes(1);
     expect(request.mock.calls[0][0].headers['if-none-match']).toBe(ETAG);
     expect(second).toBe(first);
+  });
+
+  it.each([
+    ['an empty body', 'empty', ''],
+    ['malformed JSON', 'malformed', '{"nodes":'],
+  ])('a poll answered by a JSON 200 with %s fails and caches nothing', async (_, tag, raw) => {
+    nativeInstall();
+    setApiBase(`${BASE}/e2e-bad-${tag}`);
+    const body = { nodes: { 'vm-101': { display_name: 'VM 101' } } };
+    patchedFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ETag: ETAG },
+      })
+    );
+    const first = await getServices(true);
+
+    request.mockResolvedValueOnce({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      data: raw,
+    });
+    await expect(getServices(false)).rejects.toThrow();
+
+    // The bad body was not stored: the next unchanged poll still asks with the
+    // old ETag and gets the last good body back.
+    request.mockResolvedValueOnce({ status: 304, headers: { ETag: ETAG }, data: '' });
+    const third = await getServices(false);
+    expect(request.mock.calls[1][0].headers['if-none-match']).toBe(ETAG);
+    expect(third).toBe(first);
   });
 
   it('cron/status has no ETag, so its polls stay plain GETs on the normal path', async () => {
