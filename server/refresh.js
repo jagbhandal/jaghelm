@@ -23,7 +23,7 @@ import {
   checkMonitorMappings,
   logUnmatchedContainers,
   mappingOf,
-  selectOutageMonitors,
+  selectUnclaimedMonitors,
 } from './monitors.js';
 import { serviceRegistry } from './serviceRegistry.js';
 import { containerRegistry } from './containerRegistry.js';
@@ -180,13 +180,16 @@ function serviceRank(s) {
  *      sighting flipped the node within every pass and rewrote the registries
  *      every cycle. The containers of a node are taken in name order, so `seen`
  *      does not depend on the order discovery listed them in.
- *  (b) Down-monitor synthesis — active monitors reporting `down` that no
- *      running container got become red cards: on the node of the stopped
- *      container that got the monitor, under its name; otherwise on the
- *      monitor's last-seen node, under the container it was last matched to
- *      (base spec). A card never takes the uid of a card already on the node: a
- *      monitor whose last container still runs there, matched to something
- *      else now, is drawn under the monitor's name.
+ *  (b) Monitors no running container got — each active one reporting `down`
+ *      or `up` is placed (placeMonitor): on the node of the stopped container
+ *      that got the monitor, under its name; otherwise on the monitor's
+ *      last-seen node, under the container it was last matched to (base spec).
+ *      A uid is never one a card already on the node has, or one a monitor
+ *      placed earlier in the pass took: a monitor whose last container still
+ *      runs there, matched to something else now, is under the monitor's name.
+ *      A down one becomes a red card. An up one draws nothing on the board; its
+ *      uid goes in `upWithoutCard`, which the push snapshot reads as up, so the
+ *      monitor's recovery is sent on the uid of its down push (#390).
  *  (c) Breadcrumb synthesis — established, UNMONITORED containers that have
  *      vanished (absent past grace, within TTL) become grey `unknown`
  *      `source:'presence'` cards on their last-seen node. Skipped if the
@@ -215,7 +218,7 @@ function serviceRank(s) {
  * `containerCount` (how many shown, running containers there were) feed the
  * once-per-boot "no matching monitor" log line.
  *
- * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown', unmatched: string[], containerCount: number }}
+ * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown', unmatched: string[], containerCount: number, upWithoutCard: string[] }}
  */
 export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf, lastSeenContainerOf, containerRegistry, now = Date.now, presenceKnown = true }) {
   const consumed = new Set();
@@ -325,32 +328,33 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   const wantsMonitor = running.filter((r) => mappingOf(config.services, r.container, r.nodeKey)?.monitor !== false);
   const unmatched = [...new Set(wantsMonitor.map((r) => r.container))].filter((name) => !withMonitor.has(name));
 
-  // (b) Down-monitor synthesis — outages whose container left cAdvisor. The
-  // down-vs-inactive invariant lives in selectOutageMonitors: it keeps only
-  // monitors that are down, active, and FRESH (a paused monitor's heartbeat
-  // goes stale and is excluded, so a retired-while-down service can't leave a
-  // phantom red card — `active` reads null on real Kuma and can't be relied on).
-  const outages = selectOutageMonitors(monitors, consumed, { now: nowMs });
-  for (const m of outages) {
-    const owner = stoppedOwner.get(m.id);
-    let nodeKey = owner ? owner.lastSeenNode : lastSeenNodeOf(m.id);
-    if (!nodeKey || !nodes[nodeKey]) nodeKey = nodeKeys[0];
-    if (!nodeKey || !nodes[nodeKey]) continue; // no nodes to attach to
-    // Reuse the SAME uid the running card used (the container's name) so a
-    // down→recovery transition stays on ONE key. The push differ keys off uid
-    // and only emits a recovery when 'down' and 'up' share a key — without this,
-    // the down card (monitor name) and the recovered card (container name) were
-    // different keys and the recovery push silently never fired. Fall back to the
-    // monitor name for a pure-monitor service that never had a container, or
-    // when a card on the node already has that uid.
-    const remembered = owner ? owner.container : lastSeenContainerOf ? lastSeenContainerOf(m.id) : null;
-    const nodeServices = nodes[nodeKey].services;
-    const free = (part) => !!part && !nodeServices.some((s) => s.uid === `${nodeKey}:${part}`);
-    const idPart = [remembered, m.name].find(free) || `${m.name} (${m.id})`;
+  // (b) Monitors no running container got: down-monitor synthesis, and the up
+  // entries of the push snapshot (#390). selectUnclaimedMonitors keeps only
+  // monitors that are up or down, active, and FRESH (a paused monitor's
+  // heartbeat goes stale and is excluded, so a retired-while-down service can't
+  // leave a phantom red card or send a false recovery — `active` reads null on
+  // real Kuma and can't be relied on). Each one gets its uid from placeMonitor,
+  // in one pass whatever its status, so a monitor keeps its uid from down to
+  // up. A down one becomes a red card; an up one draws nothing and is listed in
+  // `upWithoutCard`, which the push snapshot reads as up, so its recovery is
+  // sent on the uid its down push had.
+  const taken = new Set(nodeKeys.flatMap((k) => nodes[k].services.map((s) => s.uid)));
+  const upWithoutCard = [];
+  let outageCount = 0;
+  for (const m of selectUnclaimedMonitors(monitors, consumed, { now: nowMs })) {
+    if (m.status === 'down') outageCount += 1;
+    const place = placeMonitor(m, { nodes, nodeKeys, taken, owner: stoppedOwner.get(m.id), lastSeenNodeOf, lastSeenContainerOf });
+    if (!place) continue; // no nodes to attach to
+    taken.add(place.uid);
+    if (m.status === 'up') {
+      upWithoutCard.push(place.uid);
+      continue;
+    }
+    const { nodeKey, idPart, remembered } = place;
     const override = config.services?.[idPart] || {};
-    nodeServices.push({
+    nodes[nodeKey].services.push({
       container: idPart,
-      uid: `${nodeKey}:${idPart}`,
+      uid: place.uid,
       display_name: override.display_name || (idPart === remembered ? formatContainerName(remembered) : m.name),
       icon: override.icon || null,
       status: 'down',
@@ -419,12 +423,39 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   return {
     nodes,
     seen: [...seen.values()],
-    outageCount: outages.length,
+    outageCount,
     breadcrumbCount,
     overallHealth,
     unmatched: [...unmatched].sort(),
     containerCount,
+    upWithoutCard,
   };
+}
+
+/**
+ * Where a monitor no running container got goes, down or up (#390): its node
+ * and the uid its card has, `{ nodeKey, idPart, uid, remembered }`, or null with
+ * no node to attach to. Pass (b) of assembleServices is its only caller, for
+ * both statuses, so a monitor's up entry has the uid its red card had.
+ *
+ * The node is that of the stopped container that got the (down) monitor
+ * (`owner`), else the monitor's last-seen node, else the first node. The uid
+ * reuses the container the monitor was last matched to (the owner, else the
+ * service registry's), the uid its running card had, so a down→recovery
+ * transition stays on ONE key: the push differ only emits a recovery when
+ * 'down' and 'up' share a key. It falls back to the monitor's name for a
+ * monitor that never had a container, or when the uid is `taken` (a running
+ * container's card, or a monitor placed earlier in the pass), and then to the
+ * name and id.
+ */
+function placeMonitor(m, { nodes, nodeKeys, taken, owner, lastSeenNodeOf, lastSeenContainerOf }) {
+  let nodeKey = owner ? owner.lastSeenNode : lastSeenNodeOf(m.id);
+  if (!nodeKey || !nodes[nodeKey]) nodeKey = nodeKeys[0];
+  if (!nodeKey || !nodes[nodeKey]) return null;
+  const remembered = owner ? owner.container : lastSeenContainerOf ? lastSeenContainerOf(m.id) : null;
+  const free = (part) => !!part && !taken.has(`${nodeKey}:${part}`);
+  const idPart = [remembered, m.name].find(free) || `${m.name} (${m.id})`;
+  return { nodeKey, idPart, uid: `${nodeKey}:${idPart}`, remembered };
 }
 
 async function _refreshServices() {
@@ -485,7 +516,7 @@ async function _refreshServices() {
     const prometheusOk = promErrors.length === 0;
     reportPrometheus({ ok: prometheusOk, error: promErrors[0] });
 
-    const { nodes, seen, overallHealth, unmatched, containerCount } = assembleServices({
+    const { nodes, seen, overallHealth, unmatched, containerCount, upWithoutCard } = assembleServices({
       nodeResults,
       monitors,
       config,
@@ -511,9 +542,10 @@ async function _refreshServices() {
     // BOTH frontends' global dots read one truth (web NavBar + mobile Overview).
     // `sources` says whether each upstream answered this cycle (#232): the push
     // snapshot keeps its last state for one that didn't, so a failed poll is not
-    // read as every host or service going down.
+    // read as every host or service going down. `upWithoutCard` is for the push
+    // snapshot too: the uids of the up monitors no card is drawn for (#390).
     const sources = { prometheus: { ok: prometheusOk }, kuma: { ok: kuma.ok } };
-    const result = { nodes, overallHealth, sources };
+    const result = { nodes, overallHealth, sources, upWithoutCard };
     setCache('services', result);
 
     // Record this cycle's usage into the ring buffer so the UI can draw a

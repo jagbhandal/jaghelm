@@ -663,7 +663,20 @@ export function logUnmatchedContainers({ unmatched, containerCount, monitors }) 
  * absent from /metrics entirely, so this staleness guard is intentionally INERT
  * for that source.
  */
-export function selectOutageMonitors(
+export function selectOutageMonitors(monitors, consumedIds, options) {
+  return selectUnclaimedMonitors(monitors, consumedIds, options).filter((m) => m.status === 'down');
+}
+
+/**
+ * The monitors no running container got this cycle that are `up` or `down`,
+ * with the same freshness and `active` rules as selectOutageMonitors, in the
+ * map's order. assembleServices places all of them in one pass (#390): a down
+ * one becomes a red card, an up one an entry only the push snapshot reads, both
+ * under the same uid. A paused monitor (stale heartbeat, `active: false`, or
+ * absent from /metrics), a pending one, and one Kuma no longer has are in
+ * neither, so none of them sends a recovery.
+ */
+export function selectUnclaimedMonitors(
   monitors,
   consumedIds,
   { now = Date.now(), staleMs = MONITOR_STALE_MS } = {}
@@ -671,7 +684,7 @@ export function selectOutageMonitors(
   return Object.values(monitors).filter(
     (m) =>
       m &&
-      m.status === 'down' &&
+      (m.status === 'down' || m.status === 'up') &&
       m.active !== false &&
       !consumedIds.has(m.id) &&
       (m.lastBeatAt == null || now - m.lastBeatAt <= staleMs)

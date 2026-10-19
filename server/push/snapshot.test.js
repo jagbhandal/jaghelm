@@ -93,6 +93,21 @@ test('buildServices: missing/empty cache -> empty map', () => {
   assert.deepEqual(buildServices({ nodes: { pi: {} } }), {});
 });
 
+test('buildServices: the up monitors no card is drawn for read as up, and a card with their uid wins (#390)', () => {
+  const cache = {
+    nodes: {
+      vm103: { services: [{ uid: 'vm103:nas-ui', status: 'unknown' }, { uid: 'vm103:gitea', status: 'up' }] },
+    },
+    upWithoutCard: ['vm103:NAS (Ping)', 'vm103:nas-ui'],
+  };
+  assert.deepEqual(buildServices(cache), {
+    'vm103:gitea': 'up',
+    'vm103:NAS (Ping)': 'up',
+    'vm103:nas-ui': 'unknown', // the card, not the entry
+  });
+  assert.deepEqual(buildServices({ nodes: {}, upWithoutCard: 'junk' }), {}, 'a payload with no list');
+});
+
 test('buildServices: byte-identical regardless of insertion order', () => {
   const a = { nodes: { pi: { services: [{ uid: 'pi:b', status: 'up' }, { uid: 'pi:a', status: 'down' }] } } };
   const b = { nodes: { pi: { services: [{ uid: 'pi:a', status: 'down' }, { uid: 'pi:b', status: 'up' }] } } };

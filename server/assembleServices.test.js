@@ -759,3 +759,184 @@ test('assemble: a stopped container releases an up monitor to the running one, a
   assert.equal(byUid['vm103:nextcloud'].source, 'presence');
   assert.equal(breadcrumbCount, 1);
 });
+
+// ---- a monitor no container has sends its recovery push (#390) ----
+//
+// The live shape on 2026-10-19: NAS (Ping), NAS UI, Network Switch and Proxmox
+// UI never had a container, and Pi Gateway (Ping) last rode on pi2's
+// gateway-tunnel, which is now opted out and still runs there. Their card
+// existed only while they were down, so each sent service_down and never
+// service_recovered.
+
+const PUSH_THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
+// The push snapshot of one assembled cycle: buildSnapshot reads the services
+// payload, whose nodes and upWithoutCard are assembleServices'.
+const pushSnap = (r) => ({ services: buildServices(r), hosts: {}, ups: { state: 'unknown' }, cron: {} });
+const pushes = (prev, next) => diffSnapshots(pushSnap(prev), pushSnap(next), PUSH_THRESHOLDS).map((e) => `${e.type} ${e.id}`);
+
+const LIVE_MONITORS = ['Gitea', 'NAS (Ping)', 'NAS UI', 'Network Switch', 'Proxmox UI', 'Pi Gateway (Ping)'];
+// One cycle of the live shape. `monitors` maps a monitor name to its status, or
+// to a whole monitor (a paused one), or to null for one Kuma no longer has.
+function liveCycle(monitors = {}) {
+  const all = {};
+  LIVE_MONITORS.forEach((name, i) => {
+    const given = Object.hasOwn(monitors, name) ? monitors[name] : 'up';
+    if (given === null) return;
+    const base = { id: i + 1, name, ping: 1, uptime24: 1, active: true, lastBeatAt: null };
+    all[i + 1] = typeof given === 'string' ? { ...base, status: given } : { ...base, ...given };
+  });
+  return assembleServices({
+    nodeResults: [
+      ['vm103', nodeCfg, nodeData([{ container: 'gitea', status: 'running', docker: {} }])],
+      ['pi2', nodeCfg, nodeData([{ container: 'gateway-tunnel', status: 'running', docker: {} }])],
+    ],
+    monitors: all,
+    config: { services: { 'gateway-tunnel': { monitor: false } } },
+    lastSeenNodeOf: (id) => (all[id]?.name === 'Pi Gateway (Ping)' ? 'pi2' : null),
+    lastSeenContainerOf: (id) => (all[id]?.name === 'Pi Gateway (Ping)' ? 'gateway-tunnel' : null),
+    containerRegistry: null,
+    now: () => 10_000_000,
+  });
+}
+
+test('push (#390): a monitor no container has sends service_down, then service_recovered on the same id', () => {
+  const up = liveCycle();
+  const down = liveCycle({ 'NAS (Ping)': 'down', 'Pi Gateway (Ping)': 'down' });
+  const back = liveCycle();
+  assert.deepEqual(pushes(up, down), ['service_down pi2:Pi Gateway (Ping)', 'service_down vm103:NAS (Ping)']);
+  assert.deepEqual(pushes(down, back), ['service_recovered pi2:Pi Gateway (Ping)', 'service_recovered vm103:NAS (Ping)']);
+  assert.deepEqual(pushes(back, liveCycle()), [], 'and nothing while it stays up');
+});
+
+test('assemble (#390): an up monitor no container has draws no card; only the push snapshot reads it', () => {
+  const r = liveCycle();
+  assert.deepEqual(cards(r.nodes).map((s) => s.uid).sort(), ['pi2:gateway-tunnel', 'vm103:gitea'], 'no new green cards');
+  assert.equal(r.overallHealth, 'up');
+  assert.deepEqual(r.upWithoutCard, [
+    'vm103:NAS (Ping)',
+    'vm103:NAS UI',
+    'vm103:Network Switch',
+    'vm103:Proxmox UI',
+    'pi2:Pi Gateway (Ping)',
+  ]);
+  assert.deepEqual(buildServices(r), {
+    'pi2:Pi Gateway (Ping)': 'up',
+    'pi2:gateway-tunnel': 'up',
+    'vm103:gitea': 'up',
+    'vm103:NAS (Ping)': 'up',
+    'vm103:NAS UI': 'up',
+    'vm103:Network Switch': 'up',
+    'vm103:Proxmox UI': 'up',
+  });
+  // Down, the same monitor is a red card under the same uid, and is not listed.
+  const down = liveCycle({ 'NAS UI': 'down' });
+  assert.equal(cards(down.nodes).find((s) => s.uid === 'vm103:NAS UI').status, 'down');
+  assert.equal(down.upWithoutCard.includes('vm103:NAS UI'), false);
+});
+
+test('push (#390): a paused monitor, or one Kuma no longer has, sends nothing; an active one recovers', () => {
+  const now = 10_000_000;
+  const stale = now - 11 * 60_000; // past JAGHELM_MONITOR_STALE_MS (10 min): Kuma stopped checking it
+  const down = liveCycle({ 'NAS (Ping)': 'down', 'NAS UI': 'down', 'Network Switch': 'down', 'Proxmox UI': 'down' });
+  const later = liveCycle({
+    'NAS (Ping)': { status: 'down', lastBeatAt: stale }, // paused while down
+    'NAS UI': { status: 'up', active: false }, // paused, as a status page that flags it reports it
+    'Network Switch': 'up', // back up
+    'Proxmox UI': null, // deleted from Kuma
+  });
+  assert.deepEqual(pushes(down, later), ['service_recovered vm103:Network Switch']);
+  assert.deepEqual(Object.keys(buildServices(later)).filter((uid) => /NAS|Proxmox/.test(uid)), [], 'all three absent');
+  // A monitor paused while up is absent too, so it sends nothing when it is unpaused.
+  const pausedUp = liveCycle({ 'NAS (Ping)': { status: 'up', lastBeatAt: stale } });
+  assert.equal(pausedUp.upWithoutCard.includes('vm103:NAS (Ping)'), false);
+  assert.deepEqual(pushes(pausedUp, liveCycle()), []);
+});
+
+test('assemble (#390): a monitor keeps its uid from down to up where two monitors compete for one', () => {
+  // The old matcher could leave two monitors remembering the same container.
+  // Both are placed in one pass, whatever their status, so each keeps its uid.
+  const cycle = (primary, secondary) =>
+    run({
+      nodeResults: [['pi2', nodeCfg, nodeData([])]],
+      monitors: {
+        1: { id: 1, name: 'Adguard Primary', status: primary, active: true },
+        2: { id: 2, name: 'Adguard Secondary', status: secondary, active: true },
+      },
+      lastSeen: { 1: 'pi2', 2: 'pi2' },
+      lastSeenContainer: { 1: 'adguard-sync', 2: 'adguard-sync' },
+    });
+  for (const [primary, secondary] of [['down', 'down'], ['down', 'up'], ['up', 'down'], ['up', 'up']]) {
+    assert.deepEqual(
+      buildServices(cycle(primary, secondary)),
+      { 'pi2:Adguard Secondary': secondary, 'pi2:adguard-sync': primary },
+      `${primary}/${secondary}`
+    );
+  }
+  assert.deepEqual(pushes(cycle('up', 'down'), cycle('up', 'up')), ['service_recovered pi2:Adguard Secondary']);
+});
+
+test('push (#390): a card on the board wins over an up entry with its uid', () => {
+  // NAS UI last rode on vm103's nas-ui, stopped an hour ago: while the monitor
+  // is up the stopped container holds nothing and leaves a grey breadcrumb, on
+  // the uid the monitor's own entry would have.
+  const r = run({
+    nodeResults: [['vm103', nodeCfg, nodeData([])]],
+    monitors: { 1: { id: 1, name: 'NAS UI', status: 'up', active: true } },
+    lastSeen: { 1: 'vm103' },
+    lastSeenContainer: { 1: 'nas-ui' },
+    containerRegistry: fakeRegistry([{ container: 'nas-ui', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 3_600_000 }]),
+  });
+  assert.deepEqual(r.upWithoutCard, ['vm103:nas-ui']);
+  assert.deepEqual(cards(r.nodes).map((s) => `${s.uid} ${s.source}`), ['vm103:nas-ui presence'], 'no extra card');
+  assert.deepEqual(buildServices(r), { 'vm103:nas-ui': 'unknown' }, 'the breadcrumb, not the entry');
+});
+
+// The transition: a monitor feeds ONE key a cycle. A running container that has
+// it: that container's card. None: its own uid (placement), a red card while
+// down, the up entry while up. When a container takes it, its own key leaves the
+// snapshot without an event and the container's card starts with no previous
+// status; when the container goes, its own uid is that container's (the service
+// registry remembers it), so the key does not move. Never two keys at once, so
+// one change of status is one push.
+test('push (#390): a container taking or leaving the monitor moves it to one key, and the move sends nothing', () => {
+  const seen = new Map(); // the service registry: monitor id -> { nodeKey, container }
+  const cycle = (status, containers) => {
+    const r = run({
+      nodeResults: [['vm103', nodeCfg, nodeData(containers.map((container) => ({ container, status: 'running', docker: {} })))]],
+      monitors: { 1: { id: 1, name: 'Grafana', status, active: true } },
+      lastSeen: Object.fromEntries([...seen].map(([id, s]) => [id, s.nodeKey])),
+      lastSeenContainer: Object.fromEntries([...seen].map(([id, s]) => [id, s.container])),
+    });
+    for (const s of r.seen) seen.set(String(s.monitorId), s);
+    return r;
+  };
+  const keysOfMonitor = (r) => Object.keys(buildServices(r)).filter((uid) => /grafana/i.test(uid));
+
+  const steps = [
+    ['up', []], // no container: its own uid, from its name
+    ['down', []],
+    ['up', []],
+    ['up', ['grafana']], // a container appears and takes it, while it is up
+    ['down', ['grafana']],
+    ['up', ['grafana']],
+    ['up', []], // the container goes for good: its own uid is the container's now
+    ['down', []],
+    ['up', []],
+  ];
+  const sent = [];
+  let prev = null;
+  for (const [status, containers] of steps) {
+    const r = cycle(status, containers);
+    assert.equal(keysOfMonitor(r).length, 1, `one key at ${status} ${containers}`);
+    if (prev) sent.push(...pushes(prev, r));
+    prev = r;
+  }
+  assert.deepEqual(sent, [
+    'service_down vm103:Grafana',
+    'service_recovered vm103:Grafana',
+    'service_down vm103:grafana',
+    'service_recovered vm103:grafana',
+    'service_down vm103:grafana',
+    'service_recovered vm103:grafana',
+  ]);
+});

@@ -93,6 +93,11 @@ function sortedObject(entries) {
 /**
  * Project the cached /api/services payload into the snapshot services map.
  * Keys are the per-service `uid` ("NODE:ID"); values are normalized statuses.
+ *
+ * The payload's `upWithoutCard` (#390) adds the up Kuma monitors no card is
+ * drawn for, each as "up" under the uid its red card has while it is down, so
+ * its recovery diffs on the key of its down push. A card with the same uid
+ * wins.
  */
 export function buildServices(servicesCache) {
   const nodes = servicesCache?.nodes;
@@ -105,6 +110,11 @@ export function buildServices(servicesCache) {
       if (!svc || typeof svc.uid !== 'string') continue;
       entries.push([svc.uid, normalizeServiceStatus(svc.status)]);
     }
+  }
+  const upWithoutCard = Array.isArray(servicesCache.upWithoutCard) ? servicesCache.upWithoutCard : [];
+  const cards = new Set(entries.map(([uid]) => uid));
+  for (const uid of upWithoutCard) {
+    if (typeof uid === 'string' && !cards.has(uid)) entries.push([uid, 'up']);
   }
   return sortedObject(entries);
 }

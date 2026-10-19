@@ -54,6 +54,7 @@ const world = {
   kuma: 'ok', // 'ok' | 'http500' | 'refused'
   up: { vm103: 1, pi: 1, nas: 1 },
   radarr: 'down', // Kuma's status for radarr
+  nasPing: 'up', // Kuma's status for "NAS (Ping)", a monitor no container has (#390)
   ups: 1, // nut_status: 1 online, 2 on battery
   rejects: null, // (query) => true for a query Prometheus answers with HTTP 400
 };
@@ -64,6 +65,7 @@ function reset() {
     kuma: 'ok',
     up: { vm103: 1, pi: 1, nas: 1 },
     radarr: 'down',
+    nasPing: 'up',
     ups: 1,
     rejects: null,
   });
@@ -132,10 +134,14 @@ function promAnswer(q) {
 function kumaAnswer() {
   if (world.kuma === 'http500') return json(500, {});
   if (world.kuma === 'refused') throw new TypeError('fetch failed');
-  const statusOf = { gitea: 1, radarr: world.radarr === 'up' ? 1 : 0 };
+  const statusOf = { gitea: 1, radarr: world.radarr === 'up' ? 1 : 0, nasPing: world.nasPing === 'up' ? 1 : 0 };
   return json(200, {
-    publicGroupList: [{ monitorList: [{ id: 1, name: 'gitea' }, { id: 2, name: 'radarr' }] }],
-    heartbeatList: { 1: [{ status: statusOf.gitea, ping: 5 }], 2: [{ status: statusOf.radarr, ping: 0 }] },
+    publicGroupList: [{ monitorList: [{ id: 1, name: 'gitea' }, { id: 2, name: 'radarr' }, { id: 3, name: 'NAS (Ping)' }] }],
+    heartbeatList: {
+      1: [{ status: statusOf.gitea, ping: 5 }],
+      2: [{ status: statusOf.radarr, ping: 0 }],
+      3: [{ status: statusOf.nasPing, ping: 1 }],
+    },
     uptimeList: {},
   });
 }
@@ -473,6 +479,44 @@ for (const failure of ['http500', 'refused']) {
     }
   });
 }
+
+// A monitor no container has (#390): its uid is on the first node, from its
+// name, and it is in the push snapshot whether it is up or down.
+const NAS_PING = 'vm103:NAS (Ping)';
+
+test('a monitor no container has: Kuma failing and recovering while it is down sends no recovery; its real one is sent', async () => {
+  reset();
+  const p = pipeline();
+  try {
+    await p.cycle(); // baseline: NAS (Ping) up
+    assert.equal(p.snapshot.prev().services[NAS_PING], 'up');
+    world.nasPing = 'down';
+    await p.cycle();
+    assert.deepEqual(p.sent, [`service_down ${NAS_PING}`]);
+
+    world.kuma = 'http500';
+    afterKumaCeiling(); // Kuma serves nothing now: no card, no up entry
+    await p.cycle();
+    await p.cycle();
+    assert.equal(getCached('services').sources.kuma.ok, false);
+    assert.equal(p.snapshot.prev().services[NAS_PING], 'down', 'held like every other service');
+
+    world.kuma = 'ok'; // back, with NAS (Ping) still down
+    await p.cycle();
+    clockBack();
+    await p.cycle();
+    assert.deepEqual(p.sent, [`service_down ${NAS_PING}`], 'no service_recovered, and no repeat service_down');
+
+    world.nasPing = 'up';
+    await p.cycle();
+    assert.deepEqual(p.sent, [`service_down ${NAS_PING}`, `service_recovered ${NAS_PING}`]);
+    const cardsNow = Object.values(getCached('services').nodes).flatMap((n) => n.services);
+    assert.equal(cardsNow.some((s) => s.uid === NAS_PING), false, 'up, it has no card on the board');
+  } finally {
+    clockBack();
+    p.done();
+  }
+});
 
 // ── Logs ─────────────────────────────────────────────────────────────────
 
