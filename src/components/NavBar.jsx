@@ -26,6 +26,8 @@ function matchLinks(links, query) {
     );
 }
 
+const WEATHER_REFRESH_MS = 10 * 60_000;
+
 export default React.memo(function NavBar({
   tabs,
   activeTab,
@@ -36,7 +38,6 @@ export default React.memo(function NavBar({
   lastUpdated,
   onOpenSettings,
   onLogout,
-  refreshKey,
 }) {
   const { config } = useConfig();
   const [timeSince, setTimeSince] = useState('just now');
@@ -52,6 +53,8 @@ export default React.memo(function NavBar({
   const menuBtnRef = useRef(null);
   const themeRef = useRef(null);
   const themeBtnRef = useRef(null);
+  // Location and time of the last weather fetch that succeeded.
+  const weatherFetchRef = useRef({ place: '', ms: 0 });
 
   useEffect(() => {
     const u = () => {
@@ -79,14 +82,21 @@ export default React.memo(function NavBar({
     return () => clearInterval(id);
   }, []);
 
-  // Fetch weather on mount, config change, and every refresh cycle (retries if first load failed)
+  // Fetch weather on mount and on a location change, then on a dashboard refresh
+  // once the last fetch is 10 minutes old (so it pauses with the dashboard, and a
+  // failed fetch is retried on the next refresh). The server caches it for 2 minutes.
   useEffect(() => {
-    if (config?.showWeather !== false && config?.weatherLat && config?.weatherLon) {
-      getWeather(config.weatherLat, config.weatherLon)
-        .then(setWeather)
-        .catch(() => {});
-    }
-  }, [config?.weatherLat, config?.weatherLon, config?.showWeather, refreshKey]);
+    if (config?.showWeather === false || !config?.weatherLat || !config?.weatherLon) return;
+    const place = `${config.weatherLat},${config.weatherLon}`;
+    const last = weatherFetchRef.current;
+    if (last.place === place && Date.now() - last.ms < WEATHER_REFRESH_MS) return;
+    getWeather(config.weatherLat, config.weatherLon)
+      .then((w) => {
+        weatherFetchRef.current = { place, ms: Date.now() };
+        setWeather(w);
+      })
+      .catch(() => {});
+  }, [config?.weatherLat, config?.weatherLon, config?.showWeather, lastUpdated]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {

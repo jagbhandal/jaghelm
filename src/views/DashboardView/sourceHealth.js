@@ -5,7 +5,8 @@
  * 304-stable-identity contract.
  *
  * The `sources` shape comes from useDashboardData:
- *   sources[key] = { error: string | null, lastSuccessMs: number | null }
+ *   sources[key] = { error: string | null, lastSuccessMs: number | null,
+ *                    watchedSinceMs: number | null }
  * with keys: services, ups, commits, cron, integrations.
  *
  * Each panel maps to the source that feeds it (see SOURCE_FOR_PANEL below).
@@ -57,6 +58,9 @@ export function formatAgo(ms) {
  *   both stale AND erroring (banner shows both lines), or stale without an error
  *   (last fetch 304'd fine but the upstream stopped changing long ago — unusual,
  *   but the note is harmless), or erroring while still recently-fresh.
+ * - Silence counts from the last success, or from `watchedSinceMs` (when polling
+ *   resumed after a pause) if that is later: time spent paused isn't silence.
+ *   The note still gives the real age of the last success.
  */
 export function sourceBanner(source, key, refreshIntervalMs, now = Date.now()) {
   if (!source) return { message: null, staleNote: null };
@@ -67,7 +71,8 @@ export function sourceBanner(source, key, refreshIntervalMs, now = Date.now()) {
   const last = source.lastSuccessMs;
   const interval =
     Number.isFinite(refreshIntervalMs) && refreshIntervalMs > 0 ? refreshIntervalMs : 30000;
-  if (Number.isFinite(last) && now - last > STALE_INTERVALS * interval) {
+  const quietSince = Math.max(last, source.watchedSinceMs || 0);
+  if (Number.isFinite(last) && now - quietSince > STALE_INTERVALS * interval) {
     staleNote = `updated ${formatAgo(now - last)}`;
   }
 

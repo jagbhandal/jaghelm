@@ -168,3 +168,100 @@ describe('useDashboardData — per-source health + retry', () => {
     expect(result.current.retry).toBe(firstRetry);
   });
 });
+
+describe('useDashboardData — polling schedule', () => {
+  const SOURCE_PATHS = [
+    '/api/services',
+    '/api/ups',
+    '/api/integrations',
+    '/api/history',
+    '/api/cron/status',
+    '/api/gitea/activity',
+  ];
+  let paths;
+
+  beforeEach(() => {
+    if (!AbortSignal.timeout) {
+      AbortSignal.timeout = () => new AbortController().signal;
+    }
+    paths = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        paths.push(String(url));
+        if (String(url) === '/api/services') {
+          return Promise.resolve(jsonResponse({ nodes: {}, overallHealth: 'down' }));
+        }
+        return Promise.resolve(jsonResponse({}, {}));
+      })
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const render = (props) =>
+    renderHook(({ refreshKey, tick, active }) => useDashboardData(refreshKey, { tick, active }), {
+      initialProps: { refreshKey: 0, tick: 0, active: true, ...props },
+    });
+  const settle = () => act(async () => {});
+  const take = () => paths.splice(0).sort();
+
+  it('a tick fetches the live sources plus one slow source, each slow one in turn', async () => {
+    const { rerender } = render();
+    await settle();
+    expect(take()).toEqual([...SOURCE_PATHS].sort());
+
+    const slowSeen = [];
+    for (let tick = 1; tick <= 3; tick++) {
+      rerender({ refreshKey: 0, tick, active: true });
+      await settle();
+      const got = take();
+      expect(got).toHaveLength(4);
+      expect(got).toEqual(expect.arrayContaining(['/api/services', '/api/ups', '/api/integrations']));
+      slowSeen.push(got.find((p) => ['/api/history', '/api/cron/status', '/api/gitea/activity'].includes(p)));
+    }
+    expect(slowSeen).toEqual(['/api/history', '/api/cron/status', '/api/gitea/activity']);
+  });
+
+  it('a manual refresh (refreshKey) fetches every source', async () => {
+    const { rerender } = render();
+    await settle();
+    take();
+    rerender({ refreshKey: 1, tick: 0, active: true });
+    await settle();
+    expect(take()).toEqual([...SOURCE_PATHS].sort());
+  });
+
+  it('fetches nothing while inactive, then every source at once on resume', async () => {
+    const { rerender } = render();
+    await settle();
+    take();
+    rerender({ refreshKey: 0, tick: 0, active: false });
+    await settle();
+    expect(take()).toEqual([]);
+
+    rerender({ refreshKey: 0, tick: 0, active: true });
+    await settle();
+    expect(take()).toEqual([...SOURCE_PATHS].sort());
+  });
+
+  it('makes no request at all when mounted inactive (a tab opened in the background)', async () => {
+    const { rerender } = render({ active: false });
+    await settle();
+    expect(take()).toEqual([]);
+    rerender({ refreshKey: 0, tick: 0, active: true });
+    await settle();
+    expect(take()).toEqual([...SOURCE_PATHS].sort());
+  });
+
+  it('exposes overallHealth from the services body, and unknown when the fetch fails', async () => {
+    const { result, rerender } = render();
+    await waitFor(() => expect(result.current.overallHealth).toBe('down'));
+
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Network down'))));
+    rerender({ refreshKey: 0, tick: 1, active: true });
+    await waitFor(() => expect(result.current.overallHealth).toBe('unknown'));
+  });
+});
