@@ -84,6 +84,7 @@ server/                     Express API (Node 22, ESM)
   errors.js                 apiError + global JSON error handler
   version.js                single source of version (reads package.json)
   metrics.js                prom-client registry + middleware + /metrics handler
+  accessLog.js              one JSON log line per request (full path, no query string)
   demo.js                   DEMO_MODE read-only sample dashboard
   auth/                     scrypt passwords, in-memory sessions, login rate limit, middleware
   routes/                   one router per resource (see 4.1)
@@ -263,6 +264,9 @@ integration connection-test endpoint.
 ### 4.6 Observability
 
 - **Structured logging** (`util/logger.js`) with redaction -- no secrets in logs.
+- **Access log** (`accessLog.js`): one line per request with its full path and no
+  query string; 5xx at `error`, 4xx and requests of 300 ms or more at `info`, the
+  rest at `debug`. `/metrics`, `/api/health` and `/api/readyz` are not logged.
 - **Prometheus metrics** at `/metrics` via `prom-client` (`metrics.js`): request
   rate, latency histograms, refresh-loop health.
 - **Two probes**: `/api/health` (liveness; reflects refresh-loop liveness -- 503
