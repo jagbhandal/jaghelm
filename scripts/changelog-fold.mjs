@@ -2,13 +2,17 @@
 // The release PR's first step (docs/RELEASING.md): folds the fragments in changes/ next to
 // <file> (default CHANGELOG.md, or mobile/CHANGELOG.md with --mobile) into its
 // ## [Unreleased] section and deletes them. Changes nothing if anything fails the lint.
-import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { foldFragments, fragmentDir, lintWithFragments, readFragments } from './changelog.mjs';
 
 const args = process.argv.slice(2);
 const mobile = args.includes('--mobile');
 const file = args.find((a) => !a.startsWith('--')) ?? (mobile ? 'mobile/CHANGELOG.md' : 'CHANGELOG.md');
 
+if (!existsSync(file)) {
+  console.error(`${file} not found: run this from the repository root, or pass the CHANGELOG's path`);
+  process.exit(2);
+}
 const fragments = readFragments(fragmentDir(file));
 if (fragments.length === 0) {
   console.log(`${file}: no fragments to fold`);

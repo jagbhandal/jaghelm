@@ -1,8 +1,8 @@
 # Changelog fragments
 
 A PR with a user-facing server change writes its CHANGELOG entry as its own file
-here, never in `CHANGELOG.md`. No two PRs then edit the same lines, so they merge
-in any order without conflicts. The release PR folds every fragment into
+here instead of editing `CHANGELOG.md`. No two PRs then edit the same lines, so
+they merge in any order without conflicts. The release PR folds every fragment into
 `## [Unreleased]` of `CHANGELOG.md` and deletes the files
 (`node scripts/changelog-fold.mjs`, see [docs/RELEASING.md](../docs/RELEASING.md)).
 Android app changes go in [`mobile/changes/`](../mobile/changes/) instead.
@@ -22,5 +22,6 @@ Example, `changes/245-access-log.md`:
 ```
 
 `node scripts/changelog-lint.mjs CHANGELOG.md` checks the fragments along with
-the CHANGELOG, and CI runs it on every PR. The fold and the lint skip this
+the CHANGELOG, and CI runs it on every PR. The release workflows refuse to
+publish while a fragment is left unfolded. The fold and the lint skip this
 README.

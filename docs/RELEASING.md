@@ -29,9 +29,9 @@ the ones that were deployed from that commit.
 
 ## Changelog entries during development
 
-A PR never edits `CHANGELOG.md` or `mobile/CHANGELOG.md`. It writes its entry
-as a fragment, a file of its own that the release PR folds in, so open PRs never
-conflict over `## [Unreleased]`:
+Every PR except the release PR writes its entry as a fragment, a file of its
+own that the release PR folds in, and leaves `CHANGELOG.md` and
+`mobile/CHANGELOG.md` alone, so open PRs never conflict over `## [Unreleased]`:
 
 - `changes/<issue>-<slug>.md` for a server change,
   `mobile/changes/<issue>-<slug>.md` for an Android app change.
@@ -134,14 +134,17 @@ as it will appear into the run's job summary.
 - **Server:** GitHub → Actions → **Release** → **Run workflow** on `main`, with
   the defaults (tag empty, `dry_run` on). It treats `main` as if it were tagged
   with its `package.json` version and runs every check: version file, CHANGELOG
-  section, the `:sha-<short>` image, its digest and cosign signature, and that
-  `:X.Y.Z` is free. The `:sha-<short>` image of `main` must exist, so wait for
+  section, no unfolded fragments in `changes/`, the `:sha-<short>` image, its
+  digest and cosign signature, and that `:X.Y.Z` is free. The `:sha-<short>` image of `main` must exist, so wait for
   `build-push.yml` to finish after the merge.
 - **Android:** GitHub → Actions → **Build Signed Mobile APK** → **Run
   workflow** on `main`. It builds and signs a test APK (version name
   `0.0.0-dispatch.N`, version code = run number) and renders the notes for the
   `mobile/package.json` version under "Dry run — checksum is of this test
-  build". A manual run is always a test build and never creates a release, even
+  build". While that version is untagged, unfolded fragments in
+  `mobile/changes/` fail the run as they would fail the tag; once it is tagged,
+  the run is a test build between releases and pending fragments are fine. A
+  manual run is always a test build and never creates a release, even
   when it is started on a tag. The test APK still reports the
   `mobile/package.json` version to the server when it registers for push.
 
@@ -183,7 +186,8 @@ four or more tag updates silently skips the release workflows (see
 1. Checks that the tagged commit is on `main` and that `package.json` has the
    tag's version.
 2. Renders the release notes from `CHANGELOG.md`. A missing or malformed
-   section stops the release here, before anything is published.
+   section, or a fragment left unfolded in `changes/`, stops the release here,
+   before anything is published.
 3. Waits, up to 15 minutes, for `ghcr.io/jagbhandal/jaghelm:sha-<short>` of the
    tagged commit, so a tag pushed seconds after the merge does not fail.
 4. Resolves that image's digest. If `:X.Y.Z` already exists at the same digest,
@@ -199,8 +203,9 @@ The job summary records the commit, digest, signature status and outcome.
 
 **Android (`build-apk.yml`, on a `mobile-v*` tag):**
 
-1. Checks that `mobile/package.json` has the tag's version and that
-   `mobile/CHANGELOG.md` has a valid section, before the build starts.
+1. Checks that `mobile/package.json` has the tag's version, that
+   `mobile/CHANGELOG.md` has a valid section, and that `mobile/changes/` holds
+   no unfolded fragments, before the build starts.
 2. Builds and signs the APK. The version name comes from the tag and the
    version code is `MAJOR × 1000000 + MINOR × 1000 + PATCH`, so each release
    installs over the previous one. The signature is verified with `apksigner`,
@@ -214,6 +219,12 @@ The job summary records the commit, digest, signature status and outcome.
    draft, the run fails without changing it.
 
 The signing secrets are described in [mobile/KEYSTORE.md](mobile/KEYSTORE.md).
+
+Both release checks refuse unfolded fragments, because their entries would be
+missing from the release page. A fragment can also land after the fold: a PR
+that merges while the release PR is open. If the dry run reports fragments that
+landed after the fold, open a follow-up PR that runs the fold and moves the new
+bullets from `[Unreleased]` into `[X.Y.Z]`, then tag that merge commit.
 
 ## 5. Verify
 

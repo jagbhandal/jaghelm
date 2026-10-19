@@ -198,6 +198,15 @@ test('fold CLI: a second run, or a run with no changes/ directory, changes nothi
   assert.equal(readFileSync(path.join(bare, 'mobile/CHANGELOG.md'), 'utf8'), MOBILE);
 });
 
+test('fold CLI exits 2 when the CHANGELOG is not there, such as when run from a subdirectory', () => {
+  const dir = repo({ 'CHANGELOG.md': LOG, 'changes/7-a.md': '### Fixed\n- a\n', 'docs/x.md': '' });
+  const r = run(FOLD, path.join(dir, 'docs'));
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /^CHANGELOG\.md not found/);
+  assert.equal(readFileSync(path.join(dir, 'CHANGELOG.md'), 'utf8'), LOG);
+  assert.deepEqual(readdirSync(path.join(dir, 'changes')), ['7-a.md']);
+});
+
 test('fold CLI refuses a malformed fragment, naming it, and changes nothing', () => {
   const dir = repo({ 'CHANGELOG.md': LOG, 'changes/7-a.md': '### Fixed\n- a\n', 'changes/8-b.md': '### Highlights\n- b\n' });
   const r = run(FOLD, dir);
