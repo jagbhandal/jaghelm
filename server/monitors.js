@@ -646,12 +646,18 @@ export function logUnmatchedContainers({ unmatched, containerCount, monitors }) 
 }
 
 /**
- * Select the monitors that represent a live OUTAGE: reporting `down`, with a
- * FRESH heartbeat (a paused/retired monitor stops beating → goes stale →
- * excluded, so it can't leave a phantom red card — the status-page `active`
- * flag is unreliable for this), and NOT already claimed by a running container
- * this cycle. These become synthesised red "down" cards on the board so an
- * outage stays visible after the container disappears from cAdvisor.
+ * The monitors no running container got this cycle that are `up` or `down`, in
+ * the map's order. assembleServices places all of them in one pass (#390): a
+ * down one becomes a synthesised red card, so an outage stays visible after the
+ * container disappears from cAdvisor; an up one is an entry only the push
+ * snapshot reads, under the same uid, so its recovery is sent.
+ *
+ * Each has a FRESH heartbeat: a paused/retired monitor stops beating, goes
+ * stale and is excluded, so it can't leave a phantom red card or send a false
+ * recovery (the status-page `active` flag is unreliable for this, though
+ * `active: false` excludes one too). A pending one (`unknown`) and one Kuma no
+ * longer has are not in it either, and nor is one already claimed by a running
+ * container this cycle.
  *
  * `monitors` is the id→monitor map from fetchMonitors (an array works too:
  * Object.values handles both). `consumedIds` is a Set of
@@ -663,7 +669,7 @@ export function logUnmatchedContainers({ unmatched, containerCount, monitors }) 
  * absent from /metrics entirely, so this staleness guard is intentionally INERT
  * for that source.
  */
-export function selectOutageMonitors(
+export function selectUnclaimedMonitors(
   monitors,
   consumedIds,
   { now = Date.now(), staleMs = MONITOR_STALE_MS } = {}
@@ -671,7 +677,7 @@ export function selectOutageMonitors(
   return Object.values(monitors).filter(
     (m) =>
       m &&
-      m.status === 'down' &&
+      (m.status === 'down' || m.status === 'up') &&
       m.active !== false &&
       !consumedIds.has(m.id) &&
       (m.lastBeatAt == null || now - m.lastBeatAt <= staleMs)

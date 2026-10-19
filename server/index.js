@@ -112,9 +112,10 @@ app.use(metricsMiddleware);
 app.use(createAccessLog({ logger: log }));
 
 // Content-Security-Policy. The frontend uses React inline styles + dynamic
-// theme CSS-var injection (style ATTRIBUTES, which can't be nonced), Google
-// Fonts, and CDN dashboard-icons, and embeds operator-configured service URLs
-// via the iframe view — so style-src must keep 'unsafe-inline'. The meaningful
+// theme CSS-var injection (style ATTRIBUTES, which can't be nonced) and CDN
+// dashboard-icons, and embeds operator-configured service URLs via the iframe
+// view — so style-src must keep 'unsafe-inline'. Fonts are self-hosted (#244,
+// #284): no font or stylesheet comes from another origin. The meaningful
 // protection here is the strict script-src ('self' only): Vite bundles all JS
 // to hashed files and the SW-registration inline script was externalized to
 // /register-sw.js, so no inline/eval script is allowed. object-src/base-uri are
@@ -142,8 +143,8 @@ const extraConnect = (process.env.CSP_CONNECT_EXTRA || '')
 const cspDirectives = {
   defaultSrc: ["'self'"],
   scriptSrc: ["'self'"],
-  styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-  fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+  styleSrc: ["'self'", "'unsafe-inline'"],
+  fontSrc: ["'self'", 'data:'],
   imgSrc: [
     "'self'",
     'data:',
