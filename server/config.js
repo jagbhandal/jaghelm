@@ -26,28 +26,6 @@ const DEFAULT_CONFIG = {
   nodes: {},
   services: {},
   integrations: {},
-  custom_integrations: {},
-  display: {
-    title: 'JAGHELM',
-    subtitle: 'Infrastructure Dashboard',
-    theme: 'dark',
-    accent_color: '#6366f1',
-    bg_image: '',
-    bg_opacity: 0.3,
-    overlay_opacity: 0.75,
-    show_dots: true,
-    show_search: true,
-    search_engine: 'google',
-    show_weather: true,
-    weather_lat: '39.88',
-    weather_lon: '-83.09',
-    weather_city: 'Grove City',
-    temp_unit: 'F',
-    service_detail_level: 'stats',
-    refresh_interval: 30,
-    show_todos: true,
-    show_cron_jobs: true,
-  },
   links: {
     personal: [],
     management: [],
@@ -57,6 +35,26 @@ const DEFAULT_CONFIG = {
   grid_layout: null,
   grid_columns: 12,
 };
+
+// Blocks that older releases wrote into every generated services.yaml but that
+// nothing ever read: display settings live in display-config.json, and custom
+// integrations are entries under `integrations`. A file that still has them
+// loads and saves unchanged (they are ignored, not stripped, so the server never
+// silently drops what a user wrote); loadConfig says once per process that they
+// can be deleted. Remove the warning one release after it ships (#265).
+const UNREAD_KEYS = ['display', 'custom_integrations'];
+let warnedUnreadKeys = false;
+
+function warnUnreadKeys(cfg) {
+  if (warnedUnreadKeys) return;
+  const keys = UNREAD_KEYS.filter((k) => Object.hasOwn(cfg, k));
+  if (keys.length === 0) return;
+  warnedUnreadKeys = true;
+  log.warn(
+    { keys },
+    `services.yaml has blocks JagHelm does not read (${keys.join(', ')}); they are ignored and can be deleted`
+  );
+}
 
 /**
  * Load config from disk. If no file exists, returns null (caller should trigger discovery).
@@ -70,6 +68,7 @@ export function loadConfig() {
     const raw = readFileSync(CONFIG_PATH, 'utf8');
     config = yaml.load(raw) || {};
     lastModified = statSync(CONFIG_PATH).mtimeMs;
+    warnUnreadKeys(config);
     log.info(
       {
         nodes: Object.keys(config.nodes || {}).length,

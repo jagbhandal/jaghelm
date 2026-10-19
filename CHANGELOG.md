@@ -6,6 +6,9 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+### Removed
+- The `display` and `custom_integrations` blocks are no longer written into a new `services.yaml`. JagHelm never read them: the dashboard's display settings are in `display-config.json` (Settings), and custom integrations are entries under `integrations`. A `services.yaml` that still has them loads and saves as before, and JagHelm logs one warning at startup naming them; delete the two blocks from the file to clear it.
+
 ### Fixed
 - A request redirected with `307` or `308` now keeps its method and body, as those codes require, instead of being turned into a `GET` without a body. A session login (Nginx Proxy Manager, Portainer, PhotoPrism) behind such a redirect on the same host and port, or from `http://` to `https://` on it, now works. A login redirected to another origin (host, port or scheme, apart from that upgrade) is refused instead of being re-sent there. `301` and `302` still turn any method but `GET` and `HEAD` into a `GET` without a body, and `303` turns every method, `HEAD` included, into one.
 - The server no longer loads the integration presets' test files as presets at startup, so it no longer logs two "Skipping invalid preset" errors (for `gitlab.test.js` and `nextcloud.test.js`) or prints their test output in its logs. Test files are also left out of the image.

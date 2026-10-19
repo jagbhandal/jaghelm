@@ -78,7 +78,7 @@ server/                     Express API (Node 22, ESM)
                             (ignores containers labelled as Arcane internal helpers, so
                             short-lived helpers never become cards or presence breadcrumbs)
   monitors.js               Uptime Kuma monitor matching
-  config.js                 display config: copy-on-read + atomic save
+  config.js                 services.yaml: load, hot-reload watch, copy-on-read + atomic save
   secrets.js                AES-256-GCM secret store (per-install KDF salt)
   cron-store.js             cron history (bounded)
   errors.js                 apiError + global JSON error handler
