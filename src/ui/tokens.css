@@ -2,7 +2,8 @@
  * JagHelm's design tokens (#283): the values Jag signed off in the overview mock
  * (2026-10-19), spec §5.2, §5.3 and §15. docs/design-system.md lists them with
  * the rules for using them. scripts/ui-contrast.mjs checks every text and
- * background pairing in both themes and all five accents (npm test).
+ * background pairing in both themes and all five accents, on sRGB and Display
+ * P3 screens, and that each hover is visibly different from rest (npm test).
  *
  * Three layers, all on .jh-ui and never on :root while today's CSS lives (it
  * owns --bg, --accent, --border, --text-* there). The --jh- prefix keeps them
@@ -54,8 +55,8 @@
   --jh-violet-480: oklch(0.48 0.24 293);
   --jh-violet-500: oklch(0.5 0.27 293);
   --jh-violet-541: oklch(0.541 0.281 293.009);
+  --jh-violet-575: oklch(0.575 0.27 293);
   --jh-violet-580: oklch(0.58 0.23 293);
-  --jh-violet-585: oklch(0.585 0.27 293);
   --jh-violet-606: oklch(0.606 0.25 292.717);
   --jh-violet-680: oklch(0.68 0.19 293);
   --jh-violet-790: oklch(0.79 0.135 293);
@@ -101,7 +102,7 @@
   /* Accent: interactive or selected (§5.2, §15). Each data-accent block below
      sets the same eight; on-accent is shared by all five. */
   --jh-accent: var(--jh-violet-541);
-  --jh-accent-hover: var(--jh-violet-585);
+  --jh-accent-hover: var(--jh-violet-575);
   --jh-on-accent: var(--jh-violet-969);
   --jh-accent-text: var(--jh-violet-790);
   --jh-accent-tint: oklch(0.541 0.281 293.009 / 0.16);
@@ -283,7 +284,10 @@
  * ---- The four other accents (Settings → Appearance, §15) ----------------
  * Each accent sets the same eight roles in both themes, and its light block
  * sets every role its dark block does (scripts/ui-tokens.test.mjs), so the
- * result never depends on block order. None is a status hue.
+ * result never depends on block order. None is a status hue (Blue's hue 255 is
+ * close to maintenance's, and is Jag's call: docs/design-system.md, rule 2).
+ * In dark, Blue and Fuchsia darken on hover: lightened enough to see, their
+ * label would drop below 4.5:1.
  */
 
 .jh-ui[data-accent='indigo'] {
@@ -310,7 +314,7 @@
 
 .jh-ui[data-accent='blue'] {
   --jh-accent: oklch(0.53 0.19 255);
-  --jh-accent-hover: oklch(0.545 0.18 255);
+  --jh-accent-hover: oklch(0.49 0.18 255);
   --jh-accent-text: oklch(0.8 0.1 255);
   --jh-accent-tint: oklch(0.53 0.19 255 / 0.16);
   --jh-accent-border: oklch(0.62 0.17 255 / 0.38);
@@ -332,7 +336,7 @@
 
 .jh-ui[data-accent='fuchsia'] {
   --jh-accent: oklch(0.56 0.23 328);
-  --jh-accent-hover: oklch(0.57 0.22 328);
+  --jh-accent-hover: oklch(0.52 0.22 328);
   --jh-accent-text: oklch(0.8 0.12 328);
   --jh-accent-tint: oklch(0.56 0.23 328 / 0.16);
   --jh-accent-border: oklch(0.62 0.21 328 / 0.38);
