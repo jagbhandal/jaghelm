@@ -449,3 +449,30 @@ test('createPushSnapshot flush: a failed write is logged, not thrown', async () 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// #232: the builder is handed the previous snapshot, so it can keep the parts a
+// failed source feeds; advancing to what it returns keeps them across cycles.
+test('runPushCycle hands buildSnapshotFn the previous snapshot (null on the baseline)', async () => {
+  const { dir, path } = tmpSnapshotPath();
+  const seen = [];
+  const build = (prev) => {
+    seen.push(prev);
+    return SNAP_UP;
+  };
+  try {
+    const snapshot = createPushSnapshot({ path, logger: silentLog });
+    for (let i = 0; i < 2; i += 1) {
+      await runPushCycle({
+        buildSnapshotFn: build,
+        store: oneTokenStore(),
+        fcm: enabledFcm(),
+        snapshot,
+        thresholds: THRESHOLDS,
+        logger: silentLog,
+      });
+    }
+    assert.deepEqual(seen, [null, SNAP_UP]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

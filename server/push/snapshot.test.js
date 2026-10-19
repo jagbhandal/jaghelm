@@ -155,6 +155,23 @@ test('buildHosts: all-null metrics -> reachable:false, zeroed; partial -> reacha
   assert.deepEqual(out.bare, { reachable: false, cpu: 0, mem: 0, disk: 0 });
 });
 
+test('buildHosts: the payload reachable (Prometheus up) wins over metric presence (#232)', () => {
+  const cache = {
+    nodes: {
+      // every target down, but the CPU irate still has a value for a few minutes
+      gone: { reachable: false, metrics: { cpu: '12.0', memPercent: null, diskPercent: null } },
+      // an exporter-less host Prometheus still scrapes something on
+      bare: { reachable: true, metrics: { cpu: null, memPercent: null, diskPercent: null } },
+      // no up series carries this node's label: fall back to the metrics
+      unlabelled: { reachable: null, metrics: { cpu: '5.0', memPercent: null, diskPercent: null } },
+    },
+  };
+  const out = buildHosts(cache);
+  assert.equal(out.gone.reachable, false);
+  assert.equal(out.bare.reachable, true);
+  assert.equal(out.unlabelled.reachable, true);
+});
+
 test('buildHosts: missing cache -> empty map', () => {
   assert.deepEqual(buildHosts(null), {});
   assert.deepEqual(buildHosts({ nodes: {} }), {});
@@ -293,4 +310,80 @@ test('buildSnapshot: clock enters only via caches.now', () => {
   });
   assert.equal(buildSnapshot(base).cron['n:j'], 'success');
   assert.equal(buildSnapshot({ ...base, now: () => OVERDUE_NOW }).cron['n:j'], 'overdue');
+});
+
+// ── #232: a source that failed this cycle keeps its previous state ──────────
+
+const PREV = {
+  services: { 'vm103:gitea': 'up', 'vm103:radarr': 'down', 'vm103:postgres': 'up' },
+  hosts: {
+    pi: { reachable: true, cpu: 0.1, mem: 0.2, disk: 0.3 },
+    vm103: { reachable: true, cpu: 0.4, mem: 0.5, disk: 0.6 },
+  },
+  ups: { state: 'online' },
+  cron: { 'vm103:backup': 'success' },
+};
+
+// This cycle's caches: every node lost its metrics and containers (what a failed
+// Prometheus looks like), Kuma still reports radarr down and gitea now down too.
+function failedCycle({ prometheus = true, kuma = true, ups = true }) {
+  return fakeCaches({
+    services: {
+      sources: { prometheus: { ok: prometheus }, kuma: { ok: kuma } },
+      nodes: {
+        pi: { reachable: null, metrics: {}, services: [] },
+        vm103: {
+          reachable: null,
+          metrics: {},
+          services: [
+            { uid: 'vm103:radarr', status: 'down' },
+            { uid: 'vm103:gitea', status: 'down' },
+          ],
+        },
+      },
+    },
+    ups: { status: null, ok: ups },
+    cron: [{ node: 'vm103', jobs: [{ job: 'backup', runs: [{ status: 'failure' }] }] }],
+  });
+}
+
+test('buildSnapshot: Prometheus failed -> hosts kept, missing services kept, present ones current', () => {
+  const snap = buildSnapshot(failedCycle({ prometheus: false }), PREV);
+  assert.deepEqual(snap.hosts, PREV.hosts);
+  assert.deepEqual(snap.services, {
+    'vm103:gitea': 'down', // Kuma still answers: this cycle's status
+    'vm103:postgres': 'up', // not seen this cycle: kept
+    'vm103:radarr': 'down',
+  });
+  assert.deepEqual(Object.keys(snap.services), ['vm103:gitea', 'vm103:postgres', 'vm103:radarr']);
+  assert.deepEqual(snap.ups, { state: 'unknown' }, 'the UPS read answered (ok), with no UPS');
+  assert.deepEqual(snap.cron, { 'vm103:backup': 'failure' }, 'cron is never held');
+});
+
+test('buildSnapshot: Kuma failed -> every service kept, hosts current', () => {
+  const caches = failedCycle({ kuma: false });
+  const snap = buildSnapshot(caches, PREV);
+  assert.deepEqual(snap.services, PREV.services);
+  assert.deepEqual(snap.hosts, buildHosts(caches.getCached('services')));
+});
+
+test('buildSnapshot: the UPS read failed -> the UPS state kept', () => {
+  assert.deepEqual(buildSnapshot(failedCycle({ ups: false }), PREV).ups, { state: 'online' });
+});
+
+test('buildSnapshot: every source ok -> nothing is taken from prev', () => {
+  const caches = failedCycle({});
+  assert.deepEqual(buildSnapshot(caches, PREV), buildSnapshot(caches));
+});
+
+test('buildSnapshot: no prev (baseline) -> this cycle is all there is, failed or not', () => {
+  const caches = failedCycle({ prometheus: false, kuma: false, ups: false });
+  const snap = buildSnapshot(caches, null);
+  assert.deepEqual(snap.services, { 'vm103:gitea': 'down', 'vm103:radarr': 'down' });
+  assert.equal(snap.hosts.vm103.reachable, false);
+});
+
+test('buildSnapshot: a payload without source flags counts as answered', () => {
+  const caches = fakeCaches({ services: { nodes: {} }, ups: { status: 1 }, cron: [] });
+  assert.deepEqual(buildSnapshot(caches, PREV), buildSnapshot(caches));
 });

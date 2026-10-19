@@ -4,7 +4,11 @@
  * Returns merged data with config overrides applied.
  * 
  * Performance: getNodeData() fires all node metrics + container queries
- * in a single Promise.all (13 queries) instead of two sequential batches.
+ * in a single Promise.all (14 queries) instead of two sequential batches.
+ *
+ * A query that fails is never read as "no series" (#232): promQuery() rejects,
+ * and getNodeData() reports the failure in its result (`ok: false`), so the
+ * refresh loop can tell a Prometheus outage from a host that stopped reporting.
  */
 
 import { createLogger } from './util/logger.js';
@@ -31,21 +35,40 @@ export function initDiscovery(prometheusUrl) {
   log.info({ promUrl }, 'Prometheus URL');
 }
 
+/** A Prometheus query that produced no result: see promQuery(). */
+export class PromQueryError extends Error {
+  constructor(message, options) {
+    super(message, options);
+    this.name = 'PromQueryError';
+  }
+}
+
 /**
- * Query Prometheus instant query API.
+ * Run a Prometheus instant query. Resolves to the result array, which is empty
+ * when no series match. Rejects with a PromQueryError when there is no result to
+ * read: the request failed or timed out, Prometheus answered with a non-2xx
+ * status or an error, or the body is not a query result. With no Prometheus URL
+ * configured there is nothing to ask, and it resolves to [].
  */
-async function promQuery(query) {
+export async function promQuery(query) {
   if (!promUrl) return [];
+  let data;
   try {
     const r = await safeFetch(
       `${promUrl}/api/v1/query?query=${encodeURIComponent(query)}`,
       { trusted: true, timeoutMs: PROM_TIMEOUT }
     );
-    const data = await r.json();
-    return data?.data?.result || [];
-  } catch {
-    return [];
+    if (!r.ok) throw new PromQueryError(`Prometheus answered HTTP ${r.status}`);
+    data = await r.json();
+  } catch (err) {
+    if (err instanceof PromQueryError) throw err;
+    throw new PromQueryError(`Prometheus query failed: ${err?.message || err}`, { cause: err });
   }
+  const result = data?.data?.result;
+  if (data?.status === 'error' || !Array.isArray(result)) {
+    throw new PromQueryError(`Prometheus returned no query result${data?.error ? `: ${data.error}` : ''}`);
+  }
+  return result;
 }
 
 /**
@@ -68,49 +91,70 @@ function scalar(results, matchLabels = {}) {
  * Returns array of node label strings, e.g. ['pi', 'vm103', 'vm101']
  */
 export async function discoverNodes() {
-  // Try multiple label patterns — different setups use different labels
-  const results = await promQuery('count by (node)(up{node!=""})');
-  if (results.length > 0) {
-    return results.map(r => r.metric?.node).filter(Boolean);
+  try {
+    // Try multiple label patterns — different setups use different labels
+    const results = await promQuery('count by (node)(up{node!=""})');
+    if (results.length > 0) {
+      return results.map(r => r.metric?.node).filter(Boolean);
+    }
+    // Fallback: try instance labels
+    const fallback = await promQuery('count by (instance)(up{job="node"})');
+    return fallback.map(r => r.metric?.instance).filter(Boolean);
+  } catch (err) {
+    log.warn({ err }, 'node discovery could not reach Prometheus; starting with no nodes');
+    return [];
   }
-  // Fallback: try instance labels
-  const fallback = await promQuery('count by (instance)(up{job="node"})');
-  return fallback.map(r => r.metric?.instance).filter(Boolean);
 }
 
 /**
  * Get node metrics AND container data in a single parallel batch.
- * Fires all 13 Prometheus queries simultaneously instead of two sequential batches.
- * Returns { metrics, containers }
+ * Fires all 14 Prometheus queries simultaneously instead of two sequential batches.
+ *
+ * Returns { ok, error, reachable, metrics, containers }:
+ * - `ok` is false when any query failed (PromQueryError). The failed queries
+ *   read as empty, so `metrics` and `containers` hold what the others returned,
+ *   and `error` is the first failure's message (null when ok).
+ * - `reachable` is from Prometheus' own scrape status, `up{node=…}`: true when
+ *   any target of the node answered its last scrape, false when none did, null
+ *   when Prometheus has no `up` series with that node label (or the query failed).
  */
 export async function getNodeData(nodeLabel) {
   const l = `node="${nodeLabel}"`;
+  const failures = [];
+  const query = (q) =>
+    promQuery(q).catch((err) => {
+      failures.push(err);
+      return [];
+    });
 
-  // Fire ALL queries in one Promise.all — node metrics (8) + container stats (5) = 13 parallel
+  // Fire ALL queries in one Promise.all — node metrics (9) + container stats (5) = 14 parallel
   const [
     // Node metrics
-    cpuR, memTR, memAR, memFreeR, upR, tempR, diskTR, diskFR,
+    targetUpR, cpuR, memTR, memAR, memFreeR, upR, tempR, diskTR, diskFR,
     // Container stats
     namesR, cCpuR, cMemR, cRxR, cTxR,
   ] = await Promise.all([
     // Node metrics queries
-    promQuery(`100 - (avg by(instance)(irate(node_cpu_seconds_total{${l},mode="idle"}[5m])) * 100)`),
-    promQuery(`node_memory_MemTotal_bytes{${l}}`),
-    promQuery(`node_memory_MemAvailable_bytes{${l}}`),
-    promQuery(`node_memory_MemFree_bytes{${l}}`),
-    promQuery(`node_time_seconds{${l}} - node_boot_time_seconds{${l}}`),
-    promQuery(`node_hwmon_temp_celsius{${l}}`),
-    promQuery(`node_filesystem_size_bytes{${l},mountpoint="/",fstype!="tmpfs"}`),
-    promQuery(`node_filesystem_free_bytes{${l},mountpoint="/",fstype!="tmpfs"}`),
+    query(`max(up{${l}})`),
+    query(`100 - (avg by(instance)(irate(node_cpu_seconds_total{${l},mode="idle"}[5m])) * 100)`),
+    query(`node_memory_MemTotal_bytes{${l}}`),
+    query(`node_memory_MemAvailable_bytes{${l}}`),
+    query(`node_memory_MemFree_bytes{${l}}`),
+    query(`node_time_seconds{${l}} - node_boot_time_seconds{${l}}`),
+    query(`node_hwmon_temp_celsius{${l}}`),
+    query(`node_filesystem_size_bytes{${l},mountpoint="/",fstype!="tmpfs"}`),
+    query(`node_filesystem_free_bytes{${l},mountpoint="/",fstype!="tmpfs"}`),
     // Container stats queries
-    promQuery(`container_last_seen{${l},name!="",${NOT_HELPER}}`),
-    promQuery(`rate(container_cpu_usage_seconds_total{${l},name!="",${NOT_HELPER}}[5m]) * 100`),
-    promQuery(`container_memory_usage_bytes{${l},name!="",${NOT_HELPER}}`),
-    promQuery(`container_network_receive_bytes_total{${l},name!="",${NOT_HELPER}}`),
-    promQuery(`container_network_transmit_bytes_total{${l},name!="",${NOT_HELPER}}`),
+    query(`container_last_seen{${l},name!="",${NOT_HELPER}}`),
+    query(`rate(container_cpu_usage_seconds_total{${l},name!="",${NOT_HELPER}}[5m]) * 100`),
+    query(`container_memory_usage_bytes{${l},name!="",${NOT_HELPER}}`),
+    query(`container_network_receive_bytes_total{${l},name!="",${NOT_HELPER}}`),
+    query(`container_network_transmit_bytes_total{${l},name!="",${NOT_HELPER}}`),
   ]);
 
   // ── Build node metrics ──
+  const targetUp = scalar(targetUpR);
+  const reachable = Number.isFinite(targetUp) ? targetUp > 0 : null;
   const cpu = scalar(cpuR);
   const memTotal = scalar(memTR);
   const memAvail = scalar(memAR);
@@ -123,8 +167,8 @@ export async function getNodeData(nodeLabel) {
   // Fallback: if no mountpoint="/" data (e.g. NAS devices), find the largest filesystem
   if (diskTotal == null) {
     const [allDiskT, allDiskF] = await Promise.all([
-      promQuery(`node_filesystem_size_bytes{${l},fstype!="tmpfs",fstype!=""}`),
-      promQuery(`node_filesystem_free_bytes{${l},fstype!="tmpfs",fstype!=""}`),
+      query(`node_filesystem_size_bytes{${l},fstype!="tmpfs",fstype!=""}`),
+      query(`node_filesystem_free_bytes{${l},fstype!="tmpfs",fstype!=""}`),
     ]);
     // Pick the largest filesystem by total size
     let maxSize = 0;
@@ -243,7 +287,8 @@ export async function getNodeData(nodeLabel) {
 
   const containers = Array.from(containerMap.values());
 
-  return { metrics, containers };
+  const ok = failures.length === 0;
+  return { ok, error: ok ? null : failures[0].message, reachable, metrics, containers };
 }
 
 function formatUptime(s) {

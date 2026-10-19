@@ -177,14 +177,21 @@ async function fetchFromStatusPage() {
  * status-page API otherwise (or when /metrics is unavailable). Both sources
  * produce the SAME monitor-map shape, so every downstream consumer is identical.
  *
- * The stale-serving ceiling (staleOrEmpty) applies to BOTH paths: a sustained
- * Kuma outage surfaces "unknown" rather than freezing the board on stale "up"s.
+ * Resolves to `{ ok, monitors }`. `ok` is false when no monitors were loaded on
+ * this call (#232): the request failed, Kuma answered non-2xx, or it answered
+ * with no monitors (Kuma still starting, or nothing on the status page). The
+ * caller can then tell "Kuma is down" from "these services are up".
+ *
+ * On a failed load `monitors` holds the last-known statuses until they are
+ * STALE_CEILING_MS old, then {}: the stale-serving ceiling applies to BOTH
+ * paths, so a sustained Kuma outage surfaces "unknown" rather than freezing the
+ * board on stale "up"s.
  */
 export async function fetchMonitors(bustCache = false) {
-  if (!kumaUrl) return {};
+  if (!kumaUrl) return { ok: true, monitors: {} };
 
   if (!bustCache && cachedMonitors && Date.now() - cacheTime < CACHE_TTL) {
-    return cachedMonitors;
+    return { ok: true, monitors: cachedMonitors };
   }
 
   try {
@@ -216,7 +223,7 @@ export async function fetchMonitors(bustCache = false) {
         kumaUnavailableWarned = true;
       }
       lastLoad = null;
-      return staleOrEmpty();
+      return { ok: false, monitors: staleOrEmpty() };
     }
 
     // Runs every refresh cycle: info only for the first load, a change in what
@@ -228,11 +235,11 @@ export async function fetchMonitors(bustCache = false) {
     kumaUnavailableWarned = false;
     cachedMonitors = monitors;
     cacheTime = Date.now();
-    return monitors;
+    return { ok: true, monitors };
   } catch (err) {
     log.error({ err }, 'Failed to fetch Kuma monitors');
     lastLoad = null;
-    return staleOrEmpty();
+    return { ok: false, monitors: staleOrEmpty() };
   }
 }
 
@@ -240,7 +247,7 @@ export async function fetchMonitors(bustCache = false) {
  * Get a flat array of all monitor names (for Settings UI dropdowns).
  */
 export async function getMonitorNames() {
-  const monitors = await fetchMonitors();
+  const { monitors } = await fetchMonitors();
   return Object.values(monitors)
     .map((m) => m.name)
     .sort();
@@ -387,8 +394,8 @@ export function logUnmatchedContainers({ unmatched, containerCount, monitors }) 
  * this cycle. These become synthesised red "down" cards on the board so an
  * outage stays visible after the container disappears from cAdvisor.
  *
- * `monitors` is the id→monitor map from fetchMonitors (or the `[]` fallback a
- * failed fetch returns — Object.values handles both). `consumedIds` is a Set of
+ * `monitors` is the id→monitor map from fetchMonitors (an array works too:
+ * Object.values handles both). `consumedIds` is a Set of
  * monitor ids already rendered as a running container's card. A monitor whose
  * heartbeat time is missing/unparseable (`lastBeatAt == null`) is treated as
  * fresh: we only EXCLUDE on a positively-stale beat, never miss a real outage

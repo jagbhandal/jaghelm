@@ -15,7 +15,7 @@ import { readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
 import { getConfig } from './config.js';
-import { getNodeData } from './discovery.js';
+import { getNodeData, promQuery } from './discovery.js';
 import { recordSamples } from './history.js';
 import {
   fetchMonitors,
@@ -33,7 +33,7 @@ import { DATA_DIR } from './util/dataDir.js';
 import { createLogger } from './util/logger.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
-import { buildSnapshot } from './push/snapshot.js';
+import { buildSnapshot, liveCaches } from './push/snapshot.js';
 import { getPushStore } from './push/store.js';
 import * as fcm from './push/fcm.js';
 
@@ -122,6 +122,30 @@ function getRefreshIntervalMs() {
   return DEFAULT_INTERVAL_MS;
 }
 
+/**
+ * Logs a data source failing and recovering, once each (#232): a warning on the
+ * first cycle it fails, with the error, and an info line on the first cycle it
+ * answers again. The cycles in between log at debug only.
+ */
+export function createSourceHealthLog(source, logger = log) {
+  let failingSince = null; // ms epoch of the first failed cycle; null while ok
+  return function report({ ok, error }, now = Date.now()) {
+    if (!ok) {
+      if (failingSince === null) {
+        failingSince = now;
+        logger.warn({ source, error }, 'data source failed; push alerts keep its last known state until it recovers');
+      } else {
+        logger.debug({ source, error }, 'data source still failing');
+      }
+    } else if (failingSince !== null) {
+      logger.info({ source, downSec: Math.round((now - failingSince) / 1000) }, 'data source recovered');
+      failingSince = null;
+    }
+  };
+}
+
+const reportPrometheus = createSourceHealthLog('prometheus');
+
 // ── Domain refresh functions ─────────────────────────────────────────────
 
 /**
@@ -160,7 +184,13 @@ function serviceRank(s) {
  *      vanished (absent past grace, within TTL) become grey `unknown`
  *      `source:'presence'` cards on their last-seen node. Skipped if the
  *      container is running anywhere this cycle, or if ANY monitor matches it
- *      (Kuma owns tracked services entirely).
+ *      (Kuma owns tracked services entirely). Skipped altogether when
+ *      `presenceKnown` is false: a Prometheus query failed this cycle, so a
+ *      container missing from the list may still be running, and a missed
+ *      breadcrumb beats a false one (#232).
+ *
+ * Each node carries `reachable` from discovery (Prometheus' `up` for the node:
+ * true, false, or null when Prometheus has no `up` series for it).
  *
  * Every node's cards are ordered down → unknown → up.
  *
@@ -176,7 +206,7 @@ function serviceRank(s) {
  *
  * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown', unmatched: string[], containerCount: number }}
  */
-export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf, lastSeenContainerOf, containerRegistry, now = Date.now }) {
+export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf, lastSeenContainerOf, containerRegistry, now = Date.now, presenceKnown = true }) {
   const consumed = new Set();
   const seen = new Map(); // monitor id -> { monitorId, nodeKey, container }, last in the pass
   const runningOn = new Map(); // container name -> the last node it runs on in this pass
@@ -236,6 +266,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
         subtitle: nodeCfg.subtitle || '',
         icon: nodeCfg.icon || '🖥',
         border_color: nodeCfg.border_color || '#6366f1',
+        reachable: typeof nodeData.reachable === 'boolean' ? nodeData.reachable : null,
         metrics,
         services,
       },
@@ -284,7 +315,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
 
   // (c) Breadcrumb synthesis — vanished, established, UNMONITORED containers.
   let breadcrumbCount = 0;
-  if (containerRegistry) {
+  if (containerRegistry && presenceKnown) {
     const candidates = containerRegistry.getMissing({ now: nowMs });
     for (const cand of candidates) {
       if (runningOn.has(cand.container)) continue;                // running somewhere this cycle
@@ -357,7 +388,7 @@ async function _refreshServices() {
     // Monitors are best-effort; if Kuma is down we still want node data.
     const monitorsSettled = fetchMonitors(true).catch((err) => {
       log.warn({ err }, 'monitors fetch failed');
-      return [];
+      return { ok: false, monitors: {} };
     });
     const nodeDataPromises = Object.entries(config.nodes).map(async ([nodeKey, nodeCfg]) => {
       if (nodeCfg.visible === false) return null;
@@ -369,7 +400,7 @@ async function _refreshServices() {
     // allSettled (not all) so one unreachable node doesn't sink the whole
     // dashboard. Rejected node results are logged and dropped; the surviving
     // nodes still render.
-    const [monitors, ...nodeOutcomes] = await Promise.all([
+    const [kuma, ...nodeOutcomes] = await Promise.all([
       monitorsSettled,
       ...nodeDataPromises.map((p) =>
         p.then(
@@ -378,16 +409,25 @@ async function _refreshServices() {
         )
       ),
     ]);
+    const monitors = kuma.monitors;
 
+    // Prometheus failed this cycle if any node's queries did (getNodeData's
+    // `ok`), or a node's refresh threw and left it out of the payload.
     const nodeResults = [];
+    const promErrors = [];
     for (const outcome of nodeOutcomes) {
       if (outcome.status === 'fulfilled') {
         nodeResults.push(outcome.value);
+        const nodeData = outcome.value?.[2];
+        if (nodeData && nodeData.ok === false) promErrors.push(nodeData.error);
       } else {
         const msg = outcome.reason?.message || String(outcome.reason);
         log.warn({ err: msg }, 'node refresh failed');
+        promErrors.push(msg);
       }
     }
+    const prometheusOk = promErrors.length === 0;
+    reportPrometheus({ ok: prometheusOk, error: promErrors[0] });
 
     const { nodes, seen, overallHealth, unmatched, containerCount } = assembleServices({
       nodeResults,
@@ -397,6 +437,7 @@ async function _refreshServices() {
       lastSeenContainerOf: (id) => serviceRegistry.getLastSeenContainer(id),
       containerRegistry,
       now: Date.now,
+      presenceKnown: prometheusOk,
     });
 
     // Remember where each running, monitored service lives (and which container
@@ -412,7 +453,11 @@ async function _refreshServices() {
 
     // overallHealth is server-computed once (above) and shipped in the payload so
     // BOTH frontends' global dots read one truth (web NavBar + mobile Overview).
-    const result = { nodes, overallHealth };
+    // `sources` says whether each upstream answered this cycle (#232): the push
+    // snapshot keeps its last state for one that didn't, so a failed poll is not
+    // read as every host or service going down.
+    const sources = { prometheus: { ok: prometheusOk }, kuma: { ok: kuma.ok } };
+    const result = { nodes, overallHealth, sources };
     setCache('services', result);
 
     // Record this cycle's usage into the ring buffer so the UI can draw a
@@ -440,9 +485,15 @@ export async function refreshUPS() {
   return dedupe('ups', _refreshUPS);
 }
 
+/**
+ * The payload is `{ status, charge, runtime, load, ok }`. A value is null when
+ * Prometheus has no series for it (no UPS) or its query failed; `ok` is false
+ * when any query failed (#232), so the push snapshot keeps the last UPS state
+ * instead of reading the failure as "unknown". A Prometheus outage is logged by
+ * the services refresh, which queries the same Prometheus every cycle.
+ */
 async function _refreshUPS() {
   try {
-    const url = process.env.PROMETHEUS_URL || 'http://localhost:9090';
     const queryMap = {
       status: 'nut_status{ups="apcups"}',
       charge: 'nut_battery_charge{ups="apcups"}',
@@ -450,33 +501,26 @@ async function _refreshUPS() {
       load: 'nut_load{ups="apcups"}',
     };
     const keys = Object.keys(queryMap);
-    const responses = await Promise.all(
-      keys.map((k) =>
-        safeFetch(`${url}/api/v1/query?query=${encodeURIComponent(queryMap[k])}`)
-          .then((r) => r.json())
-          .then((d) =>
-            d?.data?.result?.[0]?.value?.[1] != null ? parseFloat(d.data.result[0].value[1]) : null
-          )
-          .catch(() => null)
-      )
-    );
+    const settled = await Promise.allSettled(keys.map((k) => promQuery(queryMap[k])));
 
     const results = {};
-    let found = false;
+    let ok = true;
     keys.forEach((k, i) => {
-      let val = responses[i];
-      if (val !== null) {
-        found = true;
-        if (k === 'charge' || k === 'load') val = val * 100;
+      let val = null;
+      if (settled[i].status === 'fulfilled') {
+        const raw = settled[i].value[0]?.value?.[1];
+        val = raw != null ? parseFloat(raw) : null;
+        if (val !== null && (k === 'charge' || k === 'load')) val = val * 100;
+      } else {
+        ok = false;
       }
       results[k] = val;
     });
-    if (!found) {
-      results.status = null;
-      results.charge = null;
-      results.runtime = null;
-      results.load = null;
+    if (!ok) {
+      const failed = settled.find((r) => r.status === 'rejected');
+      log.debug({ err: failed.reason }, 'UPS read failed');
     }
+    results.ok = ok;
     setCache('ups', results);
     return results;
   } catch (err) {
@@ -682,7 +726,7 @@ async function runBackgroundRefresh() {
     // tokens. Self-contained — it can NEVER reject (see runPushCycle), so it
     // cannot flip `ok` or break the loop. No-ops when push is disabled.
     await runPushCycle({
-      buildSnapshotFn: buildSnapshot,
+      buildSnapshotFn: (prev) => buildSnapshot(liveCaches, prev),
       store: getPushStore(),
       fcm,
       snapshot: pushSnapshot,

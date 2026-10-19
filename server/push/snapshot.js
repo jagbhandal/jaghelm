@@ -12,6 +12,12 @@
  *
  * Normalization law: anything unrecognized => "unknown" (services/cron),
  * "unknown" ups, or reachable:false (hosts). "unknown" never produces an event.
+ *
+ * Failed sources (#232): a payload says whether its upstream answered this
+ * cycle (services: `sources.prometheus.ok` / `sources.kuma.ok`; ups: `ok`). A
+ * source that failed has nothing to say about what it watches, so the part of
+ * the snapshot it feeds is kept from the previous snapshot (see buildSnapshot)
+ * rather than read as every host, service or the UPS going away.
  */
 
 // At top of file (after header comment), for the default production seam only.
@@ -128,9 +134,11 @@ export function buildCron(cronStatuses, nowMs = null) {
 
 /**
  * Project the cached /api/services node metrics into the snapshot hosts map.
- * A node is `reachable` iff at least one of its three metrics parses finite;
- * an all-null/absent-metrics node is treated as unreachable (per the
- * normalization law). Metrics are 0..1 fractions.
+ * A node's `reachable` is the payload's own (Prometheus' `up` for the node)
+ * when it is a boolean. Without one (no `up` series carries the node's label,
+ * or an older payload) a node is reachable iff at least one of its three
+ * metrics parses finite; an all-null/absent-metrics node is treated as
+ * unreachable (per the normalization law). Metrics are 0..1 fractions.
  */
 export function buildHosts(servicesCache) {
   const nodes = servicesCache?.nodes;
@@ -139,7 +147,10 @@ export function buildHosts(servicesCache) {
   for (const [node, data] of Object.entries(nodes)) {
     const m = data?.metrics || {};
     const hasMetric = (v) => Number.isFinite(typeof v === 'number' ? v : parseFloat(v));
-    const reachable = hasMetric(m.cpu) || hasMetric(m.memPercent) || hasMetric(m.diskPercent);
+    const reachable =
+      typeof data?.reachable === 'boolean'
+        ? data.reachable
+        : hasMetric(m.cpu) || hasMetric(m.memPercent) || hasMetric(m.diskPercent);
     entries.push([
       node,
       {
@@ -158,9 +169,36 @@ export function buildUps(upsCache) {
   return { state: normalizeUpsStatus(upsCache?.status) };
 }
 
+/**
+ * Which upstreams answered this cycle, from the flags their payloads carry. A
+ * payload without a flag (cold cache, an older payload) counts as answered.
+ */
+export function sourcesOk(servicesCache, upsCache) {
+  return {
+    prometheus: servicesCache?.sources?.prometheus?.ok !== false,
+    kuma: servicesCache?.sources?.kuma?.ok !== false,
+    ups: upsCache?.ok !== false,
+  };
+}
+
+/**
+ * The services map to diff, given which sources answered. Kuma sets every
+ * service status that can page (a container's own status is only ever `up`), so
+ * while it fails the previous map is kept whole. While Prometheus fails, the
+ * running-container list is incomplete: a service missing from this cycle keeps
+ * its previous status, and one present (a Kuma outage card) takes this cycle's,
+ * so Kuma keeps paging through a Prometheus outage and a recovery during it is
+ * still sent once the container is seen again.
+ */
+function keepServices(prev, services, ok) {
+  if (!ok.kuma) return prev.services ?? {};
+  if (!ok.prometheus) return sortedObject(Object.entries({ ...(prev.services ?? {}), ...services }));
+  return services;
+}
+
 // Default seam: real warm caches + cron store. Kept thin so production wiring
 // is parameterless; every test injects fakes instead.
-const _defaultCaches = {
+export const liveCaches = {
   getCached,
   getAllCronStatuses: getAllStatuses,
   now: () => Date.now(),
@@ -168,19 +206,31 @@ const _defaultCaches = {
 
 /**
  * Build the canonical, byte-deterministic Snapshot from the warm caches.
- * PURE given its injected `caches`. The four top-level keys are emitted in a
- * fixed order; every sub-map is ascending-sorted by key.
+ * PURE given its injected `caches` and `prev`. The four top-level keys are
+ * emitted in a fixed order; every sub-map is ascending-sorted by key.
+ *
+ * `prev` is the snapshot the result will be diffed against. For a source that
+ * failed this cycle (sourcesOk) the part it feeds is kept from `prev`: hosts
+ * and, as keepServices describes, services while Prometheus fails; services
+ * while Kuma fails; the UPS state while its read fails. Cron is pushed to
+ * JagHelm and has no upstream to fail. With no `prev` (the baseline) this
+ * cycle's values are all there is.
  *
  * @param {{ getCached: (key: string) => *, getAllCronStatuses: () => *, now?: () => number }} [caches]
+ * @param {object|null} [prev]
  */
-export function buildSnapshot(caches = _defaultCaches) {
+export function buildSnapshot(caches = liveCaches, prev = null) {
   const servicesCache = caches.getCached('services');
   const upsCache = caches.getCached('ups');
   const cronStatuses = caches.getAllCronStatuses();
+  const ok = sourcesOk(servicesCache, upsCache);
+  const services = buildServices(servicesCache);
+  const hosts = buildHosts(servicesCache);
+  const ups = buildUps(upsCache);
   return {
-    services: buildServices(servicesCache),
-    hosts: buildHosts(servicesCache),
-    ups: buildUps(upsCache),
+    services: prev ? keepServices(prev, services, ok) : services,
+    hosts: prev && !ok.prometheus ? (prev.hosts ?? {}) : hosts,
+    ups: prev && !ok.ups ? (prev.ups ?? { state: 'unknown' }) : ups,
     cron: buildCron(cronStatuses, typeof caches.now === 'function' ? caches.now() : null),
   };
 }

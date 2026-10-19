@@ -18,7 +18,7 @@ function fakeRegistry(missing = []) {
   return { recordSeen() {}, getMissing() { return missing; } };
 }
 
-function run({ nodeResults, monitors, lastSeen = {}, lastSeenContainer = {}, containerRegistry = null, now = () => 0, config = { services: {} } }) {
+function run({ nodeResults, monitors, lastSeen = {}, lastSeenContainer = {}, containerRegistry = null, now = () => 0, config = { services: {} }, presenceKnown }) {
   return assembleServices({
     nodeResults,
     monitors,
@@ -27,6 +27,7 @@ function run({ nodeResults, monitors, lastSeen = {}, lastSeenContainer = {}, con
     lastSeenContainerOf: (id) => lastSeenContainer[String(id)] ?? null,
     containerRegistry,
     now,
+    presenceKnown,
   });
 }
 
@@ -357,4 +358,37 @@ test('assemble: a monitor matched on two nodes is in seen[] once, so the service
     }
     assert.deepEqual(perCycle, [1, 0, 0, 0, 0]);
   } finally { if (existsSync(path)) rmSync(path); }
+});
+
+// ---- #232: a failed Prometheus poll draws no breadcrumbs ----
+
+test('assemble: with presence unknown (a Prometheus query failed) no breadcrumb is drawn', () => {
+  const missing = [{ container: 'postgres', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 }];
+  const args = {
+    nodeResults: [['vm103', nodeCfg, nodeData([])]],
+    monitors: { 7: { id: 7, name: 'Radarr', status: 'down', active: true } },
+    lastSeen: { 7: 'vm103' },
+    lastSeenContainer: { 7: 'radarr' },
+    containerRegistry: fakeRegistry(missing),
+  };
+  const unknown = run({ ...args, presenceKnown: false });
+  assert.equal(unknown.breadcrumbCount, 0);
+  assert.deepEqual(
+    unknown.nodes.vm103.services.map((s) => `${s.uid} ${s.status}`),
+    ['vm103:radarr down'],
+    'Kuma outage cards still drawn'
+  );
+  assert.equal(run(args).breadcrumbCount, 1, 'presence known (the default): drawn as before');
+});
+
+test('assemble: each node carries reachable from discovery, null when it has none', () => {
+  const { nodes } = run({
+    nodeResults: [
+      ['a', nodeCfg, { ...nodeData([]), reachable: true }],
+      ['b', nodeCfg, { ...nodeData([]), reachable: false }],
+      ['c', nodeCfg, nodeData([])],
+    ],
+    monitors: {},
+  });
+  assert.deepEqual([nodes.a.reachable, nodes.b.reachable, nodes.c.reachable], [true, false, null]);
 });
