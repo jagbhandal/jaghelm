@@ -14,6 +14,12 @@ the sign-off amendments in §15).
 - **Accents:** [`src/ui/accents.js`](../src/ui/accents.js) is the one list of
   accents: Violet (default), Fuchsia and Cyan. `tokens.css`, the contrast check
   and this page follow it, and a test fails when any of them disagrees.
+- **Typefaces:** [`src/ui/typefaces.js`](../src/ui/typefaces.js) is the one list
+  of faces: Manrope (default), Plus Jakarta Sans and Montserrat, and JetBrains
+  Mono. [`src/ui/fonts.css`](../src/ui/fonts.css) self-hosts them from
+  `src/fonts/`, `tokens.css` switches them, and this page lists them
+  ([Type](#type)); `scripts/fonts.test.mjs` fails when any of them, or a font
+  file, disagrees.
 - **Contrast:** [`scripts/ui-contrast.mjs`](../scripts/ui-contrast.mjs) checks every
   pairing below in both themes and all three accents, on sRGB and Display P3
   screens, each accent's hover against its rest state, and each accent against
@@ -59,7 +65,8 @@ the sign-off amendments in §15).
    utility reads one (a test checks both). Tailwind's default palette, type
    sizes, font families, radii, shadows, text shadows and blurs are cleared,
    so `bg-red-500`, `text-sm`, `font-serif`, `shadow-md`, `text-shadow-sm` and
-   `backdrop-blur` produce nothing.
+   `backdrop-blur` produce nothing, and a test fails on any class in `src/ui/`
+   that compiles to nothing (`scripts/ui-stack.test.mjs`).
 5. **Text sits only where its contrast was checked** (the pairings below). On
    a violet fill use `text-on-accent`; on a status fill use that status's
    `on-solid`. Status words may sit in hovered and selected rows. `text-3` is
@@ -81,6 +88,7 @@ popovers and menus render outside their parent):
 | `data-theme` | `light` | dark |
 | `data-accent` | `fuchsia`, `cyan` | violet |
 | `data-density` | `compact` | comfortable |
+| `data-typeface` | `plus-jakarta-sans`, `montserrat` | manrope |
 
 The `dark:` variant applies inside any root without `data-theme="light"`. Don't
 nest roots of different themes. "System" (follow the device) is Settings'
@@ -215,9 +223,42 @@ cut into warn and crit lamps, the panel colour), `scrim`, and the shadows below.
 
 ### Type
 
-Families are tokens by name only (`font-sans`, `font-mono`); #284 self-hosts
-Manrope (default), Plus Jakarta Sans and Montserrat, and JetBrains Mono for
-hostnames, SHAs, paths and code. Sizes are px, as `text-<step>`:
+**Faces.** Self-hosted, never from a CDN or Google Fonts (#244, #284). Each is
+the variable latin subset Google Fonts serves, under the SIL Open Font License
+1.1; the files and their licences are in `src/fonts/`. `data-typeface` picks
+the sans face (Settings → Appearance, #321); there is one monospace face.
+
+| Face | `data-typeface` | Weights | Use |
+| --- | --- | --- | --- |
+| Manrope (default) | none | 200–800 | all text: `font-sans`, which the root sets |
+| Plus Jakarta Sans | `plus-jakarta-sans` | 200–800 | all text, when picked |
+| Montserrat | `montserrat` | 100–900 | all text, when picked (Arcane's face: offered, never the default) |
+| JetBrains Mono | none | 400–800 | hostnames, SHAs, paths and code only: `font-mono`, and `code`, `kbd`, `samp` and `pre` |
+
+- **Only what a screen uses downloads.** A browser fetches a face when text
+  renders in it: the picked sans face, and JetBrains Mono once a screen shows
+  mono text. Nothing is preloaded, so a face nobody picked never downloads.
+  `font-display: swap` shows the system face until the file arrives, and
+  characters outside the latin subset always use it.
+- **Budget: fonts on first load ≤ 60 KB** for the default setup. Manrope
+  (24.3 KB) and JetBrains Mono (30.7 KB) come to 55.0 KB, 57.1 KB on the wire
+  with JagHelm's response headers, and a test fails when the files pass 60 KB.
+  Plus Jakarta Sans is 26.7 KB and Montserrat 37.1 KB. Until Phase 1 replaces
+  them, today's screens load their own three files first (98.3 KB, the same
+  files Google Fonts served them); the new UI shares JetBrains Mono's.
+- **Use the families by role** (`font-sans`, `font-mono`), never by name.
+  `font-mono` turns off JetBrains Mono's programming ligatures, as the mock
+  does, so a hostname or a SHA reads character by character.
+- **Tabular figures everywhere.** The root sets `font-variant-numeric:
+  tabular-nums`, as the mock does, so values line up in rows, tiles and meters
+  without a class. The utilities are Tailwind's: `proportional-nums` opts a run
+  of prose out, `tabular-nums` opts back in.
+- **Smoothing.** The root sets the mock's grayscale smoothing
+  (`-webkit-font-smoothing: antialiased`, `-moz-osx-font-smoothing:
+  grayscale`) and `text-rendering: optimizeLegibility`.
+
+**Scale.** Sizes are px, as `text-<step>`; a step sets its size, line height
+and, where listed, weight and tracking (a weight utility overrides it):
 
 | Step | Size / line | Weight | Use |
 | --- | --- | --- | --- |
@@ -225,14 +266,36 @@ hostnames, SHAs, paths and code. Sizes are px, as `text-<step>`:
 | `caption` | 12/16 | | timestamps, hints |
 | `body-sm` | 13/18 | | rows, controls |
 | `body` | 14/20 | | the default (the root sets it) |
+| `title-xs` | 15/20 | 700 | panel and card titles, node names, the healthy overview's line |
 | `title-sm` | 16/22 | 700 | entity names |
-| `title` | 20/26 | 700 | section titles |
+| `title` | 20/26 | 700 | section titles, drawer titles |
 | `headline` | 24/30, -0.015em | 700 | the overview's status sentence |
 | `display` | 28/32, -0.02em | 800 | page titles |
 | `metric` | 24/28 | 700 | values |
 | `metric-lg` | 32/36 | 700 | headline values |
 
-Nothing is smaller than 12px except the 11px uppercase overline.
+Nothing is smaller than 12px except the 11px uppercase overline. The Large text
+size (#321) is a setting on the root, not a step.
+
+**Sizes the mock draws off the scale** map onto it (#284). The mock uses 15px
+titles in two dozen places, so they got a step (`title-xs`); the others are
+one-offs:
+
+| Mock | Where | Step |
+| --- | --- | --- |
+| 10px, 800 | app chip initials (20 and 22px chips), the phone tab bar's count badge | `overline` (11/16), `font-extrabold` |
+| 10.5px | overline labels on meters, palette result kinds, the phone's subsystem labels | `overline` |
+| 14/18, 700 | the phone's subsystem values | `body` (14/20), `font-bold` |
+| 15px, 700 | panel and card titles in Settings, node names, the healthy overview's line, the header's status word | `title-xs` |
+| 15px | the command palette's search field | `title-xs`, `font-normal` |
+| 15.5/22 | body text at the Large text size (the mock's `ts-large`) | not a step: the text-size setting (#321) |
+| 17px, 800 | the phone header's wordmark | `title-sm` (16/22), `font-extrabold` |
+| 18/24, 700 | subsystem strip values | `title-sm` (16/22) |
+| 18/24, 700 | the "won't open inside JagHelm" dialog's title | `title` (20/26) |
+| 22/28, 800 | the phone's status word | `headline` (24/30), as on desktop |
+| 22/28, 800 | the phone drawer's title | `title` (20/26), as the desktop drawer's |
+| 26/30, 700 | the typeface picker's "Aa" samples | `headline` (24/30) |
+| 26/32, 700 | the settings map's page title | `display` (28/32) |
 
 ### Shape, space, elevation, layering, motion
 
@@ -283,6 +346,13 @@ mock first.
   switches and accents tables above. A test fails until all of them agree, and
   the check fails if any of its colours sits within ΔE OK 0.05 of a status
   colour.
+- A new typeface goes into `src/ui/typefaces.js`, its woff2 into `src/fonts/`
+  with its licence in `src/fonts/licences/`, an `@font-face` into
+  `src/ui/fonts.css`, a `data-typeface` block into `tokens.css` (and its id in
+  that file's header), and a row in the switches and typefaces tables above.
+  `scripts/fonts.test.mjs` fails until all of them agree with each other and
+  with the file (its weights and style), and if the default face and the mono
+  go over 60 KB.
 - A new colour role needs a utility in `tailwind.css`'s `@theme` block, and its
   pairings in `PAIRINGS` in `scripts/ui-contrast.mjs`. A plausible pairing
   that fails and that the mock never draws goes in `FORBIDDEN` instead, and in

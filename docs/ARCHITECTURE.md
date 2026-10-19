@@ -116,10 +116,13 @@ src/                        React 19 SPA (Vite 8)
   views/DashboardView/       grid + panels + useDashboardData (304-stable) + per-source health
   views/SettingsView.jsx     13-tab settings shell + collapsible live preview
   styles/global.css          today's themes (10) + their tokens + component styles
-  styles/legacy.css          imports global.css into the `legacy` cascade layer (see 5.1)
+  styles/fonts.css           today's fonts, self-hosted: the files Google Fonts served (see 5.1)
+  styles/legacy.css          imports global.css and fonts.css into the `legacy` cascade layer
+  fonts/                     every woff2 the web app ships (latin subsets) and their OFL licences
   ui/                        the redesign's component library, shared with Android (see 5.1):
                              tailwind.css (the stack's stylesheet), tokens.css (the design
                              tokens, docs/design-system.md), accents.js (the accents offered),
+                             typefaces.js (the faces offered), fonts.css (their @font-face),
                              preflight.css (generated),
                              shadcn/ui components (button.jsx, a stock placeholder until #285),
                              lib/utils.js
@@ -357,9 +360,51 @@ matched to nothing or to something else now), and then goes under the
 monitor's name.
 
 Such a card, of a monitor no container has ("Pi Gateway (Ping)", "NAS (Ping)"),
-exists only while the monitor is down, and the push differ compares the
-statuses of cards in the new snapshot only. So the monitor sends a down push,
-but no recovery push when its card goes away.
+exists only while the monitor is down: up, it draws nothing on the board. The
+push snapshot still has it (#390). Every active monitor no running container
+got, up or down, is placed in one pass by `placeMonitor` (`refresh.js`), so its
+uid does not depend on its status while its last container isn't in the
+stopped list (#395). A down one is the red card. The uid of an up one goes in
+`upWithoutCard`, which the services refresh keeps beside the cached
+`/api/services` payload, not in it: it is for push only, so it is not served
+and does not change the ETag. `buildServices` (`push/snapshot.js`) reads it as
+`up` unless a card on the board has that uid. A grey presence breadcrumb does
+not count: placement skips every other card's uid, so only a breadcrumb can
+share it, normally the one the monitor's own stopped container leaves while the
+monitor is up, and a recovery within `JAGHELM_PRESENCE_TTL_MS` of that
+container stopping is sent rather than lost. So the monitor sends
+`service_down`, then `service_recovered` on the same id. A paused monitor
+(stale heartbeat, or `active: false`) and one Kuma no longer has are in
+neither, so they send nothing. The entries come from Kuma, so the source
+failure rules above apply to them: while Kuma fails, the whole services map is
+held. While Prometheus fails with the container list missing, a monitored
+container's monitor is unclaimed too, so up it is an entry under its card's
+uid, and a recovery during the outage is sent when Kuma reports it. Only when
+no node could be read at all is nothing placed; the recovery then waits for
+the container to be seen again.
+
+A monitor feeds one key of the push snapshot a cycle: the card of the running
+container that has it, else its own uid. When a container takes it (one appears
+whose name matches), its own key leaves the snapshot without an event and the
+container's card starts with no previous status. When that container goes, the
+service registry remembers it, so the monitor's own uid is the container's from
+then on. The snapshot has no monitor identity, so when the key moves while the
+monitor is down, the snapshot loses track of the outage. These cases are left
+for #395:
+
+- A new container takes a down monitor: `service_down` is sent again, on the
+  container's card, for an outage already pushed under the old key.
+- A different container takes the monitor in the cycle it recovers (nextcloud
+  stops, the monitor goes down, nextcloud-app comes up healthy): the
+  container's card starts at `up`, so nothing is sent, including the
+  `service_recovered` the key of its down push was waiting for. Taking a
+  monitor that was already up sends nothing, which is right.
+- Two monitors remember the same container (left by the old matcher). When the
+  one earlier in the order drops out (a Kuma Pending retry, a pause, a
+  container claiming it), the other, if down, moves onto the container's uid
+  and sends a second `service_down` there. When the first comes back, the
+  other moves back: a false `service_recovered` on the container's uid, and
+  another `service_down` under its own name. No such pair exists live.
 
 The service registry's `seen` list has one record per monitor, the last node in
 the pass for one mapped explicitly to a container on several nodes. A record is
@@ -538,8 +583,12 @@ flowchart TD
   (arrow move / Shift+arrow resize, with a live region) reposition them.
 - **Data fetching.** `useDashboardData` holds a **304-stable identity contract**:
   on an unchanged poll `fetchJson` returns the same reference and `setState`
-  bails via `Object.is`, so an all-304 tick triggers zero re-renders. Per-source
-  health (error / stale / retry) is derived at render without per-tick state.
+  bails via `Object.is`, so an all-304 tick triggers zero re-renders. It stores
+  a response's ETag and body together, only once the body has parsed, so the
+  `If-None-Match` it sends always describes the body a 304 hands back; a 200
+  with an empty, malformed or cut-off body fails and keeps the last good pair.
+  Per-source health (error / stale / retry) is derived at render without
+  per-tick state.
 - **Polling.** `App.jsx` drives one tick per refresh interval (30 s by default),
   and only while the dashboard is on screen: a hidden browser tab, Settings or an
   iframe tab pauses it, and returning refreshes every source at once. The board
@@ -589,8 +638,8 @@ stack sits beside today's CSS and must not restyle it.
 
 - **Toolchain.** Tailwind CSS v4 compiles at build time through `@tailwindcss/vite`
   in `vite.config.js` and `mobile/vite.config.mobile.js`, into each app's one
-  hashed stylesheet. Nothing is injected at runtime or loaded from a CDN, so the
-  CSP is unchanged. shadcn/ui is set up in `components.json`: JSX (no
+  hashed stylesheet. Nothing is injected at runtime or loaded from a CDN.
+  shadcn/ui is set up in `components.json`: JSX (no
   TypeScript), the Base UI primitives (style `base-nova`), and the `@ui` alias for
   `src/ui/` (`tsconfig.json` `paths`, so `npx shadcn add <name>` writes
   `src/ui/<name>.jsx`). Components import `cn` from the `cn` package, as the shadcn
@@ -605,7 +654,7 @@ stack sits beside today's CSS and must not restyle it.
 - **Cascade layers.** The order is `legacy, properties, theme, base, components,
   utilities`, declared at the top of every entry stylesheet. Each app's
   `styles/legacy.css` imports today's stylesheets into `legacy`, the lowest layer
-  (web: `global.css`; Android: `MobileApp.css`, `Login.css`, `global.css` and
+  (web: `global.css` and `fonts.css`; Android: `MobileApp.css`, `Login.css`, `global.css` and
   `fonts.css`, in the order the bundle had them). The new stack's rules therefore
   win wherever both style an element: without this, `global.css`'s unlayered
   `* { margin: 0; padding: 0 }` would beat every spacing utility. Components do not
@@ -638,9 +687,9 @@ stack sits beside today's CSS and must not restyle it.
 - **Tokens.** JagHelm's design tokens are in `src/ui/tokens.css`, from the
   signed-off mock: a palette of OKLCH ramps, the roles components use, and a few
   component tokens, in dark and light, with three accents (Violet, Fuchsia,
-  Cyan; `src/ui/accents.js` is the one list) and two densities
-  switched by `data-theme`, `data-accent` and `data-density` on the `.jh-ui`
-  root. [design-system.md](design-system.md) lists them with the rules for using
+  Cyan; `src/ui/accents.js` is the one list), two densities and three
+  typefaces (`src/ui/typefaces.js`) switched by `data-theme`, `data-accent`,
+  `data-density` and `data-typeface` on the `.jh-ui` root. [design-system.md](design-system.md) lists them with the rules for using
   them, and `scripts/ui-contrast.mjs` checks every text/background pairing in
   every theme and accent against the spec's floors, as sRGB and Display P3
   screens paint them, that each accent's hover is visibly different from
@@ -667,10 +716,31 @@ stack sits beside today's CSS and must not restyle it.
   `tokens.css` and `tailwind.css`. Never add a `:root`, `html` or `body` rule or
   a `@theme` block without `reference`. `scripts/ui-stack.test.mjs` compiles the
   stack and fails on an unlayered rule, a root selector, a base rule outside
-  `@scope (.jh-ui)`, a `var()` read that `.jh-ui` doesn't declare, or the two
-  radius scales drifting apart.
+  `@scope (.jh-ui)`, a `var()` read that `.jh-ui` doesn't declare, the two
+  radius scales drifting apart, or a class in `src/ui/` that compiles to nothing
+  (with Tailwind's sizes cleared, `text-sm` would silently do so).
+- **Fonts are self-hosted** (#244, #284): no font or stylesheet comes from
+  another origin, and the server CSP allows fonts and styles from `'self'` only
+  (`server/index.test.js`). Every woff2 lives in `src/fonts/` with its OFL
+  licence, and Vite emits each as a hashed asset. Today's screens use
+  `src/styles/fonts.css`: the exact latin files Google Fonts served the default
+  Typography preset (Outfit, DM Sans, JetBrains Mono) and the Clean, Rounded and
+  Sharp presets, with Google's descriptors, so they render pixel for pixel as
+  before; `useThemeVars` no longer injects a Google stylesheet when a preset is
+  picked. The new UI's faces are in `src/ui/fonts.css` (Manrope by default, Plus
+  Jakarta Sans or Montserrat by `data-typeface`, JetBrains Mono), under family
+  names ending in "Variable" so they never join today's families; JetBrains
+  Mono's file is shared, so it downloads once. A browser downloads a face only
+  when text renders in it, and nothing is preloaded. `scripts/fonts.test.mjs`
+  checks that every `@font-face` matches its file and licence, that nothing
+  names Google Fonts or loads a font or stylesheet from elsewhere, and the new
+  UI's 60 KB budget; [design-system.md](design-system.md#type) has the faces and
+  the scale. The Android app keeps its own copies (`mobile/src/fonts/`) for
+  today's screens.
 - **When the old CSS is gone,** drop the `legacy` layer and the scoping: import
   Tailwind's own preflight, move the tokens to `:root` and drop `reference`.
+  Delete `src/styles/fonts.css` and every file in `src/fonts/` but the new UI's
+  four faces.
 
 ## 6. Data model
 
@@ -803,7 +873,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   counts (`doc-counts.test.mjs`), and the UI stack's separation from today's
   CSS and its reach into the Android build (`ui-stack.test.mjs`,
   `ui-preflight.test.mjs`), and the design tokens' shape and contrast
-  (`ui-tokens.test.mjs`, `ui-contrast.test.mjs`). Write new repo checks this way, not as shell
+  (`ui-tokens.test.mjs`, `ui-contrast.test.mjs`), and the fonts and type scale
+  (`fonts.test.mjs`). Write new repo checks this way, not as shell
   scripts: `npm test` only collects `*.test.{js,mjs,cjs}`.
 
 `npm test` preloads `scripts/test-data-dir.mjs`, which gives every test process

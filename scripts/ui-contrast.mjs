@@ -33,6 +33,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postcss from 'postcss';
 import { ACCENTS as ACCENT_LIST, DEFAULT_ACCENT } from '../src/ui/accents.js';
+import { DEFAULT_TYPEFACE } from '../src/ui/typefaces.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const TOKENS_FILE = path.join(ROOT, 'src/ui/tokens.css');
@@ -40,8 +41,14 @@ export const TOKENS_FILE = path.join(ROOT, 'src/ui/tokens.css');
 export const THEMES = ['dark', 'light'];
 /** Every accent's `data-accent` id, from the one list (src/ui/accents.js). */
 export const ACCENTS = ACCENT_LIST.map((a) => a.id);
-// The values a context takes when its element carries no attribute.
-const DEFAULTS = { theme: 'dark', accent: DEFAULT_ACCENT, density: 'comfortable' };
+// The values a context takes when its element carries no attribute. The
+// typeface sets no colour; it is here so the reader knows the switch.
+const DEFAULTS = {
+  theme: 'dark',
+  accent: DEFAULT_ACCENT,
+  density: 'comfortable',
+  typeface: DEFAULT_TYPEFACE,
+};
 
 /** Minimum contrast per rule (spec §5.2). */
 export const RULES = {
@@ -342,7 +349,7 @@ export function parseColor(value) {
 
 // ---- Reading the tokens ------------------------------------------------------
 
-const SELECTOR = /^\.jh-ui((?:\[data-(?:theme|accent|density)=(['"])[a-z]+\2\])*)$/;
+const SELECTOR = /^\.jh-ui((?:\[data-(?:theme|accent|density|typeface)=(['"])[a-z-]+\2\])*)$/;
 
 /**
  * The token rules of a stylesheet: [{ attrs, specificity, order, decls }].
@@ -362,7 +369,7 @@ export function readTokens(css) {
       const m = selector.trim().match(SELECTOR);
       if (!m) throw new Error(`token selector the contrast check doesn't understand: ${selector}`);
       const attrs = Object.fromEntries(
-        [...m[1].matchAll(/\[data-(\w+)=['"]([a-z]+)['"]\]/g)].map(([, k, v]) => [k, v])
+        [...m[1].matchAll(/\[data-(\w+)=['"]([a-z-]+)['"]\]/g)].map(([, k, v]) => [k, v])
       );
       const decls = {};
       rule.walkDecls(/^--/, (d) => (decls[d.prop] = d.value));
