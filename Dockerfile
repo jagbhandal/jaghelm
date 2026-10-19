@@ -35,21 +35,25 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 # ─── Node binary ──────────────────────────────────────────────────────────
-# The binary alone, in a directory stamped with the binary's own mtime. Copying
-# a single file would stamp /usr/local/bin with the build time, making the
-# 127 MB layer different in every build; copying this directory keeps the
-# layer byte-identical for a given pair of digests, so image versions share it
-# on the host and in the registry, as they shared the Node image's layers.
+# The binary and Node's LICENSE (its MIT licence and the notices of what it
+# bundles: OpenSSL, ICU, V8 and more; the image is public, so they ship with
+# it), in directories stamped with the binary's own mtime. Copying single files
+# would stamp /usr/local/bin with the build time, making the 127 MB layer
+# different in every build; copying this tree keeps the layer byte-identical for
+# a given pair of digests and builder, so image versions share it on the host
+# and in the registry, as they shared the Node image's layers.
 FROM node-base AS node-bin
 RUN mkdir -p /node/bin \
     && cp -p /usr/local/bin/node /node/bin/node \
-    && touch -r /usr/local/bin/node /node/bin
+    && cp -p /usr/local/LICENSE /node/LICENSE \
+    && touch -r /usr/local/bin/node /node/bin /node
 
 # ─── Runtime stage ────────────────────────────────────────────────────────
 FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
-# The Node binary first, straight onto the Alpine layer (see above).
-COPY --from=node-bin /node/bin/ /usr/local/bin/
+# The Node binary and its LICENSE first, straight onto the Alpine layer (see
+# above): /usr/local/bin/node and /usr/local/LICENSE, as in the Node image.
+COPY --from=node-bin /node/ /usr/local/
 
 # One layer for the system setup:
 #   - refuse an Alpine release other than the Node image's (see the top);

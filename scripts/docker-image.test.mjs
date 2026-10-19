@@ -98,6 +98,18 @@ test('the runtime stage starts from Alpine pinned by digest, not the Node image 
   assert.match(runtime.from, /^alpine:[\d.]+@sha256:[0-9a-f]{64}$/);
 });
 
+test("the runtime image ships Node's LICENSE (MIT plus its bundled notices) with the binary", () => {
+  const nodeBin = stages.find((s) => s.name === 'node-bin');
+  assert.ok(nodeBin, 'no node-bin stage');
+  const run = nodeBin.lines.filter((l) => /^RUN\b/.test(l)).join('\n');
+  assert.match(run, /cp -p \/usr\/local\/bin\/node \/node\/bin\/node/);
+  assert.match(run, /cp -p \/usr\/local\/LICENSE \/node\/LICENSE/);
+  assert.ok(
+    runtime.lines.includes('COPY --from=node-bin /node/ /usr/local/'),
+    'the runtime stage must copy the node-bin tree (bin/node and LICENSE) into /usr/local/'
+  );
+});
+
 test('every base image in the Dockerfile is pinned by digest', () => {
   const external = stages.map((s) => s.from).filter((f) => !stages.some((s) => s.name === f));
   for (const from of external) assert.match(from, /@sha256:[0-9a-f]{64}$/, from);

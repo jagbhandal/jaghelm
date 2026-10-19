@@ -7,7 +7,7 @@ All notable changes to JagHelm are documented here. The format is based on
 ## [Unreleased]
 
 ### Changed
-- The server image is smaller: 235 MB unpacked instead of 270 MB, and 69 MB to pull instead of 75 MB. It now runs on plain Alpine with only the Node binary taken from the Node image, so npm, npx, yarn and corepack are no longer in it (the server and its health check only ever run `node`), and the image build fails if one comes back. The Arcane dry run (`scripts/arcane-poll-once.js`) is left out of the image too; it runs from a checkout, as `docs/arcane/SETUP.md` describes.
+- The server image is smaller: 235 MB unpacked instead of 270 MB, and 69 MB to pull instead of 75 MB. It now runs on plain Alpine with only the Node binary and its licence notices taken from the Node image, so npm, npx, yarn and corepack are no longer in it (the server and its health check only ever run `node`), and the image build fails if one comes back. Dropping npm also drops the 13 fixable high and critical findings in the packages it bundles, so they leave Arcane's weekly vulnerability digest for JagHelm's image too; the 2 left are in Alpine's `libssl3` and `libcrypto3` (there before too), which Node doesn't use, since it carries its own OpenSSL. The Arcane dry run (`scripts/arcane-poll-once.js`) is left out of the image too; it runs from a checkout, as `docs/arcane/SETUP.md` describes.
 
 ### Removed
 - The server no longer serves `/dashboard.jpg` and `/settings.jpg`, two README screenshots that nothing in the app uses. They moved to `docs/images/`.
