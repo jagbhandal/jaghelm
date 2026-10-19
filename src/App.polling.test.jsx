@@ -18,6 +18,8 @@ const TICK_MS = 30_000;
 
 let requests;
 let health;
+let nodes;
+let failing; // paths the stub answers with HTTP 503
 
 function respond(body) {
   return Promise.resolve({
@@ -32,15 +34,21 @@ function respond(body) {
 function stubServer() {
   requests = [];
   health = 'up';
+  nodes = {};
+  failing = new Set();
   vi.stubGlobal(
     'fetch',
     vi.fn((url) => {
       const path = String(url).split('?')[0];
       requests.push(path);
+      if (failing.has(path))
+        return Promise.resolve({ ok: false, status: 503, headers: { get: () => null } });
       if (path === '/api/auth/check') return respond({ authRequired: false, authenticated: true });
-      if (path === '/api/services') return respond({ nodes: {}, overallHealth: health });
-      if (path === '/api/weather') return respond({ current: { temperature_2m: 60, weather_code: 0 } });
-      if (['/api/todos', '/api/gitea/activity', '/api/cron/status'].includes(path)) return respond([]);
+      if (path === '/api/services') return respond({ nodes, overallHealth: health });
+      if (path === '/api/weather')
+        return respond({ current: { temperature_2m: 60, weather_code: 0 } });
+      if (['/api/todos', '/api/gitea/activity', '/api/cron/status'].includes(path))
+        return respond([]);
       return respond({});
     })
   );
@@ -57,6 +65,7 @@ async function advance(ms) {
 const take = () => requests.splice(0);
 const count = (list, path) => list.filter((p) => p === path).length;
 const healthLabel = () => document.querySelector('.nav-health-label');
+const updatedLabel = () => document.querySelector('.nav-updated');
 
 function setHidden(hidden) {
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
@@ -170,6 +179,17 @@ describe('dashboard polling — paused when nobody is looking', () => {
     expect(healthLabel()).toHaveTextContent('Service Disruption');
   });
 
+  it('restarts the "Updated" clock on return', async () => {
+    await renderApp();
+    setHidden(true);
+    await advance(5 * TICK_MS);
+    expect(updatedLabel()).toHaveTextContent('Updated 2m ago');
+
+    setHidden(false);
+    await advance(0);
+    expect(updatedLabel()).toHaveTextContent('Updated just now');
+  });
+
   it('loads the Settings live preview once when shown, and never polls it', async () => {
     await renderApp();
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
@@ -201,5 +221,39 @@ describe('dashboard polling — paused when nobody is looking', () => {
     await advance(0);
     const back = take();
     for (const path of DASHBOARD_SOURCES) expect(count(back, path), path).toBe(1);
+  });
+});
+
+describe('dashboard polling — stale notes', () => {
+  // The cron panel's error banner; the page-level live region repeats its text.
+  const cronBanner = () =>
+    [...document.querySelectorAll('.degraded-banner')].find((b) =>
+      /Job history unavailable/.test(b.textContent)
+    );
+  // One tick per act(), so React renders each tick (one act batches them all).
+  const ticks = async (n) => {
+    for (let i = 0; i < n; i++) await advance(TICK_MS);
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('flags the cron panel stale after 2 missed cron polls (3 minutes), not 1 minute', async () => {
+    // A node and a measurable width, so the grid (and its cron panel) renders.
+    nodes = { pve: { display_name: 'PVE', services: [] } };
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1280);
+    await renderApp(); // cron last succeeded at load
+    failing.add('/api/cron/status');
+
+    // ~2.5 minutes on: cron has failed twice (it polls every third tick), and is
+    // past a 1-minute threshold but inside its own 3-minute one.
+    await ticks(5);
+    expect(cronBanner()).toBeTruthy();
+    expect(cronBanner().querySelector('.degraded-banner-stale')).toBeNull();
+
+    // ~3.5 minutes on: past 2 cron poll periods.
+    await ticks(2);
+    expect(cronBanner()).toHaveTextContent('updated 3m ago');
   });
 });
