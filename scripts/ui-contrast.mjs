@@ -1,16 +1,18 @@
 // Contrast check for JagHelm's design tokens (src/ui/tokens.css, #283).
 //
 // Every text/background pairing the design system allows (PAIRINGS) is computed
-// in both themes and with all five accents, and must meet the spec's floor
-// (RULES, spec §5.2): text-1 7:1; text-2, text-3, on-accent, accent-text, status
-// fg and on-solid 4.5:1; the focus ring 3:1 against the surface around it.
-// Pairings ruled out by name (FORBIDDEN) may never be declared. Each accent's
-// hover must also differ visibly from its rest state (HOVER_MIN_DE).
+// in both themes and with every accent (src/ui/accents.js), and must meet the
+// spec's floor (RULES, spec §5.2): text-1 7:1; text-2, text-3, on-accent,
+// accent-text, status fg and on-solid 4.5:1; the focus ring 3:1 against the
+// surface around it. Pairings ruled out by name (FORBIDDEN) may never be
+// declared. Each accent's hover must also differ visibly from its rest state
+// (HOVER_MIN_DE), and no accent may read as a status colour (STATUS_MIN_DE).
 //
 //   node scripts/ui-contrast.mjs [tokens.css]
-//     prints the lowest ratio per rule on sRGB and on Display P3 screens, and
-//     fails (exit 1) on any pairing below its floor on either, or on a hover too
-//     close to its rest state. The file defaults to src/ui/tokens.css.
+//     prints the lowest ratio per rule on sRGB and on Display P3 screens and
+//     each accent's nearest status colour, and fails (exit 1) on any pairing
+//     below its floor on either, on a hover too close to its rest state, or on
+//     an accent too close to a status. The file defaults to src/ui/tokens.css.
 //
 // scripts/ui-contrast.test.mjs runs the same check in `npm test`.
 //
@@ -30,14 +32,16 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postcss from 'postcss';
+import { ACCENTS as ACCENT_LIST, DEFAULT_ACCENT } from '../src/ui/accents.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const TOKENS_FILE = path.join(ROOT, 'src/ui/tokens.css');
 
 export const THEMES = ['dark', 'light'];
-export const ACCENTS = ['violet', 'indigo', 'blue', 'fuchsia', 'graphite'];
+/** Every accent's `data-accent` id, from the one list (src/ui/accents.js). */
+export const ACCENTS = ACCENT_LIST.map((a) => a.id);
 // The values a context takes when its element carries no attribute.
-const DEFAULTS = { theme: 'dark', accent: 'violet', density: 'comfortable' };
+const DEFAULTS = { theme: 'dark', accent: DEFAULT_ACCENT, density: 'comfortable' };
 
 /** Minimum contrast per rule (spec §5.2). */
 export const RULES = {
@@ -132,6 +136,20 @@ const samePairing = (a, b) => a.fg === b.fg && a.bg === b.bg && (a.over ?? '') =
  * below it a primary button gives no hover feedback.
  */
 export const HOVER_MIN_DE = 0.02;
+
+/**
+ * An accent must never read as a status colour (docs/design-system.md, rule 2;
+ * Jag, 2026-10-19). Each colour an accent paints a mark with (ACCENT_MARKS: the
+ * button at rest and hovered, a link, a meter, the focus ring) must sit at
+ * least STATUS_MIN_DE, in ΔE OK, from every status colour (STATUS_MARKS: each
+ * status's lamp or bar, `solid`, and its word, `fg`) in the same theme, as
+ * either screen paints them. Blue (0.021 from maintenance), Indigo (0.037 in
+ * light) and Graphite (0.018, its meter on the "no signal" ring) were dropped
+ * for falling under it.
+ */
+export const STATUS_MIN_DE = 0.05;
+export const ACCENT_MARKS = ['accent', 'accent-hover', 'accent-text', 'meter', 'focus-ring'];
+export const STATUS_MARKS = STATUSES.flatMap((s) => [`${s}-solid`, `${s}-fg`]);
 
 // ---- Colour maths (CSS Color 4) ---------------------------------------------
 
@@ -474,6 +492,47 @@ export function checkHover(css = readFileSync(TOKENS_FILE, 'utf8')) {
   return { results, failures: results.filter((r) => !r.pass) };
 }
 
+/**
+ * Each accent's marks against each status colour, in every theme, as each
+ * screen paints them: { results, failures }. A result fails below
+ * STATUS_MIN_DE. `accents` defaults to every accent offered; a test passes
+ * the dropped ones to show the rule catches them.
+ */
+export function checkAccentStatus(css = readFileSync(TOKENS_FILE, 'utf8'), accents = ACCENTS) {
+  const { rules } = readTokens(css);
+  const results = accents.flatMap((accent) =>
+    THEMES.flatMap((theme) => {
+      const props = resolveContext(rules, { theme, accent });
+      const opaque = (name) => {
+        const { lch, alpha } = tokenColor(props, name);
+        if (alpha < 1) throw new Error(`--jh-${name} must be opaque to compare it with a status`);
+        return lch;
+      };
+      return ACCENT_MARKS.flatMap((mark) =>
+        STATUS_MARKS.map((status) => {
+          const de = Math.min(
+            ...Object.keys(SPACE).map((m) =>
+              deltaEOK(paintedOklab(opaque(mark), m), paintedOklab(opaque(status), m))
+            )
+          );
+          return { theme, accent, mark, status, de, pass: de >= STATUS_MIN_DE };
+        })
+      );
+    })
+  );
+  return { results, failures: results.filter((r) => !r.pass) };
+}
+
+/** The closest accent-to-status pair for each accent in each theme. */
+export function nearestStatus({ results }) {
+  const nearest = new Map();
+  for (const r of results) {
+    const key = `${r.theme} ${r.accent}`;
+    if (!nearest.has(key) || r.de < nearest.get(key).de) nearest.set(key, r);
+  }
+  return [...nearest.values()];
+}
+
 /** A ratio to 2 decimals, never rounded up to a floor it misses (4.4999 is 4.49). */
 export const formatRatio = (ratio, floor) =>
   `${(ratio < floor ? Math.floor(ratio * 100) / 100 : ratio).toFixed(2)}:1`;
@@ -488,8 +547,8 @@ export const describe = (r) =>
     .join(', ') +
   `, needs ${r.min}:1`;
 
-/** Markdown: the lowest ratio per rule on each screen, ruled-out pairings, and hovers. */
-export function report({ results, failures }, { ruledOut = [], hover } = {}) {
+/** Markdown: the lowest ratio per rule on each screen, ruled-out pairings, hovers and status distance. */
+export function report({ results, failures }, { ruledOut = [], hover, status } = {}) {
   const lines = [
     '| Rule | Floor | Lowest, sRGB | Where | Lowest, Display P3 | Where |',
     '| --- | --- | --- | --- | --- | --- |',
@@ -524,6 +583,21 @@ export function report({ results, failures }, { ruledOut = [], hover } = {}) {
       );
     }
   }
+  if (status) {
+    lines.push(
+      '',
+      `Accent against status, nearest per accent (needs ΔE OK ${STATUS_MIN_DE}): ` +
+        `${status.failures.length} too close.`
+    );
+    for (const n of nearestStatus(status)) {
+      lines.push(`- ${n.accent}, ${n.theme}: ${n.de.toFixed(3)} (${n.mark} vs ${n.status})`);
+    }
+    for (const f of status.failures) {
+      lines.push(
+        `- FAIL ${f.mark} vs ${f.status} (${f.theme}, ${f.accent}): ΔE OK ${f.de.toFixed(3)}`
+      );
+    }
+  }
   return lines.join('\n');
 }
 
@@ -532,6 +606,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const css = readFileSync(file, 'utf8');
   const result = checkContrast(css);
   const hover = checkHover(css);
-  console.log(report(result, { ruledOut: checkRuledOut(css), hover }));
-  if (result.failures.length || hover.failures.length) process.exitCode = 1;
+  const status = checkAccentStatus(css);
+  console.log(report(result, { ruledOut: checkRuledOut(css), hover, status }));
+  if (result.failures.length || hover.failures.length || status.failures.length) {
+    process.exitCode = 1;
+  }
 }

@@ -2,8 +2,9 @@
  * JagHelm's design tokens (#283): the values Jag signed off in the overview mock
  * (2026-10-19), spec §5.2, §5.3 and §15. docs/design-system.md lists them with
  * the rules for using them. scripts/ui-contrast.mjs checks every text and
- * background pairing in both themes and all five accents, on sRGB and Display
- * P3 screens, and that each hover is visibly different from rest (npm test).
+ * background pairing in both themes and all three accents, on sRGB and Display
+ * P3 screens, that each hover is visibly different from rest, and that no
+ * accent reads as a status colour (npm test).
  *
  * Three layers, all on .jh-ui and never on :root while today's CSS lives (it
  * owns --bg, --accent, --border, --text-* there). The --jh- prefix keeps them
@@ -17,7 +18,8 @@
  *
  * Switches, on the element that carries .jh-ui (and on every portal root):
  *   data-theme="light"                           dark is the default
- *   data-accent="indigo|blue|fuchsia|graphite"   violet is the default
+ *   data-accent="fuchsia|cyan"                   violet is the default
+ *                                                (src/ui/accents.js lists them)
  *   data-density="compact"                       comfortable is the default
  *
  * The contrast check reads this file as CSS does: by specificity, then order.
@@ -100,7 +102,7 @@
   --jh-text-disabled: var(--jh-graphite-500);
 
   /* Accent: interactive or selected (§5.2, §15). Each data-accent block below
-     sets the same eight; on-accent is shared by all five. */
+     sets the same eight; on-accent is shared by all three. */
   --jh-accent: var(--jh-violet-541);
   --jh-accent-hover: var(--jh-violet-575);
   --jh-on-accent: var(--jh-violet-969);
@@ -281,58 +283,19 @@
 }
 
 /*
- * ---- The four other accents (Settings → Appearance, §15) ----------------
+ * ---- The other two accents (Settings → Appearance, §15) ----------------
+ * src/ui/accents.js lists every accent; each but violet has a block here.
  * Each accent sets the same eight roles in both themes, and its light block
  * sets every role its dark block does (scripts/ui-tokens.test.mjs), so the
- * result never depends on block order. None is a status hue (Blue's hue 255 is
- * close to maintenance's, and is Jag's call: docs/design-system.md, rule 2).
- * In dark, Blue and Fuchsia darken on hover: lightened enough to see, their
- * label would drop below 4.5:1.
+ * result never depends on block order. None reads as a status colour: each
+ * mark (button, hover, link, meter, focus ring) stays at least ΔE OK 0.05
+ * from every status lamp, bar and word (docs/design-system.md, rule 2), which
+ * is why Blue, Indigo and Graphite are gone. Fuchsia darkens on hover in dark,
+ * where lightened enough to see its label would drop below 4.5:1. Cyan (hue
+ * 215, between ok's 163 and maintenance's 254) is not in the mock: its chroma
+ * is close to sRGB's limit to keep it off the steel and blue status colours,
+ * and every value is inside sRGB, so every screen paints it alike.
  */
-
-.jh-ui[data-accent='indigo'] {
-  --jh-accent: oklch(0.52 0.22 270);
-  --jh-accent-hover: oklch(0.555 0.21 270);
-  --jh-accent-text: oklch(0.79 0.11 270);
-  --jh-accent-tint: oklch(0.52 0.22 270 / 0.16);
-  --jh-accent-border: oklch(0.6 0.2 270 / 0.38);
-  --jh-focus-ring: oklch(0.62 0.2 270);
-  --jh-row-hover: oklch(0.52 0.22 270 / 0.07);
-  --jh-meter: oklch(0.68 0.15 270);
-}
-
-.jh-ui[data-theme='light'][data-accent='indigo'] {
-  --jh-accent: oklch(0.52 0.22 270);
-  --jh-accent-hover: oklch(0.48 0.21 270);
-  --jh-accent-text: oklch(0.47 0.2 270);
-  --jh-accent-tint: oklch(0.52 0.22 270 / 0.09);
-  --jh-accent-border: oklch(0.52 0.22 270 / 0.32);
-  --jh-focus-ring: oklch(0.52 0.22 270);
-  --jh-row-hover: oklch(0.52 0.22 270 / 0.05);
-  --jh-meter: oklch(0.56 0.19 270);
-}
-
-.jh-ui[data-accent='blue'] {
-  --jh-accent: oklch(0.53 0.19 255);
-  --jh-accent-hover: oklch(0.49 0.18 255);
-  --jh-accent-text: oklch(0.8 0.1 255);
-  --jh-accent-tint: oklch(0.53 0.19 255 / 0.16);
-  --jh-accent-border: oklch(0.62 0.17 255 / 0.38);
-  --jh-focus-ring: oklch(0.64 0.17 255);
-  --jh-row-hover: oklch(0.53 0.19 255 / 0.07);
-  --jh-meter: oklch(0.7 0.13 255);
-}
-
-.jh-ui[data-theme='light'][data-accent='blue'] {
-  --jh-accent: oklch(0.53 0.19 255);
-  --jh-accent-hover: oklch(0.49 0.18 255);
-  --jh-accent-text: oklch(0.47 0.17 255);
-  --jh-accent-tint: oklch(0.53 0.19 255 / 0.09);
-  --jh-accent-border: oklch(0.53 0.19 255 / 0.32);
-  --jh-focus-ring: oklch(0.53 0.19 255);
-  --jh-row-hover: oklch(0.53 0.19 255 / 0.05);
-  --jh-meter: oklch(0.57 0.17 255);
-}
 
 .jh-ui[data-accent='fuchsia'] {
   --jh-accent: oklch(0.56 0.23 328);
@@ -356,24 +319,24 @@
   --jh-meter: oklch(0.57 0.2 328);
 }
 
-.jh-ui[data-accent='graphite'] {
-  --jh-accent: oklch(0.5 0.025 286);
-  --jh-accent-hover: oklch(0.545 0.025 286);
-  --jh-accent-text: oklch(0.85 0.02 286);
-  --jh-accent-tint: oklch(0.8 0.02 286 / 0.12);
-  --jh-accent-border: oklch(0.7 0.02 286 / 0.38);
-  --jh-focus-ring: oklch(0.75 0.02 286);
-  --jh-row-hover: oklch(0.8 0.02 286 / 0.05);
-  --jh-meter: oklch(0.72 0.02 286);
+.jh-ui[data-accent='cyan'] {
+  --jh-accent: oklch(0.52 0.09 215);
+  --jh-accent-hover: oklch(0.48 0.084 215);
+  --jh-accent-text: oklch(0.82 0.12 215);
+  --jh-accent-tint: oklch(0.52 0.09 215 / 0.16);
+  --jh-accent-border: oklch(0.62 0.1 215 / 0.38);
+  --jh-focus-ring: oklch(0.66 0.11 215);
+  --jh-row-hover: oklch(0.52 0.09 215 / 0.07);
+  --jh-meter: oklch(0.7 0.12 215);
 }
 
-.jh-ui[data-theme='light'][data-accent='graphite'] {
-  --jh-accent: oklch(0.38 0.02 286);
-  --jh-accent-hover: oklch(0.32 0.02 286);
-  --jh-accent-text: oklch(0.35 0.02 286);
-  --jh-accent-tint: oklch(0.38 0.02 286 / 0.08);
-  --jh-accent-border: oklch(0.38 0.02 286 / 0.3);
-  --jh-focus-ring: oklch(0.38 0.02 286);
-  --jh-row-hover: oklch(0.38 0.02 286 / 0.04);
-  --jh-meter: oklch(0.5 0.02 286);
+.jh-ui[data-theme='light'][data-accent='cyan'] {
+  --jh-accent: oklch(0.52 0.09 215);
+  --jh-accent-hover: oklch(0.48 0.084 215);
+  --jh-accent-text: oklch(0.48 0.083 215);
+  --jh-accent-tint: oklch(0.52 0.09 215 / 0.09);
+  --jh-accent-border: oklch(0.52 0.09 215 / 0.32);
+  --jh-focus-ring: oklch(0.52 0.09 215);
+  --jh-row-hover: oklch(0.52 0.09 215 / 0.05);
+  --jh-meter: oklch(0.57 0.1 215);
 }

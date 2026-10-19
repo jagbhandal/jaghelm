@@ -11,10 +11,14 @@ the sign-off amendments in §15).
   `.jh-ui`, prefixed `--jh-`.
 - **Utilities:** [`src/ui/tailwind.css`](../src/ui/tailwind.css) maps each role to a
   Tailwind utility (`bg-surface-1`, `text-text-2`, `text-crit-fg`).
+- **Accents:** [`src/ui/accents.js`](../src/ui/accents.js) is the one list of
+  accents: Violet (default), Fuchsia and Cyan. `tokens.css`, the contrast check
+  and this page follow it, and a test fails when any of them disagrees.
 - **Contrast:** [`scripts/ui-contrast.mjs`](../scripts/ui-contrast.mjs) checks every
-  pairing below in both themes and all five accents, on sRGB and Display P3
-  screens, and each accent's hover against its rest state, in `npm test`. Run
-  `node scripts/ui-contrast.mjs` to see the lowest ratio per rule on each screen.
+  pairing below in both themes and all three accents, on sRGB and Display P3
+  screens, each accent's hover against its rest state, and each accent against
+  the status colours, in `npm test`. Run `node scripts/ui-contrast.mjs` to see
+  the lowest ratio per rule on each screen and each accent's nearest status.
 - How the stack sits beside today's CSS: [ARCHITECTURE.md §5.1](ARCHITECTURE.md#51-ui-stack-tailwind-css-v4-shadcnui-lucide).
 
 ## The rules
@@ -36,11 +40,14 @@ the sign-off amendments in §15).
    tints section icon chips (`bg-accent-tint`, `text-accent-text`,
    `border-accent-border`) and fills meters below their threshold
    (`bg-meter`), as the mock shows (§15). It is never a status and never a
-   threshold colour. The other four accents follow the same rule. Blue is
-   the exception still open: at hue 255 it sits on maintenance's blue (hue
-   254–260), so a Blue link or meter reads like the word or bar for
-   Maintenance. Jag decides whether it stays before Settings offers accents
-   (#321).
+   threshold colour. The other two accents, Fuchsia and Cyan, follow the same
+   rule. **An accent must never read as a status colour: ΔE OK ≥ 0.05 from
+   every status colour in both themes.** Each colour an accent paints (the
+   button at rest and hovered, a link, a meter, the focus ring) is measured
+   against every status lamp, bar and word, and the check fails below 0.05
+   ("Accent against status", below). Blue, Indigo and Graphite were dropped
+   for this (Jag, 2026-10-19): Blue sat on maintenance's blue, Indigo nearly
+   did in light, and Graphite's meter was the "no signal" grey.
 3. **Status hues mean status only.** Green ok, amber warn, red crit, steel
    unknown, blue maintenance and info. Status is always a word, a colour and a
    shape together (filled disc, slashed disc, disc with a bar, hollow ring,
@@ -72,7 +79,7 @@ popovers and menus render outside their parent):
 | Attribute | Values | Default |
 | --- | --- | --- |
 | `data-theme` | `light` | dark |
-| `data-accent` | `indigo`, `blue`, `fuchsia`, `graphite` | violet |
+| `data-accent` | `fuchsia`, `cyan` | violet |
 | `data-density` | `compact` | comfortable |
 
 The `dark:` variant applies inside any root without `data-theme="light"`. Don't
@@ -102,7 +109,7 @@ draws them (`FORBIDDEN` in the script):
 | --- | --- | --- |
 | `text-3` on surface-3 | a chip or segmented-control track | 4.49:1 (light) |
 | `text-3` on accent-tint over sidebar | a selected nav item | 4.42:1 (light) |
-| `text-3` on accent-tint over surface-2 | a selected item in a popover or menu | 4.21:1 (dark, Graphite) |
+| `text-3` on accent-tint over surface-2 | a selected item in a popover or menu | 4.29:1 (light) |
 
 Contrast is WCAG 2's, computed from the OKLCH values as CSS Color 4 converts
 them, and compared unrounded (4.4999:1 fails 4.5:1; the report never rounds a
@@ -121,6 +128,16 @@ miss up to its floor). Every pairing must pass on two kinds of screen:
 least ΔE OK 0.02 (distance in OKLab, CSS Color 4's just-noticeable difference),
 as either screen paints them, so a primary button always shows that it is
 under the pointer. The check reports the closest pair.
+
+**Accent against status** (rule 2). Each of an accent's `accent`,
+`accent-hover`, `accent-text`, `meter` and `focus-ring` must sit at least ΔE OK
+0.05 from every status's `solid` (a lamp or bar) and `fg` (its word), in the
+same theme, as either screen paints them. 0.05 is two and a half times the
+just-noticeable difference: under it a link or meter reads as the status next
+to it. The dropped accents sat at 0.018 (Graphite's dark meter against the "no
+signal" ring), 0.021 (a light Blue hover against the word Maintenance) and
+0.037 (Indigo's light meter against a maintenance bar). The check reports each
+accent's nearest status colour; the accents table below lists them.
 
 ## Tokens
 
@@ -157,15 +174,20 @@ listed first.
 | `row-hover` | `hover:bg-row-hover` | a clickable row under the pointer |
 | `meter` | `bg-meter` | a meter below its threshold |
 
-The five accents (violet is the default). `on-accent` is violet-969 for all.
+The three accents, as `src/ui/accents.js` lists them. `on-accent` is violet-969
+for all. "Nearest status" is the smallest ΔE OK between any of the accent's
+colours and any status colour (rule 2; at least 0.05).
 
-| Accent | `accent`, dark | `accent`, light |
-| --- | --- | --- |
-| Violet | `oklch(0.541 0.281 293.009)` | same |
-| Indigo | `oklch(0.52 0.22 270)` | same |
-| Blue | `oklch(0.53 0.19 255)` | same |
-| Fuchsia | `oklch(0.56 0.23 328)` | `oklch(0.53 0.22 328)` |
-| Graphite | `oklch(0.5 0.025 286)` | `oklch(0.38 0.02 286)` |
+| Accent | `data-accent` | `accent`, dark | `accent`, light | Nearest status, dark / light |
+| --- | --- | --- | --- | --- |
+| Violet (default) | none | `oklch(0.541 0.281 293.009)` | same | 0.103 / 0.129 |
+| Fuchsia | `fuchsia` | `oklch(0.56 0.23 328)` | `oklch(0.53 0.22 328)` | 0.124 / 0.196 |
+| Cyan | `cyan` | `oklch(0.52 0.09 215)` | same | 0.095 / 0.064 |
+
+Violet's nearest is its dark link against the word Maintenance (in light, its
+meter against a maintenance bar); Fuchsia's is its link against the "no signal"
+word; Cyan's is its dark meter against the word Maintenance and, in light, its
+link against the "no signal" word.
 
 ### Status
 
@@ -256,30 +278,38 @@ mock first.
 - Edit `tokens.css`. Every token has its default on `.jh-ui` (dark, violet,
   comfortable); the switches only override. Each accent sets the same eight
   roles in its dark and light blocks.
+- A new accent goes into `src/ui/accents.js`, gets a dark and a light block in
+  `tokens.css` (and its value in that file's header), and a row in the
+  switches and accents tables above. A test fails until all of them agree, and
+  the check fails if any of its colours sits within ΔE OK 0.05 of a status
+  colour.
 - A new colour role needs a utility in `tailwind.css`'s `@theme` block, and its
   pairings in `PAIRINGS` in `scripts/ui-contrast.mjs`. A plausible pairing
   that fails and that the mock never draws goes in `FORBIDDEN` instead, and in
   rule 5 above. A new switch needs teaching to that script's reader, which
   refuses selectors it doesn't know.
 - `node scripts/ui-contrast.mjs` must report nothing below its floor on either
-  screen, and no hover too close to its rest state.
+  screen, no hover too close to its rest state, and no accent too close to a
+  status.
 
 Where the tokens differ from the mock, and why:
 
+- **Three accents, not five.** The mock offers Violet, Indigo, Blue, Fuchsia
+  and Graphite. Jag dropped Blue, Indigo and Graphite on 2026-10-19 because
+  they read as status colours (rule 2), and added Cyan (hue 215, between ok's
+  163 and maintenance's 254), which the mock doesn't have. Cyan's values were
+  tuned to pass every floor on both screens and to stay off the status
+  colours: its chroma is close to sRGB's limit, and every value is inside sRGB,
+  so every screen paints it alike.
 - **Hover on dark accents.** The mock lightens a primary button on hover. That
-  took the label below 4.5:1 for four accents (indigo 4.40:1, blue 3.57,
-  fuchsia 4.05, graphite 4.45), and violet's L 0.585 passed only on sRGB
+  took Fuchsia's label to 4.05:1, and violet's L 0.585 passed only on sRGB
   screens: clipping darkens it to 4.50:1, while a P3 screen shows it at 4.37:1.
-  - Violet, indigo and graphite still lighten, to the lightest L that keeps
-    4.5:1 on both screens: violet 0.575 (mock 0.585; 4.65:1 sRGB, 4.57:1 P3),
-    indigo 0.555 (0.565), graphite 0.545 (0.55).
-  - Blue and fuchsia darken instead, to L 0.49 (mock 0.605) and 0.52 (0.6). The
-    lightest hover that kept 4.5:1 sat only ΔE OK 0.015 and 0.014 from rest, a
-    hover nobody could see; darkened, they are 0.041 from rest at 5.76:1 and
-    5.69:1. The light theme already darkens every hover.
-- **Blue, dark.** The mock's dark blue (`oklch(0.56 0.19 255)`) carries its label
-  at 4.3:1; the dark theme uses the light theme's `oklch(0.53 0.19 255)`, and its
-  tint and row hover follow.
+  - Violet still lightens, to the lightest L that keeps 4.5:1 on both screens:
+    0.575 (mock 0.585; 4.65:1 sRGB, 4.57:1 P3).
+  - Fuchsia darkens instead, to L 0.52 (mock 0.6). The lightest hover that
+    kept 4.5:1 sat only ΔE OK 0.014 from rest, a hover nobody could see;
+    darkened, it is 0.041 from rest at 5.69:1. Cyan darkens in both themes, and
+    the light theme already darkens every hover.
 - **Radii off the scale.** The mock draws four radii that aren't on it. They map
   onto the scale: 5px (kbd) to `rounded-sm` 4; 7px (28px icon chips) and 9px
   (the helm mark) to `rounded-lg` 8; 10px (phone touch targets and inputs) to

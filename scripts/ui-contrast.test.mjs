@@ -2,7 +2,8 @@
 // colour maths against known values (sRGB and Display P3), every declared
 // pairing against its floor in both themes and all accents on both kinds of
 // screen, the pairings ruled out by name, each accent's hover against its rest
-// state, and that the check fails on a bad pairing.
+// state, every accent's distance from the status colours, and that the check
+// fails on a bad pairing.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -12,13 +13,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ACCENTS,
+  ACCENT_MARKS,
   FORBIDDEN,
   HOVER_MIN_DE,
   PAIRINGS,
   RULES,
   STATUSES,
+  STATUS_MARKS,
+  STATUS_MIN_DE,
   THEMES,
   TOKENS_FILE,
+  checkAccentStatus,
   checkContrast,
   checkHover,
   checkRuledOut,
@@ -27,6 +32,7 @@ import {
   describe,
   inGamut,
   luminance,
+  nearestStatus,
   oklchToP3,
   oklchToSrgb,
   pairContrast,
@@ -40,6 +46,41 @@ import {
 const SCRIPT = fileURLToPath(new URL('./ui-contrast.mjs', import.meta.url));
 const TOKENS = readFileSync(TOKENS_FILE, 'utf8');
 const near = (a, b, eps, msg) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} vs ${b}`);
+
+// The three accents Jag dropped on 2026-10-19, as the tokens had them (their
+// marks only): each read as a status colour somewhere.
+const DROPPED = `
+.jh-ui[data-accent='blue'] {
+  --jh-accent: oklch(0.53 0.19 255); --jh-accent-hover: oklch(0.49 0.18 255);
+  --jh-accent-text: oklch(0.8 0.1 255); --jh-focus-ring: oklch(0.64 0.17 255);
+  --jh-meter: oklch(0.7 0.13 255);
+}
+.jh-ui[data-theme='light'][data-accent='blue'] {
+  --jh-accent: oklch(0.53 0.19 255); --jh-accent-hover: oklch(0.49 0.18 255);
+  --jh-accent-text: oklch(0.47 0.17 255); --jh-focus-ring: oklch(0.53 0.19 255);
+  --jh-meter: oklch(0.57 0.17 255);
+}
+.jh-ui[data-accent='indigo'] {
+  --jh-accent: oklch(0.52 0.22 270); --jh-accent-hover: oklch(0.555 0.21 270);
+  --jh-accent-text: oklch(0.79 0.11 270); --jh-focus-ring: oklch(0.62 0.2 270);
+  --jh-meter: oklch(0.68 0.15 270);
+}
+.jh-ui[data-theme='light'][data-accent='indigo'] {
+  --jh-accent: oklch(0.52 0.22 270); --jh-accent-hover: oklch(0.48 0.21 270);
+  --jh-accent-text: oklch(0.47 0.2 270); --jh-focus-ring: oklch(0.52 0.22 270);
+  --jh-meter: oklch(0.56 0.19 270);
+}
+.jh-ui[data-accent='graphite'] {
+  --jh-accent: oklch(0.5 0.025 286); --jh-accent-hover: oklch(0.545 0.025 286);
+  --jh-accent-text: oklch(0.85 0.02 286); --jh-focus-ring: oklch(0.75 0.02 286);
+  --jh-meter: oklch(0.72 0.02 286);
+}
+.jh-ui[data-theme='light'][data-accent='graphite'] {
+  --jh-accent: oklch(0.38 0.02 286); --jh-accent-hover: oklch(0.32 0.02 286);
+  --jh-accent-text: oklch(0.35 0.02 286); --jh-focus-ring: oklch(0.38 0.02 286);
+  --jh-meter: oklch(0.5 0.02 286);
+}
+`;
 
 test('OKLCH converts to sRGB as CSS Color 4 does', () => {
   // CSS Color 4's own examples: sRGB red and green in OKLCH.
@@ -167,7 +208,7 @@ test('the floors are the spec’s (§5.2)', () => {
   }
 });
 
-test('every declared pairing meets its floor, in both themes and all five accents, on sRGB and P3', () => {
+test('every declared pairing meets its floor, in both themes and every accent, on sRGB and P3', () => {
   const { results, failures } = checkContrast(TOKENS);
   assert.equal(results.length, PAIRINGS.length * THEMES.length * ACCENTS.length);
   for (const r of results) {
@@ -191,9 +232,11 @@ test('pairings ruled out by name are never declared, and still fail somewhere', 
     // If tokens change so it passes everywhere, declare it instead of forbidding it.
     assert.equal(ruledOut[i].pass, false, `${describe(ruledOut[i])}: passes, declare it`);
   }
-  // The selected item in a popover or menu (review of #387): 4.21:1 at worst.
+  // The selected item in a popover or menu (review of #387): 4.29:1 at worst,
+  // light violet (4.21:1 with the dropped Graphite accent).
   const menu = ruledOut[FORBIDDEN.findIndex((f) => f.over === 'surface-2')];
-  near(menu.ratio, 4.21, 0.01, 'text-3 on accent-tint over surface-2');
+  near(menu.ratio, 4.29, 0.01, 'text-3 on accent-tint over surface-2');
+  assert.deepEqual([menu.theme, menu.accent], ['light', 'violet']);
 });
 
 test('every accent’s hover differs visibly from its rest state', () => {
@@ -205,12 +248,74 @@ test('every accent’s hover differs visibly from its rest state', () => {
     [],
     'these hovers are too close to their rest state:'
   );
-  // The lightest dark Blue hover that kept 4.5:1 was a hover nobody could see.
-  const faint = `${TOKENS}\n.jh-ui[data-accent='blue'] { --jh-accent-hover: oklch(0.545 0.18 255); }\n`;
+  // A hover a hair off its rest state is a hover nobody can see.
+  const faint = `${TOKENS}\n.jh-ui[data-accent='fuchsia'] { --jh-accent-hover: oklch(0.57 0.225 328); }\n`;
   assert.deepEqual(
     checkHover(faint).failures.map((f) => `${f.theme} ${f.accent}`),
-    ['dark blue']
+    ['dark fuchsia']
   );
+});
+
+test('no accent reads as a status colour: ΔE OK ≥ 0.05 from every lamp, bar and word, in both themes, on sRGB and P3', () => {
+  assert.equal(STATUS_MIN_DE, 0.05);
+  // Every mark an accent paints, against every status's lamp or bar and word.
+  assert.deepEqual(ACCENT_MARKS, ['accent', 'accent-hover', 'accent-text', 'meter', 'focus-ring']);
+  assert.deepEqual(
+    STATUS_MARKS,
+    STATUSES.flatMap((s) => [`${s}-solid`, `${s}-fg`])
+  );
+  const status = checkAccentStatus(TOKENS);
+  assert.equal(
+    status.results.length,
+    ACCENTS.length * THEMES.length * ACCENT_MARKS.length * STATUS_MARKS.length
+  );
+  assert.deepEqual(
+    status.failures.map(
+      (f) => `${f.mark} vs ${f.status} (${f.theme}, ${f.accent}): ${f.de.toFixed(3)}`
+    ),
+    [],
+    'these accent colours read as a status colour (docs/design-system.md, rule 2):'
+  );
+  // The nearest calls, as Jag saw them on 2026-10-19.
+  const nearest = Object.fromEntries(
+    nearestStatus(status).map((n) => [`${n.accent} ${n.theme}`, +n.de.toFixed(3)])
+  );
+  assert.deepEqual(nearest, {
+    'violet dark': 0.103,
+    'violet light': 0.129,
+    'fuchsia dark': 0.124,
+    'fuchsia light': 0.196,
+    'cyan dark': 0.095,
+    'cyan light': 0.064,
+  });
+});
+
+test('the status rule catches the accents it dropped: Blue, Indigo and Graphite', () => {
+  const dropped = ['blue', 'indigo', 'graphite'];
+  const { failures } = checkAccentStatus(`${TOKENS}\n${DROPPED}`, dropped);
+  const failing = new Set(failures.map((f) => `${f.accent} ${f.theme}`));
+  // Blue sits on maintenance in both themes; Indigo nearly does in light;
+  // Graphite's meter is the "no signal" grey.
+  assert.deepEqual([...failing].sort(), [
+    'blue dark',
+    'blue light',
+    'graphite dark',
+    'graphite light',
+    'indigo light',
+  ]);
+  const worst = (accent, theme) =>
+    failures
+      .filter((f) => f.accent === accent && f.theme === theme)
+      .reduce((a, b) => (b.de < a.de ? b : a));
+  const show = (f) => `${f.mark} vs ${f.status} ${f.de.toFixed(3)}`;
+  assert.equal(show(worst('blue', 'dark')), 'meter vs maintenance-solid 0.029');
+  assert.equal(show(worst('blue', 'light')), 'accent-hover vs maintenance-fg 0.021');
+  assert.equal(show(worst('indigo', 'light')), 'meter vs maintenance-solid 0.037');
+  assert.equal(show(worst('graphite', 'dark')), 'meter vs unknown-solid 0.018');
+  // And none of them is offered again.
+  for (const accent of dropped) {
+    assert.ok(!ACCENTS.includes(accent), `${accent} is offered again`);
+  }
 });
 
 test('the check fails on a deliberately bad pairing', async (t) => {
@@ -223,11 +328,11 @@ test('the check fails on a deliberately bad pairing', async (t) => {
   });
 
   await t.test('an accent too light for its label fails for that accent only', () => {
-    const bad = `${TOKENS}\n.jh-ui[data-accent='indigo'] { --jh-accent: oklch(0.72 0.14 270); }\n`;
+    const bad = `${TOKENS}\n.jh-ui[data-accent='cyan'] { --jh-accent: oklch(0.72 0.1 215); }\n`;
     const { failures } = checkContrast(bad);
     assert.ok(failures.some((f) => f.fg === 'on-accent' && f.bg === 'accent'));
     assert.ok(
-      failures.every((f) => f.accent === 'indigo' && f.theme === 'dark'),
+      failures.every((f) => f.accent === 'cyan' && f.theme === 'dark'),
       failures.map(describe).join('\n')
     );
   });
@@ -283,10 +388,19 @@ test('the check fails on a deliberately bad pairing', async (t) => {
       const hover = spawnSync(process.execPath, [SCRIPT, faint], { encoding: 'utf8' });
       assert.equal(hover.status, 1, hover.stderr);
       assert.match(hover.stdout, /FAIL accent-hover vs accent \(dark, fuchsia\)/);
+      // A Cyan meter in the "no signal" steel reads as a status.
+      const steel = path.join(dir, 'steel.css');
+      writeFileSync(
+        steel,
+        `${TOKENS}\n.jh-ui[data-accent='cyan'] { --jh-meter: oklch(0.72 0.03 250); }\n`
+      );
+      const status = spawnSync(process.execPath, [SCRIPT, steel], { encoding: 'utf8' });
+      assert.equal(status.status, 1, status.stderr);
+      assert.match(status.stdout, /FAIL meter vs unknown-solid \(dark, cyan\): ΔE OK 0\.000/);
       const good = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8' });
       assert.equal(good.status, 0, good.stdout + good.stderr);
       assert.match(good.stdout, /0 below their floor/);
-      assert.match(good.stdout, /0 too close/);
+      assert.match(good.stdout, /0 too close\.\n[\s\S]*Accent against status[^\n]*0 too close/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -296,11 +410,11 @@ test('the check fails on a deliberately bad pairing', async (t) => {
 test('the tokens are read the way CSS cascades them', () => {
   const { rules } = readTokens(TOKENS);
   const dark = resolveContext(rules, {});
-  const lightIndigo = resolveContext(rules, { theme: 'light', accent: 'indigo' });
+  const lightCyan = resolveContext(rules, { theme: 'light', accent: 'cyan' });
   assert.equal(dark['--jh-accent'], 'var(--jh-violet-541)');
-  // The light-and-indigo block (most specific) wins over both the light and indigo blocks.
-  assert.equal(lightIndigo['--jh-accent-text'], 'oklch(0.47 0.2 270)');
-  assert.equal(lightIndigo['--jh-text-1'], 'var(--jh-graphite-205)');
+  // The light-and-cyan block (most specific) wins over both the light and cyan blocks.
+  assert.equal(lightCyan['--jh-accent-text'], 'oklch(0.48 0.083 215)');
+  assert.equal(lightCyan['--jh-text-1'], 'var(--jh-graphite-205)');
   // A token that names another resolves through it, in the context's own values.
   assert.equal(dark['--jh-lamp-cut'], 'var(--jh-surface-1)');
   near(

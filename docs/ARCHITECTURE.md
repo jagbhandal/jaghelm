@@ -117,7 +117,8 @@ src/                        React 19 SPA (Vite 8)
   styles/legacy.css          imports global.css into the `legacy` cascade layer (see 5.1)
   ui/                        the redesign's component library, shared with Android (see 5.1):
                              tailwind.css (the stack's stylesheet), tokens.css (the design
-                             tokens, docs/design-system.md), preflight.css (generated),
+                             tokens, docs/design-system.md), accents.js (the accents offered),
+                             preflight.css (generated),
                              shadcn/ui components (button.jsx, a stock placeholder until #285),
                              lib/utils.js
 
@@ -520,13 +521,15 @@ stack sits beside today's CSS and must not restyle it.
   when a component first needs `not-sr-only`.
 - **Tokens.** JagHelm's design tokens are in `src/ui/tokens.css`, from the
   signed-off mock: a palette of OKLCH ramps, the roles components use, and a few
-  component tokens, in dark and light, with five accents and two densities
+  component tokens, in dark and light, with three accents (Violet, Fuchsia,
+  Cyan; `src/ui/accents.js` is the one list) and two densities
   switched by `data-theme`, `data-accent` and `data-density` on the `.jh-ui`
   root. [design-system.md](design-system.md) lists them with the rules for using
   them, and `scripts/ui-contrast.mjs` checks every text/background pairing in
   every theme and accent against the spec's floors, as sRGB and Display P3
-  screens paint them, and that each accent's hover is visibly different from
-  its rest state (`ui-contrast.test.mjs`).
+  screens paint them, that each accent's hover is visibly different from
+  its rest state, and that no accent colour sits within ΔE OK 0.05 of a status
+  colour (`ui-contrast.test.mjs`).
   They are custom properties on `.jh-ui`, prefixed `--jh-`, never on `:root`:
   today's CSS owns `--bg`, `--accent`, `--border`, `--card`, `--muted`,
   `--text-*`, `--font-mono`, `--font-body` and `--font-display` there and in the

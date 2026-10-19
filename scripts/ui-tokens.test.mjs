@@ -1,8 +1,10 @@
 // Guards the shape of JagHelm's design tokens (src/ui/tokens.css, #283) and how
-// tailwind.css offers them: every token in every theme and accent, the accent
-// values Jag signed off, roles (never the palette) as utilities, nothing of
-// Tailwind's defaults, blur, text shadow or gradient text left to reach for
-// (epic #333 rule 9), and no stock shadcn highlight (accent-foreground).
+// tailwind.css offers them: every token in every theme and accent, one accent
+// list (src/ui/accents.js) that tokens.css, the contrast check and
+// docs/design-system.md all follow, the accent values Jag signed off, roles
+// (never the palette) as utilities, nothing of Tailwind's defaults, blur, text
+// shadow or gradient text left to reach for (epic #333 rule 9), and no stock
+// shadcn highlight (accent-foreground).
 // scripts/ui-contrast.test.mjs checks their contrast.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,18 +18,23 @@ import {
   ACCENTS,
   STATUSES,
   TOKENS_FILE,
+  checkAccentStatus,
+  nearestStatus,
   parseColor,
   readTokens,
   resolveContext,
   tokenColor,
 } from './ui-contrast.mjs';
+import { ACCENTS as ACCENT_LIST, DEFAULT_ACCENT } from '../src/ui/accents.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const STACK = path.join(ROOT, 'src/ui/tailwind.css');
-const { rules, media } = readTokens(readFileSync(TOKENS_FILE, 'utf8'));
+const DOC = path.join(ROOT, 'docs/design-system.md');
+const TOKENS = readFileSync(TOKENS_FILE, 'utf8');
+const { rules, media } = readTokens(TOKENS);
 const base = rules.find((r) => r.selector === '.jh-ui');
 
-// What an accent sets; on-accent is shared by all five (the mock's).
+// What an accent sets; on-accent is shared by every accent (the mock's).
 const ACCENT_ROLES = [
   'accent',
   'accent-hover',
@@ -49,9 +56,58 @@ test('the default .jh-ui block declares every token, so each switch only overrid
   }
 });
 
+test('one accent list: tokens.css, the contrast check and the docs follow src/ui/accents.js', () => {
+  const ids = ACCENT_LIST.map((a) => a.id);
+  assert.equal(new Set(ids).size, ids.length, 'an accent is listed twice');
+  assert.equal(ids[0], DEFAULT_ACCENT, 'the default accent comes first');
+  for (const a of ACCENT_LIST) assert.match(a.id, /^[a-z]+$/, `${a.id}: a data-accent value`);
+  // The contrast check reads the list, so it covers every accent offered.
+  assert.deepEqual(ACCENTS, ids);
+  const others = ids.filter((id) => id !== DEFAULT_ACCENT);
+  // tokens.css: a block per accent but the default (the next test checks them),
+  // and the switch its header documents.
+  const blocks = new Set(rules.filter((r) => r.attrs.accent).map((r) => r.attrs.accent));
+  assert.deepEqual([...blocks].sort(), [...others].sort(), 'tokens.css data-accent blocks');
+  const header = TOKENS.match(/data-accent="([a-z|]+)"/);
+  assert.deepEqual(header?.[1].split('|'), others, "tokens.css header's data-accent values");
+  // docs/design-system.md: the switches table, and the accents table with each
+  // accent's nearest status colour as the check measures it.
+  const doc = readFileSync(DOC, 'utf8');
+  const sw = doc.match(/^\| `data-accent` \| (.+?) \| (\w+) \|$/m);
+  assert.ok(sw, 'design-system.md has no data-accent row in its switches table');
+  assert.deepEqual(
+    [...sw[1].matchAll(/`([a-z]+)`/g)].map((m) => m[1]),
+    others
+  );
+  assert.equal(sw[2], DEFAULT_ACCENT);
+  const head =
+    '| Accent | `data-accent` | `accent`, dark | `accent`, light | Nearest status, dark / light |';
+  const lines = doc.split('\n');
+  const at = lines.indexOf(head);
+  assert.ok(at >= 0, `design-system.md has no accents table headed ${head}`);
+  const end = lines.findIndex((l, i) => i > at && !l.startsWith('|'));
+  const cells = (l) =>
+    l
+      .split('|')
+      .slice(1, -1)
+      .map((c) => c.trim());
+  const rows = lines.slice(at + 2, end).map(cells);
+  const nearest = nearestStatus(checkAccentStatus(TOKENS));
+  const de = (id, theme) => nearest.find((n) => n.accent === id && n.theme === theme).de.toFixed(3);
+  assert.deepEqual(
+    rows.map(([label, attr, , , dist]) => [label, attr, dist]),
+    ACCENT_LIST.map(({ id, label }) => [
+      id === DEFAULT_ACCENT ? `${label} (default)` : label,
+      id === DEFAULT_ACCENT ? 'none' : `\`${id}\``,
+      `${de(id, 'dark')} / ${de(id, 'light')}`,
+    ]),
+    "design-system.md's accents table"
+  );
+});
+
 test('each accent sets the same roles in both themes, and the check covers every accent', () => {
   const accents = new Set(rules.filter((r) => r.attrs.accent).map((r) => r.attrs.accent));
-  assert.deepEqual([...accents].sort(), ACCENTS.filter((a) => a !== 'violet').sort());
+  assert.deepEqual([...accents].sort(), ACCENTS.filter((a) => a !== DEFAULT_ACCENT).sort());
   for (const accent of accents) {
     const dark = rules.find((r) => r.attrs.accent === accent && !r.attrs.theme);
     const light = rules.find((r) => r.attrs.accent === accent && r.attrs.theme === 'light');
