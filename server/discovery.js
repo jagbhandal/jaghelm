@@ -18,7 +18,7 @@
 import { createLogger } from './util/logger.js';
 import { safeFetch } from './httpClient.js';
 import { positiveNum } from './util/env.js';
-import { NOT_HELPER, isHelperSeries } from './util/helperContainers.js';
+import { NOT_HELPER, NOT_JOB, isHelperSeries, isJobContainer } from './util/helperContainers.js';
 
 const log = createLogger('discovery');
 
@@ -356,7 +356,7 @@ function buildContainers(s) {
   const containerMap = new Map();
   const allResults = [...s.seen, ...s.cpu, ...s.mem, ...s.rx, ...s.tx, ...s.rxTotal, ...s.txTotal];
   for (const r of allResults) {
-    if (isHelperSeries(r)) continue;
+    if (isHelperSeries(r) || isJobContainer(r.metric?.name)) continue;
     const name = r.metric?.name;
     if (name && !staleNames.has(name) && !containerMap.has(name)) {
       containerMap.set(name, {
@@ -459,7 +459,8 @@ export async function getNodesData(nodeLabels) {
     });
 
   const n = nodeMatcher(labels);
-  const c = `${n},name!="",${NOT_HELPER}`;
+  // Arcane's helpers and CI job containers are no services (helperContainers.js).
+  const c = `${n},name!="",${NOT_HELPER},${NOT_JOB}`;
   // Network readings come per interface: buildContainers() needs every
   // interface to tell a host-network container, and sums the others itself.
   const perInterface = (expr) => `sum by (node, name, interface) (${expr})`;

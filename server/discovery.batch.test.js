@@ -207,7 +207,7 @@ test('RX/TX: a rate summed over the container\'s own interfaces, and the old cou
     assert.equal(c.docker.txMB, parseFloat((sum(tx, (s) => s.value) / MiB).toFixed(1)), `${name} txMB`);
   }
   assert.ok(mock.queries.includes(
-    'sum by (node, name, interface) (rate(container_network_receive_bytes_total{node=~"pi1|pi2|vm1|vm2|nas1|pve1",name!="",container_label_com_getarcaneapp_internal_resource!="true"}[5m]))'
+    'sum by (node, name, interface) (rate(container_network_receive_bytes_total{node=~"pi1|pi2|vm1|vm2|nas1|pve1",name!="",container_label_com_getarcaneapp_internal_resource!="true",name!~"GITEA-ACTIONS-TASK-.+"}[5m]))'
   ));
 });
 

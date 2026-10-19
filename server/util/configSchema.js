@@ -12,10 +12,26 @@ import { z } from 'zod';
 
 const DEFAULT_MAX_BYTES = 512 * 1024;
 
+// A container's monitor mapping (#240): a Kuma monitor's name, or false for no
+// monitor at all; null (or no key) leaves the container to name matching.
+const monitorMapping = z.union([z.string(), z.literal(false), z.null()]);
+
+// One entry under `services:`, keyed by container name. Only the monitor
+// mapping is checked; display_name, icon and any other key pass through. A
+// `monitor_per_node` key that is no node is not refused here: the refresh loop
+// warns once about it (monitors.js checkMonitorMappings).
+const serviceOverrideSchema = z
+  .object({
+    monitor: monitorMapping.optional(),
+    monitor_per_node: z.record(z.string(), monitorMapping).optional(),
+  })
+  .passthrough()
+  .nullable();
+
 export const servicesConfigSchema = z
   .object({
     nodes: z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).optional(),
-    services: z.record(z.string(), z.unknown()).optional(),
+    services: z.record(z.string(), serviceOverrideSchema).optional(),
     integrations: z.record(z.string(), z.unknown()).optional(),
     // No `links` rule: services.yaml has no links (they live in display-config.json).
     // Files generated before #265 carry a `links` object, which must still save;

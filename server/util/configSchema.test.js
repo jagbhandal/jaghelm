@@ -75,3 +75,44 @@ test('accepts the links object a pre-#265 generated services.yaml carries, still
   assert.equal(r.ok, false);
   assert.match(r.error, /Unsafe URL/);
 });
+
+// #240: the monitor mapping of a container, `monitor` and `monitor_per_node`.
+test('services: a monitor mapping is a monitor name, false, or null', () => {
+  const ok = validateConfig(servicesConfigSchema, {
+    nodes: { pi1: {}, pi2: {}, vm103: {} },
+    services: {
+      'gateway-npm': { display_name: 'NPM', monitor_per_node: { pi1: 'NPM Pi Primary', pi2: 'NPM Pi Secondary' } },
+      vaultwarden: { monitor_per_node: { vm103: 'Vaultwarden' } },
+      'gateway-tunnel': { monitor: false },
+      dockge: { monitor: 'Dockge', monitor_per_node: { vm101: 'Dockge (Staging)', pi1: false, pi2: null } },
+      gitea: { monitor: null, icon: 'gitea', futureKey: 1 },
+      empty: null,
+    },
+  });
+  assert.equal(ok.ok, true, ok.error);
+  assert.equal(ok.data.services.gitea.futureKey, 1, 'other keys pass through');
+  assert.deepEqual(ok.data.services['gateway-npm'].monitor_per_node, { pi1: 'NPM Pi Primary', pi2: 'NPM Pi Secondary' });
+});
+
+test('services: a wrong-typed monitor mapping is refused, naming where', () => {
+  for (const [entry, where] of [
+    [{ monitor: true }, 'services.x.monitor'],
+    [{ monitor: 7 }, 'services.x.monitor'],
+    [{ monitor_per_node: ['pi1'] }, 'services.x.monitor_per_node'],
+    [{ monitor_per_node: 'pi1' }, 'services.x.monitor_per_node'],
+    [{ monitor_per_node: { pi1: { name: 'NPM' } } }, 'services.x.monitor_per_node.pi1'],
+  ]) {
+    const r = validateConfig(servicesConfigSchema, { services: { x: entry } });
+    assert.equal(r.ok, false, JSON.stringify(entry));
+    assert.equal(r.status, 400);
+    assert.match(r.error, new RegExp(`at ${where.replace(/\./g, '\\.')}`), r.error);
+  }
+});
+
+test('services: an unknown node key in monitor_per_node is saved (the refresh loop warns)', () => {
+  const r = validateConfig(servicesConfigSchema, {
+    nodes: { pi1: {} },
+    services: { 'gateway-npm': { monitor_per_node: { pi3: 'NPM Pi Secondary' } } },
+  });
+  assert.equal(r.ok, true);
+});

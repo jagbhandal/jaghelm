@@ -9,7 +9,7 @@
  *   - monitor_uptime_ratio      uptime over a sliding window; we take window="1d"
  *
  * This yields the SAME monitor-map shape the status-page fetch produces, so every
- * downstream consumer (matchMonitor, assembleServices, selectOutageMonitors) is
+ * downstream consumer (assignMonitors, assembleServices, selectOutageMonitors) is
  * untouched. Paused monitors are simply absent from `/metrics` (Kuma stops their
  * metrics), so `active`/`lastBeatAt` aren't needed to tell paused from down — we
  * still set `active:true, lastBeatAt:null` to satisfy the shared shape (the

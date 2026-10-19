@@ -19,8 +19,10 @@ import { getNodesData, promQuery, NODE_READS } from './discovery.js';
 import { recordSamples } from './history.js';
 import {
   fetchMonitors,
-  matchMonitor,
+  assignMonitors,
+  checkMonitorMappings,
   logUnmatchedContainers,
+  mappingOf,
   selectOutageMonitors,
 } from './monitors.js';
 import { serviceRegistry } from './serviceRegistry.js';
@@ -29,6 +31,7 @@ import { fetchIntegration } from './integrations/handler.js';
 import { setCache } from './cache.js';
 import { safeFetch } from './httpClient.js';
 import { dedupe } from './util/dedupe.js';
+import { isJobContainer } from './util/helperContainers.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { createLogger } from './util/logger.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
@@ -155,23 +158,43 @@ function serviceRank(s) {
  * monitors, and the container presence registry. Extracted from _refreshServices
  * so it can be unit-tested without the network.
  *
+ * Monitors are matched to containers once for the whole cycle
+ * (assignMonitors, #240): a monitor marks one container unless services.yaml
+ * maps it explicitly to several (`monitor`, `monitor_per_node`). The containers
+ * that compete for monitors are the running ones on the board, and the ones
+ * that stopped in the last 24 hours (the container registry's missing ones,
+ * from the moment they stop, until JAGHELM_PRESENCE_TTL_MS): a down monitor
+ * whose container stopped stays with it while it is the better match, so its
+ * outage shows on that container's card, not on a lookalike's. Once the monitor
+ * is up, a running container can have it. CI job containers are left out, as
+ * discovery leaves them out (util/helperContainers.js), including the ones the
+ * container registry recorded before that. `lastSeenNodeOf` /
+ * `lastSeenContainerOf` place outage cards.
+ *
  * Three passes:
- *  (a) Running-container cards — Kuma overlays status; each running container is
- *      recorded into the container registry (last-seen node + timing). A name
- *      running on several nodes (cadvisor, alloy...) is recorded once, with the
- *      last node in the pass, and so is a monitor in `seen`: recording each
+ *  (a) Running-container cards — Kuma overlays the status of the monitor the
+ *      container got; each running container is recorded into the container
+ *      registry (last-seen node + timing). A name running on several nodes
+ *      (cadvisor, alloy...) is recorded once, with the last node in the pass,
+ *      and so is an explicitly mapped monitor in `seen`: recording each
  *      sighting flipped the node within every pass and rewrote the registries
- *      every cycle.
- *  (b) Down-monitor synthesis — active monitors reporting `down` that matched no
- *      running container become red cards on their last-seen node (base spec).
+ *      every cycle. The containers of a node are taken in name order, so `seen`
+ *      does not depend on the order discovery listed them in.
+ *  (b) Down-monitor synthesis — active monitors reporting `down` that no
+ *      running container got become red cards: on the node of the stopped
+ *      container that got the monitor, under its name; otherwise on the
+ *      monitor's last-seen node, under the container it was last matched to
+ *      (base spec). A card never takes the uid of a card already on the node: a
+ *      monitor whose last container still runs there, matched to something
+ *      else now, is drawn under the monitor's name.
  *  (c) Breadcrumb synthesis — established, UNMONITORED containers that have
  *      vanished (absent past grace, within TTL) become grey `unknown`
  *      `source:'presence'` cards on their last-seen node. Skipped if the
- *      container is running anywhere this cycle, or if ANY monitor matches it
- *      (Kuma owns tracked services entirely). Skipped altogether when
- *      `presenceKnown` is false: a Prometheus query failed this cycle, so a
- *      container missing from the list may still be running, and a missed
- *      breadcrumb beats a false one (#232).
+ *      container is running anywhere this cycle, if it got a (down) monitor in
+ *      the matching (Kuma owns it: its outage is the monitor's red card), or if
+ *      it is a CI job's. Skipped altogether when `presenceKnown` is false: a
+ *      Prometheus query failed this cycle, so a container missing from the list
+ *      may still be running, and a missed breadcrumb beats a false one (#232).
  *
  * Each node carries `reachable` from discovery (Prometheus' `up` for the node:
  * true, false, or null when Prometheus has no `up` series for it), and
@@ -187,8 +210,9 @@ function serviceRank(s) {
  * BOTH frontends read this single server value for their global dot, so they are
  * symmetric and deterministic (no client re-derivation).
  *
- * `unmatched` (unique names of the shown, running containers no monitor matched)
- * and `containerCount` (how many shown, running containers there were) feed the
+ * `unmatched` (unique names of the shown, running containers that got no
+ * monitor on any node, leaving out those opted out with `monitor: false`) and
+ * `containerCount` (how many shown, running containers there were) feed the
  * once-per-boot "no matching monitor" log line.
  *
  * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown', unmatched: string[], containerCount: number }}
@@ -197,34 +221,65 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   const consumed = new Set();
   const seen = new Map(); // monitor id -> { monitorId, nodeKey, container }, last in the pass
   const runningOn = new Map(); // container name -> the last node it runs on in this pass
-  const unmatched = new Set();
-  let containerCount = 0;
   const nowMs = now();
+  const entries = nodeResults.filter(Boolean);
+  const nodeOrder = entries.map(([nodeKey]) => nodeKey);
+
+  // The shown, running containers of each node, in name order.
+  const shown = entries.map(([nodeKey, nodeCfg, nodeData]) => {
+    const hideList = (nodeCfg.hide || []).map((h) => h.toLowerCase());
+    const containers = nodeData.containers
+      .filter((c) => !hideList.some((h) => c.container.toLowerCase().includes(h)))
+      .sort((a, b) => (a.container < b.container ? -1 : a.container > b.container ? 1 : 0));
+    for (const c of containers) runningOn.set(c.container, nodeKey);
+    return containers;
+  });
+  const containerCount = shown.reduce((n, containers) => n + containers.length, 0);
+
+  // Containers that stopped in the last 24 hours compete for down monitors too.
+  const stopped = containerRegistry
+    ? containerRegistry
+        .getMissing({ now: nowMs, graceMs: 0 })
+        .filter((v) => !runningOn.has(v.container) && !isJobContainer(v.container))
+        .sort((a, b) => (a.container < b.container ? -1 : a.container > b.container ? 1 : 0))
+    : [];
+
+  // Warns once per bad mapping; with no nodes in the config, it can't tell.
+  const configNodeKeys = Object.keys(config.nodes || {});
+  checkMonitorMappings(config.services, configNodeKeys.length ? configNodeKeys : null);
+  const running = shown.flatMap((containers, n) => containers.map((c) => ({ container: c.container, nodeKey: nodeOrder[n] })));
+  const assigned = assignMonitors({
+    candidates: [...running, ...stopped.map((v) => ({ container: v.container, nodeKey: v.lastSeenNode, stopped: true }))],
+    monitors,
+    services: config.services,
+    nodeOrder,
+  });
+
+  // The stopped containers that got a (down) monitor: Kuma owns them.
+  const stoppedOwner = new Map(); // monitor id -> the first stopped container that got it
+  const ownedStopped = new Set();
+  stopped.forEach((v, j) => {
+    const m = assigned[running.length + j];
+    if (!m) return;
+    ownedStopped.add(v.container);
+    if (!stoppedOwner.has(m.id)) stoppedOwner.set(m.id, v);
+  });
 
   // (a) Running-container cards.
-  const nodeEntries = nodeResults.filter(Boolean).map(([nodeKey, nodeCfg, nodeData]) => {
+  const withMonitor = new Set(); // container names that got a monitor on some node
+  let next = 0;
+  const nodeEntries = entries.map(([nodeKey, nodeCfg, nodeData], n) => {
     const metrics = nodeData.metrics;
-    let containers = nodeData.containers;
-
-    const hideList = (nodeCfg.hide || []).map((h) => h.toLowerCase());
-    containers = containers.filter(
-      (c) => !hideList.some((h) => c.container.toLowerCase().includes(h))
-    );
-
-    containerCount += containers.length;
-    const services = containers.map((c) => {
-      runningOn.set(c.container, nodeKey);
+    const services = shown[n].map((c) => {
       const override = config.services?.[c.container] || {};
       const displayName = override.display_name || formatContainerName(c.container);
-      const explicitMonitor = override.monitor || null;
-      const monitor = matchMonitor(c.container, explicitMonitor, monitors);
+      const monitor = assigned[next++];
       if (monitor) {
         consumed.add(monitor.id);
+        withMonitor.add(c.container);
         // Remember the container too, so a later outage's synth card can reuse
         // this exact uid (keeps down→recovery on ONE key for the push differ).
         seen.set(monitor.id, { monitorId: monitor.id, nodeKey, container: c.container });
-      } else {
-        unmatched.add(c.container);
       }
       const rawStatus = monitor?.status || c.status || 'unknown';
       // Normalise Docker's 'running' to the Kuma-aligned 'up' so the status
@@ -261,11 +316,14 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     ];
   });
 
-  const nodes = Object.fromEntries(nodeEntries.filter(Boolean));
+  const nodes = Object.fromEntries(nodeEntries);
   const nodeKeys = Object.keys(nodes);
   if (containerRegistry) {
     for (const [name, nodeKey] of runningOn) containerRegistry.recordSeen(name, nodeKey, nowMs);
   }
+  // A container opted out with `monitor: false` has no monitor on purpose.
+  const wantsMonitor = running.filter((r) => mappingOf(config.services, r.container, r.nodeKey)?.monitor !== false);
+  const unmatched = [...new Set(wantsMonitor.map((r) => r.container))].filter((name) => !withMonitor.has(name));
 
   // (b) Down-monitor synthesis — outages whose container left cAdvisor. The
   // down-vs-inactive invariant lives in selectOutageMonitors: it keeps only
@@ -274,22 +332,26 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   // phantom red card — `active` reads null on real Kuma and can't be relied on).
   const outages = selectOutageMonitors(monitors, consumed, { now: nowMs });
   for (const m of outages) {
-    let nodeKey = lastSeenNodeOf(m.id);
+    const owner = stoppedOwner.get(m.id);
+    let nodeKey = owner ? owner.lastSeenNode : lastSeenNodeOf(m.id);
     if (!nodeKey || !nodes[nodeKey]) nodeKey = nodeKeys[0];
     if (!nodeKey || !nodes[nodeKey]) continue; // no nodes to attach to
-    // Reuse the SAME uid the running card used (remembered container name) so a
+    // Reuse the SAME uid the running card used (the container's name) so a
     // down→recovery transition stays on ONE key. The push differ keys off uid
     // and only emits a recovery when 'down' and 'up' share a key — without this,
     // the down card (monitor name) and the recovered card (container name) were
     // different keys and the recovery push silently never fired. Fall back to the
-    // monitor name for a pure-monitor service that never had a container.
-    const remembered = lastSeenContainerOf ? lastSeenContainerOf(m.id) : null;
-    const idPart = remembered || m.name;
+    // monitor name for a pure-monitor service that never had a container, or
+    // when a card on the node already has that uid.
+    const remembered = owner ? owner.container : lastSeenContainerOf ? lastSeenContainerOf(m.id) : null;
+    const nodeServices = nodes[nodeKey].services;
+    const free = (part) => !!part && !nodeServices.some((s) => s.uid === `${nodeKey}:${part}`);
+    const idPart = [remembered, m.name].find(free) || `${m.name} (${m.id})`;
     const override = config.services?.[idPart] || {};
-    nodes[nodeKey].services.push({
+    nodeServices.push({
       container: idPart,
       uid: `${nodeKey}:${idPart}`,
-      display_name: override.display_name || (remembered ? formatContainerName(remembered) : m.name),
+      display_name: override.display_name || (idPart === remembered ? formatContainerName(remembered) : m.name),
       icon: override.icon || null,
       status: 'down',
       monitored: true,
@@ -307,11 +369,11 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     const candidates = containerRegistry.getMissing({ now: nowMs });
     for (const cand of candidates) {
       if (runningOn.has(cand.container)) continue;                // running somewhere this cycle
+      if (isJobContainer(cand.container)) continue;               // a CI job, done
+      // Kuma owns it: it got a down monitor in the matching, by its explicit
+      // mapping or by name, so the outage shows as that monitor's red card.
+      if (ownedStopped.has(cand.container)) continue;
       const override = config.services?.[cand.container] || {};
-      // Kuma owns it — honor the explicit monitor mapping too (mirror pass (a)),
-      // so an explicitly-mapped, dissimilar-named monitor never lets a tracked
-      // service leak out as a grey breadcrumb (or double as breadcrumb + red card).
-      if (matchMonitor(cand.container, override.monitor || null, monitors)) continue;
       let nodeKey = cand.lastSeenNode;
       if (!nodeKey || !nodes[nodeKey]) nodeKey = nodeKeys[0];
       if (!nodeKey || !nodes[nodeKey]) continue; // no nodes to attach to
