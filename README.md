@@ -10,7 +10,7 @@
 </p>
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
-  <img src="https://img.shields.io/badge/node-22%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node">
+  <img src="https://img.shields.io/badge/node-26-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/react-19-61dafb?style=flat-square&logo=react&logoColor=white" alt="React">
   <img src="https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
   <img src="https://img.shields.io/badge/ghcr.io-jagbhandal%2Fjaghelm-blue?style=flat-square&logo=github" alt="GHCR">
@@ -290,7 +290,7 @@ Push notifications are tied to the Firebase project an APK is built with. The pu
  
 - **Frontend:** React 19, Vite 8 (Rolldown), HelmGrid (custom layout engine), @dnd-kit, react-colorful
 - **Backend:** Express, undici, helmet, multer, js-yaml, dotenv
-- **Container:** Node 22 Alpine, runs as non-root, healthcheck via native fetch
+- **Container:** Node 26 Alpine, runs as non-root, healthcheck via native fetch
 - **Encryption:** AES-256-GCM with PBKDF2 (100k iterations); scrypt for password hashing
 - **Monitoring sources:** Prometheus, cAdvisor, node_exporter, NUT exporter, Uptime Kuma
 For deeper architecture detail (server module structure, refresh pipeline, integration lifecycle), see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
