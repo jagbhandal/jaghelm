@@ -315,10 +315,12 @@ flowchart TD
 
 All state is files under the data dir (no DB):
 
+- **services.yaml** -- nodes, per-service overrides and integration configs
+  (each secret value stored separately, encrypted). Hot-reloaded on an
+  external edit; read copy-on-read; `POST /api/services/config` validated by Zod.
 - **display config** -- title, theme, layout (`{lg,md,sm}` grid item arrays),
   sections (per-panel visibility/order/colour), nav/search/weather flags,
-  integration configs (the secret value stored separately, encrypted), links,
-  fonts. Read copy-on-read; validated by Zod.
+  links, tabs, fonts. Read copy-on-read; validated by Zod.
 - **secrets** -- AES-256-GCM blob, keyed by integration storage key.
 - **Arcane state** -- `arcane-state.json` (baselined environments, agent down counters,
   seen activity ids, each environment's pending updates, runs waiting on their job run,

@@ -26,33 +26,32 @@ const DEFAULT_CONFIG = {
   nodes: {},
   services: {},
   integrations: {},
-  links: {
-    personal: [],
-    management: [],
-    devops: [],
-  },
-  tabs: [],
-  grid_layout: null,
-  grid_columns: 12,
 };
 
-// Blocks that older releases wrote into every generated services.yaml but that
-// nothing ever read: display settings live in display-config.json, and custom
-// integrations are entries under `integrations`. A file that still has them
-// loads and saves unchanged (they are ignored, not stripped, so the server never
-// silently drops what a user wrote); loadConfig says once per process that they
-// can be deleted. Remove the warning one release after it ships (#265).
-const UNREAD_KEYS = ['display', 'custom_integrations'];
-let warnedUnreadKeys = false;
+// Keys that older releases wrote into every generated services.yaml but that
+// nothing ever read from it: display settings, links, tabs and the grid live in
+// display-config.json, and custom integrations are entries under `integrations`.
+// A file that still has them loads and saves unchanged (they are ignored, not
+// stripped, so the server never silently drops what a user wrote); loadConfig
+// warns once per key, on the first load that sees it, that it can be deleted.
+// Remove the warning one release after it ships (#350).
+const UNREAD_KEYS = [
+  'display',
+  'custom_integrations',
+  'links',
+  'tabs',
+  'grid_layout',
+  'grid_columns',
+];
+const warnedUnreadKeys = new Set();
 
 function warnUnreadKeys(cfg) {
-  if (warnedUnreadKeys) return;
-  const keys = UNREAD_KEYS.filter((k) => Object.hasOwn(cfg, k));
+  const keys = UNREAD_KEYS.filter((k) => Object.hasOwn(cfg, k) && !warnedUnreadKeys.has(k));
   if (keys.length === 0) return;
-  warnedUnreadKeys = true;
+  for (const k of keys) warnedUnreadKeys.add(k);
   log.warn(
     { keys },
-    `services.yaml has blocks JagHelm does not read (${keys.join(', ')}); they are ignored and can be deleted`
+    `services.yaml has keys JagHelm does not read (${keys.join(', ')}); they are ignored and can be deleted`
   );
 }
 
