@@ -1,14 +1,16 @@
 // Guards JagHelm's fonts and type (#244, #284): every font is self-hosted, so no
 // font request leaves the origin; each @font-face matches the file it points
-// at; the new UI's faces follow the one list in src/ui/typefaces.js, as
-// src/ui/fonts.css, tokens.css and docs/design-system.md do; the default setup
-// fits the 60 KB budget; and the type scale and root typography are the ones
-// the docs and the signed-off mock give. docs/design-system.md, "Type".
+// at, and each file is the one pinned by its sha256; the new UI's faces follow
+// the one list in src/ui/typefaces.js, as src/ui/fonts.css, tokens.css and
+// docs/design-system.md do; the default faces' vendored files fit the 60 KB
+// budget; and the type scale and root typography are the ones the docs and the
+// signed-off mock give. docs/design-system.md, "Type".
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import { brotliDecompressSync } from 'node:zlib';
 import { compile } from '@tailwindcss/node';
 import { Scanner } from '@tailwindcss/oxide';
@@ -232,6 +234,63 @@ test('every @font-face points at a file that draws the face it declares', () => 
   for (const f of texts) assert.match(read(f), /SIL Open Font License, Version 1\.1/, f);
 });
 
+// Each vendored file's sha256, pinned to the file Google Fonts served for it on
+// 2026-10-19 (the URL above each; src/styles/fonts.css and src/ui/fonts.css give
+// the requests). A file that changes, by a swap or a re-fetch, fails here: check
+// the new file against its source and update the pin in the same change.
+const PINNED = Object.freeze({
+  // https://fonts.gstatic.com/s/dmsans/v17/rP2rp2ywxg089UriCZaSExd86J3t9jz86Mvy4qCRAL19DksVat_XDV30TGc.woff2
+  'dm-sans-latin-300-italic.woff2':
+    'bdd25fa33d0dfdeeb007471c64611df30cfe1879270db8c47e8159f24047e64b',
+  // https://fonts.gstatic.com/s/dmsans/v17/rP2Yp2ywxg089UriI5-g4vlH9VoD8Cmcqbu0-K4.woff2
+  'dm-sans-latin-wght.woff2': '9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543',
+  // https://fonts.gstatic.com/s/firacode/v27/uU9NCBsR6Z2vfE9aq3bh3dSD.woff2
+  'fira-code-latin-wght.woff2': '771bf4b79a97fc005d12866168bd39d868a9dd3d5903008fe8b796723c8a56f4',
+  // https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2
+  'inter-latin-wght.woff2': '3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62',
+  // https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwg.woff2
+  'jetbrains-mono-latin-wght.woff2':
+    '83c005d49d8a6a50474c73a5a36ac0468076e9c4a29da7bdb14995d80560a5be',
+  // https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggexSg.woff2
+  'manrope-latin-wght.woff2': 'a30ddcd349703aff7464c34bef3fffdff405ee50c113440d7c8693c02d210972',
+  // https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459Wlhyw.woff2
+  'montserrat-latin-wght.woff2': '06b16db7a969135d48d38c49183be7fb88d4452e2a3011957c7851941f4e4879',
+  // https://fonts.gstatic.com/s/nunito/v32/XRXV3I6Li01BKofINeaB.woff2
+  'nunito-latin-wght.woff2': 'ba344451eab25b217a165363b1982048a5e5830a0daf36577973955a04cac793',
+  // https://fonts.gstatic.com/s/outfit/v15/QGYvz_MVcBeNP4NJtEtq.woff2
+  'outfit-latin-wght.woff2': '6c18d579fd87c3776be068b762cbc83fde3acb543d49eabd3ade842eb987e887',
+  // https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko20yw.woff2
+  'plus-jakarta-sans-latin-wght.woff2':
+    '153fc85b70298beeb1d61a5f723331649e7f23bb77302a66e61cb3e2fbdb5e79',
+  // https://fonts.gstatic.com/s/rajdhani/v17/LDIxapCSOBg7S-QT7p4HM-Y.woff2
+  'rajdhani-latin-400.woff2': '759a9000e47b028799d7a4ca602634a7ac7adf415775df070a335d18d9b66f38',
+  // https://fonts.gstatic.com/s/rajdhani/v17/LDI2apCSOBg7S-QT7pb0EPOreec.woff2
+  'rajdhani-latin-500.woff2': '23afdb9b5b89b878fab04d80cc30bf41bb4f3f7e8be88e5f16a7cc7671cdb2dc',
+  // https://fonts.gstatic.com/s/rajdhani/v17/LDI2apCSOBg7S-QT7pbYF_Oreec.woff2
+  'rajdhani-latin-600.woff2': '433a7007e4747a02a790167a6efa2625855f013970ba49b9b739a5d3db8b2601',
+  // https://fonts.gstatic.com/s/rajdhani/v17/LDI2apCSOBg7S-QT7pa8FvOreec.woff2
+  'rajdhani-latin-700.woff2': '5b7e4a6f97163c2636724d4de90304fc895653dcfe64c67a7a22f26331ca5c5f',
+  // https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2
+  'roboto-latin-wght.woff2': '1404ca348bd75ef836f4dd8b6f2cc719458642d1237c368296b2fc652dca47dc',
+  // https://fonts.gstatic.com/s/robotomono/v31/L0x5DF4xlVMF-BfR8bXMIjhLq38.woff2
+  'roboto-mono-latin-wght.woff2':
+    'b81cd55177300649be8f95b3b747d721ce607e8ed2856e25bd0c630cfd631faf',
+  // https://fonts.gstatic.com/s/sourcecodepro/v32/HI_SiYsKILxRpg3hIP6sJ7fM7PqlPevW.woff2
+  'source-code-pro-latin-wght.woff2':
+    '8b774aaa5137a38ef40f4ac9d36db9a5eee152b2f66589dfdc82ff007fc87135',
+});
+
+test('every vendored font file is the one pinned by its sha256', () => {
+  const files = readdirSync(path.join(ROOT, FONTS)).filter((f) => f.endsWith('.woff2'));
+  assert.deepEqual(files.sort(), Object.keys(PINNED).sort(), `the files in ${FONTS}/ and the pins`);
+  for (const f of files) {
+    const sha = createHash('sha256')
+      .update(readFileSync(path.join(ROOT, FONTS, f)))
+      .digest('hex');
+    assert.equal(sha, PINNED[f], `${FONTS}/${f} is not the pinned file`);
+  }
+});
+
 // ---- The new UI's faces (#284) ----------------------------------------------------
 
 test('one typeface list: fonts.css, tokens.css and the docs follow src/ui/typefaces.js', () => {
@@ -296,14 +355,18 @@ test('one typeface list: fonts.css, tokens.css and the docs follow src/ui/typefa
   );
 });
 
-test("the default setup's fonts fit the 60 KB budget", () => {
+// This sums the vendored files, which is about what crosses the wire, since woff2
+// is already compressed. It doesn't measure a page load: #306 checks the bytes
+// the built app transfers.
+test('the vendored woff2 bytes of the default faces (Manrope and JetBrains Mono) are at most 60 KB', () => {
   const size = (t) => statSync(path.join(ROOT, FONTS, t.file)).size;
   const face = TYPEFACES.find((t) => t.id === DEFAULT_TYPEFACE);
   const total = size(face) + size(MONO_TYPEFACE);
   assert.ok(
     total <= BUDGET,
-    `${face.label} (${size(face)} B) and ${MONO_TYPEFACE.label} (${size(MONO_TYPEFACE)} B) ` +
-      `are ${total} B, over ${BUDGET} B`
+    `the vendored woff2 files of the default faces, ${face.label} (${size(face)} B) and ` +
+      `${MONO_TYPEFACE.label} (${size(MONO_TYPEFACE)} B), are ${total} B, over ${BUDGET} B ` +
+      '(woff2 is already compressed, so this is about what crosses the wire)'
   );
 });
 

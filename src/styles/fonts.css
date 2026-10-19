@@ -14,8 +14,10 @@
  * code asked for (Outfit v15, DM Sans v17, JetBrains Mono v24, Inter v20, Fira
  * Code v27, Nunito v32, Source Code Pro v32, Rajdhani v17, Roboto v51, Roboto
  * Mono v31). Each is under the SIL Open Font License 1.1: src/fonts/licences/.
- * Characters outside the latin subset fall back to the next family in the
- * stack, as the new faces' do (src/ui/fonts.css).
+ * The vendored faces are latin subsets only, so non-latin text (latin-ext,
+ * Cyrillic, Greek) falls back to the system font, where Google used to serve
+ * those subsets on demand: pixel-identical holds for latin text. The new faces
+ * work the same way (src/ui/fonts.css); latin-ext for the new UI is #394.
  *
  * Imported into the legacy layer by styles/legacy.css. Delete a family when no
  * screen uses it: the Typography presets go with Settings' Phase 3, Outfit and

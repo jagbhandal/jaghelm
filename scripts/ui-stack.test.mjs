@@ -181,10 +181,36 @@ export function classNamesIn(source, file) {
       add(words.join(''));
     });
   };
+  // Lookup objects: `const sizes = { sm: '…' }`, read in a class position as
+  // sizes[size] or sizes.sm. Their values are classes (nested maps too), their
+  // keys never; each map is read once.
+  const maps = new Map();
+  const walked = new Set();
+  const values = (obj) => {
+    for (const p of obj.properties) {
+      if (!ts.isPropertyAssignment(p)) continue;
+      if (ts.isObjectLiteralExpression(p.initializer)) values(p.initializer);
+      else classes(p.initializer);
+    }
+  };
+  const lookup = (node) => {
+    let root = node;
+    while (ts.isElementAccessExpression(root) || ts.isPropertyAccessExpression(root))
+      root = root.expression;
+    const map = ts.isIdentifier(root) ? maps.get(root.text) : undefined;
+    if (map && !walked.has(map)) {
+      walked.add(map);
+      values(map);
+    }
+  };
   const classes = (node) => {
     if (!node) return;
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) add(node.text);
-    else if (ts.isTemplateExpression(node)) template(node);
+    else if (ts.isTemplateExpression(node)) {
+      template(node);
+      node.templateSpans.forEach((s) => classes(s.expression));
+    } else if (ts.isElementAccessExpression(node) || ts.isPropertyAccessExpression(node))
+      lookup(node);
     else if (ts.isJsxExpression(node) || ts.isParenthesizedExpression(node))
       classes(node.expression);
     else if (ts.isConditionalExpression(node)) [node.whenTrue, node.whenFalse].forEach(classes);
@@ -224,7 +250,25 @@ export function classNamesIn(source, file) {
     }
     ts.forEachChild(node, visit);
   };
-  visit(ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JSX));
+  const sourceFile = ts.createSourceFile(
+    file,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JSX
+  );
+  const declare = (node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isObjectLiteralExpression(node.initializer)
+    )
+      maps.set(node.name.text, node.initializer);
+    ts.forEachChild(node, declare);
+  };
+  declare(sourceFile); // first, so a map declared after its use still counts
+  visit(sourceFile);
   return out;
 }
 
@@ -490,4 +534,35 @@ test('the class check reads className, cn() and cva(), and catches what compiles
     'text-xl',
     'text-xs',
   ]);
+});
+
+/** The class names classNamesIn() finds in `source`, sorted. */
+const namesIn = (source) =>
+  classNamesIn(source, 'x.jsx')
+    .map((c) => c.name)
+    .sort();
+
+test("the class check reads a template literal's ${} expressions", async () => {
+  const source = `
+    const C = ({ on }) => (
+      <div className={\`p-2 \${on ? 'text-2xl' : 'text-caption'}\`}>
+        <span className={cn(\`gap-1 \${on && 'shadow-lg'}\`)} />
+      </div>
+    );`;
+  const names = namesIn(source);
+  assert.deepEqual(names, ['gap-1', 'p-2', 'shadow-lg', 'text-2xl', 'text-caption']);
+  assert.deepEqual(await uncompiled(names), ['shadow-lg', 'text-2xl']);
+});
+
+test('the class check reads the values of a lookup object, never its keys', async () => {
+  // A map read by key, declared after its use and nested, as cn(sizes[size]).
+  const source = `
+    const C = ({ size, tone }) => (
+      <div className={cn('p-2', sizes[size], tones[tone].dot)} />
+    );
+    const sizes = { sm: 'h-7 text-sm', md: 'h-8 text-body' };
+    const tones = { ok: { dot: 'bg-green-500' } };`;
+  const names = namesIn(source);
+  assert.deepEqual(names, ['bg-green-500', 'h-7', 'h-8', 'p-2', 'text-body', 'text-sm']);
+  assert.deepEqual(await uncompiled(names), ['bg-green-500', 'text-sm']);
 });
