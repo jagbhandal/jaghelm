@@ -7,9 +7,9 @@
  *
  * jsonWithEtag() sends a cached value with an ETag (an MD5 of its JSON body) so
  * clients can revalidate cheaply via If-None-Match → 304 Not Modified. The body
- * and ETag are computed once per cached value, never per request: setCache
- * serializes the keys served this way (respondWarmCached registers them) when
- * it writes them, and every request after that reads both from the entry.
+ * and ETag are computed once per cached value, on its first request, and kept on
+ * the cache entry, so later requests (200 or 304) send them from memory until the
+ * next setCache replaces the entry. A value nobody requests is never serialized.
  */
 
 import crypto from 'crypto';
@@ -23,10 +23,6 @@ const CACHE_TTL_MS = 120_000;
 const MAX_ENTRIES = 500;
 
 const cache = new Map();
-// Keys served through respondWarmCached (a constant handful). setCache serializes
-// these when it writes them; the rest (prom-<q>, weather-<lat>-<lon>, ...) are
-// served with res.json and never pay for a body or an ETag.
-const etagKeys = new Set();
 
 function boundedSet(map, key, value) {
   map.delete(key); // re-insert: Map order = last-write order, so rewritten keys stay newest
@@ -44,19 +40,17 @@ export function getCached(key) {
 
 /**
  * Store a value in the cache with the current timestamp. The value must not be
- * mutated afterwards: a key served with an ETag keeps the JSON it had when written.
+ * mutated afterwards: once served with an ETag, its JSON is kept until the next
+ * setCache for the key.
  */
 export function setCache(key, data) {
-  const entry = { data, ts: Date.now(), body: null, etag: null };
-  if (etagKeys.has(key)) serialize(entry);
-  boundedSet(cache, key, entry);
+  boundedSet(cache, key, { data, ts: Date.now(), body: null, etag: null });
 }
 
 /** Fill in `entry.body` (the JSON as a Buffer) and its strong `entry.etag`. */
 function serialize(entry) {
   entry.body = Buffer.from(JSON.stringify(entry.data));
   entry.etag = `"${crypto.createHash('md5').update(entry.body).digest('hex')}"`;
-  return entry;
 }
 
 /**
@@ -92,13 +86,15 @@ function ifNoneMatchHits(header, etag) {
  *
  * Clients that send a matching If-None-Match header receive a 304 and skip
  * the response body entirely. When `data` is the value cached under
- * `cacheKey`, the entry's body and ETag are used (and kept, if this is the
- * first time it is served); any other value is serialized for this response.
+ * `cacheKey`, the entry's body and ETag are used (computed and kept on the
+ * entry, if this is the first time it is served); any other value is
+ * serialized for this response only.
  */
 export function jsonWithEtag(res, req, cacheKey, data) {
-  const entry = cache.get(cacheKey);
-  const { body, etag } =
-    entry && entry.data === data ? (entry.body ? entry : serialize(entry)) : serialize({ data });
+  let entry = cache.get(cacheKey);
+  if (!entry || entry.data !== data) entry = { data }; // not the cached value: this response only
+  if (!entry.body) serialize(entry);
+  const { body, etag } = entry;
 
   res.set('ETag', etag);
   if (ifNoneMatchHits(req.headers['if-none-match'], etag)) {
@@ -118,15 +114,13 @@ export function jsonWithEtag(res, req, cacheKey, data) {
  * @param {import('express').Request} req
  * @param {import('express').Response} res
  * @param {object} opts
- * @param {string} opts.key            cache key (also the ETag key); a constant,
- *   since setCache serializes this key on every write from then on
+ * @param {string} opts.key            cache key (also the ETag key)
  * @param {() => Promise<*>} opts.refresh  cold-start refresh; returns the
  *   payload or a falsy value if data isn't available yet.
  * @param {(res: import('express').Response) => *} opts.fallback  invoked when
  *   neither the cache nor the refresh produced data.
  */
 export async function respondWarmCached(req, res, { key, refresh, fallback }) {
-  etagKeys.add(key); // before refresh(), so its setCache serializes the value
   const cached = getCached(key);
   if (cached) return jsonWithEtag(res, req, key, cached);
 

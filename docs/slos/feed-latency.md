@@ -24,13 +24,14 @@ slow `services.yaml` reload, or GC pause).
 
 ### Why 300 ms and why a cache-warm endpoint
 
-The cache hit path is `getCached()` plus sending a body and ETag that
-`cache.js` computed once, when the refresh loop wrote the value; a `304` sends
-no body at all. The cache's own work is microseconds per request, whatever the
-payload size. The 300 ms threshold is generous *on purpose*: it absorbs
-cold-start inline refreshes (which fan out to Prometheus/cAdvisor/Kuma) and a
-node or two being slow, while still catching a real regression (e.g. someone
-makes the route block on a synchronous disk read).
+The cache hit path is `getCached()` plus sending a body and ETag that `cache.js`
+computed once per cached value, on its first request; a `304` sends no body at
+all. Only that first request after each refresh pays for `JSON.stringify` + an
+MD5 hash (sub-millisecond for a typical payload); every other request is
+microseconds of cache work, whatever the payload size. The 300 ms threshold is
+generous *on purpose*: it absorbs cold-start inline refreshes (which fan out to
+Prometheus/cAdvisor/Kuma) and a node or two being slow, while still catching a
+real regression (e.g. someone makes the route block on a synchronous disk read).
 The SLO is on **server response time**, not browser paint — JagHelm controls the
 former, not the user's network or device.
 

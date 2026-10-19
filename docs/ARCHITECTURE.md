@@ -151,8 +151,9 @@ metrics and every configured integration into the bounded `cache.js`
 (it evicts the least recently written key at max entries, so user-influenced
 keys can't exhaust memory). API reads serve from the cache and attach an ETag;
 an unchanged poll returns `304`.
-For the ETag-served keys, `setCache` serializes the value and hashes it once when
-it is written, so a request (`200` or `304`) only sends what is already in memory.
+Each cached value is serialized and hashed once, on its first request, and kept
+with it, so later requests (`200` or `304`) only send what is already in memory
+until the next refresh replaces the value.
 `If-None-Match` is matched per RFC 9110: weak comparison, a list of tags, or `*`.
 The loop is cancelled cleanly on shutdown (no leaking timer).
 

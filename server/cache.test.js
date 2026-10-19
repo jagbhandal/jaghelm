@@ -1,7 +1,7 @@
 /**
  * cache.js ETag contract (#251): the body and ETag of a warm-cached endpoint are
- * computed once per setCache, not per request, and If-None-Match is evaluated per
- * RFC 9110 (weak comparison, a list of tags, `*`).
+ * computed once per cached value, on its first request, not per request, and
+ * If-None-Match is evaluated per RFC 9110 (weak comparison, a list of tags, `*`).
  *
  * The counters spy on JSON.stringify and crypto.createHash. cache.js calls
  * crypto.createHash through the default import, so the spy sees it.
@@ -76,7 +76,7 @@ test('If-None-Match with the current ETag gets a 304 with no body, still carryin
   assert.equal(r.headers.etag, headers.etag, 'RFC 9110 §15.4.5: a 304 sends the ETag a 200 would');
 });
 
-test('the body and ETag are computed once per setCache, not per request', async () => {
+test('the body and ETag are computed once per setCache, on the first request', async () => {
   const key = freshKey();
   const app = appFor(key);
   setCache(key, sample(3));
@@ -86,10 +86,12 @@ test('the body and ETag are computed once per setCache, not per request', async 
   const expected = etagOf(payload); // before the counters start: etagOf hashes too
   const work = countWork(payload);
   setCache(key, payload);
-  assert.equal(work.serialized(), 1, 'a served key is serialized when it is written');
-  assert.equal(work.hashed(), 1, 'a served key is hashed when it is written');
+  assert.equal(work.serialized(), 0, 'setCache does not serialize');
+  assert.equal(work.hashed(), 0, 'setCache does not hash');
 
   const plain1 = await request(app).get('/x');
+  assert.equal(work.serialized(), 1, 'the first request serializes the new value');
+  assert.equal(work.hashed(), 1, 'the first request hashes the new value');
   const plain2 = await request(app).get('/x');
   const cond1 = await request(app).get('/x').set('If-None-Match', plain1.headers.etag);
   const cond2 = await request(app).get('/x').set('If-None-Match', plain1.headers.etag);
@@ -101,8 +103,8 @@ test('the body and ETag are computed once per setCache, not per request', async 
   assert.deepEqual(plain1.body, payload);
   assert.equal(plain1.headers.etag, expected);
   assert.notEqual(plain1.headers.etag, first.headers.etag, 'a new value gets a new ETag');
-  assert.equal(work.serialized(), 1, 'no request serialized the payload');
-  assert.equal(work.hashed(), 1, 'no request hashed the payload');
+  assert.equal(work.serialized(), 1, 'no later request serialized the payload');
+  assert.equal(work.hashed(), 1, 'no later request hashed the payload');
 
   const stale = await request(app).get('/x').set('If-None-Match', first.headers.etag);
   assert.equal(stale.status, 200, "the previous value's ETag no longer matches");
@@ -219,10 +221,10 @@ test('neither cache nor refresh has data: the fallback answers', async () => {
   assert.deepEqual(r.body, { error: 'not yet available' });
 });
 
-test('setCache on a key no route serves with an ETag does no serialization', () => {
+test('a value nobody requests is never serialized', () => {
   const payload = sample(10);
   const work = countWork(payload);
-  setCache(freshKey(), payload); // e.g. prom-<q>, weather-<lat>-<lon>: served with res.json
+  setCache(freshKey(), payload); // a refresh cycle with no dashboard open, or prom-<q> (res.json)
   assert.equal(work.serialized(), 0);
   assert.equal(work.hashed(), 0);
 });
