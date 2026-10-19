@@ -74,9 +74,10 @@ server/                     Express API (Node 26, ESM)
   index.js                  app wiring: middleware chain + route mounts + SPA fallback
   refresh.js                background refresh loop (start/stop)
   cache.js                  bounded in-memory cache (evicts least recently written, ETags)
-  discovery.js              Prometheus/cAdvisor -> nodes + services
-                            (ignores containers labelled as Arcane internal helpers, so
-                            short-lived helpers never become cards or presence breadcrumbs)
+  discovery.js              Prometheus/cAdvisor -> nodes + services, one query per reading
+                            across all nodes (see 4.2) (ignores containers labelled as Arcane
+                            internal helpers, so short-lived helpers never become cards or
+                            presence breadcrumbs)
   monitors.js               Uptime Kuma monitor matching
   icons.js                  icon picker search index: names only, persisted in the data dir,
                             refreshed from GitHub by the first search when a day old (see 6)
@@ -98,6 +99,8 @@ server/                     Express API (Node 26, ESM)
   integrations/             the integration engine (presets + handler + lib, see 4.3)
   util/                     logger, ssrf, redact, rateLimiter, atomicWrite,
                             configSchema (zod), dataDir, asyncHandler, dedupe
+  testing/                  test-only helpers: a mock Prometheus that evaluates JagHelm's
+                            PromQL over homelab-shaped series, and the pre-#234 node reader
 
 src/                        React 19 SPA (Vite 8)
   main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + view switch
@@ -181,6 +184,41 @@ response, and `/api/cron/status` (whose `seconds_since_report` changes every
 second, so an ETag would never match) sends `Cache-Control: private, max-age=60`.
 The loop is cancelled cleanly on shutdown (no leaking timer).
 
+Node data comes from Prometheus in one batch per cycle (`getNodesData` in
+`discovery.js`, #234): one instant query per reading, each matching every
+visible node at once (`node=~"a|b|…"`, labels regex-escaped) and split by the
+`node` label in JS. That is 13 queries a cycle (`NODE_QUERIES`) whatever the
+number of nodes, plus one for the UPS (its four NUT series in one
+`{__name__=~…}` selector); it was 14 per node, 2 more every cycle for a node
+with no `/` filesystem, and 4 for the UPS (90 a cycle with the homelab's six
+nodes). The queries: `up` (max by node), CPU, memory (MemTotal, MemAvailable
+and MemFree in one selector), uptime, temperature, disk (size and free in one
+selector), and the containers' last-seen, CPU, memory, RX and TX rates, and RX
+and TX counters. What they read:
+
+- **Temperature** is the hottest sensor, `max by (node)` over
+  `node_hwmon_temp_celsius` (a node has 3 to 14 such series).
+- **Container memory** (`docker.memMB`) is `container_memory_working_set_bytes`,
+  which leaves out page cache the kernel can reclaim.
+- **Container RX/TX** is `sum by (node, name)` over the container's interfaces,
+  leaving out `VIRTUAL_INTERFACES`: lo, veth\*, docker\*, br-\*, virbr\*,
+  tailscale\*, wg\* and VLAN subinterfaces (`eth0.10`). A container on the host
+  network gets every host interface from cAdvisor, and those carry traffic the
+  physical interface already counts; what remains is a bridged container's own
+  eth\* and the host's physical interface. `docker.rxBytesPerSec` /
+  `txBytesPerSec` are the 5-minute rate in bytes per second. `docker.rxMB` /
+  `txMB` keep their meaning, the cumulative counter in MiB (now summed over those
+  interfaces, where it used to be whichever interface came last), until the old
+  endpoints are removed (overhaul P4-4); their two queries go with them.
+- **Disk** is `/`, or for a node without one (the NAS) its largest filesystem.
+  Which a node has is decided from the first answer that lists its
+  filesystems: after that, the disk query asks a node with `/` for `/` alone and
+  lists every filesystem only for the nodes without one (or not decided yet),
+  so no node is asked for a `/` it lacks. Decisions are kept per node label,
+  so a new node starts undecided and a changed node set needs no
+  invalidation; a node whose `/` stops answering is decided again, and
+  `initDiscovery` forgets them all.
+
 A failed upstream poll is never read as an empty answer. A Prometheus query
 that errors, times out or returns no query result rejects (`promQuery` in
 `discovery.js`), and Kuma's `fetchMonitors` returns `ok: false` when it loaded
@@ -191,17 +229,21 @@ node: true when any of its targets answered the last scrape, false when none
 did, null when no `up` series has the node's label. It carries `failedReads`
 too: the parts of the node whose queries failed this cycle (`NODE_READS`:
 `reachable` for the `up` query, `cpu`, `mem`, `disk`, `uptime`, `temp`,
-`containers`). Prometheus counts as failed for the cycle when any node query
-fails, and also when every query answers but no node has an `up` series after
-an earlier answer had some: a Prometheus that has just started and not scraped
-yet, whose empty answers mark every node's reads failed. While Prometheus
-fails, no presence breadcrumbs are drawn, since a container missing from the
-list may still be running. The push snapshot keeps its last state for what a
-failed source feeds, and only that: for a host, only the readings whose queries
-failed, so one failing query on one node holds nothing for the others. A
-missing payload (a cold cache after a restart, or one past its TTL) counts as
-failed, and no baseline is taken while the UPS read fails or Prometheus fails
-with no host read. So an outage of Prometheus or Kuma sends no alerts about the
+`containers`). Each query covers every node, so a failed one is that reading's
+failure on every node: the `up` query failing leaves every node's reachability
+unread, and a metric query failing that metric. A node missing from an answer
+that succeeded has no data for that reading, which is not a failure.
+Prometheus counts as failed for the cycle when any node query fails, and also
+when every query answers but no node has an `up` series after an earlier answer
+had some: a Prometheus that has just started and not scraped yet, whose empty
+answers mark every node's reads failed. While Prometheus fails, no presence
+breadcrumbs are drawn, since a container missing from the list may still be
+running. The push snapshot keeps its last state for what a failed source feeds,
+and only that: for a host, only the readings whose queries failed, so a metric
+query that keeps failing holds only that metric, and a host's `up` at 0 still
+pages. A missing payload (a cold cache after a restart, or one past its TTL)
+counts as failed, and no baseline is taken while the UPS read fails or
+Prometheus fails with no host read. So an outage of Prometheus or Kuma sends no alerts about the
 hosts and services they watch ([mobile/DESIGN.md](mobile/DESIGN.md),
 "Deterministic state-change detection").
 
@@ -593,6 +635,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   contracts, rate limiting, `/health` + `/readyz`, and the pure HelmGrid
   `gridMath`, the service-worker precache injector, and the worker's install,
   activate and fetch handlers run against a fake cache (`scripts/sw.test.mjs`).
+  Node reads run against a mock Prometheus (`server/testing/mockPrometheus.js`)
+  that evaluates the PromQL JagHelm sends over series shaped like the homelab's
+  and counts the queries: the per-cycle budget, and the batched reads against
+  the per-node reader they replaced (`server/testing/legacyNodeData.js`).
 - **Client** (`npm run test:client`, Vitest + jsdom + React Testing Library):
   NavBar/config-driven rendering, settings primitives, the keyboard grid handle,
   per-source health banners, overlay/confirm semantics, the 304-stable data
