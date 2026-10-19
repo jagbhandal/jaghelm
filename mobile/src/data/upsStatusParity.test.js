@@ -14,6 +14,9 @@ vi.mock('../../../server/cron-store.js', () => ({ getAllStatuses: () => [] }));
 // /api/ups sends nut_status as a number or null (parseFloat of the Prometheus
 // sample in server/refresh.js), so the probes cover that domain: every value
 // NUT defines, its neighbours, and the non-finite and missing readings.
+// normalizeUpsStatus also maps the strings 'online' and 'on_battery' to
+// themselves; those are deliberately left out because they can't arrive over
+// /api/ups (the server's string branch serves snapshot states only).
 const PROBES = [
   -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1.5, -0,
   Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, null, undefined,

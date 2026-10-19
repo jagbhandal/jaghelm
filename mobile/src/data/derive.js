@@ -161,9 +161,12 @@ export const SEVERITY = { unknown: -1, healthy: 0, caution: 1, critical: 2 };
 /** Resource thresholds (mirror the UsageBar 75/90 ramp). cpu% and temp°C. */
 export const CPU_HOT = 90;
 export const TEMP_HOT = 75;
-/** Disk% at which the node card shows DISK over TEMP: the same 90 % usage line
- *  as CPU_HOT, which push also pages disk at. Not a lamp input (#290/#292). */
-export const DISK_HOT = CPU_HOT;
+/** Disk% at which the node card shows DISK over TEMP. A literal of its own, not
+ *  tied to CPU_HOT: it is the overhaul spec §6.1 disk warn line (>= 90 %) and
+ *  push's default disk threshold (DEFAULT_PUSH_THRESHOLDS.disk = 0.9 in
+ *  server/refresh.js). Temporary until Android reads severity from the server
+ *  status model (#290/#292); not a lamp input. */
+export const DISK_HOT = 90;
 
 /** Numeric rank for a severity string (unrecognised → unknown's rank). */
 export function severityRank(sev) {
