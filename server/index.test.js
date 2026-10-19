@@ -172,6 +172,19 @@ test('CSP ENFORCES by default with a strict script-src + locked object-src', asy
   assert.ok(!/upgrade-insecure-requests/.test(csp), 'no upgrade-insecure-requests');
 });
 
+test('CSP lets fonts and stylesheets come from this origin only (#244)', async () => {
+  const r = await request(app).get('/api/health');
+  const directive = (name) =>
+    r.headers['content-security-policy']
+      .split(';')
+      .map((d) => d.trim().split(/\s+/))
+      .find(([n]) => n === name)
+      ?.slice(1);
+  // Fonts are self-hosted: no Google Fonts, and no other origin either.
+  assert.deepEqual(directive('font-src'), ["'self'", 'data:']);
+  assert.deepEqual(directive('style-src'), ["'self'", "'unsafe-inline'"]);
+});
+
 test('POST /api/watchtower/event → 404 (webhook removed in 2.2.0)', async () => {
   const r = await request(app)
     .post('/api/watchtower/event')

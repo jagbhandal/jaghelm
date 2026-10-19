@@ -11,3 +11,4 @@
 @layer legacy, properties, theme, base, components, utilities;
 
 @import './global.css' layer(legacy);
+@import './fonts.css' layer(legacy);
