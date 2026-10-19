@@ -12,7 +12,7 @@ import { test, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync,
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync,
   utimesSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -25,7 +25,7 @@ process.env.JAGHELM_DATA_DIR = join(root, 'default'); // before the import: the 
 delete process.env.JAGHELM_ICON_CACHE_MAX_MB;
 const {
   initIconCache, handleCachedIcon, iconCacheStats, resolveIconCacheMaxBytes,
-  MAX_ICON_BYTES, DEFAULT_ICON_CACHE_MAX_BYTES, ICON_CSP,
+  MAX_ICON_BYTES, DEFAULT_ICON_CACHE_MAX_BYTES, ICON_CSP, MAX_ICON_FETCHES, MAX_QUEUED_ICON_FETCHES,
 } = await import('./icon-cache.js');
 
 const realFetch = globalThis.fetch;
@@ -200,9 +200,13 @@ test('a redirect to another icon-repository URL is followed; anywhere else is re
   }
   // A 3xx without a Location, and a redirect loop, are failures too.
   calls = stubCdn(() => new Response(null, { status: 304 }));
-  assert.equal((await get(icon('no-location'))).status, 502);
+  const noLocation = await request(app).get('/cached').query({ url: icon('no-location') });
+  assert.equal(noLocation.status, 502);
+  assert.match(noLocation.body.error, /redirected away/);
   calls = stubCdn((url) => new Response(null, { status: 302, headers: { location: url } }));
-  assert.equal((await get(icon('loop'))).status, 502);
+  const loop = await request(app).get('/cached').query({ url: icon('loop') });
+  assert.equal(loop.status, 502);
+  assert.match(loop.body.error, /too many redirects/);
   assert.ok(calls.length <= 4, `a loop made ${calls.length} requests`);
   assert.deepEqual(cacheFiles(dataDir), [`${hashOf(ICON_URL)}.svg`]);
 });
@@ -355,7 +359,10 @@ test('concurrent requests never take the cache over its cap', async () => {
     return svgResponse(svgOf(SIZE));
   });
   const responses = await Promise.all(Array.from({ length: 12 }, (_, i) => get(icon(`c${i}`))));
-  for (const r of responses) assert.equal(r.status, 200);
+  // A 302 to the CDN when another icon evicted this one before it was sent:
+  // this cache holds 3, so that can happen here.
+  for (const r of responses) assert.ok([200, 302].includes(r.status), String(r.status));
+  assert.ok(responses.filter((r) => r.status === 200).length >= 3);
   const onDisk = cacheFiles(dataDir).reduce((sum, f) => sum + statSync(join(dataDir, 'icon-cache', f)).size, 0);
   assert.ok(onDisk <= 3 * SIZE + 10, `${onDisk} bytes on disk`);
   assert.equal(iconCacheStats().bytes, onDisk, 'the count matches the disk');
@@ -432,4 +439,142 @@ test('a file an earlier version cached under another spelling of an accepted URL
   assert.equal((await get(ICON_URL)).headers['x-icon-cache'], 'HIT');
   assert.deepEqual(calls, []);
   assert.deepEqual(iconCacheStats(), { count: 1, bytes: SVG.length, maxBytes: DEFAULT_ICON_CACHE_MAX_BYTES });
+});
+
+// ── #255 review: memory across concurrent misses ───────────────────────────
+
+/** Resolves once `cond()` holds, polling. */
+const until = async (cond) => {
+  while (!cond()) await new Promise((resolve) => setTimeout(resolve, 2));
+};
+
+test('no more than MAX_ICON_FETCHES upstream fetches run at once', async () => {
+  assert.equal(MAX_ICON_FETCHES, 8);
+  assert.equal(MAX_QUEUED_ICON_FETCHES, 256);
+  const dataDir = freshDir('in-flight');
+  initIconCache(dataDir);
+  let running = 0;
+  let peak = 0;
+  stubCdn(async () => {
+    running++;
+    peak = Math.max(peak, running);
+    // Hold the first fetches until every slot is busy, so the limit is reached
+    // however slowly the requests arrive; then let them all through.
+    await until(() => peak >= MAX_ICON_FETCHES);
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 5));
+    running--;
+    return svgResponse(svgOf(1000));
+  });
+  const responses = await Promise.all(Array.from({ length: 40 }, (_, i) => get(icon(`f${i}`))));
+  for (const r of responses) assert.equal(r.status, 200);
+  assert.equal(peak, MAX_ICON_FETCHES, `${peak} fetches ran at once`);
+  assert.equal(cacheFiles(dataDir).length, 40, 'every queued miss was fetched and cached in the end');
+});
+
+test('past the wait queue a miss is a 503 with Retry-After, and is not fetched', async () => {
+  initIconCache(freshDir('queue-full'), { maxFetches: 2, maxQueued: 3 });
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const calls = stubCdn(async () => {
+    await gate;
+    return svgResponse(SVG);
+  });
+  const refused = [];
+  const all = Array.from({ length: 8 }, (_, i) => request(app).get('/cached').query({ url: icon(`q${i}`) })
+    .then((r) => { if (r.status === 503) refused.push(r); return r; }));
+  // 2 fetching and 3 waiting: the other 3 are refused straight away.
+  await until(() => refused.length === 3);
+  assert.equal(calls.length, 2);
+  for (const r of refused) {
+    assert.equal(r.headers['retry-after'], '5');
+    assert.equal(r.headers['cache-control'], 'no-store');
+    assert.match(r.body.error, /busy/);
+  }
+  release();
+  const results = await Promise.all(all);
+  assert.equal(results.filter((r) => r.status === 200).length, 5);
+  assert.equal(calls.length, 5, 'only the accepted misses were fetched');
+});
+
+test('requests for one icon share its fetch and take no slot or queue place', async () => {
+  initIconCache(freshDir('coalesce-slot'), { maxFetches: 1, maxQueued: 0 });
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const calls = stubCdn(async () => {
+    await gate;
+    return svgResponse(SVG);
+  });
+  // .then() sends a supertest request; until then it is only built.
+  const same = Array.from({ length: 5 }, () => get(ICON_URL).then((r) => r));
+  await until(() => calls.length === 1);
+  // The one slot is taken and nothing may wait: another icon is refused...
+  assert.equal((await get(icon('other'))).status, 503);
+  release();
+  // ...but every request for the icon being fetched got it, from one fetch.
+  for (const r of await Promise.all(same)) {
+    assert.equal(r.status, 200);
+    assert.equal(r.body, SVG);
+  }
+  assert.deepEqual(calls, [ICON_URL]);
+});
+
+test('an icon the cache could not store is a 302 to the CDN, not served from memory', async () => {
+  const dataDir = freshDir('not-stored');
+  initIconCache(dataDir, { maxBytes: 500 });
+  stubCdn(() => svgResponse(svgOf(1000)));
+  const r = await request(app).get('/cached').query({ url: `${icon('big-for-cache')}?v=1` });
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.location, icon('big-for-cache'));
+  assert.equal(r.headers['x-icon-cache'], 'BYPASS');
+  assert.equal(r.headers['cache-control'], 'no-store', 'may not last: ask the cache again next time');
+  assert.deepEqual(cacheFiles(dataDir), []);
+});
+
+test('a miss is written from the chunks it was read in, and served from the file', async () => {
+  const dataDir = freshDir('chunks');
+  initIconCache(dataDir);
+  const body = svgOf(200 * 1024);
+  const bytes = Buffer.from(body);
+  stubCdn(() => new Response(new ReadableStream({
+    start(controller) {
+      for (let i = 0; i < bytes.length; i += 7001) controller.enqueue(new Uint8Array(bytes.subarray(i, i + 7001)));
+      controller.close();
+    },
+  }), { status: 200, headers: { 'content-type': 'image/svg+xml' } }));
+  const r = await get(icon('chunked'));
+  assert.equal(r.status, 200);
+  assert.equal(r.body, body);
+  assert.equal(r.headers['content-length'], String(bytes.length));
+  assert.equal(r.headers['x-icon-cache'], 'MISS');
+  assert.ok(r.headers['last-modified'], 'the miss was streamed from the file (sendFile), not written from memory');
+  assert.equal(readFileSync(cachedPath(dataDir, icon('chunked')), 'utf8'), body);
+  assert.equal(iconCacheStats().bytes, bytes.length);
+});
+
+// send stats a file and sets its headers before it opens it: a file that can't be
+// opened then (evicted in between, or unreadable) fails with those headers set.
+// Root opens a mode-000 file anyway, so this one runs only as another user.
+test('a cached file that fails after send set its headers leaves none of them behind', {
+  skip: process.getuid?.() === 0 && 'root can open a mode-000 file',
+}, async () => {
+  const dataDir = freshDir('open-fails');
+  initIconCache(dataDir);
+  stubCdn();
+  assert.equal((await get(ICON_URL)).status, 200);
+  const path = cachedPath(dataDir, ICON_URL);
+  chmodSync(path, 0o000);
+  try {
+    // The fetch it falls back to finds the icon too large to cache: a 302 that
+    // carries none of the unreadable file's headers.
+    stubCdn(() => svgResponse(SVG, { 'content-length': String(MAX_ICON_BYTES + 1) }));
+    const r = await request(app).get('/cached').query({ url: ICON_URL });
+    assert.equal(r.status, 302);
+    assert.equal(r.headers['content-length'], '0');
+    assert.equal(r.headers['x-icon-cache'], 'BYPASS');
+    for (const h of ['etag', 'last-modified', 'content-type', 'content-security-policy']) {
+      assert.equal(r.headers[h], undefined, h);
+    }
+  } finally {
+    try { chmodSync(path, 0o644); } catch { /* evicted */ }
+  }
 });

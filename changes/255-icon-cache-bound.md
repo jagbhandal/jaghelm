@@ -9,7 +9,8 @@
   raw.githubusercontent.com, such as another repository or a pinned version, is
   now loaded by the browser straight from there, so it still shows. An icon over
   512 KB is not cached either: the browser is sent to the CDN for it, where one
-  over 2 MB used to show nothing.
+  over 2 MB used to show nothing. So is one the cache can't store, such as when
+  writing to the data dir fails, where it used to be served without being kept.
 ### Security
 - Anyone who could reach JagHelm's port could fill its disk through the icon
   cache, `/api/icons/cached`, which needs no login so that icons load as images.
@@ -19,5 +20,8 @@
   icon repositories, builds the URL it fetches itself, so query strings and other
   spellings of one icon share one file, follows a redirect only to another such
   icon, refuses a response that is not the image type its name says, and keeps
-  at most 512 KB per icon and 50 MB in all. The icons already in the cache stay
+  at most 512 KB per icon and 50 MB in all. It fetches at most 8 icons at a time
+  with 256 more waiting, and answers `503` past that, and holds an icon in
+  memory only until it is on disk, so a flood of requests for icons not yet
+  cached can no longer run it out of memory. The icons already in the cache stay
   and count toward the 50 MB.

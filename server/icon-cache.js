@@ -19,12 +19,19 @@
  *   - A redirect is followed only to another accepted URL, MAX_REDIRECTS at most.
  *   - The response must be the image type its extension names, and at most
  *     MAX_ICON_BYTES. A larger icon is not cached: the browser is redirected to the
- *     CDN for it.
+ *     CDN for it, as it is for one the cache couldn't store.
  *   - The whole cache is capped at JAGHELM_ICON_CACHE_MAX_MB (default 50 MB);
  *     past that the least recently used icon is deleted. The files already on
  *     disk are counted at boot, oldest written first. Every write updates the
  *     in-memory count synchronously, so concurrent requests can't take the cache
  *     over the cap, and concurrent requests for one icon share one fetch.
+ *   - At most MAX_ICON_FETCHES upstream fetches run at once and
+ *     MAX_QUEUED_ICON_FETCHES more wait for a turn; past that a miss is a 503
+ *     with Retry-After. A body is held once, in the chunks it arrived in, until
+ *     it is written to disk; every response, a miss's too, is then streamed
+ *     from the file. So the icon bodies in memory are at most MAX_ICON_FETCHES ×
+ *     MAX_ICON_BYTES (4 MB), however many misses arrive and however slowly
+ *     clients read. An icon that wasn't stored is a 302 to the CDN.
  *   - Icons are served with a sandboxing CSP and nosniff, so an SVG opened
  *     directly from JagHelm's origin can't run script.
  *
@@ -54,6 +61,20 @@ export const MAX_ICON_BYTES = 512 * 1024;
 export const DEFAULT_ICON_CACHE_MAX_BYTES = 50 * MB;
 const FETCH_TIMEOUT_MS = 10000;
 const MAX_REDIRECTS = 3;
+/**
+ * Upstream fetches at once. A browser opens at most 6 connections to one
+ * HTTP/1.1 origin, so one browser's cold page load never waits; with the
+ * per-icon cap, it bounds the icon bodies in memory to 4 MB.
+ */
+export const MAX_ICON_FETCHES = 8;
+/**
+ * Misses that may wait for a fetch slot. Room for several cold page loads at
+ * once (or one over HTTP/2) — a dashboard shows tens of icons, the Settings
+ * integration gallery about 40 — while each waiting request holds no body.
+ */
+export const MAX_QUEUED_ICON_FETCHES = 256;
+/** Seconds a 503 asks the browser to wait before asking again. */
+const BUSY_RETRY_AFTER_S = 5;
 
 /**
  * Sandbox every served icon, independent of the global CSP: an SVG can carry
@@ -85,6 +106,12 @@ function iconHeaders(mime, cacheState) {
   };
 }
 
+/** What res.sendFile() may have set before failing: ours, and the file's own. */
+const FILE_HEADERS = [
+  ...Object.keys(iconHeaders('', '')),
+  'Content-Length', 'ETag', 'Last-Modified', 'Accept-Ranges', 'Content-Range',
+];
+
 // Absolute: res.sendFile() refuses a relative path, and JAGHELM_DATA_DIR may be one.
 const cacheDirIn = (dataDir) => resolve(dataDir, 'icon-cache');
 let cacheDir = cacheDirIn(DATA_DIR);
@@ -94,6 +121,34 @@ let entries = new Map();
 let totalBytes = 0;
 /** File name → the fetch in flight for it, so concurrent requests for one icon share it. */
 let inflight = new Map();
+
+/**
+ * At most `max` holders at once, and at most `maxQueued` more waiting in order.
+ * @param {number} max
+ * @param {number} maxQueued
+ */
+function createLimiter(max, maxQueued) {
+  let active = 0;
+  /** @type {Array<() => void>} */
+  const waiting = [];
+  return {
+    /** Resolves true with a slot, or false at once when the queue is full. */
+    acquire() {
+      if (active < max) {
+        active++;
+        return Promise.resolve(true);
+      }
+      if (waiting.length >= maxQueued) return Promise.resolve(false);
+      return new Promise((resolve) => waiting.push(() => resolve(true)));
+    },
+    release() {
+      const next = waiting.shift();
+      if (next) next(); // the slot passes straight to the next in line
+      else active--;
+    },
+  };
+}
+let fetchSlots = createLimiter(MAX_ICON_FETCHES, MAX_QUEUED_ICON_FETCHES);
 
 /**
  * Delete least recently used files until the cache holds `limit` bytes or less.
@@ -123,7 +178,7 @@ function evictTo(limit) {
  * Initialize the icon cache directory and count what it holds.
  * Call once at boot; the data dir defaults to JAGHELM_DATA_DIR, like every store.
  * @param {string} [dataDir]
- * @param {{ maxBytes?: number }} [opts] tests set a small cap
+ * @param {{ maxBytes?: number, maxFetches?: number, maxQueued?: number }} [opts] tests set small caps
  */
 export function initIconCache(dataDir = DATA_DIR, opts = {}) {
   cacheDir = cacheDirIn(dataDir);
@@ -131,6 +186,7 @@ export function initIconCache(dataDir = DATA_DIR, opts = {}) {
   entries = new Map();
   totalBytes = 0;
   inflight = new Map();
+  fetchSlots = createLimiter(opts.maxFetches ?? MAX_ICON_FETCHES, opts.maxQueued ?? MAX_QUEUED_ICON_FETCHES);
   mkdirSync(cacheDir, { recursive: true });
 
   let names = [];
@@ -199,25 +255,27 @@ function adopt(from, to) {
 
 /**
  * Write an icon into the cache, evicting to make room first. Synchronous from
- * the check to the count, so no other request can interleave. Best-effort: a
- * failed write only means the icon is not cached.
+ * the check to the count, so no other request can interleave.
  * @param {string} name
- * @param {Buffer} buffer
+ * @param {Uint8Array[]} chunks the body, as read
+ * @param {number} size their total length
+ * @returns {boolean} whether it was stored (no room, or a failed write, isn't)
  */
-function admit(name, buffer) {
+function admit(name, chunks, size) {
   forget(name);
-  if (buffer.length > maxBytes) return;
-  evictTo(maxBytes - buffer.length);
-  if (totalBytes + buffer.length > maxBytes) return;
+  if (size > maxBytes) return false;
+  evictTo(maxBytes - size);
+  if (totalBytes + size > maxBytes) return false;
   try {
     mkdirSync(cacheDir, { recursive: true });
-    atomicWriteFileSync(join(cacheDir, name), buffer);
+    atomicWriteFileSync(join(cacheDir, name), chunks);
   } catch (err) {
     log.warn({ err }, 'Write failed');
-    return;
+    return false;
   }
-  entries.set(name, buffer.length);
-  totalBytes += buffer.length;
+  entries.set(name, size);
+  totalBytes += size;
+  return true;
 }
 
 /** Hash a URL to a cache-safe filename. */
@@ -225,23 +283,27 @@ function urlToHash(url) {
   return crypto.createHash('sha256').update(url).digest('hex');
 }
 
-/** Read a body up to `max` bytes; null once it is longer. */
+/**
+ * Read a body up to `max` bytes, keeping the chunks it arrives in (joining them
+ * would hold it twice); null once it is longer.
+ * @returns {Promise<{ chunks: Uint8Array[], size: number } | null>}
+ */
 async function readCapped(res, max) {
-  if (!res.body) return Buffer.alloc(0);
+  if (!res.body) return { chunks: [], size: 0 };
   const reader = res.body.getReader();
   const chunks = [];
-  let total = 0;
+  let size = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    total += value.length;
-    if (total > max) {
+    size += value.length;
+    if (size > max) {
       try { await reader.cancel(); } catch { /* already closing */ }
       return null;
     }
     chunks.push(value);
   }
-  return Buffer.concat(chunks, total);
+  return { chunks, size };
 }
 
 async function discard(res) {
@@ -258,14 +320,31 @@ function resolveLocation(location, base) {
 }
 
 /**
- * Fetch a canonical icon URL and cache it. Never rejects.
+ * Fetch a canonical icon URL and cache it, once a fetch slot is free. Never rejects.
  * @param {string} url canonical (icon-sources.js)
  * @param {string} name its cache file name
- * @returns {Promise<{ buffer: Buffer } | { tooLarge: true } | { status: number, error: string }>}
+ * @returns {Promise<{ cached: true } | { bypass: 'too large' | 'not stored' } | { status: number, error: string, retryAfter?: number }>}
  */
 async function fetchAndCache(url, name) {
+  const slots = fetchSlots;
+  if (!(await slots.acquire())) {
+    return { status: 503, error: 'Icon cache busy fetching other icons; try again shortly', retryAfter: BUSY_RETRY_AFTER_S };
+  }
+  try {
+    return await fetchIcon(url, name);
+  } finally {
+    slots.release();
+  }
+}
+
+/**
+ * The fetch itself, holding a slot. Never rejects.
+ * @param {string} url
+ * @param {string} name
+ */
+async function fetchIcon(url, name) {
   const mime = ICON_TYPES[url.slice(url.lastIndexOf('.'))];
-  // The timeout covers the body too, not just the headers.
+  // Started once the slot is held, and covering the body too, not just the headers.
   const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
   let current = url;
   try {
@@ -279,8 +358,9 @@ async function fetchAndCache(url, name) {
       });
       if (response.status >= 300 && response.status < 400) {
         await discard(response);
+        if (hop >= MAX_REDIRECTS) return { status: 502, error: 'CDN sent too many redirects' };
         const location = response.headers.get('location');
-        const next = location && hop < MAX_REDIRECTS ? canonicalIconUrl(resolveLocation(location, current)) : null;
+        const next = location ? canonicalIconUrl(resolveLocation(location, current)) : null;
         if (!next) return { status: 502, error: 'CDN redirected away from the icon repositories' };
         current = next;
         continue;
@@ -297,13 +377,13 @@ async function fetchAndCache(url, name) {
       const declared = Number(response.headers.get('content-length'));
       if (declared > MAX_ICON_BYTES) {
         await discard(response);
-        return { tooLarge: true };
+        return { bypass: 'too large' };
       }
-      const buffer = await readCapped(response, MAX_ICON_BYTES);
-      if (!buffer) return { tooLarge: true };
-      if (!buffer.length) return { status: 502, error: 'CDN returned an empty icon' };
-      admit(name, buffer);
-      return { buffer };
+      const body = await readCapped(response, MAX_ICON_BYTES);
+      if (!body) return { bypass: 'too large' };
+      if (!body.size) return { status: 502, error: 'CDN returned an empty icon' };
+      // The body is dropped here, once on disk: every response streams the file.
+      return admit(name, body.chunks, body.size) ? { cached: true } : { bypass: 'not stored' };
     }
   } catch (err) {
     if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
@@ -313,7 +393,10 @@ async function fetchAndCache(url, name) {
   }
 }
 
-/** One fetch per icon at a time; later requests for it wait for that one. */
+/**
+ * One fetch per icon at a time; later requests for it wait for that one, and so
+ * take no fetch slot or place in the queue of their own.
+ */
 function fetchOnce(url, name) {
   const pending = inflight.get(name);
   if (pending) return pending;
@@ -326,17 +409,22 @@ function fetchOnce(url, name) {
 }
 
 /**
- * Serve a cached file. Resolves false, having sent nothing, when it can't be
- * read (deleted behind the cache's back, say): the caller fetches it again. The
- * file stays counted until that fetch replaces it or eviction deletes it, so a
+ * Serve a cached file, streamed with backpressure. Resolves false, having sent
+ * nothing, when it can't be read (deleted behind the cache's back, say). The
+ * file stays counted until a fetch replaces it or eviction deletes it, so a
  * file still on disk is never left out of the total.
  */
-function sendCached(res, name, mime) {
+function sendCached(res, name, mime, cacheState) {
   return new Promise((done) => {
-    // Headers via the option, so they're set only once the file is found.
-    res.sendFile(join(cacheDir, name), { headers: iconHeaders(mime, 'HIT') }, (err) => {
+    // Headers via the option, so they're set only once send has found the file.
+    res.sendFile(join(cacheDir, name), { headers: iconHeaders(mime, cacheState) }, (err) => {
       // Sent, or the client went away: nothing more to do.
-      done(!err || res.headersSent || err.code === 'ECONNABORTED');
+      if (!err || res.headersSent || err.code === 'ECONNABORTED') return done(true);
+      // A file that vanished (evicted, say) between send's stat and its open
+      // fails after its headers are set, Content-Length among them: clear them,
+      // or the response sent instead would claim the file's length and hang.
+      for (const h of FILE_HEADERS) res.removeHeader(h);
+      done(false);
     });
   });
 }
@@ -347,7 +435,8 @@ function sendCached(res, name, mime) {
  * 1. Canonicalize the URL against the icon repositories → 403 if it isn't one
  * 2. Check local cache → serve from disk (cache HIT)
  * 3. Fetch from CDN → save to disk → serve to client (cache MISS)
- * 4. Too large to cache → 302 to the CDN; any other failure → 502/504 (errors are never cached)
+ * 4. Too large, or not stored → 302 to the CDN; too many misses at once → 503
+ *    with Retry-After; any other failure → 502/504 (errors are never cached)
  */
 export async function handleCachedIcon(req, res) {
   const raw = req.query.url;
@@ -365,24 +454,31 @@ export async function handleCachedIcon(req, res) {
   // Cache HIT — serve from disk
   if (entries.has(name)) {
     touch(name);
-    if (await sendCached(res, name, mime)) return;
+    if (await sendCached(res, name, mime, 'HIT')) return;
   }
   // Before #255 a file was named after the URL exactly as the browser sent it:
   // reuse one under the canonical name instead of fetching it again.
   const asSent = `${urlToHash(raw)}${ext}`;
   if (asSent !== name && entries.has(asSent) && adopt(asSent, name)) {
-    if (await sendCached(res, name, mime)) return;
+    if (await sendCached(res, name, mime, 'HIT')) return;
   }
 
   // Cache MISS — fetch from CDN, cache, serve
   const result = await fetchOnce(url, name);
-  if ('buffer' in result) {
-    res.set(iconHeaders(mime, 'MISS'));
-    return res.send(result.buffer);
-  }
-  if ('tooLarge' in result) {
-    res.set({ 'Location': url, 'Cache-Control': 'public, max-age=86400', 'X-Icon-Cache': 'BYPASS' });
+  if ('cached' in result && (await sendCached(res, name, mime, 'MISS'))) return;
+  if ('cached' in result || 'bypass' in result) {
+    // Not stored, or already evicted again: the browser gets it from the CDN.
+    // An icon too large to cache stays so, so the browser may keep that redirect
+    // for a day; the other reasons can pass, so it asks again next time.
+    const tooLarge = 'bypass' in result && result.bypass === 'too large';
+    res.set({
+      'Location': url, 'Cache-Control': tooLarge ? 'public, max-age=86400' : 'no-store',
+      'X-Icon-Cache': 'BYPASS', 'Content-Length': '0',
+    });
     return res.status(302).end();
+  }
+  if (result.retryAfter) {
+    res.set({ 'Retry-After': String(result.retryAfter), 'Cache-Control': 'no-store' });
   }
   return res.status(result.status).json({ error: result.error });
 }

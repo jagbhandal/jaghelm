@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -209,4 +209,13 @@ test('non-strings and overlong input are rejected', () => {
 test('ICON_TYPES maps each accepted extension to the Content-Type the repositories send', () => {
   assert.deepEqual({ ...ICON_TYPES }, { '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp' });
   assert.ok(Object.isFrozen(ICON_TYPES));
+});
+
+test('icon-sources.js imports nothing, so the web and mobile bundles can take it alone', () => {
+  const src = readFileSync(new URL('./icon-sources.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /^\s*import\b/m, 'a static import');
+  assert.doesNotMatch(src, /^\s*export\s+(\*|\{[^}]*\})\s+from\b/m, 'a re-export');
+  assert.doesNotMatch(src, /\bimport\s*\(/, 'a dynamic import');
+  assert.doesNotMatch(src, /\brequire\s*\(/, 'a require');
+  assert.doesNotMatch(src, /\bprocess\./, 'a Node global');
 });
