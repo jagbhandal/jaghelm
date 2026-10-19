@@ -16,7 +16,15 @@ import assert from 'node:assert/strict';
 process.env.LOG_LEVEL = 'debug';
 const { initMonitors, fetchMonitors, matchMonitor, logUnmatchedContainers } =
   await import('./monitors.js');
-const { createCycleReporter, collectCycleErrors } = await import('./refresh.js');
+const {
+  createCycleReporter,
+  runCycleRefreshes,
+  CYCLE_REFRESHES,
+  refreshServices,
+  refreshUPS,
+  refreshGitea,
+  refreshIntegrations,
+} = await import('./refresh.js');
 
 // A trusted loopback URL passes the SSRF guard; globalThis.fetch is stubbed, so
 // nothing touches the network.
@@ -101,8 +109,8 @@ function recordingLogger() {
 test('cycle log: a healthy cycle logs nothing at info, only a debug line', () => {
   const { entries, logger } = recordingLogger();
   const report = createCycleReporter(logger);
-  report({ ms: 371, errors: [], slowMs: 5000 });
-  report({ ms: 402, errors: [], slowMs: 5000 });
+  report({ ms: 371, errors: [] });
+  report({ ms: 402, errors: [] });
   assert.deepEqual(
     entries.map((e) => e.level),
     ['debug', 'debug']
@@ -111,11 +119,11 @@ test('cycle log: a healthy cycle logs nothing at info, only a debug line', () =>
   assert.equal(entries[0].fields.ms, 371);
 });
 
-test('cycle log: a slow cycle logs once at info, and the next fast one is quiet again', () => {
+test('cycle log: a slow cycle (5 s or more) logs once at info, and the next fast one is quiet again', () => {
   const { entries, logger } = recordingLogger();
   const report = createCycleReporter(logger);
-  report({ ms: 6200, errors: [], slowMs: 5000 });
-  report({ ms: 380, errors: [], slowMs: 5000 });
+  report({ ms: 6200, errors: [] });
+  report({ ms: 380, errors: [] });
   assert.deepEqual(
     entries.map((e) => e.level),
     ['info', 'debug']
@@ -128,12 +136,12 @@ test('cycle log: a slow cycle logs once at info, and the next fast one is quiet 
 test('cycle log: a changed error set logs once at info, and again when it clears', () => {
   const { entries, logger } = recordingLogger();
   const report = createCycleReporter(logger);
-  report({ ms: 400, errors: ['gitea'], slowMs: 5000 }); // new failure
-  report({ ms: 400, errors: ['gitea'], slowMs: 5000 }); // same failure: quiet
-  report({ ms: 400, errors: ['integration:plex', 'gitea'], slowMs: 5000 }); // one more
-  report({ ms: 400, errors: ['gitea', 'integration:plex'], slowMs: 5000 }); // same set, other order
-  report({ ms: 400, errors: [], slowMs: 5000 }); // recovery
-  report({ ms: 400, errors: [], slowMs: 5000 });
+  report({ ms: 400, errors: ['gitea'] }); // new failure
+  report({ ms: 400, errors: ['gitea'] }); // same failure: quiet
+  report({ ms: 400, errors: ['integration:plex', 'gitea'] }); // one more
+  report({ ms: 400, errors: ['gitea', 'integration:plex'] }); // same set, other order
+  report({ ms: 400, errors: [] }); // recovery
+  report({ ms: 400, errors: [] });
   assert.deepEqual(
     entries.map((e) => e.level),
     ['info', 'debug', 'info', 'debug', 'info', 'debug']
@@ -145,17 +153,30 @@ test('cycle log: a changed error set logs once at info, and again when it clears
   assert.deepEqual(entries[4].fields.errors, []);
 });
 
-test('cycle errors: a failed domain or an erroring integration joins the error set', () => {
-  const errors = collectCycleErrors(
-    ['services', 'ups', 'gitea', 'integrations'],
+test('cycle errors: a failed refresh or an erroring integration joins the error set, under its own name', async () => {
+  // Out of the usual order, so a label taken by position instead of from its
+  // own pair would land on the wrong refresh.
+  const errors = await runCycleRefreshes([
+    ['integrations', async () => ({ plex: { _error: 'HTTP 401' }, sonarr: { queue: 0 } })],
     [
-      { status: 'fulfilled', value: { nodes: {} } },
-      { status: 'fulfilled', value: null }, // refresh functions return null on error
-      { status: 'rejected', reason: new Error('boom') },
-      { status: 'fulfilled', value: { plex: { _error: 'HTTP 401' }, sonarr: { queue: 0 } } },
-    ]
-  );
+      'gitea',
+      async () => {
+        throw new Error('boom');
+      },
+    ],
+    ['services', async () => ({ nodes: {} })],
+    ['ups', async () => null], // refresh functions return null on error
+  ]);
   assert.deepEqual(errors, ['gitea', 'integration:plex', 'ups']);
+});
+
+test('cycle errors: the background cycle runs all four refreshes, each under its name', () => {
+  assert.deepEqual(CYCLE_REFRESHES, [
+    ['services', refreshServices],
+    ['ups', refreshUPS],
+    ['gitea', refreshGitea],
+    ['integrations', refreshIntegrations],
+  ]);
 });
 
 // ── Kuma monitor load ────────────────────────────────────────────────────

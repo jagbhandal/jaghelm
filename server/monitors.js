@@ -210,7 +210,8 @@ export async function fetchMonitors(bustCache = false) {
       // and the per-cycle load line is debug now, so say it once per outage.
       if (!kumaUnavailableWarned) {
         log.warn(
-          `No monitors loaded from Kuma — serving the last-known statuses until they are ${STALE_CEILING_MS / 60_000} min old, then none`
+          { staleCeilingMin: STALE_CEILING_MS / 60_000 },
+          'No monitors loaded from Kuma — serving last-known statuses, if any, until they go stale'
         );
         kumaUnavailableWarned = true;
       }

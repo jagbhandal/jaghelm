@@ -582,25 +582,34 @@ async function _refreshIntegrations() {
 // A cycle this slow logs at info: half the shortest interval allowed
 // (MIN_INTERVAL_SECONDS), so it fires before a cycle can overrun any cadence.
 // A healthy cycle takes well under a second, so this catches only outliers.
-export const SLOW_CYCLE_MS = (MIN_INTERVAL_SECONDS * 1000) / 2;
+const SLOW_CYCLE_MS = (MIN_INTERVAL_SECONDS * 1000) / 2;
 
-const CYCLE_DOMAINS = ['services', 'ups', 'gitea', 'integrations'];
+// The refreshes one background cycle runs, each with the name it goes by in the
+// cycle's error set. One list, so a name can't drift from its function.
+export const CYCLE_REFRESHES = [
+  ['services', refreshServices],
+  ['ups', refreshUPS],
+  ['gitea', refreshGitea],
+  ['integrations', refreshIntegrations],
+];
 
 /**
- * The cycle's error set: every domain whose refresh failed (each returns null
- * after logging its own error) and `integration:<key>` for every integration
- * that came back with an `_error`. Keys only, not messages, so an error whose
- * text varies doesn't read as a change. Sorted.
+ * Run the refreshes in parallel and return the cycle's error set: the name of
+ * every refresh that failed (each returns null after logging its own error) and
+ * `integration:<key>` for every integration that came back with an `_error`.
+ * Keys only, not messages, so an error whose text varies doesn't read as a
+ * change. Sorted.
  */
-export function collectCycleErrors(domains, settled) {
+export async function runCycleRefreshes(refreshes = CYCLE_REFRESHES) {
+  const settled = await Promise.allSettled(refreshes.map(([, fn]) => fn()));
   const errors = [];
   settled.forEach((r, i) => {
-    const domain = domains[i];
+    const name = refreshes[i][0];
     if (r.status === 'rejected' || r.value == null) {
-      errors.push(domain);
+      errors.push(name);
       return;
     }
-    if (domain === 'integrations') {
+    if (name === 'integrations') {
       for (const [key, entry] of Object.entries(r.value)) {
         if (entry && entry._error) errors.push(`integration:${key}`);
       }
@@ -618,12 +627,12 @@ export function collectCycleErrors(domains, settled) {
  */
 export function createCycleReporter(logger = log) {
   let prevErrors = [];
-  return function reportCycle({ ms, errors, slowMs = SLOW_CYCLE_MS }) {
+  return function reportCycle({ ms, errors }) {
     const current = [...new Set(errors)].sort();
     const added = current.filter((e) => !prevErrors.includes(e));
     const cleared = prevErrors.filter((e) => !current.includes(e));
     prevErrors = current;
-    const slow = ms >= slowMs;
+    const slow = ms >= SLOW_CYCLE_MS;
     const changed = added.length > 0 || cleared.length > 0;
     const fields = { ms, errors: current };
     if (slow) fields.slow = true;
@@ -640,13 +649,8 @@ async function runBackgroundRefresh() {
   const start = Date.now();
   let ok = true;
   try {
-    const settled = await Promise.allSettled([
-      refreshServices(),
-      refreshUPS(),
-      refreshGitea(),
-      refreshIntegrations(),
-    ]);
-    reportCycle({ ms: Date.now() - start, errors: collectCycleErrors(CYCLE_DOMAINS, settled) });
+    const errors = await runCycleRefreshes();
+    reportCycle({ ms: Date.now() - start, errors });
 
     // Push cycle: diff this cycle's state vs the last and notify mobile
     // tokens. Self-contained — it can NEVER reject (see runPushCycle), so it
