@@ -14,7 +14,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.LOG_LEVEL = 'debug';
-const { initMonitors, fetchMonitors, matchMonitor, logUnmatchedContainers } =
+const { initMonitors, fetchMonitors, assignMonitors, logUnmatchedContainers } =
   await import('./monitors.js');
 const {
   createCycleReporter,
@@ -246,12 +246,43 @@ const MONITORS = {
   2: { id: 2, name: 'gitea', status: 'up' },
 };
 
-test('matchMonitor: a container with no monitor logs nothing itself', async () => {
+const candidates = (...names) => names.map((container) => ({ container, nodeKey: 'vm103' }));
+
+test('assignMonitors: a container with no monitor logs nothing itself', async () => {
   const lines = await captureLogs(async () => {
-    assert.equal(matchMonitor('watchtower', null, MONITORS), null);
-    assert.equal(matchMonitor('alloy', null, MONITORS), null);
+    assert.deepEqual(assignMonitors({ candidates: candidates('watchtower', 'alloy'), monitors: MONITORS }), [null, null]);
   });
   assert.deepEqual(lines, []);
+});
+
+// #240: a mapping to a monitor Kuma lacks is one problem, so one warning,
+// however many refresh cycles it stays broken.
+test('assignMonitors: a mapping to a missing monitor warns once per mapping, not per cycle', async () => {
+  const mapped = { tailscale: 'Tailscale', 'gateway-npm': 'Nginx Proxy Manager', gitea: 'gitea' };
+  const cycle = (...names) =>
+    assignMonitors({ candidates: candidates(...names), monitors: MONITORS, explicitOf: (n) => mapped[n] ?? null });
+  const lines = await captureLogs(async () => {
+    for (let i = 0; i < 3; i += 1) cycle('tailscale', 'gitea', 'grafana');
+    cycle('tailscale', 'gateway-npm'); // a second broken mapping appears
+    cycle('tailscale', 'gateway-npm');
+  });
+  assert.deepEqual(
+    lines.map((l) => `${l.level} ${l.containerName} -> ${l.explicitMonitor}`),
+    ['warn tailscale -> Tailscale', 'warn gateway-npm -> Nginx Proxy Manager']
+  );
+  assert.match(lines[0].msg, /shows no monitor until the mapping is fixed/);
+});
+
+test('assignMonitors: no mapping warning while Kuma has given no monitors', async () => {
+  const lines = await captureLogs(async () => {
+    const result = assignMonitors({
+      candidates: candidates('radarr'),
+      monitors: {},
+      explicitOf: () => 'Radarr',
+    });
+    assert.deepEqual(result, [null]);
+  });
+  assert.deepEqual(lines, [], 'every mapping would look broken during a Kuma outage');
 });
 
 test('unmatched containers: the summary waits until monitors and containers have loaded', async () => {

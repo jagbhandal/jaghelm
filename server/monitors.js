@@ -249,111 +249,262 @@ export async function getMonitorNames() {
     .sort();
 }
 
+// ── Matching monitors to containers (#240) ───────────────────────────────
+//
+// A Kuma monitor is one service, so it marks one container: a down monitor
+// paints one card red and sends one push. Matching used to take each
+// container's first lookalike monitor without checking whether another
+// container already had it, so one down monitor could paint every container
+// sharing a word with it red, on every node, and other monitors were never
+// matched at all. assignMonitors() now assigns the monitors to the containers
+// of a whole cycle at once, best match first.
+
+// How good a kind of name match is, the higher the better. Within a kind, a
+// higher score wins.
+const KIND_RANK = { exact: 4, url: 3, contains: 2, word: 1 };
+
+// Words that mark a container as a helper of a stack rather than the service
+// a monitor checks: a monitor "Immich" matches immich-server, immich-redis,
+// immich-postgres and immich-machine-learning equally well by name, and goes to
+// immich-server. Only a tie-break between equally good matches.
+const HELPER_WORDS = new Set([
+  'agent',
+  'backup',
+  'cron',
+  'db',
+  'exporter',
+  'learning',
+  'machine',
+  'mariadb',
+  'ml',
+  'mongo',
+  'mysql',
+  'postgres',
+  'postgresql',
+  'proxy',
+  'redis',
+  'runner',
+  'sync',
+  'valkey',
+  'worker',
+]);
+
+const normalize = (s) =>
+  String(s ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+const wordsOf = (s) =>
+  String(s ?? '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+// The first label of a monitor name that is a URL or hostname ("grafana" from
+// "https://grafana.example.com" or "grafana.example.com"); null for any other
+// name, or for a label with no letter (the "192" of an IP address).
+function hostLabel(name) {
+  if (!name.includes('.')) return null;
+  const m = /(?:https?:\/\/)?([a-z0-9-]+)\./i.exec(name);
+  const label = m ? normalize(m[1]) : '';
+  return /[a-z]/.test(label) ? label : null;
+}
+
 /**
- * Match a container to an Uptime Kuma monitor.
+ * How well a container name matches a monitor name: `{ kind, score, helper }`,
+ * or null when they don't match. Names compare lowercased with everything but
+ * letters and digits removed ("Home Assistant" is "homeassistant").
  *
- * Strategy (in priority order):
- * 1. Explicit mapping from services.yaml → exact name match
- * 2. Exact normalized match → strip non-alphanumeric, compare
- * 3. URL-aware match → extract hostname from URL-based monitor names
- * 4. Containment match → either name contains the other
- * 5. Word-boundary match → split on spaces/hyphens, check overlap
- * 6. No match → return null
+ * - `exact`: the names are equal.
+ * - `url`: the monitor name is a URL or hostname whose first label is the
+ *   container name ("grafana.example.com" for grafana).
+ * - `contains`: one name contains the other, or the container name and that
+ *   first label do; the score is the length of the shorter one.
+ * - `word`: the names share a word of 4 letters or more ("gateway" in
+ *   gateway-npm and "Pi Gateway (Ping)"); the score is the total length of the
+ *   words of 3 letters or more they share.
+ *
+ * `helper` is true when the container's own words, those not in the monitor
+ * name, include one of HELPER_WORDS (redis, db, cron, …).
  */
-// Tracks (container, monitor) pairs that have already logged an "explicit miss"
-// warning. Process-lifetime — clears on container restart. Prevents log spam
-// every refresh cycle when services.yaml references stale monitor names.
+export function scoreMatch(containerName, monitorName) {
+  const cn = normalize(containerName);
+  const mn = normalize(monitorName);
+  if (!cn || !mn) return null;
+  const monitorWords = new Set(wordsOf(monitorName));
+  const helper = wordsOf(containerName).some((w) => !monitorWords.has(w) && HELPER_WORDS.has(w));
+  if (cn === mn) return { kind: 'exact', score: cn.length, helper };
+  const host = hostLabel(String(monitorName));
+  if (host === cn) return { kind: 'url', score: cn.length, helper };
+  let overlap = 0;
+  if (mn.includes(cn) || cn.includes(mn)) overlap = Math.min(cn.length, mn.length);
+  if (host && (host.includes(cn) || cn.includes(host))) {
+    overlap = Math.max(overlap, Math.min(cn.length, host.length));
+  }
+  if (overlap > 0) return { kind: 'contains', score: overlap, helper };
+  const shared = [...new Set(wordsOf(containerName))].filter((w) => w.length >= 3 && monitorWords.has(w));
+  if (shared.some((w) => w.length >= 4)) {
+    return { kind: 'word', score: shared.reduce((n, w) => n + w.length, 0), helper };
+  }
+  return null;
+}
+
+const compareText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+// Kuma's ids are numbers; compare them as numbers when both are.
+function compareIds(a, b) {
+  const x = Number(a);
+  const y = Number(b);
+  if (Number.isFinite(x) && Number.isFinite(y) && x !== y) return x - y;
+  return compareText(String(a), String(b));
+}
+
+// The order candidate pairs are assigned in: the better match first, then the
+// tie-breaks. A total order, so the result never depends on the order the
+// containers or monitors came in.
+function comparePairs(a, b) {
+  return (
+    b.rank - a.rank ||
+    b.score - a.score ||
+    Number(a.helper) - Number(b.helper) ||
+    Number(b.sameNode) - Number(a.sameNode) ||
+    a.nodeRank - b.nodeRank ||
+    compareText(a.nodeKey, b.nodeKey) ||
+    compareText(a.container, b.container) ||
+    compareIds(a.monitor.id, b.monitor.id)
+  );
+}
+
+// (container, mapped monitor) pairs already warned about: one warning per
+// mapping per boot, however many cycles it stays broken.
 const explicitMissWarned = new Set();
 
-export function matchMonitor(containerName, explicitMonitor, monitors) {
-  const monitorList = Object.values(monitors);
+function warnExplicitMissing(containerName, explicitMonitor) {
+  const key = `${containerName}\u0000${explicitMonitor}`;
+  if (explicitMissWarned.has(key)) return;
+  explicitMissWarned.add(key);
+  log.warn(
+    { containerName, explicitMonitor },
+    'Explicit monitor mapping names no Kuma monitor — the container shows no monitor until the mapping is fixed (logged once per mapping)'
+  );
+}
 
-  // Strategy 1: Explicit mapping
-  if (explicitMonitor) {
-    const exact = monitorList.find((m) => m.name.toLowerCase() === explicitMonitor.toLowerCase());
-    if (exact) return exact;
-    // Log once per unique (container, monitor) pair, then stay silent.
-    const key = `${containerName}::${explicitMonitor}`;
-    if (!explicitMissWarned.has(key)) {
-      log.warn(
-        { explicitMonitor, containerName },
-        'Explicit monitor not found for container — falling back to fuzzy match (this warning logs once per pair)'
-      );
-      explicitMissWarned.add(key);
+/**
+ * Assign Kuma monitors to the containers of one refresh cycle, all at once.
+ *
+ * `candidates` are `{ container, nodeKey }`, one per container on a node (the
+ * same name on two nodes is two candidates). `monitors` is fetchMonitors' id →
+ * monitor map. `explicitOf(container)` returns the monitor name services.yaml
+ * maps the container to, or null. `homeNodeOf(monitorId)` returns the node this
+ * matcher last gave the monitor to (the service registry's getHomeNode), or
+ * null. `nodeOrder` is the board's node order.
+ *
+ * Returns an array parallel to `candidates`: the monitor each one gets, or null.
+ *
+ * 1. An explicit mapping (`monitor:` in services.yaml) gives the container the
+ *    monitor of that name, compared case-insensitively, whatever the names. A
+ *    monitor mapped explicitly goes only to the containers mapped to it: to
+ *    several when several are, including one container name on several nodes.
+ *    When no monitor has that name, the container gets no monitor: it is left
+ *    out of name matching, so it takes no other container's monitor, and a
+ *    warning names the mapping once. Not while Kuma has given no monitors at
+ *    all, when every mapping would look broken.
+ * 2. Every other monitor goes to one container at most, by name. Every
+ *    (container, monitor) pair that matches (scoreMatch) is ranked, and pairs
+ *    are taken best first, each only while both its container and its monitor
+ *    are still free. A pair ranks by the kind of match (exact, then URL, then
+ *    contains, then a shared word), then its score; between equal matches, a
+ *    container that is not a helper (redis, db, …), then the container on the
+ *    monitor's home node, then the board's node order, then the container
+ *    name, then the monitor id.
+ *
+ * The home node is only a tie-break between equally good matches, above all
+ * the same container on several nodes, where it keeps the monitor on its node
+ * when the container starts on another. Ranked above the kind of match, a
+ * lookalike left on that node (gitea-runner) would keep the monitor after the
+ * service moved to another node.
+ */
+export function assignMonitors({
+  candidates,
+  monitors,
+  explicitOf = () => null,
+  homeNodeOf = () => null,
+  nodeOrder = [],
+}) {
+  const result = candidates.map(() => null);
+  const monitorList = Object.values(monitors || {})
+    .filter((m) => m && m.id != null && typeof m.name === 'string')
+    .sort((a, b) => compareIds(a.id, b.id));
+  if (monitorList.length === 0) return result;
+
+  // Two monitors with one name: an explicit mapping takes the lower id.
+  const byName = new Map();
+  for (const m of monitorList) {
+    const key = m.name.toLowerCase();
+    if (!byName.has(key)) byName.set(key, m);
+  }
+
+  const explicitlyMapped = new Set(); // monitor ids
+  const byNameMatching = []; // candidate indexes without an explicit mapping
+  candidates.forEach((c, i) => {
+    const explicit = explicitOf(c.container);
+    if (typeof explicit !== 'string' || explicit === '') {
+      byNameMatching.push(i);
+      return;
     }
-  }
+    const m = byName.get(explicit.toLowerCase());
+    if (m) {
+      result[i] = m;
+      explicitlyMapped.add(m.id);
+    } else {
+      warnExplicitMissing(c.container, explicit);
+    }
+  });
 
-  // Normalize: lowercase, strip non-alphanumeric
-  const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const cn = normalize(containerName);
-  if (!cn) return null;
-
-  // Strategy 2: Exact normalized match
-  for (const m of monitorList) {
-    if (normalize(m.name) === cn) return m;
-  }
-
-  // Strategy 3: URL-aware match — extract hostname part from monitor names that look like URLs
-  for (const m of monitorList) {
-    const name = m.name || '';
-    // If monitor name contains a dot (likely a URL or hostname)
-    if (name.includes('.')) {
-      // Extract the first segment before the first dot: "grafana.jagbhandal.com" → "grafana"
-      const urlMatch = name.match(/(?:https?:\/\/)?([a-z0-9-]+)\./i);
-      if (urlMatch) {
-        const extracted = urlMatch[1].toLowerCase();
-        if (extracted === cn || cn.includes(extracted) || extracted.includes(cn)) {
-          return m;
-        }
+  const nodeRanks = new Map(nodeOrder.map((nodeKey, i) => [nodeKey, i]));
+  const homes = new Map(); // monitor id -> home node, read once
+  const homeOf = (id) => {
+    if (!homes.has(id)) homes.set(id, homeNodeOf(id) ?? null);
+    return homes.get(id);
+  };
+  const scores = new Map(); // container name -> [monitor, match][]
+  const scoresOf = (name) => {
+    if (!scores.has(name)) {
+      const list = [];
+      for (const m of monitorList) {
+        if (explicitlyMapped.has(m.id)) continue;
+        const match = scoreMatch(name, m.name);
+        if (match) list.push([m, match]);
       }
+      scores.set(name, list);
+    }
+    return scores.get(name);
+  };
+
+  const pairs = [];
+  for (const i of byNameMatching) {
+    const { container, nodeKey } = candidates[i];
+    for (const [monitor, match] of scoresOf(container)) {
+      pairs.push({
+        i,
+        monitor,
+        container: String(container),
+        nodeKey: String(nodeKey ?? ''),
+        rank: KIND_RANK[match.kind],
+        score: match.score,
+        helper: match.helper,
+        sameNode: nodeKey != null && homeOf(monitor.id) === nodeKey,
+        nodeRank: nodeRanks.get(nodeKey) ?? nodeOrder.length,
+      });
     }
   }
+  pairs.sort(comparePairs);
 
-  // Strategy 4: Containment match with scoring
-  let best = null;
-  let bestScore = 0;
-
-  for (const m of monitorList) {
-    const mn = normalize(m.name);
-    if (!mn) continue;
-
-    if (mn.includes(cn) || cn.includes(mn)) {
-      const score = Math.min(cn.length, mn.length);
-      if (score > bestScore) {
-        best = m;
-        bestScore = score;
-      }
-    }
+  const taken = new Set(); // monitor ids
+  for (const p of pairs) {
+    if (result[p.i] || taken.has(p.monitor.id)) continue;
+    result[p.i] = p.monitor;
+    taken.add(p.monitor.id);
   }
-
-  if (best) return best;
-
-  // Strategy 5: Word overlap — split both names into words, check if any match
-  const containerWords = containerName
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .filter((w) => w.length >= 3);
-  for (const m of monitorList) {
-    const monitorWords = m.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, ' ')
-      .trim()
-      .split(/\s+/)
-      .filter((w) => w.length >= 3);
-    for (const cw of containerWords) {
-      for (const mw of monitorWords) {
-        if (cw === mw && cw.length >= 4) {
-          return m;
-        }
-      }
-    }
-  }
-
-  // No match. Not logged here: the refresh loop summarises every unmatched
-  // container in one line per boot (logUnmatchedContainers).
-  return null;
+  return result;
 }
 
 let unmatchedLogged = false;

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { assembleServices } from './refresh.js';
 import { createContainerRegistry } from './containerRegistry.js';
 import { createServiceRegistry } from './serviceRegistry.js';
@@ -18,13 +18,14 @@ function fakeRegistry(missing = []) {
   return { recordSeen() {}, getMissing() { return missing; } };
 }
 
-function run({ nodeResults, monitors, lastSeen = {}, lastSeenContainer = {}, containerRegistry = null, now = () => 0, config = { services: {} }, presenceKnown }) {
+function run({ nodeResults, monitors, lastSeen = {}, lastSeenContainer = {}, home = {}, containerRegistry = null, now = () => 0, config = { services: {} }, presenceKnown }) {
   return assembleServices({
     nodeResults,
     monitors,
     config,
     lastSeenNodeOf: (id) => lastSeen[String(id)] ?? null,
     lastSeenContainerOf: (id) => lastSeenContainer[String(id)] ?? null,
+    homeNodeOf: (id) => home[String(id)] ?? null,
     containerRegistry,
     now,
     presenceKnown,
@@ -342,7 +343,7 @@ test('assemble: a container name on two nodes is recorded once a cycle, so stead
   } finally { if (existsSync(path)) rmSync(path); }
 });
 
-test('assemble: a monitor matched on two nodes is in seen[] once, so the service registry writes nothing in steady cycles', () => {
+test('assemble: a monitor whose container runs on two nodes goes to one of them, so the service registry writes nothing in steady cycles', () => {
   const path = join(tmpdir(), `jaghelm-assemble-${process.pid}-dupmonitor.json`);
   const spy = countingWrite();
   try {
@@ -351,7 +352,8 @@ test('assemble: a monitor matched on two nodes is in seen[] once, so the service
     for (let i = 0; i < 5; i += 1) {
       const before = spy.writes;
       const { seen } = run({ nodeResults: twoNodes, monitors: { 7: { id: 7, name: 'haproxy', status: 'up', active: true } } });
-      assert.deepEqual(seen, [{ monitorId: 7, nodeKey: 'pi1', container: 'haproxy' }]);
+      // One container per monitor (#240): no last node yet, so the first node.
+      assert.deepEqual(seen, [{ monitorId: 7, nodeKey: 'vm103', container: 'haproxy' }]);
       for (const { monitorId, nodeKey, container } of seen) reg.recordSeen(monitorId, nodeKey, container);
       reg.save();
       perCycle.push(spy.writes - before);
@@ -403,4 +405,224 @@ test('assemble: each node carries the failedReads discovery reported, [] when it
   });
   assert.deepEqual(nodes.a.failedReads, ['cpu', 'temp']);
   assert.deepEqual(nodes.b.failedReads, []);
+});
+
+// ---- one container per monitor (#240) ----
+
+// The audit's mock (#240), rebuilt from its description: one down monitor, eight
+// containers on five nodes sharing its word "gateway", and five other monitors
+// sharing it too. Each container used to take the first monitor with a shared
+// word, the down one, so it painted all eight red (eight push uids) and the
+// other five were never matched.
+const AUDIT_NODES = {
+  pi1: ['gateway-npm', 'gateway-tunnel'],
+  pi2: ['gateway-npm', 'gateway-tunnel'],
+  vm101: ['gateway-npm'],
+  vm103: ['gateway-tunnel'],
+  nas: ['gateway-backup', 'gateway-sync'],
+};
+function auditMonitors(pingStatus) {
+  const m = (id, name, status = 'up') => ({ id, name, status, ping: 3, uptime24: 1, active: true, lastBeatAt: null });
+  return {
+    1: m(1, 'Pi Gateway (Ping)', pingStatus),
+    2: m(2, 'NPM Gateway Primary'),
+    3: m(3, 'NPM Gateway Secondary'),
+    4: m(4, 'Tunnel Gateway Primary'),
+    5: m(5, 'Tunnel Gateway Secondary'),
+    6: m(6, 'Backup Gateway Job'),
+  };
+}
+// `rotate` turns each node's container list, as discovery may list them in
+// another order on another cycle.
+function auditNodeResults(rotate = 0) {
+  return Object.entries(AUDIT_NODES).map(([nodeKey, names]) => {
+    const k = rotate % names.length;
+    const order = [...names.slice(k), ...names.slice(0, k)];
+    return [nodeKey, nodeCfg, nodeData(order.map((container) => ({ container, status: 'running', docker: {} })))];
+  });
+}
+const cards = (nodes) => Object.values(nodes).flatMap((n) => n.services);
+
+test('assemble (#240 audit mock): one down monitor marks exactly one container, and sends one push', () => {
+  // The registry as the old matcher left it: monitor 1 last seen on the last
+  // of its eight containers.
+  const old = { lastSeen: { 1: 'nas' }, lastSeenContainer: { 1: 'gateway-sync' } };
+  const up = run({ nodeResults: auditNodeResults(), monitors: auditMonitors('up'), ...old });
+  const down = run({ nodeResults: auditNodeResults(), monitors: auditMonitors('down'), ...old });
+
+  const red = cards(down.nodes).filter((s) => s.status === 'down');
+  assert.deepEqual(red.map((s) => s.uid), ['vm101:gateway-npm'], 'one red card (was 8)');
+  assert.equal(cards(down.nodes).length, 8, 'no synthesised card besides the eight containers');
+
+  // Every monitor marks one container; the five that were never matched now are.
+  assert.equal(down.seen.length, 6);
+  assert.equal(new Set(down.seen.map((s) => `${s.nodeKey}:${s.container}`)).size, 6);
+  assert.equal(cards(down.nodes).filter((s) => s.monitored).length, 6);
+
+  const thresholds = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
+  const snap = (r) => ({ services: buildServices({ nodes: r.nodes }), hosts: {}, ups: { state: 'unknown' }, cron: {} });
+  const events = diffSnapshots(snap(up), snap(down), thresholds);
+  assert.deepEqual(
+    events.filter((e) => e.type === 'service_down').map((e) => e.id),
+    ['vm101:gateway-npm'],
+    'one push (was 8)'
+  );
+});
+
+test('assemble (#240 audit mock): the service registry is written when the matching changes, then not again', () => {
+  const path = join(tmpdir(), `jaghelm-assemble-${process.pid}-audit-registry.json`);
+  const spy = countingWrite();
+  try {
+    // What the old matcher left: monitor 1 on the last of its eight containers.
+    writeFileSync(path, JSON.stringify({ 1: { lastSeenNode: 'nas', lastSeenAt: 0, lastSeenContainer: 'gateway-sync' } }));
+    const reg = createServiceRegistry({ path, now: () => 0, write: spy.write });
+    const perCycle = [];
+    for (let i = 0; i < 6; i += 1) {
+      const before = spy.writes;
+      const { seen } = assembleServices({
+        nodeResults: auditNodeResults(i), // discovery's order changes every cycle
+        monitors: auditMonitors(i % 2 ? 'down' : 'up'),
+        config: { services: {} },
+        lastSeenNodeOf: (id) => reg.getLastSeenNode(id),
+        lastSeenContainerOf: (id) => reg.getLastSeenContainer(id),
+        homeNodeOf: (id) => reg.getHomeNode(id),
+        containerRegistry: null,
+        now: () => 0,
+      });
+      for (const { monitorId, nodeKey, container } of seen) reg.recordSeen(monitorId, nodeKey, container);
+      reg.save();
+      perCycle.push(spy.writes - before);
+    }
+    assert.deepEqual(perCycle, [1, 0, 0, 0, 0, 0]);
+    assert.deepEqual(reg.snapshot()['1'], { lastSeenNode: 'vm101', lastSeenAt: 0, lastSeenContainer: 'gateway-npm', assigned: true });
+  } finally { if (existsSync(path)) rmSync(path); }
+});
+
+test('assemble: the live shape — mappings to monitors Kuma lacks no longer paint lookalikes red', () => {
+  // Live on 2026-10-19: gateway-npm and gateway-tunnel run on both Pis and are
+  // mapped to "Nginx Proxy Manager" and "Cloudflared", which Kuma does not
+  // have. They used to fall back to a name match and all four took
+  // "Pi Gateway (Ping)" by its word "gateway".
+  const config = {
+    services: {
+      'gateway-npm': { monitor: 'Nginx Proxy Manager' },
+      'gateway-tunnel': { monitor: 'Cloudflared' },
+      tailscale: { monitor: 'Tailscale' },
+    },
+  };
+  const pi = (names) => nodeData(names.map((container) => ({ container, status: 'running', docker: {} })));
+  const { nodes, unmatched } = assembleServices({
+    nodeResults: [
+      ['pi1', nodeCfg, pi(['adguard', 'gateway-npm', 'gateway-tunnel'])],
+      ['pi2', nodeCfg, pi(['gateway-npm', 'gateway-tunnel', 'tailscale'])],
+    ],
+    monitors: {
+      1: { id: 1, name: 'Pi Gateway (Ping)', status: 'down', active: true },
+      2: { id: 2, name: 'Adguard Primary', status: 'up', active: true },
+    },
+    config,
+    lastSeenNodeOf: (id) => (id === 1 ? 'pi2' : null),
+    lastSeenContainerOf: (id) => (id === 1 ? 'gateway-tunnel' : null),
+    containerRegistry: null,
+    now: () => 0,
+  });
+  const all = cards(nodes);
+  assert.deepEqual(
+    all.filter((s) => s.status === 'down').map((s) => `${s.uid} ${s.source}`),
+    ['pi2:Pi Gateway (Ping) monitor'],
+    'the down monitor is its own card, not four red gateway cards'
+  );
+  assert.equal(new Set(all.map((s) => s.uid)).size, all.length, 'no two cards share a uid');
+  assert.deepEqual(unmatched, ['gateway-npm', 'gateway-tunnel', 'tailscale']);
+  assert.equal(all.find((s) => s.uid === 'pi1:adguard').monitored, true);
+});
+
+test('assemble: a down monitor stays with its stopped container, not a running lookalike', () => {
+  const { nodes, breadcrumbCount } = run({
+    nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'gitea-runner', status: 'running', docker: {} }])]],
+    monitors: { 1: { id: 1, name: 'Gitea', status: 'down', active: true } },
+    lastSeen: { 1: 'vm103' },
+    lastSeenContainer: { 1: 'gitea' },
+    containerRegistry: fakeRegistry([{ container: 'gitea', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 }]),
+  });
+  const byUid = Object.fromEntries(nodes.vm103.services.map((s) => [s.uid, s]));
+  assert.equal(byUid['vm103:gitea-runner'].status, 'up', 'the runner keeps its own status');
+  assert.equal(byUid['vm103:gitea-runner'].monitored, false);
+  assert.equal(byUid['vm103:gitea'].status, 'down', 'the outage is on the stopped container');
+  assert.equal(byUid['vm103:gitea'].source, 'monitor');
+  assert.equal(breadcrumbCount, 0, 'Kuma owns the stopped container');
+});
+
+test('assemble: a stopped container whose lookalike got the monitor is unmonitored, so it leaves a breadcrumb', () => {
+  const { nodes, breadcrumbCount } = run({
+    nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'nextcloud-app', status: 'running', docker: {} }])]],
+    monitors: { 1: { id: 1, name: 'Nextcloud', status: 'up', active: true } },
+    containerRegistry: fakeRegistry([{ container: 'nextcloud-cron', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 }]),
+  });
+  assert.equal(breadcrumbCount, 1);
+  const cron = nodes.vm103.services.find((s) => s.container === 'nextcloud-cron');
+  assert.equal(cron.source, 'presence');
+  assert.equal(nodes.vm103.services.find((s) => s.container === 'nextcloud-app').monitored, true);
+});
+
+test('assemble: two down monitors last matched to one container get a card each, under distinct uids', () => {
+  // The old matcher could leave two monitors remembering the same container.
+  const { nodes } = run({
+    nodeResults: [['pi2', nodeCfg, nodeData([])]],
+    monitors: {
+      1: { id: 1, name: 'Adguard Primary', status: 'down', active: true },
+      2: { id: 2, name: 'Adguard Secondary', status: 'down', active: true },
+    },
+    lastSeen: { 1: 'pi2', 2: 'pi2' },
+    lastSeenContainer: { 1: 'adguard-sync', 2: 'adguard-sync' },
+  });
+  assert.deepEqual(nodes.pi2.services.map((s) => s.uid).sort(), ['pi2:Adguard Secondary', 'pi2:adguard-sync']);
+});
+
+test('assemble: an explicit mapping marks every container mapped to the monitor', () => {
+  const { nodes, seen } = assembleServices({
+    nodeResults: [
+      ['pi1', nodeCfg, nodeData([{ container: 'haproxy', status: 'running', docker: {} }])],
+      ['pi2', nodeCfg, nodeData([{ container: 'haproxy', status: 'running', docker: {} }])],
+    ],
+    monitors: { 1: { id: 1, name: 'HAProxy VIP', status: 'down', active: true } },
+    config: { services: { haproxy: { monitor: 'HAProxy VIP' } } },
+    lastSeenNodeOf: () => null,
+    containerRegistry: null,
+    now: () => 0,
+  });
+  assert.deepEqual(cards(nodes).map((s) => `${s.uid} ${s.status}`), ['pi1:haproxy down', 'pi2:haproxy down']);
+  assert.deepEqual(seen, [{ monitorId: 1, nodeKey: 'pi2', container: 'haproxy' }], 'recorded once, on the last node');
+});
+
+// The live board (2026-10-19): vaultwarden runs on vm103 and on pi2, and the
+// config lists vm101, vm103, pi2, pi1. The old matcher gave the Vaultwarden
+// monitor to both and left the registry on pi2, the last node of its pass.
+test('assemble: a node the old matcher left is no home; equal matches go by node order', () => {
+  const path = join(tmpdir(), `jaghelm-assemble-${process.pid}-legacy-home.json`);
+  try {
+    writeFileSync(path, JSON.stringify({ 9: { lastSeenNode: 'pi2', lastSeenAt: 0, lastSeenContainer: 'vaultwarden' } }));
+    const reg = createServiceRegistry({ path, now: () => 0 });
+    const vw = nodeData([{ container: 'vaultwarden', status: 'running', docker: {} }]);
+    const cycle = (nodeResults) =>
+      assembleServices({
+        nodeResults,
+        monitors: { 9: { id: 9, name: 'Vaultwarden', status: 'up', active: true } },
+        config: { services: {} },
+        lastSeenNodeOf: (id) => reg.getLastSeenNode(id),
+        lastSeenContainerOf: (id) => reg.getLastSeenContainer(id),
+        homeNodeOf: (id) => reg.getHomeNode(id),
+        containerRegistry: null,
+        now: () => 0,
+      });
+    assert.equal(reg.getHomeNode(9), null, 'a record without the marker gives no home');
+    const first = cycle([['vm101', nodeCfg, nodeData([])], ['vm103', nodeCfg, vw], ['pi2', nodeCfg, vw]]);
+    assert.deepEqual(first.seen, [{ monitorId: 9, nodeKey: 'vm103', container: 'vaultwarden' }]);
+    for (const { monitorId, nodeKey, container } of first.seen) reg.recordSeen(monitorId, nodeKey, container);
+    assert.equal(reg.getHomeNode(9), 'vm103');
+
+    // Then vaultwarden starts on vm101, first in node order: the monitor stays home.
+    const later = cycle([['vm101', nodeCfg, vw], ['vm103', nodeCfg, vw], ['pi2', nodeCfg, vw]]);
+    assert.deepEqual(later.seen, [{ monitorId: 9, nodeKey: 'vm103', container: 'vaultwarden' }]);
+  } finally { if (existsSync(path)) rmSync(path); }
 });
