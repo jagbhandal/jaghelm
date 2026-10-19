@@ -106,6 +106,7 @@ export default function MobileApp() {
         intervalMs={data.intervalMs}
         error={data.error}
         loading={data.loading}
+        foreground={data.foreground}
         onRefresh={data.refresh}
       />
       <main className="mobile-content">

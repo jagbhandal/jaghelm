@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, act } from '@testing-library/react';
 import RefreshStatus from './RefreshStatus.jsx';
 
 /**
@@ -93,5 +93,61 @@ describe('RefreshStatus annunciator', () => {
     expect(summary(container)).toBe('Connecting…');
     expect(lamp(container).classList.contains('lamp--unknown')).toBe(true);
     expect(screen.queryByText(/next \d+s/)).toBeNull();
+  });
+});
+
+describe('RefreshStatus heartbeat', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const props = (foreground) => ({
+    severity: 'healthy',
+    summary: 'All systems operational',
+    lastUpdated: Date.now(),
+    intervalMs: 30000,
+    error: null,
+    loading: false,
+    foreground,
+    onRefresh: vi.fn(),
+  });
+
+  it('pauses the 1 s countdown in the background and catches up at once on return', () => {
+    const live = props(true);
+    const { rerender, unmount } = render(<RefreshStatus {...live} />);
+    expect(screen.getByText('next 30s')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.getByText('next 25s')).toBeInTheDocument();
+
+    rerender(<RefreshStatus {...live} foreground={false} />);
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => {
+      vi.advanceTimersByTime(10000);
+    });
+    expect(screen.getByText('next 25s')).toBeInTheDocument(); // no tick while away
+
+    rerender(<RefreshStatus {...live} foreground />);
+    expect(screen.getByText('next 15s')).toBeInTheDocument(); // the real time, without waiting a tick
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.getByText('next 14s')).toBeInTheDocument();
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('ticks by default when no foreground flag is passed', () => {
+    const { foreground: _omit, ...rest } = props(true);
+    render(<RefreshStatus {...rest} />);
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(screen.getByText('next 27s')).toBeInTheDocument();
   });
 });
