@@ -65,3 +65,13 @@ test('rejects a javascript: link URL at the persistence boundary (stored XSS)', 
   assert.equal(validateConfig(servicesConfigSchema, { links: [{ name: 'ok', url: 'https://h/x' }] }).ok, true);
   assert.equal(validateConfig(servicesConfigSchema, { links: [{ name: 'rel', url: '/local' }] }).ok, true);
 });
+
+test('accepts the links object a pre-#265 generated services.yaml carries, still scanning its URLs', () => {
+  const generated = { nodes: {}, services: {}, links: { personal: [], management: [], devops: [] } };
+  assert.equal(validateConfig(servicesConfigSchema, generated).ok, true);
+  const r = validateConfig(servicesConfigSchema, {
+    links: { personal: [{ name: 'x', url: "javascript:fetch('/api/secrets')" }] },
+  });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /Unsafe URL/);
+});
