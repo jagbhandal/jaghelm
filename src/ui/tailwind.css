@@ -13,17 +13,23 @@
  *    new screen and to portalled content (dialogs, popovers, menus).
  *  - Only src/ui/ is scanned for class names, so a class in legacy markup that
  *    happens to share a utility's name (`hidden`, `grid`, `container`) never
- *    generates CSS. Add an @source line for each new folder of screens.
- *  - The default theme is inlined: utilities carry their values, rather than
- *    setting `--text-sm` and the like on :root, where global.css already
- *    defines its own `--text-*` and `--font-mono`.
+ *    generates CSS. Add an @source line for each new folder of screens. A file
+ *    here that mentions such a name would still restyle legacy markup, so
+ *    scripts/ui-stack.test.mjs fails when any legacy class name is a utility
+ *    under this theme, apart from `flex-1` and `sr-only`.
+ *  - The theme is inline and reference-only (`theme(inline reference)`,
+ *    `@theme inline reference`): utilities carry their values, and Tailwind
+ *    writes no variable to :root, where global.css already defines its own
+ *    `--text-*`, `--font-mono`, `--accent`, `--border`, `--card` and `--muted`.
+ *    So every variable a class reads with var() must be declared in the .jh-ui
+ *    block below. scripts/ui-stack.test.mjs checks the compiled CSS for both.
  *
  * The same layer order opens the legacy stylesheets, so it holds whichever file
  * a bundle loads first.
  */
 @layer legacy, properties, theme, base, components, utilities;
 
-@import 'tailwindcss/theme.css' layer(theme) theme(inline);
+@import 'tailwindcss/theme.css' layer(theme) theme(inline reference);
 @import './preflight.css' layer(base);
 @import 'tailwindcss/utilities.css' layer(utilities) source(none);
 
@@ -34,9 +40,10 @@
 
 /*
  * shadcn/ui's semantic colour and radius roles, mapped to the tokens below.
- * Inline, so `bg-primary` reads var(--primary) where it is used.
+ * Inline, so `bg-primary` reads var(--primary) where it is used; reference, so
+ * none of these is written to :root.
  */
-@theme inline {
+@theme inline reference {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -122,11 +129,11 @@
     --sidebar-ring: oklch(0.708 0 0);
 
     /*
-     * When a class reads a theme variable with var(), as the Button's
-     * rounded-[min(var(--radius-md),10px)] does, Tailwind writes that variable
-     * onto :root. There the tokens above don't exist, so a variable built from
-     * them would inherit as invalid. Declare each such variable here again.
-     * scripts/ui-stack.test.mjs names any that are missing.
+     * The radius scale again, as variables. `rounded-md` carries its value from
+     * the @theme block above, but a class that reads the variable itself, as
+     * the Button's rounded-[min(var(--radius-md),10px)] does, needs it declared
+     * here: the theme is reference-only, so Tailwind declares nothing. Keep the
+     * two lists the same; scripts/ui-stack.test.mjs checks both.
      */
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
