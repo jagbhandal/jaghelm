@@ -151,6 +151,96 @@ function legacyClassNames() {
   return names;
 }
 
+// Functions whose arguments are class names (clsx-style: strings, the branches of
+// && || ?:, arrays, and the keys of an object), and cva, whose base and variant
+// values are.
+const CLASS_FNS = new Set(['cn', 'clsx', 'cx', 'twMerge', 'twJoin']);
+// Classes that compile to nothing by design: they name a group or peer for a
+// variant (`group-hover:`, `peer-checked:`).
+const MARKER = /^(group|peer)(\/[\w-]+)?$/;
+
+/**
+ * The class names a component writes: [{ file, name }] for each string in a
+ * className prop, in a call to cn() and its kin, and in cva()'s base classes,
+ * variants and compound variants (never its variant names or defaults). Parsed,
+ * not scanned, so a class named in a comment doesn't count. Pure: takes the
+ * source and the file name for messages.
+ */
+export function classNamesIn(source, file) {
+  const out = [];
+  const add = (text) => {
+    for (const name of text.split(/\s+/)) if (name) out.push({ file, name });
+  };
+  // The fixed parts of a template literal, less the pieces that touch a ${}.
+  const template = (node) => {
+    const parts = [node.head.text, ...node.templateSpans.map((s) => s.literal.text)];
+    parts.forEach((text, i) => {
+      const words = text.split(/(\s+)/);
+      if (i > 0 && !/^\s/.test(text)) words.shift();
+      if (i < parts.length - 1 && !/\s$/.test(text)) words.pop();
+      add(words.join(''));
+    });
+  };
+  const classes = (node) => {
+    if (!node) return;
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) add(node.text);
+    else if (ts.isTemplateExpression(node)) template(node);
+    else if (ts.isJsxExpression(node) || ts.isParenthesizedExpression(node))
+      classes(node.expression);
+    else if (ts.isConditionalExpression(node)) [node.whenTrue, node.whenFalse].forEach(classes);
+    else if (ts.isBinaryExpression(node)) {
+      const op = node.operatorToken.kind;
+      if (op !== ts.SyntaxKind.AmpersandAmpersandToken) classes(node.left);
+      classes(node.right);
+    } else if (ts.isArrayLiteralExpression(node)) node.elements.forEach(classes);
+    else if (ts.isObjectLiteralExpression(node)) {
+      for (const p of node.properties) {
+        if (p.name && (ts.isStringLiteral(p.name) || ts.isIdentifier(p.name))) add(p.name.text);
+      }
+    }
+  };
+  const prop = (obj, key) =>
+    obj && ts.isObjectLiteralExpression(obj)
+      ? obj.properties.find((p) => ts.isPropertyAssignment(p) && p.name.text === key)?.initializer
+      : undefined;
+  const cva = ([base, config]) => {
+    classes(base);
+    const variants = prop(config, 'variants');
+    for (const group of variants?.properties ?? []) {
+      for (const value of group.initializer?.properties ?? []) classes(value.initializer);
+    }
+    const compound = prop(config, 'compoundVariants');
+    for (const entry of compound?.elements ?? []) {
+      classes(prop(entry, 'class'));
+      classes(prop(entry, 'className'));
+    }
+  };
+  const visit = (node) => {
+    if (ts.isJsxAttribute(node) && /className$/i.test(node.name.text ?? '')) {
+      classes(node.initializer);
+    } else if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      if (node.expression.text === 'cva') cva(node.arguments);
+      else if (CLASS_FNS.has(node.expression.text)) node.arguments.forEach(classes);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JSX));
+  return out;
+}
+
+/** The names among `names` that compile to no CSS under the stack's theme. */
+async function uncompiled(names) {
+  const compiler = await compileStack();
+  let size = compiler.build([]).length;
+  const empty = [];
+  for (const name of [...new Set(names)].sort()) {
+    const grown = compiler.build([name]).length; // cumulative: growth means CSS
+    if (grown === size && !MARKER.test(name)) empty.push(name);
+    size = grown;
+  }
+  return empty;
+}
+
 test('each app loads its legacy stylesheets first, then the new UI stack', () => {
   for (const entry of ENTRIES) {
     const src = read(entry);
@@ -342,4 +432,62 @@ test('src/ui imports only packages the Android app installs and dedupes', () => 
       `${where} must be in resolve.dedupe in mobile/vite.config.mobile.js`
     );
   }
+});
+
+test('every class in src/ui/ compiles to CSS', async () => {
+  const found = walk('src/ui', ['.js', '.jsx'])
+    .filter((f) => !/\.test\.jsx?$/.test(f))
+    .flatMap((f) => classNamesIn(read(f), f));
+  assert.ok(
+    found.some((c) => c.name === 'inline-flex'),
+    'no class names found in src/ui/'
+  );
+  const empty = new Set(await uncompiled(found.map((c) => c.name)));
+  assert.deepEqual(
+    found.filter((c) => empty.has(c.name)).map((c) => `${c.file}: ${c.name}`),
+    [],
+    "these classes compile to nothing: Tailwind's default sizes, colours, fonts, radii and " +
+      'shadows are cleared (docs/design-system.md, rule 4). Use the scale (text-body-sm, ' +
+      'text-caption...) and the roles'
+  );
+});
+
+test('the class check reads className, cn() and cva(), and catches what compiles to nothing', async () => {
+  const source = `
+    // text-lg in a comment is not a class
+    const v = cva('inline-flex text-sm', {
+      variants: { size: { xs: 'h-6 text-xs', md: \`h-8 \${x}px-2 text-body\` } },
+      compoundVariants: [{ size: 'xs', class: 'font-serif' }],
+      defaultVariants: { size: 'md' },
+    });
+    const C = ({ on }) => (
+      <div className={cn('p-2', on && 'shadow-md', on ? 'text-caption' : 'text-xl', { 'bg-red-500': on })}>
+        <span className="group/row tabular-nums" />
+      </div>
+    );`;
+  const names = classNamesIn(source, 'x.jsx').map((c) => c.name);
+  assert.deepEqual(names.sort(), [
+    'bg-red-500',
+    'font-serif',
+    'group/row',
+    'h-6',
+    'h-8',
+    'inline-flex',
+    'p-2',
+    'shadow-md',
+    'tabular-nums',
+    'text-body',
+    'text-caption',
+    'text-sm',
+    'text-xl',
+    'text-xs',
+  ]);
+  assert.deepEqual(await uncompiled(names), [
+    'bg-red-500',
+    'font-serif',
+    'shadow-md',
+    'text-sm',
+    'text-xl',
+    'text-xs',
+  ]);
 });
