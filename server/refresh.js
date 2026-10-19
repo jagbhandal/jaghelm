@@ -31,7 +31,7 @@ import { dedupe } from './util/dedupe.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { createLogger } from './util/logger.js';
 import { recordRefreshCycle } from './metrics.js';
-import { runPushCycle } from './push/dispatch.js';
+import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
 import { buildSnapshot } from './push/snapshot.js';
 import { getPushStore } from './push/store.js';
 import * as fcm from './push/fcm.js';
@@ -48,27 +48,40 @@ let bgRefreshRunning = false;
 let lastRefreshComplete = 0; // ms epoch of the last finished cycle (0 = never)
 
 // ── Push pipeline wiring ─────────────────────────────────────────────────
-// Snapshot of the prev cycle's state lives beside the other data/ stores.
-const PUSH_SNAPSHOT_PATH = join(DATA_DIR, 'push-snapshot.json');
+// The prev cycle's snapshot is held in memory and persisted beside the other
+// data/ stores when it changes.
+const pushSnapshot = createPushSnapshot({ path: join(DATA_DIR, 'push-snapshot.json'), logger: log });
 const DEFAULT_PUSH_THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-/** Read and parse display-config.json once. Returns the parsed object or null on missing/error. */
-function readDisplayConfig() {
-  try {
-    if (existsSync(DISPLAY_CONFIG_PATH)) {
-      return JSON.parse(readFileSync(DISPLAY_CONFIG_PATH, 'utf8'));
-    }
-  } catch {
-    // fall through
-  }
-  return null;
+// display-config.json is parsed once and cached: the loop needs its refresh
+// interval and push thresholds every cycle, and re-reading the file each time
+// was pure waste. Its only writer, the displayConfig POST route, invalidates
+// the cache after a save, so a hand edit of the file takes effect at the next
+// save or restart.
+let cachedDisplayConfig; // undefined: not read yet; null: missing or unreadable
+
+export function invalidateDisplayConfigCache() {
+  cachedDisplayConfig = undefined;
 }
 
-// Thresholds come from display-config when present, else the defaults. Read
-// through the same cached file the loop already touches.
-function getPushThresholds() {
+/** The parsed display-config.json, or null on missing/error. */
+function readDisplayConfig() {
+  if (cachedDisplayConfig !== undefined) return cachedDisplayConfig;
+  cachedDisplayConfig = null;
+  try {
+    if (existsSync(DISPLAY_CONFIG_PATH)) {
+      cachedDisplayConfig = JSON.parse(readFileSync(DISPLAY_CONFIG_PATH, 'utf8'));
+    }
+  } catch {
+    // fall through: defaults until the next save
+  }
+  return cachedDisplayConfig;
+}
+
+// Thresholds come from display-config when present, else the defaults.
+export function getPushThresholds() {
   const data = readDisplayConfig();
   const t = data?.pushThresholds;
   if (t && typeof t === 'object') {
@@ -86,26 +99,11 @@ function formatContainerName(name) {
   return name.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-// Cache the parsed refresh interval. The background loop reads it every tick
-// (and again on every restart), so re-running readFileSync + JSON.parse each
-// time was pure waste. Cache is invalidated by the displayConfig POST route
-// after it writes a new value.
-let cachedIntervalMs = null;
-
-export function invalidateRefreshIntervalCache() {
-  cachedIntervalMs = null;
-}
-
 function getRefreshIntervalMs() {
-  if (cachedIntervalMs !== null) return cachedIntervalMs;
   const data = readDisplayConfig();
   const seconds = data?.refreshInterval;
-  if (typeof seconds === 'number' && seconds >= MIN_INTERVAL_SECONDS) {
-    cachedIntervalMs = seconds * 1000;
-    return cachedIntervalMs;
-  }
-  cachedIntervalMs = DEFAULT_INTERVAL_MS;
-  return cachedIntervalMs;
+  if (typeof seconds === 'number' && seconds >= MIN_INTERVAL_SECONDS) return seconds * 1000;
+  return DEFAULT_INTERVAL_MS;
 }
 
 // ── Domain refresh functions ─────────────────────────────────────────────
@@ -659,7 +657,7 @@ async function runBackgroundRefresh() {
       buildSnapshotFn: buildSnapshot,
       store: getPushStore(),
       fcm,
-      snapshotPath: PUSH_SNAPSHOT_PATH,
+      snapshot: pushSnapshot,
       thresholds: getPushThresholds(),
       logger: log,
     });
@@ -696,19 +694,24 @@ export function startBackgroundRefresh() {
 }
 
 export function restartBackgroundRefresh() {
-  // The cached interval is stale by definition when this is called (the route
-  // that triggers a restart just wrote a new value).
-  invalidateRefreshIntervalCache();
+  // The cached display config is stale by definition when this is called (the
+  // route that triggers a restart just wrote a new value).
+  invalidateDisplayConfigCache();
   const intervalMs = getRefreshIntervalMs();
   if (bgRefreshTimer) clearInterval(bgRefreshTimer);
   bgRefreshTimer = setInterval(runBackgroundRefresh, intervalMs);
   log.info({ intervalSec: intervalMs / 1000 }, 'background loop restarted');
 }
 
-/** Stop the background loop. Called on shutdown so the timer doesn't fire mid-drain. */
+/**
+ * Stop the background loop. Called on shutdown so the timer doesn't fire
+ * mid-drain, and writes the container registry's refreshed lastSeenAt so the
+ * next start doesn't read one up to PRESENCE_FLUSH_MS old.
+ */
 export function stopBackgroundRefresh() {
   if (bgRefreshTimer) {
     clearInterval(bgRefreshTimer);
     bgRefreshTimer = null;
   }
+  containerRegistry.flush();
 }

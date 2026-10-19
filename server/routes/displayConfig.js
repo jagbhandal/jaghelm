@@ -13,7 +13,7 @@ import { Router } from 'express';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-import { restartBackgroundRefresh, invalidateRefreshIntervalCache } from '../refresh.js';
+import { restartBackgroundRefresh, invalidateDisplayConfigCache } from '../refresh.js';
 import { apiError } from '../errors.js';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { validateConfig, displayConfigSchema } from '../util/configSchema.js';
@@ -63,9 +63,9 @@ router.post('/', (req, res) => {
 
     atomicWriteFileSync(DISPLAY_CONFIG_PATH, serialized);
     // Always invalidate — even if the interval value happens to match, the
-    // cache could be stale from a previous run. Restart re-reads through
-    // getRefreshIntervalMs which now hits a fresh cache slot.
-    invalidateRefreshIntervalCache();
+    // push thresholds (or anything else the loop reads) may have changed.
+    // Restart re-reads the interval through the now-empty cache.
+    invalidateDisplayConfigCache();
     if (intervalChanged) restartBackgroundRefresh();
     res.json({ ok: true });
   } catch (err) {

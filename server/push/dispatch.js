@@ -1,16 +1,17 @@
 /**
  * Push dispatch: the pure pref-filter (shouldDeliver/categoryOf), the
- * fan-out (dispatchEvents), and the per-cycle orchestrator (runPushCycle).
+ * fan-out (dispatchEvents), the prev-snapshot memory (createPushSnapshot) and
+ * the per-cycle orchestrator (runPushCycle).
  *
  * shouldDeliver + categoryOf are PURE and clock-free (determinism law).
- * dispatchEvents + runPushCycle own the I/O (fcm.send, snapshot file) and
- * are the only places a clock or side effect lives.
+ * dispatchEvents, createPushSnapshot and runPushCycle own the I/O (fcm.send,
+ * snapshot file) and are the only places a clock or side effect lives.
  */
 import { existsSync, readFileSync } from 'fs';
 
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { createLogger } from '../util/logger.js';
-import { diffSnapshots, RECOVERY_TYPES } from './differ.js';
+import { alertStateKey, diffSnapshots, RECOVERY_TYPES } from './differ.js';
 
 const defaultLog = createLogger('push-dispatch');
 
@@ -107,9 +108,66 @@ export async function dispatchEvents(events, { store, fcm, logger = defaultLog }
 }
 
 /**
- * One push cycle: build the current snapshot, diff it against the persisted
- * previous snapshot, dispatch the resulting events, then persist the new
- * snapshot (ALWAYS — even on baseline — so the next cycle has a prev).
+ * The previous cycle's snapshot, which the next cycle diffs against. It lives
+ * in memory; the file at `path` is for restarts: read on first use, so a
+ * restart diffs against the last persisted state (no re-alert, no missed
+ * change), and rewritten only when alertStateKey changes, so a CPU reading
+ * that moves without crossing its threshold costs no write.
+ *
+ * A failed write is logged and retried every cycle until it lands. Memory moves
+ * on regardless, so the running process does not send the alert again; a
+ * restart before the retry lands diffs against the older file and may send an
+ * alert a second time, but never misses one.
+ *
+ * @param {object}   opts
+ * @param {string}   opts.path     the persisted snapshot file
+ * @param {Function} [opts.write]  atomic writer (injected in tests)
+ * @param {object}   [opts.logger]
+ */
+export function createPushSnapshot({ path, write = atomicWriteFileSync, logger = defaultLog }) {
+  let loaded = false;
+  let prev = null; // the last cycle's snapshot (null: baseline)
+  let persisted = null; // what the file holds (null: nothing usable)
+
+  function load() {
+    if (!existsSync(path)) return null;
+    try {
+      return JSON.parse(readFileSync(path, 'utf8'));
+    } catch (err) {
+      // Corrupt/partial snapshot => treat as baseline rather than crash.
+      logger.warn({ err }, 'unreadable push snapshot, treating as baseline');
+      return null;
+    }
+  }
+
+  return {
+    /** The previous cycle's snapshot, or null on the first cycle (baseline). */
+    prev() {
+      if (!loaded) {
+        prev = persisted = load();
+        loaded = true;
+      }
+      return prev;
+    },
+    /** Make `snap` the next cycle's prev, and write it if the file is behind. */
+    advance(snap, thresholds) {
+      prev = snap;
+      loaded = true;
+      if (persisted !== null && alertStateKey(persisted, thresholds) === alertStateKey(snap, thresholds)) return;
+      try {
+        write(path, JSON.stringify(snap));
+        persisted = snap;
+      } catch (err) {
+        logger.error({ err }, 'failed to persist push snapshot, retrying next cycle');
+      }
+    },
+  };
+}
+
+/**
+ * One push cycle: build the current snapshot, diff it against the previous
+ * one, dispatch the resulting events, then advance the previous snapshot
+ * (ALWAYS — even on baseline — so the next cycle has a prev).
  *
  * Total error isolation: the entire body is wrapped so it can NEVER reject.
  * It runs inside the background refresh loop and must never break that loop.
@@ -120,28 +178,18 @@ export async function dispatchEvents(events, { store, fcm, logger = defaultLog }
  * @param {Function} deps.buildSnapshotFn  () => Snapshot (injected; fakeable)
  * @param {object}   deps.store            token store
  * @param {object}   deps.fcm              fcm module
- * @param {string}   deps.snapshotPath     path to the persisted prev snapshot
+ * @param {object}   deps.snapshot         prev-snapshot memory (createPushSnapshot)
  * @param {object}   deps.thresholds       diff thresholds
  * @param {object}   [deps.logger]
  * @returns {Promise<void>}
  */
-export async function runPushCycle({ buildSnapshotFn, store, fcm, snapshotPath, thresholds, logger = defaultLog }) {
+export async function runPushCycle({ buildSnapshotFn, store, fcm, snapshot, thresholds, logger = defaultLog }) {
   try {
     store.pruneStale();
     if (!fcm.isPushEnabled()) return;
 
     const snap = buildSnapshotFn();
-
-    let prev = null;
-    if (existsSync(snapshotPath)) {
-      try {
-        prev = JSON.parse(readFileSync(snapshotPath, 'utf8'));
-      } catch (err) {
-        // Corrupt/partial snapshot => treat as baseline rather than crash.
-        logger.warn({ err }, 'unreadable push snapshot, treating as baseline');
-        prev = null;
-      }
-    }
+    const prev = snapshot.prev();
 
     if (prev !== null) {
       const events = diffSnapshots(prev, snap, thresholds);
@@ -151,8 +199,9 @@ export async function runPushCycle({ buildSnapshotFn, store, fcm, snapshotPath, 
       }
     }
 
-    // Always advance the persisted snapshot so the next cycle has a prev.
-    atomicWriteFileSync(snapshotPath, JSON.stringify(snap));
+    // Advance only after a clean dispatch: one that throws leaves prev as it
+    // was, so the next cycle diffs against it again instead of dropping the alert.
+    snapshot.advance(snap, thresholds);
   } catch (err) {
     // Swallow EVERYTHING. This runs inside the refresh loop; it must never
     // reject or the loop's allSettled accounting / health gate could be hurt.
