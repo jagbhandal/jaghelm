@@ -16,6 +16,11 @@ let kumaUrl = null;
 let kumaApiKey = '';
 let cachedMonitors = null;
 let cacheTime = 0;
+// What the last successful load looked like, so a reload logs at info only when
+// it differs (or follows an outage); null before the first load and after a
+// failed one. `kumaUnavailableWarned` keeps an outage to one warning.
+let lastLoad = null;
+let kumaUnavailableWarned = false;
 const CACHE_TTL = 15000;
 // Ceiling on how long we'll keep serving the last-known statuses while Kuma is
 // unreachable. Past this, a sustained Kuma outage would otherwise freeze the
@@ -200,14 +205,33 @@ export async function fetchMonitors(bustCache = false) {
       if (monitors) source = 'status-page';
     }
 
-    if (!monitors) return staleOrEmpty();
+    if (!monitors) {
+      // Some of these paths (a non-2xx status page) log nothing on their own,
+      // and the per-cycle load line is debug now, so say it once per outage.
+      if (!kumaUnavailableWarned) {
+        log.warn(
+          { staleCeilingMin: STALE_CEILING_MS / 60_000 },
+          'No monitors loaded from Kuma — serving last-known statuses, if any, until they go stale'
+        );
+        kumaUnavailableWarned = true;
+      }
+      lastLoad = null;
+      return staleOrEmpty();
+    }
 
-    log.info({ count: Object.keys(monitors).length, source }, 'Loaded monitors from Kuma');
+    // Runs every refresh cycle: info only for the first load, a change in what
+    // Kuma returned, or the first load after an outage; debug otherwise.
+    const load = { count: Object.keys(monitors).length, source };
+    const changed = !lastLoad || lastLoad.count !== load.count || lastLoad.source !== load.source;
+    (changed ? log.info : log.debug)(load, 'Loaded monitors from Kuma');
+    lastLoad = load;
+    kumaUnavailableWarned = false;
     cachedMonitors = monitors;
     cacheTime = Date.now();
     return monitors;
   } catch (err) {
     log.error({ err }, 'Failed to fetch Kuma monitors');
+    lastLoad = null;
     return staleOrEmpty();
   }
 }
@@ -233,7 +257,6 @@ export async function getMonitorNames() {
  * 5. Word-boundary match → split on spaces/hyphens, check overlap
  * 6. No match → return null
  */
-let loggedOnce = false;
 // Tracks (container, monitor) pairs that have already logged an "explicit miss"
 // warning. Process-lifetime — clears on container restart. Prevents log spam
 // every refresh cycle when services.yaml references stale monitor names.
@@ -325,20 +348,35 @@ export function matchMonitor(containerName, explicitMonitor, monitors) {
     }
   }
 
-  // Log unmatched containers once at startup to help debug
-  if (!loggedOnce) {
-    log.info(
-      { containerName, monitors: monitorList.map((m) => m.name).join(', ') },
-      'No match for container among monitors'
-    );
-  }
-
+  // No match. Not logged here: the refresh loop summarises every unmatched
+  // container in one line per boot (logUnmatchedContainers).
   return null;
 }
 
-// Call after first full service build to suppress repeat logs
-export function markMonitorLogDone() {
-  loggedOnce = true;
+let unmatchedLogged = false;
+
+/**
+ * Log, once per boot, the running containers that matched no Kuma monitor, in a
+ * single line (it used to be one line per container), to help debug matching.
+ *
+ * Waits until there is something to match against: with no monitors loaded (Kuma
+ * down or slow at boot) every container would look unmatched, and with no
+ * containers discovered (Prometheus or cAdvisor not ready) the list would be
+ * empty, so neither uses up the one line. Returns true once the line is spent,
+ * including when every container matched and there was nothing to say.
+ */
+export function logUnmatchedContainers({ unmatched, containerCount, monitors }) {
+  if (unmatchedLogged) return false;
+  const monitorNames = Object.values(monitors || {}).map((m) => m.name);
+  if (monitorNames.length === 0 || !containerCount) return false;
+  unmatchedLogged = true;
+  if (unmatched.length > 0) {
+    log.info(
+      { count: unmatched.length, containers: [...unmatched].sort(), monitors: monitorNames.sort() },
+      'Containers with no matching Kuma monitor (logged once per boot)'
+    );
+  }
+  return true;
 }
 
 /**
