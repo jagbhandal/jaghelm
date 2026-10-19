@@ -27,8 +27,10 @@ export const SOURCE_MESSAGES = {
   integrations: 'App metrics unavailable — integrations endpoint unreachable',
 };
 
-// How many refresh intervals of silence before a panel is flagged "stale".
-const STALE_INTERVALS = 2;
+// A panel is flagged "stale" once this many polls of ITS source have gone by
+// without a success. The poll period comes from useDashboardData's pollPeriodMs,
+// so a slow source (polled every third tick) goes stale on its own cadence.
+const STALE_POLLS = 2;
 
 /**
  * Human "Nm ago" / "Ns ago" / "Nh ago" for a millisecond age. Compact by design
@@ -55,25 +57,27 @@ export function formatAgo(ms) {
  *
  * - `message` is set when the source's last fetch errored.
  * - `staleNote` ("updated Nm ago") is set when the last SUCCESS is older than
- *   ~2 refresh intervals. Staleness and error are independent: a source can be
- *   both stale AND erroring (banner shows both lines), or stale without an error
+ *   2 poll periods of the source (`pollPeriodMs`, the time between two of its
+ *   scheduled polls), i.e. 2 missed polls. Staleness and error are
+ *   independent: a source can be both stale AND erroring (banner shows both
+ *   lines), or stale without an error
  *   (last fetch 304'd fine but the upstream stopped changing long ago — unusual,
  *   but the note is harmless), or erroring while still recently-fresh.
  * - Silence counts from the last success, or from `watchedSinceMs` (when polling
  *   resumed after a pause) if that is later: time spent paused isn't silence.
- *   The note still gives the real age of the last success.
+ *   A source that is still failing keeps counting from its last success, so its
+ *   age note doesn't vanish on every return. The note gives the real age.
  */
-export function sourceBanner(source, key, refreshIntervalMs, now = Date.now()) {
+export function sourceBanner(source, key, pollPeriodMs, now = Date.now()) {
   if (!source) return { message: null, staleNote: null };
 
   const message = source.error ? SOURCE_MESSAGES[key] || source.error : null;
 
   let staleNote = null;
   const last = source.lastSuccessMs;
-  const interval =
-    Number.isFinite(refreshIntervalMs) && refreshIntervalMs > 0 ? refreshIntervalMs : 30000;
-  const quietSince = Math.max(last, source.watchedSinceMs || 0);
-  if (Number.isFinite(last) && now - quietSince > STALE_INTERVALS * interval) {
+  const period = Number.isFinite(pollPeriodMs) && pollPeriodMs > 0 ? pollPeriodMs : 30000;
+  const quietSince = source.error ? last : Math.max(last, source.watchedSinceMs || 0);
+  if (Number.isFinite(last) && now - quietSince > STALE_POLLS * period) {
     staleNote = `updated ${formatAgo(now - last)}`;
   }
 
