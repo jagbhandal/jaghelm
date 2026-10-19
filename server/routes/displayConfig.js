@@ -62,9 +62,10 @@ router.post('/', (req, res) => {
     }
 
     atomicWriteFileSync(DISPLAY_CONFIG_PATH, serialized);
-    // Always invalidate — even if the interval value happens to match, the
-    // push thresholds (or anything else the loop reads) may have changed.
-    // Restart re-reads the interval through the now-empty cache.
+    // Always invalidate, even if the interval is unchanged: the push thresholds
+    // may have changed, and the loop's file-identity check misses a quick
+    // second save that reuses the inode, size and mtime. Restart re-reads the
+    // interval through the now-empty cache.
     invalidateDisplayConfigCache();
     if (intervalChanged) restartBackgroundRefresh();
     res.json({ ok: true });

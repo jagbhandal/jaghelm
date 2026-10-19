@@ -345,7 +345,7 @@ test('runPushCycle: a failed write keeps memory moving and is retried until it l
   }
 });
 
-test('runPushCycle: a restart before a failed write lands sends the alert again, never loses it', async () => {
+test('runPushCycle: a restart before a failed write lands diffs against the older file, so the alert is sent again', async () => {
   const { dir, path } = tmpSnapshotPath();
   const spy = writeSpy({ failOn: [2] });
   try {
@@ -379,6 +379,72 @@ test('runPushCycle: a dispatch that throws leaves prev alone, so the next cycle 
     fail = false;
     await cycle(snapshot, SNAP_DOWN, flakyFcm);
     assert.deepEqual(calls, ['service_down']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The file can lag memory by readings that stay on one side of their
+// threshold. If the threshold is edited while JagHelm is stopped, a lagging
+// reading can sit on the other side of the new one, so shutdown writes the
+// latest snapshot (flush) and the restart diffs against the last reading, as
+// it did when the file was written every cycle.
+test('createPushSnapshot flush: a threshold lowered across a restart still raises the alert', async () => {
+  const { dir, path } = tmpSnapshotPath();
+  const lower = { ...THRESHOLDS, cpu: 0.8 };
+  try {
+    const first = createPushSnapshot({ path, logger: silentLog });
+    for (const cpu of [0.85, 0.7, 0.6]) await cycle(first, host(cpu), enabledFcm()); // all below 0.9
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).hosts.n1.cpu, 0.85, 'the file lags memory');
+    first.flush(); // shutdown
+    const afterRestart = enabledFcm();
+    await cycle(createPushSnapshot({ path, logger: silentLog }), host(0.82), afterRestart, lower);
+    assert.deepEqual(afterRestart.calls.map((c) => c.type), ['host_threshold'], '0.60 -> 0.82 crosses 0.8');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('createPushSnapshot flush: a threshold lowered across a restart raises no alert the reading already passed', async () => {
+  const { dir, path } = tmpSnapshotPath();
+  const lower = { ...THRESHOLDS, cpu: 0.8 };
+  try {
+    const first = createPushSnapshot({ path, logger: silentLog });
+    for (const cpu of [0.5, 0.85, 0.85]) await cycle(first, host(cpu), enabledFcm());
+    first.flush();
+    const afterRestart = enabledFcm();
+    await cycle(createPushSnapshot({ path, logger: silentLog }), host(0.85), afterRestart, lower);
+    assert.equal(afterRestart.calls.length, 0, '0.85 -> 0.85: no crossing');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('createPushSnapshot flush: writes nothing when the file is current or there is no snapshot', async () => {
+  const { dir, path } = tmpSnapshotPath();
+  const spy = writeSpy();
+  try {
+    const snapshot = createPushSnapshot({ path, write: spy.write, logger: silentLog });
+    snapshot.flush();
+    assert.equal(spy.attempts, 0, 'push never ran: nothing to write');
+    await cycle(snapshot, SNAP_UP, enabledFcm());
+    await cycle(snapshot, SNAP_UP, enabledFcm());
+    snapshot.flush();
+    assert.equal(spy.attempts, 1, 'only the baseline');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('createPushSnapshot flush: a failed write is logged, not thrown', async () => {
+  const { dir, path } = tmpSnapshotPath();
+  const spy = writeSpy({ failOn: [2] });
+  try {
+    const snapshot = createPushSnapshot({ path, write: spy.write, logger: silentLog });
+    await cycle(snapshot, host(0.5), enabledFcm());
+    await cycle(snapshot, host(0.6), enabledFcm());
+    assert.doesNotThrow(() => snapshot.flush());
+    assert.equal(spy.attempts, 2);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

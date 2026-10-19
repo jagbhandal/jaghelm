@@ -27,8 +27,8 @@ function sanitizeServiceEntry(v) {
   return null;
 }
 
-export function createServiceRegistry({ path = DEFAULT_PATH, now = Date.now } = {}) {
-  const core = createPresenceStore({ path, now, sanitize: sanitizeServiceEntry });
+export function createServiceRegistry({ path = DEFAULT_PATH, now = Date.now, write } = {}) {
+  const core = createPresenceStore({ path, now, sanitize: sanitizeServiceEntry, write });
 
   function recordSeen(monitorId, nodeKey, containerName) {
     if (monitorId == null || !nodeKey) return;

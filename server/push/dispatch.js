@@ -114,10 +114,17 @@ export async function dispatchEvents(events, { store, fcm, logger = defaultLog }
  * change), and rewritten only when alertStateKey changes, so a CPU reading
  * that moves without crossing its threshold costs no write.
  *
+ * That leaves the file's readings behind memory's, on the same side of the
+ * thresholds they were written under. flush() writes the latest snapshot on
+ * shutdown, so a threshold edited while JagHelm is stopped is judged against
+ * the last reading. After a crash it is judged against the last written one,
+ * and a reading between the old and the new threshold can add or drop one
+ * threshold alert.
+ *
  * A failed write is logged and retried every cycle until it lands. Memory moves
- * on regardless, so the running process does not send the alert again; a
- * restart before the retry lands diffs against the older file and may send an
- * alert a second time, but never misses one.
+ * on regardless, so the running process does not send the alert again. Until
+ * the write lands, a restart diffs against the older file: it can re-send an
+ * alert, or miss the recovery of one already sent.
  *
  * @param {object}   opts
  * @param {string}   opts.path     the persisted snapshot file
@@ -140,6 +147,15 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, logger =
     }
   }
 
+  function persist(snap) {
+    try {
+      write(path, JSON.stringify(snap));
+      persisted = snap;
+    } catch (err) {
+      logger.error({ err }, 'failed to persist push snapshot, retrying next cycle');
+    }
+  }
+
   return {
     /** The previous cycle's snapshot, or null on the first cycle (baseline). */
     prev() {
@@ -154,12 +170,12 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, logger =
       prev = snap;
       loaded = true;
       if (persisted !== null && alertStateKey(persisted, thresholds) === alertStateKey(snap, thresholds)) return;
-      try {
-        write(path, JSON.stringify(snap));
-        persisted = snap;
-      } catch (err) {
-        logger.error({ err }, 'failed to persist push snapshot, retrying next cycle');
-      }
+      persist(snap);
+    },
+    /** Write the in-memory snapshot if the file holds an older one (shutdown). */
+    flush() {
+      if (prev === null || JSON.stringify(prev) === JSON.stringify(persisted)) return;
+      persist(prev);
     },
   };
 }

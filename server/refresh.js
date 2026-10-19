@@ -7,10 +7,11 @@
  *
  * Loop control: startBackgroundRefresh() starts the interval (once at boot);
  * restartBackgroundRefresh() re-reads the interval from display-config and
- * restarts it (called after a settings save).
+ * restarts it (called after a settings save). Each tick also follows a hand
+ * edit of the interval in the file.
  */
 
-import { existsSync, readFileSync } from 'fs';
+import { readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
 import { getConfig } from './config.js';
@@ -44,38 +45,53 @@ const DEFAULT_INTERVAL_MS = 30_000;
 const MIN_INTERVAL_SECONDS = 10;
 
 let bgRefreshTimer = null;
+let bgRefreshIntervalMs = null; // the interval bgRefreshTimer runs at
 let bgRefreshRunning = false;
 let lastRefreshComplete = 0; // ms epoch of the last finished cycle (0 = never)
 
 // ── Push pipeline wiring ─────────────────────────────────────────────────
 // The prev cycle's snapshot is held in memory and persisted beside the other
-// data/ stores when it changes.
-const pushSnapshot = createPushSnapshot({ path: join(DATA_DIR, 'push-snapshot.json'), logger: log });
+// data/ stores when it changes, and on shutdown. Exported for that test.
+export const pushSnapshot = createPushSnapshot({ path: join(DATA_DIR, 'push-snapshot.json'), logger: log });
 const DEFAULT_PUSH_THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-// display-config.json is parsed once and cached: the loop needs its refresh
-// interval and push thresholds every cycle, and re-reading the file each time
-// was pure waste. Its only writer, the displayConfig POST route, invalidates
-// the cache after a save, so a hand edit of the file takes effect at the next
-// save or restart.
+// display-config.json is cached: the loop needs its refresh interval and push
+// thresholds every cycle, and re-parsing the file each time was pure waste.
+// Each read stats the file and parses it again only when its identity (mtime,
+// size, inode) differs from the cached copy's. Any difference counts, not just
+// a newer mtime: a save by rename brings a new inode, and a restore can set an
+// older mtime. A hand edit therefore takes effect on the next cycle. The
+// displayConfig POST route also invalidates the cache after a save.
 let cachedDisplayConfig; // undefined: not read yet; null: missing or unreadable
+let cachedDisplayConfigId = null; // the file identity cachedDisplayConfig was read from
 
 export function invalidateDisplayConfigCache() {
   cachedDisplayConfig = undefined;
 }
 
+function displayConfigId() {
+  try {
+    const st = statSync(DISPLAY_CONFIG_PATH);
+    return `${st.mtimeMs}:${st.size}:${st.ino}`;
+  } catch {
+    return null; // missing
+  }
+}
+
 /** The parsed display-config.json, or null on missing/error. */
 function readDisplayConfig() {
-  if (cachedDisplayConfig !== undefined) return cachedDisplayConfig;
+  const id = displayConfigId();
+  if (cachedDisplayConfig !== undefined && id === cachedDisplayConfigId) return cachedDisplayConfig;
+  cachedDisplayConfigId = id;
   cachedDisplayConfig = null;
+  if (id === null) return null;
   try {
-    if (existsSync(DISPLAY_CONFIG_PATH)) {
-      cachedDisplayConfig = JSON.parse(readFileSync(DISPLAY_CONFIG_PATH, 'utf8'));
-    }
-  } catch {
-    // fall through: defaults until the next save
+    cachedDisplayConfig = JSON.parse(readFileSync(DISPLAY_CONFIG_PATH, 'utf8'));
+  } catch (err) {
+    // Once per bad file: it is parsed again only when it changes.
+    log.warn({ err }, 'display-config.json is unreadable; using the default refresh interval and push thresholds');
   }
   return cachedDisplayConfig;
 }
@@ -133,7 +149,11 @@ function serviceRank(s) {
  *
  * Three passes:
  *  (a) Running-container cards — Kuma overlays status; each running container is
- *      recorded into the container registry (last-seen node + timing).
+ *      recorded into the container registry (last-seen node + timing). A name
+ *      running on several nodes (cadvisor, alloy...) is recorded once, with the
+ *      last node in the pass, and so is a monitor in `seen`: recording each
+ *      sighting flipped the node within every pass and rewrote the registries
+ *      every cycle.
  *  (b) Down-monitor synthesis — active monitors reporting `down` that matched no
  *      running container become red cards on their last-seen node (base spec).
  *  (c) Breadcrumb synthesis — established, UNMONITORED containers that have
@@ -158,8 +178,8 @@ function serviceRank(s) {
  */
 export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf, lastSeenContainerOf, containerRegistry, now = Date.now }) {
   const consumed = new Set();
-  const seen = [];
-  const runningNames = new Set();
+  const seen = new Map(); // monitor id -> { monitorId, nodeKey, container }, last in the pass
+  const runningOn = new Map(); // container name -> the last node it runs on in this pass
   const unmatched = new Set();
   let containerCount = 0;
   const nowMs = now();
@@ -176,8 +196,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
 
     containerCount += containers.length;
     const services = containers.map((c) => {
-      runningNames.add(c.container);
-      if (containerRegistry) containerRegistry.recordSeen(c.container, nodeKey, nowMs);
+      runningOn.set(c.container, nodeKey);
       const override = config.services?.[c.container] || {};
       const displayName = override.display_name || formatContainerName(c.container);
       const explicitMonitor = override.monitor || null;
@@ -186,7 +205,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
         consumed.add(monitor.id);
         // Remember the container too, so a later outage's synth card can reuse
         // this exact uid (keeps down→recovery on ONE key for the push differ).
-        seen.push({ monitorId: monitor.id, nodeKey, container: c.container });
+        seen.set(monitor.id, { monitorId: monitor.id, nodeKey, container: c.container });
       } else {
         unmatched.add(c.container);
       }
@@ -225,6 +244,9 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
 
   const nodes = Object.fromEntries(nodeEntries.filter(Boolean));
   const nodeKeys = Object.keys(nodes);
+  if (containerRegistry) {
+    for (const [name, nodeKey] of runningOn) containerRegistry.recordSeen(name, nodeKey, nowMs);
+  }
 
   // (b) Down-monitor synthesis — outages whose container left cAdvisor. The
   // down-vs-inactive invariant lives in selectOutageMonitors: it keeps only
@@ -265,7 +287,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   if (containerRegistry) {
     const candidates = containerRegistry.getMissing({ now: nowMs });
     for (const cand of candidates) {
-      if (runningNames.has(cand.container)) continue;             // running somewhere this cycle
+      if (runningOn.has(cand.container)) continue;                // running somewhere this cycle
       const override = config.services?.[cand.container] || {};
       // Kuma owns it — honor the explicit monitor mapping too (mirror pass (a)),
       // so an explicitly-mapped, dissimilar-named monitor never lets a tracked
@@ -315,7 +337,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
 
   return {
     nodes,
-    seen,
+    seen: [...seen.values()],
     outageCount: outages.length,
     breadcrumbCount,
     overallHealth,
@@ -642,6 +664,12 @@ export function createCycleReporter(logger = log) {
 const reportCycle = createCycleReporter();
 
 async function runBackgroundRefresh() {
+  // Follow a hand edit of the interval in display-config.json from this tick on.
+  const intervalMs = getRefreshIntervalMs();
+  if (bgRefreshTimer && intervalMs !== bgRefreshIntervalMs) {
+    scheduleBackgroundRefresh(intervalMs);
+    log.info({ intervalSec: intervalMs / 1000 }, 'background loop restarted (refresh interval changed)');
+  }
   if (bgRefreshRunning) return; // Skip if previous cycle hasn't finished
   bgRefreshRunning = true;
   const start = Date.now();
@@ -679,15 +707,22 @@ async function runBackgroundRefresh() {
 export function getRefreshHealth() {
   if (lastRefreshComplete === 0) return { state: 'starting', ageMs: null };
   const ageMs = Date.now() - lastRefreshComplete;
-  const intervalMs = getRefreshIntervalMs();
+  // The interval the timer runs at: a hand edit is in the file before the
+  // timer's next tick picks it up.
+  const intervalMs = bgRefreshIntervalMs ?? getRefreshIntervalMs();
   const state = ageMs > Math.max(3 * intervalMs, 90_000) ? 'stale' : 'ok';
   return { state, ageMs };
 }
 
-export function startBackgroundRefresh() {
-  const intervalMs = getRefreshIntervalMs();
+function scheduleBackgroundRefresh(intervalMs) {
   if (bgRefreshTimer) clearInterval(bgRefreshTimer);
   bgRefreshTimer = setInterval(runBackgroundRefresh, intervalMs);
+  bgRefreshIntervalMs = intervalMs;
+}
+
+export function startBackgroundRefresh() {
+  const intervalMs = getRefreshIntervalMs();
+  scheduleBackgroundRefresh(intervalMs);
   log.info({ intervalSec: intervalMs / 1000 }, 'background loop started');
   // Warm the cache immediately so the first dashboard load isn't a cold miss
   runBackgroundRefresh();
@@ -698,20 +733,22 @@ export function restartBackgroundRefresh() {
   // route that triggers a restart just wrote a new value).
   invalidateDisplayConfigCache();
   const intervalMs = getRefreshIntervalMs();
-  if (bgRefreshTimer) clearInterval(bgRefreshTimer);
-  bgRefreshTimer = setInterval(runBackgroundRefresh, intervalMs);
+  scheduleBackgroundRefresh(intervalMs);
   log.info({ intervalSec: intervalMs / 1000 }, 'background loop restarted');
 }
 
 /**
  * Stop the background loop. Called on shutdown so the timer doesn't fire
- * mid-drain, and writes the container registry's refreshed lastSeenAt so the
- * next start doesn't read one up to PRESENCE_FLUSH_MS old.
+ * mid-drain. Also writes what the loop holds in memory ahead of the files: the
+ * container registry's refreshed lastSeenAt (up to PRESENCE_FLUSH_MS old on
+ * disk) and the push snapshot's latest readings (see createPushSnapshot).
  */
 export function stopBackgroundRefresh() {
   if (bgRefreshTimer) {
     clearInterval(bgRefreshTimer);
     bgRefreshTimer = null;
+    bgRefreshIntervalMs = null;
   }
   containerRegistry.flush();
+  pushSnapshot.flush();
 }
