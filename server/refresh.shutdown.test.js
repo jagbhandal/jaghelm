@@ -1,8 +1,9 @@
 /**
  * The refresh loop writes a running container's refreshed lastSeenAt only every
- * PRESENCE_FLUSH_MS, and the push snapshot only when its alert state changes,
- * so the shutdown path (stopBackgroundRefresh) writes both, and the next start
- * doesn't read older ones (#241).
+ * PRESENCE_FLUSH_MS, so the shutdown path (stopBackgroundRefresh) writes it,
+ * and the next start doesn't read an older one (#241). The push snapshot holds
+ * only alert state since #292 (levels, not readings), so it is written as it
+ * changes; shutdown flushes it too, which matters only after a failed write.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,8 +21,8 @@ writeFileSync(
 );
 
 const snapshotPath = join(dataDir, 'push-snapshot.json');
-const host = (cpu) => ({ services: {}, hosts: { n1: { reachable: true, cpu, mem: 0.1, disk: 0.1 } }, ups: { state: 'online' }, cron: {} });
-writeFileSync(snapshotPath, JSON.stringify(host(0.85)));
+const host = (cpu) => ({ services: {}, hosts: { n1: { reachable: true, levels: { cpu } } }, ups: { state: 'online' }, cron: {} });
+writeFileSync(snapshotPath, JSON.stringify(host('ok')));
 
 const { containerRegistry } = await import('./containerRegistry.js');
 const { pushSnapshot, stopBackgroundRefresh } = await import('./refresh.js');
@@ -35,11 +36,12 @@ test('stopBackgroundRefresh writes the container registry\'s refreshed lastSeenA
   containerRegistry.recordSeen('redis', 'vm103', now);
   containerRegistry.save();
   assert.equal(lastSeenOnDisk(), seenAt, 'inside the flush interval: not written by the cycle');
+  const cpuOnDisk = () => JSON.parse(readFileSync(snapshotPath, 'utf8')).hosts.n1.levels.cpu;
   pushSnapshot.prev();
-  pushSnapshot.advance(host(0.6), { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 });
-  assert.equal(JSON.parse(readFileSync(snapshotPath, 'utf8')).hosts.n1.cpu, 0.85, 'same alert state: not written');
+  pushSnapshot.advance(host('warn'));
+  assert.equal(cpuOnDisk(), 'warn', 'a new level is written at once');
 
   stopBackgroundRefresh();
   assert.equal(lastSeenOnDisk(), now);
-  assert.equal(JSON.parse(readFileSync(snapshotPath, 'utf8')).hosts.n1.cpu, 0.6);
+  assert.equal(cpuOnDisk(), 'warn');
 });

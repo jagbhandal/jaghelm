@@ -224,7 +224,7 @@ export function liveCycle({ status = {}, order = (list) => list } = {}) {
   });
 }
 
-/** The caches the push snapshot reads after `r`'s refresh (refresh.js' setCache). */
+/** The caches the status model and push read after `r`'s refresh (refresh.js' setCache). */
 export function liveCaches(r) {
   return {
     getCached: (key) => {
@@ -239,7 +239,15 @@ export function liveCaches(r) {
       return null;
     },
     getCachedInternal: (key) =>
-      key === 'services' ? { upWithoutCard: r.upWithoutCard, monitorOf: r.monitorOf } : null,
+      key === 'services'
+        ? {
+            upWithoutCard: r.upWithoutCard,
+            monitorOf: r.monitorOf,
+            kumaStatusOf: r.kumaStatusOf,
+            kumaWithoutCard: r.kumaWithoutCard,
+            backedBy: r.backedBy,
+          }
+        : null,
     getAllCronStatuses: () => [
       {
         node: 'vm103',

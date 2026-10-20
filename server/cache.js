@@ -14,7 +14,8 @@
 
 import crypto from 'crypto';
 
-const CACHE_TTL_MS = 120_000;
+// How long an entry counts as fresh, unless it was written with its own TTL.
+export const CACHE_TTL_MS = 120_000;
 // Hard cap on distinct keys. Cache keys include user-influenced strings
 // (`weather-<lat>-<lon>`), so an unbounded Map is a trivial
 // memory-exhaustion DoS for an authenticated user. Map preserves insertion
@@ -32,7 +33,7 @@ function boundedSet(map, key, value) {
 
 function freshEntry(key) {
   const entry = cache.get(key);
-  if (!entry || Date.now() - entry.ts >= CACHE_TTL_MS) return null;
+  if (!entry || Date.now() - entry.ts >= entry.ttlMs) return null;
   return entry;
 }
 
@@ -55,10 +56,12 @@ export function getCachedInternal(key) {
  * Store a value in the cache with the current timestamp. The value must not be
  * mutated afterwards: once served with an ETag, its JSON is kept until the next
  * setCache for the key. `internal` is kept beside it, unserved, for
- * getCachedInternal, and expires with it.
+ * getCachedInternal, and expires with it. `ttlMs` is how long it stays fresh
+ * (CACHE_TTL_MS by default): the status the loop builds lives two refresh
+ * intervals, so a long interval leaves no gap between cycles.
  */
-export function setCache(key, data, internal = null) {
-  boundedSet(cache, key, { data, internal, ts: Date.now(), body: null, etag: null });
+export function setCache(key, data, internal = null, { ttlMs = CACHE_TTL_MS } = {}) {
+  boundedSet(cache, key, { data, internal, ts: Date.now(), ttlMs, body: null, etag: null });
 }
 
 /** Fill in `entry.body` (the JSON as a Buffer) and its strong `entry.etag`. */

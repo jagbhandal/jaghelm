@@ -1,12 +1,15 @@
 /**
- * Deploying #395 over the live install sends nothing (#395).
+ * Deploying over the live install sends nothing (#395, #292).
  *
- * The push snapshot now records which monitor fed each service key. The file a
- * running JagHelm holds was written before that: push-snapshot-v1.json is one,
- * written by createPushSnapshot at main 9d68385 (before #395) from liveShape.js,
- * which is modelled on the live install's names, with "NAS UI" down. Read back,
- * it must diff as it did, so the first cycle after the deploy sends nothing,
- * and NAS UI's recovery is still sent later.
+ * push-snapshot-v1.json was written by createPushSnapshot at main 9d68385
+ * (before #395, no monitor identities) and push-snapshot-v2.json at main
+ * c395e95 (before #292: host readings, not levels; services for every
+ * card), both from liveShape.js, which is modelled on the live install's
+ * names, with "NAS UI" down; in v2 vm103's disk is at 92 %, over push's line.
+ * Read back, each must diff as it did, so the first cycle after the deploy
+ * sends nothing, an outage the old file holds still recovers, and (v2) the
+ * disk episode survives the deploy: inside the band after it, nothing; below
+ * the clear level, one "back to normal" (#361).
  *
  * Like the live install, the shape has three mappings to monitors Kuma lacks
  * (#342), and the 19 container names of the live boot line get no monitor.
@@ -22,8 +25,7 @@ import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { buildSnapshot } from './snapshot.js';
-import { createPushSnapshot, runPushCycle } from './dispatch.js';
+import { pushPipeline } from '../testing/pushPipeline.js';
 import {
   liveCaches,
   liveCycle,
@@ -33,7 +35,7 @@ import {
 } from './fixtures/liveShape.js';
 
 const FIXTURE = new URL('./fixtures/push-snapshot-v1.json', import.meta.url);
-const THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
+const FIXTURE_V2 = new URL('./fixtures/push-snapshot-v2.json', import.meta.url);
 
 // The structured logger's JSON lines written while `fn` runs.
 async function captureLogs(fn) {
@@ -64,41 +66,37 @@ async function captureLogs(fn) {
   return lines;
 }
 
-function deployed() {
+// JagHelm started on a copy of `fixture`: its first cycle diffs against it.
+function deployed(fixture = FIXTURE) {
   const dir = mkdtempSync(join(tmpdir(), 'jaghelm-push-deploy-'));
   const path = join(dir, 'push-snapshot.json');
-  copyFileSync(FIXTURE, path);
-  const sent = [];
-  const fcm = {
-    isPushEnabled: () => true,
-    sendToToken: async (_token, event) => {
-      sent.push(`${event.type} ${event.id}`);
-      return { ok: true, prune: false };
+  copyFileSync(fixture, path);
+  const p = pushPipeline({ path });
+  return {
+    sent: p.sent,
+    path,
+    push: (r, caches = liveCaches(r)) => p.cycle(caches),
+    close: () => {
+      p.close();
+      rmSync(dir, { recursive: true, force: true });
     },
   };
-  const store = {
-    getAllTokens: () => [{ token: 'phone' }],
-    getPrefs: () => ({ enabled: true, categories: {}, notifyRecoveries: true }),
-    removeToken() {},
-    pruneStale() {},
-    markDelivered() {},
-  };
-  const snapshot = createPushSnapshot({
-    path,
-    logger: { info() {}, warn() {}, error() {}, debug() {} },
-  });
+}
+
+// liveCaches(r) with vm103's disk at `pct` %.
+function withDisk(r, pct) {
+  const c = liveCaches(r);
   return {
-    sent,
-    path,
-    push: (r) =>
-      runPushCycle({
-        buildSnapshotFn: (prev) => buildSnapshot(liveCaches(r), prev),
-        store,
-        fcm,
-        snapshot,
-        thresholds: THRESHOLDS,
-      }),
-    close: () => rmSync(dir, { recursive: true, force: true }),
+    ...c,
+    getCached: (key) => {
+      const v = c.getCached(key);
+      if (key !== 'services') return v;
+      const vm103 = {
+        ...v.nodes.vm103,
+        metrics: { ...v.nodes.vm103.metrics, diskPercent: String(pct) },
+      };
+      return { ...v, nodes: { ...v.nodes, vm103 } };
+    },
   };
 }
 
@@ -124,8 +122,10 @@ test('deploy (#395): the old snapshot loads, the first cycle sends nothing, and 
       await live.push(r);
       assert.deepEqual(live.sent, [], 'the format change sends nothing');
       const written = JSON.parse(readFileSync(live.path, 'utf8'));
-      assert.deepEqual(written.services, old.services, 'the same state as the old file');
-      assert.deepEqual(written.hosts, old.hosts);
+      for (const [key, state] of Object.entries(written.services)) {
+        assert.equal(state, old.services[key], `${key}: the same state as the old file`);
+      }
+      assert.deepEqual(Object.keys(written.hosts), Object.keys(old.hosts));
       assert.equal(
         written.monitorOf['vm103:NAS UI'],
         '11',
@@ -192,6 +192,97 @@ test('deploy (#395): the 19 unmonitored containers and the three broken mappings
       'NAS UI was down already'
     );
     assert.deepEqual(idsOf('service_recovered'), fedKeys);
+  } finally {
+    live.close();
+  }
+});
+
+test('deploy (#292): the snapshot written before it loads, sends nothing, and its episodes carry on', async () => {
+  const old = JSON.parse(readFileSync(FIXTURE_V2, 'utf8'));
+  assert.deepEqual(
+    Object.keys(old),
+    ['services', 'monitorOf', 'hosts', 'ups', 'cron'],
+    'written before #292'
+  );
+  assert.deepEqual(
+    old.hosts.vm103,
+    { reachable: true, cpu: 0.125, mem: 0.41, disk: 0.92 },
+    'readings, disk over the line'
+  );
+  assert.equal(old.services['vm103:NAS UI'], 'down');
+  assert.equal(old.services['vm103:alloy'], 'up', 'every card, monitored or not');
+
+  const live = deployed(FIXTURE_V2);
+  try {
+    // The deploy cycle: the disk has come down to 87 %, inside the band.
+    await live.push(
+      liveCycle({ status: { 'NAS UI': 'down' } }),
+      withDisk(liveCycle({ status: { 'NAS UI': 'down' } }), 87)
+    );
+    assert.deepEqual(live.sent, [], 'the format change sends nothing');
+    const written = JSON.parse(readFileSync(live.path, 'utf8'));
+    assert.deepEqual(Object.keys(written), [
+      'services',
+      'monitorOf',
+      'hosts',
+      'ups',
+      'cron',
+      'sources',
+    ]);
+    assert.equal(
+      written.hosts.vm103.levels.disk,
+      'warn',
+      'still over its line: the level was seeded from the old reading'
+    );
+    assert.equal(written.services['vm103:alloy'], undefined, 'only what a Kuma monitor feeds');
+    assert.equal(written.services['vm103:NAS UI'], 'down');
+
+    const down = liveCycle({ status: { 'NAS UI': 'down' } });
+    await live.push(down, withDisk(down, 88));
+    assert.deepEqual(live.sent, [], 'nor does the cycle after it');
+    await live.push(down, withDisk(down, 80));
+    assert.deepEqual(
+      live.sent,
+      ['host_threshold_cleared vm103:disk'],
+      'the episode ends below the clear level'
+    );
+    await live.push(liveCycle(), withDisk(liveCycle(), 80));
+    assert.deepEqual(live.sent, [
+      'host_threshold_cleared vm103:disk',
+      'service_recovered vm103:NAS UI',
+    ]);
+  } finally {
+    live.close();
+  }
+});
+
+// `c` with pi1's memory at `pct` %.
+function withPi1Memory(c, pct) {
+  return {
+    ...c,
+    getCached: (key) => {
+      const v = c.getCached(key);
+      if (key !== 'services') return v;
+      const pi1 = { ...v.nodes.pi1, metrics: { ...v.nodes.pi1.metrics, memPercent: String(pct) } };
+      return { ...v, nodes: { ...v.nodes, pi1 } };
+    },
+  };
+}
+
+test('deploy (#292): a reading that crossed its line since the old snapshot was written alerts on the first cycle', async () => {
+  const old = JSON.parse(readFileSync(FIXTURE_V2, 'utf8'));
+  assert.equal(old.hosts.pi1.mem, 0.41, 'under its line in the old file');
+  const live = deployed(FIXTURE_V2);
+  try {
+    // vm103's disk stays at the old file's 92 %; pi1's memory went from 41 % to 95 %.
+    const r = liveCycle({ status: { 'NAS UI': 'down' } });
+    await live.push(r, withPi1Memory(withDisk(r, 92), 95));
+    assert.deepEqual(live.sent, ['host_threshold pi1:mem'], 'one alert, on the deploy cycle');
+    await live.push(r, withPi1Memory(withDisk(r, 92), 95));
+    assert.deepEqual(live.sent, ['host_threshold pi1:mem'], 'and not again');
+    // The disk the old file held over its line comes back under it: one "back to normal".
+    await live.push(r, withPi1Memory(withDisk(r, 63), 95));
+    assert.deepEqual(live.sent, ['host_threshold pi1:mem', 'host_threshold_cleared vm103:disk']);
   } finally {
     live.close();
   }

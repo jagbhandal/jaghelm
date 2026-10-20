@@ -30,7 +30,7 @@ import { containerRegistry } from './containerRegistry.js';
 import { fetchIntegration } from './integrations/handler.js';
 import { createIntegrationBackoff } from './integrations/backoff.js';
 import { configFingerprint, resolveIntegrationConfig } from './integrations/lib/config.js';
-import { setCache } from './cache.js';
+import { CACHE_TTL_MS, setCache } from './cache.js';
 import { safeFetch } from './httpClient.js';
 import { dedupe } from './util/dedupe.js';
 import { isJobContainer } from './util/helperContainers.js';
@@ -40,10 +40,11 @@ import { redactSecrets } from './util/redact.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
-import { buildSnapshot, liveCaches } from './push/snapshot.js';
+import { buildSnapshot, heldLevels, upgradeSnapshot } from './push/snapshot.js';
 import { getPushStore } from './push/store.js';
 import * as fcm from './push/fcm.js';
-import { DEFAULT_THRESHOLDS, pushThresholdsOf, resolveThresholds } from './status/thresholds.js';
+import { createStatusTracker, liveCaches, memoryFromLevels, readStatusInputs } from './status/index.js';
+import { resolveThresholds } from './status/thresholds.js';
 
 const log = createLogger('refresh');
 
@@ -59,11 +60,40 @@ let lastRefreshComplete = 0; // ms epoch of the last finished cycle (0 = never)
 
 // ── Push pipeline wiring ─────────────────────────────────────────────────
 // The prev cycle's snapshot is held in memory and persisted beside the other
-// data/ stores when it changes, and on shutdown. Exported for that test.
-export const pushSnapshot = createPushSnapshot({ path: join(DATA_DIR, 'push-snapshot.json'), logger: log });
-// Push's host thresholds are a view of the server's one threshold config
-// (status/thresholds.js), which the status model reads too (#290).
-const DEFAULT_PUSH_THRESHOLDS = Object.freeze(pushThresholdsOf(DEFAULT_THRESHOLDS));
+// data/ stores when it changes, and on shutdown. Exported for that test. A
+// file written before #292 holds readings: it is read as levels (upgrade).
+export const pushSnapshot = createPushSnapshot({
+  path: join(DATA_DIR, 'push-snapshot.json'),
+  upgrade: (snap) => upgradeSnapshot(snap, getThresholds()),
+  logger: log,
+});
+
+// ── Status model wiring (#292) ───────────────────────────────────────────
+// Built once a cycle, after the refreshes: /api/status serves it and push
+// builds its snapshot from it. Its memory (hysteresis levels, "for 2 cycles"
+// runs) lives in this process, so it starts from the levels push last
+// persisted (#361): a reading still inside a hysteresis band after a restart
+// is still over its line, and sends neither a repeat alert nor a false
+// "back to normal". Only when push is set up: without it the file is not
+// push's live state. Only the nodes services.yaml still has are seeded. A seed
+// that fails (an unreadable file is already null) starts the model without it.
+const statusTracker = createStatusTracker({
+  seed: (thresholds) => {
+    if (!fcm.isPushConfigured() && !fcm.isPushEnabled()) return null;
+    try {
+      const nodes = getConfig()?.nodes;
+      return memoryFromLevels(heldLevels(pushSnapshot.prev(), thresholds), {
+        nodes: nodes && typeof nodes === 'object' ? Object.keys(nodes) : null,
+      });
+    } catch (err) {
+      log.warn({ err }, 'push snapshot levels not usable; the status model starts without them');
+      return null;
+    }
+  },
+});
+// The message of the model failure last logged (null: it built last cycle), so
+// a failure that repeats every cycle logs once.
+let statusModelError = null;
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -109,17 +139,69 @@ export function readDisplayConfig() {
 
 /**
  * The server's thresholds in force (status/thresholds.js): the defaults, with
- * display-config.json's `pushThresholds` over them. The status model and push
- * both read these, so they can never disagree about a line.
+ * display-config.json's `pushThresholds` over them. The status model reads
+ * them, and push sends what the model judges, so there is one set of lines.
  */
 export function getThresholds() {
   return resolveThresholds(readDisplayConfig()?.pushThresholds);
 }
 
-/** Push's host thresholds: CPU, memory and disk warn lines and the hysteresis, from getThresholds(). */
-export function getPushThresholds() {
-  const t = readDisplayConfig()?.pushThresholds;
-  return t && typeof t === 'object' ? pushThresholdsOf(getThresholds()) : DEFAULT_PUSH_THRESHOLDS;
+/**
+ * Builds this cycle's status from what the refreshes cached (reading
+ * cron-jobs.json once, for the model and so for push), keeps it for
+ * /api/status and returns it. `cycleErrors` is runCycleRefreshes' error set.
+ *
+ * It never throws. If the model throws (an input it can't read), it logs the
+ * error once until the error changes or the model builds again, keeps the
+ * last status for /api/status, and returns null: push skips that cycle.
+ *
+ * The status stays fresh in the cache for two refresh intervals (at least the
+ * cache's 120 s), so /api/status has one between cycles however long they are.
+ */
+export function updateStatus(cycleErrors = [], now = Date.now()) {
+  let status;
+  try {
+    status = statusTracker.update({
+      inputs: readStatusInputs(liveCaches, { cycleErrors }),
+      thresholds: getThresholds(),
+      now,
+    });
+  } catch (err) {
+    const message = String(err?.message ?? err);
+    if (message !== statusModelError) {
+      log.error({ err }, 'status model failed: /api/status keeps the last status, and push skips the cycle');
+      statusModelError = message;
+    }
+    return null;
+  }
+  if (statusModelError !== null) {
+    log.info('status model built again');
+    statusModelError = null;
+  }
+  const intervalMs = bgRefreshIntervalMs ?? getRefreshIntervalMs();
+  setCache('status', status, null, { ttlMs: Math.max(CACHE_TTL_MS, 2 * intervalMs) });
+  return status;
+}
+
+/**
+ * The status-and-push half of a background cycle, after the refreshes: the
+ * status model (updateStatus), then the push cycle on it. It can NEVER reject:
+ * updateStatus never throws, and runPushCycle swallows everything. A cycle
+ * with no status (the model threw) is skipped by push: nothing is diffed,
+ * sent or advanced, so the next cycle the model builds diffs against the last
+ * good snapshot and a change made meanwhile is still sent. No-ops when push is
+ * disabled (beyond the status and token pruning).
+ */
+export async function runStatusAndPush(cycleErrors = []) {
+  const status = updateStatus(cycleErrors);
+  await runPushCycle({
+    buildSnapshotFn: (prev) => (status ? buildSnapshot(liveCaches, prev, status) : null),
+    status,
+    store: getPushStore(),
+    fcm,
+    snapshot: pushSnapshot,
+    logger: log,
+  });
 }
 
 function formatContainerName(name) {
@@ -211,8 +293,8 @@ function serviceRank(s) {
  * Each node carries `reachable` from discovery (Prometheus' `up` for the node:
  * true, false, or null when Prometheus has no `up` series for it), and
  * `failedReads`: the parts of the node whose queries failed this cycle
- * (discovery's NODE_READS names; [] when they all answered). The push snapshot
- * keeps its previous value for each of those.
+ * (discovery's NODE_READS names; [] when they all answered). The status model
+ * makes each of those unknown, and push holds its last level for them.
  *
  * Every node's cards are ordered down → unknown → up.
  *
@@ -228,9 +310,11 @@ function serviceRank(s) {
  * once-per-boot "no matching monitor" log line.
  *
  * `monitorOf` (uid -> Kuma monitor id) names the monitor each monitored uid of
- * the cycle carries: a running card's, a red card's and an up entry's. The push
- * snapshot keeps it, so a monitor's state goes with it when its uid changes
- * (#395). Like `upWithoutCard`, it is for push only.
+ * the cycle carries: a running card's, a red card's, an up entry's, and a
+ * pending or in-maintenance monitor's with no card (`kumaWithoutCard`). The
+ * push snapshot keeps it, so a monitor's state goes with it when its uid
+ * changes (#395), and a monitor is one push however many cards it feeds
+ * (#407). Like `upWithoutCard`, it is for push only.
  *
  * Three more maps are for the status model only (status/, #290), kept beside
  * the payload like those two, so the payload keeps its shape and meaning
@@ -411,6 +495,10 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     if (!place) continue;
     taken.add(place.uid);
     kumaWithoutCard[place.uid] = m.kumaStatus;
+    // Push holds such a monitor at its last state, so it goes with its
+    // monitor like the others (#292): down, then pending, then down is one
+    // outage, wherever its key lands.
+    monitorOf[place.uid] = String(m.id);
   }
 
   // (c) Breadcrumb synthesis — vanished, established, UNMONITORED containers.
@@ -1065,17 +1153,11 @@ async function runBackgroundRefresh() {
     const errors = await runCycleRefreshes();
     reportCycle({ ms: Date.now() - start, errors });
 
-    // Push cycle: diff this cycle's state vs the last and notify mobile
-    // tokens. Self-contained — it can NEVER reject (see runPushCycle), so it
-    // cannot flip `ok` or break the loop. No-ops when push is disabled.
-    await runPushCycle({
-      buildSnapshotFn: (prev) => buildSnapshot(liveCaches, prev),
-      store: getPushStore(),
-      fcm,
-      snapshot: pushSnapshot,
-      thresholds: getPushThresholds(),
-      logger: log,
-    });
+    // The status model, once a cycle (what /api/status serves), then the push
+    // cycle on it: diff this cycle's state vs the last and notify mobile
+    // tokens. It can NEVER reject (see runStatusAndPush), so a model or push
+    // failure cannot flip `ok` or break the loop. No-ops when push is disabled.
+    await runStatusAndPush(errors);
   } catch (err) {
     ok = false;
     log.error({ err }, 'background cycle error');

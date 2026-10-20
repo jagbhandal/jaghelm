@@ -15,9 +15,6 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import express from 'express';
 import request from 'supertest';
 
@@ -26,8 +23,7 @@ const { initMonitors } = await import('./monitors.js');
 const { saveConfig } = await import('./config.js');
 const { getCached, getCachedInternal } = await import('./cache.js');
 const { refreshServices, refreshUPS } = await import('./refresh.js');
-const { buildSnapshot } = await import('./push/snapshot.js');
-const { createPushSnapshot, runPushCycle } = await import('./push/dispatch.js');
+const { pushPipeline } = await import('./testing/pushPipeline.js');
 const { servicesRoutes } = await import('./routes/services.js');
 
 const PROM = 'http://localhost:9998';
@@ -162,55 +158,31 @@ process.on('exit', () => {
 
 // ── The push side ────────────────────────────────────────────────────────
 
-const THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
-const silentLog = { debug() {}, info() {}, warn() {}, error() {} };
-const caches = { getCached, getCachedInternal, getAllCronStatuses: () => [], now: () => 0 };
-
-const store = {
-  getAllTokens: () => [{ token: 'phone' }],
-  getPrefs: () => ({
-    enabled: true,
-    notifyRecoveries: true,
-    categories: { service: true, host: true, ups: true, cron: true },
-  }),
-  removeToken: () => true,
-  pruneStale: () => 0,
-  markDelivered: () => 0,
-};
+const caches = { getCached, getCachedInternal, getAllCronStatuses: () => [] };
 
 // A fresh push pipeline: its first cycle is the baseline. Given the `path` of
-// another pipeline's snapshot file, it is that pipeline after a restart.
+// another pipeline's snapshot file, it is that pipeline after a restart. Each
+// cycle builds the status model and push from it, as refresh.js does (#292).
 function pipeline({ path } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'jaghelm-232-'));
-  const snapshotPath = path ?? join(dir, 'push-snapshot.json');
-  const snapshot = createPushSnapshot({ path: snapshotPath, logger: silentLog });
-  const sent = [];
-  const fcm = {
-    isPushEnabled: () => true,
-    sendToToken: async (token, event) => {
-      sent.push(`${event.type} ${event.id}`);
-      return { ok: true, prune: false };
-    },
-  };
+  const p = pushPipeline({ path, env: { KUMA_URL: KUMA } });
   return {
-    path: snapshotPath,
-    snapshot,
-    sent,
+    path: p.path,
+    sent: p.sent,
+    events: p.events,
+    get status() {
+      return p.status;
+    },
+    get snapshot() {
+      return p.snapshot;
+    },
     // `refresh: false` runs the push side only, as when the refreshes failed;
     // `from` replaces the caches the snapshot is built from.
     async cycle({ refresh = true, from = caches } = {}) {
       if (refresh) await Promise.all([refreshServices(), refreshUPS()]);
-      await runPushCycle({
-        buildSnapshotFn: (prev) => buildSnapshot(from, prev),
-        store,
-        fcm,
-        snapshot,
-        thresholds: THRESHOLDS,
-        logger: silentLog,
-      });
+      await p.cycle(from);
     },
     done() {
-      rmSync(dir, { recursive: true, force: true });
+      p.close();
     },
   };
 }
@@ -228,7 +200,9 @@ function clockBack() {
 // ── Prometheus ───────────────────────────────────────────────────────────
 
 for (const failure of ['http500', 'timeout']) {
-  test(`Prometheus failing (${failure}) for two cycles pages nothing, and nor does its recovery`, async () => {
+  // #292: one "monitoring source down" push for the outage, not one per host,
+  // service or the UPS it fed, and one when it is back.
+  test(`Prometheus failing (${failure}) for two cycles pages once that it is down, and once that it is back`, async () => {
     reset();
     const p = pipeline();
     try {
@@ -242,10 +216,16 @@ for (const failure of ['http500', 'timeout']) {
       assert.equal(getCached('services').sources.kuma.ok, true);
       assert.equal(getCached('ups').ok, false, 'the UPS read failed with it');
 
+      assert.deepEqual(p.sent, ['source_down prometheus'], 'its second failed cycle: one push, nothing per host');
+
       world.prometheus = 'ok';
       await p.cycle();
       assert.equal(getCached('services').sources.prometheus.ok, true);
-      assert.deepEqual(p.sent, [], 'no host_unreachable, no host_recovered, nothing');
+      assert.deepEqual(
+        p.sent,
+        ['source_down prometheus', 'source_recovered prometheus'],
+        'no host_unreachable, no host_recovered: one each way for the source'
+      );
     } finally {
       p.done();
     }
@@ -259,12 +239,15 @@ test('the push snapshot keeps the previous hosts, services and UPS while Prometh
     await p.cycle();
     const before = structuredClone(p.snapshot.prev());
     assert.deepEqual(Object.keys(before.hosts), ['nas', 'pi', 'vm103']);
-    assert.equal(before.services['vm103:postgres'], 'up');
+    assert.equal(before.services['vm103:gitea'], 'up');
     assert.equal(before.ups.state, 'online');
 
     world.prometheus = 'http500';
     await p.cycle();
-    assert.deepEqual(p.snapshot.prev(), before, 'what the next cycle diffs against is unchanged');
+    const held = p.snapshot.prev();
+    // What the next cycle diffs against is unchanged, but for the source.
+    for (const key of ['services', 'monitorOf', 'hosts', 'ups', 'cron']) assert.deepEqual(held[key], before[key], key);
+    assert.deepEqual(held.sources, { kuma: 'ok', nut: 'ok', prometheus: 'failing' });
   } finally {
     p.done();
   }
@@ -284,11 +267,20 @@ test('a Kuma outage during a Prometheus failure still pages, and so does its rec
     world.radarr = 'up'; // recovers while Prometheus is still failing
     await p.cycle();
     // Sent when Kuma reports it (#390): no container is seen, so the up monitor
-    // is an up entry under its card's uid.
-    assert.deepEqual(p.sent, ['service_down vm103:radarr', 'service_recovered vm103:radarr'], 'in the outage cycle');
+    // is an up entry under its card's uid. Prometheus has failed twice by now.
+    assert.deepEqual(
+      p.sent,
+      ['service_down vm103:radarr', 'service_recovered vm103:radarr', 'source_down prometheus'],
+      'in the outage cycle'
+    );
     world.prometheus = 'ok';
     await p.cycle();
-    assert.deepEqual(p.sent, ['service_down vm103:radarr', 'service_recovered vm103:radarr']);
+    assert.deepEqual(p.sent, [
+      'service_down vm103:radarr',
+      'service_recovered vm103:radarr',
+      'source_down prometheus',
+      'source_recovered prometheus',
+    ]);
   } finally {
     p.done();
   }
@@ -371,11 +363,12 @@ test('one metric query failing does not hold host_unreachable for any node', asy
     for (let i = 0; i < 5; i += 1) await p.cycle();
     assert.equal(getCached('services').sources.prometheus.ok, false, 'Prometheus counts as failing');
     assert.deepEqual(getCached('services').nodes.nas.failedReads, ['temp']);
-    assert.deepEqual(p.sent, ['host_unreachable pi'], 'pi still pages');
+    assert.deepEqual(p.sent, ['host_unreachable pi', 'source_down prometheus'], 'pi still pages');
+    assert.match(p.events.find((e) => e.type === 'source_down').body, /^Prometheus · /, 'the source push says why');
 
     world.up.pi = 1;
     await p.cycle();
-    assert.deepEqual(p.sent, ['host_unreachable pi', 'host_recovered pi']);
+    assert.deepEqual(p.sent, ['host_unreachable pi', 'source_down prometheus', 'host_recovered pi']);
   } finally {
     p.done();
   }
@@ -447,12 +440,19 @@ test('Prometheus answering with no up series after it had some counts as failed,
     await p.cycle();
     await p.cycle();
     assert.equal(getCached('services').sources.prometheus.ok, false);
-    assert.deepEqual(p.snapshot.prev().hosts.pi, { reachable: true, cpu: 0.25, mem: 0.5, disk: 0.5 });
+    assert.deepEqual(p.snapshot.prev().hosts.pi, {
+      reachable: true,
+      levels: { cpu: 'ok', disk: 'ok', mem: 'ok' },
+    });
 
     world.prometheus = 'ok';
     await p.cycle();
     assert.equal(getCached('services').sources.prometheus.ok, true, 'the up series are back');
-    assert.deepEqual(p.sent, [], 'no host_unreachable, no host_recovered');
+    assert.deepEqual(
+      p.sent,
+      ['source_down prometheus', 'source_recovered prometheus'],
+      'no host_unreachable, no host_recovered'
+    );
   } finally {
     p.done();
   }
@@ -476,9 +476,15 @@ for (const failure of ['http500', 'refused']) {
       assert.equal(getCached('services').sources.prometheus.ok, true);
       assert.equal(p.snapshot.prev().services['vm103:radarr'], 'down', 'held, not "recovered"');
 
+      assert.deepEqual(p.sent, ['source_down kuma'], 'one push for Kuma, none for radarr');
+
       world.kuma = 'ok';
       await p.cycle();
-      assert.deepEqual(p.sent, [], 'no service_recovered, then no repeat service_down');
+      assert.deepEqual(
+        p.sent,
+        ['source_down kuma', 'source_recovered kuma'],
+        'no service_recovered, then no repeat service_down'
+      );
     } finally {
       clockBack();
       p.done();
@@ -511,11 +517,12 @@ test('a monitor no container has: Kuma failing and recovering while it is down s
     await p.cycle();
     clockBack();
     await p.cycle();
-    assert.deepEqual(p.sent, [`service_down ${NAS_PING}`], 'no service_recovered, and no repeat service_down');
+    const kuma = ['source_down kuma', 'source_recovered kuma'];
+    assert.deepEqual(p.sent, [`service_down ${NAS_PING}`, ...kuma], 'no service_recovered, and no repeat service_down');
 
     world.nasPing = 'up';
     await p.cycle();
-    assert.deepEqual(p.sent, [`service_down ${NAS_PING}`, `service_recovered ${NAS_PING}`]);
+    assert.deepEqual(p.sent, [`service_down ${NAS_PING}`, ...kuma, `service_recovered ${NAS_PING}`]);
     const cardsNow = Object.values(getCached('services').nodes).flatMap((n) => n.services);
     assert.equal(cardsNow.some((s) => s.uid === NAS_PING), false, 'up, it has no card on the board');
   } finally {

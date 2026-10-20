@@ -344,19 +344,21 @@ App.addListener('backButton', ({ canGoBack }) => { if (atTabRoot()) App.exitApp(
 
 ## Push Pipeline / FCM
 
-The backend originates push on infrastructure state changes. It plugs into the existing Express background poll (`server/refresh.js` → `runBackgroundRefresh`) and reuses the data the loop already produces. The detector is a **judgment-free deterministic module**: given two snapshots it emits the same event set **in the same canonical order** every time — no model, no heuristics, no wall-clock branching beyond explicit thresholds. Push is **fully optional**: with no FCM service account configured, the whole pipeline self-disables and nothing else is affected.
+The backend originates push on infrastructure state changes. It plugs into the existing Express background poll (`server/refresh.js` → `runBackgroundRefresh`) and reads what the loop already produces: since #292, the server's **status model** (`server/status/`, [ARCHITECTURE.md](../ARCHITECTURE.md) 4.7), which judges every entity once for the web, the app and push. The detector is a **judgment-free deterministic module**: given two snapshots it emits the same event set **in the same canonical order** every time — no heuristics, no wall-clock branching; every line (thresholds, hysteresis, "for 2 cycles") is the status model's. Push is **fully optional**: with no FCM service account configured, the whole pipeline self-disables and nothing else is affected.
 
 ### Architecture
 
 ```
 runBackgroundRefresh()  ──▶ refreshServices/refreshUPS/refreshGitea/...   [existing poll, ~30s]
-        │  (new, AWAITED, inside the try — after allSettled, before recordRefreshCycle)
+        ▼
+  updateStatus()  ──▶ the status model, once a cycle (also served at /api/status)   server/status/
+        │  (AWAITED, inside the try — after allSettled, before recordRefreshCycle)
         ▼
   await runPushCycle()  ──▶ guarded; self-contained try/catch; can never reject
         ▼
-  buildSnapshot(caches)  ──▶ canonical { services, monitorOf, hosts, ups, cron } state map   (PURE)
+  buildSnapshot(caches, prev, status) ──▶ { services, monitorOf, hosts, ups, cron, sources }   (PURE)
         ▼
-  diffSnapshots(prev,next) ──▶ Event[] (canonically sorted)   server/push/differ.js  (PURE, no I/O)
+  diffSnapshots(prev,next,status) ──▶ Event[] (canonically sorted)   server/push/differ.js  (PURE, no I/O)
         ▼
   dispatchEvents(events) ──▶ per event × per registered token   server/push/fcm.js (HTTP v1, Admin SDK)
         ▼
@@ -369,8 +371,8 @@ New files under `server/push/` (mirrors the existing `server/<domain>.js` layout
 
 | File | Responsibility |
 |---|---|
-| `server/push/snapshot.js` | `buildSnapshot()` — flatten existing caches into a canonical comparable map (keys inserted in sorted order). Pure. |
-| `server/push/differ.js` | `diffSnapshots(prev, next, thresholds)` — deterministic differ; returns a **canonically sorted** `Event[]`. Pure, no I/O. |
+| `server/push/snapshot.js` | `buildSnapshot()` — record what the status model decided about each entity push pages for, as a canonical comparable map (keys inserted in sorted order). Pure. |
+| `server/push/differ.js` | `diffSnapshots(prev, next, status)` — deterministic differ; returns a **canonically sorted** `Event[]`, each with the model's reason. Pure, no I/O. |
 | `server/push/fcm.js` | FCM HTTP v1 via Firebase Admin SDK; `initPush()`, `isPushEnabled()`, credential bootstrap. |
 | `server/push/tokenStore.js` | Device-token registration + persistence + stale-token pruning. |
 | `server/push/dispatch.js` | Glue: events → FCM message JSON, per-token fan-out, dead-token pruning, holds + persists the prev-snapshot. |
@@ -391,8 +393,8 @@ export async function runPushCycle() {
   if (!isPushEnabled()) return;        // zero cost when push disabled
   try {
     const prev = loadPrevSnapshot();
-    const next = buildSnapshot(readCaches(), prev); // keeps what a failed source feeds (#232)
-    const events = diffSnapshots(prev, next, thresholds);
+    const next = buildSnapshot(readCaches(), prev, status); // from the status model (#292); holds what it can't call
+    const events = diffSnapshots(prev, next, status);
     await dispatchEvents(events);
     persistSnapshot(next);             // must complete before return
   } catch (err) { log.warn({ err }, 'push cycle failed — skipped this round'); }
@@ -404,30 +406,31 @@ export async function runPushCycle() {
 
 The detector hooks in as the **last data step of the cycle**, after `Promise.allSettled` resolves and caches are populated — so it sees exactly the data the API serves.
 
-**Snapshot** — reads the just-written caches (`getCached('services')`, `getCached('ups')`) + `cron-store.getAllStatuses()`, projecting into one canonical map keyed by stable IDs that already exist in the data layer (services use the existing `uid` = `nodeKey:container`). **Keys are inserted in sorted order** so iteration order is pinned:
+**Snapshot** (#292) — reads this cycle's status model (built from the just-written caches and one read of `cron-store.getAllStatuses()`), plus the caches' source flags and monitor identities, projecting into one canonical map keyed by stable IDs that already exist in the data layer (services use the existing `uid` = `nodeKey:container`). **Keys are inserted in sorted order** so iteration order is pinned:
 ```js
 {
-  services: { "vm-101:gitea": "up", "vm-103:grafana": "down" },           // monitor?.status || c.status
+  services: { "vm-101:gitea": "up", "vm-103:grafana": "down" },           // each Kuma-fed service: crit → down, ok → up
   monitorOf: { "vm-101:gitea": "1", "vm-103:grafana": "7" },             // the Kuma monitor that fed each key (#395)
-  hosts:    { "vm-101": { reachable: true,  cpu: 0.42, mem: 0.61, disk: 0.55 },
-              "vm-103": { reachable: false, cpu: null, mem: null, disk: null } },
-  ups:      { state: "online" },                                          // nut_status → online|on_battery|unknown
-  cron:     { "pi2:npm-sync": "success", "vm103:backup": "failure" },     // latest run status per node:job
+  hosts:    { "vm-101": { reachable: true,  levels: { cpu: "ok", disk: "warn", mem: "ok", temp: "ok" } },
+              "vm-103": { reachable: false, levels: { cpu: "ok", disk: "ok", mem: "ok" } } },  // the model's conditions
+  ups:      { state: "online" },                                          // the model's UPS: crit → on_battery, ok → online
+  cron:     { "pi2:npm-sync": "success", "vm103:backup": "failure" },     // each job (and backup): success|failure|overdue
+  sources:  { "kuma": "ok", "nut": "ok", "prometheus": "failing" },       // ok | failing (1st failed cycle) | down
 }
 ```
 > **API name (ground truth):** the cache accessor is `getCached(key)` (`server/cache.js`), **not** `getCache`. Use `getCached`.
 
-Status normalization is explicit and total: Kuma/Docker → `up|down|unknown`; a host's `reachable` comes from Prometheus' `up{node=…}` via the node's flag in the services payload (true when any of its targets answered the last scrape, false when none did); a node with no `up` series carrying its label falls back to its metrics, all-null → `reachable:false`; NUT → `online|on_battery|unknown`. Anything unrecognized → `unknown` and **never emits** (no false alarms on novel states).
+Every state is the model's: a service's from its Kuma monitor, a host's `reachable` and each reading's level (hysteresis and CPU's 2 cycles applied) from its node entity, the UPS's and each job's from theirs; the model's status word tells a pending service, an unreachable node, a failed run and an overdue one apart. What the model can't call up or down — a service pending or in maintenance, an entity a failed source made unknown, a reading whose query failed — **holds its last known state** and never emits; `unknown` (never known) never emits either. A container with no monitor, an integration and an Arcane agent are not in it (the Arcane poller pages for its agents).
 
-**A Kuma monitor no container has (#390)** has a card only while it is down. The services refresh keeps the uids of the up ones beside the cached services payload, in `upWithoutCard` (it is not served), each the uid its red card has while down, as long as its last container isn't in the stopped list. `buildServices` adds them to `services` as `up`, so the monitor's recovery diffs on the key of its down push. A card with the same uid wins, except a grey presence breadcrumb, so a recovery while the monitor's stopped container still shows one is sent too. A paused monitor, or one Kuma no longer has, is in neither, so it sends nothing. See [ARCHITECTURE.md](../ARCHITECTURE.md), "Kuma monitors and containers".
+**A Kuma monitor no container has (#390)** has a card only while it is down. The services refresh keeps the uids of the up ones beside the cached services payload, in `upWithoutCard` (it is not served), each the uid its red card has while down, as long as its last container isn't in the stopped list. The status model reads them as up services, and `buildServices` records them as `up`, so the monitor's recovery diffs on the key of its down push. A service card with the same uid wins, but a grey presence breadcrumb does not (the model judges it as a missing container), so a recovery while the monitor's stopped container still shows one is sent too. A paused monitor, or one Kuma no longer has, is in neither, so it sends nothing. See [ARCHITECTURE.md](../ARCHITECTURE.md), "Kuma monitors and containers".
 
-**A monitor's key can move (#395)**: a container takes it, its stopped container holds it only while it is down, or a monitor that remembered the same container drops out. The services refresh keeps `monitorOf` beside the cached payload (not served), the id of the monitor each monitored uid carries, and `buildSnapshot` stores it in the snapshot. The differ diffs such a key against the monitor's last state wherever its key was (`serviceHistory`), so each outage is one `service_down` and one `service_recovered`, each on the card the monitor has at the time; a key whose monitor moved on to another key starts fresh, and so does a key whose monitor has gone (paused or deleted) when no monitor feeds it now, so a running card whose monitor is paused or deleted while down sends no false recovery. A card that had no monitor, a key that a monitor new to the snapshot feeds (deleted from Kuma and added again), and the cards of a monitor an explicit mapping gives several containers keep their own state, as before. A snapshot written before #395 has no `monitorOf` and diffs key by key, so the deploy sends nothing. The FCM payload is unchanged.
+**A monitor's key can move (#395)**: a container takes it, its stopped container holds it only while it is down, or a monitor that remembered the same container drops out. The services refresh keeps `monitorOf` beside the cached payload (not served), the id of the monitor each monitored uid carries, and `buildSnapshot` stores it in the snapshot. The differ diffs such a key against the monitor's last state wherever its keys were (`serviceHistory`), so each outage is one `service_down` and one `service_recovered`, each on the card the monitor has at the time; a key whose monitor moved on to another key starts fresh, and so does a key whose monitor has gone (paused or deleted) when no monitor feeds it now, so a running card whose monitor is paused or deleted while down sends no false recovery. A monitor an explicit mapping gives several containers is **one** event, on the first of its cards, naming every node, however its cards come and go during the outage (#407). A card that had no monitor and a key that a monitor new to the snapshot feeds (deleted from Kuma and added again) keep their own state, as before. A snapshot written before #395 has no `monitorOf` and diffs key by key, so the deploy sends nothing. The FCM payload is unchanged.
 
-**A failed source is not an outage of what it watches (#232).** The services payload says whether Prometheus and Kuma answered this cycle (`sources.prometheus.ok`, `sources.kuma.ok`), and each node which of its reads failed (`failedReads`); the UPS payload carries its own `ok`. A missing payload (a cold cache after a restart, or one past its 120 s TTL because the refresh kept failing) counts as failed, never as an empty answer. `buildSnapshot(caches, prev)` keeps the part a failed source feeds from the previous snapshot instead of reading the failure as every host or service going away. For hosts that is per host and per field: a metric whose query failed keeps its previous value, and `reachable` keeps its previous value when the node's `up` query failed (or, for a node judged by metric presence, one of its metric queries did); everything else takes this cycle's. A query covers every node (#234), so a metric query that keeps failing holds that metric on every host, and, for a host with no `up` series, its reachability; a host's `up` at 0 still pages. A host missing from the payload while Prometheus fails is kept whole. While Prometheus fails, a service missing from this cycle keeps its previous status while one present (a Kuma outage card, or the up entry of a monitor whose container wasn't seen) takes this cycle's, so Kuma keeps paging, and a recovery during the outage is sent when Kuma reports it: with no container seen, the up monitor is an entry under its card's uid (#390). Only if no node could be read at all is it sent once the container is seen again; while Kuma fails, all of `services` is kept, since Kuma sets every status that can page; while the UPS read fails, `ups` is kept. `runPushCycle` hands the builder its `prev` and advances to the result, so the kept state lasts however long the failure does, and its recovery diffs against the last real reading.
+**A failed source is not an outage of what it watches (#232), and is one push of its own (#292).** The services payload says whether Prometheus and Kuma answered this cycle (`sources.prometheus.ok`, `sources.kuma.ok`), and each node which of its reads failed (`failedReads`); the UPS payload carries its own `ok`. A missing payload (a cold cache after a restart, or one past its 120 s TTL because the refresh kept failing) counts as failed, never as an empty answer. The status model makes what a failed source feeds `unknown`, and `buildSnapshot(caches, prev, status)` holds each unknown at its previous state instead of reading the failure as every host or service going away. For hosts that is per host and per reading: a reading whose query failed keeps its previous level, and `reachable` its previous value when the node's `up` query failed (or, for a node judged by metric presence, one of its metric queries did); everything else takes this cycle's. A query covers every node (#234), so a metric query that keeps failing holds that reading on every host, and, for a host with no `up` series, its reachability; a host's `up` at 0 still pages. A host missing from the payload while Prometheus fails is kept whole. The source itself — Prometheus, Kuma or the NUT exporter, failed two cycles in a row — sends one `source_down`, and one `source_recovered` when it answers. While Prometheus fails, a service missing from this cycle keeps its previous status while one present (a Kuma outage card, or the up entry of a monitor whose container wasn't seen) takes this cycle's, so Kuma keeps paging, and a recovery during the outage is sent when Kuma reports it: with no container seen, the up monitor is an entry under its card's uid (#390). Only if no node could be read at all is it sent once the container is seen again; while Kuma fails, all of `services` is kept, since Kuma sets every status that can page; while the UPS read fails, `ups` is kept. `runPushCycle` hands the builder its `prev` and advances to the result, so the kept state lasts however long the failure does, and its recovery diffs against the last real reading.
 
 On the baseline (no `prev`) there is nothing to keep, and a failure would be recorded as state: a host recorded unreachable sends `host_recovered` once Prometheus answers, and an `unknown` UPS keeps a later `on_battery` silent. So `buildSnapshot` returns null while the UPS read fails, or while Prometheus fails with no host's reachability read, and `runPushCycle` skips that cycle without diffing or advancing: the baseline is taken from the first cycle those answer. It does not wait for Kuma, or for a Prometheus failure some host was still read through, since either can last as long as JagHelm runs (no Kuma at `KUMA_URL`, a query that always times out) and push would have no baseline the whole time; a baseline taken then records services without Kuma's statuses, so a service already down pages once when Kuma first answers.
 
-**Differ** — `diffSnapshots(prev, next, thresholds) → Event[]`. No I/O, no `Date.now()`, no randomness. The previous snapshot is held in memory (`createPushSnapshot` in `dispatch.js`) and **persisted to `data/push-snapshot.json`** so a restart doesn't re-fire every active incident as "new". The file is read once, on the first cycle; it is rewritten only when the snapshot's alert state (`alertStateKey` in `differ.js`: every status, the monitor of each service key, each host's reachability, and which side of its threshold each metric is on) differs from the file's, so a steady cycle writes nothing. Shutdown writes the latest snapshot (`flush`), so a threshold edited while JagHelm is stopped is judged against the last reading; after a crash it is judged against the last written one, and a reading between the old and the new threshold can add or drop one threshold alert. A failed write is retried every cycle; until it lands, a restart can re-send an alert, or miss the recovery of one already sent. With no file, or an unreadable one, the first cycle establishes a baseline and emits nothing.
+**Differ** — `diffSnapshots(prev, next, status) → Event[]`. No I/O, no `Date.now()`, no randomness. The previous snapshot is held in memory (`createPushSnapshot` in `dispatch.js`) and **persisted to `data/push-snapshot.json`** so a restart doesn't re-fire every active incident as "new". The file is read once, on the first cycle; it is rewritten only when the snapshot's alert state (`alertStateKey` in `differ.js`: every state, the monitor of each service key, each host's reachability and levels, each source's state — since #292 all of the snapshot) differs from the file's, so a steady cycle writes nothing. The status model's memory starts, at boot, from the levels the file holds, so a reading inside its hysteresis band after a restart (or a threshold edited while JagHelm was stopped) is judged as if the process had kept running (#361). A failed write is retried every cycle, and shutdown writes the latest snapshot (`flush`) if the file is behind; until it lands, a restart can re-send an alert, or miss the recovery of one already sent. With no file, or an unreadable one, the first cycle establishes a baseline and emits nothing. A file written before #292 holds readings, not levels: it is read as the levels its readings give (`upgradeSnapshot`), so the first cycle after the deploy compares levels like any other, and a reading that crossed its line since the file was written is sent. A cycle whose status model failed is skipped (nothing diffed, sent or advanced), so the next good cycle sends what changed meanwhile.
 
 **Canonical ordering (REQUIRED for the byte-identical promise).** "Same input ⇒ same event set" is necessary but not sufficient for "byte-identical array": JS object key iteration is insertion-order, and cache-population order across refreshes is not pinned. The differ therefore applies a **total, deterministic sort** to the emitted array before returning:
 > **Sort key:** ascending `(type, id)` — string-compare `type`, tiebreak by `id`. This is the canonical order; it is stated here and **asserted in the table-driven test** (the test compares the full serialized array, not a set). `buildSnapshot` also emits sorted keyed maps as belt-and-suspenders. Without this, the "byte-identical array" promise does not hold.
@@ -438,21 +441,24 @@ On the baseline (no `prev`) there is nothing to keep, and a failure would be rec
 | Service | `down` → `up` | `service_recovered` | info |
 | Host | `reachable` true → false | `host_unreachable` | critical |
 | Host | `reachable` false → true | `host_recovered` | info |
-| Host | metric crosses threshold up (`cpu`/`mem`/`disk` ≥ limit, was below) | `host_threshold` | warning |
-| Host | metric falls below threshold − hysteresis | `host_threshold_cleared` | info |
+| Host | a reading's level rises (`ok` → `warn`, or to `crit`): CPU, memory, disk, temperature, a storage pool | `host_threshold` | warning (critical for `crit`) |
+| Host | a reading's level returns to `ok` (below its line − hysteresis) | `host_threshold_cleared` | info |
 | UPS | `online` → `on_battery` | `ups_on_battery` | critical |
 | UPS | `on_battery` → `online` | `ups_restored` | info |
 | Cron | ok/new → `failure` | `cron_failed` | warning |
 | Cron | `failure` → `success` | `cron_recovered` | info |
+| Cron | → `overdue` | `cron_overdue` | warning |
+| Monitoring source | failed two cycles in a row (`down`) | `source_down` | warning |
+| Monitoring source | `down` → `ok` | `source_recovered` | info |
 
 Each `Event` is a plain serializable record:
 ```js
 { type: "service_down", id: "vm-103:grafana", node: "vm-103",
-  title: "grafana is DOWN", body: "Service grafana on vm-103 is not responding",
-  prev: "up", next: "down" }
+  title: "Service down", body: "Grafana on vm-103 · Kuma: down",
+  reason: "Kuma: down", severity: "critical", prev: "up", next: "down" }
 ```
 
-**Determinism guards (by construction):** pure exported function unit-tested with fixture snapshot pairs (same input ⇒ **byte-identical, canonically-sorted** event array, table-driven test covering every row + the no-change → `[]` case + an order-stability case where two unsorted inputs yield identical arrays); thresholds (`{ cpu: 0.90, mem: 0.90, disk: 0.90, hysteresis: 0.05 }`) are explicit config read from `display-config.json` (cached; parsed again when the file changes), not magic numbers; hysteresis (the only stateful nuance) lives in the comparison, not in timers; new/removed keys handled by one documented baseline rule; no model call anywhere. This satisfies the determinism-by-construction law — atomic deterministic execution, judgment (thresholds/severities/sort key) lives in config/spec.
+**Determinism guards (by construction):** pure exported function unit-tested with fixture snapshot pairs (same input ⇒ **byte-identical, canonically-sorted** event array, table-driven test covering every row + the no-change → `[]` case + an order-stability case where two unsorted inputs yield identical arrays); every line is the status model's (`server/status/thresholds.js`, `display-config.json`'s `pushThresholds` over the spec §6.1 defaults), not a number of push's own; hysteresis lives in the model's held levels, not in the comparison or in timers; new/removed keys handled by one documented baseline rule; no machine-learning model is called anywhere (the status model is plain code). This satisfies the determinism-by-construction law — atomic deterministic execution, judgment (thresholds/severities/sort key) lives in config/spec.
 
 ### Device-token registration + storage
 
@@ -540,7 +546,7 @@ User-controllable, **filtered server-side** so a muted category is never sent (s
     "prefs": { "categories": { "service": true, "host": true, "ups": true, "cron": true, "watchtower": true },
                "notifyRecoveries": true, "enabled": true } } }
 ```
-- **Categories → event types:** `service` → `service_down`/`service_recovered`; `host` → `host_down`/`host_recovered`/`host_threshold`; `ups` → `ups_onbattery`/`ups_restored`; `cron` → `cron_failed`/`cron_recovered`/`cron_overdue`; `watchtower` (shown as *Updates*) → the Arcane types `arcane_update`/`arcane_heldback`/`arcane_cleared`/`arcane_agent_offline`/`arcane_agent_recovered`/`arcane_release`/`arcane_vulns` (mapped explicitly in `TYPE_CATEGORY`, `server/push/dispatch.js`). `arcane_cleared` and `arcane_agent_recovered` count as recoveries.
+- **Categories → event types:** `service` → `service_down`/`service_recovered`; `host` → `host_unreachable`/`host_recovered`/`host_threshold`/`host_threshold_cleared`; `ups` → `ups_on_battery`/`ups_restored`; `cron` → `cron_failed`/`cron_recovered`/`cron_overdue`; `source_down`/`source_recovered` (#292) → the category of what the source watches: Prometheus `host`, Kuma `service`, NUT `ups` (`SOURCE_CATEGORY`, `server/push/dispatch.js`); `watchtower` (shown as *Updates*) → the Arcane types `arcane_update`/`arcane_heldback`/`arcane_cleared`/`arcane_agent_offline`/`arcane_agent_recovered`/`arcane_release`/`arcane_vulns` (mapped explicitly in `TYPE_CATEGORY`, `server/push/dispatch.js`). `arcane_cleared` and `arcane_agent_recovered` count as recoveries.
 - **`notifyRecoveries`** off ⇒ `*_recovered`/`*_restored` suppressed (you get the down, not the all-clear).
 - **`enabled`** = master switch; off ⇒ no pushes to this device (token kept so re-enabling needs no re-onboarding).
 - **Defaults** (new registration): all categories on, recoveries on, enabled on.

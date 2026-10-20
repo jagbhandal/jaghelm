@@ -106,13 +106,15 @@ server/                     Express API (Node 26, ESM)
   integrations/             the integration engine (presets + handler + lib, see 4.3)
   status/                   the status model: every entity's state, reason and since, the
                             subsystems, the overall sentence and the ranked issues, and the
-                            one threshold config push reads too (see 4.7)
+                            one threshold config; built once a cycle, served at /api/status,
+                            and what push sends from (see 4.7)
   util/                     logger, ssrf, redact, rateLimiter, atomicWrite,
                             configSchema (zod), configMask (the config read's
                             credential markers, see 6), dataDir, asyncHandler, dedupe
   testing/                  test-only helpers: a mock Prometheus that evaluates JagHelm's
-                            PromQL over homelab-shaped series, the pre-#234 node reader, and
-                            the status model's input builders (statusFixtures.js)
+                            PromQL over homelab-shaped series, the pre-#234 node reader, the
+                            status model's input builders (statusFixtures.js), and the
+                            loop's status-and-push step as refresh.js runs it (pushPipeline.js)
 
 src/                        React 19 SPA (Vite 8)
   main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + view switch
@@ -204,6 +206,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/health`, `/api/readyz` | public | liveness / readiness probes |
 | `/metrics` | public | Prometheus exposition |
 | `/api/services` | token | discovered nodes + services (background-refreshed, ETag); `services.yaml` for Settings, without its credentials (`/config`, see 6) |
+| `/api/status` | token | the status model (4.7), built once a background cycle (ETag; 503 before the first cycle) |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6) |
 | `/api/display-config` | token | the display config blob |
 | `/api/embed-check/:tabId` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs") |
@@ -304,20 +307,22 @@ when every query answers but no node has an `up` series after an earlier answer
 had some: a Prometheus that has just started and not scraped yet, whose empty
 answers mark every node's reads failed. While Prometheus fails, no presence
 breadcrumbs are drawn, since a container missing from the list may still be
-running. The push snapshot keeps its last state for what a failed source feeds,
-and only that: for a host, only the readings whose queries failed, so a metric
-query that keeps failing holds that metric on every host (and, for a host with
-no `up` series, its reachability), and a host's `up` at 0 still pages. A missing payload (a cold cache after a restart, or one past its TTL)
-counts as failed, and no baseline is taken while the UPS read fails or
-Prometheus fails with no host read. So an outage of Prometheus or Kuma sends no alerts about the
-hosts and services they watch ([mobile/DESIGN.md](mobile/DESIGN.md),
-"Deterministic state-change detection").
+running. The status model makes what a failed source feeds unknown (4.7), and
+only that: for a host, only the readings whose queries failed. Push holds an
+unknown at its last known state, so a metric query that keeps failing holds
+that reading's level on every host (and, for a host with no `up` series, its
+reachability), and a host's `up` at 0 still pages. A missing payload (a cold
+cache after a restart, or one past its TTL) counts as failed, and no baseline
+is taken while the UPS read fails or Prometheus fails with no host read. So an
+outage of Prometheus, Kuma or the NUT exporter sends no alert about what it
+watches, only its own "monitoring source down" push (4.7, "Push"; and
+[mobile/DESIGN.md](mobile/DESIGN.md), "Deterministic state-change detection").
 
 #### Kuma monitors and containers
 
 A Kuma monitor is one service, so it marks one container (#240): a down monitor
-paints one card red and sends one push, unless `services.yaml` maps it to
-several containers. Each cycle `assembleServices` (`refresh.js`) hands
+paints one card red, unless `services.yaml` maps it to several containers. It
+sends one push either way (#407). Each cycle `assembleServices` (`refresh.js`) hands
 `assignMonitors` (`monitors.js`) every shown, running container (the same name
 on two nodes is two containers), plus the containers that stopped in the last
 24 hours (the container registry's missing ones, kept for
@@ -414,11 +419,12 @@ order, so its uid does not depend on its status while its last container isn't
 in the stopped list, nor on the order Kuma listed the monitors in. A down one
 is the red card. The uid of an up one goes in
 `upWithoutCard`, which the services refresh keeps beside the cached
-`/api/services` payload, not in it: it is for push only, so it is not served
-and does not change the ETag. `buildServices` (`push/snapshot.js`) reads it as
-`up` unless a card on the board has that uid. A grey presence breadcrumb does
-not count: placement skips every other card's uid, so only a breadcrumb can
-share it, normally the one the monitor's own stopped container leaves while the
+`/api/services` payload, not in it: it is not served and does not change the
+ETag. The status model reads each as an up service (4.7), and push reads it as
+`up` unless a service card on the board has that uid (`buildServices` in
+`push/snapshot.js`). A grey presence breadcrumb does not count (the model judges
+it as a missing container): placement skips every other card's uid, so only a
+breadcrumb can share it, normally the one the monitor's own stopped container leaves while the
 monitor is up, and a recovery within `JAGHELM_PRESENCE_TTL_MS` of that
 container stopping is sent rather than lost. So the monitor sends
 `service_down`, then `service_recovered` on the same id. A paused monitor
@@ -446,14 +452,19 @@ container's uid, and back when it returns.
 So the push snapshot keeps the monitor's identity (#395). The services refresh
 keeps `monitorOf` beside the cached payload, like `upWithoutCard` and for push
 only: the id of the monitor each monitored uid carries, for running cards, red
-cards and up entries. The snapshot stores it as `monitorOf`, next to
+cards, up entries, and the pending or in-maintenance monitors no card is drawn
+for (`kumaWithoutCard`), which push holds at their last state (4.7). The snapshot stores it as `monitorOf`, next to
 `services`, and the differ diffs a key against the monitor's last state rather
 than the key's alone (`serviceHistory` in `push/differ.js`):
 
-- A monitor that fed one key last cycle and feeds one now brings that key's
-  state with it, wherever its key moved. Each outage is one `service_down` and
-  one `service_recovered`, each on the card the monitor has at the time: the
-  recovery can come on a different card than the down push.
+- A monitor that fed keys last cycle brings its state with it, wherever its
+  keys moved. Each outage is one `service_down` and one `service_recovered`,
+  each on the card the monitor has at the time: the recovery can come on a
+  different card than the down push.
+- A monitor that an explicit mapping gives several cards (tailscale on pi2 and
+  vm103) is one event, on the first of its cards by key, naming every node
+  (#407). One of its cards leaving or coming back during an outage changes
+  nothing: the outage is still one `service_down` and one `service_recovered`.
 - A key whose monitor last cycle feeds another key now starts with no
   previous status, whatever feeds it now: its state went with the monitor, so
   the key sends no false recovery and no repeat `service_down`.
@@ -464,10 +475,9 @@ than the key's alone (`serviceHistory` in `push/differ.js`):
   recovery, as a monitor with no container sends nothing then. Unpaused while
   still down, it pages again, as one with no container does.
 - Every other key keeps its own previous state, as before: a card that had no
-  monitor last cycle, a key that a monitor new to the snapshot feeds now (one
-  deleted from Kuma and added again, under a new id), and the cards of a
-  monitor that an explicit mapping gives several containers, which are sent
-  card by card. Taking a monitor that was already up sends nothing.
+  monitor last cycle, and a key that a monitor new to the snapshot feeds now
+  (one deleted from Kuma and added again, under a new id). Taking a monitor
+  that was already up sends nothing.
 
 `monitorOf` is part of `alertStateKey`, so the file is rewritten when only the
 monitor of a key changes, and a restart keeps it. While a source fails, a key
@@ -734,18 +744,36 @@ integration connection-test endpoint.
 ### 4.7 Status model
 
 `server/status/` judges every entity JagHelm watches, once, on the server (spec
-§6, #290), so no client and no push path judges one for itself. It is built
-but not yet called: #292 runs it once per background cycle, after the
-refreshes, serves it at `/api/status` and builds push on it. Until then it
-costs the refresh loop nothing. Built from the homelab-shaped fixture (4 nodes,
-63 entities), one build takes about 0.04 ms.
+§6, #290), so no client and no push path judges one for itself. The background
+loop builds it once a cycle, after the refreshes (`updateStatus` in
+`refresh.js`, #292): `/api/status` serves the result and push sends from it
+(see "Push" below). Built from the homelab-shaped fixture (4 nodes, 63
+entities), one build takes about 0.04 ms; its inputs are the cycle's cached
+payloads and one read of `cron-jobs.json`, which push no longer reads itself.
 
 **`buildStatus({ inputs, thresholds, memory, now })`** (`model.js`) is a pure,
 deterministic function: the same inputs, memory and clock give the same JSON,
 whatever order the payloads list things in. It returns `{ status, memory }`;
 `memory` is for the next call only (levels, "for N cycles" runs and each
-entity's `since`) and is never served. `createStatusTracker()` (`index.js`)
-keeps the memory from one cycle to the next.
+entity's `since`) and is never served. `createStatusTracker({ seed })`
+(`index.js`) keeps the memory from one cycle to the next. The memory lives in
+the process, so the loop seeds it, before its first build, with the level of
+each host reading that the push snapshot file holds (`memoryFromLevels`, push's
+`heldLevels`), when push is set up (#361), for the nodes `services.yaml` still
+has. A reading inside its hysteresis band after a restart is still over its
+line: push sends neither a second alert nor a false "back to normal". The
+snapshot is rewritten whenever a level changes, so the file is never behind the
+last push. A snapshot written before #292 holds readings, not levels: it is read
+as the levels they give (`upgradeSnapshot`; a reading at or over its line is at
+that line's level), so the first cycle after the deploy compares levels like
+any other.
+
+**The loop's status step never fails** (`runStatusAndPush` in `refresh.js`). If
+the model throws on an input it can't read, the error is logged once (again
+only when it changes, and one info line when the model builds again),
+`/api/status` keeps serving the last status, and push skips the cycle: nothing
+is diffed, sent or advanced, so the next cycle the model builds diffs against
+the last good snapshot and a change made meanwhile is still sent.
 
 **Inputs** (`readStatusInputs(caches)`, the same cache seam as the push
 snapshot): the cached `/api/services`, `/api/ups` and `/api/integrations`
@@ -796,8 +824,9 @@ as backups) and `arcaneAgents` come from #291; until then there are none.
   (`up` is 0, or no `up` series and no metric) while Prometheus answers.
   Proxmox storage pools feed their node's disk rule (the node `_target` names,
   else `pve`).
-- **Failed sources** (#232's flags, read by push's `sourcesOk`): an entity a
-  failed source feeds is `unknown`, with a reason naming it, never crit. A node
+- **Failed sources** (#232's flags, read by `sourcesOk` in `model.js`, which
+  push reads too): an entity a failed source feeds is `unknown`, with a reason
+  naming it, never crit. A node
   whose `up` read failed is unknown; one whose metric read failed has that
   condition unknown, so it is unknown unless a reading that was read is worse.
   What the failed source fed last cycle and no longer reports (the container
@@ -826,9 +855,50 @@ as backups) and `arcaneAgents` come from #291; until then there are none.
 `DEFAULT_THRESHOLDS` holds every number, usage lines as fractions of 1 as push
 has always compared them. `resolveThresholds()` lays `display-config.json`'s
 `pushThresholds` (`cpu`, `mem`, `disk`, `hysteresis`) over the defaults, and
-`refresh.js`'s `getThresholds()` returns the result; `getPushThresholds()` is a
-view of the same (`pushThresholdsOf`), so push and the model can't disagree
-about a line.
+`refresh.js`'s `getThresholds()` returns the result. Push has no lines of its
+own: it sends what the model judges, so the two can't disagree about a line.
+
+**`GET /api/status`** (`routes/status.js`, token auth like every `/api/*`
+read) serves the status the loop cached this cycle under `status`, with the
+cache's ETag (4.2: computed once per value). Reasons hold no times, so a steady
+board serves the same bytes every cycle and a poll with the last ETag gets a
+304. The status stays fresh for two refresh intervals (at least the cache's 2
+minutes), so a long interval leaves no gap between cycles. Before the first
+cycle, or once the loop has built none for that long, it answers 503. It sits beside `/api/services`, `/api/ups` and
+`/api/cron/status`, which keep their shape and meaning for Android apps already
+installed (spec §6.3; frozen by `server/routes/contract.test.js`): the new
+states (maintenance, pending, unknown because a source failed) appear only
+here.
+
+**Push** (`push/snapshot.js`, `push/differ.js`, #292) is built on the model, so
+a notification says what the screens say. The snapshot records, per entity push
+pages for, what the model decided: a Kuma-fed service's up or down, each host's
+reachability and the level of each reading (its `conditions`: CPU, memory,
+disk, temperature, each Proxmox storage pool), the UPS (on battery or online)
+and each job and backup (success, failure, overdue). The differ only sees where
+that changed:
+
+- A level that rises (ok to warn, warn to crit) sends `host_threshold`,
+  `critical` for crit; one back to ok sends `host_threshold_cleared`; crit
+  falling to warn sends nothing. The model holds a level through its hysteresis
+  band and waits CPU's 2 cycles, so push does too (#361).
+- What the model can't call up or down holds its last known state and sends
+  nothing: a service pending or in maintenance, an entity a failed source made
+  unknown, a reading whose query failed. So down, pending, up still sends the
+  recovery, and down, pending, down sends no second `service_down`.
+- A monitoring source (Prometheus, Kuma, NUT) the model lists as failed for two
+  cycles in a row (about a minute) sends one `source_down`, and one
+  `source_recovered` when it answers. The snapshot keeps each source as `ok`,
+  `failing` (its first failed cycle) or `down`. Its category is what it watches
+  (`SOURCE_CATEGORY` in `push/dispatch.js`: Prometheus is Hosts, Kuma Services,
+  NUT UPS), since the installed app has five category keys.
+- Each event's `reason` is the model's reason for the entity, and its body the
+  entity's name (and node) and that reason: "Gitea on vm103 · Kuma: down",
+  "pve · Disk 94 % (warning above 90 %)". The FCM `data` block the Android app
+  reads is unchanged: `type`, `id`, `node`, `severity`, with each id namespace
+  as before (`server/push/androidPayload.test.js`).
+- A container with no monitor, an integration and an Arcane agent send nothing,
+  as before: the Arcane poller pages for its agents itself.
 
 ## 5. Frontend architecture
 
@@ -1382,7 +1452,11 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   contracts, rate limiting, `/health` + `/readyz`, the status model (one test
   per row of spec §6.1's severity table in `server/status/severityTable.test.js`,
   each rule table-driven, and source-down fixtures through the real
-  `assembleServices`), and the pure HelmGrid
+  `assembleServices`), push built on it (the hysteresis table and its restart
+  case, one push per failed source, the model's reason in every push, the FCM
+  payload the Android app reads), `/api/status` and its ETag, contract tests
+  that freeze `/api/services`, `/api/ups` and `/api/cron/status`
+  (`server/routes/contract.test.js`), and the pure HelmGrid
   `gridMath`, the service-worker precache injector, and the worker's install,
   activate and fetch handlers run against a fake cache (`scripts/sw.test.mjs`).
   Node reads run against a mock Prometheus (`server/testing/mockPrometheus.js`)

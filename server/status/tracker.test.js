@@ -18,7 +18,7 @@ import {
   node,
 } from '../testing/statusFixtures.js';
 import { buildStatus } from './model.js';
-import { createStatusTracker, readStatusInputs } from './index.js';
+import { createStatusTracker, memoryFromLevels, readStatusInputs } from './index.js';
 import { DEFAULT_THRESHOLDS } from './thresholds.js';
 
 const T = DEFAULT_THRESHOLDS;
@@ -63,6 +63,65 @@ test('tracker: current() is null before the first update, then the last status; 
     second.entities.find((e) => e.id === 'nodes/n1').state,
     'warn',
     'the second cycle at 97 % warns'
+  );
+});
+
+test('tracker: `seed` is asked once, before the first build, with the thresholds; its memory is where the model starts (#361)', () => {
+  const asked = [];
+  const tracker = createStatusTracker({
+    seed: (thresholds) => {
+      asked.push(thresholds);
+      return memoryFromLevels({ n1: { mem: 'warn', disk: 'crit' } });
+    },
+  });
+  // Memory at 87 %, disk at 91 %: inside the bands, so still over their lines.
+  const banded = inputs({ nodes: { n1: node({ memPercent: '87', diskPercent: '91' }) } });
+  const first = tracker.update({ inputs: banded, thresholds: T, now: NOW });
+  tracker.update({ inputs: banded, thresholds: T, now: NOW + 30_000 });
+  assert.deepEqual(asked, [T], 'once');
+  const n1 = first.entities.find((e) => e.id === 'nodes/n1');
+  assert.deepEqual([n1.conditions.mem, n1.conditions.disk, n1.state], ['warn', 'crit', 'crit']);
+  assert.equal(
+    n1.reason,
+    'Disk 91 % (critical until below 90 %) · Memory 87 % (warning until below 85 %)'
+  );
+
+  // Unseeded, the same readings are judged fresh: memory under its line, the
+  // disk over its warn line only.
+  const fresh = createStatusTracker().update({ inputs: banded, thresholds: T, now: NOW });
+  const conditions = fresh.entities.find((e) => e.id === 'nodes/n1').conditions;
+  assert.deepEqual([conditions.mem, conditions.disk], ['ok', 'warn']);
+  // A seed with nothing for a node (or no seed at all: null) changes nothing.
+  const none = createStatusTracker({ seed: () => null }).update({
+    inputs: banded,
+    thresholds: T,
+    now: NOW,
+  });
+  assert.deepEqual(none, fresh);
+});
+
+test('memoryFromLevels: given the configured nodes, it seeds only those', () => {
+  const memory = memoryFromLevels(
+    { n1: { cpu: 'warn' }, gone: { disk: 'warn' } },
+    { nodes: ['n1', 'n2'] }
+  );
+  assert.deepEqual(Object.keys(memory.entities), ['nodes/n1']);
+  assert.deepEqual(Object.keys(memoryFromLevels({ n1: {} }, { nodes: [] }).entities), []);
+});
+
+test("memoryFromLevels: only each node's levels; a node it seeds that Prometheus no longer reports is dropped", () => {
+  const memory = memoryFromLevels({ n1: { cpu: 'warn' }, gone: { disk: 'warn' }, junk: null });
+  assert.deepEqual(Object.keys(memory.entities), ['nodes/n1', 'nodes/gone']);
+  assert.deepEqual(memory.entities['nodes/n1'].memo, { levels: { cpu: 'warn' }, streak: {} });
+  const tracker = createStatusTracker({ seed: () => memory });
+  const status = tracker.update({
+    inputs: inputs({ nodes: { n1: node() } }),
+    thresholds: T,
+    now: NOW,
+  });
+  assert.deepEqual(
+    status.entities.filter((e) => e.kind === 'node').map((e) => e.id),
+    ['nodes/n1']
   );
 });
 

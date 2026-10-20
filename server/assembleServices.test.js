@@ -7,8 +7,20 @@ import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { assembleServices } from './refresh.js';
 import { createContainerRegistry } from './containerRegistry.js';
 import { createServiceRegistry } from './serviceRegistry.js';
-import { buildServices } from './push/snapshot.js';
 import { diffSnapshots } from './push/differ.js';
+import { cachesOfAssembled, snapshotAfter } from './testing/pushPipeline.js';
+
+// The push snapshot of one assembled cycle, built from the status model of what
+// the services refresh caches (#292), after `prev`; and what push sends from
+// one cycle to the next.
+const pushSnap = (r, prev = null) => snapshotAfter(cachesOfAssembled(r), prev).snapshot;
+const servicesOf = (r) => pushSnap(r).services;
+function pushes(prev, next) {
+  const before = pushSnap(prev);
+  const { snapshot, status } = snapshotAfter(cachesOfAssembled(next), before);
+  return diffSnapshots(before, snapshot, status).map((e) => `${e.type} ${e.id}`);
+}
+
 
 const nodeCfg = { display_name: 'Production' };
 function nodeData(containers) { return { metrics: {}, containers }; }
@@ -118,7 +130,6 @@ test('assemble: a down synth card reuses the remembered CONTAINER uid, not the m
 });
 
 test('recovery push: vanish→down then return→up emits service_recovered on a stable uid', () => {
-  const thresholds = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
   // DOWN cycle: container gone, down monitor remembered as container "radarr".
   const down = run({
     nodeResults: [['vm103', nodeCfg, nodeData([])]],
@@ -131,11 +142,11 @@ test('recovery push: vanish→down then return→up emits service_recovered on a
     nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'radarr', status: 'running', docker: {} }])]],
     monitors: { 7: { id: 7, name: 'Radarr', status: 'up', active: true } },
   });
-  const snapDown = { services: buildServices({ nodes: down.nodes }), hosts: {}, ups: { state: 'unknown' }, cron: {} };
-  const snapUp = { services: buildServices({ nodes: up.nodes }), hosts: {}, ups: { state: 'unknown' }, cron: {} };
+  const snapDown = pushSnap(down);
+  const snapUp = pushSnap(up, snapDown);
   assert.equal(snapDown.services['vm103:radarr'], 'down');
   assert.equal(snapUp.services['vm103:radarr'], 'up');
-  const events = diffSnapshots(snapDown, snapUp, thresholds);
+  const events = diffSnapshots(snapDown, snapUp);
   const rec = events.find((e) => e.type === 'service_recovered');
   assert.ok(rec, 'service_recovered fires for the returned service');
   assert.equal(rec.id, 'vm103:radarr');
@@ -483,9 +494,7 @@ test('assemble (#240 audit mock): one down monitor marks exactly one container, 
   assert.equal(new Set(down.seen.map((s) => `${s.nodeKey}:${s.container}`)).size, 6);
   assert.equal(cards(down.nodes).filter((s) => s.monitored).length, 6);
 
-  const thresholds = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
-  const snap = (r) => ({ services: buildServices({ nodes: r.nodes }), hosts: {}, ups: { state: 'unknown' }, cron: {} });
-  const events = diffSnapshots(snap(up), snap(down), thresholds);
+  const events = diffSnapshots(pushSnap(up), pushSnap(down, pushSnap(up)));
   assert.deepEqual(
     events.filter((e) => e.type === 'service_down').map((e) => e.id),
     ['vm101:gateway-npm'],
@@ -768,12 +777,6 @@ test('assemble: a stopped container releases an up monitor to the running one, a
 // existed only while they were down, so each sent service_down and never
 // service_recovered.
 
-const PUSH_THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
-// The push snapshot of one assembled cycle: buildSnapshot reads the services
-// payload (assembleServices' nodes) and the upWithoutCard kept beside it.
-const servicesOf = (r) => buildServices(r, r.upWithoutCard);
-const pushSnap = (r) => ({ services: servicesOf(r), hosts: {}, ups: { state: 'unknown' }, cron: {} });
-const pushes = (prev, next) => diffSnapshots(pushSnap(prev), pushSnap(next), PUSH_THRESHOLDS).map((e) => `${e.type} ${e.id}`);
 
 const LIVE_MONITORS = ['Gitea', 'NAS (Ping)', 'NAS UI', 'Network Switch', 'Proxmox UI', 'Pi Gateway (Ping)'];
 // One cycle of the live shape. `monitors` maps a monitor name to its status, or
@@ -820,9 +823,10 @@ test('assemble (#390): an up monitor no container has draws no card; only the pu
     'vm103:Proxmox UI',
     'pi2:Pi Gateway (Ping)',
   ]);
+  // gateway-tunnel has no monitor (`monitor: false`): a container, which push
+  // has nothing to say about (#292).
   assert.deepEqual(servicesOf(r), {
     'pi2:Pi Gateway (Ping)': 'up',
-    'pi2:gateway-tunnel': 'up',
     'vm103:gitea': 'up',
     'vm103:NAS (Ping)': 'up',
     'vm103:NAS UI': 'up',
@@ -899,7 +903,7 @@ test('push (#390): an up entry wins over a grey breadcrumb with its uid, so the 
   assert.deepEqual(pushes(down, up), ['service_recovered vm103:nas-ui']);
   // At deploy, the last snapshot read the breadcrumb: unknown -> up sends nothing.
   const deployed = { ...pushSnap(up), services: { 'vm103:nas-ui': 'unknown' } };
-  assert.deepEqual(diffSnapshots(deployed, pushSnap(up), PUSH_THRESHOLDS), []);
+  assert.deepEqual(diffSnapshots(deployed, pushSnap(up, deployed)), []);
 });
 
 // The transition: a monitor feeds ONE key a cycle. A running container that has
