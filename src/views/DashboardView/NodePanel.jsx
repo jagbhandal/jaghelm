@@ -1,5 +1,6 @@
 import React from 'react';
 import NodeCard from '../../components/NodeCard';
+import { entityAnchor } from '../../shell/entityAnchors.js';
 import DroppablePanel from '../../components/DroppablePanel';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { ProxmoxVMList, ProxmoxStoragePools, ProxmoxBackupStatus } from './ProxmoxPanels';
@@ -149,8 +150,9 @@ export default function NodePanel({
   const proxmoxStorage = proxmox?.storage || null;
   const proxmoxBackup = proxmox?.backup || null;
 
+  // The card's anchor: the Overview's issue row for this node leads here (#297).
   return (
-    <div key={gridKey}>
+    <div key={gridKey} id={entityAnchor(`nodes/${nodeKey}`)}>
       <DroppablePanel panelId={gridKey} disabled={isMobile}>
         <NodeCard
           sectionKey={nodeKey}

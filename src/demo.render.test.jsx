@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, within, act, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
+import { entityAnchor } from './shell/entityAnchors.js';
 import { setReadOnlyServer } from './api/client.js';
 import { forgetLocalChanges } from './hooks/useData.js';
 // The demo server's own answers: the same function its /api guard answers with.
@@ -208,5 +210,63 @@ describe('the demo, rendered', () => {
     expect(screen.queryByText(/Couldn.t save/)).not.toBeInTheDocument();
     expect(alert).not.toHaveBeenCalled();
     expect(requests.filter((r) => !r.startsWith('GET '))).toEqual([]);
+  });
+});
+
+// The top of the Overview (#297): the model's issues over the board, each row a
+// link to its entity's place on the board, until entities have URLs (#309).
+describe("the demo's Overview status", () => {
+  const place = (entityId) => document.getElementById(entityAnchor(entityId));
+  const rowLinks = () =>
+    within(screen.getByRole('region', { name: 'Needs attention' }))
+      .getAllByRole('listitem')
+      .map((row) => within(row).getByRole('link'));
+
+  it("each place on the board carries its entity's anchor", async () => {
+    await renderDemo('incident');
+
+    expect(within(place('services/apps:jellyfin')).getByText('Jellyfin')).toBeInTheDocument();
+    expect(panel('App Server')).toContainElement(place('services/apps:jellyfin'));
+    expect(place('nodes/apps')).toContainElement(panel('App Server'));
+    expect(place('power/ups')).toBe(panel('UPS Power'));
+    expect(within(place('jobs/storage:nightly-backup')).getByText('nightly-backup')).toBeTruthy();
+    expect(panel('Scheduled Jobs')).toContainElement(place('jobs/storage:nightly-backup'));
+  });
+
+  it('incident: a click on a row moves to its entity on the board', async () => {
+    await renderDemo('incident');
+    const [jellyfin] = rowLinks();
+    expect(jellyfin).toHaveAccessibleName('Jellyfin, Down, Service · apps');
+    const card = place('services/apps:jellyfin');
+    const scroll = vi.spyOn(card, 'scrollIntoView');
+
+    await act(async () => {
+      fireEvent.click(jellyfin);
+    });
+    expect(document.activeElement).toBe(card);
+    expect(scroll).toHaveBeenCalledWith({ block: 'start' });
+    expect(jellyfin).toHaveAttribute('href', `#${entityAnchor('services/apps:jellyfin')}`);
+  });
+
+  it('incident: Enter on a row moves there too; a backup leads to its job’s row', async () => {
+    await renderDemo('incident');
+    // user-event waits on a real timer between keys (Testing Library's async
+    // wrapper knows only Jest's fake clock), so the keyboard runs on real ones.
+    vi.useRealTimers();
+    const user = userEvent.setup();
+    const [, backup] = rowLinks();
+    expect(backup).toHaveAccessibleName('nightly-backup, Failed, Backup · storage');
+    backup.focus();
+    await user.keyboard('{Enter}');
+    expect(document.activeElement).toBe(place('jobs/storage:nightly-backup'));
+  });
+
+  it("healthy: the quiet line, with the model's sentence", async () => {
+    await renderDemo('healthy');
+
+    expect(screen.getByRole('region', { name: 'Status' })).toHaveTextContent(
+      `All systems normal${demoStatus('healthy').overall.sentence}`
+    );
+    expect(screen.queryByRole('region', { name: 'Needs attention' })).toBeNull();
   });
 });

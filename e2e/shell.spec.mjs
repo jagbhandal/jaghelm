@@ -12,65 +12,21 @@
  *  - Back, Forward and a reload keep the page.
  *  - No page scrolls sideways.
  *  - axe finds nothing on the shell, at both widths, dark and light: the whole
- *    Alerts page (a page of the new UI), and the shell's chrome around today's
- *    Overview, whose board later cards rebuild (#297–#300).
+ *    Alerts page (a page of the new UI), and the shell's chrome and the
+ *    status (#297) around today's Overview board, which later cards rebuild
+ *    (#298–#300).
+ *
+ * The Overview's status itself is in overview.spec.mjs; app.mjs holds what
+ * both share.
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { demoResponse } from '../server/demo.js';
-
-const APPS = [
-  { id: 'grafana', label: 'Grafana', type: 'iframe', url: '/embedded/grafana' },
-  { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: '/embedded/kuma' },
-];
-const WIDTHS = {
-  phone: { width: 390, height: 844 },
-  desktop: { width: 1440, height: 900 },
-};
-// Today's themes, until #304: the shell draws a light one light.
-const THEMES = { dark: 'dark', light: 'github-light' };
-
-/** The demo's answer to `path` in its incident scenario, as its server sends it. */
-const demo = (path, method = 'GET', query = {}) =>
-  demoResponse({ method, path, query, scenario: 'incident' });
+import { THEMES, WIDTHS, axeFindings, demo, openApp } from './app.mjs';
 
 /** The demo's status in its incident scenario: what the header must say. */
 const INCIDENT = demo('/api/status').body;
-
-/**
- * Opens the app at `path`, answering every request here. Returns the server's
- * state: set `down` to refuse /api/status, as a backend that can't be reached.
- */
-async function openApp(page, path = '/', { down = false, theme = 'dark' } = {}) {
-  const server = { down };
-  const origin = new URL(test.info().project.use.baseURL).origin;
-  await page.route(
-    (url) => url.origin !== origin,
-    (route) => route.abort()
-  );
-  await page.route('**/embedded/**', (route) => {
-    const name = new URL(route.request().url()).pathname.split('/').pop();
-    return route.fulfill({
-      contentType: 'text/html',
-      body: `<!doctype html><html lang="en"><title>${name}</title><p>Embedded ${name}</p></html>`,
-    });
-  });
-  await page.route('**/api/**', (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    if (url.pathname === '/api/status' && server.down) return route.abort('connectionrefused');
-    if (url.pathname === '/api/icons/cached') return route.fulfill({ status: 404, json: {} });
-    const out = demo(url.pathname, request.method(), Object.fromEntries(url.searchParams));
-    const body = url.pathname === '/api/display-config' ? { ...out.body, tabs: APPS } : out.body;
-    return route.fulfill({ status: out.status, json: body ?? {} });
-  });
-  await page.addInitScript((id) => localStorage.setItem('jaghelm-theme', id), THEMES[theme]);
-  await page.goto(path);
-  await expect(page.getByRole('banner')).toBeVisible();
-  return server;
-}
 
 const headerStatus = (page) => page.getByRole('banner').getByRole('status').getByRole('link');
 const sidebar = (page) => page.getByRole('navigation', { name: 'Main' });
@@ -274,12 +230,6 @@ test.describe('at 390px', () => {
   });
 });
 
-/** axe's violations, one line per element. */
-async function axeFindings(builder) {
-  const { violations } = await builder.analyze();
-  return violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.target.join(' ')}`));
-}
-
 for (const theme of Object.keys(THEMES)) {
   for (const [name, viewport] of Object.entries(WIDTHS)) {
     test(`axe: the shell at ${viewport.width}px, ${theme}`, async ({ page }) => {
@@ -290,13 +240,16 @@ for (const theme of Object.keys(THEMES)) {
       // The Alerts page is the new UI throughout: the whole page.
       expect(await axeFindings(new AxeBuilder({ page })), 'Alerts').toEqual([]);
 
-      // The Overview is today's board inside the shell: the shell's chrome.
+      // The Overview is today's board inside the shell, under its status (#297):
+      // the shell's chrome and the status, the new UI on it.
       await page.goto('/');
       await SHOWS.overview(page);
+      await expect(page.getByRole('region', { name: 'Needs attention' })).toBeVisible();
       const chrome = new AxeBuilder({ page })
         .include('[data-slot="app-header"]')
-        .include(name === 'phone' ? '[data-slot="bottom-tabs"]' : '[data-slot="side-nav"]');
-      expect(await axeFindings(chrome), 'the shell around the Overview').toEqual([]);
+        .include(name === 'phone' ? '[data-slot="bottom-tabs"]' : '[data-slot="side-nav"]')
+        .include('[data-slot="overview-status"]');
+      expect(await axeFindings(chrome), "the shell and the Overview's status").toEqual([]);
 
       if (name === 'phone') {
         await phoneTabs(page).getByRole('button', { name: 'More' }).click();

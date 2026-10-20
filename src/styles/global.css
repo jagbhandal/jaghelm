@@ -178,6 +178,9 @@
   border: 0;
 }
 body { font-family: var(--font-body); font-size: var(--text-lg); line-height: 1.6; color: var(--text-primary); background: var(--bg-primary); min-height: 100vh; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+/* What scrolls into view (an issue row's anchor on the Overview, #297; a focused
+   control) stops clear of the 48px sticky header. */
+html { scroll-padding-top: 64px; }
 
 .bg-layer { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
 .bg-image { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: var(--bg-opacity); }
@@ -188,6 +191,11 @@ body { font-family: var(--font-body); font-size: var(--text-lg); line-height: 1.
 
 
 .dashboard-content { padding: 24px 5%; max-width: 100%; margin: 0 auto; width: 100%; }
+/* The Overview's status (#297): the new UI's attention panel over today's board,
+   in line with the board's cards: .dashboard-content's padding, then HelmGrid's
+   16px margin (12px when the board is under 480px wide). It goes when the board
+   is rebuilt (#298-#300). */
+.overview-status { padding: 24px calc(5% + 16px) 0; }
 
 /* Cards */
 .glass-card { background: var(--bg-card); backdrop-filter: blur(var(--glass-blur)); border: 1px solid var(--glass-border); border-radius: var(--card-radius); box-shadow: var(--shadow-card); transition: border-color 0.3s; position: relative; height: 100%; overflow: hidden; }
@@ -454,6 +462,8 @@ body { font-family: var(--font-body); font-size: var(--text-lg); line-height: 1.
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 3px; }
 @media (max-width: 900px) { .dashboard-content { padding: 14px; } }
+@media (max-width: 900px) { .overview-status { padding: 14px 30px 0; } }
+@media (max-width: 479px) { .overview-status { padding: 14px 26px 0; } }
 @media (max-width: 480px) {
   .node-card { padding: 14px 16px; }
   .section-header { gap: var(--space-2); margin-bottom: var(--space-3); }
