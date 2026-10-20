@@ -94,9 +94,10 @@ server/                     Express API (Node 26, ESM)
   metrics.js                prom-client registry + middleware + /metrics handler
   accessLog.js              one JSON log line per request (full path, no query string)
   demo.js                   DEMO_MODE guard: owns /api, refuses writes, answers reads from
-                            demoFixtures.js; boot() starts no subsystem in demo mode
+                            demoFixtures.js and any other path with a 404; boot() starts no
+                            subsystem in demo mode
   demoFixtures.js           the demo's board, shaped by the live code (assembleServices,
-                            decorateStatuses); incident and healthy scenarios
+                            decorateStatuses, the status model); incident and healthy scenarios
   embedCheck.js             reads an app tab's X-Frame-Options / CSP frame-ancestors and says
                             whether the browser will frame it (see 5, "App tabs")
   auth/                     scrypt passwords, in-memory sessions, login rate limit, middleware
@@ -195,8 +196,13 @@ it logs `cannot listen` and exits 1. The `listening` line logs the port bound.
 In demo mode `boot()` only loads the integration preset gallery: it starts no
 discovery, refresh loop, Kuma, push, Arcane, icon index or cache, reads no
 `services.yaml` and makes no directory. The demo guard answers every `/api`
-read, so the server makes no outbound request and writes no file; the browser
-still loads the board's icons from the icon CDN (docs/DEMO.md).
+request itself, so the server makes no outbound request and writes no file;
+the browser still loads the board's icons from the icon CDN (docs/DEMO.md).
+It answers each read the web and Android apps send from the demo's fixtures
+(a test walks both apps' source for them, `server/demo.reads.test.js`), and
+any other `/api` path with the live server's 404 (`Endpoint not found`), so an
+endpoint the demo doesn't know can't pass for an empty one (#437).
+`/api/status` is the status model (4.7) of the demo's board.
 
 Routers (each `server/routes/*.js`), mounted under `/api`:
 
@@ -870,6 +876,15 @@ installed (spec §6.3; frozen by `server/routes/contract.test.js`): the new
 states (maintenance, pending, unknown because a source failed) appear only
 here.
 
+**In demo mode** the demo guard answers `/api/status` (#437) with the model
+built from the payloads the demo serves (`demoStatus` in `demoFixtures.js`):
+`readStatusInputs` with the demo's board as the caches, the demo display
+config's thresholds, and a tracker as a fresh boot has it (no push to seed it
+from), on every request. So every `since` is that request's time (its down
+service is down "since now"), except a job's, which is its last run's.
+`server/demoStatus.test.js` puts the same payloads in the live caches and cron
+store and checks that the loop's own `updateStatus` gives the same status.
+
 **Push** (`push/snapshot.js`, `push/differ.js`, #292) is built on the model, so
 a notification says what the screens say. The snapshot records, per entity push
 pages for, what the model decided: a Kuma-fed service's up or down, each host's
@@ -1030,7 +1045,8 @@ flowchart TD
     an answer names the URL it is about, which the page checks again.
   - **Unknown.** When the server can't read the app (it can't reach it, doesn't
     trust its certificate, gets a non-2xx answer or is redirected to another
-    host; the demo answers nothing), or before the URL is saved, the frame
+    host; the demo has no saved app tab, so it answers that it has none), or
+    before the URL is saved, the frame
     shows whatever the browser puts in it.
 - **Design system.** 10 themes (`themes.js` + `[data-theme]` token blocks),
   generic `--space-*` / `--text-*` scales plus semantic `--fs-*` card tokens,

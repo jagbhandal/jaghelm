@@ -5,8 +5,9 @@
  * locked down by construction (see docs/security/STRIDE.md):
  *   - EVERY state-changing request (POST/PUT/DELETE/PATCH) is refused 403.
  *   - The middleware OWNS the entire /api surface: reads are answered from the
- *     demo's fixtures (demoFixtures.js) or an empty default, and the request
- *     never reaches a real route — so there is NO outbound fetch, NO backend
+ *     demo's fixtures (demoFixtures.js), and any other path with the live
+ *     server's 404 for a path it has no route for (#437). The request never
+ *     reaches a real route — so there is NO outbound fetch, NO backend
  *     dependency, and NO secrets endpoint reachable.
  *   - An icon the board asks /api/icons/cached for is a redirect to the icon
  *     repository's URL, which the browser loads itself; the server neither
@@ -35,6 +36,8 @@ import {
   demoGiteaActivity,
   demoCronStatus,
   demoDisplayConfig,
+  demoIntegrations,
+  demoStatus,
   demoTodos,
 } from './demoFixtures.js';
 
@@ -51,7 +54,10 @@ export function demoScenario(env = process.env) {
 
 const MUTATING = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 
-// Exact-path reads. Anything else under /api answers an empty object (no route runs).
+// Exact-path reads. Every read the web and Android apps send is here, or
+// answered in demoResponse (the icon redirect, the embed check):
+// server/demo.reads.test.js walks their source to keep it so. Any other /api
+// path is a 404, and no route runs.
 const READS = {
   '/api/health': () => ({ status: 'ok', demo: true, version: VERSION }),
   '/api/readyz': () => ({ ready: true, demo: true, checks: { prometheus: true, kuma: true } }),
@@ -65,11 +71,21 @@ const READS = {
   '/api/gitea/activity': demoGiteaActivity,
   '/api/cron': () => [],
   '/api/cron/status': demoCronStatus,
-  '/api/integrations': () => ({}),
+  '/api/integrations': demoIntegrations,
   // The preset gallery is code in the image, not live data (empty unless
   // boot() loaded the registry).
   '/api/integrations/presets': () => listPresets(),
+  // The status model of the board above, built by the live model (#437).
+  '/api/status': demoStatus,
   '/api/todos': demoTodos,
+  // No outbound, so no weather: an answer without a temperature draws none.
+  '/api/weather': () => ({}),
+  // boot() loads no icon index in demo mode: the live route's answer without one.
+  '/api/icons': () => ({ count: 0, results: [] }),
+  // The Android app's push reads keep the empty answer they always had: its
+  // Notifications screen reads no `enabled` as push not set up on the server.
+  '/api/push/status': () => ({}),
+  '/api/push/prefs': () => ({}),
 };
 
 /**
@@ -90,7 +106,7 @@ export function demoResponse({
   // 1. Refuse every state-changing request.
   if (MUTATING.has(method)) return { status: 403, body: { error: 'This is a read-only demo' } };
   // Express does NOT strip a trailing slash, so "/api/services/" would miss the
-  // table and fall through to {}. Drop it (except on the root path itself).
+  // table and fall through to a 404. Drop it (except on the root path itself).
   const p = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
   // 2. Icons: the browser fetches them from the icon repository itself.
   if (p === '/api/icons/cached') {
@@ -99,9 +115,16 @@ export function demoResponse({
       ? { status: 302, location: url }
       : { status: 404, body: { error: 'Not a cached icon' } };
   }
-  // 3. Reads: a fixture, else an empty object. Never a real route.
+  // 3. An app tab's embed check: the demo saves no app tab, so the live
+  // route's answer for any tab id is that it has none (the page then shows the
+  // frame as the browser draws it).
+  if (p.startsWith('/api/embed-check/')) {
+    return { status: 404, body: { error: 'No saved app tab has that id' } };
+  }
+  // 4. Reads: a fixture, else the live server's answer for an /api path it
+  // has no route for (index.js). Never a real route.
   if (Object.hasOwn(READS, p)) return { status: 200, body: READS[p]({ scenario, now }) };
-  return { status: 200, body: {} };
+  return { status: 404, body: { error: 'Endpoint not found' } };
 }
 
 export function demoMiddleware(req, res) {

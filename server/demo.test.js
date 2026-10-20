@@ -23,12 +23,59 @@ after(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+// The live server's answer for an /api path it has no route for (index.js).
+const NOT_FOUND = { error: 'Endpoint not found' };
+
 test('demo: GET /api/services returns the demo board (no backend), down by default (#248)', async () => {
   const r = await request(app).get('/api/services');
   assert.equal(r.status, 200);
   assert.deepEqual(Object.keys(r.body.nodes), ['edge', 'apps', 'storage']);
   assert.ok(r.body.nodes.apps.services.length > 0, 'populated with services');
   assert.equal(r.body.overallHealth, 'down', 'its down service is not hidden behind a green status');
+});
+
+test('demo: GET /api/status is the status model of the demo board, in both scenarios (#437)', async () => {
+  const shapeOf = (status) => {
+    assert.deepEqual(Object.keys(status).sort(), ['entities', 'issues', 'overall', 'sources', 'subsystems']);
+    assert.deepEqual(Object.keys(status.overall).sort(), ['sentence', 'state']);
+    assert.deepEqual(
+      status.subsystems.map((s) => s.id),
+      ['services', 'nodes', 'power', 'jobs', 'backups', 'integrations']
+    );
+    for (const e of status.entities) {
+      for (const k of ['id', 'kind', 'subsystem', 'name', 'state', 'word', 'reason', 'since']) {
+        assert.ok(Object.hasOwn(e, k), `${e.id}: ${k}`);
+      }
+      assert.ok(!Object.hasOwn(e, 'memo'), `${e.id}: the model's memory is never served`);
+    }
+    // Every board entity is judged: 12 services, 3 nodes, the UPS, 4 jobs.
+    assert.equal(status.entities.length, 20);
+    assert.deepEqual(Object.keys(status.sources).sort(), ['gitea', 'kuma', 'nut', 'prometheus']);
+    for (const s of Object.values(status.sources)) assert.equal(s.state, 'ok');
+  };
+
+  const incident = await request(app).get('/api/status');
+  assert.equal(incident.status, 200);
+  shapeOf(incident.body);
+  assert.deepEqual(incident.body.overall, { state: 'crit', sentence: '1 service down · 1 job failed' });
+  assert.deepEqual(
+    incident.body.issues.map((i) => [i.id, i.state, i.reason]),
+    [
+      ['services/apps:jellyfin', 'crit', 'Kuma: down'],
+      ['jobs/storage:nightly-backup', 'warn', 'Last run failed: repository is locked by another process'],
+    ]
+  );
+
+  process.env.DEMO_SCENARIO = 'healthy';
+  try {
+    const healthy = await request(app).get('/api/status');
+    assert.equal(healthy.status, 200);
+    shapeOf(healthy.body);
+    assert.deepEqual(healthy.body.overall, { state: 'ok', sentence: 'All 12 services up · 3 nodes healthy' });
+    assert.deepEqual(healthy.body.issues, []);
+  } finally {
+    delete process.env.DEMO_SCENARIO;
+  }
 });
 
 test('demo: the UPS and Pipeline sources say they are set up, so their panels show (#248)', async () => {
@@ -90,10 +137,10 @@ test('demo: every write is refused 403', async () => {
   }
 });
 
-test('demo: secrets are unreachable — read is empty, write is 403', async () => {
+test('demo: secrets are unreachable — read is not found, write is 403', async () => {
   const g = await request(app).get('/api/secrets/keys');
-  assert.equal(g.status, 200);
-  assert.deepEqual(g.body, {}, 'no secret data (real route never runs)');
+  assert.equal(g.status, 404);
+  assert.deepEqual(g.body, NOT_FOUND, 'no secret data (real route never runs)');
   const w = await request(app).put('/api/secrets/foo').send({ value: 'x' });
   assert.equal(w.status, 403);
 });
@@ -106,10 +153,27 @@ test('demo: a trailing-slash path still hits the canned fixture (not the empty d
   assert.ok(r.body.nodes && r.body.nodes.edge, 'fixture served despite trailing slash');
 });
 
-test('demo: an unknown /api read returns empty (no real route → no outbound)', async () => {
-  const r = await request(app).get('/api/integrations/proxmox');
-  assert.equal(r.status, 200);
-  assert.deepEqual(r.body, {});
+test('demo: an unknown /api read is a 404, as the live server answers it (no real route → no outbound) (#437)', async () => {
+  for (const path of ['/api/integrations/proxmox', '/api/no-such-read', '/api/arcane/agents']) {
+    const r = await request(app).get(path);
+    assert.equal(r.status, 404, path);
+    assert.deepEqual(r.body, NOT_FOUND, path);
+  }
+});
+
+test('demo: the reads the web client sends that have no demo data answer as the live server would without it (#437)', async () => {
+  // No outbound, so no weather: an answer with no temperature draws none.
+  const weather = await request(app).get('/api/weather').query({ lat: 51.5, lon: -0.1 });
+  assert.equal(weather.status, 200);
+  assert.deepEqual(weather.body, {});
+  // No icon index is loaded in demo mode: the picker's search finds nothing.
+  const icons = await request(app).get('/api/icons').query({ q: 'graf', limit: 60 });
+  assert.equal(icons.status, 200);
+  assert.deepEqual(icons.body, { count: 0, results: [] });
+  // The demo saves no app tab, so no tab id is one the server has.
+  const embed = await request(app).get('/api/embed-check/tab-1').query({ origin: 'https://demo.example.com' });
+  assert.equal(embed.status, 404);
+  assert.deepEqual(embed.body, { error: 'No saved app tab has that id' });
 });
 
 test('demo: HEAD and OPTIONS are owned by the guard, not a real route', async () => {
@@ -118,5 +182,7 @@ test('demo: HEAD and OPTIONS are owned by the guard, not a real route', async ()
   const h = await request(app).head('/api/services');
   assert.equal(h.status, 200);
   const o = await request(app).options('/api/secrets/keys');
-  assert.equal(o.status, 200); // answered by the guard; real secrets route never runs
+  // Answered by the guard (the real secrets route never runs): not a demo read.
+  assert.equal(o.status, 404);
+  assert.deepEqual(o.body, NOT_FOUND);
 });
