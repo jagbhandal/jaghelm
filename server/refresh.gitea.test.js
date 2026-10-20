@@ -32,7 +32,10 @@ async function withoutGiteaUrl(fn) {
   }
 }
 
-/** The structured log lines written while `fn` runs; anything else passes through. */
+/**
+ * The structured log lines written while `fn` runs (handed to `fn` as they
+ * come, too); anything else passes through.
+ */
 async function captureLogs(fn) {
   const lines = [];
   const origOut = process.stdout.write;
@@ -53,7 +56,7 @@ async function captureLogs(fn) {
   process.stdout.write = tap(origOut);
   process.stderr.write = tap(origErr);
   try {
-    await fn();
+    await fn(lines);
   } finally {
     process.stdout.write = origOut;
     process.stderr.write = origErr;
@@ -145,18 +148,17 @@ test('with GITEA_URL set, the boot does not log "Gitea panel off"', async (t) =>
   const realSetInterval = globalThis.setInterval;
   t.mock.method(globalThis, 'setInterval', () => realSetInterval(() => {}, 2 ** 31 - 1).unref());
 
-  const lines = await captureLogs(async () => {
-    const before = Date.now();
+  const lines = await captureLogs(async (seen) => {
     startBackgroundRefresh();
-    // Wait for its warm-up cycle, so the cycle doesn't outlive the test.
-    const deadline = before + 10_000;
-    while (getRefreshHealth().ageMs > Date.now() - before) {
-      if (Date.now() > deadline) throw new Error('the warm-up cycle did not finish');
+    // Wait for its warm-up cycle to poll Gitea (and fail: no network here), so
+    // the cycle doesn't outlive the test.
+    const deadline = Date.now() + 10_000;
+    while (!seen.some((l) => l.msg === 'Gitea refresh error')) {
+      if (Date.now() > deadline) throw new Error('the warm-up cycle never polled Gitea');
       await new Promise((r) => setTimeout(r, 20));
     }
     stopBackgroundRefresh();
   });
 
   assert.equal(lines.filter((l) => l.msg.includes('Gitea panel off')).length, 0);
-  assert.equal(lines.filter((l) => l.msg === 'Gitea refresh error').length, 1, 'Gitea was polled');
 });
