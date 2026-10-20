@@ -10,7 +10,7 @@ import { atomicWriteFileSync } from '../util/atomicWrite.js';
 
 const silentLog = { info() {}, warn() {}, error() {}, debug() {} };
 
-// A minimal snapshot pair: baseline has a service up, next has it down.
+// A minimal snapshot pair: a service up, then the same service down.
 const SNAP_UP = { services: { 'n1:svc': 'up' }, hosts: {}, ups: { state: 'online' }, cron: {} };
 const SNAP_DOWN = { services: { 'n1:svc': 'down' }, hosts: {}, ups: { state: 'online' }, cron: {} };
 
@@ -45,7 +45,7 @@ function oneTokenStore() {
   };
 }
 
-test('runPushCycle BASELINE: no prev file => persists snapshot, dispatches nothing', async () => {
+test('runPushCycle NO PREV: no prev file => diffs from no previous state; a healthy board dispatches nothing, and is persisted', async () => {
   const { dir, path } = tmpSnapshotPath();
   const fcm = enabledFcm();
   try {
@@ -56,7 +56,7 @@ test('runPushCycle BASELINE: no prev file => persists snapshot, dispatches nothi
       snapshot: createPushSnapshot({ path, logger: silentLog }),
       logger: silentLog,
     });
-    assert.equal(fcm.calls.length, 0, 'no dispatch on baseline');
+    assert.equal(fcm.calls.length, 0, 'nothing in trouble: nothing sent');
     assert.ok(existsSync(path), 'snapshot persisted so next cycle has a prev');
     assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), SNAP_UP);
   } finally {
@@ -382,7 +382,7 @@ test('createPushSnapshot flush: writes the file if a failed write left it behind
 
 // #232: the builder is handed the previous snapshot, so it can keep the parts a
 // failed source feeds; advancing to what it returns keeps them across cycles.
-test('runPushCycle hands buildSnapshotFn the previous snapshot (null on the baseline)', async () => {
+test('runPushCycle hands buildSnapshotFn the previous snapshot (null when there is none)', async () => {
   const { dir, path } = tmpSnapshotPath();
   const seen = [];
   const build = (prev) => {
@@ -406,9 +406,32 @@ test('runPushCycle hands buildSnapshotFn the previous snapshot (null on the base
   }
 });
 
-// #232 review: a builder with no snapshot to give (a baseline while a source
-// fails) returns null, and the cycle neither sends nor advances.
-test('runPushCycle: a null snapshot skips the cycle, so the baseline waits for one', async () => {
+// #448: with no previous snapshot every entity is new, so what is in trouble
+// pages once, on that cycle, and not again.
+test('runPushCycle NO PREV: what is in trouble pages once, and the next cycle diffs against it', async () => {
+  const { dir, path } = tmpSnapshotPath();
+  const fcm = enabledFcm();
+  try {
+    const snapshot = createPushSnapshot({ path, logger: silentLog });
+    for (let i = 0; i < 3; i += 1) {
+      await runPushCycle({
+        buildSnapshotFn: () => SNAP_DOWN,
+        store: oneTokenStore(),
+        fcm,
+        snapshot,
+        logger: silentLog,
+      });
+    }
+    assert.deepEqual(fcm.calls, [{ token: 'a', type: 'service_down' }]);
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), SNAP_DOWN);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// #232 review: a builder with no snapshot to give (no previous one while a
+// source fails) returns null, and the cycle neither sends nor advances.
+test('runPushCycle: a null snapshot skips the cycle, so the first snapshot waits for one', async () => {
   const { dir, path } = tmpSnapshotPath();
   const fcm = enabledFcm();
   const snapshot = createPushSnapshot({ path, logger: silentLog });
@@ -422,13 +445,16 @@ test('runPushCycle: a null snapshot skips the cycle, so the baseline waits for o
     });
   try {
     await cycle(() => null);
-    assert.equal(snapshot.prev(), null, 'no baseline taken');
+    assert.equal(snapshot.prev(), null, 'no snapshot taken');
     assert.equal(existsSync(path), false, 'nothing written');
 
-    await cycle(() => SNAP_DOWN); // the baseline
-    await cycle(() => null); // skipped: prev stays the baseline
+    await cycle(() => SNAP_DOWN); // the first snapshot: the service is down (#448)
+    await cycle(() => null); // skipped: prev stays the first snapshot
     await cycle(() => SNAP_UP);
-    assert.deepEqual(fcm.calls, [{ token: 'a', type: 'service_recovered' }]);
+    assert.deepEqual(fcm.calls, [
+      { token: 'a', type: 'service_down' },
+      { token: 'a', type: 'service_recovered' },
+    ]);
     assert.deepEqual(snapshot.prev(), SNAP_UP);
   } finally {
     rmSync(dir, { recursive: true, force: true });

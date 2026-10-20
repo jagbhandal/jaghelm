@@ -371,7 +371,12 @@ const SCENARIOS = [
   },
 ];
 
-/** Run a scenario's cycles through the push pipeline; returns what was sent and the last snapshot file. */
+// The first cycle has no snapshot, so every entity is new (#448): the board's
+// failed cron job (fixtures/liveShape.js) pages there once. These scenarios
+// are about services: play checks it and leaves it out.
+const FIRST = 'cron_failed nas:b2-sync';
+
+/** Run a scenario's cycles through the push pipeline; returns what was sent (but FIRST) and the last snapshot file. */
 async function play(scenario, { restartEachCycle = false, order } = {}) {
   const cycle = homelab(scenario.nodes, scenario.seen);
   const pipeline = pushPipeline();
@@ -380,7 +385,11 @@ async function play(scenario, { restartEachCycle = false, order } = {}) {
       if (restartEachCycle) pipeline.restart();
       await pipeline.push(cycle({ ...input, order }));
     }
-    return { sent: pipeline.sent, file: readFileSync(pipeline.path, 'utf8') };
+    assert.equal(pipeline.sent.filter((s) => s === FIRST).length, 1, `${FIRST} once`);
+    return {
+      sent: pipeline.sent.filter((s) => s !== FIRST),
+      file: readFileSync(pipeline.path, 'utf8'),
+    };
   } finally {
     pipeline.close();
   }

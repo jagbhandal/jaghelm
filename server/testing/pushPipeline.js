@@ -40,9 +40,9 @@ export function seededTracker(snapshot) {
 }
 
 /**
- * A push pipeline over a snapshot file. Its first cycle is the baseline, unless
- * `path` names another pipeline's file: then it is that pipeline after a
- * restart. `cycle(caches)` runs one cycle on `caches` (getCached,
+ * A push pipeline over a snapshot file. Its first cycle has no snapshot, so it
+ * diffs every entity from no previous state (#448), unless `path` names another
+ * pipeline's file: then it is that pipeline after a restart. `cycle(caches)` runs one cycle on `caches` (getCached,
  * getCachedInternal, getAllCronStatuses); `restart()` stops and starts JagHelm.
  *
  * @param {{ path?: string, thresholds?: any, start?: number, env?: Record<string, string> }} [opts]

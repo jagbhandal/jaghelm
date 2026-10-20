@@ -939,8 +939,22 @@ that changed:
   band and waits CPU's 2 cycles, so push does too (#361).
 - What the model can't call up or down holds its last known state and sends
   nothing: a service pending or in maintenance, an entity a failed source made
-  unknown, a reading whose query failed. So down, pending, up still sends the
-  recovery, and down, pending, down sends no second `service_down`.
+  unknown, a reading whose query failed, the UPS while NUT is quiet or its read
+  fails. So down, pending, up still sends the recovery, and down, pending, down
+  sends no second `service_down`; on battery, unknown, on battery sends no
+  second `ups_on_battery`, and online, unknown, online sends nothing.
+- An entity with no previous state (#448) is diffed from "no previous state":
+  it pages once if it appears in trouble, at the model's level, and sends
+  nothing if it appears ok. That is an entity new to the snapshot (a node added
+  to `services.yaml`, a reading that starts answering, a new service or job, a
+  UPS never read, whose snapshot state is `unknown`), and every entity when
+  there is no snapshot (a first run, or a missing or unreadable file): each
+  open problem then pages once, on that cycle, and the snapshot written holds
+  it. A new node sends no "Host recovered"; one unreachable sends
+  `host_unreachable`, and each reading over its line `host_threshold`. An
+  entity first seen while its source fails is unknown, so it sends nothing
+  until the source answers, and is new then. A restart with a valid snapshot
+  is not a first sight: it sends nothing again and clears nothing.
 - A monitoring source (Prometheus, Kuma, NUT) the model lists as failed for two
   cycles in a row (about a minute) sends one `source_down`, and one
   `source_recovered` when it answers. The snapshot keeps each source as `ok`,
@@ -1001,10 +1015,7 @@ them on its Node side and hand a page the JSON.
 A disagreement fails it unless a named exception (`KNOWN` in each file) covers
 it, where it says. An exception that stops happening fails too, so settling
 one is deleting its entry. Today's: a failed backup is crit on the screen but
-pushes at `warning` (#446, Jag to decide); a node new to the push snapshot is
-a baseline, so it sends "Host recovered" (or nothing, if unreachable) and a
-reading already over its line doesn't page (#448); a UPS with no known state
-in the snapshot doesn't page on battery; an empty board's attention panel
+pushes at `warning` (#446, Jag to decide); an empty board's attention panel
 isn't quiet (#449); a meter rounds a reading the model rounds down (94.6 %
 reads "95%" on the meter, "94 %" in the reason, #450). The legacy
 derivations (`src/utils/thresholds.js`, `mobile/src/data/derive.js`) are

@@ -145,7 +145,7 @@ export async function dispatchEvents(events, { store, fcm, logger = defaultLog }
  */
 export function createPushSnapshot({ path, write = atomicWriteFileSync, upgrade = (snap) => snap, logger = defaultLog }) {
   let loaded = false;
-  let prev = null; // the last cycle's snapshot (null: baseline)
+  let prev = null; // the last cycle's snapshot (null: none yet)
   let persisted = null; // what the file holds (null: nothing usable)
 
   function load() {
@@ -153,8 +153,8 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, upgrade 
     try {
       return JSON.parse(readFileSync(path, 'utf8'));
     } catch (err) {
-      // Corrupt/partial snapshot => treat as baseline rather than crash.
-      logger.warn({ err }, 'unreadable push snapshot, treating as baseline');
+      // Corrupt/partial snapshot => no previous state rather than a crash.
+      logger.warn({ err }, 'unreadable push snapshot, starting with no previous state');
       return null;
     }
   }
@@ -169,7 +169,7 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, upgrade 
   }
 
   return {
-    /** The previous cycle's snapshot, or null on the first cycle (baseline). */
+    /** The previous cycle's snapshot, or null when there is none (no file, or an unreadable one). */
     prev() {
       if (!loaded) {
         const read = load();
@@ -196,7 +196,9 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, upgrade 
 /**
  * One push cycle: build the current snapshot, diff it against the previous
  * one, dispatch the resulting events, then advance the previous snapshot
- * (ALWAYS — even on baseline — so the next cycle has a prev).
+ * (ALWAYS, so the next cycle has a prev). With no previous snapshot, every
+ * entity is new to it (diffSnapshots, #448): each open problem pages once, on
+ * this cycle, and the snapshot advanced to holds it from then on.
  *
  * The builder is handed the previous snapshot, so what the status model can't
  * call, and the parts fed by a source that failed this cycle, can be kept from
@@ -235,12 +237,12 @@ export async function runPushCycle({ buildSnapshotFn, status = null, store, fcm,
       return;
     }
 
-    if (prev !== null) {
-      const events = diffSnapshots(prev, snap, status);
-      if (events.length > 0) {
-        const counts = await dispatchEvents(events, { store, fcm, logger });
-        logger.info({ ...counts, events: events.length }, 'push cycle dispatched');
-      }
+    // With no prev (no file, or an unreadable one) every entity is new: what
+    // is in trouble pages once, what is ok sends nothing (#448).
+    const events = diffSnapshots(prev, snap, status);
+    if (events.length > 0) {
+      const counts = await dispatchEvents(events, { store, fcm, logger });
+      logger.info({ ...counts, events: events.length }, 'push cycle dispatched');
     }
 
     // Advance only after a clean dispatch: one that throws leaves prev as it
