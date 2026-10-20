@@ -105,7 +105,8 @@ server/                     Express API (Node 26, ESM)
                             persisted state, dry-run module (see 4.2)
   integrations/             the integration engine (presets + handler + lib, see 4.3)
   util/                     logger, ssrf, redact, rateLimiter, atomicWrite,
-                            configSchema (zod), dataDir, asyncHandler, dedupe
+                            configSchema (zod), configMask (the config read's
+                            credential markers, see 6), dataDir, asyncHandler, dedupe
   testing/                  test-only helpers: a mock Prometheus that evaluates JagHelm's
                             PromQL over homelab-shaped series, and the pre-#234 node reader
 
@@ -187,7 +188,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/auth` | public | login, logout, auth-status |
 | `/api/health`, `/api/readyz` | public | liveness / readiness probes |
 | `/metrics` | public | Prometheus exposition |
-| `/api/services` | token | discovered nodes + services (background-refreshed, ETag) |
+| `/api/services` | token | discovered nodes + services (background-refreshed, ETag); `services.yaml` for Settings, without its credentials (`/config`, see 6) |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6) |
 | `/api/display-config` | token | the display config blob |
 | `/api/embed-check/:tabId` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs") |
@@ -992,6 +993,31 @@ All state is files under the data dir (no DB):
   external edit; read copy-on-read; `POST /api/services/config` validated by Zod.
   `saveConfig` re-serialises the whole file, so a write drops its comments and
   hand formatting.
+  - **The config read never carries a credential** (#413).
+    `GET /api/services/config` answers with each credential that is set as
+    the marker `{ "$stored": true }`, never its value or its `$secret:`
+    reference (`util/configMask.js`). A credential is the value of a
+    `password` or `token` key at any depth (plaintext, a number, or a
+    `$secret:` reference: the resolver reads references from these two keys
+    only), each value of an `extraHeaders` map, and a `session`'s `loginBody`.
+    One that is null or empty is sent as it is, so the marker always means a
+    value is stored. `authHeader` names a header and is sent; its value is the
+    `token`. No preset declares any other field secret. Not masked: the URL,
+    endpoint and username, which the integration form shows and saves (a key
+    written into a URL or endpoint by hand is not known to be a credential).
+  - **`POST /api/services/config` replaces the file, keeping what is stored.**
+    The Nodes and Services tabs read the config, change it and post all of it
+    back, markers included. Each marker is replaced by the value stored in its
+    place before the write. A marker is accepted only where the read would put
+    one now: one in place of a credential that is no longer stored (removed
+    since Settings read the config) is a 409, one anywhere else, or an object
+    with `$stored` that is not exactly the marker, is a 400, and nothing is
+    written. So a marker is never written, and a credential can't be moved to
+    another entry or key. A credential sent as a value replaces the stored one,
+    as before. The answer is `{ ok: true }` or an error naming the place, never
+    a value. A save whose result equals the stored config writes nothing, so
+    the file stays byte-for-byte as it was; a value JSON can't carry (a YAML
+    date) reads back as text, so such a file is still rewritten.
   - **An integration's save in Settings merges** (`POST /api/integrations/save`,
     #402). The form's values go into the stored entry, and only what the form
     owns changes: the URL (required), the username and target (sent empty to
