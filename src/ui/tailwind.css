@@ -80,6 +80,7 @@
   --color-surface-3: var(--jh-surface-3);
   --color-border-subtle: var(--jh-border-subtle);
   --color-border-strong: var(--jh-border-strong);
+  --color-control-edge: var(--jh-control-edge);
 
   /* Text: text-text-1 (headings, values), -2 (secondary), -3 (sparing). */
   --color-text-1: var(--jh-text-1);
@@ -137,6 +138,7 @@
   --color-beat-ok: var(--jh-beat-ok);
   --color-lamp-cut: var(--jh-lamp-cut);
   --color-scrim: var(--jh-scrim);
+  --color-switch-thumb: var(--jh-switch-thumb);
 
   /*
    * shadcn/ui's role names, so a generated component compiles in JagHelm's
@@ -214,14 +216,22 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  /* Elevation: panels are flat; only popovers, dialogs and drawers cast a shadow. */
+  /* Elevation: panels are flat; only popovers, dialogs and drawers cast a
+     shadow. shadow-thumb lifts a switch's thumb off its track. */
   --shadow-control: var(--jh-shadow-control);
   --shadow-pop: var(--jh-shadow-pop);
+  --shadow-thumb: var(--jh-shadow-thumb);
 
-  /* Density and gutter: h-row, p-panel, px-gutter. */
+  /* Density and gutter: h-row, p-panel, px-gutter; and the controls' heights,
+     which density leaves alone (h-control, h-control-sm, h-segment;
+     size-control for icon buttons). src/ui/lib/utils.js lists these names, and
+     the z-index, duration and easing names below, for cn. */
   --spacing-row: var(--jh-row-h);
   --spacing-panel: var(--jh-pad);
   --spacing-gutter: var(--jh-gutter);
+  --spacing-control: var(--jh-control-h);
+  --spacing-control-sm: var(--jh-control-h-sm);
+  --spacing-segment: var(--jh-segment-h);
 
   --z-index-sticky: 20;
   --z-index-header: 40;
