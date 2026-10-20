@@ -115,6 +115,7 @@ export default function IntegrationsTab() {
         allContainers={allContainers}
         testStatus={testStatus}
         saveStatus={saveStatus}
+        setSaveStatus={setSaveStatus}
         handleTest={handleTest}
         handleSave={handleSave}
         handleDelete={handleDelete}

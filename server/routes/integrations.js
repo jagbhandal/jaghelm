@@ -161,22 +161,23 @@ function storedEntry(integrations, key) {
 function listName(key, entry) {
   const presetType = entry.preset || (key.includes('_') ? key.split('_')[0] : key);
   const name = getPreset(presetType)?.name;
-  if (!isBlank(entry.instance)) return `${name || presetType} (${entry.instance})`;
+  if (entry.instance) return `${name || presetType} (${entry.instance})`;
   return name || key;
 }
 
 /**
  * Why a save onto `key`, which `holder` already holds, is refused: it names
- * the holder as the list does, and says what to change when the form has an
- * Instance Name field (a preset's form).
+ * the holder as the list does (one it names by its key is a custom
+ * integration), and says what to do: a preset's form has an Instance Name
+ * field to change; the custom builder has none and always derives `_custom`.
  */
 function takenKeyError(key, holder, type) {
   const name = listName(key, holder);
   const taken =
     name === key
-      ? `Integration '${key}' already uses that key`
+      ? `A custom integration is already saved under '${key}'`
       : `${name} already uses the key '${key}'`;
-  return getPreset(type) ? `${taken}; choose another instance name` : taken;
+  return `${taken}; ${getPreset(type) ? 'choose another instance name' : 'edit or remove it first'}`;
 }
 
 /** Set an owned field: an empty value removes it, unless it is already empty. */

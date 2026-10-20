@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { iconImageSrc } from '../../../utils/icon.jsx';
 import { AUTH_LABELS, AUTH_FIELDS } from './constants.js';
 import { FieldRow as FieldGroup } from '../Field';
@@ -15,6 +15,7 @@ import { FieldRow as FieldGroup } from '../Field';
  *   allContainers   — flat array of containers for the target dropdown
  *   testStatus      — null | 'testing' | { ok, status?, error?, instructions? }
  *   saveStatus      — null | 'saving' | 'saved' | { error, field? } (field: 'instance' shows it beside that field)
+ *   setSaveStatus   — (status) => void; editing Instance Name clears an error shown beside it
  *   handleTest      — () => Promise<void>
  *   handleSave      — () => Promise<void>
  *   handleDelete    — (storageKey) => Promise<boolean> (true only on confirmed success)
@@ -28,6 +29,7 @@ export default function ConfigView({
   allContainers,
   testStatus,
   saveStatus,
+  setSaveStatus,
   handleTest,
   handleSave,
   handleDelete,
@@ -43,6 +45,12 @@ export default function ConfigView({
   // A key taken by another integration is the instance name's to fix (#414),
   // so it shows beside that field when the form has one.
   const instanceError = isPreset && saveStatus?.field === 'instance' ? saveError : null;
+  // Focus the field on each such refusal: Save is at the bottom of a form that
+  // may be scrolled, and focusing the field brings its message into view.
+  const instanceRef = useRef(null);
+  useEffect(() => {
+    if (instanceError) instanceRef.current?.focus();
+  }, [saveStatus, instanceError]);
 
   return (
     <div>
@@ -93,9 +101,14 @@ export default function ConfigView({
         {isPreset && (
           <FieldGroup label="Instance Name" hint="Optional. Use when running multiple instances (e.g. primary, secondary). Leave blank for single instances." error={instanceError}>
             <input
+              ref={instanceRef}
               className="settings-input mono"
               value={form.instance}
-              onChange={e => form.setInstance(e.target.value)}
+              onChange={e => {
+                form.setInstance(e.target.value);
+                // The message was about the name it no longer holds.
+                if (instanceError) setSaveStatus?.(null);
+              }}
               placeholder="e.g. primary"
             />
           </FieldGroup>
@@ -281,7 +294,7 @@ export default function ConfigView({
 
         {/* Save error */}
         {saveError && !instanceError && (
-          <div style={{
+          <div role="alert" style={{
             padding: '10px 14px', borderRadius: 10,
             background: 'var(--red-bg)', border: '1px solid var(--red-border)',
             fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--red)',

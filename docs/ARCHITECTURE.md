@@ -1026,9 +1026,12 @@ All state is files under the data dir (no DB):
     `{ error, field: "instance" }` that names that integration as the
     Settings list does, before any secret is stored, so `services.yaml` and
     `secrets.json` are unchanged. The form shows it beside its Instance Name
-    field. A save with neither `editingKey` nor `create` still merges into the
-    entry under the key it derives, because the toggle of web apps before
-    #402 posts exactly that.
+    field and focuses that field, and clears it once the field is edited; the
+    custom builder, which has no such field and always derives `_custom`,
+    shows it as a save error. A save with neither `editingKey` nor `create`
+    still merges into the entry under the key it derives, because the toggle
+    of web apps before #402 posts exactly that (only a tab left open from
+    before #402 sends one, until it reloads).
   - **The enable toggle** (`PATCH /api/integrations/:key`, body
     `{ "enabled": true|false }` and nothing else) sets `enabled` alone, writes
     nothing when the entry is already in that state, and asks for a retry when
