@@ -931,7 +931,8 @@ stack sits beside today's CSS and must not restyle it.
   slots and a sequential ramp, are roles there too: the same script checks
   them at 3:1 where charts are drawn, the ramp's steps, and the slots' separation
   under protanopia, deuteranopia and normal vision and from the status colours
-  and the violet accent (`chart-palette.test.mjs`).
+  and the violet accent, their chroma and their lightness band
+  (`chart-palette.test.mjs`).
   They are custom properties on `.jh-ui`, prefixed `--jh-`, never on `:root`:
   today's CSS owns `--bg`, `--accent`, `--border`, `--card`, `--muted`,
   `--text-*`, `--font-mono`, `--font-body` and `--font-display` there and in the

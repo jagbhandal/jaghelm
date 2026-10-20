@@ -12,7 +12,9 @@
  * apart from those names, so an old widget inside a new screen keeps its own.
  *
  *  1. Palette: OKLCH ramps, each step named by hue and lightness (graphite-198
- *     is L 0.198). Roles read the palette; components never do.
+ *     is L 0.198). Roles read the palette; components never do. A few roles
+ *     hold their own values instead: the tints, the Fuchsia and Cyan accents,
+ *     and the chart colours, each value having one use.
  *  2. Roles: what components use, through Tailwind (bg-surface-1, text-text-2,
  *     bg-accent, text-crit-fg). tailwind.css maps each one to a utility.
  *  3. Component tokens, only where no role fits (meter, track, lamp-cut).

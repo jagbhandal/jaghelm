@@ -1,10 +1,11 @@
 // Guards JagHelm's chart colours (src/ui/tokens.css, #386): the six categorical
 // slots and the sequential ramp Jag signed off on 2026-10-20, their utilities,
-// their 3:1 contrast where charts are drawn, the ramp's shape, and the gates the
-// palette was chosen by, computed from the tokens as written: neighbouring
+// their 3:1 contrast where charts are drawn, the ramp's shape, and the gates
+// that hold the palette, computed from the tokens as written: neighbouring
 // slots apart under protanopia, deuteranopia and normal vision, slots 1 to 3
-// apart in every pair, every slot clear of the status colours and of the
-// violet accent, and enough chroma. Each gate is shown to bite.
+// apart in every pair under all three, every slot clear of the status colours
+// and of the violet accent, enough chroma, and each slot inside its theme's
+// lightness band. Each gate is shown to bite.
 // docs/design-system.md, "Chart colours", states the rules these keep.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,6 +19,7 @@ import {
   ACCENTS,
   ACCENT_MARKS,
   CHART_FLOORS,
+  CHART_LIGHTNESS,
   MACHADO,
   PAIRINGS,
   RAMP,
@@ -26,6 +28,7 @@ import {
   RAMP_ORDINAL_STEP,
   RULES,
   SERIES,
+  STATUSES,
   STATUS_MARKS,
   THEMES,
   TOKENS_FILE,
@@ -81,10 +84,11 @@ const worst = (results, gate, theme) =>
   results
     .filter((r) => r.gate === gate && r.theme === theme)
     .reduce((a, b) => (b.value < a.value ? b : a));
-const show = (r) =>
-  r.gate === 'chroma'
-    ? `${r.a} ${r.value}`
-    : `${r.a}–${r.b}${r.vision === 'normal' ? '' : ` ${r.vision}`} ${formatDE(r.value)}`;
+const show = (r) => {
+  if (r.gate === 'chroma') return `${r.a} ${r.value}`;
+  if (r.gate === 'lightness') return `${r.a} L ${r.l}`;
+  return `${r.a}–${r.b}${r.vision === 'normal' ? '' : ` ${r.vision}`} ${formatDE(r.value)}`;
+};
 
 test('the six slots and the ramp are the values Jag signed off, in order', () => {
   assert.deepEqual(
@@ -155,20 +159,52 @@ test('tailwind.css offers each as fill, stroke, background and text utilities', 
 test('every slot is at least 3:1 where a chart is drawn, in both themes and every accent', () => {
   assert.equal(RULES.series, 3, "WCAG 1.4.11's 3:1 for a graphical object");
   const series = PAIRINGS.filter((p) => p.rule === 'series');
-  // The page, a panel, a hovered tile or a chart's tooltip, and a hovered row.
+  // Every slot, and only there: the page, a panel, a hovered tile or a chart's
+  // tooltip, and a hovered row. Slot 1 alone, a single series such as a
+  // sparkline, also in a status-tinted tile and a selected row.
   const where = (p) => (p.over ? `${p.bg} over ${p.over}` : p.bg);
+  const everywhere = ['bg', 'surface-1', 'surface-2', 'row-hover over surface-1'];
+  const slotOne = [
+    ...STATUSES.map((s) => `${s}-tint over surface-1`),
+    'accent-tint over bg',
+    'accent-tint over surface-1',
+  ];
   for (const s of SERIES) {
     assert.deepEqual(
       series.filter((p) => p.fg === s).map(where),
-      ['bg', 'surface-1', 'surface-2', 'row-hover over surface-1'],
+      s === SERIES[0] ? [...everywhere, ...slotOne] : everywhere,
       `${s}'s pairings`
     );
   }
   const { results, failures } = checkContrast(TOKENS, series);
-  assert.equal(results.length, SERIES.length * 4 * THEMES.length * ACCENTS.length);
+  assert.equal(
+    results.length,
+    (SERIES.length * everywhere.length + slotOne.length) * THEMES.length * ACCENTS.length
+  );
   assert.deepEqual(failures.map(describe), [], 'these slots are below 3:1');
-  // The dimmest, as docs/design-system.md quotes them: dark plum and light teal,
-  // on surface-2.
+  // Slot 1 on tints and selected rows: 3.47:1 at worst, a selected row on the
+  // light page.
+  const one = results
+    .filter((r) => r.bg.endsWith('-tint'))
+    .reduce((a, b) => (b.ratio < a.ratio ? b : a));
+  assert.deepEqual([one.bg, one.over, one.theme], ['accent-tint', 'bg', 'light']);
+  near(one.ratio, 3.47, 0.005, 'azure in a selected row on the light page');
+  // The other slots don't sit there: dark plum and light teal fall below 3:1.
+  const tinted = checkContrast(
+    TOKENS,
+    SERIES.slice(1).flatMap((fg) =>
+      [
+        ...STATUSES.map((s) => ({ bg: `${s}-tint`, over: 'surface-1' })),
+        { bg: 'accent-tint', over: 'bg' },
+      ].map((p) => ({ rule: 'series', fg, ...p }))
+    )
+  );
+  assert.deepEqual([...new Set(tinted.failures.map((f) => `${f.fg} ${f.theme}`))].sort(), [
+    'series-4 dark',
+    'series-6 light',
+  ]);
+  // The dimmest of all, as docs/design-system.md quotes them: dark plum and
+  // light teal, on surface-2.
   const low = (theme) =>
     results.filter((r) => r.theme === theme).reduce((a, b) => (b.ratio < a.ratio ? b : a));
   assert.deepEqual([low('dark').fg, low('dark').bg], ['series-4', 'surface-2']);
@@ -258,33 +294,38 @@ test('the CVD matrices are Machado, Oliveira and Fernandes (2009) at severity 1.
   assert.deepEqual(simulateCvd([0, 1, 0], 'protan'), [1, 0.786281, 0], 'clamped at 1');
 });
 
-test('the palette passes every gate it was chosen by, in both themes', () => {
+test('the palette passes every gate that holds it, in both themes', () => {
   assert.deepEqual(CHART_FLOORS, {
     adjacent: 15,
     'adjacent-cvd': 8,
+    'first-three': 15,
     'first-three-cvd': 8,
     status: 8.5,
     violet: 12,
     chroma: 0.1,
   });
+  assert.deepEqual(CHART_LIGHTNESS, { dark: [0.48, 0.67], light: [0.43, 0.77] });
   const { results, failures } = checkChartPalette(TOKENS);
   assert.deepEqual(failures.map(show), [], 'these gates fail (docs/design-system.md):');
-  // What each gate covers, per theme: neighbours (5 pairs) in normal vision and
-  // both CVDs, slots 1–3 (3 pairs) in both CVDs, each slot against every status
-  // lamp and word and every violet mark, and each slot's chroma.
+  // What each gate covers, per theme: neighbours (5 pairs) and slots 1–3 (3
+  // pairs) in normal vision and both CVDs, each slot against every status lamp
+  // and word and every violet mark, and each slot's chroma and lightness.
   const count = (gate) => results.filter((r) => r.gate === gate).length / THEMES.length;
   assert.equal(count('adjacent'), 5);
   assert.equal(count('adjacent-cvd'), 10);
+  assert.equal(count('first-three'), 3);
   assert.equal(count('first-three-cvd'), 6);
   assert.equal(count('status'), SERIES.length * STATUS_MARKS.length);
   assert.equal(count('violet'), SERIES.length * ACCENT_MARKS.length);
   assert.equal(count('chroma'), SERIES.length);
+  assert.equal(count('lightness'), SERIES.length);
   // The sign-off's figures (ΔE OK ×100, rounded down): neighbours under CVD
   // 8.8, in normal vision 21.1, slots 1–3 in every pair 8.8, and the nearest
-  // status pair, light teal to light ok, 8.8.
+  // status pair, light teal to light ok, 8.8. Lightness: the slot nearest its
+  // theme's band edge.
   const pinned = Object.fromEntries(
     THEMES.flatMap((theme) =>
-      ['adjacent-cvd', 'adjacent', 'first-three-cvd', 'status', 'violet', 'chroma'].map((g) => [
+      [...Object.keys(CHART_FLOORS), 'lightness'].map((g) => [
         `${g} ${theme}`,
         show(worst(results, g, theme)),
       ])
@@ -293,16 +334,20 @@ test('the palette passes every gate it was chosen by, in both themes', () => {
   assert.deepEqual(pinned, {
     'adjacent-cvd dark': 'series-1–series-2 protan 8.8',
     'adjacent dark': 'series-4–series-5 23.8',
+    'first-three dark': 'series-1–series-2 24.5',
     'first-three-cvd dark': 'series-1–series-2 protan 8.8',
     'status dark': 'series-2–crit-solid 10.7',
     'violet dark': 'series-4–focus-ring 14.6',
     'chroma dark': 'series-6 0.112',
+    'lightness dark': 'series-3 L 0.66',
     'adjacent-cvd light': 'series-2–series-3 deutan 12.4',
     'adjacent light': 'series-4–series-5 21.1',
+    'first-three light': 'series-1–series-3 23.1',
     'first-three-cvd light': 'series-2–series-3 deutan 12.4',
     'status light': 'series-6–ok-solid 8.8',
     'violet light': 'series-4–meter 13.1',
     'chroma light': 'series-6 0.105',
+    'lightness light': 'series-2 L 0.5',
   });
 });
 
@@ -349,11 +394,23 @@ test('each gate bites: one slot moved fails it, and names the pair', async (t) =
     assert.ok(f.includes('adjacent light series-4–series-5 8.0'), f);
   });
 
-  await t.test('slots 1 and 3 too close under CVD fail the scatter gate', () => {
+  await t.test('slots 1 and 3 too close fail the scatter gates, normal and CVD', () => {
     const f = failing('.jh-ui { --jh-series-3: oklch(0.62 0.13 230); }');
+    assert.ok(f.includes('first-three dark series-1–series-3 3.1'), f);
     assert.ok(
       f.some((x) => /^first-three-cvd dark series-1–series-3/.test(x)),
       f
+    );
+  });
+
+  await t.test('a slot brightened past its band fails the lightness gate, and only it', () => {
+    // Dark lime at L 0.72 passes every other gate, and 3:1 everywhere.
+    const css = '.jh-ui { --jh-series-3: oklch(0.72 0.15 125); }';
+    assert.deepEqual(failing(css), ['lightness dark series-3 L 0.72']);
+    assert.deepEqual(checkContrast(`${TOKENS}\n${css}\n`).failures, []);
+    assert.deepEqual(
+      failing(".jh-ui[data-theme='light'] { --jh-series-2: oklch(0.42 0.15 355); }"),
+      ['lightness light series-2 L 0.42']
     );
   });
 
@@ -438,15 +495,29 @@ test("design-system.md's chart colour tables match the tokens", () => {
   const gates = table('| Gate | Check | Floor | Worst |');
   assert.deepEqual(
     gates.map(([g]) => g.replaceAll('`', '')).sort(),
-    Object.keys(CHART_FLOORS).sort()
+    [...Object.keys(CHART_FLOORS), 'lightness'].sort()
   );
   for (const [g, , floor, worstCell] of gates) {
     const gate = g.replaceAll('`', '');
-    assert.equal(Number(floor), CHART_FLOORS[gate], `${gate}'s floor`);
+    if (gate === 'lightness') {
+      const band = ([lo, hi]) => `${lo}–${hi}`;
+      assert.equal(
+        floor,
+        `${band(CHART_LIGHTNESS.dark)} dark, ${band(CHART_LIGHTNESS.light)} light`,
+        "lightness's band"
+      );
+    } else {
+      assert.equal(Number(floor), CHART_FLOORS[gate], `${gate}'s floor`);
+    }
     const low = results
       .filter((r) => r.gate === gate)
       .reduce((a, b) => (b.value < a.value ? b : a));
-    const figure = gate === 'chroma' ? String(low.value) : formatDE(low.value);
+    const figure =
+      gate === 'chroma'
+        ? String(low.value)
+        : gate === 'lightness'
+          ? `L ${low.l}`
+          : formatDE(low.value);
     assert.ok(worstCell.startsWith(`${figure}, `), `${gate}'s worst is ${figure}: ${worstCell}`);
     assert.ok(worstCell.includes(`(${low.theme}`), `${gate}'s worst is in ${low.theme}`);
   }

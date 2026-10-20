@@ -12,9 +12,10 @@
 //
 // The chart colours (#386) are checked here too: each of the six slots 3:1
 // where a chart is drawn (a PAIRINGS rule, `series`), the sequential ramp's
-// shape (checkRamp), and the gates the palette was chosen by (checkChartPalette:
+// shape (checkRamp), and the gates that hold the palette (checkChartPalette:
 // neighbours apart under protanopia, deuteranopia and normal vision, slots 1
-// to 3 apart in every pair, clear of the status colours and the violet accent).
+// to 3 apart in every pair under all three, clear of the status colours and
+// the violet accent, enough chroma, and inside each theme's lightness band).
 //
 //   node scripts/ui-contrast.mjs [tokens.css]
 //     prints the lowest ratio per rule on sRGB and on Display P3 screens, each
@@ -136,9 +137,9 @@ export const PAIRINGS = [
     ...on('bg', 'sidebar', 'surface-1', 'surface-2'),
     ...over('row-hover', 'bg', 'surface-1'),
   ].map((p) => ({ rule: 'control-edge', fg: 'control-edge', ...p })),
-  // A chart's slots (#386): on the page, a panel, a hovered tile or a chart's
-  // tooltip (surface-2), and a hovered row (a sparkline in a list). Never on
-  // surface-3, where dark plum and light teal fall below 3:1.
+  // A chart's slots (#386), only here: on the page, a panel, a hovered tile or
+  // a chart's tooltip (surface-2), and a hovered row (a sparkline in a list).
+  // Never on surface-3, where dark plum and light teal fall below 3:1.
   ...SERIES.flatMap((fg) =>
     [...on('bg', 'surface-1', 'surface-2'), ...over('row-hover', 'surface-1')].map((p) => ({
       rule: 'series',
@@ -146,6 +147,13 @@ export const PAIRINGS = [
       ...p,
     }))
   ),
+  // Slot 1 alone, a single series such as a sparkline, may also sit in a
+  // status-tinted tile and in a selected row. The other slots never do: dark
+  // plum and light teal fall below 3:1 there.
+  ...[
+    ...STATUSES.flatMap((s) => over(`${s}-tint`, 'surface-1')),
+    ...over('accent-tint', 'bg', 'surface-1'),
+  ].map((p) => ({ rule: 'series', fg: SERIES[0], ...p })),
 ];
 
 /**
@@ -594,27 +602,36 @@ export const RAMP_ORDINAL_STEP = 3;
 export const RAMP_ORDINAL_MIN = 2;
 
 /**
- * The gates the six slots were chosen by (#386, signed off 2026-10-20), as ΔE OK
- * ×100 between the colours a screen paints, and chroma as written:
+ * The gates that hold the six slots (#386, signed off 2026-10-20), as ΔE OK
+ * ×100 between the colours a screen paints, and chroma and lightness as
+ * written. The separation and chroma floors are the checks the sign-off ran;
+ * status and violet are set under the margins it measured (8.8 from the
+ * nearest status colour, 16 from the violet fill).
  *
  *  - adjacent: neighbouring slots in normal vision, as either screen paints them.
  *  - adjacent-cvd: neighbouring slots under protanopia and under deuteranopia.
- *    A line or stacked chart keeps its order, so only neighbours touch.
- *  - first-three-cvd: slots 1 to 3 in every pair under both, so a scatter, a
- *    map or a small multiple, where any two can meet, shows three series.
+ *    A stacked chart keeps its order, so neighbours touch.
+ *  - first-three, first-three-cvd: slots 1 to 3 in every pair, in normal vision
+ *    and under both, so a scatter, a map or a small multiple, where any two can
+ *    meet, shows three series.
  *  - status: every slot against every status lamp or bar (`solid`) and word
  *    (`fg`), so a series never reads as a state.
  *  - violet: every slot against each mark of the default accent (ACCENT_MARKS).
  *  - chroma: every slot's OKLCH chroma, so none reads as a grey.
+ *  - lightness (CHART_LIGHTNESS): every slot's OKLCH L inside its theme's band,
+ *    so none glares or sinks into the panel beside the others.
  */
 export const CHART_FLOORS = {
   adjacent: 15,
   'adjacent-cvd': 8,
+  'first-three': 15,
   'first-three-cvd': 8,
   status: 8.5,
   violet: 12,
   chroma: 0.1,
 };
+/** The lightness band per theme, [lowest, highest] OKLCH L as written. */
+export const CHART_LIGHTNESS = { dark: [0.48, 0.67], light: [0.43, 0.77] };
 const FIRST_THREE = 3;
 
 /**
@@ -714,10 +731,12 @@ export function checkRamp(css = readFileSync(TOKENS_FILE, 'utf8')) {
 }
 
 /**
- * Every chart gate (CHART_FLOORS) in both themes: { results, failures }. A
- * result is { gate, theme, a, b, vision, value, min, pass }: `value` is ΔE OK
- * ×100 (chroma for the chroma gate, which has no `b`). The slots don't change
- * with the accent, so each theme is read once, with the violet accent.
+ * Every chart gate (CHART_FLOORS and the lightness band) in both themes:
+ * { results, failures }. A result is { gate, theme, a, b, vision, value, min,
+ * pass }: `value` is ΔE OK ×100; for the chroma gate, which has no `b`, the
+ * chroma; for the lightness gate, how far inside its band the slot's L sits
+ * (negative outside it), with the L itself as `l` and the band as `band`. The
+ * slots don't change with the accent, so each theme is read once, with violet.
  */
 export function checkChartPalette(css = readFileSync(TOKENS_FILE, 'utf8')) {
   const { rules } = readTokens(css);
@@ -744,6 +763,7 @@ export function checkChartPalette(css = readFileSync(TOKENS_FILE, 'utf8')) {
     });
     SERIES.slice(0, FIRST_THREE).forEach((a, i) => {
       for (const b of SERIES.slice(i + 1, FIRST_THREE)) {
+        out.push(row('first-three', a, b, 'normal'));
         for (const v of CVDS) out.push(row('first-three-cvd', a, b, v));
       }
     });
@@ -759,6 +779,10 @@ export function checkChartPalette(css = readFileSync(TOKENS_FILE, 'utf8')) {
         min: CHART_FLOORS.chroma,
         pass: value >= CHART_FLOORS.chroma,
       });
+      const l = color(a)[0];
+      const band = CHART_LIGHTNESS[theme];
+      const inside = Math.min(l - band[0], band[1] - l);
+      out.push({ gate: 'lightness', theme, a, l, band, value: inside, min: 0, pass: inside >= 0 });
     }
     return out;
   });
@@ -880,24 +904,31 @@ export function report({ results, failures }, { ruledOut = [], hover, status, ra
   }
   if (chart) {
     const pair = (r) => (r.b ? `${r.a}–${r.b}` : r.a);
-    const shown = (r) => (r.gate === 'chroma' ? String(r.value) : formatDE(r.value));
+    const shown = (r) =>
+      r.gate === 'chroma'
+        ? String(r.value)
+        : r.gate === 'lightness'
+          ? `L ${r.l}`
+          : formatDE(r.value);
+    const needs = (r) =>
+      r.gate === 'lightness' ? `${r.band[0]}–${r.band[1]}` : String(CHART_FLOORS[r.gate]);
     const vision = (r) => (r.vision && r.vision !== 'normal' ? `${r.vision}, ` : '');
     lines.push(
       '',
       `Chart colours (ΔE OK ×100, rounded down), the closest call per gate: ` +
         `${chart.failures.length} failing.`
     );
-    for (const gate of Object.keys(CHART_FLOORS)) {
+    for (const gate of [...Object.keys(CHART_FLOORS), 'lightness']) {
       const low = chart.results
         .filter((r) => r.gate === gate)
         .reduce((a, b) => (b.value < a.value ? b : a));
       lines.push(
-        `- ${gate}: ${shown(low)}, ${pair(low)} (${vision(low)}${low.theme}), needs ${CHART_FLOORS[gate]}`
+        `- ${gate}: ${shown(low)}, ${pair(low)} (${vision(low)}${low.theme}), needs ${needs(low)}`
       );
     }
     for (const f of chart.failures) {
       lines.push(
-        `- FAIL ${f.gate}: ${pair(f)} (${vision(f)}${f.theme}): ${shown(f)}, needs ${f.min}`
+        `- FAIL ${f.gate}: ${pair(f)} (${vision(f)}${f.theme}): ${shown(f)}, needs ${needs(f)}`
       );
     }
     if (chart.nearest) {

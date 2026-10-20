@@ -155,6 +155,7 @@ translucent token painted over that surface.
 | `focus-ring` | 3:1 | bg, sidebar, surface-1, surface-2, surface-3 (the ring sits 2px outside the control) | none |
 | `control-edge` | 3:1 | bg, sidebar, surface-1, surface-2 | row-hover over bg and surface-1 |
 | `series-1` to `series-6` | 3:1 | bg, surface-1, surface-2 | row-hover over surface-1 |
+| `series-1` alone (a single series) | 3:1 | the same | the same; each status tint over surface-1; accent-tint over bg and surface-1 (a selected row) |
 
 `control-edge` is the edge of a control with no fill of its own, an empty
 checkbox or an off switch. WCAG 1.4.11 asks 3:1 of the boundary that shows
@@ -463,12 +464,22 @@ Utilities: `stroke-series-1` for a line, `fill-series-1` for a bar or an area,
   go back and forth. Labels and legend entries are words in `text-text-1` or
   `text-text-2` beside the series' swatch, never in the series colour: the
   slots are checked at 3:1 for a graphic, not 4.5:1 for text (rule 5).
-- **Where they're drawn.** Each slot is at least 3:1 (WCAG 1.4.11, a graphical
-  object) on the page, a panel, `surface-2` (a hovered tile, a chart's tooltip)
-  and a hovered row, in both themes and every accent. The dimmest are dark plum
-  (3.46:1 on a panel, 3.15:1 on `surface-2`) and light teal (3.48:1 and
-  3.11:1). Never on `surface-3`: dark plum falls to 2.73:1 there and light
-  teal to 2.82:1.
+- **Where they're drawn, and only there.** A chart of several series sits on
+  the page (`bg`), a panel (`surface-1`), `surface-2` (a hovered tile, a
+  chart's tooltip) or a hovered row (`row-hover` over `surface-1`), and
+  nowhere else. Each slot is at least 3:1 (WCAG 1.4.11, a graphical object) on
+  each, in both themes and every accent. The dimmest are dark plum (3.46:1 on a
+  panel, 3.15:1 on `surface-2`) and light teal (3.48:1 and 3.11:1).
+- **A single series also sits on tints.** Slot 1 alone, such as a sparkline
+  inside a row or a tile, may also sit on each status tint over a panel (a
+  warn-tinted tile: `ok-tint` to `info-tint` over `surface-1`) and in a
+  selected row (`accent-tint` over `bg` or `surface-1`). It clears 3:1 on each
+  in both themes and every accent, 3.47:1 at worst (a selected row on the
+  light page). Slots 2 to 6 never sit on a status tint or in a selected row:
+  dark plum falls to 2.86:1 on a warn tint and light teal to 2.86:1 in a
+  selected row.
+- **Never on `surface-3`** (a chip, a track), whatever the series: dark plum
+  falls to 2.73:1 there and light teal to 2.82:1.
 
 **The sequential ramp** is azure, slot 1's hue (240), in seven steps from none
 to most. On the dark panel it lightens step by step, on the light one it
@@ -510,20 +521,26 @@ its light meter 5.6; Fuchsia's dark hover is 7.6 from plum, and its light meter
 5.9. A focus ring goes around a chart, never on a series, and a meter is never
 drawn inside a plot. `node scripts/ui-contrast.mjs` prints these.
 
-**The gates the slots were chosen by**, which `checkChartPalette` in
-`scripts/ui-contrast.mjs` holds in `npm test` (`scripts/chart-palette.test.mjs`),
-in both themes. ΔE is OKLab distance ×100 between the colours a screen paints,
-rounded down; protanopia and deuteranopia are simulated with Machado, Oliveira
-and Fernandes (2009) at severity 1.0 on sRGB:
+**The gates that hold the slots**, which `checkChartPalette` in
+`scripts/ui-contrast.mjs` enforces in `npm test` (`scripts/chart-palette.test.mjs`),
+in both themes. The separation, chroma and lightness gates are the checks the
+sign-off ran. The status and violet floors are set here, under the margins
+the sign-off measured (8.8 from the nearest status colour, 16 from the violet
+fill); the violet gate measures every violet mark, not only the fill. ΔE is
+OKLab distance ×100 between the colours a screen paints, rounded down.
+Protanopia and deuteranopia are simulated with Machado, Oliveira and Fernandes
+(2009) at severity 1.0, on linear sRGB, clamped:
 
 | Gate | Check | Floor | Worst |
 | --- | --- | --- | --- |
 | `adjacent-cvd` | neighbouring slots, protanopia and deuteranopia | 8 | 8.8, azure to rose (dark, protan) |
 | `adjacent` | neighbouring slots, normal vision | 15 | 21.1, plum to orange (light) |
 | `first-three-cvd` | slots 1 to 3, every pair, both CVDs | 8 | 8.8, azure to rose (dark, protan) |
+| `first-three` | slots 1 to 3, every pair, normal vision | 15 | 23.1, azure to lime (light) |
 | `status` | every slot to every status lamp, bar and word | 8.5 | 8.8, teal to the ok lamp (light) |
 | `violet` | every slot to every violet mark | 12 | 13.1, plum to the meter (light) |
 | `chroma` | every slot's OKLCH chroma, as written | 0.1 | 0.105, teal (light) |
+| `lightness` | every slot's OKLCH L, as written, inside its theme's band | 0.48–0.67 dark, 0.43–0.77 light | L 0.66, lime, orange and teal (dark, 0.01 under the top) |
 
 Trade-offs taken at sign-off:
 
@@ -1101,7 +1118,7 @@ mock first.
   rule 5 above. A new switch needs teaching to that script's reader, which
   refuses selectors it doesn't know.
 - A chart colour change is checked like any colour: 3:1 where charts are
-  drawn, the ramp's steps, and the gates the slots were chosen by
+  drawn, the ramp's steps, and the gates that hold the slots
   ([Chart colours](#chart-colours)). `scripts/chart-palette.test.mjs` pins the
   signed-off values and the tables there, so a change fails until the test
   and the tables agree with it.

@@ -136,7 +136,9 @@
   /* Chart colours (#386): the six slots, fill-series-1 to stroke-series-6
      (bg- for a legend's swatch, text- for an SVG drawn in currentColor, never
      for words), and the ramp, fill-seq-1 to bg-seq-7. Never a status, never
-     the accent (docs/design-system.md, "Chart colours"). */
+     the accent. Drawn only on bg, surface-1, surface-2 and a hovered row, and
+     never on surface-3; slot 1 alone may also sit on a status tint or in a
+     selected row (docs/design-system.md, "Chart colours"). */
   --color-series-1: var(--jh-series-1);
   --color-series-2: var(--jh-series-2);
   --color-series-3: var(--jh-series-3);
