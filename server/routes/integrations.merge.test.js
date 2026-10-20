@@ -324,8 +324,8 @@ test('a credential is never sent back or logged', async () => {
   try {
     handEdit(HAND_WRITTEN);
     bodies = [
-      (await save({ ...ADGUARD_PRIMARY.saveUnchanged, password: 'leak-check-pw' })).text,
-      (await save({ ...STATUSPAGE.saveUnchanged, token: 'leak-check-token' })).text,
+      (await save({ ...ADGUARD_PRIMARY.saveUnchanged, password: 'leak-check-pw' })).text, // pragma: allowlist secret
+      (await save({ ...STATUSPAGE.saveUnchanged, token: 'leak-check-token' })).text, // pragma: allowlist secret
       (await send(ADGUARD_PRIMARY.disable)).text,
     ];
   } finally {
