@@ -126,7 +126,8 @@ src/                        React 19 SPA (Vite 8)
                              preflight.css (generated),
                              the controls (#285: button, icon-button, input, select, switch,
                              checkbox, field, segmented-control, tabs; design-system.md),
-                             lib/utils.js (cn, taught the theme), lib/portal.js (portal roots)
+                             lib/utils.js (cn, taught the theme), lib/portal.js (portal roots),
+                             lib/field-context.js (how a Field labels its control)
 
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
@@ -661,11 +662,12 @@ stack sits beside today's CSS and must not restyle it.
   `src/ui/` (`tsconfig.json` `paths`, so `npx shadcn add <name>` writes
   `src/ui/<name>.jsx`). Components import `cn` from `src/ui/lib/utils.js`: the
   `cn` package, as the shadcn registry generates it, taught the theme's type
-  steps, named spacing and shadows, which it would otherwise misread (a
-  generated component's `import { cn } from 'cn'` is switched to it). Icons come
-  from `lucide-react` by name (`import { Check } from 'lucide-react'`), so a
-  bundle carries only the icons it uses. The controls (#285) are the only
-  components so far, built on Base UI primitives, and no screen uses them yet.
+  steps, named spacing, shadows, layers and motion, which it would otherwise
+  misread. A generated component's `import { cn } from 'cn'` is switched to it,
+  and a test fails on any other `cn` in `src/ui/`. Icons come from
+  `lucide-react` by name (`import { Check } from 'lucide-react'`), so a bundle
+  carries only the icons it uses. The controls (#285) are the only components
+  so far, built on Base UI primitives, and no screen uses them yet.
 - **Both apps import `@ui/...`.** The Android build maps `@ui` to `../src/ui` and
   lists React and every package `src/ui/` imports in `resolve.dedupe`, so shared
   code uses the Android app's own copies: the APK build installs `mobile/` only,
@@ -736,12 +738,13 @@ stack sits beside today's CSS and must not restyle it.
   `tailwind.css`. The one exception is the two variables Base UI sets inline on
   a popup's positioner (`--anchor-width`, `--available-height`), which the
   test allows by name and checks that today's CSS never defines. Never add a
-  `:root`, `html` or `body` rule or a `@theme` block without `reference`. `scripts/ui-stack.test.mjs` compiles the
-  stack and fails on an unlayered rule, a root selector, a base rule outside
-  `@scope (.jh-ui)`, a `var()` read that `.jh-ui` doesn't declare, the two
-  radius scales drifting apart, a class in `src/ui/` that compiles to nothing
-  (with Tailwind's sizes cleared, `text-sm` would silently do so) or that
-  removes the focus ring, or `cn`'s lists drifting from the theme.
+  `:root`, `html` or `body` rule or a `@theme` block without `reference`.
+  `scripts/ui-stack.test.mjs` compiles the stack and fails on an unlayered
+  rule, a root selector, a base rule outside `@scope (.jh-ui)`, a `var()` read
+  that `.jh-ui` doesn't declare, the two radius scales drifting apart, a class
+  in `src/ui/` that compiles to nothing (with Tailwind's sizes cleared,
+  `text-sm` would silently do so) or that removes the focus ring, `cn`'s lists
+  drifting from the theme, or a file in `src/ui/` importing another `cn`.
 - **Fonts are self-hosted** (#244, #284): no font or stylesheet comes from
   another origin, and the server CSP allows fonts and styles from `'self'` only
   (`server/index.test.js`). Every woff2 lives in `src/fonts/` with its OFL

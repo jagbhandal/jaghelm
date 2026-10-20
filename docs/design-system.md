@@ -112,14 +112,21 @@ translucent token painted over that surface.
 
 | Foreground | Floor | Opaque backgrounds | Translucent backgrounds |
 | --- | --- | --- | --- |
-| `text-1` | 7:1 | bg, sidebar, surface-1, surface-2, surface-3 | accent-tint over bg, sidebar and surface-1; row-hover over bg and surface-1; each status tint over bg and surface-1 |
+| `text-1` | 7:1 | bg, sidebar, surface-1, surface-2, surface-3 | accent-tint over bg, sidebar and surface-1; row-hover over bg, surface-1 and surface-2 (a Select's highlighted option); each status tint over bg and surface-1 |
 | `text-2` | 4.5:1 | bg, sidebar, surface-1, surface-2, surface-3 | the same as `text-1` |
 | `text-3` | 4.5:1 | bg, sidebar, surface-1, surface-2 | accent-tint over bg and surface-1; row-hover over bg and surface-1; each status tint over bg and surface-1 |
-| `accent-text` | 4.5:1 | bg, sidebar, surface-1, surface-2, surface-3 (a Select's chosen tick under the highlight) | accent-tint over bg, sidebar and surface-1; row-hover over bg and surface-1 |
+| `accent-text` | 4.5:1 | bg, sidebar, surface-1, surface-2 | accent-tint over bg, sidebar and surface-1; row-hover over bg, surface-1 and surface-2 (a Select's chosen tick under the highlight) |
 | `on-accent` | 4.5:1 | accent, accent-hover | none |
 | status `fg` | 4.5:1 | bg, sidebar, surface-1, surface-2 | its own tint, row-hover and accent-tint, each over bg and surface-1 |
 | status `on-solid` | 4.5:1 | its own solid | none |
 | `focus-ring` | 3:1 | bg, sidebar, surface-1, surface-2, surface-3 (the ring sits 2px outside the control) | none |
+| `control-edge` | 3:1 | bg, sidebar, surface-1, surface-2 | row-hover over bg and surface-1 |
+
+`control-edge` is the edge of a control with no fill of its own, an empty
+checkbox or an off switch. WCAG 1.4.11 asks 3:1 of the boundary that shows
+where a control is; `border-strong` (1.4:1 to 1.5:1) and `surface-3` on the page
+(1.2:1 in light) are too faint for it. Its worst case is 3.84:1 (light, on
+surface-2).
 
 Ruled out by name, because they fall below 4.5:1 somewhere and the mock never
 draws them (`FORBIDDEN` in the script):
@@ -171,9 +178,10 @@ listed first.
 | `sidebar` | `bg-sidebar` | graphite-172 | graphite-972 | the nav rail |
 | `surface-1` | `bg-surface-1` | graphite-198 | white | panels, tiles, dialogs |
 | `surface-2` | `bg-surface-2` | graphite-238 | graphite-962 | hover, popovers, toasts |
-| `surface-3` | `bg-surface-3` | graphite-285 | graphite-930 | segmented-control track, chips, skeletons |
+| `surface-3` | `bg-surface-3` | graphite-285 | graphite-930 | segmented-control track, a switch's off track, chips, skeletons |
 | `border-subtle` | `border-border-subtle` (`border-border`) | white 8 % | graphite L 0.25, 10 % | panel and row edges |
 | `border-strong` | `border-border-strong` | white 15 % | graphite L 0.25, 18 % | inputs, hover edges |
+| `control-edge` | `border-control-edge` | graphite-580 | graphite-580 | an empty checkbox's and an off switch's edge (3:1, WCAG 1.4.11) |
 | `text-1` | `text-text-1` | graphite-975 | graphite-205 | headings, values, body |
 | `text-2` | `text-text-2` | graphite-775 | graphite-430 | secondary text |
 | `text-3` | `text-text-3` | graphite-665 | graphite-520 | captions, overlines (sparing) |
@@ -230,7 +238,8 @@ light theme.
 
 `track` (a meter's empty track), `tick` (its quarter marks), `beat-ok` (a
 healthy heartbeat bar; failures use `crit-solid`), `lamp-cut` (the slash and bar
-cut into warn and crit lamps, the panel colour), `scrim`, and the shadows below.
+cut into warn and crit lamps, the panel colour), `scrim`, `switch-thumb` (a
+switch's thumb, white in both themes, as the mock's), and the shadows below.
 
 ### Type
 
@@ -318,10 +327,11 @@ one-offs:
 - **Spacing:** Tailwind's 4px steps; prefer 4, 8, 12, 16, 24, 32, 48 (`1`, `2`,
   `3`, `4`, `6`, `8`, `12`).
 - **Density:** `h-row` is 40px (comfortable) or 32px (compact); `p-panel` is 20
-  or 16. The controls follow the same switch ([Components](#density-and-sizes)):
-  `h-control` 34 or 30 (md buttons, inputs, selects, tabs), `h-control-sm` 30 or
-  26 (sm buttons, a select's options), `h-segment` 28 or 24 (a segment), and
-  `size-control` and `size-control-sm` for square icon buttons.
+  or 16. Compact is spacing: the controls keep the mock's heights in both
+  densities ([Components](#density-and-sizes)): `h-control` 34 (md buttons,
+  inputs, selects, tabs), `h-control-sm` 30 (sm buttons, a select's options),
+  `h-segment` 30 (a segment, whose track makes it 34), and `size-control` and
+  `size-control-sm` for square icon buttons.
 - **Page gutter:** `px-gutter`, 16px on phones, 24 from 768px, 32 from 1536px.
 - **Elevation:** `shadow-control` (the slight lift on buttons and the selected
   segment), `shadow-pop` (popovers, palette, dialogs, drawers), `shadow-thumb`
@@ -358,14 +368,14 @@ shapes. No screen uses them yet; the gallery (#289) will show every state.
 
 | Component | Import | Base UI part | Props | Keys |
 | --- | --- | --- | --- | --- |
-| `Button` | `@ui/button` | Button | `variant`: `primary`, `secondary` (default), `ghost`, `danger`; `size`: `sm`, `md` (default) | Tab; Enter or Space |
-| `IconButton` | `@ui/icon-button` | Button | `label` (required); the Button's variants (`ghost` by default) and sizes | Tab; Enter or Space |
+| `Button` | `@ui/button` | Button | `variant`: `primary`, `secondary` (default), `ghost`, `danger`; `size`: `sm`, `md` (default); `tone`: `neutral` (default), `accent` (ghost only) | Tab; Enter or Space |
+| `IconButton` | `@ui/icon-button` | Button | `label` (required); the Button's variants (`ghost` by default), sizes and tones | Tab; Enter or Space |
 | `Input` | `@ui/input` | Input | the input's own | Tab |
-| `Select` | `@ui/select` | Select | `items` (`[{ value, label, disabled? }]`), `placeholder`, `value` or `defaultValue`, `onValueChange` | Enter, Space or an arrow opens; the arrows and typing move; Enter picks; Escape closes |
-| `Switch` | `@ui/switch` | Switch | `checked` or `defaultChecked`, `onCheckedChange` | Space |
+| `Select` | `@ui/select` | Select | `items` (`[{ value, label, disabled? }]`), `placeholder`, `value` or `defaultValue`, `onValueChange`, `name` and Base UI's other Select props; the rest, `ref` included, go to the trigger (`style`, `data-*`, ARIA, `title`, focus handlers) | Enter, Space or an arrow opens; the arrows and typing move; Enter picks; Escape closes |
+| `Switch` | `@ui/switch` | Switch | `checked` or `defaultChecked`, `onCheckedChange`, `name` | Space |
 | `Checkbox` | `@ui/checkbox` | Checkbox | as the Switch, and `indeterminate` | Space |
-| `Field` | `@ui/field` | Field | `label`, `description` (help text), `error`, `invalid`, `disabled` | its control's |
-| `SegmentedControl` | `@ui/segmented-control` | RadioGroup, Radio | `options` (`[{ value, label, icon?, disabled? }]`), `value` or `defaultValue`, `onValueChange` | Tab enters at the chosen segment; the arrows move and choose |
+| `Field` | `@ui/field` | Field | `label`, `description` (help text), `error`, `invalid`, `disabled`, `nativeLabel` | its control's |
+| `SegmentedControl` | `@ui/segmented-control` | RadioGroup, Radio | `options` (`[{ value, label, icon?, disabled? }]`), `value` or `defaultValue`, `onValueChange`, `name` | Tab enters at the chosen segment; the arrows move and choose |
 | `Tabs`, `TabList`, `Tab`, `TabPanel` | `@ui/tabs` | Tabs | `value` or `defaultValue`; `activateOnFocus` on `TabList` (default on) | the arrows, Home and End move; Tab goes to the panel |
 
 ### How each looks
@@ -380,34 +390,43 @@ From the mock's Settings and Overview boards:
     semibold, `shadow-control`; under the pointer the edge is `border-strong`
     and the fill `surface-2`.
   - `ghost`: no fill or edge, `text-text-2`; `surface-2` and `text-1` under the
-    pointer. For row actions (Edit, Remove, Sign out) and icon buttons.
+    pointer. At sm it is the mock's row action (Edit, Remove, Sign out):
+    `rounded-md` (6px) and 10px padding. `tone="accent"` draws it in
+    `accent-text`, which it keeps under the pointer, as the mock's Edit and
+    Clear filter.
   - `danger`: the secondary's shape in `text-crit-fg` with a
     `border-crit-border` edge, `surface-2` under the pointer. It warns about an
     action, so it never takes `crit-solid`, which is a status (rule 3).
   - Padding is the mock's: at md 14px for primary, 12 for secondary and
-    danger, 10 for ghost; at sm 12, 10 and 8. Icons are Lucide in
+    danger, 10 for ghost; at sm 12, 10 and 10. Icons are Lucide in
     `currentColor`, 16px at md and 14 at sm, at the mock's 1.75 stroke.
-  - A link drawn as a button puts `buttonVariants({ variant, size })` on its
-    `<a>`.
-- **IconButton.** Square, 34px (`size-control`) or 30 at sm, ghost by default,
-  as the mock's theme, reload and close buttons. `label` becomes its
-  accessible name; it throws without one (or an `aria-label` or
-  `aria-labelledby`).
+  - A link drawn as a button puts `buttonVariants({ variant, size, tone })` on
+    its `<a>`.
+- **IconButton.** Square, 34px (`size-control`) or 30 at sm, `rounded-lg`
+  (8px) at both, ghost by default, as the mock's theme, reload and close
+  buttons. `label` becomes its accessible name. Without one (or an
+  `aria-label` or `aria-labelledby`) it throws in development; a production
+  build logs the error instead, so a label read from data that comes back
+  empty doesn't take the screen down.
 - **Input** and the **Select** trigger: the mock's `.field`, `bg-background` in
   a `border-border-strong` edge, 13px `text-1`, placeholder `text-3`, 10px
   padding. Their focus ring sits 1px out, as the mock's does. An invalid one's
   edge is `border-crit-border`.
 - **The Select's list** is a popover: `surface-2` in a `border-strong` edge
-  with `shadow-pop`, 6px-radius options (`h-control-sm`), the highlighted one
-  on `surface-3`, the chosen one ticked in `accent-text`. It opens below the
+  with `shadow-pop`, 6px around 8px-radius options (`h-control-sm`, 10px
+  padding), the highlighted one tinted `row-hover` as the command palette's
+  rows are, the chosen one ticked in `accent-text`. It opens below the
   trigger, not over it, portalled ([Switches](#switches)).
 - **Switch.** The mock's `.tog`: a 36 × 20 track, `surface-3` off and `accent`
-  on, a 16px `on-accent` thumb with `shadow-thumb`. The mock's locked toggle
-  is a disabled one.
-- **Checkbox.** 16px, `rounded-sm`, `bg-background` in a `border-strong` edge;
-  checked or mixed, `accent` with an `on-accent` tick or bar. The mock uses the
-  browser's checkbox in the accent colour; this one is drawn, so it looks the
-  same everywhere.
+  on, a 16px white thumb (`switch-thumb`) with `shadow-thumb`. Off, the track
+  has a 1px `control-edge` edge, which the mock lacks (3:1 for WCAG 1.4.11; see
+  [Contrast floors](#contrast-floors)); on, the edge is the accent, so the
+  track is the mock's. The mock's locked toggle is a disabled one.
+- **Checkbox.** 16px, `rounded-sm`, `bg-background` in a `control-edge` edge,
+  as easy to see as the browser's own box in the mock; checked or mixed,
+  `accent` with an `on-accent` tick or bar. An invalid one's edge is
+  `crit-fg`, which keeps 3:1. The mock uses the browser's checkbox in the
+  accent colour; this one is drawn, so it looks the same everywhere.
 - **Field.** The mock's label (13px semibold `text-1`), the control, then the
   help text (12px `text-3`), 6px apart; an error under them in `text-crit-fg`
   with an alert icon, so it never rests on colour alone. Help text is `text-3`,
@@ -415,7 +434,8 @@ From the mock's Settings and Overview boards:
 - **SegmentedControl.** The mock's Density, Text size and Temperature pickers:
   a `surface-3` track with 2px around 6px-radius segments, the chosen one on
   `surface-1` with `shadow-control` in `text-1`, the others `text-2` (never
-  `text-3`, which fails on `surface-3`).
+  `text-3`, which fails on `surface-3`). A segment is 30px (`h-segment`), so
+  the control is 34px, as an Input or Button beside it.
 - **Tabs.** The mock draws none, so they follow §5.2: `text-2` labels, the
   active one in `accent-text` over a 2px `accent` bar on the list's
   `border-subtle` bottom edge, not shadcn's pill tabs.
@@ -430,17 +450,25 @@ From the mock's Settings and Overview boards:
   (IconButton), a Field, an enclosing `<label>` (Switch and Checkbox, the
   mock's pattern), or `aria-label` or `aria-labelledby` (Select,
   SegmentedControl, TabList).
-  - A Field names a Select with a `<div>`, not a `<label>`, which would open
-    the list when clicked; clicking it focuses the trigger. `nativeLabel` on
-    the Field overrides the choice for a Select wrapped in another component.
+  - A Field names a Select or a SegmentedControl with a `<div>`, not a
+    `<label>`, however deeply the control is wrapped
+    ([`lib/field-context.js`](../src/ui/lib/field-context.js)). A `<label>`
+    would open a Select's list when clicked; clicking the `<div>` focuses the
+    trigger instead. For a SegmentedControl the `<div>` names the group, as a
+    fieldset's legend does, and each segment keeps its own text as its name.
+    `nativeLabel` on the Field sets the choice by hand.
 - **Field wiring.** The help text and the error are in the control's
-  `aria-describedby`, and an error sets `aria-invalid`. Say what is wrong and
-  how to fix it.
+  `aria-describedby`, and an error sets `aria-invalid`. `invalid={false}`
+  clears both, and hides the error. Say what is wrong and how to fix it.
+- **Edges.** An empty checkbox's and an off switch's edge are `control-edge`,
+  3:1 against the surface they sit on (WCAG 1.4.11), checked in CI.
 - **Focus ring.** Every control keeps the base style's 2px `focus-ring`
   ([tailwind.css](../src/ui/tailwind.css)), and a test fails on any class in
-  `src/ui/` that removes it (`outline-none`, `outline-hidden`, `outline-0`).
-  Inputs and the Select trigger draw it 1px out; tabs and a list's options
-  draw it inset, clear of their neighbours.
+  `src/ui/` that removes it (`outline-none`, `outline-hidden`, `outline-0`,
+  `outline-transparent`, `outline-[0px]`, an arbitrary `[outline:none]`, each
+  with or without a variant or `!`), or on a `style` prop that sets the
+  outline. Inputs and the Select trigger draw it 1px out; tabs and a list's
+  options draw it inset, clear of their neighbours.
 - **Disabled.** Dimmed to 55 % with a not-allowed cursor, as the mock's locked
   toggle. A disabled button, input, switch, checkbox or segment leaves the
   keyboard order. A disabled option or tab stays in the arrow-key order,
@@ -450,42 +478,60 @@ From the mock's Settings and Overview boards:
 
 ### Density and sizes
 
-`data-density="compact"` on the root ([Switches](#switches)) takes 4px off
-each control's height; nothing is set per component.
+`data-density="compact"` on the root ([Switches](#switches)) is spacing: it
+takes 8px off a row (`h-row`) and 4px off a panel's padding (`p-panel`), and
+leaves every control at the mock's height, as the mock's own compact mode
+does. Nothing is set per component.
 
-| Control | Comfortable | Compact | Utility |
-| --- | --- | --- | --- |
-| Button (md), Input, Select trigger, Tab | 34px | 30px | `h-control` |
-| Button (sm), a Select's option | 30px | 26px | `h-control-sm` |
-| IconButton, md and sm | 34 and 30px | 30 and 26px | `size-control`, `size-control-sm` |
-| A segment (its track adds 4px) | 28px | 24px | `h-segment` |
-| Switch, Checkbox | 36 × 20, 16px | the same | fixed |
+| Control | Height, both densities | Utility |
+| --- | --- | --- |
+| Button (md), Input, Select trigger, Tab | 34px | `h-control` |
+| Button (sm), a Select's option | 30px | `h-control-sm` |
+| IconButton, md and sm | 34 and 30px | `size-control`, `size-control-sm` |
+| A segment (its track adds 4px, to 34) | 30px | `h-segment` |
+| Switch, Checkbox | 36 × 20, 16px | fixed |
 
 ### Class names
 
 `cn` ([`src/ui/lib/utils.js`](../src/ui/lib/utils.js)) is the `cn` package
 taught this theme: the type steps (`TYPE_STEPS`), the named spacing
-(`SPACING`) and the shadows (`SHADOWS`). Stock, it read `text-body-sm` as a
-colour, so a colour class beside it dropped the size, and it never let a
-caller's `h-9` replace `h-control`. A caller's `className` wins over a
-component's own classes. A new step, spacing or shadow in `tailwind.css` goes
-into those lists too; `scripts/ui-stack.test.mjs` fails until it does.
+(`SPACING`), the shadows (`SHADOWS`), the layers (`Z_INDEX`) and the motion's
+duration and easing (`DURATIONS`, `EASES`). Stock, it read `text-body-sm` as a
+colour, so a colour class beside it dropped the size; it never let a caller's
+`h-9` replace `h-control`; and it kept both of `z-dialog z-toast`, leaving the
+stylesheet's order to pick one. A caller's `className` wins over a component's
+own classes. A new name in `tailwind.css`'s `@theme` block goes into those
+lists too; `scripts/ui-stack.test.mjs` fails until it does.
+
+Import `cn` from there, never from the `cn` package, `tailwind-merge` or
+`clsx`: a test fails on any other in `src/ui/`. `npx shadcn add` writes
+`import { cn } from 'cn'`; switch it to `./lib/utils.js`.
 
 Keep class strings in `className`, `cn()`, `cva()` or a lookup object read by
 key, where the empty-class check reads them (rule 4).
 
 ### Where the components differ from the mock
 
-- **Ghost text buttons** have the Button's heights and 8px radius; the mock's
-  row actions are about 26px with a 6px radius.
+- **Ghost sm buttons** are 30px, the sm height; the mock's row actions are
+  28px. Their padding and radius are the mock's.
+- **The off switch has an edge**, `control-edge`, which the mock's toggle
+  lacks: without it the track is 1.2:1 against the page in light, under WCAG
+  1.4.11's 3:1.
 - **The segmented control is a radio group**; the mock marks its segments
   `aria-pressed` in a `group`. A radio group also says "one of", and its arrow
   keys choose.
 - **One segmented look.** The Overview board's Cards / Table picker sits on
   `surface-2` with an edge; it uses the Settings board's `surface-3` track
   here.
-- **Not in the mock, derived from its tokens:** the danger button, compact
-  controls, tabs, the Select's list, a drawn checkbox, and the error line.
+- **The classes' intent, not a slip in the mock's stylesheet.** The mock's
+  `.jh button, .jh input { font: inherit; color: inherit }` outranks its own
+  `.jh-primary`, `.seg-off` and `.field`, so the boards draw light-theme
+  primary buttons in dark text (3.05:1), unselected segments in `text-1`
+  and text fields at 14px. The controls follow the classes and §5.2:
+  `on-accent` (5.36:1), `text-2` and 13px. The mock's Phone board sets
+  `on-accent` on its primary button inline, which confirms the intent.
+- **Not in the mock, derived from its tokens:** the danger button, tabs, the
+  Select's list, a drawn checkbox, and the error line.
 
 ## Changing a token
 
