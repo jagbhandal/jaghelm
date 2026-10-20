@@ -5,6 +5,8 @@ import { OverlayProvider } from '../../../context/OverlayContext.jsx';
 import {
   STATUSPAGE,
   ADGUARD_PRIMARY,
+  ADGUARD_SECONDARY,
+  CUSTOM_BUILDER,
   ZEROS,
 } from '../../../../server/routes/fixtures/settingsForm.js';
 
@@ -33,7 +35,11 @@ const PRESETS = [
   },
 ];
 
-function stubServer() {
+/**
+ * A server with the fixture entries. `saveReply(body)` may answer a save
+ * itself, as `{ status, body }`; otherwise every save succeeds.
+ */
+function stubServer({ saveReply } = {}) {
   const writes = [];
   vi.stubGlobal(
     'fetch',
@@ -47,6 +53,7 @@ function stubServer() {
           integrations: {
             [STATUSPAGE.key]: STATUSPAGE.entry,
             [ADGUARD_PRIMARY.key]: ADGUARD_PRIMARY.entry,
+            [ADGUARD_SECONDARY.key]: ADGUARD_SECONDARY.entry,
             [ZEROS.key]: ZEROS.entry,
           },
         });
@@ -59,6 +66,8 @@ function stubServer() {
         });
       }
       if (url === '/api/integrations/save') {
+        const reply = saveReply?.(body);
+        if (reply) return Response.json(reply.body, { status: reply.status });
         return Response.json({ ok: true, type: body.editingKey ?? body.type });
       }
       return Response.json({ ok: true });
@@ -187,9 +196,93 @@ describe('IntegrationsTab sends only what it owns (#402)', () => {
             enabled: true,
             target: '',
             username: '',
+            create: true,
           },
         },
       ])
     );
+  });
+});
+
+// #414: a save that would land on another integration's key is refused (409),
+// and the form shows why next to the field that would have to change.
+describe('IntegrationsTab shows a refused key beside the Instance Name field (#414)', () => {
+  it('renaming adguard_secondary to "primary" sends the fixture body and shows the refusal beside Instance Name', async () => {
+    const writes = stubServer({
+      saveReply: (body) =>
+        body.editingKey === ADGUARD_SECONDARY.key ? ADGUARD_SECONDARY.refused : null,
+    });
+    renderTab();
+    fireEvent.click(
+      within(await rowFor('AdGuard Home (secondary)')).getByRole('button', { name: 'Edit' })
+    );
+    const instance = screen.getByLabelText('Instance Name');
+    fireEvent.change(instance, { target: { value: 'primary' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Integration/ }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe(ADGUARD_SECONDARY.refused.body.error);
+    expect(writes).toEqual([
+      { method: 'POST', url: '/api/integrations/save', body: ADGUARD_SECONDARY.renameToPrimary },
+    ]);
+    // Beside the field: in its group, and tied to the input for assistive tech.
+    expect(alert.parentElement).toBe(instance.parentElement);
+    expect(instance.getAttribute('aria-invalid')).toBe('true');
+    expect(instance.getAttribute('aria-describedby')).toBe(alert.id);
+    // Shown once: not repeated in the general save error below the buttons.
+    expect(screen.queryByText(/Save error:/)).toBeNull();
+    // The form stays open on the refused values, with the field focused, so
+    // a form scrolled down to Save brings it into view.
+    expect(instance.value).toBe('primary');
+    expect(document.activeElement).toBe(instance);
+  });
+
+  it('editing Instance Name clears the refusal, and a refused save again focuses it again', async () => {
+    stubServer({
+      saveReply: (body) =>
+        body.editingKey === ADGUARD_SECONDARY.key && body.instance === 'primary'
+          ? ADGUARD_SECONDARY.refused
+          : null,
+    });
+    renderTab();
+    fireEvent.click(
+      within(await rowFor('AdGuard Home (secondary)')).getByRole('button', { name: 'Edit' })
+    );
+    const instance = screen.getByLabelText('Instance Name');
+    const saveButton = screen.getByRole('button', { name: /Save Integration/ });
+    fireEvent.change(instance, { target: { value: 'primary' } });
+    fireEvent.click(saveButton);
+    await screen.findByRole('alert');
+
+    fireEvent.change(instance, { target: { value: 'primar' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(instance.getAttribute('aria-invalid')).toBeNull();
+    expect(screen.queryByText(/Save error:/)).toBeNull();
+
+    // The same name again, saved from the button: refused and focused again.
+    fireEvent.change(instance, { target: { value: 'primary' } });
+    saveButton.focus();
+    fireEvent.click(saveButton);
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      ADGUARD_SECONDARY.refused.body.error
+    );
+    expect(document.activeElement).toBe(instance);
+  });
+
+  it('a form with no Instance Name field (custom builder) shows the refusal as a save error, announced once', async () => {
+    const writes = stubServer({ saveReply: () => CUSTOM_BUILDER.refused });
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: '+ Custom Integration' }));
+    fireEvent.change(screen.getByLabelText('Base URL'), {
+      target: { value: CUSTOM_BUILDER.add.url },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Save Integration/ }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe(`Save error: ${CUSTOM_BUILDER.refused.body.error}`);
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(writes).toEqual([
+      { method: 'POST', url: '/api/integrations/save', body: CUSTOM_BUILDER.add },
+    ]);
+    expect(screen.queryByLabelText('Instance Name')).toBeNull();
   });
 });

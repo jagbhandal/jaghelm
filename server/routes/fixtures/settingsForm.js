@@ -60,6 +60,65 @@ export const ADGUARD_PRIMARY = Object.freeze({
 });
 
 /**
+ * A third AdGuard, whose instance name is then changed to the second one's
+ * (#414). The server refuses that save with `refused`, and the form shows its
+ * message beside the Instance Name field.
+ */
+export const ADGUARD_SECONDARY = Object.freeze({
+  key: 'adguard_secondary',
+  entry: {
+    preset: 'adguard',
+    instance: 'secondary',
+    url: 'http://adguard2.example.test:3000',
+    username: 'admin',
+    password: '$secret:integration_adguard_secondary_password', // pragma: allowlist secret
+  },
+  /** Edit, change Instance Name to "primary", then Save. */
+  renameToPrimary: {
+    type: 'adguard',
+    url: 'http://adguard2.example.test:3000',
+    instance: 'primary',
+    target: '',
+    username: 'admin',
+    editingKey: 'adguard_secondary',
+  },
+  refused: {
+    status: 409,
+    body: {
+      error:
+        "AdGuard Home (primary) already uses the key 'adguard_primary'; choose another instance name",
+      field: 'instance',
+    },
+  },
+});
+
+/**
+ * The custom builder adding a second custom integration (#414). It has no
+ * Instance Name field and always derives `_custom`, so with one stored there
+ * the save is refused with `refused`, which the form shows as a save error.
+ */
+export const CUSTOM_BUILDER = Object.freeze({
+  key: '_custom',
+  entry: { url: 'http://first.example.test' },
+  /** + Custom Integration, a Base URL, then Save. */
+  add: {
+    type: '_custom',
+    url: 'http://second.example.test',
+    enabled: true,
+    target: '',
+    username: '',
+    create: true,
+  },
+  refused: {
+    status: 409,
+    body: {
+      error: "A custom integration is already saved under '_custom'; edit or remove it first",
+      field: 'instance',
+    },
+  },
+});
+
+/**
  * Values that are set but falsy, which the form used to show as empty and an
  * unchanged save then removed.
  */
