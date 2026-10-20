@@ -25,11 +25,11 @@ the sign-off amendments in §15).
   screens, each accent's hover against its rest state, and each accent against
   the status colours, in `npm test`. Run `node scripts/ui-contrast.mjs` to see
   the lowest ratio per rule on each screen and each accent's nearest status.
-- **Components:** the controls in `src/ui/` (#285) are listed under
-  [Components](#components), with their variants, sizes and keyboard use, and
-  the status components (#287) under [Status components](#status-components).
-  No web screen uses them yet; the Android app's screens use the status
-  components, in its own look.
+- **Components:** the controls (#285), the containers (#286) and the status
+  components (#287) in `src/ui/` are listed under [Components](#components),
+  [Containers](#containers) and [Status components](#status-components), with
+  their variants, sizes and keyboard use. No web screen uses them yet; the
+  Android app's screens use the status components, in its own look.
 - How the stack sits beside today's CSS: [ARCHITECTURE.md §5.1](ARCHITECTURE.md#51-ui-stack-tailwind-css-v4-shadcnui-lucide).
 
 ## The rules
@@ -80,8 +80,10 @@ the sign-off amendments in §15).
    `surface-2`). The check names these three as ruled out and refuses them.
 6. **In the light theme lamps stay bright and the words darken.** A status's
    `solid` is the lamp; its `fg` is the word, darkened to carry 4.5:1.
-7. **Panels are flat.** Only popovers, the command palette, dialogs and drawers
-   cast a shadow (`shadow-pop`), over a scrim (`bg-scrim`) when modal.
+7. **Panels are flat.** Only what floats over the page casts a shadow
+   (`shadow-pop`): popovers, tooltips, toasts, the command palette, dialogs
+   and drawers, over a scrim (`bg-scrim`) when modal, and over a lighter one
+   (`bg-scrim-nested`) when opened from another modal.
 
 ## Switches
 
@@ -95,17 +97,42 @@ popovers and menus render outside their parent):
 | `data-density` | `compact` | comfortable |
 | `data-typeface` | `plus-jakarta-sans`, `montserrat` | manrope |
 
-The `dark:` variant applies inside any root without `data-theme="light"`. Don't
-nest roots of different themes. "System" (follow the device) is Settings'
-job: it sets `data-theme` from `prefers-color-scheme`.
+Roots can nest, in any theme: each carries its own tokens, so a light root
+inside a dark one is light. The `dark:` variant applies inside any root
+without `data-theme="light"`, so it can't tell such a root from its dark
+parent; `src/ui/` doesn't use it, and `scripts/ui-stack.test.mjs` fails if a
+class does. "System" (follow the device) is Settings' job: it sets
+`data-theme` from `prefers-color-scheme`.
+
+A screen's root is a `UiRoot` ([`src/ui/root.jsx`](../src/ui/root.jsx),
+#286): `<UiRoot theme="light" density="compact">` renders the `.jh-ui`
+element with those attributes (a default sets none) and gives the same
+switches to everything portalled from the screen. It also holds the screen's
+toasts and the tooltips' shared timing. A UiRoot inside another (a gallery of
+states in both themes) shares the outer one's toasts and tooltip timing, and a
+page has one toast viewport however many roots it holds
+([Containers](#containers)).
 
 Portalled content gets its root from
-[`src/ui/lib/portal.js`](../src/ui/lib/portal.js): `usePortalRoot(ref)` gives
-the portal element `jh-ui` and copies each switch from the root around the
-control that opened it (`ROOT_SWITCHES`), read when the control mounts and
-again when the popup opens. The Select's list uses it; popovers, dialogs and
-menus (#286) will too. A new switch goes into `ROOT_SWITCHES` as well as
-`tokens.css`; `scripts/ui-stack.test.mjs` fails until both list it.
+[`src/ui/lib/portal.js`](../src/ui/lib/portal.js). The portal element gets
+`jh-ui` and each switch (`ROOT_SWITCHES`), taken from, in order:
+
+1. the UiRoot around it, read again whenever its switches change. This
+   covers an overlay opened from inside another (a Select in a dialog, a
+   Confirm from a drawer), whose control sits in its parent's portal root,
+   which may not have taken the change yet; a toast, which has no control;
+   and a dialog opened from code;
+2. with no UiRoot, the `.jh-ui` root around the control that opened it (a
+   Select's trigger, a dialog's or popover's trigger), read when the control
+   mounts and when the popup opens;
+3. with neither, nothing: a bare `.jh-ui` root, dark and comfortable.
+
+An open overlay, nested or not, follows a switch the screen changes. A new
+switch goes into `SWITCHES` in `portal.js` as well as `tokens.css`;
+`scripts/ui-stack.test.mjs` fails until both list it, and when a Base UI
+portal in `src/ui/` isn't given the portal root's props (`{...portalRoot}`),
+or gets a class, a container, a switch or another spread after them. Screens
+import the components, never `@base-ui/react` itself (the same file checks).
 
 ## Contrast floors
 
@@ -240,15 +267,20 @@ light theme.
 
 `track` (a meter's empty track), `tick` (its quarter marks), `beat-ok` (a
 healthy heartbeat bar; failures use `crit-solid`), `lamp-cut` (the slash and bar
-cut into warn and crit lamps, the panel colour), `scrim`, `switch-thumb` (a
-switch's thumb, white in both themes, as the mock's), and the shadows below.
+cut into warn and crit lamps, the panel colour), `scrim`, `scrim-nested` (the
+scrim of a modal opened from another, half as strong, so the one under it
+reads as dimmed and the page under both never goes near black; derived from
+`scrim` in `tailwind.css`, so it has no `--jh-` token of its own),
+`switch-thumb` (a switch's thumb, white in both themes, as the mock's), and
+the shadows below.
 
 ### Type
 
 **Faces.** Self-hosted, never from a CDN or Google Fonts (#244, #284). Each is
-the variable latin subset Google Fonts serves, under the SIL Open Font License
-1.1; the files and their licences are in `src/fonts/`. `data-typeface` picks
-the sans face (Settings → Appearance, #321); there is one monospace face.
+two variable files, the latin and latin-ext subsets Google Fonts serves (#394),
+under the SIL Open Font License 1.1; the files and their licences are in
+`src/fonts/`. `data-typeface` picks the sans face (Settings → Appearance, #321);
+there is one monospace face.
 
 | Face | `data-typeface` | Weights | Use |
 | --- | --- | --- | --- |
@@ -260,14 +292,21 @@ the sans face (Settings → Appearance, #321); there is one monospace face.
 - **Only what a screen uses downloads.** A browser fetches a face when text
   renders in it: the picked sans face, and JetBrains Mono once a screen shows
   mono text. Nothing is preloaded, so a face nobody picked never downloads.
-  `font-display: swap` shows the system face until the file arrives, and
-  characters outside the latin subset always use it.
-- **Budget: fonts on first load ≤ 60 KB** for the default setup. Manrope
-  (24.3 KB) and JetBrains Mono (30.7 KB) come to 55.0 KB, 57.1 KB on the wire
-  with JagHelm's response headers, and a test fails when the files pass 60 KB.
-  Plus Jakarta Sans is 26.7 KB and Montserrat 37.1 KB. Until Phase 1 replaces
-  them, today's screens load their own three files first (98.3 KB, the same
-  files Google Fonts served them); the new UI shares JetBrains Mono's.
+  `font-display: swap` shows the system face until the file arrives.
+- **latin-ext only when the text needs it.** Each face's two `@font-face` rules
+  carry Google's `unicode-range`, so its latin-ext file downloads only once a
+  screen shows one of that subset's characters, such as the Ł and ź of a node
+  named Łódź, and the whole word then draws in the face. The latin-ext files are
+  Manrope 14.8 KB, Plus Jakarta Sans 21.2 KB, Montserrat 69.0 KB and JetBrains
+  Mono 11.4 KB. Characters outside both subsets (Cyrillic, Greek, Vietnamese)
+  use the system face.
+- **Budget: fonts on first load ≤ 60 KB** for the default setup on latin text,
+  which downloads no latin-ext file. Manrope (24.3 KB) and JetBrains Mono
+  (30.7 KB) come to 55.0 KB, 57.1 KB on the wire with JagHelm's response
+  headers, and a test fails when the files pass 60 KB. Plus Jakarta Sans is
+  26.7 KB and Montserrat 37.1 KB. Until Phase 1 replaces them, today's screens
+  load their own three files first (98.3 KB, the same files Google Fonts served
+  them); the new UI shares JetBrains Mono's latin file.
 - **Use the families by role** (`font-sans`, `font-mono`), never by name.
   `font-mono` turns off JetBrains Mono's programming ligatures, as the mock
   does, so a hostname or a SHA reads character by character.
@@ -336,14 +375,22 @@ one-offs:
   `size-control-sm` for square icon buttons.
 - **Page gutter:** `px-gutter`, 16px on phones, 24 from 768px, 32 from 1536px.
 - **Elevation:** `shadow-control` (the slight lift on buttons and the selected
-  segment), `shadow-pop` (popovers, palette, dialogs, drawers), `shadow-thumb`
+  segment), `shadow-pop` (popovers, tooltips, toasts, palette, dialogs,
+  drawers), `shadow-thumb`
   (a switch's thumb, the mock's `0 1px 2px` at 30 % black in both themes),
-  `bg-scrim`.
-- **Z-index:** `z-sticky` 20, `z-header` 40, `z-overlay` 50 (scrims),
-  `z-dialog` 60, `z-toast` 80.
+  `bg-scrim`, `bg-scrim-nested`.
+- **Z-index:** `z-sticky` 20, `z-header` 40, `z-overlay` 50 (unused so far),
+  `z-dialog` 60 (popups and their scrims), `z-toast` 80. The scrims share
+  `z-dialog` with the popups, so a later overlay stacks above an earlier one:
+  a modal opened from another portals after its parent's popup, and its scrim
+  covers it.
 - **Motion:** 150ms `ease` (`transition-*`, `duration-standard`,
   `ease-standard`) for drawers and popovers; animate bars only. With reduced
-  motion asked for, transitions and animations are cut to nothing.
+  motion asked for, transitions and animations are cut to nothing: the base
+  style sets them to 0.01ms with `!important` inside every `.jh-ui` root,
+  portals included, which even a utility's `!important` can't beat. No class
+  in `src/ui/` sets a duration, delay, easing or keyframe animation of its
+  own (`scripts/ui-stack.test.mjs`).
 
 ### shadcn/ui names
 
@@ -545,6 +592,205 @@ web.
 - **Not in the mock, derived from its tokens:** the danger button, tabs, the
   Select's list, a drawn checkbox, and the error line.
 
+## Containers
+
+The containers and feedback components (spec §5.4, #286), one file each in
+`src/ui/`, imported as `@ui/<file>`. The overlays are Base UI primitives,
+which bring the focus handling, the keys and the ARIA; the rest are plain
+elements on the role tokens. No screen uses them yet; the gallery (#289) will
+show every state.
+
+| Component | Import | Base UI part | Props | Keys |
+| --- | --- | --- | --- | --- |
+| `UiRoot` | `@ui/root` | Toast and Tooltip providers (the outermost root's) | `theme`, `accent`, `density`, `typeface` ([Switches](#switches)), `toastManager` | none |
+| `Panel` | `@ui/panel` | none | `title`, `description`, `icon`, `actions`, `flush`, `titleAs` (`h2`) | none |
+| `Dialog`, `DialogClose` | `@ui/dialog` | Dialog | `trigger` or `open` and `onOpenChange`, `title` (or `aria-label`), `description`, `footer`, `size` (`sm` 440, `md` 540, `lg` 600), `closeLabel`, `initialFocus`, `finalFocus` | Tab and Shift+Tab stay inside; Escape closes the top one |
+| `Drawer`, `DrawerClose` | `@ui/drawer` | Dialog, at the edge | `trigger` or `open` and `onOpenChange`, `eyebrow`, `title` (or `aria-label`), `description`, `closeLabel` | as the Dialog |
+| `Confirm` | `@ui/confirm` | AlertDialog | `trigger` or `open` and `onOpenChange`, `title` (required), `name` (required), `detail`, `description`, `confirmLabel`, `cancelLabel`, `destructive`, `value`, `onConfirm(value)`, `onCancel` | as the Dialog; Escape cancels |
+| `Popover`, `PopoverClose` | `@ui/popover` | Popover | `trigger`, `title` (or `aria-label`; else its trigger names it), `description`, `side` (`bottom`), `align`, `openOnHover`, `open` and `onOpenChange` | Escape closes |
+| `Tooltip` | `@ui/tooltip` | Tooltip | `content`, `side` (`top`), `align`, `delay`, `closeDelay`; the trigger is its child | focus opens it; Escape closes |
+| `useToast`, `createToastManager` | `@ui/toast` | Toast | `add({ title, description, tone, action: { label, onClick }, timeout, id })`, `update`, `close`, `promise` | F6 reaches the toasts |
+| `Banner` | `@ui/banner` | none | `tone` (`crit` by default, `warn`, `unknown`, `maintenance`, `info`, `ok`), `title`, `cause`, `detail`, `action`, `icon` | none |
+| `EmptyState` | `@ui/empty-state` | none | `icon`, `title`, `description`, `action`, `size` (`md`, `sm`) | none |
+| `Skeleton` | `@ui/skeleton` | none | `className` (its size and shape) | none |
+
+### How each looks
+
+From the mock's Overview, Settings and Phone boards:
+
+- **Panel.** The mock's attention panel, utility cards and Settings sections:
+  `bg-surface-1` in a `border-border` edge, `rounded-xl` (12px), flat, padded
+  by the density (`p-panel`, 20 or 16px). The header is the mock's: an icon
+  in its 28px accent chip (`accent-tint`, `accent-text`, an `accent-border`
+  ring), the title at `title-xs` (15px bold), a `text-3` caption, actions at
+  the end. `flush` lays rows edge to edge under a subtle rule, as the Settings
+  lists.
+- **Dialog.** The command palette's frame, the mock's one modal: `surface-1`
+  in a `border-strong` edge, 12px radius, `shadow-pop` over `bg-scrim`, 96px
+  from the top, centred, never wider than the screen less 16px a side. Its
+  content is laid out as the "won't open inside JagHelm" card: 24px of
+  padding, the title at `title` (20/26), the description in `text-2`, 12px
+  apart, the actions in a row under them with the main one first, as the mock
+  orders its buttons. A ghost close button sits beside the title.
+- **Drawer.** The mock's detail drawer: the full height on the right, 460px
+  (the whole screen on a phone), `surface-1` with a subtle left edge and
+  `shadow-pop` over the scrim. Its header is the mock's 110px: an overline,
+  the title at `title`, a 13px `text-3` line, a ghost close button (34px,
+  flush with the header's padding), a subtle rule; the body has 20px of
+  padding and 20px between sections, in both densities.
+- **A modal opened from another** (a Confirm from a Drawer): over its own
+  scrim, `bg-scrim-nested`, half the scrim's strength, so the drawer under it
+  reads as dimmed and the page under both stays short of black.
+- **Confirm.** The Dialog at 440px. Under the question, the thing it acts on,
+  by its display name (`name`, semibold `text-1`) and `detail` (12px
+  `text-3`), quoted on `surface-2` with no edge and an 8px radius (the
+  Settings device row's anatomy), so it never reads as a field to type in,
+  then what will happen.
+- **Popover.** The mock's floating card (the "shows here" note over an app):
+  `surface-2` in a `border-strong` edge, 12px radius, `shadow-pop`, 14px by
+  18px of padding, an optional bold title over 13px `text-2`. It opens 6px from
+  its trigger, below it by default, at most 460px wide.
+- **Tooltip.** The mock has none (its notes are `title` attributes); it takes
+  the popover's surface smaller: `surface-2`, `border-strong`, `rounded-md`,
+  4px by 8px of padding, 12px `text-1`, `shadow-pop`, 6px above its trigger.
+- **Toast.** The mock has none; the floating card's frame (`surface-2`,
+  `border-strong`, 12px radius, `shadow-pop`), 360px wide at the bottom
+  right, inset by the page gutter, the newest nearest the corner; on a phone
+  they span the screen less the gutter. A title (semibold), a description in
+  `text-2`, an action as an accent ghost button, a dismiss button.
+- **Banner.** The mock's status box at the top of the detail drawer: the
+  tone's icon, the title bold in the tone's word colour (`text-crit-fg`), the
+  cause in `text-2`, the detail in 12px `text-3`, on the tone's tint
+  (`bg-crit-tint`) in a subtle edge, 14px of padding, 12px radius. Ok has no
+  tint: healthy stays quiet. Put it on the page or a panel (`bg`,
+  `surface-1`), where its colours are checked.
+- **EmptyState.** Centred: an icon in the Settings board's 32px chip
+  (`surface-3`, `text-1`), the title at `title-xs`, the description in 13px
+  `text-2`, the action under them. At `sm` it is the command palette's
+  "Nothing matches" line: 13px `text-3`, 16px by 10px of padding.
+- **Skeleton.** The mock's `.skel`: `surface-3`, a 6px radius, sized by the
+  caller. Still: no shimmer or pulse.
+
+### Tones
+
+A Banner's and a toast's `tone` shows as an icon in the tone's word colour
+(`fg`) whose shape echoes its lamp, so status never rests on colour (rule 3):
+a filled disc for ok, a slashed disc for warn, a disc with a bar for crit, a
+hollow ring for no signal (`unknown`), a wrench for maintenance, an "i" for
+info, which is not a state. They are Lucide outlines
+([`lib/tone.jsx`](../src/ui/lib/tone.jsx)) until the shared StatusLamp
+(#287) is in `src/ui/`. A toast with no tone is neutral and shows none.
+
+### Decisions
+
+- **A destructive Confirm keeps danger quiet.** The confirm button is the
+  `danger` button, red text and a red edge, never a red fill, which is a
+  status (rule 3, #285). It still leads: it comes first, and Cancel is a
+  `ghost` button, the quietest there is. Focus starts on Cancel, so Enter
+  alone never destroys anything. A Confirm that destroys nothing confirms
+  with the `primary` button, and focus starts on it.
+- **Display names, never storage keys.** A Confirm names what it acts on by
+  `name`, the name the person knows ("Pixel 8", "Immich"), and without one it
+  throws in development and logs in production. The key the screen needs
+  travels as `value`: `onConfirm` gets it back, and it is never rendered.
+- **Cause-naming banners.** A Banner says what failed (`title`) and why
+  (`cause`), naming the thing to go and check, as today's degraded banners
+  ("Live metrics unavailable", "Prometheus unreachable"). In a failing tone
+  (`crit`, `warn`, `unknown`) a missing cause throws in development and logs
+  in production.
+- **Portal roots come from the screen.** See [Switches](#switches): the
+  UiRoot's switches, else the root around the opener, so a toast, a dialog
+  opened from code and an overlay opened from another overlay all match the
+  screen in light and compact, and follow it when it changes.
+- **A modal opened from another stacks above it.** Base UI draws no scrim for
+  a nested dialog unless told to; here each has its own, on the popups'
+  layer, so a Confirm opened from a Drawer covers the drawer. The drawer is
+  `inert` until the Confirm closes: a click where it shows lands on the
+  Confirm's scrim, and only the Confirm's buttons or Escape answer it. The
+  nested scrim is half as strong, so the page under both isn't dimmed twice
+  to near black.
+- **One toast viewport per page.** The first UiRoot at the top of the page
+  renders it, in its switches, and it shows every root's toasts: a nested
+  root uses the outer one's, and a manager several roots share shows each
+  toast once. Several viewports would stack in the same corner and repeat the
+  "Notifications" landmark, which axe fails.
+- **The Drawer is a Dialog at the edge.** Base UI's Drawer adds swipe
+  gestures and snap points, which the mock doesn't have; Base UI's advice for
+  a drawer without them is a positioned Dialog.
+
+### Accessibility
+
+- **Modal overlays** (Dialog, Drawer, Confirm) move focus inside when they
+  open (the first control; a destructive Confirm's Cancel), keep it there
+  (Tab and Shift+Tab cycle), hide the page from screen readers and stop it
+  scrolling, and give focus back to whatever opened them, a trigger or the
+  control that set `open`. Escape closes them, the top one first; a click on
+  the scrim closes a Dialog or Drawer, never a Confirm, which only its buttons
+  or Escape (a cancel) close. One opened from another makes the one under it
+  `inert` until it closes. Each is named by its title and described by its
+  description; a Dialog or Drawer without a title takes an `aria-label`, and
+  with neither it throws in development and logs in production, as a Confirm
+  without its title does.
+- **A Popover** is a non-modal dialog named by its title: focus moves in,
+  Escape or a click outside closes it, and focus goes back to its trigger.
+  `openOnHover` makes it an infotip, which a tooltip must not be: help that
+  matters can't live in a tooltip. Without a title it is named by an
+  `aria-label`, or else by its trigger, so it is never unnamed.
+- **A Tooltip** opens on keyboard focus as well as under the pointer, and
+  never on touch. The trigger keeps its own name (an `aria-label`, an
+  IconButton's `label`, a Button's text); when the tooltip says more, the
+  trigger is described by it (`aria-describedby`, a hidden copy that is
+  always there), so a screen reader hears it without opening it. The copies
+  sit in one hidden element in `<body>`, never beside the trigger,
+  where they would break the row's `:last-child` and `+` selectors and a
+  list's or a table's markup.
+- **Toasts** are announced: the viewport is a polite live region and a
+  landmark named "Notifications", there before the first toast, and F6 jumps
+  to it. A `crit` toast is announced as an alert and stays until dismissed,
+  whether it was added so, `update`d to crit, or is a failed `promise` (an
+  error is crit unless it names a tone; a success is ok); the others go
+  after 5 seconds, a timer that pauses under the pointer or focus, and an
+  update away from crit makes a toast polite again. Each keeps its tone's
+  icon through updates and promises. A toast added while the screen mounts
+  still shows; give one added from an effect an `id`, or React's StrictMode,
+  which runs effects twice in development, shows it twice. A manager's toasts
+  sent while no UiRoot listens (a legacy screen) wait for one, but one that
+  isn't crit and is older than its timeout is dropped rather than shown late.
+  A page has one viewport, so one "Notifications" landmark, however many
+  UiRoots it holds.
+- **A Banner is not a live region**: the same cause can show on several
+  panels, so the screen announces each cause once, from one place, as today's
+  dashboard does. `role="alert"` on a banner that stands alone.
+- **Skeletons** are `aria-hidden`; the region holding them sets
+  `aria-busy="true"` and says what is loading in a `sr-only` line.
+- **Motion.** Dialogs, popovers, tooltips and the scrim fade, the Drawer
+  slides in from the right and a toast rises 8px, each over 150ms. With
+  reduced motion asked for, they appear and go at once (every portal is a
+  `.jh-ui` root, where the base style cuts motion).
+
+### Where the containers differ from the mock
+
+- **Tone icons** are Lucide outlines of the lamps' shapes; the mock's drawer
+  box shows the filled lamp, which comes with StatusLamp (#287).
+- **The drawer box's 10px radius** is the Banner's 12, as the Phone board's
+  same box (the radius scale has no 10).
+- **The Dialog's title is 20/26** (`title`), where the "won't open" card it
+  is laid out from uses 18/24: the type scale has no 18, and 20 matches the
+  drawer's title.
+- **Not in the mock, derived from it:** the Dialog's layout (the "won't open"
+  card's), its widths (440 for a Confirm, 540 as that card, 600 as the
+  palette), the Confirm's subject block, the lighter scrim of a nested modal,
+  the Tooltip, the Toast, the EmptyState's centred layout, the Popover's
+  left-aligned text (the mock's one floating card is centred), the Drawer's
+  close button at the IconButton's 34px (the mock's is 32px), and the toasts'
+  place and timing.
+- **Type-scale steps, kept over the mock's sizes:** the Quick Launch card's
+  title is 15px (`title-xs`; the mock's is 14) and its padding 20px when
+  comfortable (the mock's is 16); the popover's description and a small
+  EmptyState's line are 13/18 (the mock's are 13/20); the Banner's detail line
+  is 16px tall (the mock's is 20, so its box is 90px against 94); and the
+  drawer's title has no -0.01em tracking.
+
 ## Status components
 
 The status components (spec §5.4, #287), moved here from the Android app and
@@ -713,13 +959,15 @@ mock first.
   switches and accents tables above. A test fails until all of them agree, and
   the check fails if any of its colours sits within ΔE OK 0.05 of a status
   colour.
-- A new typeface goes into `src/ui/typefaces.js`, its woff2 into `src/fonts/`
-  with its licence in `src/fonts/licences/`, an `@font-face` into
-  `src/ui/fonts.css`, a `data-typeface` block into `tokens.css` (and its id in
-  that file's header), and a row in the switches and typefaces tables above.
-  `scripts/fonts.test.mjs` fails until all of them agree with each other and
-  with the file (its weights and style), and if the default face and the mono
-  go over 60 KB.
+- A new typeface goes into `src/ui/typefaces.js`, its latin and latin-ext woff2
+  files from Google Fonts into `src/fonts/` (each pinned by its sha256 in
+  `scripts/fonts.test.mjs`) with its licence in `src/fonts/licences/`, two
+  `@font-face` rules into `src/ui/fonts.css` (latin-ext, then latin, with
+  Google's `unicode-range`), a `data-typeface` block into `tokens.css` (and its
+  id in that file's header), and a row in the switches and typefaces tables
+  above. `scripts/fonts.test.mjs` fails until all of them agree with each other
+  and with the files (their family, weights, style and characters), and if the
+  default face and the mono go over 60 KB.
 - A new colour role needs a utility in `tailwind.css`'s `@theme` block, and its
   pairings in `PAIRINGS` in `scripts/ui-contrast.mjs`. A plausible pairing
   that fails and that the mock never draws goes in `FORBIDDEN` instead, and in

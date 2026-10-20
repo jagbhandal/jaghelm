@@ -16,8 +16,9 @@
  * Mono v31). Each is under the SIL Open Font License 1.1: src/fonts/licences/.
  * The vendored faces are latin subsets only, so non-latin text (latin-ext,
  * Cyrillic, Greek) falls back to the system font, where Google used to serve
- * those subsets on demand: pixel-identical holds for latin text. The new faces
- * work the same way (src/ui/fonts.css); latin-ext for the new UI is #394.
+ * those subsets on demand: pixel-identical holds for latin text. The new UI's
+ * faces also ship latin-ext (src/ui/fonts.css, #394); these stay latin only
+ * until they are deleted (below).
  *
  * Imported into the legacy layer by styles/legacy.css. Delete a family when no
  * screen uses it: the Typography presets go with Settings' Phase 3, Outfit and

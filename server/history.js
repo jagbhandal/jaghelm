@@ -21,8 +21,6 @@ const MAX_SAMPLES = 120; // ~1h at a 30s refresh
 const MAX_SERIES = 500; // bound distinct keys so a churn of node ids can't grow unbounded
 const SAVE_DEBOUNCE_MS = 60_000;
 
-if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-
 function load() {
   try {
     if (!existsSync(STORE_PATH)) return new Map();
@@ -49,6 +47,8 @@ function scheduleSave() {
   saveTimer = setTimeout(() => {
     saveTimer = null;
     try {
+      // Made here, not on import: importing this module writes nothing (#248).
+      mkdirSync(DATA_DIR, { recursive: true });
       atomicWriteFileSync(STORE_PATH, JSON.stringify(Object.fromEntries(series)));
     } catch (err) {
       log.error({ err }, 'Failed to save history');

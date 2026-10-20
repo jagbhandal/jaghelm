@@ -71,10 +71,15 @@ const GridItem = React.memo(function GridItem({
     // Initial measure after paint
     rafId = requestAnimationFrame(measure);
 
-    // Re-measure when children resize (e.g. service cards load, data refreshes)
+    // Re-measure when the panel resizes (its service cards load, its data
+    // refreshes, the layout makes it wider or narrower). The panel, not the
+    // keyboard move handle that comes first in a draggable item: watching the
+    // 1 px handle missed every change after the first measure, so a panel kept
+    // the height it had at its first width (#248).
     const ro = new ResizeObserver(debouncedMeasure);
-    const content = el.firstElementChild;
-    if (content) ro.observe(content);
+    for (const child of el.children) {
+      if (!child.matches('.helmgrid-move-handle, .helmgrid-resize-handle')) ro.observe(child);
+    }
 
     return () => {
       if (rafId) cancelAnimationFrame(rafId);

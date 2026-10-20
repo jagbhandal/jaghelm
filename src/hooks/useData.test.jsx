@@ -5,6 +5,10 @@ import {
   getCronStatus,
   getServices,
   saveTodos,
+  getTodos,
+  deleteCronJob,
+  uploadFile,
+  forgetLocalChanges,
   saveIntegration,
   testIntegration,
   deleteIntegration,
@@ -12,6 +16,7 @@ import {
 } from './useData.js';
 import { iconSlugUrl } from '../utils/iconCdn.js';
 import { setApiBase } from '../api/baseUrl.js';
+import { setReadOnlyServer } from '../api/client.js';
 
 // getServiceIcon resolves a slug to the CDN URL then proxies it via
 // cachedIconUrl (jaghelm is a local path). To assert WHICH key matched, mirror
@@ -356,5 +361,84 @@ describe('fetchJson — the stored ETag always describes the body held', () => {
     serve('"v2"', B);
     await expect(getServices(false)).resolves.toBe(B);
     expect(sent.at(-1)).toBe('"v2"');
+  });
+});
+
+// ── A read-only server (the public demo, #248) ────────────────────────────
+//
+// It refuses every write, so the helpers send none: the change is kept in this
+// tab for the visit and the matching read answers with it.
+describe('on a read-only server, a change is kept in this tab and nothing is sent', () => {
+  const json = (body) =>
+    new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
+  const STATUSES = [
+    { node: 'apps', jobs: [{ job: 'db-dump', runs: [] }] },
+    {
+      node: 'storage',
+      jobs: [
+        { job: 'nightly-backup', runs: [] },
+        { job: 'scrub-check', runs: [] },
+      ],
+    },
+  ];
+  let sent;
+
+  beforeEach(() => {
+    if (!AbortSignal.timeout) AbortSignal.timeout = () => new AbortController().signal;
+    sent = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url, init = {}) => {
+        sent.push(`${init.method || 'GET'} ${url}`);
+        if (String(url).endsWith('/todos')) return json([{ id: 'a', text: 'From the server' }]);
+        if (String(url).endsWith('/cron/status')) return json(STATUSES);
+        return json({});
+      })
+    );
+    setReadOnlyServer(true);
+  });
+
+  afterEach(() => {
+    setReadOnlyServer(false);
+    forgetLocalChanges();
+    vi.unstubAllGlobals();
+  });
+
+  const writes = () => sent.filter((r) => !r.startsWith('GET '));
+
+  it("the checklist: a save is kept, and read back instead of the server's list", async () => {
+    expect(await getTodos()).toEqual([{ id: 'a', text: 'From the server' }]);
+    const edited = [{ id: 'a', text: 'From the server', done: true }];
+    await expect(saveTodos(edited)).resolves.toBeUndefined();
+    expect(await getTodos()).toEqual(edited);
+    expect(writes()).toEqual([]);
+  });
+
+  it('a scheduled job: removing it leaves it out of the statuses, and its node when it was the last', async () => {
+    await expect(deleteCronJob('storage', 'nightly-backup')).resolves.toBeNull();
+    expect(await getCronStatus(true)).toEqual([
+      STATUSES[0],
+      { node: 'storage', jobs: [{ job: 'scrub-check', runs: [] }] },
+    ]);
+    await deleteCronJob('apps', 'db-dump');
+    expect((await getCronStatus(true)).map((n) => n.node)).toEqual(['storage']);
+    expect(writes()).toEqual([]);
+  });
+
+  it('a logo or background: an object URL in this tab, not an upload', async () => {
+    const createObjectURL = vi.fn(() => 'blob:local/1');
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL }));
+    const file = new File(['png'], 'logo.png', { type: 'image/png' });
+    await expect(uploadFile(file, 'logo')).resolves.toEqual({ url: 'blob:local/1' });
+    expect(createObjectURL).toHaveBeenCalledWith(file);
+    expect(sent).toEqual([]);
+  });
+
+  it('a writable server still gets the save', async () => {
+    setReadOnlyServer(false);
+    await saveTodos([{ id: 'b' }]);
+    await deleteCronJob('apps', 'db-dump');
+    expect(writes()).toEqual(['POST /api/todos', 'DELETE /api/cron/jobs/apps/db-dump']);
+    expect(await getTodos()).toEqual([{ id: 'a', text: 'From the server' }]);
   });
 });

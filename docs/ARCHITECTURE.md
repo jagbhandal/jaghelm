@@ -93,7 +93,10 @@ server/                     Express API (Node 26, ESM)
   version.js                single source of version (reads package.json)
   metrics.js                prom-client registry + middleware + /metrics handler
   accessLog.js              one JSON log line per request (full path, no query string)
-  demo.js                   DEMO_MODE read-only sample dashboard
+  demo.js                   DEMO_MODE guard: owns /api, refuses writes, answers reads from
+                            demoFixtures.js; boot() starts no subsystem in demo mode
+  demoFixtures.js           the demo's board, shaped by the live code (assembleServices,
+                            decorateStatuses); incident and healthy scenarios
   auth/                     scrypt passwords, in-memory sessions, login rate limit, middleware
   routes/                   one router per resource (see 4.1)
   arcane/                   Arcane poller: read-only API client, state derivation, push builders,
@@ -118,7 +121,8 @@ src/                        React 19 SPA (Vite 8)
   styles/global.css          today's themes (10) + their tokens + component styles
   styles/fonts.css           today's fonts, self-hosted: the files Google Fonts served (see 5.1)
   styles/legacy.css          imports global.css and fonts.css into the `legacy` cascade layer
-  fonts/                     every woff2 the web app ships (latin subsets) and their OFL licences
+  fonts/                     every woff2 the web app ships (latin subsets; latin-ext too for the
+                             new UI's faces) and their OFL licences
   ui/                        the redesign's component library, shared with Android (see 5.1):
                              tailwind.css (the stack's stylesheet), tokens.css (the design
                              tokens, docs/design-system.md), accents.js (the accents offered),
@@ -126,12 +130,16 @@ src/                        React 19 SPA (Vite 8)
                              preflight.css (generated),
                              the controls (#285: button, icon-button, input, select, switch,
                              checkbox, field, segmented-control, tabs; design-system.md),
+                             the containers (#286: root, panel, dialog, drawer, confirm,
+                             popover, tooltip, toast, banner, empty-state, skeleton),
                              the status components (#287: status-lamp, status-word,
                              issue-row, subsystem-strip, attention-panel; the Android app
                              uses them too), lib/status.js (the five states, their words,
                              and the two looks), lib/utils.js (cn, taught the theme),
-                             lib/portal.js (portal roots), lib/field-context.js (how a
-                             Field labels its control)
+                             lib/portal.js (portal roots and the switches they copy),
+                             lib/field-context.js (how a Field labels its control),
+                             lib/tone.jsx (a tone's icon), lib/name.js (an overlay's
+                             required name)
 
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
@@ -159,7 +167,12 @@ CORS -> `express.json({ limit: '1mb' })` -> `/uploads` static -> `/metrics` ->
 (`index.html`) -> the global JSON error handler.
 It listens on `JAGHELM_HOST` (default `0.0.0.0`, every IPv4 interface) and `PORT`
 (default 3099); if it can't (an address the machine doesn't have, a port in use),
-it logs `cannot listen` and exits 1.
+it logs `cannot listen` and exits 1. The `listening` line logs the port bound.
+In demo mode `boot()` only loads the integration preset gallery: it starts no
+discovery, refresh loop, Kuma, push, Arcane, icon index or cache, reads no
+`services.yaml` and makes no directory. The demo guard answers every `/api`
+read, so the server makes no outbound request and writes no file; the browser
+still loads the board's icons from the icon CDN (docs/DEMO.md).
 
 Routers (each `server/routes/*.js`), mounted under `/api`:
 
@@ -361,17 +374,22 @@ is up, or the container has been gone longer than `JAGHELM_PRESENCE_TTL_MS`, it
 holds nothing: a running container can have the monitor (`nextcloud` renamed to
 `nextcloud-app`), and the stopped one leaves a grey presence breadcrumb like any
 container with no monitor. A down monitor no running container got is drawn on
-the stopped container's node, else its last-seen node; its card never takes the
-uid of a card already on that node (its last container still running there,
-matched to nothing or to something else now), and then goes under the
-monitor's name.
+the stopped container's node, else its last-seen node. When that stopped
+container is the one the monitor last ran as, the monitor's last-seen node
+comes first while it is on the board: the container registry keeps one record
+per name, with the last node in the pass, so when both copies of an unpinned
+replica stop (vaultwarden on vm103 and pi2), the red card is drawn on vm103,
+where the monitor ran, not on pi2. Its card never takes the uid of a card
+already on that node (its last container still running there, matched to
+nothing or to something else now), and then goes under the monitor's name.
 
 Such a card, of a monitor no container has ("Pi Gateway (Ping)", "NAS (Ping)"),
 exists only while the monitor is down: up, it draws nothing on the board. The
 push snapshot still has it (#390). Every active monitor no running container
-got, up or down, is placed in one pass by `placeMonitor` (`refresh.js`), so its
-uid does not depend on its status while its last container isn't in the
-stopped list (#395). A down one is the red card. The uid of an up one goes in
+got, up or down, is placed in one pass by `placeMonitor` (`refresh.js`), in id
+order, so its uid does not depend on its status while its last container isn't
+in the stopped list, nor on the order Kuma listed the monitors in. A down one
+is the red card. The uid of an up one goes in
 `upWithoutCard`, which the services refresh keeps beside the cached
 `/api/services` payload, not in it: it is for push only, so it is not served
 and does not change the ETag. `buildServices` (`push/snapshot.js`) reads it as
@@ -391,27 +409,49 @@ no node could be read at all is nothing placed; the recovery then waits for
 the container to be seen again.
 
 A monitor feeds one key of the push snapshot a cycle: the card of the running
-container that has it, else its own uid. When a container takes it (one appears
-whose name matches), its own key leaves the snapshot without an event and the
-container's card starts with no previous status. When that container goes, the
-service registry remembers it, so the monitor's own uid is the container's from
-then on. The snapshot has no monitor identity, so when the key moves while the
-monitor is down, the snapshot loses track of the outage. These cases are left
-for #395:
+container that has it, else its own uid. That key can move. A container takes
+the monitor (one appears whose name matches); a stopped container holds it only
+while it is down, so a down placement and an up one can differ (the down
+monitor goes to an older `nextcloud` that stopped, the better match, and comes
+back up on `nextcloud-app`, the container it last ran as); another container
+takes it in the cycle it recovers (nextcloud stops, the monitor goes down,
+nextcloud-app comes up healthy); or two monitors remember the same container
+(left by the old matcher), and when the one earlier in id order drops out (a
+Kuma Pending retry, a pause, a container claiming it) the other moves onto the
+container's uid, and back when it returns.
 
-- A new container takes a down monitor: `service_down` is sent again, on the
-  container's card, for an outage already pushed under the old key.
-- A different container takes the monitor in the cycle it recovers (nextcloud
-  stops, the monitor goes down, nextcloud-app comes up healthy): the
-  container's card starts at `up`, so nothing is sent, including the
-  `service_recovered` the key of its down push was waiting for. Taking a
-  monitor that was already up sends nothing, which is right.
-- Two monitors remember the same container (left by the old matcher). When the
-  one earlier in the order drops out (a Kuma Pending retry, a pause, a
-  container claiming it), the other, if down, moves onto the container's uid
-  and sends a second `service_down` there. When the first comes back, the
-  other moves back: a false `service_recovered` on the container's uid, and
-  another `service_down` under its own name. No such pair exists live.
+So the push snapshot keeps the monitor's identity (#395). The services refresh
+keeps `monitorOf` beside the cached payload, like `upWithoutCard` and for push
+only: the id of the monitor each monitored uid carries, for running cards, red
+cards and up entries. The snapshot stores it as `monitorOf`, next to
+`services`, and the differ diffs a key against the monitor's last state rather
+than the key's alone (`serviceHistory` in `push/differ.js`):
+
+- A monitor that fed one key last cycle and feeds one now brings that key's
+  state with it, wherever its key moved. Each outage is one `service_down` and
+  one `service_recovered`, each on the card the monitor has at the time: the
+  recovery can come on a different card than the down push.
+- A key whose monitor last cycle feeds another key now starts with no
+  previous status, whatever feeds it now: its state went with the monitor, so
+  the key sends no false recovery and no repeat `service_down`.
+- A key whose monitor has gone from the snapshot (paused or deleted: the
+  `/metrics` source leaves a paused monitor out) and that no monitor feeds now
+  starts with no previous status too: its state was the monitor's, so a
+  running card whose monitor is paused or deleted while down sends no false
+  recovery, as a monitor with no container sends nothing then. Unpaused while
+  still down, it pages again, as one with no container does.
+- Every other key keeps its own previous state, as before: a card that had no
+  monitor last cycle, a key that a monitor new to the snapshot feeds now (one
+  deleted from Kuma and added again, under a new id), and the cards of a
+  monitor that an explicit mapping gives several containers, which are sent
+  card by card. Taking a monitor that was already up sends nothing.
+
+`monitorOf` is part of `alertStateKey`, so the file is rewritten when only the
+monitor of a key changes, and a restart keeps it. While a source fails, a key
+kept from the previous snapshot keeps its monitor with it. A snapshot written
+before #395 has no `monitorOf` and diffs as one where no key had a monitor,
+which is how every key was diffed before, so the deploy sends nothing; its
+first cycle writes the new format.
 
 The service registry's `seen` list has one record per monitor, the last node in
 the pass for one mapped explicitly to a container on several nodes. A record is
@@ -644,14 +684,31 @@ flowchart TD
 - **HelmGrid** is a custom, dependency-light layout engine: pure math in
   `gridMath.js` (snap, overlap-resolve, content-fit), per-item measurement +
   rendering in `GridItem.jsx`, and lifecycle (breakpoints, drag/resize, commit)
-  in `HelmGrid.jsx`. Panels auto-grow to fit content; pointer **and keyboard**
+  in `HelmGrid.jsx`. Panels auto-grow to fit content (`GridItem` re-measures a
+  panel whenever it resizes); pointer **and keyboard**
   (arrow move / Shift+arrow resize, with a live region) reposition them.
 - **Panels and first run.** The board has a panel per discovered node and custom
   group, plus the Checklist, Scheduled Jobs and Quick Launch panels. Without a
-  saved layout it starts from `DEFAULT_LAYOUTS` (`layouts.js`), which names no
-  node, so a fresh install with no node shows the "Connect your first node"
-  empty state. The UPS and Pipeline panels show only when the server says their
-  source is set up (`configuredPanels.js`). `/api/ups` carries `configured`:
+  saved layout the board is laid out by `defaultLayouts(nodes)` (`layouts.js`)
+  from the nodes `/api/services` has and the panels on show. The nodes come
+  first, in their order, at most three to a row (two at the md breakpoint,
+  fewer on a narrow grid), spread evenly over the rows, each row filling the
+  width: three to a row leaves no node alone in a row, two to a row leaves the
+  last node of an odd count alone, the whole width. Then the panels, paired by
+  height: HelmGrid grows a panel to its content and only pushes panels down, so
+  a panel under two of different heights leaves a hole under the shorter one.
+  Pipeline sits beside Scheduled Jobs, then UPS beside the Checklist, each half
+  and half, so each panel of the second pair sits under one of the first; then
+  Quick Launch. When one of a pair isn't shown, the two left over share a row,
+  the tall one 2/3 (on a fresh install, Scheduled Jobs beside the Checklist); a
+  panel left alone takes the whole row. It is regenerated as nodes
+  and panels come and go, until the first drag or resize saves a layout; a
+  saved layout is never replaced by it. A panel not on show (switched off in
+  Settings, or a source not known to be set up) is not added to a layout, so
+  it holds no empty slot. A fresh install with no node shows the "Connect your
+  first node" empty state, and the demo (`DEMO_MODE`) gets the same default
+  from its own nodes. The UPS and Pipeline panels show only when the server
+  says their source is set up (`configuredPanels.js`). `/api/ups` carries `configured`:
   true when Prometheus has the UPS's readings or saw its `nut_ups_info` series
   in the last 7 days (one query, with `last_over_time`), false when neither,
   null when the query failed. `/api/gitea/activity` answers
@@ -747,8 +804,13 @@ stack sits beside today's CSS and must not restyle it.
   and a test fails on any other `cn` in `src/ui/`. Icons come from
   `lucide-react` by name (`import { Check } from 'lucide-react'`), so a bundle
   carries only the icons it uses. The components so far are the controls
-  (#285), built on Base UI primitives, which no screen uses yet, and the status
-  components (#287), which the Android app's screens use (next point).
+  (#285) and the containers (#286), which no screen uses yet, and the status
+  components (#287), which the Android app's screens use (next point). The
+  interactive controls and containers are built on Base UI primitives. A
+  screen's root is a `UiRoot` (`src/ui/root.jsx`), which carries its switches
+  to every portal; roots can nest, and a page has one toast viewport. Screens
+  import the components, never `@base-ui/react` itself
+  (`scripts/ui-stack.test.mjs`).
 - **Both apps import `@ui/...`.** The Android build maps `@ui` to `../src/ui` and
   lists React and every package `src/ui/` imports in `resolve.dedupe`, so shared
   code uses the Android app's own copies: the APK build installs `mobile/` only,
@@ -779,8 +841,9 @@ stack sits beside today's CSS and must not restyle it.
   page (margins, lists, headings, `svg` display). `src/ui/preflight.css` is
   Tailwind's preflight wrapped in `@scope (.jh-ui)`, generated by
   `node scripts/ui-preflight.mjs`; rerun it after a Tailwind upgrade (a test fails
-  until you do). Give `jh-ui` to the root of each new screen and to portalled
-  content (dialogs, popovers, menus render outside their parent). `@scope` needs
+  until you do). Give `jh-ui` to the root of each new screen (a `UiRoot`
+  renders one) and to portalled content (dialogs, popovers, menus render
+  outside their parent; `src/ui/lib/portal.js` does it for every overlay). `@scope` needs
   Chrome or Edge 118, Safari 17.4 or Firefox 146; the Android WebView is current
   Chromium. In an older browser new components lose the reset, and today's
   screens are unaffected either way.
@@ -850,17 +913,21 @@ stack sits beside today's CSS and must not restyle it.
   picked. The new UI's faces are in `src/ui/fonts.css` (Manrope by default, Plus
   Jakarta Sans or Montserrat by `data-typeface`, JetBrains Mono), under family
   names ending in "Variable" so they never join today's families; JetBrains
-  Mono's file is shared, so it downloads once. A browser downloads a face only
-  when text renders in it, and nothing is preloaded. `scripts/fonts.test.mjs`
-  checks that every `@font-face` matches its file and licence, that nothing
-  names Google Fonts or loads a font or stylesheet from elsewhere, and the new
-  UI's 60 KB budget; [design-system.md](design-system.md#type) has the faces and
-  the scale. The Android app keeps its own copies (`mobile/src/fonts/`) for
-  today's screens.
+  Mono's latin file is shared, so it downloads once. Each new face is a latin
+  and a latin-ext file with Google's `unicode-range`, so the latin-ext file
+  downloads only for text that needs it, such as "Łódź" (#394); today's faces
+  are latin only. A browser downloads a face only when text renders in it, and
+  nothing is preloaded. `scripts/fonts.test.mjs` checks that every `@font-face`
+  matches its file and licence and each file its pinned sha256, that nothing
+  names Google Fonts or loads a font or stylesheet from elsewhere, that "Łódź"
+  draws in each new face from its latin-ext file while latin text never needs
+  it, and the new UI's 60 KB budget;
+  [design-system.md](design-system.md#type) has the faces and the scale. The
+  Android app keeps its own copies (`mobile/src/fonts/`) for today's screens.
 - **When the old CSS is gone,** drop the `legacy` layer and the scoping: import
   Tailwind's own preflight, move the tokens to `:root` and drop `reference`.
   Delete `src/styles/fonts.css` and every file in `src/fonts/` but the new UI's
-  four faces.
+  four faces (eight files: latin and latin-ext).
 
 ## 6. Data model
 

@@ -40,6 +40,7 @@ import { dedupe } from './util/dedupe.js';
 import { isJobContainer } from './util/helperContainers.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { createLogger } from './util/logger.js';
+import { redactSecrets } from './util/redact.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
@@ -188,8 +189,10 @@ function serviceRank(s) {
  *      does not depend on the order discovery listed them in.
  *  (b) Monitors no running container got — each active one reporting `down`
  *      or `up` is placed (placeMonitor): on the node of the stopped container
- *      that got the monitor, under its name; otherwise on the monitor's
- *      last-seen node, under the container it was last matched to (base spec).
+ *      that got the monitor, under its name (on the monitor's last-seen node
+ *      when that container is the one it last ran as); otherwise on the
+ *      monitor's last-seen node, under the container it was last matched to
+ *      (base spec).
  *      A uid is never one a card already on the node has, or one a monitor
  *      placed earlier in the pass took: a monitor whose last container still
  *      runs there, matched to something else now, is under the monitor's name.
@@ -224,11 +227,17 @@ function serviceRank(s) {
  * `containerCount` (how many shown, running containers there were) feed the
  * once-per-boot "no matching monitor" log line.
  *
- * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown', unmatched: string[], containerCount: number, upWithoutCard: string[] }}
+ * `monitorOf` (uid -> Kuma monitor id) names the monitor each monitored uid of
+ * the cycle carries: a running card's, a red card's and an up entry's. The push
+ * snapshot keeps it, so a monitor's state goes with it when its uid changes
+ * (#395). Like `upWithoutCard`, it is for push only.
+ *
+ * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown', unmatched: string[], containerCount: number, upWithoutCard: string[], monitorOf: Record<string, string> }}
  */
 export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf, lastSeenContainerOf, containerRegistry, now = Date.now, presenceKnown = true }) {
   const consumed = new Set();
   const seen = new Map(); // monitor id -> { monitorId, nodeKey, container }, last in the pass
+  const monitorOf = {}; // uid -> the id of the monitor it carries (#395)
   const runningOn = new Map(); // container name -> the last node it runs on in this pass
   const nowMs = now();
   const entries = nodeResults.filter(Boolean);
@@ -286,6 +295,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
       if (monitor) {
         consumed.add(monitor.id);
         withMonitor.add(c.container);
+        monitorOf[`${nodeKey}:${c.container}`] = String(monitor.id);
         // Remember the container too, so a later outage's synth card can reuse
         // this exact uid (keeps down→recovery on ONE key for the push differ).
         seen.set(monitor.id, { monitorId: monitor.id, nodeKey, container: c.container });
@@ -340,11 +350,13 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
   // heartbeat goes stale and is excluded, so a retired-while-down service can't
   // leave a phantom red card or send a false recovery — `active` reads null on
   // real Kuma and can't be relied on). Each one gets its uid from placeMonitor,
-  // in one pass whatever its status, so a monitor keeps its uid from down to up
-  // while its last container isn't in the stopped list (#395: a stopped owner
-  // only competes for a down monitor). A down one becomes a red card; an up one
-  // draws nothing and is listed in `upWithoutCard`, which the push snapshot
-  // reads as up, so its recovery is sent on the uid its down push had.
+  // in one pass whatever its status, in id order, so a monitor keeps its uid
+  // from down to up while its last container isn't in the stopped list (a
+  // stopped owner only competes for a down monitor; when it moves anyway, the
+  // push snapshot carries the monitor's state to its new uid, #395). A down one
+  // becomes a red card; an up one draws nothing and is listed in
+  // `upWithoutCard`, which the push snapshot reads as up, so its recovery is
+  // sent on the uid its down push had.
   const taken = new Set(nodeKeys.flatMap((k) => nodes[k].services.map((s) => s.uid)));
   const upWithoutCard = [];
   let outageCount = 0;
@@ -353,6 +365,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     const place = placeMonitor(m, { nodes, nodeKeys, taken, owner: stoppedOwner.get(m.id), lastSeenNodeOf, lastSeenContainerOf });
     if (!place) continue; // no nodes to attach to
     taken.add(place.uid);
+    monitorOf[place.uid] = String(m.id);
     if (m.status === 'up') {
       upWithoutCard.push(place.uid);
       continue;
@@ -436,6 +449,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     unmatched: [...unmatched].sort(),
     containerCount,
     upWithoutCard,
+    monitorOf,
   };
 }
 
@@ -444,13 +458,18 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
  * and the uid its card has, `{ nodeKey, idPart, uid, remembered }`, or null with
  * no node to attach to. Pass (b) of assembleServices is its only caller, for
  * both statuses, so a monitor's up entry has the uid its red card had while its
- * last container isn't in the stopped list (#395): `owner` is only ever set for
- * a down monitor.
+ * last container isn't in the stopped list: `owner` is only ever set for a down
+ * monitor (when the uid moves, the push snapshot carries the monitor's state
+ * to the new one, #395).
  *
  * The node is that of the stopped container that got the (down) monitor
- * (`owner`), else the monitor's last-seen node, else the first node. The uid
- * reuses the container the monitor was last matched to (the owner, else the
- * service registry's), the uid its running card had, so a down→recovery
+ * (`owner`), else the monitor's last-seen node, else the first node. When the
+ * owner is the container the monitor last ran as, the monitor's last-seen node
+ * comes first while it is on the board: the container registry keeps one
+ * record per name, with the last node in the pass, so when both copies of an
+ * unpinned replica stop, the owner's node can be the copy the monitor was not
+ * on. The uid reuses the container the monitor was last matched to (the owner,
+ * else the service registry's), the uid its running card had, so a down→recovery
  * transition stays on ONE key: the push differ only emits a recovery when
  * 'down' and 'up' share a key. It falls back to the monitor's name for a
  * monitor that never had a container, or when the uid is `taken` (a running
@@ -458,10 +477,13 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
  * name and id.
  */
 function placeMonitor(m, { nodes, nodeKeys, taken, owner, lastSeenNodeOf, lastSeenContainerOf }) {
-  let nodeKey = owner ? owner.lastSeenNode : lastSeenNodeOf(m.id);
+  const lastNode = lastSeenNodeOf(m.id);
+  const lastContainer = lastSeenContainerOf ? lastSeenContainerOf(m.id) : null;
+  const ownerIsLast = !!owner && owner.container === lastContainer && !!lastNode && !!nodes[lastNode];
+  let nodeKey = owner && !ownerIsLast ? owner.lastSeenNode : lastNode;
   if (!nodeKey || !nodes[nodeKey]) nodeKey = nodeKeys[0];
   if (!nodeKey || !nodes[nodeKey]) return null;
-  const remembered = owner ? owner.container : lastSeenContainerOf ? lastSeenContainerOf(m.id) : null;
+  const remembered = owner ? owner.container : lastContainer;
   const free = (part) => !!part && !taken.has(`${nodeKey}:${part}`);
   const idPart = [remembered, m.name].find(free) || `${m.name} (${m.id})`;
   return { nodeKey, idPart, uid: `${nodeKey}:${idPart}`, remembered };
@@ -525,7 +547,7 @@ async function _refreshServices() {
     const prometheusOk = promErrors.length === 0;
     reportPrometheus({ ok: prometheusOk, error: promErrors[0] });
 
-    const { nodes, seen, overallHealth, unmatched, containerCount, upWithoutCard } = assembleServices({
+    const { nodes, seen, overallHealth, unmatched, containerCount, upWithoutCard, monitorOf } = assembleServices({
       nodeResults,
       monitors,
       config,
@@ -552,11 +574,12 @@ async function _refreshServices() {
     // `sources` says whether each upstream answered this cycle (#232): the push
     // snapshot keeps its last state for one that didn't, so a failed poll is not
     // read as every host or service going down. `upWithoutCard`, the uids of
-    // the up monitors no card is drawn for (#390), is for the push snapshot
-    // only, so it is kept beside the payload, not in the served JSON.
+    // the up monitors no card is drawn for (#390), and `monitorOf`, the monitor
+    // each monitored uid carries (#395), are for the push snapshot only, so
+    // they are kept beside the payload, not in the served JSON.
     const sources = { prometheus: { ok: prometheusOk }, kuma: { ok: kuma.ok } };
     const result = { nodes, overallHealth, sources };
-    setCache('services', result, { upWithoutCard });
+    setCache('services', result, { upWithoutCard, monitorOf });
 
     // Record this cycle's usage into the ring buffer so the UI can draw a
     // glance-context sparkline. Only the bounded usage percents (CPU/RAM/disk);
@@ -660,25 +683,91 @@ function giteaConfigured() {
   return Boolean(process.env.GITEA_URL);
 }
 
+// The longest Gitea message the log keeps, in characters.
+const GITEA_MESSAGE_MAX = 200;
+
+/** A Gitea answer's body as JSON, or undefined when it is not JSON (a proxy's error page). */
+async function giteaBody(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The repos in a repos/search answer: its `data`, or the answer itself when it
+ * is a list. null for anything else, such as the error object Gitea answers a
+ * refused request with.
+ */
+function giteaRepoList(body) {
+  if (Array.isArray(body)) return body;
+  if (Array.isArray(body?.data)) return body.data;
+  return null;
+}
+
+/**
+ * `text` fit for the log: the token and any credential in a URL are taken out
+ * before it is cut to GITEA_MESSAGE_MAX characters, so the cut leaves no part
+ * of one.
+ */
+function giteaLogText(text, token) {
+  const clean = redactSecrets(token ? text.split(token).join('[redacted]') : text);
+  return clean.length > GITEA_MESSAGE_MAX ? `${clean.slice(0, GITEA_MESSAGE_MAX)}…` : clean;
+}
+
+/**
+ * The message in a Gitea error answer, for the log (see giteaLogText): its
+ * `message`, or the `error` repos/search reports its own failures in.
+ * undefined without a message.
+ */
+function giteaErrorMessage(body, token) {
+  const raw = body?.message ?? body?.error;
+  if (typeof raw !== 'string' || raw === '') return undefined;
+  return giteaLogText(raw, token);
+}
+
+/**
+ * An error thrown while polling Gitea, for the log (see giteaLogText). Node's
+ * fetch puts the request URL in its message, so a GITEA_URL with a user and
+ * password in it would otherwise reach the log every cycle.
+ */
+function giteaErrorText(err, token) {
+  return giteaLogText(String(err?.message || err), token);
+}
+
 /**
  * The payload is the repos with recent commits, newest first, or
  * GITEA_NOT_CONFIGURED when GITEA_URL is not set, which polls nothing. null
- * (nothing cached) when Gitea failed, so the route answers 502.
+ * (nothing cached) when Gitea failed, so the route answers 502. A repos/search
+ * answer without a repo list fails it too, with a log line giving the status
+ * and what Gitea said (#399), and so does every repo's commits request failing.
+ * Some of them failing leaves those repos out. Logged errors are redacted (see
+ * giteaLogText).
  */
 async function _refreshGitea() {
   if (!giteaConfigured()) {
     setCache('gitea', GITEA_NOT_CONFIGURED);
     return GITEA_NOT_CONFIGURED;
   }
+  const url = process.env.GITEA_URL;
+  const token = process.env.GITEA_TOKEN || '';
   try {
-    const url = process.env.GITEA_URL;
-    const token = process.env.GITEA_TOKEN || '';
     // Header, not ?token= — Gitea logs full request URLs, which would leak it.
     const opts = token ? { headers: { Authorization: `token ${token}` } } : {};
 
     const reposRes = await safeFetch(`${url}/api/v1/repos/search?limit=20`, opts);
-    const reposData = await reposRes.json();
-    const repos = (reposData?.data || reposData || [])
+    const reposData = await giteaBody(reposRes);
+    const list = giteaRepoList(reposData);
+    if (!list) {
+      log.error(
+        { status: reposRes.status, message: giteaErrorMessage(reposData, token) },
+        'Gitea refresh error: no repo list in the answer'
+      );
+      return null;
+    }
+    const repos = list
       .filter((r) => !r.fork && !r.mirror && !r.archived)
       .map((r) => ({ name: r.name, fullName: r.full_name }));
 
@@ -706,6 +795,17 @@ async function _refreshGitea() {
       })
     );
 
+    // A request that threw, or a body that is not JSON. With every repo's
+    // failing, an empty list would read as a Gitea with no recent commits.
+    const failed = repoCommits.filter((r) => r.status === 'rejected');
+    if (failed.length === repos.length) {
+      log.error(
+        { repos: repos.length, err: giteaErrorText(failed[0].reason, token) },
+        'Gitea refresh error: every commits request failed'
+      );
+      return null;
+    }
+
     const result = repoCommits
       .filter((r) => r.status === 'fulfilled' && r.value.commits.length > 0)
       .map((r) => r.value)
@@ -718,7 +818,7 @@ async function _refreshGitea() {
     setCache('gitea', result);
     return result;
   } catch (err) {
-    log.error({ err }, 'Gitea refresh error');
+    log.error({ err: giteaErrorText(err, token) }, 'Gitea refresh error');
     return null;
   }
 }

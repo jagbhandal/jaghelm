@@ -304,6 +304,66 @@ describe('DashboardView on a fresh install', () => {
   });
 });
 
+describe('DashboardView without a saved layout (#248)', () => {
+  // The lg layout's rows, top to bottom: the panel ids at each y, left to right.
+  const lgRows = () => {
+    const byY = new Map();
+    for (const it of [...gridLayouts().lg].sort((a, b) => a.y - b.y || a.x - b.x)) {
+      if (!byY.has(it.y)) byY.set(it.y, []);
+      byY.get(it.y).push(it.i);
+    }
+    return [...byY.values()];
+  };
+
+  it('places the discovered nodes first, side by side, then the panels', () => {
+    renderBoard(
+      freshConfig(),
+      boardData({
+        serviceData: { nodes: { edge: node('Edge'), apps: node('Apps'), storage: node('Storage') } },
+        ups: NO_UPS,
+        commits: NO_GITEA,
+        sources: sourcesWith({ commits: answered() }),
+      })
+    );
+
+    expect(lgRows()).toEqual([
+      ['node-edge', 'node-apps', 'node-storage'],
+      ['cron-jobs', 'todos'],
+      ['quicklaunch'],
+    ]);
+    expect(screen.queryByText(/Loading /)).not.toBeInTheDocument();
+  });
+
+  it('pairs the panels by height once the UPS and Pipeline sources are set up', () => {
+    renderBoard(
+      freshConfig(),
+      boardData({
+        serviceData: { nodes: { edge: node('Edge'), apps: node('Apps') } },
+        ups: UPS_ONLINE,
+        commits: [],
+        sources: sourcesWith({ commits: answered() }),
+      })
+    );
+
+    expect(lgRows()).toEqual([
+      ['node-edge', 'node-apps'],
+      ['pipeline', 'cron-jobs'],
+      ['ups', 'todos'],
+      ['quicklaunch'],
+    ]);
+  });
+
+  it('holds no slot for a panel switched off in Settings', () => {
+    renderBoard(
+      freshConfig({ sections: { todos: { visible: false } } }),
+      boardData({ serviceData: { nodes: { edge: node('Edge') } } })
+    );
+
+    expect(lgRows()).toEqual([['node-edge'], ['cron-jobs'], ['quicklaunch']]);
+    for (const items of Object.values(gridLayouts())) expect(ids(items)).not.toContain('todos');
+  });
+});
+
 describe('DashboardView on an existing install', () => {
   // A layout saved before #272, naming the panels the old defaults shipped.
   const SAVED = {

@@ -196,6 +196,24 @@ test('generateDefaultConfig writes only nodes, services and integrations', () =>
   assert.deepEqual(cfg.integrations, {});
 });
 
+test('generateDefaultConfig names each node by its own label, never by a built-in name (#248)', () => {
+  // The labels the author's homelab has once mapped to his own names
+  // ("Gateway Primary", "Production", "Staging"); any install may use them.
+  const cfg = generateDefaultConfig(['pi1', 'pi2', 'vm103', 'vm101']);
+  for (const label of ['pi1', 'pi2', 'vm103', 'vm101']) {
+    assert.deepEqual(cfg.nodes[label], {
+      prometheus_node: label,
+      display_name: label,
+      subtitle: '',
+      icon: '🖥',
+      border_color: '#6366f1',
+      visible: true,
+      auto_discover: true,
+      hide: ['prometheus', 'node-exporter', 'cadvisor'],
+    });
+  }
+});
+
 test('a services.yaml generated before #265 loads, with one warning naming the unread keys', (t) => {
   // Negative control: a file without the old keys logs nothing.
   writeFileSync(servicesYaml, 'nodes:\n  pi1:\n    display_name: Gateway\nservices: {}\n');

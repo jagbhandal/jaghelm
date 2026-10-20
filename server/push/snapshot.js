@@ -5,10 +5,13 @@
  * enters only through the injected `caches.now` (absent => no overdue).
  *
  * Snapshot shape (every map's keys inserted in ascending sorted order):
- *   services: "NODE:ID" -> "up" | "down" | "unknown"
- *   hosts:    "NODE"    -> { reachable, cpu, mem, disk }  (metrics 0..1 fractions)
- *   ups:      { state: "online" | "on_battery" | "unknown" }
- *   cron:     "NODE:JOB" -> "success" | "failure" | "overdue" | "unknown"
+ *   services:  "NODE:ID" -> "up" | "down" | "unknown"
+ *   monitorOf: "NODE:ID" -> the id of the Kuma monitor that fed that service key
+ *              (#395), for the keys a monitor fed; a snapshot written before
+ *              #395 has none, and diffs as one where no key had a monitor
+ *   hosts:     "NODE"    -> { reachable, cpu, mem, disk }  (metrics 0..1 fractions)
+ *   ups:       { state: "online" | "on_battery" | "unknown" }
+ *   cron:      "NODE:JOB" -> "success" | "failure" | "overdue" | "unknown"
  *
  * Normalization law: anything unrecognized => "unknown" (services/cron),
  * "unknown" ups, or reachable:false (hosts). "unknown" never produces an event.
@@ -120,6 +123,25 @@ export function buildServices(servicesCache, upWithoutCard = []) {
     if (typeof uid === 'string' && !cards.has(uid)) statusOf.set(uid, 'up');
   }
   return sortedObject([...statusOf]);
+}
+
+/**
+ * The Kuma monitor that fed each key of `services` this cycle (#395). The
+ * services refresh keeps `monitorOf` (uid -> monitor id) beside the cached
+ * payload, like upWithoutCard (it is not served): the running cards that have a
+ * monitor, the red cards of monitors no running container got, and those
+ * monitors' up entries. The differ carries a monitor's state across a move of
+ * its key with it. Only the keys in `services` are kept, ids as strings, sorted.
+ */
+export function buildMonitorOf(monitorOf, services) {
+  if (!monitorOf || typeof monitorOf !== 'object' || Array.isArray(monitorOf)) return {};
+  const entries = [];
+  for (const [uid, id] of Object.entries(monitorOf)) {
+    if (!Object.hasOwn(services, uid)) continue;
+    const valid = typeof id === 'string' ? id !== '' : typeof id === 'number' && Number.isFinite(id);
+    if (valid) entries.push([uid, String(id)]);
+  }
+  return sortedObject(entries);
 }
 
 /**
@@ -264,21 +286,33 @@ function baselineReady(hosts, servicesCache, ok) {
 }
 
 /**
- * The services map to diff, given which sources answered. Kuma sets every
- * service status that can page (a container's own status is only ever `up`), so
- * while it fails the previous map is kept whole. While Prometheus fails, the
- * running-container list is incomplete: a service missing from this cycle keeps
- * its previous status, and one present (a Kuma outage card, or the up entry of a
- * monitor whose container wasn't seen) takes this cycle's, so Kuma keeps paging
- * through a Prometheus outage. A recovery during it is sent when Kuma reports
- * it, since with no container seen the up monitor is an entry under its card's
- * uid (#390), unless no node could be read at all: then nothing is placed, and
- * it is sent once the container is seen again.
+ * The services map to diff, given which sources answered, with the monitor
+ * that fed each of its keys (#395): a key kept from `prev` keeps the monitor it
+ * had there. Kuma sets every service status that can page (a container's own
+ * status is only ever `up`), so while it fails the previous map is kept whole.
+ * While Prometheus fails, the running-container list is incomplete: a service
+ * missing from this cycle keeps its previous status, and one present (a Kuma
+ * outage card, or the up entry of a monitor whose container wasn't seen) takes
+ * this cycle's, so Kuma keeps paging through a Prometheus outage. A recovery
+ * during it is sent when Kuma reports it, since with no container seen the up
+ * monitor is an entry under its card's uid (#390), unless no node could be read
+ * at all: then nothing is placed, and it is sent once the container is seen
+ * again.
  */
-function keepServices(prev, services, ok) {
-  if (!ok.kuma) return prev.services ?? {};
-  if (!ok.prometheus) return sortedObject(Object.entries({ ...(prev.services ?? {}), ...services }));
-  return services;
+function keepServices(prev, services, monitorOf, ok) {
+  const prevServices = prev.services ?? {};
+  const prevMonitorOf = buildMonitorOf(prev.monitorOf, prevServices);
+  if (!ok.kuma) return { services: prevServices, monitorOf: prevMonitorOf };
+  if (!ok.prometheus) {
+    const kept = sortedObject(Object.entries({ ...prevServices, ...services }));
+    const owners = [];
+    for (const key of Object.keys(kept)) {
+      const from = Object.hasOwn(services, key) ? monitorOf : prevMonitorOf;
+      if (Object.hasOwn(from, key)) owners.push([key, from[key]]);
+    }
+    return { services: kept, monitorOf: sortedObject(owners) };
+  }
+  return { services, monitorOf };
 }
 
 // Default seam: real warm caches + cron store. Kept thin so production wiring
@@ -292,14 +326,15 @@ export const liveCaches = {
 
 /**
  * Build the canonical, byte-deterministic Snapshot from the warm caches.
- * PURE given its injected `caches` and `prev`. The four top-level keys are
+ * PURE given its injected `caches` and `prev`. The five top-level keys are
  * emitted in a fixed order; every sub-map is ascending-sorted by key.
  *
  * `prev` is the snapshot the result will be diffed against. For a source that
  * failed this cycle (sourcesOk) the part it feeds is kept from `prev`: each
  * host's unread fields (keepHosts) and, as keepServices describes, services
- * while Prometheus fails; services while Kuma fails; the UPS state while its
- * read fails. Cron is pushed to JagHelm and has no upstream to fail.
+ * (with the monitor of each) while Prometheus fails; services while Kuma fails;
+ * the UPS state while its read fails. Cron is pushed to JagHelm and has no
+ * upstream to fail.
  *
  * With no `prev` this cycle is the baseline, and its values are all there is.
  * When it cannot be one (baselineReady) the result is null, and the push cycle
@@ -314,12 +349,16 @@ export function buildSnapshot(caches = liveCaches, prev = null) {
   const upsCache = caches.getCached('ups');
   const cronStatuses = caches.getAllCronStatuses();
   const ok = sourcesOk(servicesCache, upsCache);
-  const services = buildServices(servicesCache, caches.getCachedInternal?.('services')?.upWithoutCard);
+  const internal = caches.getCachedInternal?.('services');
+  const services = buildServices(servicesCache, internal?.upWithoutCard);
+  const monitorOf = buildMonitorOf(internal?.monitorOf, services);
   const hosts = buildHosts(servicesCache);
   const ups = buildUps(upsCache);
   if (!prev && !baselineReady(hosts, servicesCache, ok)) return null;
+  const kept = prev ? keepServices(prev, services, monitorOf, ok) : { services, monitorOf };
   return {
-    services: prev ? keepServices(prev, services, ok) : services,
+    services: kept.services,
+    monitorOf: kept.monitorOf,
     hosts: prev ? keepHosts(prev.hosts ?? {}, hosts, servicesCache, ok) : hosts,
     ups: prev && !ok.ups ? (prev.ups ?? { state: 'unknown' }) : ups,
     cron: buildCron(cronStatuses, typeof caches.now === 'function' ? caches.now() : null),

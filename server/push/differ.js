@@ -13,6 +13,9 @@
  * "unknown" (services/cron) and reachable:false-from-absent are normalized
  * upstream in buildSnapshot; here "unknown" NEVER produces an event, and the
  * first cycle (prev=null) is a silent baseline.
+ *
+ * A service key is diffed against the state of the Kuma monitor that feeds it,
+ * wherever that monitor's key was last cycle (#395): see serviceHistory.
  */
 
 /** event.type -> severity. */
@@ -46,7 +49,7 @@ export function diffSnapshots(prev, next, thresholds) {
   // Baseline: first cycle has no prior state, so nothing has "changed" yet.
   if (prev === null || prev === undefined) return [];
   const events = [];
-  diffServices(prev.services || {}, next.services || {}, events);
+  diffServices(prev.services || {}, next.services || {}, monitorOfIn(prev), monitorOfIn(next), events);
   diffHosts(prev.hosts || {}, next.hosts || {}, thresholds, events);
   diffUps(prev.ups || { state: 'unknown' }, next.ups || { state: 'unknown' }, events);
   diffCron(prev.cron || {}, next.cron || {}, events);
@@ -65,9 +68,72 @@ function idPart(key) {
   return i === -1 ? key : key.slice(i + 1);
 }
 
-function diffServices(prev, next, events) {
+/** A snapshot's monitorOf (service key -> Kuma monitor id); {} when it has none. */
+function monitorOfIn(snapshot) {
+  const m = snapshot?.monitorOf;
+  return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+}
+
+/** monitorOf turned around: monitor id -> the keys it fed. */
+function keysByMonitor(monitorOf) {
+  const keys = new Map();
+  for (const [key, id] of Object.entries(monitorOf)) {
+    if (!keys.has(id)) keys.set(id, []);
+    keys.get(id).push(key);
+  }
+  return keys;
+}
+
+/**
+ * The state each service key of `next` is diffed from, given which monitor fed
+ * each key in the previous snapshot and in this one (#395). A key's own
+ * previous state, except where its monitor changed:
+ *
+ * - A monitor that fed one key last cycle and feeds one key now brings that
+ *   key's state with it, wherever its key moved (a container took it, its
+ *   stopped container let it go, the monitor that shared its place dropped
+ *   out). So an outage is one service_down and one service_recovered, whatever
+ *   card each lands on.
+ * - A key whose monitor last cycle feeds another key now starts fresh
+ *   ("unknown"), whatever feeds it now: that state went with the monitor, so
+ *   the key sends no false recovery and no repeat down push.
+ * - A key whose monitor last cycle has gone from the snapshot (paused or
+ *   deleted: Kuma no longer lists it) and that no monitor feeds now starts
+ *   fresh too: its state was the monitor's, so a running card whose monitor is
+ *   paused or deleted while down sends no false recovery, as a monitor with no
+ *   container sends nothing then (#390).
+ *
+ * Otherwise the key keeps its own state, as before #395: a card with no
+ * monitor last cycle, a key that a monitor new to the snapshot feeds now (one
+ * deleted from Kuma and added again, under a new id), a monitor that feeds
+ * several cards (explicit mappings, each card sent on its own), and every key
+ * of a snapshot written before #395, which records no monitors (so a deploy
+ * sends nothing for it).
+ */
+function serviceHistory(prev, prevMonitorOf, nextMonitorOf) {
+  const prevKeys = keysByMonitor(prevMonitorOf);
+  const nextKeys = keysByMonitor(nextMonitorOf);
+  const stateOf = (key) => (Object.hasOwn(prev, key) ? prev[key] : 'unknown');
+  return (key) => {
+    const monitor = Object.hasOwn(nextMonitorOf, key) ? nextMonitorOf[key] : undefined;
+    const fed = monitor === undefined ? undefined : prevKeys.get(monitor);
+    if (fed) {
+      if (fed.includes(key)) return stateOf(key);
+      if (fed.length === 1 && nextKeys.get(monitor).length === 1) return stateOf(fed[0]);
+    }
+    // (A monitor that fed this key last cycle and still does returned above.)
+    const before = Object.hasOwn(prevMonitorOf, key) ? prevMonitorOf[key] : undefined;
+    if (before !== undefined && nextKeys.has(before)) return 'unknown';
+    // Its monitor has gone and nothing feeds it now: the state was the monitor's.
+    if (before !== undefined && monitor === undefined) return 'unknown';
+    return stateOf(key);
+  };
+}
+
+function diffServices(prev, next, prevMonitorOf, nextMonitorOf, events) {
+  const history = serviceHistory(prev, prevMonitorOf, nextMonitorOf);
   for (const key of Object.keys(next)) {
-    const before = prev[key] === undefined ? 'unknown' : prev[key];
+    const before = history(key);
     const after = next[key];
     if (after === 'unknown') continue; // unknown never emits
     const wentDown = (before === 'up' || before === 'unknown') && after === 'down';
@@ -174,18 +240,25 @@ function diffHosts(prev, next, thresholds, events) {
 
 /**
  * What diffSnapshots reads from a snapshot when it is `prev`: the service, cron
- * and UPS states, each host's reachability, and which side of its threshold
- * each host metric is on, not the reading itself. Two snapshots with the same
- * key give the same alerts against any `next`, so the persisted snapshot is
- * rewritten only when this changes (createPushSnapshot). Keep it in step with
- * the reads in diffServices, diffHosts, diffUps and diffCron.
+ * and UPS states, the monitor that fed each service key, each host's
+ * reachability, and which side of its threshold each host metric is on, not the
+ * reading itself. Two snapshots with the same key give the same alerts against
+ * any `next`, so the persisted snapshot is rewritten only when this changes
+ * (createPushSnapshot). Keep it in step with the reads in diffServices,
+ * diffHosts, diffUps and diffCron.
  */
 export function alertStateKey(snapshot, thresholds) {
   const hosts = {};
   for (const [node, h] of Object.entries(snapshot?.hosts || {})) {
     hosts[node] = [h?.reachable === true, ...HOST_METRICS.map((metric) => h?.[metric] >= thresholds[metric])];
   }
-  return JSON.stringify({ services: snapshot?.services, hosts, ups: snapshot?.ups?.state, cron: snapshot?.cron });
+  return JSON.stringify({
+    services: snapshot?.services,
+    monitorOf: snapshot?.monitorOf,
+    hosts,
+    ups: snapshot?.ups?.state,
+    cron: snapshot?.cron,
+  });
 }
 
 function diffCron(prev, next, events) {
