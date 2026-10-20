@@ -14,8 +14,12 @@ import { createMockPrometheus, homelabSeries } from './testing/mockPrometheus.js
 
 const { initDiscovery, getNodesData } = await import('./discovery.js');
 const { refreshUPS, refreshGitea } = await import('./refresh.js');
+const { initMonitors, fetchMonitors } = await import('./monitors.js');
+const { recordRun, getAllStatuses } = await import('./cron-store.js');
+const { decorateStatuses } = await import('./cron-overdue.js');
 const {
   demoNodeReadings,
+  demoMonitors,
   demoServices,
   demoServicesConfig,
   demoMonitorNames,
@@ -65,6 +69,65 @@ test('each demo node reading has the keys and value types discovery gives a live
       );
       for (const f of ['cpu', 'memMB', 'rxMB', 'txMB', 'rxBytesPerSec', 'txBytesPerSec']) {
         assert.equal(typeof c.docker[f], 'number', `${key}/${c.container}: docker.${f}`);
+      }
+    }
+  }
+});
+
+// ── Kuma monitors: monitors.js's shape ───────────────────────────────────
+
+test('each demo monitor has the keys and value types fetchMonitors gives a live one', async () => {
+  // A Kuma status page with one monitor and its heartbeats.
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    const json = (body) =>
+      new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
+    if (url.pathname === '/api/status-page/default')
+      return json({ publicGroupList: [{ monitorList: [{ id: 7, name: 'Grafana' }] }] });
+    if (url.pathname === '/api/status-page/heartbeat/default')
+      return json({
+        heartbeatList: { 7: [{ status: 1, ping: 38, time: '2026-10-19 11:59:40.000' }] },
+        uptimeList: { '7_24': 0.9993 },
+      });
+    assert.fail(`unexpected request ${url}`);
+  };
+  initMonitors('http://kuma.demo.test');
+  const { ok, monitors } = await fetchMonitors(true);
+  assert.equal(ok, true);
+  const live = monitors[7];
+  assert.ok(live, 'the live monitor to compare with');
+
+  for (const scenario of ['incident', 'healthy']) {
+    for (const m of Object.values(demoMonitors(scenario, NOW))) {
+      assert.deepEqual(keys(m), keys(live), `${m.name}: monitor keys`);
+      for (const [k, v] of Object.entries(m)) {
+        assert.equal(typeOf(v), typeOf(live[k]), `${m.name}.${k} is ${typeOf(v)}`);
+      }
+    }
+  }
+});
+
+// ── Cron runs: cron-store's shape ────────────────────────────────────────
+
+test('the demo cron statuses have the keys a live store gives, at every level', () => {
+  // A live store (the test's own data dir), a failed and a good run with every field.
+  const report = { job: 'probe', node: 'probe-node', duration_seconds: 4 };
+  const extra = { schedule: 'daily 02:00', expected_every_seconds: 86_400 };
+  recordRun({ ...report, ...extra, status: 'success' });
+  recordRun({ ...report, ...extra, status: 'failure', error: 'repository is locked' });
+  const [liveNode] = decorateStatuses(getAllStatuses(), NOW);
+  const [liveJob] = liveNode.jobs;
+  const [liveFailed, liveGood] = liveJob.runs;
+
+  const demo = demoCronStatus({ scenario: 'incident', now: NOW });
+  for (const node of demo) {
+    assert.deepEqual(keys(node), keys(liveNode), `${node.node}: node keys`);
+    for (const job of node.jobs) {
+      assert.deepEqual(keys(job), keys(liveJob), `${node.node}/${job.job}: job keys`);
+      for (const run of job.runs) {
+        const live = run.status === 'failure' ? liveFailed : liveGood;
+        assert.deepEqual(keys(run), keys(live), `${node.node}/${job.job}: ${run.status} run keys`);
+        for (const [k, v] of Object.entries(run)) assert.equal(typeOf(v), typeOf(live[k]), k);
       }
     }
   }

@@ -7,9 +7,9 @@
  * /api/services, decorateStatuses() /api/cron/status, and generateDefaultConfig()
  * the services.yaml behind /api/services/config. So the board matches what a
  * live install serves, and a down monitor turns it red the way a real one does.
- * The parts written in their payload's shape (the node readings, the UPS and
- * the Gitea payloads) are checked against the live code's own output by
- * server/demoFixtures.test.js.
+ * The parts written by hand are checked against the live code's own output by
+ * server/demoFixtures.test.js: the node readings, the Kuma monitors and the
+ * cron runs for their keys and value types, the UPS and Gitea payloads whole.
  *
  * Two scenarios: `incident` (the default) has one service failing its health
  * check and a failed backup job, so the board is not green; `healthy` has
@@ -187,8 +187,11 @@ const MONITORS = [
 ];
 const DOWN_IN_INCIDENT = new Set(['Jellyfin']);
 
-/** The monitors, in the shape monitors.js fetchMonitors() gives them. */
-function demoMonitors(scenario, now) {
+/**
+ * The monitors, in the shape monitors.js fetchMonitors() gives them (checked
+ * against it by server/demoFixtures.test.js).
+ */
+export function demoMonitors(scenario, now) {
   const out = {};
   for (const [id, name, ping, uptime24] of MONITORS) {
     const down = scenario === 'incident' && DOWN_IN_INCIDENT.has(name);
@@ -319,7 +322,11 @@ export function demoGiteaActivity({ now = Date.now() } = {}) {
 
 const ago = (now, ms) => new Date(now - ms).toISOString();
 
-/** The cron store's statuses (cron-store.js getAllStatuses), nodes and jobs sorted. */
+/**
+ * The cron store's statuses (cron-store.js getAllStatuses), nodes and jobs
+ * sorted. Each run has the keys recordRun() stores (checked against it by
+ * server/demoFixtures.test.js).
+ */
 function cronStatuses(scenario, now) {
   const backupFailed = scenario === 'incident';
   return [

@@ -7,8 +7,12 @@
  * TCP connection (http, https and fetch all open one), DNS lookup and global
  * fetch is recorded and refused, and every call that writes to the file system
  * is recorded. The data dir it is pointed at doesn't exist, so making it counts
- * too. A normal-mode boot under the same spies is the control: it reaches out
- * (discovery) and writes (services.yaml), so the spies are known to catch both.
+ * too. In the demo boot every timer is run fast (any delay becomes at most
+ * 10 ms), so a poller whose first tick comes minutes or a day after boot still
+ * runs inside the test's watch, and the demo must log none of the lines the
+ * live subsystems log as they start. A normal-mode boot under the same spies
+ * is the control: it reaches out (discovery), writes (services.yaml) and logs
+ * those lines, so the spies and the list are known to catch them.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,6 +33,8 @@ writeFileSync(
 import fs from 'node:fs';
 import net from 'node:net';
 import dns from 'node:dns';
+import timers from 'node:timers';
+import timersPromises from 'node:timers/promises';
 import { syncBuiltinESMExports } from 'node:module';
 
 const append = fs.appendFileSync;
@@ -47,7 +53,8 @@ const record = (kind, detail) => {
 // Outbound: refused as a closed port would refuse it.
 const refused = () => Object.assign(new Error('blocked by demo.boot.test.js'), { code: 'ECONNREFUSED' });
 net.Socket.prototype.connect = function (...args) {
-  const o = args[0];
+  // http and fetch hand connect() a normalised [options, callback] array.
+  const o = Array.isArray(args[0]) ? args[0][0] : args[0];
   record('connect', o && typeof o === 'object' ? (o.path ?? (o.host ?? 'localhost') + ':' + o.port) : o);
   process.nextTick(() => this.destroy(refused()));
   return this;
@@ -92,6 +99,20 @@ spy(fs, 'open', (a) => writeFlag(a[1]));
 spy(fs, 'openSync', (a) => writeFlag(a[1]));
 spy(fs.promises, 'open', (a) => writeFlag(a[1]));
 spy(fs, 'createWriteStream');
+
+// Timers, fast: any delay becomes at most 10 ms, so a minute, an hour or a day
+// passes in the second the test watches. The clock record proves it did.
+if (process.env.SPY_FAST_TIMERS) {
+  const fast = (orig) =>
+    function (fn, ms, ...rest) {
+      return orig.call(this, fn, Math.min(Number(ms) || 0, 10), ...rest);
+    };
+  timers.setTimeout = globalThis.setTimeout = fast(globalThis.setTimeout);
+  timers.setInterval = globalThis.setInterval = fast(globalThis.setInterval);
+  const sleep = timersPromises.setTimeout;
+  timersPromises.setTimeout = (ms, ...rest) => sleep(Math.min(Number(ms) || 0, 10), ...rest);
+  setTimeout(() => record('clock', 'a day of timers ran'), 24 * 60 * 60 * 1000).unref();
+}
 syncBuiltinESMExports();
 `
 );
@@ -128,6 +149,20 @@ const WRITES = [
 ];
 const ICON = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@latest/svg/grafana.svg';
 
+// What each subsystem a live boot starts (index.js startSubsystems) logs as it
+// starts. The control logs every one; the demo, none.
+const SUBSYSTEM_LINES = {
+  secrets: /^DASH_SECRET not set|^Loaded encrypted secrets/,
+  discovery: /^Prometheus URL$/,
+  kuma: /^Uptime Kuma URL$/,
+  'icon cache': /^icons cached locally$/,
+  push: /^push (disabled|enabled)/,
+  'icon index': /icon index/,
+  'services.yaml': /^first boot|^No services\.yaml|^Loaded services\.yaml/,
+  'refresh loop': /^background loop started$/,
+  arcane: /^Arcane integration|^ARCANE_URL/,
+};
+
 /**
  * Boot the server under the spies, run `drive(baseUrl)` against it, wait a
  * moment for anything deferred, stop it. Returns what the spies recorded,
@@ -154,6 +189,7 @@ async function bootUnderSpies(name, extraEnv, drive = async () => {}) {
     ARCANE_API_KEY: 'demo-boot-test',
   };
   delete env.DASH_PASS;
+  delete env.DASH_SECRET; // so the secrets store logs its start the same way everywhere
   delete env.NODE_TEST_CONTEXT; // the child is a server, not a test file
   const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, serverEntry], {
     env,
@@ -187,7 +223,8 @@ async function bootUnderSpies(name, extraEnv, drive = async () => {}) {
     ]);
     assert.ok(port, `server exited, or did not listen within 30 s:\n${out}`);
     await drive(`http://127.0.0.1:${port}`);
-    // The refresh loop and the pollers start at boot; give anything deferred a moment.
+    // The refresh loop and the pollers start at boot; give anything deferred a
+    // moment (a day and more of it, with SPY_FAST_TIMERS).
     await new Promise((resolve) => setTimeout(resolve, 1000));
   } finally {
     clearTimeout(timer);
@@ -199,17 +236,27 @@ async function bootUnderSpies(name, extraEnv, drive = async () => {}) {
     .split('\n')
     .filter(Boolean)
     .map((l) => JSON.parse(l));
-  return { records, out, dataDir };
+  const logged = out
+    .split('\n')
+    .filter((l) => l.startsWith('{'))
+    .map((l) => JSON.parse(l));
+  return { records, out, logged, dataDir };
 }
+
+/** The subsystems whose start line is in `logged`. */
+const started = (logged) =>
+  Object.keys(SUBSYSTEM_LINES).filter((name) =>
+    logged.some((l) => SUBSYSTEM_LINES[name].test(l.msg))
+  );
 
 const of = (records, ...kinds) =>
   records.filter((r) => kinds.includes(r.kind)).map((r) => `${r.kind} ${r.detail}`);
 
 test('demo: boot and every client read make no outbound request and write no file (#248)', async () => {
   const answers = {};
-  const { records, out, dataDir } = await bootUnderSpies(
+  const { records, out, logged, dataDir } = await bootUnderSpies(
     'demo',
-    { DEMO_MODE: 'true' },
+    { DEMO_MODE: 'true', SPY_FAST_TIMERS: '1' },
     async (base) => {
       for (const path of READS) {
         const r = await fetch(base + path);
@@ -232,6 +279,7 @@ test('demo: boot and every client read make no outbound request and write no fil
     }
   );
 
+  assert.deepEqual(of(records, 'clock'), ['clock a day of timers ran'], 'the timers ran fast');
   assert.deepEqual(of(records, 'connect', 'dns', 'fetch'), [], 'no outbound request');
   assert.deepEqual(of(records, 'write'), [], 'no file written');
   assert.equal(existsSync(dataDir), false, 'the data dir is never made');
@@ -242,10 +290,7 @@ test('demo: boot and every client read make no outbound request and write no fil
   // The browser fetches the icon from the CDN itself; the server only points it there.
   assert.deepEqual(answers.icon, [302, ICON]);
 
-  const logged = out
-    .split('\n')
-    .filter((l) => l.startsWith('{'))
-    .map((l) => JSON.parse(l));
+  assert.deepEqual(started(logged), [], 'no subsystem started');
   assert.ok(
     logged.some(
       (l) => l.module === 'demo' && /DEMO_MODE is ON/.test(l.msg) && l.scenario === 'incident'
@@ -263,8 +308,13 @@ test('demo: boot and every client read make no outbound request and write no fil
   );
 });
 
-test('control: a normal boot under the same spies reaches out and writes, so the spies catch both', async () => {
-  const { records, dataDir } = await bootUnderSpies('normal', {});
+test('control: a normal boot under the same spies reaches out, writes and starts every subsystem, so the checks catch each', async () => {
+  const { records, logged, dataDir } = await bootUnderSpies('normal', {});
+  assert.deepEqual(
+    started(logged),
+    Object.keys(SUBSYSTEM_LINES),
+    'every subsystem logged its start'
+  );
   assert.ok(of(records, 'connect', 'dns', 'fetch').length > 0, 'discovery asked Prometheus');
   assert.ok(
     of(records, 'write').some((w) => w.includes('services.yaml')),
