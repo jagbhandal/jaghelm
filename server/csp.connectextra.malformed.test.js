@@ -3,7 +3,7 @@
  *
  * CSP_CONNECT_EXTRA entries are NOT validated by helmet; we validate them
  * ourselves before passing to helmet. Entries that are not well-formed
- * http/https/wss/ws origins must be dropped (with a console.warn) so that
+ * http/https/wss/ws origins must be dropped (with a warning in the server log) so that
  * operators can't accidentally widen connect-src with wildcards, javascript:
  * URIs, or other garbage.
  *

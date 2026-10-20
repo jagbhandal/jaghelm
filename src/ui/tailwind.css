@@ -133,6 +133,26 @@
   --color-info-solid: var(--jh-info-solid);
   --color-info-on-solid: var(--jh-info-on-solid);
 
+  /* Chart colours (#386): the six slots, fill-series-1 to stroke-series-6
+     (bg- for a legend's swatch, text- for an SVG drawn in currentColor, never
+     for words), and the ramp, fill-seq-1 to bg-seq-7. Never a status, never
+     the accent. Drawn only on bg, surface-1, surface-2 and a hovered row, and
+     never on surface-3; slot 1 alone may also sit on a status tint or in a
+     selected row (docs/design-system.md, "Chart colours"). */
+  --color-series-1: var(--jh-series-1);
+  --color-series-2: var(--jh-series-2);
+  --color-series-3: var(--jh-series-3);
+  --color-series-4: var(--jh-series-4);
+  --color-series-5: var(--jh-series-5);
+  --color-series-6: var(--jh-series-6);
+  --color-seq-1: var(--jh-seq-1);
+  --color-seq-2: var(--jh-seq-2);
+  --color-seq-3: var(--jh-seq-3);
+  --color-seq-4: var(--jh-seq-4);
+  --color-seq-5: var(--jh-seq-5);
+  --color-seq-6: var(--jh-seq-6);
+  --color-seq-7: var(--jh-seq-7);
+
   /* Component tokens. */
   --color-meter: var(--jh-meter);
   --color-track: var(--jh-track);

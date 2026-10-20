@@ -9,26 +9,97 @@
 // that credential in the URL.
 const CREDENTIAL_PARAMS = new Set(['username', 'password', 'token']);
 
+// A value that is, or looks like, a `$secret:` reference: a name in the secrets
+// store, not the credential itself.
+const SECRET_REF = /^\s*\$secret:/i;
+
+/** True for a value that is, or looks like, a `$secret:` reference. */
+export function looksLikeSecretRef(value) {
+  return typeof value === 'string' && SECRET_REF.test(value);
+}
+
+/**
+ * A URL needs a stored credential that couldn't be resolved: a `$secret:`
+ * reference whose secret is missing or unreadable, or a reference where a
+ * credential is never resolved. The URL is not built and no request is sent.
+ * The message names where the credential goes (`{token} in the endpoint`),
+ * never the reference, and says where to fix it: the token is a field in
+ * Settings for every integration, anything else is fixed in services.yaml (a
+ * custom integration's form shows no password or username).
+ */
+export class UnresolvedSecretError extends Error {
+  /**
+   * @param {string} where
+   * @param {{ token?: boolean }} [opts] token: the credential is the token
+   */
+  constructor(where, { token = false } = {}) {
+    const fix = token
+      ? 'enter the token again in Settings and save'
+      : "check this integration's entry in services.yaml";
+    super(`Couldn't resolve the stored credential for ${where}; ${fix}`);
+    this.name = 'UnresolvedSecretError';
+  }
+}
+
+// placeholderValue's answer for a credential whose reference didn't resolve.
+const UNRESOLVED = Symbol('unresolved');
+
+/**
+ * The value a `{key}` placeholder takes. A credential with a resolved `_` twin
+ * (which resolveIntegrationConfig sets) always takes the twin: the raw value
+ * beside it is what the twin was resolved from, often a `$secret:` reference,
+ * and for a preset the `.env` value wins over it. Anything else is looked up
+ * by its name, then with the underscore.
+ */
+function placeholderValue(config, key) {
+  const name = key.replace(/^_/, '');
+  if (CREDENTIAL_PARAMS.has(name) && Object.hasOwn(config, `_${name}`)) {
+    const resolved = config[`_${name}`];
+    if (!resolved && looksLikeSecretRef(config[name])) return UNRESOLVED;
+    return resolved;
+  }
+  return config[key] || config[`_${key}`];
+}
+
 /**
  * Replace {placeholder} tokens in endpoint URLs with config values.
- * Used by presets that require dynamic URL segments (e.g. Cloudflare account_id).
- * Looks up the key in config directly, then falls back to _prefixed version.
+ * Used by presets that require dynamic URL segments (e.g. Cloudflare account_id)
+ * and by custom integrations that put a credential in the URL (`?key={token}`).
+ * A credential placeholder takes the resolved credential (see placeholderValue);
+ * a placeholder with no value is left as written.
+ *
+ * A `$secret:` reference is never put into a URL. A placeholder whose value
+ * is, or looks like, one (its secret is missing or unreadable, or it is in a
+ * field that is never resolved) throws UnresolvedSecretError, so the request
+ * is not sent and the integration's error says why (#425).
  *
  * Also reports whether a credential was filled in (a custom integration's
  * `/api?key={token}`), which the caller passes to safeFetch as credentialInUrl so
- * the request refuses a redirect to another origin.
+ * the request refuses a redirect to another origin, and `shownPath`: the path
+ * with every credential placeholder left as written (`/api?key={token}`), for
+ * safeFetch's shownUrl, so an error that quotes the URL never quotes the
+ * credential.
  *
- * @returns {{ path: string, credentialInUrl: boolean }}
+ * @returns {{ path: string, credentialInUrl: boolean, shownPath: string }}
  */
 export function resolveEndpoint(endpoint, config) {
   let credentialInUrl = false;
-  const path = endpoint.replace(/\{(\w+)\}/g, (match, key) => {
-    const value = config[key] || config[`_${key}`];
-    if (!value) return match;
-    if (CREDENTIAL_PARAMS.has(key.replace(/^_/, ''))) credentialInUrl = true;
-    return value;
+  let shownPath = '';
+  let shownTo = 0;
+  const path = endpoint.replace(/\{(\w+)\}/g, (match, key, offset) => {
+    const value = placeholderValue(config, key);
+    if (value === UNRESOLVED || looksLikeSecretRef(value)) {
+      throw new UnresolvedSecretError(`{${key}} in the endpoint`, { token: key.replace(/^_/, '') === 'token' });
+    }
+    const credential = !!value && CREDENTIAL_PARAMS.has(key.replace(/^_/, ''));
+    if (credential) credentialInUrl = true;
+    const filled = value ? String(value) : match;
+    shownPath += endpoint.slice(shownTo, offset) + (credential ? match : filled);
+    shownTo = offset + match.length;
+    return filled;
   });
-  return { path, credentialInUrl };
+  shownPath += endpoint.slice(shownTo);
+  return { path, credentialInUrl, shownPath };
 }
 
 /**

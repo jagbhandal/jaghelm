@@ -7,7 +7,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
-  { ignores: ['**/dist/**', 'coverage/**', 'public/**', '**/node_modules/**', 'mobile/visual/out/**', 'mobile/android/**'] },
+  { ignores: ['**/dist/**', 'dist-gallery/**', 'test-results/**', 'coverage/**', 'public/**', '**/node_modules/**', 'mobile/visual/out/**', 'mobile/android/**'] },
   js.configs.recommended,
   // Frontend (desktop `src/` + mobile app `mobile/`) — browser + React + JSX
   {
@@ -35,6 +35,22 @@ export default [
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^[A-Z_]' }],
     },
   },
+  // The component gallery (#289, docs/GALLERY.md): a page in the browser.
+  {
+    files: ['gallery/**/*.{js,jsx}'],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'module',
+      globals: { ...globals.browser, __ANDROID_LOOK__: 'readonly' },
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^[A-Z_]' }],
+    },
+  },
   // shadcn/ui components export their variant helpers (buttonVariants and the
   // like) beside the component, by design; Fast Refresh just reloads those files.
   {
@@ -43,11 +59,32 @@ export default [
   },
   // Backend + tooling — Node
   {
-    files: ['server/**/*.js', 'scripts/**/*.mjs', 'scripts/**/*.js', 'vite.config.js', 'eslint.config.js'],
+    files: [
+      'server/**/*.js',
+      'scripts/**/*.mjs',
+      'scripts/**/*.js',
+      'vite.config.js',
+      'vite.gallery.config.js',
+      'playwright.config.mjs',
+      'eslint.config.js',
+    ],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
       globals: { ...globals.node },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    },
+  },
+  // The gallery's Playwright tests and container pin: Node, with browser globals
+  // inside page.evaluate(...) and waitForFunction(...) callbacks.
+  {
+    files: ['gallery/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'module',
+      globals: { ...globals.node, ...globals.browser },
     },
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],

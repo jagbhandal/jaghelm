@@ -1,0 +1,1652 @@
+/*
+ * What each gallery state draws (#289), keyed by its id in catalog.js. Each is
+ * a component, rendered inside a UiRoot with the variant's switches
+ * (main.jsx), so it can use hooks.
+ *
+ * Layout here is inline styles reading the role tokens, and classes only where
+ * a component's own API asks for one (a Skeleton's shape, a Sparkline's
+ * `w-full`): the gallery loads the production stylesheet unchanged, which only
+ * holds the classes src/ui/ uses (scripts/gallery-build.test.mjs checks the
+ * few named here). Data is fixed, times included, so every render is the same.
+ */
+import { useEffect } from 'react';
+import {
+  Bell,
+  History,
+  Inbox,
+  Info,
+  LayoutGrid,
+  Monitor,
+  Moon,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Rocket,
+  ScrollText,
+  Sun,
+  Trash2,
+} from 'lucide-react';
+import { Button, buttonVariants } from '@ui/button';
+import { IconButton } from '@ui/icon-button';
+import { Input } from '@ui/input';
+import { Select } from '@ui/select';
+import { Switch } from '@ui/switch';
+import { Checkbox } from '@ui/checkbox';
+import { Field } from '@ui/field';
+import { SegmentedControl } from '@ui/segmented-control';
+import { Tabs, TabList, Tab, TabPanel } from '@ui/tabs';
+import { Panel } from '@ui/panel';
+import { Dialog, DialogClose } from '@ui/dialog';
+import { Drawer, DrawerClose } from '@ui/drawer';
+import { Confirm } from '@ui/confirm';
+import { Popover } from '@ui/popover';
+import { Tooltip } from '@ui/tooltip';
+import { useToast } from '@ui/toast';
+import { Banner } from '@ui/banner';
+import { EmptyState } from '@ui/empty-state';
+import { Skeleton } from '@ui/skeleton';
+import { StatusLamp } from '@ui/status-lamp';
+import { StatusWord, StatusBadge } from '@ui/status-word';
+import { IssueRow } from '@ui/issue-row';
+import { SubsystemStrip } from '@ui/subsystem-strip';
+import { AttentionPanel } from '@ui/attention-panel';
+import { MetricMeter } from '@ui/metric-meter';
+import { Sparkline } from '@ui/sparkline';
+import { UptimeBar } from '@ui/uptime-bar';
+import { EntityRow } from '@ui/entity-row';
+import { FactList } from '@ui/fact-list';
+import { Table } from '@ui/table';
+
+// ---------------------------------------------------------------- layout
+
+const noop = () => {};
+
+function Stack({ gap = 16, width, children }) {
+  return <div style={{ display: 'flex', flexDirection: 'column', gap, width }}>{children}</div>;
+}
+
+function Row({ gap = 12, align = 'center', children }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: align, gap }}>{children}</div>
+  );
+}
+
+function Grid({ columns, gap = 16, width, children }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: columns, gap, width, alignItems: 'start' }}>
+      {children}
+    </div>
+  );
+}
+
+/** A short caption for what follows, in text-2 (checked on the page and panels). */
+function Caption({ children }) {
+  return <p style={{ color: 'var(--jh-text-2)', fontSize: 12, lineHeight: '16px' }}>{children}</p>;
+}
+
+/** A labelled control in a row: the label wraps it, as the mock's settings rows. */
+function Labelled({ children }) {
+  return <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>{children}</label>;
+}
+
+function List({ children }) {
+  return <ul className="divide-y divide-border">{children}</ul>;
+}
+
+// ---------------------------------------------------------------- fixtures
+
+// 08:00 to 08:58 UTC on 2026-10-20, every 2 minutes.
+const T0 = Date.UTC(2026, 9, 20, 8, 0);
+const series = (values) => values.map((value, i) => ({ time: T0 + i * 120_000, value }));
+
+const CPU = series([
+  22, 24, 21, 28, 35, 31, 27, 26, 30, 42, 38, 33, 29, 27, 25, 31, 36, 34, 30, 28, 26, 29, 33, 37,
+  41, 36, 32, 30, 34, 38,
+]);
+const MEMORY = series([
+  61, 61, 62, 62, 63, 63, 64, 64, 64, 65, 66, 66, 67, 68, 68, 69, 70, 71, 71, 72, 73, 73, 74, 75,
+  75, 76, 77, 77, 78, 78,
+]);
+const LATENCY = series([
+  92, 88, 95, 101, 97, 90, 86, 112, 140, 131, 104, 96, 91, 89, 93, 99, 105, 98, 94, 90, 87, 92, 97,
+  103, 99, 95, 91, 94, 96, 93,
+]);
+const GAPPED = series([
+  30,
+  32,
+  35,
+  33,
+  null,
+  null,
+  null,
+  38,
+  41,
+  39,
+  36,
+  34,
+  37,
+  40,
+  43,
+  41,
+  38,
+  null,
+  36,
+  35,
+  33,
+  31,
+  34,
+  37,
+  39,
+  42,
+  40,
+  38,
+  36,
+  35,
+]);
+
+const beats = (pattern) =>
+  [...pattern].map((c) => ({ o: 'ok', x: 'crit', w: 'warn', m: 'maintenance', '.': null })[c]);
+const BEATS_OK = beats('oooooooooooooooooooooooooooooo');
+const BEATS_FAILING = beats('ooooooooooooooooooooooooooxxxx');
+const BEATS_FLAKY = beats('oooooooxooooooooooooooxooooooo');
+const BEATS_PENDING = beats('oooooooooooooooooooowwoooooooo');
+const BEATS_MAINTENANCE = beats('oooooooooooooooommmmmmmmmmoooo');
+const BEATS_NONE = beats('..............................');
+
+const ISSUES = [
+  {
+    id: 'immich',
+    state: 'crit',
+    word: 'Down',
+    title: 'Immich',
+    where: 'Service · Production (vm-103)',
+    reason: 'Kuma: HTTP 502 for 4 min',
+    age: '4 m',
+    href: '#immich',
+  },
+  {
+    id: 'ups',
+    state: 'crit',
+    word: 'On battery',
+    title: 'UPS',
+    where: 'Power',
+    reason: '82 % charge · about 31 min runtime left',
+    age: '2 m',
+    onOpen: noop,
+  },
+  {
+    id: 'disk',
+    state: 'warn',
+    word: 'Warning',
+    title: 'vm-101 disk',
+    where: 'Node · Staging',
+    reason: '/ is 86 % full, 41 GB free',
+    age: '1 h',
+    onOpen: noop,
+  },
+  {
+    id: 'wiki',
+    state: 'unknown',
+    word: 'No signal',
+    title: 'Wiki.js',
+    where: 'Service · Production (vm-103)',
+    reason: 'No heartbeat yet',
+    age: '2 m',
+  },
+];
+
+const MAINTENANCE_ISSUE = {
+  id: 'ha',
+  state: 'maintenance',
+  word: 'Maintenance',
+  title: 'Home Assistant',
+  where: 'Service · pi-1',
+  reason: 'Kuma maintenance until 10:00',
+  age: '20 m',
+  onOpen: noop,
+};
+
+const CELLS = [
+  {
+    key: 'services',
+    label: 'Services',
+    state: 'crit',
+    word: 'Down',
+    value: '30 / 32 up',
+    sub: '1 down · 1 no signal',
+  },
+  {
+    key: 'nodes',
+    label: 'Nodes',
+    state: 'warn',
+    word: 'Warning',
+    value: '6 / 6 up',
+    sub: '1 disk warning',
+  },
+  {
+    key: 'power',
+    label: 'Power',
+    state: 'crit',
+    word: 'On battery',
+    value: 'On battery',
+    sub: '82 % · ~31 min left',
+  },
+  {
+    key: 'jobs',
+    label: 'Jobs',
+    state: 'ok',
+    value: '14 / 14 on time',
+    sub: 'next: npm-sync in 9 min',
+  },
+  {
+    key: 'backups',
+    label: 'Backups',
+    state: 'maintenance',
+    word: 'Maintenance',
+    value: '1 in maintenance',
+    sub: 'vzdump OK 4 h ago',
+  },
+  {
+    key: 'integrations',
+    label: 'Integrations',
+    state: 'unknown',
+    word: 'No signal',
+    value: '11 / 12 answering',
+    sub: 'Gitea: no answer',
+  },
+];
+
+const INCIDENT = {
+  state: 'crit',
+  counts: '2 critical, 1 warning, 1 no signal',
+  subline: 'Immich is down and the UPS is on battery.',
+};
+
+const NODES = [
+  {
+    id: 'vm-103',
+    name: 'Production',
+    host: 'vm-103',
+    state: 'ok',
+    cpu: '34 %',
+    memory: '61 %',
+    disk: '48 %',
+    uptime: '41 d',
+  },
+  {
+    id: 'vm-101',
+    name: 'Staging',
+    host: 'vm-101',
+    state: 'warn',
+    word: 'Disk',
+    cpu: '12 %',
+    memory: '44 %',
+    disk: '86 %',
+    uptime: '41 d',
+  },
+  {
+    id: 'pi-1',
+    name: 'DNS primary',
+    host: 'pi-1',
+    state: 'ok',
+    cpu: '7 %',
+    memory: '38 %',
+    disk: '22 %',
+    uptime: '9 d',
+  },
+  {
+    id: 'nas',
+    name: 'JagNAS',
+    host: 'jagnas',
+    state: 'unknown',
+    cpu: '—',
+    memory: '—',
+    disk: '—',
+    uptime: '—',
+  },
+];
+
+const NODE_COLUMNS = [
+  {
+    key: 'name',
+    header: 'Node',
+    cell: (row) => (
+      <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 8 }}>
+        {row.name}
+        <code style={{ fontSize: 12, fontWeight: 400, color: 'var(--jh-text-3)' }}>{row.host}</code>
+      </span>
+    ),
+  },
+  {
+    key: 'state',
+    header: 'Status',
+    cell: (row) => (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <StatusLamp state={row.state} decorative />
+        <StatusWord state={row.state} word={row.word} />
+      </span>
+    ),
+  },
+  { key: 'cpu', header: 'CPU', numeric: true },
+  { key: 'memory', header: 'Memory', numeric: true },
+  { key: 'disk', header: 'Disk', numeric: true },
+  { key: 'uptime', header: 'Uptime', numeric: true },
+];
+
+const NODE_ITEMS = [
+  { value: 'vm-103', label: 'Production (vm-103)' },
+  { value: 'vm-101', label: 'Staging (vm-101)' },
+  { value: 'pi-1', label: 'DNS primary (pi-1)' },
+  { value: 'pi-2', label: 'DNS secondary (pi-2)', disabled: true },
+];
+
+const UPS_FACTS = [
+  { key: 'charge', label: 'Charge', value: '82 %' },
+  { key: 'runtime', label: 'Runtime', value: 'about 31 min' },
+  { key: 'load', label: 'Load', value: '18 %, 96 W' },
+  { key: 'input', label: 'Input', value: <StatusWord state="crit" word="On battery" /> },
+];
+
+const SERVICE_FACTS = [
+  { key: 'monitor', label: 'Monitor', value: 'HTTP(s), every 60 s' },
+  { key: 'latency', label: 'Latency', value: '42 ms median' },
+  { key: 'uptime', label: 'Uptime, 30 days', value: '99.94 %' },
+  { key: 'host', label: 'Host', value: <code>vm-103</code> },
+  { key: 'url', label: 'Address', value: 'https://photos.jagbhandal.com/api/server/ping' },
+];
+
+// ---------------------------------------------------------------- controls
+
+const BUTTON_SIZES = ['md', 'sm'];
+
+function ButtonState() {
+  return (
+    <Stack>
+      {BUTTON_SIZES.map((size) => (
+        <Row key={size}>
+          <Button variant="primary" size={size}>
+            Save changes
+          </Button>
+          <Button size={size}>Secondary</Button>
+          <Button variant="ghost" size={size}>
+            Ghost
+          </Button>
+          <Button variant="ghost" tone="accent" size={size}>
+            <Pencil />
+            Edit
+          </Button>
+          <Button variant="danger" size={size}>
+            <Trash2 />
+            Remove
+          </Button>
+          <Button variant="primary" size={size}>
+            <Plus />
+            Add service
+          </Button>
+          <Button size={size}>
+            <RefreshCw />
+            Reload
+          </Button>
+        </Row>
+      ))}
+      <Row>
+        <a href="#settings" className={buttonVariants({ variant: 'secondary' })}>
+          A link drawn as a button
+        </a>
+        <a
+          href="#alerts"
+          className={buttonVariants({ variant: 'ghost', size: 'sm', tone: 'accent' })}
+        >
+          All alerts
+        </a>
+      </Row>
+    </Stack>
+  );
+}
+
+function ButtonDisabledState() {
+  return (
+    <Stack>
+      {BUTTON_SIZES.map((size) => (
+        <Row key={size}>
+          <Button variant="primary" size={size} disabled>
+            Save changes
+          </Button>
+          <Button size={size} disabled>
+            Secondary
+          </Button>
+          <Button variant="ghost" size={size} disabled>
+            Ghost
+          </Button>
+          <Button variant="ghost" tone="accent" size={size} disabled>
+            Edit
+          </Button>
+          <Button variant="danger" size={size} disabled>
+            Remove
+          </Button>
+        </Row>
+      ))}
+    </Stack>
+  );
+}
+
+function ButtonFocusState() {
+  return (
+    <Row>
+      <Button variant="primary" data-gallery-focus>
+        Save changes
+      </Button>
+      <Button>Cancel</Button>
+    </Row>
+  );
+}
+
+function IconButtonState() {
+  return (
+    <Stack>
+      {BUTTON_SIZES.map((size) => (
+        <Row key={size}>
+          <IconButton label="Reload" size={size}>
+            <RefreshCw />
+          </IconButton>
+          <IconButton label="Notifications" variant="secondary" size={size}>
+            <Bell />
+          </IconButton>
+          <IconButton label="Edit" tone="accent" size={size}>
+            <Pencil />
+          </IconButton>
+          <IconButton label="Remove" variant="danger" size={size}>
+            <Trash2 />
+          </IconButton>
+          <IconButton label="Reload, disabled" size={size} disabled>
+            <RefreshCw />
+          </IconButton>
+          <IconButton label="Notifications, disabled" variant="secondary" size={size} disabled>
+            <Bell />
+          </IconButton>
+        </Row>
+      ))}
+    </Stack>
+  );
+}
+
+function InputState() {
+  return (
+    <Grid columns="repeat(2, 280px)">
+      <Field label="Name">
+        <Input placeholder="Immich" />
+      </Field>
+      <Field label="Address">
+        <Input defaultValue="https://photos.jagbhandal.com" />
+      </Field>
+      <Field label="Port" disabled>
+        <Input defaultValue="2283" disabled />
+      </Field>
+      <Field label="Timeout" error="Use a number of seconds from 1 to 60.">
+        <Input defaultValue="90" />
+      </Field>
+    </Grid>
+  );
+}
+
+function InputFocusState() {
+  return (
+    <Stack width={280}>
+      <Field label="Search" description="Services, nodes and issues.">
+        <Input placeholder="Immich" data-gallery-focus />
+      </Field>
+    </Stack>
+  );
+}
+
+function SelectState() {
+  return (
+    <Grid columns="repeat(2, 280px)">
+      <Field label="Node">
+        <Select items={NODE_ITEMS} placeholder="Choose a node" />
+      </Field>
+      <Field label="Runs on">
+        <Select items={NODE_ITEMS} defaultValue="vm-103" />
+      </Field>
+      <Field label="Fallback" disabled>
+        <Select items={NODE_ITEMS} defaultValue="pi-1" disabled />
+      </Field>
+      <Field label="Backup target" error="Pick a node that runs Proxmox.">
+        <Select items={NODE_ITEMS} defaultValue="pi-1" />
+      </Field>
+    </Grid>
+  );
+}
+
+function SelectOpenState() {
+  return (
+    <Stack width={280}>
+      <Field label="Runs on">
+        <Select items={NODE_ITEMS} defaultValue="vm-101" defaultOpen />
+      </Field>
+    </Stack>
+  );
+}
+
+function SwitchState() {
+  return (
+    <Stack gap={12}>
+      <Labelled>
+        <Switch />
+        Send push alerts
+      </Labelled>
+      <Labelled>
+        <Switch defaultChecked />
+        Show the weather
+      </Labelled>
+      <Labelled>
+        <Switch disabled />
+        Locked off
+      </Labelled>
+      <Labelled>
+        <Switch defaultChecked disabled />
+        Locked on
+      </Labelled>
+    </Stack>
+  );
+}
+
+function CheckboxState() {
+  return (
+    <Stack gap={12}>
+      <Labelled>
+        <Checkbox />
+        Open in a new browser tab
+      </Labelled>
+      <Labelled>
+        <Checkbox defaultChecked />
+        Back up before updating
+      </Labelled>
+      <Labelled>
+        <Checkbox indeterminate />
+        Some services
+      </Labelled>
+      <Labelled>
+        <Checkbox disabled />
+        Locked, empty
+      </Labelled>
+      <Labelled>
+        <Checkbox defaultChecked disabled />
+        Locked, checked
+      </Labelled>
+      <Field error="Tick this to go on.">
+        <Labelled>
+          <Checkbox />I have a backup
+        </Labelled>
+      </Field>
+    </Stack>
+  );
+}
+
+function FieldState() {
+  return (
+    <Grid columns="repeat(2, 280px)">
+      <Field label="Display name" description="Shown on the Overview and in alerts.">
+        <Input defaultValue="Production" />
+      </Field>
+      <Field label="Prometheus address" error="Prometheus didn't answer at this address.">
+        <Input defaultValue="http://192.168.68.11:9091" />
+      </Field>
+      <Field label="Read-only" description="Set in config.yaml." disabled>
+        <Input defaultValue="/opt/stacks" disabled />
+      </Field>
+      <Field label="Theme" description="System follows the device.">
+        <Select
+          items={[
+            { value: 'system', label: 'System' },
+            { value: 'dark', label: 'Dark' },
+            { value: 'light', label: 'Light' },
+          ]}
+          defaultValue="system"
+        />
+      </Field>
+      <Field label="Density">
+        <SegmentedControl
+          options={[
+            { value: 'comfortable', label: 'Comfortable' },
+            { value: 'compact', label: 'Compact' },
+          ]}
+          defaultValue="comfortable"
+        />
+      </Field>
+      <Field label="Push alerts" description="To every device signed in.">
+        <Switch defaultChecked />
+      </Field>
+    </Grid>
+  );
+}
+
+function SegmentedControlState() {
+  return (
+    <Stack>
+      <SegmentedControl
+        aria-label="Text size"
+        options={[
+          { value: 'default', label: 'Default' },
+          { value: 'large', label: 'Large' },
+        ]}
+        defaultValue="default"
+      />
+      <SegmentedControl
+        aria-label="Theme"
+        options={[
+          { value: 'dark', label: 'Dark', icon: Moon },
+          { value: 'light', label: 'Light', icon: Sun },
+          { value: 'system', label: 'System', icon: Monitor },
+        ]}
+        defaultValue="light"
+      />
+      <SegmentedControl
+        aria-label="Range"
+        options={[
+          { value: '1h', label: '1 h' },
+          { value: '6h', label: '6 h' },
+          { value: '24h', label: '24 h' },
+          { value: '7d', label: '7 d', disabled: true },
+        ]}
+        defaultValue="24h"
+      />
+    </Stack>
+  );
+}
+
+function ServiceTabs({ focus = false }) {
+  return (
+    <Stack width={520}>
+      <Tabs defaultValue="overview">
+        <TabList aria-label="Immich">
+          <Tab value="overview" data-gallery-focus={focus || undefined}>
+            <LayoutGrid />
+            Overview
+          </Tab>
+          <Tab value="history">
+            <History />
+            History
+          </Tab>
+          <Tab value="logs" disabled>
+            <ScrollText />
+            Logs
+          </Tab>
+        </TabList>
+        <TabPanel value="overview">Up for 41 days. 24,499 assets, 42 ms median latency.</TabPanel>
+        <TabPanel value="history">Two outages in the last 30 days.</TabPanel>
+        <TabPanel value="logs">Logs need Loki.</TabPanel>
+      </Tabs>
+    </Stack>
+  );
+}
+
+// ---------------------------------------------------------------- containers
+
+function PanelState() {
+  return (
+    <Grid columns="repeat(2, 400px)">
+      <Panel
+        title="Quick launch"
+        description="Your most used apps"
+        icon={<Rocket />}
+        actions={
+          <Button variant="ghost" size="sm" tone="accent">
+            Edit
+          </Button>
+        }
+      >
+        <p style={{ color: 'var(--jh-text-2)' }}>Immich, Gitea, Nextcloud and Home Assistant.</p>
+      </Panel>
+      <Panel title="Weather" icon={<Sun />}>
+        <p>14 °C, light cloud. Rain from 16:00.</p>
+      </Panel>
+    </Grid>
+  );
+}
+
+function ServiceRows() {
+  return (
+    <List>
+      <li>
+        <EntityRow state="ok" name="Immich" detail="24,499 assets" meta="42 ms" onOpen={noop} />
+      </li>
+      <li>
+        <EntityRow
+          state="crit"
+          word="Down"
+          name="Gitea"
+          detail="Kuma: HTTP 502 for 4 min"
+          meta="—"
+          onOpen={noop}
+        />
+      </li>
+      <li>
+        <EntityRow
+          state="ok"
+          name="Nextcloud"
+          detail="3 users signed in"
+          meta="118 ms"
+          onOpen={noop}
+        />
+      </li>
+    </List>
+  );
+}
+
+function PanelFlushState() {
+  return (
+    <Stack width={720}>
+      <Panel
+        flush
+        title="Services"
+        description="31 of 32 up"
+        icon={<LayoutGrid />}
+        actions={
+          <Button variant="ghost" size="sm" tone="accent">
+            All services
+          </Button>
+        }
+      >
+        <ServiceRows />
+      </Panel>
+    </Stack>
+  );
+}
+
+function PanelUntitledState() {
+  return (
+    <Stack width={400}>
+      <Panel>
+        <p>A panel with no header: its content sits inside the density's padding.</p>
+        <MetricMeter label="CPU" value={34} warn={75} crit={90} />
+      </Panel>
+    </Stack>
+  );
+}
+
+function DialogState({ size }) {
+  const copy = {
+    sm: {
+      title: 'Rename node',
+      description: 'The name shows on the Overview and in alerts.',
+      field: (
+        <Field label="Name" description="Up to 40 characters.">
+          <Input defaultValue="Production" />
+        </Field>
+      ),
+    },
+    md: {
+      title: 'Add a link',
+      description: "Links open in a new tab. Apps that can't load inside JagHelm open here too.",
+      field: (
+        <Field label="Address" error="Start the address with http:// or https://.">
+          <Input defaultValue="photos.jagbhandal.com" />
+        </Field>
+      ),
+    },
+    lg: {
+      title: 'Edit service',
+      description: "Immich's monitor and where it runs.",
+      field: (
+        <Field label="Runs on" description="The node whose metrics show beside it.">
+          <Select items={NODE_ITEMS} defaultValue="vm-103" />
+        </Field>
+      ),
+    },
+  }[size];
+  return (
+    <Dialog
+      defaultOpen
+      size={size}
+      title={copy.title}
+      description={copy.description}
+      footer={
+        <>
+          <Button variant="primary">Save</Button>
+          <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+        </>
+      }
+    >
+      {copy.field}
+    </Dialog>
+  );
+}
+
+function DrawerState() {
+  return (
+    <Drawer defaultOpen eyebrow="Service" title="Immich" description="Production · vm-103">
+      <Banner
+        tone="crit"
+        title="Down for 4 min"
+        cause="Kuma: HTTP 502 from photos.jagbhandal.com"
+        detail="Last check 08:58"
+        action={<Button size="sm">Retry</Button>}
+      />
+      <FactList facts={SERVICE_FACTS} />
+      <Row gap={8}>
+        <Button variant="primary">Open Immich</Button>
+        <DrawerClose render={<Button variant="ghost">Close</Button>} />
+      </Row>
+    </Drawer>
+  );
+}
+
+function ConfirmDestructiveState() {
+  return (
+    <Confirm
+      defaultOpen
+      destructive
+      title="Remove this device?"
+      name="Pixel 8"
+      detail="Android · added 12 Oct"
+      description="It stops getting push alerts. You can sign it in again later."
+      confirmLabel="Remove"
+      value="device-7f3a"
+    />
+  );
+}
+
+function ConfirmState() {
+  return (
+    <Confirm
+      defaultOpen
+      title="Send a test alert?"
+      name="Pixel 8"
+      detail="Android · last seen 2 min ago"
+      description="A test notification goes to this device only."
+      confirmLabel="Send"
+      value="device-7f3a"
+    />
+  );
+}
+
+function PopoverState() {
+  return (
+    <Popover
+      defaultOpen
+      trigger={<Button>Shows here</Button>}
+      title="Shows here"
+      description="Pinned apps open under the header and stay loaded, so they come back where you left them."
+    />
+  );
+}
+
+function PopoverHoverState() {
+  return (
+    <Row gap={8}>
+      <span>Latency</span>
+      <Popover
+        openOnHover
+        trigger={
+          <IconButton label="About latency" size="sm" data-gallery-hover>
+            <Info />
+          </IconButton>
+        }
+        title="Latency"
+        description="The median response time of the last 30 checks."
+      />
+    </Row>
+  );
+}
+
+function TooltipNameState() {
+  return (
+    <Tooltip content="Reload">
+      <IconButton label="Reload" data-gallery-focus>
+        <RefreshCw />
+      </IconButton>
+    </Tooltip>
+  );
+}
+
+function TooltipDescriptionState() {
+  return (
+    <Tooltip content="Still loaded: opens where you left it">
+      <Button data-gallery-focus>Immich</Button>
+    </Tooltip>
+  );
+}
+
+/** Adds `toasts` once, from an effect, with ids (StrictMode-safe). */
+function Toasts({ toasts }) {
+  const toast = useToast();
+  useEffect(() => {
+    for (const t of toasts) toast.add(t);
+  }, [toast, toasts]);
+  return null;
+}
+
+const NOTES = [
+  {
+    id: 'gallery-saved',
+    title: 'Checklist saved',
+    description: 'Synced to your other devices.',
+    timeout: 0,
+  },
+  { id: 'gallery-sent', title: 'Sent to 2 devices', tone: 'ok', timeout: 0 },
+  {
+    id: 'gallery-slow',
+    title: 'Saved, but Gitea is slow',
+    description: 'The activity panel may lag for a minute.',
+    tone: 'warn',
+    timeout: 0,
+  },
+];
+
+const URGENT = [
+  {
+    id: 'gallery-failed',
+    title: "Couldn't save the checklist",
+    description: 'The server answered 503. Your changes are still here.',
+    tone: 'crit',
+  },
+  {
+    id: 'gallery-undo',
+    title: 'Device removed',
+    description: 'Pixel 8 no longer gets alerts.',
+    action: { label: 'Undo', onClick: noop },
+    timeout: 0,
+  },
+];
+
+const BANNERS = [
+  {
+    tone: 'crit',
+    title: 'Live metrics unavailable',
+    cause: 'Prometheus unreachable at 192.168.68.11:9090',
+    detail: 'Last good reading 3 min ago',
+    action: 'Retry',
+  },
+  {
+    tone: 'warn',
+    title: 'Backups overdue',
+    cause: "vzdump hasn't reported since 02:00",
+    detail: 'Expected every 24 h',
+    action: 'Open jobs',
+  },
+  {
+    tone: 'unknown',
+    title: 'No signal from Wiki.js',
+    cause: 'Kuma has no heartbeat for this monitor yet',
+    detail: 'Monitor added 2 min ago',
+    action: 'Open Kuma',
+  },
+  {
+    tone: 'maintenance',
+    title: 'Planned work on vm-103',
+    cause: 'Kuma maintenance until 10:00',
+    detail: 'Alerts for its services are held',
+    action: 'Details',
+  },
+  {
+    tone: 'info',
+    title: 'Demo mode',
+    cause: 'Everything here is made-up data.',
+    detail: 'Nothing is sent anywhere',
+    action: 'Leave demo',
+  },
+  {
+    tone: 'ok',
+    title: 'Back to normal',
+    cause: 'Prometheus answered again at 08:41',
+    detail: 'Down for 6 min',
+    action: 'Dismiss',
+  },
+];
+
+function BannerState({ plain = false }) {
+  return (
+    <Stack gap={12} width={640}>
+      {BANNERS.map((b) => (
+        <Banner
+          key={b.tone}
+          tone={b.tone}
+          title={b.title}
+          cause={b.cause}
+          detail={plain ? undefined : b.detail}
+          action={plain ? undefined : <Button size="sm">{b.action}</Button>}
+        />
+      ))}
+    </Stack>
+  );
+}
+
+function EmptyStateState() {
+  return (
+    <Grid columns="repeat(2, 400px)">
+      <Panel title="Integrations">
+        <EmptyState
+          icon={<Inbox />}
+          title="No integrations yet"
+          description="Add one to show its stats on the Overview and in the drawer."
+          action={
+            <Button variant="primary">
+              <Plus />
+              Add integration
+            </Button>
+          }
+        />
+      </Panel>
+      <Panel title="Search">
+        <EmptyState size="sm" title="Nothing matches “gitea”" />
+      </Panel>
+    </Grid>
+  );
+}
+
+function SkeletonState() {
+  return (
+    <Stack width={400}>
+      <Panel title="Services">
+        <div aria-busy="true" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <span className="sr-only">Loading services</span>
+          <Skeleton style={{ height: 12, width: '70%' }} />
+          <Skeleton style={{ height: 12, width: '50%' }} />
+          <Skeleton style={{ height: 12, width: '85%' }} />
+          <Row>
+            <Skeleton className="rounded-full" style={{ width: 32, height: 32 }} />
+            <Skeleton className="rounded-full" style={{ width: 64, height: 20 }} />
+          </Row>
+          <Skeleton className="rounded-lg" style={{ height: 96 }} />
+        </div>
+      </Panel>
+    </Stack>
+  );
+}
+
+// ---------------------------------------------------------------- status
+
+const LAMP_ROWS = [
+  ['ok', 'ok'],
+  ['warn', 'warn'],
+  ['crit', 'crit'],
+  ['unknown', 'unknown'],
+  ['maintenance', 'maintenance'],
+  ['healthy', 'healthy (an Android severity, read as ok)'],
+  ['caution', 'caution (read as warn)'],
+  ['critical', 'critical (read as crit)'],
+  ['offline', 'anything else (read as no signal)'],
+];
+
+function Lamps() {
+  return (
+    <Grid columns="10px 14px 20px 1fr" gap={12}>
+      {LAMP_ROWS.map(([state, said]) => (
+        <LampRow key={state} state={state} said={said} />
+      ))}
+    </Grid>
+  );
+}
+
+function LampRow({ state, said }) {
+  return (
+    <>
+      <StatusLamp state={state} />
+      <StatusLamp state={state} size="lg" />
+      <StatusLamp state={state} size={20} />
+      <Caption>{said}</Caption>
+    </>
+  );
+}
+
+function StatusLampState() {
+  return (
+    <Grid columns="repeat(2, 320px)">
+      <Stack gap={8}>
+        <Caption>On the page</Caption>
+        <Lamps />
+      </Stack>
+      <Panel title="On a panel">
+        <Lamps />
+      </Panel>
+    </Grid>
+  );
+}
+
+const STATES = ['ok', 'warn', 'crit', 'unknown', 'maintenance'];
+
+function StatusWordState() {
+  return (
+    <Stack>
+      <Row gap={20}>
+        {STATES.map((state) => (
+          <StatusWord key={state} state={state} />
+        ))}
+      </Row>
+      <Row gap={20}>
+        <StatusWord state="crit" word="Down" />
+        <StatusWord state="crit" word="On battery" />
+        <StatusWord state="warn" word="Overdue" />
+        <StatusWord state="unknown" word="UNKN" />
+      </Row>
+      <p>
+        Immich is <StatusWord state="crit" word="down" /> and the UPS is{' '}
+        <StatusWord state="crit" word="on battery" />.
+      </p>
+    </Stack>
+  );
+}
+
+function StatusBadgeState() {
+  return (
+    <Stack>
+      <Row>
+        {STATES.map((state) => (
+          <StatusBadge key={state} state={state} />
+        ))}
+      </Row>
+      <Row>
+        <StatusBadge state="crit" word="Down" />
+        <StatusBadge state="crit" word="On battery" />
+        <StatusBadge state="warn" word="Overdue" />
+      </Row>
+    </Stack>
+  );
+}
+
+function IssueRows() {
+  return (
+    <List>
+      {[...ISSUES, MAINTENANCE_ISSUE].map((issue) => (
+        <li key={issue.id}>
+          <IssueRow issue={issue} onOpen={issue.onOpen} href={issue.href} />
+        </li>
+      ))}
+    </List>
+  );
+}
+
+function IssueRowState({ width }) {
+  return (
+    <Stack width={width}>
+      <Panel flush title="Issues">
+        <IssueRows />
+      </Panel>
+    </Stack>
+  );
+}
+
+function SubsystemStripState() {
+  return <SubsystemStrip cells={CELLS} />;
+}
+
+// Several strips on one page each need their own name (axe: landmark-unique);
+// a screen has one, named "Subsystems".
+function SubsystemStripNarrowState() {
+  return (
+    <Stack>
+      <Caption>480px: rows of three</Caption>
+      <Stack width={480}>
+        <SubsystemStrip cells={CELLS} aria-label="Subsystems at 480px" />
+      </Stack>
+      <Caption>300px: rows of two</Caption>
+      <Stack width={300}>
+        <SubsystemStrip cells={CELLS} aria-label="Subsystems at 300px" />
+      </Stack>
+    </Stack>
+  );
+}
+
+function SubsystemStripCountsState() {
+  return (
+    <Stack>
+      <SubsystemStrip cells={CELLS.slice(0, 4)} aria-label="Four subsystems" />
+      <SubsystemStrip cells={CELLS.slice(0, 5)} aria-label="Five subsystems" />
+      <Row align="start" gap={16}>
+        <Stack width={300}>
+          <SubsystemStrip cells={CELLS.slice(0, 4)} aria-label="Four subsystems at 300px" />
+        </Stack>
+        <Stack width={480}>
+          <SubsystemStrip cells={CELLS.slice(0, 5)} aria-label="Five subsystems at 480px" />
+        </Stack>
+        <Stack width={300}>
+          <SubsystemStrip cells={CELLS.slice(0, 5)} aria-label="Five subsystems at 300px" />
+        </Stack>
+      </Row>
+    </Stack>
+  );
+}
+
+function SubsystemStripSelectableState() {
+  return <SubsystemStrip cells={CELLS} selected="services" onSelect={noop} />;
+}
+
+const ALL_ALERTS = (
+  <a href="#alerts" className={buttonVariants({ variant: 'ghost', size: 'sm', tone: 'accent' })}>
+    All alerts
+  </a>
+);
+
+function AttentionPanelState() {
+  return <AttentionPanel {...INCIDENT} action={ALL_ALERTS} issues={ISSUES} />;
+}
+
+function AttentionPanelFilteredState() {
+  return (
+    <AttentionPanel
+      {...INCIDENT}
+      action={ALL_ALERTS}
+      issues={ISSUES.slice(0, 1)}
+      filter="Services"
+      onClearFilter={noop}
+    />
+  );
+}
+
+function AttentionPanelFilteredEmptyState() {
+  return <AttentionPanel {...INCIDENT} issues={[]} filter="Jobs" onClearFilter={noop} />;
+}
+
+function AttentionPanelQuietState() {
+  return <AttentionPanel state="ok" counts="32 services, 6 nodes" meta="Last incident 2 d ago" />;
+}
+
+function AttentionPanelMaintenanceState() {
+  return (
+    <AttentionPanel
+      state="maintenance"
+      counts="32 services, 6 nodes"
+      meta="Maintenance until 10:00"
+    />
+  );
+}
+
+function AttentionPanelNarrowState() {
+  return (
+    <Stack width={390}>
+      <AttentionPanel {...INCIDENT} action={ALL_ALERTS} issues={ISSUES} />
+    </Stack>
+  );
+}
+
+// ---------------------------------------------------------------- data
+
+function MetricMeterState() {
+  return (
+    <Stack width={520}>
+      <Panel title="vm-103" description="Production" icon={<LayoutGrid />}>
+        <Grid columns="repeat(2, minmax(0, 1fr))" gap={16}>
+          <MetricMeter label="CPU" value={34} warn={75} crit={90} />
+          <MetricMeter label="Memory" value={78} warn={75} crit={90} />
+          <MetricMeter label="Disk /" value={92} warn={75} crit={90} />
+          <MetricMeter label="Load" value={130} warn={75} crit={90} />
+          <MetricMeter label="Temperature" value={78} max={100} unit="°C" warn={75} crit={85} />
+          <MetricMeter
+            label="Swap, held by the server"
+            value={82}
+            warn={85}
+            crit={95}
+            state="warn"
+          />
+          <MetricMeter label="Disk /data, crit only" value={40} crit={90} />
+          <MetricMeter label="GPU" value={null} warn={75} crit={90} />
+        </Grid>
+      </Panel>
+    </Stack>
+  );
+}
+
+function SparklineState() {
+  return (
+    <Stack width={560}>
+      <Panel title="Trends" description="08:00 to 08:58">
+        <Grid columns="160px 1fr" gap={14}>
+          <Caption>Line, 0–100</Caption>
+          <Sparkline label="CPU, last hour" points={CPU} unit="%" />
+          <Caption>Area</Caption>
+          <Sparkline label="Memory, last hour" points={MEMORY} unit="%" area />
+          <Caption>Auto domain</Caption>
+          <Sparkline label="Latency, last hour" points={LATENCY} domain="auto" unit=" ms" />
+          <Caption>A gap</Caption>
+          <Sparkline label="CPU with missing readings" points={GAPPED} unit="%" />
+          <Caption>One reading: nothing</Caption>
+          <Sparkline label="CPU, one reading" points={CPU.slice(0, 1)} unit="%" />
+          <Caption>Full width, 48px</Caption>
+          <Sparkline
+            label="Memory, full width"
+            points={MEMORY}
+            unit="%"
+            area
+            height={48}
+            className="w-full"
+          />
+        </Grid>
+      </Panel>
+    </Stack>
+  );
+}
+
+function SparklineTooltipState() {
+  return (
+    <Stack width={360}>
+      <Panel title="Memory" description="Last hour">
+        <Sparkline
+          label="Memory, last hour"
+          points={MEMORY}
+          unit="%"
+          area
+          height={48}
+          className="w-full"
+        />
+      </Panel>
+    </Stack>
+  );
+}
+
+const STRIPS = [
+  ['sm, every check up', <UptimeBar key="a" beats={BEATS_OK} />],
+  ['sm, failing now', <UptimeBar key="b" beats={BEATS_FAILING} />],
+  ['sm, two failures', <UptimeBar key="c" beats={BEATS_FLAKY} />],
+  ['md, pending (warn)', <UptimeBar key="d" beats={BEATS_PENDING} size="md" />],
+  ['md, maintenance stays quiet', <UptimeBar key="e" beats={BEATS_MAINTENANCE} size="md" />],
+  ['lg, padded to 30', <UptimeBar key="f" beats={BEATS_FLAKY.slice(0, 12)} count={30} size="lg" />],
+  ['sm, no data', <UptimeBar key="g" beats={BEATS_NONE} />],
+  ['sm, no checks yet', <UptimeBar key="h" beats={[]} count={30} />],
+];
+
+function UptimeBarState() {
+  return (
+    <Stack width={520}>
+      <Panel title="Heartbeats">
+        <Grid columns="200px 1fr" gap={14}>
+          {STRIPS.flatMap(([caption, strip]) => [
+            <Caption key={caption}>{caption}</Caption>,
+            strip,
+          ])}
+        </Grid>
+      </Panel>
+    </Stack>
+  );
+}
+
+function EntityRows() {
+  return (
+    <List>
+      <li>
+        <EntityRow
+          state="ok"
+          name="Immich"
+          detail="24,499 assets"
+          meta="42 ms"
+          trailing={<UptimeBar beats={BEATS_OK} count={30} />}
+          onOpen={noop}
+        />
+      </li>
+      <li>
+        <EntityRow
+          state="crit"
+          word="Down"
+          name="Gitea"
+          detail="Kuma: HTTP 502 for 4 min"
+          meta="—"
+          trailing={<UptimeBar beats={BEATS_FAILING} count={30} />}
+          href="#gitea"
+        />
+      </li>
+      <li>
+        <EntityRow
+          state="warn"
+          word="Slow"
+          name="Nextcloud"
+          detail="1.8 s median over 10 min"
+          meta="1.8 s"
+          trailing={<UptimeBar beats={BEATS_PENDING} count={30} />}
+          onOpen={noop}
+        />
+      </li>
+      <li>
+        <EntityRow
+          state="unknown"
+          name="Wiki.js"
+          detail="No heartbeat yet · monitor added 2 min ago"
+          meta="—"
+          trailing={<UptimeBar beats={BEATS_NONE} count={30} />}
+        />
+      </li>
+      <li>
+        <EntityRow
+          state="maintenance"
+          name="Home Assistant"
+          detail="Kuma maintenance until 10:00"
+          meta="38 ms"
+          trailing={<UptimeBar beats={BEATS_MAINTENANCE} count={30} />}
+          onOpen={noop}
+        />
+      </li>
+      <li>
+        <EntityRow
+          state="ok"
+          name="Paperless-ngx document archive on staging"
+          detail="12,031 documents, 4 in the inbox waiting for tags"
+          meta="61 ms"
+          trailing={<Sparkline label="CPU, last hour" points={CPU} decorative />}
+          onOpen={noop}
+        />
+      </li>
+    </List>
+  );
+}
+
+function EntityRowState({ width }) {
+  return (
+    <Stack width={width}>
+      <Panel flush title="Services" description="31 of 32 up">
+        <EntityRows />
+      </Panel>
+    </Stack>
+  );
+}
+
+function FactListState() {
+  return (
+    <Row align="start" gap={24}>
+      <Stack width={420}>
+        <Caption>420px: the Overview drawer</Caption>
+        <FactList facts={UPS_FACTS} />
+        <FactList facts={SERVICE_FACTS} />
+      </Stack>
+      <Stack width={340}>
+        <Caption>340px: the phone</Caption>
+        <FactList facts={UPS_FACTS} />
+        <FactList facts={SERVICE_FACTS} />
+      </Stack>
+    </Row>
+  );
+}
+
+const LONG_FACTS = [
+  {
+    key: 'url',
+    label: 'Address',
+    value: 'https://photos.jagbhandal.com/api/server/ping?verbose=true&format=json',
+  },
+  {
+    key: 'image',
+    label: 'Image',
+    value: <code>sha256:3f9c2e1a7b6d4c08e5f2a91b3c7d6e4f5a8b9c0d</code>,
+  },
+  {
+    key: 'host',
+    label: 'Backup target',
+    value: <code>backup-target.storage.jagbhandal.internal</code>,
+  },
+  { key: 'note', label: 'Note', value: 'Words still wrap between words first, as any value does.' },
+];
+
+function FactListLongState() {
+  return (
+    <Row align="start" gap={24}>
+      <Stack width={420}>
+        <Caption>420px: the Overview drawer</Caption>
+        <FactList facts={LONG_FACTS} />
+      </Stack>
+      <Stack width={340}>
+        <Caption>340px: the phone</Caption>
+        <FactList facts={LONG_FACTS} />
+      </Stack>
+    </Row>
+  );
+}
+
+function TableState() {
+  return (
+    <Table caption="Nodes" columns={NODE_COLUMNS} rows={NODES} onRowOpen={noop} minWidth={720} />
+  );
+}
+
+function TableEmptyState() {
+  return (
+    <Table caption="Nodes" columns={NODE_COLUMNS} rows={[]} empty="No nodes match this filter" />
+  );
+}
+
+function TableScrollState() {
+  return (
+    <Stack width={420}>
+      <Table caption="Nodes" columns={NODE_COLUMNS} rows={NODES} onRowOpen={noop} minWidth={720} />
+    </Stack>
+  );
+}
+
+const SLOTS = ['Azure', 'Rose', 'Lime', 'Plum', 'Orange', 'Teal'];
+
+function Slots() {
+  return (
+    <Stack gap={10}>
+      <svg width="360" height="48" viewBox="0 0 360 48" aria-hidden="true">
+        {SLOTS.map((name, i) => (
+          <polyline
+            key={name}
+            fill="none"
+            strokeWidth="2"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            style={{ stroke: `var(--jh-series-${i + 1})` }}
+            points={[0, 1, 2, 3, 4, 5, 6]
+              .map((x) => `${4 + x * 58},${8 + ((i * 6 + x * 7 + (x % 2) * 9) % 32)}`)
+              .join(' ')}
+          />
+        ))}
+      </svg>
+      <Row gap={14}>
+        {SLOTS.map((name, i) => (
+          <span key={name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: 2,
+                background: `var(--jh-series-${i + 1})`,
+              }}
+            />
+            <span style={{ color: 'var(--jh-text-2)', fontSize: 12 }}>
+              {i + 1} {name}
+            </span>
+          </span>
+        ))}
+      </Row>
+    </Stack>
+  );
+}
+
+function ChartColoursState() {
+  return (
+    <Stack>
+      <Caption>On the page (bg)</Caption>
+      <Slots />
+      <Panel title="On a panel (surface-1)" description="The sequential ramp, steps 1 to 7">
+        <Slots />
+        <Row gap={4}>
+          {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+            <span
+              key={n}
+              style={{ width: 40, height: 24, borderRadius: 4, background: `var(--jh-seq-${n})` }}
+            />
+          ))}
+        </Row>
+      </Panel>
+      <div
+        style={{
+          background: 'var(--jh-surface-2)',
+          borderRadius: 12,
+          padding: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+        }}
+      >
+        <Caption>On surface-2 (a hovered tile, a chart&apos;s tooltip)</Caption>
+        <Slots />
+      </div>
+    </Stack>
+  );
+}
+
+// ---------------------------------------------------------------- registry
+
+export const RENDERS = Object.freeze({
+  button: ButtonState,
+  'button-disabled': ButtonDisabledState,
+  'button-focus': ButtonFocusState,
+  'icon-button': IconButtonState,
+  input: InputState,
+  'input-focus': InputFocusState,
+  select: SelectState,
+  'select-open': SelectOpenState,
+  switch: SwitchState,
+  checkbox: CheckboxState,
+  field: FieldState,
+  'segmented-control': SegmentedControlState,
+  tabs: () => <ServiceTabs />,
+  'tab-focus': () => <ServiceTabs focus />,
+
+  panel: PanelState,
+  'panel-flush': PanelFlushState,
+  'panel-untitled': PanelUntitledState,
+  'dialog-sm': () => <DialogState size="sm" />,
+  'dialog-md': () => <DialogState size="md" />,
+  'dialog-lg': () => <DialogState size="lg" />,
+  drawer: DrawerState,
+  'confirm-destructive': ConfirmDestructiveState,
+  confirm: ConfirmState,
+  popover: PopoverState,
+  'popover-hover': PopoverHoverState,
+  'tooltip-name': TooltipNameState,
+  'tooltip-description': TooltipDescriptionState,
+  toasts: () => <Toasts toasts={NOTES} />,
+  'toasts-urgent': () => <Toasts toasts={URGENT} />,
+  banner: () => <BannerState />,
+  'banner-plain': () => <BannerState plain />,
+  'empty-state': EmptyStateState,
+  skeleton: SkeletonState,
+
+  'status-lamp': StatusLampState,
+  'status-word': StatusWordState,
+  'status-badge': StatusBadgeState,
+  'issue-row': () => <IssueRowState />,
+  'issue-row-narrow': () => <IssueRowState width={390} />,
+  'subsystem-strip': SubsystemStripState,
+  'subsystem-strip-narrow': SubsystemStripNarrowState,
+  'subsystem-strip-counts': SubsystemStripCountsState,
+  'subsystem-strip-selectable': SubsystemStripSelectableState,
+  'attention-panel': AttentionPanelState,
+  'attention-panel-filtered': AttentionPanelFilteredState,
+  'attention-panel-filtered-empty': AttentionPanelFilteredEmptyState,
+  'attention-panel-quiet': AttentionPanelQuietState,
+  'attention-panel-maintenance': AttentionPanelMaintenanceState,
+  'attention-panel-narrow': AttentionPanelNarrowState,
+
+  'metric-meter': MetricMeterState,
+  sparkline: SparklineState,
+  'sparkline-tooltip': SparklineTooltipState,
+  'uptime-bar': UptimeBarState,
+  'entity-row': () => <EntityRowState />,
+  'entity-row-narrow': () => <EntityRowState width={390} />,
+  'fact-list': FactListState,
+  'fact-list-long': FactListLongState,
+  table: TableState,
+  'table-empty': TableEmptyState,
+  'table-scroll': TableScrollState,
+  'chart-colours': ChartColoursState,
+});

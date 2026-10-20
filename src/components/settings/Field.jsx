@@ -101,9 +101,9 @@ export default function Field({ label, children, hint, error, layout = 'field' }
  * copies / a FieldGroup alias). Delegates to <Field layout="row">, so the
  * label/htmlFor/error wiring stays in one place.
  */
-export function FieldRow({ label, hint, children }) {
+export function FieldRow({ label, hint, error, children }) {
   return (
-    <Field layout="row" label={label} hint={hint}>
+    <Field layout="row" label={label} hint={hint} error={error}>
       {children}
     </Field>
   );

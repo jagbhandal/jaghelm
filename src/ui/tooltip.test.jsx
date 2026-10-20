@@ -40,6 +40,35 @@ describe('Tooltip', () => {
     expect(trigger).toHaveFocus();
   });
 
+  it('keeps its popup from assistive tech: the trigger’s name and description say it (#289)', async () => {
+    // Visual only, as Base UI's tooltips are: exposed, its text would sit at the
+    // end of <body>, outside every landmark, and be read again after the
+    // trigger's own name or description (axe's region rule, in the gallery).
+    const user = userEvent.setup();
+    render(
+      <>
+        <Tooltip content="Reload">
+          <IconButton label="Reload">
+            <RefreshCw />
+          </IconButton>
+        </Tooltip>
+        <Tooltip content="Still loaded: opens where you left it">
+          <Button>Immich</Button>
+        </Tooltip>
+      </>
+    );
+    await user.tab();
+    await waitFor(() => expect(popup()).toHaveTextContent('Reload'));
+    expect(popup()).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByRole('button', { name: 'Reload' })).toHaveFocus();
+    await user.tab();
+    await waitFor(() => expect(popup()).toHaveTextContent('Still loaded'));
+    expect(popup()).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByRole('button', { name: 'Immich' })).toHaveAccessibleDescription(
+      'Still loaded: opens where you left it'
+    );
+  });
+
   it('opens under the pointer', async () => {
     const user = userEvent.setup();
     render(

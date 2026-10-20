@@ -141,19 +141,30 @@ src/                        React 19 SPA (Vite 8)
                              popover, tooltip, toast, banner, empty-state, skeleton),
                              the status components (#287: status-lamp, status-word,
                              issue-row, subsystem-strip, attention-panel; the Android app
-                             uses them too), lib/status.js (the five states, their words,
+                             uses them too), the data components (#288: metric-meter,
+                             sparkline, uptime-bar, entity-row, fact-list, table),
+                             lib/status.js (the five states, their words,
                              and the two looks), lib/utils.js (cn, taught the theme),
                              lib/portal.js (portal roots and the switches they copy),
                              lib/field-context.js (how a Field labels its control),
                              lib/tone.jsx (a tone's icon), lib/name.js (an overlay's
                              required name)
 
+gallery/                    the component gallery (development and CI only, docs/GALLERY.md):
+                            catalog.js (every state), states.jsx (what each draws),
+                            main.jsx (the page), gallery.spec.mjs (screenshots and axe),
+                            baselines/ (the committed PNGs), container.mjs (the pinned
+                            Playwright image); built by vite.gallery.config.js, tested by
+                            playwright.config.mjs, never part of the production build
+
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
 scripts/                    inject-sw-precache.mjs, check-assets.mjs, changelog-lint.mjs,
                             changelog-fold.mjs, release-notes.mjs (build/CI/release helpers),
                             ui-preflight.mjs (writes src/ui/preflight.css),
-                            ui-contrast.mjs (the design tokens' contrast check)
+                            ui-contrast.mjs (the design tokens' contrast check, and the
+                            chart colours' gates), gallery.mjs (runs the gallery's tests in
+                            their container)
 changes/                    CHANGELOG fragments, one per PR (mobile/changes/ for Android);
                             the release PR folds them into the CHANGELOG (RELEASING.md)
 .github/workflows/          build-push.yml (test -> build -> sign -> GHCR), release.yml (tag ->
@@ -539,6 +550,26 @@ Key properties:
   `http://` to `https://` upgrade is still followed, and logged once per
   origin pair like a header-carrying one, since the key went out in clear
   text first. `httpClient.js` `safeFetch` accepts the same option.
+- **A URL carries the resolved credential, never a `$secret:` reference**
+  (#425). `resolveIntegrationConfig` (`lib/config.js`) keeps the entry's own
+  `token`, `password` and `username` (a Settings save writes `$secret:`
+  references for the password and token; any of the three can be one written
+  by hand) and puts the resolved values in `_token`, `_password` and
+  `_username`. An endpoint's `{token}`, `{password}` or `{username}` takes
+  the `_` value whenever the config has one, so a preset's `.env` value wins
+  there too; the raw value is used only when there is no `_` key. A
+  placeholder, or a query-auth key, whose value is or looks like a `$secret:`
+  reference (one that didn't resolve, or a reference in a field that is never
+  resolved, such as `{account_id}`) throws `UnresolvedSecretError` where the
+  URL is built (`resolveEndpoint`, `applyQueryAuth`). No request is sent, and
+  the integration's error names the placeholder and says the stored
+  credential couldn't be resolved, never the reference. It says to enter the
+  token again in Settings for a token, and to check the integration's entry
+  in `services.yaml` for anything else, since a custom integration's form has
+  no password or username. A session preset fills in its endpoint before it
+  logs in, so no login is sent for a read that can't be made. The connection
+  test resolves nothing: a `$secret:` typed as a query-auth key is refused
+  with an error saying to type the token itself.
 - **Request bodies stay on their origin.** A `307` or `308` keeps the method
   and body, so a session login is re-sent, but only to the same origin or
   through the same-host upgrade; a request with a body redirected to another
@@ -550,7 +581,14 @@ Key properties:
   without a body.
 - **Credentials are redacted** (`util/redact.js`) before any error is logged *or*
   returned to the browser -- query-auth presets put the key in the URL, which
-  fetch errors would otherwise echo.
+  fetch errors would otherwise echo. A credential filled into an endpoint's
+  path (`/api/{token}/status`) is one redaction can't recognise, so every
+  call that sets `credentialInUrl` also passes `shownUrl`, the URL with each
+  credential back as its placeholder (`resolveEndpoint`'s `shownPath`,
+  `applyQueryAuth`'s `?apikey={token}`). `lib/http.js` `safeFetch` swaps the
+  request URL in an error for it before redacting, in the form it was passed
+  and parsed and on a same-origin redirect hop; without one it withholds all
+  but the origin (#425).
 - **Only the computed result is kept.** A poll returns what the preset
   computes (its fields, plus structured data such as Proxmox's VMs, storage
   pools and last backup), and drops the upstream response once the preset has
@@ -634,7 +672,22 @@ integration connection-test endpoint.
 
 ### 4.6 Observability
 
-- **Structured logging** (`util/logger.js`) with redaction -- no secrets in logs.
+- **Structured logging** (`util/logger.js`) with redaction -- no URL credentials
+  or secret query values in logs. Every string a line carries goes through
+  `util/redact.js` as the logger writes it: the message, each field at any
+  depth, object keys, an Error's message and properties, and a URL object
+  (written as its address). A URL loses its password (`user:[redacted]@`, any
+  scheme; a user with no password, often a token, is redacted whole), secret
+  query values and, for http(s), its query string, and keeps its scheme, user
+  and host. A URL the parser refuses, such as one with a raw `#` or `/` in its
+  password, loses everything between `://` and its last `@`. Node's fetch
+  refuses a `PROMETHEUS_URL` or `KUMA_URL` with `user:pass@` and names the full
+  URL in its error, which every failing cycle logs (#409). Redaction is by
+  text, not by field name: a header map or an `apiKey` field would be written
+  as it is (no line logs one). A log call never throws: a circular reference is
+  written as `"[Circular]"`, a BigInt as a string, and a line that still can't
+  be written keeps its module and message with a `logError` saying why. The
+  running server writes to stdout/stderr only through the logger.
   `LOG_LEVEL` (`debug|info|warn|error|silent`, default `info`) filters it.
   Success lines every refresh cycle would repeat are debug, while a refresh
   that keeps failing still logs its own error each cycle. At info: a cycle that
@@ -858,8 +911,10 @@ stack sits beside today's CSS and must not restyle it.
   and a test fails on any other `cn` in `src/ui/`. Icons come from
   `lucide-react` by name (`import { Check } from 'lucide-react'`), so a bundle
   carries only the icons it uses. The components so far are the controls
-  (#285) and the containers (#286), which no screen uses yet, and the status
-  components (#287), which the Android app's screens use (next point). The
+  (#285), the containers (#286) and the data components (#288), which no
+  screen uses yet, and the status components (#287), which the Android app's
+  screens use (next point). The component gallery shows each in every state
+  ([GALLERY.md](GALLERY.md), #289). The
   interactive controls and containers are built on Base UI primitives. A
   screen's root is a `UiRoot` (`src/ui/root.jsx`), which carries its switches
   to every portal; roots can nest, and a page has one toast viewport. Screens
@@ -927,7 +982,12 @@ stack sits beside today's CSS and must not restyle it.
   every theme and accent against the spec's floors, as sRGB and Display P3
   screens paint them, that each accent's hover is visibly different from
   its rest state, and that no accent colour sits within ΔE OK 0.05 of a status
-  colour (`ui-contrast.test.mjs`).
+  colour (`ui-contrast.test.mjs`). The chart colours (#386), six categorical
+  slots and a sequential ramp, are roles there too: the same script checks
+  them at 3:1 where charts are drawn, the ramp's steps, and the slots' separation
+  under protanopia, deuteranopia and normal vision and from the status colours
+  and the violet accent, their chroma and their lightness band
+  (`chart-palette.test.mjs`).
   They are custom properties on `.jh-ui`, prefixed `--jh-`, never on `:root`:
   today's CSS owns `--bg`, `--accent`, `--border`, `--card`, `--muted`,
   `--text-*`, `--font-mono`, `--font-body` and `--font-display` there and in the
@@ -1072,6 +1132,18 @@ All state is files under the data dir (no DB):
     removed under the new key too, since a preset resolves those names ahead
     of the entry's `$secret:` reference. A reference to an old name is pointed
     at the new one, and the old names are removed once the move is written.
+  - **A taken key is refused** (#414). A save never lands on a key another
+    integration holds: a rename onto one, or a new integration from the form
+    (which sends `create: true`) under one, is refused with a 409
+    `{ error, field: "instance" }` that names that integration as the
+    Settings list does, before any secret is stored, so `services.yaml` and
+    `secrets.json` are unchanged. The form shows it beside its Instance Name
+    field and focuses that field, and clears it once the field is edited; the
+    custom builder, which has no such field and always derives `_custom`,
+    shows it as a save error. A save with neither `editingKey` nor `create`
+    still merges into the entry under the key it derives, because the toggle
+    of web apps before #402 posts exactly that (only a tab left open from
+    before #402 sends one, until it reloads).
   - **The enable toggle** (`PATCH /api/integrations/:key`, body
     `{ "enabled": true|false }` and nothing else) sets `enabled` alone, writes
     nothing when the entry is already in that state, and asks for a retry when
@@ -1122,7 +1194,7 @@ All state is files under the data dir (no DB):
 
 ```mermaid
 flowchart LR
-  CHK["Gitea check.yml on the PR<br/>lint + typecheck + tests + CHANGELOG format"] --> PR
+  CHK["Gitea check.yml on the PR<br/>lint + typecheck + tests + CHANGELOG format<br/>+ gallery screenshots and axe"] --> PR
   PR["PR merged on Gitea<br/>(source of truth)"] --> MIRROR["mirror -> GitHub"]
   MIRROR --> GH["GitHub Actions: build-push.yml"]
   subgraph GH2["build-push.yml"]
@@ -1144,7 +1216,10 @@ flowchart LR
 - **PR gate** ([check.yml](../.gitea/workflows/check.yml)) runs on the
   self-hosted Gitea runner for every PR to `main`: secret scan, CHANGELOG
   format (both CHANGELOGs and their `changes/` fragments), lint, typecheck,
-  server, web and mobile tests, and the asset check.
+  server, web and mobile tests, and the asset check. Its `gallery` job, beside
+  them, screenshots every state of every `src/ui/` component against its
+  committed baseline and runs axe on each, in the pinned Playwright container
+  ([GALLERY.md](GALLERY.md)).
 - **Build** ([build-push.yml](../.github/workflows/build-push.yml)) runs on
   GitHub for every push to `main`: a test gate (so a red `main` can't ship),
   then build and push `:latest` and the immutable `:sha-<short>` with OCI
@@ -1191,6 +1266,16 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   hook, the old-tab chunk reload, its per-build guard and stall watchdog
   (`src/chunkReload.test.jsx`) and the tab it reopens (`src/App.reloadTab.test.jsx`),
   and the `src/ui/` components.
+- **Component gallery** (`npm run gallery:test`, Playwright in its pinned
+  container; CI's `gallery` job): every state of every `src/ui/` component, in
+  both themes and densities and the three accents where colour follows the
+  accent, screenshotted against `gallery/baselines/` with no tolerance, and
+  axe on each with every default rule, portals included, and two exceptions
+  scoped to Base UI's markup around an open Select
+  ([GALLERY.md](GALLERY.md#the-two-axe-exceptions)). `npm run gallery:update` regenerates the
+  baselines; an approved change commits them in its PR.
+  `scripts/gallery-build.test.mjs` (in `npm test`) keeps the gallery out of
+  the production build and the container pinned in step.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through
   the Android build's `@ui` alias.
@@ -1200,7 +1285,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   counts (`doc-counts.test.mjs`), and the UI stack's separation from today's
   CSS and its reach into the Android build (`ui-stack.test.mjs`,
   `ui-preflight.test.mjs`), and the design tokens' shape and contrast
-  (`ui-tokens.test.mjs`, `ui-contrast.test.mjs`), and the fonts and type scale
+  (`ui-tokens.test.mjs`, `ui-contrast.test.mjs`) and the chart colours
+  (`chart-palette.test.mjs`), and the fonts and type scale
   (`fonts.test.mjs`). Write new repo checks this way, not as shell
   scripts: `npm test` only collects `*.test.{js,mjs,cjs}`.
 

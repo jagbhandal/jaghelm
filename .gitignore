@@ -1,5 +1,8 @@
 node_modules/
 dist/
+# the component gallery's build and test output (docs/GALLERY.md)
+dist-gallery/
+test-results/
 .env
 uploads/
 data/

@@ -86,6 +86,10 @@ export async function fetchWithSession(config) {
 
   const baseUrl = config.url.replace(/\/+$/, '');
   const skipTls = !!config.tlsSkip;
+  // Filled in before any login: an endpoint needing a stored credential that
+  // doesn't resolve throws here (#425), so no login is sent for a read that
+  // can't be made.
+  const endpoint = resolveEndpoint(config.endpoint, config);
 
   // Determine which session configs to try (primary, then fallback)
   const fallbackKey = config.authFallback;
@@ -108,7 +112,7 @@ export async function fetchWithSession(config) {
     // Try cached token first
     if (cached && Date.now() < cached.expires) {
       try {
-        const data = await fetchWithToken(cached, config, baseUrl, skipTls);
+        const data = await fetchWithToken(cached, endpoint, config, baseUrl, skipTls);
         return data;
       } catch (fetchErr) {
         // Cached token rejected (expiry or transient blip): drop it and re-login. Logged to tell the two apart.
@@ -121,7 +125,7 @@ export async function fetchWithSession(config) {
     try {
       const tokenInfo = await doSessionLogin(config, sess, baseUrl, skipTls);
       cacheSet(cacheKey, tokenInfo);
-      const data = await fetchWithToken(tokenInfo, config, baseUrl, skipTls);
+      const data = await fetchWithToken(tokenInfo, endpoint, config, baseUrl, skipTls);
       return data;
     } catch (err) {
       if (err.authRejected) rejectedLogins += 1;
@@ -179,16 +183,20 @@ async function doSessionLogin(config, session, baseUrl, skipTls) {
   };
 }
 
-/** Fetch data using a cached token. */
-async function fetchWithToken(tokenInfo, config, baseUrl, skipTls) {
+/**
+ * Fetch data using a cached token, from `endpoint`: resolveEndpoint's answer
+ * for the integration's endpoint, worked out once before any login.
+ */
+async function fetchWithToken(tokenInfo, endpoint, config, baseUrl, skipTls) {
   const headers = {};
   if (tokenInfo.header) {
     headers[tokenInfo.header] = tokenInfo.prefix + tokenInfo.token;
   }
   if (config.extraHeaders) Object.assign(headers, config.extraHeaders);
 
-  const { path, credentialInUrl } = resolveEndpoint(config.endpoint, config);
-  const res = await safeFetch(`${baseUrl}${path}`, { headers }, skipTls, { credentialInUrl });
+  const { path, shownPath, credentialInUrl } = endpoint;
+  const res = await safeFetch(`${baseUrl}${path}`, { headers }, skipTls,
+    { credentialInUrl, shownUrl: `${baseUrl}${shownPath}` });
   if (!res.ok) throw new Error(`Data fetch returned HTTP ${res.status}`);
   return res.json();
 }

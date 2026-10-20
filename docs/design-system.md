@@ -22,14 +22,23 @@ the sign-off amendments in §15).
   file, disagrees.
 - **Contrast:** [`scripts/ui-contrast.mjs`](../scripts/ui-contrast.mjs) checks every
   pairing below in both themes and all three accents, on sRGB and Display P3
-  screens, each accent's hover against its rest state, and each accent against
-  the status colours, in `npm test`. Run `node scripts/ui-contrast.mjs` to see
-  the lowest ratio per rule on each screen and each accent's nearest status.
-- **Components:** the controls (#285), the containers (#286) and the status
-  components (#287) in `src/ui/` are listed under [Components](#components),
-  [Containers](#containers) and [Status components](#status-components), with
-  their variants, sizes and keyboard use. No web screen uses them yet; the
-  Android app's screens use the status components, in its own look.
+  screens, each accent's hover against its rest state, each accent against
+  the status colours, and the chart colours ([Chart colours](#chart-colours)),
+  in `npm test`. Run `node scripts/ui-contrast.mjs` to see the lowest ratio per
+  rule on each screen, each accent's nearest status, and the chart colours'
+  closest calls.
+- **Components:** the controls (#285), the containers (#286), the status
+  components (#287) and the data components (#288) in `src/ui/` are listed
+  under [Components](#components), [Containers](#containers),
+  [Status components](#status-components) and
+  [Data components](#data-components), with their variants, sizes and keyboard
+  use. No web screen uses them yet; the Android app's screens use the status
+  components, in its own look.
+- **Gallery:** every state of every component above, in both themes and both
+  densities and, where colour follows the accent, all three accents, on one
+  development page ([GALLERY.md](GALLERY.md), #289). CI screenshots each
+  against its committed baseline and runs axe on it, in both themes, and fails
+  on any violation or unapproved change.
 - How the stack sits beside today's CSS: [ARCHITECTURE.md §5.1](ARCHITECTURE.md#51-ui-stack-tailwind-css-v4-shadcnui-lucide).
 
 ## The rules
@@ -64,7 +73,9 @@ the sign-off amendments in §15).
    shape together (filled disc, slashed disc, disc with a bar, hollow ring,
    wrench), so it never rests on colour alone. No signal is steel, never red.
    Healthy stays quiet: at most a small lamp. A meter changes colour only above
-   its threshold, to `warn-solid` or `crit-solid`.
+   its threshold, to `warn-solid` or `crit-solid`. A status colour never draws
+   a chart series, and a series colour never means a state
+   ([Chart colours](#chart-colours)).
 4. **Roles, never raw colours.** Components use the role utilities. Palette
    steps (`--jh-graphite-198`) exist for the roles to read; no component and no
    utility reads one (a test checks both). Tailwind's default palette, type
@@ -150,12 +161,18 @@ translucent token painted over that surface.
 | status `on-solid` | 4.5:1 | its own solid | none |
 | `focus-ring` | 3:1 | bg, sidebar, surface-1, surface-2, surface-3 (the ring sits 2px outside the control) | none |
 | `control-edge` | 3:1 | bg, sidebar, surface-1, surface-2 | row-hover over bg and surface-1 |
+| `series-1` to `series-6` | 3:1 | bg, surface-1, surface-2 | row-hover over surface-1 |
+| `series-1` alone (a single series) | 3:1 | the same | the same; each status tint over surface-1; accent-tint over bg and surface-1 (a selected row) |
 
 `control-edge` is the edge of a control with no fill of its own, an empty
 checkbox or an off switch. WCAG 1.4.11 asks 3:1 of the boundary that shows
 where a control is; `border-strong` (1.4:1 to 1.5:1) and `surface-3` on the page
 (1.2:1 in light) are too faint for it. Its worst case is 3.77:1 (light, in a
 hovered row on the page).
+
+The `series` slots are a chart's lines, bars and legend swatches: WCAG 1.4.11's
+3:1 for a graphical object. They are never words. The ramp has its own check
+([Chart colours](#chart-colours)): its first steps recede by design.
 
 Ruled out by name, because they fall below 4.5:1 somewhere and the mock never
 draws them (`FORBIDDEN` in the script):
@@ -408,12 +425,157 @@ in `src/ui/`: highlight with `bg-row-hover` or `bg-surface-2` and
 `text-text-1` instead. When a component is shaped for a screen, switch it to the
 JagHelm names.
 
+## Chart colours
+
+Six categorical colours and one sequential ramp, for every chart (#386). Jag
+signed them off on 2026-10-20 on the mock's Chart colours board. They are roles
+in `tokens.css`, in dark and light, and they never change with the accent. The
+Sparkline (#288, [Data components](#data-components)) draws slot 1; no screen
+uses it yet, and the history charts (#311) will draw the rest.
+
+| Slot | Name | Token | Dark | Light |
+| --- | --- | --- | --- | --- |
+| 1 | Azure | `series-1` | `oklch(0.6 0.138 240)` | `oklch(0.58 0.133 240)` |
+| 2 | Rose | `series-2` | `oklch(0.64 0.15 355)` | `oklch(0.5 0.15 355)` |
+| 3 | Lime | `series-3` | `oklch(0.66 0.15 125)` | `oklch(0.56 0.141 125)` |
+| 4 | Plum | `series-4` | `oklch(0.55 0.15 325)` | `oklch(0.6 0.15 325)` |
+| 5 | Orange | `series-5` | `oklch(0.66 0.15 55)` | `oklch(0.6 0.149 55)` |
+| 6 | Teal | `series-6` | `oklch(0.66 0.112 200)` | `oklch(0.62 0.105 200)` |
+
+Utilities: `stroke-series-1` for a line, `fill-series-1` for a bar or an area,
+`bg-series-1` for a legend's swatch, and `text-series-1` for an SVG drawn in
+`currentColor`, through `series-6`. Never for words: see the legend rule below.
+
+- **In this order.** A chart takes the slots in order, 1 first. The order
+  keeps neighbours apart for protanopia, deuteranopia and normal vision, so a
+  slot is never skipped for taste.
+- **Colour follows the entity.** A chart that draws one series by design, such
+  as a sparkline, uses slot 1, azure. A chart of several gives each entity (a
+  node, a disk, a service) its slot in a stable order, the order the entities
+  are configured in, and the entity keeps it: when the chart is sorted, when a
+  filter hides the others, and from chart to chart on a screen. Colour never
+  follows a series' rank or what a filter left.
+- **How many.** A line or stacked chart, where only neighbouring slots touch,
+  can show all six. A scatter, a map or a small multiple, where any two can
+  meet, shows at most three, slots 1 to 3, which stay apart in every pair, and
+  folds the rest into one Other series. A line chart of more than six folds
+  the rest the same way. Other is drawn in a neutral, never a slot or a status
+  colour; it has no token yet.
+- **Status is never a series, and a series never means a state.** Ok, warn,
+  crit, no signal, maintenance and info never draw a series. A series keeps
+  its slot when its value crosses a threshold: the state shows in the status
+  components, never by recolouring the series. Every slot sits at least ΔE 8.5
+  from every status lamp, bar and word (the gates below).
+- **Legend and labels.** Two or more series always get a legend. Up to four
+  also get direct labels, at a line's end or on its bar, so the eye needn't
+  go back and forth. Labels and legend entries are words in `text-text-1` or
+  `text-text-2` beside the series' swatch, never in the series colour: the
+  slots are checked at 3:1 for a graphic, not 4.5:1 for text (rule 5).
+- **Where they're drawn, and only there.** A chart of several series sits on
+  the page (`bg`), a panel (`surface-1`), `surface-2` (a hovered tile, a
+  chart's tooltip) or a hovered row (`row-hover` over `surface-1`), and
+  nowhere else. Each slot is at least 3:1 (WCAG 1.4.11, a graphical object) on
+  each, in both themes and every accent. The dimmest are dark plum (3.46:1 on a
+  panel, 3.15:1 on `surface-2`) and light teal (3.48:1 and 3.11:1).
+- **A single series also sits on tints.** Slot 1 alone, such as a sparkline
+  inside a row or a tile, may also sit on each status tint over a panel (a
+  warn-tinted tile: `ok-tint` to `info-tint` over `surface-1`) and in a
+  selected row (`accent-tint` over `bg` or `surface-1`). It clears 3:1 on each
+  in both themes and every accent, 3.47:1 at worst (a selected row on the
+  light page). Slots 2 to 6 never sit on a status tint or in a selected row:
+  dark plum falls to 2.86:1 on a warn tint and light teal to 2.86:1 in a
+  selected row.
+- **Never on `surface-3`** (a chip, a track), whatever the series: dark plum
+  falls to 2.73:1 there and light teal to 2.82:1.
+
+**The sequential ramp** is azure, slot 1's hue (240), in seven steps from none
+to most. On the dark panel it lightens step by step, on the light one it
+deepens. The sign-off lists it in hex; `tokens.css` writes each step in OKLCH at
+hue 240 that paints that hex on an sRGB screen, clipped or gamut-mapped, and a
+test checks each one.
+
+| Step | Token | Dark | Light |
+| --- | --- | --- | --- |
+| 1 | `seq-1` | `oklch(0.3 0.07 240)` #00314d | `oklch(0.92 0.043 240)` #cce9ff |
+| 2 | `seq-2` | `oklch(0.38 0.087 240)` #00476c | `oklch(0.84 0.08 240)` #9bd2fa |
+| 3 | `seq-3` | `oklch(0.459 0.105 240)` #005e8c | `oklch(0.76 0.11 240)` #6bbaf0 |
+| 4 | `seq-4` | `oklch(0.54 0.124 240)` #0076af | `oklch(0.68 0.135 240)` #36a2e3 |
+| 5 | `seq-5` | `oklch(0.63 0.11 240)` #4191c5 | `oklch(0.6 0.138 240)` #0089c9 |
+| 6 | `seq-6` | `oklch(0.72 0.08 240)` #75acd2 | `oklch(0.511 0.117 240)` #006da2 |
+| 7 | `seq-7` | `oklch(0.81 0.05 240)` #a4c6de | `oklch(0.42 0.096 240)` #00537c |
+
+- **Sequential magnitude only:** one quantity from none to most, such as a
+  heatmap's cells. Never for categories or series: neighbouring steps are one
+  hue, told apart by lightness alone.
+- **The first steps recede** toward the panel, as a scale's "none" end should,
+  so the ramp is not held to 3:1. It is drawn on panels (`surface-1`).
+- **As an ordinal scale** (tiers, stages), start at step 3: 2.58:1 on a dark
+  panel, 2.12:1 on a light one.
+- **Checked:** every step further from `surface-1`'s lightness than the one
+  before, by at least 0.06 (OKLCH L, as written), all at slot 1's hue, and
+  step 3 at least 2:1 on `surface-1` (`checkRamp` in `scripts/ui-contrast.mjs`).
+  Utilities: `fill-seq-1` to `fill-seq-7`, and `bg-`, `stroke-` and `text-` as
+  for the slots.
+
+**With Fuchsia and Cyan.** The slots avoid Violet, the default: every slot is
+at least ΔE 12 from each violet mark (the button at rest and hovered, a link,
+the meter, the focus ring). Fuchsia and Cyan sit nearer. With Fuchsia the slot
+nearest the accent is plum (ΔE 8.1 dark, 9.9 light); with Cyan it is azure
+(10.5 dark, 8.7 light). Charts never draw the accent inside the plot: no line,
+bar, selection or highlight in it. So nothing changes per accent. The accents'
+other marks come closer still: Cyan's dark focus ring is ΔE 2.9 from teal, and
+its light meter 5.6; Fuchsia's dark hover is 7.6 from plum, and its light meter
+5.9. A focus ring goes around a chart, never on a series, and a meter is never
+drawn inside a plot. `node scripts/ui-contrast.mjs` prints these.
+
+**Beside a meter, slot 1 only** (#288). A strip, row or card that holds a
+meter draws its chart as a Sparkline, which is always slot 1, so a teal or
+plum series never sits beside an accent-coloured meter: teal is ΔE 5.0 from
+Cyan's dark meter and 5.6 from its light one, plum 5.9 from Fuchsia's light
+meter. A chart of several series sits apart from meters, in its own panel or
+the drawer's chart. Slot 1 itself is ΔE 11.5 or more from every accent's
+meter but one: Cyan's light meter, 6.0 (violet's are 17.1 and 18.3). There a
+meter and a sparkline are told apart by shape and place (a bar with a label
+over it, a line), and the line is never drawn in the meter's colour.
+
+**The gates that hold the slots**, which `checkChartPalette` in
+`scripts/ui-contrast.mjs` enforces in `npm test` (`scripts/chart-palette.test.mjs`),
+in both themes. The separation, chroma and lightness gates are the checks the
+sign-off ran. The status and violet floors are set here, under the margins
+the sign-off measured (8.8 from the nearest status colour, 16 from the violet
+fill); the violet gate measures every violet mark, not only the fill. ΔE is
+OKLab distance ×100 between the colours a screen paints, rounded down.
+Protanopia and deuteranopia are simulated with Machado, Oliveira and Fernandes
+(2009) at severity 1.0, on linear sRGB, clamped:
+
+| Gate | Check | Floor | Worst |
+| --- | --- | --- | --- |
+| `adjacent-cvd` | neighbouring slots, protanopia and deuteranopia | 8 | 8.8, azure to rose (dark, protan) |
+| `adjacent` | neighbouring slots, normal vision | 15 | 21.1, plum to orange (light) |
+| `first-three-cvd` | slots 1 to 3, every pair, both CVDs | 8 | 8.8, azure to rose (dark, protan) |
+| `first-three` | slots 1 to 3, every pair, normal vision | 15 | 23.1, azure to lime (light) |
+| `status` | every slot to every status lamp, bar and word | 8.5 | 8.8, teal to the ok lamp (light) |
+| `violet` | every slot to every violet mark | 12 | 13.1, plum to the meter (light) |
+| `chroma` | every slot's OKLCH chroma, as written | 0.1 | 0.105, teal (light) |
+| `lightness` | every slot's OKLCH L, as written, inside its theme's band | 0.48–0.67 dark, 0.43–0.77 light | L 0.66, lime, orange and teal (dark, 0.01 under the top) |
+
+Trade-offs taken at sign-off:
+
+- Only about six hue families are left once red, amber, green, blue and violet
+  are reserved. Gold separated better but read as a warning beside amber, so it
+  was dropped.
+- Rose and plum are split by lightness rather than hue, so they stay apart
+  where their lines cross.
+- Dark plum is the dimmest slot and light lime leans olive. Both pass; they are
+  the first to nudge if they look off.
+
 ## Components
 
 The controls (spec §5.4, #285), one file each in `src/ui/`, imported as
 `@ui/<file>`. Each is a Base UI primitive, which brings the focus handling,
 the keys and the ARIA, drawn from the role tokens in the signed-off mock's
-shapes. No screen uses them yet; the gallery (#289) will show every state.
+shapes. No screen uses them yet; the [gallery](GALLERY.md) (#289) shows every
+state.
 
 | Component | Import | Base UI part | Props | Keys |
 | --- | --- | --- | --- | --- |
@@ -597,8 +759,8 @@ web.
 The containers and feedback components (spec §5.4, #286), one file each in
 `src/ui/`, imported as `@ui/<file>`. The overlays are Base UI primitives,
 which bring the focus handling, the keys and the ARIA; the rest are plain
-elements on the role tokens. No screen uses them yet; the gallery (#289) will
-show every state.
+elements on the role tokens. No screen uses them yet; the
+[gallery](GALLERY.md) (#289) shows every state.
 
 | Component | Import | Base UI part | Props | Keys |
 | --- | --- | --- | --- | --- |
@@ -745,7 +907,9 @@ is neutral and shows none.
   always there), so a screen reader hears it without opening it. The copies
   sit in one hidden element in `<body>`, never beside the trigger,
   where they would break the row's `:last-child` and `+` selectors and a
-  list's or a table's markup.
+  list's or a table's markup. The popup itself is hidden from assistive tech
+  (`aria-hidden`): it only repeats the name or the description, and would
+  otherwise sit at the end of `<body>` outside every landmark (#289).
 - **Toasts** are announced: the viewport is a polite live region and a
   landmark named "Notifications", there before the first toast, and F6 jumps
   to it. A `crit` toast is announced as an alert and stays until dismissed,
@@ -841,6 +1005,11 @@ is in, not the window):
   its state's tint when it is a warning, critical or no signal; maintenance
   stays on `surface-1`, its wrench saying it (spec §6.1). A tile is a lamp and
   an overline label, over the value (`title-sm`) and `sub` (12px `text-3`).
+  The tint is laid over the tile's `surface-1` (a one-colour gradient over the
+  background colour), never over the frame's `border-subtle` that shows in the
+  gaps: there the `text-3` label and line fell to 3.85:1 in light, which the
+  gallery's axe check found (#289); over `surface-1` they keep the 4.5:1 the
+  contrast check holds. Under the pointer a tile is `surface-2`, tinted or not.
   The label ends in an ellipsis when it doesn't fit, after using 4px of the
   tile's padding. Six sit in a row from 672px, three from 320px and two below
   that, where a tile is the Phone board's: a 14px value and no `sub`. A strip
@@ -946,6 +1115,186 @@ draws the Android lamp; nothing there uses it.
   two by two when narrow, five as 3 + 2 or 2 + 2 + 1 with the last tile
   wider); the line a filter with nothing in it shows; the tiles' names.
 
+## Data components
+
+The data components (spec §5.4, #288), one file each in `src/ui/`, imported as
+`@ui/<file>`: what the Overview and the detail drawer show about each entity.
+They are plain elements on the role tokens, the Sparkline's tooltip excepted
+(Base UI's). No screen uses them yet; the [gallery](GALLERY.md) (#289) shows
+every state.
+They have no Android look: the Android app keeps its own UsageBar and rows
+until Phase 4 (#326).
+
+| Component | Import | Props |
+| --- | --- | --- |
+| `MetricMeter` | `@ui/metric-meter` | `label`; `value` (a number, or null for no reading); `max` (100); `unit` (`%`); `warn`, `crit` (thresholds, in the reading's unit); `state` (the server's, which wins over the thresholds); `valueText` (the printed value; the rounded value and unit by default) |
+| `meterState` | `@ui/metric-meter` | `(value, { warn, crit })`: `ok`, `warn`, `crit`, or `unknown` without a reading |
+| `Sparkline` | `@ui/sparkline` | `label` (its name; required unless `decorative`); `points` (numbers, or `{ time, value }`); `domain` (`[0, 100]`, or `auto`); `width`, `height` (96 × 24); `area`; `unit`, `formatValue`, `formatTime` (HH:MM); `decorative` |
+| `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`) |
+| `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
+| `EntityRow` | `@ui/entity-row` | `state`, `word`, `name`, `detail`, `meta`, `trailing`; `onOpen` or `href` |
+| `FactList` | `@ui/fact-list` | `facts` (`[{ key, label, value }]`) |
+| `Table` | `@ui/table` | `caption` (or `aria-label`, or `aria-labelledby`), `columns` (`[{ key, header, numeric, cell, className }]`), `rows`, `rowKey` (`id`), `onRowOpen`, `empty`, `minWidth` |
+
+Each also takes `className`, and passes other props to its root.
+
+Spec §5.4's **StatStrip is FactList**. The mock draws an entity's figures
+(a UPS's charge, runtime, load and input; a service's monitor, latency and
+host) as the detail drawer's two-column list on both its Overview and Phone
+boards, and has no strip of figures; the drawer's integration stats (#310) go
+there too.
+
+### How the data components look
+
+From the mock's Overview board (node cards, the Services list, the
+Infrastructure table), its Phone board, its Tokens board's Pieces and its
+Chart colours board:
+
+- **MetricMeter.** The node card's meter: an overline label and the value
+  (13px bold, the mock's 20px line) over a 6px round `track` with `tick`
+  marks at a quarter, a half and three quarters. Below its threshold the fill
+  is `meter`, the accent's; at or above `warn` it is `warn-solid`, at or above
+  `crit` `crit-solid`, and the value takes the state's word colour (rule 3).
+  The threshold where it leaves the accent (`warn`, or `crit` without one) is
+  cut into the track in `lamp-cut`, 2px wide, so a reading past it shows
+  without colour. The fill clamps to the track and grows over 150ms; the value
+  prints as read ("130%"). No reading: an empty track and a dash in the
+  no-signal word colour. Ported from the Android app's UsageBar, whose fixed
+  75/90 steps become `warn` and `crit` (spec §6.1's defaults are the server's).
+- **Sparkline.** One series in slot 1, `series-1` ([Chart colours](#chart-colours)).
+  The plain line is the node card's: 96 × 24, a 1.5px line. `area` is the
+  Chart colours board's: a 2px line over a 14 % fill, the latest reading a
+  3.5px dot ringed in `surface-1`. It plots against 0–100 unless
+  `domain="auto"`; a missing reading breaks the line; fewer than two readings
+  draw nothing. Under the pointer, or with the keyboard on it, the nearest
+  point gets the same dot and a tooltip above the chart (the Tooltip's frame,
+  #286): the value in bold and the time in `text-2`. In a wider root
+  (`className="w-full"`) it fills the root's width at its own height, drawn at
+  that size, so the line stays 1.5 or 2px and the dots round.
+- **UptimeBar.** Kuma's heartbeat strip, oldest on the left. Only failures
+  light up: `crit` beats are `crit-solid`, `warn` beats (Kuma's pending)
+  `warn-solid`; every other check, maintenance included, is the quiet
+  `beat-ok`, and a beat with no check is a hollow `border-strong` outline.
+  Beats are 2px round (`rounded-xs`) and 2px apart: `sm` 4 × 16 (rows), `md`
+  6 × 22 (the drawer), `lg` 8 × 26 (the phone's detail screen, spread with
+  `justify-between`). `count` pads the oldest end with empty beats, so strips
+  in a list line up.
+- **EntityRow.** The Services row. From 672px of its own container: the lamp
+  (at the start of a 16px column), the name (semibold), the detail (13px), the meta (12px `text-3`,
+  right-aligned in 64px), the trailing figure and a chevron, `h-row` tall
+  (40px, 32 compact) and padded by `p-panel`, with the name keeping at least
+  the mock's name column (3/7 of the name and detail) so details line up down
+  a list. Narrower, the Phone board's row: the lamp in a 12px column, the name
+  over the detail (12px) and the trailing figure, 12px taller than `h-row`; a
+  heartbeat strip there shows its newest 12 beats, as the Phone board's, so
+  the detail keeps its room. Both keep the mock's 20px
+  lines. The detail is `text-1` when healthy and the state's word colour
+  otherwise; a critical row is tinted `crit-tint` from 672px, as the Overview
+  board's (the Phone board's list leaves it plain). `row-hover` under the
+  pointer, over the tint.
+- **FactList.** The detail drawer's facts: a label column in `text-3` and a
+  value column, semibold in `text-1`, 10px between rows and 12px between the
+  columns. From 384px of its own container it is the Overview drawer's (a
+  130px label column, 13px on the mock's 20px line); narrower, the Phone
+  board's detail screen (120px, 14px). Labels wrap in their column, values in
+  theirs, and a value with no break in it (a URL, a SHA, a hostname) breaks
+  anywhere (`wrap-anywhere`) rather than run past its column or a drawer's
+  edge (#289). Without facts it draws nothing.
+- **Table.** The Infrastructure table: `surface-1` in a subtle edge, 12px
+  round, overline headers (`text-3`, the mock's 20px line, 10px above and
+  below), rows `h-row` tall with a subtle rule between them, 13px text,
+  12px between columns and 16px at both ends of the first and last, as the
+  mock pads them. The first column is
+  bold. Numeric columns are right-aligned, header too, in tabular figures.
+  Cells keep to one line, so a row stays one `h-row` tall (a column's
+  `className` can set `whitespace-normal`), and a table wider than its frame
+  scrolls inside it (`minWidth`; the mock's is 720px).
+
+### Rules for the data components
+
+- **The name is never truncated before anything else** (spec §8, the card).
+  An EntityRow's name column starts at the name's own width; the meta and the
+  trailing figure start from nothing and grow into the room it leaves, up to
+  their own width (a strip short of room loses its oldest beats from the
+  left; on a phone-width row a heartbeat strip shows only its newest 12); the
+  detail fills what is left after them, ending in an ellipsis. Only a name
+  wider than the whole row ends in one. Pass every row in a list the same
+  parts (`meta="—"` where there is none, which stays out of the row's
+  description; an UptimeBar with the same `count`), so they line up.
+- **Beside a meter, slot 1 only.** A strip, row or card that holds a
+  MetricMeter draws its chart as a Sparkline ([Chart colours](#chart-colours)).
+- **Never on `surface-3`.** Meters and sparklines sit on the page, a panel,
+  `surface-2` or a hovered row; a sparkline may also sit on a status tint or
+  in a selected row (slot 1 alone, [Chart colours](#chart-colours)).
+- **Severity is the server's** (spec §6). A meter's `warn` and `crit` come
+  from the server's threshold config, and its `state`, when the server sends
+  one, wins: its hysteresis holds a warning until the reading drops 5 points.
+- **Inside something that opens** (a node card, an EntityRow with `onOpen`),
+  a Sparkline is `decorative`: a focusable chart inside a button is a control
+  inside a control, and the row's name says what matters.
+
+### Accessibility of the data components
+
+- **MetricMeter** is a `meter` named by its label, with `aria-valuenow`, its
+  min and max, and its value in words, with any threshold it passed: "92%,
+  warning above 90%". Without a reading it is no meter: its label and "No
+  data".
+- **Sparkline** is an image named by `label` and described by its latest,
+  lowest and highest readings, so nothing lives only in the tooltip, which
+  never opens on touch. Tab reaches it, and focus opens the tooltip at the
+  latest point; the arrows, Home and End move it, and a polite live region
+  says each point they reach ("30% at 08:38"), so the tooltip itself is hidden
+  from assistive tech (#289). Escape closes the tooltip. Its
+  focus ring goes around the chart, never on the line. `decorative` hides it
+  from assistive tech and the tab order; the pointer still gets the tooltip.
+- **UptimeBar** is an image named by its summary, "Heartbeats: 5 failures in
+  the last 30 checks, including the latest", counting only checks with data
+  (with none, "No data in the last 30 checks"; with no checks, "No checks
+  yet"). On a phone-width row it shows 12 beats and still sums up them all.
+  The name is hidden text inside it, so an EntityRow holding it is described
+  by it.
+- **EntityRow** is a button (`onOpen`) or a link (`href`) named "name, word"
+  and described by its detail, meta (not a dash alone) and trailing figure,
+  with a decorative
+  lamp; with nothing to open it is plain content and its lamp is named by the
+  word. The focus ring is drawn inset.
+- **FactList** is a description list: each label a term, its value the
+  definition.
+- **Table** is a `<table>` named by its `caption` (hidden: the panel's heading
+  shows it), an `aria-label`, or its section's heading (`aria-labelledby`, as
+  the mock names its sections), with `scope`d column headers and each row
+  named by its first cell, a row header; without a name it throws in
+  development and logs in production. With `onRowOpen`, that first cell is a
+  button, so Tab reaches each row and Enter or Space opens it, and a click
+  anywhere on the row opens it too, except on a link or control a cell holds.
+  While it scrolls, its frame is a region named as the table that Tab
+  reaches, so the keyboard can scroll it.
+
+### Where the data components differ from the mock
+
+- **The sparkline is azure, slot 1**, where the mock's node cards and drawer
+  draw it in the accent's `meter`: the Chart colours sign-off (#386) gives a
+  single series slot 1 and keeps the accent out of plots.
+- **The threshold tick** is not in the mock, whose meters have only the
+  quarter ticks: it shows where the meter leaves the accent, so a reading past
+  its threshold shows by more than colour. Jag's call (#288); taking it out is
+  one element in `metric-meter.jsx`.
+- **No reading keeps the track.** UsageBar hid its bar; the empty track keeps a
+  grid of meters in line.
+- **The table's headers are on the type scale's 20px line**, as the mock's
+  inherit; the first column is bold as a whole, where the mock bolds the name
+  and sets the host beside it in 12px mono `text-3` (a `cell` can do that).
+- **A row's detail ends in an ellipsis**, where the mock's wraps to a second
+  line ("No heartbeat yet · monitor added 2 min ago"), and the phone row's
+  beats are 16px tall (the mock's 18): one `sm` size for both rows.
+- **Not in the mock, derived from it:** the Sparkline's tooltip, its keyboard
+  and its active dot; UptimeBar's `warn` beats, maintenance kept quiet, and
+  its `md` and `lg` sizes (the drawers' beats); FactList's switch between the
+  drawer's and the phone's sizes at 384px of its container (the boards show
+  the two, not where one becomes the other); the meta and trailing figure
+  giving way to the name; the table's row header, its open button and its
+  scrolling region; the empty-table line.
+
 ## Changing a token
 
 Values come from the signed-off mock. A change Jag hasn't seen goes into the
@@ -973,9 +1322,14 @@ mock first.
   that fails and that the mock never draws goes in `FORBIDDEN` instead, and in
   rule 5 above. A new switch needs teaching to that script's reader, which
   refuses selectors it doesn't know.
+- A chart colour change is checked like any colour: 3:1 where charts are
+  drawn, the ramp's steps, and the gates that hold the slots
+  ([Chart colours](#chart-colours)). `scripts/chart-palette.test.mjs` pins the
+  signed-off values and the tables there, so a change fails until the test
+  and the tables agree with it.
 - `node scripts/ui-contrast.mjs` must report nothing below its floor on either
-  screen, no hover too close to its rest state, and no accent too close to a
-  status.
+  screen, no hover too close to its rest state, no accent too close to a
+  status, and no chart gate failing.
 
 Where the tokens differ from the mock, and why:
 
