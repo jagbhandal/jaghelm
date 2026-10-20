@@ -538,6 +538,21 @@ Key properties:
   `http://` to `https://` upgrade is still followed, and logged once per
   origin pair like a header-carrying one, since the key went out in clear
   text first. `httpClient.js` `safeFetch` accepts the same option.
+- **A URL carries the resolved credential, never a `$secret:` reference**
+  (#425). `resolveIntegrationConfig` (`lib/config.js`) keeps the entry's own
+  `token`, `password` and `username` (a Settings save writes `$secret:`
+  references there) and puts the resolved values in `_token`, `_password` and
+  `_username`. An endpoint's `{token}`, `{password}` or `{username}` takes
+  the `_` value whenever the config has one, so a preset's `.env` value wins
+  there too; the raw value is used only when there is no `_` key. A
+  placeholder, or a query-auth key, whose value is or looks like a `$secret:`
+  reference (one that didn't resolve, or a reference in a field that is never
+  resolved) throws `UnresolvedSecretError` where the URL is built
+  (`resolveEndpoint`, `applyQueryAuth`). No request is sent, and the
+  integration's error names the placeholder and says the stored credential
+  couldn't be resolved, never the reference. A session preset fills in its
+  endpoint before it logs in, so no login is sent for a read that can't be
+  made.
 - **Request bodies stay on their origin.** A `307` or `308` keeps the method
   and body, so a session login is re-sent, but only to the same origin or
   through the same-host upgrade; a request with a body redirected to another

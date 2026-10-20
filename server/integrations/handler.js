@@ -13,7 +13,7 @@
 import { getPresetFull } from './registry.js';
 
 import { safeFetch, isAuthRejection } from './lib/http.js';
-import { extractValue, resolveEndpoint } from './lib/extract.js';
+import { extractValue, resolveEndpoint, looksLikeSecretRef, UnresolvedSecretError } from './lib/extract.js';
 import { formatValue, computeField } from './lib/format.js';
 import { buildAuthHeaders } from './lib/auth.js';
 import { fetchWithSession, testSessionAuth } from './lib/session.js';
@@ -33,9 +33,17 @@ const log = createLogger('integrations');
  * Returns the URL and whether the key went into it, for safeFetch's
  * credentialInUrl: a redirect to another origin could carry the query (and the
  * key) with it, so such a request refuses one.
+ *
+ * A `$secret:` reference is never put into the URL (#425): a token that looks
+ * like one, or a reference that resolved to nothing, throws
+ * UnresolvedSecretError, so no request is sent and the error says why.
  */
 function applyQueryAuth(url, config) {
-  if (config.auth === 'query' && config._token) {
+  if (config.auth !== 'query') return { url, credentialInUrl: false };
+  if (looksLikeSecretRef(config._token) || (!config._token && looksLikeSecretRef(config.token))) {
+    throw new UnresolvedSecretError('the token in the URL');
+  }
+  if (config._token) {
     const paramName = config.queryParam || 'apikey';
     const separator = url.includes('?') ? '&' : '?';
     return { url: `${url}${separator}${paramName}=${encodeURIComponent(config._token)}`, credentialInUrl: true };

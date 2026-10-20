@@ -14,7 +14,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { extractValue, resolveEndpoint } from './extract.js';
+import { extractValue, resolveEndpoint, UnresolvedSecretError } from './extract.js';
 
 // ── _filter: numeric ordering guard + strict equality ──────────────────────
 
@@ -135,7 +135,7 @@ test('resolveEndpoint fills a non-credential placeholder without flagging it', (
 test('resolveEndpoint flags a filled credential placeholder, with or without the underscore', () => {
   const config = { token: 'raw', _token: 't1', _password: 'p1', _username: 'u1' };
   for (const [endpoint, path] of [
-    ['/api?key={token}', '/api?key=raw'],
+    ['/api?key={token}', '/api?key=t1'],
     ['/api?key={_token}', '/api?key=t1'],
     ['/api/{password}', '/api/p1'],
     ['/users/{username}', '/users/u1'],
@@ -146,4 +146,57 @@ test('resolveEndpoint flags a filled credential placeholder, with or without the
 
 test('resolveEndpoint does not flag a credential placeholder left unfilled', () => {
   assert.deepEqual(resolveEndpoint('/api?key={token}', {}), { path: '/api?key={token}', credentialInUrl: false });
+});
+
+// ── resolveEndpoint: the resolved credential, never a $secret: reference (#425) ──
+
+test('resolveEndpoint takes the resolved _ twin over the raw value it was resolved from', () => {
+  const config = {
+    token: '$secret:integration_x_token', // pragma: allowlist secret
+    _token: 'resolved-tok', // pragma: allowlist secret
+    password: '$secret:integration_x_password', // pragma: allowlist secret
+    _password: 'resolved-pw',
+    // A preset's .env username wins over the one in services.yaml.
+    username: 'yaml-user',
+    _username: 'env-user',
+  };
+  assert.deepEqual(resolveEndpoint('/a/{username}?k={token}&p={password}', config), {
+    path: '/a/env-user?k=resolved-tok&p=resolved-pw',
+    credentialInUrl: true,
+  });
+});
+
+test('resolveEndpoint falls back to the raw value only when there is no _ twin', () => {
+  assert.deepEqual(resolveEndpoint('/api?key={token}', { token: 'plain' }), {
+    path: '/api?key=plain',
+    credentialInUrl: true,
+  });
+  // A twin that resolved to nothing, with nothing behind it, leaves the placeholder.
+  assert.deepEqual(resolveEndpoint('/api?key={token}', { _token: undefined }), {
+    path: '/api?key={token}',
+    credentialInUrl: false,
+  });
+});
+
+test('resolveEndpoint refuses a $secret: reference that did not resolve, without naming it', () => {
+  for (const [endpoint, config] of [
+    ['/api?key={token}', { token: '$secret:hand_key', _token: null }], // pragma: allowlist secret
+    ['/api?key={_token}', { token: '$secret:hand_key', _token: null }], // pragma: allowlist secret
+    ['/api/{password}', { password: '$secret:hand_key', _password: null }], // pragma: allowlist secret
+    // A value that looks like a reference is never put into a URL, resolved or not.
+    ['/users/{username}', { username: '$secret:hand_key', _username: '$secret:hand_key' }], // pragma: allowlist secret
+    ['/api?key={token}', { token: ' $secret:hand_key' }], // pragma: allowlist secret
+    ['/accounts/{account_id}', { account_id: '$secret:hand_key' }], // pragma: allowlist secret
+  ]) {
+    assert.throws(
+      () => resolveEndpoint(endpoint, config),
+      (err) => {
+        assert.ok(err instanceof UnresolvedSecretError, endpoint);
+        assert.match(err.message, /Couldn't resolve the stored credential for \{\w+\} in the endpoint/);
+        assert.ok(!err.message.includes('hand_key') && !err.message.includes('$secret'), err.message);
+        return true;
+      },
+      endpoint
+    );
+  }
 });

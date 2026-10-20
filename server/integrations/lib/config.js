@@ -11,7 +11,9 @@ import { resolveCredential, getSecret } from '../../secrets.js';
  *
  * Resolved credentials are placed under _-prefixed keys (_username, _password,
  * _token) so the original yaml fields ($secret:refs, plain values) remain
- * available unmodified for callers that need them.
+ * available unmodified for callers that need them. Whatever sends a credential
+ * reads the _ key: auth headers, query auth, and an endpoint's {token},
+ * {password} or {username} (resolveEndpoint in extract.js, #425).
  */
 
 /**
