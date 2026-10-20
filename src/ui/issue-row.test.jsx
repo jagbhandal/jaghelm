@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { IssueRow } from '@ui/issue-row';
@@ -71,6 +71,20 @@ describe('IssueRow', () => {
     render(<IssueRow issue={immich} href="/services/immich" />);
     const row = screen.getByRole('link', { name: 'Immich, Down, Service · Production (vm-103)' });
     expect(row).toHaveAttribute('href', '/services/immich');
+  });
+
+  it("a link's onOpen runs on a plain click; a modified or middle click is the browser's", () => {
+    const onOpen = vi.fn();
+    render(<IssueRow issue={immich} href="#entity-immich" onOpen={onOpen} />);
+    const row = screen.getByRole('link');
+    for (const modifier of ['ctrlKey', 'metaKey', 'shiftKey', 'altKey']) {
+      fireEvent.click(row, { [modifier]: true });
+    }
+    fireEvent.click(row, { button: 1 });
+    expect(onOpen).not.toHaveBeenCalled();
+    fireEvent.click(row);
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(onOpen).toHaveBeenCalledWith();
   });
 
   it('is plain content with nothing to open: no button, no name, no chevron (#279)', () => {

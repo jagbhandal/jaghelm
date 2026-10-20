@@ -92,11 +92,12 @@ export function agoText(ms) {
 }
 
 /**
- * "Updated 12 s ago", for the time `at` (ms since the epoch; nothing before
- * the first update). It keeps its own clock, ticking each second, so it
- * re-renders alone.
+ * How long ago `at` was (ms since the epoch), as agoText says it, on a clock
+ * of its own that ticks each second, so only the component that asks
+ * re-renders; null while `at` is. UpdatedAgo's, and the "No signal" banner's
+ * "This is what it said 20 min ago" (#297).
  */
-function UpdatedAgo({ at, className, ...props }) {
+export function useAgo(at) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (at == null) return undefined;
@@ -104,14 +105,23 @@ function UpdatedAgo({ at, className, ...props }) {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [at]);
-  if (at == null) return null;
+  return at == null ? null : agoText(now - at);
+}
+
+/**
+ * "Updated 12 s ago", for the time `at` (ms since the epoch; nothing before
+ * the first update). It keeps its own clock (useAgo), so it re-renders alone.
+ */
+function UpdatedAgo({ at, className, ...props }) {
+  const ago = useAgo(at);
+  if (ago == null) return null;
   return (
     <span
       data-slot="updated-ago"
       className={cn('text-caption whitespace-nowrap text-text-3', className)}
       {...props}
     >
-      Updated {agoText(now - at)}
+      Updated {ago}
     </span>
   );
 }

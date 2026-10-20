@@ -25,6 +25,7 @@ import { safeUrl } from './utils/safeUrl.js';
 import { navigate, useRoute } from './router/useRoute.js';
 import { pathTo } from './router/routes.js';
 import { ShellHeader, ShellSideNav, ShellTabs } from './shell/ShellChrome.jsx';
+import { OverviewStatus } from './shell/OverviewStatus.jsx';
 import { appsOf, navGroups } from './shell/nav.js';
 import { alertsBadge } from './shell/statusView.js';
 
@@ -335,6 +336,10 @@ function AppMain({ authRequired, demo, onLogout }) {
         >
           <div style={onOverview ? undefined : OUT_OF_SIGHT}>
             <h1 className="sr-only">Overview</h1>
+            {/* Its state is the poll's: nothing to keep while another page is open. */}
+            {onOverview && (
+              <OverviewStatus status={poll.status} reach={poll.reach} updated={poll.updated} />
+            )}
             <DashboardView tick={tick} active={dashboardActive} onOpenSettings={openSettings} />
           </div>
           <Suspense fallback={lazyFallback}>

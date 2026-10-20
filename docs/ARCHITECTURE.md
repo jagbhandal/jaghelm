@@ -129,8 +129,10 @@ src/                        React 19 SPA (Vite 8)
                             their page exists), useRoute.js (the History API router)
   shell/                    the shell wired: ShellChrome.jsx (header, sidebar, phone tabs and
                             More sheet, fed from the route, the config and the status poll),
-                            nav.js (the nav as data), AlertsPage.jsx, statusView.js (how the
-                            status model's issues are counted and worded)
+                            nav.js (the nav as data), AlertsPage.jsx, OverviewStatus.jsx (the
+                            Overview's top), ShellAttention.jsx (the attention panel both
+                            draw), statusView.js (how the status model's issues are counted
+                            and worded), entityAnchors.js (where an Overview issue row leads)
   api/client.js             apiFetch -- explicit auth-injecting fetch wrapper
   context/                  ConfigContext (config + update via setIn), OverlayContext (toast/confirm)
   hooks/useData.js          fetchJson (304-aware), weather, search engines
@@ -179,10 +181,10 @@ gallery/                    the component gallery (development and CI only, docs
                             baselines/ (the committed PNGs), container.mjs (the pinned
                             Playwright image); built by vite.gallery.config.js, tested by
                             playwright.config.mjs, never part of the production build
-e2e/                        the app shell's browser tests (shell.spec.mjs, see 8): the
-                            production build served by `vite preview`, every /api request
-                            answered in the test; run by playwright.e2e.config.mjs in the
-                            gallery's container
+e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
+                            what they share in app.mjs; see 8): the production build served
+                            by `vite preview`, every /api request answered in the test; run
+                            by playwright.e2e.config.mjs in the gallery's container
 
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
@@ -1143,8 +1145,9 @@ flowchart TD
   SH --> HD["AppHeader<br/>(useStatus: /api/status)"]
   SH --> SN["SideNav (≥ 768px) /<br/>BottomTabs + More sheet (< 768px)"]
   APP --> CPAL["CommandPalette<br/>(pages, apps, themes, links)"]
+  SH --> OS["/ : OverviewStatus<br/>(the poll's status: ShellAttention)"]
   SH --> DV["/ : DashboardView"]
-  SH --> AP["/alerts : AlertsPage"]
+  SH --> AP["/alerts : AlertsPage<br/>(ShellAttention)"]
   SH --> SV["/settings/:section? : SettingsView (13 tabs)"]
   SH --> AF["/apps/:id : AppFrames<br/>(useAppFrames)"]
   AF --> IV["IframeView per app<br/>(useEmbedStatus)"]
@@ -1165,7 +1168,8 @@ flowchart TD
   `src/storage`, which works without storage). Each piece of chrome is its own
   `.jh-ui` root; the page area, `<main>`, is not one, so today's views inside it
   keep their look, and a page of the new UI (Alerts) brings its own root
-  (`ShellPage`). The chrome is dark, or light under one of today's light
+  (`ShellPage`), as does a part of a page beside today's views (the Overview's
+  status, `ShellSection`). The chrome is dark, or light under one of today's light
   themes, until #304 gives the new UI its own theme switch. The URL is the page: `src/router` is a small router on the
   History API (no dependency) over one route table (`routes.js`): `/`
   Overview, `/alerts`, `/apps/:id`, `/settings/:section?`, and `/launch`,
@@ -1187,8 +1191,8 @@ flowchart TD
   its sentence, which carries the counts ("1 service down · UPS on battery · 1
   no signal"); healthy reads "All systems normal" in text-1, never green. An
   empty board (nothing set up, #449) reads the model's "Nothing monitored yet"
-  in text-1, with no lamp, and the Alerts page shows the same quiet line. The
-  whole of it links to Alerts, inside a polite live region. When the server
+  in text-1, with no lamp, and the Alerts page and the Overview show the same
+  quiet line. The whole of it links to Alerts, inside a polite live region. When the server
   can't be reached the header says steel "No signal" with "Can't reach
   JagHelm", as the Android app does; a 503 before the first cycle (or an
   answer with no status) is "No signal" with "Waiting for the first check".
@@ -1198,6 +1202,43 @@ flowchart TD
   each second and each poll's answer re-render it alone, never the header. The
   sidebar's Alerts entry carries the issue count, in the worst issue's colour.
   This replaced the dashboard's health dot, read off `/api/services`.
+- **The Overview's status** (#297, spec §8 item 1). The top of the Overview
+  says whether anything is wrong, what and where, before today's board
+  (`OverviewStatus`, a `ShellSection` root). It reads the header's poll
+  (`useStatus`), so no second `/api/status`, and draws it as the Alerts page
+  does, through one component both use (`ShellAttention`): with issues, the
+  attention panel (the status word coloured and the counts, "Critical · 2
+  critical"; the model's sentence under them; the ranked rows: lamp, word,
+  entity, where, reason, age) and "All alerts"; with none, the quiet line
+  with the model's sentence ("All systems normal · All 12 services up · 3
+  nodes healthy"); on an empty board, "Nothing monitored yet" with no lamp
+  (#449). No signal is a Banner over the last status, which is kept, saying
+  how long ago it was said on its own clock (`useAgo`, as the header's
+  "Updated 20 min ago": nothing else changes while the polls fail); the first
+  load is a placeholder. It renders only while the Overview is open (its
+  state is the poll's), and is memoised on the poll, so the board's tick
+  doesn't re-render it. Each row is a link to an in-page anchor on today's board
+  until entities have URLs (#309, `entityAnchors.js`): a place on the board
+  carries the anchor of the entity it draws, by the model's id. A service or
+  container leads to its card (`DraggableServiceCard`), else its node's card
+  (a pending monitor has no card); a node to its card (`NodePanel`); the UPS
+  to its panel (`UPSCard`); a job to its row in Scheduled Jobs (`CronJobs`),
+  and a backup to its job's row, since the board lists backups as jobs. An
+  integration, an Arcane agent and a monitoring source have no place on the
+  board, so their rows are plain content. Whether the board draws a place is
+  the board's own say: each place puts its anchor on a list while it is
+  mounted (`usePlace`, `usePlaces`) and the rows read that list
+  (`useRowLink`), so they follow every rule that hides one (a section
+  switched off, no UPS, Scheduled Jobs off, a collapsed card, a service moved
+  into a group) without restating any; a row whose places are all off the
+  board is plain content too (#279). A click or Enter focuses the place
+  (`tabindex="-1"` unless it has one) and scrolls its top into view, clear of
+  the sticky header (`scroll-padding-top` on the page, `global.css`); a click
+  with a modifier key or the middle button is the browser's (a new tab or
+  window), and this tab stays where it was. A
+  wrapper (`.overview-status`, `global.css`) lines the status up with the
+  board's cards: the board's padding plus HelmGrid's margin. Later cards
+  rebuild the board under it (#298–#300) and take over the gutter.
 - **State.** `ConfigContext` exposes `config`, the stable `setConfig`, and a
   memoised `update(path, value)` built on `setIn` (immutable structural-sharing
   deep-set) -- so leaf cards memoise and don't re-render on unrelated edits.
@@ -1787,16 +1828,23 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   the production build and the container pinned in step.
 - **The app shell in a browser** (`npm run test:e2e`, Playwright in the
   gallery's container; CI's `gallery` job, after the gallery): `e2e/shell.spec.mjs`
-  runs the production build under `vite preview`, answering every `/api`
-  request in the test with the demo server's own answers (`demoResponse`) in
-  its incident scenario, `/api/status` included, at 390 and 1440px. It checks
+  and `e2e/overview.spec.mjs` run the production build under `vite preview`,
+  answering every `/api` request in the test with the demo server's own
+  answers (`demoResponse`, `e2e/app.mjs`) in its incident scenario (and, for
+  the Overview, its healthy one), `/api/status` included, at 390 and 1440px. They check
   the header's incident sentence and its steel "No signal" with the backend
   down (and back), that every nav entry (sidebar, phone tabs and More) opens
   its page and every old view is reachable, the app bar (Reload makes a new
   frame; "Open in new tab" is `_blank` with `noopener noreferrer`), Back,
   Forward and a reload, no sideways scroll on any page, and axe with every default rule, dark and
-  light, at both widths: the whole Alerts page, and the shell's chrome around
-  today's Overview. It also leaves screenshots of the incident in
+  light, at both widths: the whole Alerts page, and the shell's chrome and
+  the status around today's Overview board. The Overview's status (#297): in
+  the incident, the issue count and every issue row are on screen without
+  scrolling (inside the window, under the header, above the phone's tabs);
+  healthy, the quiet line, with no red, amber or green in the status area but
+  its one 10px lamp (every colour each element draws, read in OKLCH); and an
+  issue row, clicked or by Enter, brings its entity's place on the board into
+  view, clear of the header, and focuses it. Both leave screenshots in
   `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through

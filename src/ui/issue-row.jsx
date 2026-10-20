@@ -7,7 +7,11 @@
  * something is a link (`href`) or a button (`onOpen`, called with no
  * argument: the caller knows where it leads), named "title, word, where" and
  * described by its reason and age; a row with nothing to open is plain
- * content, so it neither looks nor announces as tappable (#279).
+ * content, so it neither looks nor announces as tappable (#279). A link may
+ * have an `onOpen` too, for what the page does beside following it (the
+ * Overview's moves to the place it names, #297): a plain click or Enter
+ * calls it, and a click with a modifier key or the middle button is the
+ * browser's alone (a new tab or window), so it never moves this one.
  *
  * The `ui` look is the mock's row, at either of its own widths:
  *
@@ -38,6 +42,9 @@ const word = {
   unknown: 'text-unknown-fg',
   maintenance: 'text-maintenance-fg',
 };
+
+/** A click the page may act on: the main button, no modifier key. */
+const plain = (e) => e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey);
 
 /** The name of a row that opens something: "title, word, where". */
 function nameOf(title, said, where) {
@@ -95,7 +102,7 @@ function UiIssueRow({ issue: it, onOpen, href, className, ...props }) {
     Tag === 'button'
       ? { type: 'button', onClick: () => onOpen() }
       : Tag === 'a'
-        ? { href, onClick: onOpen ? () => onOpen() : undefined }
+        ? { href, onClick: onOpen ? (e) => plain(e) && onOpen() : undefined }
         : {};
 
   return (
