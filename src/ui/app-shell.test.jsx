@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
-import { AppShell, ShellApps, ShellPage } from '@ui/app-shell';
+import { AppShell, ShellApps, ShellPage, ShellSection } from '@ui/app-shell';
 
 // The frame (#296): the chrome is the new UI, each piece its own `.jh-ui`
 // root with the screen's switches; the page area is not one, so today's views
@@ -61,6 +61,24 @@ describe('AppShell', () => {
     expect(root(heading)).toHaveAttribute('data-theme', 'light');
     expect(root(heading)).toHaveAttribute('data-slot', 'shell-page');
     expect(screen.getByText('What needs attention')).toBeInTheDocument();
+  });
+
+  it('a ShellSection is its own root, with the shell’s switches, its children stacked', () => {
+    render(
+      <Shell>
+        <p>an old view</p>
+        <ShellSection data-testid="section">
+          <p>status</p>
+        </ShellSection>
+      </Shell>
+    );
+    const section = screen.getByTestId('section');
+    expect(root(screen.getByText('status'))).toBe(section);
+    expect(section).toHaveAttribute('data-theme', 'light');
+    expect(section).toHaveAttribute('data-slot', 'shell-section');
+    expect(section).toHaveClass('flex', 'flex-col', 'gap-6');
+    // Beside today's view, which stays outside every root.
+    expect(root(screen.getByText('an old view'))).toBeNull();
   });
 
   it('ShellApps is a region named by the open app, and nothing when none is', () => {

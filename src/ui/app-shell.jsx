@@ -15,6 +15,11 @@
  *   ShellPage  a page of the new UI inside the shell: its own UiRoot with the
  *              shell's switches, the page's gutter (16, 24, 32px by width),
  *              its title (h1) and what goes under it.
+ *   ShellSection  a part of a page in the new UI beside today's views, such
+ *              as the Overview's status over today's board (#297): its own
+ *              UiRoot with the shell's switches, its children stacked 24px
+ *              apart, as a ShellPage stacks them. No gutter: the page around
+ *              it has one.
  *   ShellApps  where the embedded apps are drawn (AppFrames): a region named
  *              by the open app, its `bar` (AppBar) on top, in a root of its
  *              own, and the frames filling the window under them (and above
@@ -90,6 +95,20 @@ function ShellPage({ title, description, actions, className, children, ...props 
   );
 }
 
+function ShellSection({ className, children, ...props }) {
+  const switches = useContext(ShellSwitches);
+  return (
+    <UiRoot
+      {...switches}
+      data-slot="shell-section"
+      className={cn('flex flex-col gap-6', className)}
+      {...props}
+    >
+      {children}
+    </UiRoot>
+  );
+}
+
 function ShellApps({ label, bar, className, children, ...props }) {
   const switches = useContext(ShellSwitches);
   // The bar's place is kept when there is none, so the frames after it never
@@ -110,4 +129,4 @@ function ShellApps({ label, bar, className, children, ...props }) {
   );
 }
 
-export { AppShell, ShellPage, ShellApps };
+export { AppShell, ShellPage, ShellSection, ShellApps };

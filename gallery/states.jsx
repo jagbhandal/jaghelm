@@ -30,6 +30,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Button, buttonVariants } from '@ui/button';
+import { cn } from '@ui/lib/utils';
 import { IconButton } from '@ui/icon-button';
 import { Input } from '@ui/input';
 import { Select } from '@ui/select';
@@ -397,12 +398,12 @@ function ButtonState() {
         </Row>
       ))}
       <Row>
-        <a href="#settings" className={buttonVariants({ variant: 'secondary' })}>
+        <a href="#settings" className={cn(buttonVariants({ variant: 'secondary' }))}>
           A link drawn as a button
         </a>
         <a
           href="#alerts"
-          className={buttonVariants({ variant: 'ghost', size: 'sm', tone: 'accent' })}
+          className={cn(buttonVariants({ variant: 'ghost', size: 'sm', tone: 'accent' }))}
         >
           All alerts
         </a>
@@ -1220,7 +1221,10 @@ function SubsystemStripSelectableState() {
 }
 
 const ALL_ALERTS = (
-  <a href="#alerts" className={buttonVariants({ variant: 'ghost', size: 'sm', tone: 'accent' })}>
+  <a
+    href="#alerts"
+    className={cn(buttonVariants({ variant: 'ghost', size: 'sm', tone: 'accent' }))}
+  >
     All alerts
   </a>
 );

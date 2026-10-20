@@ -4,6 +4,7 @@ import { useConfig } from '../context/ConfigContext.jsx';
 import { safeUrl } from '../utils/safeUrl.js';
 import { fmtSpan } from '../util/span.js';
 import { renderIcon, iconSlugUrl } from '../utils/icon.jsx';
+import { usePlace, usePlaces, entityAnchor } from '../shell/entityAnchors.js';
 
 // Shared: compute background style from section config
 function sectionBgStyle(sec) {
@@ -42,8 +43,11 @@ export const UPSCard = React.memo(function UPSCard({ upsData, borderColor, banne
           ? 'var(--red)'
           : 'var(--text-muted)';
   const rt = upsData?.runtime ? Math.floor(upsData.runtime / 60) : null;
+  // The panel's anchor: the Overview's issue row for the UPS leads here (#297).
+  const anchor = usePlace('power/ups');
   return (
     <div
+      id={anchor}
       className="glass-card node-card"
       style={{ borderTop: `2px solid ${borderColor || 'var(--green)'}`, ...sectionBgStyle(sec) }}
     >
@@ -247,6 +251,10 @@ export const CronJobs = React.memo(function CronJobs({ nodes, banner, onRemove }
   };
 
   const isEmpty = !nodes || nodes.length === 0;
+  // Each job row's anchor: the Overview's issue row for the job, or for the
+  // backup it is, leads there (#297).
+  const jobId = (nodeEntry, jobEntry) => `jobs/${nodeEntry.node}:${jobEntry.job}`;
+  usePlaces((nodes ?? []).flatMap((n) => (n.jobs ?? []).map((j) => jobId(n, j))));
 
   return (
     <div
@@ -317,6 +325,7 @@ export const CronJobs = React.memo(function CronJobs({ nodes, banner, onRemove }
                   return (
                     <div
                       key={jobEntry.job}
+                      id={entityAnchor(jobId(nodeEntry, jobEntry))}
                       style={{
                         background: 'rgba(255,255,255,0.03)',
                         borderRadius: 6,

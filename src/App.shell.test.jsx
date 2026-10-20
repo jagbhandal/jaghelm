@@ -25,7 +25,7 @@ const GRAFANA = { id: 'grafana', label: 'Grafana', type: 'iframe', url: 'https:/
 const KUMA = { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: 'https://kuma.example/' };
 
 function stubServer({ tabs = [GRAFANA, KUMA], status = INCIDENT, serverTabs } = {}) {
-  server = { requests: [], status, statusDown: false };
+  server = { requests: [], status, statusDown: false, statusPending: false };
   localStorage.setItem('jaghelm-config', JSON.stringify({ tabs }));
   vi.stubGlobal(
     'fetch',
@@ -35,6 +35,7 @@ function stubServer({ tabs = [GRAFANA, KUMA], status = INCIDENT, serverTabs } = 
       if (path === '/api/auth/check') return respond({ authRequired: true, authenticated: true });
       if (path === '/api/status') {
         if (server.statusDown) return Promise.reject(new TypeError('Failed to fetch'));
+        if (server.statusPending) return new Promise(() => {});
         return respond(server.status);
       }
       if (path === '/api/display-config')
@@ -349,6 +350,114 @@ describe('the URL is the page', () => {
   it('names the browser tab after the page', async () => {
     await renderApp('/alerts');
     await waitFor(() => expect(document.title).toBe('Alerts — JagHelm'));
+  });
+});
+
+// The top of the Overview (#297): the status model, as the Alerts page draws
+// it, over today's board, from the header's own poll.
+describe('the Overview', () => {
+  const overviewStatus = () => document.querySelector('[data-slot="overview-status"]');
+
+  it("leads with the model's incident: the counts, its sentence, the ranked issues", async () => {
+    await renderApp();
+    const panel = await screen.findByRole('region', { name: 'Needs attention' });
+    expect(overviewStatus()).toContainElement(panel);
+    // Under the page's own h1, Overview.
+    expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
+    expect(within(panel).getByRole('heading', { level: 2 })).toHaveTextContent(
+      'Critical · 2 critical, 1 warning, 1 no signal'
+    );
+    expect(within(panel).getByText(INCIDENT.overall.sentence)).toBeInTheDocument();
+    const rows = within(panel).getAllByRole('listitem');
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringContaining('Immich'),
+      expect.stringContaining('Back-UPS'),
+      expect.stringContaining('vm103'),
+      expect.stringContaining('pi'),
+    ]);
+    // A row links to its entity's place on the board (#309 brings URLs), and
+    // this board draws none (no /api/services): each row is plain content.
+    expect(rows.map((r) => r.querySelector('[data-slot="issue-row"]').tagName)).toEqual([
+      'DIV',
+      'DIV',
+      'DIV',
+      'DIV',
+    ]);
+    // All alerts, as the mock has it, in accent-text, opens the Alerts page.
+    const all = within(panel).getByRole('link', { name: 'All alerts' });
+    expect(all).toHaveAttribute('href', '/alerts');
+    expect(all).toHaveClass('text-accent-text');
+    expect(all).not.toHaveClass('text-text-2');
+    fireEvent.click(all);
+    await current('Alerts');
+  });
+
+  it('reads the header’s poll: no second /api/status', async () => {
+    await renderApp();
+    await screen.findByRole('region', { name: 'Needs attention' });
+    expect(server.requests.filter((r) => r === '/api/status')).toHaveLength(1);
+  });
+
+  it("is the quiet line when all is well, with the model's sentence", async () => {
+    stubServer({ status: HEALTHY });
+    await renderApp();
+    const line = await screen.findByRole('region', { name: 'Status' });
+    expect(overviewStatus()).toContainElement(line);
+    expect(line).toHaveTextContent(`All systems normal${HEALTHY.overall.sentence}`);
+    expect(screen.queryByRole('region', { name: 'Needs attention' })).toBeNull();
+  });
+
+  // #449: nothing is set up, so there is no state to give a lamp.
+  it('on an empty board: the quiet line, "Nothing monitored yet", with no lamp', async () => {
+    stubServer({ status: FIRST_RUN });
+    await renderApp();
+    const line = await screen.findByRole('region', { name: 'Status' });
+    expect(overviewStatus()).toContainElement(line);
+    expect(line).toHaveTextContent(/^Nothing monitored yet$/);
+    expect(line.querySelector('[data-slot="status-lamp"]')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Needs attention' })).toBeNull();
+  });
+
+  it('is a placeholder before the first answer', async () => {
+    stubServer();
+    server.statusPending = true;
+    await renderApp();
+    const busy = overviewStatus().querySelector('[aria-busy="true"]');
+    expect(busy).toHaveTextContent('Loading status');
+    expect(within(overviewStatus()).queryByRole('region')).toBeNull();
+  });
+
+  it('without a signal, says so and keeps what the server last said', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await renderApp();
+      await screen.findByRole('region', { name: 'Needs attention' });
+      server.statusDown = true;
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      const said = () => overviewStatus().querySelector('[data-slot="banner"]');
+      expect(said()).toHaveAttribute('data-tone', 'unknown');
+      expect(said()).toHaveTextContent(
+        /^No signal.*Can't reach JagHelmThis is what it said 30 s ago\.$/
+      );
+      // A blip doesn't blank the panel.
+      expect(
+        within(overviewStatus()).getByRole('region', { name: 'Needs attention' })
+      ).toHaveTextContent('Immich');
+
+      // The polls keep failing, so nothing new arrives: the age keeps its own
+      // clock, as the header's "Updated" does.
+      await act(() => vi.advanceTimersByTimeAsync(20 * 60_000));
+      expect(said()).toHaveTextContent(/This is what it said 20 min ago\.$/);
+      expect(within(banner()).getByText('Updated 20 min ago')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('is on the Overview alone', async () => {
+    await renderApp('/alerts');
+    await screen.findByRole('region', { name: 'Needs attention' });
+    expect(overviewStatus()).toBeNull();
   });
 });
 
