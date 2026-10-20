@@ -33,7 +33,18 @@ describe('IconButton', () => {
     expect(btn).toHaveClass('size-control-sm', 'bg-surface-1', 'border-border');
   });
 
-  it('requires an accessible name', () => {
+  it('keeps the mock’s 8px radius at sm, where a ghost text button takes 6px', () => {
+    render(
+      <IconButton label="Close" size="sm">
+        <X />
+      </IconButton>
+    );
+    const btn = screen.getByRole('button', { name: 'Close' });
+    expect(btn).toHaveClass('size-control-sm', 'rounded-lg', 'px-0');
+    expect(btn).not.toHaveClass('rounded-md');
+  });
+
+  it('requires an accessible name: it throws in development', () => {
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       expect(() =>
@@ -45,6 +56,23 @@ describe('IconButton', () => {
       ).toThrow(/label/);
     } finally {
       quiet.mockRestore();
+    }
+  });
+
+  it('logs a missing name in a production build instead of taking the screen down', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubEnv('DEV', false);
+    try {
+      render(
+        <IconButton label="">
+          <X />
+        </IconButton>
+      );
+      expect(screen.getByRole('button')).toBeInTheDocument();
+      expect(logged).toHaveBeenCalledWith(expect.stringMatching(/label/));
+    } finally {
+      vi.unstubAllEnvs();
+      logged.mockRestore();
     }
   });
 

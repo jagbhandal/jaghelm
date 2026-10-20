@@ -3,14 +3,15 @@
  * drawer's sections. The mock draws none, so they follow §5.2's accent rule:
  * the active tab's label is accent-text over a 2px accent bar that sits on the
  * list's subtle bottom edge; the others are text-2, text-1 under the pointer.
- * Tabs are h-control tall (34px, 30 in compact), and their focus ring is inset
- * so it stays clear of the neighbouring tab.
+ * Tabs are h-control tall (34px, in both densities), and their focus ring is
+ * inset so it stays clear of the neighbouring tab.
  *
  * Base UI's Tabs give the tabs pattern: the arrow keys, Home and End move
- * between tabs (skipping disabled ones), Tab moves on to the panel, and ARIA
- * ties each tab to its panel. A tab shows its panel as soon as it has focus;
- * pass activateOnFocus={false} to TabList to wait for Enter or Space, for
- * panels that load something.
+ * between tabs, Tab moves on to the panel, and ARIA ties each tab to its
+ * panel. The arrows reach a disabled tab, marked aria-disabled, so it can be
+ * found, but it never shows its panel. A tab shows its panel as soon as it has
+ * focus; pass activateOnFocus={false} to TabList to wait for Enter or Space,
+ * for panels that load something.
  */
 import { Tabs as TabsPrimitive } from '@base-ui/react/tabs';
 import { cn } from './lib/utils.js';

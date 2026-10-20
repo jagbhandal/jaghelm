@@ -1,3 +1,4 @@
+import { createRef } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
@@ -88,15 +89,29 @@ describe('Select', () => {
     expect(trigger).toHaveFocus();
   });
 
-  it('draws the list as a popover: surface-2, highlighted on surface-3, chosen ticked in the accent', async () => {
+  it('draws the list as a popover: surface-2, the palette’s row tint, chosen ticked in the accent', async () => {
     const user = userEvent.setup();
     render(<Select aria-label="Data refresh" items={REFRESH} defaultValue="60" />);
     await user.click(screen.getByRole('combobox', { name: 'Data refresh' }));
     const listbox = await screen.findByRole('listbox');
     const popup = listbox.closest('[data-slot="select-popup"]');
-    expect(popup).toHaveClass('bg-surface-2', 'border-border-strong', 'shadow-pop', 'rounded-lg');
+    expect(popup).toHaveClass(
+      'bg-surface-2',
+      'border-border-strong',
+      'shadow-pop',
+      'rounded-lg',
+      'p-1.5'
+    );
     const chosen = screen.getByRole('option', { name: 'Every 60 s' });
-    expect(chosen).toHaveClass('data-highlighted:bg-surface-3', 'h-control-sm');
+    // The mock's command palette rows: row-hover, 8px radius, 10px padding;
+    // never shadcn's neutral highlight.
+    expect(chosen).toHaveClass(
+      'data-highlighted:bg-row-hover',
+      'rounded-lg',
+      'px-2.5',
+      'h-control-sm'
+    );
+    expect(chosen.className).not.toMatch(/surface-3/);
     // The keyboard ring is inset, so it stays inside the list.
     expect(chosen).toHaveClass('-outline-offset-2');
     expect(chosen.className).not.toMatch(NO_RING);
@@ -127,6 +142,108 @@ describe('Select', () => {
     expect(root).toHaveAttribute('data-accent', 'cyan');
     expect(root).toHaveAttribute('data-density', 'compact');
     expect(root).toHaveAttribute('data-typeface', 'montserrat');
+  });
+
+  it('reads the switches again when it opens, after the screen changed them', async () => {
+    const user = userEvent.setup();
+    render(
+      <div className="jh-ui" data-testid="screen">
+        <Select aria-label="Data refresh" items={REFRESH} defaultValue="30" />
+      </div>
+    );
+    const screenRoot = screen.getByTestId('screen');
+    screenRoot.setAttribute('data-theme', 'light');
+    screenRoot.setAttribute('data-density', 'compact');
+    await user.click(screen.getByRole('combobox', { name: 'Data refresh' }));
+    const root = (await screen.findByRole('listbox')).closest('.jh-ui');
+    expect(root).not.toBe(screenRoot);
+    expect(root).toHaveAttribute('data-theme', 'light');
+    expect(root).toHaveAttribute('data-density', 'compact');
+  });
+
+  it('moves to an option by typing its first letters', async () => {
+    const user = userEvent.setup();
+    const engines = [
+      { value: 'google', label: 'Google' },
+      { value: 'duckduckgo', label: 'DuckDuckGo' },
+      { value: 'searxng', label: 'SearXNG' },
+    ];
+    render(<Select aria-label="Search engine" items={engines} defaultValue="google" />);
+    screen.getByRole('combobox', { name: 'Search engine' }).focus();
+    await user.keyboard('{ArrowDown}');
+    await screen.findByRole('listbox');
+    await user.keyboard('s');
+    await waitFor(() => expect(screen.getByRole('option', { name: 'SearXNG' })).toHaveFocus());
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('combobox', { name: 'Search engine' })).toHaveTextContent('SearXNG');
+  });
+
+  it('carries its value in a form, by name', async () => {
+    const user = userEvent.setup();
+    render(
+      <form data-testid="form">
+        <Select aria-label="Data refresh" name="refresh" items={REFRESH} defaultValue="30" />
+      </form>
+    );
+    const form = screen.getByTestId('form');
+    expect(new FormData(form).get('refresh')).toBe('30');
+    await user.click(screen.getByRole('combobox', { name: 'Data refresh' }));
+    await user.click(await screen.findByRole('option', { name: 'Every 2 min' }));
+    expect(new FormData(form).get('refresh')).toBe('120');
+  });
+
+  it('puts style, data-*, ref, title and focus handlers on the trigger', () => {
+    const ref = createRef();
+    const onFocus = vi.fn();
+    render(
+      <Select
+        aria-label="Data refresh"
+        items={REFRESH}
+        defaultValue="30"
+        ref={ref}
+        style={{ width: 160 }}
+        data-testid="refresh"
+        title="How often the server polls"
+        onFocus={onFocus}
+      />
+    );
+    const trigger = screen.getByRole('combobox', { name: 'Data refresh' });
+    expect(screen.getByTestId('refresh')).toBe(trigger);
+    expect(ref.current).toBe(trigger);
+    expect(trigger).toHaveStyle({ width: '160px' });
+    expect(trigger).toHaveAttribute('title', 'How often the server polls');
+    trigger.focus();
+    expect(onFocus).toHaveBeenCalled();
+  });
+
+  it('renders with no items yet, as while they load', () => {
+    render(<Select aria-label="Engine" placeholder="Loading" />);
+    expect(screen.getByRole('combobox', { name: 'Engine' })).toHaveTextContent('Loading');
+  });
+
+  it('lists options whose values are objects, each its own', async () => {
+    const user = userEvent.setup();
+    const noisy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const hosts = [
+        { value: { id: 1 }, label: 'pi-1' },
+        { value: { id: 2 }, label: 'pi-2' },
+      ];
+      render(
+        <Select
+          aria-label="Host"
+          items={hosts}
+          isItemEqualToValue={(a, b) => a.id === b.id}
+          itemToStringValue={(v) => String(v.id)}
+          defaultValue={hosts[0].value}
+        />
+      );
+      await user.click(screen.getByRole('combobox', { name: 'Host' }));
+      expect(await screen.findAllByRole('option')).toHaveLength(2);
+      expect(noisy.mock.calls.flat().join(' ')).not.toMatch(/same key/);
+    } finally {
+      noisy.mockRestore();
+    }
   });
 
   it('when disabled, is skipped by Tab and never opens', async () => {

@@ -56,8 +56,8 @@ describe('Button', () => {
     ['secondary', 'sm', 'px-2.5'],
     ['danger', 'sm', 'px-2.5'],
     ['ghost', 'md', 'px-2.5'],
-    ['ghost', 'sm', 'px-2'],
-  ])('%s at %s has the mock’s padding (%s) and the density height', (variant, size, px) => {
+    ['ghost', 'sm', 'px-2.5'],
+  ])('%s at %s has the mock’s padding (%s) and height', (variant, size, px) => {
     render(
       <Button variant={variant} size={size}>
         Go
@@ -65,6 +65,46 @@ describe('Button', () => {
     );
     const btn = screen.getByRole('button');
     expect(btn).toHaveClass(px, size === 'sm' ? 'h-control-sm' : 'h-control');
+  });
+
+  it('draws a ghost sm button as the mock’s row action: 10px padding, 6px radius', () => {
+    render(
+      <>
+        <Button variant="ghost" size="sm">
+          Remove
+        </Button>
+        <Button variant="ghost">Reload</Button>
+      </>
+    );
+    const row = screen.getByRole('button', { name: 'Remove' });
+    expect(row).toHaveClass('rounded-md', 'px-2.5', 'h-control-sm');
+    expect(row).not.toHaveClass('rounded-lg');
+    expect(screen.getByRole('button', { name: 'Reload' })).toHaveClass('rounded-lg');
+  });
+
+  it('draws a ghost button in accent-text with tone="accent", and keeps it under the pointer', () => {
+    render(
+      <>
+        <Button variant="ghost" size="sm" tone="accent">
+          Edit
+        </Button>
+        <Button variant="secondary" tone="accent">
+          Save
+        </Button>
+      </>
+    );
+    const edit = screen.getByRole('button', { name: 'Edit' });
+    expect(edit).toHaveClass(
+      'text-accent-text',
+      'not-data-disabled:hover:bg-surface-2',
+      'not-data-disabled:hover:text-accent-text'
+    );
+    expect(edit.className).not.toMatch(/text-text-[12]/);
+    expect(edit).not.toHaveAttribute('tone');
+    // tone colours a ghost button only.
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toHaveClass('text-text-1');
+    expect(save).not.toHaveClass('text-accent-text');
   });
 
   it('activates with Enter and Space once focused with Tab', async () => {
@@ -146,12 +186,23 @@ describe('cn', () => {
     expect(cn('text-text-2', 'text-accent-text')).toBe('text-accent-text');
   });
 
-  it("knows the density heights and the shadows, so a caller's class replaces them", () => {
+  it("knows the control heights and the shadows, so a caller's class replaces them", () => {
     expect(cn('h-control', 'h-control-sm')).toBe('h-control-sm');
     expect(cn('h-control', 'h-9')).toBe('h-9');
     expect(cn('h-control px-3', 'size-control')).toBe('px-3 size-control');
     expect(cn('h-segment', 'h-row')).toBe('h-row');
     expect(cn('p-panel', 'p-2')).toBe('p-2');
     expect(cn('shadow-control', 'shadow-pop')).toBe('shadow-pop');
+  });
+
+  it('knows the layers, the duration and the easing, so only one of each is kept', () => {
+    expect(cn('z-dialog', 'z-toast')).toBe('z-toast');
+    expect(cn('z-overlay', 'z-10')).toBe('z-10');
+    expect(cn('duration-standard', 'duration-300')).toBe('duration-300');
+    expect(cn('duration-300', 'duration-standard')).toBe('duration-standard');
+    expect(cn('ease-in', 'ease-standard')).toBe('ease-standard');
+    expect(cn('transition-colors duration-standard ease-standard')).toBe(
+      'transition-colors duration-standard ease-standard'
+    );
   });
 });

@@ -11,10 +11,24 @@ describe('Switch', () => {
     const sw = screen.getByRole('switch', { name: 'Show Pipeline' });
     expect(sw).toHaveAttribute('aria-checked', 'false');
     expect(sw).toHaveAttribute('data-slot', 'switch');
-    // 36 x 20 track: surface-3 off, the accent on; a 16px thumb.
-    expect(sw).toHaveClass('h-5', 'w-9', 'rounded-full', 'bg-surface-3', 'data-checked:bg-accent');
+    // 36 x 20 track: surface-3 off, the accent on; a 16px white thumb. Off,
+    // a 1px control-edge edge carries 3:1 against the page (WCAG 1.4.11);
+    // on, the edge is the accent, so the track is the mock's. 1px border and
+    // 1px padding keep the thumb 2px in, as the mock's.
+    expect(sw).toHaveClass(
+      'h-5',
+      'w-9',
+      'rounded-full',
+      'bg-surface-3',
+      'border',
+      'border-control-edge',
+      'p-px',
+      'data-checked:bg-accent',
+      'data-checked:border-accent'
+    );
     expect(sw.firstElementChild).toHaveClass(
       'size-4',
+      'bg-switch-thumb',
       'shadow-thumb',
       'data-checked:translate-x-4'
     );
@@ -33,6 +47,19 @@ describe('Switch', () => {
     expect(onCheckedChange).toHaveBeenLastCalledWith(true, expect.anything());
     await user.keyboard(' ');
     expect(sw).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('carries its state in a form, by name', async () => {
+    const user = userEvent.setup();
+    render(
+      <form data-testid="form">
+        <Switch aria-label="Weekly digest" name="digest" />
+      </form>
+    );
+    const form = screen.getByTestId('form');
+    expect(new FormData(form).get('digest')).toBeNull();
+    await user.click(screen.getByRole('switch', { name: 'Weekly digest' }));
+    expect(new FormData(form).get('digest')).toBe('on');
   });
 
   it('is named by an enclosing label, and clicking the label toggles it', async () => {

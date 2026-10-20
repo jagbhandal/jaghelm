@@ -6,6 +6,7 @@ import { Input } from '@ui/input';
 import { Select } from '@ui/select';
 import { Switch } from '@ui/switch';
 import { Checkbox } from '@ui/checkbox';
+import { SegmentedControl } from '@ui/segmented-control';
 
 describe('Field', () => {
   it('labels its control and lays out label, control and help text as the mock does', () => {
@@ -91,6 +92,78 @@ describe('Field', () => {
     await user.click(label);
     expect(trigger).toHaveFocus();
     expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('shows no error and sets no aria-invalid when told invalid={false}', () => {
+    render(
+      <Field label="Name" error="Required" invalid={false}>
+        <Input />
+      </Field>
+    );
+    const input = screen.getByRole('textbox', { name: 'Name' });
+    expect(input).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByText('Required')).toBeNull();
+    expect(input).not.toHaveAccessibleDescription();
+  });
+
+  it('labels a Select wrapped in another component without a <label> too', async () => {
+    const user = userEvent.setup();
+    function RefreshPicker() {
+      return (
+        <div className="flex gap-2">
+          <Select items={[{ value: '30', label: 'Every 30 s' }]} defaultValue="30" />
+        </div>
+      );
+    }
+    render(
+      <Field label="Data refresh">
+        <RefreshPicker />
+      </Field>
+    );
+    const trigger = screen.getByRole('combobox', { name: 'Data refresh' });
+    const label = screen.getByText('Data refresh');
+    expect(label.tagName).not.toBe('LABEL');
+    await user.click(label);
+    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('labels with a <label> again once its Select is gone', () => {
+    const { rerender } = render(
+      <Field label="Refresh">
+        <Select items={[{ value: '30', label: 'Every 30 s' }]} defaultValue="30" />
+      </Field>
+    );
+    expect(screen.getByText('Refresh').tagName).not.toBe('LABEL');
+    rerender(
+      <Field label="Refresh">
+        <Input />
+      </Field>
+    );
+    expect(screen.getByText('Refresh').tagName).toBe('LABEL');
+  });
+
+  it('names and describes a SegmentedControl as a group, each segment by its own text', () => {
+    render(
+      <Field label="Density" description="Compact fits more rows.">
+        <SegmentedControl
+          options={[
+            { value: 'comfortable', label: 'Comfortable' },
+            { value: 'compact', label: 'Compact' },
+          ]}
+          defaultValue="compact"
+        />
+      </Field>
+    );
+    const group = screen.getByRole('radiogroup', { name: 'Density' });
+    expect(group).toHaveAccessibleDescription('Compact fits more rows.');
+    // The label names the group, as a legend would, so it is no <label>.
+    expect(screen.getByText('Density').tagName).not.toBe('LABEL');
+    const comfortable = screen.getByRole('radio', { name: 'Comfortable' });
+    const compact = screen.getByRole('radio', { name: 'Compact' });
+    expect(compact).toHaveAttribute('aria-checked', 'true');
+    expect(comfortable.id).not.toBe(compact.id);
+    expect(document.querySelectorAll(`[id="${compact.id}"]`)).toHaveLength(1);
   });
 
   it('labels and describes a Switch and a Checkbox', () => {

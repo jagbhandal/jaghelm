@@ -22,7 +22,8 @@ describe('SegmentedControl', () => {
     expect(on).toHaveAttribute('aria-checked', 'true');
     expect(off).toHaveAttribute('aria-checked', 'false');
     expect(on.tagName).toBe('BUTTON');
-    // The chosen segment lifts onto surface-1; the others are text-2.
+    // The chosen segment lifts onto surface-1; the others are text-2. A
+    // segment is h-segment (30px), so with the track's 2px the control is 34.
     expect(on).toHaveClass(
       'h-segment',
       'rounded-md',
@@ -92,6 +93,24 @@ describe('SegmentedControl', () => {
     );
     const cards = screen.getByRole('radio', { name: 'Cards' });
     expect(cards.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('carries its value in a form, by name', async () => {
+    const user = userEvent.setup();
+    render(
+      <form data-testid="form">
+        <SegmentedControl
+          aria-label="Density"
+          name="density"
+          options={DENSITY}
+          defaultValue="comfortable"
+        />
+      </form>
+    );
+    const form = screen.getByTestId('form');
+    expect(new FormData(form).get('density')).toBe('comfortable');
+    await user.click(screen.getByRole('radio', { name: 'Compact' }));
+    expect(new FormData(form).get('density')).toBe('compact');
   });
 
   it('skips a disabled segment', async () => {

@@ -4,7 +4,9 @@
 // in both themes and with every accent (src/ui/accents.js), and must meet the
 // spec's floor (RULES, spec §5.2): text-1 7:1; text-2, text-3, on-accent,
 // accent-text, status fg and on-solid 4.5:1; the focus ring 3:1 against the
-// surface around it. Pairings ruled out by name (FORBIDDEN) may never be
+// surface around it; and the edge of a control with no fill of its own (an
+// empty checkbox, an off switch) 3:1 against the surface it sits on (WCAG
+// 1.4.11). Pairings ruled out by name (FORBIDDEN) may never be
 // declared. Each accent's hover must also differ visibly from its rest state
 // (HOVER_MIN_DE), and no accent may read as a status colour (STATUS_MIN_DE).
 //
@@ -50,7 +52,7 @@ const DEFAULTS = {
   typeface: DEFAULT_TYPEFACE,
 };
 
-/** Minimum contrast per rule (spec §5.2). */
+/** Minimum contrast per rule (spec §5.2; control-edge, WCAG 1.4.11's 3:1 for a control's boundary). */
 export const RULES = {
   'text-1': 7,
   'text-2': 4.5,
@@ -60,6 +62,7 @@ export const RULES = {
   'status-fg': 4.5,
   'on-solid': 4.5,
   'focus-ring': 3,
+  'control-edge': 3,
 };
 
 export const STATUSES = ['ok', 'warn', 'crit', 'unknown', 'maintenance', 'info'];
@@ -81,7 +84,8 @@ export const PAIRINGS = [
     [
       ...on(...SURFACES),
       ...over('accent-tint', 'bg', 'sidebar', 'surface-1'),
-      ...over('row-hover', 'bg', 'surface-1'),
+      // over surface-2: a Select's highlighted option (#285).
+      ...over('row-hover', 'bg', 'surface-1', 'surface-2'),
       ...STATUSES.flatMap((s) => over(`${s}-tint`, 'bg', 'surface-1')),
     ].map((p) => ({ rule: fg, fg, ...p }))
   ),
@@ -92,11 +96,11 @@ export const PAIRINGS = [
     ...STATUSES.flatMap((s) => over(`${s}-tint`, 'bg', 'surface-1')),
   ].map((p) => ({ rule: 'text-3', fg: 'text-3', ...p })),
   ...[
-    // surface-3: a Select's chosen option, ticked in accent-text, under the
-    // highlight (#285).
-    ...on('bg', 'sidebar', 'surface-1', 'surface-2', 'surface-3'),
+    ...on('bg', 'sidebar', 'surface-1', 'surface-2'),
     ...over('accent-tint', 'bg', 'sidebar', 'surface-1'),
-    ...over('row-hover', 'bg', 'surface-1'),
+    // over surface-2: a Select's chosen option, ticked in accent-text, under
+    // the highlight (#285).
+    ...over('row-hover', 'bg', 'surface-1', 'surface-2'),
   ].map((p) => ({ rule: 'accent-text', fg: 'accent-text', ...p })),
   ...on('accent', 'accent-hover').map((p) => ({ rule: 'on-accent', fg: 'on-accent', ...p })),
   ...STATUSES.flatMap((s) =>
@@ -109,6 +113,12 @@ export const PAIRINGS = [
   ),
   ...STATUSES.map((s) => ({ rule: 'on-solid', fg: `${s}-on-solid`, bg: `${s}-solid` })),
   ...on(...SURFACES).map((p) => ({ rule: 'focus-ring', fg: 'focus-ring', ...p })),
+  // An empty checkbox's or an off switch's edge, where controls sit: the page,
+  // the nav rail, panels, popovers, and hovered rows (#285).
+  ...[
+    ...on('bg', 'sidebar', 'surface-1', 'surface-2'),
+    ...over('row-hover', 'bg', 'surface-1'),
+  ].map((p) => ({ rule: 'control-edge', fg: 'control-edge', ...p })),
 ];
 
 /**

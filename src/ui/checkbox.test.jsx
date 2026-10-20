@@ -15,12 +15,19 @@ describe('Checkbox', () => {
     const box = screen.getByRole('checkbox', { name: 'Open in a new browser tab' });
     expect(box).toHaveAttribute('aria-checked', 'false');
     expect(box).toHaveAttribute('data-slot', 'checkbox');
+    // Its edge is control-edge, 3:1 against the page (WCAG 1.4.11), not the
+    // 1.4:1 border-strong; an invalid box keeps 3:1 in crit's word colour.
     expect(box).toHaveClass(
       'size-4',
       'rounded-sm',
-      'border-border-strong',
-      'data-checked:bg-accent'
+      'border',
+      'border-control-edge',
+      'bg-background',
+      'data-checked:bg-accent',
+      'data-checked:border-accent',
+      'aria-invalid:border-crit-fg'
     );
+    expect(box.className).not.toMatch(/border-border-strong|crit-border/);
     expect(box.className).not.toMatch(NO_RING);
     expect(box.querySelector('svg')).toBeNull();
   });
@@ -53,6 +60,19 @@ describe('Checkbox', () => {
       'aria-checked',
       'mixed'
     );
+  });
+
+  it('carries its state in a form, by name', async () => {
+    const user = userEvent.setup();
+    render(
+      <form data-testid="form">
+        <Checkbox aria-label="Rotate backups" name="rotate" />
+      </form>
+    );
+    const form = screen.getByTestId('form');
+    expect(new FormData(form).get('rotate')).toBeNull();
+    await user.click(screen.getByRole('checkbox', { name: 'Rotate backups' }));
+    expect(new FormData(form).get('rotate')).toBe('on');
   });
 
   it('when disabled, ignores clicks and is skipped by Tab', async () => {

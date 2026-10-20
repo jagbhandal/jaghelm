@@ -6,14 +6,17 @@
  *  - secondary (the default): surface-1 inside a subtle edge, semibold; under
  *    the pointer the edge strengthens and the fill steps to surface-2.
  *  - ghost: no fill or edge, text-2; surface-2 and text-1 under the pointer.
+ *    At sm it is the mock's row action (Edit, Remove, Sign out): 10px
+ *    padding and a 6px radius. tone="accent" draws it in accent-text, which
+ *    it keeps under the pointer, as the mock's Edit and Clear filter.
  *  - danger: the secondary's shape in crit's word colour and edge. It warns
  *    about an action, so it never takes crit's solid fill, which is a status.
  *
- * Heights follow the density switch (h-control 34px, h-control-sm 30px; 30 and
- * 26 in compact); the padding is the mock's for each variant. The focus ring
- * is the base style's (tailwind.css), which every control keeps. Built on Base
- * UI's Button, which keeps a disabled button out of the tab order. A link
- * drawn as a button puts `buttonVariants()` on its <a>.
+ * Heights are the mock's, h-control (34px) and h-control-sm (30px), in both
+ * densities; so is each variant's padding. The focus ring is the base style's
+ * (tailwind.css), which every control keeps. Built on Base UI's Button, which
+ * keeps a disabled button out of the tab order. A link drawn as a button puts
+ * `buttonVariants()` on its <a>.
  */
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { cva } from 'class-variance-authority';
@@ -37,6 +40,8 @@ const buttonVariants = cva(
         sm: "h-control-sm gap-1.5 [&_svg:not([class*='size-'])]:size-3.5",
         md: "h-control gap-2 [&_svg:not([class*='size-'])]:size-4",
       },
+      // Colours a ghost button only (compoundVariants); the others ignore it.
+      tone: { neutral: '', accent: '' },
     },
     compoundVariants: [
       { variant: 'primary', size: 'md', class: 'px-3.5' },
@@ -44,20 +49,26 @@ const buttonVariants = cva(
       { variant: ['secondary', 'danger'], size: 'md', class: 'px-3' },
       { variant: ['secondary', 'danger'], size: 'sm', class: 'px-2.5' },
       { variant: 'ghost', size: 'md', class: 'px-2.5' },
-      { variant: 'ghost', size: 'sm', class: 'px-2' },
+      { variant: 'ghost', size: 'sm', class: 'rounded-md px-2.5' },
+      {
+        variant: 'ghost',
+        tone: 'accent',
+        class: 'text-accent-text not-data-disabled:hover:text-accent-text',
+      },
     ],
     defaultVariants: {
       variant: 'secondary',
       size: 'md',
+      tone: 'neutral',
     },
   }
 );
 
-function Button({ className, variant = 'secondary', size = 'md', ...props }) {
+function Button({ className, variant = 'secondary', size = 'md', tone = 'neutral', ...props }) {
   return (
     <ButtonPrimitive
       data-slot="button"
-      className={cn(buttonVariants({ variant, size }), className)}
+      className={cn(buttonVariants({ variant, size, tone }), className)}
       {...props}
     />
   );

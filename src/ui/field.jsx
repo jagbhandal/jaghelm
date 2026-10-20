@@ -5,28 +5,34 @@
  * wires them: the label names the control, the help text and the error are in
  * its aria-describedby, and an error sets aria-invalid. The error is crit's
  * word colour with an icon, so it never rests on colour alone; say what is
- * wrong and how to fix it.
+ * wrong and how to fix it. `error` makes the field invalid; `invalid={false}`
+ * says it isn't, and then the error is not shown either.
  *
- * Works with Input, Select, Switch and Checkbox (any Base UI control). A Select
- * is labelled by a <div> rather than a <label>, which would open its list when
- * clicked; `nativeLabel` overrides the choice for a control wrapped in another
- * component.
+ * Works with Input, Select, Switch, Checkbox and SegmentedControl (any Base UI
+ * control). A Select or a SegmentedControl, however deeply it is wrapped, is
+ * labelled by a <div> rather than a <label>: a <label> would open a Select's
+ * list when clicked, and has no one control to point at in a group
+ * (lib/field-context.js). `nativeLabel` sets the choice by hand.
  */
-import { Children, isValidElement } from 'react';
+import { useMemo, useState } from 'react';
 import { Field as FieldPrimitive } from '@base-ui/react/field';
 import { CircleAlert } from 'lucide-react';
 import { cn } from './lib/utils.js';
+import { FieldContext } from './lib/field-context.js';
 
 function Field({ label, description, error, invalid, nativeLabel, className, children, ...props }) {
-  const native =
-    nativeLabel ??
-    !Children.toArray(children).some(
-      (child) => isValidElement(child) && child.type?.labelsWithoutLabelElement
-    );
+  // How many controls inside asked not to be labelled by a <label>.
+  const [noLabelElement, setNoLabelElement] = useState(0);
+  const context = useMemo(
+    () => ({ reportNoLabelElement: (n) => setNoLabelElement((count) => count + n) }),
+    []
+  );
+  const native = nativeLabel ?? noLabelElement === 0;
+  const showError = Boolean(error) && invalid !== false;
   return (
     <FieldPrimitive.Root
       data-slot="field"
-      invalid={invalid ?? (error ? true : undefined)}
+      invalid={invalid ?? (showError ? true : undefined)}
       className={cn('flex min-w-0 flex-col gap-1.5', className)}
       {...props}
     >
@@ -39,13 +45,13 @@ function Field({ label, description, error, invalid, nativeLabel, className, chi
           {label}
         </FieldPrimitive.Label>
       )}
-      {children}
+      <FieldContext.Provider value={context}>{children}</FieldContext.Provider>
       {description != null && (
         <FieldPrimitive.Description className="text-caption text-text-3">
           {description}
         </FieldPrimitive.Description>
       )}
-      {error ? (
+      {showError ? (
         <FieldPrimitive.Error match className="flex items-start gap-1.5 text-caption text-crit-fg">
           <CircleAlert className="mt-px size-3.5 shrink-0" strokeWidth={2} />
           {error}

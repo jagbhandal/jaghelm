@@ -15,7 +15,15 @@ import { Scanner } from '@tailwindcss/oxide';
 import postcss from 'postcss';
 import ts from 'typescript';
 import { readTokens, resolveContext } from './ui-contrast.mjs';
-import { SHADOWS, SPACING, TYPE_STEPS } from '../src/ui/lib/utils.js';
+import {
+  DURATIONS,
+  EASES,
+  SHADOWS,
+  SPACING,
+  TYPE_STEPS,
+  Z_INDEX,
+  cn,
+} from '../src/ui/lib/utils.js';
 import { ROOT_SWITCHES } from '../src/ui/lib/portal.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -586,15 +594,33 @@ function themeNames(ns) {
   return names;
 }
 
-test("cn knows the theme's type steps, named spacing and shadows (src/ui/lib/utils.js)", () => {
+test("cn knows the theme's names: type steps, spacing, shadows, layers and motion (src/ui/lib/utils.js)", () => {
   // Without these, cn reads text-caption as a colour and drops it beside
-  // text-crit-fg, and never lets a caller's h-9 replace h-control.
-  assert.deepEqual([...TYPE_STEPS], themeNames('text'), 'TYPE_STEPS and tailwind.css --text-*');
-  assert.deepEqual([...SPACING], themeNames('spacing'), 'SPACING and tailwind.css --spacing-*');
-  assert.deepEqual([...SHADOWS], themeNames('shadow'), 'SHADOWS and tailwind.css --shadow-*');
+  // text-crit-fg, never lets a caller's h-9 replace h-control, and keeps both
+  // of z-dialog z-toast, leaving the stylesheet's order to pick one.
+  const lists = [
+    [TYPE_STEPS, 'text', 'text', 'TYPE_STEPS'],
+    [SPACING, 'spacing', 'h', 'SPACING'],
+    [SHADOWS, 'shadow', 'shadow', 'SHADOWS'],
+    [Z_INDEX, 'z-index', 'z', 'Z_INDEX'],
+    [DURATIONS, 'transition-duration', 'duration', 'DURATIONS'],
+    [EASES, 'ease', 'ease', 'EASES'],
+  ];
+  for (const [list, ns, prefix, name] of lists) {
+    assert.deepEqual([...list], themeNames(ns), `${name} and tailwind.css --${ns}-*`);
+    // ...and cn treats each one as its group's: the later of two wins.
+    for (const n of list) {
+      for (const other of list.filter((o) => o !== n)) {
+        assert.equal(cn(`${prefix}-${other}`, `${prefix}-${n}`), `${prefix}-${n}`, name);
+      }
+    }
+  }
+  assert.equal(cn('z-dialog', 'z-10'), 'z-10');
+  assert.equal(cn('duration-standard', 'duration-300'), 'duration-300');
+  assert.equal(cn('ease-standard', 'ease-in'), 'ease-in');
 });
 
-test('the density switch sizes every control, from the tokens', async () => {
+test('the controls keep the same heights in both densities, read from the tokens', async () => {
   // Each height utility reads its token...
   const compiler = await compileStack();
   const heights = new Map();
@@ -610,15 +636,17 @@ test('the density switch sizes every control, from the tokens', async () => {
     'size-control': 'var(--jh-control-h)',
     'size-control-sm': 'var(--jh-control-h-sm)',
   });
-  // ...and data-density="compact" on the root changes each one.
+  // ...and data-density="compact" on the root changes a row, never a control:
+  // the mock's compact mode keeps its 34px and 30px controls. A segment is a
+  // control less its track's 2px padding, so the track is a control's height.
   const { rules } = readTokens(read('src/ui/tokens.css'));
   const sizes = (density) => {
     const props = resolveContext(rules, { density });
     return ['row-h', 'control-h', 'control-h-sm', 'segment-h'].map((t) => props[`--jh-${t}`]);
   };
-  // The mock's 34px and 30px controls and 28px segments, and 4px less in compact.
-  assert.deepEqual(sizes('comfortable'), ['40px', '34px', '30px', '28px']);
-  assert.deepEqual(sizes('compact'), ['32px', '30px', '26px', '24px']);
+  const segment = 'calc(var(--jh-control-h) - 4px)';
+  assert.deepEqual(sizes('comfortable'), ['40px', '34px', '30px', segment]);
+  assert.deepEqual(sizes('compact'), ['32px', '34px', '30px', segment]);
 });
 
 test('a portal root copies every switch the tokens read (src/ui/lib/portal.js)', () => {
@@ -641,23 +669,180 @@ test("Base UI's positioner variables are not ones today's CSS defines", () => {
   }
 });
 
-/** The class names among `names` that take away the focus ring the base style draws. */
-export const ringRemovers = (names) => names.filter((n) => /(^|:)outline-(none|hidden|0)$/.test(n));
+/** A class name less its variants (`focus-visible:`, `data-[a=b:c]:`) and its `!`. */
+function utilityOf(name) {
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < name.length; i++) {
+    const c = name[i];
+    if (c === '[' || c === '(') depth++;
+    else if (c === ']' || c === ')') depth--;
+    else if (c === ':' && depth === 0) start = i + 1;
+  }
+  return name.slice(start).replace(/^!|!$/g, '');
+}
 
-test('no class in src/ui/ takes the focus ring away', () => {
-  const found = walk('src/ui', ['.js', '.jsx'])
-    .filter((f) => !/\.test\.jsx?$/.test(f))
-    .flatMap((f) => classNamesIn(read(f), f));
+// A utility that takes the outline away: none, hidden, zero width or a
+// transparent colour, written as a utility or an arbitrary value or property.
+const RING_REMOVER = new RegExp(
+  [
+    String.raw`^outline-(none|hidden|0|transparent)(\/[\w.[\]%-]+)?$`,
+    String.raw`^outline-\[0(px)?\]$`,
+    String.raw`^\[outline(-width|-style|-color)?:(none|hidden|0|0px|transparent)\]$`,
+  ].join('|')
+);
+
+/** The class names among `names` that take away the focus ring the base style draws. */
+export const ringRemovers = (names) => names.filter((n) => RING_REMOVER.test(utilityOf(n)));
+
+/** `style` props in `source` that set an outline: [{ file, name }]. */
+export function outlineStyles(source, file) {
+  const out = [];
+  const visit = (node) => {
+    if (ts.isJsxAttribute(node) && node.name.text === 'style') {
+      const walkObject = (n) => {
+        if (ts.isPropertyAssignment(n) || ts.isShorthandPropertyAssignment(n)) {
+          const key =
+            n.name && (ts.isIdentifier(n.name) || ts.isStringLiteral(n.name)) ? n.name.text : '';
+          if (/^outline(Width|Style|Color|-width|-style|-color)?$/.test(key))
+            out.push({ file, name: key });
+        }
+        ts.forEachChild(n, walkObject);
+      };
+      ts.forEachChild(node, walkObject);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JSX));
+  return out;
+}
+
+test('no class or style in src/ui/ takes the focus ring away', () => {
+  const files = walk('src/ui', ['.js', '.jsx']).filter((f) => !/\.test\.jsx?$/.test(f));
+  const found = files.flatMap((f) => classNamesIn(read(f), f));
   assert.deepEqual(
     ringRemovers(found.map((c) => c.name)),
     [],
     'every control keeps the 2px focus ring (tailwind.css base); move it with outline-offset-*'
   );
-  // The check bites: each way of hiding the ring is caught.
-  const source = `<b className="outline-none focus:outline-hidden focus-visible:outline-0 -outline-offset-2 outline-offset-1" />`;
+  assert.deepEqual(
+    files.flatMap((f) => outlineStyles(read(f), f)).map((s) => `${s.file}: style ${s.name}`),
+    [],
+    'a style prop must not set the outline either: the focus ring is the base style'
+  );
+  // The check bites: each way of hiding the ring is caught, and moving it isn't.
+  const source = `<b className="outline-none focus:outline-hidden focus-visible:outline-0
+    outline-none! !outline-none focus-visible:outline-none! outline-transparent
+    focus-visible:outline-transparent outline-transparent/50 [outline:none] [outline:0]
+    focus-visible:[outline-style:none] [outline-color:transparent] [outline-width:0px]
+    outline-[0px] focus-visible:outline-[0] data-[a=b:c]:outline-none
+    -outline-offset-2 outline-offset-1 outline-offset-0 outline-2 outline-focus-ring
+    focus-visible:outline-offset-1 data-[a=b:c]:outline-offset-2" />`;
   assert.deepEqual(ringRemovers(namesIn(source)), [
+    '!outline-none',
+    '[outline-color:transparent]',
+    '[outline-width:0px]',
+    '[outline:0]',
+    '[outline:none]',
+    'data-[a=b:c]:outline-none',
+    'focus-visible:[outline-style:none]',
     'focus-visible:outline-0',
+    'focus-visible:outline-[0]',
+    'focus-visible:outline-none!',
+    'focus-visible:outline-transparent',
     'focus:outline-hidden',
+    'outline-[0px]',
     'outline-none',
+    'outline-none!',
+    'outline-transparent',
+    'outline-transparent/50',
+  ]);
+  const styled = `<b style={{ outline: 'none' }} /><i style={{ outlineWidth: 0, color: 'red' }} />
+    <u style={{ 'outline-style': 'none' }} /><s style={{ outlineOffset: 2 }} />`;
+  assert.deepEqual(
+    outlineStyles(styled, 'x.jsx').map((s) => s.name),
+    ['outline', 'outlineWidth', 'outline-style']
+  );
+});
+
+// Names a module binds that merge class names, and the packages that provide them.
+const MERGER_NAMES = /^(cn|cx|clsx|twMerge|twJoin|createCn|extendTailwindMerge)$/;
+const MERGER_PACKAGES = /^(cn|tailwind-merge|clsx|classnames)(\/|$)/;
+const UTILS = 'src/ui/lib/utils.js';
+
+/** True if `spec`, imported from `file`, is src/ui/lib/utils.js. */
+function isUtils(file, spec) {
+  const target = spec.startsWith('@ui/')
+    ? `src/ui/${spec.slice('@ui/'.length)}`
+    : spec.startsWith('.')
+      ? path.posix.normalize(path.posix.join(path.posix.dirname(file), spec))
+      : spec;
+  return target === UTILS || target === UTILS.replace(/\.js$/, '');
+}
+
+/**
+ * The imports and re-exports in `source` that bring in a class merger other than
+ * src/ui/lib/utils.js's cn: a merger package (`cn`, `tailwind-merge`, `clsx`),
+ * or a `cn` or `twMerge` from anywhere else, such as `@/lib/utils`.
+ */
+export function strayMergers(source, file) {
+  const out = [];
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JSX);
+  for (const node of sf.statements) {
+    const spec =
+      node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)
+        ? node.moduleSpecifier.text
+        : null;
+    if (!spec || !(ts.isImportDeclaration(node) || ts.isExportDeclaration(node))) continue;
+    const names = [];
+    const clause = ts.isImportDeclaration(node) ? node.importClause : undefined;
+    if (clause?.name) names.push(clause.name.text);
+    const bindings =
+      clause?.namedBindings ?? (ts.isExportDeclaration(node) ? node.exportClause : undefined);
+    if (bindings && 'elements' in bindings) {
+      for (const el of bindings.elements) names.push((el.propertyName ?? el.name).text);
+    } else if (bindings) names.push(bindings.name.text);
+    if (isUtils(file, spec)) continue;
+    if (MERGER_PACKAGES.test(spec) || names.some((n) => MERGER_NAMES.test(n))) {
+      out.push(`${file}: ${spec}`);
+    }
+  }
+  return out;
+}
+
+test('src/ui/ merges class names only through lib/utils.js, the cn that knows the theme', () => {
+  const files = walk('src/ui', ['.js', '.jsx']).filter((f) => f !== UTILS);
+  assert.ok(files.includes('src/ui/button.jsx'), 'expected the controls in src/ui/');
+  assert.deepEqual(
+    files.flatMap((f) => strayMergers(read(f), f)),
+    [],
+    "import cn from src/ui/lib/utils.js: the stock one misreads the theme's names " +
+      "(`npx shadcn add` writes `import { cn } from 'cn'`; switch it)"
+  );
+  // The check bites, and lets the taught cn through by any path.
+  const source = `
+    import { cn } from 'cn';
+    import { twMerge } from 'tailwind-merge';
+    import clsx from 'clsx';
+    import { createCn } from 'cn/config';
+    import { cn as merge } from '@/lib/utils';
+    import * as tw from 'tailwind-merge';
+    export { cn } from 'cn';
+    import { cn as ok1 } from './lib/utils.js';
+    import { cn as ok2 } from '@ui/lib/utils';
+    import { Check } from 'lucide-react';
+    import { cva } from 'class-variance-authority';`;
+  assert.deepEqual(strayMergers(source, 'src/ui/x.jsx'), [
+    'src/ui/x.jsx: cn',
+    'src/ui/x.jsx: tailwind-merge',
+    'src/ui/x.jsx: clsx',
+    'src/ui/x.jsx: cn/config',
+    'src/ui/x.jsx: @/lib/utils',
+    'src/ui/x.jsx: tailwind-merge',
+    'src/ui/x.jsx: cn',
+  ]);
+  assert.deepEqual(strayMergers(`import { cn } from '../lib/utils';`, 'src/ui/forms/x.jsx'), []);
+  assert.deepEqual(strayMergers(`import { cn } from '../lib/utils';`, 'src/ui/x.jsx'), [
+    'src/ui/x.jsx: ../lib/utils',
   ]);
 });

@@ -1,6 +1,6 @@
 /*
  * Input (spec §5.4, #285): the mock's text field (.field): the page colour
- * inside a strong edge, 13px text, 34px tall (30 in compact), its focus ring
+ * inside a strong edge, 13px text, 34px tall in both densities, its focus ring
  * 1px out as the mock draws it. Base UI's Input, so inside a Field it takes the
  * field's label, help text and error (aria-describedby, aria-invalid) with no
  * wiring. An invalid field's edge turns crit-border; the Field says why.
