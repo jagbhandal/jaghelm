@@ -178,8 +178,8 @@ router.post('/save', (req, res) => {
     // saveConfig returns false on a write failure (or a reentrant save) — surface
     // that as a 500 instead of reporting success, matching services.js POST /config.
     if (!saveConfig(config)) return apiError(res, 500, 'Failed to persist config');
-    // A save is the way to say "try again now": the next refresh attempts it
-    // even when its login was rejected and nothing in it changed (#239).
+    // A save is the way to say "try again": the next refresh attempts it even
+    // when its login was refused and nothing in it changed (#239).
     retryIntegrationNow(storageKey);
 
     res.json({ ok: true, type: storageKey });

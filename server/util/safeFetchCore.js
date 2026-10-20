@@ -81,6 +81,24 @@ function refuseRedirect(reason, prev, next, why, fields = {}) {
   throw new Error(msg);
 }
 
+// Responses that answered a request which had left its origin on a redirect
+// (the http -> https upgrade to the same host and port excepted, see fetchSafe).
+// Past that hop the request carried no credential header, no URL credential and
+// no body, so a 401 or 403 there refused a request without the caller's
+// credentials, not the credentials themselves (#239).
+/** @type {WeakSet<object>} */
+const offOrigin = new WeakSet();
+
+/**
+ * Whether `res`, from fetchSafe, answered a request that a redirect took to
+ * another origin, so that it no longer carried the caller's credentials.
+ * @param {unknown} res
+ * @returns {boolean}
+ */
+export function leftOrigin(res) {
+  return typeof res === 'object' && res !== null && offOrigin.has(res);
+}
+
 /**
  * Whether fetch can send this request body again for a 307/308: the body types
  * it serialises afresh for each request. Anything else (a ReadableStream, a Node
@@ -107,6 +125,8 @@ export async function fetchSafe(url, opts = {}, cfg = {}) {
   let method = String(opts.method || 'GET').toUpperCase();
   let body = opts.body;
   const headers = new Headers(opts.headers || {});
+  // Whether a hop has left the request's origin; see leftOrigin.
+  let crossed = false;
 
   for (let hop = 0; ; hop++) {
     assertSafeUrl(current, { trusted }); // re-validate EVERY hop, not just the first
@@ -116,7 +136,11 @@ export async function fetchSafe(url, opts = {}, cfg = {}) {
     });
     const canHeaders = res.headers && typeof res.headers.get === 'function';
     const location = res.status >= 300 && res.status < 400 && canHeaders && res.headers.get('location');
-    if (!location) return capBody(res, maxBytes);
+    if (!location) {
+      const out = await capBody(res, maxBytes);
+      if (crossed) offOrigin.add(out);
+      return out;
+    }
 
     if (hop >= MAX_HOPS) throw new Error('too many redirects');
     const prev = new URL(current);
@@ -135,6 +159,7 @@ export async function fetchSafe(url, opts = {}, cfg = {}) {
     // for the default ports).
     const upgrade = prev.protocol === 'http:' && next.protocol === 'https:' && prev.host === next.host;
     const keepAll = next.origin === prev.origin || upgrade;
+    if (!keepAll) crossed = true;
 
     // A credential in the URL (a query-auth preset's key, a {token} endpoint)
     // can't be stripped from the hop the way a header can: the Location may

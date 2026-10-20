@@ -29,7 +29,11 @@ import { serviceRegistry } from './serviceRegistry.js';
 import { containerRegistry } from './containerRegistry.js';
 import { fetchIntegration } from './integrations/handler.js';
 import { createIntegrationBackoff } from './integrations/backoff.js';
-import { configFingerprint } from './integrations/lib/config.js';
+import {
+  configFingerprint,
+  resolveIntegrationConfig,
+  savedFromSettings,
+} from './integrations/lib/config.js';
 import { setCache } from './cache.js';
 import { safeFetch } from './httpClient.js';
 import { dedupe } from './util/dedupe.js';
@@ -685,16 +689,17 @@ export async function refreshIntegrations() {
 }
 
 // Which integrations are due this cycle (#239): a failing one backs off, and a
-// rejected login waits for its config to change. See integrations/backoff.js.
+// login refused twice waits for its config to change. See integrations/backoff.js.
 const integrationBackoff = createIntegrationBackoff({ logger: log });
 
 /**
  * Attempt the integration stored under `key` in the next refresh, whatever its
  * backoff, as a changed config would. The Settings save calls it, so saving an
- * integration, changed or not, is the way to say "try again now".
+ * integration, changed or not, is the way to say "try again". A call while the
+ * integration's fetch is in flight holds for the refresh after it.
  */
 export function retryIntegrationNow(key) {
-  integrationBackoff.retryNow(key);
+  integrationBackoff.retryNow(key, performance.now());
 }
 
 /**
@@ -705,9 +710,10 @@ export function retryIntegrationNow(key) {
  * its backoff state (integrations/backoff.js).
  *
  * Only the integrations that are due are fetched, through at most CONCURRENCY
- * at a time. One that is backing off or whose login was rejected is not queued
+ * at a time. One that is backing off or whose login was refused is not queued
  * at all, so it holds no slot and spends no timeout: its entry is the one its
- * last attempt left, served again.
+ * last attempt left, served again. Each integration's config is resolved once a
+ * cycle, for its fingerprint, and the fetch reuses it.
  */
 async function _refreshIntegrations() {
   try {
@@ -715,7 +721,9 @@ async function _refreshIntegrations() {
     const integrations = config?.integrations || {};
     // The cycle's start times every attempt in it, so the next cycle, one
     // interval later, is the one an attempt due after that interval falls in.
-    const now = Date.now();
+    // The payload shows wall-clock times; whether an attempt is due is worked
+    // out on the monotonic clock, which a clock step doesn't move.
+    const at = { wall: Date.now(), mono: performance.now() };
 
     const byKey = {};
     const entries = Object.entries(integrations).filter(([, cfg]) => cfg.enabled !== false);
@@ -725,22 +733,27 @@ async function _refreshIntegrations() {
     for (const [key, cfg] of entries) {
       const handlerType = cfg.preset || key;
       const yamlConfig = { ...cfg, _storageKey: key };
+      // Left undefined when resolving throws: the fetch then resolves the config
+      // itself and reports what is wrong with it.
+      let resolved;
       let fingerprint = null;
       try {
-        fingerprint = configFingerprint(handlerType, yamlConfig);
+        const r = resolveIntegrationConfig(handlerType, yamlConfig);
+        fingerprint = configFingerprint(yamlConfig, r);
+        resolved = r;
       } catch {
-        // The fetch resolves the same config and reports what is wrong with it.
+        // left for the fetch to report
       }
-      const held = integrationBackoff.held(key, fingerprint, now);
+      const held = integrationBackoff.held(key, fingerprint, at);
       if (held) byKey[key] = held;
-      else due.push({ key, cfg, handlerType, yamlConfig, fingerprint });
+      else due.push({ key, cfg, handlerType, yamlConfig, resolved, fingerprint });
     }
 
-    const fetchOne = async ({ key, cfg, handlerType, yamlConfig, fingerprint }) => {
+    const fetchOne = async ({ key, cfg, handlerType, yamlConfig, resolved, fingerprint }) => {
       let entry;
       let authRejected = false;
       try {
-        const result = await fetchIntegration(handlerType, yamlConfig);
+        const result = await fetchIntegration(handlerType, yamlConfig, resolved);
         entry = { ...(result.fields || {}) };
         // Surface fetch/auth failures instead of dropping them — otherwise a
         // down integration renders as silent zeros, not an error state.
@@ -757,7 +770,13 @@ async function _refreshIntegrations() {
       } catch (err) {
         entry = { _error: String((err && err.message) || err) };
       }
-      byKey[key] = integrationBackoff.record(key, fingerprint, entry, { authRejected }, now);
+      byKey[key] = integrationBackoff.record(
+        key,
+        fingerprint,
+        entry,
+        { authRejected, savedFromSettings: savedFromSettings(key, cfg) },
+        at
+      );
     };
 
     // Bounded fan-out: a fully-wired board can have 30-50+ integrations; firing them

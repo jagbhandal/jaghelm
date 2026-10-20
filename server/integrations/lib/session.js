@@ -153,7 +153,7 @@ async function doSessionLogin(config, session, baseUrl, skipTls) {
 
   if (!loginRes.ok) {
     const err = new Error(`Login returned HTTP ${loginRes.status}`);
-    if (isAuthRejection(loginRes.status)) err.authRejected = true;
+    if (isAuthRejection(loginRes)) err.authRejected = true;
     throw err;
   }
 

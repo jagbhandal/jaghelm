@@ -68,8 +68,20 @@ export { resolveIntegrationConfig };
 export { assertSafeUrl };
 
 // ── Main fetch function for any integration ──
-export async function fetchIntegration(type, yamlConfig) {
-  const config = resolveIntegrationConfig(type, yamlConfig);
+/**
+ * Fetch one integration and return its fields, or `{ error }`, plus
+ * `authRejected: true` when the upstream refused its credentials (#239).
+ *
+ * @param {string} type preset type, or the storage key of a custom integration
+ * @param {object} yamlConfig its services.yaml entry, with `_storageKey`
+ * @param {object | null} [resolved] the config resolveIntegrationConfig returns
+ *   for these two, when the caller already has it: the refresh loop resolves an
+ *   integration once a cycle for its backoff fingerprint and hands that over, so
+ *   its credentials are not read from the secrets store twice. Omitted, it is
+ *   resolved here.
+ */
+export async function fetchIntegration(type, yamlConfig, resolved) {
+  const config = resolved === undefined ? resolveIntegrationConfig(type, yamlConfig) : resolved;
   if (!config || !config.url || !config.endpoint) {
     return { error: 'Integration not configured', fields: {} };
   }
@@ -90,7 +102,7 @@ export async function fetchIntegration(type, yamlConfig) {
       const res = await safeFetch(url, { headers }, skipTls, { credentialInUrl: urlCarriesCredential });
       if (!res.ok) {
         const err = new Error(`HTTP ${res.status} ${res.statusText || ''}`.trim());
-        if (isAuthRejection(res.status) && carriesCredentials(config, urlCarriesCredential)) err.authRejected = true;
+        if (isAuthRejection(res) && carriesCredentials(config, urlCarriesCredential)) err.authRejected = true;
         throw err;
       }
       rawData = await res.json();

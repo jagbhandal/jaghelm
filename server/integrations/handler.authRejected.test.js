@@ -165,3 +165,119 @@ test('session auth with a fallback: rejected only when every login was', async (
   const fellBack = await withFetch(answer(401, 200), () => fetchIntegration('custom', cfg()));
   assert.equal(fellBack.error, null);
 });
+
+// ── A redirect to another origin (#239 review N3) ──
+// fetchSafe drops the credential headers, and a login's body, on a redirect to
+// another origin, so a 401 or 403 from there refused a request without them.
+const redirectTo = (location) => new Response(null, { status: 302, headers: { location } });
+
+test('a 401 from another origin after a redirect is a plain failure, not a refused login', async () => {
+  const cfg = custom({ auth: 'header', token: 't' });
+  const origin = new URL(cfg.url).host;
+  const seen = [];
+  const r = await withFetch(
+    async (url, init = {}) => {
+      const u = new URL(String(url));
+      seen.push([u.host, new Headers(init.headers).get('x-api-key')]);
+      return u.host === origin ? redirectTo('http://elsewhere.example.test/status') : json({}, 401);
+    },
+    () => fetchIntegration('custom', cfg)
+  );
+  assert.match(r.error, /HTTP 401/);
+  assert.equal(r.authRejected, undefined);
+  assert.deepEqual(
+    seen,
+    [
+      [origin, 't'],
+      ['elsewhere.example.test', null],
+    ],
+    'the credential never reached the host that refused'
+  );
+});
+
+test('a 401 after a redirect within the origin, or an upgrade to https on it, is still a refused login', async () => {
+  for (const to of ['/v2/status', 'https://SAME/status']) {
+    const cfg = custom({ auth: 'bearer', token: 't' });
+    const host = new URL(cfg.url).host;
+    let hops = 0;
+    const r = await withFetch(
+      async () => (hops++ === 0 ? redirectTo(to.replace('SAME', host)) : json({}, 401)),
+      () => fetchIntegration('custom', cfg)
+    );
+    assert.equal(hops, 2, to);
+    assert.equal(r.authRejected, true, to);
+  }
+});
+
+test('session auth: a login redirected to another origin and refused there is not a refused login', async () => {
+  const cfg = npmCfg();
+  const origin = new URL(cfg.url).host;
+  const r = await withFetch(
+    async (url) =>
+      new URL(String(url)).host === origin
+        ? redirectTo('http://sso.example.test/login')
+        : json({}, 401),
+    () => fetchIntegration('npm', cfg)
+  );
+  assert.ok(r.error);
+  assert.equal(r.authRejected, undefined);
+});
+
+// ── A cached session token the upstream no longer takes (#239 review N9) ──
+test('session auth: a cached token answered 401, then a good fresh login, is a success', async () => {
+  const cfg = npmCfg();
+  let logins = 0;
+  let refuseNextRead = false;
+  const fake = async (url, init = {}) => {
+    if (init.method === 'POST') {
+      logins += 1;
+      return json({ token: `tok${logins}` });
+    }
+    if (refuseNextRead) {
+      refuseNextRead = false;
+      return json({}, 401);
+    }
+    return json([]);
+  };
+  // Not withFetch: the token cached by the first poll has to survive to the second.
+  const real = globalThis.fetch;
+  globalThis.fetch = fake;
+  sessionTest.sessionTokenCache.clear();
+  try {
+    const first = await fetchIntegration('npm', cfg);
+    assert.equal(first.error, null);
+    assert.equal(logins, 1);
+    refuseNextRead = true; // the cached token expired upstream
+    const second = await fetchIntegration('npm', cfg);
+    assert.equal(logins, 2, 'logged in again within the same attempt');
+    assert.equal(second.error, null);
+    assert.equal(second.authRejected, undefined);
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+// ── The refresh loop hands over the config it resolved (#239 review N4) ──
+test('fetchIntegration uses a config resolved by the caller instead of resolving it again', async () => {
+  const yaml = custom({ auth: 'bearer', token: '$secret:not_stored_anywhere' });
+  const resolved = { ...yaml, _token: 'resolved-by-caller' };
+  let sent;
+  const r = await withFetch(
+    async (url, init = {}) => {
+      sent = new Headers(init.headers).get('authorization');
+      return json({ up: 'yes' });
+    },
+    () => fetchIntegration('custom', yaml, resolved)
+  );
+  assert.equal(r.error, null);
+  assert.equal(sent, 'Bearer resolved-by-caller');
+  const none = await withFetch(
+    async () => json({ up: 'yes' }),
+    () => fetchIntegration('custom', yaml, null)
+  );
+  assert.equal(
+    none.error,
+    'Integration not configured',
+    'null, as resolveIntegrationConfig returns for an unsupported preset'
+  );
+});
