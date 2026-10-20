@@ -154,29 +154,21 @@ test('a first refused login backs off like any failure; the second in a row park
     failures: 2,
     nextAttemptAt: null,
   });
-  assert.equal(parked._error, `HTTP 401 (${PARKED_HINT.file})`);
+  assert.equal(parked._error, `HTTP 401 (${PARKED_HINT})`);
   for (const later of [1 * MIN, 10 * MIN, 24 * 60 * MIN]) {
     assert.equal(b.held('a', 'fp', at(later)), parked);
   }
 });
 
-test('the hint says how to retry: a save in Settings for an entry Settings wrote, the file or a restart otherwise', () => {
-  assert.equal(
-    PARKED_HINT.settings,
-    'login refused twice; not retried until it is saved in Settings'
-  );
-  assert.equal(
-    PARKED_HINT.file,
-    'login refused twice; not retried until services.yaml changes or JagHelm restarts'
-  );
+test('the hint says how to retry: a save in Settings, whoever wrote the entry (#402)', () => {
+  assert.equal(PARKED_HINT, 'login refused twice; not retried until it is saved in Settings');
   const b = createIntegrationBackoff();
-  const outcome = { authRejected: true, savedFromSettings: true };
-  b.record('g', 'fp', failed('All session auth methods failed'), outcome, at(0));
+  b.record('g', 'fp', failed('All session auth methods failed'), REFUSED, at(0));
   const parked = b.record(
     'g',
     'fp',
     failed('All session auth methods failed'),
-    outcome,
+    REFUSED,
     at(30 * S)
   );
   assert.equal(

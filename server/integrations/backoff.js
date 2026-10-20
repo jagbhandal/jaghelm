@@ -57,15 +57,11 @@ const DUE_SLACK_MS = 1_000;
 
 /**
  * The hint appended to a parked integration's `_error`: how to have it retried.
- * Fixed text, never a credential or URL, so the ETag holds. `settings` is for an
- * entry exactly as a save in Settings writes it (savedFromSettings in
- * lib/config.js), which saving again keeps; `file` for one written by hand,
- * which a save in Settings would rebuild and lose parts of (#402).
+ * Fixed text, never a credential or URL, so the ETag holds. One hint for every
+ * integration: a save in Settings keeps the entry as it is, however it was
+ * written (#402), so saving it, changed or not, is a retry for each of them.
  */
-export const PARKED_HINT = Object.freeze({
-  settings: 'login refused twice; not retried until it is saved in Settings',
-  file: 'login refused twice; not retried until services.yaml changes or JagHelm restarts',
-});
+export const PARKED_HINT = 'login refused twice; not retried until it is saved in Settings';
 
 /** The wait after `failures` failed attempts in a row: 30 s doubling, at most 10 min. */
 export function backoffDelayMs(failures) {
@@ -113,12 +109,11 @@ export function createIntegrationBackoff({ logger } = {}) {
      * @param {string} key
      * @param {string | null} fingerprint
      * @param {Record<string, unknown>} entry
-     * @param {{ authRejected?: boolean, savedFromSettings?: boolean }} outcome
-     *   authRejected: the login was refused. savedFromSettings: the entry is as
-     *   a save in Settings writes it, which picks the hint a parked one gets.
+     * @param {{ authRejected?: boolean }} outcome
+     *   authRejected: the login was refused.
      * @param {CycleTime} at
      */
-    record(key, fingerprint, entry, { authRejected = false, savedFromSettings = false } = {}, at) {
+    record(key, fingerprint, entry, { authRejected = false } = {}, at) {
       const prev = byKey.get(key);
       // A retryNow from before this attempt began is what made it: it starts
       // from a clean slate. One from after it began (a save in Settings while
@@ -153,8 +148,7 @@ export function createIntegrationBackoff({ logger } = {}) {
             'integration login refused twice; not retrying until its config changes'
           );
           next = { state: 'auth_failed', since: at.wall, failures, nextAttemptAt: null };
-          const hint = savedFromSettings ? PARKED_HINT.settings : PARKED_HINT.file;
-          served = { ...entry, _error: `${entry._error} (${hint})` };
+          served = { ...entry, _error: `${entry._error} (${PARKED_HINT})` };
         } else {
           const delay = backoffDelayMs(failures);
           const since = carried?.state === 'backing_off' ? carried.since : at.wall;
