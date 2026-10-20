@@ -49,7 +49,7 @@ export const DURATIONS = Object.freeze(['standard']);
 export const EASES = Object.freeze(['standard']);
 
 // Pure, so a bundle that never calls cn leaves the cn package out: the Android
-// app's, whose status components draw its own look until Phase 4 (#287).
+// app's, whose status components draw its own look until Phase 4 (#326).
 export const cn = /* @__PURE__ */ createCn({
   extend: {
     theme: {

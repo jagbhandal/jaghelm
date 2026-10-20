@@ -15,19 +15,20 @@
  * assistive tech where the word sits beside it. It always draws its state's
  * shape.
  *
- * The `android` look is the Android app's lamp, unchanged (lib/status.js): the
- * shapes of its own (`shape`: disc, slash, ring, bolt), sized in px, coloured
- * by MobileApp.css's `lamp--<severity>` classes.
+ * The `android` look, a stopgap until #326, is the Android app's lamp,
+ * unchanged (lib/status.js): the shapes of its own (`shape`: disc, slash,
+ * ring, bolt), sized in px, coloured by MobileApp.css's `lamp--<severity>`
+ * classes.
  */
 import { cn } from './lib/utils.js';
-import { DEFAULT_LOOK, WORDS, toSeverity, toState } from './lib/status.js';
+import { WORDS, toSeverity, toState } from './lib/status.js';
 
 const SHAPES = { ok: 'disc', warn: 'slash', crit: 'bar', unknown: 'ring', maintenance: 'wrench' };
 const SIZES = { sm: 10, lg: 14 };
 
 // Lucide's wrench, as the mock's Tokens board draws it. It spans 2 to 22 on
-// Lucide's 24px grid; the lamp scales that span to its box, so the wrench is as
-// big as a disc beside it.
+// Lucide's 24px grid; the lamp scales that span to its box, less half the line
+// on each side, so the wrench and its line are as big as a disc beside it.
 const WRENCH =
   'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z';
 
@@ -83,14 +84,23 @@ function uiMarks(shape, px) {
     );
   }
   if (shape === 'wrench') {
-    // Its own viewport onto the 2-to-22 span, at a 1.5px line whatever the size.
+    // Its own viewport onto the 2-to-22 span, widened by half the line (1.5px
+    // whatever the size) on each side, so the box doesn't clip the jaw tips.
+    // Hidden, so the lamp stays one image.
+    const line = 1.5;
+    const m = ((line / 2) * 20) / (px - line); // half the line, in Lucide's units
     return (
-      <svg width={px} height={px} viewBox="2 2 20 20" overflow="visible">
+      <svg
+        aria-hidden="true"
+        width={px}
+        height={px}
+        viewBox={`${2 - m} ${2 - m} ${20 + 2 * m} ${20 + 2 * m}`}
+      >
         <path
           d={WRENCH}
           fill="none"
           stroke="currentColor"
-          strokeWidth={1.5}
+          strokeWidth={line}
           strokeLinecap="round"
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
@@ -179,8 +189,8 @@ function AndroidStatusLamp({ state, severity, shape, label, size, ...props }) {
   );
 }
 
-function StatusLamp({ look, ...props }) {
-  if (DEFAULT_LOOK === 'android' || look === 'android') return <AndroidStatusLamp {...props} />;
+function StatusLamp(props) {
+  if (__ANDROID_LOOK__) return <AndroidStatusLamp {...props} />;
   return <UiStatusLamp {...props} />;
 }
 

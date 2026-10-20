@@ -13,12 +13,12 @@
  * cell or a line of text. The lamp is decorative there: the word beside it
  * names the status.
  *
- * StatusWord, `android` look: the Android app's mono, weight-500, upper-case
- * word, coloured by its own tokens (lib/status.js).
+ * StatusWord, `android` look (a stopgap until #326): the Android app's mono,
+ * weight-500, upper-case word, coloured by its own tokens (lib/status.js).
  */
 import { StatusLamp } from './status-lamp.jsx';
 import { cn } from './lib/utils.js';
-import { DEFAULT_LOOK, WORDS, toSeverity, toState } from './lib/status.js';
+import { WORDS, toSeverity, toState } from './lib/status.js';
 
 const fg = {
   ok: 'text-ok-fg',
@@ -62,8 +62,8 @@ function AndroidStatusWord({ state, severity, word, ...props }) {
   );
 }
 
-function StatusWord({ look, ...props }) {
-  if (DEFAULT_LOOK === 'android' || look === 'android') return <AndroidStatusWord {...props} />;
+function StatusWord(props) {
+  if (__ANDROID_LOOK__) return <AndroidStatusWord {...props} />;
   return <UiStatusWord {...props} />;
 }
 
@@ -94,7 +94,7 @@ function StatusBadge({ state, severity, word, className, ...props }) {
       )}
       {...props}
     >
-      <StatusLamp state={s} decorative look="ui" />
+      <StatusLamp state={s} decorative />
       {word || WORDS[s]}
     </span>
   );

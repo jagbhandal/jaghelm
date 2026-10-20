@@ -5,6 +5,33 @@ import { SubsystemStrip } from '@ui/subsystem-strip';
 
 const NO_RING = /(^|\s|:)outline-(none|hidden|0)(\s|$)/;
 
+// The strip's container widths: below 320px (`@xs`), to 672px (`@2xl`), and
+// from there. jsdom lays nothing out, so `layout` reads the classes a browser
+// applies at each: the columns, and the columns the last tile spans.
+const WIDTHS = {
+  'below 320px': ['', '@max-2xl:'],
+  '320 to 671px': ['', '@xs:', '@max-2xl:'],
+  'from 672px': ['', '@xs:', '@2xl:'],
+};
+function layout(strip, width) {
+  const classes = strip.className.split(/\s+/);
+  const last = (pattern) => {
+    let value = null;
+    for (const prefix of WIDTHS[width]) {
+      for (const c of classes) {
+        if (c.startsWith(prefix) && pattern.test(c.slice(prefix.length))) {
+          value = Number(c.slice(prefix.length).match(pattern)[1]);
+        }
+      }
+    }
+    return value;
+  };
+  return {
+    columns: last(/^grid-cols-(\d+)$/),
+    lastSpan: last(/^\[&>:last-child\]:col-span-(\d+)$/) ?? 1,
+  };
+}
+
 // The mock's incident strip.
 const CELLS = [
   {
@@ -73,19 +100,37 @@ describe('SubsystemStrip', () => {
       'data-shape',
       'ring'
     );
-    expect(within(tiles[0]).getByText('Services')).toHaveClass('text-overline', 'uppercase');
+    // The label truncates, with an ellipsis, at every width, once it has used
+    // 4px of the tile's padding.
+    expect(within(tiles[0]).getByText('Services')).toHaveClass(
+      'text-overline',
+      'uppercase',
+      'truncate',
+      '-mr-1'
+    );
+    expect(within(tiles[0]).getByText('Services').className).not.toMatch(/overflow-visible/);
     expect(within(tiles[0]).getByText('30 / 32 up')).toHaveClass('@2xl:text-title-sm');
     expect(within(tiles[0]).getByText('1 down · 1 no signal')).toHaveClass('hidden', '@2xl:block');
   });
 
-  it("tints a tile that isn't ok, and leaves an ok tile on the panel", () => {
-    render(<SubsystemStrip cells={CELLS} />);
-    const tiles = screen.getByRole('region').querySelectorAll('[data-slot="subsystem-tile"]');
-    expect(tiles[0]).toHaveClass('bg-crit-tint');
-    expect(tiles[1]).toHaveClass('bg-warn-tint');
-    expect(tiles[5]).toHaveClass('bg-unknown-tint');
-    expect(tiles[3]).toHaveClass('bg-surface-1');
-    expect(tiles[3].className).not.toMatch(/-tint/);
+  it('tints a warning, critical or no-signal tile, and leaves ok and maintenance on the panel', () => {
+    const { rerender } = render(<SubsystemStrip cells={CELLS} />);
+    const tiles = () => screen.getByRole('region').querySelectorAll('[data-slot="subsystem-tile"]');
+    expect(tiles()[5]).toHaveClass('bg-unknown-tint');
+    const maintenance = { ...CELLS[5], state: 'maintenance', value: '1 in maintenance' };
+    rerender(<SubsystemStrip cells={[...CELLS.slice(0, 5), maintenance]} />);
+    const [crit, warn, , ok, , maint] = tiles();
+    expect(crit).toHaveClass('bg-crit-tint');
+    expect(warn).toHaveClass('bg-warn-tint');
+    expect(ok).toHaveClass('bg-surface-1');
+    expect(ok.className).not.toMatch(/-tint/);
+    // Maintenance is not an issue (spec §6.1): its wrench says it, on the panel.
+    expect(maint).toHaveClass('bg-surface-1');
+    expect(maint.className).not.toMatch(/-tint/);
+    expect(within(maint).getByRole('img', { name: 'Maintenance' })).toHaveAttribute(
+      'data-shape',
+      'wrench'
+    );
   });
 
   it('sits six in a row from 672px, three from 320px and two below', () => {
@@ -100,6 +145,31 @@ describe('SubsystemStrip', () => {
     expect(screen.getByRole('region')).toHaveClass('grid-cols-2', '@2xl:grid-cols-4');
   });
 
+  // An empty slot would show the frame's border-subtle as a grey block.
+  it('leaves no empty slot in its last row, for one to six tiles at every width', () => {
+    const { rerender } = render(<SubsystemStrip cells={CELLS.slice(0, 1)} />);
+    for (let n = 1; n <= CELLS.length; n++) {
+      rerender(<SubsystemStrip cells={CELLS.slice(0, n)} />);
+      for (const width of Object.keys(WIDTHS)) {
+        const { columns, lastSpan } = layout(screen.getByRole('region'), width);
+        // The tiles before the last leave `used` slots in its row; the last
+        // fills the rest of it.
+        const used = (n - 1) % columns;
+        expect(`${n} tiles ${width}: ${used} + ${lastSpan} of ${columns}`).toBe(
+          `${n} tiles ${width}: ${used} + ${columns - used} of ${columns}`
+        );
+      }
+    }
+  });
+
+  it('lays five tiles out as 2 + 2 + 1, then 3 + 2, the last tile wider, then one row', () => {
+    render(<SubsystemStrip cells={CELLS.slice(0, 5)} />);
+    const strip = screen.getByRole('region');
+    expect(layout(strip, 'below 320px')).toEqual({ columns: 2, lastSpan: 2 });
+    expect(layout(strip, '320 to 671px')).toEqual({ columns: 3, lastSpan: 2 });
+    expect(layout(strip, 'from 672px')).toEqual({ columns: 5, lastSpan: 1 });
+  });
+
   it('is plain content without onSelect', () => {
     render(<SubsystemStrip cells={CELLS} />);
     expect(screen.queryByRole('button')).toBeNull();
@@ -109,7 +179,10 @@ describe('SubsystemStrip', () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
     const { rerender } = render(<SubsystemStrip cells={CELLS} onSelect={onSelect} />);
-    const services = screen.getByRole('button', { name: /Services/ });
+    // Named as a row is: "label, word, value", and described by the line under it.
+    const services = screen.getByRole('button', { name: 'Services, Down, 30 / 32 up' });
+    expect(services).toHaveAccessibleDescription('1 down · 1 no signal');
+    expect(screen.getByRole('button', { name: 'Jobs, OK, 14 / 14 on time' })).toBeInTheDocument();
     expect(services).toHaveAttribute('aria-pressed', 'false');
     expect(services).toHaveClass('hover:bg-surface-2', '-outline-offset-2');
     expect(services.className).not.toMatch(NO_RING);
@@ -122,20 +195,5 @@ describe('SubsystemStrip', () => {
     expect(pressed).toHaveClass('inset-ring-[1.5px]', 'inset-ring-accent');
     await user.click(pressed);
     expect(onSelect).toHaveBeenLastCalledWith(null);
-  });
-
-  it("is the Android app's 2×2 grid in the android look", () => {
-    const { container } = render(
-      <SubsystemStrip
-        look="android"
-        cells={[
-          { key: 'ups', label: 'UPS', severity: 'caution', word: 'ON BATTERY', detail: '47% · 8m' },
-        ]}
-      />
-    );
-    expect(screen.getByRole('list', { name: 'Subsystem health' })).toHaveClass('subsys-strip');
-    expect(container.querySelector('.subsystem-cell--caution')).not.toBeNull();
-    // The UPS on battery keeps its bolt there.
-    expect(container.querySelector('svg.status-lamp path')).not.toBeNull();
   });
 });

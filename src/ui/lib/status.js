@@ -7,19 +7,26 @@
  * (mobile/src/data/derive.js) until it moves onto that model (spec §9), so a
  * component takes either `state` or `severity`, and `toState` reads both.
  *
- * Two looks, until Phase 4 rebuilds the Android screens on src/ui/:
+ * Two looks, as a stopgap until Phase 4 (#326) rebuilds the Android screens
+ * on src/ui/:
  *
- *  - `ui`: the signed-off mock's, drawn from the role tokens. The web app's,
- *    and the default anywhere but the Android build.
+ *  - `ui`: the signed-off mock's, drawn from the role tokens. The web app's.
  *  - `android`: the Android app's own, unchanged: the class names its
  *    MobileApp.css styles, in the `legacy` layer, so its screens look as they
- *    did when these components lived in mobile/src/components/. The Android
- *    build sets `__ANDROID_LOOK__` (mobile/vite.config.mobile.js), which makes
- *    it the default there. Phase 4 deletes the define and this look.
+ *    did when these components lived in mobile/src/components/.
  *
- * Outside the Android build, a component's `look` prop picks one for a single
- * use (tests, a gallery). In the Android build every component draws the
- * Android look, so its bundle carries none of the `ui` look's code.
+ * Each build picks one with its `__ANDROID_LOOK__` define: true in
+ * mobile/vite.config.mobile.js, false in vite.config.js, and so in each app's
+ * tests too. Each component reads it in a one-line switch,
+ * `if (__ANDROID_LOOK__) return <AndroidStatusLamp {...props} />`, never
+ * through an import: there the bundler sees a literal, so each bundle leaves
+ * the other look out, down to the icons it imports. (Read through an exported
+ * constant, it stayed a variable until the minifier, and the APK kept the web
+ * row's chevron and Lucide's runtime.) There is no per-use override: the web
+ * tests check the `ui` look, and the Android app's tests check the `android`
+ * look. In the Android build a component without an Android look of its own
+ * (StatusBadge) still draws the Android lamp; nothing there uses it. #326
+ * deletes the define, the Android look and this note.
  */
 
 /** The five states, as the status model lists them (spec §6). */
@@ -59,14 +66,6 @@ export function toSeverity(value) {
   if (Object.hasOwn(FROM_SEVERITY, value)) return value;
   return TO_SEVERITY[toState(value)];
 }
-
-/**
- * The look the status components draw: `android` in the Android build, `ui`
- * elsewhere. A build constant, so each bundle leaves the other look's code
- * out. Only outside the Android build does a component's `look` pick another.
- */
-export const DEFAULT_LOOK =
-  typeof __ANDROID_LOOK__ !== 'undefined' && __ANDROID_LOOK__ === true ? 'android' : 'ui';
 
 // A screen reader spells an abbreviated word out, so TalkBack doesn't read
 // "UNKN" letter by letter. The visible word stays as it is.

@@ -34,7 +34,8 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(appVersion),
     // The status components in src/ui/ draw the Android app's own look here, so
     // its screens look as they did before those components moved there (#287,
-    // src/ui/lib/status.js). Phase 4 rebuilds the screens on src/ui/ and drops this.
+    // src/ui/lib/status.js). A stopgap: Phase 4 (#326) rebuilds the screens on
+    // src/ui/ and deletes this define.
     __ANDROID_LOOK__: 'true',
   },
   resolve: {

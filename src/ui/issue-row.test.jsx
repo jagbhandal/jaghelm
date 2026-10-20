@@ -96,20 +96,4 @@ describe('IssueRow', () => {
     expect(screen.getByRole('button', { name: 'Wiki.js, unknown' })).toBeInTheDocument();
     expect(screen.getByText('UNKN')).toBeInTheDocument();
   });
-
-  it("is the Android app's row in the android look, reading its incident", () => {
-    const incident = {
-      severity: 'critical',
-      word: 'DOWN',
-      shape: 'slash',
-      title: 'jellyfin',
-      readout: 'vm-103',
-      cause: 'Service is down',
-    };
-    const { container } = render(<IssueRow look="android" incident={incident} onOpen={() => {}} />);
-    const row = screen.getByRole('button', { name: 'jellyfin, DOWN, vm-103' });
-    expect(row).toHaveClass('issue-row', 'issue-row--critical');
-    expect(container.querySelector('svg.status-lamp')).toHaveClass('lamp--critical');
-    expect(screen.getByText('Service is down')).toHaveClass('issue-row__cause');
-  });
 });

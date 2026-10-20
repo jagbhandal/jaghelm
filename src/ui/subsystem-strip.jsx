@@ -9,39 +9,47 @@
  *
  * The `ui` look is the mock's joined annunciator strip: tiles 1px apart inside
  * one 12px-round frame, each a lamp and an overline label over the value.
- * A tile not ok takes its state's tint. Six tiles sit in one row from 672px
- * (`@2xl` of the strip's container), in rows of three from 320px and of two
- * below that, as the Phone board's; the narrow tiles leave out `sub`.
+ * A warning, critical or no-signal tile takes its state's tint; a maintenance
+ * tile stays on the panel, its wrench saying it (spec §6.1: maintenance is not
+ * an issue). Six tiles sit in one row from 672px (`@2xl` of the strip's
+ * container), in rows of three from 320px and of two below that, as the Phone
+ * board's; the narrow tiles leave out `sub`. A strip holds one to six tiles,
+ * and no row is left with an empty slot (`columns`, below).
  *
  * With `onSelect`, each tile is a toggle button (`aria-pressed`) that filters
  * by its subsystem, as the mock's do: a press calls `onSelect(key)`, or
  * `onSelect(null)` on the tile already `selected`, which shows an accent edge.
- * Without it the tiles are plain content.
+ * It is named "label, word, value", as a row is, and described by `sub`.
+ * Without `onSelect` the tiles are plain content.
  *
- * The `android` look is the Android app's 2×2 grid of cells, unchanged
- * (lib/status.js), with its lamp rule (SubsystemCell, below).
+ * The `android` look, a stopgap until #326, is the Android app's 2×2 grid of
+ * cells, unchanged (lib/status.js), with its lamp rule (SubsystemCell, below,
+ * which only the Android look draws).
  */
+import { useId } from 'react';
 import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
-import { WORDS, DEFAULT_LOOK, toSeverity, toState } from './lib/status.js';
+import { WORDS, spoken, toSeverity, toState } from './lib/status.js';
 
 const tint = {
   ok: '',
   warn: 'bg-warn-tint',
   crit: 'bg-crit-tint',
   unknown: 'bg-unknown-tint',
-  maintenance: 'bg-maintenance-tint',
+  maintenance: '',
 };
 
-// Columns by how many tiles there are, so a row is never left half empty
-// where it can be helped: six in rows of three, then one row.
+// Columns by how many tiles there are. An empty slot would show the frame's
+// `border-subtle`, so every row fills: six in rows of three, or of two; four
+// two by two; five as 3 + 2 or 2 + 2 + 1, the last tile spanning the rest of
+// its row below 672px.
 const columns = {
   1: 'grid-cols-1',
   2: 'grid-cols-2',
   3: 'grid-cols-3',
   4: 'grid-cols-2 @2xl:grid-cols-4',
-  5: 'grid-cols-2 @xs:grid-cols-3 @2xl:grid-cols-5',
+  5: 'grid-cols-2 @xs:grid-cols-3 @2xl:grid-cols-5 @max-2xl:[&>:last-child]:col-span-2',
   6: 'grid-cols-2 @xs:grid-cols-3 @2xl:grid-cols-6',
 };
 
@@ -68,23 +76,26 @@ function SubsystemCell({ cell }) {
           severity={severity}
           label={`${cell.label}: ${cell.word}`}
           size={14}
-          look="android"
         />
       </div>
-      <StatusWord word={cell.word} severity={severity} look="android" />
+      <StatusWord word={cell.word} severity={severity} />
       <span className="subsystem-cell__detail">{cell.detail ?? cell.value}</span>
     </div>
   );
 }
 
 function Tile({ cell, selected, onSelect }) {
+  const id = useId();
   const s = toState(cell.state ?? cell.severity);
+  const said = cell.word || WORDS[s];
   const pressed = selected === cell.key;
   const Tag = onSelect ? 'button' : 'div';
   const action = onSelect
     ? {
         type: 'button',
         'aria-pressed': pressed,
+        'aria-label': [cell.label, spoken(said), cell.value].filter(Boolean).join(', '),
+        'aria-describedby': cell.sub ? `${id}-sub` : undefined,
         onClick: () => onSelect(pressed ? null : cell.key),
       }
     : {};
@@ -101,13 +112,17 @@ function Tile({ cell, selected, onSelect }) {
       {...action}
     >
       <span className="flex min-w-0 items-center gap-1.5 @2xl:gap-2">
-        <StatusLamp state={s} label={cell.word || WORDS[s]} look="ui" />
-        <span className="truncate text-overline text-text-3 uppercase @2xl:overflow-visible">
-          {cell.label}
-        </span>
+        <StatusLamp state={s} label={said} />
+        {/* Truncated with an ellipsis, after using 4px of the tile's padding: the
+            mock's labels run a hair past their box, "Integrations" at 820px. */}
+        <span className="-mr-1 truncate text-overline text-text-3 uppercase">{cell.label}</span>
       </span>
       <span className="text-body font-bold @2xl:text-title-sm">{cell.value}</span>
-      {cell.sub && <span className="hidden text-caption text-text-3 @2xl:block">{cell.sub}</span>}
+      {cell.sub && (
+        <span id={`${id}-sub`} className="hidden text-caption text-text-3 @2xl:block">
+          {cell.sub}
+        </span>
+      )}
     </Tag>
   );
 }
@@ -124,8 +139,8 @@ function AndroidSubsystemStrip({ cells, 'aria-label': label }) {
   );
 }
 
-function SubsystemStrip({ look, ...props }) {
-  if (DEFAULT_LOOK === 'android' || look === 'android') return <AndroidSubsystemStrip {...props} />;
+function SubsystemStrip(props) {
+  if (__ANDROID_LOOK__) return <AndroidSubsystemStrip {...props} />;
   return <UiSubsystemStrip {...props} />;
 }
 

@@ -26,13 +26,6 @@ describe('StatusWord', () => {
     expect(word).toHaveClass('text-body-sm', 'text-warn-fg');
     expect(word).not.toHaveClass('uppercase');
   });
-
-  it("is the Android app's mono upper-case word in the android look", () => {
-    render(<StatusWord look="android" severity="caution" word="on battery" />);
-    const word = screen.getByText('ON BATTERY');
-    expect(word).toHaveClass('status-word', 'word--caution');
-    expect(word).toHaveStyle({ fontWeight: 500, textTransform: 'uppercase' });
-  });
 });
 
 describe('StatusBadge', () => {

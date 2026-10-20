@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 // The status components are the shared library's (src/ui/), in the Android
-// app's own look until Phase 4 (src/ui/lib/status.js).
+// app's own look until Phase 4 (#326; src/ui/lib/status.js).
 import { AttentionPanel } from '@ui/attention-panel';
 import { SubsystemStrip } from '@ui/subsystem-strip';
 import { IssueRow } from '@ui/issue-row';

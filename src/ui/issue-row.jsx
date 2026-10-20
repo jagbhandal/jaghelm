@@ -19,16 +19,17 @@
  *
  * The lamp is decorative: the word beside it names the status.
  *
- * The `android` look is the Android app's row, unchanged (lib/status.js): it
- * reads `readout` (passed through verbatim, never a made-up age) and shows
- * `cause` only on a critical row; MobileApp.css styles it.
+ * The `android` look, a stopgap until #326, is the Android app's row,
+ * unchanged (lib/status.js): it reads `readout` (passed through verbatim, never
+ * a made-up age) and shows `cause` only on a critical row; MobileApp.css
+ * styles it.
  */
 import { useId } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
-import { DEFAULT_LOOK, WORDS, spoken, toSeverity, toState } from './lib/status.js';
+import { WORDS, spoken, toSeverity, toState } from './lib/status.js';
 
 const word = {
   ok: 'text-ok-fg',
@@ -51,14 +52,8 @@ function AndroidIssueRow({ incident, onOpen }) {
   const content = (
     <>
       <div className="issue-row__main">
-        <StatusLamp
-          shape={incident.shape}
-          severity={severity}
-          label={incident.word}
-          size={14}
-          look="android"
-        />
-        <StatusWord word={incident.word} severity={severity} look="android" />
+        <StatusLamp shape={incident.shape} severity={severity} label={incident.word} size={14} />
+        <StatusWord word={incident.word} severity={severity} />
         <span className="issue-row__name">{incident.title}</span>
         <span className="issue-row__readout">{incident.readout}</span>
       </div>
@@ -83,11 +78,9 @@ function AndroidIssueRow({ incident, onOpen }) {
   );
 }
 
-function IssueRow({ look, issue, incident, ...props }) {
+function IssueRow({ issue, incident, ...props }) {
   const it = issue ?? incident ?? {};
-  if (DEFAULT_LOOK === 'android' || look === 'android') {
-    return <AndroidIssueRow incident={it} onOpen={props.onOpen} />;
-  }
+  if (__ANDROID_LOOK__) return <AndroidIssueRow incident={it} onOpen={props.onOpen} />;
   return <UiIssueRow issue={it} {...props} />;
 }
 
@@ -120,7 +113,7 @@ function UiIssueRow({ issue: it, onOpen, href, className, ...props }) {
       {...props}
     >
       <span className="grid min-h-14 grid-cols-[12px_minmax(0,1fr)_auto] items-start gap-x-3 px-3.5 py-2.5 @2xl:min-h-12 @2xl:grid-cols-[18px_96px_minmax(140px,1.1fr)_minmax(200px,2fr)_44px_16px] @2xl:items-center @2xl:px-panel @2xl:py-2">
-        <StatusLamp state={s} decorative look="ui" className="mt-1.25 @2xl:mt-0" />
+        <StatusLamp state={s} decorative className="mt-1.25 @2xl:mt-0" />
         <span className="flex min-w-0 flex-col @2xl:contents">
           <span className="flex min-w-0 items-baseline gap-1 @2xl:contents">
             <span className="flex min-w-0 flex-col @2xl:col-start-3 @2xl:row-start-1">

@@ -98,8 +98,20 @@ describe('AttentionPanel', () => {
     );
     expect(screen.getByRole('link', { name: 'All alerts →' })).toBeInTheDocument();
     expect(screen.getByText('Showing Services only')).toBeInTheDocument();
+    expect(screen.queryByText(/needs attention$/)).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Clear' }));
     expect(onClearFilter).toHaveBeenCalledOnce();
+  });
+
+  it('says so, quietly, when the subsystem it is filtered to has nothing to show', () => {
+    render(<AttentionPanel {...incident} issues={[]} filter="Jobs" onClearFilter={() => {}} />);
+    const panel = screen.getByRole('region', { name: 'Needs attention' });
+    expect(within(panel).getByText('Showing Jobs only')).toBeInTheDocument();
+    expect(within(panel).getByText('Nothing in Jobs needs attention')).toHaveClass(
+      'text-body-sm',
+      'text-text-3'
+    );
+    expect(within(panel).queryByRole('list')).toBeNull();
   });
 
   it('is the quiet line when all is well: no green word, no list', () => {
@@ -114,21 +126,30 @@ describe('AttentionPanel', () => {
     const heading = within(line).getByRole('heading', { level: 1, name: 'All systems normal' });
     expect(heading).toHaveClass('text-title-xs');
     expect(line.querySelector('.text-ok-fg')).toBeNull();
-    expect(within(line).getByRole('img', { name: 'All systems normal' })).toHaveAttribute(
-      'data-shape',
-      'disc'
-    );
+    // The heading says the state once; the lamp beside it is its shape only.
+    const lamp = line.querySelector('[data-slot="status-lamp"]');
+    expect(lamp).toHaveAttribute('data-shape', 'disc');
+    expect(lamp).toHaveAttribute('aria-hidden', 'true');
+    expect(within(line).queryByRole('img')).toBeNull();
+    expect(within(line).getAllByText('All systems normal')).toHaveLength(1);
     expect(within(line).getByText('Last incident 2 d ago')).toHaveClass('ml-auto', 'text-caption');
     expect(screen.queryByRole('list')).toBeNull();
   });
 
+  // Spec §6.1: maintenance doesn't break the quiet line; the subsystem detail
+  // under it ("1 in maintenance") says what is in maintenance.
   it('stays quiet for maintenance, which is never an issue, and not for a warning', () => {
-    const { rerender } = render(<AttentionPanel state="maintenance" />);
-    expect(screen.getByRole('region', { name: 'Status' })).toHaveTextContent('Maintenance');
-    expect(screen.getByRole('img', { name: 'Maintenance' })).toHaveAttribute(
-      'data-shape',
-      'wrench'
+    const { rerender } = render(
+      <AttentionPanel state="maintenance" counts="32 services up · 1 in maintenance" />
     );
+    const line = screen.getByRole('region', { name: 'Status' });
+    expect(within(line).getByRole('heading', { name: 'All systems normal' })).toBeInTheDocument();
+    expect(within(line).getByText('32 services up · 1 in maintenance')).toHaveClass('text-text-2');
+    expect(within(line).queryByText('Maintenance')).toBeNull();
+    const lamp = line.querySelector('[data-slot="status-lamp"]');
+    expect(lamp).toHaveAttribute('data-shape', 'wrench');
+    expect(lamp).toHaveAttribute('aria-hidden', 'true');
+    expect(within(line).queryByRole('img')).toBeNull();
     rerender(<AttentionPanel state="warn" counts="1 warning" />);
     expect(screen.getByRole('region', { name: 'Needs attention' })).toBeInTheDocument();
     expect(screen.getByRole('heading')).toHaveTextContent('Warning · 1 warning');
@@ -137,21 +158,5 @@ describe('AttentionPanel', () => {
   it('takes another heading level', () => {
     render(<AttentionPanel state="crit" titleAs="h2" />);
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Critical');
-  });
-
-  it("is the Android app's SystemStatusCard in the android look", () => {
-    const { container } = render(
-      <AttentionPanel
-        look="android"
-        severity="critical"
-        headline="Two services down"
-        word="down"
-        subline="jellyfin · vaultwarden"
-        counts="14 up · 2 down · 3 nodes"
-      />
-    );
-    expect(container.firstChild).toHaveClass('sys-status-card', 'sys-status-card--critical');
-    expect(screen.getByText('System status')).toBeInTheDocument();
-    expect(container.querySelector('.sys-status-card__word--critical')).toHaveTextContent('down');
   });
 });

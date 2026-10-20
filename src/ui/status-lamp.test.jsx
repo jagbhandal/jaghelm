@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { StatusLamp } from '@ui/status-lamp';
-import { DEFAULT_LOOK, STATES, WORDS } from '@ui/lib/status.js';
+import { STATES, WORDS } from '@ui/lib/status.js';
 
 /** What a lamp draws: each mark's element and the attributes that make its shape. */
 function geometry(svg) {
@@ -16,8 +16,13 @@ function geometry(svg) {
 }
 
 describe('StatusLamp', () => {
+  // The web's build, and these tests, define __ANDROID_LOOK__ false; the
+  // Android app's tests check its own look (mobile/src/components/).
   it('draws the web look outside the Android build', () => {
-    expect(DEFAULT_LOOK).toBe('ui');
+    expect(__ANDROID_LOOK__).toBe(false);
+    const { container } = render(<StatusLamp state="crit" />);
+    expect(container.querySelector('svg')).toHaveAttribute('data-slot', 'status-lamp');
+    expect(container.querySelector('svg')).not.toHaveClass('status-lamp');
   });
 
   // Status is never colour alone (docs/design-system.md, rule 3): every state
@@ -35,7 +40,7 @@ describe('StatusLamp', () => {
     expect(STATES).toEqual(['ok', 'warn', 'crit', 'unknown', 'maintenance']);
   });
 
-  it('draws each state as §5.2 says: disc, slashed disc, disc with a bar, hollow ring, wrench', () => {
+  it('draws each state as design-system.md rule 3 says: disc, slashed disc, disc with a bar, hollow ring, wrench', () => {
     const marks = (state) => {
       const { container, unmount } = render(<StatusLamp state={state} />);
       const svg = container.querySelector('svg');
@@ -134,15 +139,25 @@ describe('StatusLamp', () => {
     expect(container.querySelector('path')).toBeNull();
   });
 
-  it("draws the Android app's lamp in the android look", () => {
-    const { container } = render(
-      <StatusLamp look="android" shape="slash" severity="critical" label="DOWN" size={14} />
-    );
-    const svg = container.querySelector('svg');
-    expect(svg).toHaveClass('status-lamp', 'lamp--critical');
-    expect(svg).not.toHaveAttribute('data-slot');
-    expect(svg.querySelector('line')).toHaveAttribute('stroke', 'white');
-    expect(svg.querySelector('title')).toHaveTextContent('DOWN');
-    expect(screen.getByRole('img', { name: 'DOWN' })).toBe(svg);
+  // The wrench is Lucide's 2-to-22 span drawn in the lamp's box, inset by half
+  // its 1.5px line, so the box's edge doesn't clip it, and its inner viewport
+  // is hidden, so assistive tech meets one image.
+  it('draws the wrench inside its box, as one image', () => {
+    for (const px of [10, 14, 16]) {
+      const { container, unmount } = render(<StatusLamp state="maintenance" size={px} />);
+      const lamp = screen.getByRole('img', { name: 'Maintenance' });
+      const inner = lamp.querySelector('svg');
+      expect(inner).toHaveAttribute('aria-hidden', 'true');
+      expect(container.querySelectorAll('[role="img"]')).toHaveLength(1);
+      const [x, y, w, h] = inner.getAttribute('viewBox').split(' ').map(Number);
+      expect([x, w]).toEqual([y, h]);
+      // Lucide's 2 lands at 0.75 and its 22 at px - 0.75: the line's outer edge
+      // meets the box's.
+      const at = (u) => ((u - x) * px) / w;
+      expect(at(2)).toBeCloseTo(0.75, 6);
+      expect(at(22)).toBeCloseTo(px - 0.75, 6);
+      expect(inner.querySelector('path')).toHaveAttribute('stroke-width', '1.5');
+      unmount();
+    }
   });
 });

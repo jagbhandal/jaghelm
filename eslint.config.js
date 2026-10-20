@@ -16,9 +16,9 @@ export default [
       ecmaVersion: 2023,
       sourceType: 'module',
       // __PUSH_ENABLED__, __APP_VERSION__ and __ANDROID_LOOK__ are Vite `define`s
-      // (vite.config.mobile.js) injected at build — declare them so the
-      // build-constant reads in push/pushConfig.js, push/pushPrefsApi.js and
-      // src/ui/lib/status.js aren't no-undef errors.
+      // (vite.config.mobile.js; __ANDROID_LOOK__ in vite.config.js too) injected
+      // at build — declare them so the build-constant reads in push/pushConfig.js,
+      // push/pushPrefsApi.js and src/ui's status components aren't no-undef errors.
       globals: {
         ...globals.browser,
         __PUSH_ENABLED__: 'readonly',

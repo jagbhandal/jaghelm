@@ -18,20 +18,25 @@
  * The `ui` look is the mock's. With issues, or any state but ok and
  * maintenance (which never make an issue, spec §6.1), it is the attention
  * panel: a 14px lamp and the word in its colour, the counts after it in
- * `text-2`, the sentence under them, then the list of IssueRows. Otherwise it
- * is the mock's quiet line: a lamp, "All systems normal" in `text-1`, the
- * counts, and `meta`. Healthy stays quiet (rule 3): no green word.
+ * `text-2`, the sentence under them, then the list of IssueRows; filtered to a
+ * subsystem with none, one quiet line says so. Otherwise it is the mock's
+ * quiet line: a lamp, "All systems normal" in `text-1`, the counts, and
+ * `meta`. Healthy stays quiet (rule 3): no green word. Maintenance doesn't
+ * break the quiet line either (§6.1): the heading still says all is normal,
+ * the lamp is the wrench, and the strip's tile under the line says what is in
+ * maintenance.
  *
- * The `android` look is the Android app's SystemStatusCard, unchanged
- * (lib/status.js): the "System status" label, `headline` with `word` coloured
- * where it appears in it, `subline` and the `counts` footer.
+ * The `android` look, a stopgap until #326, is the Android app's
+ * SystemStatusCard, unchanged (lib/status.js): the "System status" label,
+ * `headline` with `word` coloured where it appears in it, `subline` and the
+ * `counts` footer.
  */
 import { Button } from './button.jsx';
 import { IssueRow } from './issue-row.jsx';
 import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
-import { DEFAULT_LOOK, WORDS, toSeverity, toState } from './lib/status.js';
+import { toSeverity, toState } from './lib/status.js';
 
 const ANDROID_COLOURS = {
   critical: 'var(--red)',
@@ -81,9 +86,8 @@ function AndroidSystemStatusCard({ state, severity: given, headline, word, subli
   );
 }
 
-function AttentionPanel({ look, ...props }) {
-  if (DEFAULT_LOOK === 'android' || look === 'android')
-    return <AndroidSystemStatusCard {...props} />;
+function AttentionPanel(props) {
+  if (__ANDROID_LOOK__) return <AndroidSystemStatusCard {...props} />;
   return <UiAttentionPanel {...props} />;
 }
 
@@ -108,7 +112,7 @@ function UiAttentionPanel({
   const Title = titleAs;
 
   if (quiet) {
-    const said = word || (s === 'ok' ? 'All systems normal' : WORDS[s]);
+    const said = word || 'All systems normal';
     return (
       <section
         data-slot="attention-panel"
@@ -120,7 +124,8 @@ function UiAttentionPanel({
         )}
         {...props}
       >
-        <StatusLamp state={s} label={said} look="ui" />
+        {/* The heading beside it says the state, so the lamp is its shape only. */}
+        <StatusLamp state={s} decorative />
         <Title className="text-title-xs">{said}</Title>
         {counts && <span className="text-text-2">{counts}</span>}
         {meta && <span className="ml-auto text-caption text-text-3">{meta}</span>}
@@ -142,9 +147,9 @@ function UiAttentionPanel({
       <div className="flex flex-wrap items-start justify-between gap-4 px-panel pt-panel pb-4">
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="flex items-center gap-3">
-            <StatusLamp state={s} size="lg" decorative look="ui" />
+            <StatusLamp state={s} size="lg" decorative />
             <Title className="text-headline">
-              <StatusWord state={s} word={word} look="ui" />
+              <StatusWord state={s} word={word} />
               {counts && <span className="font-semibold text-text-2"> · {counts}</span>}
             </Title>
           </div>
@@ -168,10 +173,15 @@ function UiAttentionPanel({
         <ul className="divide-y divide-border border-t border-border">
           {issues.map((issue, i) => (
             <li key={issue.id ?? i}>
-              <IssueRow issue={issue} onOpen={issue.onOpen} href={issue.href} look="ui" />
+              <IssueRow issue={issue} onOpen={issue.onOpen} href={issue.href} />
             </li>
           ))}
         </ul>
+      )}
+      {filter && issues.length === 0 && (
+        <p className="border-t border-border px-panel py-3 text-body-sm text-text-3">
+          Nothing in {filter} needs attention
+        </p>
       )}
     </section>
   );
