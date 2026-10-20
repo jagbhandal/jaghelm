@@ -877,10 +877,9 @@ function PopoverHoverState() {
     <Row gap={8}>
       <span>Latency</span>
       <Popover
-        defaultOpen
         openOnHover
         trigger={
-          <IconButton label="About latency" size="sm">
+          <IconButton label="About latency" size="sm" data-gallery-hover>
             <Info />
           </IconButton>
         }

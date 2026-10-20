@@ -52,7 +52,9 @@ async function settle(variant) {
   const html = document.documentElement;
   await Promise.all(FACES.map((face) => document.fonts.load(face)));
   await document.fonts.ready;
-  const { focus, wait = {} } = variant?.state ?? {};
+  // A state opened under the pointer waits for it in the tests, after the hover.
+  const { focus, hover, wait: waits = {} } = variant?.state ?? {};
+  const wait = hover ? {} : waits;
   if (focus) {
     const el = document.querySelector(focus);
     if (!el) {

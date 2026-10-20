@@ -16,10 +16,12 @@
  *    .jh-ui root to nothing), animations off for the shot, the caret hidden.
  *  - A frozen clock (Date), a fixed time zone and locale, a fixed viewport at
  *    a device scale of 1.
+ *  - Its own server on a free port per run, so runs side by side never meet.
  *  - No retries: a state that only passes the second time is a bug.
  *  - Exact comparison: a threshold of 0 and no pixel allowance.
  */
 import { existsSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { defineConfig } from '@playwright/test';
 import { GALLERY_IMAGE, IMAGE_ENV } from './gallery/container.mjs';
 
@@ -30,7 +32,25 @@ if (process.env[IMAGE_ENV] !== GALLERY_IMAGE || !existsSync('/ms-playwright')) {
   );
 }
 
-export const PORT = 4179;
+// The gallery's server takes a free port, picked once per run in the main
+// process and handed to the workers through the environment, which they
+// inherit. A fixed port collided when two runs shared a network (CI's runner
+// runs several jobs in one network namespace): one run failed at random, or
+// tested the other's build. `strictPort` (vite.gallery.config.js) and no
+// reused server make a lost race fail loudly rather than test another build.
+const PORT_ENV = 'JH_GALLERY_PORT';
+if (!process.env[PORT_ENV]) {
+  process.env[PORT_ENV] = String(
+    await new Promise((resolve, reject) => {
+      const probe = createServer().once('error', reject);
+      probe.listen(0, '127.0.0.1', () => {
+        const { port } = probe.address();
+        probe.close(() => resolve(port));
+      });
+    })
+  );
+}
+export const PORT = Number(process.env[PORT_ENV]);
 
 export default defineConfig({
   testDir: 'gallery',

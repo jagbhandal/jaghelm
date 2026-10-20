@@ -96,7 +96,9 @@ test('the Playwright version and the container image agree everywhere', () => {
   }
   assert.match(
     GALLERY_IMAGE,
-    new RegExp(`^mcr\\.microsoft\\.com/playwright:v${PLAYWRIGHT_VERSION}-noble@sha256:[0-9a-f]{64}$`),
+    new RegExp(
+      `^mcr\\.microsoft\\.com/playwright:v${PLAYWRIGHT_VERSION}-noble@sha256:[0-9a-f]{64}$`
+    ),
     'an exact tag, pinned by digest'
   );
   const job = yaml.load(read('.gitea/workflows/check.yml')).jobs.gallery;

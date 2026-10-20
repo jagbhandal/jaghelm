@@ -14,6 +14,9 @@
  *             full gallery page shows it in a frame.
  *   focus     the element to focus once it has rendered (a selector): a focus
  *             ring, or a tooltip that opens on focus
+ *   hover     the element the tests put the pointer on once the page is
+ *             ready (a selector), for a state that opens under the pointer;
+ *             its `wait` then applies after the hover
  *   wait      for an isolated state, the elements it waits for before it is
  *             ready: { selector: count }
  *
@@ -114,8 +117,9 @@ export const CATALOG = Object.freeze([
     isolated: true,
     wait: { '[data-slot="popover"]': 1 },
   }),
-  s('popover-hover', 'Containers', 'Popover: openOnHover, an infotip', {
+  s('popover-hover', 'Containers', 'Popover: openOnHover, an infotip, under the pointer', {
     isolated: true,
+    hover: '[data-gallery-hover]',
     wait: { '[data-slot="popover"]': 1 },
   }),
   s('tooltip-name', 'Containers', 'Tooltip: open on focus, repeating the name', {

@@ -59,7 +59,6 @@ const args = [
   'run',
   '--rm',
   '--init',
-  '--ipc=host',
   '--user',
   `${process.getuid()}:${process.getgid()}`,
   '-e',

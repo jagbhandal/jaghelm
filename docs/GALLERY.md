@@ -21,7 +21,8 @@ The app's own dev server (`npm run dev`) serves it at the same address.
 
 - `/gallery/` shows every state, grouped as the design system lists them. A
   state that needs the page to itself (an open dialog, drawer, popover, select
-  or tooltip, a focus ring, toasts) shows in a frame.
+  or tooltip, a focus ring, toasts) shows in a frame. The infotip
+  (`popover-hover`) opens when you point at its icon, as the tests do.
 - `/gallery/?state=<variant>` shows one variant alone, as the tests shoot it,
   such as `?state=dialog-md--light-compact` or
   `?state=button--dark-comfortable-cyan`. Each variant's name on the full page
@@ -89,13 +90,15 @@ JagHelm's components, and each is scoped to that markup alone
 (`gallery/axe.mjs`). **Revisit both when Base UI is upgraded**: a test fails
 once axe passes the open Select without them, so a fixed Base UI shows itself.
 
-- **`aria-hidden-focus` skips only Base UI's focus guards**
-  (`[data-base-ui-focus-guard]`, the element axe names, not anything inside
-  it). Base UI's focus manager puts these spans around an open Select's list,
-  `aria-hidden` with `tabindex="0"` by design (floating-ui's pattern): a
-  guard hands focus on the moment it gets it, so nobody rests on it, and Base
-  UI makes it a button for VoiceOver, whose virtual cursor would skip it
-  otherwise. JagHelm's Select can't change them.
+- **`aria-hidden-focus` skips only Base UI's focus guards around an open
+  Select**: the element axe names must itself be a guard
+  (`[data-base-ui-focus-guard]`) sitting beside the Select's trigger or its
+  list. Base UI's focus manager puts these spans there, `aria-hidden` with
+  `tabindex="0"` by design (floating-ui's pattern): a guard hands focus on the
+  moment it gets it, so nobody rests on it, and Base UI makes it a button for
+  VoiceOver, whose virtual cursor would skip it otherwise. JagHelm's Select
+  can't change them. A guard anywhere else (a dialog's, a popover's) is still
+  checked.
 - **`region` counts the Select's list as a region**
   (`[data-slot="select-popup"]`, added to axe's own `regionMatcher`). Base UI
   portals the list to the end of `<body>`, outside every landmark. Other
@@ -105,10 +108,12 @@ once axe passes the open Select without them, so a fixed Base UI shows itself.
   exempt.
 
 A test plants the same findings outside those elements (a focusable
-`aria-hidden` element that isn't a guard, text outside every landmark, and
-text in another portal root) and checks that each still fails. Another
-checks that the region list starts from axe's own default, so an axe upgrade
-that changes it shows.
+`aria-hidden` element that isn't a guard, a Base UI guard that isn't beside a
+Select, text outside every landmark, and text in another portal root), plus a
+low-contrast line, and checks that each still fails. Another checks that axe
+ran every rule it runs by default, so no rule can be left out quietly (by
+`disableRules` or a narrower set of tags). A third checks that the region
+list starts from axe's own default, so an axe upgrade that changes it shows.
 
 ## Change a component's look
 
@@ -132,9 +137,19 @@ gallery:test` also stops it writing a missing baseline). Arguments after `--`
 go to Playwright: `npm run gallery:test -- -g dialog`.
 
 Both scripts need Docker on a Linux x64 machine, as CI's runner: they run
-`docker run` with the pinned image, this checkout mounted, as the calling user.
-Run anywhere else (`npx playwright test` on the host), the config refuses,
-because the screenshots would not match.
+`docker run` with the pinned image, this checkout mounted, as the calling user,
+sharing nothing else with the host (no host IPC or network; Chromium doesn't
+need `/dev/shm`). Run anywhere else (`npx playwright test` on the host), the
+config refuses, because the screenshots would not match. The gallery's
+server takes a free port for each run, so runs side by side never meet; two
+runs at once need two checkouts, as CI's jobs have, since they build into
+the checkout's `dist-gallery/`.
+
+The image ships Node 24 while `package.json` asks for Node 26, so `npm ci` in
+it warns `EBADENGINE`. That is expected and harmless: the gallery only builds
+the page with Vite and runs Playwright, both of which support Node 24, and
+`engine-strict` is off. Don't "fix" it by loosening `engines`; it goes away
+when a Playwright image ships Node 26.
 
 ## Why a baseline is exact
 
@@ -147,9 +162,12 @@ The screenshots are deterministic by construction, so a diff is a real change:
   `package.json`, the lockfile, `check.yml` and `gallery/container.mjs`
   disagree. To upgrade Playwright, change all of them and regenerate the
   baselines in the same PR.
-- **The same pixels on any CPU**: Skia's CPU-specific code paths are off
-  (`--disable-skia-runtime-opts`), with sRGB colour, no LCD text and no font
-  hinting.
+- **Meant to draw the same pixels on any CPU**: Skia's CPU-specific code
+  paths are off (`--disable-skia-runtime-opts`), with sRGB colour, no LCD
+  text and no font hinting. So far this is checked on MS-S1 only, where CI
+  and every local run have been; vm-103, CI's fallback runner, hasn't run it
+  yet, and a difference there would fail loudly (a false red, never a false
+  green).
 - **Self-hosted fonts only**, loaded before the shot (`document.fonts`).
 - **No motion**: reduced motion (the base style cuts every transition and
   animation in a `.jh-ui` root), animations off for the shot, the caret

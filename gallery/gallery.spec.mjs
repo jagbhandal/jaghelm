@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { READY_ATTRIBUTE, STATE_ATTRIBUTE, VARIANTS } from './catalog.js';
-import { AXE_REGION_DEFAULT, FOCUS_GUARD, SELECT_LIST, axeFindings } from './axe.mjs';
+import { AXE_REGION_DEFAULT, FOCUS_GUARD, SELECT_LIST, axeFindings, axeResults } from './axe.mjs';
 
 /** The frozen clock: every Date the page reads is this. */
 const NOW = new Date('2026-10-20T09:00:00Z');
@@ -61,6 +61,14 @@ for (const variant of VARIANTS) {
       READY_ATTRIBUTE,
       'true'
     );
+    // A state shown under the pointer (an infotip) is hovered here, as a
+    // person would, and then waits for what it opens.
+    if (variant.state.hover) {
+      await page.hover(variant.state.hover);
+      for (const [selector, n] of Object.entries(variant.state.wait ?? {})) {
+        await expect(page.locator(selector)).toHaveCount(n);
+      }
+    }
     await settled(page);
 
     const target = variant.state.isolated ? page : page.locator(`[id="${variant.id}"]`);
@@ -120,30 +128,62 @@ test('the axe exceptions are narrow: the same findings elsewhere still fail', as
   await openSelect(page);
   expect(await axeFindings(page), 'the open Select passes with the exceptions').toEqual([]);
   await page.evaluate(() => {
-    // Focusable and hidden from assistive tech, but not a Base UI focus guard.
-    const hidden = document.createElement('span');
-    hidden.id = 'planted-hidden-focus';
-    hidden.setAttribute('aria-hidden', 'true');
-    hidden.tabIndex = 0;
-    hidden.textContent = 'Hidden, yet reachable by Tab';
-    document.querySelector('main').append(hidden);
+    const main = document.querySelector('main');
+    const make = (tag, id, text, attributes = {}) => {
+      const el = document.createElement(tag);
+      el.id = id;
+      el.textContent = text;
+      for (const [name, value] of Object.entries(attributes)) el.setAttribute(name, value);
+      return el;
+    };
+    main.append(
+      // Focusable and hidden from assistive tech, but not a Base UI focus guard.
+      make('span', 'planted-hidden-focus', 'Hidden, yet reachable by Tab', {
+        'aria-hidden': 'true',
+        tabindex: '0',
+      }),
+      // A Base UI focus guard, but not beside a Select's trigger or list.
+      make('span', 'planted-guard', '', {
+        'aria-hidden': 'true',
+        tabindex: '0',
+        'data-base-ui-focus-guard': '',
+      }),
+      // Any other rule still runs: text far below 4.5:1.
+      make('p', 'planted-contrast', 'Low contrast', { style: 'color:#777;background:#7a7a7a' })
+    );
     // Content outside every landmark: in <body>, and in another portal root.
-    const outside = document.createElement('p');
-    outside.id = 'planted-outside';
-    outside.textContent = 'Outside every landmark';
-    const portal = document.createElement('div');
-    portal.id = 'planted-portal';
-    portal.setAttribute('data-base-ui-portal', '');
-    portal.className = 'jh-ui';
-    portal.append(Object.assign(document.createElement('p'), { textContent: 'In another portal' }));
-    document.body.append(outside, portal);
+    const portal = make('div', 'planted-portal', '', { 'data-base-ui-portal': '', class: 'jh-ui' });
+    portal.append(make('p', 'planted-portal-text', 'In another portal'));
+    document.body.append(make('p', 'planted-outside', 'Outside every landmark'), portal);
   });
   const found = await axeFindings(page);
   const rule = (id, target) => found.some((f) => f.startsWith(`${id} `) && f.includes(target));
   expect(rule('aria-hidden-focus', '#planted-hidden-focus'), found.join('\n')).toBe(true);
+  expect(rule('aria-hidden-focus', '#planted-guard'), found.join('\n')).toBe(true);
+  expect(rule('color-contrast', '#planted-contrast'), found.join('\n')).toBe(true);
   expect(rule('region', '#planted-outside'), found.join('\n')).toBe(true);
   expect(rule('region', '#planted-portal'), found.join('\n')).toBe(true);
-  expect(found, 'nothing of the Select itself').toHaveLength(3);
+  expect(found, 'nothing of the Select itself').toHaveLength(5);
+});
+
+test('the axe check runs every rule axe runs by default', async ({ page }) => {
+  await openSelect(page);
+  const results = await axeResults(page);
+  const ran = new Set(
+    ['passes', 'violations', 'incomplete', 'inapplicable'].flatMap((k) =>
+      results[k].map((r) => r.id)
+    )
+  );
+  // The rules axe runs by default, from its own copy in the page: those it
+  // enables (the AAA ones it doesn't), less the experimental and deprecated,
+  // which a default run leaves out. axe has no public list of them.
+  const defaults = await page.evaluate(() =>
+    window.axe._audit.rules
+      .filter((r) => r.enabled && !r.tags.some((t) => t === 'experimental' || t === 'deprecated'))
+      .map((r) => r.id)
+  );
+  expect(defaults.length).toBeGreaterThan(50);
+  expect([...ran].sort()).toEqual([...defaults].sort());
 });
 
 test("the region exception keeps axe's own default list", () => {
