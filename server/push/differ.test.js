@@ -592,7 +592,56 @@ test("a backup (a cron job marked as one, #291) pages as a cron job, with the mo
     cron({ 'nas:b2': 'failure' }),
     status
   );
-  assert.deepEqual([event.type, event.body], ['cron_failed', 'b2 on nas · Last backup failed']);
+  assert.deepEqual(
+    [event.type, event.body, event.severity],
+    ['cron_failed', 'b2 on nas · Last backup failed', 'critical']
+  );
+});
+
+test('#478: only a failed backup pages as critical; a failed job, an overdue backup and a recovery keep their severity', () => {
+  const entity = (id, kind, state) => ({
+    id,
+    kind,
+    name: id.split(':')[1],
+    node: 'nas',
+    state,
+    reason: 'r',
+  });
+  const failed = diffSnapshots(
+    cron({ 'nas:b2': 'success', 'nas:sync': 'success' }),
+    cron({ 'nas:b2': 'failure', 'nas:sync': 'failure' }),
+    {
+      entities: [
+        entity('backups/nas:b2', 'backup', 'crit'),
+        entity('jobs/nas:sync', 'job', 'warn'),
+      ],
+    }
+  );
+  assert.deepEqual(
+    failed.map((e) => [e.id, e.type, e.severity]),
+    [
+      ['nas:b2', 'cron_failed', 'critical'],
+      ['nas:sync', 'cron_failed', 'warning'],
+    ]
+  );
+  const [overdue] = diffSnapshots(cron({ 'nas:b2': 'success' }), cron({ 'nas:b2': 'overdue' }), {
+    entities: [entity('backups/nas:b2', 'backup', 'warn')],
+  });
+  assert.deepEqual([overdue.type, overdue.severity], ['cron_overdue', 'warning']);
+  // Failed, then overdue: the model still says crit ("failed · overdue"), but
+  // the critical page went out with the failure; the overdue one stays a warning.
+  const [stillFailed] = diffSnapshots(
+    cron({ 'nas:b2': 'failure' }),
+    cron({ 'nas:b2': 'overdue' }),
+    {
+      entities: [entity('backups/nas:b2', 'backup', 'crit')],
+    }
+  );
+  assert.deepEqual([stillFailed.type, stillFailed.severity], ['cron_overdue', 'warning']);
+  const [recovered] = diffSnapshots(cron({ 'nas:b2': 'failure' }), cron({ 'nas:b2': 'success' }), {
+    entities: [entity('backups/nas:b2', 'backup', 'ok')],
+  });
+  assert.deepEqual([recovered.type, recovered.severity], ['cron_recovered', 'info']);
 });
 
 // ── Monitoring sources: one push for a failed source (#292) ──────────────

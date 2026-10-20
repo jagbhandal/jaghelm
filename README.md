@@ -248,7 +248,7 @@ A job is a backup only when `backupJobs` in `data/display-config.json` names it,
 { "backupJobs": ["pve:proxmox-backup", "nas:b2-sync"] }
 ```
 
-A backup shows under Backups instead of Jobs in `/api/status`, and is judged more strictly than a job: a failed last run is critical, overdue a warning (a job is a warning either way). Its push notifications are the job's, unchanged. Proxmox backup results reported by a PVE notification webhook arrive as a job like any other, so name that job here too. Edit the file (JagHelm reads it again on the next refresh) or save the whole config with `POST /api/display-config`; a Settings page for the list comes later. An entry that isn't a `"node:job"` string is ignored, with one warning in the log.
+A backup shows under Backups instead of Jobs in `/api/status`, and is judged more strictly than a job: a failed last run is critical, overdue a warning (a job is a warning either way). Its push notifications are the job's, except that a failed backup pages as critical (high priority) where a failed job is a warning. Proxmox backup results reported by a PVE notification webhook arrive as a job like any other, so name that job here too. Edit the file (JagHelm reads it again on the next refresh) or save the whole config with `POST /api/display-config`; a Settings page for the list comes later. An entry that isn't a `"node:job"` string is ignored, with one warning in the log.
 
 ## Features
  
