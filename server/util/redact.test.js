@@ -7,6 +7,8 @@ test('redacts known secret query params', () => {
   assert.ok(!redactSecrets('https://h/api?token=abc').includes('abc'));
   assert.ok(!redactSecrets('https://h/api?api_key=xyz').includes('xyz'));
   assert.ok(!redactSecrets('https://h/?password=hunter2').includes('hunter2'));
+  // Plex's token as a query parameter (#413).
+  assert.ok(!redactSecrets('/status/sessions?X-Plex-Token=plexsecret').includes('plexsecret'));
 });
 
 test('strips the entire query string off URLs (catches unknown param names)', () => {

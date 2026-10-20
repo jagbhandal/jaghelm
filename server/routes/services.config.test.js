@@ -8,7 +8,7 @@
  * marker { "$stored": true }. Settings' Nodes and Services tabs post the whole
  * config back with those markers in it, so POST /api/services/config puts the
  * stored value back in each marker's place: a marker is never written, and a
- * credential is never lost or moved to another place.
+ * credential is never lost or moved to another key or array element.
  *
  * These drive the real route against the real config module and file.
  */

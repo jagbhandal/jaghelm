@@ -22,6 +22,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { Router } from 'express';
 
 import { getConfig, saveConfig } from '../config.js';
+import { getPresetFull, listPresets } from '../integrations/registry.js';
 import { getMonitorNames } from '../monitors.js';
 import { refreshServices } from '../refresh.js';
 import { respondWarmCached } from '../cache.js';
@@ -31,6 +32,20 @@ import { validateConfig, servicesConfigSchema } from '../util/configSchema.js';
 import { maskCredentials, restoreCredentials } from '../util/configMask.js';
 
 const router = Router();
+
+/**
+ * What the masking needs to know about the presets: each entry's preset (its
+ * endpoints' placeholders are masked on the entry), as the refresh loop picks
+ * it, and every URL parameter a preset's form shows and saves (never masked).
+ * Exported for the tests.
+ */
+export function configMaskOptions() {
+  return {
+    presetOf: (/** @type {string} */ key, /** @type {any} */ entry) =>
+      getPresetFull(entry?.preset || key),
+    urlParamKeys: listPresets().flatMap((p) => (p.urlParams || []).map((u) => u.key)),
+  };
+}
 
 router.get(
   '/',
@@ -44,7 +59,7 @@ router.get(
 );
 
 router.get('/config', (req, res) => {
-  res.json(maskCredentials(getConfig() || {}));
+  res.json(maskCredentials(getConfig() || {}, configMaskOptions()));
 });
 
 router.post('/config', (req, res) => {
@@ -55,7 +70,7 @@ router.post('/config', (req, res) => {
   // is stored, or in place of anything but a credential, is refused, so a
   // marker is never written and no credential moves to another place.
   const current = getConfig();
-  const restored = restoreCredentials(v.data, current || {});
+  const restored = restoreCredentials(v.data, current || {}, configMaskOptions());
   if (!restored.ok) return apiError(res, restored.status, restored.error);
 
   // A save that changes nothing writes nothing, so services.yaml stays

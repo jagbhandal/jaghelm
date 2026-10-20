@@ -996,28 +996,54 @@ All state is files under the data dir (no DB):
   - **The config read never carries a credential** (#413).
     `GET /api/services/config` answers with each credential that is set as
     the marker `{ "$stored": true }`, never its value or its `$secret:`
-    reference (`util/configMask.js`). A credential is the value of a
-    `password` or `token` key at any depth (plaintext, a number, or a
-    `$secret:` reference: the resolver reads references from these two keys
-    only), each value of an `extraHeaders` map, and a `session`'s `loginBody`.
-    One that is null or empty is sent as it is, so the marker always means a
-    value is stored. `authHeader` names a header and is sent; its value is the
-    `token`. No preset declares any other field secret. Not masked: the URL,
-    endpoint and username, which the integration form shows and saves (a key
-    written into a URL or endpoint by hand is not known to be a credential).
+    reference (`util/configMask.js`). A credential, at any depth:
+    - the value of a key with a credential's name, in any case: `password` and
+      `token` (plaintext, a number, or a `$secret:` reference, which the
+      resolver reads from these two only), `apikey`, `api_key`, `api-key`,
+      `secret`, `client_secret`, `pass`, `passwd`, `passphrase`,
+      `access_token`, `auth_token`, `bearer` and `cookie`;
+    - each value of an `extraHeaders` map, and any `loginBody` (a session's or
+      a fallback session's);
+    - a value under a key ending in `endpoint` (`endpoint`, `testEndpoint`,
+      `extraEndpoints[].endpoint`, `loginEndpoint`) whose query carries a key
+      (`SECRET_PARAMS` in `util/redact.js`, now with `X-Plex-Token`) or which
+      has a password in it (`//user:pass@`), masked whole. A `{token}`
+      placeholder is no credential in the endpoint itself.
+
+    And directly on an integration entry: `key`, and every key the entry's
+    endpoints or its preset's fill in through a `{name}` placeholder
+    (`resolveEndpoint` in `lib/extract.js`), whatever its name (nextdns's
+    `profile_id`). Never masked: a map's own keys (an integration, node,
+    service or `monitor_per_node` named `secret` is a name), `key` anywhere
+    else (in `fields` and `extraEndpoints` it names a field), and what the
+    integration form shows and saves back on an entry (url, username, target,
+    instance, enabled, preset and every preset's URL parameters, such as
+    Cloudflare's `account_id`): a marker there would be posted back through
+    the form and written. One that is null or empty is sent as it is, so the
+    marker always means a value is stored. `authHeader` names a header and is
+    sent; its value is the `token`. No preset declares any other field secret.
+    Not masked: the URL, which the form shows and saves; a key or password
+    written into it by hand still reaches Settings (refused at the form in a
+    later change).
   - **`POST /api/services/config` replaces the file, keeping what is stored.**
     The Nodes and Services tabs read the config, change it and post all of it
     back, markers included. Each marker is replaced by the value stored in its
-    place before the write. A marker is accepted only where the read would put
-    one now: one in place of a credential that is no longer stored (removed
-    since Settings read the config) is a 409, one anywhere else, or an object
-    with `$stored` that is not exactly the marker, is a 400, and nothing is
-    written. So a marker is never written, and a credential can't be moved to
-    another entry or key. A credential sent as a value replaces the stored one,
-    as before. The answer is `{ ok: true }` or an error naming the place, never
-    a value. A save whose result equals the stored config writes nothing, so
-    the file stays byte-for-byte as it was; a value JSON can't carry (a YAML
-    date) reads back as text, so such a file is still rewritten.
+    place before the write: the same keys, and in an array the element with
+    the same `name`, `id` or `key` (the first it has), never the one at the
+    same position. A marker is accepted only where the read would put one now:
+    one in place of a credential that is no longer stored (removed, or its
+    entry or element renamed, since Settings read the config) is a 409. One
+    anywhere else, in an array element with no name, id or key (or one two
+    elements share), or an object with `$stored` that is not exactly the
+    marker, is a 400, and nothing is written. So a marker is never written,
+    and a credential can't move to another key or another array element. A
+    credential sent as a value replaces the stored one, as before. The answer
+    is `{ ok: true }` or an error naming the place, never a value. A save
+    whose result equals the stored config writes nothing, so the file stays
+    byte-for-byte as it was; a value JSON can't carry (a YAML date) reads back
+    as text, so such a file is still rewritten. Settings shows a refused or
+    failed save in a toast with the server's reason and reads the stored
+    config again, so the screen matches what is saved.
   - **An integration's save in Settings merges** (`POST /api/integrations/save`,
     #402). The form's values go into the stored entry, and only what the form
     owns changes: the URL (required), the username and target (sent empty to

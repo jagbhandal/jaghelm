@@ -10,8 +10,10 @@
  */
 
 // Sensitive query-param values, redacted in place (keeps the param name as a hint).
-const SECRET_PARAMS =
-  /([?&](?:api[_-]?key|token|password|passwd|pass|secret|auth|access[_-]?token|sig)=)[^&\s'"]+/gi;
+// The config read (configMask.js) uses it too, to tell an endpoint that carries
+// a credential. Global: copy it without the g flag before calling .test().
+export const SECRET_PARAMS =
+  /([?&](?:api[_-]?key|token|password|passwd|pass|secret|auth|access[_-]?token|x-plex-token|sig)=)[^&\s'"]+/gi;
 
 /**
  * Redact secrets from a string.

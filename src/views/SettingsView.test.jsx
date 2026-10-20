@@ -3,6 +3,7 @@ import { useState, useRef } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import SettingsView from './SettingsView';
 import { ConfigProvider } from '../context/ConfigContext.jsx';
+import { OverlayProvider } from '../context/OverlayContext.jsx';
 
 // The `update(path, value)` deep-setter that the General tab drives now lives in
 // ConfigContext (computed once from the stable setConfig, immutable via setIn),
@@ -40,10 +41,14 @@ function Harness({ initialConfig, onConfigs }) {
       return next;
     });
   };
+  // SettingsView shows a refused save in a toast, so it sits in the overlay
+  // provider, as in App.jsx.
   return (
-    <ConfigProvider config={config} setConfig={setConfig}>
-      <SettingsView theme="dark" setTheme={() => {}} />
-    </ConfigProvider>
+    <OverlayProvider>
+      <ConfigProvider config={config} setConfig={setConfig}>
+        <SettingsView theme="dark" setTheme={() => {}} />
+      </ConfigProvider>
+    </OverlayProvider>
   );
 }
 
