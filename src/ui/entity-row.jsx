@@ -12,7 +12,7 @@
  * loses its oldest beats from the left; narrower than 672px a heartbeat strip
  * shows its newest 12, as the Phone board's), and the detail fills what is left
  * after them, ending in an ellipsis. Only a name wider than the whole row ends
- * in one. From 672px of its own container the name and the detail
+ * in one. From 672px of its own width the name and the detail
  * share a line, the name keeping at least the mock's name column (3/7 of the
  * line) so details line up down a list. Narrower, it is the Phone board's
  * row: the name on its own line over the detail, and the trailing figure; no

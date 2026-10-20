@@ -9,7 +9,7 @@
  * described by its reason and age; a row with nothing to open is plain
  * content, so it neither looks nor announces as tappable (#279).
  *
- * The `ui` look is the mock's row, at either width of its container:
+ * The `ui` look is the mock's row, at either of its own widths:
  *
  *  - from 672px (`@2xl`), the desktop attention panel's: lamp, word, the
  *    title over where, the reason, the age and a chevron, in columns, 48px

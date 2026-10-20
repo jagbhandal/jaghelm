@@ -4,10 +4,11 @@
  * inside a subtle edge, a 12px radius, flat (no shadow; design-system rule 7).
  * Its padding is the density's (`p-panel`: 20px comfortable, 16px compact).
  *
- * The header is optional: `icon` in the mock's 28px accent chip (accent-tint,
- * accent-text, an accent-border ring), the title (15px bold, an h2 unless
- * `titleAs` says otherwise), `description` under it in 12px text-3, and
- * `actions` at the end of the row. The section is named by its title.
+ * The header is optional: `icon` in the mock's 28px accent chip
+ * (`bg-accent-tint`, `text-accent-text`, `inset-ring-accent-border`), the
+ * title (15px bold, an h2 unless `titleAs` says otherwise), `description`
+ * under it in 12px text-3, and `actions` at the end of the row. The section
+ * is named by its title.
  *
  * `flush` lays the children edge to edge under a subtle rule, for rows and
  * tables that bring their own padding (the mock's Settings lists); otherwise

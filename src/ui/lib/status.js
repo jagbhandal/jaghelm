@@ -68,7 +68,7 @@ export function toSeverity(value) {
 }
 
 // A screen reader spells an abbreviated word out, so TalkBack doesn't read
-// "UNKN" letter by letter. The visible word stays as it is.
+// "UNKN" letter by letter. The word on screen stays as it is.
 const SPOKEN = { UNKN: 'unknown' };
 
 /** `word` as a screen reader should say it. */
