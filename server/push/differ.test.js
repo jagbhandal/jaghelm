@@ -596,9 +596,18 @@ test('#395: a key whose monitor moved on starts fresh', () => {
   ]);
 });
 
-test('#395: a key whose monitor has gone from the snapshot keeps its own state, as before', () => {
-  // Paused or deleted while down, on a running container whose own status is up.
-  assert.deepEqual(sent(fed({ 'n1:x': ['down', '1'] }), fed({ 'n1:x': ['up'] })), ['service_recovered n1:x down->up']);
+test('#395: a key whose monitor has gone and that no monitor feeds now starts fresh', () => {
+  // Paused or deleted while down, on a running container whose own status is up: no false recovery.
+  const paused = fed({ 'n1:x': ['up'] });
+  assert.deepEqual(sent(fed({ 'n1:x': ['down', '1'] }), paused), []);
+  // Unpaused while still down: a new outage, as for a monitor with no container (#390).
+  assert.deepEqual(sent(paused, fed({ 'n1:x': ['down', '1'] })), ['service_down n1:x up->down']);
+  // Unpaused up, or deleted for good: nothing more.
+  assert.deepEqual(sent(paused, fed({ 'n1:x': ['up', '1'] })), []);
+  assert.deepEqual(sent(paused, fed({ 'n1:x': ['up'] })), []);
+});
+
+test('#395: a key that a monitor new to the snapshot feeds keeps its own state, as before', () => {
   // Deleted from Kuma and added again (a new id) for the same service, still down: no repeat.
   assert.deepEqual(sent(fed({ 'n1:x': ['down', '1'] }), fed({ 'n1:x': ['down', '9'] })), []);
   assert.deepEqual(sent(fed({ 'n1:x': ['down', '1'] }), fed({ 'n1:x': ['up', '9'] })), ['service_recovered n1:x down->up']);
@@ -613,6 +622,8 @@ test('#395: a monitor an explicit mapping gives several cards is sent card by ca
     'service_recovered n1:x down->up',
     'service_recovered n2:x down->up',
   ]);
+  // It fed several cards and now feeds one other: that card is its own, not one of theirs.
+  assert.deepEqual(sent(fed({ 'n1:x': ['down', '1'], 'n2:x': ['down', '1'] }), fed({ 'n3:x': ['down', '1'] })), ['service_down n3:x unknown->down']);
 });
 
 test('#395: a snapshot that records no monitors (written before #395) is diffed key by key', () => {

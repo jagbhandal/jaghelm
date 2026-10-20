@@ -97,13 +97,18 @@ function keysByMonitor(monitorOf) {
  * - A key whose monitor last cycle feeds another key now starts fresh
  *   ("unknown"), whatever feeds it now: that state went with the monitor, so
  *   the key sends no false recovery and no repeat down push.
+ * - A key whose monitor last cycle has gone from the snapshot (paused or
+ *   deleted: Kuma no longer lists it) and that no monitor feeds now starts
+ *   fresh too: its state was the monitor's, so a running card whose monitor is
+ *   paused or deleted while down sends no false recovery, as a monitor with no
+ *   container sends nothing then (#390).
  *
  * Otherwise the key keeps its own state, as before #395: a card with no
- * monitor, a key whose last monitor has gone from the snapshot (paused,
- * deleted, Pending) whoever feeds it now, a monitor that feeds several cards
- * (explicit mappings, each card sent on its own), and every key of a snapshot
- * written before #395, which records no monitors (so a deploy sends nothing
- * for it).
+ * monitor last cycle, a key that a monitor new to the snapshot feeds now (one
+ * deleted from Kuma and added again, under a new id), a monitor that feeds
+ * several cards (explicit mappings, each card sent on its own), and every key
+ * of a snapshot written before #395, which records no monitors (so a deploy
+ * sends nothing for it).
  */
 function serviceHistory(prev, prevMonitorOf, nextMonitorOf) {
   const prevKeys = keysByMonitor(prevMonitorOf);
@@ -119,6 +124,8 @@ function serviceHistory(prev, prevMonitorOf, nextMonitorOf) {
     // (A monitor that fed this key last cycle and still does returned above.)
     const before = Object.hasOwn(prevMonitorOf, key) ? prevMonitorOf[key] : undefined;
     if (before !== undefined && nextKeys.has(before)) return 'unknown';
+    // Its monitor has gone and nothing feeds it now: the state was the monitor's.
+    if (before !== undefined && monitor === undefined) return 'unknown';
     return stateOf(key);
   };
 }
