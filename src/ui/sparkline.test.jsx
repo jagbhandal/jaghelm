@@ -123,6 +123,20 @@ describe('Sparkline', () => {
     await waitFor(() => expect(popup()).toBeNull());
   });
 
+  it('keeps its tooltip from assistive tech: the live region and the description say it (#289)', async () => {
+    // Exposed, the tooltip's text would sit at the end of <body>, outside every
+    // landmark, repeating what the live region just said (axe's region rule).
+    const user = userEvent.setup();
+    render(<Sparkline label="CPU, last hour" points={CPU} unit="%" />);
+    await user.tab();
+    await waitFor(() => expect(popup()).toHaveTextContent('41%08:42'));
+    expect(popup()).toHaveAttribute('aria-hidden', 'true');
+    await user.keyboard('{ArrowLeft}');
+    await waitFor(() =>
+      expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent('30% at 08:38')
+    );
+  });
+
   it('says the point the arrows reach in a polite live region', async () => {
     const user = userEvent.setup();
     render(<Sparkline label="CPU, last hour" points={CPU} unit="%" />);
