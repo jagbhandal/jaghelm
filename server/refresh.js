@@ -686,16 +686,33 @@ function giteaRepoList(body) {
 }
 
 /**
- * The message in a Gitea error answer, for the log: its `message`, or the
- * `error` repos/search reports its own failures in. The token and any
- * credential in a URL are taken out before it is cut to GITEA_MESSAGE_MAX
- * characters, so the cut leaves no part of one. undefined without a message.
+ * `text` fit for the log: the token and any credential in a URL are taken out
+ * before it is cut to GITEA_MESSAGE_MAX characters, so the cut leaves no part
+ * of one.
+ */
+function giteaLogText(text, token) {
+  const clean = redactSecrets(token ? text.split(token).join('[redacted]') : text);
+  return clean.length > GITEA_MESSAGE_MAX ? `${clean.slice(0, GITEA_MESSAGE_MAX)}…` : clean;
+}
+
+/**
+ * The message in a Gitea error answer, for the log (see giteaLogText): its
+ * `message`, or the `error` repos/search reports its own failures in.
+ * undefined without a message.
  */
 function giteaErrorMessage(body, token) {
   const raw = body?.message ?? body?.error;
   if (typeof raw !== 'string' || raw === '') return undefined;
-  const text = redactSecrets(token ? raw.split(token).join('[redacted]') : raw);
-  return text.length > GITEA_MESSAGE_MAX ? `${text.slice(0, GITEA_MESSAGE_MAX)}…` : text;
+  return giteaLogText(raw, token);
+}
+
+/**
+ * An error thrown while polling Gitea, for the log (see giteaLogText). Node's
+ * fetch puts the request URL in its message, so a GITEA_URL with a user and
+ * password in it would otherwise reach the log every cycle.
+ */
+function giteaErrorText(err, token) {
+  return giteaLogText(String(err?.message || err), token);
 }
 
 /**
@@ -703,16 +720,18 @@ function giteaErrorMessage(body, token) {
  * GITEA_NOT_CONFIGURED when GITEA_URL is not set, which polls nothing. null
  * (nothing cached) when Gitea failed, so the route answers 502. A repos/search
  * answer without a repo list fails it too, with a log line giving the status
- * and what Gitea said (#399).
+ * and what Gitea said (#399), and so does every repo's commits request failing.
+ * Some of them failing leaves those repos out. Logged errors are redacted (see
+ * giteaLogText).
  */
 async function _refreshGitea() {
   if (!giteaConfigured()) {
     setCache('gitea', GITEA_NOT_CONFIGURED);
     return GITEA_NOT_CONFIGURED;
   }
+  const url = process.env.GITEA_URL;
+  const token = process.env.GITEA_TOKEN || '';
   try {
-    const url = process.env.GITEA_URL;
-    const token = process.env.GITEA_TOKEN || '';
     // Header, not ?token= — Gitea logs full request URLs, which would leak it.
     const opts = token ? { headers: { Authorization: `token ${token}` } } : {};
 
@@ -754,6 +773,17 @@ async function _refreshGitea() {
       })
     );
 
+    // A request that threw, or a body that is not JSON. With every repo's
+    // failing, an empty list would read as a Gitea with no recent commits.
+    const failed = repoCommits.filter((r) => r.status === 'rejected');
+    if (failed.length === repos.length) {
+      log.error(
+        { repos: repos.length, err: giteaErrorText(failed[0].reason, token) },
+        'Gitea refresh error: every commits request failed'
+      );
+      return null;
+    }
+
     const result = repoCommits
       .filter((r) => r.status === 'fulfilled' && r.value.commits.length > 0)
       .map((r) => r.value)
@@ -766,7 +796,7 @@ async function _refreshGitea() {
     setCache('gitea', result);
     return result;
   } catch (err) {
-    log.error({ err }, 'Gitea refresh error');
+    log.error({ err: giteaErrorText(err, token) }, 'Gitea refresh error');
     return null;
   }
 }

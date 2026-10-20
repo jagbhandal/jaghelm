@@ -7,7 +7,9 @@
  * says so, and the boot logs it once.
  *
  * A repos/search answer without a repo list (an error object, a proxy's HTML
- * page) logs what Gitea sent and fails like an HTTP error (#399).
+ * page) logs what Gitea sent and fails like an HTTP error (#399). So does every
+ * repo's commits request failing. No log line carries the token or a URL's
+ * password.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -309,9 +311,15 @@ test('the line never carries the token, the Authorization header or URL credenti
   assert.equal(lines[0].message, `${'y'.repeat(200)}…`);
 });
 
-test('a repo list in either shape still refreshes (#399)', async () => {
+test('a repo list in either shape still refreshes, an empty one too (#399)', async () => {
   const repo = { name: 'r', full_name: 'o/r', fork: false, mirror: false, archived: false };
-  for (const search of [{ ok: true, data: [repo] }, [repo]]) {
+  for (const [search, expected] of [
+    [{ ok: true, data: [repo] }, ['o/r']],
+    [[repo], ['o/r']],
+    // A Gitea with no repo the token can see: a success, not "no repo list".
+    [{ ok: true, data: [] }, []],
+    [[], []],
+  ]) {
     globalThis.fetch = async (url) => {
       const body = String(url).includes('/repos/search')
         ? search
@@ -321,7 +329,107 @@ test('a repo list in either shape still refreshes (#399)', async () => {
 
     const { result, lines } = await refreshOnce();
 
-    assert.deepEqual(result.map((r) => r.fullName), ['o/r']);
-    assert.deepEqual(lines, []);
+    assert.deepEqual(result.map((r) => r.fullName), expected, JSON.stringify(search));
+    assert.deepEqual(getCached('gitea'), result, 'cached');
+    assert.deepEqual(lines, [], JSON.stringify(search));
+    let errors;
+    await captureLogs(async () => {
+      errors = await runCycleRefreshes([['gitea', refreshGitea]]);
+    });
+    assert.deepEqual(errors, [], JSON.stringify(search));
   }
+});
+
+test('a GITEA_URL with a user and password: the error line keeps the password out', async () => {
+  // Node's own fetch: it refuses a URL with credentials, and its error names the URL.
+  globalThis.fetch = realFetch;
+  const saved = process.env.GITEA_URL;
+  process.env.GITEA_URL = 'http://jag:hunter2@127.0.0.1:9';
+  let out;
+  try {
+    out = await refreshOnce();
+  } finally {
+    process.env.GITEA_URL = saved;
+  }
+
+  assert.equal(out.result, null);
+  assert.deepEqual(
+    out.lines.map((l) => [l.level, l.msg]),
+    [['error', 'Gitea refresh error']]
+  );
+  const line = JSON.stringify(out.lines[0]);
+  assert.match(out.lines[0].err, /credentials/, 'the real fetch error, not some other');
+  assert.ok(!line.includes('hunter2'), line);
+  assert.ok(!line.includes('jag:hunter2@'), line);
+});
+
+/**
+ * Make repos/search list the repos `a` and `b`, and each commits request
+ * answer what `commits[repo]` gives: a Response, or a thrown error.
+ */
+function commitsAnswer(commits) {
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes('/repos/search')) {
+      const repos = ['a', 'b'].map((n) => ({ name: n, full_name: `o/${n}`, fork: false, mirror: false, archived: false }));
+      return Response.json({ ok: true, data: repos });
+    }
+    return commits[u.match(/\/repos\/o\/(\w+)\/commits/)[1]]();
+  };
+}
+
+const COMMITS = () =>
+  Response.json([{ sha: 'abcdef123', commit: { message: 'm', author: { date: '2026-10-10', name: 'a' } } }]);
+
+test('every commits request failing fails the refresh: one redacted line, nothing cached, a cycle error, a 502', async () => {
+  const token = process.env.GITEA_TOKEN;
+  commitsAnswer({
+    a: () => {
+      throw new Error(`token ${token} refused, connect ECONNREFUSED http://jag:hunter2@gitea.test:3060/api/v1/repos/o/a`);
+    },
+    b: () => new Response('<html>502 Bad Gateway</html>', { status: 502, headers: { 'content-type': 'text/html' } }),
+  });
+
+  const { result, lines } = await refreshOnce();
+
+  assert.equal(result, null);
+  assert.equal(getCached('gitea'), null, 'nothing cached');
+  assert.deepEqual(
+    lines.map((l) => [l.level, l.msg, l.repos]),
+    [['error', 'Gitea refresh error: every commits request failed', 2]]
+  );
+  assert.match(lines[0].err, /ECONNREFUSED/);
+  const line = JSON.stringify(lines[0]);
+  for (const secret of [token, 'hunter2']) assert.ok(!line.includes(secret), `${secret} in ${line}`);
+
+  let errors;
+  let res;
+  await captureLogs(async () => {
+    errors = await runCycleRefreshes([['gitea', refreshGitea]]);
+    const app = express();
+    app.use('/api', infrastructureRoutes);
+    res = await request(app).get('/api/gitea/activity');
+  });
+  assert.deepEqual(errors, ['gitea']);
+  assert.equal(res.status, 502);
+});
+
+test('some commits requests failing: the others are listed, as before, with no log line', async () => {
+  commitsAnswer({
+    a: () => {
+      throw new Error('fetch failed');
+    },
+    b: COMMITS,
+  });
+
+  const { result, lines } = await refreshOnce();
+
+  assert.deepEqual(result.map((r) => r.fullName), ['o/b']);
+  assert.deepEqual(getCached('gitea'), result);
+  assert.deepEqual(lines, []);
+  let errors;
+  await captureLogs(async () => {
+    errors = await runCycleRefreshes([['gitea', refreshGitea]]);
+  });
+  assert.deepEqual(errors, []);
 });
