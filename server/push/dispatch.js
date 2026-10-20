@@ -198,16 +198,18 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, upgrade 
  * one, dispatch the resulting events, then advance the previous snapshot
  * (ALWAYS, so the next cycle has a prev). With no previous snapshot, every
  * entity is new to it (diffSnapshots, #448): each open problem pages once, on
- * this cycle, and the snapshot advanced to holds it from then on.
+ * this cycle, and the snapshot advanced to holds it from then on. That is so
+ * whatever the sources say (#461): a source failing then is in the snapshot
+ * like any other cycle's, and pages after its usual 2 cycles.
  *
  * The builder is handed the previous snapshot, so what the status model can't
  * call, and the parts fed by a source that failed this cycle, can be kept from
  * it (buildSnapshot, #232, #292). Advancing to that snapshot keeps them for the
  * next cycle too, however long the failure. `status` is the model the snapshot
  * was built from: each event takes its words from it.
- * A builder that returns null has no snapshot to give (a baseline taken while a
- * source fails would record its failure as state): the cycle is skipped, and
- * nothing is diffed, sent or advanced.
+ * A builder that returns null has no snapshot to give (the cycle has no status
+ * model: refresh.js runStatusAndPush): the cycle is skipped, and nothing is
+ * diffed, sent or advanced.
  *
  * Total error isolation: the entire body is wrapped so it can NEVER reject.
  * It runs inside the background refresh loop and must never break that loop.
@@ -231,9 +233,8 @@ export async function runPushCycle({ buildSnapshotFn, status = null, store, fcm,
     const prev = snapshot.prev();
     const snap = buildSnapshotFn(prev);
     if (snap === null) {
-      // A baseline would record a failed source as state (buildSnapshot), or
-      // the cycle has no status model (refresh.js runStatusAndPush).
-      logger.debug({ baseline: prev === null }, 'push cycle skipped: no snapshot this cycle');
+      // The cycle has no status model (refresh.js runStatusAndPush).
+      logger.debug('push cycle skipped: no snapshot this cycle');
       return;
     }
 

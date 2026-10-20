@@ -178,7 +178,8 @@ export function cachesOfAssembled(r, { ups = NO_UPS, cron = [], sources } = {}) 
 /**
  * One cycle's push snapshot, as a JagHelm that has just started would build
  * it: a model seeded from `prev` (its levels), then the snapshot from that.
- * Returns the snapshot (null: no baseline yet) and the status.
+ * Returns the snapshot (never null since #461: there is no baseline wait) and
+ * the status.
  */
 export function snapshotAfter(
   caches,

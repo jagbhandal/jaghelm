@@ -462,15 +462,33 @@ test("buildSnapshot: every source ok -> only what the model can't call is taken 
   assert.deepEqual(held.hosts.pi, fresh.hosts.pi);
 });
 
-test('buildSnapshot: no prev -> no baseline while Prometheus fails with no host read, or the UPS read fails', () => {
-  assert.equal(after(failedCycle({ prometheus: false }), null), null, 'every host unread');
-  assert.equal(after(failedCycle({ ups: false }), null), null, 'the UPS unread');
-  assert.equal(after(failedCycle({ prometheus: false, kuma: false, ups: false }), null), null);
+test('#461: buildSnapshot: no prev -> a snapshot whatever the sources say; a failed source is in it, what it feeds is not', () => {
+  const promDown = after(failedCycle({ prometheus: false }), null);
+  assert.deepEqual(promDown, {
+    services: { 'vm103:gitea': 'down', 'vm103:radarr': 'down' }, // Kuma answers
+    monitorOf: {},
+    hosts: {}, // every host unread
+    ups: { state: 'unknown' },
+    cron: { 'vm103:backup': 'failure' },
+    sources: { kuma: 'ok', prometheus: 'failing' },
+  });
+
+  const upsDown = after(failedCycle({ ups: false }), null);
+  assert.deepEqual(upsDown.ups, { state: 'unknown' }, 'the UPS unread');
+  assert.deepEqual(
+    upsDown.sources,
+    { kuma: 'ok', prometheus: 'failing' },
+    'the model reads it as Prometheus failing'
+  );
+  assert.deepEqual(Object.keys(upsDown.hosts), ['pi', 'vm103'], 'every host read');
+
+  const allDown = after(failedCycle({ prometheus: false, kuma: false, ups: false }), null);
+  assert.deepEqual(allDown.hosts, {});
+  assert.deepEqual(allDown.sources, { kuma: 'failing', prometheus: 'failing' });
+  assert.deepEqual(allDown.cron, { 'vm103:backup': 'failure' }, 'cron has no upstream to fail');
 });
 
-test('buildSnapshot: no prev -> a Kuma failure, or a Prometheus failure a host was read through, is still a baseline', () => {
-  // Either can last as long as JagHelm runs (no Kuma at KUMA_URL; a query that
-  // always times out), and waiting would leave push without a baseline.
+test('buildSnapshot: no prev -> a Kuma failure, or a Prometheus failure a host was read through, gives a snapshot too', () => {
   const kumaDown = after(failedCycle({ kuma: false }), null);
   assert.deepEqual(
     kumaDown.services,
@@ -489,7 +507,7 @@ test('buildSnapshot: no prev -> a Kuma failure, or a Prometheus failure a host w
     ups: NO_UPS,
   });
   const snap = after(caches, null);
-  assert.deepEqual(Object.keys(snap.hosts), ['pi'], 'nas has no data: not in the baseline');
+  assert.deepEqual(Object.keys(snap.hosts), ['pi'], 'nas has no data: not in the snapshot');
   assert.equal(snap.hosts.pi.reachable, true);
 });
 
@@ -499,7 +517,11 @@ test('buildSnapshot: a missing services or UPS cache (cold, or expired) is a fai
   assert.deepEqual(snap.services, PREV.services);
   assert.deepEqual(snap.hosts, PREV.hosts);
   assert.deepEqual(snap.ups, PREV.ups);
-  assert.equal(after(cold, null), null, 'and never a baseline');
+  assert.deepEqual(
+    after(cold, null),
+    { services: {}, monitorOf: {}, hosts: {}, ups: { state: 'unknown' }, cron: {}, sources: {} },
+    'with no prev, nothing is read from them (#461)'
+  );
   assert.deepEqual(after(cachesOf({ services: EMPTY_SERVICES, ups: null }), PREV).ups, PREV.ups);
 });
 

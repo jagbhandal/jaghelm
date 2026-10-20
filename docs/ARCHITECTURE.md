@@ -342,10 +342,10 @@ only that: for a host, only the readings whose queries failed. Push holds an
 unknown at its last known state, so a metric query that keeps failing holds
 that reading's level on every host (and, for a host with no `up` series, its
 reachability), and a host's `up` at 0 still pages. A missing payload (a cold
-cache after a restart, or one past its TTL) counts as failed, and no baseline
-is taken while the UPS read fails or Prometheus fails with no host read. So an
-outage of Prometheus, Kuma or the NUT exporter sends no alert about what it
-watches, only its own "monitoring source down" push (4.7, "Push"; and
+cache after a restart, or one past its TTL) counts as failed. So an outage of
+Prometheus, Kuma or the NUT exporter sends no alert about what it watches, only
+its own "monitoring source down" push, also when JagHelm starts into the outage
+with no push snapshot (#461; 4.7, "Push"; and
 [mobile/DESIGN.md](mobile/DESIGN.md), "Deterministic state-change detection").
 
 #### Kuma monitors and containers
@@ -989,6 +989,14 @@ that changed:
   entity first seen while its source fails is unknown, so it sends nothing
   until the source answers, and is new then. A restart with a valid snapshot
   is not a first sight: it sends nothing again and clears nothing.
+- With no snapshot, the first cycle is diffed whatever the sources say
+  (#461): there is no baseline to wait for. A source failing then is in the
+  snapshot written, so it sends its `source_down` after its 2 cycles and one
+  `source_recovered` when it answers; what it feeds sends nothing until then,
+  and what is in trouble pages once it is read. A Kuma service going down or
+  a job failing pages as on any cycle. (Before, the first snapshot waited for
+  the UPS read and Prometheus, which silenced every push meanwhile, for as
+  long as the UPS query kept failing.)
 - A monitoring source (Prometheus, Kuma, NUT) the model lists as failed for two
   cycles in a row (about a minute) sends one `source_down`, and one
   `source_recovered` when it answers. The snapshot keeps each source as `ok`,
