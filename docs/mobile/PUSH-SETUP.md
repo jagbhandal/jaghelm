@@ -110,17 +110,17 @@ This is **manual on the prod host** — no CI/deploy step injects it. The prod s
    > Never leave the key in `/tmp`, `~/Downloads`, or any shared / world-readable directory —
    > this is the exact mistake that leaks server push credentials.
 
-4. **Bind-mount it read-only and point the env at it.** In `/opt/stacks/jaghelm/compose.yaml`,
-   add the mount under the existing `volumes:`:
+4. **Bind-mount it read-only and point the env at it.** Add the mount in
+   `/opt/stacks/jaghelm/compose.override.yaml` (create it next to `compose.yaml`). Compose
+   merges it into `compose.yaml` automatically, adding this mount to the existing `volumes:`,
+   and it survives `compose.yaml` updates: JagHelm's own deploy replaces `compose.yaml` on its
+   host at every deploy and never touches the override.
 
    ```yaml
    services:
      jaghelm:
-       # …existing config…
        volumes:
-         - ./data:/app/data
-         - ./uploads:/app/uploads
-         - ./secrets/fcm-service-account.json:/app/secrets/fcm-service-account.json:ro   # <-- add
+         - ./secrets/fcm-service-account.json:/app/secrets/fcm-service-account.json:ro
    ```
 
    In `/opt/stacks/jaghelm/.env` (already loaded via `env_file`), add:
