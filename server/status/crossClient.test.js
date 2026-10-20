@@ -247,7 +247,7 @@ const KNOWN = [
   },
   {
     name: 'a UPS with no known state does not page on battery',
-    issue: 'found by #293, to be filed',
+    issue: '#448',
     why:
       'The push snapshot keeps the UPS as online, on_battery or unknown, and the differ pages only ' +
       'online to on_battery (push/differ.js diffUps: "any state involving unknown => no event"). A UPS ' +
