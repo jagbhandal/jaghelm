@@ -966,18 +966,20 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
 - **A storage pool whose read failed** (#468) is a reading with no value: while
   a node's pools are not read, each pool the model held a level for and that
   isn't listed keeps it, as above, with the same reason ("Storage pool
-  local-lvm: no reading (warning held until below 85 %)"). A node's pools are
-  read when it has a Proxmox entry and each one fetched its pool list
-  (`proxmoxPools` in `model.js`). They are not read when a fetch failed
-  (`_error`), its storage read failed (the preset then gives no list, not an
-  empty one), a fetch failed before it was known as Proxmox, the integrations
-  refresh left no payload, or no Proxmox entry names the node. A pool's episode
-  ends only when the node's pools were read without it: push's snapshot drops
-  it on that cycle, and over its line it sends one `host_threshold_cleared`,
-  since the node on the screen no longer shows it. So a Proxmox integration
-  removed or disabled while a pool is over its line keeps its node at that
-  level until the integration lists its pools again or the node leaves
-  `services.yaml`, as a removed sensor does.
+  local-lvm: no reading (warning held until below 85 %)"). `proxmoxPools` in
+  `model.js` says which nodes' pools were read. A node with Proxmox entries
+  has its pools read when each one fetched its pool list; a fetch that failed
+  (`_error`) or whose storage read failed (the preset then gives no list, not
+  an empty one) is not a read. The integrations refresh stamps `_preset` and
+  `_target` on an entry whose fetch threw too, so a Proxmox integration that is
+  still set up always has an entry for its node. A node no Proxmox entry names
+  has none set up any more (the integration was removed, disabled or pointed
+  at another node): its pools were read, as an empty list. With no
+  integrations payload (the refresh failed, or its cache is cold or past its
+  TTL), no node's pools were read. A pool's episode ends only when the node's
+  pools were read without it: push's snapshot drops it on that cycle, and over
+  its line it sends one `host_threshold_cleared`, since the node on the screen
+  no longer shows it.
 - **Issues** are the entities in `crit`, `warn` or `unknown`, plus the failed
   sources: crit before warn before unknown; within a level by subsystem order
   (sources, Services, Nodes, Power, Jobs, Backups, Integrations), then oldest
@@ -1043,8 +1045,9 @@ that changed:
   `critical` for crit; one back to ok sends `host_threshold_cleared`; crit
   falling to warn sends nothing. The model holds a level through its hysteresis
   band and waits CPU's 2 cycles, so push does too (#361). A storage pool at
-  warn or crit that a Proxmox read that succeeded no longer lists leaves the
-  snapshot with its `host_threshold_cleared` (#468); one at ok leaves quietly.
+  warn or crit that a Proxmox read that succeeded no longer lists, or whose
+  node has no Proxmox integration any more, leaves the snapshot with its
+  `host_threshold_cleared` (#468); one at ok leaves quietly.
 - What the model can't call up or down holds its last known state and sends
   nothing: a service pending or in maintenance, an entity a failed source made
   unknown, a reading whose query failed or that has no value this cycle (the

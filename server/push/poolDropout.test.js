@@ -68,8 +68,14 @@ const FAILURES = {
       _status: { state: 'ok', since: 0, failures: 0, nextAttemptAt: null },
     },
   },
-  'the fetch threw before it was known as Proxmox': {
-    proxmox: { _error: 'boom', _status: { state: 'backing_off', since: 0, failures: 1 } },
+  // The refresh stamps a fetch that threw with its preset and target too.
+  'the fetch threw': {
+    proxmox: {
+      _error: 'boom',
+      _target: 'pve:pve',
+      _preset: 'proxmox',
+      _status: { state: 'backing_off', since: 0, failures: 1, nextAttemptAt: 0 },
+    },
   },
 };
 
@@ -235,6 +241,64 @@ test('#468: a pool gone while JagHelm was stopped ends on the first read that su
     assert.equal(filed(p), undefined, 'it leaves the snapshot');
   } finally {
     p.close();
+  }
+});
+
+// ── The Proxmox integration removed, disabled or retargeted ──────────────
+
+// What the integrations refresh leaves once the node has no Proxmox entry: the
+// integration removed or disabled (only enabled ones have an entry), or
+// pointed at another node.
+const GONE = {
+  'removed or disabled': { gitea: { Stars: '3', _preset: 'gitea', _status: { state: 'ok' } } },
+  'retargeted to another node': {
+    proxmox: { ...listed([pool(93)]).proxmox, _target: 'pve2:pve' },
+  },
+};
+
+for (const [how, payload] of Object.entries(GONE)) {
+  test(`#468: the Proxmox integration ${how} while a pool is at warn: one clear, the node healthy, then nothing`, async () => {
+    const p = pushPipeline();
+    try {
+      const { sent, nodes } = await play([50, 93, payload, payload, payload], p);
+      assert.deepEqual(sent, [[], [SENT_THRESHOLD], [SENT_CLEARED], [], []]);
+      assert.deepEqual(
+        nodes.slice(2).map((n) => [n.state, n.reason, Object.hasOwn(n.conditions, KEY)]),
+        Array(3).fill(['ok', 'Healthy', false])
+      );
+      assert.equal(filed(p), undefined, 'it leaves the snapshot');
+    } finally {
+      p.close();
+    }
+  });
+
+  test(`#468: the Proxmox integration ${how} across a restart: one clear, then nothing`, async () => {
+    const p = pushPipeline();
+    try {
+      const { sent, nodes } = await play(
+        [50, 93, 'restart', payload, payload, 'restart', payload],
+        p
+      );
+      assert.deepEqual(sent, [[], [SENT_THRESHOLD], [SENT_CLEARED], [], []]);
+      assert.equal(nodes.at(-1).state, 'ok');
+    } finally {
+      p.close();
+    }
+  });
+}
+
+test('#468: a snapshot from before the deploy with a pool on a node no Proxmox entry names: one clear, then nothing', async () => {
+  const first = pushPipeline();
+  try {
+    await play([50, 97], first);
+    first.restart(); // the deploy: the file holds the pool at crit
+    const { sent } = await play(
+      [{ gitea: { _preset: 'gitea', _status: { state: 'ok' } } }, {}, {}],
+      first
+    );
+    assert.deepEqual(sent, [[SENT_CLEARED], [], []]);
+  } finally {
+    first.close();
   }
 });
 

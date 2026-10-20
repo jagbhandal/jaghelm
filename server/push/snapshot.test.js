@@ -217,14 +217,15 @@ test("buildHosts: a storage pool leaves only when its node's pools were read wit
   const judged = statusOf(
     nodeEntity('a', { state: 'ok', conditions: { disk: 'ok', 'pool:kept': 'ok' } })
   );
-  const reads = (read) => new Map([['a', { pools: [{ name: 'kept', percent: 40 }], read }]]);
+  const reads = (read) => (node) =>
+    node === 'a' ? { pools: [{ name: 'kept', percent: 40 }], read } : { pools: [], read: false };
   assert.deepEqual(buildHosts(judged, prev, reads(true)).a.levels, {
     disk: 'ok',
     'pool:kept': 'ok',
   });
-  // Not read (a fetch failed), or no read for the node at all: held.
+  // Not read (a fetch failed), or no pool reads given (no payload): held.
   assert.deepEqual(buildHosts(judged, prev, reads(false)).a.levels, prev.a.levels);
-  assert.deepEqual(buildHosts(judged, prev, new Map()).a.levels, prev.a.levels);
+  assert.deepEqual(buildHosts(judged, prev).a.levels, prev.a.levels);
   // The model didn't judge its readings this cycle (no data, or unreachable): held, read or not.
   const noData = statusOf(nodeEntity('a', { state: 'unknown', word: 'No signal' }));
   assert.deepEqual(buildHosts(noData, prev, reads(true)).a, prev.a);

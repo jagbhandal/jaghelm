@@ -442,7 +442,7 @@ With no `prev` (a first run, or a missing or unreadable file) there is nothing t
 | Host | `reachable` true → false, or new to the snapshot and unreachable | `host_unreachable` | critical |
 | Host | `reachable` false → true | `host_recovered` | info |
 | Host | a reading's level rises (`ok` → `warn`, or to `crit`), or a reading new to the snapshot (a new host's included) is at `warn` or `crit`: CPU, memory, disk, temperature, a storage pool | `host_threshold` | warning (critical for `crit`) |
-| Host | a reading's level returns to `ok` (below its line − hysteresis), or a storage pool at `warn` or `crit` that a Proxmox read that succeeded no longer lists (#468) | `host_threshold_cleared` | info |
+| Host | a reading's level returns to `ok` (below its line − hysteresis), or a storage pool at `warn` or `crit` that a Proxmox read that succeeded no longer lists, or whose node has no Proxmox integration any more (#468) | `host_threshold_cleared` | info |
 | UPS | `online`/`unknown` (no known state) → `on_battery` | `ups_on_battery` | critical |
 | UPS | `on_battery` → `online` | `ups_restored` | info |
 | Cron | ok/new → `failure` | `cron_failed` | warning (critical for a job marked as a backup, #478) |

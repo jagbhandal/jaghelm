@@ -42,6 +42,8 @@ import { serviceHistory } from './differ.js';
 // The monitoring sources whose failure pages (spec §6.1), in key order.
 const MONITORING_SOURCES = ['kuma', 'nut', 'prometheus'];
 const LEVELS = new Set(['ok', 'warn', 'crit']);
+/** No node's storage pools read this cycle (buildHosts' default). */
+const NO_POOL_READS = () => ({ pools: [], read: false });
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -152,14 +154,16 @@ export function buildMonitorOf(monitorOf, services) {
  * A storage pool holds the same way while its node's pools were not read (a
  * Proxmox fetch failed, #468), as the model holds it. It leaves the map when
  * the model ends its episode: on a cycle the model judged the node's readings
- * and the node's pools were read (`pools`, model.js proxmoxPools) without it.
- * The differ then sends its clear if it was over its line.
+ * and the node's pools were read (`poolsOf`, model.js proxmoxPools) without it,
+ * which includes a node no Proxmox entry names any more. The differ then sends
+ * its clear if it was over its line.
  *
  * @param {any} status
  * @param {Record<string, any>} [prevHosts]
- * @param {Map<string, { pools: any[], read: boolean }>} [pools]  this cycle's proxmoxPools
+ * @param {(node: string) => { pools: any[], read: boolean }} [poolsOf]  this
+ *   cycle's proxmoxPools; without it, no node's pools were read
  */
-export function buildHosts(status, prevHosts = {}, pools = new Map()) {
+export function buildHosts(status, prevHosts = {}, poolsOf = NO_POOL_READS) {
   const held = isObject(prevHosts) ? prevHosts : {};
   const entries = [];
   for (const e of entitiesOf(status)) {
@@ -178,8 +182,8 @@ export function buildHosts(status, prevHosts = {}, pools = new Map()) {
     for (const [reading, level] of Object.entries(e.conditions)) {
       if (LEVELS.has(level)) levels[reading] = level;
     }
-    const read = pools.get(node);
-    if (read?.read) {
+    const read = poolsOf(node);
+    if (read.read) {
       // The pools the model judged (status/rules.js judgeNode takes only named ones).
       const listed = new Set(
         read.pools.filter((p) => typeof p?.name === 'string').map((p) => `pool:${p.name}`)

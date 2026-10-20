@@ -304,22 +304,31 @@ const proxmox = (extra) => ({
 });
 
 test('#468: proxmoxPools: the pools each node’s reads listed, and whether that is the whole list', () => {
-  const got = proxmoxPools({
+  const poolsOf = proxmoxPools({
     a: { _preset: 'proxmox', _target: 'n1:pve', _storagePools: [lvm(50)] },
     b: { _preset: 'proxmox', _target: 'n2:pve', _storagePools: [lvm(50)] },
     c: { _preset: 'proxmox', _target: 'n2:pve2', _error: 'HTTP 500' },
     d: { _preset: 'proxmox', _target: 'n3:pve' }, // its storage read failed: no list
     e: { _preset: 'proxmox', _storagePools: [] }, // no target: "pve"
-    f: { _error: 'boom' }, // failed before it was known as Proxmox: no node
-    g: { _preset: 'gitea', _target: 'n4:gitea' },
+    f: { _preset: 'gitea', _target: 'n4:gitea' },
   });
-  assert.deepEqual(Object.fromEntries(got), {
-    n1: { pools: [lvm(50)], read: true },
-    n2: { pools: [lvm(50)], read: false },
-    n3: { pools: [], read: false },
-    pve: { pools: [], read: true },
-  });
-  assert.deepEqual(proxmoxPools(null), new Map(), 'no payload: no node has its pools read');
+  assert.deepEqual(
+    Object.fromEntries(['n1', 'n2', 'n3', 'pve', 'n4', 'n5'].map((n) => [n, poolsOf(n)])),
+    {
+      n1: { pools: [lvm(50)], read: true },
+      n2: { pools: [lvm(50)], read: false }, // one of its two fetches failed
+      n3: { pools: [], read: false },
+      pve: { pools: [], read: true },
+      // No Proxmox entry names them: none is set up for them, so none are listed.
+      n4: { pools: [], read: true },
+      n5: { pools: [], read: true },
+    }
+  );
+  assert.deepEqual(
+    proxmoxPools(null)('n1'),
+    { pools: [], read: false },
+    'no payload: no node has its pools read'
+  );
 });
 
 test('#468: pool at warn → its Proxmox fetch fails → back inside the band is one warning in the model, since its first cycle', () => {
@@ -364,6 +373,24 @@ test('#468: a read that succeeds and no longer lists a pool ends its episode in 
       ['warn', 'warn'],
       ['ok', null],
       ['ok', 'ok'],
+    ]
+  );
+});
+
+test('#468: the Proxmox integration removed: a pool it held ends in the model; no payload holds it', () => {
+  const statuses = cycles(
+    [proxmox({ _storagePools: [lvm(93)] }), null, {}, {}].map((integrations) =>
+      inputs({ nodes: PVE, integrations })
+    )
+  );
+  const pve = statuses.map((s) => s.entities.find((e) => e.id === 'nodes/pve'));
+  assert.deepEqual(
+    pve.map((e) => [e.state, e.conditions['pool:local-lvm'] ?? null]),
+    [
+      ['warn', 'warn'],
+      ['warn', 'unknown'], // the refresh left no payload: held
+      ['ok', null], // the payload has no Proxmox entry for pve: it has ended
+      ['ok', null],
     ]
   );
 });

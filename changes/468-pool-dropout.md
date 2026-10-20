@@ -7,4 +7,6 @@
 - A pool that Proxmox lists with no size, such as inactive storage, is no
   longer read as 0 %, so it never ends a warning.
 - A pool over its line that Proxmox no longer lists now sends one "back to
-  normal" and leaves the node's warning, once a fetch succeeds without it.
+  normal" and leaves the node's warning, once a fetch succeeds without it. So
+  does a pool whose Proxmox integration is removed, disabled or pointed at
+  another node.
