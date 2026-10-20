@@ -418,7 +418,9 @@ function diffCron(prev, next, words, events) {
       node: nodeOf(key),
       title: CRON_TEXT[type],
       body: line(`${entity?.name ?? idPart(key)} on ${nodeOf(key)}`, reason),
-      severity: SEVERITY[type],
+      // A failure the model judges crit (a failed backup) pages as critical,
+      // as the board shows it (#478); every other cron push keeps its type's.
+      severity: type === 'cron_failed' && entity?.state === 'crit' ? 'critical' : SEVERITY[type],
       reason,
       prev: before,
       next: after,

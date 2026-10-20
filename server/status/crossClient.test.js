@@ -209,25 +209,7 @@ function describe(f) {
  * settles it and where it shows (fixture, starting snapshot). Each one covers
  * only its own findings, only where it says, and must still happen there.
  */
-const KNOWN = [
-  {
-    name: 'a failed backup pushes as a warning',
-    issue: '#446',
-    why:
-      'The model calls a failed backup crit (the screen shows it red), but its push stays cron_failed at ' +
-      '"warning", normal priority on Android, as a job\'s does. Jag has not decided whether it should ' +
-      'page as critical (the question in PR #446). If it should, delete this entry.',
-    at: [
-      ['incident', 'empty'],
-      ['incident', 'healthy'],
-    ],
-    covers: (f) =>
-      f.subject.startsWith('backups/') &&
-      f.what === 'severity' &&
-      f.model === 'crit' &&
-      f.push === 'warning',
-  },
-];
+const KNOWN = [];
 
 // ── The push side of a fixture ───────────────────────────────────────────
 

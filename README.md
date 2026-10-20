@@ -96,7 +96,7 @@ For a longer walkthrough — including standing up Prometheus and cAdvisor if yo
 ### Requirements
  
 - Docker + docker compose
-- Prometheus reachable on the network, with `node_exporter` on each node you want to monitor
+- Prometheus reachable on the network, with `node_exporter` on each node you want to monitor. JagHelm calls its query API (`/api/v1/query`), its health check (`/-/healthy`, for `/api/readyz`) and, when a node has no `up` series or its `up` is 0, its target list (`/api/v1/targets`); a proxy in front of Prometheus must allow all three
 - (Optional but recommended) `cAdvisor` for container-level CPU/RAM/network stats
 - (Optional) Uptime Kuma for service health
 - (Optional) NUT exporter if you want UPS panels
@@ -248,7 +248,7 @@ A job is a backup only when `backupJobs` in `data/display-config.json` names it,
 { "backupJobs": ["pve:proxmox-backup", "nas:b2-sync"] }
 ```
 
-A backup shows under Backups instead of Jobs in `/api/status`, and is judged more strictly than a job: a failed last run is critical, overdue a warning (a job is a warning either way). Its push notifications are the job's, unchanged. Proxmox backup results reported by a PVE notification webhook arrive as a job like any other, so name that job here too. Edit the file (JagHelm reads it again on the next refresh) or save the whole config with `POST /api/display-config`; a Settings page for the list comes later. An entry that isn't a `"node:job"` string is ignored, with one warning in the log.
+A backup shows under Backups instead of Jobs in `/api/status`, and is judged more strictly than a job: a failed last run is critical, overdue a warning (a job is a warning either way). Its push notifications are the job's, except that a failed backup pages as critical (high priority) where a failed job is a warning. Proxmox backup results reported by a PVE notification webhook arrive as a job like any other, so name that job here too. Edit the file (JagHelm reads it again on the next refresh) or save the whole config with `POST /api/display-config`; a Settings page for the list comes later. An entry that isn't a `"node:job"` string is ignored, with one warning in the log.
 
 ## Features
  
