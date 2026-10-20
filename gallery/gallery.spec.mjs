@@ -6,17 +6,21 @@
  *    state's own element, or the whole viewport for an isolated state (an open
  *    overlay, focus, toasts), whose popups sit outside it;
  *  - axe finds no violation in the whole document, the portal roots at the
- *    end of <body> included, with every rule axe runs by default;
+ *    end of <body> included, with every rule axe runs by default and two
+ *    exceptions scoped to Base UI's markup (axe.mjs), which the tests below
+ *    show are narrow and still needed;
  *  - nothing is logged as an error, and nothing is fetched from another origin.
  *
  * Plus: the baselines are exactly the variants (no stale file), and the full
  * gallery page lists every variant.
  */
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { READY_ATTRIBUTE, STATE_ATTRIBUTE, VARIANTS } from './catalog.js';
+import { AXE_REGION_DEFAULT, FOCUS_GUARD, SELECT_LIST, axeFindings } from './axe.mjs';
 
 /** The frozen clock: every Date the page reads is this. */
 const NOW = new Date('2026-10-20T09:00:00Z');
@@ -62,11 +66,7 @@ for (const variant of VARIANTS) {
     const target = variant.state.isolated ? page : page.locator(`[id="${variant.id}"]`);
     await expect.soft(target).toHaveScreenshot(`${variant.id}.png`);
 
-    const { violations } = await new AxeBuilder({ page }).analyze();
-    const found = violations.flatMap((v) =>
-      v.nodes.map((n) => `${v.id} (${v.impact}): ${n.target.join(' ')}: ${n.failureSummary}`)
-    );
-    expect.soft(found, 'axe violations').toEqual([]);
+    expect.soft(await axeFindings(page), 'axe violations').toEqual([]);
     expect(problems, 'errors and outside requests').toEqual([]);
   });
 }
@@ -95,4 +95,61 @@ test('the full gallery shows every variant', async ({ page }) => {
   expect([...inline, ...framed].sort()).toEqual(VARIANTS.map((v) => v.id).sort());
   expect(new Set(inline).size, 'ids are unique').toBe(inline.length);
   expect(problems).toEqual([]);
+});
+
+/** The open Select, alone and settled: where both axe exceptions apply. */
+async function openSelect(page) {
+  const problems = await open(page, '/gallery/index.html?state=select-open--dark-comfortable');
+  await expect(page.locator('html')).toHaveAttribute(READY_ATTRIBUTE, 'true');
+  await settled(page);
+  return problems;
+}
+
+test('the axe exceptions are still needed: without them the open Select fails', async ({
+  page,
+}) => {
+  await openSelect(page);
+  expect(await page.locator(FOCUS_GUARD).count(), "Base UI's focus guards").toBeGreaterThan(0);
+  expect(await page.locator(SELECT_LIST).count(), "the Select's list").toBe(1);
+  const { violations } = await new AxeBuilder({ page }).analyze();
+  // When Base UI changes and this fails, drop the exception it names (axe.mjs).
+  expect(violations.map((v) => v.id).sort()).toEqual(['aria-hidden-focus', 'region']);
+});
+
+test('the axe exceptions are narrow: the same findings elsewhere still fail', async ({ page }) => {
+  await openSelect(page);
+  expect(await axeFindings(page), 'the open Select passes with the exceptions').toEqual([]);
+  await page.evaluate(() => {
+    // Focusable and hidden from assistive tech, but not a Base UI focus guard.
+    const hidden = document.createElement('span');
+    hidden.id = 'planted-hidden-focus';
+    hidden.setAttribute('aria-hidden', 'true');
+    hidden.tabIndex = 0;
+    hidden.textContent = 'Hidden, yet reachable by Tab';
+    document.querySelector('main').append(hidden);
+    // Content outside every landmark: in <body>, and in another portal root.
+    const outside = document.createElement('p');
+    outside.id = 'planted-outside';
+    outside.textContent = 'Outside every landmark';
+    const portal = document.createElement('div');
+    portal.id = 'planted-portal';
+    portal.setAttribute('data-base-ui-portal', '');
+    portal.className = 'jh-ui';
+    portal.append(Object.assign(document.createElement('p'), { textContent: 'In another portal' }));
+    document.body.append(outside, portal);
+  });
+  const found = await axeFindings(page);
+  const rule = (id, target) => found.some((f) => f.startsWith(`${id} `) && f.includes(target));
+  expect(rule('aria-hidden-focus', '#planted-hidden-focus'), found.join('\n')).toBe(true);
+  expect(rule('region', '#planted-outside'), found.join('\n')).toBe(true);
+  expect(rule('region', '#planted-portal'), found.join('\n')).toBe(true);
+  expect(found, 'nothing of the Select itself').toHaveLength(3);
+});
+
+test("the region exception keeps axe's own default list", () => {
+  // axe-core's region check, as installed: our matcher only adds the Select's
+  // list to it. An axe upgrade that changes its default fails here.
+  const source = readFileSync(createRequire(import.meta.url).resolve('axe-core'), 'utf8');
+  const rule = source.slice(source.indexOf("id: 'region',"), source.indexOf("id: 'region',") + 400);
+  expect(rule).toContain(`regionMatcher: '${AXE_REGION_DEFAULT}'`);
 });

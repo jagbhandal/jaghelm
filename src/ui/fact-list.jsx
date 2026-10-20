@@ -10,7 +10,8 @@
  * is the Overview drawer's (a 130px label column, 13px, the mock's 20px
  * lines); narrower, the Phone board's detail screen (120px, 14px). A value
  * may be any node (a host in mono, a status word); a label wraps in its
- * column, a value in its own.
+ * column, a value in its own, and a value with no break in it (a URL, a SHA,
+ * a hostname) breaks anywhere rather than run past it (#289).
  *
  * It is a description list: each label a term, each value its definition.
  * Without facts it renders nothing.
@@ -29,7 +30,7 @@ function FactList({ facts = [], className, ...props }) {
         {facts.map((f) => (
           <Fragment key={f.key}>
             <dt className="text-text-3">{f.label}</dt>
-            <dd className="min-w-0 font-semibold text-text-1">{f.value}</dd>
+            <dd className="min-w-0 font-semibold wrap-anywhere text-text-1">{f.value}</dd>
           </Fragment>
         ))}
       </dl>

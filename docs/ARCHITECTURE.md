@@ -1164,8 +1164,9 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   container; CI's `gallery` job): every state of every `src/ui/` component, in
   both themes and densities and the three accents where colour follows the
   accent, screenshotted against `gallery/baselines/` with no tolerance, and
-  axe on each with every default rule, portals included
-  ([GALLERY.md](GALLERY.md)). `npm run gallery:update` regenerates the
+  axe on each with every default rule, portals included, and two exceptions
+  scoped to Base UI's markup around an open Select
+  ([GALLERY.md](GALLERY.md#the-two-axe-exceptions)). `npm run gallery:update` regenerates the
   baselines; an approved change commits them in its PR.
   `scripts/gallery-build.test.mjs` (in `npm test`) keeps the gallery out of
   the production build and the container pinned in step.

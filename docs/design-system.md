@@ -1197,7 +1197,9 @@ Chart colours board:
   columns. From 384px of its own container it is the Overview drawer's (a
   130px label column, 13px on the mock's 20px line); narrower, the Phone
   board's detail screen (120px, 14px). Labels wrap in their column, values in
-  theirs. Without facts it draws nothing.
+  theirs, and a value with no break in it (a URL, a SHA, a hostname) breaks
+  anywhere (`wrap-anywhere`) rather than run past its column or a drawer's
+  edge (#289). Without facts it draws nothing.
 - **Table.** The Infrastructure table: `surface-1` in a subtle edge, 12px
   round, overline headers (`text-3`, the mock's 20px line, 10px above and
   below), rows `h-row` tall with a subtle rule between them, 13px text,

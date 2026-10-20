@@ -72,8 +72,8 @@ variant, alone on its page:
   sit outside it. No tolerance: a threshold of 0 and no pixels allowed to
   differ.
 - **axe finds no violation**, with every rule axe runs by default, on the whole
-  document, the portal roots at the end of `<body>` included. No rule is
-  turned off.
+  document, the portal roots at the end of `<body>` included, with the two
+  exceptions below and no other.
 - **Nothing is logged as an error** (a component missing its required name
   logs one in a production build), and **nothing is fetched from another
   origin**: fonts and everything else are JagHelm's own.
@@ -81,6 +81,34 @@ variant, alone on its page:
 And, once per run: the baselines are exactly the variants (no stale file, none
 missing), and the full gallery page shows every variant. The job fails on any
 of these.
+
+### The two axe exceptions
+
+Both come from Base UI's own markup around an open Select, not from
+JagHelm's components, and each is scoped to that markup alone
+(`gallery/axe.mjs`). **Revisit both when Base UI is upgraded**: a test fails
+once axe passes the open Select without them, so a fixed Base UI shows itself.
+
+- **`aria-hidden-focus` skips only Base UI's focus guards**
+  (`[data-base-ui-focus-guard]`, the element axe names, not anything inside
+  it). Base UI's focus manager puts these spans around an open Select's list,
+  `aria-hidden` with `tabindex="0"` by design (floating-ui's pattern): a
+  guard hands focus on the moment it gets it, so nobody rests on it, and Base
+  UI makes it a button for VoiceOver, whose virtual cursor would skip it
+  otherwise. JagHelm's Select can't change them.
+- **`region` counts the Select's list as a region**
+  (`[data-slot="select-popup"]`, added to axe's own `regionMatcher`). Base UI
+  portals the list to the end of `<body>`, outside every landmark. Other
+  popups already pass: a dialog, drawer, confirm or popover is a `dialog`, the
+  toasts are a region, and the tooltips are hidden from assistive tech (they
+  only repeat the trigger's name or description). Other portals are not
+  exempt.
+
+A test plants the same findings outside those elements (a focusable
+`aria-hidden` element that isn't a guard, text outside every landmark, and
+text in another portal root) and checks that each still fails. Another
+checks that the region list starts from axe's own default, so an axe upgrade
+that changes it shows.
 
 ## Change a component's look
 

@@ -1456,6 +1456,40 @@ function FactListState() {
   );
 }
 
+const LONG_FACTS = [
+  {
+    key: 'url',
+    label: 'Address',
+    value: 'https://photos.jagbhandal.com/api/server/ping?verbose=true&format=json',
+  },
+  {
+    key: 'image',
+    label: 'Image',
+    value: <code>sha256:3f9c2e1a7b6d4c08e5f2a91b3c7d6e4f5a8b9c0d</code>,
+  },
+  {
+    key: 'host',
+    label: 'Backup target',
+    value: <code>backup-target.storage.jagbhandal.internal</code>,
+  },
+  { key: 'note', label: 'Note', value: 'Words still wrap between words first, as any value does.' },
+];
+
+function FactListLongState() {
+  return (
+    <Row align="start" gap={24}>
+      <Stack width={420}>
+        <Caption>420px: the Overview drawer</Caption>
+        <FactList facts={LONG_FACTS} />
+      </Stack>
+      <Stack width={340}>
+        <Caption>340px: the phone</Caption>
+        <FactList facts={LONG_FACTS} />
+      </Stack>
+    </Row>
+  );
+}
+
 function TableState() {
   return (
     <Table caption="Nodes" columns={NODE_COLUMNS} rows={NODES} onRowOpen={noop} minWidth={720} />
@@ -1611,6 +1645,7 @@ export const RENDERS = Object.freeze({
   'entity-row': () => <EntityRowState />,
   'entity-row-narrow': () => <EntityRowState width={390} />,
   'fact-list': FactListState,
+  'fact-list-long': FactListLongState,
   table: TableState,
   'table-empty': TableEmptyState,
   'table-scroll': TableScrollState,

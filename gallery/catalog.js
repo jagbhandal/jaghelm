@@ -187,6 +187,7 @@ export const CATALOG = Object.freeze([
   s('entity-row', 'Data', 'EntityRow: from 672px, every state, a long name'),
   s('entity-row-narrow', 'Data', 'EntityRow: below 672px, the newest 12 beats'),
   s('fact-list', 'Data', "FactList: the drawer's and the phone's"),
+  s('fact-list-long', 'Data', 'FactList: values with no break in them, a URL, a SHA and a host'),
   s('table', 'Data', 'Table: rows that open, numbers, a status cell'),
   s('table-empty', 'Data', 'Table: no rows'),
   s('table-scroll', 'Data', 'Table: wider than its frame, scrolling inside it'),
