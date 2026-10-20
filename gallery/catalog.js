@@ -200,6 +200,26 @@ export const CATALOG = Object.freeze([
     'Data',
     'Chart colours: the six slots and the ramp, on bg, surface-1 and surface-2'
   ),
+
+  // Shell (#296)
+  s(
+    'app-header',
+    'Shell',
+    'AppHeader: an incident, healthy on Settings, no signal, and before the first answer',
+    { accent: true }
+  ),
+  s('side-nav', 'Shell', 'SideNav: an open app, loaded apps, the Alerts count, Add app', {
+    accent: true,
+  }),
+  s('side-nav-collapsed', 'Shell', 'SideNav: collapsed to icons, Alerts open', { accent: true }),
+  s('side-nav-unload', 'Shell', 'SideNav: Unload on a loaded app, by keyboard', {
+    isolated: true,
+    focus: 'button[aria-label="Unload Uptime Kuma"]',
+    wait: { 'button[aria-label="Unload Uptime Kuma"]:focus-visible': 1 },
+  }),
+  s('bottom-tabs', 'Shell', "BottomTabs: the phone's tabs, Alerts open with its count", {
+    accent: true,
+  }),
 ]);
 
 /**

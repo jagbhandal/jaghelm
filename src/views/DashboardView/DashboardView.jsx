@@ -36,7 +36,7 @@ const NO_COMMITS = [];
  *   - HelmGrid              → drag/resize-aware responsive grid
  *   - DndContext            → service-card drag between panels
  */
-export default function DashboardView({ refreshKey, tick, active, onHealth, onOpenSettings }) {
+export default function DashboardView({ refreshKey, tick, active, onOpenSettings }) {
   const { config, setConfig } = useConfig();
   // Mobile detection — used to disable drag/resize on small screens
   const mobileRef = useRef(null);
@@ -59,14 +59,8 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
     history,
     servicesLoaded,
     sources,
-    overallHealth,
     retry,
   } = useDashboardData(refreshKey, { tick, active });
-
-  // The navbar health dot reads this board's own /api/services result.
-  useEffect(() => {
-    if (overallHealth) onHealth?.(overallHealth);
-  }, [overallHealth, onHealth]);
 
   const removeCronJob = useCallback(
     async (node, job) => {
@@ -436,9 +430,6 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
     // HelmGrid handles layout save via onLayoutChange — nothing extra needed here
   }, []);
 
-  // Welcome banner config
-  const wm = config.welcomeMessage || {};
-
   // First-run empty state: services have loaded, but no nodes were discovered
   // and the user hasn't created any custom groups. Show a friendly CTA instead
   // of an empty/Loading grid.
@@ -496,22 +487,6 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
       <div className="sr-only" role="status" aria-live="polite">
         {liveErrors}
       </div>
-      {wm.enabled && wm.text && (
-        <div className="welcome-banner">
-          <div className="welcome-text" style={{ fontSize: wm.fontSize || 20 }}>
-            {wm.text}
-          </div>
-          {wm.description && (
-            <div
-              className="welcome-desc"
-              style={{ fontSize: Math.max((wm.fontSize || 20) * 0.6, 12) }}
-            >
-              {wm.description}
-            </div>
-          )}
-        </div>
-      )}
-
       {isFirstLoading ? (
         <div
           role="status"

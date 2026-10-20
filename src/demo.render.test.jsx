@@ -60,7 +60,22 @@ async function renderDemo(scenario) {
   expect(screen.getByText('Network Edge')).toBeInTheDocument();
 }
 
-const healthLabel = () => document.querySelector('.nav-health-label');
+// The header's status link (#296): the lamp's state, and what it says.
+const headerStatus = () =>
+  within(within(screen.getByRole('banner')).getByRole('status')).getByRole('link');
+
+/**
+ * What the header must say for the demo's own /api/status answer in
+ * `scenario`: the model's word and sentence; or, for an answer without a
+ * status, "No signal" while it waits for one.
+ */
+function expectedHeader(scenario) {
+  const { body } = demoResponse({ method: 'GET', path: '/api/status', query: {}, scenario });
+  if (!body?.overall) return 'No signal: Waiting for the first check';
+  const { state, sentence } = body.overall;
+  const word = { crit: 'Critical', warn: 'Warning', unknown: 'No signal' }[state] ?? 'All systems normal';
+  return `${word}: ${sentence}`;
+}
 const panel = (title) => screen.getByText(title).closest('.glass-card');
 const gridItem = (title) => screen.getByText(title).closest('.helmgrid-item');
 
@@ -126,7 +141,9 @@ describe('the demo, rendered', () => {
   it('is not green while a service is down', async () => {
     await renderDemo('incident');
 
-    expect(healthLabel()).toHaveTextContent('Service Disruption');
+    // The header says what the demo's /api/status says, and never all clear.
+    expect(headerStatus()).toHaveAccessibleName(expectedHeader('incident'));
+    expect(headerStatus()).not.toHaveAttribute('data-state', 'ok');
     // One service card is down (its status badge reads "down"): Jellyfin's.
     expect(screen.getAllByText('down')).toHaveLength(1);
     const card = within(panel('App Server')).getByText('down').parentElement.parentElement;
@@ -136,7 +153,9 @@ describe('the demo, rendered', () => {
   it('is green in the healthy scenario', async () => {
     await renderDemo('healthy');
 
-    expect(healthLabel()).toHaveTextContent('All Systems Operational');
+    // Never red or amber; the header says what the demo's /api/status says.
+    expect(headerStatus()).toHaveAccessibleName(expectedHeader('healthy'));
+    expect(['crit', 'warn']).not.toContain(headerStatus().getAttribute('data-state'));
     expect(screen.queryAllByText('down')).toEqual([]);
     expect(screen.getAllByText('running').length).toBeGreaterThan(10);
   });

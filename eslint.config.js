@@ -7,7 +7,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
-  { ignores: ['**/dist/**', 'dist-gallery/**', 'test-results/**', 'coverage/**', 'public/**', '**/node_modules/**', 'mobile/visual/out/**', 'mobile/android/**'] },
+  { ignores: ['**/dist/**', 'dist-gallery/**', 'dist-e2e/**', 'test-results/**', 'coverage/**', 'public/**', '**/node_modules/**', 'mobile/visual/out/**', 'mobile/android/**'] },
   js.configs.recommended,
   // Frontend (desktop `src/` + mobile app `mobile/`) — browser + React + JSX
   {
@@ -66,6 +66,7 @@ export default [
       'vite.config.js',
       'vite.gallery.config.js',
       'playwright.config.mjs',
+      'playwright.e2e.config.mjs',
       'eslint.config.js',
     ],
     languageOptions: {
@@ -77,10 +78,10 @@ export default [
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
     },
   },
-  // The gallery's Playwright tests and container pin: Node, with browser globals
-  // inside page.evaluate(...) and waitForFunction(...) callbacks.
+  // The gallery's and the shell's Playwright tests and the container pin: Node,
+  // with browser globals inside page.evaluate(...) and waitForFunction(...) callbacks.
   {
-    files: ['gallery/**/*.mjs'],
+    files: ['gallery/**/*.mjs', 'e2e/**/*.mjs'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',

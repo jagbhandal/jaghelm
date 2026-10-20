@@ -390,16 +390,16 @@ The integration data will appear on the matching service card in the dashboard a
 
 ## 9. Step 8: Embed Services as Tabs
 
-One of JagHelm's standout features is the ability to embed your web-based tools as tabs in the navigation bar. Instead of opening Uptime Kuma in a new browser tab, it loads inside JagHelm.
+One of JagHelm's standout features is the ability to embed your web-based tools as apps inside JagHelm. Instead of opening Uptime Kuma in a new browser tab, it loads inside JagHelm, under the status header.
 
 **To add a tab:**
 
-1. Open Settings > **Tabs**
+1. Open Settings > **Tabs** (or **Add app** in the sidebar)
 2. Click **Add Tab**
 3. Enter a name (e.g. "Uptime Kuma") and the URL (e.g. `http://your-kuma-host:3001`)
 4. Save
 
-The new tab appears in the top navigation bar. Click it to load the service inline. Click "Dashboard" to go back. The tab stays loaded while you are elsewhere, so it is where you left it when you come back.
+The new app appears in the sidebar's **Apps** group (under **More** on a phone) and in the command palette ("Open Uptime Kuma"), and has its own address (`/apps/<id>`). Click it to load the service inline; click **Overview** to go back. The app stays loaded while you are elsewhere, so it is where you left it when you come back: a dot beside it says so, and **Unload** (on the entry, under the pointer) frees it. At most five stay loaded at once; opening a sixth unloads the one you used least recently.
 
 If the service hasn't loaded after 8 seconds, the tab says it is slow to load and offers Retry; the service keeps loading and shows as soon as it is ready. If its server refuses to be shown inside another site, the tab says it won't open inside JagHelm and offers "Open in new tab" and "How to allow embedding". JagHelm's server finds that out by reading the service's headers, so it has to be able to reach the service's URL; when it can't, the tab shows whatever the browser shows.
 

@@ -6,7 +6,7 @@
 // preload helper wraps every lazy import() in the build and fires a cancelable
 // `vite:preloadError` on window when one fails, whether a preloaded dependency
 // or the import itself. On the first failure in a build we cancel it and
-// reload, so the page comes back on the new build, on the tab that was open.
+// reload, so the page comes back on the new build, on the page that was open.
 //
 // The same event also fires for a chunk that is served but throws while it
 // evaluates, and for a fetch that fails because the browser is offline. Both
@@ -30,13 +30,10 @@
 // If the page is still here RELOAD_STALL_MS after asking (the navigation was
 // cancelled), pending ends and the boundaries show the error screen.
 //
-// The open tab: App.jsx reports it through noteActiveTab(). Just before the
-// reload we store it under TAB_KEY, which only this path writes, and AppMain
-// takes it once at boot (takeReloadTab), so an ordinary reload still opens the
-// dashboard.
+// The open page comes back by itself: the URL names it (src/router, #296), and
+// a reload keeps the URL.
 
 export const RELOAD_KEY = 'jaghelm-chunk-reload';
-export const TAB_KEY = 'jaghelm-chunk-reload-tab';
 
 // A reload normally replaces the page in well under a second; one still here
 // after this long isn't going to happen.
@@ -44,7 +41,6 @@ export const RELOAD_STALL_MS = 10_000;
 
 let pending = false;
 let stallTimer = null;
-let currentTab = null;
 const stallListeners = new Set();
 
 /** True once a reload has been started; the page is about to be replaced. */
@@ -61,23 +57,6 @@ export function onChunkReloadStall(listener) {
   return () => stallListeners.delete(listener);
 }
 
-/** App.jsx reports the open tab here, for the page a chunk reload brings up. */
-export function noteActiveTab(tab) {
-  currentTab = tab;
-}
-
-/** The tab a chunk reload left for this boot, read once; null when none. Never throws. */
-export function takeReloadTab(getStorage = () => window.sessionStorage) {
-  try {
-    const storage = getStorage();
-    const tab = storage.getItem(TAB_KEY);
-    storage.removeItem(TAB_KEY);
-    return tab;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Record this build as reloaded and say whether the reload may go ahead: false
  * when this build already reloaded once, or when storage throws or loses the
@@ -91,16 +70,6 @@ function claimReload(getStorage, build) {
     return storage.getItem(RELOAD_KEY) === build;
   } catch {
     return false;
-  }
-}
-
-/** Store or drop the open tab for the next boot. Never throws. */
-function keepTab(getStorage, tab) {
-  try {
-    if (tab && tab !== 'dashboard') getStorage().setItem(TAB_KEY, tab);
-    else getStorage().removeItem(TAB_KEY);
-  } catch {
-    // The reload still helps; it lands on the dashboard.
   }
 }
 
@@ -122,13 +91,11 @@ export function installChunkReload({
       return;
     }
     if (!build || !claimReload(getStorage, build)) return;
-    keepTab(getStorage, currentTab);
     pending = true;
     try {
       reload();
     } catch {
       pending = false;
-      keepTab(getStorage, null);
       return;
     }
     event.preventDefault();

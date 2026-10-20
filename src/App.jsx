@@ -1,28 +1,37 @@
 import React, {
   useState,
   useEffect,
-  useLayoutEffect,
   useCallback,
+  useMemo,
   useRef,
   lazy,
   Suspense,
 } from 'react';
-import NavBar from './components/NavBar';
 import LoginPage from './components/LoginPage';
 import CommandPalette from './components/CommandPalette';
 import DashboardView from './views/DashboardView';
+import { THEMES } from './components/settings/themes.js';
 import { ConfigProvider } from './context/ConfigContext.jsx';
 import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
 import { useThemeVars } from './hooks/useThemeVars.js';
 import { usePageVisible } from './hooks/usePageVisible.js';
 import { useConfigPersistence } from './hooks/useConfigPersistence.js';
 import { useAppFrames } from './hooks/useAppFrames.js';
+import { useStatus } from './hooks/useStatus.js';
 import { defaultConfig } from './defaultConfig.js';
+import { AppShell, ShellApps } from '@ui/app-shell';
+import { navigate, useRoute } from './router/useRoute.js';
+import { pathTo } from './router/routes.js';
+import { ShellHeader, ShellSideNav, ShellTabs } from './shell/ShellChrome.jsx';
+import { appsOf, navGroups } from './shell/nav.js';
+import { alertsBadge } from './shell/statusView.js';
 
-// Settings (13-tab tree) and the app frames aren't needed for the default
-// dashboard render — code-split them so they don't weigh down the initial bundle.
+// Settings (13-tab tree), the app frames and the Alerts page aren't needed for
+// the default Overview render — code-split them so they don't weigh down the
+// initial bundle.
 const AppFrames = lazy(() => import('./views/AppFrames'));
 const SettingsView = lazy(() => import('./views/SettingsView'));
+const AlertsPage = lazy(() => import('./shell/AlertsPage.jsx'));
 import {
   apiFetch,
   setAuthToken as setApiAuthToken,
@@ -30,7 +39,6 @@ import {
   setReadOnlyServer,
 } from './api/client.js';
 import { secureStore } from './storage/index.js';
-import { noteActiveTab, takeReloadTab } from './chunkReload.js';
 
 /**
  * App — outer shell owning auth resolution and the login screen. The
@@ -126,20 +134,36 @@ export default function App() {
   );
 }
 
+// The Overview stays mounted on other pages, out of sight (it keeps its state),
+// so returning to it is instant.
+const OUT_OF_SIGHT = { visibility: 'hidden', height: 0, overflow: 'hidden' };
+
+/** The pages the nav lists, as the command palette offers them (routes.js). */
+const PAGES = [
+  { id: 'overview', label: 'Overview', href: pathTo('overview') },
+  { id: 'alerts', label: 'Alerts', href: pathTo('alerts') },
+  { id: 'settings', label: 'Settings', href: pathTo('settings') },
+];
+
+/** The instance's name in the header: the stock 'JAGHELM' reads as the product's name. */
+function instanceName(title) {
+  const t = typeof title === 'string' ? title.trim() : '';
+  return t && t !== 'JAGHELM' ? t : 'JagHelm';
+}
+
 function AppMain({ authRequired, demo, onLogout }) {
   const toast = useToast();
-  // A chunk reload (chunkReload.js, #379) left the tab that was open; take it
-  // once, so an ordinary reload still opens the dashboard.
-  const [activeTab, setActiveTab] = useState(() => takeReloadTab() || 'dashboard');
-  // Before the browser paints, so the tab is noted before its chunk can fail.
-  useLayoutEffect(() => noteActiveTab(activeTab), [activeTab]);
+  // The URL is the page (src/router, #296): a deep link, Back and Forward, a
+  // reload and a chunk reload after a deploy all land where it says.
+  const { route, params } = useRoute();
   const [theme, setTheme] = useState(() => localStorage.getItem('jaghelm-theme') || 'dark');
-  const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [overallHealth, setOverallHealth] = useState('up');
   const [tick, setTick] = useState(0);
   // Start with localStorage for instant render; the server fetch overrides it.
   // `migrate` upgrades the legacy `jagnet-config` key to the current one.
   const [config, setConfig] = useState(() => readStoredConfig({ migrate: true }));
+  // Whether the server's config has loaded (or failed to): until then an app
+  // the browser's copy lacks may still be on its way.
+  const [configLoaded, setConfigLoaded] = useState(false);
   const intervalRef = useRef(null);
 
   useEffect(() => {
@@ -159,39 +183,33 @@ function AppMain({ authRequired, demo, onLogout }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
 
   // Display-config save/load (localStorage + debounced server save,
   // flush-on-unload, authoritative server load on mount). The demo refuses
   // writes, so nothing is sent to it: no save fails and no toast shows on load.
-  const savedConfig = useConfigPersistence(config, setConfig, setTheme, toast, { readOnly: demo });
+  const savedConfig = useConfigPersistence(config, setConfig, setTheme, toast, {
+    readOnly: demo,
+    onLoaded: () => setConfigLoaded(true),
+  });
 
   // Apply config to the document as CSS custom properties
   // (accent/opacity/font family/font sizes/blur).
   useThemeVars(config);
 
   const intervalMs = (config.refreshInterval || 30) * 1000;
-  // One tick = one DashboardView fetch round. The navbar health dot reads the
-  // SERVER-computed overallHealth off that round's /api/services payload
-  // (DashboardView reports it through onHealth), so the web header dot and the
-  // mobile Overview dot stay symmetric without a second /api/services fetch.
-  const doRefresh = useCallback(() => {
-    setLastUpdated(new Date());
-    setTick((t) => t + 1);
-  }, []);
+  // The header's status: /api/status once an interval, paused while the browser
+  // tab is hidden (useStatus). It replaced the dashboard's health dot.
+  const poll = useStatus({ intervalMs });
 
-  // Poll only while the dashboard is on screen: not in a hidden browser tab, and
-  // not on Settings or an iframe tab (the dashboard stays mounted there, hidden).
-  // DashboardView loads on mount and refreshes at once when it becomes active.
+  // One tick = one DashboardView fetch round, only while the Overview is on
+  // screen: not in a hidden browser tab, and not on another page (the Overview
+  // stays mounted there, out of sight). DashboardView loads on mount and
+  // refreshes at once when it becomes active.
+  const doRefresh = useCallback(() => setTick((t) => t + 1), []);
   const pageVisible = usePageVisible();
-  const dashboardActive = activeTab === 'dashboard' && pageVisible;
-
-  // Back on the dashboard: DashboardView's resume refresh starts now, so restart
-  // the "Updated" clock with it.
-  const wasActiveRef = useRef(dashboardActive);
-  useEffect(() => {
-    if (dashboardActive && !wasActiveRef.current) setLastUpdated(new Date());
-    wasActiveRef.current = dashboardActive;
-  }, [dashboardActive]);
+  const onOverview = route.id === 'overview';
+  const dashboardActive = onOverview && pageVisible;
 
   // Set up refresh interval — debounced so slider dragging doesn't spam intervals
   useEffect(() => {
@@ -206,20 +224,76 @@ function AppMain({ authRequired, demo, onLogout }) {
     };
   }, [doRefresh, intervalMs, dashboardActive]);
 
-  const allTabs = [
-    { id: 'dashboard', label: 'Dashboard', type: 'dashboard' },
-    ...(config.tabs || []),
-  ];
-
-  // A restored tab the config no longer has would hide the dashboard and show
-  // nothing in its place, so fall back to the dashboard.
-  const tabKnown = activeTab === 'settings' || allTabs.some((t) => t.id === activeTab);
+  // The embedded apps (#269): an app mounts on its first visit and stays
+  // loaded, hidden, after, up to MAX_LOADED_APPS (useAppFrames).
+  const apps = useMemo(() => appsOf(config.tabs), [config.tabs]);
+  const appId = route.id === 'app' ? params.id : null;
+  const openApp = appId == null ? null : (apps.find((a) => String(a.id) === appId) ?? null);
+  const { frames, unload } = useAppFrames(config.tabs, openApp ? openApp.id : null);
+  // An app the config doesn't have shows the Overview, once the server's config
+  // is in: it may only be missing from this browser's copy.
   useEffect(() => {
-    if (!tabKnown) setActiveTab('dashboard');
-  }, [tabKnown]);
+    if (appId != null && !openApp && configLoaded) navigate(pathTo('overview'), { replace: true });
+  }, [appId, openApp, configLoaded]);
 
-  // App tabs mount on their first visit and stay loaded, hidden, after (#269).
-  const appFrames = useAppFrames(allTabs, activeTab);
+  // The apps loaded but not open, as one string, so the nav's groups (and the
+  // memoised sidebar) only change when that set does, not on every render.
+  const loadedKey = frames
+    .filter((f) => !f.active)
+    .map((f) => String(f.tab.id))
+    .join('\n');
+  const badge = useMemo(() => alertsBadge(poll.status, poll.reach), [poll.status, poll.reach]);
+  const groups = useMemo(
+    () =>
+      navGroups({
+        routeId: route.id,
+        appId,
+        apps,
+        loaded: new Set(loadedKey ? loadedKey.split('\n') : []),
+        onUnload: unload,
+        badge,
+      }),
+    [route.id, appId, apps, loadedKey, unload, badge]
+  );
+  const paletteApps = useMemo(
+    () =>
+      apps.map((a) => ({
+        id: String(a.id),
+        label: a.label || String(a.id),
+        href: pathTo('app', { id: String(a.id) }),
+      })),
+    [apps]
+  );
+
+  const logout = useMemo(
+    () =>
+      authRequired
+        ? () => {
+            onLogout();
+            navigate(pathTo('overview'), { replace: true });
+          }
+        : null,
+    [authRequired, onLogout]
+  );
+  const openSettings = useCallback(() => navigate(pathTo('settings')), []);
+  const onSectionChange = useCallback(
+    (section) => navigate(pathTo('settings', { section }), { replace: true }),
+    []
+  );
+
+  // Each page names the browser tab, so history entries tell apart.
+  const name = instanceName(config.title);
+  const pageTitle = route.id === 'app' ? openApp?.label : route.title;
+  useEffect(() => {
+    document.title = pageTitle ? `${pageTitle} — ${name}` : name;
+  }, [pageTitle, name]);
+
+  // Today's ten themes, until #304: a light one draws the shell light.
+  const switches = useMemo(
+    () => ({ theme: THEMES.find((t) => t.id === theme)?.light ? 'light' : 'dark' }),
+    [theme]
+  );
+
   const lazyFallback = (
     <div
       className="lazy-fallback"
@@ -238,66 +312,63 @@ function AppMain({ authRequired, demo, onLogout }) {
         <div className="bg-overlay" />
       </div>
       <div className="bg-mesh" />
-      {config.showDots && activeTab !== 'settings' && <div className="dot-grid" />}
+      {config.showDots && route.id !== 'settings' && <div className="dot-grid" />}
       <div className="app-container">
-        <NavBar
-          tabs={allTabs}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          theme={theme}
-          setTheme={setTheme}
-          health={overallHealth}
-          lastUpdated={lastUpdated}
-          onOpenSettings={() => setActiveTab((t) => (t === 'settings' ? 'dashboard' : 'settings'))}
-          onLogout={
-            authRequired
-              ? () => {
-                  onLogout();
-                  setActiveTab('dashboard');
-                }
-              : null
+        <AppShell
+          switches={switches}
+          header={
+            <ShellHeader
+              name={name}
+              logoUrl={config.logoUrl}
+              status={poll.status}
+              reach={poll.reach}
+              updated={poll.updated}
+              routeId={route.id}
+              onOpenPalette={openPalette}
+              onLogout={logout}
+            />
           }
-        />
+          sidebar={<ShellSideNav groups={groups} />}
+          tabs={<ShellTabs groups={groups} routeId={route.id} badge={badge} />}
+        >
+          <div style={onOverview ? undefined : OUT_OF_SIGHT}>
+            <h1 className="sr-only">Overview</h1>
+            <DashboardView tick={tick} active={dashboardActive} onOpenSettings={openSettings} />
+          </div>
+          <Suspense fallback={lazyFallback}>
+            {route.id === 'alerts' && (
+              <AlertsPage status={poll.status} reach={poll.reach} updated={poll.updated} />
+            )}
+          </Suspense>
+          <Suspense fallback={lazyFallback}>
+            {route.id === 'settings' && (
+              <SettingsView
+                theme={theme}
+                setTheme={setTheme}
+                section={params.section}
+                onSectionChange={onSectionChange}
+              />
+            )}
+          </Suspense>
+          {/* A boundary of its own: another page's chunk loading must not hide the frames. */}
+          <ShellApps label={openApp ? `${openApp.label || openApp.id}, open inside JagHelm` : undefined}>
+            {frames.length > 0 && (
+              <Suspense fallback={lazyFallback}>
+                <AppFrames frames={frames} savedTabs={savedConfig?.tabs} />
+              </Suspense>
+            )}
+          </ShellApps>
+        </AppShell>
         <CommandPalette
           open={paletteOpen}
           onClose={() => setPaletteOpen(false)}
-          tabs={allTabs}
-          onSelectTab={setActiveTab}
-          onOpenSettings={() => setActiveTab('settings')}
+          pages={PAGES}
+          apps={paletteApps}
+          onNavigate={navigate}
           theme={theme}
           setTheme={setTheme}
-          onLogout={
-            authRequired
-              ? () => {
-                  onLogout();
-                  setActiveTab('dashboard');
-                }
-              : null
-          }
+          onLogout={logout}
         />
-        <div
-          style={
-            activeTab === 'dashboard'
-              ? undefined
-              : { visibility: 'hidden', height: 0, overflow: 'hidden' }
-          }
-        >
-          <DashboardView
-            tick={tick}
-            active={dashboardActive}
-            onHealth={setOverallHealth}
-            onOpenSettings={() => setActiveTab('settings')}
-          />
-        </div>
-        <Suspense fallback={lazyFallback}>
-          {activeTab === 'settings' && <SettingsView theme={theme} setTheme={setTheme} />}
-        </Suspense>
-        {/* A boundary of its own: Settings' chunk loading must not hide the frames. */}
-        {appFrames.length > 0 && (
-          <Suspense fallback={lazyFallback}>
-            <AppFrames frames={appFrames} savedTabs={savedConfig?.tabs} />
-          </Suspense>
-        )}
       </div>
     </ConfigProvider>
   );

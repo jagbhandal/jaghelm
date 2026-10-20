@@ -5,10 +5,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import {
   installChunkReload,
   chunkReloadPending,
-  noteActiveTab,
-  takeReloadTab,
   RELOAD_KEY,
-  TAB_KEY,
   RELOAD_STALL_MS,
 } from './chunkReload.js';
 
@@ -60,7 +57,6 @@ function loadPage(options = {}) {
 
 beforeEach(() => {
   window.sessionStorage.clear();
-  noteActiveTab(null);
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -170,13 +166,10 @@ describe('chunk reload guard: one reload per build', () => {
   it('a reload that throws lets the error through', () => {
     const reload = blockedReload();
     loadPage({ reload });
-    noteActiveTab('settings');
     const event = failChunk();
     expect(reload).toHaveBeenCalledTimes(1);
     expect(event.defaultPrevented).toBe(false);
     expect(chunkReloadPending()).toBe(false);
-    // No reload happened, so nothing is left for a later boot to restore.
-    expect(window.sessionStorage.getItem(TAB_KEY)).toBeNull();
   });
 
   it('a reload that never navigates stops counting as pending after the watchdog', () => {
@@ -199,39 +192,15 @@ describe('chunk reload guard: one reload per build', () => {
   });
 });
 
-describe('chunk reload: the open tab comes back', () => {
-  it('stores the open tab before reloading, but not the dashboard, the default anyway', () => {
-    loadPage({ build: BUILD_A });
-    noteActiveTab('dashboard');
+describe('chunk reload: the open page comes back', () => {
+  it('reloads the page at its own URL, which names the page (#296), storing only the build', () => {
+    window.history.replaceState(null, '', '/apps/grafana');
+    const reload = loadPage();
     failChunk();
-    expect(window.sessionStorage.getItem(TAB_KEY)).toBeNull();
-
-    loadPage({ build: BUILD_B });
-    noteActiveTab('settings');
-    failChunk();
-    expect(window.sessionStorage.getItem(TAB_KEY)).toBe('settings');
-  });
-
-  it('stores nothing when the failure goes to the error screen', () => {
-    loadPage({ build: BUILD_B });
-    noteActiveTab('settings');
-    failChunk();
-    loadPage({ build: BUILD_B }); // the same build again: this failure is let through
-    noteActiveTab('grafana');
-    failChunk();
-    expect(window.sessionStorage.getItem(TAB_KEY)).toBe('settings');
-  });
-
-  it('takeReloadTab reads the stored tab once, and gives null when storage throws', () => {
-    window.sessionStorage.setItem(TAB_KEY, 'grafana');
-    expect(takeReloadTab()).toBe('grafana');
-    expect(takeReloadTab()).toBeNull();
-    expect(window.sessionStorage.getItem(TAB_KEY)).toBeNull();
-
-    const blocked = () => {
-      throw new DOMException('The operation is insecure.', 'SecurityError');
-    };
-    expect(takeReloadTab(blocked)).toBeNull();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe('/apps/grafana');
+    expect(Object.keys(window.sessionStorage)).toEqual([RELOAD_KEY]);
+    window.history.replaceState(null, '', '/');
   });
 });
 

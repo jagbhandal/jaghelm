@@ -72,7 +72,7 @@ function scan(files, matches) {
 
 test('the scan covers the web and Android sources, and the server files a stranger sees', () => {
   const files = DIRS.flatMap(sources);
-  assert.ok(files.includes('src/components/NavBar.jsx'), 'src/ is scanned');
+  assert.ok(files.includes('src/components/CommandPalette.jsx'), 'src/ is scanned');
   assert.ok(files.includes('mobile/src/MobileApp.jsx'), 'mobile/src/ is scanned');
   assert.ok(!files.some(isTest), 'tests are left out');
   for (const rel of SERVER_FILES)

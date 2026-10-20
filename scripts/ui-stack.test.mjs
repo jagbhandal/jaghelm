@@ -449,8 +449,8 @@ test('the radius scale under .jh-ui matches the rounded-* utilities', async () =
 
 test("no class today's screens use is also a Tailwind utility, apart from the shared ones", async () => {
   const names = legacyClassNames();
-  // The collection works: a class from a stylesheet, and one only markup uses (NavBar).
-  assert.ok(names.has('glass-card') && names.has('nav-menu-btn'), 'legacy class names not found');
+  // The collection works: a class from a stylesheet, and one only markup uses (AppFrames).
+  assert.ok(names.has('glass-card') && names.has('app-frames'), 'legacy class names not found');
   const compiler = await compileStack();
   let size = compiler.build([]).length;
   const utilities = [];

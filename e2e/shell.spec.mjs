@@ -1,0 +1,317 @@
+/*
+ * The app shell in a real browser (#296): the production build, every /api
+ * request answered here (the demo server's own answers, demoResponse, for the
+ * board; the status model's fixtures for /api/status, built by the server's
+ * model from src/testing/statusFixtures.js; two embedded apps served here), at
+ * 390 and 1440px.
+ *
+ *  - The header says the model's incident sentence, and steel "No signal"
+ *    when the backend can't be reached.
+ *  - Every nav entry opens its page, and every old view is reachable: the
+ *    dashboard, Settings (and its Tabs section, "Add app"), each embedded app.
+ *  - Back, Forward and a reload keep the page.
+ *  - No page scrolls sideways.
+ *  - axe finds nothing on the shell, at both widths, dark and light: the whole
+ *    Alerts page (a page of the new UI), and the shell's chrome around today's
+ *    Overview, whose board later cards rebuild (#297–#300).
+ *
+ * /api/status is route-stubbed with the model's fixture until the demo serves
+ * the model's status itself (#437).
+ */
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { test, expect } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+import { demoResponse } from '../server/demo.js';
+import { NOW } from '../server/testing/statusFixtures.js';
+import { INCIDENT } from '../src/testing/statusFixtures.js';
+
+const APPS = [
+  { id: 'grafana', label: 'Grafana', type: 'iframe', url: '/embedded/grafana' },
+  { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: '/embedded/kuma' },
+];
+const WIDTHS = {
+  phone: { width: 390, height: 844 },
+  desktop: { width: 1440, height: 900 },
+};
+// Today's themes, until #304: the shell draws a light one light.
+const THEMES = { dark: 'dark', light: 'github-light' };
+
+/**
+ * Opens the app at `path`, answering every request here. Returns the server's
+ * state: set `status` to change what /api/status answers ('down' refuses it).
+ */
+async function openApp(page, path = '/', { status = INCIDENT, theme = 'dark' } = {}) {
+  const server = { status };
+  const origin = new URL(test.info().project.use.baseURL).origin;
+  await page.route(
+    (url) => url.origin !== origin,
+    (route) => route.abort()
+  );
+  await page.route('**/embedded/**', (route) => {
+    const name = new URL(route.request().url()).pathname.split('/').pop();
+    return route.fulfill({
+      contentType: 'text/html',
+      body: `<!doctype html><html lang="en"><title>${name}</title><p>Embedded ${name}</p></html>`,
+    });
+  });
+  await page.route('**/api/**', (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname === '/api/status') {
+      if (server.status === 'down') return route.abort('connectionrefused');
+      return route.fulfill({ json: server.status });
+    }
+    if (url.pathname === '/api/icons/cached') return route.fulfill({ status: 404, json: {} });
+    const out = demoResponse({
+      method: request.method(),
+      path: url.pathname,
+      query: Object.fromEntries(url.searchParams),
+      scenario: 'incident',
+    });
+    const body = url.pathname === '/api/display-config' ? { ...out.body, tabs: APPS } : out.body;
+    return route.fulfill({ status: out.status, json: body ?? {} });
+  });
+  await page.addInitScript((id) => localStorage.setItem('jaghelm-theme', id), THEMES[theme]);
+  await page.goto(path);
+  await expect(page.getByRole('banner')).toBeVisible();
+  return server;
+}
+
+const headerStatus = (page) => page.getByRole('banner').getByRole('status').getByRole('link');
+const sidebar = (page) => page.getByRole('navigation', { name: 'Main' });
+const phoneTabs = (page) => page.getByRole('navigation', { name: 'Tabs' });
+
+/** The page scrolls up and down only. */
+async function noSideScroll(page) {
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(overflow, `${page.url()} scrolls sideways`).toBeLessThanOrEqual(0);
+}
+
+/** Each page, as it shows when open. */
+const SHOWS = {
+  overview: (page) => expect(page.getByText('Network Edge')).toBeVisible(),
+  alerts: (page) => expect(page.getByRole('heading', { level: 1, name: 'Alerts' })).toBeVisible(),
+  settings: (page) =>
+    expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible(),
+  tabs: (page) => expect(page.getByRole('heading', { name: /Tabs/ })).toBeVisible(),
+  app: (name) => async (page) => {
+    const frame = page.locator(`iframe[title="${name}"]`);
+    await expect(frame).toBeVisible();
+    await expect(page.frameLocator(`iframe[title="${name}"]`).locator('p')).toContainText(
+      'Embedded'
+    );
+  },
+};
+
+async function expectAt(page, path, shows) {
+  await expect(page).toHaveURL(new RegExp(`${path.replace(/[/]/g, '\\/')}$`));
+  await shows(page);
+  await noSideScroll(page);
+}
+
+test.describe('the header', () => {
+  test.use({ viewport: WIDTHS.desktop });
+
+  test("shows the status model's incident sentence, a link to Alerts", async ({ page }) => {
+    await openApp(page);
+    const status = headerStatus(page);
+    await expect(status).toHaveAttribute('data-state', 'crit');
+    await expect(status).toContainText('Critical');
+    await expect(status).toContainText(INCIDENT.overall.sentence);
+    await status.click();
+    await expectAt(page, '/alerts', SHOWS.alerts);
+  });
+
+  test('is steel "No signal" with the backend down', async ({ page }) => {
+    await openApp(page, '/', { status: 'down' });
+    const status = headerStatus(page);
+    await expect(status).toHaveAttribute('data-state', 'unknown');
+    await expect(status).toContainText('No signal');
+    await expect(status).toContainText("Can't reach JagHelm");
+    await expect(status.locator('[data-slot="status-lamp"]')).toHaveAttribute('data-shape', 'ring');
+    // Steel: the word in the unknown role's colour, as the Android app draws it.
+    const [word, steel] = await page.getByRole('banner').evaluate((header) => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--jh-unknown-fg)';
+      header.append(probe);
+      const said = [...header.querySelectorAll('span')].find((s) => s.textContent === 'No signal');
+      const out = [getComputedStyle(said).color, getComputedStyle(probe).color];
+      probe.remove();
+      return out;
+    });
+    expect(word).toBe(steel);
+  });
+
+  test('goes to "No signal" when the backend stops answering, and back', async ({ page }) => {
+    await page.clock.install();
+    const server = await openApp(page);
+    await expect(headerStatus(page)).toHaveAttribute('data-state', 'crit');
+    server.status = 'down';
+    await page.clock.runFor(30_000);
+    await expect(headerStatus(page)).toHaveAttribute('data-state', 'unknown');
+    server.status = INCIDENT;
+    await page.clock.runFor(30_000);
+    await expect(headerStatus(page)).toHaveAttribute('data-state', 'crit');
+  });
+});
+
+test.describe('at 1440px', () => {
+  test.use({ viewport: WIDTHS.desktop });
+
+  test('every sidebar entry opens its page; every old view is reachable', async ({ page }) => {
+    await openApp(page);
+    await expectAt(page, '/', SHOWS.overview);
+    const nav = sidebar(page);
+    // [entry, where it goes, what shows, the entry marked current there]
+    const steps = [
+      ['Alerts', '/alerts', SHOWS.alerts],
+      ['Grafana', '/apps/grafana', SHOWS.app('Grafana')],
+      ['Uptime Kuma', '/apps/kuma', SHOWS.app('Uptime Kuma')],
+      ['Add app', '/settings/tabs', SHOWS.tabs, 'Settings'],
+      ['Settings', '/settings', SHOWS.settings],
+      ['Overview', '/', SHOWS.overview],
+    ];
+    for (const [name, path, shows, current = name] of steps) {
+      await nav.getByRole('link', { name: new RegExp(`^${name}`) }).click();
+      await expectAt(page, path, shows);
+      await expect(nav.getByRole('link', { name: new RegExp(`^${current}`) })).toHaveAttribute(
+        'aria-current',
+        'page'
+      );
+    }
+    // The header's own links.
+    const header = page.getByRole('banner');
+    await header.getByRole('link', { name: 'Settings' }).click();
+    await expectAt(page, '/settings', SHOWS.settings);
+    await header.getByRole('link', { name: 'JagHelm' }).click();
+    await expectAt(page, '/', SHOWS.overview);
+  });
+
+  test('Back, Forward and a reload keep the page', async ({ page }) => {
+    await openApp(page);
+    const nav = sidebar(page);
+    await nav.getByRole('link', { name: /^Alerts/ }).click();
+    await expectAt(page, '/alerts', SHOWS.alerts);
+    await nav.getByRole('link', { name: /^Grafana/ }).click();
+    await expectAt(page, '/apps/grafana', SHOWS.app('Grafana'));
+    await page.goBack();
+    await expectAt(page, '/alerts', SHOWS.alerts);
+    await page.goForward();
+    await expectAt(page, '/apps/grafana', SHOWS.app('Grafana'));
+    await page.reload();
+    await expectAt(page, '/apps/grafana', SHOWS.app('Grafana'));
+    await page.goto('/settings/tabs');
+    await page.reload();
+    await expectAt(page, '/settings/tabs', SHOWS.tabs);
+  });
+
+  test('the command palette opens an app', async ({ page }) => {
+    await openApp(page);
+    // The apps come with the server's config.
+    await expect(sidebar(page).getByRole('link', { name: /^Uptime Kuma/ })).toBeVisible();
+    await page.keyboard.press('Control+k');
+    await page.getByRole('combobox').fill('open uptime');
+    await page.getByRole('option', { name: /Open Uptime Kuma/ }).click();
+    await expectAt(page, '/apps/kuma', SHOWS.app('Uptime Kuma'));
+  });
+});
+
+test.describe('at 390px', () => {
+  test.use({ viewport: WIDTHS.phone });
+
+  test('no sidebar; every tab and More entry opens its page; every old view is reachable', async ({
+    page,
+  }) => {
+    await openApp(page);
+    await expect(sidebar(page)).toBeHidden();
+    await expectAt(page, '/', SHOWS.overview);
+    const tabs = phoneTabs(page);
+    await tabs.getByRole('link', { name: /^Alerts/ }).click();
+    await expectAt(page, '/alerts', SHOWS.alerts);
+    const more = [
+      ['Grafana', '/apps/grafana', SHOWS.app('Grafana')],
+      ['Uptime Kuma', '/apps/kuma', SHOWS.app('Uptime Kuma')],
+      ['Add app', '/settings/tabs', SHOWS.tabs],
+      ['Settings', '/settings', SHOWS.settings],
+    ];
+    for (const [name, path, shows] of more) {
+      await tabs.getByRole('button', { name: 'More' }).click();
+      const sheet = page.getByRole('dialog', { name: 'More' });
+      await sheet.getByRole('link', { name: new RegExp(`^${name}`) }).click();
+      await expect(sheet).toBeHidden();
+      await expectAt(page, path, shows);
+    }
+    await tabs.getByRole('link', { name: 'Overview' }).click();
+    await expectAt(page, '/', SHOWS.overview);
+  });
+
+  test('Back, Forward and a reload keep the page', async ({ page }) => {
+    await openApp(page);
+    await phoneTabs(page).getByRole('link', { name: /^Alerts/ }).click();
+    await expectAt(page, '/alerts', SHOWS.alerts);
+    await page.goBack();
+    await expectAt(page, '/', SHOWS.overview);
+    await page.goForward();
+    await expectAt(page, '/alerts', SHOWS.alerts);
+    await page.reload();
+    await expectAt(page, '/alerts', SHOWS.alerts);
+  });
+});
+
+/** axe's violations, one line per element. */
+async function axeFindings(builder) {
+  const { violations } = await builder.analyze();
+  return violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.target.join(' ')}`));
+}
+
+for (const theme of Object.keys(THEMES)) {
+  for (const [name, viewport] of Object.entries(WIDTHS)) {
+    test(`axe: the shell at ${viewport.width}px, ${theme}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await openApp(page, '/alerts', { theme });
+      await SHOWS.alerts(page);
+      await expect(headerStatus(page)).toHaveAttribute('data-state', 'crit');
+      // The Alerts page is the new UI throughout: the whole page.
+      expect(await axeFindings(new AxeBuilder({ page })), 'Alerts').toEqual([]);
+
+      // The Overview is today's board inside the shell: the shell's chrome.
+      await page.goto('/');
+      await SHOWS.overview(page);
+      const chrome = new AxeBuilder({ page })
+        .include('[data-slot="app-header"]')
+        .include(name === 'phone' ? '[data-slot="bottom-tabs"]' : '[data-slot="side-nav"]');
+      expect(await axeFindings(chrome), 'the shell around the Overview').toEqual([]);
+
+      if (name === 'phone') {
+        await phoneTabs(page).getByRole('button', { name: 'More' }).click();
+        await expect(page.getByRole('dialog', { name: 'More' })).toBeVisible();
+        const sheet = new AxeBuilder({ page }).include('[data-slot="drawer"]');
+        expect(await axeFindings(sheet), 'the More sheet').toEqual([]);
+      }
+    });
+  }
+}
+
+test('screenshots of the incident, dark, for the PR', async ({ page }) => {
+  const dir = join(test.info().project.outputDir, 'shots');
+  mkdirSync(dir, { recursive: true });
+  // Four minutes after the fixture's cycle, so the issues' ages read as they would.
+  await page.clock.setFixedTime(NOW + 4 * 60_000);
+  await page.setViewportSize(WIDTHS.desktop);
+  await openApp(page);
+  await SHOWS.overview(page);
+  await page.screenshot({ path: `${dir}/desktop-overview.png` });
+  await page.goto('/alerts');
+  await SHOWS.alerts(page);
+  await page.screenshot({ path: `${dir}/desktop-alerts.png` });
+  await page.setViewportSize(WIDTHS.phone);
+  await page.goto('/');
+  await SHOWS.overview(page);
+  await page.screenshot({ path: `${dir}/phone-overview.png` });
+  await page.goto('/alerts');
+  await SHOWS.alerts(page);
+  await page.screenshot({ path: `${dir}/phone-alerts.png` });
+});

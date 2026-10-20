@@ -67,9 +67,18 @@ function previewDefaultVisible() {
   return window.matchMedia(PREVIEW_BREAKPOINT).matches;
 }
 
-export default function SettingsView({ theme, setTheme }) {
+/**
+ * Settings. `section` opens one section, the route's (/settings/<section>,
+ * #296): an unknown one opens General. `onSectionChange` hears each switch,
+ * so the route can follow it; without it the view keeps its own.
+ */
+export default function SettingsView({ theme, setTheme, section, onSectionChange }) {
   const toast = useToast();
-  const [activeSection, setActiveSection] = useState('general');
+  const [ownSection, setOwnSection] = useState('general');
+  const known = (id) => SECTIONS.some((s) => s.id === id && !s.disabled);
+  const routed = onSectionChange != null;
+  const activeSection = routed ? (known(section) ? section : 'general') : ownSection;
+  const setActiveSection = routed ? onSectionChange : setOwnSection;
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   // Live preview visibility. Defaults to the viewport-derived value (hidden on
   // ~laptop widths so the form gets full width) and, once the user toggles it,
@@ -208,7 +217,7 @@ export default function SettingsView({ theme, setTheme }) {
       <div style={{ display: 'flex', flex: 1, minWidth: 0, overflow: 'hidden' }}>
         {/* Settings form — claims full width when the preview is hidden, so the
             form isn't cramped on narrower (~laptop) viewports. */}
-        <main
+        <div
           className="settings-main"
           style={showPreview ? { maxWidth: '50%', flex: '0 0 50%' } : { flex: 1, minWidth: 0 }}
         >
@@ -289,7 +298,7 @@ export default function SettingsView({ theme, setTheme }) {
             {activeSection === 'security' && <SecurityTab />}
             {activeSection === 'backup' && <BackupTab />}
           </div>
-        </main>
+        </div>
 
         {/* Live Preview Panel — toggled via the header button; hidden by default
             on narrow viewports so the form can use the full width. */}

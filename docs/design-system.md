@@ -574,8 +574,8 @@ Trade-offs taken at sign-off:
 The controls (spec §5.4, #285), one file each in `src/ui/`, imported as
 `@ui/<file>`. Each is a Base UI primitive, which brings the focus handling,
 the keys and the ARIA, drawn from the role tokens in the signed-off mock's
-shapes. No screen uses them yet; the [gallery](GALLERY.md) (#289) shows every
-state.
+shapes. The [shell](#shell) uses them; the [gallery](GALLERY.md) (#289) shows
+every state.
 
 | Component | Import | Base UI part | Props | Keys |
 | --- | --- | --- | --- | --- |
@@ -759,8 +759,8 @@ web.
 The containers and feedback components (spec §5.4, #286), one file each in
 `src/ui/`, imported as `@ui/<file>`. The overlays are Base UI primitives,
 which bring the focus handling, the keys and the ARIA; the rest are plain
-elements on the role tokens. No screen uses them yet; the
-[gallery](GALLERY.md) (#289) shows every state.
+elements on the role tokens. The [shell](#shell) uses some (Drawer, Tooltip,
+Banner, Skeleton); the [gallery](GALLERY.md) (#289) shows every state.
 
 | Component | Import | Base UI part | Props | Keys |
 | --- | --- | --- | --- | --- |
@@ -1294,6 +1294,109 @@ Chart colours board:
   the two, not where one becomes the other); the meta and trailing figure
   giving way to the name; the table's row header, its open button and its
   scrolling region; the empty-table line.
+
+## Shell
+
+The frame every page lives in (spec §5.4, §7; #296), one file each in
+`src/ui/`, built on the components above. `src/shell/` wires them to the
+router, the config and the status poll ([ARCHITECTURE.md](ARCHITECTURE.md),
+"Shell and routing"); the [gallery](GALLERY.md) shows each in every state, and
+`e2e/shell.spec.mjs` runs the whole shell in a browser.
+
+| Component | Import | Props |
+| --- | --- | --- |
+| `AppShell` | `@ui/app-shell` | `switches` (the roots' theme, accent, density, typeface), `header`, `sidebar`, `tabs`, and the page as `children` |
+| `ShellPage` | `@ui/app-shell` | `title` (the page's h1), `description`, `actions`; a page of the new UI inside the shell |
+| `ShellApps` | `@ui/app-shell` | `label` (names the open app's region); holds the embedded apps' frames |
+| `AppHeader` | `@ui/app-header` | `name`, `logoUrl`, `status` (`{ reach, state, word, sentence, href, current }`), `updated` (an element, `UpdatedAgo`), `onOpenPalette`, `shortcut`, `settingsHref`, `settingsCurrent`, `onLogout`, `onNavigate` |
+| `UpdatedAgo` | `@ui/app-header` | `at` (ms since the epoch) |
+| `SideNav` | `@ui/side-nav` | `groups` (`[{ id, label, items }]`), `collapsed`, `onCollapsedChange`, `onNavigate`, `label` |
+| `NavGroups` | `@ui/side-nav` | `groups`, `collapsed`, `onNavigate`: the list alone, as the phone's More sheet uses it |
+| `BottomTabs` | `@ui/bottom-tabs` | `tabs` (`[{ id, label, icon, href or onClick, current, badge, expanded }]`), `onNavigate`, `label` |
+
+A nav entry is `{ id, label, href, icon or monogram, current, badge, loaded,
+onUnload, minor }`; a badge is `{ count, state, label }`, its `label` the count
+in words ("4 issues"). `onNavigate(event, href)` handles a link's click: the
+router's `followLink`, which leaves a modified or middle click to the browser.
+
+### How the shell looks
+
+From the mock's Main and Phone boards:
+
+- **AppShell.** The header runs the full width at the top, sticky (`z-header`).
+  From 768px the sidebar sits under it, sticky, the window's height, scrolling
+  on its own; below 768px the bottom tabs are fixed to the bottom edge, and the
+  page keeps 64px clear above them. Each piece of chrome is a `UiRoot`; the
+  page, `<main>`, is not, so today's views inside it keep their look
+  ([ARCHITECTURE.md](ARCHITECTURE.md), "UI stack"). A `ShellPage` is its own
+  root: the page gutter (16, 24, 32px by width), at most 1024px wide, its
+  title in `text-title`, its description in `text-2`.
+- **AppHeader.** 48px on `bg`, a subtle bottom edge, 16px (24px from 768px) at
+  the sides. The brand: the mock's helm mark, the wheel in `on-accent` on a
+  28px `accent` square, or the instance's own logo; the name in 15px
+  extra-bold, for screen readers only below 768px. The status: a 14px lamp,
+  the word in `text-title-xs` in its state's `fg`, then the model's sentence
+  in `text-2` (`text-1` under the pointer), cut short with an ellipsis rather
+  than wrapped. Healthy (ok, or only maintenance) says "All systems normal" in
+  `text-1`: no green word (rule 3). No signal is the steel ring and "No
+  signal" in `unknown-fg`, with why in `text-2`. Before the first answer a
+  14px skeleton disc and a 160px bar stand in. "Updated 12 s ago" in
+  `caption` `text-3`, from 640px. From 1024px the search button is the mock's:
+  `surface-1` in a subtle edge, `text-3`, the shortcut in a mono `kbd`, 240px
+  (280px from 1280px); narrower, a ghost IconButton. Settings and Log out are
+  ghost IconButtons; Settings, when open, takes `accent-tint` and
+  `accent-text`, as a selected nav entry does.
+- **SideNav.** `bg-sidebar` with a subtle right edge, 232px, 16px by 12px of
+  padding, 20px between groups. Each group's label is the mock's overline
+  (`text-overline`, upper case, `text-3`). An entry is 36px (`minor`: 32px and
+  13px), `rounded-lg`, 10px of padding, a 16px icon or a 20px app chip, then
+  the label; `text-2` and `font-medium`, `surface-2` and `text-1` under the
+  pointer. The open page's entry is `accent-tint` with `text-1` semibold and
+  its icon in `accent-text`; an app's chip turns `accent` with `on-accent`
+  letters (`surface-3` and `text-1` otherwise). Alerts' count is a pill on the
+  worst state's tint in its `fg`. A loaded app's dot is 6px `text-3`. Unload
+  is a 28px ghost IconButton over the entry's right end, on `bg-sidebar`,
+  shown under the pointer, on keyboard focus, and always on a touch screen
+  (`pointer-coarse`). Collapsed: 64px, icons and chips centred, the count and
+  the dot at the icon's corner, the toggle (`PanelLeftClose` /
+  `PanelLeftOpen`) at the bottom.
+- **BottomTabs.** 64px (plus the home-indicator inset) on `surface-1` above a
+  subtle edge, one cell per tab: a 20px icon over a 12px label, `text-3`;
+  the open tab's icon sits on a 48 × 28 `accent-tint` pill and its label is
+  `accent-text`, bold. A count sits at the icon's top right in the state's
+  `solid` with its `on-solid` figure, as the mock's.
+
+### Accessibility of the shell
+
+- **Landmarks.** The header is the page's `banner`; the sidebar is the
+  navigation "Main" and the phone's tabs the navigation "Tabs" (only one shows
+  at a width); the page is `main`; an open app's frames are a region named
+  "<app>, open inside JagHelm". The sidebar's groups are `group`s named by
+  their labels.
+- **Names.** A nav entry's name is its label, then its count and whether it is
+  loaded ("Alerts, 4 issues", "Grafana, still loaded"); collapsed, the same
+  name shows as a tooltip. The header's status is one link, "Critical: 1
+  service down · …", in a polite live region, so a change is announced. The
+  open page's entry and link are `aria-current="page"`. More is a button with
+  `aria-haspopup="dialog"` and `aria-expanded`; its sheet is a Drawer named
+  "More". The search button carries `aria-keyshortcuts`.
+- **Focus.** Unload sends focus back to its entry. Every control keeps the
+  base focus ring; a phone tab's is inset, clear of its neighbours.
+
+### Where the shell differs from the mock
+
+- **The header runs the full width**, above the sidebar, with the logo and the
+  instance name in it (spec §7); the mock puts the brand at the top of the
+  sidebar and the header beside it. It is 48px, the mock's is 56px.
+- **No theme toggle in the header**: the theme is Settings → Appearance's
+  (#304 brings dark, light and system); the header has the settings link and
+  Log out instead, as spec §7 lists.
+- **No account card at the sidebar's foot**, and no Launch entry yet (#301);
+  Settings is in the Tools group rather than pinned to the bottom.
+- **Phone tabs: Overview, Alerts and More**, until the Services and
+  Infrastructure pages exist (#313); the mock has all five.
+- **Labels are 12px, not 11px** (the type floor), and the phone's count is the
+  mock's solid; the sidebar's is the mock's tint.
 
 ## Changing a token
 
