@@ -757,13 +757,15 @@ stack sits beside today's CSS and must not restyle it.
 - **The Android app's status components are the shared ones** (#287): its
   StatusLamp, StatusWord, IssueRow, SubsystemStrip and SystemStatusCard moved
   from `mobile/src/components/` into `src/ui/` (SystemStatusCard became
-  AttentionPanel), and its screens import them as `@ui/...`. Until Phase 4
-  rebuilds those screens, each status component also draws the Android app's
-  own look, its old markup and the class names `MobileApp.css` styles in the
-  `legacy` layer. The Android build's `__ANDROID_LOOK__` define makes every
-  status component draw that look there (`src/ui/lib/status.js`), as a build
-  constant, so the APK's bundle leaves out the web look's code and `cn`. The
-  web draws the mock's look. Phase 4 drops the define and the Android look
+  AttentionPanel), and its screens import them as `@ui/...`. As a stopgap
+  until Phase 4 rebuilds those screens (#326, which removes it), each status
+  component also draws the Android app's own look, its old markup and the
+  class names `MobileApp.css` styles in the `legacy` layer. The
+  `__ANDROID_LOOK__` define picks the look per build: true in the Android
+  build, false in the web's (`src/ui/lib/status.js`). Each component reads it
+  directly, so the bundler sees a literal and each bundle leaves the other
+  look out: the APK carries neither `cn`, Lucide nor the web look's code, bar
+  the lamp marks its own lamp borrows
   ([design-system.md](design-system.md#two-looks)).
 - **Cascade layers.** The order is `legacy, properties, theme, base, components,
   utilities`, declared at the top of every entry stylesheet. Each app's

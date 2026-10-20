@@ -511,10 +511,16 @@ Import `cn` from there, never from the `cn` package, `tailwind-merge` or
 
 Keep class strings in `className`, `cn()`, `cva()` or a lookup object read by
 key, where the empty-class check reads them (rule 4). The one exception is the
-status components' `android` look ([Two looks](#two-looks)): it writes the
-Android app's own class names, which compile to nothing here. The check lets
-through only names the Android app's stylesheets style, or the block or element
-whose modifiers they style, so a misspelt utility still fails.
+status components' `android` look ([Two looks](#two-looks)), a stopgap until
+#326: it writes the Android app's own class names, which compile to nothing
+here. The check lets such a name through only in the five status component
+files, only as one of the blocks they write (`status-lamp`, `status-word`,
+`issue-row`, `subsystem-cell`, `subsys-strip`, `sys-status-card`) or an element
+of one (`sys-status-card__word`), and only when the Android app's stylesheets
+style it or its modifiers. A misspelt utility still fails, and so does an
+Android class name anywhere else: `chip`, `secondary` or `note` on a web
+component, which the Android stylesheets also style, would do nothing on the
+web.
 
 ### Where the components differ from the mock
 
@@ -558,9 +564,9 @@ reads as no signal: never green, never red.
 | `SubsystemStrip` | `@ui/subsystem-strip` | `cells` (`[{ key, label, state, word, value, sub }]`); `selected`, `onSelect` |
 | `AttentionPanel` | `@ui/attention-panel` | `state`, `word`, `counts`, `subline`, `action`, `issues` (IssueRow's, each with an `id` and its `onOpen` or `href`), `filter` and `onClearFilter`, `meta`, `titleAs` (`h1` by default) |
 
-Each also takes `look` ([Two looks](#two-looks)) and `className`. A state's word,
-when none is given, is the mock's: OK, Warning, Critical, No signal,
-Maintenance.
+Each also takes `className`. A state's word, when none is given, is the
+mock's: OK, Warning, Critical, No signal, Maintenance. Which look a component
+draws is the build's, never a prop's ([Two looks](#two-looks)).
 
 ### How the status components look
 
@@ -571,9 +577,9 @@ is in, not the window):
 - **StatusLamp.** The mock's lamps, drawn as SVG in the state's `solid`: a
   filled disc for ok, a disc slashed from bottom left to top right for warn, a
   disc with a level bar for crit, a 2px hollow ring for no signal, and the
-  Tokens board's wrench for maintenance. The slash and the bar are cut in
-  `lamp-cut`, 2px wide at 10px and 2.5px from 14px. A lamp always draws its
-  state's shape.
+  Tokens board's wrench for maintenance, its 1.5px line inside the box. The
+  slash and the bar are cut in `lamp-cut`, 2px wide at 10px and 2.5px from
+  14px. A lamp always draws its state's shape.
 - **StatusWord.** Bold, in the state's `fg`, at the size around it and in the
   case it is given ("Down", "On battery").
 - **StatusBadge.** The word and its lamp, 12px semibold, on the state's `tint`
@@ -586,63 +592,82 @@ is in, not the window):
   and the age, at least 56px tall. `row-hover` under the pointer.
 - **SubsystemStrip.** The joined annunciator strip: tiles 1px apart, the gaps
   showing `border-subtle`, in one 12px-round frame. A tile is `surface-1`, or
-  its state's tint when it isn't ok: a lamp and an overline label, over the
-  value (`title-sm`) and `sub` (12px `text-3`). Six sit in a row from 672px,
-  three from 320px and two below that, where a tile is the Phone board's: a
-  14px value and no `sub`. With `onSelect` the tiles are toggles, `surface-2`
-  under the pointer, the selected one inside a 1.5px accent edge.
+  its state's tint when it is a warning, critical or no signal; maintenance
+  stays on `surface-1`, its wrench saying it (spec §6.1). A tile is a lamp and
+  an overline label, over the value (`title-sm`) and `sub` (12px `text-3`).
+  The label ends in an ellipsis when it doesn't fit, after using 4px of the
+  tile's padding. Six sit in a row from 672px, three from 320px and two below
+  that, where a tile is the Phone board's: a 14px value and no `sub`. A strip
+  holds one to six tiles and never leaves an empty slot, which would show the
+  frame's `border-subtle`: four sit two by two when narrow, and five as 3 + 2
+  or 2 + 2 + 1, the last tile spanning the rest of its row. With `onSelect` the
+  tiles are toggles, `surface-2` under the pointer, the selected one inside a
+  1.5px accent edge.
 - **AttentionPanel.** With issues, or in any state but ok and maintenance
   (which never make an issue, spec §6.1), the mock's attention panel: a 14px
   lamp beside the heading, at `headline` (24/30): the word in its colour, then
   " · " and the counts, semibold in `text-2`. The subline under it in `text-2`,
   at most 72 characters wide; the action at the top right; "Showing … only"
-  and Clear when the list is filtered; then the issues as IssueRows. Otherwise
-  the mock's quiet line: the lamp, "All systems normal" at `title-xs` in
-  `text-1`, the counts in `text-2`, and `meta` at the right in 12px `text-3`.
-  Healthy stays quiet (rule 3): no green word.
+  and Clear when the list is filtered; then the issues as IssueRows, or, when
+  the filter leaves none, "Nothing in Jobs needs attention" in 13px `text-3`
+  where the list would be. Otherwise the mock's quiet line: the lamp, "All
+  systems normal" at `title-xs` in `text-1`, the counts in `text-2`, and
+  `meta` at the right in 12px `text-3`. Healthy stays quiet (rule 3): no green
+  word. Maintenance doesn't break the quiet line (spec §6.1): its heading
+  still says "All systems normal", its lamp is the wrench, and the strip's
+  tile under it says what is in maintenance ("1 in maintenance").
 
 ### Two looks
 
-Until Phase 4 rebuilds the Android screens on `src/ui/`, each status
-component draws one of two looks:
+A stopgap until Phase 4 rebuilds the Android screens on `src/ui/` (#326, which
+removes it): each status component draws one of two looks.
 
-- `ui`: the above. The web's, and the default anywhere but the Android build.
+- `ui`: the above. The web's.
 - `android`: the Android app's own components as they were in
   `mobile/src/components/`: mono upper-case words, glass cards, the 2×2 strip
   and its lamp shapes (`disc`, `slash`, `ring` and the UPS's `bolt`, passed as
   `shape`). It writes the class names `MobileApp.css` styles in the `legacy`
-  layer, and its colours are the app's own. The Android build defines
-  `__ANDROID_LOOK__` (`mobile/vite.config.mobile.js`), and there every status
-  component draws this look, so the app's screens look as they did (#287
-  compared them pixel for pixel). Phase 4 deletes the define and this look.
+  layer, and its colours are the app's own, so the app's screens look as they
+  did (#287 compared them pixel for pixel).
 
-Outside the Android build, `look="android"` on a component draws that look
-for one use (its tests). The choice is a build constant
-(`DEFAULT_LOOK` in [`lib/status.js`](../src/ui/lib/status.js)), so the
-Android bundle carries none of the `ui` look's code, nor `cn`: its script
-grows by 7.6 KB (2.9 KB compressed), not the 94 KB the `ui` look and its
-packages would add. Keep a
-component's two looks as two functions behind its one-line
-`if (DEFAULT_LOOK === 'android' || look === 'android') return …`, which is
-what lets the bundler drop the other.
+The build picks the look with its `__ANDROID_LOOK__` define: true in
+`mobile/vite.config.mobile.js`, false in `vite.config.js`, and so in each app's
+tests too. There is no prop for it: the web's tests check the `ui` look and the
+Android app's tests the `android` look. Each component reads the define in its
+one-line switch, `if (__ANDROID_LOOK__) return <AndroidStatusLamp {...props} />`,
+never through an import: there the bundler sees a literal and leaves the other
+look out, down to the icons it imports. (Read through an exported constant, it
+stayed a variable until the minifier, and the APK kept the web row's chevron
+and Lucide's runtime, about 1.4 KB compressed.) So the APK carries none of the
+`ui` look's code, nor `cn` or Lucide, apart from the lamp marks the Android
+lamp borrows for the bar and the wrench: its script grows by 3.1 KB (1.0 KB
+compressed). The web's bundle leaves the Android look out the same way once a
+screen imports these components.
+
+#326 deletes the define (and its ESLint global), each component's Android
+function and switch, the class-check exception and this section. In the
+Android build a component with no Android look of its own (StatusBadge) still
+draws the Android lamp; nothing there uses it.
 
 ### Accessibility of the status components
 
 - **Never colour alone.** Every state is a shape, a word and a colour. A lamp
   is an image named by its word. Where the word is printed beside it
-  (StatusBadge, IssueRow, the panel's heading) the lamp is `decorative`, so a
-  screen reader doesn't say it twice. A subsystem tile prints no word, so its
-  lamp keeps the name. A test checks that the five states draw five different
-  shapes, each with a name.
+  (StatusBadge, IssueRow, the panel's heading, the quiet line's "All systems
+  normal") the lamp is `decorative`, so a screen reader doesn't say it twice.
+  A subsystem tile prints no word, so its lamp keeps the name. The wrench's
+  inner viewport is hidden, so it is one image. A test checks that the five
+  states draw five different shapes, each with a name.
 - **Rows.** A row that opens something is a button (`onOpen`) or a link
   (`href`), named "title, word, where" and described by its reason and age; an
   abbreviated word is spelled out ("UNKN" is said as "unknown"). A row with
   nothing to open is plain content, so it neither looks nor announces as
   tappable (#279).
-- **Strip and panel.** Selectable tiles are toggle buttons (`aria-pressed`).
-  The strip is a region named "Subsystems"; the panel is one named "Needs
-  attention", or "Status" when quiet, and its heading is the page's `h1`
-  unless `titleAs` says otherwise.
+- **Strip and panel.** Selectable tiles are toggle buttons (`aria-pressed`),
+  named as a row is, "label, word, value" ("Services, Down, 30 / 32 up"), and
+  described by `sub`. The strip is a region named "Subsystems"; the panel is
+  one named "Needs attention", or "Status" when quiet, and its heading is the
+  page's `h1` unless `titleAs` says otherwise.
 - **Focus.** Rows and tiles draw the base style's focus ring inset, clear of
   their neighbours.
 
@@ -651,9 +676,9 @@ what lets the bundler drop the other.
 - **The slash stops at the disc's edge.** The mock's 13px cut overhangs a
   10px lamp by 1.5px each side, which shows on a tinted row or tile as a
   surface-coloured tick.
-- **The wrench is the lamp's size**, 10 or 14px, filling its box, so rows keep
-  their columns. The mock draws it only on its Tokens board, at 16px beside
-  10px discs.
+- **The wrench is the lamp's size**, 10 or 14px, filling its box with its
+  line, so rows keep their columns. The mock draws it only on its Tokens
+  board, at 16px beside 10px discs.
 - **The last issue row has no bottom edge**, which doubled the panel's own in
   the mock.
 - **Type steps over the mock's sizes:** subsystem values are `title-sm`
@@ -661,13 +686,19 @@ what lets the bundler drop the other.
   mock's 14/18), as the mapping under [Type](#type) says. The rows keep the
   mock's 20px lines for where and the reason, so they are its height.
 - **A lamp beside its printed word is decorative.** The mock names every lamp,
-  so a screen reader heard "Critical Critical".
+  so a screen reader heard "Critical Critical", and "All systems normal" twice
+  on the quiet line.
 - **One frame at every width.** The Phone board splits the status box from
   the issue list; the panel keeps one frame, with the phone's rows, and the
   Overview (Phase 1) lays out the phone screen.
+- **A tile's label may use 4px of its padding** before its ellipsis. The
+  mock's labels don't truncate, and "Integrations" runs a hair past its box at
+  820px, where an ellipsis alone would cut it.
 - **Not in the mock, derived from it:** StatusBadge; a row as a link; the
-  quiet line for maintenance (its wrench and word); strips of other than six
-  tiles (four sit two by two when narrow, five in rows of three).
+  quiet line for maintenance (the wrench beside "All systems normal", §6.1);
+  maintenance tiles left untinted; strips of other than six tiles (four sit
+  two by two when narrow, five as 3 + 2 or 2 + 2 + 1 with the last tile
+  wider); the line a filter with nothing in it shows; the tiles' names.
 
 ## Changing a token
 
