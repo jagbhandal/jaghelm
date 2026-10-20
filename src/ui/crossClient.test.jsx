@@ -8,8 +8,8 @@
  * way a screen draws the model (Board, below): the attention panel from the
  * overall state, sentence and issues; a subsystem tile per subsystem that has
  * anything; a row per entity; a meter per node reading. Then the screen is
- * read back and checked against the model: the headline's word and sentence,
- * each tile's state, word and counts, each row's state and word, and each
+ * read back and checked against the model: the headline's word and sentence
+ * (or the quiet line's heading), each tile's state, word and counts, each row's state and word, and each
  * meter's state, number and line. The push side, the same fixtures through
  * the real push cycle, is server/status/crossClient.test.js (`npm run
  * test:ci`); this file runs in `npm run test:client`.
@@ -36,6 +36,7 @@ import { STATES } from './lib/status.js';
 import { runScenario, STATUS_SCENARIOS } from '../../server/testing/statusScenarios.js';
 import { cycles, inputs, node } from '../../server/testing/statusFixtures.js';
 import { judgeNode, judgeService } from '../../server/status/rules.js';
+import { EMPTY } from '../../server/status/summary.js';
 import { DEFAULT_THRESHOLDS } from '../../server/status/thresholds.js';
 
 const NOW = Date.parse('2026-10-19T12:00:00Z');
@@ -58,6 +59,11 @@ const MODEL_WORD = {
   unknown: judgeNode(null, { prometheusOk: false, thresholds: DEFAULT_THRESHOLDS }).word,
   maintenance: judgeService({ kumaStatus: 'maintenance', kumaOk: true }).word,
 };
+
+// The quiet line's heading (spec §8, #464). An empty board has nothing checked,
+// so it says the model's sentence ("Nothing monitored yet"); any other quiet
+// board says all is normal, and the model's sentence follows it.
+const QUIET_HEADING = 'All systems normal';
 
 // ── The screen: the model drawn with src/ui ──────────────────────────────
 
@@ -206,6 +212,10 @@ function disagreements({ status, cycle }) {
   if (!quiet) {
     const word = panel.querySelector('h1 [data-slot="status-word"]')?.textContent;
     if (word !== MODEL_WORD[state]) say('headline', 'word', MODEL_WORD[state], word);
+  } else {
+    const heading = panel.querySelector('h1')?.textContent;
+    const said = state === EMPTY ? sentence : QUIET_HEADING;
+    if (heading !== said) say('headline', 'quiet line', said, heading);
   }
   if (!panel.textContent.includes(sentence))
     say('headline', 'sentence', sentence, panel.textContent);
