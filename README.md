@@ -23,7 +23,7 @@
 
 JagHelm ships a **self-contained read-only demo**: a made-up three-node
 homelab with one service down, every write refused, no backend, no config, and
-nothing requested from anywhere. Kick the tyres before wiring up your stack:
+no request out from the server. Kick the tyres before wiring up your stack:
 
 ```bash
 docker run --rm -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:latest
