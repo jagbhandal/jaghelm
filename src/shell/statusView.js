@@ -105,11 +105,12 @@ export function subsystemCells(status) {
 }
 
 /**
- * The subsystem the Overview is filtered to, `{ id, name }`, when `id` names
- * one the strip shows; otherwise null, and the Overview shows everything.
+ * The subsystem the Overview is filtered to, `{ id, name, detail }` (the
+ * model's), when `id` names one the strip shows; otherwise null, and the
+ * Overview shows everything.
  */
 export function subsystemFilter(status, id) {
   if (!id) return null;
   const s = (status?.subsystems ?? []).find((x) => x.id === id && x.counts?.total > 0);
-  return s ? { id: s.id, name: s.name } : null;
+  return s ? { id: s.id, name: s.name, detail: s.detail } : null;
 }

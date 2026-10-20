@@ -8,6 +8,7 @@ const PANELS = [
   'node-edge',
   'node-apps',
   'node-pve',
+  'node-pi',
   'group-media',
   'ups',
   'pipeline',
@@ -15,22 +16,24 @@ const PANELS = [
   'cron-jobs',
   'quicklaunch',
 ];
-// pve has no service cards of its own (a hypervisor with only VMs).
+// pve has no service cards of its own (a hypervisor with only VMs), and pi is
+// a saved node /api/services hasn't drawn yet (its placeholder).
+const loadedNodes = new Set(['node-edge', 'node-apps', 'node-pve']);
 const nodesWithServices = new Set(['node-edge', 'node-apps']);
-const kept = (subsystem) =>
-  PANELS.filter(boardSections(subsystem, { nodesWithServices }) ?? (() => true));
+const board = { loadedNodes, nodesWithServices };
+const kept = (subsystem) => PANELS.filter(boardSections(subsystem, board) ?? (() => true));
 
 describe('boardSections', () => {
   it('no filter keeps every panel', () => {
-    expect(boardSections(null, { nodesWithServices })).toBeNull();
+    expect(boardSections(null, board)).toBeNull();
   });
 
-  it('Services keeps the panels that draw service cards: nodes with services, and groups', () => {
-    expect(kept('services')).toEqual(['node-edge', 'node-apps', 'group-media']);
+  it('Services keeps the panels that draw service cards: nodes with services, a node still loading, and groups', () => {
+    expect(kept('services')).toEqual(['node-edge', 'node-apps', 'node-pi', 'group-media']);
   });
 
-  it('Nodes keeps the node cards', () => {
-    expect(kept('nodes')).toEqual(['node-edge', 'node-apps', 'node-pve']);
+  it('Nodes keeps the node cards, and a node still loading', () => {
+    expect(kept('nodes')).toEqual(['node-edge', 'node-apps', 'node-pve', 'node-pi']);
   });
 
   it('Power keeps the UPS panel', () => {

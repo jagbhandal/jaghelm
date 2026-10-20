@@ -20,9 +20,10 @@ let notFound; // the requests the demo answered 404, as it answers a path it doe
 
 /**
  * Answer every request as the demo server would, in `scenario`, recording each;
- * `edit` maps a path to a change to the demo's answer to it.
+ * `edit` maps a path to a change to the demo's answer to it. A path in `hold`
+ * is never answered, and one in `fail` is answered 503.
  */
-function routeToDemo(scenario, edit = {}) {
+function routeToDemo(scenario, edit = {}, { hold = [], fail = [] } = {}) {
   requests = [];
   notFound = [];
   vi.stubGlobal(
@@ -31,6 +32,12 @@ function routeToDemo(scenario, edit = {}) {
       const url = new URL(String(input), 'http://demo.test');
       const method = (init.method || 'GET').toUpperCase();
       requests.push(`${method} ${url.pathname}`);
+      if (hold.includes(url.pathname)) return new Promise(() => {});
+      if (fail.includes(url.pathname))
+        return new Response(JSON.stringify({ error: 'unavailable' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        });
       const out = demoResponse({
         method,
         path: url.pathname,
@@ -60,8 +67,8 @@ async function advance(ms) {
  * (2 s). The render, every answer and the timers all run inside act(), so each
  * update is applied before the test looks (and React has nothing to warn of).
  */
-async function renderDemo(scenario, edit, { path = '/', ready = 'Network Edge' } = {}) {
-  routeToDemo(scenario, edit);
+async function renderDemo(scenario, edit, { path = '/', ready = 'Network Edge', hold, fail } = {}) {
+  routeToDemo(scenario, edit, { hold, fail });
   window.history.replaceState(null, '', path);
   await act(async () => {
     render(<App />);
@@ -465,20 +472,29 @@ describe("the demo's subsystem strip", () => {
     expect(drawn(OTHERS)).toEqual([]);
   });
 
-  it.each(['/?subsystem=integrations', '/?subsystem=bogus'])(
-    "a subsystem the strip doesn't show in the URL (%s): the whole board",
+  it.each(['/?subsystem=integrations', '/?subsystem=bogus', '/?subsystem='])(
+    "a subsystem the strip doesn't show in the URL (%s): the whole board, and the URL drops it",
     async (path) => {
+      window.history.replaceState(null, '', '/');
+      const entries = window.history.length;
       await renderDemo('incident', undefined, { path });
       expect(within(strip()).queryByRole('button', { pressed: true })).toBeNull();
       expect(within(attention()).queryByText(/^Showing/)).toBeNull();
       expect(drawn(NODES)).toEqual(NODES);
       expect(drawn(OTHERS)).toEqual(OTHERS);
+      // Replaced, not a new entry: Back doesn't return to it, and it can't
+      // filter the page later, once that subsystem is set up.
+      expect(window.location.pathname + window.location.search).toBe('/');
+      expect(window.history.length).toBe(entries);
     }
   );
 
-  // Nothing of the subsystem is on the board: its section is switched off,
-  // or it has none yet (Integrations).
-  it('a filter that leaves the board nothing says so, and offers the whole board', async () => {
+  // Nothing of the subsystem is on the board. It is set up (the strip shows
+  // it), so the note never says it isn't: it says why.
+  const note = () => document.querySelector('[data-slot="board-filter-empty"]');
+  const NOT_SET_UP = /none yet|not set up|isn't set up/i;
+
+  it('a filter whose panel is switched off says so, and offers the whole board', async () => {
     await renderDemo(
       'incident',
       { '/api/display-config': (config) => ({ ...config, showCronJobs: false }) },
@@ -486,14 +502,84 @@ describe("the demo's subsystem strip", () => {
     );
     expect(drawn(NODES)).toEqual([]);
     expect(drawn(OTHERS)).toEqual([]);
-    const note = screen
-      .getByText('No section on the board for Backups')
-      .closest('[data-slot="board-filter-empty"]');
-    expect(note).toHaveTextContent(/switched off/);
-    await click(within(note).getByRole('button', { name: 'Show the whole board' }));
+    expect(note()).toHaveTextContent(
+      'Scheduled Jobs is switched offSwitch it on in Settings to see Backups here.'
+    );
+    expect(note()).not.toHaveTextContent(NOT_SET_UP);
+    await click(within(note()).getByRole('button', { name: 'Show the whole board' }));
     expect(window.location.search).toBe('');
     expect(drawn(NODES)).toEqual(NODES);
-    expect(screen.queryByText('No section on the board for Backups')).toBeNull();
+    expect(note()).toBeNull();
+  });
+
+  it("Power before /api/ups answers: a placeholder, never a note that it isn't set up", async () => {
+    await renderDemo('incident', undefined, {
+      path: '/?subsystem=power',
+      ready: 'Showing Power only',
+      hold: ['/api/ups'],
+    });
+    expect(tile('Power')).toHaveAttribute('aria-pressed', 'true');
+    expect(note()).toHaveAttribute('aria-busy', 'true');
+    expect(note()).toHaveTextContent(/^Loading the board$/);
+    expect(note()).not.toHaveTextContent(NOT_SET_UP);
+    expect(drawn(NODES)).toEqual([]);
+  });
+
+  it('Power with /api/ups failing: no UPS reading, with what the status says, never "none yet"', async () => {
+    await renderDemo('incident', undefined, {
+      path: '/?subsystem=power',
+      ready: 'Showing Power only',
+      fail: ['/api/ups'],
+    });
+    const power = demoStatus('incident').subsystems.find((s) => s.id === 'power');
+    expect(note()).toHaveTextContent(
+      `No UPS reading on the boardPower, as the status reads it: ${power.detail}.`
+    );
+    expect(note()).not.toHaveTextContent(NOT_SET_UP);
+    expect(note()).not.toHaveTextContent(/switched off/);
+    expect(
+      within(note()).getByRole('button', { name: 'Show the whole board' })
+    ).toBeInTheDocument();
+  });
+
+  it('Services with a saved layout while /api/services is out: its nodes loading, no note', async () => {
+    const lg = ['edge', 'apps', 'storage'].map((n, k) => ({
+      i: `node-${n}`,
+      x: k * 8,
+      y: 0,
+      w: 8,
+      h: 8,
+    }));
+    await renderDemo(
+      'incident',
+      { '/api/display-config': (config) => ({ ...config, gridLayout: { lg } }) },
+      { path: '/?subsystem=services', ready: 'Showing Services only', hold: ['/api/services'] }
+    );
+    expect(screen.getByText('Loading edge…')).toBeInTheDocument();
+    expect(screen.getByText('Loading storage…')).toBeInTheDocument();
+    expect(note()).toBeNull();
+  });
+
+  // A node whose services all moved into a custom group draws no service card
+  // of its own: Services leaves its card out and keeps the group; Nodes keeps
+  // every node card and leaves the group out.
+  it('a node whose services all moved into a group: Services keeps the group, not the node', async () => {
+    const group = {
+      id: 'edge-apps',
+      title: 'Edge apps',
+      containers: ['edge:adguard-home', 'edge:nginx-proxy-manager', 'edge:wireguard'],
+    };
+    await renderDemo(
+      'incident',
+      { '/api/display-config': (config) => ({ ...config, customGroups: [group] }) },
+      { ready: 'Edge apps' }
+    );
+    await click(tile('Services'));
+    expect(drawn(['Edge apps', ...NODES])).toEqual(['Edge apps', 'App Server', 'Storage']);
+    await click(tile('Nodes'));
+    expect(drawn(['Edge apps', ...NODES])).toEqual(NODES);
+    await click(tile('Nodes'));
+    expect(drawn(['Edge apps', ...NODES])).toEqual(['Edge apps', ...NODES]);
   });
 
   // A drag or resize saves the layout it sees, so a filtered board can't be

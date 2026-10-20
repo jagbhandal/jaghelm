@@ -3,9 +3,11 @@
  * page to, kept in the URL as `/?subsystem=nodes`. So Back undoes it, a link
  * opens the page filtered, and a reload keeps it. One subsystem at a time; a
  * value the strip doesn't show (an unconfigured subsystem, or none the model
- * knows) is no filter, and the page shows everything.
+ * knows) is no filter: the page shows everything, and the value leaves the
+ * URL (replaced, not a new entry) once the status has said so, so it can't
+ * filter the page again later, when that subsystem is set up.
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { navigate, useSearchParam } from '../router/useRoute.js';
 import { pathTo } from '../router/routes.js';
 import { subsystemFilter } from './statusView.js';
@@ -34,10 +36,20 @@ export function clearOverviewFilter() {
 }
 
 /**
- * The subsystem the Overview is filtered to, `{ id, name }` (the model's), or
- * null: the URL's, when the strip shows it.
+ * The subsystem the Overview is filtered to, `{ id, name, detail }` (the
+ * model's), or null: the URL's, when the strip shows it. While the Overview is
+ * open (`active`), a value the status doesn't show is dropped from the URL;
+ * before the first status, it is kept.
  */
-export function useOverviewFilter(status) {
+export function useOverviewFilter(status, active = true) {
   const id = useSearchParam(FILTER_PARAM);
-  return useMemo(() => subsystemFilter(status, id), [status, id]);
+  const filter = useMemo(() => subsystemFilter(status, id), [status, id]);
+  const stale = active && status != null && id != null && filter === null;
+  useEffect(() => {
+    if (!stale) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete(FILTER_PARAM);
+    navigate(url.pathname + url.search + url.hash, { replace: true });
+  }, [stale]);
+  return filter;
 }

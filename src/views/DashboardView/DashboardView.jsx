@@ -20,11 +20,12 @@ import { useAppDataMatching } from './useAppDataMatching';
 import { useEffectiveLayouts } from './useEffectiveLayouts';
 import { useConfiguredPanels, SOURCE_PANEL_KEYS } from './configuredPanels';
 import { sourceBanner } from './sourceHealth';
-import { boardSections, filterLayouts } from './boardFilter';
+import { boardSections, emptyBoardReason, filterLayouts } from './boardFilter';
 import { ShellSection } from '@ui/app-shell';
 import { Panel } from '@ui/panel';
 import { EmptyState } from '@ui/empty-state';
 import { Button } from '@ui/button';
+import { Skeleton } from '@ui/skeleton';
 
 // What the Pipeline panel lists when /api/gitea/activity answered no list.
 const NO_COMMITS = [];
@@ -41,11 +42,13 @@ const NO_COMMITS = [];
  *   - HelmGrid              → drag/resize-aware responsive grid
  *   - DndContext            → service-card drag between panels
  *
- * `filter`, the subsystem the Overview's strip is filtered to (`{ id, name }`,
- * #298), keeps only that subsystem's panels (boardFilter.js), risen to the top
- * and fixed in place: a filtered board can't be dragged or resized, since a
- * drag saves the layout it sees. When it keeps none, a note says so and offers
- * the whole board (`onClearFilter`).
+ * `filter`, the subsystem the Overview's strip is filtered to (`{ id, name,
+ * detail }`, the model's, #298), keeps only that subsystem's panels
+ * (boardFilter.js), risen to the top and fixed in place: a filtered board
+ * can't be dragged or resized, since a drag saves the layout it sees. When it
+ * keeps none, a note in their place says why (emptyBoardReason) and offers the
+ * whole board (`onClearFilter`), or, while the panel's source hasn't answered,
+ * a placeholder.
  */
 export default function DashboardView({
   refreshKey,
@@ -395,21 +398,24 @@ export default function DashboardView({
   );
 
   // The Overview's filter (#298): the panels it keeps. A node's card counts as
-  // a services panel only when it draws a service card of its own.
-  const nodesWithServices = useMemo(() => {
-    const set = new Set();
+  // a services panel only when it draws a service card of its own (one not
+  // moved into a group), or while it is still loading.
+  const { loadedNodes, nodesWithServices } = useMemo(() => {
+    const loaded = new Set();
+    const withServices = new Set();
     for (const [nodeKey, node] of Object.entries(serviceData.nodes || {})) {
+      loaded.add(`node-${nodeKey}`);
       const own = (node.services || []).some(
         (s) => !claimedContainers.has(`${nodeKey}:${s.container}`)
       );
-      if (own) set.add(`node-${nodeKey}`);
+      if (own) withServices.add(`node-${nodeKey}`);
     }
-    return set;
+    return { loadedNodes: loaded, nodesWithServices: withServices };
   }, [serviceData, claimedContainers]);
   const filterId = filter?.id ?? null;
   const keep = useMemo(
-    () => boardSections(filterId, { nodesWithServices }),
-    [filterId, nodesWithServices]
+    () => boardSections(filterId, { loadedNodes, nodesWithServices }),
+    [filterId, loadedNodes, nodesWithServices]
   );
   const kept = (key) => !keep || keep(key);
 
@@ -559,7 +565,18 @@ export default function DashboardView({
       ) : isEmpty ? (
         <DashboardEmptyState onOpenSettings={onOpenSettings} />
       ) : keptKey === '' ? (
-        <BoardFilterEmpty name={filter.name} onClear={onClearFilter} margin={isMobile ? 12 : 16} />
+        <BoardFilterEmpty
+          filter={filter}
+          reason={emptyBoardReason(filter.id, {
+            upsHidden: sc.ups?.visible === false,
+            // `ups` is the last answer's body; a failure is the source's error.
+            upsAnswered: ups != null || sources.ups?.error != null,
+            cronShown,
+            servicesLoaded,
+          })}
+          onClear={onClearFilter}
+          margin={isMobile ? 12 : 16}
+        />
       ) : (
         <DndContext
           sensors={sensors}
@@ -652,20 +669,51 @@ export default function DashboardView({
   );
 }
 
+// What the note says for each reason (emptyBoardReason). The subsystem is set
+// up (the model says so), so no note says it isn't.
+const NOTES = {
+  off: ({ name }, { panel }) => ({
+    title: `${panel} is switched off`,
+    description: `Switch it on in Settings to see ${name} here.`,
+  }),
+  unread: ({ id, name, detail }) => ({
+    title: id === 'power' ? 'No UPS reading on the board' : `Nothing on the board for ${name}`,
+    description: `${name}, as the status reads it: ${detail}.`,
+  }),
+  none: ({ id, name }) => ({
+    title: `No section on the board for ${name}`,
+    description:
+      id === 'integrations'
+        ? "Today's board has none for them yet: an integration's numbers show on its service's card."
+        : "Today's board has none for it yet.",
+  }),
+};
+
 /**
  * What the board shows when the Overview's filter (#298) keeps none of its
- * panels: the subsystem has no section on today's board (Integrations), or
- * its section is switched off (Scheduled Jobs off, the UPS panel hidden). In
- * the new UI, lined up with the board's cards (HelmGrid's margin).
+ * panels, in the new UI, lined up with the board's cards (HelmGrid's margin):
+ * a placeholder while the panel's source hasn't answered, otherwise a note
+ * saying why (NOTES) with "Show the whole board".
  */
-function BoardFilterEmpty({ name, onClear, margin }) {
+function BoardFilterEmpty({ filter, reason, onClear, margin }) {
+  if (reason.why === 'loading') {
+    return (
+      <div data-slot="board-filter-empty" aria-busy="true" style={{ margin }}>
+        <ShellSection>
+          <span className="sr-only">Loading the board</span>
+          <Skeleton style={{ height: 120 }} />
+        </ShellSection>
+      </div>
+    );
+  }
+  const { title, description } = NOTES[reason.why](filter, reason);
   return (
     <div data-slot="board-filter-empty" style={{ margin }}>
       <ShellSection>
         <Panel>
           <EmptyState
-            title={`No section on the board for ${name}`}
-            description="There is none yet, or it is switched off. Its state is in the strip above."
+            title={title}
+            description={description}
             action={
               onClear && (
                 <Button variant="secondary" size="sm" onClick={onClear}>

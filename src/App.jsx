@@ -216,7 +216,7 @@ function AppMain({ authRequired, demo, onLogout }) {
   const dashboardActive = onOverview && pageVisible;
   // The subsystem the Overview is filtered to (#298): the URL's `?subsystem=`,
   // when the model's strip shows it.
-  const overviewFilter = useOverviewFilter(poll.status);
+  const overviewFilter = useOverviewFilter(poll.status, onOverview);
   const filter = onOverview ? overviewFilter : null;
 
   // Set up refresh interval — debounced so slider dragging doesn't spam intervals

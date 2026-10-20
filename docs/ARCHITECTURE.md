@@ -1255,22 +1255,28 @@ flowchart TD
   subsystem, one at a time; pressing the pressed one, or Clear, shows
   everything. The filter is the URL's `?subsystem=` (`overviewFilter.js`,
   `useSearchParam`): a press pushes a history entry without scrolling, so
-  Back undoes it and a link or a reload opens the page filtered; a value the
-  strip doesn't show is no filter. Filtered, the attention panel's rows are
+  Back undoes it and a link or a reload opens the page filtered. A value the
+  strip doesn't show is no filter, and once the status has said so it leaves
+  the URL (replaced, not a new entry), so it can't filter the page again when
+  that subsystem is set up later. Filtered, the attention panel's rows are
   that subsystem's alone and it says "Showing Nodes only" with Clear (the
   quiet line says it too); its heading and sentence stay the whole board's.
   Today's board keeps that subsystem's panels (`boardFilter.js`): Services
-  the node cards with a service of their own and the custom groups, Nodes
-  the node cards, Power the UPS panel, Jobs and Backups Scheduled Jobs;
-  Pipeline, Checklist and Quick Launch belong to none. The panels kept rise
-  into the space left (`compactUp`, `gridMath.js`), and can't be dragged or
-  resized while filtered: a drag saves the layout it sees, which would drop
-  the hidden panels. Integrations have no panel on today's board (their
-  numbers show on their services' cards), so, as for a section switched off
-  (Scheduled Jobs off, the UPS panel hidden), the board shows a note in its
-  place, "No section on the board for Integrations", with "Show the whole
-  board". The rows' links follow: a panel the filter hides takes its anchor
-  off the list of places drawn.
+  the node cards with a service of their own (not all moved into a group),
+  the nodes still loading and the custom groups, Nodes the node cards, Power
+  the UPS panel, Jobs and Backups Scheduled Jobs; Pipeline, Checklist and
+  Quick Launch belong to none. The panels kept rise into the space left
+  (`compactUp`, `gridMath.js`), and can't be dragged or resized while
+  filtered: a drag saves the layout it sees, which would drop the hidden
+  panels. When the filter keeps no panel, the board says why in their place
+  (`emptyBoardReason`), and never that the subsystem isn't set up, since the
+  model says it is: while the panel's source hasn't answered (`/api/ups`,
+  `/api/services`), a placeholder; a panel switched off ("Scheduled Jobs is
+  switched off"); a source that answered with nothing to draw ("No UPS
+  reading on the board", with the model's detail for it); or no panel on
+  today's board at all (Integrations, whose numbers show on their services'
+  cards). Each note offers "Show the whole board". The rows' links follow: a
+  panel the filter hides takes its anchor off the list of places drawn.
 - **State.** `ConfigContext` exposes `config`, the stable `setConfig`, and a
   memoised `update(path, value)` built on `setIn` (immutable structural-sharing
   deep-set) -- so leaf cards memoise and don't re-render on unrelated edits.
@@ -1903,12 +1909,15 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   its 10px lamps, the line's and the strip's (every colour each element
   draws, read in OKLCH); and an
   issue row, clicked or by Enter, brings its entity's place on the board into
-  view, clear of the header, and focuses it. The subsystem strip (#298): on
+  view, clear of the header, and focuses it, while a Ctrl-click opens a tab at
+  its anchor and leaves the page where it was (Chromium in the container now
+  and then drops a Ctrl-click's tab, so that test tries up to three times,
+  checking the page acted on none). The subsystem strip (#298): on
   screen under the status without scrolling, a tile per subsystem the model
   has anything in, nothing in a tile cut off and no sideways scroll (at 360px
   too); a tile, clicked or by Space and Enter (its focus ring showing),
   filters the rows and the board and back, Back and Forward follow the URL,
-  and a filter with no panel on the board shows its note; axe on the
+  and a filter whose panel is switched off says so; axe on the
   filtered status and the note. Both leave screenshots in
   `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,

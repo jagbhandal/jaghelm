@@ -438,6 +438,27 @@ describe('the Overview', () => {
     expect(server.requests.filter((r) => r === '/api/status')).toHaveLength(1);
   });
 
+  // #298: a filter the status doesn't show leaves the URL, but only once the
+  // status has said so.
+  it('keeps the filter in the URL before the first status, and drops one the status doesn’t show', async () => {
+    stubServer({ status: HEALTHY });
+    server.statusPending = true;
+    await renderApp('/?subsystem=jobs');
+    expect(window.location.search).toBe('?subsystem=jobs');
+    cleanup();
+
+    // This board has no jobs: the URL drops the filter, replacing its entry.
+    stubServer({ status: HEALTHY });
+    window.history.replaceState(null, '', '/');
+    const entries = window.history.length;
+    await renderApp('/?subsystem=jobs');
+    await screen.findByRole('region', { name: 'Subsystems' });
+    await waitFor(() => expect(window.location.search).toBe(''));
+    expect(window.location.pathname).toBe('/');
+    expect(window.history.length).toBe(entries);
+    expect(screen.queryByText(/^Showing/)).toBeNull();
+  });
+
   it('on an empty board: no strip', async () => {
     stubServer({ status: FIRST_RUN });
     await renderApp();

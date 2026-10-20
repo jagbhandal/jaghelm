@@ -5,8 +5,9 @@
  * space left (filterLayouts), at the top of the board.
  *
  *   services      the panels that draw service cards: a node's card with any
- *                 service of its own (not moved into a group), and the
- *                 custom groups
+ *                 service of its own (not moved into a group), a node still
+ *                 loading (its placeholder: it may have some), and the custom
+ *                 groups
  *   nodes         the node cards
  *   power         the UPS panel
  *   jobs, backups Scheduled Jobs, where the board lists backups as jobs
@@ -24,17 +25,20 @@ const isGroup = (key) => key.startsWith('group-');
 /**
  * Which panels (by grid key: `node-<key>`, `group-<id>`, `ups`, `cron-jobs`,
  * …) the board keeps for `subsystem`, as a predicate; null without a filter.
- * `nodesWithServices` holds the grid keys of the nodes that draw a service card.
+ * `loadedNodes` holds the grid keys of the nodes `/api/services` has drawn
+ * (any other node key is a saved node's placeholder, still loading), and
+ * `nodesWithServices` those of them that draw a service card of their own.
  *
  * @param {string | null} subsystem
- * @param {{ nodesWithServices: Set<string> }} board
+ * @param {{ loadedNodes: Set<string>, nodesWithServices: Set<string> }} board
  * @returns {((key: string) => boolean) | null}
  */
-export function boardSections(subsystem, { nodesWithServices }) {
+export function boardSections(subsystem, { loadedNodes, nodesWithServices }) {
   if (!subsystem) return null;
   switch (subsystem) {
     case 'services':
-      return (key) => isGroup(key) || (isNode(key) && nodesWithServices.has(key));
+      return (key) =>
+        isGroup(key) || (isNode(key) && (!loadedNodes.has(key) || nodesWithServices.has(key)));
     case 'nodes':
       return isNode;
     case 'power':
@@ -62,4 +66,37 @@ export function filterLayouts(layouts, keys) {
     out[bp] = compactUp(items.filter((item) => keys.has(item.i)));
   }
   return out;
+}
+
+/**
+ * Why a filter keeps no panel on the board, for the note in its place. The
+ * filter only ever names a subsystem the status model has something in, so
+ * the note never says it isn't set up:
+ *
+ *   loading  its panel's source hasn't answered yet: a placeholder, no words
+ *   off      its panel is switched off in Settings (`panel` names it)
+ *   unread   its source answered, but gave the board nothing to draw (the UPS
+ *            read failed, or found no UPS): the note says so, with the
+ *            model's own detail for it
+ *   none     today's board has no panel for it (Integrations)
+ *
+ * @param {string} subsystem
+ * @param {{ upsHidden: boolean, upsAnswered: boolean, cronShown: boolean,
+ *   servicesLoaded: boolean }} board
+ * @returns {{ why: 'loading' | 'off' | 'unread' | 'none', panel?: string }}
+ */
+export function emptyBoardReason(subsystem, board) {
+  switch (subsystem) {
+    case 'power':
+      if (board.upsHidden) return { why: 'off', panel: 'The UPS panel' };
+      return { why: board.upsAnswered ? 'unread' : 'loading' };
+    case 'jobs':
+    case 'backups':
+      return board.cronShown ? { why: 'unread' } : { why: 'off', panel: 'Scheduled Jobs' };
+    case 'services':
+    case 'nodes':
+      return { why: board.servicesLoaded ? 'unread' : 'loading' };
+    default:
+      return { why: 'none' };
+  }
 }

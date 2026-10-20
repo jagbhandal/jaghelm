@@ -13,7 +13,7 @@
  *    scrolling, a tile per subsystem the model has anything in, nothing in it
  *    cut off, at 360px too. A tile, clicked or by Space and Enter, filters
  *    the rows and the board to its subsystem and back, in the URL, so Back
- *    and Forward follow it; a filter the board has no panel for says so.
+ *    and Forward follow it; a filter whose panel is switched off says so.
  *  - An issue row, clicked or by Enter, brings its entity's place on today's
  *    board into view, clear of the header, and focuses it; a Ctrl-click opens
  *    a new tab and leaves this one where it was.
@@ -48,6 +48,35 @@ async function openOverview(page, scenario, theme = 'dark') {
   await expect(page.getByText('Network Edge')).toBeVisible();
   await expect(statusArea(page).getByRole('region').first()).toBeVisible();
   await expect(strip(page)).toBeVisible();
+}
+
+/**
+ * Ctrl-clicks `row` until the browser opens a tab whose URL matches `url`, and
+ * returns it (null after three tries). A new tab starts on about:blank, so its
+ * URL is read once its navigation has started (not loaded: its requests
+ * aren't answered here). Chromium in the test container now and then drops a
+ * Ctrl-click's tab: the click reaches the link, unhandled and with Ctrl down,
+ * and nothing opens (the same on main, about 1 in 7 runs); or the tab never
+ * leaves about:blank. Either way the page itself acts on nothing, which the
+ * test checks after.
+ */
+async function ctrlClickOpens(page, row, url) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const opened = page
+      .context()
+      .waitForEvent('page', { timeout: 5_000 })
+      .catch(() => null);
+    await row.click({ modifiers: ['ControlOrMeta'] });
+    const tab = await opened;
+    if (!tab) continue;
+    const there = await tab.waitForURL(url, { waitUntil: 'commit', timeout: 5_000 }).then(
+      () => true,
+      () => false
+    );
+    if (there) return tab;
+    await tab.close();
+  }
+  return null;
 }
 
 /**
@@ -277,9 +306,8 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
       await openOverview(page, 'incident');
       const job = place(page, 'entity-jobs/storage:nightly-backup');
       const row = statusArea(page).getByRole('link', { name: /^nightly-backup, Failed/ });
-      const opened = page.context().waitForEvent('page');
-      await row.click({ modifiers: ['ControlOrMeta'] });
-      const tab = await opened;
+      const tab = await ctrlClickOpens(page, row, /#entity-jobs\/storage:nightly-backup$/);
+      expect(tab, 'a new tab at the row’s anchor').not.toBeNull();
       expect(new URL(tab.url()).hash).toBe('#entity-jobs/storage:nightly-backup');
       await tab.close();
       expect(await page.evaluate(() => window.scrollY)).toBe(0);
@@ -374,12 +402,13 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
       await expect(panelTitle(page, 'App Server')).toBeVisible();
     });
 
-    test('a filter the board has no panel for says so, and offers the whole board', async ({
+    test('a filter whose panel is switched off says so, and offers the whole board', async ({
       page,
     }) => {
       await openApp(page, '/?subsystem=jobs', { config: { showCronJobs: false } });
       const note = page.locator('[data-slot="board-filter-empty"]');
-      await expect(note).toContainText('No section on the board for Jobs');
+      await expect(note).toContainText('Scheduled Jobs is switched off');
+      await expect(note).toContainText('Switch it on in Settings to see Jobs here.');
       await expect(tile(page, 'Jobs')).toHaveAttribute('aria-pressed', 'true');
       await expect(panelTitle(page, 'App Server')).toHaveCount(0);
       expect(

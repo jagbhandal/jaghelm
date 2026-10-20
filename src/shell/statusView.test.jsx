@@ -131,7 +131,11 @@ describe('the subsystem strip, from the model', () => {
   it("names the filter by the model's subsystem, only one the strip shows", () => {
     const incident = at('incident');
     const nodes = incident.subsystems.find((s) => s.id === 'nodes');
-    expect(subsystemFilter(incident, 'nodes')).toEqual({ id: 'nodes', name: nodes.name });
+    expect(subsystemFilter(incident, 'nodes')).toEqual({
+      id: 'nodes',
+      name: nodes.name,
+      detail: nodes.detail,
+    });
     const none = incident.subsystems.find((s) => s.counts.total === 0);
     expect(subsystemFilter(incident, none.id)).toBeNull();
     expect(subsystemFilter(incident, 'bogus')).toBeNull();
