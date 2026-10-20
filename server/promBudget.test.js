@@ -89,6 +89,7 @@ for (const nodes of [6, 12]) {
       assert.equal(asked.ups, 1, `cycle ${i}`);
     }
     assert.deepEqual(mock.parseErrors, []);
+    assert.equal(mock.targetReads, 0, 'every node has an up series: no targets read (#470)');
 
     const services = getCached('services');
     assert.equal(services.sources.prometheus.ok, true);

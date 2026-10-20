@@ -24,6 +24,7 @@
  * failed source is itself one `warn` issue.
  */
 import {
+  NOT_SCRAPED,
   errorText,
   judgeAgent,
   judgeContainer,
@@ -388,13 +389,16 @@ function isEmptyBoard({ entities, sources, services, integrations }) {
 /**
  * Why an entity the model had last cycle, and doesn't see now, is kept as
  * unknown: the source that fed it failed. null when nothing failed (it is
- * gone: a container removed, a job deleted), so it is dropped.
+ * gone: a container removed, a job deleted), so it is dropped. A container
+ * list unread while Prometheus answered is a node it has not scraped yet
+ * (#470).
  */
 function carriedReason(before, { ok, containersRead, services, integrations }) {
   switch (before.subsystem) {
     case 'services':
       if (before.kind === 'service' && !ok.kuma) return 'No data: Kuma unreachable';
-      return containersRead(before.node) ? null : 'No data: Prometheus unreachable';
+      if (containersRead(before.node)) return null;
+      return ok.prometheus ? NOT_SCRAPED : 'No data: Prometheus unreachable';
     case 'nodes':
       return services && ok.prometheus ? null : 'No data: Prometheus unreachable';
     case 'integrations':

@@ -96,7 +96,7 @@ For a longer walkthrough — including standing up Prometheus and cAdvisor if yo
 ### Requirements
  
 - Docker + docker compose
-- Prometheus reachable on the network, with `node_exporter` on each node you want to monitor
+- Prometheus reachable on the network, with `node_exporter` on each node you want to monitor. JagHelm calls its query API (`/api/v1/query`), its health check (`/-/healthy`, for `/api/readyz`) and, when a node has no `up` series or its `up` is 0, its target list (`/api/v1/targets`); a proxy in front of Prometheus must allow all three
 - (Optional but recommended) `cAdvisor` for container-level CPU/RAM/network stats
 - (Optional) Uptime Kuma for service health
 - (Optional) NUT exporter if you want UPS panels

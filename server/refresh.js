@@ -15,7 +15,7 @@ import { readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
 import { getConfig } from './config.js';
-import { getNodesData, promQuery, NODE_READS } from './discovery.js';
+import { getNodesData, promQuery } from './discovery.js';
 import { recordSamples } from './history.js';
 import {
   fetchMonitors,
@@ -240,11 +240,6 @@ function getRefreshIntervalMs() {
 
 const reportPrometheus = createSourceHealthLog('prometheus', log);
 
-// Whether Prometheus has answered with an `up` series for some node since boot.
-// After that, an answer with none for any node is a Prometheus that has just
-// started and not scraped yet, not every host going down (#232).
-let upSeriesSeen = false;
-
 // ── Domain refresh functions ─────────────────────────────────────────────
 
 /**
@@ -310,14 +305,17 @@ function serviceRank(s) {
  *      container is running anywhere this cycle, if it got a (down) monitor in
  *      the matching (Kuma owns it: its outage is the monitor's red card), or if
  *      it is a CI job's. Skipped altogether when `presenceKnown` is false: a
- *      Prometheus query failed this cycle, so a container missing from the list
- *      may still be running, and a missed breadcrumb beats a false one (#232).
+ *      Prometheus query failed this cycle, or a node is unread because
+ *      Prometheus hasn't scraped it yet (#470), so a container missing from
+ *      the list may still be running, and a missed breadcrumb beats a false
+ *      one (#232).
  *
  * Each node carries `reachable` from discovery (Prometheus' `up` for the node:
  * true, false, or null when Prometheus has no `up` series for it), and
  * `failedReads`: the parts of the node whose queries failed this cycle
- * (discovery's NODE_READS names; [] when they all answered). The status model
- * makes each of those unknown, and push holds its last level for them.
+ * (discovery's NODE_READS names; [] when they all answered), or every part
+ * for a node Prometheus hasn't scraped yet (#470). The status model makes
+ * each of those unknown, and push holds its last level for them.
  *
  * Every node's cards are ordered down → unknown → up.
  *
@@ -730,7 +728,10 @@ async function _refreshServices() {
 
     // Prometheus failed this cycle if any query did: every node's `ok` is then
     // false, with the same `failedReads` naming what the failed queries feed.
-    let nodeResults = [];
+    // So did the targets read, when a node with no `up` series needed it, and
+    // so does a node Prometheus scraped but stored no `up` series for: only
+    // those nodes' `ok` is false then (discovery.js, #470).
+    const nodeResults = [];
     const promErrors = [];
     if (nodesOutcome.ok) {
       for (const entry of visibleNodes) {
@@ -744,22 +745,13 @@ async function _refreshServices() {
       log.warn({ err: msg }, 'node refresh failed');
       promErrors.push(msg);
     }
-    // Every query answered, but no node has an `up` series where an earlier
-    // answer had some: a Prometheus that has just started (after an outage
-    // longer than its lookback) and not scraped yet. Its empty answers say
-    // nothing about the hosts, so the cycle counts as failed and every node's
-    // reads as unread, until an `up` series is back.
-    const answered = nodeResults.filter(Boolean);
-    if (promErrors.length === 0 && answered.length > 0) {
-      if (answered.some(([, , nodeData]) => typeof nodeData?.reachable === 'boolean')) {
-        upSeriesSeen = true;
-      } else if (upSeriesSeen) {
-        promErrors.push('Prometheus answered, but with no up series for any node');
-        nodeResults = nodeResults.map((r) => r && [r[0], r[1], { ...r[2], ok: false, failedReads: NODE_READS }]);
-      }
-    }
     const prometheusOk = promErrors.length === 0;
     reportPrometheus({ ok: prometheusOk, error: promErrors[0] });
+    // A container missing from the list may still be running when a query
+    // failed, or on a node Prometheus hasn't scraped yet (#470): its reads are
+    // unread while Prometheus answered.
+    const presenceKnown =
+      prometheusOk && nodeResults.every(([, , nodeData]) => !nodeData?.failedReads?.length);
 
     const assembled = assembleServices({
       nodeResults,
@@ -769,7 +761,7 @@ async function _refreshServices() {
       lastSeenContainerOf: (id) => serviceRegistry.getLastSeenContainer(id),
       containerRegistry,
       now: Date.now,
-      presenceKnown: prometheusOk,
+      presenceKnown,
     });
     const { nodes, seen, unmatched, containerCount } = assembled;
 
