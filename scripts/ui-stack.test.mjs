@@ -203,8 +203,10 @@ export function classNamesIn(source, file) {
   };
   // Lookup objects: `const sizes = { sm: '…' }`, read in a class position as
   // sizes[size] or sizes.sm. Their values are classes (nested maps too), their
-  // keys never; each map is read once.
+  // keys never; each map is read once. Any other variable a class position reads
+  // by name (`const pad = 'px-3'`, cn(pad)) holds classes in its initializer.
   const maps = new Map();
+  const held = new Map();
   const walked = new Set();
   const values = (obj) => {
     for (const p of obj.properties) {
@@ -223,9 +225,17 @@ export function classNamesIn(source, file) {
       values(map);
     }
   };
+  const variable = (name) => {
+    for (const init of held.get(name) ?? []) {
+      if (walked.has(init)) continue;
+      walked.add(init);
+      classes(init);
+    }
+  };
   const classes = (node) => {
     if (!node) return;
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) add(node.text);
+    else if (ts.isIdentifier(node)) variable(node.text);
     else if (ts.isTemplateExpression(node)) {
       template(node);
       node.templateSpans.forEach((s) => classes(s.expression));
@@ -278,16 +288,14 @@ export function classNamesIn(source, file) {
     ts.ScriptKind.JSX
   );
   const declare = (node) => {
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer &&
-      ts.isObjectLiteralExpression(node.initializer)
-    )
-      maps.set(node.name.text, node.initializer);
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      const name = node.name.text;
+      if (ts.isObjectLiteralExpression(node.initializer)) maps.set(name, node.initializer);
+      else held.set(name, [...(held.get(name) ?? []), node.initializer]);
+    }
     ts.forEachChild(node, declare);
   };
-  declare(sourceFile); // first, so a map declared after its use still counts
+  declare(sourceFile); // first, so a variable declared after its use still counts
   visit(sourceFile);
   return out;
 }
@@ -675,6 +683,126 @@ test('the class check reads the values of a lookup object, never its keys', asyn
   const names = namesIn(source);
   assert.deepEqual(names, ['bg-green-500', 'h-7', 'h-8', 'p-2', 'text-body', 'text-sm']);
   assert.deepEqual(await uncompiled(names), ['bg-green-500', 'text-sm']);
+});
+
+test('the class check reads the classes a variable holds, where a class position reads it', async () => {
+  // As table.jsx's cellPad and align (#424). A variable no class position reads,
+  // and a parameter (a caller's className), add nothing.
+  const source = `
+    const pad = 'px-3 first:px-4';
+    const C = ({ numeric, className }) => {
+      const align = numeric ? 'text-right tabular-nums' : 'text-2xl';
+      const label = 'Loading';
+      return <td className={cn(pad, align, className)}>{label}</td>;
+    };`;
+  const names = namesIn(source);
+  assert.deepEqual(names, ['first:px-4', 'px-3', 'tabular-nums', 'text-2xl', 'text-right']);
+  assert.deepEqual(await uncompiled(names), ['text-2xl']);
+});
+
+// Tailwind reads each script it scans as text, comments and other prose included,
+// and generates a utility for every word that is one (#424): `grow`, `outline` or
+// `block` in a comment each put a rule in the stylesheet that no element uses.
+// Tailwind v4 can't skip a script's comments (`@source` picks files, and `@source
+// not inline()` would refuse the word as a class too), so this check holds the
+// line. The stack's own stylesheets are scanned only for the variables they read.
+
+// Utilities a script in src/ui/ writes as data, not as a class, so the build
+// generates them whatever its comments say, and prose may name them: StatusLamp's
+// `ring` shape (a prop value the Android app passes), theme names lib/utils.js
+// lists for cn, and Table's `data-slot`. Each ships a rule no element uses. Add a
+// word only for a name another contract fixes; otherwise rename the data.
+const DATA_WORDS = new Map([
+  ['ring', 'src/ui/status-lamp.jsx'],
+  ['overline', 'src/ui/lib/utils.js'],
+  ['sticky', 'src/ui/lib/utils.js'],
+  ['table', 'src/ui/table.jsx'],
+]);
+
+/** The candidates Tailwind finds in a script's text, as the build's scan does. */
+const candidatesIn = (content, file) =>
+  new Scanner({}).scanFiles([{ content, extension: path.extname(file).slice(1) }]);
+
+/**
+ * The utilities the build generates from src/ui/ that no className, cn() or cva()
+ * there writes, as `file: word` for each file whose text names one. `extra`
+ * ([{ file, content }]) adds scripts to the scan. The build's own scan decides
+ * what is generated; each script is scanned again on its own to name its file.
+ */
+async function strayUtilities(extra = []) {
+  const compiler = await compileStack();
+  const scanner = new Scanner({ sources: compiler.sources });
+  const candidates = scanner.scan();
+  const scripts = scanner.files
+    .map((f) => path.relative(ROOT, f))
+    .filter((f) => /\.jsx?$/.test(f))
+    .map((file) => ({ file, content: read(file) }));
+  assert.ok(
+    scripts.some((s) => s.file === 'src/ui/button.jsx'),
+    'the scan found no script in src/ui/'
+  );
+  const namedIn = new Map();
+  for (const { file, content } of [...scripts, ...extra]) {
+    const own = candidatesIn(content, file);
+    for (const name of own) namedIn.set(name, [...(namedIn.get(name) ?? []), file]);
+  }
+  for (const { file, content } of extra) candidates.push(...candidatesIn(content, file));
+  const written = new Set(
+    [...scripts, ...extra].flatMap(({ file, content }) =>
+      classNamesIn(content, file).map((c) => c.name)
+    )
+  );
+  let size = compiler.build([]).length;
+  const stray = [];
+  for (const name of [...new Set(candidates)].sort()) {
+    const grown = compiler.build([name]).length; // cumulative: growth means a utility
+    if (grown !== size && !written.has(name) && !DATA_WORDS.has(name)) {
+      for (const file of namedIn.get(name) ?? ['(a stylesheet in src/ui/)'])
+        stray.push(`${file}: ${name}`);
+    }
+    size = grown;
+  }
+  return stray.sort();
+}
+
+test('every utility the build generates from src/ui/ is a class written there', async () => {
+  assert.deepEqual(
+    await strayUtilities(),
+    [],
+    'these words in src/ui/ generate a utility that no className, cn() or cva() writes, ' +
+      'so it ships unused (Tailwind reads comments as class names, #424). Reword them: ' +
+      '"grows" for "grow", "on screen" for "visible", "its own width" for "its container". ' +
+      'A word the code writes as data goes in DATA_WORDS, above'
+  );
+});
+
+test('the stray-utility check names the file and the word, and passes what is written', async () => {
+  // A line comment, a block comment and JSX text each name a utility nothing
+  // writes. A word some component writes (`hidden`) and a data word (`overline`)
+  // add nothing, nor do the classes this file writes, held in a variable or not.
+  const content = `
+    // The label may grow to the row's end.
+    /* Its outline sits outside, kept hidden until hovered, as overline text. */
+    const pad = 'px-7';
+    export const P = () => <p className={cn(pad, 'flex-1')}>Shown in italic</p>;`;
+  assert.deepEqual(await strayUtilities([{ file: 'src/ui/planted.jsx', content }]), [
+    'src/ui/planted.jsx: grow',
+    'src/ui/planted.jsx: italic',
+    'src/ui/planted.jsx: outline',
+  ]);
+});
+
+test('each data word the stray-utility check lets through is still data in its file', () => {
+  const printer = ts.createPrinter({ removeComments: true });
+  for (const [word, file] of DATA_WORDS) {
+    const code = printer.printFile(
+      ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, false, ts.ScriptKind.JSX)
+    );
+    assert.ok(
+      candidatesIn(code, file).includes(word),
+      `${file} names \`${word}\` only in comments now: drop it from DATA_WORDS`
+    );
+  }
 });
 
 /** Names in tailwind.css's @theme block under `--<ns>-`, less sub-keys (`--text-x--line-height`). */

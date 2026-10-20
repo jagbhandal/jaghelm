@@ -6,7 +6,7 @@
  * Overview and Phone boards, and has no strip of figures.
  *
  * Two columns: the label in `text-3`, the value semibold in `text-1`, 10px
- * between rows and 12px between columns. From 384px of its own container it
+ * between rows and 12px between columns. From 384px of its own width it
  * is the Overview drawer's (a 130px label column, 13px, the mock's 20px
  * lines); narrower, the Phone board's detail screen (120px, 14px). A value
  * may be any node (a host in mono, a status word); a label wraps in its

@@ -972,6 +972,18 @@ stack sits beside today's CSS and must not restyle it.
   `position: absolute !important`, which also beats a new component's
   `not-sr-only` (for `!important` the lowest layer wins): drop that `!important`
   when a component first needs `not-sr-only`.
+  A word in a comment ships too: Tailwind reads each scanned script as text,
+  comments included, and v4 has no option to skip them (`@source` picks files;
+  `@source not inline()` would refuse the word as a class as well). So the same
+  test builds the stylesheet and fails on any utility it generates from `src/ui/`
+  that no `className`, `cn()` or `cva()` there writes (a variable a class
+  position reads counts), naming the file and the word (#424): reword it
+  ("its own width" for "its container", "on screen" for "visible"). A few utilities
+  are names the code writes as data under another contract, so they ship
+  unused and prose may name them: `ring` (a StatusLamp shape), `overline` and
+  `sticky` (theme names `cn` is taught), `table` (Table's `data-slot`); the
+  test fails when one is no longer data. The stack's own stylesheets are
+  scanned only for the variables they read, so their comments generate nothing.
 - **Tokens.** JagHelm's design tokens are in `src/ui/tokens.css`, from the
   signed-off mock: a palette of OKLCH ramps, the roles components use, and a few
   component tokens, in dark and light, with three accents (Violet, Fuchsia,

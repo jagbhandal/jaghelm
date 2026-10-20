@@ -49,7 +49,7 @@ export const TYPEFACES = Object.freeze([
 ]);
 
 /**
- * The one monospace face, for hostnames, SHAs, paths and code (`font-mono`). Its
+ * The one monospace face, for hostnames, SHAs, paths and code (`--font-mono`). Its
  * latin file is the one today's screens use for JetBrains Mono
  * (src/styles/fonts.css), so the two never download it twice; the new UI's
  * family name differs so that its wider weight range can't change how today's
