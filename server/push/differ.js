@@ -17,8 +17,13 @@
  * Cron states: success | failure | overdue | unknown. "overdue" means the job
  * stopped reporting; it emits once on entry and stays silent while it persists.
  *
- * "unknown" never produces an event, and the first cycle (prev=null) is a
- * silent baseline.
+ * An entity with no previous state (#448), one new to the snapshot or every
+ * entity when there is no previous snapshot (prev=null: a first run, or a
+ * missing or unreadable file), is diffed from "no previous state": it sends its
+ * alert once if it appears in trouble and nothing if it appears ok. So a node
+ * added to services.yaml sends no "Host recovered", and one that appears over
+ * its line or unreachable pages. "unknown" (what the model can't call) never
+ * produces an event; the snapshot holds the last known state through it.
  *
  * A service key is diffed against the state of the Kuma monitor that feeds it,
  * wherever that monitor's key was last cycle (#395), and a monitor is one event
@@ -58,14 +63,24 @@ export const RECOVERY_TYPES = new Set([
   'arcane_agent_recovered',
 ]);
 
+/** A snapshot with no previous state for anything: what a missing prev is diffed from (#448). */
+const NO_STATE = Object.freeze({
+  services: {},
+  monitorOf: {},
+  hosts: {},
+  ups: { state: 'unknown' },
+  cron: {},
+  sources: {},
+});
+
 /**
- * @param {object|null} prev    the previous cycle's snapshot (null: baseline)
+ * @param {object|null} prev    the previous cycle's snapshot (null: none, so
+ *                              every entity is new, #448)
  * @param {object} next         this cycle's snapshot
  * @param {object|null} [status] the status model `next` was built from: the words
  */
 export function diffSnapshots(prev, next, status = null) {
-  // Baseline: first cycle has no prior state, so nothing has "changed" yet.
-  if (prev === null || prev === undefined) return [];
+  if (prev === null || prev === undefined) prev = NO_STATE;
   const words = wordsFrom(status);
   const events = [];
   diffServices(
@@ -77,7 +92,7 @@ export function diffSnapshots(prev, next, status = null) {
     events
   );
   diffHosts(prev.hosts || {}, next.hosts || {}, words, events);
-  diffUps(prev.ups || { state: 'unknown' }, next.ups || { state: 'unknown' }, words, events);
+  diffUps(prev.ups, next.ups, words, events);
   diffCron(prev.cron || {}, next.cron || {}, words, events);
   diffSources(prev.sources || {}, next.sources || {}, words, events);
   return sortEvents(events);
@@ -259,21 +274,29 @@ function levelsOf(host) {
  * Reachability, then each reading's level as the model holds it (hysteresis
  * included: status/rules.js levelOf). A level that rises (ok to warn, ok or
  * warn to crit) sends host_threshold; one that returns to ok sends
- * host_threshold_cleared; crit falling back to warn sends nothing. A reading
- * new to the snapshot is its own baseline. Levels are compared whenever the
- * host is reachable now, including the cycle it comes back, since the model
- * keeps them while it is away.
+ * host_threshold_cleared; crit falling back to warn sends nothing. Levels are
+ * compared whenever the host is reachable now, including the cycle it comes
+ * back, since the model keeps them while it is away.
+ *
+ * A host new to the snapshot has no previous state (#448): unreachable, it
+ * sends host_unreachable; reachable, nothing for that (it never went away),
+ * and each of its readings is new. A reading new to the snapshot (a node's
+ * first, or a sensor or pool that starts answering) at warn or crit sends
+ * host_threshold at its level, and nothing at ok. `prev` is null in those
+ * events: there was no previous state.
  */
 function diffHosts(prev, next, words, events) {
   for (const node of Object.keys(next)) {
-    const before = prev[node] || { reachable: false };
+    const known =
+      Object.hasOwn(prev, node) && prev[node] !== null && typeof prev[node] === 'object';
+    const before = known ? prev[node] : null;
     const after = next[node];
-    const beforeReach = before.reachable === true;
+    const beforeReach = before === null ? null : before.reachable === true;
     const afterReach = after.reachable === true;
     const entity = words.entity(`nodes/${node}`);
     const name = entity?.name ?? node;
     const reason = entity?.reason;
-    if (beforeReach && !afterReach) {
+    if (beforeReach !== false && !afterReach) {
       events.push({
         type: 'host_unreachable',
         id: node,
@@ -282,12 +305,12 @@ function diffHosts(prev, next, words, events) {
         body: line(name, reason),
         severity: SEVERITY.host_unreachable,
         reason,
-        prev: true,
+        prev: beforeReach,
         next: false,
       });
       continue; // unreachable supersedes level changes this cycle
     }
-    if (!beforeReach && afterReach) {
+    if (beforeReach === false && afterReach) {
       events.push({
         type: 'host_recovered',
         id: node,
@@ -301,16 +324,18 @@ function diffHosts(prev, next, words, events) {
       });
     }
     if (!afterReach) continue;
-    const was = levelsOf(before);
+    const was = before === null ? {} : levelsOf(before);
     const now = levelsOf(after);
     // A file written before #292 holds readings: it is upgraded as it is read
     // (push/snapshot.js upgradeSnapshot), so this only skips one that wasn't.
     if (!was || !now) continue;
     for (const key of Object.keys(now).sort()) {
-      const b = was[key];
+      // A reading with no level before is new: diffed from no state, as from ok.
+      const b = Object.hasOwn(was, key) ? was[key] : null;
       const a = now[key];
-      if (!Object.hasOwn(LEVEL_RANK, b) || !Object.hasOwn(LEVEL_RANK, a)) continue;
-      if (LEVEL_RANK[a] > LEVEL_RANK[b]) {
+      if (!Object.hasOwn(LEVEL_RANK, a)) continue;
+      if (b !== null && !Object.hasOwn(LEVEL_RANK, b)) continue;
+      if (LEVEL_RANK[a] > (b === null ? LEVEL_RANK.ok : LEVEL_RANK[b])) {
         events.push({
           type: 'host_threshold',
           id: `${node}:${key}`,
@@ -322,7 +347,7 @@ function diffHosts(prev, next, words, events) {
           prev: b,
           next: a,
         });
-      } else if (a === 'ok' && b !== 'ok') {
+      } else if (a === 'ok' && b !== null && b !== 'ok') {
         events.push({
           type: 'host_threshold_cleared',
           id: `${node}:${key}`,
@@ -403,16 +428,23 @@ function diffCron(prev, next, words, events) {
 
 // ── UPS ──────────────────────────────────────────────────────────────────
 
+/**
+ * The snapshot holds the UPS's last known state through "unknown" (NUT quiet,
+ * the UPS read failed: push/snapshot.js buildUps), so "unknown" here means no
+ * state is known at all (#448): a UPS new to the snapshot, or one never read.
+ * Going on battery from there pages, as from online; coming back on mains from
+ * there sends nothing, since no outage was paged. A UPS going unknown sends
+ * nothing.
+ */
 function diffUps(prev, next, words, events) {
-  const before = prev.state;
-  const after = next.state;
+  const before = prev?.state ?? 'unknown';
+  const after = next?.state ?? 'unknown';
   const type =
-    before === 'online' && after === 'on_battery'
+    before !== 'on_battery' && after === 'on_battery'
       ? 'ups_on_battery'
       : before === 'on_battery' && after === 'online'
         ? 'ups_restored'
         : null;
-  // any state involving "unknown" => no event.
   if (!type) return;
   const entity = words.entity('power/ups');
   const reason = entity?.reason;

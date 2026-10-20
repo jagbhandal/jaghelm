@@ -9,6 +9,11 @@
  * odd containers, a UPS and two cron jobs) runs through the real
  * assembleServices, the status model and the real push cycle
  * (testing/pushPipeline.js), one cycle at a time.
+ *
+ * Each run starts with no push snapshot, so its first cycle diffs every
+ * entity from no previous state (#448): the board's one open problem, the
+ * failed nas:b2-sync job, pages there once. `play` checks that and leaves it
+ * out of what each test compares.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -69,7 +74,13 @@ function prometheusDown() {
   });
 }
 
-/** Runs `cycles` (caches, one a cycle) through push; returns what each cycle sent. */
+// What the first cycle of a run on the board sends: its open problem, once (#448).
+const FIRST = 'cron_failed nas:b2-sync';
+
+/**
+ * Runs `cycles` (caches, one a cycle) through push; returns what each cycle
+ * sent, and the events, but for the first cycle's FIRST.
+ */
 async function play(cycles) {
   const p = pushPipeline({ env: { KUMA_URL: 'http://kuma' } });
   try {
@@ -79,7 +90,9 @@ async function play(cycles) {
       await p.cycle(c);
       perCycle.push(p.sent.slice(before));
     }
-    return { perCycle, events: p.events };
+    assert.ok(perCycle[0].includes(FIRST), `the first cycle pages ${FIRST}`);
+    perCycle[0] = perCycle[0].filter((s) => s !== FIRST);
+    return { perCycle, events: p.events.filter((e) => `${e.type} ${e.id}` !== FIRST) };
   } finally {
     p.close();
   }
@@ -153,8 +166,17 @@ test('Kuma down: exactly one push event, none for the services it feeds; its rec
     }
   );
   const { perCycle, events } = await play([healthy, kumaDown, kumaDown, kumaDown, healthy]);
-  assert.deepEqual(perCycle, [[], [], ['source_down kuma'], [], ['source_recovered kuma']]);
-  assert.equal(events[0].body, 'Kuma · Kuma unreachable: fetch failed');
+  assert.deepEqual(perCycle, [
+    ['service_down vm103:NAS UI'], // down on the first cycle, which has no snapshot (#448)
+    [],
+    ['source_down kuma'],
+    [],
+    ['source_recovered kuma'],
+  ]);
+  assert.equal(
+    events.find((e) => e.type === 'source_down').body,
+    'Kuma · Kuma unreachable: fetch failed'
+  );
 });
 
 test('NUT quiet: exactly one push event, none for the UPS; its recovery exactly one', async () => {
@@ -182,17 +204,17 @@ test('a restart during an outage keeps it: no second source_down, and one recove
   const p = pushPipeline({ env: { KUMA_URL: 'http://kuma' } });
   try {
     for (const c of [healthy, prometheusDown(), prometheusDown()]) await p.cycle(c);
-    assert.deepEqual(p.sent, ['source_down prometheus']);
+    assert.deepEqual(p.sent, [FIRST, 'source_down prometheus']);
     p.restart();
     await p.cycle(prometheusDown());
     await p.cycle(prometheusDown());
     assert.deepEqual(
       p.sent,
-      ['source_down prometheus'],
+      [FIRST, 'source_down prometheus'],
       'still down after the restart: nothing new'
     );
     await p.cycle(healthy);
-    assert.deepEqual(p.sent, ['source_down prometheus', 'source_recovered prometheus']);
+    assert.deepEqual(p.sent, [FIRST, 'source_down prometheus', 'source_recovered prometheus']);
   } finally {
     p.close();
   }

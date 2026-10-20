@@ -177,8 +177,10 @@ export function buildHosts(status, prevHosts = {}) {
 
 /**
  * The UPS state, from the model's UPS: on battery or low battery (crit) is
- * on_battery, on mains (ok) online, anything else (no data, NUT quiet) holds.
- * null when the model has no UPS this cycle.
+ * on_battery, on mains (ok) online, anything else (no data, NUT quiet) holds,
+ * so an exporter blip mid-outage neither pages again nor sends a false "back
+ * on mains". "unknown" is left only when no state was ever known, and going
+ * on battery from it pages (#448). null when the model has no UPS this cycle.
  */
 export function buildUps(status, prevUps = null) {
   const e = entitiesOf(status).find((x) => x?.id === 'power/ups');
@@ -246,15 +248,19 @@ export function buildSources(status, prevSources = {}) {
 
 /**
  * Whether this cycle can be the baseline (the first snapshot, with no `prev`).
- * A baseline is never diffed, so what it records for a host or the UPS is only
- * ever compared against later: a host missing because Prometheus was down sends
- * host_recovered once it answers, and an "unknown" UPS keeps a later on_battery
- * silent. So the baseline waits while the UPS read fails, or while Prometheus
- * fails with no host's reachability read (a host is in `hosts` only when it
- * was). It does not wait for Kuma, or for a Prometheus failure some host was
- * still read through: either can last as long as JagHelm runs (no Kuma at
- * KUMA_URL, a query that always times out), and waiting would leave push
- * without a baseline the whole time.
+ * The baseline waits while the UPS read fails, or while Prometheus fails with
+ * no host's reachability read (a host is in `hosts` only when it was), and is
+ * taken from the first cycle those answer (#232). It does not wait for Kuma,
+ * or for a Prometheus failure some host was still read through: either can
+ * last as long as JagHelm runs (no Kuma at KUMA_URL, a query that always times
+ * out), and waiting would leave push without a baseline the whole time.
+ *
+ * The baseline is diffed from no previous state like any snapshot (#448), so
+ * it pages what is in trouble once, whenever it is taken. The wait was for a
+ * baseline that was never diffed: a host it missed sent host_recovered later,
+ * and an "unknown" UPS kept a later on_battery silent. Neither happens now;
+ * what the wait still does is send no source_down for an outage JagHelm boots
+ * into with no snapshot file (#436).
  */
 function baselineReady(hosts, ok) {
   if (!ok.ups) return false;
@@ -313,9 +319,10 @@ function keepHosts(prevHosts, hosts, ok) {
  * fails; hosts missing while Prometheus fails; the UPS while its read fails.
  * Cron is pushed to JagHelm and has no upstream to fail.
  *
- * With no `prev` this cycle is the baseline, and its values are all there is.
- * When it cannot be one (baselineReady) the result is null, and the push cycle
- * skips it without taking a baseline.
+ * With no `prev` this cycle is the baseline, and its values are all there is:
+ * the differ diffs it from no previous state (#448). When it cannot be one
+ * (baselineReady) the result is null, and the push cycle skips it without
+ * taking a baseline.
  *
  * @param {{ getCached: (key: string) => *, getCachedInternal?: (key: string) => * }} caches
  * @param {object|null} prev
