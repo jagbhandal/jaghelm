@@ -958,8 +958,12 @@ written by hand: `healthy` and `incident` are the demo's boards
 (`demoStatusCycle` in `demoFixtures.js`, the same inputs `demoStatus` serves);
 `source-down` is the healthy board and then two cycles of Prometheus failing;
 `first-run` has nothing set up; `thresholds` puts node readings on, over, just
-under and held inside the lines of the threshold table. They are Node-only; an
-e2e or gallery run can import them on its Node side and hand a page the JSON.
+under and held inside the lines of the threshold table; `every-state` has one
+of every other state (a node unreachable, the UPS on battery, a job failed, a
+job and a backup overdue, a service pending and one in maintenance, a container
+missing, an integration failing, an Arcane agent offline); `low-battery` has
+the UPS on low battery. They are Node-only; an e2e or gallery run can import
+them on its Node side and hand a page the JSON.
 
 - **Push** (`server/status/crossClient.test.js`, `npm run test:ci`): each
   fixture's status goes through the real push cycle, from an empty snapshot and
@@ -976,15 +980,18 @@ e2e or gallery run can import them on its Node side and hand a page the JSON.
   condition), and read back: the headline's word (the model's word for the
   board's state) and sentence, each tile's state, word and counts, each row's
   state, word and reason, each meter's state and the number and line the
-  model's reason gives.
+  model's reason gives. A meter reads its lines from the fixture's threshold
+  config, since `/api/status` doesn't serve them yet (#451).
 
 A disagreement fails it unless a named exception (`KNOWN` in each file) covers
 it, where it says. An exception that stops happening fails too, so settling
 one is deleting its entry. Today's: a failed backup is crit on the screen but
-pushes at `warning` (#446, Jag to decide); a node new to the push snapshot
-sends "Host recovered" and never pages a reading already over its line; an
-empty board's attention panel isn't quiet; a meter rounds a reading the model
-rounds down (94.6 % reads "95%" on the meter, "94 %" in the reason). The legacy
+pushes at `warning` (#446, Jag to decide); a node new to the push snapshot is
+a baseline, so it sends "Host recovered" (or nothing, if unreachable) and a
+reading already over its line doesn't page (#448); a UPS with no known state
+in the snapshot doesn't page on battery; an empty board's attention panel
+isn't quiet (#449); a meter rounds a reading the model rounds down (94.6 %
+reads "95%" on the meter, "94 %" in the reason, #450). The legacy
 derivations (`src/utils/thresholds.js`, `mobile/src/data/derive.js`) are
 outside it; #306, #325 and #326 delete them, and Android's screens join it in
 #325.
@@ -1562,7 +1569,7 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   hook, the old-tab chunk reload, its per-build guard and stall watchdog
   (`src/chunkReload.test.jsx`) and the tab it reopens (`src/App.reloadTab.test.jsx`),
   and the `src/ui/` components.
-- **Cross-client status suite** (both of the above): five named status fixtures
+- **Cross-client status suite** (both of the above): seven named status fixtures
   (`server/testing/statusScenarios.js`) through the real push cycle
   (`server/status/crossClient.test.js`, in `test:ci`) and through the `src/ui`
   status components (`src/ui/crossClient.test.jsx`, in `test:client`): every
