@@ -35,3 +35,42 @@ test('redactError handles Error objects and null/undefined', () => {
   assert.equal(redactError(null), null);
   assert.equal(redactError(undefined), undefined);
 });
+
+test('redacts userinfo in a URL of any scheme, not only http(s) (#409)', () => {
+  for (const url of [
+    'ws://svc:t0k3n@10.0.0.5/socket', // pragma: allowlist secret
+    'postgres://app:t0k3n@db:5432/jaghelm', // pragma: allowlist secret
+    'redis://:t0k3n@cache:6379', // pragma: allowlist secret
+  ]) {
+    const out = redactSecrets(`connect failed: ${url}`);
+    assert.ok(!out.includes('t0k3n'), out);
+    assert.ok(out.includes(':[redacted]@'), out);
+  }
+});
+
+test('a URL with a user and no password loses the user: it is often the token itself (#409)', () => {
+  const out = redactSecrets('Request cannot be constructed from a URL that includes credentials: https://ghp_t0k3n@git.test/x'); // pragma: allowlist secret
+  assert.ok(!out.includes('t0k3n'), out);
+  assert.ok(out.includes('https://[redacted]@git.test/x'), out);
+});
+
+test('a password holding an @ is redacted whole, up to the last @ before the host (#409)', () => {
+  const out = redactSecrets('to http://jag:hun@ter2@127.0.0.1:9/api failed'); // pragma: allowlist secret
+  assert.equal(out, 'to http://jag:[redacted]@127.0.0.1:9/api failed');
+});
+
+test('an @ after the host (a path, a query, the text after the URL) is not userinfo (#409)', () => {
+  for (const s of [
+    'GET http://127.0.0.1:9/users/@me failed',
+    'mail admin@example.test about http://127.0.0.1:9',
+    'http://127.0.0.1:9#a@b',
+  ]) {
+    assert.equal(redactSecrets(s), s);
+  }
+});
+
+test('redacting twice gives the same text (#409)', () => {
+  const once = redactSecrets('http://jag:hunter2@127.0.0.1:9 and http://t0k3n@h.test'); // pragma: allowlist secret
+  assert.equal(redactSecrets(once), once);
+  assert.equal(once, 'http://jag:[redacted]@127.0.0.1:9 and http://[redacted]@h.test');
+});

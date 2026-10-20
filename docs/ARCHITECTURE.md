@@ -623,6 +623,15 @@ integration connection-test endpoint.
 ### 4.6 Observability
 
 - **Structured logging** (`util/logger.js`) with redaction -- no secrets in logs.
+  Every string a line carries goes through `util/redact.js` as the logger
+  writes it: the message, each field at any depth, object keys, an Error's
+  message and properties, and a URL object (written as its address). A URL
+  loses its password (`user:[redacted]@`, any scheme; a user with no password,
+  often a token, is redacted whole), secret query values and, for http(s), its
+  query string, and keeps its scheme, user and host. Node's fetch refuses a
+  `PROMETHEUS_URL` or `KUMA_URL` with `user:pass@` and names the full URL in its
+  error, which every failing cycle logs (#409). The running server writes to
+  stdout/stderr only through the logger.
   `LOG_LEVEL` (`debug|info|warn|error|silent`, default `info`) filters it.
   Success lines every refresh cycle would repeat are debug, while a refresh
   that keeps failing still logs its own error each cycle. At info: a cycle that

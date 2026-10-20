@@ -141,7 +141,7 @@ const extraConnect = (process.env.CSP_CONNECT_EXTRA || '')
   .filter(Boolean)
   .filter((entry) => {
     if (VALID_CSP_ORIGIN_RE.test(entry)) return true;
-    console.warn(`[csp] ignoring invalid CSP_CONNECT_EXTRA entry: ${entry}`);
+    log.warn({ entry }, 'ignoring invalid CSP_CONNECT_EXTRA entry');
     return false;
   });
 const cspDirectives = {
