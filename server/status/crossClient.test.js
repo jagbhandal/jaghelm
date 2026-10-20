@@ -227,42 +227,6 @@ const KNOWN = [
       f.model === 'crit' &&
       f.push === 'warning',
   },
-  {
-    name: 'a host new to the push snapshot',
-    issue: '#448',
-    why:
-      'A node the push snapshot has no entry for (one added to services.yaml; after a first run, ' +
-      'every node) is a baseline (push/differ.js diffHosts): reachable, it sends "Host recovered" at ' +
-      '"info" with the model\'s reason, and a reading already over its line pages only once it falls ' +
-      'back and crosses again; unreachable, it sends nothing. The screen shows the node warn or crit.',
-    at: [
-      ['thresholds', 'empty'],
-      ['every-state', 'empty'],
-    ],
-    covers: (f, { prev }) =>
-      f.subject.startsWith('nodes/') &&
-      !Object.hasOwn(prev.hosts ?? {}, f.subject.slice('nodes/'.length)) &&
-      ((f.what === 'severity' && f.push === 'info') ||
-        (f.what === 'missing' && (f.type === 'host_threshold' || f.type === 'host_unreachable'))),
-  },
-  {
-    name: 'a UPS with no known state does not page on battery',
-    issue: '#448',
-    why:
-      'The push snapshot keeps the UPS as online, on_battery or unknown, and the differ pages only ' +
-      'online to on_battery (push/differ.js diffUps: "any state involving unknown => no event"). A UPS ' +
-      'new to the snapshot, or one whose NUT exporter was quiet, that is on battery or low battery ' +
-      'sends nothing. The screen shows it crit.',
-    at: [
-      ['every-state', 'empty'],
-      ['low-battery', 'empty'],
-    ],
-    covers: (f, { prev }) =>
-      f.subject === 'power/ups' &&
-      f.what === 'missing' &&
-      f.type === 'ups_on_battery' &&
-      prev.ups?.state !== 'online',
-  },
 ];
 
 // ── The push side of a fixture ───────────────────────────────────────────
@@ -353,31 +317,23 @@ for (const name of STATUS_SCENARIOS) {
 
 // Each fixture's pushes from each start: the anchor that says what the
 // fixture is about for push (source-down's single push, first-run's none).
+// From the empty snapshot every entity is new, and is diffed from no previous
+// state (#448): what is in trouble pages, what is ok doesn't.
 const SENT = {
-  healthy: {
-    empty: ['host_recovered apps', 'host_recovered edge', 'host_recovered storage'],
-    healthy: [],
-  },
+  healthy: { empty: [], healthy: [] },
   incident: {
-    empty: [
-      'cron_failed storage:nightly-backup',
-      'host_recovered apps',
-      'host_recovered edge',
-      'host_recovered storage',
-      'service_down apps:jellyfin',
-    ],
+    empty: ['cron_failed storage:nightly-backup', 'service_down apps:jellyfin'],
     healthy: ['cron_failed storage:nightly-backup', 'service_down apps:jellyfin'],
   },
   'source-down': { empty: ['source_down prometheus'], healthy: ['source_down prometheus'] },
   'first-run': { empty: [], healthy: [] },
   'every-state': {
-    // The unreachable node and the UPS: KNOWN, #448 and the UPS entry.
     empty: [
       'cron_failed apps:db-dump',
       'cron_overdue apps:image-prune',
       'cron_overdue storage:nightly-backup',
-      'host_recovered apps',
-      'host_recovered storage',
+      'host_unreachable edge',
+      'ups_on_battery ups',
     ],
     healthy: [
       'cron_failed apps:db-dump',
@@ -387,13 +343,15 @@ const SENT = {
       'ups_on_battery ups',
     ],
   },
-  'low-battery': {
-    // The UPS: KNOWN's UPS entry.
-    empty: ['host_recovered apps', 'host_recovered edge', 'host_recovered storage'],
-    healthy: ['ups_on_battery ups'],
-  },
+  'low-battery': { empty: ['ups_on_battery ups'], healthy: ['ups_on_battery ups'] },
   thresholds: {
-    empty: ['host_recovered apps', 'host_recovered edge', 'host_recovered storage'],
+    empty: [
+      'host_threshold apps:cpu',
+      'host_threshold apps:disk',
+      'host_threshold edge:mem',
+      'host_threshold storage:disk',
+      'host_threshold storage:temp',
+    ],
     healthy: [
       'host_threshold apps:cpu',
       'host_threshold apps:disk',

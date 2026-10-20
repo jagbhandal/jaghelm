@@ -10,8 +10,9 @@
  * the real snapshot builder, differ and push cycle, sending to a recording FCM.
  *
  * Tests share module state (cache, registries, the Kuma cache) and run in order;
- * each starts its own push snapshot, so its first cycle with every source
- * answering is a fresh baseline.
+ * each starts its own push snapshot, with nothing in it: its first cycle with
+ * every source answering diffs every entity from no previous state (#448), so
+ * what is down then (radarr, unless a test says otherwise) pages once.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -160,9 +161,13 @@ process.on('exit', () => {
 
 const caches = { getCached, getCachedInternal, getAllCronStatuses: () => [] };
 
-// A fresh push pipeline: its first cycle is the baseline. Given the `path` of
-// another pipeline's snapshot file, it is that pipeline after a restart. Each
-// cycle builds the status model and push from it, as refresh.js does (#292).
+// A monitor no container has (#390): its uid is on the first node, from its
+// name, and it is in the push snapshot whether it is up or down.
+const NAS_PING = 'vm103:NAS (Ping)';
+
+// A fresh push pipeline, with no snapshot. Given the `path` of another
+// pipeline's snapshot file, it is that pipeline after a restart. Each cycle
+// builds the status model and push from it, as refresh.js does (#292).
 function pipeline({ path } = {}) {
   const p = pushPipeline({ path, env: { KUMA_URL: KUMA } });
   return {
@@ -180,6 +185,18 @@ function pipeline({ path } = {}) {
     async cycle({ refresh = true, from = caches } = {}) {
       if (refresh) await Promise.all([refreshServices(), refreshUPS()]);
       await p.cycle(from);
+    },
+    // The first cycle, every source answering, for a test about what comes
+    // after it. It has no snapshot, so each service Kuma has down pages once
+    // (#448): checked here, then `sent` starts after it.
+    async boot() {
+      await this.cycle();
+      const down = [['radarr', 'vm103:radarr'], ['nasPing', NAS_PING]]
+        .filter(([w]) => world[w] === 'down')
+        .map(([, key]) => `service_down ${key}`);
+      assert.deepEqual(p.sent, down, 'the first cycle pages what is down, once');
+      p.sent.length = 0;
+      p.events.length = 0;
     },
     done() {
       p.close();
@@ -206,7 +223,7 @@ for (const failure of ['http500', 'timeout']) {
     reset();
     const p = pipeline();
     try {
-      await p.cycle(); // baseline: three reachable hosts, radarr down
+      await p.boot(); // three reachable hosts, radarr down
       assert.equal(p.snapshot.prev().hosts.vm103.reachable, true);
 
       world.prometheus = failure;
@@ -236,7 +253,7 @@ test('the push snapshot keeps the previous hosts, services and UPS while Prometh
   reset();
   const p = pipeline();
   try {
-    await p.cycle();
+    await p.boot();
     const before = structuredClone(p.snapshot.prev());
     assert.deepEqual(Object.keys(before.hosts), ['nas', 'pi', 'vm103']);
     assert.equal(before.services['vm103:gitea'], 'up');
@@ -258,7 +275,7 @@ test('a Kuma outage during a Prometheus failure still pages, and so does its rec
   world.radarr = 'up';
   const p = pipeline();
   try {
-    await p.cycle();
+    await p.boot();
     world.prometheus = 'timeout';
     world.radarr = 'down'; // Kuma still answers: radarr went down
     await p.cycle();
@@ -290,7 +307,7 @@ test('only the container queries failing pages nothing, and keeps the container 
   reset();
   const p = pipeline();
   try {
-    await p.cycle();
+    await p.boot();
     const before = structuredClone(p.snapshot.prev().services);
     world.prometheus = 'containers500';
     await p.cycle();
@@ -313,7 +330,7 @@ test('the UPS going on battery while Prometheus was failing is sent once it answ
   reset();
   const p = pipeline();
   try {
-    await p.cycle();
+    await p.boot();
     world.prometheus = 'http500';
     await p.cycle();
     world.prometheus = 'ok';
@@ -329,7 +346,7 @@ test('a node whose up{node} is 0 while Prometheus is healthy still pages host_un
   reset();
   const p = pipeline();
   try {
-    await p.cycle();
+    await p.boot();
     // Every target on pi stopped answering. Its CPU series (an irate over 5m)
     // keeps a value for a few minutes after that; this stub keeps them all, so
     // only up{node="pi"} says the host is gone.
@@ -353,7 +370,7 @@ test('one metric query failing does not hold host_unreachable for any node', asy
   reset();
   const p = pipeline();
   try {
-    await p.cycle();
+    await p.boot();
     // Every cycle from now on, the temperature query is a 400 (a query that
     // always fails: a bad label, or one that always times out). It covers every
     // node (#234), so every node's temperature read fails, and nothing else.
@@ -379,7 +396,7 @@ test('a cold cache after a restart is a failed source: nothing is re-sent on the
   const before = pipeline();
   let after = null;
   try {
-    await before.cycle(); // baseline written: three reachable hosts, radarr down (already paged)
+    await before.boot(); // written: three reachable hosts, radarr down (already paged)
     after = pipeline({ path: before.path }); // the restart
     const cold = { ...caches, getCached: () => null };
     await after.cycle({ refresh: false, from: cold }); // the first refresh threw
@@ -395,7 +412,7 @@ test('a cache past its TTL is a failed source: nothing is re-sent, and the UPS g
   reset();
   const p = pipeline();
   try {
-    await p.cycle();
+    await p.boot();
     Date.now = () => realNow() + 121_000; // the refreshes failed for longer than the 120 s TTL
     assert.equal(getCached('services'), null);
     await p.cycle({ refresh: false });
@@ -410,20 +427,20 @@ test('a cache past its TTL is a failed source: nothing is re-sent, and the UPS g
   }
 });
 
-test('booting during a Prometheus outage takes no baseline until it answers, so its recovery sends nothing', async () => {
+test('booting during a Prometheus outage takes no snapshot until it answers; then what is down pages once, and no host_recovered', async () => {
   reset();
   world.prometheus = 'http500';
   const p = pipeline();
   try {
     await p.cycle();
     await p.cycle();
-    assert.equal(p.snapshot.prev(), null, 'no baseline from a failed cycle');
+    assert.equal(p.snapshot.prev(), null, 'no snapshot from a failed cycle');
 
     world.prometheus = 'ok';
-    await p.cycle(); // the baseline
+    await p.cycle(); // the first snapshot: every entity is new (#448)
     await p.cycle();
     assert.equal(p.snapshot.prev().hosts.pi.reachable, true);
-    assert.deepEqual(p.sent, [], 'no host_recovered');
+    assert.deepEqual(p.sent, ['service_down vm103:radarr'], 'radarr is down: once; no host_recovered');
   } finally {
     p.done();
   }
@@ -433,7 +450,7 @@ test('Prometheus answering with no up series after it had some counts as failed,
   reset();
   const p = pipeline();
   try {
-    await p.cycle();
+    await p.boot();
     // Back after an outage longer than its lookback, before its first scrape:
     // every query answers, with no series at all.
     world.prometheus = 'fresh';
@@ -465,7 +482,7 @@ for (const failure of ['http500', 'refused']) {
     reset();
     const p = pipeline();
     try {
-      await p.cycle(); // baseline: radarr down per Kuma, its container running
+      await p.boot(); // radarr down per Kuma, its container running
       assert.equal(p.snapshot.prev().services['vm103:radarr'], 'down');
 
       world.kuma = failure;
@@ -492,15 +509,11 @@ for (const failure of ['http500', 'refused']) {
   });
 }
 
-// A monitor no container has (#390): its uid is on the first node, from its
-// name, and it is in the push snapshot whether it is up or down.
-const NAS_PING = 'vm103:NAS (Ping)';
-
 test('a monitor no container has: Kuma failing and recovering while it is down sends no recovery; its real one is sent', async () => {
   reset();
   const p = pipeline();
   try {
-    await p.cycle(); // baseline: NAS (Ping) up
+    await p.boot(); // NAS (Ping) up
     assert.equal(p.snapshot.prev().services[NAS_PING], 'up');
     world.nasPing = 'down';
     await p.cycle();
@@ -535,7 +548,7 @@ test('a monitor no container has: its up entry is in the push snapshot, not in t
   reset();
   const p = pipeline();
   try {
-    await p.cycle(); // NAS (Ping) up
+    await p.boot(); // NAS (Ping) up
     assert.equal(p.snapshot.prev().services[NAS_PING], 'up');
     const app = express();
     app.use('/api/services', servicesRoutes);
@@ -552,7 +565,7 @@ test('a monitor no container has: upWithoutCard is kept beside the cached payloa
   reset();
   const p = pipeline();
   try {
-    await p.cycle(); // NAS (Ping) up
+    await p.boot(); // NAS (Ping) up
     // What /api/services serves and takes its ETag from.
     const keysOf = (v) => (v && typeof v === 'object' ? Object.entries(v).flatMap(([k, x]) => [k, ...keysOf(x)]) : []);
     assert.equal(keysOf(getCached('services')).includes('upWithoutCard'), false, 'not in the served data');
@@ -566,7 +579,7 @@ test('the monitor each monitored key carries is kept beside the cached payload, 
   reset();
   const p = pipeline();
   try {
-    await p.cycle(); // gitea and radarr have their monitors; NAS (Ping) is up with no container
+    await p.boot(); // gitea and radarr have their monitors; NAS (Ping) is up with no container
     const keysOf = (v) => (v && typeof v === 'object' ? Object.entries(v).flatMap(([k, x]) => [k, ...keysOf(x)]) : []);
     assert.equal(keysOf(getCached('services')).includes('monitorOf'), false, 'not in the served data');
     const want = { [NAS_PING]: '3', 'vm103:gitea': '1', 'vm103:radarr': '2' };
@@ -582,7 +595,7 @@ test('a monitor no container has: a restart while it is down sends exactly one r
   const before = pipeline();
   let after = null;
   try {
-    await before.cycle(); // baseline: NAS (Ping) up
+    await before.boot(); // NAS (Ping) up
     world.nasPing = 'down';
     await before.cycle();
     assert.deepEqual(before.sent, [`service_down ${NAS_PING}`]);
@@ -637,7 +650,7 @@ test('logs: Prometheus failing logs one warning, and its recovery one info line'
   reset();
   const p = pipeline();
   try {
-    await p.cycle();
+    await p.boot();
     const prometheusLines = (lines) => lines.filter((l) => l.source === 'prometheus');
 
     world.prometheus = 'http500';

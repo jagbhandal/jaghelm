@@ -41,16 +41,31 @@ test('RECOVERY_TYPES is the info-severity types plus the Arcane recoveries', () 
   }
 });
 
-test('baseline: prev=null returns [] regardless of next', () => {
+test('#448: no previous snapshot (prev=null) is diffed as an empty one: what is in trouble pages, what is ok does not', () => {
   assert.deepEqual(diffSnapshots(null, EMPTY), []);
   const populated = {
-    services: { 'n1:web': 'down' },
-    hosts: { n1: { reachable: false, levels: { cpu: 'warn', disk: 'crit' } } },
+    services: { 'n1:web': 'down', 'n1:api': 'up', 'n1:db': 'unknown' },
+    hosts: {
+      n1: { reachable: false, levels: { cpu: 'warn', disk: 'crit' } },
+      n2: { reachable: true, levels: { cpu: 'ok', disk: 'crit', mem: 'warn' } },
+      n3: { reachable: true, levels: { cpu: 'ok', disk: 'ok' } },
+    },
     ups: { state: 'on_battery' },
-    cron: { 'n1:backup': 'failure' },
-    sources: { prometheus: 'down' },
+    cron: { 'n1:backup': 'failure', 'n1:prune': 'overdue', 'n1:rotate': 'success' },
+    sources: { prometheus: 'down', kuma: 'ok', nut: 'failing' },
   };
-  assert.deepEqual(diffSnapshots(null, populated), []);
+  const sent = diffSnapshots(null, populated).map((e) => `${e.type} ${e.id} ${e.severity}`);
+  assert.deepEqual(sent, [
+    'cron_failed n1:backup warning',
+    'cron_overdue n1:prune warning',
+    'host_threshold n2:disk critical',
+    'host_threshold n2:mem warning',
+    'host_unreachable n1 critical',
+    'service_down n1:web critical',
+    'source_down prometheus warning',
+    'ups_on_battery ups critical',
+  ]);
+  assert.deepEqual(diffSnapshots(null, populated), diffSnapshots(EMPTY, populated));
 });
 
 test('no change: identical prev/next returns []', () => {
@@ -269,11 +284,36 @@ test('host reachable unchanged emits nothing', () => {
   assert.deepEqual(diffSnapshots(host({ n1: DOWN }), host({ n1: DOWN })), []);
 });
 
-test('host absent in prev defaults to reachable:false (no false unreachable)', () => {
-  // prev missing host => reachable:false; next OK => false->true => host_recovered
-  const events = diffSnapshots(host({}), host({ n1: OK }));
-  assert.equal(events.length, 1);
-  assert.equal(events[0].type, 'host_recovered');
+test('#448: a host new to the snapshot at ok sends nothing (no "Host recovered")', () => {
+  assert.deepEqual(diffSnapshots(host({}), host({ n1: OK })), []);
+  assert.deepEqual(diffSnapshots(host({ n0: OK }), host({ n0: OK, n1: OK })), []);
+});
+
+test('#448: a host new to the snapshot that is unreachable sends host_unreachable (critical)', () => {
+  const events = diffSnapshots(host({}), host({ n1: DOWN }));
+  assert.deepEqual(
+    events.map((e) => [e.type, e.id, e.severity, e.prev, e.next]),
+    [['host_unreachable', 'n1', 'critical', null, false]]
+  );
+});
+
+test('#448: a host new to the snapshot sends host_threshold for each reading over its line, at its level', () => {
+  const next = host({
+    n1: { reachable: true, levels: { cpu: 'ok', disk: 'crit', mem: 'warn', 'pool:tank': 'warn' } },
+  });
+  assert.deepEqual(sentFor(host({}), next), [
+    'host_threshold n1:disk critical null->crit',
+    'host_threshold n1:mem warning null->warn',
+    'host_threshold n1:pool:tank warning null->warn',
+  ]);
+  assert.deepEqual(
+    diffSnapshots(host({}), next).map((e) => e.title),
+    ['Host disk critical', 'Host memory high', 'Host storage pool tank high']
+  );
+});
+
+test('#448: a host known to be unreachable stays quiet while it stays so (it is not new)', () => {
+  assert.deepEqual(diffSnapshots(host({ n1: DOWN }), host({ n1: DOWN })), []);
 });
 
 // ── Hosts: the model's levels ────────────────────────────────────────────
@@ -340,8 +380,20 @@ test('every reading the model judges pages, the storage pools and temperature in
   );
 });
 
-test('a reading new to the snapshot is its own baseline', () => {
-  assert.deepEqual(sentFor(...levels({ cpu: 'ok' }, { cpu: 'ok', 'pool:tank': 'warn' })), []);
+test('#448: a reading new to the snapshot pages if it appears at warn or crit, and is quiet at ok', () => {
+  assert.deepEqual(
+    sentFor(...levels({ cpu: 'ok' }, { cpu: 'ok', 'pool:tank': 'warn', temp: 'crit', disk: 'ok' })),
+    ['host_threshold n1:pool:tank warning null->warn', 'host_threshold n1:temp critical null->crit']
+  );
+});
+
+test('#448: a host first seen unreachable (no levels) that comes back over its line sends the reading too', () => {
+  const prev = host({ n1: { reachable: false, levels: {} } });
+  const next = host({ n1: { reachable: true, levels: { cpu: 'ok', disk: 'warn' } } });
+  assert.deepEqual(
+    diffSnapshots(prev, next).map((e) => `${e.type} ${e.id}`),
+    ['host_recovered n1', 'host_threshold n1:disk']
+  );
 });
 
 test('a snapshot written before #292 (readings, not levels) compares no level on the deploy cycle', () => {
@@ -404,10 +456,24 @@ test('ups on_battery->online emits ups_restored(info)', () => {
   );
 });
 
-test('ups transitions to/from unknown emit nothing', () => {
-  assert.deepEqual(diffSnapshots(ups('unknown'), ups('on_battery')), []);
+test('#448: ups unknown (no known state) -> on_battery emits ups_on_battery(critical)', () => {
+  const events = diffSnapshots(ups('unknown'), ups('on_battery'));
+  assert.deepEqual(
+    events.map((e) => [e.type, e.severity, e.prev, e.next]),
+    [['ups_on_battery', 'critical', 'unknown', 'on_battery']]
+  );
+  // A snapshot with no UPS entry at all is the same.
+  assert.deepEqual(
+    diffSnapshots({ ...EMPTY, ups: undefined }, ups('on_battery')).map((e) => e.type),
+    ['ups_on_battery']
+  );
+});
+
+test('ups to unknown, and unknown -> online (no known state), emit nothing', () => {
   assert.deepEqual(diffSnapshots(ups('online'), ups('unknown')), []);
+  assert.deepEqual(diffSnapshots(ups('on_battery'), ups('unknown')), []);
   assert.deepEqual(diffSnapshots(ups('unknown'), ups('online')), []);
+  assert.deepEqual(diffSnapshots(ups('unknown'), ups('unknown')), []);
 });
 
 test('ups unchanged emits nothing', () => {

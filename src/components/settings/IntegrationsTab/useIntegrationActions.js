@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../../../api/client.js';
 import { useConfirm, useToast } from '../../../context/OverlayContext.jsx';
 
@@ -18,6 +18,10 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
   const toast = useToast();
   const [testStatus, setTestStatus] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null);
+  // The post-save call waits 800 ms so "Saved" shows first. A tab closed
+  // before then gets no call (#459), and a second save restarts the wait.
+  const afterSaveTimer = useRef(null);
+  useEffect(() => () => clearTimeout(afterSaveTimer.current), []);
 
   // ── Test connection ──
   const handleTest = async () => {
@@ -97,7 +101,8 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
       }
       if (data.ok) {
         setSaveStatus('saved');
-        setTimeout(() => {
+        clearTimeout(afterSaveTimer.current);
+        afterSaveTimer.current = setTimeout(() => {
           onAfterSave?.();
         }, 800);
       } else {

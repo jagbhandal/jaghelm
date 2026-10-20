@@ -118,8 +118,9 @@ server/                     Express API (Node 26, ESM)
                             PromQL over homelab-shaped series, the pre-#234 node reader, the
                             status model's input builders (statusFixtures.js), the
                             loop's status-and-push step as refresh.js runs it (pushPipeline.js),
-                            and the named status fixtures the cross-client suite runs on
-                            (statusScenarios.js, see 4.7)
+                            the named status fixtures the cross-client suite runs on
+                            (statusScenarios.js, see 4.7), and the live loop's side of the
+                            demo's /api/status drift test (demoLiveStatus.js, see 4.7)
 
 src/                        React 19 SPA (Vite 8)
   main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + the shell and its
@@ -943,11 +944,20 @@ built from the payloads the demo serves (`demoStatus` in `demoFixtures.js`):
 `readStatusInputs` with the demo's board as the caches, the demo display
 config's thresholds and backup jobs (it marks the nightly backup as one, so the
 `incident` headline reads "1 service down · 1 backup failed"; the demo has no
-Arcane), and a tracker as a fresh boot has it (no push to seed it from), on
-every request. So every `since` is that request's time (its down
-service is down "since now"), except a job's, which is its last run's.
-`server/demoStatus.test.js` puts the same payloads in the live caches and cron
-store and checks that the loop's own `updateStatus` gives the same status.
+Arcane). It answers as a board that has been running a while (#442): a new
+tracker on every request (nothing is kept between requests, and there is no
+push to seed it from) runs over the same board twice, at a warm-up clock 15
+minutes before the request and then at the request's (`demoStatusCycles`). So
+every `since` is the warm-up clock (its down service has been down 15 minutes,
+not "since now"), except a job's, which is its last run's, and a "for 2
+cycles" rule has had its two. Both cycles read the board as it is at the
+request; that is also the board at the warm-up clock, since every time the
+model reads in it (the cron runs, the newest an hour old) is before the
+warm-up, which a test checks. `server/demoStatus.test.js` (`incident`) and
+`server/demoStatus.healthy.test.js` put the same payloads in the live caches
+and cron store, run the loop's own `updateStatus` at the same two clocks, and
+check that it gives the same status (`server/testing/demoLiveStatus.js`; one
+file per scenario, so each loop starts from a fresh boot's tracker).
 
 **Push** (`push/snapshot.js`, `push/differ.js`, #292) is built on the model, so
 a notification says what the screens say. The snapshot records, per entity push
@@ -963,8 +973,22 @@ that changed:
   band and waits CPU's 2 cycles, so push does too (#361).
 - What the model can't call up or down holds its last known state and sends
   nothing: a service pending or in maintenance, an entity a failed source made
-  unknown, a reading whose query failed. So down, pending, up still sends the
-  recovery, and down, pending, down sends no second `service_down`.
+  unknown, a reading whose query failed, the UPS while NUT is quiet or its read
+  fails. So down, pending, up still sends the recovery, and down, pending, down
+  sends no second `service_down`; on battery, unknown, on battery sends no
+  second `ups_on_battery`, and online, unknown, online sends nothing.
+- An entity with no previous state (#448) is diffed from "no previous state":
+  it pages once if it appears in trouble, at the model's level, and sends
+  nothing if it appears ok. That is an entity new to the snapshot (a node added
+  to `services.yaml`, a reading that starts answering, a new service or job, a
+  UPS never read, whose snapshot state is `unknown`), and every entity when
+  there is no snapshot (a first run, or a missing or unreadable file): each
+  open problem then pages once, on that cycle, and the snapshot written holds
+  it. A new node sends no "Host recovered"; one unreachable sends
+  `host_unreachable`, and each reading over its line `host_threshold`. An
+  entity first seen while its source fails is unknown, so it sends nothing
+  until the source answers, and is new then. A restart with a valid snapshot
+  is not a first sight: it sends nothing again and clears nothing.
 - A monitoring source (Prometheus, Kuma, NUT) the model lists as failed for two
   cycles in a row (about a minute) sends one `source_down`, and one
   `source_recovered` when it answers. The snapshot keeps each source as `ok`,
@@ -994,7 +1018,8 @@ a push. Its fixtures (`server/testing/statusScenarios.js`) are named boards,
 each a list of cycles built as the loop builds them (`readStatusInputs` over
 the caches a refresh would leave, through one tracker), never status JSON
 written by hand: `healthy` and `incident` are the demo's boards
-(`demoStatusCycle` in `demoFixtures.js`, the same inputs `demoStatus` serves);
+(`demoStatusCycles` in `demoFixtures.js`, the same warm-up and request cycles
+`demoStatus` serves);
 `source-down` is the healthy board and then two cycles of Prometheus failing;
 `first-run` has nothing set up; `thresholds` puts node readings on, over, just
 under and held inside the lines of the threshold table; `every-state` has one
@@ -1025,10 +1050,7 @@ them on its Node side and hand a page the JSON.
 A disagreement fails it unless a named exception (`KNOWN` in each file) covers
 it, where it says. An exception that stops happening fails too, so settling
 one is deleting its entry. Today's: a failed backup is crit on the screen but
-pushes at `warning` (#446, Jag to decide); a node new to the push snapshot is
-a baseline, so it sends "Host recovered" (or nothing, if unreachable) and a
-reading already over its line doesn't page (#448); a UPS with no known state
-in the snapshot doesn't page on battery; a meter rounds a reading the model
+pushes at `warning` (#446, Jag to decide); a meter rounds a reading the model
 rounds down (94.6 % reads "95%" on the meter, "94 %" in the reason, #450). The legacy
 derivations (`src/utils/thresholds.js`, `mobile/src/data/derive.js`) are
 outside it; #306, #325 and #326 delete them, and Android's screens join it in
