@@ -125,6 +125,12 @@ separate Arcane toggle. Recovery messages also respect the "also notify on recov
   `Arcane · <env>`) pushes after 2 consecutive polls that report the environment down,
   counted from first sight and independent of the silent data baseline. One push per outage.
   `Agent reconnected` pushes once when it returns.
+- **On the dashboard's status** (`/api/status`), each environment's agent is an entry under
+  Integrations: a warning while the last environment list read it as down (from the first
+  such poll, while its push waits for the second), no signal while the list itself fails.
+  JagHelm reads it from the poller's last poll and asks Arcane nothing more. Updates,
+  held-back updates, releases and vulnerability digests stay pushes only; they never show
+  as issues there.
 - **New Arcane release.** `Arcane <version> available` pushes once per new version, checked
   every `ARCANE_RELEASE_CHECK_HOURS`. The body says to upgrade by PR (bump the pinned tag).
 - **Failed reads.** If any data read for an environment fails (network error, non-2xx,
