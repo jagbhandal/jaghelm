@@ -28,6 +28,12 @@ import {
 import { serviceRegistry } from './serviceRegistry.js';
 import { containerRegistry } from './containerRegistry.js';
 import { fetchIntegration } from './integrations/handler.js';
+import { createIntegrationBackoff } from './integrations/backoff.js';
+import {
+  configFingerprint,
+  resolveIntegrationConfig,
+  savedFromSettings,
+} from './integrations/lib/config.js';
 import { setCache } from './cache.js';
 import { safeFetch } from './httpClient.js';
 import { dedupe } from './util/dedupe.js';
@@ -722,19 +728,73 @@ export async function refreshIntegrations() {
   return dedupe('integrations', _refreshIntegrations);
 }
 
+// Which integrations are due this cycle (#239): a failing one backs off, and a
+// login refused twice waits for its config to change. See integrations/backoff.js.
+const integrationBackoff = createIntegrationBackoff({ logger: log });
+
+/**
+ * Attempt the integration stored under `key` in the next refresh, whatever its
+ * backoff, as a changed config would. The Settings save calls it, so saving an
+ * integration, changed or not, is the way to say "try again". A call while the
+ * integration's fetch is in flight holds for the refresh after it.
+ */
+export function retryIntegrationNow(key) {
+  integrationBackoff.retryNow(key, performance.now());
+}
+
+/**
+ * The /api/integrations payload: one entry per enabled integration, in config
+ * order. An entry is the integration's fields plus `_`-prefixed internals:
+ * `_error` when the fetch failed (with no fields), `_vms` / `_storagePools` /
+ * `_lastBackup` (Proxmox), `_target`, `_instance`, `_preset`, and `_status`,
+ * its backoff state (integrations/backoff.js).
+ *
+ * Only the integrations that are due are fetched, through at most CONCURRENCY
+ * at a time. One that is backing off or whose login was refused is not queued
+ * at all, so it holds no slot and spends no timeout: its entry is the one its
+ * last attempt left, served again. Each integration's config is resolved once a
+ * cycle, for its fingerprint, and the fetch reuses it.
+ */
 async function _refreshIntegrations() {
   try {
     const config = getConfig();
     const integrations = config?.integrations || {};
+    // The cycle's start times every attempt in it, so the next cycle, one
+    // interval later, is the one an attempt due after that interval falls in.
+    // The payload shows wall-clock times; whether an attempt is due is worked
+    // out on the monotonic clock, which a clock step doesn't move.
+    const at = { wall: Date.now(), mono: performance.now() };
 
-    const results = {};
+    const byKey = {};
     const entries = Object.entries(integrations).filter(([, cfg]) => cfg.enabled !== false);
+    integrationBackoff.retain(entries.map(([key]) => key));
 
-    const fetchOne = async ([key, cfg]) => {
+    const due = [];
+    for (const [key, cfg] of entries) {
+      const handlerType = cfg.preset || key;
+      const yamlConfig = { ...cfg, _storageKey: key };
+      // Left undefined when resolving throws: the fetch then resolves the config
+      // itself and reports what is wrong with it.
+      let resolved;
+      let fingerprint = null;
       try {
-        const handlerType = cfg.preset || key;
-        const result = await fetchIntegration(handlerType, { ...cfg, _storageKey: key });
-        const entry = { ...(result.fields || {}) };
+        const r = resolveIntegrationConfig(handlerType, yamlConfig);
+        fingerprint = configFingerprint(yamlConfig, r);
+        resolved = r;
+      } catch {
+        // left for the fetch to report
+      }
+      const held = integrationBackoff.held(key, fingerprint, at);
+      if (held) byKey[key] = held;
+      else due.push({ key, cfg, handlerType, yamlConfig, resolved, fingerprint });
+    }
+
+    const fetchOne = async ({ key, cfg, handlerType, yamlConfig, resolved, fingerprint }) => {
+      let entry;
+      let authRejected = false;
+      try {
+        const result = await fetchIntegration(handlerType, yamlConfig, resolved);
+        entry = { ...(result.fields || {}) };
         // Surface fetch/auth failures instead of dropping them — otherwise a
         // down integration renders as silent zeros, not an error state.
         if (result.error) entry._error = result.error;
@@ -746,22 +806,32 @@ async function _refreshIntegrations() {
         // Stamp the preset identity so the client can detect integration type
         // directly (e.g. proxmox child panels) rather than sniffing output fields.
         entry._preset = handlerType;
-        results[key] = entry;
+        authRejected = !!result.authRejected;
       } catch (err) {
-        results[key] = { _error: String((err && err.message) || err) };
+        entry = { _error: String((err && err.message) || err) };
       }
+      byKey[key] = integrationBackoff.record(
+        key,
+        fingerprint,
+        entry,
+        { authRejected, savedFromSettings: savedFromSettings(key, cfg) },
+        at
+      );
     };
 
     // Bounded fan-out: a fully-wired board can have 30-50+ integrations; firing them
     // all at once opened that many concurrent sockets every refresh cycle. Cap the
     // peak (no head-of-line blocking — runners pull from a shared queue).
     const CONCURRENCY = 6;
-    const queue = [...entries];
+    const queue = [...due];
     await Promise.all(
       Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
         while (queue.length) await fetchOne(queue.shift());
       })
     );
+    // Config order, not the order the fetches finished in, so an unchanged
+    // payload serializes the same and keeps its ETag.
+    const results = Object.fromEntries(entries.map(([key]) => [key, byKey[key]]));
     setCache('integrations', results);
     return results;
   } catch (err) {

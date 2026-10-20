@@ -180,7 +180,7 @@ credentials ([KNOWN-ISSUES](../KNOWN-ISSUES.md) covers the open-by-default model
 ### 4.2 Background refresh & cache
 
 `refresh.js` runs a single in-process interval that re-fetches node/service
-metrics and every configured integration into the bounded `cache.js`
+metrics and every configured integration that is due (see 4.3) into the bounded `cache.js`
 (it evicts the least recently written key at max entries, so user-influenced
 keys can't exhaust memory). API reads serve from the cache and attach an ETag;
 an unchanged poll returns `304`.
@@ -504,6 +504,60 @@ Key properties:
   read it. No route returns an integration's upstream response.
 - **Session-auth presets** (Nginx Proxy Manager, Portainer, PhotoPrism) get a
   managed login session via `lib/session.js`; the same SSRF guard still applies.
+- **A failing integration backs off; a login refused twice waits for a
+  config change** (`integrations/backoff.js`, #239). The refresh loop fetches
+  only the integrations that are due, through at most 6 at a time. After a
+  failure the next attempt waits 30 s, then 1, 2, 4 and 8 min, then 10 min
+  each time; a success resets it. Whether an attempt is due is worked out on a
+  monotonic clock (`performance.now()`), so a wall-clock step doesn't move it.
+  A refused login (`authRejected` from `fetchIntegration`) is a 401 or 403
+  from the request's own origin to the session login (to every one of them
+  with an `authFallback`) or to a data request that carried the integration's
+  credentials (basic, bearer, header or query). A 401 or 403 to a request
+  without credentials, one from another origin after a redirect (which
+  dropped the credentials, see above), a data read after a good session login,
+  and every other failure back off instead.
+  - **Two refusals in a row park it.** A first refused login backs off like
+    any failure, so a proxy, a WAF challenge or an app answering 403 while it
+    rate-limits recovers on the next attempt. A second refusal in a row, under
+    the same config, parks the integration in `auth_failed`: it is not
+    attempted again until its config changes. Any other outcome in between
+    starts the count again. A wrong password so costs two attempts per config,
+    well under the five failed logins that qBittorrent and fail2ban allow by
+    default before they ban.
+  - **What counts as a config change.** Its config is a fingerprint
+    (`configFingerprint` in `lib/config.js`, a SHA-256) of its entry in
+    `services.yaml` with its URL and credentials resolved, so a hand edit
+    picked up by the config watcher, a save in Settings, and a new value for
+    the same `$secret:` each count. Each integration is resolved once a cycle
+    and the fetch reuses that config. A save in Settings retries it at the next
+    refresh even when nothing changed (`retryIntegrationNow`), and a save made
+    while its fetch is in flight holds for the refresh after that. The state
+    is in memory, so a restart attempts every integration. Removing an
+    integration, or disabling it, drops its state only when a refresh runs
+    without it: a hand edit that removes and re-adds it, or disables and
+    re-enables it, between two refreshes leaves it parked, since its config
+    is the same.
+  - **How it is served.** An integration that is not due is not queued, so it
+    holds no fetch slot and spends no timeout: its entry is the one its last
+    attempt left, served again, `_error` included, as the failure was served
+    when it happened (no last good data). A parked integration's `_error` ends
+    with a fixed hint: "(login refused twice; not retried until it is saved in
+    Settings)" for an entry exactly as a save in Settings writes it
+    (`savedFromSettings` in `lib/config.js`), and "(... not retried until
+    services.yaml changes or JagHelm restarts)" for one written by hand,
+    which a save in Settings would rebuild and lose parts of (#402).
+  - **`_status`.** Every entry in `/api/integrations` carries
+    `_status: { state, since, failures, nextAttemptAt }`, with `state` one of
+    `ok`, `backing_off` and `auth_failed`, `since` when that state began,
+    `failures` the failed attempts in a row under the current config, and
+    `nextAttemptAt` the next attempt (null when ok, as it is fetched every
+    cycle, or auth failed, as it waits for a config change). Both times are
+    wall-clock ms since the epoch, set once per attempt, so none of the values
+    change between attempts and the payload's ETag holds. The payload lists
+    the integrations in config order. The web app does not read `_status` yet
+    (#290 builds the status model on it). It shows `_error` as the note on
+    the service card the integration is matched to, so the hint is on screen.
 
 ### 4.4 Config, secrets, and persistence
 
@@ -533,7 +587,8 @@ integration connection-test endpoint.
   Success lines every refresh cycle would repeat are debug, while a refresh
   that keeps failing still logs its own error each cycle. At info: a cycle that
   took 5 s or more; a change in the cycle's set of failed refreshes (a refresh
-  that returned null, or an integration with an `_error`); a Kuma load whose
+  that returned null, or an integration with an `_error`, which a backed-off
+  one keeps until it answers); a Kuma load whose
   monitor count or source changed; and one line per boot for containers no
   monitor went to. A `services.yaml` mapping to a monitor Kuma does not have
   (or a paused one), a `monitor_per_node` key that is no node, and a mapping of
@@ -542,7 +597,10 @@ integration connection-test endpoint.
   monitors loaded: unreachable, non-2xx, or a status page with none) each warn
   once, with the error, and their recovery logs once at info with how long it
   was down; the failed cycles in between log at debug
-  (`util/sourceHealthLog.js`).
+  (`util/sourceHealthLog.js`). A failed integration attempt logs its error;
+  one parked by a second refused login in a row also warns that it waits for
+  a config change, and the first success after failures logs at info
+  (`integrations/backoff.js`).
 - **Access log** (`accessLog.js`): one line per request with its full path and no
   query string or fragment; 5xx at `error`, 4xx and requests of 300 ms or more at
   `info`, the rest at `debug`. `/metrics`, `/api/health` and `/api/readyz` are not
