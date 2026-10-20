@@ -158,6 +158,14 @@ const CELSIUS = {
  * - Each reading that was read: its level (levelOf). A reading whose query
  *   failed is `unknown`; one with no data (a VM has no temperature sensor) is
  *   left out.
+ * - A reading with no value this cycle that the model holds a level for (a
+ *   sensor or exporter that didn't answer, #462) keeps that level and CPU's
+ *   run, as a failed read does, so a quiet cycle neither ends an episode nor
+ *   starts another. Held at warn or crit, the node stays at that level, with a
+ *   reason that says there is no reading and no number or metric; its
+ *   condition is `unknown`, as there is no value for a meter. Held at ok, it
+ *   is left out. It holds until the reading is read again or the node goes
+ *   from services.yaml, as push's snapshot holds it.
  * - CPU warns only after `cpu.cycles` cycles in a row at or above its line.
  *
  * `conditions` gives each reading's state, so a meter is coloured by the
@@ -214,6 +222,28 @@ export function judgeNode(node, { prometheusOk, pools = [], memo = null, thresho
   const found = [];
   let order = 0;
 
+  // A reading with no value this cycle: what the model held for it is kept
+  // (#462). `lines` are its warn and crit lines, `band` its hysteresis and
+  // `line` how a line is written.
+  const hold = (key, label, { lines, band, line }, at) => {
+    if (prevStreak[key]) streak[key] = prevStreak[key];
+    const before = prevLevels[key];
+    if (!before) return;
+    levels[key] = before;
+    // At most the level its lines allow: a reading with no crit line holds warn.
+    const level = before === 'crit' && lines.crit == null ? 'warn' : before;
+    if (level !== 'warn' && level !== 'crit') return;
+    conditions[key] = 'unknown';
+    found.push({
+      key,
+      state: level,
+      reason: `${label}: no reading (${LEVEL_WORD[level]} held until below ${line(lines[level] - band)})`,
+      order: at,
+    });
+  };
+  const usage = (lines) => ({ lines, band: h.fraction, line: pct });
+  const celsius = { lines: thresholds.temp, band: h.celsius, line: CELSIUS.line };
+
   for (const r of NODE_METRICS) {
     order += 1;
     if (failed.includes(r.read)) {
@@ -230,7 +260,10 @@ export function judgeNode(node, { prometheusOk, pools = [], memo = null, thresho
     }
     if (r.key === 'temp') {
       const v = celsiusOf(m.temp);
-      if (v === null) continue;
+      if (v === null) {
+        hold('temp', r.label, celsius, order);
+        continue;
+      }
       const level = levelOf(v, prevLevels.temp, thresholds.temp, h.celsius);
       levels.temp = level;
       conditions.temp = level;
@@ -247,7 +280,10 @@ export function judgeNode(node, { prometheusOk, pools = [], memo = null, thresho
       continue;
     }
     const v = fractionOf(m[r.field]);
-    if (v === null) continue;
+    if (v === null) {
+      hold(r.key, r.label, usage(thresholds[r.key]), order);
+      continue;
+    }
     let level;
     if (r.key === 'cpu') {
       // Warn only after `cycles` cycles in a row at or above the line; then it
@@ -288,7 +324,10 @@ export function judgeNode(node, { prometheusOk, pools = [], memo = null, thresho
   for (const p of poolList) {
     const key = `pool:${p.name}`;
     const v = fractionOf(p.percent);
-    if (v === null) continue;
+    if (v === null) {
+      hold(key, `Storage pool ${p.name}`, usage(thresholds.disk), 1.5);
+      continue;
+    }
     const level = levelOf(v, prevLevels[key], thresholds.disk, h.fraction);
     levels[key] = level;
     conditions[key] = level;

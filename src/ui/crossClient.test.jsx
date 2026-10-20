@@ -34,6 +34,7 @@ import { MetricMeter } from './metric-meter.jsx';
 import { SubsystemStrip } from './subsystem-strip.jsx';
 import { STATES } from './lib/status.js';
 import { runScenario, STATUS_SCENARIOS } from '../../server/testing/statusScenarios.js';
+import { cycles, inputs, node } from '../../server/testing/statusFixtures.js';
 import { judgeNode, judgeService } from '../../server/status/rules.js';
 import { DEFAULT_THRESHOLDS } from '../../server/status/thresholds.js';
 
@@ -336,6 +337,29 @@ describe('cross-client, screen', () => {
       }
     });
   }
+
+  it('a reading with no value this cycle: the meter shows none, and the row says its level is held (#462)', () => {
+    // The hottest sensor at 78 °C, then a cycle it doesn't answer.
+    const board = (temp) => inputs({ nodes: { n1: node({ temp }) } });
+    const [, status] = cycles([board('78.0'), board(null)]);
+    const services = board(null).services;
+    const cycle = {
+      caches: { getCached: (k) => (k === 'services' ? services : null) },
+      thresholds: DEFAULT_THRESHOLDS,
+    };
+    expect(disagreements({ status, cycle }).map(describeFinding)).toEqual([]);
+    const n1 = status.entities.find((e) => e.id === 'nodes/n1');
+    expect([n1.state, n1.reason]).toEqual([
+      'warn',
+      'Temperature: no reading (warning held until below 70 °C)',
+    ]);
+    const meter = document.querySelector(
+      '[data-node="nodes/n1"] [data-reading="temp"] [data-slot="metric-meter"]'
+    );
+    expect(meter.dataset.state).toBe('unknown');
+    expect(meter.textContent).toContain('No data');
+    expect(meter.textContent).not.toMatch(/\d+\s*°C/);
+  });
 
   it("the headline says the model's word for every state the board can be in", () => {
     // The fixtures reach crit, warn and unknown; this covers maintenance too.
