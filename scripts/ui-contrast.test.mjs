@@ -180,6 +180,7 @@ test('the floors are the spec’s (§5.2)', () => {
     'status-fg': 4.5,
     'on-solid': 4.5,
     'focus-ring': 3,
+    'control-edge': 3,
   });
   for (const rule of Object.keys(RULES)) {
     assert.ok(
