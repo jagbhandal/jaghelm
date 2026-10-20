@@ -123,9 +123,10 @@ jobs:
   # (gallery/container.mjs; scripts/gallery-build.test.mjs keeps the three
   # copies of it in step), which carries Chromium, so nothing is downloaded but
   # npm packages and, after a runner's image prune (weekly on MS-S1, daily on
-  # vm-103), the image itself, about 1 GB. It shares no host namespace: no
-  # --ipc=host (Chromium already avoids /dev/shm), and it picks a free port
-  # per run (playwright.config.mjs), so jobs side by side never meet.
+  # vm-103), the image itself, about 1 GB. It asks for no host namespace of
+  # its own (no --ipc=host: Chromium already avoids /dev/shm), and it picks a
+  # free port per run (playwright.config.mjs), so jobs side by side on one
+  # runner's network never meet.
   gallery:
     runs-on: self-hosted
     container:
