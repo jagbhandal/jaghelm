@@ -220,6 +220,7 @@ export const CATALOG = Object.freeze([
   s('bottom-tabs', 'Shell', "BottomTabs: the phone's tabs, Alerts open with its count", {
     accent: true,
   }),
+  s('app-bar', 'Shell', 'AppBar: over an open app, with Reload and Open in new tab'),
 ]);
 
 /**

@@ -1307,12 +1307,13 @@ router, the config and the status poll ([ARCHITECTURE.md](ARCHITECTURE.md),
 | --- | --- | --- |
 | `AppShell` | `@ui/app-shell` | `switches` (the roots' theme, accent, density, typeface), `header`, `sidebar`, `tabs`, and the page as `children` |
 | `ShellPage` | `@ui/app-shell` | `title` (the page's h1), `description`, `actions`; a page of the new UI inside the shell |
-| `ShellApps` | `@ui/app-shell` | `label` (names the open app's region); holds the embedded apps' frames |
+| `ShellApps` | `@ui/app-shell` | `label` (names the open app's region), `bar` (the open app's AppBar); holds the embedded apps' frames |
 | `AppHeader` | `@ui/app-header` | `name`, `logoUrl`, `status` (`{ reach, state, word, sentence, href, current }`), `updated` (an element, `UpdatedAgo`), `onOpenPalette`, `shortcut`, `settingsHref`, `settingsCurrent`, `onLogout`, `onNavigate` |
 | `UpdatedAgo` | `@ui/app-header` | `at` (ms since the epoch) |
 | `SideNav` | `@ui/side-nav` | `groups` (`[{ id, label, items }]`), `collapsed`, `onCollapsedChange`, `onNavigate`, `label` |
 | `NavGroups` | `@ui/side-nav` | `groups`, `collapsed`, `onNavigate`: the list alone, as the phone's More sheet uses it |
 | `BottomTabs` | `@ui/bottom-tabs` | `tabs` (`[{ id, label, icon, href or onClick, current, badge, expanded }]`), `onNavigate`, `label` |
+| `AppBar` | `@ui/app-bar` | `name`, `monogram`, `url`, `href` (Open in new tab; none, no link), `onReload` (none, no button) |
 
 A nav entry is `{ id, label, href, icon or monogram, current, badge, loaded,
 onUnload, minor }`; a badge is `{ count, state, label }`, its `label` the count
@@ -1360,6 +1361,13 @@ From the mock's Main and Phone boards:
   (`pointer-coarse`). Collapsed: 64px, icons and chips centred, the count and
   the dot at the icon's corner, the toggle (`PanelLeftClose` /
   `PanelLeftOpen`) at the bottom.
+- **AppBar.** The mock's strip over an open app: 44px on `surface-1` above a
+  subtle edge, 16px (24px from 768px) at the left. The app's chip, its name
+  in bold, its address in 12px mono `text-3`, cut short (from 768px), "Stays
+  loaded when you switch away" in `caption` `text-3` (from 1024px), a 30px
+  ghost Reload (`RotateCw`) and a secondary sm "Open in new tab" with the
+  external-link icon. It sits in its own root above the frames, which fill
+  the rest of the window; the loading, slow and blocked notices show under it.
 - **BottomTabs.** 64px (plus the home-indicator inset) on `surface-1` above a
   subtle edge, one cell per tab: a 20px icon over a 12px label, `text-3`;
   the open tab's icon sits on a 48 × 28 `accent-tint` pill and its label is
@@ -1377,7 +1385,9 @@ From the mock's Main and Phone boards:
   loaded ("Alerts, 4 issues", "Grafana, still loaded"); collapsed, the same
   name shows as a tooltip. The header's status is one link, "Critical: 1
   service down · …", in a polite live region, so a change is announced. The
-  open page's entry and link are `aria-current="page"`. More is a button with
+  open page's entry and link are `aria-current="page"`. Reload is named
+  "Reload <app>"; "Open in new tab" opens with `rel="noopener noreferrer"`,
+  so the app gets no handle on JagHelm. More is a button with
   `aria-haspopup="dialog"` and `aria-expanded`; its sheet is a Drawer named
   "More". The search button carries `aria-keyshortcuts`.
 - **Focus.** Unload sends focus back to its entry. Every control keeps the

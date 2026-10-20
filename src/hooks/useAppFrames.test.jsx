@@ -24,6 +24,7 @@ function setup(tabs, activeTab) {
       },
     },
     unload: (id) => act(() => hook.result.current.unload(id)),
+    reload: (id) => act(() => hook.result.current.reload(id)),
     rerender: hook.rerender,
   };
 }
@@ -169,6 +170,30 @@ describe('useAppFrames', () => {
       expect(ids(result.current)).toEqual([
         ['grafana', true],
         ['kuma', false],
+      ]);
+    });
+  });
+
+  describe('reload', () => {
+    it("counts a reload on that app only, which keeps its place and stays loaded", () => {
+      const { result, rerender, reload } = setup([dash, grafana, kuma], 'grafana');
+      rerender({ tabs: [dash, grafana, kuma], activeTab: 'kuma' });
+      rerender({ tabs: [dash, grafana, kuma], activeTab: 'grafana' });
+      const reloads = () => result.current.map((f) => [f.tab.id, f.reloads]);
+      expect(reloads()).toEqual([
+        ['grafana', 0],
+        ['kuma', 0],
+      ]);
+      reload('grafana');
+      reload('grafana');
+      expect(reloads()).toEqual([
+        ['grafana', 2],
+        ['kuma', 0],
+      ]);
+      reload('nope');
+      expect(reloads()).toEqual([
+        ['grafana', 2],
+        ['kuma', 0],
       ]);
     });
   });

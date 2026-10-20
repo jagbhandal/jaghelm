@@ -222,6 +222,46 @@ describe('the sidebar', () => {
   });
 });
 
+describe('the app bar', () => {
+  it("shows over the open app, and Reload reloads that app's frame alone", async () => {
+    await renderApp();
+    fireEvent.click(entry('Uptime Kuma'));
+    await waitFor(() => expect(frame(KUMA.url)).not.toBeNull());
+    fireEvent.click(entry('Grafana'));
+    await waitFor(() => expect(frame(GRAFANA.url)).not.toBeNull());
+    const grafana = frame(GRAFANA.url);
+    const kuma = frame(KUMA.url);
+
+    const region = screen.getByRole('region', { name: 'Grafana, open inside JagHelm' });
+    const bar = region.querySelector('[data-slot="app-bar"]');
+    expect(bar).toHaveTextContent(GRAFANA.url);
+    const open = within(bar).getByRole('link', { name: 'Open in new tab' });
+    expect(open).toHaveAttribute('href', GRAFANA.url);
+    expect(open).toHaveAttribute('target', '_blank');
+    expect(open).toHaveAttribute('rel', 'noopener noreferrer');
+
+    fireEvent.click(within(bar).getByRole('button', { name: 'Reload Grafana' }));
+    await waitFor(() => expect(grafana.isConnected).toBe(false));
+    expect(frame(GRAFANA.url)).not.toBeNull();
+    expect(frame(GRAFANA.url)).not.toBe(grafana);
+    // The other loaded app keeps its frame, and no frame moved.
+    expect(frame(KUMA.url)).toBe(kuma);
+    expect([...document.querySelectorAll('iframe')].map((f) => f.getAttribute('src'))).toEqual([
+      KUMA.url,
+      GRAFANA.url,
+    ]);
+  });
+
+  it('is not there when no app is open', async () => {
+    await renderApp();
+    fireEvent.click(entry('Grafana'));
+    await waitFor(() => expect(frame(GRAFANA.url)).not.toBeNull());
+    fireEvent.click(entry('Overview'));
+    await current('Overview');
+    expect(document.querySelector('[data-slot="app-bar"]')).toBeNull();
+  });
+});
+
 describe("the phone's tabs", () => {
   it('Overview, Alerts and More; More holds the apps and Settings', async () => {
     await renderApp();

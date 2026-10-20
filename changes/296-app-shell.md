@@ -9,11 +9,13 @@
   the Android app does, instead of a status it can no longer vouch for.
 - An Alerts page lists what needs attention now, worst first.
 - Every page has its own address (`/alerts`, `/settings/tabs`, `/apps/<app>`):
-  links, bookmarks, Back, Forward and a reload all land on the page you were on.
+  links, bookmarks, Back, Forward and a reload all land on the page you were on,
+  offline too once JagHelm has been opened in that browser.
 - Embedded apps are in the sidebar (under More on a phone) and in the command
   palette ("Open Grafana"). A dot marks an app that is still loaded; Unload
   frees it. At most five stay loaded at once: opening a sixth unloads the one
-  you used least recently.
+  you used least recently. Over an open app, a bar shows its name and address,
+  with Reload (that app only) and Open in new tab.
 
 ### Removed
 - The welcome message under the navigation bar.

@@ -62,6 +62,7 @@ import { Table } from '@ui/table';
 import { AppHeader, UpdatedAgo } from '@ui/app-header';
 import { SideNav, appMonogram } from '@ui/side-nav';
 import { BottomTabs } from '@ui/bottom-tabs';
+import { AppBar } from '@ui/app-bar';
 
 // ---------------------------------------------------------------- layout
 
@@ -1705,6 +1706,20 @@ function BottomTabsState() {
   );
 }
 
+function AppBarState() {
+  return (
+    <Stack width={912}>
+      <AppBar
+        name="Grafana"
+        url="https://grafana.example.com/d/homelab/overview"
+        href="https://grafana.example.com/d/homelab/overview"
+        onReload={noop}
+      />
+      <AppBar name="Uptime Kuma" url="http://kuma.lan:3001" onReload={noop} />
+    </Stack>
+  );
+}
+
 export const RENDERS = Object.freeze({
   button: ButtonState,
   'button-disabled': ButtonDisabledState,
@@ -1775,4 +1790,5 @@ export const RENDERS = Object.freeze({
   'side-nav-collapsed': () => <SideNavState collapsed open="alerts" />,
   'side-nav-unload': () => <SideNavState open="arcane" />,
   'bottom-tabs': BottomTabsState,
+  'app-bar': AppBarState,
 });

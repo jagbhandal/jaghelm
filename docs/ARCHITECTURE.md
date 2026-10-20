@@ -159,7 +159,7 @@ src/                        React 19 SPA (Vite 8)
                              uses them too), the data components (#288: metric-meter,
                              sparkline, uptime-bar, entity-row, fact-list, table),
                              the shell (#296: app-shell, app-header, side-nav,
-                             bottom-tabs),
+                             bottom-tabs, app-bar),
                              lib/status.js (the five states, their words,
                              and the two looks), lib/utils.js (cn, taught the theme),
                              lib/portal.js (portal roots and the switches they copy),
@@ -1054,8 +1054,14 @@ flowchart TD
   one more unmounts the least recently opened, never the open one, since each
   is a whole web app running in the page. The sidebar dots each app that is
   loaded but not open, and its Unload button (under the pointer, on keyboard
-  focus, always on a touch screen) unmounts it. The frames fill the window
-  under the header (`ShellApps`, which also names the open app's region).
+  focus, always on a touch screen) unmounts it. Over the open app sits its
+  bar (`AppBar`): its name and address, "Stays loaded when you switch away",
+  Reload and "Open in new tab" (`noopener noreferrer`). Reload counts a reload
+  on that app alone (`useAppFrames`' `reload(id)`), which `useEmbedStatus`
+  takes as a Retry: that frame gets a new iframe element and the server is
+  asked afresh, and no other frame reloads or moves. The frames fill the
+  window under the header and the bar (`ShellApps`, which also names the open
+  app's region).
   `AppFrames` hides the other frames with `visibility: hidden` at full size, not
   `display: none`, so an app laid out to its window isn't redrawn at zero size
   on every switch; each hidden slot is clipped, so it adds no scroll height.
@@ -1105,7 +1111,10 @@ flowchart TD
   bundles (the precache list, the build's full `dist/assets` list + version are
   injected at build by `scripts/inject-sw-precache.mjs`); immutable `/assets/`
   are served cache-first, and other same-origin GETs outside `/api/`
-  network-first with a cached copy for offline. Both runtime paths store into
+  network-first with a cached copy for offline. A page load (`mode:
+  'navigate'`) offline with no copy of its own, such as `/alerts` never
+  visited, gets the precached shell (`/`): every route is the same
+  `index.html`, and the router opens the page its URL names (#296). Both runtime paths store into
   the same versioned cache; an `/assets/` response is stored only when it is ok
   and not HTML. On activate the worker deletes every other cache and trims
   `/assets/` entries not in the current build's asset list, so a redeploy at the
@@ -1555,7 +1564,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   `/api/status` with the model's incident fixture, at 390 and 1440px. It checks
   the header's incident sentence and its steel "No signal" with the backend
   down (and back), that every nav entry (sidebar, phone tabs and More) opens
-  its page and every old view is reachable, Back, Forward and a reload, no
+  its page and every old view is reachable, the app bar (Reload makes a new
+  frame; "Open in new tab" is `_blank` with `noopener noreferrer`), Back, Forward and a reload, no
   sideways scroll on any page, and axe with every default rule, dark and
   light, at both widths: the whole Alerts page, and the shell's chrome around
   today's Overview. It also leaves screenshots of the incident in

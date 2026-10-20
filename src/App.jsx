@@ -20,6 +20,8 @@ import { useAppFrames } from './hooks/useAppFrames.js';
 import { useStatus } from './hooks/useStatus.js';
 import { defaultConfig } from './defaultConfig.js';
 import { AppShell, ShellApps } from '@ui/app-shell';
+import { AppBar } from '@ui/app-bar';
+import { safeUrl } from './utils/safeUrl.js';
 import { navigate, useRoute } from './router/useRoute.js';
 import { pathTo } from './router/routes.js';
 import { ShellHeader, ShellSideNav, ShellTabs } from './shell/ShellChrome.jsx';
@@ -229,7 +231,7 @@ function AppMain({ authRequired, demo, onLogout }) {
   const apps = useMemo(() => appsOf(config.tabs), [config.tabs]);
   const appId = route.id === 'app' ? params.id : null;
   const openApp = appId == null ? null : (apps.find((a) => String(a.id) === appId) ?? null);
-  const { frames, unload } = useAppFrames(config.tabs, openApp ? openApp.id : null);
+  const { frames, unload, reload } = useAppFrames(config.tabs, openApp ? openApp.id : null);
   // An app the config doesn't have shows the Overview, once the server's config
   // is in: it may only be missing from this browser's copy.
   useEffect(() => {
@@ -351,7 +353,19 @@ function AppMain({ authRequired, demo, onLogout }) {
             )}
           </Suspense>
           {/* A boundary of its own: another page's chunk loading must not hide the frames. */}
-          <ShellApps label={openApp ? `${openApp.label || openApp.id}, open inside JagHelm` : undefined}>
+          <ShellApps
+            label={openApp ? `${openApp.label || openApp.id}, open inside JagHelm` : undefined}
+            bar={
+              openApp && (
+                <AppBar
+                  name={openApp.label || String(openApp.id)}
+                  url={openApp.url}
+                  href={safeUrl(openApp.url) || undefined}
+                  onReload={() => reload(openApp.id)}
+                />
+              )
+            }
+          >
             {frames.length > 0 && (
               <Suspense fallback={lazyFallback}>
                 <AppFrames frames={frames} savedTabs={savedConfig?.tabs} />

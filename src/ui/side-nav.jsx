@@ -222,4 +222,4 @@ function SideNav({
   );
 }
 
-export { SideNav, NavGroups };
+export { SideNav, NavGroups, AppChip };

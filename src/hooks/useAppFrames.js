@@ -7,8 +7,10 @@
  * the least recently opened: each loaded app is a whole web app running in
  * the page, and they add up.
  *
- * Returns `{ frames, unload }`. `frames` is `[{ tab, active }]`: every mounted
- * app, its tab, and whether it is the open page. A hidden frame keeps the URL
+ * Returns `{ frames, unload, reload }`. `frames` is `[{ tab, active, reloads }]`:
+ * every mounted app, its tab, whether it is the open page, and how many times
+ * it was reloaded (`reload(id)`, the app bar's Reload: each one gives that app
+ * a new iframe element, and no other app reloads). A hidden frame keeps the URL
  * it last showed: the URL field in Settings changes the config on every key,
  * and a frame that followed it would load each partial URL. An edited URL
  * loads when the app is next opened; the rest of the tab (its label) is the
@@ -34,10 +36,12 @@ export function useAppFrames(tabs, activeTab) {
   const apps = new Map();
   for (const t of tabs || []) if (t && t.type === 'iframe' && t.id != null) apps.set(t.id, t);
 
-  // [{ id, url, used }]: each mounted frame, the URL it shows, and when it was
-  // last opened (a count that only goes up).
+  // [{ id, url, used, reloads }]: each mounted frame, the URL it shows, when
+  // it was last opened (a count that only goes up), and its reloads.
   const [mounted, setMounted] = useState(() =>
-    apps.has(activeTab) ? [{ id: activeTab, url: apps.get(activeTab).url, used: 1 }] : []
+    apps.has(activeTab)
+      ? [{ id: activeTab, url: apps.get(activeTab).url, used: 1, reloads: 0 }]
+      : []
   );
 
   // Adjust the state while rendering (React's pattern for state derived from
@@ -50,9 +54,11 @@ export function useAppFrames(tabs, activeTab) {
     const url = apps.get(activeTab).url;
     const i = next.findIndex((m) => m.id === activeTab);
     const latest = next.reduce((max, m) => (m.id === activeTab ? max : Math.max(max, m.used)), 0);
-    if (i === -1) next = [...next, { id: activeTab, url, used: latest + 1 }];
+    if (i === -1) next = [...next, { id: activeTab, url, used: latest + 1, reloads: 0 }];
     else if (next[i].url !== url || next[i].used <= latest) {
-      next = next.map((m, j) => (j === i ? { id: m.id, url, used: Math.max(m.used, latest + 1) } : m));
+      next = next.map((m, j) =>
+        j === i ? { ...m, url, used: Math.max(m.used, latest + 1) } : m
+      );
     }
   }
   while (next.length > MAX_LOADED_APPS) {
@@ -71,9 +77,17 @@ export function useAppFrames(tabs, activeTab) {
     [activeTab]
   );
 
-  const frames = next.map(({ id, url }) => {
+  const reload = useCallback((id) => {
+    setMounted((list) =>
+      list.some((m) => m.id === id)
+        ? list.map((m) => (m.id === id ? { ...m, reloads: m.reloads + 1 } : m))
+        : list
+    );
+  }, []);
+
+  const frames = next.map(({ id, url, reloads }) => {
     const tab = apps.get(id);
-    return { tab: tab.url === url ? tab : { ...tab, url }, active: id === activeTab };
+    return { tab: tab.url === url ? tab : { ...tab, url }, active: id === activeTab, reloads };
   });
-  return { frames, unload };
+  return { frames, unload, reload };
 }

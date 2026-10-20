@@ -16,8 +16,9 @@
  *              shell's switches, the page's gutter (16, 24, 32px by width),
  *              its title (h1) and what goes under it.
  *   ShellApps  where the embedded apps are drawn (AppFrames): a region named
- *              by the open app, whose frames fill the window under the
- *              header (and above the bottom tabs on a phone).
+ *              by the open app, its `bar` (AppBar) on top, in a root of its
+ *              own, and the frames filling the window under them (and above
+ *              the bottom tabs on a phone).
  */
 import { createContext, useContext } from 'react';
 import { UiRoot } from './root.jsx';
@@ -89,17 +90,21 @@ function ShellPage({ title, description, actions, className, children, ...props 
   );
 }
 
-function ShellApps({ label, className, children, ...props }) {
+function ShellApps({ label, bar, className, children, ...props }) {
+  const switches = useContext(ShellSwitches);
+  // The bar's place is kept when there is none, so the frames after it never
+  // move in the page (moving an iframe reloads it).
   return (
     <section
       aria-label={label || undefined}
       data-slot="shell-apps"
       className={cn(
-        '[&_iframe]:h-[calc(100dvh-3rem)] max-md:[&_iframe]:h-[calc(100dvh-7rem-env(safe-area-inset-bottom))]',
+        '[&_iframe]:h-[calc(100dvh-5.75rem)] max-md:[&_iframe]:h-[calc(100dvh-9.75rem-env(safe-area-inset-bottom))]',
         className
       )}
       {...props}
     >
+      {bar ? <UiRoot {...switches}>{bar}</UiRoot> : null}
       {children}
     </section>
   );

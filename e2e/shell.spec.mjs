@@ -8,7 +8,8 @@
  *  - The header says the model's incident sentence, and steel "No signal"
  *    when the backend can't be reached.
  *  - Every nav entry opens its page, and every old view is reachable: the
- *    dashboard, Settings (and its Tabs section, "Add app"), each embedded app.
+ *    dashboard, Settings (and its Tabs section, "Add app"), each embedded app,
+ *    under its app bar (Reload, Open in new tab).
  *  - Back, Forward and a reload keep the page.
  *  - No page scrolls sideways.
  *  - axe finds nothing on the shell, at both widths, dark and light: the whole
@@ -206,6 +207,24 @@ test.describe('at 1440px', () => {
     await page.goto('/settings/tabs');
     await page.reload();
     await expectAt(page, '/settings/tabs', SHOWS.tabs);
+  });
+
+  test("the app bar: the app's name and address, Reload, Open in new tab", async ({ page }) => {
+    await openApp(page, '/apps/grafana');
+    await SHOWS.app('Grafana')(page);
+    const bar = page.getByRole('region', { name: 'Grafana, open inside JagHelm' }).locator(
+      '[data-slot="app-bar"]'
+    );
+    await expect(bar).toContainText('Grafana');
+    await expect(bar).toContainText('/embedded/grafana');
+    await expect(bar).toContainText('Stays loaded when you switch away');
+    const open = bar.getByRole('link', { name: 'Open in new tab' });
+    await expect(open).toHaveAttribute('target', '_blank');
+    await expect(open).toHaveAttribute('rel', 'noopener noreferrer');
+    const before = await page.locator('iframe[title="Grafana"]').elementHandle();
+    await bar.getByRole('button', { name: 'Reload Grafana' }).click();
+    await expect.poll(() => before.evaluate((el) => el.isConnected)).toBe(false);
+    await SHOWS.app('Grafana')(page);
   });
 
   test('the command palette opens an app', async ({ page }) => {

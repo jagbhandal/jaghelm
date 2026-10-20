@@ -9,10 +9,11 @@ import IframeView from './IframeView.jsx';
  * isn't squashed to nothing and redrawn on every switch.
  *
  * `savedTabs` is the tabs the server has saved (useConfigPersistence): the
- * embed check asks only about a frame whose URL the server has.
+ * embed check asks only about a frame whose URL the server has. A frame's
+ * `reloads` (the app bar's Reload, #296) gives it a new iframe element.
  *
- * @param {{ frames: Array<{ tab: object, active: boolean }>, savedTabs?: Array<object>,
- *   slowAfterMs?: number }} props
+ * @param {{ frames: Array<{ tab: object, active: boolean, reloads?: number }>,
+ *   savedTabs?: Array<object>, slowAfterMs?: number }} props
  */
 const host = { position: 'relative', flex: 1 };
 // Nothing open: no height and nothing drawn, but each frame keeps its size.
@@ -41,14 +42,19 @@ export default function AppFrames({ frames, savedTabs, slowAfterMs }) {
   const open = frames.some((f) => f.active);
   return (
     <div className="app-frames" style={open ? host : idleHost}>
-      {frames.map(({ tab, active }) => (
+      {frames.map(({ tab, active, reloads }) => (
         <div
           key={tab.id}
           style={active ? undefined : hiddenSlot}
           aria-hidden={active ? undefined : 'true'}
           inert={!active}
         >
-          <IframeView tab={tab} savedUrl={savedUrlOf(savedTabs, tab.id)} slowAfterMs={slowAfterMs} />
+          <IframeView
+            tab={tab}
+            savedUrl={savedUrlOf(savedTabs, tab.id)}
+            slowAfterMs={slowAfterMs}
+            reloads={reloads}
+          />
         </div>
       ))}
     </div>
