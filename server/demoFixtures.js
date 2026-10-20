@@ -5,8 +5,10 @@
  * node readings, Uptime Kuma's monitors, the cron reports) and shaped into each
  * payload by the code the live server uses: assembleServices() builds
  * /api/services, decorateStatuses() /api/cron/status, and generateDefaultConfig()
- * the services.yaml behind /api/services/config. So the board matches what a
- * live install serves, and a down monitor turns it red the way a real one does.
+ * the services.yaml behind /api/services/config. /api/status is the status
+ * model built from those payloads, read the way the live loop reads its caches
+ * (demoStatus, #437). So the board matches what a live install serves, and a
+ * down monitor turns it red the way a real one does.
  * The parts written by hand are checked against the live code's own output by
  * server/demoFixtures.test.js: the node readings, the Kuma monitors and the
  * cron runs for their keys and value types, the UPS and Gitea payloads whole.
@@ -22,9 +24,10 @@
  * the demo runs; nothing here reads a file, writes one or sends a request.
  */
 
-import { assembleServices } from './refresh.js';
+import { assembleServices, servicesCacheEntry, thresholdsOf } from './refresh.js';
 import { decorateStatuses } from './cron-overdue.js';
 import { generateDefaultConfig } from './config.js';
+import { createStatusTracker, readStatusInputs } from './status/index.js';
 
 export const DEMO_SCENARIOS = Object.freeze(['incident', 'healthy']);
 
@@ -214,8 +217,13 @@ export function demoMonitorNames() {
   return MONITORS.map(([, name]) => name).sort();
 }
 
-/** /api/services, assembled by the live server's assembleServices(). */
-export function demoServices({ scenario = 'incident', now = Date.now() } = {}) {
+/**
+ * The services cache entry a live cycle would leave for this board:
+ * `{ payload, internal }`, the /api/services payload and what the refresh
+ * keeps beside it, both from the live server's assembleServices() and
+ * servicesCacheEntry(). Every source answered.
+ */
+function demoServicesEntry(scenario, now) {
   const config = demoServicesConfig();
   const readings = demoNodeReadings();
   const nodeResults = Object.entries(config.nodes).map(([key, nodeCfg]) => [
@@ -223,7 +231,7 @@ export function demoServices({ scenario = 'incident', now = Date.now() } = {}) {
     nodeCfg,
     readings[key],
   ]);
-  const { nodes, overallHealth } = assembleServices({
+  const assembled = assembleServices({
     nodeResults,
     monitors: demoMonitors(scenario, now),
     config,
@@ -232,8 +240,12 @@ export function demoServices({ scenario = 'incident', now = Date.now() } = {}) {
     containerRegistry: null,
     now: () => now,
   });
-  // As refresh.js serves it: every source answered.
-  return { nodes, overallHealth, sources: { prometheus: { ok: true }, kuma: { ok: true } } };
+  return servicesCacheEntry(assembled, { prometheusOk: true, kumaOk: true });
+}
+
+/** /api/services, assembled by the live server's assembleServices(). */
+export function demoServices({ scenario = 'incident', now = Date.now() } = {}) {
+  return demoServicesEntry(scenario, now).payload;
 }
 
 // ── History (sparklines) ─────────────────────────────────────────────────
@@ -328,7 +340,7 @@ const ago = (now, ms) => new Date(now - ms).toISOString();
  * sorted. Each run has the keys recordRun() stores (checked against it by
  * server/demoFixtures.test.js).
  */
-function cronStatuses(scenario, now) {
+export function demoCronStore({ scenario = 'incident', now = Date.now() } = {}) {
   const backupFailed = scenario === 'incident';
   return [
     {
@@ -387,7 +399,56 @@ function cronStatuses(scenario, now) {
 
 /** /api/cron/status, decorated by the live route's decorateStatuses(). */
 export function demoCronStatus({ scenario = 'incident', now = Date.now() } = {}) {
-  return decorateStatuses(cronStatuses(scenario, now), now);
+  return decorateStatuses(demoCronStore({ scenario, now }), now);
+}
+
+// ── Integrations ─────────────────────────────────────────────────────────
+
+/** /api/integrations: none set up. */
+export function demoIntegrations() {
+  return {};
+}
+
+// ── Status (/api/status) ─────────────────────────────────────────────────
+
+// The environment the status model reads: a live install with Kuma and Gitea
+// set up, as the board shows (Kuma monitors on its services, Gitea commits in
+// its Pipeline panel). The model reads only whether each is set.
+const STATUS_ENV = Object.freeze({
+  KUMA_URL: 'https://status.example.com',
+  GITEA_URL: 'https://git.example.com',
+});
+
+/**
+ * The caches a live cycle would leave for this board, in the shape of the
+ * status model's live seam (status/index.js liveCaches): the payloads the demo
+ * serves (/api/services, /api/ups, /api/integrations), what the services
+ * refresh keeps beside its payload, and the cron store's statuses.
+ */
+function demoStatusCaches(scenario, now) {
+  const services = demoServicesEntry(scenario, now);
+  const cached = { services: services.payload, ups: demoUps(), integrations: demoIntegrations() };
+  return {
+    getCached: (key) => cached[key] ?? null,
+    getCachedInternal: (key) => (key === 'services' ? services.internal : null),
+    getAllCronStatuses: () => demoCronStore({ scenario, now }),
+  };
+}
+
+/**
+ * /api/status: the status model of this board, built as the live loop builds
+ * it (refresh.js updateStatus): readStatusInputs() over the board's caches,
+ * the demo display config's thresholds, and a status tracker as a fresh boot
+ * has it (no memory: the demo runs no push to seed one from). Built on every
+ * request, about as cheap as /api/services, so every `since` is that request's
+ * time, except a job's, which is its last run's.
+ */
+export function demoStatus({ scenario = 'incident', now = Date.now() } = {}) {
+  return createStatusTracker().update({
+    inputs: readStatusInputs(demoStatusCaches(scenario, now), { env: STATUS_ENV }),
+    thresholds: thresholdsOf(demoDisplayConfig()),
+    now,
+  });
 }
 
 // ── Display config and the checklist ─────────────────────────────────────

@@ -138,12 +138,21 @@ export function readDisplayConfig() {
 }
 
 /**
- * The server's thresholds in force (status/thresholds.js): the defaults, with
- * display-config.json's `pushThresholds` over them. The status model reads
- * them, and push sends what the model judges, so there is one set of lines.
+ * The thresholds a display config sets (status/thresholds.js): the defaults,
+ * with its `pushThresholds` over them. The demo reads its own config's
+ * through it (#437).
+ */
+export function thresholdsOf(displayConfig) {
+  return resolveThresholds(displayConfig?.pushThresholds);
+}
+
+/**
+ * The server's thresholds in force: display-config.json's (thresholdsOf). The
+ * status model reads them, and push sends what the model judges, so there is
+ * one set of lines.
  */
 export function getThresholds() {
-  return resolveThresholds(readDisplayConfig()?.pushThresholds);
+  return thresholdsOf(readDisplayConfig());
 }
 
 /**
@@ -586,6 +595,36 @@ function isPendingOrMaintenance(m) {
 }
 
 /**
+ * The services refresh's cache entry for one assembleServices() result: the
+ * `/api/services` payload, and what is kept beside it (setCache's `internal`).
+ * The demo builds its board's entry through it too (demoFixtures.js), so the
+ * status model reads the demo's board as it reads a live one (#437).
+ *
+ * overallHealth is server-computed once and shipped in the payload so BOTH
+ * frontends' global dots read one truth (web NavBar + mobile Overview).
+ * `sources` says whether each upstream answered this cycle (#232): the push
+ * snapshot keeps its last state for one that didn't, so a failed poll is not
+ * read as every host or service going down. `upWithoutCard`, the uids of the
+ * up monitors no card is drawn for (#390), and `monitorOf`, the monitor each
+ * monitored uid carries (#395), are for the push snapshot only, so they are
+ * kept beside the payload, not in the served JSON. So are the status model's
+ * (#290): `kumaStatusOf`, `kumaWithoutCard`, `backedBy` (see assembleServices)
+ * and `sourceErrors`, why Prometheus or Kuma failed.
+ *
+ * @param {ReturnType<typeof assembleServices>} assembled
+ * @param {{ prometheusOk: boolean, kumaOk: boolean, prometheusError?: string|null, kumaError?: string|null }} outcome
+ */
+export function servicesCacheEntry(assembled, { prometheusOk, kumaOk, prometheusError = null, kumaError = null }) {
+  const { nodes, overallHealth, upWithoutCard, monitorOf, kumaStatusOf, kumaWithoutCard, backedBy } = assembled;
+  const sources = { prometheus: { ok: prometheusOk }, kuma: { ok: kumaOk } };
+  const sourceErrors = { prometheus: prometheusError, kuma: kumaOk ? null : kumaError };
+  return {
+    payload: { nodes, overallHealth, sources },
+    internal: { upWithoutCard, monitorOf, kumaStatusOf, kumaWithoutCard, backedBy, sourceErrors },
+  };
+}
+
+/**
  * Where a monitor no running container got goes, down or up (#390): its node
  * and the uid its card has, `{ nodeKey, idPart, uid, remembered }`, or null with
  * no node to attach to. Pass (b) of assembleServices is its only caller, for
@@ -689,8 +728,7 @@ async function _refreshServices() {
       now: Date.now,
       presenceKnown: prometheusOk,
     });
-    const { nodes, seen, overallHealth, unmatched, containerCount, upWithoutCard, monitorOf } = assembled;
-    const { kumaStatusOf, kumaWithoutCard, backedBy } = assembled;
+    const { nodes, seen, unmatched, containerCount } = assembled;
 
     // Remember where each running, monitored service lives (and which container
     // it maps to) so an outage that later loses its container still lands on its
@@ -703,20 +741,13 @@ async function _refreshServices() {
     containerRegistry.prune();
     containerRegistry.save();
 
-    // overallHealth is server-computed once (above) and shipped in the payload so
-    // BOTH frontends' global dots read one truth (web NavBar + mobile Overview).
-    // `sources` says whether each upstream answered this cycle (#232): the push
-    // snapshot keeps its last state for one that didn't, so a failed poll is not
-    // read as every host or service going down. `upWithoutCard`, the uids of
-    // the up monitors no card is drawn for (#390), and `monitorOf`, the monitor
-    // each monitored uid carries (#395), are for the push snapshot only, so
-    // they are kept beside the payload, not in the served JSON. So are the
-    // status model's (#290): `kumaStatusOf`, `kumaWithoutCard`, `backedBy`
-    // (see assembleServices) and `sourceErrors`, why Prometheus or Kuma failed.
-    const sources = { prometheus: { ok: prometheusOk }, kuma: { ok: kuma.ok } };
-    const result = { nodes, overallHealth, sources };
-    const sourceErrors = { prometheus: promErrors[0] ?? null, kuma: kuma.ok ? null : (kuma.error ?? null) };
-    setCache('services', result, { upWithoutCard, monitorOf, kumaStatusOf, kumaWithoutCard, backedBy, sourceErrors });
+    const { payload: result, internal } = servicesCacheEntry(assembled, {
+      prometheusOk,
+      kumaOk: kuma.ok,
+      prometheusError: promErrors[0] ?? null,
+      kumaError: kuma.error ?? null,
+    });
+    setCache('services', result, internal);
 
     // Record this cycle's usage into the ring buffer so the UI can draw a
     // glance-context sparkline. Only the bounded usage percents (CPU/RAM/disk);

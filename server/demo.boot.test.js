@@ -134,10 +134,14 @@ const READS = [
   '/api/integrations/presets',
   '/api/todos',
   '/api/push/status',
+  '/api/push/prefs?token=demo-device',
+  '/api/status',
   '/api/weather?lat=40&lon=-83',
   '/api/icons?q=grafana',
-  '/api/secrets/keys',
 ];
+// Paths no client reads: the demo answers them 404, as the live server answers
+// a path it has no route for (#437), and still runs no route.
+const NOT_READS = ['/api/secrets/keys', '/api/no-such-read'];
 const WRITES = [
   ['POST', '/api/display-config'],
   ['POST', '/api/todos'],
@@ -258,7 +262,7 @@ test('demo: boot and every client read make no outbound request and write no fil
     'demo',
     { DEMO_MODE: 'true', SPY_FAST_TIMERS: '1' },
     async (base) => {
-      for (const path of READS) {
+      for (const path of [...READS, ...NOT_READS]) {
         const r = await fetch(base + path);
         answers[path] = r.status;
         await r.arrayBuffer();
@@ -285,6 +289,7 @@ test('demo: boot and every client read make no outbound request and write no fil
   assert.equal(existsSync(dataDir), false, 'the data dir is never made');
 
   for (const path of READS) assert.equal(answers[path], 200, `GET ${path}`);
+  for (const path of NOT_READS) assert.equal(answers[path], 404, `GET ${path}`);
   for (const [method, path] of WRITES)
     assert.equal(answers[`${method} ${path}`], 403, `${method} ${path}`);
   // The browser fetches the icon from the CDN itself; the server only points it there.
