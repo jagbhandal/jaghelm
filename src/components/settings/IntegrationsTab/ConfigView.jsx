@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { iconImageSrc } from '../../../utils/icon.jsx';
 import { AUTH_LABELS, AUTH_FIELDS } from './constants.js';
 import { FieldRow as FieldGroup } from '../Field';
@@ -46,9 +46,11 @@ export default function ConfigView({
   // so it shows beside that field when the form has one.
   const instanceError = isPreset && saveStatus?.field === 'instance' ? saveError : null;
   // Focus the field on each such refusal: Save is at the bottom of a form that
-  // may be scrolled, and focusing the field brings its message into view.
+  // may be scrolled, and focusing the field brings its message into view. A
+  // layout effect, so the field has focus in the same commit that shows the
+  // message, before anything can observe the message without it.
   const instanceRef = useRef(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (instanceError) instanceRef.current?.focus();
   }, [saveStatus, instanceError]);
 

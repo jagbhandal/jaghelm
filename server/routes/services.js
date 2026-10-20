@@ -2,26 +2,50 @@
  * Services routes — the dashboard's primary data feed plus config CRUD.
  *
  *   GET  /api/services           → unified node + container + monitor payload
- *   GET  /api/services/config    → raw services.yaml as JSON
- *   POST /api/services/config    → replace services.yaml
+ *   GET  /api/services/config    → services.yaml as JSON, without its credentials
+ *   POST /api/services/config    → replace services.yaml, keeping stored credentials
  *   GET  /api/services/monitors  → flat list of Kuma monitor names
  *
  * The /api/services payload is kept warm by the background refresh loop;
  * the route reads from cache and falls back to an on-demand refresh on a
  * cold start.
+ *
+ * The config read never carries a credential (#413): each one that is set
+ * comes back as { "$stored": true }, and the write puts the stored value back
+ * in each marker's place (util/configMask.js). Settings' Nodes and
+ * Services tabs read the config, change it and post the whole of it back, so
+ * an unchanged credential round-trips as its marker.
  */
+
+import { isDeepStrictEqual } from 'node:util';
 
 import { Router } from 'express';
 
 import { getConfig, saveConfig } from '../config.js';
+import { getPresetFull, listPresets } from '../integrations/registry.js';
 import { getMonitorNames } from '../monitors.js';
 import { refreshServices } from '../refresh.js';
 import { respondWarmCached } from '../cache.js';
 import { apiError } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { validateConfig, servicesConfigSchema } from '../util/configSchema.js';
+import { maskCredentials, restoreCredentials } from '../util/configMask.js';
 
 const router = Router();
+
+/**
+ * What the masking needs to know about the presets: each entry's preset (its
+ * endpoints' placeholders are masked on the entry), as the refresh loop picks
+ * it, and every URL parameter a preset's form shows and saves (never masked).
+ * Exported for the tests.
+ */
+export function configMaskOptions() {
+  return {
+    presetOf: (/** @type {string} */ key, /** @type {any} */ entry) =>
+      getPresetFull(entry?.preset || key),
+    urlParamKeys: listPresets().flatMap((p) => (p.urlParams || []).map((u) => u.key)),
+  };
+}
 
 router.get(
   '/',
@@ -35,14 +59,26 @@ router.get(
 );
 
 router.get('/config', (req, res) => {
-  res.json(getConfig() || {});
+  res.json(maskCredentials(getConfig() || {}, configMaskOptions()));
 });
 
 router.post('/config', (req, res) => {
   const v = validateConfig(servicesConfigSchema, req.body);
   if (!v.ok) return apiError(res, v.status, v.error);
 
-  const ok = saveConfig(v.data);
+  // Each marker becomes the credential stored in its place. One where nothing
+  // is stored, or in place of anything but a credential, is refused, so a
+  // marker is never written and no credential moves to another place.
+  const current = getConfig();
+  const restored = restoreCredentials(v.data, current || {}, configMaskOptions());
+  if (!restored.ok) return apiError(res, restored.status, restored.error);
+
+  // A save that changes nothing writes nothing, so services.yaml stays
+  // byte-for-byte as it was (every write re-serialises the whole file), as an
+  // unchanged integration save (#402).
+  if (current && isDeepStrictEqual(restored.config, current)) return res.json({ ok: true });
+
+  const ok = saveConfig(restored.config);
   // saveConfig returns false on a write failure (or a reentrant save) — surface
   // that as a 500 instead of a misleading HTTP 200 { ok: false }.
   if (!ok) return apiError(res, 500, 'Failed to persist config');
