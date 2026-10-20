@@ -21,7 +21,7 @@ import { getConfig, saveConfig } from '../config.js';
 import { setSecret } from '../secrets.js';
 import { getPreset, listPresets } from '../integrations/registry.js';
 import { testIntegration } from '../integrations/handler.js';
-import { refreshIntegrations } from '../refresh.js';
+import { refreshIntegrations, retryIntegrationNow } from '../refresh.js';
 import { respondWarmCached } from '../cache.js';
 import { apiError } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
@@ -178,6 +178,9 @@ router.post('/save', (req, res) => {
     // saveConfig returns false on a write failure (or a reentrant save) — surface
     // that as a 500 instead of reporting success, matching services.js POST /config.
     if (!saveConfig(config)) return apiError(res, 500, 'Failed to persist config');
+    // A save is the way to say "try again now": the next refresh attempts it
+    // even when its login was rejected and nothing in it changed (#239).
+    retryIntegrationNow(storageKey);
 
     res.json({ ok: true, type: storageKey });
   } catch (err) {

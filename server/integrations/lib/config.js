@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { getPresetFull } from '../registry.js';
 import { resolveCredential, getSecret } from '../../secrets.js';
 
@@ -67,4 +69,24 @@ export function resolveIntegrationConfig(type, yamlConfig) {
   }
 
   return resolved;
+}
+
+/**
+ * A fingerprint of an integration's config, for the refresh loop's backoff
+ * (#239): a rejected login is not sent again until this changes. It covers the
+ * integration's entry in services.yaml and the URL and credentials it resolves
+ * to, so a hand edit, a save in Settings, and a credential changed only in the
+ * secrets store (the entry still names the same `$secret:`) each change it. A
+ * hash, so the backoff state holds no credential.
+ */
+export function configFingerprint(type, yamlConfig) {
+  const resolved = resolveIntegrationConfig(type, yamlConfig);
+  const material = JSON.stringify([
+    yamlConfig ?? null,
+    resolved?.url ?? null,
+    resolved?._username ?? null,
+    resolved?._password ?? null,
+    resolved?._token ?? null,
+  ]);
+  return createHash('sha256').update(material).digest('hex');
 }

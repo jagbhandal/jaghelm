@@ -12,7 +12,7 @@
 
 import { getPresetFull } from './registry.js';
 
-import { safeFetch } from './lib/http.js';
+import { safeFetch, isAuthRejection } from './lib/http.js';
 import { extractValue, resolveEndpoint } from './lib/extract.js';
 import { formatValue, computeField } from './lib/format.js';
 import { buildAuthHeaders } from './lib/auth.js';
@@ -43,6 +43,25 @@ function applyQueryAuth(url, config) {
   return { url, credentialInUrl: false };
 }
 
+/**
+ * Whether a data request carries the integration's own credentials: an auth
+ * header from buildAuthHeaders, or a key in the URL. A 401 or 403 to such a
+ * request is a rejected login (#239), which the refresh loop does not repeat
+ * until the config changes; one to a request without them is not.
+ */
+function carriesCredentials(config, credentialInUrl) {
+  if (credentialInUrl) return true;
+  switch (config.auth) {
+    case 'basic':
+      return !!(config._username || config._password);
+    case 'bearer':
+    case 'header':
+      return !!config._token;
+    default:
+      return false;
+  }
+}
+
 // Re-exported for back-compat; SSRF is also enforced at the fetch chokepoint in
 // lib/http.js, so every auth path is guarded by construction.
 export { resolveIntegrationConfig };
@@ -67,10 +86,12 @@ export async function fetchIntegration(type, yamlConfig) {
       const { url, credentialInUrl } = applyQueryAuth(`${baseUrl}${endpoint.path}`, config);
 
       const headers = buildAuthHeaders(config);
-      const res = await safeFetch(url, { headers }, skipTls,
-        { credentialInUrl: credentialInUrl || endpoint.credentialInUrl });
+      const urlCarriesCredential = credentialInUrl || endpoint.credentialInUrl;
+      const res = await safeFetch(url, { headers }, skipTls, { credentialInUrl: urlCarriesCredential });
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status} ${res.statusText || ''}`.trim());
+        const err = new Error(`HTTP ${res.status} ${res.statusText || ''}`.trim());
+        if (isAuthRejection(res.status) && carriesCredentials(config, urlCarriesCredential)) err.authRejected = true;
+        throw err;
       }
       rawData = await res.json();
     }
@@ -143,7 +164,9 @@ export async function fetchIntegration(type, yamlConfig) {
     // in the URL, and fetch errors embed the full URL — never leak it.
     const safe = redactError(err);
     log.error({ type, error: safe }, 'fetch error');
-    return { error: safe, fields: {} };
+    // authRejected (#239): the upstream refused the credentials, so the
+    // refresh loop stops sending them until the config changes.
+    return err?.authRejected ? { error: safe, fields: {}, authRejected: true } : { error: safe, fields: {} };
   }
 }
 

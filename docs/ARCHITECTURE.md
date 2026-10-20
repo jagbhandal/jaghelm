@@ -178,7 +178,7 @@ credentials ([KNOWN-ISSUES](../KNOWN-ISSUES.md) covers the open-by-default model
 ### 4.2 Background refresh & cache
 
 `refresh.js` runs a single in-process interval that re-fetches node/service
-metrics and every configured integration into the bounded `cache.js`
+metrics and every configured integration that is due (see 4.3) into the bounded `cache.js`
 (it evicts the least recently written key at max entries, so user-influenced
 keys can't exhaust memory). API reads serve from the cache and attach an ETag;
 an unchanged poll returns `304`.
@@ -501,6 +501,34 @@ Key properties:
   read it. No route returns an integration's upstream response.
 - **Session-auth presets** (Nginx Proxy Manager, Portainer, PhotoPrism) get a
   managed login session via `lib/session.js`; the same SSRF guard still applies.
+- **A failing integration backs off; a refused login waits for a config
+  change** (`integrations/backoff.js`, #239). The refresh loop fetches only the
+  integrations that are due, through at most 6 at a time. After a failure the
+  next attempt waits 30 s, then 1, 2, 4 and 8 min, then 10 min each time; a
+  success resets it. A refused login (`authRejected` from `fetchIntegration`:
+  a 401 or 403 to the session login, or to every one of them with an
+  `authFallback`; or to a data request that carried the integration's
+  credentials, basic, bearer, header or query) is not attempted again until
+  the integration's config changes. Its config is a fingerprint
+  (`configFingerprint` in `lib/config.js`, a SHA-256) of its entry in
+  `services.yaml` with its URL and credentials resolved, so a hand edit picked
+  up by the config watcher, a save in Settings, and a new value for the same
+  `$secret:` each count; a save in Settings retries it even when nothing
+  changed (`retryIntegrationNow`). A 401 or 403 to a request without
+  credentials, a data read after a good session login, and every other failure
+  back off instead. An integration that is not due is not queued, so it holds
+  no fetch slot and spends no timeout: its entry is the one its last attempt
+  left, served again, `_error` included, as the failure was served when it
+  happened. The state is in memory, so a restart attempts every integration.
+  Every entry in `/api/integrations` carries `_status`:
+  `{ state, since, failures, nextAttemptAt }`, with `state` one of `ok`,
+  `backing_off` and `auth_failed`, `since` when that state began (ms epoch),
+  `failures` the failed attempts in a row under the current config, and
+  `nextAttemptAt` the next attempt (ms epoch; null when ok, as it is fetched
+  every cycle, or auth failed, as it waits for a config change). None of them
+  change between attempts, so the payload's ETag holds, and the payload lists
+  the integrations in config order. The web app shows only an entry's fields
+  without a leading `_`, so `_status` changes nothing on screen yet.
 
 ### 4.4 Config, secrets, and persistence
 
@@ -530,7 +558,8 @@ integration connection-test endpoint.
   Success lines every refresh cycle would repeat are debug, while a refresh
   that keeps failing still logs its own error each cycle. At info: a cycle that
   took 5 s or more; a change in the cycle's set of failed refreshes (a refresh
-  that returned null, or an integration with an `_error`); a Kuma load whose
+  that returned null, or an integration with an `_error`, which a backed-off
+  one keeps until it answers); a Kuma load whose
   monitor count or source changed; and one line per boot for containers no
   monitor went to. A `services.yaml` mapping to a monitor Kuma does not have
   (or a paused one), a `monitor_per_node` key that is no node, and a mapping of
@@ -539,7 +568,9 @@ integration connection-test endpoint.
   monitors loaded: unreachable, non-2xx, or a status page with none) each warn
   once, with the error, and their recovery logs once at info with how long it
   was down; the failed cycles in between log at debug
-  (`util/sourceHealthLog.js`).
+  (`util/sourceHealthLog.js`). A failed integration attempt logs its error;
+  one whose login was refused also warns that it waits for a config change,
+  and the first success after failures logs at info (`integrations/backoff.js`).
 - **Access log** (`accessLog.js`): one line per request with its full path and no
   query string or fragment; 5xx at `error`, 4xx and requests of 300 ms or more at
   `info`, the rest at `debug`. `/metrics`, `/api/health` and `/api/readyz` are not

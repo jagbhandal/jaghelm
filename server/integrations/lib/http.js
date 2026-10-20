@@ -59,3 +59,12 @@ export async function safeFetch(url, opts = {}, skipTls = false, { credentialInU
     throw safe;
   }
 }
+
+/**
+ * Whether an upstream status refuses the credentials it was sent: 401 or 403.
+ * The refresh loop does not repeat a login refused this way until the
+ * integration's config changes (#239).
+ */
+export function isAuthRejection(status) {
+  return status === 401 || status === 403;
+}

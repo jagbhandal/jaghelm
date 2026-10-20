@@ -1,4 +1,4 @@
-import { safeFetch } from './http.js';
+import { safeFetch, isAuthRejection } from './http.js';
 import { extractValue, resolveEndpoint } from './extract.js';
 import { createLogger } from '../../util/logger.js';
 
@@ -95,6 +95,12 @@ export async function fetchWithSession(config) {
     ...(fallbackSession ? [{ key: fallbackKey, session: fallbackSession }] : []),
   ];
 
+  // Logins the upstream refused with a 401 or 403 (#239). Only when every
+  // method's login was refused is the failure a rejected login, which the
+  // refresh loop does not repeat until the config changes; a data read refused
+  // after a good login, or a login that failed another way, is retried.
+  let rejectedLogins = 0;
+
   for (const { key, session: sess } of sessionConfigs) {
     const cacheKey = `${baseUrl}:${sess.loginEndpoint}`;
     const cached = cacheGet(cacheKey);
@@ -118,6 +124,7 @@ export async function fetchWithSession(config) {
       const data = await fetchWithToken(tokenInfo, config, baseUrl, skipTls);
       return data;
     } catch (err) {
+      if (err.authRejected) rejectedLogins += 1;
       log.warn({ key, error: err.message }, 'session auth failed');
       continue;
     }
@@ -125,11 +132,13 @@ export async function fetchWithSession(config) {
 
   // All auth methods failed
   const instructions = config.oauth2Instructions || '';
-  throw new Error(
+  const err = new Error(
     instructions
       ? `Authentication failed. ${instructions}`
       : 'All session auth methods failed'
   );
+  if (rejectedLogins === sessionConfigs.length) err.authRejected = true;
+  throw err;
 }
 
 /** Login and return token info (without fetching data). */
@@ -143,7 +152,9 @@ async function doSessionLogin(config, session, baseUrl, skipTls) {
   }, skipTls);
 
   if (!loginRes.ok) {
-    throw new Error(`Login returned HTTP ${loginRes.status}`);
+    const err = new Error(`Login returned HTTP ${loginRes.status}`);
+    if (isAuthRejection(loginRes.status)) err.authRejected = true;
+    throw err;
   }
 
   let loginData;
