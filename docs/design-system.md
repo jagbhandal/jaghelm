@@ -34,6 +34,11 @@ the sign-off amendments in §15).
   [Data components](#data-components), with their variants, sizes and keyboard
   use. No web screen uses them yet; the Android app's screens use the status
   components, in its own look.
+- **Gallery:** every state of every component above, in both themes and both
+  densities and, where colour follows the accent, all three accents, on one
+  development page ([GALLERY.md](GALLERY.md), #289). CI screenshots each
+  against its committed baseline and runs axe on it, in both themes, and fails
+  on any violation or unapproved change.
 - How the stack sits beside today's CSS: [ARCHITECTURE.md §5.1](ARCHITECTURE.md#51-ui-stack-tailwind-css-v4-shadcnui-lucide).
 
 ## The rules
@@ -569,7 +574,8 @@ Trade-offs taken at sign-off:
 The controls (spec §5.4, #285), one file each in `src/ui/`, imported as
 `@ui/<file>`. Each is a Base UI primitive, which brings the focus handling,
 the keys and the ARIA, drawn from the role tokens in the signed-off mock's
-shapes. No screen uses them yet; the gallery (#289) will show every state.
+shapes. No screen uses them yet; the [gallery](GALLERY.md) (#289) shows every
+state.
 
 | Component | Import | Base UI part | Props | Keys |
 | --- | --- | --- | --- | --- |
@@ -753,8 +759,8 @@ web.
 The containers and feedback components (spec §5.4, #286), one file each in
 `src/ui/`, imported as `@ui/<file>`. The overlays are Base UI primitives,
 which bring the focus handling, the keys and the ARIA; the rest are plain
-elements on the role tokens. No screen uses them yet; the gallery (#289) will
-show every state.
+elements on the role tokens. No screen uses them yet; the
+[gallery](GALLERY.md) (#289) shows every state.
 
 | Component | Import | Base UI part | Props | Keys |
 | --- | --- | --- | --- | --- |
@@ -901,7 +907,9 @@ is neutral and shows none.
   always there), so a screen reader hears it without opening it. The copies
   sit in one hidden element in `<body>`, never beside the trigger,
   where they would break the row's `:last-child` and `+` selectors and a
-  list's or a table's markup.
+  list's or a table's markup. The popup itself is hidden from assistive tech
+  (`aria-hidden`): it only repeats the name or the description, and would
+  otherwise sit at the end of `<body>` outside every landmark (#289).
 - **Toasts** are announced: the viewport is a polite live region and a
   landmark named "Notifications", there before the first toast, and F6 jumps
   to it. A `crit` toast is announced as an alert and stays until dismissed,
@@ -997,6 +1005,11 @@ is in, not the window):
   its state's tint when it is a warning, critical or no signal; maintenance
   stays on `surface-1`, its wrench saying it (spec §6.1). A tile is a lamp and
   an overline label, over the value (`title-sm`) and `sub` (12px `text-3`).
+  The tint is laid over the tile's `surface-1` (a one-colour gradient over the
+  background colour), never over the frame's `border-subtle` that shows in the
+  gaps: there the `text-3` label and line fell to 3.85:1 in light, which the
+  gallery's axe check found (#289); over `surface-1` they keep the 4.5:1 the
+  contrast check holds. Under the pointer a tile is `surface-2`, tinted or not.
   The label ends in an ellipsis when it doesn't fit, after using 4px of the
   tile's padding. Six sit in a row from 672px, three from 320px and two below
   that, where a tile is the Phone board's: a 14px value and no `sub`. A strip
@@ -1107,7 +1120,8 @@ draws the Android lamp; nothing there uses it.
 The data components (spec §5.4, #288), one file each in `src/ui/`, imported as
 `@ui/<file>`: what the Overview and the detail drawer show about each entity.
 They are plain elements on the role tokens, the Sparkline's tooltip excepted
-(Base UI's). No screen uses them yet; the gallery (#289) will show every state.
+(Base UI's). No screen uses them yet; the [gallery](GALLERY.md) (#289) shows
+every state.
 They have no Android look: the Android app keeps its own UsageBar and rows
 until Phase 4 (#326).
 
@@ -1183,7 +1197,9 @@ Chart colours board:
   columns. From 384px of its own container it is the Overview drawer's (a
   130px label column, 13px on the mock's 20px line); narrower, the Phone
   board's detail screen (120px, 14px). Labels wrap in their column, values in
-  theirs. Without facts it draws nothing.
+  theirs, and a value with no break in it (a URL, a SHA, a hostname) breaks
+  anywhere (`wrap-anywhere`) rather than run past its column or a drawer's
+  edge (#289). Without facts it draws nothing.
 - **Table.** The Infrastructure table: `surface-1` in a subtle edge, 12px
   round, overline headers (`text-3`, the mock's 20px line, 10px above and
   below), rows `h-row` tall with a subtle rule between them, 13px text,
@@ -1227,7 +1243,8 @@ Chart colours board:
   lowest and highest readings, so nothing lives only in the tooltip, which
   never opens on touch. Tab reaches it, and focus opens the tooltip at the
   latest point; the arrows, Home and End move it, and a polite live region
-  says each point they reach ("30% at 08:38"). Escape closes the tooltip. Its
+  says each point they reach ("30% at 08:38"), so the tooltip itself is hidden
+  from assistive tech (#289). Escape closes the tooltip. Its
   focus ring goes around the chart, never on the line. `decorative` hides it
   from assistive tech and the tab order; the pointer still gets the tooltip.
 - **UptimeBar** is an image named by its summary, "Heartbeats: 5 failures in

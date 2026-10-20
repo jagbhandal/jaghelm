@@ -53,3 +53,11 @@ server/arcane/vulnDigestOnce.js
 
 # Archives
 *.tar.gz
+
+# The component gallery (docs/GALLERY.md): development and CI only; the image
+# build never reads it
+gallery
+dist-gallery
+test-results
+playwright.config.mjs
+vite.gallery.config.js

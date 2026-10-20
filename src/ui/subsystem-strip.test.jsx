@@ -116,12 +116,18 @@ describe('SubsystemStrip', () => {
   it('tints a warning, critical or no-signal tile, and leaves ok and maintenance on the panel', () => {
     const { rerender } = render(<SubsystemStrip cells={CELLS} />);
     const tiles = () => screen.getByRole('region').querySelectorAll('[data-slot="subsystem-tile"]');
-    expect(tiles()[5]).toHaveClass('bg-unknown-tint');
+    expect(tiles()[5]).toHaveClass('bg-surface-1', 'from-unknown-tint', 'to-unknown-tint');
     const maintenance = { ...CELLS[5], state: 'maintenance', value: '1 in maintenance' };
     rerender(<SubsystemStrip cells={[...CELLS.slice(0, 5), maintenance]} />);
     const [crit, warn, , ok, , maint] = tiles();
-    expect(crit).toHaveClass('bg-crit-tint');
-    expect(warn).toHaveClass('bg-warn-tint');
+    // The tint is a layer over the tile's surface-1 (a gradient of one colour,
+    // over the background colour), never a background colour of its own: that
+    // sat over the frame's border colour in the gaps, where text-3 fell to
+    // 3.85:1 in light (the gallery's axe check, #289). Over surface-1 it is
+    // the pairing the contrast check holds at 4.5:1.
+    expect(crit).toHaveClass('bg-surface-1', 'bg-linear-to-r', 'from-crit-tint', 'to-crit-tint');
+    expect(warn).toHaveClass('bg-surface-1', 'bg-linear-to-r', 'from-warn-tint', 'to-warn-tint');
+    for (const tile of tiles()) expect(tile.className).not.toMatch(/(^|\s)bg-\w+-tint/);
     expect(ok).toHaveClass('bg-surface-1');
     expect(ok.className).not.toMatch(/-tint/);
     // Maintenance is not an issue (spec §6.1): its wrench says it, on the panel.
@@ -185,6 +191,9 @@ describe('SubsystemStrip', () => {
     expect(screen.getByRole('button', { name: 'Jobs, OK, 14 / 14 on time' })).toBeInTheDocument();
     expect(services).toHaveAttribute('aria-pressed', 'false');
     expect(services).toHaveClass('hover:bg-surface-2', '-outline-offset-2');
+    // Under the pointer a tinted tile drops its tint layer, so it is surface-2
+    // as an untinted one is (the tint over surface-2 is no checked pairing).
+    expect(services).toHaveClass('hover:bg-none');
     expect(services.className).not.toMatch(NO_RING);
     await user.click(services);
     expect(onSelect).toHaveBeenLastCalledWith('services');

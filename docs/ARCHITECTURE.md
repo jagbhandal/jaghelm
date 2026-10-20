@@ -149,13 +149,21 @@ src/                        React 19 SPA (Vite 8)
                              lib/tone.jsx (a tone's icon), lib/name.js (an overlay's
                              required name)
 
+gallery/                    the component gallery (development and CI only, docs/GALLERY.md):
+                            catalog.js (every state), states.jsx (what each draws),
+                            main.jsx (the page), gallery.spec.mjs (screenshots and axe),
+                            baselines/ (the committed PNGs), container.mjs (the pinned
+                            Playwright image); built by vite.gallery.config.js, tested by
+                            playwright.config.mjs, never part of the production build
+
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
 scripts/                    inject-sw-precache.mjs, check-assets.mjs, changelog-lint.mjs,
                             changelog-fold.mjs, release-notes.mjs (build/CI/release helpers),
                             ui-preflight.mjs (writes src/ui/preflight.css),
                             ui-contrast.mjs (the design tokens' contrast check, and the
-                            chart colours' gates)
+                            chart colours' gates), gallery.mjs (runs the gallery's tests in
+                            their container)
 changes/                    CHANGELOG fragments, one per PR (mobile/changes/ for Android);
                             the release PR folds them into the CHANGELOG (RELEASING.md)
 .github/workflows/          build-push.yml (test -> build -> sign -> GHCR), release.yml (tag ->
@@ -877,7 +885,8 @@ stack sits beside today's CSS and must not restyle it.
   carries only the icons it uses. The components so far are the controls
   (#285), the containers (#286) and the data components (#288), which no
   screen uses yet, and the status components (#287), which the Android app's
-  screens use (next point). The
+  screens use (next point). The component gallery shows each in every state
+  ([GALLERY.md](GALLERY.md), #289). The
   interactive controls and containers are built on Base UI primitives. A
   screen's root is a `UiRoot` (`src/ui/root.jsx`), which carries its switches
   to every portal; roots can nest, and a page has one toast viewport. Screens
@@ -1094,7 +1103,7 @@ All state is files under the data dir (no DB):
 
 ```mermaid
 flowchart LR
-  CHK["Gitea check.yml on the PR<br/>lint + typecheck + tests + CHANGELOG format"] --> PR
+  CHK["Gitea check.yml on the PR<br/>lint + typecheck + tests + CHANGELOG format<br/>+ gallery screenshots and axe"] --> PR
   PR["PR merged on Gitea<br/>(source of truth)"] --> MIRROR["mirror -> GitHub"]
   MIRROR --> GH["GitHub Actions: build-push.yml"]
   subgraph GH2["build-push.yml"]
@@ -1116,7 +1125,10 @@ flowchart LR
 - **PR gate** ([check.yml](../.gitea/workflows/check.yml)) runs on the
   self-hosted Gitea runner for every PR to `main`: secret scan, CHANGELOG
   format (both CHANGELOGs and their `changes/` fragments), lint, typecheck,
-  server, web and mobile tests, and the asset check.
+  server, web and mobile tests, and the asset check. Its `gallery` job, beside
+  them, screenshots every state of every `src/ui/` component against its
+  committed baseline and runs axe on each, in the pinned Playwright container
+  ([GALLERY.md](GALLERY.md)).
 - **Build** ([build-push.yml](../.github/workflows/build-push.yml)) runs on
   GitHub for every push to `main`: a test gate (so a red `main` can't ship),
   then build and push `:latest` and the immutable `:sha-<short>` with OCI
@@ -1163,6 +1175,16 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   hook, the old-tab chunk reload, its per-build guard and stall watchdog
   (`src/chunkReload.test.jsx`) and the tab it reopens (`src/App.reloadTab.test.jsx`),
   and the `src/ui/` components.
+- **Component gallery** (`npm run gallery:test`, Playwright in its pinned
+  container; CI's `gallery` job): every state of every `src/ui/` component, in
+  both themes and densities and the three accents where colour follows the
+  accent, screenshotted against `gallery/baselines/` with no tolerance, and
+  axe on each with every default rule, portals included, and two exceptions
+  scoped to Base UI's markup around an open Select
+  ([GALLERY.md](GALLERY.md#the-two-axe-exceptions)). `npm run gallery:update` regenerates the
+  baselines; an approved change commits them in its PR.
+  `scripts/gallery-build.test.mjs` (in `npm test`) keeps the gallery out of
+  the production build and the container pinned in step.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through
   the Android build's `@ui` alias.

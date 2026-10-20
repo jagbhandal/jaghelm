@@ -24,7 +24,7 @@
  * gives the value and time of the point nearest the pointer, or of the point
  * the keyboard is on: focus starts at the latest, the arrows, Home and End
  * move, Escape closes it. A polite live region says each point the arrows
- * reach. It is an image named by `label` and described by its latest, lowest
+ * reach, so the tooltip itself is hidden from assistive tech (#289). It is an image named by `label` and described by its latest, lowest
  * and highest readings, so nothing lives only in the tooltip (which never
  * opens on touch); without a `label` it throws in development and logs in
  * production. `decorative` hides it from assistive tech and the tab
@@ -332,6 +332,7 @@ function Sparkline({
           >
             <TooltipPrimitive.Popup
               data-slot="sparkline-tooltip"
+              aria-hidden="true"
               className="flex items-baseline gap-2 rounded-md border border-border-strong bg-surface-2 px-2 py-1 text-caption whitespace-nowrap text-text-1 shadow-pop"
             >
               {tip &&

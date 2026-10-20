@@ -62,6 +62,27 @@ describe('FactList', () => {
     );
   });
 
+  it('breaks a value with no break in it (a URL, a SHA, a hostname) inside its column', () => {
+    // jsdom can't lay it out: the gallery's fact-list-long state shows it at
+    // the drawer's and the phone's widths (#289). Without this, a long URL ran
+    // past its column and out of a drawer.
+    const url = 'https://photos.jagbhandal.com/api/server/ping?verbose=true&format=json';
+    const sha = '3f9c2e1a7b6d4c08e5f2a91b3c7d6e4f5a8b9c0d';
+    render(
+      <FactList
+        facts={[
+          { key: 'url', label: 'Address', value: url },
+          { key: 'sha', label: 'Image', value: <code>{sha}</code> },
+        ]}
+      />
+    );
+    for (const value of screen.getAllByRole('definition')) {
+      expect(value).toHaveClass('min-w-0', 'wrap-anywhere');
+    }
+    // The value column may shrink below its longest word: minmax(0, 1fr).
+    expect(list().className).toMatch(/grid-cols-\[120px_minmax\(0,1fr\)\]/);
+  });
+
   it('renders nothing without facts', () => {
     const { container } = render(<FactList facts={[]} />);
     expect(container).toBeEmptyDOMElement();

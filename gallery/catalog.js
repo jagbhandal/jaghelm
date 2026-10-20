@@ -1,0 +1,238 @@
+/*
+ * The gallery's catalogue (#289, docs/GALLERY.md): every state of every src/ui
+ * component the design system lists, as plain data, so the Playwright tests
+ * can read it without a bundler. What each state draws is in states.jsx, under
+ * the same id; the tests fail when the two disagree.
+ *
+ *   id        the state's stable name; a variant adds the switches:
+ *             `button--dark-comfortable`, `button--light-comfortable-cyan`
+ *   group     the design-system section it belongs to
+ *   title     what the state shows
+ *   accent    colour that follows the accent: also drawn in Fuchsia and Cyan
+ *   isolated  needs the page to itself: an open overlay, focus or toasts.
+ *             It renders alone at ?state=<id>, filling the viewport, and the
+ *             full gallery page shows it in a frame.
+ *   focus     the element to focus once it has rendered (a selector): a focus
+ *             ring, or a tooltip that opens on focus
+ *   hover     the element the tests put the pointer on once the page is
+ *             ready (a selector), for a state that opens under the pointer;
+ *             its `wait` then applies after the hover
+ *   wait      for an isolated state, the elements it waits for before it is
+ *             ready: { selector: count }
+ *
+ * Every state is drawn in both themes and both densities with the default
+ * accent (Violet). An `accent` state is also drawn in Fuchsia and Cyan, in
+ * both themes, at the default density: density is spacing and never changes
+ * a colour.
+ */
+
+export const THEMES = Object.freeze(['dark', 'light']);
+export const DENSITIES = Object.freeze(['comfortable', 'compact']);
+export const ACCENTS = Object.freeze(['violet', 'fuchsia', 'cyan']);
+
+/** Set by the page once the state it shows has rendered, fonts included. */
+export const READY_ATTRIBUTE = 'data-gallery-ready';
+/** On the element of each state, whose id is the state's. */
+export const STATE_ATTRIBUTE = 'data-gallery-state';
+
+const s = (id, group, title, flags = {}) => Object.freeze({ id, group, title, ...flags });
+
+export const CATALOG = Object.freeze([
+  // Controls (#285)
+  s('button', 'Controls', 'Button: each variant at md and sm, with icons, and a link', {
+    accent: true,
+  }),
+  s('button-disabled', 'Controls', 'Button: each variant disabled'),
+  s('button-focus', 'Controls', 'Button: the focus ring', {
+    accent: true,
+    isolated: true,
+    focus: '[data-gallery-focus]',
+    wait: { '[data-gallery-focus]:focus-visible': 1 },
+  }),
+  s('icon-button', 'Controls', 'IconButton: ghost, secondary and accent, md and sm, disabled'),
+  s('input', 'Controls', 'Input: placeholder, value, disabled and invalid'),
+  s('input-focus', 'Controls', 'Input: the focus ring, 1px out', {
+    accent: true,
+    isolated: true,
+    focus: '[data-gallery-focus]',
+    wait: { '[data-gallery-focus]:focus-visible': 1 },
+  }),
+  s('select', 'Controls', 'Select: placeholder, a choice, disabled and invalid'),
+  s('select-open', 'Controls', 'Select: the list open, a choice ticked, an option disabled', {
+    accent: true,
+    isolated: true,
+    wait: { '[data-slot="select-popup"]': 1 },
+  }),
+  s('switch', 'Controls', 'Switch: off, on, and both disabled', { accent: true }),
+  s('checkbox', 'Controls', 'Checkbox: empty, checked, mixed, disabled and invalid', {
+    accent: true,
+  }),
+  s(
+    'field',
+    'Controls',
+    'Field: help text, an error, disabled, and around a Select and a segmented control'
+  ),
+  s(
+    'segmented-control',
+    'Controls',
+    'SegmentedControl: two to four options, icons, a disabled option'
+  ),
+  s('tabs', 'Controls', 'Tabs: the active tab, icons, a disabled tab', { accent: true }),
+  s('tab-focus', 'Controls', 'Tabs: the focus ring, inset', {
+    accent: true,
+    isolated: true,
+    focus: '[data-gallery-focus]',
+    wait: { '[data-gallery-focus]:focus-visible': 1 },
+  }),
+
+  // Containers (#286)
+  s('panel', 'Containers', 'Panel: icon, description and actions', { accent: true }),
+  s('panel-flush', 'Containers', 'Panel: flush, with rows'),
+  s('panel-untitled', 'Containers', 'Panel: no title'),
+  s('dialog-sm', 'Containers', 'Dialog: sm, with a Field and a footer', {
+    isolated: true,
+    wait: { '[data-slot="dialog"]': 1 },
+  }),
+  s('dialog-md', 'Containers', 'Dialog: md, with a Field and a footer', {
+    isolated: true,
+    wait: { '[data-slot="dialog"]': 1 },
+  }),
+  s('dialog-lg', 'Containers', 'Dialog: lg, with a Field and a footer', {
+    isolated: true,
+    wait: { '[data-slot="dialog"]': 1 },
+  }),
+  s('drawer', 'Containers', 'Drawer: eyebrow, title, description, a Banner and actions', {
+    isolated: true,
+    wait: { '[data-slot="drawer"]': 1 },
+  }),
+  s('confirm-destructive', 'Containers', 'Confirm: destructive, focus on Cancel', {
+    isolated: true,
+    wait: { '[data-slot="confirm-cancel"]:focus': 1 },
+  }),
+  s('confirm', 'Containers', 'Confirm: not destructive, focus on Confirm', {
+    isolated: true,
+    wait: { '[data-slot="confirm"] [data-slot="button"]:focus': 1 },
+  }),
+  s('popover', 'Containers', 'Popover: open, with a title and a description', {
+    isolated: true,
+    wait: { '[data-slot="popover"]': 1 },
+  }),
+  s('popover-hover', 'Containers', 'Popover: openOnHover, an infotip, under the pointer', {
+    isolated: true,
+    hover: '[data-gallery-hover]',
+    wait: { '[data-slot="popover"]': 1 },
+  }),
+  s('tooltip-name', 'Containers', 'Tooltip: open on focus, repeating the name', {
+    isolated: true,
+    focus: '[data-gallery-focus]',
+    wait: { '[data-slot="tooltip"]': 1 },
+  }),
+  s('tooltip-description', 'Containers', 'Tooltip: open on focus, adding a description', {
+    isolated: true,
+    focus: '[data-gallery-focus]',
+    wait: { '[data-slot="tooltip"]': 1 },
+  }),
+  s('toasts', 'Containers', 'Toasts: neutral, ok and warn', {
+    isolated: true,
+    wait: { '[data-slot="toast"]': 3 },
+  }),
+  s('toasts-urgent', 'Containers', 'Toasts: crit (an alert that stays), and one with an action', {
+    isolated: true,
+    wait: { '[data-slot="toast"]': 2 },
+  }),
+  s('banner', 'Containers', 'Banner: every tone, with detail and an action'),
+  s('banner-plain', 'Containers', 'Banner: every tone, without detail or action'),
+  s('empty-state', 'Containers', 'EmptyState: md with an icon and an action, and sm'),
+  s('skeleton', 'Containers', 'Skeleton: lines, a chip, a circle and a block'),
+
+  // Status components (#287)
+  s('status-lamp', 'Status', 'StatusLamp: every state at sm, lg and 20px'),
+  s('status-word', 'Status', 'StatusWord: every state, its own word and a given one'),
+  s('status-badge', 'Status', 'StatusBadge: every state'),
+  s('issue-row', 'Status', 'IssueRow: from 672px, as a link, a button and plain content'),
+  s('issue-row-narrow', 'Status', 'IssueRow: below 672px, the phone row'),
+  s('subsystem-strip', 'Status', 'SubsystemStrip: six tiles from 672px'),
+  s('subsystem-strip-narrow', 'Status', 'SubsystemStrip: six tiles in rows of three, and of two'),
+  s('subsystem-strip-counts', 'Status', 'SubsystemStrip: four and five tiles, wide and narrow'),
+  s('subsystem-strip-selectable', 'Status', 'SubsystemStrip: toggles, one selected', {
+    accent: true,
+  }),
+  s('attention-panel', 'Status', 'AttentionPanel: an incident, with its issues'),
+  s('attention-panel-filtered', 'Status', 'AttentionPanel: filtered to a subsystem'),
+  s(
+    'attention-panel-filtered-empty',
+    'Status',
+    'AttentionPanel: filtered to a subsystem with nothing'
+  ),
+  s('attention-panel-quiet', 'Status', 'AttentionPanel: the quiet line'),
+  s('attention-panel-maintenance', 'Status', 'AttentionPanel: the quiet line in maintenance'),
+  s('attention-panel-narrow', 'Status', 'AttentionPanel: an incident below 672px'),
+
+  // Data components (#288) and chart colours (#386)
+  s(
+    'metric-meter',
+    'Data',
+    'MetricMeter: below, at and past its thresholds, over the top, no reading',
+    {
+      accent: true,
+    }
+  ),
+  s('sparkline', 'Data', 'Sparkline: line, area, auto domain, a gap, too few points, full width'),
+  s('sparkline-tooltip', 'Data', 'Sparkline: the keyboard on the latest point', {
+    isolated: true,
+    focus: '[data-slot="sparkline-chart"]',
+    wait: { '[data-slot="sparkline-tooltip"]': 1 },
+  }),
+  s(
+    'uptime-bar',
+    'Data',
+    'UptimeBar: sm, md and lg, failures, pending, maintenance, padding, no data'
+  ),
+  s('entity-row', 'Data', 'EntityRow: from 672px, every state, a long name'),
+  s('entity-row-narrow', 'Data', 'EntityRow: below 672px, the newest 12 beats'),
+  s('fact-list', 'Data', "FactList: the drawer's and the phone's"),
+  s('fact-list-long', 'Data', 'FactList: values with no break in them, a URL, a SHA and a host'),
+  s('table', 'Data', 'Table: rows that open, numbers, a status cell'),
+  s('table-empty', 'Data', 'Table: no rows'),
+  s('table-scroll', 'Data', 'Table: wider than its frame, scrolling inside it'),
+  s(
+    'chart-colours',
+    'Data',
+    'Chart colours: the six slots and the ramp, on bg, surface-1 and surface-2'
+  ),
+]);
+
+/**
+ * Every variant of `state` as { id, theme, density, accent }: both themes in
+ * both densities with Violet, then, for an accent state, Fuchsia and Cyan in
+ * both themes at the default density.
+ */
+export function variantsOf(state) {
+  const out = [];
+  for (const theme of THEMES) {
+    for (const density of DENSITIES) {
+      out.push({ id: `${state.id}--${theme}-${density}`, theme, density, accent: 'violet' });
+    }
+  }
+  if (state.accent) {
+    for (const accent of ACCENTS.slice(1)) {
+      for (const theme of THEMES) {
+        out.push({
+          id: `${state.id}--${theme}-${DENSITIES[0]}-${accent}`,
+          theme,
+          density: DENSITIES[0],
+          accent,
+        });
+      }
+    }
+  }
+  return out.map((v) => Object.freeze({ ...v, state }));
+}
+
+/** Every variant of every state, in catalogue order. */
+export const VARIANTS = Object.freeze(CATALOG.flatMap(variantsOf));
+
+/** The variant whose id is `id`, or null. */
+export function variantById(id) {
+  return VARIANTS.find((v) => v.id === id) ?? null;
+}
