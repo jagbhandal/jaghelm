@@ -553,3 +553,88 @@ test('alertStateKey: a threshold crossing, reachability or status change gives a
   assert.notEqual(alertStateKey({ ...base, cron: { 'n1:backup': 'failure' } }, THRESHOLDS), key);
   assert.notEqual(alertStateKey(base, { ...THRESHOLDS, cpu: 0.4 }), key, 'same reading, new threshold');
 });
+
+test('alertStateKey: a change of the monitor that fed a service key gives a new key (#395)', () => {
+  const a = { ...svc({ 'n1:x': 'down', 'n1:y': 'up' }), monitorOf: { 'n1:x': '1', 'n1:y': '2' } };
+  const b = { ...a, monitorOf: { 'n1:x': '2', 'n1:y': '1' } };
+  assert.notEqual(alertStateKey(a, THRESHOLDS), alertStateKey(b, THRESHOLDS));
+  assert.notEqual(alertStateKey(a, THRESHOLDS), alertStateKey({ ...a, monitorOf: undefined }, THRESHOLDS));
+});
+
+// ── #395: a service key is diffed against the state of the monitor that feeds it ──
+
+// A services snapshot with the monitor of each key: { key: [status, monitorId?] }.
+function fed(map) {
+  const services = {};
+  const monitorOf = {};
+  for (const [key, [status, monitor]] of Object.entries(map)) {
+    services[key] = status;
+    if (monitor !== undefined) monitorOf[key] = monitor;
+  }
+  return { ...svc(services), monitorOf };
+}
+const sent = (prev, next) => diffSnapshots(prev, next, THRESHOLDS).map((e) => `${e.type} ${e.id} ${e.prev}->${e.next}`);
+
+test('#395: a monitor whose key moves brings its state with it', () => {
+  // Down under its own name, then a container takes it, still down: nothing.
+  assert.deepEqual(sent(fed({ 'n1:Grafana': ['down', '7'] }), fed({ 'n1:grafana': ['down', '7'] })), []);
+  // Down on its stopped container's card, up on the container that took it: the recovery.
+  assert.deepEqual(sent(fed({ 'n1:nextcloud': ['down', '3'] }), fed({ 'n1:nextcloud-app': ['up', '3'], 'n1:nextcloud': ['unknown'] })), [
+    'service_recovered n1:nextcloud-app down->up',
+  ]);
+  // Up on one card, down on another: one service_down.
+  assert.deepEqual(sent(fed({ 'n1:a': ['up', '1'] }), fed({ 'n2:a': ['down', '1'] })), ['service_down n2:a up->down']);
+});
+
+test('#395: a key whose monitor moved on starts fresh', () => {
+  // Its monitor moved to another card, still down, and a container with no monitor has the key: no false recovery.
+  assert.deepEqual(sent(fed({ 'n1:x': ['down', '1'] }), fed({ 'n1:x': ['up'], 'n1:y': ['down', '1'] })), []);
+  // Another monitor, new to the snapshot, has it now: no false recovery, and its own outage pages once.
+  assert.deepEqual(sent(fed({ 'n1:x': ['down', '2'] }), fed({ 'n1:x': ['up', '1'], 'n1:y': ['down', '2'] })), []);
+  assert.deepEqual(sent(fed({ 'n1:x': ['up', '2'] }), fed({ 'n1:x': ['down', '1'], 'n1:y': ['up', '2'] })), [
+    'service_down n1:x unknown->down',
+  ]);
+});
+
+test('#395: a key whose monitor has gone and that no monitor feeds now starts fresh', () => {
+  // Paused or deleted while down, on a running container whose own status is up: no false recovery.
+  const paused = fed({ 'n1:x': ['up'] });
+  assert.deepEqual(sent(fed({ 'n1:x': ['down', '1'] }), paused), []);
+  // Unpaused while still down: a new outage, as for a monitor with no container (#390).
+  assert.deepEqual(sent(paused, fed({ 'n1:x': ['down', '1'] })), ['service_down n1:x up->down']);
+  // Unpaused up, or deleted for good: nothing more.
+  assert.deepEqual(sent(paused, fed({ 'n1:x': ['up', '1'] })), []);
+  assert.deepEqual(sent(paused, fed({ 'n1:x': ['up'] })), []);
+});
+
+test('#395: a key that a monitor new to the snapshot feeds keeps its own state, as before', () => {
+  // Deleted from Kuma and added again (a new id) for the same service, still down: no repeat.
+  assert.deepEqual(sent(fed({ 'n1:x': ['down', '1'] }), fed({ 'n1:x': ['down', '9'] })), []);
+  assert.deepEqual(sent(fed({ 'n1:x': ['down', '1'] }), fed({ 'n1:x': ['up', '9'] })), ['service_recovered n1:x down->up']);
+});
+
+test('#395: a monitor an explicit mapping gives several cards is sent card by card, as before', () => {
+  // A second mapped container appears while the monitor is down: its card pages on its own.
+  assert.deepEqual(sent(fed({ 'n1:x': ['down', '1'] }), fed({ 'n1:x': ['down', '1'], 'n2:x': ['down', '1'] })), [
+    'service_down n2:x unknown->down',
+  ]);
+  assert.deepEqual(sent(fed({ 'n1:x': ['down', '1'], 'n2:x': ['down', '1'] }), fed({ 'n1:x': ['up', '1'], 'n2:x': ['up', '1'] })), [
+    'service_recovered n1:x down->up',
+    'service_recovered n2:x down->up',
+  ]);
+  // It fed several cards and now feeds one other: that card is its own, not one of theirs.
+  assert.deepEqual(sent(fed({ 'n1:x': ['down', '1'], 'n2:x': ['down', '1'] }), fed({ 'n3:x': ['down', '1'] })), ['service_down n3:x unknown->down']);
+});
+
+test('#395: a snapshot that records no monitors (written before #395) is diffed key by key', () => {
+  const old = svc({ 'n1:Grafana': 'down', 'n1:x': 'up' });
+  assert.deepEqual(sent(old, fed({ 'n1:Grafana': ['down', '7'], 'n1:x': ['up', '1'] })), [], 'a deploy sends nothing');
+  assert.deepEqual(sent(old, fed({ 'n1:grafana': ['down', '7'], 'n1:x': ['up', '1'] })), ['service_down n1:grafana unknown->down']);
+  assert.deepEqual(sent({ ...old, monitorOf: 'junk' }, fed({ 'n1:Grafana': ['up', '7'] })), ['service_recovered n1:Grafana down->up']);
+});
+
+test('#395: two monitors that swap keys each keep their own state', () => {
+  const prev = fed({ 'n1:a': ['down', '1'], 'n1:b': ['up', '2'] });
+  assert.deepEqual(sent(prev, fed({ 'n1:a': ['up', '2'], 'n1:b': ['down', '1'] })), []);
+  assert.deepEqual(sent(prev, fed({ 'n1:a': ['up', '2'], 'n1:b': ['up', '1'] })), ['service_recovered n1:b down->up']);
+});

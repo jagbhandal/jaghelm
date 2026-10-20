@@ -370,17 +370,22 @@ is up, or the container has been gone longer than `JAGHELM_PRESENCE_TTL_MS`, it
 holds nothing: a running container can have the monitor (`nextcloud` renamed to
 `nextcloud-app`), and the stopped one leaves a grey presence breadcrumb like any
 container with no monitor. A down monitor no running container got is drawn on
-the stopped container's node, else its last-seen node; its card never takes the
-uid of a card already on that node (its last container still running there,
-matched to nothing or to something else now), and then goes under the
-monitor's name.
+the stopped container's node, else its last-seen node. When that stopped
+container is the one the monitor last ran as, the monitor's last-seen node
+comes first while it is on the board: the container registry keeps one record
+per name, with the last node in the pass, so when both copies of an unpinned
+replica stop (vaultwarden on vm103 and pi2), the red card is drawn on vm103,
+where the monitor ran, not on pi2. Its card never takes the uid of a card
+already on that node (its last container still running there, matched to
+nothing or to something else now), and then goes under the monitor's name.
 
 Such a card, of a monitor no container has ("Pi Gateway (Ping)", "NAS (Ping)"),
 exists only while the monitor is down: up, it draws nothing on the board. The
 push snapshot still has it (#390). Every active monitor no running container
-got, up or down, is placed in one pass by `placeMonitor` (`refresh.js`), so its
-uid does not depend on its status while its last container isn't in the
-stopped list (#395). A down one is the red card. The uid of an up one goes in
+got, up or down, is placed in one pass by `placeMonitor` (`refresh.js`), in id
+order, so its uid does not depend on its status while its last container isn't
+in the stopped list, nor on the order Kuma listed the monitors in. A down one
+is the red card. The uid of an up one goes in
 `upWithoutCard`, which the services refresh keeps beside the cached
 `/api/services` payload, not in it: it is for push only, so it is not served
 and does not change the ETag. `buildServices` (`push/snapshot.js`) reads it as
@@ -400,27 +405,49 @@ no node could be read at all is nothing placed; the recovery then waits for
 the container to be seen again.
 
 A monitor feeds one key of the push snapshot a cycle: the card of the running
-container that has it, else its own uid. When a container takes it (one appears
-whose name matches), its own key leaves the snapshot without an event and the
-container's card starts with no previous status. When that container goes, the
-service registry remembers it, so the monitor's own uid is the container's from
-then on. The snapshot has no monitor identity, so when the key moves while the
-monitor is down, the snapshot loses track of the outage. These cases are left
-for #395:
+container that has it, else its own uid. That key can move. A container takes
+the monitor (one appears whose name matches); a stopped container holds it only
+while it is down, so a down placement and an up one can differ (the down
+monitor goes to an older `nextcloud` that stopped, the better match, and comes
+back up on `nextcloud-app`, the container it last ran as); another container
+takes it in the cycle it recovers (nextcloud stops, the monitor goes down,
+nextcloud-app comes up healthy); or two monitors remember the same container
+(left by the old matcher), and when the one earlier in id order drops out (a
+Kuma Pending retry, a pause, a container claiming it) the other moves onto the
+container's uid, and back when it returns.
 
-- A new container takes a down monitor: `service_down` is sent again, on the
-  container's card, for an outage already pushed under the old key.
-- A different container takes the monitor in the cycle it recovers (nextcloud
-  stops, the monitor goes down, nextcloud-app comes up healthy): the
-  container's card starts at `up`, so nothing is sent, including the
-  `service_recovered` the key of its down push was waiting for. Taking a
-  monitor that was already up sends nothing, which is right.
-- Two monitors remember the same container (left by the old matcher). When the
-  one earlier in the order drops out (a Kuma Pending retry, a pause, a
-  container claiming it), the other, if down, moves onto the container's uid
-  and sends a second `service_down` there. When the first comes back, the
-  other moves back: a false `service_recovered` on the container's uid, and
-  another `service_down` under its own name. No such pair exists live.
+So the push snapshot keeps the monitor's identity (#395). The services refresh
+keeps `monitorOf` beside the cached payload, like `upWithoutCard` and for push
+only: the id of the monitor each monitored uid carries, for running cards, red
+cards and up entries. The snapshot stores it as `monitorOf`, next to
+`services`, and the differ diffs a key against the monitor's last state rather
+than the key's alone (`serviceHistory` in `push/differ.js`):
+
+- A monitor that fed one key last cycle and feeds one now brings that key's
+  state with it, wherever its key moved. Each outage is one `service_down` and
+  one `service_recovered`, each on the card the monitor has at the time: the
+  recovery can come on a different card than the down push.
+- A key whose monitor last cycle feeds another key now starts with no
+  previous status, whatever feeds it now: its state went with the monitor, so
+  the key sends no false recovery and no repeat `service_down`.
+- A key whose monitor has gone from the snapshot (paused or deleted: the
+  `/metrics` source leaves a paused monitor out) and that no monitor feeds now
+  starts with no previous status too: its state was the monitor's, so a
+  running card whose monitor is paused or deleted while down sends no false
+  recovery, as a monitor with no container sends nothing then. Unpaused while
+  still down, it pages again, as one with no container does.
+- Every other key keeps its own previous state, as before: a card that had no
+  monitor last cycle, a key that a monitor new to the snapshot feeds now (one
+  deleted from Kuma and added again, under a new id), and the cards of a
+  monitor that an explicit mapping gives several containers, which are sent
+  card by card. Taking a monitor that was already up sends nothing.
+
+`monitorOf` is part of `alertStateKey`, so the file is rewritten when only the
+monitor of a key changes, and a restart keeps it. While a source fails, a key
+kept from the previous snapshot keeps its monitor with it. A snapshot written
+before #395 has no `monitorOf` and diffs as one where no key had a monitor,
+which is how every key was diffed before, so the deploy sends nothing; its
+first cycle writes the new format.
 
 The service registry's `seen` list has one record per monitor, the last node in
 the pass for one mapped explicitly to a container on several nodes. A record is
