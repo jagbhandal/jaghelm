@@ -14,11 +14,16 @@
  *   a refused frame too), so the server reads them (`fetchEmbedCheck`). When
  *   it can't, the frame shows whatever the browser puts in it.
  *
+ * The server checks the URL it has saved for the tab, so the hook asks only
+ * when `savedUrl` (the saved config's URL for this tab) is the URL the frame
+ * shows. An edited URL is asked about when its save lands, never before (the
+ * answer would be about the old URL), and never per keystroke.
+ *
  * `blockedBy` is the header line that blocks (null when not known), `attempt`
  * keys the iframe element so Retry gets a new one (a reload of that frame
  * only), and `onLoad` goes on the iframe.
  *
- * @param {{ tabId: string, url: string, slowAfterMs?: number,
+ * @param {{ tabId: string, url: string, savedUrl?: string, slowAfterMs?: number,
  *   checkEmbed?: typeof fetchEmbedCheck }} args
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -26,7 +31,13 @@ import { fetchEmbedCheck } from '../api/embedCheck.js';
 
 export const SLOW_AFTER_MS = 8000;
 
-export function useEmbedStatus({ tabId, url, slowAfterMs = SLOW_AFTER_MS, checkEmbed = fetchEmbedCheck }) {
+export function useEmbedStatus({
+  tabId,
+  url,
+  savedUrl,
+  slowAfterMs = SLOW_AFTER_MS,
+  checkEmbed = fetchEmbedCheck,
+}) {
   const [attempt, setAttempt] = useState(0);
   // State is kept with the attempt and URL it is about, so a retry or a new URL
   // starts from 'loading' and no answer about the last one leaks into it.
@@ -44,8 +55,11 @@ export function useEmbedStatus({ tabId, url, slowAfterMs = SLOW_AFTER_MS, checkE
     return () => clearTimeout(timer);
   }, [key, slowAfterMs]);
 
-  // A retry asks the server afresh, so a fix to the app's headers shows up.
+  // Asked once the server has this URL saved, per attempt: a retry asks
+  // afresh, so a fix to the app's headers shows up.
+  const saved = savedUrl === url;
   useEffect(() => {
+    if (!saved) return undefined;
     let current = true;
     checkEmbed(tabId, url, { fresh: attempt > 0 }).then((answer) => {
       if (current) setCheck({ key, answer });
@@ -53,7 +67,7 @@ export function useEmbedStatus({ tabId, url, slowAfterMs = SLOW_AFTER_MS, checkE
     return () => {
       current = false;
     };
-  }, [key, tabId, url, attempt, checkEmbed]);
+  }, [key, saved, tabId, url, attempt, checkEmbed]);
 
   const onLoad = useCallback(() => setProgress({ key, phase: 'loaded' }), [key]);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);

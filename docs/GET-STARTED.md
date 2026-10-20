@@ -407,7 +407,7 @@ If the service hasn't loaded after 8 seconds, the tab says it is slow to load an
 
 - **Uptime Kuma:** If embedding is blocked, set the environment variable `UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN=true` on your Kuma container, or add your JagHelm domain to the allowed iframe origins in Kuma's settings.
 - **Grafana:** Set `allow_embedding = true` in `grafana.ini` under `[security]`, and set `cookie_samesite = none` if accessing across different hostnames.
-- **Proxmox:** Proxmox blocks iframe embedding by default. Use the tab for LAN access where same-origin policies are relaxed, or use Tailscale for consistent access.
+- **Proxmox:** Proxmox VE's web UI sends no `X-Frame-Options` or `frame-ancestors` header (checked on Proxmox VE 9.2), so its headers don't stop it opening inside JagHelm, and being on the LAN or on Tailscale makes no difference to that. Two other things can: its own certificate on `https://your-proxmox:8006`, which a browser won't let you accept inside a frame (use an address behind your reverse proxy with a trusted certificate, or open the address in a normal tab and accept the certificate there first), and its sign-in cookie, which a browser that blocks third-party cookies drops when Proxmox and JagHelm are on different sites (give both addresses under the same domain, such as `proxmox.example.com` and `jaghelm.example.com`). If your reverse proxy adds `X-Frame-Options`, the tab says so.
 
 ---
 

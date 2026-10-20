@@ -157,12 +157,13 @@ function BlockedNotice({ title, url, blockedBy, onRetry }) {
   );
 }
 
-export default function IframeView({ tab, slowAfterMs = SLOW_AFTER_MS }) {
+export default function IframeView({ tab, savedUrl, slowAfterMs = SLOW_AFTER_MS }) {
   const { id, url } = tab;
   const title = tab.label || url;
   const { status, blockedBy, attempt, onLoad, retry } = useEmbedStatus({
     tabId: String(id),
     url,
+    savedUrl,
     slowAfterMs,
   });
 

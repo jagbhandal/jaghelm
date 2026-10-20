@@ -1,7 +1,8 @@
 ### Changed
 - An embedded tab stays loaded when you switch to another tab, Settings or the
   dashboard, and is where you left it when you come back. It used to load again
-  from the start on every switch. Deleting the tab in Settings unloads it.
+  from the start on every switch. Deleting the tab in Settings unloads it, and
+  an address edited in Settings loads the next time you open the tab.
 ### Fixed
 - An embedded tab that takes more than 8 seconds to load now says it is slow to
   load and offers Retry, and shows as soon as it loads. It used to say

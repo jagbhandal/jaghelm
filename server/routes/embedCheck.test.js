@@ -33,7 +33,9 @@ const appServer = http.createServer((req, res) => {
     '/ancestors': { 'Content-Security-Policy': "frame-ancestors 'self'" },
     '/allowed': { 'Content-Security-Policy': `frame-ancestors 'self' ${PAGE}` },
   }[req.url];
-  res.writeHead(200, headers || {});
+  // A proxy's login page, refusing the check's request (it has no cookie).
+  if (req.url === '/forbidden') res.writeHead(403, { 'X-Frame-Options': 'DENY' });
+  else res.writeHead(200, headers || {});
   res.end('<html>app</html>');
 });
 let base;
@@ -50,6 +52,7 @@ before(async () => {
         { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: `${base}/allowed` },
         { id: 'plain', label: 'Plain', type: 'iframe', url: `${base}/plain` },
         { id: 'meta', label: 'Metadata', type: 'iframe', url: 'http://169.254.169.254/latest/' },
+        { id: 'login', label: 'Behind a login', type: 'iframe', url: `${base}/forbidden` },
       ],
     })
   );
@@ -114,6 +117,11 @@ test('a repeat check is answered from the cache', async () => {
 test('an app it cannot read is unknown, not blocked', async () => {
   const r = await check('meta');
   assert.deepEqual(r.body, { url: 'http://169.254.169.254/latest/', verdict: 'unknown', reason: 'refused' });
+});
+
+test('a 403 carrying X-Frame-Options: DENY is unknown, not blocked', async () => {
+  const r = await check('login');
+  assert.deepEqual(r.body, { url: `${base}/forbidden`, verdict: 'unknown', reason: 'answered 403' });
 });
 
 test('only saved tab ids are checked: a URL in the request is ignored', async () => {

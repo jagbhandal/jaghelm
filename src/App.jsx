@@ -163,7 +163,7 @@ function AppMain({ authRequired, demo, onLogout }) {
   // Display-config save/load (localStorage + debounced server save,
   // flush-on-unload, authoritative server load on mount). The demo refuses
   // writes, so nothing is sent to it: no save fails and no toast shows on load.
-  useConfigPersistence(config, setConfig, setTheme, toast, { readOnly: demo });
+  const savedConfig = useConfigPersistence(config, setConfig, setTheme, toast, { readOnly: demo });
 
   // Apply config to the document as CSS custom properties
   // (accent/opacity/font family/font sizes/blur).
@@ -295,7 +295,7 @@ function AppMain({ authRequired, demo, onLogout }) {
         {/* A boundary of its own: Settings' chunk loading must not hide the frames. */}
         {appFrames.length > 0 && (
           <Suspense fallback={lazyFallback}>
-            <AppFrames frames={appFrames} />
+            <AppFrames frames={appFrames} savedTabs={savedConfig?.tabs} />
           </Suspense>
         )}
       </div>

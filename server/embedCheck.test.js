@@ -86,6 +86,15 @@ describe('frameVerdict: CSP frame-ancestors', () => {
     assert.equal(verdict({ csp: 'frame-ancestors http://192.168.1.5:3099' }, 'http://192.168.1.5:3099').verdict, 'allowed');
   });
 
+  test("'self' matches the same host on another scheme when both ports are default (CSP3)", () => {
+    const self = (parent, finalUrl) => verdict({ csp: "frame-ancestors 'self'" }, parent, finalUrl).verdict;
+    assert.equal(self('https://app.lan', 'http://app.lan/'), 'allowed');
+    assert.equal(self('https://app.lan', 'http://app.lan:80/'), 'allowed');
+    assert.equal(self('http://app.lan', 'https://app.lan/'), 'blocked'); // a downgrade never matches
+    assert.equal(self('https://app.lan:8443', 'http://app.lan/'), 'blocked');
+    assert.equal(self('https://app.lan:8443', 'https://app.lan:8443/'), 'allowed');
+  });
+
   test('frame-ancestors wins over X-Frame-Options', () => {
     assert.equal(verdict({ xfo: 'DENY', csp: 'frame-ancestors https://jaghelm.example' }).verdict, 'allowed');
   });
@@ -185,6 +194,62 @@ describe('readFrameHeaders', () => {
     const r = await readFrameHeaders(`${app.base}/`);
     assert.deepEqual(r, { ok: false, reason: 'redirected to another host' });
     assert.equal(other.seen.length, 0);
+  });
+
+  test('reads nothing from an answer that is not 2xx: the signed-in browser may get another', async () => {
+    const answers = {
+      '/401': [401, { 'WWW-Authenticate': 'Basic realm="proxy"' }],
+      '/403': [403, { 'X-Frame-Options': 'DENY' }],
+      '/500': [500, { 'X-Frame-Options': 'DENY' }],
+      '/to-401': [302, { Location: '/401' }],
+    };
+    const app = await startApp((req, res) => {
+      const [status, headers] = answers[req.url];
+      res.writeHead(status, headers);
+      res.end();
+    });
+    assert.deepEqual(await readFrameHeaders(`${app.base}/401`), { ok: false, reason: 'answered 401' });
+    assert.deepEqual(await readFrameHeaders(`${app.base}/403`), { ok: false, reason: 'answered 403' });
+    assert.deepEqual(await readFrameHeaders(`${app.base}/500`), { ok: false, reason: 'answered 500' });
+    assert.deepEqual(await readFrameHeaders(`${app.base}/to-401`), { ok: false, reason: 'answered 401' });
+  });
+
+  test('a redirect to another port on the same hostname is not followed', async () => {
+    const other = await startApp((req, res) => {
+      res.writeHead(200, { 'X-Frame-Options': 'DENY' });
+      res.end('another service');
+    });
+    const app = await startApp((req, res) => {
+      res.writeHead(302, { Location: `http://127.0.0.1:${other.port}/` });
+      res.end();
+    });
+    assert.deepEqual(await readFrameHeaders(`${app.base}/`), { ok: false, reason: 'redirected to another host' });
+    assert.equal(other.seen.length, 0);
+  });
+
+  test('an upgrade to https on the same host is followed', async () => {
+    const calls = [];
+    const fetchImpl = async (url) => {
+      calls.push(url);
+      if (url === 'http://app.example/') {
+        return new Response(null, { status: 301, headers: { location: 'https://app.example/login' } });
+      }
+      if (url === 'http://app.example:8080/') {
+        return new Response(null, { status: 301, headers: { location: 'https://app.example:8443/' } });
+      }
+      return new Response('ok', { status: 200, headers: { 'x-frame-options': 'SAMEORIGIN' } });
+    };
+    assert.deepEqual(await readFrameHeaders('http://app.example/', { fetchImpl }), {
+      ok: true,
+      finalUrl: 'https://app.example/login',
+      xfo: 'SAMEORIGIN',
+      csp: null,
+    });
+    assert.deepEqual(await readFrameHeaders('http://app.example:8080/', { fetchImpl }), {
+      ok: false,
+      reason: 'redirected to another host',
+    });
+    assert.deepEqual(calls, ['http://app.example/', 'https://app.example/login', 'http://app.example:8080/']);
   });
 
   test('gives up on a redirect loop', async () => {

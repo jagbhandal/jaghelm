@@ -215,9 +215,9 @@ describe('dashboard polling — paused when nobody is looking', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Grafana' }));
     await vi.waitFor(() => document.querySelector('iframe'));
     await advance(5 * TICK_MS);
-    // The dashboard asks nothing. Opening the app asks once whether its headers
-    // let it be framed (#269).
-    expect(take()).toEqual(['/api/embed-check/grafana']);
+    // The dashboard asks nothing. (Opening the app may ask once whether its
+    // headers let it be framed, #269; not here, as this server has no saved tab.)
+    expect(take().filter((p) => !p.startsWith('/api/embed-check/'))).toEqual([]);
 
     fireEvent.click(screen.getByRole('tab', { name: 'Dashboard' }));
     await advance(0);

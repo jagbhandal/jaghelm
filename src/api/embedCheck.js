@@ -6,8 +6,9 @@
  * Resolves to `{ verdict: 'blocked', header }`, `{ verdict: 'allowed' }` or
  * `{ verdict: 'unknown' }`, never rejects. Unknown covers everything that
  * isn't an answer about this URL: the server couldn't read the app, the call
- * failed, the demo's empty answer, and an answer for another URL (the saved
- * config is up to 2 s behind an edit).
+ * failed, the demo's empty answer, and an answer about another URL. Callers
+ * ask only once the server has `url` saved (useEmbedStatus), so that last one
+ * is a race with another save, not the normal case.
  *
  * @param {string} tabId
  * @param {string} url the URL the frame shows

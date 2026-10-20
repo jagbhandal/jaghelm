@@ -11,8 +11,9 @@ import { useAppFrames } from '../hooks/useAppFrames.js';
 const vault = { id: 'vault', label: 'Vaultwarden', type: 'iframe', url: 'https://vault.example/' };
 const kuma = { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: 'https://kuma.example/' };
 
-function Harness({ tabs, active }) {
-  return <AppFrames frames={useAppFrames(tabs, active)} />;
+// savedTabs: what the server has saved (useConfigPersistence); by default the tabs shown.
+function Harness({ tabs, active, savedTabs = tabs }) {
+  return <AppFrames frames={useAppFrames(tabs, active)} savedTabs={savedTabs} />;
 }
 
 let answers; // tab id → body, or a Promise of one, or an Error
@@ -151,6 +152,25 @@ describe('a blocked app', () => {
     expect(frameOf(vault)).toBeVisible();
   });
 
+  it('asks nothing until the server has the URL the frame shows saved', async () => {
+    answers.vault = { url: vault.url, verdict: 'blocked', header: 'X-Frame-Options: DENY' };
+    const old = { ...vault, url: 'https://old-vault.example/' };
+    const { rerender } = render(<Harness tabs={[vault]} active="vault" savedTabs={[old]} />);
+    await advance(0);
+    rerender(<Harness tabs={[vault]} active="vault" savedTabs={null} />);
+    await advance(0);
+    expect(checks).toHaveLength(0);
+    // The save lands.
+    rerender(<Harness tabs={[vault]} active="vault" savedTabs={[vault]} />);
+    await advance(0);
+    expect(checks).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: "Vaultwarden won't open inside JagHelm" })).toBeInTheDocument();
+    // Another save of the same URL asks nothing more.
+    rerender(<Harness tabs={[vault]} active="vault" savedTabs={[{ ...vault }]} />);
+    await advance(0);
+    expect(checks).toHaveLength(1);
+  });
+
   it('asks about the tab by id and the page origin, never by URL', async () => {
     render(<Harness tabs={[vault]} active="vault" />);
     await advance(0);
@@ -171,7 +191,13 @@ describe('frames stay loaded', () => {
     await advance(0);
     expect(frameOf(vault)).toBe(v);
     expect(v).not.toBeVisible();
-    expect(v.closest('[aria-hidden="true"]')).not.toBeNull();
+    const slot = v.closest('[aria-hidden="true"]');
+    expect(slot).not.toBeNull();
+    // Hidden at full size, never display: none, so an app laid out to its
+    // window isn't squashed and redrawn; clipped so it adds no scroll height.
+    expect(slot.style.visibility).toBe('hidden');
+    for (let el = v; el; el = el.parentElement) expect(getComputedStyle(el).display).not.toBe('none');
+    expect(slot.style.overflow).toBe('hidden');
     rerender(<Harness tabs={[vault, kuma]} active="vault" />);
     expect(frameOf(vault)).toBe(v);
     expect(v).toBeVisible();

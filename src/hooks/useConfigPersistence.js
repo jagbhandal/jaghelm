@@ -17,9 +17,13 @@
  *   readOnly: the server refuses writes (the public demo, #248). Changes are
  *   kept in this browser (localStorage) and never sent, so nothing fails and
  *   no "couldn't save" toast shows.
+ * @returns {object | null} the config the server has: what the mount load
+ *   read, then each save once the server accepts it; null before the load,
+ *   or when the server has none. The embed check (#269) asks the server only
+ *   about a URL it has saved.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiFetch, getAuthToken } from '../api/client.js';
 
 export function useConfigPersistence(
@@ -35,6 +39,7 @@ export function useConfigPersistence(
   // flush-on-unload handler can write the most recent edit synchronously.
   const pendingConfigRef = useRef(config);
   const savePendingRef = useRef(false);
+  const [savedConfig, setSavedConfig] = useState(null);
 
   // Save config: localStorage immediately, server debounced
   useEffect(() => {
@@ -62,6 +67,7 @@ export function useConfigPersistence(
         .then((r) => {
           // A non-2xx response is a failed save just as much as a thrown error.
           if (!r.ok) throw new Error(`save failed (${r.status})`);
+          setSavedConfig(config);
         })
         .catch(() => {
           // The debounced effect re-arms on the next edit, and localStorage
@@ -130,6 +136,7 @@ export function useConfigPersistence(
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+          setSavedConfig(data);
           setConfig((prev) => {
             const merged = { ...data };
             // localStorage layout is authoritative — server may be stale from a previous deploy
@@ -147,4 +154,6 @@ export function useConfigPersistence(
         configLoadedFromServer.current = true;
       });
   }, []);
+
+  return savedConfig;
 }

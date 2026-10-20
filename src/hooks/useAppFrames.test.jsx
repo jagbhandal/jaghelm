@@ -52,9 +52,17 @@ describe('useAppFrames', () => {
     expect(ids(result.current)).toEqual([['kuma', true]]);
   });
 
-  it('passes the current tab, so an edited URL reaches the frame', () => {
+  it('keeps the URL a hidden frame last showed until it is opened again', () => {
     const { result, rerender } = setup([dash, grafana], 'grafana');
+    // Typed in Settings, a key at a time: the hidden frame doesn't follow.
+    for (const url of ['https://g', 'https://grafana2', 'https://grafana2.example']) {
+      rerender({ tabs: [dash, { ...grafana, label: 'Grafana 2', url }], activeTab: 'settings' });
+      expect(result.current[0].tab.url).toBe('https://grafana.example');
+      expect(result.current[0].tab.label).toBe('Grafana 2');
+    }
     const moved = { ...grafana, url: 'https://grafana2.example' };
+    rerender({ tabs: [dash, moved], activeTab: 'grafana' });
+    expect(result.current[0].tab).toBe(moved);
     rerender({ tabs: [dash, moved], activeTab: 'dashboard' });
     expect(result.current[0].tab).toBe(moved);
   });

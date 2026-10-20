@@ -12,9 +12,14 @@
  *   id. The request names a tab id, never a URL.
  * - One GET, with no cookie, no Authorization header and no URL credentials (a
  *   URL with a user or password is not checked). The body is never read.
- * - Redirects are followed only on the same hostname, at most MAX_HOPS, each
- *   hop through assertSafeUrl (http(s) only; never the metadata address, nor
- *   0.0.0.0/8; private ranges too under JAGHELM_BLOCK_PRIVATE_NETWORKS).
+ * - Redirects are followed only on the same host (hostname and port; the
+ *   scheme may change, so http://app -> https://app is followed), at most
+ *   MAX_HOPS, each hop through assertSafeUrl (http(s) only; never the metadata
+ *   address, nor 0.0.0.0/8; private ranges too under
+ *   JAGHELM_BLOCK_PRIVATE_NETWORKS).
+ * - Only a 2xx answer is read. The request carries no cookie, so a 401 or 403
+ *   (a proxy's login, a WAF challenge) or a 5xx (an app starting up) may not
+ *   be what the signed-in browser gets; its headers say nothing about the app.
  * - EMBED_CHECK_TIMEOUT_MS for the whole exchange, every hop included.
  * - The answer is cached per tab: OK_TTL_MS for a read, FAIL_TTL_MS for a
  *   failure, and a "fresh" check (the Retry button) reuses an answer younger
@@ -65,7 +70,7 @@ export async function readFrameHeaders(rawUrl, { timeoutMs = EMBED_CHECK_TIMEOUT
     return { ok: false, reason: NOT_CHECKABLE };
   }
   if (!checkable(url)) return { ok: false, reason: NOT_CHECKABLE };
-  const hostname = url.hostname;
+  const host = url.host; // hostname, and the port unless it is the default
   const signal = AbortSignal.timeout(timeoutMs);
 
   for (let hop = 0; ; hop++) {
@@ -91,6 +96,7 @@ export async function readFrameHeaders(rawUrl, { timeoutMs = EMBED_CHECK_TIMEOUT
     res.body?.cancel().catch(() => {});
     const redirectTo = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
     if (!redirectTo) {
+      if (res.status < 200 || res.status > 299) return { ok: false, reason: `answered ${res.status}` };
       return {
         ok: true,
         finalUrl: url.href,
@@ -105,7 +111,7 @@ export async function readFrameHeaders(rawUrl, { timeoutMs = EMBED_CHECK_TIMEOUT
     } catch {
       return { ok: false, reason: 'unreachable' };
     }
-    if (next.hostname !== hostname || !checkable(next)) {
+    if (next.host !== host || !checkable(next)) {
       return { ok: false, reason: 'redirected to another host' };
     }
     url = next;
@@ -158,9 +164,10 @@ function sourceMatches(expr, ancestor, self) {
   }
   if (expr.toLowerCase() === "'self'") {
     if (ancestor.origin === self.origin) return true;
+    // CSP3: the same host on the same port, or on each scheme's default port.
     return (
       ancestor.hostname === self.hostname &&
-      portOf(ancestor) === portOf(self) &&
+      (portOf(ancestor) === portOf(self) || (ancestor.port === '' && self.port === '')) &&
       (scheme === 'https' || scheme === 'wss' || (self.protocol === 'http:' && scheme === 'http'))
     );
   }
