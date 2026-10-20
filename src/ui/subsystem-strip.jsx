@@ -9,12 +9,13 @@
  *
  * The `ui` look is the mock's joined annunciator strip: tiles 1px apart inside
  * one 12px-round frame, each a lamp and an overline label over the value.
- * A warning, critical or no-signal tile takes its state's tint; a maintenance
- * tile stays on the panel, its wrench saying it (spec §6.1: maintenance is not
- * an issue). Six tiles sit in one row from 672px (`@2xl` of the strip's
- * container), in rows of three from 320px and of two below that, as the Phone
- * board's; the narrow tiles leave out `sub`. A strip holds one to six tiles,
- * and no row is left with an empty slot (`columns`, below).
+ * A warning, critical or no-signal tile takes its state's tint, over the
+ * panel's surface-1 (#289); a maintenance tile stays on the panel, its wrench
+ * saying it (spec §6.1: maintenance is not an issue). Six tiles sit in one row
+ * from 672px (`@2xl` of the strip's container), in rows of three from 320px
+ * and of two below that, as the Phone board's; the narrow tiles leave out
+ * `sub`. A strip holds one to six tiles, and no row is left with an empty
+ * slot (`columns`, below).
  *
  * With `onSelect`, each tile is a toggle button (`aria-pressed`) that filters
  * by its subsystem, as the mock's do: a press calls `onSelect(key)`, or
@@ -32,11 +33,17 @@ import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
 import { WORDS, spoken, toSeverity, toState } from './lib/status.js';
 
+// A tint is a layer over the tile's surface-1: a gradient of one colour, which
+// paints over the background colour and under the selected tile's inset ring.
+// As a background colour of its own it sat over the frame's border colour in
+// the gaps, a pairing no contrast check covers, and the text-3 label and line
+// fell to 3.85:1 in light (the gallery's axe check, #289). Over surface-1 it
+// is the pairing ui-contrast.mjs holds at 4.5:1.
 const tint = {
   ok: '',
-  warn: 'bg-warn-tint',
-  crit: 'bg-crit-tint',
-  unknown: 'bg-unknown-tint',
+  warn: 'bg-linear-to-r from-warn-tint to-warn-tint',
+  crit: 'bg-linear-to-r from-crit-tint to-crit-tint',
+  unknown: 'bg-linear-to-r from-unknown-tint to-unknown-tint',
   maintenance: '',
 };
 
@@ -106,7 +113,9 @@ function Tile({ cell, selected, onSelect }) {
       className={cn(
         'flex min-w-0 flex-col gap-1 bg-surface-1 px-2.5 pt-2.5 pb-3 text-left text-text-1 @2xl:gap-1.5 @2xl:px-4 @2xl:pt-3.5 @2xl:pb-3.5',
         tint[s],
-        onSelect && 'cursor-pointer -outline-offset-2 transition-colors hover:bg-surface-2',
+        // Under the pointer, surface-2 alone, tinted or not.
+        onSelect &&
+          'cursor-pointer -outline-offset-2 transition-colors hover:bg-surface-2 hover:bg-none',
         pressed && 'inset-ring-[1.5px] inset-ring-accent'
       )}
       {...action}

@@ -10,6 +10,9 @@ name: check
 # Mirrors the homelab-infra CI runner pattern: a self-hosted runner + a toolchain
 # container + a manual clone (the act_runner host lacks Node for actions/checkout;
 # the node:26 container supplies Node + git).
+#
+# Two jobs, side by side: `check` (the suite above) and `gallery` (the component
+# gallery's screenshots and axe, #289, in the pinned Playwright container).
 on:
   pull_request:
     branches:
@@ -110,3 +113,51 @@ jobs:
 
       - name: Asset/link existence check
         run: npm run check:assets
+
+  # The component gallery (#289, docs/GALLERY.md): every state of every src/ui
+  # component, screenshotted against its committed baseline and checked with
+  # axe, in both themes and densities and the three accents. It fails on any
+  # axe violation and on any screenshot that isn't its baseline, pixel for
+  # pixel; an approved change is the regenerated baselines committed in the PR
+  # (`npm run gallery:update`). It runs in the pinned Playwright image
+  # (gallery/container.mjs; scripts/gallery-build.test.mjs keeps the three
+  # copies of it in step), which carries Chromium, so nothing is downloaded but
+  # npm packages and, after a runner's image prune (weekly on MS-S1, daily on
+  # vm-103), the image itself, about 1 GB. It asks for no host namespace of
+  # its own (no --ipc=host: Chromium already avoids /dev/shm), and it picks a
+  # free port per run (playwright.config.mjs), so jobs side by side on one
+  # runner's network never meet.
+  gallery:
+    runs-on: self-hosted
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+    env:
+      JH_GALLERY_IMAGE: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Manual checkout (git clone, as the check job)
+        env:
+          PR_TOKEN: ${{ secrets.PR_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_SAFE: ${{ github.sha }}
+          PUBLIC_GITEA_URL: "https://git.jagbhandal.com"
+        run: |
+          # Keep `set -e` and NOT `set -x`: tracing would echo the
+          # http.extraHeader Authorization token into the CI logs.
+          set -e
+          CLONE_URL="${PUBLIC_GITEA_URL%/}/${REPOSITORY}.git"
+          cd "$GITHUB_WORKSPACE"
+          git init -q
+          git remote add origin "$CLONE_URL"
+          git -c "http.extraHeader=Authorization: token ${PR_TOKEN}" \
+              fetch --depth 1 origin "$GITHUB_REF_SAFE"
+          git checkout -q FETCH_HEAD
+
+      - name: Install dependencies (npm ci)
+        run: npm ci --no-audit --no-fund
+
+      - name: Gallery (screenshots and axe on every state)
+        run: npx playwright test

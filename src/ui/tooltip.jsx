@@ -14,7 +14,9 @@
  * (an IconButton's `label`, a Button's text); when the tooltip says more than
  * that name, the trigger is also described by it (aria-describedby, pointing
  * at a hidden copy that is always in the page), so a screen reader hears it
- * without opening it. The copies live in one hidden element in <body>, never
+ * without opening it. The popup itself is hidden from assistive tech: its text
+ * would otherwise sit at the end of <body>, outside every landmark, and be
+ * read again after the name or description (#289). The copies live in one hidden element in <body>, never
  * beside the trigger, where they would break its row's `:last-child` and `+`
  * selectors, and the markup of a list it sits in.
  *
@@ -99,6 +101,7 @@ function Tooltip({
         >
           <TooltipPrimitive.Popup
             data-slot="tooltip"
+            aria-hidden="true"
             className={cn(
               'max-w-[min(280px,calc(100vw-1rem))] rounded-md border border-border-strong bg-surface-2 px-2 py-1 text-caption text-text-1 shadow-pop transition-opacity data-ending-style:opacity-0 data-instant:transition-none data-starting-style:opacity-0',
               className
