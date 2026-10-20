@@ -100,6 +100,15 @@ test('tracker: `seed` is asked once, before the first build, with the thresholds
   assert.deepEqual(none, fresh);
 });
 
+test('memoryFromLevels: given the configured nodes, it seeds only those', () => {
+  const memory = memoryFromLevels(
+    { n1: { cpu: 'warn' }, gone: { disk: 'warn' } },
+    { nodes: ['n1', 'n2'] }
+  );
+  assert.deepEqual(Object.keys(memory.entities), ['nodes/n1']);
+  assert.deepEqual(Object.keys(memoryFromLevels({ n1: {} }, { nodes: [] }).entities), []);
+});
+
 test("memoryFromLevels: only each node's levels; a node it seeds that Prometheus no longer reports is dropped", () => {
   const memory = memoryFromLevels({ n1: { cpu: 'warn' }, gone: { disk: 'warn' }, junk: null });
   assert.deepEqual(Object.keys(memory.entities), ['nodes/n1', 'nodes/gone']);

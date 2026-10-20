@@ -55,9 +55,6 @@ against spec §6.1's 90/95, and to let Android drop its `DISK_HOT` literal.
   rises again doesn't alert twice. Temperature and storage pools page too, and
   a disk reaching 95 % sends a second, critical alert. A restart keeps each held
   level: the model starts from the levels the push snapshot file holds.
-- `mobile/src/data/derive.js`'s comment on `DISK_HOT` still cites
-  `DEFAULT_PUSH_THRESHOLDS.disk`, which #292 removed; the comment goes with
-  `DISK_HOT` in Phase 4.
 - Changing a number is one edit, in one file, covered by the table tests
   (`server/status/severityTable.test.js`). Settings → Notifications edits the
   table from Phase 3.

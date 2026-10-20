@@ -255,3 +255,35 @@ test('deploy (#292): the snapshot written before it loads, sends nothing, and it
     live.close();
   }
 });
+
+// `c` with pi1's memory at `pct` %.
+function withPi1Memory(c, pct) {
+  return {
+    ...c,
+    getCached: (key) => {
+      const v = c.getCached(key);
+      if (key !== 'services') return v;
+      const pi1 = { ...v.nodes.pi1, metrics: { ...v.nodes.pi1.metrics, memPercent: String(pct) } };
+      return { ...v, nodes: { ...v.nodes, pi1 } };
+    },
+  };
+}
+
+test('deploy (#292): a reading that crossed its line since the old snapshot was written alerts on the first cycle', async () => {
+  const old = JSON.parse(readFileSync(FIXTURE_V2, 'utf8'));
+  assert.equal(old.hosts.pi1.mem, 0.41, 'under its line in the old file');
+  const live = deployed(FIXTURE_V2);
+  try {
+    // vm103's disk stays at the old file's 92 %; pi1's memory went from 41 % to 95 %.
+    const r = liveCycle({ status: { 'NAS UI': 'down' } });
+    await live.push(r, withPi1Memory(withDisk(r, 92), 95));
+    assert.deepEqual(live.sent, ['host_threshold pi1:mem'], 'one alert, on the deploy cycle');
+    await live.push(r, withPi1Memory(withDisk(r, 92), 95));
+    assert.deepEqual(live.sent, ['host_threshold pi1:mem'], 'and not again');
+    // The disk the old file held over its line comes back under it: one "back to normal".
+    await live.push(r, withPi1Memory(withDisk(r, 63), 95));
+    assert.deepEqual(live.sent, ['host_threshold pi1:mem', 'host_threshold_cleared vm103:disk']);
+  } finally {
+    live.close();
+  }
+});

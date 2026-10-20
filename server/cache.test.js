@@ -240,3 +240,23 @@ test('a key the refresh loop rewrites is never the one evicted', () => {
     if (i % 100 === 0) setCache(warm, { v: i }); // a refresh cycle
   }
 });
+
+test('an entry lives 120 s by default, or the TTL it was written with', () => {
+  const realNow = Date.now;
+  const t0 = realNow();
+  try {
+    Date.now = () => t0;
+    const plain = freshKey();
+    const long = freshKey();
+    setCache(plain, { a: 1 });
+    setCache(long, { b: 2 }, null, { ttlMs: 600_000 });
+    Date.now = () => t0 + 119_000;
+    assert.deepEqual([getCached(plain), getCached(long)], [{ a: 1 }, { b: 2 }]);
+    Date.now = () => t0 + 121_000;
+    assert.deepEqual([getCached(plain), getCached(long)], [null, { b: 2 }]);
+    Date.now = () => t0 + 600_001;
+    assert.equal(getCached(long), null);
+  } finally {
+    Date.now = realNow;
+  }
+});

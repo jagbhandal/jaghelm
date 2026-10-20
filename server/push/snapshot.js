@@ -364,7 +364,8 @@ export function heldLevels(snapshot, thresholds) {
   for (const [node, host] of Object.entries(hosts)) {
     if (!isObject(host)) continue;
     if (isObject(host.levels)) {
-      out[node] = { ...host.levels };
+      // Only level words: anything else in a damaged file is left out.
+      out[node] = Object.fromEntries(Object.entries(host.levels).filter(([, v]) => LEVELS.has(v)));
       continue;
     }
     const legacy = {};
@@ -376,4 +377,31 @@ export function heldLevels(snapshot, thresholds) {
     out[node] = legacy;
   }
   return out;
+}
+
+/**
+ * A snapshot as this version writes it. One written before #292 holds each
+ * host's readings, not their levels: each host gets the levels those readings
+ * give (heldLevels), so the first cycle after the deploy compares levels like
+ * any other, and a reading that crossed its line since the old file was
+ * written alerts at once. Anything else is returned as it is.
+ *
+ * @param {object|null} snapshot
+ * @param {import('../status/thresholds.js').Thresholds} thresholds
+ */
+export function upgradeSnapshot(snapshot, thresholds) {
+  const hosts = isObject(snapshot?.hosts) ? snapshot.hosts : null;
+  if (!hosts || Object.values(hosts).every((h) => !isObject(h) || isObject(h.levels)))
+    return snapshot;
+  const levels = heldLevels(snapshot, thresholds);
+  const upgraded = Object.entries(hosts).map(([node, host]) => [
+    node,
+    isObject(host) && !isObject(host.levels)
+      ? {
+          reachable: host.reachable === true,
+          levels: sortedObject(Object.entries(levels[node] ?? {})),
+        }
+      : host,
+  ]);
+  return { ...snapshot, hosts: sortedObject(upgraded) };
 }

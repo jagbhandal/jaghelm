@@ -133,12 +133,17 @@ export async function dispatchEvents(events, { store, fcm, logger = defaultLog }
  * alert, or miss the recovery of one already sent. flush() writes the latest
  * snapshot on shutdown if the file is behind.
  *
+ * `upgrade` brings a file an older version wrote to this one's shape as it is
+ * read (refresh.js: push/snapshot.js upgradeSnapshot, levels for a pre-#292
+ * file's readings), so the first cycle diffs like any other.
+ *
  * @param {object}   opts
- * @param {string}   opts.path     the persisted snapshot file
- * @param {Function} [opts.write]  atomic writer (injected in tests)
+ * @param {string}   opts.path       the persisted snapshot file
+ * @param {Function} [opts.write]    atomic writer (injected in tests)
+ * @param {Function} [opts.upgrade]  (snapshot) => snapshot, applied to what the file holds
  * @param {object}   [opts.logger]
  */
-export function createPushSnapshot({ path, write = atomicWriteFileSync, logger = defaultLog }) {
+export function createPushSnapshot({ path, write = atomicWriteFileSync, upgrade = (snap) => snap, logger = defaultLog }) {
   let loaded = false;
   let prev = null; // the last cycle's snapshot (null: baseline)
   let persisted = null; // what the file holds (null: nothing usable)
@@ -167,7 +172,8 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, logger =
     /** The previous cycle's snapshot, or null on the first cycle (baseline). */
     prev() {
       if (!loaded) {
-        prev = persisted = load();
+        const read = load();
+        prev = persisted = read === null ? null : upgrade(read);
         loaded = true;
       }
       return prev;
@@ -223,7 +229,9 @@ export async function runPushCycle({ buildSnapshotFn, status = null, store, fcm,
     const prev = snapshot.prev();
     const snap = buildSnapshotFn(prev);
     if (snap === null) {
-      logger.debug({ baseline: prev === null }, 'push cycle skipped: no snapshot while a source fails');
+      // A baseline would record a failed source as state (buildSnapshot), or
+      // the cycle has no status model (refresh.js runStatusAndPush).
+      logger.debug({ baseline: prev === null }, 'push cycle skipped: no snapshot this cycle');
       return;
     }
 

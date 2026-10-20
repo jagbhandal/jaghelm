@@ -19,6 +19,7 @@ import {
   heldLevels,
   normalizeUpsStatus,
   serviceStateOf,
+  upgradeSnapshot,
 } from './snapshot.js';
 import { NODE_READS } from '../discovery.js';
 import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
@@ -656,6 +657,35 @@ test("heldLevels: a snapshot's levels by node", () => {
   assert.deepEqual(heldLevels(snap, T), { a: { cpu: 'ok', disk: 'warn' }, b: {} });
   assert.deepEqual(heldLevels(null, T), {});
   assert.deepEqual(heldLevels({ hosts: 'junk' }, T), {});
+});
+
+test('heldLevels: only level words survive from a damaged file', () => {
+  const snap = {
+    hosts: { a: { reachable: true, levels: { disk: 'warn', cpu: {}, mem: 3, temp: 'hot' } } },
+  };
+  assert.deepEqual(heldLevels(snap, T), { a: { disk: 'warn' } });
+});
+
+test('upgradeSnapshot: a snapshot written before #292 gets levels for its readings; anything else is as it was', () => {
+  const old = {
+    services: { 'n1:app': 'down' },
+    hosts: {
+      n1: { reachable: true, cpu: 0.2, mem: 0.95, disk: 0.6 },
+      n2: { reachable: false, cpu: 0, mem: 0, disk: 0 },
+    },
+    ups: { state: 'online' },
+    cron: {},
+  };
+  assert.deepEqual(upgradeSnapshot(old, T), {
+    ...old,
+    hosts: {
+      n1: { reachable: true, levels: { cpu: 'ok', disk: 'ok', mem: 'warn' } },
+      n2: { reachable: false, levels: { cpu: 'ok', disk: 'ok', mem: 'ok' } },
+    },
+  });
+  const current = { ...old, hosts: { n1: { reachable: true, levels: { cpu: 'warn' } } } };
+  assert.equal(upgradeSnapshot(current, T), current, 'a current snapshot is returned as it is');
+  assert.equal(upgradeSnapshot(null, T), null);
 });
 
 test("heldLevels: a snapshot written before #292 holds readings: at or over a line is that line's level", () => {

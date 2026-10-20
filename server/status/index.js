@@ -94,12 +94,19 @@ export function createStatusTracker({ seed } = {}) {
  * inside the band, as it would have had the process kept running. Everything
  * else starts as on a first cycle.
  *
+ * `nodes`, when given, are the nodes services.yaml has: a node taken out of
+ * it is not seeded, so the model doesn't keep it as unknown while Prometheus
+ * fails.
+ *
  * @param {Record<string, Record<string, string>>} levels
+ * @param {{ nodes?: string[] | null }} [opts]
  */
-export function memoryFromLevels(levels) {
+export function memoryFromLevels(levels, { nodes = null } = {}) {
+  const configured = Array.isArray(nodes) ? new Set(nodes) : null;
   const entities = {};
   for (const [nodeKey, byReading] of Object.entries(levels ?? {})) {
     if (!byReading || typeof byReading !== 'object') continue;
+    if (configured && !configured.has(nodeKey)) continue;
     const id = `nodes/${nodeKey}`;
     entities[id] = {
       id,

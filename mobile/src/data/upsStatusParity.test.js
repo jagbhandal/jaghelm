@@ -1,15 +1,12 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { upsState } from './derive.js';
 import { normalizeUpsStatus } from '../../../server/push/snapshot.js';
 
 // The app keeps its own copy of the nut_status map because it can't bundle
-// server code. This holds the copy to the server's (server/push/snapshot.js,
-// which push and the web read the same way), so a change to either side fails
-// here instead of drifting (#273).
-//
-// snapshot.js imports the cron store, which creates the data directory as it
-// loads. The UPS mapping doesn't use it, so the test stubs it out.
-vi.mock('../../../server/cron-store.js', () => ({ getAllStatuses: () => [] }));
+// server code. This holds the copy to the server's (normalizeUpsStatus in
+// server/push/snapshot.js: how push reads a nut_status, through the status
+// model's UPS rule since #292), so a change to either side fails here instead
+// of drifting (#273).
 
 // /api/ups sends nut_status as a number or null (parseFloat of the Prometheus
 // sample in server/refresh.js), so the probes cover that domain: every value

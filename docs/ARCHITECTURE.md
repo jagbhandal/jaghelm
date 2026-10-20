@@ -759,11 +759,21 @@ entity's `since`) and is never served. `createStatusTracker({ seed })`
 (`index.js`) keeps the memory from one cycle to the next. The memory lives in
 the process, so the loop seeds it, before its first build, with the level of
 each host reading that the push snapshot file holds (`memoryFromLevels`, push's
-`heldLevels`), when push is set up (#361). A reading inside its hysteresis band
-after a restart is still over its line: push sends neither a second alert nor
-a false "back to normal". The snapshot is rewritten whenever a level changes,
-so the file is never behind the last push. A snapshot written before #292 holds
-readings, not levels; a reading at or over its line seeds that line's level.
+`heldLevels`), when push is set up (#361), for the nodes `services.yaml` still
+has. A reading inside its hysteresis band after a restart is still over its
+line: push sends neither a second alert nor a false "back to normal". The
+snapshot is rewritten whenever a level changes, so the file is never behind the
+last push. A snapshot written before #292 holds readings, not levels: it is read
+as the levels they give (`upgradeSnapshot`; a reading at or over its line is at
+that line's level), so the first cycle after the deploy compares levels like
+any other.
+
+**The loop's status step never fails** (`runStatusAndPush` in `refresh.js`). If
+the model throws on an input it can't read, the error is logged once (again
+only when it changes, and one info line when the model builds again),
+`/api/status` keeps serving the last status, and push skips the cycle: nothing
+is diffed, sent or advanced, so the next cycle the model builds diffs against
+the last good snapshot and a change made meanwhile is still sent.
 
 **Inputs** (`readStatusInputs(caches)`, the same cache seam as the push
 snapshot): the cached `/api/services`, `/api/ups` and `/api/integrations`
@@ -852,8 +862,9 @@ own: it sends what the model judges, so the two can't disagree about a line.
 read) serves the status the loop cached this cycle under `status`, with the
 cache's ETag (4.2: computed once per value). Reasons hold no times, so a steady
 board serves the same bytes every cycle and a poll with the last ETag gets a
-304. Before the first cycle, or once the loop has built none for the cache's
-2-minute TTL, it answers 503. It sits beside `/api/services`, `/api/ups` and
+304. The status stays fresh for two refresh intervals (at least the cache's 2
+minutes), so a long interval leaves no gap between cycles. Before the first
+cycle, or once the loop has built none for that long, it answers 503. It sits beside `/api/services`, `/api/ups` and
 `/api/cron/status`, which keep their shape and meaning for Android apps already
 installed (spec §6.3; frozen by `server/routes/contract.test.js`): the new
 states (maintenance, pending, unknown because a source failed) appear only

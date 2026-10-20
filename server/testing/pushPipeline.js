@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createPushSnapshot, runPushCycle } from '../push/dispatch.js';
-import { buildSnapshot, heldLevels } from '../push/snapshot.js';
+import { buildSnapshot, heldLevels, upgradeSnapshot } from '../push/snapshot.js';
 import { createStatusTracker, memoryFromLevels, readStatusInputs } from '../status/index.js';
 import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
 
@@ -55,7 +55,13 @@ export function pushPipeline({
 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'jaghelm-push-'));
   const file = path ?? join(dir, 'push-snapshot.json');
-  let snapshot = createPushSnapshot({ path: file, logger: silent });
+  const open = () =>
+    createPushSnapshot({
+      path: file,
+      logger: silent,
+      upgrade: (snap) => upgradeSnapshot(snap, thresholds),
+    });
+  let snapshot = open();
   let tracker = seededTracker(snapshot);
   let now = start;
   const sent = [];
@@ -106,7 +112,7 @@ export function pushPipeline({
     },
     restart() {
       snapshot.flush();
-      snapshot = createPushSnapshot({ path: file, logger: silent });
+      snapshot = open();
       tracker = seededTracker(snapshot);
     },
     close() {

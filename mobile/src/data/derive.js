@@ -162,10 +162,11 @@ export const SEVERITY = { unknown: -1, healthy: 0, caution: 1, critical: 2 };
 export const CPU_HOT = 90;
 export const TEMP_HOT = 75;
 /** Disk% at which the node card shows DISK over TEMP. A literal of its own, not
- *  tied to CPU_HOT: it is the overhaul spec §6.1 disk warn line (>= 90 %) and
- *  push's default disk threshold (DEFAULT_PUSH_THRESHOLDS.disk = 0.9 in
- *  server/refresh.js). Temporary until Android reads severity from the server
- *  status model (#290/#292); not a lamp input. */
+ *  tied to CPU_HOT: it is the overhaul spec §6.1 disk warn line (>= 90 %), the
+ *  server's default (DEFAULT_THRESHOLDS.disk.warn = 0.9 in
+ *  server/status/thresholds.js), which push follows since #292. Temporary
+ *  until Android reads severity from the server status model; not a lamp
+ *  input. */
 export const DISK_HOT = 90;
 
 /** Numeric rank for a severity string (unrecognised → unknown's rank). */

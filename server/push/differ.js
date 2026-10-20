@@ -303,7 +303,9 @@ function diffHosts(prev, next, words, events) {
     if (!afterReach) continue;
     const was = levelsOf(before);
     const now = levelsOf(after);
-    if (!was || !now) continue; // the deploy cycle: the old file holds readings
+    // A file written before #292 holds readings: it is upgraded as it is read
+    // (push/snapshot.js upgradeSnapshot), so this only skips one that wasn't.
+    if (!was || !now) continue;
     for (const key of Object.keys(now).sort()) {
       const b = was[key];
       const a = now[key];
