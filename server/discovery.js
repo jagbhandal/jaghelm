@@ -13,6 +13,10 @@
  * and getNodesData() reports the failure in each node's result (`ok: false`),
  * so the refresh loop can tell a Prometheus outage from a host that stopped
  * reporting.
+ *
+ * Nor is a node Prometheus hasn't scraped yet (#470): a node with no `up`
+ * series is looked up in Prometheus's target list (promTargets()), read only
+ * on a cycle that has such a node, so the happy path asks nothing more.
  */
 
 import { createLogger } from './util/logger.js';
@@ -62,24 +66,50 @@ export class PromQueryError extends Error {
  */
 export async function promQuery(query) {
   if (!promUrl) return [];
-  let data;
-  try {
-    const r = await safeFetch(
-      `${promUrl}/api/v1/query?query=${encodeURIComponent(query)}`,
-      { trusted: true, timeoutMs: PROM_TIMEOUT }
-    );
-    if (!r.ok) throw new PromQueryError(`Prometheus answered HTTP ${r.status}`);
-    data = await r.json();
-  } catch (err) {
-    if (err instanceof PromQueryError) throw err;
-    throw new PromQueryError(`Prometheus query failed: ${err?.message || err}`, { cause: err });
-  }
+  const data = await promGet(`/api/v1/query?query=${encodeURIComponent(query)}`, 'query');
   const result = data?.data?.result;
   if (data?.status === 'error' || !Array.isArray(result)) {
     throw new PromQueryError(`Prometheus returned no query result${data?.error ? `: ${data.error}` : ''}`);
   }
   if (Array.isArray(data.warnings)) logWarnings(data.warnings, query);
   return result;
+}
+
+/**
+ * Prometheus's active scrape targets (`GET /api/v1/targets?state=active`, #470),
+ * as it lists them: each with its `labels` (after relabelling, the labels its
+ * `up` series carries), `health` ("up", "down", or "unknown" before its first
+ * scrape) and `lastScrape`. Rejects with a PromQueryError as promQuery() does,
+ * naming the targets read. With no Prometheus URL configured, resolves to [].
+ */
+export async function promTargets() {
+  if (!promUrl) return [];
+  const data = await promGet('/api/v1/targets?state=active', 'targets read');
+  const targets = data?.data?.activeTargets;
+  if (data?.status === 'error' || !Array.isArray(targets)) {
+    throw new PromQueryError(`Prometheus returned no target list${data?.error ? `: ${data.error}` : ''}`);
+  }
+  return targets;
+}
+
+/**
+ * One GET of Prometheus's HTTP API at `path`, the one client every read goes
+ * through: the parsed JSON body. Rejects with a PromQueryError when there is
+ * none: the request failed or timed out, Prometheus answered non-2xx, or the
+ * body is not JSON. `what` names the read in the message; a query's messages
+ * are the ones it always had.
+ */
+async function promGet(path, what) {
+  try {
+    const r = await safeFetch(`${promUrl}${path}`, { trusted: true, timeoutMs: PROM_TIMEOUT });
+    if (!r.ok) {
+      throw new PromQueryError(`Prometheus answered HTTP ${r.status}${what === 'query' ? '' : ` to the ${what}`}`);
+    }
+    return await r.json();
+  } catch (err) {
+    if (err instanceof PromQueryError) throw err;
+    throw new PromQueryError(`Prometheus ${what} failed: ${err?.message || err}`, { cause: err });
+  }
 }
 
 // The Prometheus warnings logged so far, so each distinct one is logged once.
@@ -442,6 +472,18 @@ export const NODE_QUERIES = 13;
  *
  * A node missing from an answer that succeeded has no data for that reading,
  * which is not a failure.
+ *
+ * No `up` series is told from Prometheus's own state, not from what this
+ * process saw (#470): when the `up` query answered and a node has no `up`
+ * series and no CPU, memory or disk reading (so the model would judge it
+ * unreachable), Prometheus's target list is read, once for the call
+ * (promTargets()). Such a node with a target (the same `node` label) that
+ * Prometheus has not scraped yet is unread: every part in `failedReads`, `ok`
+ * unchanged, as Prometheus failed at nothing. A node with no target of its own
+ * is left as it is. When the targets read fails, each such node is unread, with
+ * `ok` false and the targets read's `error`; a node with an `up` series is not
+ * touched. A cycle where every node has an `up` series, or metrics, reads no
+ * targets.
  */
 export async function getNodesData(nodeLabels) {
   const labels = [...new Set(nodeLabels)];
@@ -509,7 +551,40 @@ export async function getNodesData(nodeLabels) {
       }),
     });
   }
+  if (answers[keys.indexOf('up')] !== null) await markUnscraped(out);
   return out;
+}
+
+/** Whether a node has a CPU, memory or disk reading: the model reads it as reachable by them. */
+function hasUsage(metrics) {
+  return ['cpu', 'memPercent', 'diskPercent'].some((f) => Number.isFinite(parseFloat(metrics?.[f])));
+}
+
+/** Whether Prometheus has yet to scrape `t`: health "unknown", or no last scrape. */
+function notScrapedYet(t) {
+  return t?.health === 'unknown' || !(Date.parse(t?.lastScrape) > 0);
+}
+
+/**
+ * getNodesData's nodes with no `up` series and no usage reading, looked up in
+ * Prometheus's target list (#470; see getNodesData). Updates `out` in place.
+ */
+async function markUnscraped(out) {
+  const unsure = [...out].filter(([, d]) => d.reachable === null && !hasUsage(d.metrics));
+  if (unsure.length === 0) return;
+  let targets;
+  try {
+    targets = await promTargets();
+  } catch (err) {
+    for (const [label, d] of unsure) {
+      out.set(label, { ...d, ok: false, error: d.error ?? err.message, failedReads: [...NODE_READS] });
+    }
+    return;
+  }
+  const pending = new Set(targets.filter(notScrapedYet).map((t) => t?.labels?.node));
+  for (const [label, d] of unsure) {
+    if (pending.has(label)) out.set(label, { ...d, failedReads: [...NODE_READS] });
+  }
 }
 
 function formatUptime(s) {

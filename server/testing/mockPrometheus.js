@@ -304,11 +304,37 @@ const answer = (status, body) => ({
 });
 
 /**
+ * The scrape targets behind `series`' `up` series, as /api/v1/targets lists
+ * its active targets (#470): one per `up` series, its labels without the
+ * name. Scraped (`scraped`, the default), each has a last scrape and is
+ * healthy when its `up` is above 0; not scraped yet (a Prometheus that has
+ * just started), each is "unknown", with Prometheus's zero time.
+ */
+export function targetsOf(series, { scraped = true } = {}) {
+  return series
+    .filter((s) => s.labels.__name__ === 'up')
+    .map(({ labels: { __name__, ...labels }, value }) => ({
+      discoveredLabels: { __address__: labels.instance },
+      labels,
+      scrapePool: labels.job,
+      scrapeUrl: `http://${labels.instance}/metrics`,
+      lastError: '',
+      lastScrape: scraped ? new Date(EVAL_TS * 1000).toISOString() : '0001-01-01T00:00:00Z',
+      lastScrapeDuration: scraped ? 0.01 : 0,
+      health: scraped ? (value > 0 ? 'up' : 'down') : 'unknown',
+    }));
+}
+
+/**
  * A mock Prometheus at `url` serving `series`. `fetch` is a drop-in for
  * globalThis.fetch. `queries` lists every instant query asked, in order;
  * `parseErrors` the ones the mock could not evaluate. Set `fail` to a
  * predicate to answer the queries it matches with HTTP 500, and `warnings` to
  * a function of the query giving the `warnings` to attach to its answer.
+ *
+ * It also answers /api/v1/targets (#470): with `targets` when set, else with
+ * the targets of `series` (targetsOf). `targetReads` counts those reads, and
+ * `failTargets` set answers them with HTTP 500.
  */
 export function createMockPrometheus(series, { url = 'http://localhost:9997' } = {}) {
   const mock = {
@@ -318,8 +344,17 @@ export function createMockPrometheus(series, { url = 'http://localhost:9997' } =
     parseErrors: [],
     fail: null,
     warnings: null,
+    targets: null,
+    targetReads: 0,
+    failTargets: false,
     async fetch(requestUrl) {
       const u = new URL(String(requestUrl));
+      if (String(requestUrl).startsWith(url) && u.pathname === '/api/v1/targets') {
+        mock.targetReads += 1;
+        if (mock.failTargets) return answer(500, { status: 'error', errorType: 'internal', error: 'boom' });
+        const activeTargets = mock.targets ?? targetsOf(mock.series);
+        return answer(200, { status: 'success', data: { activeTargets, droppedTargets: [] } });
+      }
       if (!String(requestUrl).startsWith(url) || u.pathname !== '/api/v1/query') {
         throw new Error(`unexpected fetch ${requestUrl}`);
       }

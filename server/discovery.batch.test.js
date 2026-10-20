@@ -77,6 +77,7 @@ for (const nodes of [6, 12]) {
       assert.deepEqual([...data.keys()], labels);
     }
     assert.deepEqual(mock.parseErrors, []);
+    assert.equal(mock.targetReads, 0, 'every node has an up series: no targets read (#470)');
   });
 }
 
@@ -383,10 +384,11 @@ test('a metric query failing is that metric\'s failure on every node', async () 
 });
 
 test('a node missing from an answer that succeeded has no data, which is not a failure', async () => {
-  const { labels } = homelab(6);
+  const { labels, mock } = homelab(6);
   const data = await getNodesData([...labels, 'ghost']);
   const ghost = data.get('ghost');
-  assert.equal(ghost.ok, true);
+  assert.equal(mock.targetReads, 1, 'no up series and no metric: the target list is read, once (#470)');
+  assert.equal(ghost.ok, true, 'Prometheus has no target for it');
   assert.deepEqual(ghost.failedReads, []);
   assert.equal(ghost.reachable, null);
   assert.equal(ghost.metrics.cpu, null);

@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
 
-const { initDiscovery } = await import('./discovery.js');
+const { initDiscovery, NODE_READS } = await import('./discovery.js');
 const { initMonitors } = await import('./monitors.js');
 const { saveConfig } = await import('./config.js');
 const { getCached, getCachedInternal } = await import('./cache.js');
@@ -49,7 +49,8 @@ const CONTAINERS = { vm103: ['gitea', 'radarr', 'postgres'], pi: ['adguard'], na
 
 // What each upstream does this cycle. Tests change it between cycles.
 const world = {
-  // 'fresh': Prometheus answers every query, but has scraped nothing yet.
+  // 'fresh': Prometheus answers every query, but has scraped nothing yet: its
+  // targets are known and not scraped (#470).
   prometheus: 'ok', // 'ok' | 'http500' | 'timeout' | 'containers500' | 'fresh'
   kuma: 'ok', // 'ok' | 'http500' | 'refused'
   up: { vm103: 1, pi: 1, nas: 1 },
@@ -57,7 +58,14 @@ const world = {
   nasPing: 'up', // Kuma's status for "NAS (Ping)", a monitor no container has (#390)
   ups: 1, // nut_status: 1 online, 2 on battery
   rejects: null, // (query) => true for a query Prometheus answers with HTTP 400
+  // #470: nodes Prometheus has no series and no target for (a host gone from it).
+  gone: [],
+  // #470: how /api/v1/targets answers: 'ok' (each node's target, not gone),
+  // or 'http403' (a proxy that lets only queries through).
+  targets: 'ok',
 };
+// How many times Prometheus's target list was read (#470).
+let targetReads = 0;
 
 function reset() {
   Object.assign(world, {
@@ -68,6 +76,8 @@ function reset() {
     nasPing: 'up',
     ups: 1,
     rejects: null,
+    gone: [],
+    targets: 'ok',
   });
 }
 
@@ -102,7 +112,9 @@ function promAnswer(q) {
 
   // One query covers every node, node=~"vm103|pi|nas" (#234): each sample
   // carries its `node` label, and series that share a query their name.
-  const nodes = [...q.matchAll(/node=~"([^"]+)"/g)].flatMap((m) => m[1].split('|'));
+  const nodes = [...q.matchAll(/node=~"([^"]+)"/g)]
+    .flatMap((m) => m[1].split('|'))
+    .filter((node) => !world.gone.includes(node));
   const perNode = (fn) => vector(nodes.flatMap((node) => fn(node).map((s) => ({ ...s, metric: { node, ...s.metric } }))));
   if (q.includes('container_')) {
     if (world.prometheus === 'containers500') {
@@ -131,6 +143,24 @@ function promAnswer(q) {
   return vector([]);
 }
 
+// Prometheus's active targets (#470): one per node it has, scraped unless it
+// has just started.
+function targetsAnswer() {
+  targetReads += 1;
+  if (world.prometheus === 'http500') return json(500, { status: 'error', errorType: 'internal', error: 'boom' });
+  if (world.prometheus === 'timeout') throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+  if (world.targets === 'http403') return json(403, { status: 'error', error: 'forbidden' });
+  const fresh = world.prometheus === 'fresh';
+  const activeTargets = Object.keys(world.up)
+    .filter((node) => !world.gone.includes(node))
+    .map((node) => ({
+      labels: { instance: `${node}:9100`, job: 'node', node },
+      health: fresh ? 'unknown' : world.up[node] > 0 ? 'up' : 'down',
+      lastScrape: fresh ? '0001-01-01T00:00:00Z' : new Date(EVAL * 1000).toISOString(),
+    }));
+  return json(200, { status: 'success', data: { activeTargets, droppedTargets: [] } });
+}
+
 function kumaAnswer() {
   if (world.kuma === 'http500') return json(500, {});
   if (world.kuma === 'refused') throw new TypeError('fetch failed');
@@ -149,6 +179,7 @@ function kumaAnswer() {
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url) => {
   const u = String(url);
+  if (u.startsWith(`${PROM}/api/v1/targets`)) return targetsAnswer();
   if (u.startsWith(PROM)) return promAnswer(decodeURIComponent(u));
   if (u.startsWith(KUMA)) return kumaAnswer();
   throw new Error(`unexpected fetch ${u}`);
@@ -494,30 +525,145 @@ test('#461: booting with no snapshot while only the UPS query fails: a Kuma serv
   }
 });
 
-test('Prometheus answering with no up series after it had some counts as failed, so no host pages', async () => {
+// ── #470: no `up` series, told from Prometheus's targets ─────────────────
+
+const NOT_SCRAPED = 'No data: not scraped by Prometheus yet';
+const entity = (p, id) => p.status.entities.find((e) => e.id === id);
+
+test('#470: Prometheus restarted after an outage longer than its lookback (targets known, none scraped, no up series) while JagHelm runs: no push', async () => {
   reset();
   const p = pipeline();
   try {
     await p.boot();
+    Date.now = () => realNow() + 70_000;
+    await p.cycle(); // the containers, seen a minute apart, are established
+    const before = targetReads;
     // Back after an outage longer than its lookback, before its first scrape:
-    // every query answers, with no series at all.
+    // every query answers, with no series at all (#232's case). Long enough
+    // for a container missing from the list to be drawn as gone.
+    Date.now = () => realNow() + 200_000;
     world.prometheus = 'fresh';
     await p.cycle();
     await p.cycle();
-    assert.equal(getCached('services').sources.prometheus.ok, false);
+    await p.cycle();
+    const services = getCached('services');
+    const presence = Object.values(services.nodes)
+      .flatMap((n) => n.services)
+      .filter((s) => s.source === 'presence');
+    assert.deepEqual(presence, [], 'no grey breadcrumbs: what Prometheus hasn\'t scraped may still run');
+    assert.equal(services.sources.prometheus.ok, true, 'Prometheus answered: it is not failing');
+    assert.equal(targetReads - before, 3, 'its target list read once a cycle');
+    for (const node of ['vm103', 'pi', 'nas']) {
+      assert.deepEqual(services.nodes[node].failedReads, [...NODE_READS], `${node}: nothing read`);
+      assert.deepEqual(
+        [entity(p, `nodes/${node}`).state, entity(p, `nodes/${node}`).word, entity(p, `nodes/${node}`).reason],
+        ['unknown', 'No signal', NOT_SCRAPED],
+        node
+      );
+    }
+    assert.deepEqual(
+      [entity(p, 'services/vm103:postgres').state, entity(p, 'services/vm103:postgres').reason],
+      ['unknown', NOT_SCRAPED],
+      'a container it ran is kept, as no signal'
+    );
+    assert.equal(p.status.sources.prometheus.state, 'ok');
     assert.deepEqual(p.snapshot.prev().hosts.pi, {
       reachable: true,
       levels: { cpu: 'ok', disk: 'ok', mem: 'ok' },
     });
 
     world.prometheus = 'ok';
+    const after = targetReads;
     await p.cycle();
-    assert.equal(getCached('services').sources.prometheus.ok, true, 'the up series are back');
+    await p.cycle();
+    assert.equal(targetReads, after, 'the up series are back: no targets read');
+    assert.equal(entity(p, 'nodes/pi').state, 'ok');
+    assert.deepEqual(p.sent, [], 'no host_unreachable, no host_recovered, no source push');
+  } finally {
+    clockBack();
+    p.done();
+  }
+});
+
+test('#470: a node with no up series and no target, while the others are scraped, pages host_unreachable once', async () => {
+  reset();
+  const p = pipeline();
+  try {
+    await p.boot();
+    // The NAS is gone from Prometheus: no series, no target.
+    world.gone = ['nas'];
+    const sent = await perCycle(p, 3);
+    assert.deepEqual(sent, [['host_unreachable nas'], [], []]);
+    const services = getCached('services');
+    assert.equal(services.sources.prometheus.ok, true);
+    assert.equal(services.nodes.nas.reachable, null);
+    assert.deepEqual(services.nodes.nas.failedReads, []);
     assert.deepEqual(
-      p.sent,
-      ['source_down prometheus', 'source_recovered prometheus'],
-      'no host_unreachable, no host_recovered'
+      [entity(p, 'nodes/nas').state, entity(p, 'nodes/nas').reason],
+      ['crit', 'Unreachable: no metrics from Prometheus']
     );
+
+    world.gone = [];
+    await p.cycle();
+    assert.deepEqual(p.sent, ['host_unreachable nas', 'host_recovered nas']);
+  } finally {
+    p.done();
+  }
+});
+
+test('#470: the targets read failing pages no node, and the Prometheus source health says why', async () => {
+  reset();
+  const p = pipeline();
+  try {
+    await p.boot();
+    // A proxy that lets only queries through, while Prometheus has just
+    // started: no node has an up series, and its targets can't be read.
+    world.prometheus = 'fresh';
+    world.targets = 'http403';
+    const sent = await perCycle(p, 3);
+    const services = getCached('services');
+    assert.equal(services.sources.prometheus.ok, false);
+    assert.deepEqual(p.status.sources.prometheus.state, 'failed');
+    assert.equal(p.status.sources.prometheus.error, 'Prometheus answered HTTP 403 to the targets read');
+    for (const node of ['vm103', 'pi', 'nas']) {
+      assert.deepEqual(services.nodes[node].failedReads, [...NODE_READS], node);
+      assert.equal(entity(p, `nodes/${node}`).state, 'unknown', node);
+    }
+    // Prometheus failing for 2 cycles is its own push, as for any failed read (#292).
+    assert.deepEqual(sent, [[], ['source_down prometheus'], []]);
+    assert.equal(
+      p.events.find((e) => e.type === 'source_down').body,
+      'Prometheus · Prometheus answered HTTP 403 to the targets read'
+    );
+
+    // It scrapes: every node has its up series, and no targets read is needed.
+    world.prometheus = 'ok';
+    await p.cycle();
+    assert.deepEqual(p.sent, ['source_down prometheus', 'source_recovered prometheus'], 'no host push');
+  } finally {
+    p.done();
+  }
+});
+
+test('#470: the targets read failing holds a gone node unread; it pages once the read answers', async () => {
+  reset();
+  const p = pipeline();
+  try {
+    await p.boot();
+    world.gone = ['nas'];
+    world.targets = 'http403';
+    await p.cycle();
+    const services = getCached('services');
+    assert.equal(services.nodes.pi.reachable, true, 'a node with an up series is read as usual');
+    assert.deepEqual(services.nodes.pi.failedReads, []);
+    assert.deepEqual(services.nodes.nas.failedReads, [...NODE_READS]);
+    assert.equal(entity(p, 'nodes/nas').state, 'unknown');
+    assert.equal(p.status.sources.prometheus.error, 'Prometheus answered HTTP 403 to the targets read');
+    assert.deepEqual(p.sent, []);
+
+    world.targets = 'ok';
+    await p.cycle();
+    assert.deepEqual(p.sent, ['host_unreachable nas']);
   } finally {
     p.done();
   }

@@ -40,6 +40,11 @@ function promResponse(url) {
   const q = decodeURIComponent(url);
   const result = promResult;
 
+  // The target list (#470), read for a node with no up series: none of its own.
+  if (new URL(String(url)).pathname === '/api/v1/targets') {
+    return { ...result([]), json: async () => ({ status: 'success', data: { activeTargets: [], droppedTargets: [] } }) };
+  }
+
   // Container CPU at exactly 0% — the headline case.
   if (q.includes('container_cpu_usage_seconds_total')) {
     return result([{ metric: { name: 'idlebox' }, value: [0, '0'] }]);
@@ -188,7 +193,9 @@ test('getNodesData, one node: a failing query makes the result ok:false with its
 });
 
 test('getNodesData, one node: every query answering, even with no series, is ok:true', async () => {
-  globalThis.fetch = async () => promResult([]);
+  // Prometheus has no target for the node either (#470).
+  globalThis.fetch = async (url) =>
+    new URL(String(url)).pathname === '/api/v1/targets' ? promResponse(url) : promResult([]);
   try {
     const data = await nodeData('vm-test');
     assert.equal(data.ok, true);
@@ -242,5 +249,192 @@ test('getNodesData, one node: failedReads names the parts whose queries failed',
     } finally {
       globalThis.fetch = realFetch;
     }
+  }
+});
+
+// ── #470: no `up` series is told from Prometheus's own targets ───────────
+// A Prometheus that has just started answers every query with no series until
+// it scrapes. A node with no `up` series is then asked about once a cycle, in
+// Prometheus's target list: a target of that node not scraped yet makes the
+// node unread (no signal), and no target at all leaves it as before (with no
+// metric either, the model judges it unreachable).
+
+const { NODE_READS } = await import('./discovery.js');
+const TARGETS_PATH = '/api/v1/targets';
+
+/** An active target of node `node`, as /api/v1/targets lists it. */
+const target = (node, health, lastScrape = health === 'unknown' ? '0001-01-01T00:00:00Z' : '2026-10-20T10:00:00Z') => ({
+  discoveredLabels: { __address__: `${node}:9100` },
+  labels: { instance: `${node}:9100`, job: 'node', node },
+  scrapePool: 'node',
+  scrapeUrl: `http://${node}:9100/metrics`,
+  lastError: '',
+  lastScrape,
+  lastScrapeDuration: 0,
+  health,
+});
+
+const targetsAnswer = (activeTargets) => answer(200, { status: 'success', data: { activeTargets, droppedTargets: [] } });
+
+/**
+ * A Prometheus with no series at all (nothing scraped yet, or no node), whose
+ * target list is `targets` (a function, so a test can fail it). `reads` lists
+ * every URL asked.
+ */
+function coldProm(targets) {
+  const reads = [];
+  const fetch = async (url) => {
+    const u = String(url);
+    reads.push(u);
+    return new URL(u).pathname === TARGETS_PATH ? targets() : promResult([]);
+  };
+  return { reads, fetch, targetReads: () => reads.filter((u) => new URL(u).pathname === TARGETS_PATH) };
+}
+
+test('#470: a node with no up series whose target Prometheus has not scraped yet is unread, and nothing failed', async () => {
+  for (const [why, t] of [
+    ['health unknown', target('vm-test', 'unknown')],
+    ['no lastScrape', { ...target('vm-test', 'up'), lastScrape: undefined }],
+  ]) {
+    const prom = coldProm(() => targetsAnswer([target('other', 'up'), t]));
+    globalThis.fetch = prom.fetch;
+    try {
+      const data = await nodeData('vm-test');
+      assert.equal(data.ok, true, why);
+      assert.equal(data.error, null, why);
+      assert.equal(data.reachable, null, why);
+      assert.deepEqual(data.failedReads, [...NODE_READS], `${why}: every part unread`);
+      assert.equal(prom.targetReads().length, 1, `${why}: the targets read once`);
+      assert.match(prom.targetReads()[0], /\/api\/v1\/targets\?state=active$/);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+});
+
+test('#470: a node with no up series and no target of its own is as before: nothing unread, reachability null', async () => {
+  // Other nodes' targets, one not scraped yet: only the node's own count.
+  const prom = coldProm(() => targetsAnswer([target('other', 'unknown'), target('vm-test-2', 'up')]));
+  globalThis.fetch = prom.fetch;
+  try {
+    const data = await nodeData('vm-test');
+    assert.equal(data.ok, true);
+    assert.deepEqual(data.failedReads, []);
+    assert.equal(data.reachable, null);
+    assert.equal(prom.targetReads().length, 1);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('#470: a node with no up series whose target has been scraped is as before', async () => {
+  for (const health of ['up', 'down']) {
+    const prom = coldProm(() => targetsAnswer([target('vm-test', health)]));
+    globalThis.fetch = prom.fetch;
+    try {
+      const data = await nodeData('vm-test');
+      assert.equal(data.ok, true, health);
+      assert.deepEqual(data.failedReads, [], health);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+});
+
+const TARGET_FAILURES = {
+  'an HTTP 403 (a proxy that only lets queries through)': [
+    async () => answer(403, { error: 'forbidden' }),
+    /^Prometheus answered HTTP 403 to the targets read$/,
+  ],
+  'a refused connection': [
+    async () => {
+      throw new TypeError('fetch failed');
+    },
+    /^Prometheus targets read failed: fetch failed$/,
+  ],
+  'a 200 that is not a target list': [async () => answer(200, { hello: 'proxy login page' }), /^Prometheus returned no target list$/],
+  'a 200 with an error status': [
+    async () => answer(200, { status: 'error', error: 'unavailable' }),
+    /^Prometheus returned no target list: unavailable$/,
+  ],
+};
+
+for (const [name, [targets, message]] of Object.entries(TARGET_FAILURES)) {
+  test(`#470: the targets read failing (${name}) makes a node with no up series unread, and the result ok:false with why`, async () => {
+    const prom = coldProm(targets);
+    globalThis.fetch = prom.fetch;
+    try {
+      const data = await nodeData('vm-test');
+      assert.equal(data.ok, false);
+      assert.match(data.error, message);
+      assert.deepEqual(data.failedReads, [...NODE_READS]);
+      assert.equal(data.reachable, null);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+}
+
+test('#470: the targets read failing leaves a node that has its up series as it was', async () => {
+  const both = ['vm-test', 'vm-test-2'];
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (new URL(u).pathname === TARGETS_PATH) throw new TypeError('fetch failed');
+    // Only vm-test-2 has an up series.
+    return decodeURIComponent(u).includes('max by (node) (up{')
+      ? answer(200, { status: 'success', data: { result: [{ metric: { node: 'vm-test-2' }, value: [0, '1'] }] } })
+      : promResult([]);
+  };
+  try {
+    const data = await getNodesData(both);
+    assert.equal(data.get('vm-test').ok, false);
+    assert.deepEqual(data.get('vm-test').failedReads, [...NODE_READS]);
+    assert.equal(data.get('vm-test-2').ok, true, 'the node Prometheus has up for is read as usual');
+    assert.equal(data.get('vm-test-2').error, null);
+    assert.deepEqual(data.get('vm-test-2').failedReads, []);
+    assert.equal(data.get('vm-test-2').reachable, true);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('#470: no targets read when every node has an up series, nor for one Prometheus has metrics for', async () => {
+  // vm-test has up; vm-test-2 has no up series but a CPU reading (a node read
+  // by its metrics, whose up series lacks the node label): it is reachable by
+  // them, so the target list could change nothing.
+  for (const nodes of [['vm-test'], ['vm-test', 'vm-test-2']]) {
+    const reads = [];
+    globalThis.fetch = async (url) => {
+      const u = String(url);
+      reads.push(u);
+      const q = decodeURIComponent(u);
+      if (q.includes('max by (node) (up{')) return promResult([{ metric: {}, value: [0, '1'] }]);
+      if (q.includes('node_cpu_seconds_total'))
+        return answer(200, { status: 'success', data: { result: [{ metric: { node: 'vm-test-2' }, value: [0, '20'] }] } });
+      return promResult([]);
+    };
+    try {
+      const data = await getNodesData(nodes);
+      assert.equal(reads.filter((u) => new URL(u).pathname === TARGETS_PATH).length, 0, nodes.join(','));
+      for (const n of nodes) assert.deepEqual(data.get(n).failedReads, [], n);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+});
+
+test('#470: no targets read when the up query failed: every node is unread already', async () => {
+  const reads = [];
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    reads.push(u);
+    return decodeURIComponent(u).includes('max by (node) (up{') ? answer(500, { status: 'error', error: 'boom' }) : promResult([]);
+  };
+  try {
+    const data = await nodeData('vm-test');
+    assert.equal(reads.filter((u) => new URL(u).pathname === TARGETS_PATH).length, 0);
+    assert.deepEqual(data.failedReads, ['reachable']);
+  } finally {
+    globalThis.fetch = realFetch;
   }
 });

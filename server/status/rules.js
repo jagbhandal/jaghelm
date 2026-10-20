@@ -60,6 +60,12 @@ export function errorText(raw) {
   return clean.length > ERROR_MAX ? `${clean.slice(0, ERROR_MAX)}…` : clean;
 }
 
+/**
+ * Why a node, or what it runs, has no data while Prometheus answered: it has
+ * a target for the node it has not scraped yet (#470).
+ */
+export const NOT_SCRAPED = 'No data: not scraped by Prometheus yet';
+
 /** A line as a percentage: whole, or with one decimal when it has one. */
 function pct(fraction) {
   return `${Number((fraction * 100).toFixed(1))} %`;
@@ -152,7 +158,10 @@ const CELSIUS = {
  *
  * - No data: Prometheus failed to read whether it is up (`failedReads` names
  *   `reachable`, or, for a node with no `up` series, a metric read failed), or
- *   the node is missing from a failed cycle → unknown, never crit.
+ *   the node is missing from a failed cycle → unknown, never crit. With
+ *   `reachable` unread while Prometheus answered, Prometheus has a target for
+ *   the node that it has not scraped yet (#470, discovery.js), and the reason
+ *   says so.
  * - Unreachable: `up` is 0, or it has no `up` series and no metric, while
  *   Prometheus answered → crit (push pages it as host_unreachable).
  * - Each reading that was read: its level (levelOf). A reading whose query
@@ -193,6 +202,7 @@ export function judgeNode(node, { prometheusOk, pools = [], memo = null, thresho
       : ALL_NODE_READS;
   const m = node.metrics || {};
   const byPresence = typeof node.reachable !== 'boolean';
+  if (failed.includes('reachable') && prometheusOk) return { ...noData, reason: NOT_SCRAPED };
   if (
     failed.includes('reachable') ||
     (byPresence && ['cpu', 'mem', 'disk'].some((r) => failed.includes(r)))
