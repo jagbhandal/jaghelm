@@ -141,24 +141,43 @@ services:
     image: ghcr.io/jagbhandal/jaghelm:latest
     container_name: jaghelm
     restart: unless-stopped
-    network_mode: host        # binds 3099 on the host; reaches LAN services directly
+    ports:
+      - "3099:3099"
     env_file:
       - .env
+    environment:
+      - NODE_ENV=production
     volumes:
       - ./data:/app/data        # config + encrypted secrets
       - ./uploads:/app/uploads  # logo + background images
-    environment:
-      - NODE_ENV=production
+    # Hardening: a read-only image, an unprivileged user, no capabilities.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 256
 ```
  
-This is the shipped default: `network_mode: host` lets JagHelm reach your
-exporters and LAN apps directly. **Prefer an isolated bridge network?** Drop
-`network_mode: host` and publish the port instead:
- 
-```yaml
-    # ports:
-    #   - 3099:3099
+This matches the `compose.yaml` in the repo: a bridge network that publishes
+port 3099, so the container stays off the host's network. JagHelm runs as UID
+1000 on a read-only image, so `data/` and `uploads/` are the only places it
+writes, and they must be writable by that user. Create them before the first
+start (Docker would otherwise create them owned by root):
+
+```bash
+mkdir -p data uploads && sudo chown 1000:1000 data uploads
 ```
+
+**Switch to host networking** only if JagHelm can't reach something from the
+bridge: an exporter bound to a host-only interface, or anything found by mDNS.
+Replace the `ports:` block with `network_mode: host`. Host mode drops the
+network isolation and ignores `ports:`; JagHelm then binds 3099 on the host
+directly.
  
 ### 3. Pull and start
  
