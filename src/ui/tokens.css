@@ -45,6 +45,7 @@
   --jh-graphite-430: oklch(0.43 0.014 286);
   --jh-graphite-500: oklch(0.5 0.012 286);
   --jh-graphite-520: oklch(0.52 0.014 286);
+  --jh-graphite-580: oklch(0.58 0.012 286);
   --jh-graphite-660: oklch(0.66 0.012 286);
   --jh-graphite-665: oklch(0.665 0.014 286);
   --jh-graphite-775: oklch(0.775 0.012 286);
@@ -97,6 +98,9 @@
 
   --jh-border-subtle: oklch(1 0 0 / 0.08);
   --jh-border-strong: oklch(1 0 0 / 0.15);
+  /* The edge of a control with no fill of its own, an empty checkbox or an off
+     switch: 3:1 against the surface it sits on (WCAG 1.4.11), in both themes. */
+  --jh-control-edge: var(--jh-graphite-580);
 
   --jh-text-1: var(--jh-graphite-975);
   --jh-text-2: var(--jh-graphite-775);
@@ -163,6 +167,8 @@
   --jh-scrim: oklch(0.1 0.01 286 / 0.62);
   --jh-shadow-control: inset 0 1px 0 rgb(255 255 255 / 0.1), 0 1px 2px rgb(0 0 0 / 0.25);
   --jh-shadow-pop: 0 24px 64px -24px rgb(0 0 0 / 0.7), 0 2px 8px -2px rgb(0 0 0 / 0.4);
+  --jh-shadow-thumb: 0 1px 2px rgb(0 0 0 / 0.3); /* a switch's thumb, both themes (the mock's) */
+  --jh-switch-thumb: var(--jh-white); /* the thumb itself, white in both themes (the mock's) */
 
   /* ---- Type, shape, space, motion (§5.3) ------------------------------- */
 
@@ -193,6 +199,14 @@
   /* Density (§5.3): row height and panel padding. */
   --jh-row-h: 40px;
   --jh-pad: 20px;
+
+  /* Controls' heights (#285), the mock's in both densities: compact is
+     spacing, not smaller controls. Buttons, inputs, selects and tabs at md
+     (34), buttons at sm (30), and a segment, which its track's 2px padding
+     brings back to a control's height. */
+  --jh-control-h: 34px;
+  --jh-control-h-sm: 30px;
+  --jh-segment-h: calc(var(--jh-control-h) - 4px);
 
   /* Page gutter: 16 on phones, 24 from 768px, 32 from 1536px (below). */
   --jh-gutter: 16px;
