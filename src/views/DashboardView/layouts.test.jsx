@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { migrateLayouts } from './layouts';
+import { DEFAULT_LAYOUTS, MOBILE_PANEL_ORDER, migrateLayouts, orderForMobile } from './layouts';
 
 describe('migrateLayouts', () => {
   it('renames legacy keys to their node-prefixed equivalents', () => {
@@ -61,5 +61,43 @@ describe('migrateLayouts', () => {
   it('returns null for nullish input', () => {
     expect(migrateLayouts(null)).toBeNull();
     expect(migrateLayouts(undefined)).toBeNull();
+  });
+});
+
+describe('DEFAULT_LAYOUTS (a fresh install, no saved layout)', () => {
+  const keys = Object.values(DEFAULT_LAYOUTS).flatMap((items) => items.map((it) => it.i));
+
+  it('names no node, so no "Loading <node>…" panel stands in for one (#272)', () => {
+    expect(keys.filter((k) => k.startsWith('node-'))).toEqual([]);
+  });
+
+  it('names no UPS or Pipeline panel: they join the board once their source is configured', () => {
+    expect(keys).not.toContain('ups');
+    expect(keys).not.toContain('pipeline');
+  });
+});
+
+describe('mobile panel order', () => {
+  it('names no node of its own (#272)', () => {
+    expect(MOBILE_PANEL_ORDER.filter((k) => k.startsWith('node-') && k !== 'node-*')).toEqual([]);
+  });
+
+  it('puts Quick Launch first, then the nodes in their desktop order, then the panels, then groups', () => {
+    const lg = ['node-b', 'todos', 'group-x', 'ups', 'quicklaunch', 'node-a', 'pipeline', 'cron-jobs'];
+    expect(orderForMobile(lg)).toEqual([
+      'quicklaunch',
+      'node-b',
+      'node-a',
+      'ups',
+      'pipeline',
+      'todos',
+      'cron-jobs',
+      'group-x',
+    ]);
+  });
+
+  it('leaves out what the layout does not have', () => {
+    expect(orderForMobile(['todos', 'node-a'])).toEqual(['node-a', 'todos']);
+    expect(orderForMobile([])).toEqual([]);
   });
 });

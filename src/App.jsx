@@ -16,6 +16,7 @@ import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
 import { useThemeVars } from './hooks/useThemeVars.js';
 import { usePageVisible } from './hooks/usePageVisible.js';
 import { useConfigPersistence } from './hooks/useConfigPersistence.js';
+import { defaultConfig } from './defaultConfig.js';
 
 // Settings (13-tab tree) and the iframe view aren't needed for the default
 // dashboard render — code-split them so they don't weigh down the initial bundle.
@@ -305,32 +306,4 @@ function readStoredConfig({ migrate = false } = {}) {
     // fall through to defaults
   }
   return defaultConfig();
-}
-
-function defaultConfig() {
-  return {
-    title: 'JAGHELM',
-    subtitle: 'Infrastructure Dashboard',
-    logoUrl: '',
-    bgImage: '',
-    bgOpacity: 0.3,
-    overlayOpacity: 0.75,
-    showDots: true,
-    accentColor: '#6366f1',
-    refreshInterval: 30,
-    searchEngine: 'google',
-    showSearch: true,
-    weatherLat: '',
-    weatherLon: '',
-    showWeather: false,
-    weatherCity: '',
-    showDockerStats: false,
-    showTodos: true,
-    showCronJobs: true,
-    tabs: [],
-    sections: {},
-    gridLayout: null,
-    gridColumns: 24,
-    links: {},
-  };
 }

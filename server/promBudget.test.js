@@ -32,13 +32,36 @@ const UPS_SERIES = [
   ['nut_battery_runtime_seconds', 2100],
   ['nut_load', 0.25],
 ];
+const UPS_TARGET = { ups: 'apcups', instance: 'vm1:9199', job: 'nut-ups' };
+// The exporter's info series, with the labels it has live (values made up).
+const UPS_INFO = {
+  __name__: 'nut_ups_info',
+  ...UPS_TARGET,
+  description: 'Example UPS 900',
+  model: 'UPS 900',
+  manufacturer: 'Example Power',
+  driver: 'usbhid-ups',
+  driver_version: '2.8.1',
+  nut_version: '2.8.1',
+  usb_vendor_id: '0f0f',
+  usb_product_id: '0002',
+  ups_firmware: '9.Z1',
+  battery_type: 'PbAc',
+  device_type: 'ups',
+  type: 'ups',
+};
 
-/** The homelab with `nodes` nodes and a UPS behind a fresh mock Prometheus, all configured. */
-function homelab(nodes) {
+/**
+ * The homelab with `nodes` nodes behind a fresh mock Prometheus, all configured.
+ * `ups`: 'up' (the exporter reports a UPS), 'quiet' (it did within the last
+ * 7 days and has gone quiet) or 'none' (never had one).
+ */
+function homelab(nodes, { ups = 'up' } = {}) {
   const { labels, series } = homelabSeries({ nodes });
-  for (const [name, value] of UPS_SERIES) {
-    series.push({ labels: { __name__: name, ups: 'apcups', instance: 'vm1:9199', job: 'nut-ups' }, value });
+  if (ups === 'up') {
+    for (const [name, value] of UPS_SERIES) series.push({ labels: { __name__: name, ...UPS_TARGET }, value });
   }
+  if (ups !== 'none') series.push({ labels: UPS_INFO, value: 1, quiet: ups === 'quiet' });
   const mock = createMockPrometheus(series);
   initDiscovery(mock.url);
   globalThis.fetch = mock.fetch;
@@ -74,16 +97,80 @@ for (const nodes of [6, 12]) {
       assert.equal(services.nodes[label].reachable, true, label);
       assert.deepEqual(services.nodes[label].failedReads, []);
     }
-    assert.deepEqual(getCached('ups'), { status: 1, charge: 100, runtime: 2100, load: 25, ok: true });
+    assert.deepEqual(getCached('ups'), {
+      status: 1,
+      charge: 100,
+      runtime: 2100,
+      load: 25,
+      ok: true,
+      configured: true,
+      model: 'Example UPS 900',
+    });
   });
 }
 
-test('the UPS query failing makes the UPS payload not ok, with every value null', async () => {
+test('the UPS query failing makes the UPS payload not ok, with every value null and configured not known', async () => {
   const { mock } = homelab(6);
   mock.fail = (q) => q.includes('nut_');
   await cycle(mock);
-  assert.deepEqual(getCached('ups'), { status: null, charge: null, runtime: null, load: null, ok: false });
+  assert.deepEqual(getCached('ups'), {
+    status: null,
+    charge: null,
+    runtime: null,
+    load: null,
+    ok: false,
+    configured: null,
+    model: null,
+  });
   assert.equal(getCached('services').sources.prometheus.ok, true, 'the node queries answered');
+});
+
+// ── Whether a UPS is set up (#272) ───────────────────────────────────────
+
+test('a UPS whose exporter has gone quiet is still set up: no readings, its model kept', async () => {
+  const { mock } = homelab(6, { ups: 'quiet' });
+  const asked = await cycle(mock);
+  assert.equal(asked.ups, 1, 'still one query');
+  assert.deepEqual(mock.parseErrors, []);
+  assert.deepEqual(getCached('ups'), {
+    status: null,
+    charge: null,
+    runtime: null,
+    load: null,
+    ok: true,
+    configured: true,
+    model: 'Example UPS 900',
+  });
+});
+
+test('an install that has never had a UPS answers configured false', async () => {
+  const { mock } = homelab(6, { ups: 'none' });
+  await cycle(mock);
+  assert.deepEqual(mock.parseErrors, []);
+  assert.deepEqual(getCached('ups'), {
+    status: null,
+    charge: null,
+    runtime: null,
+    load: null,
+    ok: true,
+    configured: false,
+    model: null,
+  });
+});
+
+test('the model falls back to the model label, and nothing else from the info series is sent', async () => {
+  const { mock } = homelab(6);
+  const info = mock.series.find((s) => s.labels.__name__ === 'nut_ups_info');
+  info.labels = { ...info.labels };
+  delete info.labels.description;
+  await cycle(mock);
+  const ups = getCached('ups');
+  assert.equal(ups.model, 'UPS 900');
+  assert.deepEqual(Object.keys(ups).sort(), ['charge', 'configured', 'load', 'model', 'ok', 'runtime', 'status']);
+  const body = JSON.stringify(ups);
+  for (const leak of ['vm1:9199', 'usbhid-ups', '0f0f', 'Example Power', 'nut-ups']) {
+    assert.ok(!body.includes(leak), `${leak} in ${body}`);
+  }
 });
 
 // ── #232, batched ────────────────────────────────────────────────────────

@@ -1,16 +1,33 @@
 import { useMemo, useRef } from 'react';
-import { MOBILE_PANEL_ORDER, STATIC_PANEL_KEYS } from './layouts';
+import { STATIC_PANEL_KEYS, orderForMobile } from './layouts';
+
+const NONE = [];
 
 /**
  * Reconciles the saved/default layout with the actual set of dynamic panels
  * (nodes + custom groups), enforces min-size constraints, and auto-generates
  * the mobile (sm) breakpoint when missing.
  *
+ * Source-fed panels (#272): `hidden` lists the ones not shown because their
+ * source isn't known to be set up. They are not added to a layout that lacks
+ * them, so they hold no slot in the grid, and a saved layout that has one keeps
+ * its place while its source can't say. `dropped`, a subset, lists the ones the
+ * server says are not set up: they are taken out of the layout too, so the
+ * space they held is free for other panels (and a stacked phone layout has no
+ * gap), and the next drag or resize saves the layout without them.
+ *
  * Stability: returns the previous object reference whenever the layout
  * content is unchanged, preventing react-grid-layout's compactor from
  * re-running on every 30-second data refresh.
  */
-export function useEffectiveLayouts(layouts, serviceData, customGroups, gridColumns) {
+export function useEffectiveLayouts(
+  layouts,
+  serviceData,
+  customGroups,
+  gridColumns,
+  hidden = NONE,
+  dropped = NONE
+) {
   const prevRef = useRef(null);
 
   return useMemo(() => {
@@ -23,15 +40,19 @@ export function useEffectiveLayouts(layouts, serviceData, customGroups, gridColu
 
     // ── Process saved breakpoints (lg, md) ──
     for (const [bp, items] of Object.entries(layouts)) {
-      const constrained = items.map((item) => ({
-        ...item,
-        minW: bp === 'sm' ? 1 : item.minW || 4,
-        minH: item.minH || 3,
-      }));
+      const constrained = items
+        .filter((item) => !dropped.includes(item.i))
+        .map((item) => ({
+          ...item,
+          minW: bp === 'sm' ? 1 : item.minW || 4,
+          minH: item.minH || 3,
+        }));
 
       const existingKeys = new Set(constrained.map((i) => i.i));
       const missingDynamic = allDynamicKeys.filter((k) => !existingKeys.has(k));
-      const missingStatic = STATIC_PANEL_KEYS.filter((k) => !existingKeys.has(k));
+      const missingStatic = STATIC_PANEL_KEYS.filter(
+        (k) => !existingKeys.has(k) && !hidden.includes(k)
+      );
 
       let maxY = constrained.reduce((max, i) => Math.max(max, i.y + i.h), 0);
       const newItems = [...missingDynamic, ...missingStatic].map((k) => ({
@@ -51,11 +72,8 @@ export function useEffectiveLayouts(layouts, serviceData, customGroups, gridColu
       const lgItems = result.lg || result.md || [];
       const allKeys = lgItems.map((i) => i.i);
 
-      // Explicit-order keys first, then anything custom (groups, unknown nodes)
-      const orderedKeys = [
-        ...MOBILE_PANEL_ORDER.filter((k) => allKeys.includes(k)),
-        ...allKeys.filter((k) => !MOBILE_PANEL_ORDER.includes(k)),
-      ];
+      // MOBILE_PANEL_ORDER first (nodes in desktop order), then custom groups.
+      const orderedKeys = orderForMobile(allKeys);
 
       const heightByKey = {};
       for (const item of lgItems) heightByKey[item.i] = item.h || 4;
@@ -91,5 +109,5 @@ export function useEffectiveLayouts(layouts, serviceData, customGroups, gridColu
 
     prevRef.current = result;
     return result;
-  }, [layouts, serviceData, customGroups, gridColumns]);
+  }, [layouts, serviceData, customGroups, gridColumns, hidden, dropped]);
 }

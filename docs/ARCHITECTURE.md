@@ -249,7 +249,8 @@ that errors, times out or returns no query result rejects (`promQuery` in
 `discovery.js`), and Kuma's `fetchMonitors` returns `ok: false` when it loaded
 no monitors. The `/api/services` payload says which answered this cycle,
 `sources: { prometheus: { ok }, kuma: { ok } }`, and `/api/ups` carries its own
-`ok`. Each node also carries `reachable`, from Prometheus' `up` series for that
+`ok` (and `configured: null`, since a failed query can't say whether there is a
+UPS). Each node also carries `reachable`, from Prometheus' `up` series for that
 node: true when any of its targets answered the last scrape, false when none
 did, null when no `up` series has the node's label. It carries `failedReads`
 too: the parts of the node whose queries failed this cycle (`NODE_READS`:
@@ -583,6 +584,23 @@ flowchart TD
   rendering in `GridItem.jsx`, and lifecycle (breakpoints, drag/resize, commit)
   in `HelmGrid.jsx`. Panels auto-grow to fit content; pointer **and keyboard**
   (arrow move / Shift+arrow resize, with a live region) reposition them.
+- **Panels and first run.** The board has a panel per discovered node and custom
+  group, plus the Checklist, Scheduled Jobs and Quick Launch panels. Without a
+  saved layout it starts from `DEFAULT_LAYOUTS` (`layouts.js`), which names no
+  node, so a fresh install with no node shows the "Connect your first node"
+  empty state. The UPS and Pipeline panels show only when the server says their
+  source is set up (`configuredPanels.js`). `/api/ups` carries `configured`:
+  true when Prometheus has the UPS's readings or saw its `nut_ups_info` series
+  in the last 7 days (one query, with `last_over_time`), false when neither,
+  null when the query failed. `/api/gitea/activity` answers
+  `{ configured: false }` when `GITEA_URL` is not set, and then polls nothing;
+  its 502 means a set-up Gitea failed. True shows the panel, with its down state
+  when its source is down. False hides it, even when the saved layout names it,
+  and drops it from the layout. Null (no answer yet, or a failure that says
+  nothing) keeps the last answer this session, and hides the panel before
+  there is one. Settings → Sections can hide either panel, not force it on.
+  The page-level live region leaves out the outages of sources whose panel is
+  hidden.
 - **Data fetching.** `useDashboardData` holds a **304-stable identity contract**:
   on an unchanged poll `fetchJson` returns the same reference and `setState`
   bails via `Object.is`, so an all-304 tick triggers zero re-renders. It stores
