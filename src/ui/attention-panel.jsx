@@ -24,7 +24,10 @@
  * `meta`. Healthy stays quiet (rule 3): no green word. Maintenance doesn't
  * break the quiet line either (§6.1): the heading still says all is normal,
  * the lamp is the wrench, and the strip's tile under the line says what is in
- * maintenance.
+ * maintenance. An empty board (`EMPTY`: nothing is set up, #449) is the quiet
+ * line too, with no lamp, since it has no state to show: its heading is
+ * `word`, or else the sentence it is given in `counts` (the model's "Nothing
+ * monitored yet"), said once. Never "All systems normal": nobody checked.
  *
  * The `android` look, a stopgap until #326, is the Android app's
  * SystemStatusCard, unchanged (lib/status.js): the "System status" label,
@@ -36,7 +39,7 @@ import { IssueRow } from './issue-row.jsx';
 import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
-import { toSeverity, toState } from './lib/status.js';
+import { EMPTY, EMPTY_SENTENCE, toSeverity, toState } from './lib/status.js';
 
 const ANDROID_COLOURS = {
   critical: 'var(--red)',
@@ -107,12 +110,14 @@ function UiAttentionPanel({
   className,
   ...props
 }) {
-  const s = toState(state ?? severity);
-  const quiet = issues.length === 0 && (s === 'ok' || s === 'maintenance');
+  // An empty board has no issues; one that somehow does is drawn as no signal.
+  const empty = (state ?? severity) === EMPTY && issues.length === 0;
+  const s = empty ? EMPTY : toState(state ?? severity);
+  const quiet = issues.length === 0 && (empty || s === 'ok' || s === 'maintenance');
   const Title = titleAs;
 
   if (quiet) {
-    const said = word || 'All systems normal';
+    const said = word || (empty ? counts || EMPTY_SENTENCE : 'All systems normal');
     return (
       <section
         data-slot="attention-panel"
@@ -125,9 +130,9 @@ function UiAttentionPanel({
         {...props}
       >
         {/* The heading beside it says the state, so the lamp is its shape only. */}
-        <StatusLamp state={s} decorative />
+        {!empty && <StatusLamp state={s} decorative />}
         <Title className="text-title-xs">{said}</Title>
-        {counts && <span className="text-text-2">{counts}</span>}
+        {counts && counts !== said && <span className="text-text-2">{counts}</span>}
         {meta && <span className="ml-auto text-caption text-text-3">{meta}</span>}
       </section>
     );

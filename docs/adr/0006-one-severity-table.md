@@ -58,3 +58,34 @@ against spec §6.1's 90/95, and to let Android drop its `DISK_HOT` literal.
 - Changing a number is one edit, in one file, covered by the table tests
   (`server/status/severityTable.test.js`). Settings → Notifications edits the
   table from Phase 3.
+
+## Amendment: the empty board (#449)
+
+The table judges entities, and an overall state was the worst of them. With
+nothing set up (a first run: no entity and no failed source) there is nothing
+to take the worst of, and the model called the board `unknown`, so the web
+drew the no-signal alarm, "No signal · Nothing monitored yet", about nothing
+being wrong.
+
+- **The overall has a sixth value, `empty`**, for that board alone, with the
+  sentence "Nothing monitored yet" (`EMPTY` in `server/status/summary.js`,
+  named the same in `src/ui/lib/status.js`). It is not `ok`, which would claim
+  a health nobody checked, and not `unknown`, which means something went
+  silent. No entity or subsystem is ever `empty`: an empty subsystem stays `ok`
+  with a total of 0, as before.
+- **Only when nothing is set up and every read that ran answered**
+  (`isEmptyBoard` in `server/status/model.js`): no entity, no source listed
+  but Prometheus, Prometheus answering, and the services and integrations
+  payloads there. A board with nothing on it for any other reason stays
+  `unknown`: Kuma or Gitea set up with no nodes, a refresh that left nothing.
+  With no nodes, the services refresh asks Prometheus one probe query and
+  carries the answer in its payload's `sources` flag, so a wrong
+  `PROMETHEUS_URL` on a first run is a failed source, "Prometheus
+  unreachable", not a calm empty board.
+- **It is answered once, in the model**, so every client reading
+  `/api/status` (the web, the Android app from Phase 1, the demo) says the
+  same. It is no issue and pages nothing. The web's attention panel and header
+  show it as their quiet line, with no lamp, since there is no state to show.
+- The old endpoints keep their meaning: `/api/services`' `overallHealth`
+  stays `unknown` with no nodes, and its payload gains the `sources` flag a
+  board with nodes already carries.

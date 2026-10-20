@@ -414,7 +414,7 @@ test('cross-client fixtures: each headline, as the model says it', () => {
     healthy: 'ok: All 12 services up · 3 nodes healthy',
     incident: 'crit: 1 service down · 1 backup failed',
     'source-down': 'warn: Prometheus unreachable · 16 no signal',
-    'first-run': 'unknown: Nothing monitored yet',
+    'first-run': 'empty: Nothing monitored yet',
     thresholds: 'crit: 1 node critical · 2 nodes in warning',
     'every-state':
       'crit: 1 node unreachable · UPS on battery · 1 container missing · 1 service pending · ' +
@@ -427,7 +427,8 @@ test('cross-client fixtures: first run has nothing to show and the empty snapsho
   const { status } = runScenario('first-run', { now: NOW });
   assert.deepEqual(status.entities, []);
   assert.deepEqual(status.issues, []);
-  assert.deepEqual(status.sources, {});
+  // Prometheus answered the services refresh's probe (#449).
+  assert.deepEqual(status.sources, { prometheus: { state: 'ok', since: NOW } });
   assert.ok(
     status.subsystems.every((s) => s.counts.total === 0),
     'no subsystem has anything'
@@ -438,7 +439,7 @@ test('cross-client fixtures: first run has nothing to show and the empty snapsho
     hosts: {},
     ups: { state: 'unknown' },
     cron: {},
-    sources: {},
+    sources: { prometheus: 'ok' },
   });
 });
 

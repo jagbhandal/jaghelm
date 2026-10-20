@@ -9,7 +9,10 @@
  *              and the model's sentence, which carries the counts ("2 services
  *              down · 1 no signal"), the whole of it a link to Alerts. Healthy
  *              (ok, or only maintenance) says "All systems normal" in text-1,
- *              never in green (rule 3). `reach` other than 'ok' is no signal:
+ *              never in green (rule 3). An empty board (`EMPTY`, nothing set
+ *              up, #449) is quiet too, with no lamp: the model's sentence,
+ *              "Nothing monitored yet", in text-1, never "No signal" and never
+ *              "All systems normal". `reach` other than 'ok' is no signal:
  *              the steel ring and "No signal", with why ("Can't reach
  *              JagHelm"), the same word and colour as the Android app.
  *              `reach` 'loading', before the first answer, is a placeholder,
@@ -35,10 +38,13 @@ import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { Tooltip } from './tooltip.jsx';
 import { cn } from './lib/utils.js';
-import { WORDS, toState } from './lib/status.js';
+import { EMPTY, EMPTY_SENTENCE, WORDS, toState } from './lib/status.js';
 
-/** The overall states that read as healthy: maintenance never breaks the quiet line (§6.1). */
-const QUIET = new Set(['ok', 'maintenance']);
+/**
+ * The overall states that read as quiet: maintenance never breaks the quiet
+ * line (§6.1), and an empty board has nothing to break it (#449).
+ */
+const QUIET = new Set(['ok', 'maintenance', EMPTY]);
 
 /** What the header says when it has no status to show, by why. */
 export const NO_SIGNAL = Object.freeze({
@@ -128,10 +134,14 @@ function HeaderStatus({ status = {}, onNavigate }) {
     );
   }
   const signal = reach === 'ok';
-  const s = signal ? toState(state) : 'unknown';
+  const s = !signal ? 'unknown' : state === EMPTY ? EMPTY : toState(state);
+  const empty = s === EMPTY;
   const quiet = signal && QUIET.has(s);
-  const said = !signal ? WORDS.unknown : word || (quiet ? 'All systems normal' : WORDS[s]);
-  const says = signal ? sentence : NO_SIGNAL[reach] || NO_SIGNAL.down;
+  const said = !signal
+    ? WORDS.unknown
+    : word || (empty ? sentence || EMPTY_SENTENCE : quiet ? 'All systems normal' : WORDS[s]);
+  // An empty board's sentence is its whole line, said once.
+  const says = !signal ? NO_SIGNAL[reach] || NO_SIGNAL.down : sentence !== said ? sentence : null;
   return (
     <div role="status" data-slot="header-status" className="flex min-w-0 flex-1">
       <a
@@ -141,7 +151,7 @@ function HeaderStatus({ status = {}, onNavigate }) {
         data-state={s}
         className="group/status flex min-w-0 items-center gap-2.5 rounded-md py-1 pr-1.5"
       >
-        <StatusLamp state={s} size="lg" decorative />
+        {!empty && <StatusLamp state={s} size="lg" decorative />}
         {quiet ? (
           <span className="shrink-0 text-title-xs text-text-1">{said}</span>
         ) : (
