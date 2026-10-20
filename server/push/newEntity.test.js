@@ -276,7 +276,7 @@ test('#448: a service, job or backup new to the snapshot pages if it appears in 
 // ── The UPS ──────────────────────────────────────────────────────────────
 
 test('#448: UPS unknown -> on_battery with no held state pages once', async () => {
-  // The baseline is taken while the NUT exporter is quiet: no state is known.
+  // The first snapshot is taken while the NUT exporter is quiet: no state is known.
   const p = await after([board({ ups: UPS_QUIET })]);
   try {
     const sent = await play(p, [
@@ -455,7 +455,7 @@ test('#448: Prometheus down at first sight: nothing for what it feeds; once it a
   }
 });
 
-test('#448: no snapshot and Prometheus down at boot: nothing until it answers, then each open problem once', async () => {
+test('#448: no snapshot and Prometheus down at boot: nothing for what it feeds until it answers, then each open problem once', async () => {
   const p = pushPipeline({ start: NOW });
   try {
     const sent = await play(p, [
@@ -464,9 +464,13 @@ test('#448: no snapshot and Prometheus down at boot: nothing until it answers, t
       board({ nodes: { n2: [{ diskPercent: '97' }] }, ups: UPS_ON_BATTERY }),
       board({ nodes: { n2: [{ diskPercent: '97' }] }, ups: UPS_ON_BATTERY }),
     ]);
-    // The baseline waits for Prometheus (push/snapshot.js baselineReady), so
-    // this outage sends no source_down: #436's known gap.
-    assert.deepEqual(sent, [[], [], ['host_threshold n2:disk', 'ups_on_battery ups'], []]);
+    // No baseline wait (#461): the outage itself pages, as on any cycle.
+    assert.deepEqual(sent, [
+      [],
+      ['source_down prometheus'],
+      ['host_threshold n2:disk', 'source_recovered prometheus', 'ups_on_battery ups'],
+      [],
+    ]);
   } finally {
     p.close();
   }

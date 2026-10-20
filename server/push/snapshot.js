@@ -247,27 +247,6 @@ export function buildSources(status, prevSources = {}) {
 }
 
 /**
- * Whether this cycle can be the baseline (the first snapshot, with no `prev`).
- * The baseline waits while the UPS read fails, or while Prometheus fails with
- * no host's reachability read (a host is in `hosts` only when it was), and is
- * taken from the first cycle those answer (#232). It does not wait for Kuma,
- * or for a Prometheus failure some host was still read through: either can
- * last as long as JagHelm runs (no Kuma at KUMA_URL, a query that always times
- * out), and waiting would leave push without a baseline the whole time.
- *
- * The baseline is diffed from no previous state like any snapshot (#448), so
- * it pages what is in trouble once, whenever it is taken. The wait was for a
- * baseline that was never diffed: a host it missed sent host_recovered later,
- * and an "unknown" UPS kept a later on_battery silent. Neither happens now;
- * what the wait still does is send no source_down for an outage JagHelm boots
- * into with no snapshot file (#436).
- */
-function baselineReady(hosts, ok) {
-  if (!ok.ups) return false;
-  return ok.prometheus || Object.keys(hosts).length > 0;
-}
-
-/**
  * The services map to diff, given which sources answered, with the monitor
  * that fed each of its keys (#395): a key kept from `prev` keeps the monitor it
  * had there. Kuma sets every service status that can page, so while it fails
@@ -319,15 +298,26 @@ function keepHosts(prevHosts, hosts, ok) {
  * fails; hosts missing while Prometheus fails; the UPS while its read fails.
  * Cron is pushed to JagHelm and has no upstream to fail.
  *
- * With no `prev` this cycle is the baseline, and its values are all there is:
- * the differ diffs it from no previous state (#448). When it cannot be one
- * (baselineReady) the result is null, and the push cycle skips it without
- * taking a baseline.
+ * With no `prev` (a first run, or a missing or unreadable file) this cycle's
+ * values are all there is, whatever the sources say (#461): the differ diffs
+ * them from no previous state (#448). A source that failed is in `sources` as
+ * on any cycle, so its second failed cycle in a row sends its source_down
+ * (#439); what it feeds is unknown in the model, so it is left out (a host) or
+ * `unknown` (a service, the UPS), which sends nothing, and it is new once the
+ * source answers: what is in trouble then pages once.
+ *
+ * There used to be a wait here: no snapshot until the UPS read and Prometheus
+ * answered (#232), because the first snapshot was never diffed and what it
+ * recorded during an outage was compared against later (a host recorded
+ * unreachable sent host_recovered, an "unknown" UPS kept a later on_battery
+ * silent). Since #448 neither can happen: a host Prometheus didn't read isn't
+ * in the snapshot, and when it is read it is new, so it sends no recovery; the
+ * UPS pages going on battery from `unknown`. The wait only silenced push.
  *
  * @param {{ getCached: (key: string) => *, getCachedInternal?: (key: string) => * }} caches
  * @param {object|null} prev
  * @param {any} status  the status model built from the same caches this cycle
- * @returns {object|null}
+ * @returns {object}
  */
 export function buildSnapshot(caches, prev, status) {
   const servicesCache = caches.getCached('services');
@@ -341,7 +331,6 @@ export function buildSnapshot(caches, prev, status) {
   });
   const monitorOf = buildMonitorOf(internal?.monitorOf, services);
   const hosts = buildHosts(status, prev?.hosts);
-  if (!prev && !baselineReady(hosts, ok)) return null;
   const kept = prev ? keepServices(prev, services, monitorOf, ok) : { services, monitorOf };
   const ups = buildUps(status, prev?.ups);
   return {

@@ -427,20 +427,68 @@ test('a cache past its TTL is a failed source: nothing is re-sent, and the UPS g
   }
 });
 
-test('booting during a Prometheus outage takes no snapshot until it answers; then what is down pages once, and no host_recovered', async () => {
+// #461: no snapshot, and the first cycles' sources failing: no baseline to wait
+// for. The first cycle is diffed from nothing, its snapshot holds the failed
+// source, and what Kuma says pages as on any cycle.
+const perCycle = async (p, n) => {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const before = p.sent.length;
+    await p.cycle();
+    out.push(p.sent.slice(before));
+  }
+  return out;
+};
+
+test('#461: booting with no snapshot into a Prometheus outage: one source_down after 2 cycles, one recovery; radarr down pages once, no host_recovered, nothing re-pages', async () => {
   reset();
   world.prometheus = 'http500';
   const p = pipeline();
   try {
-    await p.cycle();
-    await p.cycle();
-    assert.equal(p.snapshot.prev(), null, 'no snapshot from a failed cycle');
+    const during = await perCycle(p, 3);
+    assert.equal(p.snapshot.prev().sources.prometheus, 'down');
+    assert.deepEqual(p.snapshot.prev().hosts, {}, 'no host was read');
 
     world.prometheus = 'ok';
-    await p.cycle(); // the first snapshot: every entity is new (#448)
-    await p.cycle();
+    const back = await perCycle(p, 3);
     assert.equal(p.snapshot.prev().hosts.pi.reachable, true);
-    assert.deepEqual(p.sent, ['service_down vm103:radarr'], 'radarr is down: once; no host_recovered');
+    assert.deepEqual(
+      [...during, ...back],
+      [
+        ['service_down vm103:radarr'], // Kuma answers: radarr is down, on the first cycle
+        ['source_down prometheus'],
+        [],
+        ['source_recovered prometheus'], // no host_recovered, no second service_down
+        [],
+        [],
+      ]
+    );
+  } finally {
+    p.done();
+  }
+});
+
+test('#461: booting with no snapshot while only the UPS query fails: a Kuma service going down pages, and its recovery', async () => {
+  reset();
+  world.radarr = 'up';
+  world.rejects = (q) => q.includes('nut_');
+  const p = pipeline();
+  try {
+    const sent = await perCycle(p, 2);
+    assert.equal(getCached('ups').ok, false, 'the UPS read fails');
+    assert.equal(getCached('services').sources.prometheus.ok, true, 'every node is read');
+    world.radarr = 'down';
+    sent.push(...(await perCycle(p, 2)));
+    world.radarr = 'up';
+    sent.push(...(await perCycle(p, 2)));
+    assert.deepEqual(sent, [
+      [],
+      ['source_down prometheus'], // the model's word for a failed UPS query
+      ['service_down vm103:radarr'],
+      [],
+      ['service_recovered vm103:radarr'],
+      [],
+    ]);
   } finally {
     p.done();
   }

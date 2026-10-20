@@ -199,6 +199,34 @@ test('two sources down at once: one push each', async () => {
   ]);
 });
 
+test('#461: no snapshot and Prometheus down from the first cycle: one source_down after 2 cycles, one recovery; what is in trouble pages once it answers, nothing re-pages', async () => {
+  // The failed job pages on the first cycle all the same (play checks it):
+  // cron is pushed to JagHelm, so Prometheus being down doesn't hide it.
+  const back = liveCycle({ status: { Gitea: 'down', 'NAS UI': 'down' } });
+  back.nodes.pi1 = { ...back.nodes.pi1, reachable: false };
+  const { perCycle } = await play([
+    prometheusDown(),
+    prometheusDown(),
+    prometheusDown(),
+    caches(back),
+    caches(back),
+    caches(back),
+  ]);
+  assert.deepEqual(perCycle, [
+    [],
+    ['source_down prometheus'],
+    [],
+    [
+      'host_unreachable pi1',
+      'service_down vm103:NAS UI',
+      'service_down vm103:gitea',
+      'source_recovered prometheus',
+    ],
+    [],
+    [],
+  ]);
+});
+
 test('a restart during an outage keeps it: no second source_down, and one recovery', async () => {
   const healthy = caches(liveCycle());
   const p = pushPipeline({ env: { KUMA_URL: 'http://kuma' } });
