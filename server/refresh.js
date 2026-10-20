@@ -571,10 +571,11 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     node.services.sort((a, b) => serviceRank(a) - serviceRank(b) || a.display_name.localeCompare(b.display_name));
   }
 
-  // Server-computed global health for BOTH frontends' dot (web NavBar + mobile
-  // Overview). Computed ONCE from every assembled card across all nodes so the
-  // two clients are symmetric and deterministic — a presence breadcrumb (status
-  // 'unknown') drives 'degraded', exactly as a tracked-unknown monitor would.
+  // Server-computed global health for the Android app's Overview dot (the web
+  // header reads the status model, /api/status, since #296). Computed ONCE from
+  // every assembled card across all nodes, so it is deterministic — a presence
+  // breadcrumb (status 'unknown') drives 'degraded', exactly as a
+  // tracked-unknown monitor would.
   let anyCard = false;
   let anyDown = false;
   let anyUnknown = false;
@@ -614,8 +615,8 @@ function isPendingOrMaintenance(m) {
  * The demo builds its board's entry through it too (demoFixtures.js), so the
  * status model reads the demo's board as it reads a live one (#437).
  *
- * overallHealth is server-computed once and shipped in the payload so BOTH
- * frontends' global dots read one truth (web NavBar + mobile Overview).
+ * overallHealth is server-computed once and shipped in the payload for the
+ * Android app's global dot (the web header reads /api/status since #296).
  * `sources` says whether each upstream answered this cycle (#232): the push
  * snapshot keeps its last state for one that didn't, so a failed poll is not
  * read as every host or service going down. `upWithoutCard`, the uids of the

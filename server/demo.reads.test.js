@@ -45,6 +45,7 @@ const CLIENT_PATHS = {
   '/api/services': 'read',
   '/api/services/config': 'read',
   '/api/services/monitors': 'read',
+  '/api/status': 'read', // the web header (#296)
   '/api/todos': 'read',
   '/api/ups': 'read',
   '/api/weather': 'read',

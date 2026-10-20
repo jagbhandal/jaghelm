@@ -70,12 +70,17 @@ afterEach(() => {
 });
 
 const advance = (ms) => act(() => vi.advanceTimersByTimeAsync(ms));
+// The sidebar entry named `name` (#296); an app's name may say it is still loaded.
+const entry = (name) =>
+  within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', {
+    name: new RegExp(`^${name}(,|$)`),
+  });
 const frames = () => [...document.querySelectorAll('iframe')];
 const blockedHeading = () =>
   screen.queryByRole('heading', { name: "Vaultwarden won't open inside JagHelm" });
 
 async function openVault() {
-  fireEvent.click(screen.getByRole('tab', { name: 'Vaultwarden' }));
+  fireEvent.click(entry('Vaultwarden'));
   await vi.waitFor(() => expect(frames()).toHaveLength(1)); // the lazy chunk
   await advance(0);
 }
@@ -83,13 +88,13 @@ async function openVault() {
 // Open the app (its URL saved and allowed), then Settings → Tabs → its URL field.
 async function editUrl() {
   render(<App />);
-  await vi.waitFor(() => screen.getByRole('tab', { name: 'Vaultwarden' }));
+  await vi.waitFor(() => entry('Vaultwarden'));
   await advance(0);
   await openVault();
   fireEvent.load(frames()[0]);
   expect(checks).toEqual(['vault']);
 
-  fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+  fireEvent.click(entry('Settings'));
   const nav = await vi.waitFor(() => screen.getByRole('navigation', { name: 'Settings sections' }));
   fireEvent.click(within(nav).getByText('Tabs'));
   fireEvent.click(await vi.waitFor(() => screen.getByText('Click to edit')));

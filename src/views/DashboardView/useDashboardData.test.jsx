@@ -291,18 +291,6 @@ describe('useDashboardData — polling schedule', () => {
       vi.useRealTimers();
     }
   });
-
-  it('exposes overallHealth from the services body, and unknown when the fetch fails', async () => {
-    const { result, rerender } = render();
-    await waitFor(() => expect(result.current.overallHealth).toBe('down'));
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.reject(new Error('Network down')))
-    );
-    rerender({ refreshKey: 0, tick: 1, active: true });
-    await waitFor(() => expect(result.current.overallHealth).toBe('unknown'));
-  });
 });
 
 // The stale rule is "2 missed polls of that source", built on the hook's own poll

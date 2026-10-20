@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import App from './App.jsx';
+import { HEALTHY, INCIDENT } from './testing/statusFixtures.js';
 
-// Request counter for the dashboard's polling (#237). A URL-aware fetch stub
-// records every request path; fake timers step the 30 s refresh tick, so each
-// test can count what one tick (or a stretch of hidden time) costs.
+// Request counter for the dashboard's polling (#237) and the header's status
+// poll (#296). A URL-aware fetch stub records every request path; fake timers
+// step the 30 s refresh tick, so each test can count what one tick (or a
+// stretch of hidden time) costs.
 
 const DASHBOARD_SOURCES = [
   '/api/services',
@@ -17,7 +19,7 @@ const DASHBOARD_SOURCES = [
 const TICK_MS = 30_000;
 
 let requests;
-let health;
+let status; // what /api/status answers
 let nodes;
 let failing; // paths the stub answers with HTTP 503
 
@@ -33,7 +35,7 @@ function respond(body) {
 
 function stubServer() {
   requests = [];
-  health = 'up';
+  status = HEALTHY;
   nodes = {};
   failing = new Set();
   vi.stubGlobal(
@@ -44,9 +46,8 @@ function stubServer() {
       if (failing.has(path))
         return Promise.resolve({ ok: false, status: 503, headers: { get: () => null } });
       if (path === '/api/auth/check') return respond({ authRequired: false, authenticated: true });
-      if (path === '/api/services') return respond({ nodes, overallHealth: health });
-      if (path === '/api/weather')
-        return respond({ current: { temperature_2m: 60, weather_code: 0 } });
+      if (path === '/api/services') return respond({ nodes, overallHealth: 'up' });
+      if (path === '/api/status') return respond(status);
       if (['/api/todos', '/api/gitea/activity', '/api/cron/status'].includes(path))
         return respond([]);
       return respond({});
@@ -64,8 +65,15 @@ async function advance(ms) {
 // Requests made since the last call, emptying the log.
 const take = () => requests.splice(0);
 const count = (list, path) => list.filter((p) => p === path).length;
-const healthLabel = () => document.querySelector('.nav-health-label');
-const updatedLabel = () => document.querySelector('.nav-updated');
+// What the board asks for, leaving out the header's status poll.
+const board = (list) => list.filter((p) => p !== '/api/status');
+const headerStatus = () =>
+  within(screen.getByRole('banner')).getByRole('link', { name: /^(Critical|All systems)/ });
+const updatedLabel = () => within(screen.getByRole('banner')).getByText(/^Updated/);
+const entry = (name) =>
+  within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', {
+    name: new RegExp(`^${name}(,|$)`),
+  });
 
 function setHidden(hidden) {
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
@@ -100,13 +108,15 @@ afterEach(() => {
 });
 
 describe('dashboard polling — request budget', () => {
-  it('loads each dashboard source once (services once, not three times)', async () => {
+  it('loads each dashboard source once (services once, not three times), and the status once', async () => {
     await renderApp();
     const load = take();
-    for (const path of DASHBOARD_SOURCES) expect(count(load, path), path).toBe(1);
+    for (const path of [...DASHBOARD_SOURCES, '/api/status']) {
+      expect(count(load, path), path).toBe(1);
+    }
   });
 
-  it('makes at most 4 requests per 30 s tick, with services fetched once per tick', async () => {
+  it('the board makes at most 4 requests per 30 s tick, services once; the header adds one /api/status', async () => {
     await renderApp();
     take();
     const ticks = [];
@@ -115,8 +125,9 @@ describe('dashboard polling — request budget', () => {
       ticks.push(take());
     }
     for (const tick of ticks) {
-      expect(tick.length).toBeLessThanOrEqual(4);
+      expect(board(tick).length).toBeLessThanOrEqual(4);
       expect(count(tick, '/api/services')).toBe(1);
+      expect(count(tick, '/api/status')).toBe(1);
     }
     // The slow sources still refresh, each in turn: twice in six ticks.
     const all = ticks.flat();
@@ -125,65 +136,54 @@ describe('dashboard polling — request budget', () => {
     }
   });
 
-  it('updates the header health dot on every tick from the dashboard fetch', async () => {
+  it("updates the header from /api/status on every tick", async () => {
     await renderApp();
-    expect(healthLabel()).toHaveTextContent('All Systems Operational');
-    health = 'down';
+    expect(headerStatus()).toHaveAccessibleName(`All systems normal: ${HEALTHY.overall.sentence}`);
+    status = INCIDENT;
     await advance(TICK_MS);
-    expect(healthLabel()).toHaveTextContent('Service Disruption');
-  });
-
-  it('fetches weather on load and then every 10 minutes, not every tick', async () => {
-    localStorage.setItem(
-      'jaghelm-config',
-      JSON.stringify({ showWeather: true, weatherLat: '40', weatherLon: '-80', tabs: [] })
-    );
-    await renderApp();
-    expect(count(take(), '/api/weather')).toBe(1);
-    await advance(19 * TICK_MS); // 9.5 minutes
-    expect(count(take(), '/api/weather')).toBe(0);
-    await advance(TICK_MS); // the first tick past 10 minutes
-    expect(count(take(), '/api/weather')).toBe(1);
+    expect(headerStatus()).toHaveAccessibleName(`Critical: ${INCIDENT.overall.sentence}`);
   });
 });
 
 describe('dashboard polling — paused when nobody is looking', () => {
-  it('makes no requests while the browser tab is hidden and refreshes at once on return', async () => {
+  it('asks nothing at all while the browser tab is hidden, and refreshes at once on return', async () => {
     await renderApp();
     take();
     setHidden(true);
     await advance(5 * TICK_MS);
     expect(take()).toEqual([]);
 
-    health = 'down';
+    status = INCIDENT;
     setHidden(false);
     await advance(0);
     const back = take();
-    for (const path of DASHBOARD_SOURCES) expect(count(back, path), path).toBe(1);
-    expect(healthLabel()).toHaveTextContent('Service Disruption');
+    for (const path of [...DASHBOARD_SOURCES, '/api/status']) {
+      expect(count(back, path), path).toBe(1);
+    }
+    expect(headerStatus()).toHaveAccessibleName(`Critical: ${INCIDENT.overall.sentence}`);
   });
 
-  it('makes no requests on the Settings tab and refreshes at once back on the dashboard', async () => {
+  it('the board asks nothing on Settings, the header only its status; the board refreshes at once back on the Overview', async () => {
     await renderApp();
     take();
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(entry('Settings'));
     await vi.waitFor(() => screen.getByRole('navigation', { name: 'Settings sections' }));
     await advance(5 * TICK_MS);
-    expect(take()).toEqual([]);
+    const away = take();
+    expect(board(away)).toEqual([]);
+    expect(count(away, '/api/status')).toBe(5);
 
-    health = 'down';
-    fireEvent.click(screen.getByRole('tab', { name: 'Dashboard' }));
+    fireEvent.click(entry('Overview'));
     await advance(0);
     const back = take();
     for (const path of DASHBOARD_SOURCES) expect(count(back, path), path).toBe(1);
-    expect(healthLabel()).toHaveTextContent('Service Disruption');
   });
 
   it('restarts the "Updated" clock on return', async () => {
     await renderApp();
     setHidden(true);
     await advance(5 * TICK_MS);
-    expect(updatedLabel()).toHaveTextContent('Updated 2m ago');
+    expect(updatedLabel()).toHaveTextContent('Updated 2 min ago');
 
     setHidden(false);
     await advance(0);
@@ -192,7 +192,7 @@ describe('dashboard polling — paused when nobody is looking', () => {
 
   it('loads the Settings live preview once when shown, and never polls it', async () => {
     await renderApp();
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(entry('Settings'));
     await vi.waitFor(() => screen.getByRole('button', { name: /show preview/i }));
     take();
     fireEvent.click(screen.getByRole('button', { name: /show preview/i }));
@@ -200,10 +200,10 @@ describe('dashboard polling — paused when nobody is looking', () => {
     const shown = take();
     for (const path of DASHBOARD_SOURCES) expect(count(shown, path), path).toBe(1);
     await advance(5 * TICK_MS);
-    expect(take()).toEqual([]);
+    expect(board(take())).toEqual([]);
   });
 
-  it('makes no requests on an iframe tab and refreshes at once back on the dashboard', async () => {
+  it('the board asks nothing on an app and refreshes at once back on the Overview', async () => {
     localStorage.setItem(
       'jaghelm-config',
       JSON.stringify({
@@ -212,14 +212,14 @@ describe('dashboard polling — paused when nobody is looking', () => {
     );
     await renderApp();
     take();
-    fireEvent.click(screen.getByRole('tab', { name: 'Grafana' }));
+    fireEvent.click(entry('Grafana'));
     await vi.waitFor(() => document.querySelector('iframe'));
     await advance(5 * TICK_MS);
     // The dashboard asks nothing. (Opening the app may ask once whether its
     // headers let it be framed, #269; not here, as this server has no saved tab.)
-    expect(take().filter((p) => !p.startsWith('/api/embed-check/'))).toEqual([]);
+    expect(board(take()).filter((p) => !p.startsWith('/api/embed-check/'))).toEqual([]);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Dashboard' }));
+    fireEvent.click(entry('Overview'));
     await advance(0);
     const back = take();
     for (const path of DASHBOARD_SOURCES) expect(count(back, path), path).toBe(1);

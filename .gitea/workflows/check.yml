@@ -12,7 +12,8 @@ name: check
 # the node:26 container supplies Node + git).
 #
 # Two jobs, side by side: `check` (the suite above) and `gallery` (the component
-# gallery's screenshots and axe, #289, in the pinned Playwright container).
+# gallery's screenshots and axe, #289, then the app shell's browser tests, #296,
+# both in the pinned Playwright container).
 on:
   pull_request:
     branches:
@@ -161,3 +162,9 @@ jobs:
 
       - name: Gallery (screenshots and axe on every state)
         run: npx playwright test
+
+      # The app shell in a browser (#296, e2e/): the production build, every
+      # /api request answered in the test, at 390 and 1440px: the header's
+      # status, every nav entry, Back/Forward/reload, no sideways scroll, axe.
+      - name: App shell (navigation, header and axe)
+        run: npx playwright test --config playwright.e2e.config.mjs

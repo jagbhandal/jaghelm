@@ -4,21 +4,27 @@ import { THEMES } from './settings/themes.js';
 import { safeUrl } from '../utils/safeUrl.js';
 
 /**
- * ⌘K command palette — fuzzy-jump to a tab/theme/link + run actions.
+ * ⌘K command palette — jump to a page or an app, pick a theme, open a link,
+ * or log out.
  *
  * Combobox/listbox pattern: focus stays in the input, ArrowUp/Down move a
  * highlighted index (aria-activedescendant), Enter runs it. Escape / backdrop
  * close and restore focus. No backend — every command is something already
- * controllable app-wide (tabs, themes, the link list, logout).
+ * controllable app-wide (the pages, the embedded apps, themes, the link list,
+ * logout).
+ *
+ * `pages` (`[{ id, label, href }]`) are the shell's pages in the nav, under
+ * "Go to"; `apps` (`[{ id, label, href }]`) the embedded apps, each "Open
+ * <app>" (#296). `onNavigate(href)` opens one.
  *
  * Controlled by the parent (`open`/`onClose`) which owns the ⌘K shortcut.
  */
 export default function CommandPalette({
   open,
   onClose,
-  tabs,
-  onSelectTab,
-  onOpenSettings,
+  pages = [],
+  apps = [],
+  onNavigate,
   theme,
   setTheme,
   onLogout,
@@ -31,10 +37,18 @@ export default function CommandPalette({
 
   const commands = useMemo(() => {
     const cmds = [];
-    for (const t of tabs || []) {
-      cmds.push({ id: `tab:${t.id}`, group: 'Go to', label: t.label, run: () => onSelectTab(t.id) });
+    for (const p of pages) {
+      cmds.push({ id: `page:${p.id}`, group: 'Go to', label: p.label, run: () => onNavigate(p.href) });
     }
-    cmds.push({ id: 'go:settings', group: 'Go to', label: 'Settings', run: onOpenSettings });
+    for (const a of apps) {
+      cmds.push({
+        id: `app:${a.id}`,
+        group: 'App',
+        label: `Open ${a.label}`,
+        hint: 'inside JagHelm',
+        run: () => onNavigate(a.href),
+      });
+    }
     for (const th of THEMES) {
       cmds.push({
         id: `theme:${th.id}`,
@@ -58,7 +72,7 @@ export default function CommandPalette({
     }
     if (onLogout) cmds.push({ id: 'action:logout', group: 'Action', label: 'Log out', run: onLogout });
     return cmds;
-  }, [tabs, config?.links, theme, onSelectTab, onOpenSettings, setTheme, onLogout]);
+  }, [pages, apps, config?.links, theme, onNavigate, setTheme, onLogout]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -130,7 +144,7 @@ export default function CommandPalette({
           aria-expanded="true"
           aria-controls="cmdk-list"
           aria-activedescendant={filtered[active] ? `cmdk-opt-${active}` : undefined}
-          placeholder="Search commands, themes, links…"
+          placeholder="Search pages, apps, themes, links…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}

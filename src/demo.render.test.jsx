@@ -63,7 +63,13 @@ async function renderDemo(scenario) {
   expect(screen.getByText('Network Edge')).toBeInTheDocument();
 }
 
-const healthLabel = () => document.querySelector('.nav-health-label');
+// The header's status link (#296): the lamp's state, and what it says.
+const headerStatus = () =>
+  within(within(screen.getByRole('banner')).getByRole('status')).getByRole('link');
+
+/** The demo's own /api/status in `scenario`: the model's status of its board (#437). */
+const demoStatus = (scenario) =>
+  demoResponse({ method: 'GET', path: '/api/status', query: {}, scenario }).body;
 const panel = (title) => screen.getByText(title).closest('.glass-card');
 const gridItem = (title) => screen.getByText(title).closest('.helmgrid-item');
 
@@ -129,7 +135,12 @@ describe('the demo, rendered', () => {
   it('is not green while a service is down', async () => {
     await renderDemo('incident');
 
-    expect(healthLabel()).toHaveTextContent('Service Disruption');
+    // The header says what the demo's status model says: critical, a service down.
+    expect(demoStatus('incident').overall.sentence).toMatch(/^1 service down/);
+    expect(headerStatus()).toHaveAccessibleName(
+      `Critical: ${demoStatus('incident').overall.sentence}`
+    );
+    expect(headerStatus()).toHaveAttribute('data-state', 'crit');
     // One service card is down (its status badge reads "down"): Jellyfin's.
     expect(screen.getAllByText('down')).toHaveLength(1);
     const card = within(panel('App Server')).getByText('down').parentElement.parentElement;
@@ -139,7 +150,11 @@ describe('the demo, rendered', () => {
   it('is green in the healthy scenario', async () => {
     await renderDemo('healthy');
 
-    expect(healthLabel()).toHaveTextContent('All Systems Operational');
+    // The quiet line: the model's sentence, never a green word.
+    expect(headerStatus()).toHaveAccessibleName(
+      `All systems normal: ${demoStatus('healthy').overall.sentence}`
+    );
+    expect(headerStatus()).toHaveAttribute('data-state', 'ok');
     expect(screen.queryAllByText('down')).toEqual([]);
     expect(screen.getAllByText('running').length).toBeGreaterThan(10);
   });

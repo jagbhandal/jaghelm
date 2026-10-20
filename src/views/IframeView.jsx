@@ -157,7 +157,7 @@ function BlockedNotice({ title, url, blockedBy, onRetry }) {
   );
 }
 
-export default function IframeView({ tab, savedUrl, slowAfterMs = SLOW_AFTER_MS }) {
+export default function IframeView({ tab, savedUrl, slowAfterMs = SLOW_AFTER_MS, reloads = 0 }) {
   const { id, url } = tab;
   const title = tab.label || url;
   const { status, blockedBy, attempt, onLoad, retry } = useEmbedStatus({
@@ -165,6 +165,7 @@ export default function IframeView({ tab, savedUrl, slowAfterMs = SLOW_AFTER_MS 
     url,
     savedUrl,
     slowAfterMs,
+    reloads,
   });
 
   return (

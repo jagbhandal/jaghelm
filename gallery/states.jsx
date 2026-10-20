@@ -9,12 +9,14 @@
  * holds the classes src/ui/ uses (scripts/gallery-build.test.mjs checks the
  * few named here). Data is fixed, times included, so every render is the same.
  */
-import { useEffect } from 'react';
+import { createElement, useEffect } from 'react';
 import {
   Bell,
+  Ellipsis,
   History,
   Inbox,
   Info,
+  LayoutDashboard,
   LayoutGrid,
   Monitor,
   Moon,
@@ -23,6 +25,7 @@ import {
   RefreshCw,
   Rocket,
   ScrollText,
+  SlidersHorizontal,
   Sun,
   Trash2,
 } from 'lucide-react';
@@ -56,6 +59,10 @@ import { UptimeBar } from '@ui/uptime-bar';
 import { EntityRow } from '@ui/entity-row';
 import { FactList } from '@ui/fact-list';
 import { Table } from '@ui/table';
+import { AppHeader, UpdatedAgo } from '@ui/app-header';
+import { SideNav, appMonogram } from '@ui/side-nav';
+import { BottomTabs } from '@ui/bottom-tabs';
+import { AppBar } from '@ui/app-bar';
 
 // ---------------------------------------------------------------- layout
 
@@ -1585,6 +1592,134 @@ function ChartColoursState() {
 
 // ---------------------------------------------------------------- registry
 
+// ---------------------------------------------------------------- shell
+
+// 12 seconds before the gallery's frozen clock (09:00:00 UTC).
+const ANSWERED = Date.UTC(2026, 9, 20, 8, 59, 48);
+const INCIDENT_SENTENCE = '1 service down · UPS on battery · 1 node in warning · 1 no signal';
+
+function AppHeaderState() {
+  return (
+    <Stack width={912}>
+      <AppHeader
+        status={{ state: 'crit', sentence: INCIDENT_SENTENCE }}
+        updated={<UpdatedAgo at={ANSWERED} />}
+        onOpenPalette={noop}
+        onLogout={noop}
+      />
+      <AppHeader
+        name="Homelab"
+        status={{ state: 'ok', sentence: 'All 32 services up · 6 nodes healthy' }}
+        updated={<UpdatedAgo at={ANSWERED} />}
+        onOpenPalette={noop}
+        settingsCurrent
+      />
+      <AppHeader
+        status={{ reach: 'down', state: 'crit', sentence: INCIDENT_SENTENCE }}
+        updated={<UpdatedAgo at={ANSWERED - 168_000} />}
+        onOpenPalette={noop}
+        onLogout={noop}
+      />
+      <AppHeader status={{ reach: 'loading' }} onOpenPalette={noop} onLogout={noop} />
+    </Stack>
+  );
+}
+
+const icon = (glyph) => createElement(glyph, { 'aria-hidden': 'true' });
+
+/** The sidebar's groups, as the shell builds them (src/shell/nav.js). */
+function shellGroups({ open = 'grafana', loaded = ['kuma', 'ha'], onUnload } = {}) {
+  const apps = [
+    ['arcane', 'Arcane'],
+    ['grafana', 'Grafana'],
+    ['ha', 'Home Assistant'],
+    ['kuma', 'Uptime Kuma'],
+  ];
+  return [
+    {
+      id: 'monitor',
+      label: 'Monitor',
+      items: [
+        { id: 'overview', label: 'Overview', href: '#overview', icon: icon(LayoutDashboard) },
+        {
+          id: 'alerts',
+          label: 'Alerts',
+          href: '#alerts',
+          icon: icon(Bell),
+          current: open === 'alerts',
+          badge: { count: 4, state: 'crit', label: '4 issues' },
+        },
+      ],
+    },
+    {
+      id: 'apps',
+      label: 'Apps',
+      items: [
+        ...apps.map(([id, label]) => ({
+          id,
+          label,
+          href: `#${id}`,
+          monogram: appMonogram(label),
+          current: open === id,
+          loaded: loaded.includes(id),
+          onUnload: loaded.includes(id) ? (onUnload ?? noop) : undefined,
+        })),
+        { id: 'add-app', label: 'Add app', href: '#add', icon: icon(Plus), minor: true },
+      ],
+    },
+    {
+      id: 'tools',
+      label: 'Tools',
+      items: [
+        { id: 'settings', label: 'Settings', href: '#settings', icon: icon(SlidersHorizontal) },
+      ],
+    },
+  ];
+}
+
+function SideNavState({ collapsed = false, open }) {
+  return (
+    <div style={{ height: 520, display: 'flex' }}>
+      <SideNav groups={shellGroups({ open })} collapsed={collapsed} onCollapsedChange={noop} />
+    </div>
+  );
+}
+
+function BottomTabsState() {
+  return (
+    <Stack width={390}>
+      <BottomTabs
+        tabs={[
+          { id: 'overview', label: 'Overview', href: '#overview', icon: icon(LayoutDashboard) },
+          {
+            id: 'alerts',
+            label: 'Alerts',
+            href: '#alerts',
+            icon: icon(Bell),
+            current: true,
+            badge: { count: 4, state: 'crit', label: '4 issues' },
+          },
+          { id: 'more', label: 'More', icon: icon(Ellipsis), onClick: noop },
+        ]}
+      />
+    </Stack>
+  );
+}
+
+function AppBarState() {
+  return (
+    <Stack width={912}>
+      <AppBar
+        name="Grafana"
+        url="https://grafana.example.com/d/homelab/overview"
+        href="https://grafana.example.com/d/homelab/overview"
+        onReload={noop}
+      />
+      <AppBar name="Uptime Kuma" url="http://kuma.lan:3001" onReload={noop} />
+    </Stack>
+  );
+}
+
 export const RENDERS = Object.freeze({
   button: ButtonState,
   'button-disabled': ButtonDisabledState,
@@ -1649,4 +1784,11 @@ export const RENDERS = Object.freeze({
   'table-empty': TableEmptyState,
   'table-scroll': TableScrollState,
   'chart-colours': ChartColoursState,
+
+  'app-header': AppHeaderState,
+  'side-nav': () => <SideNavState />,
+  'side-nav-collapsed': () => <SideNavState collapsed open="alerts" />,
+  'side-nav-unload': () => <SideNavState open="arcane" />,
+  'bottom-tabs': BottomTabsState,
+  'app-bar': AppBarState,
 });

@@ -13,10 +13,13 @@
  * @param {function} setConfig the raw useState setter from App
  * @param {function} setTheme  the theme setter (server load may seed it)
  * @param {function} toast     useToast()'s notifier (surface save failures)
- * @param {{ readOnly?: boolean }} [options]
+ * @param {{ readOnly?: boolean, onLoaded?: () => void }} [options]
  *   readOnly: the server refuses writes (the public demo, #248). Changes are
  *   kept in this browser (localStorage) and never sent, so nothing fails and
  *   no "couldn't save" toast shows.
+ *   onLoaded: called once the mount load is over, whether the server had a
+ *   config, had none or failed (the shell waits for it before calling an app
+ *   unknown, #296).
  * @returns {object | null} the config the server has: what the mount load
  *   read, then each save once the server accepts it; null before the load,
  *   or when the server has none. The embed check (#269) asks the server only
@@ -31,7 +34,7 @@ export function useConfigPersistence(
   setConfig,
   setTheme,
   toast,
-  { readOnly = false } = {}
+  { readOnly = false, onLoaded } = {}
 ) {
   const configLoadedFromServer = useRef(false);
   const saveTimerRef = useRef(null);
@@ -40,6 +43,8 @@ export function useConfigPersistence(
   const pendingConfigRef = useRef(config);
   const savePendingRef = useRef(false);
   const [savedConfig, setSavedConfig] = useState(null);
+  const onLoadedRef = useRef(onLoaded);
+  onLoadedRef.current = onLoaded;
 
   // Save config: localStorage immediately, server debounced
   useEffect(() => {
@@ -149,9 +154,11 @@ export function useConfigPersistence(
           });
         }
         configLoadedFromServer.current = true;
+        onLoadedRef.current?.();
       })
       .catch(() => {
         configLoadedFromServer.current = true;
+        onLoadedRef.current?.();
       });
   }, []);
 

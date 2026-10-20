@@ -56,8 +56,8 @@ export default function TabsTab() {
   return (
     <div className="settings-section">
       <p className="settings-desc" style={{ marginBottom: 16 }}>
-        Add tabs that embed services in an iframe. These appear in the navigation bar next to the
-        Dashboard tab.
+        Add tabs that embed services in an iframe. Each appears in the sidebar&apos;s Apps group
+        (under More on a phone) and opens inside JagHelm.
       </p>
 
       {tabs.map((tab, i) => (

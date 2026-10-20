@@ -9,6 +9,9 @@
  *                                         and add new ones, then drop the
  *                                         ones no variant has any more
  *   npm run gallery:test -- -g dialog     extra arguments go to Playwright
+ *   npm run test:e2e                      the app shell's browser tests (e2e/),
+ *                                         in the same container
+ *                                         (--config playwright.e2e.config.mjs)
  *
  * It mounts this checkout and uses its node_modules (`npm ci` first), so it
  * needs Docker on a Linux x64 machine, as CI's runner: the native build tools

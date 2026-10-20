@@ -249,10 +249,6 @@ export function useDashboardData(refreshKey, { tick, active = true } = {}) {
     [sourceErrors, healthBucket, resumedAtMs]
   );
 
-  // The server-computed health from the latest /api/services body, for the
-  // navbar dot; 'unknown' while the fetch is failing.
-  const overallHealth = sourceErrors.services ? 'unknown' : serviceData.overallHealth;
-
   return {
     serviceData,
     ups,
@@ -262,7 +258,6 @@ export function useDashboardData(refreshKey, { tick, active = true } = {}) {
     history,
     servicesLoaded,
     sources,
-    overallHealth,
     retry,
   };
 }

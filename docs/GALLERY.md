@@ -132,6 +132,10 @@ writes, for each failing variant, the expected, actual and diff images under
 (`npx playwright show-report test-results/gallery-report`). In the PR the
 changed PNGs show side by side.
 
+The same container runs the app shell's browser tests, `npm run test:e2e`
+(`e2e/`, `playwright.e2e.config.mjs`; [ARCHITECTURE.md](ARCHITECTURE.md) §8),
+in CI's `gallery` job after the gallery's own.
+
 `npm run gallery:test` runs the checks locally, as CI does (`CI=1 npm run
 gallery:test` also stops it writing a missing baseline). Arguments after `--`
 go to Playwright: `npm run gallery:test -- -g dialog`.

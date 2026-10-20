@@ -130,6 +130,15 @@ export async function getServices(skipEtag) {
   return fetchJson(`${getApiBase()}/services`, skipEtag);
 }
 
+/**
+ * The status model (#292): every entity's state, the subsystems, the overall
+ * state and sentence, and the ranked issues (docs/ARCHITECTURE.md §4.7). The
+ * header polls it (useStatus, #296); a steady board answers 304.
+ */
+export async function getStatus(skipEtag) {
+  return fetchJson(`${getApiBase()}/status`, skipEtag);
+}
+
 // Dashboard display config (refresh cadence + layout flags). This is the SAME
 // endpoint the web dashboard reads its `refreshInterval` from, so the mobile app
 // can sync its refresh countdown to the exact cadence the web polls at. Display

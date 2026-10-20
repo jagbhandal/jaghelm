@@ -58,7 +58,7 @@ function fakeCaches(seed = {}) {
     delete: async (name) => stores.delete(name),
     match: async (request) =>
       [...stores.values()].some((store) => store.has(keyOf(request)))
-        ? new Response('cached')
+        ? new Response('cached', { headers: { 'x-cached-url': keyOf(request) } })
         : undefined,
     /** Test view: cache name -> sorted URL paths. */
     snapshot: () =>
@@ -108,11 +108,16 @@ function loadWorker(caches, { assets = BUNDLES, buildAssets = BUILD, network = {
   };
 }
 
-/** Send a GET through the worker's fetch handler; resolves once its cache write has settled. */
-async function fetchThrough(dispatch, path) {
+/**
+ * Send a GET through the worker's fetch handler; resolves once its cache write
+ * has settled. `mode: 'navigate'` sends a page load, as the browser does (a
+ * Request can't be built in that mode, so it is a plain object with what the
+ * worker reads).
+ */
+async function fetchThrough(dispatch, path, { mode } = {}) {
   let responded;
   await dispatch('fetch', {
-    request: new Request(abs(path)),
+    request: mode ? { url: abs(path), method: 'GET', mode } : new Request(abs(path)),
     respondWith: (promise) => {
       responded = promise;
     },
@@ -200,4 +205,34 @@ test('sw fetch still caches the HTML app shell for offline use', async () => {
   const shell = await fetchThrough(dispatch, '/');
   assert.equal(shell.status, 200);
   assert.deepEqual(caches.snapshot(), { [CACHE]: ['/'] });
+});
+
+test('sw fetch answers an offline visit to any page of the app with the cached shell', async () => {
+  const caches = fakeCaches({ [CACHE]: ['/'] });
+  const dispatch = loadWorker(caches);
+  for (const page of ['/alerts', '/apps/grafana', '/settings/tabs']) {
+    const shell = await fetchThrough(dispatch, page, { mode: 'navigate' });
+    assert.ok(shell, `${page} gets an answer`);
+    assert.equal(shell.headers.get('x-cached-url'), abs('/'), page);
+  }
+});
+
+test('sw fetch serves a page its own cached copy offline, before the shell', async () => {
+  const caches = fakeCaches({ [CACHE]: ['/', '/alerts'] });
+  const dispatch = loadWorker(caches);
+  const page = await fetchThrough(dispatch, '/alerts', { mode: 'navigate' });
+  assert.equal(page.headers.get('x-cached-url'), abs('/alerts'));
+});
+
+test('sw fetch answers only a page load with the shell: a missing file offline stays missing', async () => {
+  const caches = fakeCaches({ [CACHE]: ['/'] });
+  const dispatch = loadWorker(caches);
+  assert.equal(await fetchThrough(dispatch, '/uploads/logo.png'), undefined);
+  assert.equal(await fetchThrough(dispatch, '/uploads/logo.png', { mode: 'no-cors' }), undefined);
+});
+
+test('sw fetch leaves /api to the network, even for a page load', async () => {
+  const caches = fakeCaches({ [CACHE]: ['/'] });
+  const dispatch = loadWorker(caches);
+  assert.equal(await fetchThrough(dispatch, '/api/status', { mode: 'navigate' }), undefined);
 });

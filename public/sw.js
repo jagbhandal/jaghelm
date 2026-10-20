@@ -100,6 +100,14 @@ self.addEventListener('fetch', (event) => {
   }
 
   // App shell + everything else: network-first (live data), fall back to cache
-  // when offline.
-  event.respondWith(fetchAndCache(event.request).catch(() => caches.match(event.request)));
+  // when offline. Every page of the app (/alerts, /apps/<id>, /settings/tabs...)
+  // is the same index.html, and the router opens the page its URL names, so an
+  // offline visit to a page with no copy of its own gets the precached shell.
+  event.respondWith(
+    fetchAndCache(event.request).catch(() =>
+      caches
+        .match(event.request)
+        .then((hit) => hit || (event.request.mode === 'navigate' ? caches.match('/') : undefined))
+    )
+  );
 });

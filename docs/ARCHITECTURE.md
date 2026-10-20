@@ -122,16 +122,25 @@ server/                     Express API (Node 26, ESM)
                             (statusScenarios.js, see 4.7)
 
 src/                        React 19 SPA (Vite 8)
-  main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + view switch
+  main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + the shell and its
+                            pages, by route (see 5, "Shell and routing")
+  router/                   routes.js (the route table: paths, params, the routes hidden until
+                            their page exists), useRoute.js (the History API router)
+  shell/                    the shell wired: ShellChrome.jsx (header, sidebar, phone tabs and
+                            More sheet, fed from the route, the config and the status poll),
+                            nav.js (the nav as data), AlertsPage.jsx, statusView.js (how the
+                            status model's issues are counted and worded)
   api/client.js             apiFetch -- explicit auth-injecting fetch wrapper
   context/                  ConfigContext (config + update via setIn), OverlayContext (toast/confirm)
   hooks/useData.js          fetchJson (304-aware), weather, search engines
-  hooks/useAppFrames.js,    app tabs: which frames are mounted, and each frame's load state
-  hooks/useEmbedStatus.js   (logic only; see 5, "App tabs")
+  hooks/useStatus.js        the header's /api/status poll (see 5, "Status in the header")
+  hooks/useAppFrames.js,    app tabs: which frames are mounted (at most five, least recently
+  hooks/useEmbedStatus.js   used out first), and each frame's load state (logic only; see 5,
+                            "App tabs")
   utils/setIn.js            immutable structural-sharing deep-set
   components/HelmGrid/       custom grid engine (gridMath, GridItem, HelmGrid)
   components/settings/       shared primitives + 13 settings tabs (+ IntegrationsTab module)
-  components/                NodeCard, ServiceCard, Widgets, NavBar, overlays, etc.
+  components/                NodeCard, ServiceCard, Widgets, CommandPalette, overlays, etc.
   views/DashboardView/       grid + panels + useDashboardData (304-stable) + per-source health
   views/SettingsView.jsx     13-tab settings shell + collapsible live preview
   views/AppFrames.jsx,       app tabs as they look today: the host keeping visited frames, and
@@ -154,6 +163,8 @@ src/                        React 19 SPA (Vite 8)
                              issue-row, subsystem-strip, attention-panel; the Android app
                              uses them too), the data components (#288: metric-meter,
                              sparkline, uptime-bar, entity-row, fact-list, table),
+                             the shell (#296: app-shell, app-header, side-nav,
+                             bottom-tabs, app-bar),
                              lib/status.js (the five states, their words,
                              and the two looks), lib/utils.js (cn, taught the theme),
                              lib/portal.js (portal roots and the switches they copy),
@@ -167,6 +178,10 @@ gallery/                    the component gallery (development and CI only, docs
                             baselines/ (the committed PNGs), container.mjs (the pinned
                             Playwright image); built by vite.gallery.config.js, tested by
                             playwright.config.mjs, never part of the production build
+e2e/                        the app shell's browser tests (shell.spec.mjs, see 8): the
+                            production build served by `vite preview`, every /api request
+                            answered in the test; run by playwright.e2e.config.mjs in the
+                            gallery's container
 
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
@@ -1003,11 +1018,15 @@ flowchart TD
   MAIN["main.jsx"] --> EB["ErrorBoundary (root)"]
   EB --> CP["ConfigProvider"]
   CP --> OP["OverlayProvider<br/>(toast + confirm)"]
-  OP --> APP["App.jsx (view switch)"]
-  APP --> NAV["NavBar<br/>(search, weather, theme picker, mobile menu)"]
-  APP --> DV["DashboardView"]
-  APP --> SV["SettingsView (13 tabs)"]
-  APP --> AF["AppFrames<br/>(useAppFrames)"]
+  OP --> APP["App.jsx (useRoute: the page)"]
+  APP --> SH["AppShell (src/ui)"]
+  SH --> HD["AppHeader<br/>(useStatus: /api/status)"]
+  SH --> SN["SideNav (≥ 768px) /<br/>BottomTabs + More sheet (< 768px)"]
+  APP --> CPAL["CommandPalette<br/>(pages, apps, themes, links)"]
+  SH --> DV["/ : DashboardView"]
+  SH --> AP["/alerts : AlertsPage"]
+  SH --> SV["/settings/:section? : SettingsView (13 tabs)"]
+  SH --> AF["/apps/:id : AppFrames<br/>(useAppFrames)"]
   AF --> IV["IframeView per app<br/>(useEmbedStatus)"]
   DV --> HG["HelmGrid engine"]
   HG --> GI["GridItem (+ keyboard handle)"]
@@ -1017,6 +1036,46 @@ flowchart TD
   SV --> ITAB["IntegrationsTab module"]
 ```
 
+- **Shell and routing** (#296). Every page lives in `AppShell`
+  (`src/ui/app-shell.jsx`): the 48px header across the top, the grouped
+  sidebar from 768px (Monitor: Overview and Alerts; Apps: one entry per
+  embedded app, then "Add app"; Tools: Settings), and below 768px the bottom
+  tabs (Overview, Alerts, More, whose sheet holds the apps and Settings). The
+  sidebar folds to icons; the choice is kept per browser (`prefs` in
+  `src/storage`, which works without storage). Each piece of chrome is its own
+  `.jh-ui` root; the page area, `<main>`, is not one, so today's views inside it
+  keep their look, and a page of the new UI (Alerts) brings its own root
+  (`ShellPage`). The chrome is dark, or light under one of today's light
+  themes, until #304 gives the new UI its own theme switch. The URL is the page: `src/router` is a small router on the
+  History API (no dependency) over one route table (`routes.js`): `/`
+  Overview, `/alerts`, `/apps/:id`, `/settings/:section?`, and `/launch`,
+  `/services` and `/infrastructure`, which are in the table but hidden until
+  their pages exist (#301, #313): a hidden route, or a path no route matches,
+  shows the Overview and replaces the URL with `/`. An `:id` the config has no
+  app for does too, once the server's config has loaded (it may only be missing
+  from this browser's copy). A plain click on a nav link navigates in the page
+  (`followLink`); a modified or middle click opens a browser tab. The server's
+  SPA fallback serves `index.html` for every path, so a deep link, Back,
+  Forward and a reload all land where the URL says. Each page names the
+  browser tab ("Alerts — JagHelm"). The command palette (⌘K or Ctrl K, or the
+  header's search button) lists the pages in the nav, "Open <app>" for each
+  app, the themes and the links.
+- **Status in the header** (#296, #275). `useStatus` polls `/api/status`
+  (4.7) once a refresh interval with the last ETag, so a steady board costs a
+  304, and asks nothing while the browser tab is hidden; on return it asks at
+  once. The header shows the model's overall state as its lamp and word, and
+  its sentence, which carries the counts ("1 service down · UPS on battery · 1
+  no signal"); healthy reads "All systems normal" in text-1, never green. The
+  whole of it links to Alerts, inside a polite live region. When the server
+  can't be reached the header says steel "No signal" with "Can't reach
+  JagHelm", as the Android app does; a 503 before the first cycle (or an
+  answer with no status) is "No signal" with "Waiting for the first check".
+  The last status is kept, so the Alerts page still lists what the server last
+  said, under a banner saying there is no signal. "Updated 12 s ago" is its own
+  component (`UpdatedAgo`, fed from `useStatus`'s `updated` store): its tick
+  each second and each poll's answer re-render it alone, never the header. The
+  sidebar's Alerts entry carries the issue count, in the worst issue's colour.
+  This replaced the dashboard's health dot, read off `/api/services`.
 - **State.** `ConfigContext` exposes `config`, the stable `setConfig`, and a
   memoised `update(path, value)` built on `setIn` (immutable structural-sharing
   deep-set) -- so leaf cards memoise and don't re-render on unrelated edits.
@@ -1071,21 +1130,34 @@ flowchart TD
   Per-source health (error / stale / retry) is derived at render without
   per-tick state.
 - **Polling.** `App.jsx` drives one tick per refresh interval (30 s by default),
-  and only while the dashboard is on screen: a hidden browser tab, Settings or an
-  iframe tab pauses it, and returning refreshes every source at once. The board
+  and only while the Overview is on screen: a hidden browser tab, or any other
+  page, pauses it, and returning refreshes every source at once. The board
   loads every source once on mount; a tick then fetches the live sources
   (`/api/services`, `/api/ups`, `/api/integrations`) plus one slow source in turn
   (`/api/history`, `/api/cron/status`, `/api/gitea/activity`), so four requests
-  per tick. A panel shows its "updated ... ago" stale note after 2 missed polls
-  of its own source (`pollPeriodMs` in `useDashboardData`): 1 minute for a live
-  source and 3 minutes for a slow one at 30 s. The navbar health dot reads
-  `overallHealth` from the board's own `/api/services` result, so it holds its
-  last value while polling is paused (the "Updated" clock keeps counting) and
-  catches up on return. The navbar refetches weather at most every 10 minutes.
-  The Settings preview loads once when shown and refreshes only on its button.
-- **App tabs.** An `iframe` tab in the config is an app. Its frame mounts on the
-  first visit and stays mounted while another tab is open (`useAppFrames`), so
-  coming back finds the app where it was left: its page, scroll and sign-in.
+  per tick. The header's `/api/status` is one more per tick, on every page
+  (paused only while the browser tab is hidden), so the Overview makes five
+  until the old board's sources go with it (#306 enforces spec §4's four). A
+  panel shows its "updated ... ago" stale note after 2 missed polls of its own
+  source (`pollPeriodMs` in `useDashboardData`): 1 minute for a live source and
+  3 minutes for a slow one at 30 s. Nothing fetches the weather while it has no
+  place on screen (#307 brings it back, in the Overview's side panel). The
+  Settings preview loads once when shown and refreshes only on its button.
+- **App tabs.** An `iframe` tab in the config is an app, opened at `/apps/<id>`.
+  Its frame mounts on the first visit and stays mounted while another page is
+  open (`useAppFrames`), so coming back finds the app where it was left: its
+  page, scroll and sign-in. At most `MAX_LOADED_APPS` (5) stay mounted: opening
+  one more unmounts the least recently opened, never the open one, since each
+  is a whole web app running in the page. The sidebar dots each app that is
+  loaded but not open, and its Unload button (under the pointer, on keyboard
+  focus, always on a touch screen) unmounts it. Over the open app sits its
+  bar (`AppBar`): its name and address, "Stays loaded when you switch away",
+  Reload and "Open in new tab" (`noopener noreferrer`). Reload counts a reload
+  on that app alone (`useAppFrames`' `reload(id)`), which `useEmbedStatus`
+  takes as a Retry: that frame gets a new iframe element and the server is
+  asked afresh, and no other frame reloads or moves. The frames fill the
+  window under the header and the bar (`ShellApps`, which also names the open
+  app's region).
   `AppFrames` hides the other frames with `visibility: hidden` at full size, not
   `display: none`, so an app laid out to its window isn't redrawn at zero size
   on every switch; each hidden slot is clipped, so it adds no scroll height.
@@ -1094,8 +1166,8 @@ flowchart TD
   frame. A hidden frame keeps the URL it last showed: the URL field in Settings
   changes the config on every key, so an edited URL loads when its tab is next
   opened, never a partial one while typing. The logic (the hooks) is apart
-  from today's look (`AppFrames`, `IframeView`) so the sidebar's Apps group
-  (#296) can reuse it.
+  from today's look (`AppFrames`, `IframeView`); the sidebar's Apps group
+  reads which are loaded from it.
   - **Load state** (`useEmbedStatus`): loading; slow, when the frame hasn't
     loaded after 8 s (it keeps loading behind a "slow to load" notice with
     Retry, and shows as soon as it loads); shown; or blocked. Retry gives that
@@ -1136,20 +1208,24 @@ flowchart TD
   bundles (the precache list, the build's full `dist/assets` list + version are
   injected at build by `scripts/inject-sw-precache.mjs`); immutable `/assets/`
   are served cache-first, and other same-origin GETs outside `/api/`
-  network-first with a cached copy for offline. Both runtime paths store into
+  network-first with a cached copy for offline. A page load (`mode:
+  'navigate'`) offline with no copy of its own, such as `/alerts` never
+  visited, gets the precached shell (`/`): every route is the same
+  `index.html`, and the router opens the page its URL names (#296). Both runtime paths store into
   the same versioned cache; an `/assets/` response is stored only when it is ok
   and not HTML. On activate the worker deletes every other cache and trims
   `/assets/` entries not in the current build's asset list, so a redeploy at the
   same version doesn't leave its old bundles behind. The current build's lazy
   chunks, the shell, `/uploads/` and public files stay cached for offline use.
-- **Old tab after a deploy.** A tab still on an older build that opens Settings
-  or an iframe tab asks for a chunk the deploy removed, and gets a 404.
-  `src/chunkReload.js`, installed by `main.jsx`, listens for Vite's
+- **Old tab after a deploy.** A tab still on an older build that opens
+  Settings, Alerts or an app asks for a chunk the deploy removed, and gets a
+  404. `src/chunkReload.js`, installed by `main.jsx`, listens for Vite's
   `vite:preloadError` (fired for every failed lazy import in a build), cancels
-  it and reloads the page once, onto the new build, which reopens the tab that
-  was open. The guard is the build: `main.jsx` passes the entry chunk's URL,
-  whose hash changes whenever any lazy chunk's name does, and the reload stores
-  it in sessionStorage. A chunk failure on a build that already reloaded once
+  it and reloads the page once, onto the new build. The reload keeps the URL,
+  which names the page (#296), so the page that was open comes back. The guard
+  is the build: `main.jsx` passes the entry chunk's URL, whose hash changes
+  whenever any lazy chunk's name does, and the reload stores it in
+  sessionStorage. A chunk failure on a build that already reloaded once
   goes through to the root `ErrorBoundary`'s error screen, whenever it happens,
   so a chunk broken in the current build can't loop. Each later deploy is a new
   build and gets its own reload. Blocked sessionStorage means no reload. While
@@ -1157,10 +1233,6 @@ flowchart TD
   cancelled import resolves empty and the lazy view throws. If `reload()` throws,
   the error shows at once; if the page is still there 10 s after asking (the
   navigation was cancelled), the error screen shows then.
-  - **The open tab.** Just before reloading, `chunkReload.js` stores the open
-    tab's id under a sessionStorage key only it writes. `AppMain` takes it once
-    at boot and opens that tab, or the dashboard when the config no longer has
-    it. An ordinary reload still opens the dashboard.
   - **Also covered, one reload then the error screen.** The same event fires
     for a chunk that is served but throws while it evaluates, and for a fetch
     that fails because the browser is offline. Each gets the one reload. A chunk
@@ -1192,9 +1264,9 @@ stack sits beside today's CSS and must not restyle it.
   and a test fails on any other `cn` in `src/ui/`. Icons come from
   `lucide-react` by name (`import { Check } from 'lucide-react'`), so a bundle
   carries only the icons it uses. The components so far are the controls
-  (#285), the containers (#286) and the data components (#288), which no
-  screen uses yet, and the status components (#287), which the Android app's
-  screens use (next point). The component gallery shows each in every state
+  (#285), the containers (#286), the data components (#288), the status
+  components (#287), which the Android app's screens use (next point), and the
+  shell (#296), the first screen built on them. The component gallery shows each in every state
   ([GALLERY.md](GALLERY.md), #289). The
   interactive controls and containers are built on Base UI primitives. A
   screen's root is a `UiRoot` (`src/ui/root.jsx`), which carries its switches
@@ -1564,11 +1636,17 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   and counts the queries: the per-cycle budget, and the batched reads against
   the per-node reader they replaced (`server/testing/legacyNodeData.js`).
 - **Client** (`npm run test:client`, Vitest + jsdom + React Testing Library):
-  NavBar/config-driven rendering, settings primitives, the keyboard grid handle,
+  config-driven rendering, settings primitives, the keyboard grid handle,
   per-source health banners, overlay/confirm semantics, the 304-stable data
   hook, the old-tab chunk reload, its per-build guard and stall watchdog
-  (`src/chunkReload.test.jsx`) and the tab it reopens (`src/App.reloadTab.test.jsx`),
-  and the `src/ui/` components.
+  (`src/chunkReload.test.jsx`), the router (`src/router/`), the shell
+  (`src/App.shell.test.jsx`: the header, every nav entry, deep links, Back and
+  Forward; `src/shell/ShellHeader.test.jsx`: each state of the header, and a
+  render count proving the "updated" tick re-renders nothing else), the status
+  poll's request budget (`src/App.polling.test.jsx`), the loaded-app cap
+  (`src/hooks/useAppFrames.test.jsx`), and the `src/ui/` components. The
+  status fixtures (`src/testing/statusFixtures.js`) are built by the server's
+  own model, never written by hand.
 - **Cross-client status suite** (both of the above): seven named status fixtures
   (`server/testing/statusScenarios.js`) through the real push cycle
   (`server/status/crossClient.test.js`, in `test:ci`) and through the `src/ui`
@@ -1585,6 +1663,19 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   baselines; an approved change commits them in its PR.
   `scripts/gallery-build.test.mjs` (in `npm test`) keeps the gallery out of
   the production build and the container pinned in step.
+- **The app shell in a browser** (`npm run test:e2e`, Playwright in the
+  gallery's container; CI's `gallery` job, after the gallery): `e2e/shell.spec.mjs`
+  runs the production build under `vite preview`, answering every `/api`
+  request in the test with the demo server's own answers (`demoResponse`) in
+  its incident scenario, `/api/status` included, at 390 and 1440px. It checks
+  the header's incident sentence and its steel "No signal" with the backend
+  down (and back), that every nav entry (sidebar, phone tabs and More) opens
+  its page and every old view is reachable, the app bar (Reload makes a new
+  frame; "Open in new tab" is `_blank` with `noopener noreferrer`), Back,
+  Forward and a reload, no sideways scroll on any page, and axe with every default rule, dark and
+  light, at both widths: the whole Alerts page, and the shell's chrome around
+  today's Overview. It also leaves screenshots of the incident in
+  `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through
   the Android build's `@ui` alias.

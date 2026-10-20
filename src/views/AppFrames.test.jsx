@@ -13,7 +13,7 @@ const kuma = { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: 'https://k
 
 // savedTabs: what the server has saved (useConfigPersistence); by default the tabs shown.
 function Harness({ tabs, active, savedTabs = tabs }) {
-  return <AppFrames frames={useAppFrames(tabs, active)} savedTabs={savedTabs} />;
+  return <AppFrames frames={useAppFrames(tabs, active).frames} savedTabs={savedTabs} />;
 }
 
 let answers; // tab id → body, or a Promise of one, or an Error
