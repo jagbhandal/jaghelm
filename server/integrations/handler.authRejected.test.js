@@ -259,8 +259,8 @@ test('session auth: a cached token answered 401, then a good fresh login, is a s
 
 // ── The refresh loop hands over the config it resolved (#239 review N4) ──
 test('fetchIntegration uses a config resolved by the caller instead of resolving it again', async () => {
-  const yaml = custom({ auth: 'bearer', token: '$secret:not_stored_anywhere' });
-  const resolved = { ...yaml, _token: 'resolved-by-caller' };
+  const yaml = custom({ auth: 'bearer', token: '$secret:not_stored_anywhere' }); // pragma: allowlist secret
+  const resolved = { ...yaml, _token: 'resolved-by-caller' }; // pragma: allowlist secret
   let sent;
   const r = await withFetch(
     async (url, init = {}) => {

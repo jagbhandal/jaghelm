@@ -383,7 +383,7 @@ test('each integration is resolved once a cycle: the fetch reuses the config its
       vault: custom('vault.example.test', {
         auth: 'basic',
         username: 'u',
-        password: '$secret:corrupt_pw',
+        password: '$secret:corrupt_pw', // pragma: allowlist secret
       }),
     },
   });
@@ -445,11 +445,11 @@ test('savedFromSettings is true for every entry a save in Settings writes, and f
   const byHand = {
     'a custom integration': [
       'mine',
-      custom('d.example.test', { auth: 'header', token: '$secret:mine' }),
+      custom('d.example.test', { auth: 'header', token: '$secret:mine' }), // pragma: allowlist secret
     ],
     'a preset entry with no preset key': ['npm', { url, username: 'u' }],
     'a password in the file': ['npm', { preset: 'npm', url, username: 'u', password: 'hunter2' }],
-    'a secret under another name': ['npm', { preset: 'npm', url, password: '$secret:npm_pw' }],
+    'a secret under another name': ['npm', { preset: 'npm', url, password: '$secret:npm_pw' }], // pragma: allowlist secret
     'a key the form does not send': ['npm', { preset: 'npm', url, endpoint: '/api/other' }],
     'a key Settings would not derive': ['my_npm', { preset: 'npm', url }],
     'an instance Settings would rename': ['npm_Two', { preset: 'npm', instance: 'Two', url }],
