@@ -3,7 +3,8 @@
 // pairing against its floor in both themes and all accents on both kinds of
 // screen, the pairings ruled out by name, each accent's hover against its rest
 // state, every accent's distance from the status colours, and that the check
-// fails on a bad pairing.
+// fails on a bad pairing. scripts/chart-palette.test.mjs covers the chart
+// colours (#386).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -170,7 +171,7 @@ test('contrast is WCAG 2 contrast, and translucent colours are painted over thei
   assert.throws(() => parseColor('rgb(0 0 0)'), /unsupported colour/);
 });
 
-test('the floors are the spec’s (§5.2)', () => {
+test('the floors are the spec’s (§5.2), and WCAG 1.4.11’s 3:1 for a chart’s slots', () => {
   assert.deepEqual(RULES, {
     'text-1': 7,
     'text-2': 4.5,
@@ -181,6 +182,7 @@ test('the floors are the spec’s (§5.2)', () => {
     'on-solid': 4.5,
     'focus-ring': 3,
     'control-edge': 3,
+    series: 3,
   });
   for (const rule of Object.keys(RULES)) {
     assert.ok(

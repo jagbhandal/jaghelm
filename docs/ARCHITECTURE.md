@@ -152,7 +152,8 @@ components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/u
 scripts/                    inject-sw-precache.mjs, check-assets.mjs, changelog-lint.mjs,
                             changelog-fold.mjs, release-notes.mjs (build/CI/release helpers),
                             ui-preflight.mjs (writes src/ui/preflight.css),
-                            ui-contrast.mjs (the design tokens' contrast check)
+                            ui-contrast.mjs (the design tokens' contrast check, and the
+                            chart colours' gates)
 changes/                    CHANGELOG fragments, one per PR (mobile/changes/ for Android);
                             the release PR folds them into the CHANGELOG (RELEASING.md)
 .github/workflows/          build-push.yml (test -> build -> sign -> GHCR), release.yml (tag ->
@@ -941,7 +942,12 @@ stack sits beside today's CSS and must not restyle it.
   every theme and accent against the spec's floors, as sRGB and Display P3
   screens paint them, that each accent's hover is visibly different from
   its rest state, and that no accent colour sits within ΔE OK 0.05 of a status
-  colour (`ui-contrast.test.mjs`).
+  colour (`ui-contrast.test.mjs`). The chart colours (#386), six categorical
+  slots and a sequential ramp, are roles there too: the same script checks
+  them at 3:1 where charts are drawn, the ramp's steps, and the slots' separation
+  under protanopia, deuteranopia and normal vision and from the status colours
+  and the violet accent, their chroma and their lightness band
+  (`chart-palette.test.mjs`).
   They are custom properties on `.jh-ui`, prefixed `--jh-`, never on `:root`:
   today's CSS owns `--bg`, `--accent`, `--border`, `--card`, `--muted`,
   `--text-*`, `--font-mono`, `--font-body` and `--font-display` there and in the
@@ -1163,7 +1169,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   counts (`doc-counts.test.mjs`), and the UI stack's separation from today's
   CSS and its reach into the Android build (`ui-stack.test.mjs`,
   `ui-preflight.test.mjs`), and the design tokens' shape and contrast
-  (`ui-tokens.test.mjs`, `ui-contrast.test.mjs`), and the fonts and type scale
+  (`ui-tokens.test.mjs`, `ui-contrast.test.mjs`) and the chart colours
+  (`chart-palette.test.mjs`), and the fonts and type scale
   (`fonts.test.mjs`). Write new repo checks this way, not as shell
   scripts: `npm test` only collects `*.test.{js,mjs,cjs}`.
 

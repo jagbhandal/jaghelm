@@ -22,9 +22,11 @@ the sign-off amendments in §15).
   file, disagrees.
 - **Contrast:** [`scripts/ui-contrast.mjs`](../scripts/ui-contrast.mjs) checks every
   pairing below in both themes and all three accents, on sRGB and Display P3
-  screens, each accent's hover against its rest state, and each accent against
-  the status colours, in `npm test`. Run `node scripts/ui-contrast.mjs` to see
-  the lowest ratio per rule on each screen and each accent's nearest status.
+  screens, each accent's hover against its rest state, each accent against
+  the status colours, and the chart colours ([Chart colours](#chart-colours)),
+  in `npm test`. Run `node scripts/ui-contrast.mjs` to see the lowest ratio per
+  rule on each screen, each accent's nearest status, and the chart colours'
+  closest calls.
 - **Components:** the controls (#285), the containers (#286) and the status
   components (#287) in `src/ui/` are listed under [Components](#components),
   [Containers](#containers) and [Status components](#status-components), with
@@ -64,7 +66,9 @@ the sign-off amendments in §15).
    shape together (filled disc, slashed disc, disc with a bar, hollow ring,
    wrench), so it never rests on colour alone. No signal is steel, never red.
    Healthy stays quiet: at most a small lamp. A meter changes colour only above
-   its threshold, to `warn-solid` or `crit-solid`.
+   its threshold, to `warn-solid` or `crit-solid`. A status colour never draws
+   a chart series, and a series colour never means a state
+   ([Chart colours](#chart-colours)).
 4. **Roles, never raw colours.** Components use the role utilities. Palette
    steps (`--jh-graphite-198`) exist for the roles to read; no component and no
    utility reads one (a test checks both). Tailwind's default palette, type
@@ -150,12 +154,18 @@ translucent token painted over that surface.
 | status `on-solid` | 4.5:1 | its own solid | none |
 | `focus-ring` | 3:1 | bg, sidebar, surface-1, surface-2, surface-3 (the ring sits 2px outside the control) | none |
 | `control-edge` | 3:1 | bg, sidebar, surface-1, surface-2 | row-hover over bg and surface-1 |
+| `series-1` to `series-6` | 3:1 | bg, surface-1, surface-2 | row-hover over surface-1 |
+| `series-1` alone (a single series) | 3:1 | the same | the same; each status tint over surface-1; accent-tint over bg and surface-1 (a selected row) |
 
 `control-edge` is the edge of a control with no fill of its own, an empty
 checkbox or an off switch. WCAG 1.4.11 asks 3:1 of the boundary that shows
 where a control is; `border-strong` (1.4:1 to 1.5:1) and `surface-3` on the page
 (1.2:1 in light) are too faint for it. Its worst case is 3.77:1 (light, in a
 hovered row on the page).
+
+The `series` slots are a chart's lines, bars and legend swatches: WCAG 1.4.11's
+3:1 for a graphical object. They are never words. The ramp has its own check
+([Chart colours](#chart-colours)): its first steps recede by design.
 
 Ruled out by name, because they fall below 4.5:1 somewhere and the mock never
 draws them (`FORBIDDEN` in the script):
@@ -407,6 +417,140 @@ with `text-1` on it (3.05:1 in light). A test fails on any `accent-foreground`
 in `src/ui/`: highlight with `bg-row-hover` or `bg-surface-2` and
 `text-text-1` instead. When a component is shaped for a screen, switch it to the
 JagHelm names.
+
+## Chart colours
+
+Six categorical colours and one sequential ramp, for every chart (#386). Jag
+signed them off on 2026-10-20 on the mock's Chart colours board. They are roles
+in `tokens.css`, in dark and light, and they never change with the accent. No
+screen uses them yet: the Sparkline and MetricMeter (#288) and the history
+charts (#311) will be the first.
+
+| Slot | Name | Token | Dark | Light |
+| --- | --- | --- | --- | --- |
+| 1 | Azure | `series-1` | `oklch(0.6 0.138 240)` | `oklch(0.58 0.133 240)` |
+| 2 | Rose | `series-2` | `oklch(0.64 0.15 355)` | `oklch(0.5 0.15 355)` |
+| 3 | Lime | `series-3` | `oklch(0.66 0.15 125)` | `oklch(0.56 0.141 125)` |
+| 4 | Plum | `series-4` | `oklch(0.55 0.15 325)` | `oklch(0.6 0.15 325)` |
+| 5 | Orange | `series-5` | `oklch(0.66 0.15 55)` | `oklch(0.6 0.149 55)` |
+| 6 | Teal | `series-6` | `oklch(0.66 0.112 200)` | `oklch(0.62 0.105 200)` |
+
+Utilities: `stroke-series-1` for a line, `fill-series-1` for a bar or an area,
+`bg-series-1` for a legend's swatch, and `text-series-1` for an SVG drawn in
+`currentColor`, through `series-6`. Never for words: see the legend rule below.
+
+- **In this order.** A chart takes the slots in order, 1 first. The order
+  keeps neighbours apart for protanopia, deuteranopia and normal vision, so a
+  slot is never skipped for taste.
+- **Colour follows the entity.** A chart that draws one series by design, such
+  as a sparkline, uses slot 1, azure. A chart of several gives each entity (a
+  node, a disk, a service) its slot in a stable order, the order the entities
+  are configured in, and the entity keeps it: when the chart is sorted, when a
+  filter hides the others, and from chart to chart on a screen. Colour never
+  follows a series' rank or what a filter left.
+- **How many.** A line or stacked chart, where only neighbouring slots touch,
+  can show all six. A scatter, a map or a small multiple, where any two can
+  meet, shows at most three, slots 1 to 3, which stay apart in every pair, and
+  folds the rest into one Other series. A line chart of more than six folds
+  the rest the same way. Other is drawn in a neutral, never a slot or a status
+  colour; it has no token yet.
+- **Status is never a series, and a series never means a state.** Ok, warn,
+  crit, no signal, maintenance and info never draw a series. A series keeps
+  its slot when its value crosses a threshold: the state shows in the status
+  components, never by recolouring the series. Every slot sits at least ΔE 8.5
+  from every status lamp, bar and word (the gates below).
+- **Legend and labels.** Two or more series always get a legend. Up to four
+  also get direct labels, at a line's end or on its bar, so the eye needn't
+  go back and forth. Labels and legend entries are words in `text-text-1` or
+  `text-text-2` beside the series' swatch, never in the series colour: the
+  slots are checked at 3:1 for a graphic, not 4.5:1 for text (rule 5).
+- **Where they're drawn, and only there.** A chart of several series sits on
+  the page (`bg`), a panel (`surface-1`), `surface-2` (a hovered tile, a
+  chart's tooltip) or a hovered row (`row-hover` over `surface-1`), and
+  nowhere else. Each slot is at least 3:1 (WCAG 1.4.11, a graphical object) on
+  each, in both themes and every accent. The dimmest are dark plum (3.46:1 on a
+  panel, 3.15:1 on `surface-2`) and light teal (3.48:1 and 3.11:1).
+- **A single series also sits on tints.** Slot 1 alone, such as a sparkline
+  inside a row or a tile, may also sit on each status tint over a panel (a
+  warn-tinted tile: `ok-tint` to `info-tint` over `surface-1`) and in a
+  selected row (`accent-tint` over `bg` or `surface-1`). It clears 3:1 on each
+  in both themes and every accent, 3.47:1 at worst (a selected row on the
+  light page). Slots 2 to 6 never sit on a status tint or in a selected row:
+  dark plum falls to 2.86:1 on a warn tint and light teal to 2.86:1 in a
+  selected row.
+- **Never on `surface-3`** (a chip, a track), whatever the series: dark plum
+  falls to 2.73:1 there and light teal to 2.82:1.
+
+**The sequential ramp** is azure, slot 1's hue (240), in seven steps from none
+to most. On the dark panel it lightens step by step, on the light one it
+deepens. The sign-off lists it in hex; `tokens.css` writes each step in OKLCH at
+hue 240 that paints that hex on an sRGB screen, clipped or gamut-mapped, and a
+test checks each one.
+
+| Step | Token | Dark | Light |
+| --- | --- | --- | --- |
+| 1 | `seq-1` | `oklch(0.3 0.07 240)` #00314d | `oklch(0.92 0.043 240)` #cce9ff |
+| 2 | `seq-2` | `oklch(0.38 0.087 240)` #00476c | `oklch(0.84 0.08 240)` #9bd2fa |
+| 3 | `seq-3` | `oklch(0.459 0.105 240)` #005e8c | `oklch(0.76 0.11 240)` #6bbaf0 |
+| 4 | `seq-4` | `oklch(0.54 0.124 240)` #0076af | `oklch(0.68 0.135 240)` #36a2e3 |
+| 5 | `seq-5` | `oklch(0.63 0.11 240)` #4191c5 | `oklch(0.6 0.138 240)` #0089c9 |
+| 6 | `seq-6` | `oklch(0.72 0.08 240)` #75acd2 | `oklch(0.511 0.117 240)` #006da2 |
+| 7 | `seq-7` | `oklch(0.81 0.05 240)` #a4c6de | `oklch(0.42 0.096 240)` #00537c |
+
+- **Sequential magnitude only:** one quantity from none to most, such as a
+  heatmap's cells. Never for categories or series: neighbouring steps are one
+  hue, told apart by lightness alone.
+- **The first steps recede** toward the panel, as a scale's "none" end should,
+  so the ramp is not held to 3:1. It is drawn on panels (`surface-1`).
+- **As an ordinal scale** (tiers, stages), start at step 3: 2.58:1 on a dark
+  panel, 2.12:1 on a light one.
+- **Checked:** every step further from `surface-1`'s lightness than the one
+  before, by at least 0.06 (OKLCH L, as written), all at slot 1's hue, and
+  step 3 at least 2:1 on `surface-1` (`checkRamp` in `scripts/ui-contrast.mjs`).
+  Utilities: `fill-seq-1` to `fill-seq-7`, and `bg-`, `stroke-` and `text-` as
+  for the slots.
+
+**With Fuchsia and Cyan.** The slots avoid Violet, the default: every slot is
+at least ΔE 12 from each violet mark (the button at rest and hovered, a link,
+the meter, the focus ring). Fuchsia and Cyan sit nearer. With Fuchsia the slot
+nearest the accent is plum (ΔE 8.1 dark, 9.9 light); with Cyan it is azure
+(10.5 dark, 8.7 light). Charts never draw the accent inside the plot: no line,
+bar, selection or highlight in it. So nothing changes per accent. The accents'
+other marks come closer still: Cyan's dark focus ring is ΔE 2.9 from teal, and
+its light meter 5.6; Fuchsia's dark hover is 7.6 from plum, and its light meter
+5.9. A focus ring goes around a chart, never on a series, and a meter is never
+drawn inside a plot. `node scripts/ui-contrast.mjs` prints these.
+
+**The gates that hold the slots**, which `checkChartPalette` in
+`scripts/ui-contrast.mjs` enforces in `npm test` (`scripts/chart-palette.test.mjs`),
+in both themes. The separation, chroma and lightness gates are the checks the
+sign-off ran. The status and violet floors are set here, under the margins
+the sign-off measured (8.8 from the nearest status colour, 16 from the violet
+fill); the violet gate measures every violet mark, not only the fill. ΔE is
+OKLab distance ×100 between the colours a screen paints, rounded down.
+Protanopia and deuteranopia are simulated with Machado, Oliveira and Fernandes
+(2009) at severity 1.0, on linear sRGB, clamped:
+
+| Gate | Check | Floor | Worst |
+| --- | --- | --- | --- |
+| `adjacent-cvd` | neighbouring slots, protanopia and deuteranopia | 8 | 8.8, azure to rose (dark, protan) |
+| `adjacent` | neighbouring slots, normal vision | 15 | 21.1, plum to orange (light) |
+| `first-three-cvd` | slots 1 to 3, every pair, both CVDs | 8 | 8.8, azure to rose (dark, protan) |
+| `first-three` | slots 1 to 3, every pair, normal vision | 15 | 23.1, azure to lime (light) |
+| `status` | every slot to every status lamp, bar and word | 8.5 | 8.8, teal to the ok lamp (light) |
+| `violet` | every slot to every violet mark | 12 | 13.1, plum to the meter (light) |
+| `chroma` | every slot's OKLCH chroma, as written | 0.1 | 0.105, teal (light) |
+| `lightness` | every slot's OKLCH L, as written, inside its theme's band | 0.48–0.67 dark, 0.43–0.77 light | L 0.66, lime, orange and teal (dark, 0.01 under the top) |
+
+Trade-offs taken at sign-off:
+
+- Only about six hue families are left once red, amber, green, blue and violet
+  are reserved. Gold separated better but read as a warning beside amber, so it
+  was dropped.
+- Rose and plum are split by lightness rather than hue, so they stay apart
+  where their lines cross.
+- Dark plum is the dimmest slot and light lime leans olive. Both pass; they are
+  the first to nudge if they look off.
 
 ## Components
 
@@ -973,9 +1117,14 @@ mock first.
   that fails and that the mock never draws goes in `FORBIDDEN` instead, and in
   rule 5 above. A new switch needs teaching to that script's reader, which
   refuses selectors it doesn't know.
+- A chart colour change is checked like any colour: 3:1 where charts are
+  drawn, the ramp's steps, and the gates that hold the slots
+  ([Chart colours](#chart-colours)). `scripts/chart-palette.test.mjs` pins the
+  signed-off values and the tables there, so a change fails until the test
+  and the tables agree with it.
 - `node scripts/ui-contrast.mjs` must report nothing below its floor on either
-  screen, no hover too close to its rest state, and no accent too close to a
-  status.
+  screen, no hover too close to its rest state, no accent too close to a
+  status, and no chart gate failing.
 
 Where the tokens differ from the mock, and why:
 
