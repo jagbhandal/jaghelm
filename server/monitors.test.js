@@ -43,8 +43,32 @@ const STATUS_PAGE_BODY = {
 test('monitors: a fresh ok fetch primes the cache with live statuses', async () => {
   globalThis.fetch = async () => mockResponse({ ok: true, body: STATUS_PAGE_BODY });
   try {
-    const m = await fetchMonitors(true);
+    const { ok, monitors: m } = await fetchMonitors(true);
+    assert.equal(ok, true);
     assert.equal(m[1]?.status, 'up', 'live status loaded into cache');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('monitors: the status page path keeps pending and maintenance as kumaStatus (#258)', async () => {
+  const body = {
+    publicGroupList: [{ monitorList: [1, 2, 3, 4].map((id) => ({ id, name: `m${id}` })) }],
+    heartbeatList: { 1: [{ status: 1 }], 2: [{ status: 0 }], 3: [{ status: 2 }], 4: [{ status: 3 }] },
+    uptimeList: {},
+  };
+  globalThis.fetch = async () => mockResponse({ ok: true, body });
+  try {
+    const { monitors: m } = await fetchMonitors(true);
+    assert.deepEqual(
+      [1, 2, 3, 4].map((id) => [m[id].status, m[id].kumaStatus]),
+      [
+        ['up', 'up'],
+        ['down', 'down'],
+        ['unknown', 'pending'],
+        ['unknown', 'maintenance'],
+      ]
+    );
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -57,7 +81,8 @@ test('monitors: a stale cache PAST the ceiling is NOT served on !ok', async () =
   const base = realNow();
   Date.now = () => base + 10 * 60 * 1000;
   try {
-    const m = await fetchMonitors(true);
+    const { ok, monitors: m } = await fetchMonitors(true);
+    assert.equal(ok, false, 'a failed load says so (#232)');
     assert.deepEqual(m, {}, 'stale cache past the ceiling is dropped, not frozen');
   } finally {
     globalThis.fetch = realFetch;
@@ -75,7 +100,8 @@ test('monitors: a stale cache WITHIN the ceiling is still served on !ok', async 
   const base = realNow();
   Date.now = () => base + 60 * 1000;
   try {
-    const m = await fetchMonitors(true);
+    const { ok, monitors: m } = await fetchMonitors(true);
+    assert.equal(ok, false, 'serving last-known statuses is still a failed load (#232)');
     assert.equal(m[1]?.status, 'up', 'recent cache still served during a brief outage');
   } finally {
     globalThis.fetch = realFetch;
@@ -109,7 +135,8 @@ test('monitors: with KUMA_API_KEY, a good /metrics response is used (status-page
     return mockResponse({ ok: true, body: STATUS_PAGE_BODY });
   };
   try {
-    const m = await fetchMonitors(true);
+    const { ok, monitors: m } = await fetchMonitors(true);
+    assert.equal(ok, true);
     assert.equal(m[2]?.status, 'up', 'parsed live status from /metrics');
     assert.equal(m[2]?.ping, 137);
     assert.equal(m[2]?.uptime24, 1);
@@ -129,7 +156,8 @@ test('monitors: with KUMA_API_KEY, a 401 on /metrics falls back to the status-pa
     return mockResponse({ ok: true, body: STATUS_PAGE_BODY });
   };
   try {
-    const m = await fetchMonitors(true);
+    const { ok, monitors: m } = await fetchMonitors(true);
+    assert.equal(ok, true, 'the fallback loaded monitors');
     assert.equal(m[1]?.status, 'up', 'fell back to the status-page monitor');
     assert.ok(statusPageHit >= 1, 'status-page API was used as fallback');
   } finally {
@@ -150,11 +178,32 @@ test('monitors: with KUMA_API_KEY, a /metrics body with no monitor_id falls back
     return mockResponse({ ok: true, body: STATUS_PAGE_BODY });
   };
   try {
-    const m = await fetchMonitors(true);
+    const { monitors: m } = await fetchMonitors(true);
     assert.equal(m[1]?.status, 'up', 'empty parse → status-page fallback');
     assert.ok(statusPageHit >= 1);
   } finally {
     globalThis.fetch = realFetch;
     initMonitors('http://localhost:9999');
+  }
+});
+
+// #232: the refresh loop keeps the push state of a source that failed, so a
+// failed load must say so rather than look like a Kuma with no monitors.
+test('monitors: a thrown fetch, or Kuma answering with no monitors, is ok:false', async () => {
+  const cases = {
+    refused: async () => {
+      throw new TypeError('fetch failed');
+    },
+    'empty status page': async () => mockResponse({ ok: true, body: { publicGroupList: [] } }),
+  };
+  for (const [name, stub] of Object.entries(cases)) {
+    globalThis.fetch = stub;
+    try {
+      const { ok, monitors } = await fetchMonitors(true);
+      assert.equal(ok, false, name);
+      assert.equal(typeof monitors, 'object', `${name}: still a map to render`);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   }
 });

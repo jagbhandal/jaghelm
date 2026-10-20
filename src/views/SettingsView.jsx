@@ -13,7 +13,13 @@ import SecurityTab from '../components/settings/SecurityTab';
 import BackupTab from '../components/settings/BackupTab';
 import IntegrationsTab from '../components/settings/IntegrationsTab';
 import DashboardView from './DashboardView';
-import { apiFetch } from '../api/client.js';
+import { apiFetch, isReadOnlyServer } from '../api/client.js';
+import { useToast } from '../context/OverlayContext.jsx';
+
+// The services config as last edited in this tab, when the server is the
+// read-only demo (#248): it refuses the save, so the edit is kept here for the
+// visit and shown again when Settings reloads the config.
+let localServerConfig = null;
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: '🏠', desc: 'Title, logo, branding' },
@@ -61,8 +67,18 @@ function previewDefaultVisible() {
   return window.matchMedia(PREVIEW_BREAKPOINT).matches;
 }
 
-export default function SettingsView({ theme, setTheme }) {
-  const [activeSection, setActiveSection] = useState('general');
+/**
+ * Settings. `section` opens one section, the route's (/settings/<section>,
+ * #296): an unknown one opens General. `onSectionChange` hears each switch,
+ * so the route can follow it; without it the view keeps its own.
+ */
+export default function SettingsView({ theme, setTheme, section, onSectionChange }) {
+  const toast = useToast();
+  const [ownSection, setOwnSection] = useState('general');
+  const known = (id) => SECTIONS.some((s) => s.id === id && !s.disabled);
+  const routed = onSectionChange != null;
+  const activeSection = routed ? (known(section) ? section : 'general') : ownSection;
+  const setActiveSection = routed ? onSectionChange : setOwnSection;
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   // Live preview visibility. Defaults to the viewport-derived value (hidden on
   // ~laptop widths so the form gets full width) and, once the user toggles it,
@@ -84,7 +100,8 @@ export default function SettingsView({ theme, setTheme }) {
       apiFetch('/api/services/monitors').then((r) => (r.ok ? r.json() : null)),
     ])
       .then(([cfg, svc, mon]) => {
-        if (cfg) setServerConfig(cfg);
+        if (isReadOnlyServer() && localServerConfig) setServerConfig(localServerConfig);
+        else if (cfg) setServerConfig(cfg);
         if (svc) setLiveServices(svc);
         if (Array.isArray(mon)) setMonitorNames(mon);
       })
@@ -97,22 +114,39 @@ export default function SettingsView({ theme, setTheme }) {
     }
   }, [activeSection, fetchServerData]);
 
-  // Save server config with debounce
-  const saveServerConfig = useCallback((newConfig) => {
-    setServerConfig(newConfig);
-    setServerSaving(true);
-    if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
-    serverSaveTimer.current = setTimeout(() => {
-      apiFetch('/api/services/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newConfig),
-      })
-        .then((r) => r.json())
-        .then(() => setServerSaving(false))
-        .catch(() => setServerSaving(false));
-    }, 1500);
-  }, []);
+  // Save server config with debounce. A save the server refuses (a stale
+  // credential marker is a 409, #413) or that fails is never silent: the
+  // server's reason is shown, and the stored config is read again so the
+  // screen matches what is saved.
+  const saveServerConfig = useCallback(
+    (newConfig) => {
+      setServerConfig(newConfig);
+      if (isReadOnlyServer()) {
+        localServerConfig = newConfig;
+        return;
+      }
+      setServerSaving(true);
+      if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
+      serverSaveTimer.current = setTimeout(() => {
+        apiFetch('/api/services/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newConfig),
+        })
+          .then(async (r) => {
+            if (r.ok) return;
+            const data = await r.json().catch(() => ({}));
+            throw new Error(data?.error || `HTTP ${r.status}`);
+          })
+          .catch((err) => {
+            toast(`Not saved: ${err.message}`, 'error');
+            fetchServerData();
+          })
+          .finally(() => setServerSaving(false));
+      }, 1500);
+    },
+    [toast, fetchServerData]
+  );
 
   return (
     <div className="settings-page">
@@ -183,7 +217,7 @@ export default function SettingsView({ theme, setTheme }) {
       <div style={{ display: 'flex', flex: 1, minWidth: 0, overflow: 'hidden' }}>
         {/* Settings form — claims full width when the preview is hidden, so the
             form isn't cramped on narrower (~laptop) viewports. */}
-        <main
+        <div
           className="settings-main"
           style={showPreview ? { maxWidth: '50%', flex: '0 0 50%' } : { flex: 1, minWidth: 0 }}
         >
@@ -264,7 +298,7 @@ export default function SettingsView({ theme, setTheme }) {
             {activeSection === 'security' && <SecurityTab />}
             {activeSection === 'backup' && <BackupTab />}
           </div>
-        </main>
+        </div>
 
         {/* Live Preview Panel — toggled via the header button; hidden by default
             on narrow viewports so the form can use the full width. */}

@@ -16,7 +16,7 @@ import IncidentDetail from './views/IncidentDetail.jsx';
 import NotificationSettings from './views/NotificationSettings.jsx';
 import RefreshStatus from './components/RefreshStatus.jsx';
 import { initPush } from './push/registerPush.js';
-import './MobileApp.css';
+// MobileApp.css loads through styles/legacy.css, in the `legacy` cascade layer.
 
 const SCREENS = {
   overview: Overview, services: Services, infra: Infra, alerts: Alerts,
@@ -106,6 +106,7 @@ export default function MobileApp() {
         intervalMs={data.intervalMs}
         error={data.error}
         loading={data.loading}
+        foreground={data.foreground}
         onRefresh={data.refresh}
       />
       <main className="mobile-content">

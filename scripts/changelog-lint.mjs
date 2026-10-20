@@ -1,6 +1,6 @@
 // Usage: node scripts/changelog-lint.mjs [--mobile] <file>
-import { readFileSync } from 'node:fs';
-import { lintChangelog } from './changelog.mjs';
+// Also lints the fragments in changes/ next to <file>, and <file> with them folded in.
+import { lintWithFragments } from './changelog.mjs';
 
 const args = process.argv.slice(2);
 const mobile = args.includes('--mobile');
@@ -10,6 +10,6 @@ if (!file) {
   process.exit(2);
 }
 
-const errors = lintChangelog(readFileSync(file, 'utf8'), { mobile });
-for (const e of errors) console.error(`${file}: ${e}`);
+const errors = lintWithFragments(file, { mobile });
+for (const e of errors) console.error(e);
 process.exit(errors.length ? 1 : 0);

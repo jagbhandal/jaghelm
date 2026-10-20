@@ -1,12 +1,13 @@
 import React from 'react';
 import UsageBar from './UsageBar.jsx';
-import StatusLamp from './StatusLamp.jsx';
+import { StatusLamp } from '@ui/status-lamp';
 import { nodeSeverity, nodeUpDown, parseMetricPct, thirdMetric, severityToShape, nodeSeverityWord } from '../data/derive.js';
 
 /**
  * Compact node card. Header: node name (Outfit) + subtitle (mono) + resource
  * StatusLamp. Up/down count (down count red when > 0). CPU + MEM + third bar
- * (TEMP when the node reports temperature, else DISK). Tap → onTap(nodeKey).
+ * via thirdMetric (TEMP when the node reports temperature, else DISK; DISK wins
+ * once disk >= DISK_HOT, #273). The detail screen shows both. Tap → onTap(nodeKey).
  *
  * The lamp reflects RESOURCE-ONLY severity (cpu ≥ 90 or temp ≥ 75 → amber;
  * cool resources → green; no metrics → steel). A node hosting a down service

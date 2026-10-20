@@ -1,9 +1,19 @@
-import { apiFetch } from '../api/client.js';
+import { apiFetch, isReadOnlyServer } from '../api/client.js';
 import { iconSlugUrl } from '../utils/iconCdn.js';
 import { getApiBase } from '../api/baseUrl.js';
+// The server's own allowlist (dependency-free), so the client sends the cache
+// exactly the URLs it accepts.
+import { canonicalIconUrl } from '../../server/icon-sources.js';
 
-const etagStore = new Map();
-const resultStore = new Map();
+// url → { etag, body, seq }: the last 200 whose body parsed, the ETag it came
+// with (null when it had none), and the request's place in send order. Written
+// in one step, after the parse, so the ETag sent as If-None-Match always
+// describes the body a 304 hands back.
+const held = new Map();
+// Send order: each fetchJson call takes the next number. When requests for one
+// URL overlap, the pair from the one sent last is kept, whichever body finishes
+// last.
+let lastSent = 0;
 
 /**
  * Sentinel for the 304 cold-start edge (304 with no cached 200 body). Distinct
@@ -24,30 +34,52 @@ export const NOT_MODIFIED_NO_BODY = Object.freeze({ __jaghelm304NoBody: true });
  *   1. 200 → freshly-parsed body (new reference).
  *   2. 304 with prior body → that prior reference (stable identity).
  *   3. 304 cold-start, no prior body → NOT_MODIFIED_NO_BODY sentinel (still a success).
- *   network error / non-2xx / non-304 → THROWS; the only path a caller reads as error.
+ *   network error / non-2xx / non-304 / a body that fails to parse → THROWS; the
+ *   only path a caller reads as error.
+ *
+ * The ETag and the body are stored together, only once the body has parsed, so
+ * the stored ETag always describes the body held. A 200 whose body is empty,
+ * malformed or cut off by the timeout throws and leaves the held pair as it was
+ * (with none held, the next request stays unconditional). A 200 without an ETag
+ * replaces the pair with no ETag, so the next request is unconditional. When
+ * requests for one URL overlap, the newest request's pair wins: an older one
+ * that finishes later stores nothing and returns the newer body.
  *
  * Pass skipEtag=true to force a full fetch (used on first load when state is empty).
+ * A forced fetch also bypasses AND refreshes the browser's HTTP cache, which may
+ * hold a copy of a response the server marked cacheable (/cron/status sends a
+ * max-age). `reload` (not `no-store`) writes the fresh response back, so a later
+ * polled fetch can't be served the older cached copy (e.g. a just-deleted cron
+ * job reappearing for up to max-age).
  */
 async function fetchJson(url, skipEtag = false) {
+  const seq = ++lastSent;
   const headers = {};
-  const storedEtag = etagStore.get(url);
+  const storedEtag = held.get(url)?.etag;
   if (storedEtag && !skipEtag) {
     headers['If-None-Match'] = storedEtag;
   }
 
-  const r = await apiFetch(url, { headers, signal: AbortSignal.timeout(12000) });
+  const r = await apiFetch(url, {
+    headers,
+    signal: AbortSignal.timeout(12000),
+    ...(skipEtag && { cache: 'reload' }),
+  });
 
   if (r.status === 304) {
-    return resultStore.has(url) ? resultStore.get(url) : NOT_MODIFIED_NO_BODY;
+    return held.has(url) ? held.get(url).body : NOT_MODIFIED_NO_BODY;
   }
 
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
 
-  const newEtag = r.headers.get('ETag');
-  if (newEtag) etagStore.set(url, newEtag);
-
+  // Parse before storing anything: a failed parse throws here and leaves the
+  // held pair untouched.
   const body = await r.json();
-  resultStore.set(url, body);
+  const cur = held.get(url);
+  // A request sent later already stored its pair: keep it and hand back its
+  // body, so the caller doesn't step back to this older one.
+  if (cur && cur.seq > seq) return cur.body;
+  held.set(url, { etag: r.headers.get('ETag') || null, body, seq });
   return body;
 }
 
@@ -65,6 +97,30 @@ async function requestJson(url, opts) {
   return text ? JSON.parse(text) : null;
 }
 
+// ── A read-only server (the public demo, #248) ───────────────────────────
+// It refuses every write, so the helpers below don't send one: the change is
+// kept in this tab for the visit, and the matching read answers with it. A
+// reload starts again from the server's data.
+let localTodos = null;
+const removedCronJobs = new Set();
+const cronJobKey = (node, job) => JSON.stringify([node, job]);
+
+/** /api/cron/status without the jobs removed in this tab. */
+function withoutRemovedCronJobs(statuses) {
+  return statuses
+    .map((n) => ({
+      ...n,
+      jobs: n.jobs.filter((j) => !removedCronJobs.has(cronJobKey(n.node, j.job))),
+    }))
+    .filter((n) => n.jobs.length > 0);
+}
+
+/** Forget the changes kept in this tab (tests start each case afresh). */
+export function forgetLocalChanges() {
+  localTodos = null;
+  removedCronJobs.clear();
+}
+
 /**
  * Fetch all node + service data in one call.
  * Returns null if data unchanged (304), otherwise:
@@ -72,6 +128,15 @@ async function requestJson(url, opts) {
  */
 export async function getServices(skipEtag) {
   return fetchJson(`${getApiBase()}/services`, skipEtag);
+}
+
+/**
+ * The status model (#292): every entity's state, the subsystems, the overall
+ * state and sentence, and the ranked issues (docs/ARCHITECTURE.md §4.7). The
+ * header polls it (useStatus, #296); a steady board answers 304.
+ */
+export async function getStatus(skipEtag) {
+  return fetchJson(`${getApiBase()}/status`, skipEtag);
 }
 
 // Dashboard display config (refresh cadence + layout flags). This is the SAME
@@ -82,10 +147,10 @@ export async function getDisplayConfig(skipEtag) {
   return fetchJson(`${getApiBase()}/display-config`, skipEtag);
 }
 
-// Metric history (sparklines). Not ETag-cached server-side — it changes every
-// cycle by design — so this always returns a fresh body.
-export async function getMetricHistory() {
-  return fetchJson(`${getApiBase()}/history`);
+// Metric history (sparklines). It changes every refresh cycle, so a 304 only
+// comes back when no cycle has run since the last fetch.
+export async function getMetricHistory(skipEtag) {
+  return fetchJson(`${getApiBase()}/history`, skipEtag);
 }
 
 // Dedicated section data (not covered by /api/services or /api/integrations).
@@ -96,7 +161,10 @@ export async function getGiteaActivity(skipEtag) {
   return fetchJson(`${getApiBase()}/gitea/activity`, skipEtag);
 }
 export async function getCronStatus(skipEtag) {
-  return fetchJson(`${getApiBase()}/cron/status`, skipEtag);
+  const statuses = await fetchJson(`${getApiBase()}/cron/status`, skipEtag);
+  return removedCronJobs.size && Array.isArray(statuses)
+    ? withoutRemovedCronJobs(statuses)
+    : statuses;
 }
 
 // Phase 3: Integration Engine
@@ -125,6 +193,10 @@ export async function deleteIntegration(type) {
 }
 
 export async function deleteCronJob(node, job) {
+  if (isReadOnlyServer()) {
+    removedCronJobs.add(cronJobKey(node, job));
+    return null;
+  }
   const url = `${getApiBase()}/cron/jobs/${encodeURIComponent(node)}/${encodeURIComponent(job)}`;
   try {
     return await requestJson(url, { method: 'DELETE' });
@@ -144,11 +216,16 @@ export async function getWeather(lat, lon) {
 }
 
 export async function getTodos() {
+  if (isReadOnlyServer() && localTodos) return localTodos;
   const r = await apiFetch(`${getApiBase()}/todos`, { signal: AbortSignal.timeout(12000) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
 export async function saveTodos(todos) {
+  if (isReadOnlyServer()) {
+    localTodos = todos;
+    return;
+  }
   // Route through requestJson so a failed save REJECTS (was silently swallowed:
   // the old code awaited the fetch but never checked r.ok, so a 500 looked like
   // a successful save). Caller awaits for completion only; no body is returned.
@@ -160,6 +237,8 @@ export async function saveTodos(todos) {
 }
 
 export async function uploadFile(file, type) {
+  // The image stays in this tab: an object URL for the visit, never sent.
+  if (isReadOnlyServer()) return { url: URL.createObjectURL(file) };
   const form = new FormData();
   form.append('file', file);
   // HARNESS-GAP (ledger #1): the one remaining raw '/api' literal that bypasses
@@ -171,28 +250,25 @@ export async function uploadFile(file, type) {
 }
 
 /**
- * Convert an external CDN icon URL to a locally-cached URL.
- * Icons are fetched from the CDN once, saved to data/icon-cache/,
+ * Convert an icon-repository URL to a locally-cached URL.
+ * Icons are fetched from the CDN once, saved to icon-cache/ in the data dir,
  * and served locally on all subsequent loads. Eliminates 20-30
  * cross-origin CDN round-trips on every cold page load.
  *
- * Non-CDN URLs (local paths, data URIs) pass through unchanged.
- * Emojis and empty strings return null.
+ * Only the URLs the server caches go through it: Dashboard Icons and selfh.st
+ * icons on jsDelivr or raw.githubusercontent.com (server/icon-sources.js, #255).
+ * Every other URL — another repository, a pinned version, any other host,
+ * local paths, data URIs — passes through unchanged and loads directly.
+ * Empty strings return null.
  *
  * Base-aware: the proxied URL is built from getApiBase() so on mobile it is an
- * absolute same-base URL that reaches Express over Tailscale and gets the
- * x-auth-token injected (the icon route is protected). Web is unchanged ('/api').
+ * absolute same-base URL that reaches Express over Tailscale. Web is unchanged ('/api').
  */
 export function cachedIconUrl(url) {
   if (!url || typeof url !== 'string') return null;
-  // Only proxy external CDN URLs
-  if (
-    url.startsWith('https://cdn.jsdelivr.net/') ||
-    url.startsWith('https://raw.githubusercontent.com/')
-  ) {
+  if (canonicalIconUrl(url)) {
     return `${getApiBase()}/icons/cached?url=${encodeURIComponent(url)}`;
   }
-  // Local paths, data URIs, etc. — pass through
   return url;
 }
 

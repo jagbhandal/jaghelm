@@ -5,7 +5,7 @@ import { isEmoji } from '../utils/icon.jsx';
 /**
  * IconPicker — Reusable icon search & selection component
  * 
- * Searches the JagHelm icon index (homarr-labs/dashboard-icons, selfhst/icons, simple-icons)
+ * Searches the JagHelm icon index (homarr-labs/dashboard-icons, selfhst/icons)
  * via GET /api/icons?q=search&limit=60
  * 
  * Props:

@@ -13,18 +13,38 @@
  * @param {function} setConfig the raw useState setter from App
  * @param {function} setTheme  the theme setter (server load may seed it)
  * @param {function} toast     useToast()'s notifier (surface save failures)
+ * @param {{ readOnly?: boolean, onLoaded?: () => void }} [options]
+ *   readOnly: the server refuses writes (the public demo, #248). Changes are
+ *   kept in this browser (localStorage) and never sent, so nothing fails and
+ *   no "couldn't save" toast shows.
+ *   onLoaded: called once the mount load is over, whether the server had a
+ *   config, had none or failed (the shell waits for it before calling an app
+ *   unknown, #296).
+ * @returns {object | null} the config the server has: what the mount load
+ *   read, then each save once the server accepts it; null before the load,
+ *   or when the server has none. The embed check (#269) asks the server only
+ *   about a URL it has saved.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiFetch, getAuthToken } from '../api/client.js';
 
-export function useConfigPersistence(config, setConfig, setTheme, toast) {
+export function useConfigPersistence(
+  config,
+  setConfig,
+  setTheme,
+  toast,
+  { readOnly = false, onLoaded } = {}
+) {
   const configLoadedFromServer = useRef(false);
   const saveTimerRef = useRef(null);
   // Latest config + whether a debounced server save is still pending, so the
   // flush-on-unload handler can write the most recent edit synchronously.
   const pendingConfigRef = useRef(config);
   const savePendingRef = useRef(false);
+  const [savedConfig, setSavedConfig] = useState(null);
+  const onLoadedRef = useRef(onLoaded);
+  onLoadedRef.current = onLoaded;
 
   // Save config: localStorage immediately, server debounced
   useEffect(() => {
@@ -33,6 +53,8 @@ export function useConfigPersistence(config, setConfig, setTheme, toast) {
     pendingConfigRef.current = config;
     // Don't save to server until we've loaded from server first (prevents overwriting server config with defaults)
     if (!configLoadedFromServer.current) return;
+    // Nothing is sent to a read-only server, so the unload flush has nothing owed either.
+    if (readOnly) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     // From here a server write is owed; the flush handler may send it early.
     savePendingRef.current = true;
@@ -50,6 +72,7 @@ export function useConfigPersistence(config, setConfig, setTheme, toast) {
         .then((r) => {
           // A non-2xx response is a failed save just as much as a thrown error.
           if (!r.ok) throw new Error(`save failed (${r.status})`);
+          setSavedConfig(config);
         })
         .catch(() => {
           // The debounced effect re-arms on the next edit, and localStorage
@@ -58,7 +81,7 @@ export function useConfigPersistence(config, setConfig, setTheme, toast) {
           toast("Couldn't save settings — will retry", 'error');
         });
     }, 2000);
-  }, [config, toast]);
+  }, [config, toast, readOnly]);
 
   // Flush a pending (debounced-but-unsent) server save immediately when the tab
   // is hidden or about to unload. Without this, an edit made <2s before the user
@@ -118,6 +141,7 @@ export function useConfigPersistence(config, setConfig, setTheme, toast) {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+          setSavedConfig(data);
           setConfig((prev) => {
             const merged = { ...data };
             // localStorage layout is authoritative — server may be stale from a previous deploy
@@ -130,9 +154,13 @@ export function useConfigPersistence(config, setConfig, setTheme, toast) {
           });
         }
         configLoadedFromServer.current = true;
+        onLoadedRef.current?.();
       })
       .catch(() => {
         configLoadedFromServer.current = true;
+        onLoadedRef.current?.();
       });
   }, []);
+
+  return savedConfig;
 }

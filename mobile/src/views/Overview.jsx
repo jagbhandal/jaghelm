@@ -1,14 +1,16 @@
 import React, { useMemo } from 'react';
-import SystemStatusCard from '../components/SystemStatusCard.jsx';
-import SubsystemStrip from '../components/SubsystemStrip.jsx';
-import IssueRow from '../components/IssueRow.jsx';
+// The status components are the shared library's (src/ui/), in the Android
+// app's own look until Phase 4 (#326; src/ui/lib/status.js).
+import { AttentionPanel } from '@ui/attention-panel';
+import { SubsystemStrip } from '@ui/subsystem-strip';
+import { IssueRow } from '@ui/issue-row';
 import StatusBanner from '../components/StatusBanner.jsx';
 import {
   overallSeverity, deriveSubsystems, deriveIncidents, deriveHero,
 } from '../data/derive.js';
-import { openTarget } from '../open.js';
+import { issueRoute } from '../nav/issueRoute.js';
 
-export default function Overview({ data }) {
+export default function Overview({ data, nav }) {
   const { servicesBody, ups, cron, loading, error } = data;
   // Bug #4: a live fetch error means we can't trust the (possibly stale) body.
   // Thread `unreachable` into BOTH overallSeverity and deriveSubsystems so a
@@ -32,7 +34,7 @@ export default function Overview({ data }) {
 
   return (
     <section className="mobile-view" aria-label="Overview">
-      <SystemStatusCard
+      <AttentionPanel
         severity={hero.severity}
         headline={hero.headline}
         word={hero.word}
@@ -48,9 +50,18 @@ export default function Overview({ data }) {
 
         {!error && !loading && incidents.length > 0 && (
           <div className="overview-issues__list">
-            {incidents.map((inc) => (
-              <IssueRow key={inc.id} incident={inc} onOpen={openTarget} />
-            ))}
+            {/* A row opens the detail screen of what it refers to (#279); a
+                row with nothing to open renders as plain content. */}
+            {incidents.map((inc) => {
+              const route = issueRoute(inc);
+              return (
+                <IssueRow
+                  key={inc.id}
+                  incident={inc}
+                  onOpen={route ? () => nav.push(route.screen, route.params) : undefined}
+                />
+              );
+            })}
           </div>
         )}
 

@@ -222,26 +222,43 @@ services:
     image: ghcr.io/jagbhandal/jaghelm:latest
     container_name: jaghelm
     restart: unless-stopped
-    network_mode: host        # binds 3099 on the host; reaches LAN services directly
+    ports:
+      - "3099:3099"
     env_file:
       - .env
+    environment:
+      - NODE_ENV=production
     volumes:
       - ./data:/app/data
       - ./uploads:/app/uploads
-    environment:
-      - NODE_ENV=production
+    # Hardening: a read-only image, an unprivileged user, no capabilities.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 256
 ```
 
-This matches the `compose.yaml` shipped in the repo. `network_mode: host` lets
-JagHelm reach your exporters and LAN services without per-target Docker
-networking, which is why it's the default. If you'd rather keep JagHelm on an
-isolated bridge network, remove the `network_mode: host` line and publish the
-port instead:
+This matches the `compose.yaml` in the repo: a bridge network that publishes
+port 3099, so the container stays off the host's network. JagHelm runs as UID
+1000 on a read-only image, so `data/` and `uploads/` are the only places it
+writes, and they must be writable by that user. Create them before the first
+start (Docker would otherwise create them owned by root):
 
-```yaml
-    # ports:
-    #   - 3099:3099
+```bash
+mkdir -p data uploads && sudo chown 1000:1000 data uploads
 ```
+
+**Switch to host networking** only if JagHelm can't reach something from the
+bridge: an exporter bound to a host-only interface, or anything found by mDNS.
+Replace the `ports:` block with `network_mode: host`. Host mode drops the
+network isolation and ignores `ports:`; JagHelm then binds 3099 on the host
+directly.
 
 Pull and start:
 
@@ -308,7 +325,29 @@ volumes:
 docker compose up -d
 ```
 
-Then set up monitors in Uptime Kuma for each service you want to track. JagHelm auto-matches Kuma monitors to containers by name — if your container is called `gitea` and your Kuma monitor is called "Gitea", they'll match automatically.
+Then set up monitors in Uptime Kuma for each service you want to track. JagHelm auto-matches Kuma monitors to containers by name — if your container is called `gitea` and your Kuma monitor is called "Gitea", they'll match automatically. Each monitor goes to one container, the best match: "Gitea" goes to `gitea`, not to `gitea-runner` as well.
+
+When a name doesn't match, or the same container runs on two machines, map the monitor yourself under `services:` in `data/services.yaml`, keyed by container name:
+
+```yaml
+services:
+  immich-server:
+    monitor: Immich              # this monitor, on every machine the container runs on
+  gateway-npm:
+    monitor_per_node:            # a different monitor on each machine
+      pi1: NPM Pi Primary        # keys are the node keys under `nodes:`
+      pi2: NPM Pi Secondary
+  vaultwarden:
+    monitor_per_node:
+      vm103: Vaultwarden         # only vm103's copy gets the monitor; the replica gets none
+  gateway-tunnel:
+    monitor: false               # no monitor, and no matching by name
+```
+
+- `monitor` is the monitor's name as Uptime Kuma shows it (any case). Settings > Services sets it from a dropdown.
+- `monitor_per_node` maps a node key to a monitor name, and wins over `monitor` on that node. A node with no entry there uses `monitor`, or matching by name when `monitor` isn't set either. Edit it in the file; Settings keeps it when it saves.
+- `false` (in either) means no monitor at all: the card shows its Docker status, and no monitor is matched to it by name.
+- A monitor named in any mapping goes only to the containers mapped to it, even while they're stopped, so a container with a similar name never takes it.
 
 Make sure `KUMA_URL` in your JagHelm `.env` file points to your Uptime Kuma instance, then restart JagHelm:
 
@@ -345,7 +384,7 @@ Add it to `prometheus.yml`:
       - targets: ['localhost:9199']
 ```
 
-Restart Prometheus, and the UPS panel will appear in JagHelm automatically.
+Restart Prometheus, and the UPS panel will appear in JagHelm automatically. JagHelm reads the UPS named `apcups` in NUT (`ups.conf`); a UPS with another name doesn't show yet (#249).
 
 ---
 
@@ -357,7 +396,7 @@ JagHelm can pull data from your self-hosted apps and display it on service cards
 
 1. Click the gear icon to open Settings
 2. Go to **Integrations**
-3. Browse the preset gallery — 42 presets available including AdGuard, Pi-hole, Plex, Jellyfin, Sonarr, Radarr, Grafana, Portainer, and more
+3. Browse the preset gallery — AdGuard, Pi-hole, Plex, Jellyfin, Sonarr, Radarr, Grafana, Portainer, and dozens more
 4. Click a preset, enter the URL and credentials for your instance
 5. Click **Test** to verify the connection works
 6. Click **Save** — credentials are encrypted with AES-256-GCM and stored securely
@@ -368,22 +407,24 @@ The integration data will appear on the matching service card in the dashboard a
 
 ## 9. Step 8: Embed Services as Tabs
 
-One of JagHelm's standout features is the ability to embed your web-based tools as tabs in the navigation bar. Instead of opening Uptime Kuma in a new browser tab, it loads inside JagHelm.
+One of JagHelm's standout features is the ability to embed your web-based tools as apps inside JagHelm. Instead of opening Uptime Kuma in a new browser tab, it loads inside JagHelm, under the status header.
 
 **To add a tab:**
 
-1. Open Settings > **Tabs**
+1. Open Settings > **Tabs** (or **Add app** in the sidebar)
 2. Click **Add Tab**
 3. Enter a name (e.g. "Uptime Kuma") and the URL (e.g. `http://your-kuma-host:3001`)
 4. Save
 
-The new tab appears in the top navigation bar. Click it to load the service inline. Click "Dashboard" to go back.
+The new app appears in the sidebar's **Apps** group (under **More** on a phone) and in the command palette ("Open Uptime Kuma"), and has its own address (`/apps/<id>`). Click it to load the service inline; click **Overview** to go back. The app stays loaded while you are elsewhere, so it is where you left it when you come back: a dot beside it says so, and **Unload** (on the entry, under the pointer) frees it. At most five stay loaded at once; opening a sixth unloads the one you used least recently. The bar over an open app shows its address, with **Reload** (that app only) and **Open in new tab**.
+
+If the service hasn't loaded after 8 seconds, the tab says it is slow to load and offers Retry; the service keeps loading and shows as soon as it is ready. If its server refuses to be shown inside another site, the tab says it won't open inside JagHelm and offers "Open in new tab" and "How to allow embedding". JagHelm's server finds that out by reading the service's headers, so it has to be able to reach the service's URL; when it can't, the tab shows whatever the browser shows.
 
 **Tips for embedded tabs:**
 
 - **Uptime Kuma:** If embedding is blocked, set the environment variable `UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN=true` on your Kuma container, or add your JagHelm domain to the allowed iframe origins in Kuma's settings.
 - **Grafana:** Set `allow_embedding = true` in `grafana.ini` under `[security]`, and set `cookie_samesite = none` if accessing across different hostnames.
-- **Proxmox:** Proxmox blocks iframe embedding by default. Use the tab for LAN access where same-origin policies are relaxed, or use Tailscale for consistent access.
+- **Proxmox:** Proxmox VE's web UI sends no `X-Frame-Options` or `frame-ancestors` header (checked on Proxmox VE 9.2), so its headers don't stop it opening inside JagHelm, and being on the LAN or on Tailscale makes no difference to that. Two other things can: its own certificate on `https://your-proxmox:8006`, which a browser won't let you accept inside a frame (use an address behind your reverse proxy with a trusted certificate, or open the address in a normal tab and accept the certificate there first), and its sign-in cookie, which a browser that blocks third-party cookies drops when Proxmox and JagHelm are on different sites (give both addresses under the same domain, such as `proxmox.example.com` and `jaghelm.example.com`). If your reverse proxy adds `X-Frame-Options`, the tab says so.
 
 ---
 
@@ -442,13 +483,17 @@ If this works but JagHelm doesn't show stats, verify cAdvisor has the same `node
 
 ### Uptime Kuma monitors not matching
 
-JagHelm matches Kuma monitors to containers by checking if the monitor name contains the container name (case-insensitive). If your container is named `gateway-npm` and your Kuma monitor is named "NPM Proxy", they won't auto-match.
+JagHelm matches Kuma monitors to containers by name, ignoring case and punctuation: the same name first, then a monitor named after a hostname whose first part is the container name (`grafana.example.com`), then one name containing the other, then a shared word of 4 letters or more. Each monitor goes to one container, the best match; when the same container runs on two machines, or a stack's containers all contain the monitor's name (`immich-server`, `immich-redis`, …), only one of them gets it. If your container is named `gateway-npm` and your Kuma monitor is named "NPM Proxy", they won't auto-match.
 
-**Fix:** Go to Settings > Services, find the container, and select the correct Kuma monitor from the dropdown.
+**Fix:** Go to Settings > Services, find the container, and select the correct Kuma monitor from the dropdown. That sets `monitor:`, which applies on every machine the container runs on; for a different monitor on each machine, use `monitor_per_node:` in `services.yaml`, and to keep a container off monitors altogether, `monitor: false` (see [Step 5](#6-step-5-add-uptime-kuma-optional)). A monitor you map goes only to the containers mapped to it. If the mapped monitor is renamed, deleted or paused in Kuma, the container shows no monitor and JagHelm's log warns about the mapping once; pick the monitor again, or resume it.
 
-### Embedded tab shows "Embedding Blocked"
+### Embedded tab says the service "won't open inside JagHelm"
 
-The service is sending `X-Frame-Options` or `Content-Security-Policy` headers that prevent iframe embedding. Each service has its own setting to allow this — see the tips in [Step 8](#9-step-8-embed-services-as-tabs).
+The service is sending `X-Frame-Options` or `Content-Security-Policy` headers that prevent iframe embedding; "How to allow embedding" names the one it sends. Allow JagHelm's address with `Content-Security-Policy: frame-ancestors 'self' https://your-jaghelm-address` in the service or in the reverse proxy in front of it (browsers then ignore `X-Frame-Options`), or add the address to the service's own `frame-ancestors` list if it sends one. Each service has its own setting for this — see the tips in [Step 8](#9-step-8-embed-services-as-tabs). Then click "Check again".
+
+### Embedded tab says the service "is slow to load"
+
+The service hasn't finished loading after 8 seconds. That is not a block: it keeps loading and shows when it is ready. Retry reloads that tab only.
 
 ### JagHelm container won't start
 

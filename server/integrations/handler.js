@@ -1,19 +1,19 @@
 /**
  * JagHelm Integration Handler — all integrations, preset and custom, flow
  * through this single handler. Pipeline: resolve config → auth → fetch →
- * transform → cache. Owns the two orchestrators fetchIntegration + testIntegration.
+ * transform. Owns the two orchestrators fetchIntegration + testIntegration.
+ * Only the transformed result is returned; the upstream response is dropped
+ * once the fields and structuredTransform have read it (#254).
  *
- * lib/ map: cache.js (response cache+TTL), http.js (safeFetch), extract.js (JSON
- * path DSL + URL templating), format.js (formatValue+computeField), auth.js
- * (buildAuthHeaders), session.js (session token cache+login), config.js (cred
- * resolution + config merging).
+ * lib/ map: http.js (safeFetch), extract.js (JSON path DSL + URL templating),
+ * format.js (formatValue+computeField), auth.js (buildAuthHeaders), session.js
+ * (session token cache+login), config.js (cred resolution + config merging).
  */
 
 import { getPresetFull } from './registry.js';
 
-import { getCached, setCache } from './lib/cache.js';
-import { safeFetch } from './lib/http.js';
-import { extractValue, resolveEndpointParams } from './lib/extract.js';
+import { safeFetch, isAuthRejection } from './lib/http.js';
+import { extractValue, resolveEndpoint, looksLikeSecretRef, UnresolvedSecretError } from './lib/extract.js';
 import { formatValue, computeField } from './lib/format.js';
 import { buildAuthHeaders } from './lib/auth.js';
 import { fetchWithSession, testSessionAuth } from './lib/session.js';
@@ -25,18 +25,55 @@ import { createLogger } from '../util/logger.js';
 const log = createLogger('integrations');
 
 /**
- * Append query-param auth (`?apikey=…`) to a URL for the `query` auth type.
+ * Append query-param auth (`?apikey=…`) to a URL for the `query` auth type,
+ * and `?apikey={token}` to `shownUrl`, the same URL as an error may show it
+ * (safeFetch's shownUrl; defaults to `url`).
  * No-op for any other auth type or when no token is resolved. The token is
  * URL-encoded so a raw token containing reserved chars (&, =, +, space) can't
  * corrupt the query string or split into extra params.
+ *
+ * Returns the URL and whether the key went into it, for safeFetch's
+ * credentialInUrl: a redirect to another origin could carry the query (and the
+ * key) with it, so such a request refuses one.
+ *
+ * A `$secret:` reference is never put into the URL (#425): a token that looks
+ * like one, or a reference that resolved to nothing, throws
+ * UnresolvedSecretError, so no request is sent and the error says why.
  */
-function applyQueryAuth(url, config) {
-  if (config.auth === 'query' && config._token) {
+function applyQueryAuth(url, config, shownUrl = url) {
+  if (config.auth !== 'query') return { url, shownUrl, credentialInUrl: false };
+  if (looksLikeSecretRef(config._token) || (!config._token && looksLikeSecretRef(config.token))) {
+    throw new UnresolvedSecretError('the token in the URL', { token: true });
+  }
+  if (config._token) {
     const paramName = config.queryParam || 'apikey';
     const separator = url.includes('?') ? '&' : '?';
-    return `${url}${separator}${paramName}=${encodeURIComponent(config._token)}`;
+    return {
+      url: `${url}${separator}${paramName}=${encodeURIComponent(config._token)}`,
+      shownUrl: `${shownUrl}${separator}${paramName}={token}`,
+      credentialInUrl: true,
+    };
   }
-  return url;
+  return { url, shownUrl, credentialInUrl: false };
+}
+
+/**
+ * Whether a data request carries the integration's own credentials: an auth
+ * header from buildAuthHeaders, or a key in the URL. A 401 or 403 to such a
+ * request is a rejected login (#239), which the refresh loop does not repeat
+ * until the config changes; one to a request without them is not.
+ */
+function carriesCredentials(config, credentialInUrl) {
+  if (credentialInUrl) return true;
+  switch (config.auth) {
+    case 'basic':
+      return !!(config._username || config._password);
+    case 'bearer':
+    case 'header':
+      return !!config._token;
+    default:
+      return false;
+  }
 }
 
 // Re-exported for back-compat; SSRF is also enforced at the fetch chokepoint in
@@ -45,19 +82,20 @@ export { resolveIntegrationConfig };
 export { assertSafeUrl };
 
 // ── Main fetch function for any integration ──
-export async function fetchIntegration(type, yamlConfig, bustCache = false) {
-  // Key by the unique storage key, not the preset type — otherwise two
-  // instances of one preset (adguard_primary / adguard_secondary) share a key
-  // and serve each other's data. refresh.js threads _storageKey through; the
-  // GET /:type route passes the storage key as `type` directly.
-  const cacheKey = `integration:${yamlConfig?._storageKey || type}`;
-
-  if (!bustCache) {
-    const cached = getCached(cacheKey);
-    if (cached) return cached;
-  }
-
-  const config = resolveIntegrationConfig(type, yamlConfig);
+/**
+ * Fetch one integration and return its fields, or `{ error }`, plus
+ * `authRejected: true` when the upstream refused its credentials (#239).
+ *
+ * @param {string} type preset type, or the storage key of a custom integration
+ * @param {object} yamlConfig its services.yaml entry, with `_storageKey`
+ * @param {object | null} [resolved] the config resolveIntegrationConfig returns
+ *   for these two, when the caller already has it: the refresh loop resolves an
+ *   integration once a cycle for its backoff fingerprint and hands that over, so
+ *   its credentials are not read from the secrets store twice. Omitted, it is
+ *   resolved here.
+ */
+export async function fetchIntegration(type, yamlConfig, resolved) {
+  const config = resolved === undefined ? resolveIntegrationConfig(type, yamlConfig) : resolved;
   if (!config || !config.url || !config.endpoint) {
     return { error: 'Integration not configured', fields: {} };
   }
@@ -70,13 +108,17 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
     if (config.auth === 'session') {
       rawData = await fetchWithSession(config);
     } else {
-      let url = `${baseUrl}${resolveEndpointParams(config.endpoint, config)}`;
-      url = applyQueryAuth(url, config);
+      const endpoint = resolveEndpoint(config.endpoint, config);
+      const { url, shownUrl, credentialInUrl } =
+        applyQueryAuth(`${baseUrl}${endpoint.path}`, config, `${baseUrl}${endpoint.shownPath}`);
 
       const headers = buildAuthHeaders(config);
-      const res = await safeFetch(url, { headers }, skipTls);
+      const urlCarriesCredential = credentialInUrl || endpoint.credentialInUrl;
+      const res = await safeFetch(url, { headers }, skipTls, { credentialInUrl: urlCarriesCredential, shownUrl });
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status} ${res.statusText || ''}`.trim());
+        const err = new Error(`HTTP ${res.status} ${res.statusText || ''}`.trim());
+        if (isAuthRejection(res) && carriesCredentials(config, urlCarriesCredential)) err.authRejected = true;
+        throw err;
       }
       rawData = await res.json();
     }
@@ -91,9 +133,9 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       const headers = buildAuthHeaders(config);
       const extraResults = await Promise.allSettled(
         extraEps.map(async (ep) => {
-          const resolvedEp = resolveEndpointParams(ep.endpoint, config);
-          const epUrl = `${baseUrl}${resolvedEp}`;
-          const epRes = await safeFetch(epUrl, { headers }, skipTls);
+          const { path, shownPath, credentialInUrl } = resolveEndpoint(ep.endpoint, config);
+          const epRes = await safeFetch(`${baseUrl}${path}`, { headers }, skipTls,
+            { credentialInUrl, shownUrl: `${baseUrl}${shownPath}` });
           if (!epRes.ok) {
             throw new Error(`HTTP ${epRes.status} ${epRes.statusText || ''}`.trim());
           }
@@ -143,16 +185,16 @@ export async function fetchIntegration(type, yamlConfig, bustCache = false) {
       extra = config.structuredTransform(rawData);
     }
 
-    const result = { fields, ...extra, raw: rawData, error: null };
-    setCache(cacheKey, result);
-    return result;
+    return { fields, ...extra, error: null };
 
   } catch (err) {
     // Redact before logging AND returning: query-auth presets put the API key
     // in the URL, and fetch errors embed the full URL — never leak it.
     const safe = redactError(err);
     log.error({ type, error: safe }, 'fetch error');
-    return { error: safe, fields: {} };
+    // authRejected (#239): the upstream refused the credentials, so the
+    // refresh loop stops sending them until the config changes.
+    return err?.authRejected ? { error: safe, fields: {}, authRejected: true } : { error: safe, fields: {} };
   }
 }
 
@@ -208,13 +250,21 @@ export async function testIntegration(type, testConfig) {
 
     } else {
       // Non-session auth (basic, bearer, header, query)
-      const url = applyQueryAuth(`${baseUrl}${testEndpoint}`, config);
+      const { url, shownUrl, credentialInUrl } = applyQueryAuth(`${baseUrl}${testEndpoint}`, config);
       const headers = buildAuthHeaders(config);
-      const res = await safeFetch(url, { headers }, skipTls);
+      const res = await safeFetch(url, { headers }, skipTls, { credentialInUrl, shownUrl });
       if (!res.ok) return { ok: false, error: `HTTP ${res.status}: ${res.statusText}` };
       return { ok: true, status: res.status };
     }
   } catch (err) {
+    // A token typed into the form that looks like a `$secret:` reference: the
+    // test sends what was typed and resolves nothing, so say that (#425).
+    if (err instanceof UnresolvedSecretError) {
+      return {
+        ok: false,
+        error: 'The token looks like a stored-secret reference, and the connection test sends the token as typed; type the token itself',
+      };
+    }
     return { ok: false, error: redactError(err) };
   }
 }

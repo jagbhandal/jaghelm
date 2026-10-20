@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../../../api/client.js';
 import { useConfirm, useToast } from '../../../context/OverlayContext.jsx';
 
@@ -18,6 +18,10 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
   const toast = useToast();
   const [testStatus, setTestStatus] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null);
+  // The post-save call waits 800 ms so "Saved" shows first. A tab closed
+  // before then gets no call (#459), and a second save restarts the wait.
+  const afterSaveTimer = useRef(null);
+  useEffect(() => () => clearTimeout(afterSaveTimer.current), []);
 
   // ── Test connection ──
   const handleTest = async () => {
@@ -51,19 +55,29 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
       const body = {
         type: selectedPreset?.type || editingType || '_custom',
         url: form.url,
-        enabled: form.enabled,
       };
+      // A new integration is saved with its Enabled box. An edit leaves
+      // `enabled` to the toggle route (below), so a form left open can't undo
+      // a toggle made elsewhere since (#402).
+      if (!editingType) body.enabled = form.enabled;
+      // And it says it is new, so the server refuses it, rather than merging
+      // it into another integration, when its key is taken (#414).
+      if (!editingType) body.create = true;
       if (form.instance.trim())
         body.instance = form.instance
           .trim()
           .toLowerCase()
           .replace(/[^a-z0-9-]/g, '');
-      if (form.target) body.target = form.target;
-      if (form.username) body.username = form.username;
+      // The server merges this into the stored entry (#402): target and
+      // username are always sent, so emptying one clears it; a blank password
+      // or token is left out and keeps the stored one.
+      body.target = form.target;
+      body.username = form.username;
       if (form.password) body.password = form.password;
       if (form.token) body.token = form.token;
       if (Object.keys(form.params).length > 0) body.params = form.params;
-      // When editing, send the original storage key so server can remove it if the key changed
+      // When editing, send the original storage key: the server merges into
+      // that entry, and moves it to a new key only when the instance changed.
       if (editingType) body.editingKey = editingType;
 
       const res = await apiFetch('/api/integrations/save', {
@@ -72,13 +86,29 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
         body: JSON.stringify(body),
       });
       const data = await res.json();
+      if (data.ok && editingType && form.enabled !== form.enabledAtOpen) {
+        const toggled = await apiFetch(`/api/integrations/${encodeURIComponent(data.type)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: form.enabled }),
+        });
+        if (!toggled.ok) {
+          setSaveStatus({
+            error: `Saved, but could not ${form.enabled ? 'enable' : 'disable'} it (HTTP ${toggled.status})`,
+          });
+          return;
+        }
+      }
       if (data.ok) {
         setSaveStatus('saved');
-        setTimeout(() => {
+        clearTimeout(afterSaveTimer.current);
+        afterSaveTimer.current = setTimeout(() => {
           onAfterSave?.();
         }, 800);
       } else {
-        setSaveStatus({ error: data.error || 'Save failed' });
+        // `field` names the form field the error belongs to: 'instance' when
+        // the key it would take is another integration's (#414).
+        setSaveStatus({ error: data.error || 'Save failed', field: data.field });
       }
     } catch (err) {
       setSaveStatus({ error: err.message });
@@ -112,23 +142,19 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
   };
 
   // ── Toggle enabled/disabled ──
+  // Sends only the new state: the server changes `enabled` and nothing else
+  // in the stored entry (#402).
   const handleToggle = async (type, currentConfig) => {
+    const enabled = currentConfig.enabled === false; // flip it
     try {
-      const body = {
-        type,
-        url: currentConfig.url,
-        enabled: currentConfig.enabled === false, // flip it
-      };
-      if (currentConfig.username) body.username = currentConfig.username;
-      // Don't send password/token — they're already stored as $secret refs
-      const res = await apiFetch('/api/integrations/save', {
-        method: 'POST',
+      const res = await apiFetch(`/api/integrations/${encodeURIComponent(type)}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ enabled }),
       });
       const data = res.ok ? await res.json().catch(() => ({})) : {};
       if (!res.ok || data.ok === false) {
-        toast(`Failed to ${body.enabled ? 'enable' : 'disable'} ${type}.`, 'error');
+        toast(`Failed to ${enabled ? 'enable' : 'disable'} ${type}.`, 'error');
         return;
       }
       refetch();

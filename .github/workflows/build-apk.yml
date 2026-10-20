@@ -35,6 +35,9 @@ name: Build Signed Mobile APK
 # Dry run (workflow_dispatch, any ref): a test build (versionName
 # 0.0.0-dispatch.N, versionCode N) that renders the release page for
 # mobile/package.json's version into the job summary. The release job never runs.
+# While that version is untagged, unfolded mobile/changes/ fragments fail it as they
+# would fail the tag; once it is tagged, the run is a test build between releases
+# and pending fragments are expected.
 #
 # Tags are created on Gitea only and reach GitHub through the push mirror.
 # Procedure: docs/RELEASING.md.
@@ -143,7 +146,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: '22'
+          node-version: '26'
           cache: 'npm'
           cache-dependency-path: mobile/package-lock.json
 
@@ -391,13 +394,16 @@ jobs:
 
       # --- Dry run only: the release page a tag would publish, with the test build's
       # checksum, in the job summary. If it cannot be rendered, the dry run fails as
-      # the tag build would (the test APK is already uploaded above). ---
+      # the tag build would (the test APK is already uploaded above). Unfolded
+      # mobile/changes/ fragments fail it only while mobile-v$VERSION is untagged (see
+      # the header, #357); the full-history checkout has every tag. ---
       - name: Render the release page (dry run)
         if: github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
+          TAGGED="$(git tag -l "mobile-v$VERSION")"
           if ! node scripts/release-notes.mjs android "$VERSION" \
-              --apk "jaghelm-android-$VERSION.apk" --sha256 "$APK_SHA256" > notes.md; then
+              --apk "jaghelm-android-$VERSION.apk" --sha256 "$APK_SHA256" ${TAGGED:+--allow-unfolded} > notes.md; then
             echo "::error::release notes for $VERSION could not be rendered (see above); a mobile-v$VERSION tag would fail the same way"
             exit 1
           fi
@@ -465,7 +471,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: '22'
+          node-version: '26'
 
       - name: Download the signed APK
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4

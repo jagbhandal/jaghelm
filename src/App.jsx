@@ -1,19 +1,45 @@
-import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
-import NavBar from './components/NavBar';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  lazy,
+  Suspense,
+} from 'react';
 import LoginPage from './components/LoginPage';
 import CommandPalette from './components/CommandPalette';
 import DashboardView from './views/DashboardView';
+import { THEMES } from './components/settings/themes.js';
 import { ConfigProvider } from './context/ConfigContext.jsx';
 import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
-import { getServices } from './hooks/useData';
 import { useThemeVars } from './hooks/useThemeVars.js';
+import { usePageVisible } from './hooks/usePageVisible.js';
 import { useConfigPersistence } from './hooks/useConfigPersistence.js';
+import { useAppFrames } from './hooks/useAppFrames.js';
+import { useStatus } from './hooks/useStatus.js';
+import { defaultConfig } from './defaultConfig.js';
+import { AppShell, ShellApps } from '@ui/app-shell';
+import { AppBar } from '@ui/app-bar';
+import { safeUrl } from './utils/safeUrl.js';
+import { navigate, useRoute } from './router/useRoute.js';
+import { pathTo } from './router/routes.js';
+import { ShellHeader, ShellSideNav, ShellTabs } from './shell/ShellChrome.jsx';
+import { appsOf, navGroups } from './shell/nav.js';
+import { alertsBadge } from './shell/statusView.js';
 
-// Settings (13-tab tree) and the iframe view aren't needed for the default
-// dashboard render — code-split them so they don't weigh down the initial bundle.
-const IframeView = lazy(() => import('./views/IframeView'));
+// Settings (13-tab tree), the app frames and the Alerts page aren't needed for
+// the default Overview render — code-split them so they don't weigh down the
+// initial bundle.
+const AppFrames = lazy(() => import('./views/AppFrames'));
 const SettingsView = lazy(() => import('./views/SettingsView'));
-import { apiFetch, setAuthToken as setApiAuthToken, initAuthToken } from './api/client.js';
+const AlertsPage = lazy(() => import('./shell/AlertsPage.jsx'));
+import {
+  apiFetch,
+  setAuthToken as setApiAuthToken,
+  initAuthToken,
+  setReadOnlyServer,
+} from './api/client.js';
 import { secureStore } from './storage/index.js';
 
 /**
@@ -25,6 +51,8 @@ export default function App() {
   const [authed, setAuthed] = useState(false);
   const [authRequired, setAuthRequired] = useState(null);
   const [authToken, setAuthToken] = useState('');
+  // The server is the read-only public demo (#248): it says so in the auth check.
+  const [demo, setDemo] = useState(false);
 
   // Apply the persisted theme to the document before login resolves, so the
   // login screen renders in the user's chosen theme (matching prior behaviour
@@ -58,6 +86,8 @@ export default function App() {
         if (cancelled) return;
         setAuthRequired(d.authRequired);
         setAuthed(d.authenticated);
+        setDemo(d.demo === true);
+        setReadOnlyServer(d.demo === true);
       } catch {
         if (cancelled) return;
         setAuthRequired(true);
@@ -101,21 +131,41 @@ export default function App() {
   // settings (and the save effects in AppMain) can useToast()/useConfirm().
   return (
     <OverlayProvider>
-      <AppMain authRequired={authRequired} onLogout={handleLogout} />
+      <AppMain authRequired={authRequired} demo={demo} onLogout={handleLogout} />
     </OverlayProvider>
   );
 }
 
-function AppMain({ authRequired, onLogout }) {
+// The Overview stays mounted on other pages, out of sight (it keeps its state),
+// so returning to it is instant.
+const OUT_OF_SIGHT = { visibility: 'hidden', height: 0, overflow: 'hidden' };
+
+/** The pages the nav lists, as the command palette offers them (routes.js). */
+const PAGES = [
+  { id: 'overview', label: 'Overview', href: pathTo('overview') },
+  { id: 'alerts', label: 'Alerts', href: pathTo('alerts') },
+  { id: 'settings', label: 'Settings', href: pathTo('settings') },
+];
+
+/** The instance's name in the header: the stock 'JAGHELM' reads as the product's name. */
+function instanceName(title) {
+  const t = typeof title === 'string' ? title.trim() : '';
+  return t && t !== 'JAGHELM' ? t : 'JagHelm';
+}
+
+function AppMain({ authRequired, demo, onLogout }) {
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  // The URL is the page (src/router, #296): a deep link, Back and Forward, a
+  // reload and a chunk reload after a deploy all land where it says.
+  const { route, params } = useRoute();
   const [theme, setTheme] = useState(() => localStorage.getItem('jaghelm-theme') || 'dark');
-  const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [overallHealth, setOverallHealth] = useState('up');
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [tick, setTick] = useState(0);
   // Start with localStorage for instant render; the server fetch overrides it.
   // `migrate` upgrades the legacy `jagnet-config` key to the current one.
   const [config, setConfig] = useState(() => readStoredConfig({ migrate: true }));
+  // Whether the server's config has loaded (or failed to): until then an app
+  // the browser's copy lacks may still be on its way.
+  const [configLoaded, setConfigLoaded] = useState(false);
   const intervalRef = useRef(null);
 
   useEffect(() => {
@@ -135,49 +185,37 @@ function AppMain({ authRequired, onLogout }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
 
   // Display-config save/load (localStorage + debounced server save,
-  // flush-on-unload, authoritative server load on mount).
-  useConfigPersistence(config, setConfig, setTheme, toast);
+  // flush-on-unload, authoritative server load on mount). The demo refuses
+  // writes, so nothing is sent to it: no save fails and no toast shows on load.
+  const savedConfig = useConfigPersistence(config, setConfig, setTheme, toast, {
+    readOnly: demo,
+    onLoaded: () => setConfigLoaded(true),
+  });
 
-  // Apply config to the document as CSS custom properties + lazy webfont
-  // injection (accent/opacity/font family/font sizes/blur).
+  // Apply config to the document as CSS custom properties
+  // (accent/opacity/font family/font sizes/blur).
   useThemeVars(config);
 
   const intervalMs = (config.refreshInterval || 30) * 1000;
-  const doRefresh = useCallback(() => {
-    // Bump refreshKey IMMEDIATELY so DashboardView starts fetching right away.
-    // The health read runs in parallel — it updates the navbar health dot but
-    // does NOT block the dashboard data load.
-    setLastUpdated(new Date());
-    setRefreshKey((k) => k + 1);
+  // The header's status: /api/status once an interval, paused while the browser
+  // tab is hidden (useStatus). It replaced the dashboard's health dot.
+  const poll = useStatus({ intervalMs });
 
-    // Navbar health dot — fire and forget, non-blocking. Read the SERVER-computed
-    // overallHealth off the same /api/services payload the dashboard renders, so
-    // the web header dot and the mobile Overview dot are symmetric (one server
-    // truth, no client re-derivation). getServices shares useData's ETag/result
-    // cache with DashboardView's fetch: on an unchanged (304) cycle both resolve
-    // to the same cached object; on a changed cycle both pull the full 200 body
-    // (one redundant fetch — acceptable for an infrequent flip on a 30s poll; a
-    // follow-up could lift overallHealth from the dashboard fetch instead). A
-    // 304-no-body / missing field keeps the current value; a thrown fetch → 'unknown'.
-    getServices()
-      .then((body) => {
-        if (body && typeof body.overallHealth === 'string') setOverallHealth(body.overallHealth);
-      })
-      .catch(() => setOverallHealth('unknown'));
-  }, []);
-
-  // Initial fetch on mount
-  const didInitialFetch = useRef(false);
-  useEffect(() => {
-    if (didInitialFetch.current) return;
-    didInitialFetch.current = true;
-    doRefresh();
-  }, [doRefresh]);
+  // One tick = one DashboardView fetch round, only while the Overview is on
+  // screen: not in a hidden browser tab, and not on another page (the Overview
+  // stays mounted there, out of sight). DashboardView loads on mount and
+  // refreshes at once when it becomes active.
+  const doRefresh = useCallback(() => setTick((t) => t + 1), []);
+  const pageVisible = usePageVisible();
+  const onOverview = route.id === 'overview';
+  const dashboardActive = onOverview && pageVisible;
 
   // Set up refresh interval — debounced so slider dragging doesn't spam intervals
   useEffect(() => {
+    if (!dashboardActive) return;
     const timer = setTimeout(() => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = setInterval(doRefresh, intervalMs);
@@ -186,12 +224,86 @@ function AppMain({ authRequired, onLogout }) {
       clearTimeout(timer);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [doRefresh, intervalMs]);
+  }, [doRefresh, intervalMs, dashboardActive]);
 
-  const allTabs = [
-    { id: 'dashboard', label: 'Dashboard', type: 'dashboard' },
-    ...(config.tabs || []),
-  ];
+  // The embedded apps (#269): an app mounts on its first visit and stays
+  // loaded, hidden, after, up to MAX_LOADED_APPS (useAppFrames).
+  const apps = useMemo(() => appsOf(config.tabs), [config.tabs]);
+  const appId = route.id === 'app' ? params.id : null;
+  const openApp = appId == null ? null : (apps.find((a) => String(a.id) === appId) ?? null);
+  const { frames, unload, reload } = useAppFrames(config.tabs, openApp ? openApp.id : null);
+  // An app the config doesn't have shows the Overview, once the server's config
+  // is in: it may only be missing from this browser's copy.
+  useEffect(() => {
+    if (appId != null && !openApp && configLoaded) navigate(pathTo('overview'), { replace: true });
+  }, [appId, openApp, configLoaded]);
+
+  // The apps loaded but not open, as one string, so the nav's groups (and the
+  // memoised sidebar) only change when that set does, not on every render.
+  const loadedKey = frames
+    .filter((f) => !f.active)
+    .map((f) => String(f.tab.id))
+    .join('\n');
+  const badge = useMemo(() => alertsBadge(poll.status, poll.reach), [poll.status, poll.reach]);
+  const groups = useMemo(
+    () =>
+      navGroups({
+        routeId: route.id,
+        appId,
+        apps,
+        loaded: new Set(loadedKey ? loadedKey.split('\n') : []),
+        onUnload: unload,
+        badge,
+      }),
+    [route.id, appId, apps, loadedKey, unload, badge]
+  );
+  const paletteApps = useMemo(
+    () =>
+      apps.map((a) => ({
+        id: String(a.id),
+        label: a.label || String(a.id),
+        href: pathTo('app', { id: String(a.id) }),
+      })),
+    [apps]
+  );
+
+  const logout = useMemo(
+    () =>
+      authRequired
+        ? () => {
+            onLogout();
+            navigate(pathTo('overview'), { replace: true });
+          }
+        : null,
+    [authRequired, onLogout]
+  );
+  const openSettings = useCallback(() => navigate(pathTo('settings')), []);
+  const onSectionChange = useCallback(
+    (section) => navigate(pathTo('settings', { section }), { replace: true }),
+    []
+  );
+
+  // Each page names the browser tab, so history entries tell apart.
+  const name = instanceName(config.title);
+  const pageTitle = route.id === 'app' ? openApp?.label : route.title;
+  useEffect(() => {
+    document.title = pageTitle ? `${pageTitle} — ${name}` : name;
+  }, [pageTitle, name]);
+
+  // Today's ten themes, until #304: a light one draws the shell light.
+  const switches = useMemo(
+    () => ({ theme: THEMES.find((t) => t.id === theme)?.light ? 'light' : 'dark' }),
+    [theme]
+  );
+
+  const lazyFallback = (
+    <div
+      className="lazy-fallback"
+      style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}
+    >
+      Loading…
+    </div>
+  );
 
   return (
     <ConfigProvider config={config} setConfig={setConfig}>
@@ -202,71 +314,75 @@ function AppMain({ authRequired, onLogout }) {
         <div className="bg-overlay" />
       </div>
       <div className="bg-mesh" />
-      {config.showDots && activeTab !== 'settings' && <div className="dot-grid" />}
+      {config.showDots && route.id !== 'settings' && <div className="dot-grid" />}
       <div className="app-container">
-        <NavBar
-          tabs={allTabs}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          theme={theme}
-          setTheme={setTheme}
-          health={overallHealth}
-          lastUpdated={lastUpdated}
-          onOpenSettings={() => setActiveTab((t) => (t === 'settings' ? 'dashboard' : 'settings'))}
-          onLogout={
-            authRequired
-              ? () => {
-                  onLogout();
-                  setActiveTab('dashboard');
-                }
-              : null
+        <AppShell
+          switches={switches}
+          header={
+            <ShellHeader
+              name={name}
+              logoUrl={config.logoUrl}
+              status={poll.status}
+              reach={poll.reach}
+              updated={poll.updated}
+              routeId={route.id}
+              onOpenPalette={openPalette}
+              onLogout={logout}
+            />
           }
-          refreshKey={refreshKey}
-        />
+          sidebar={<ShellSideNav groups={groups} />}
+          tabs={<ShellTabs groups={groups} routeId={route.id} badge={badge} />}
+        >
+          <div style={onOverview ? undefined : OUT_OF_SIGHT}>
+            <h1 className="sr-only">Overview</h1>
+            <DashboardView tick={tick} active={dashboardActive} onOpenSettings={openSettings} />
+          </div>
+          <Suspense fallback={lazyFallback}>
+            {route.id === 'alerts' && (
+              <AlertsPage status={poll.status} reach={poll.reach} updated={poll.updated} />
+            )}
+          </Suspense>
+          <Suspense fallback={lazyFallback}>
+            {route.id === 'settings' && (
+              <SettingsView
+                theme={theme}
+                setTheme={setTheme}
+                section={params.section}
+                onSectionChange={onSectionChange}
+              />
+            )}
+          </Suspense>
+          {/* A boundary of its own: another page's chunk loading must not hide the frames. */}
+          <ShellApps
+            label={openApp ? `${openApp.label || openApp.id}, open inside JagHelm` : undefined}
+            bar={
+              openApp && (
+                <AppBar
+                  name={openApp.label || String(openApp.id)}
+                  url={openApp.url}
+                  href={safeUrl(openApp.url) || undefined}
+                  onReload={() => reload(openApp.id)}
+                />
+              )
+            }
+          >
+            {frames.length > 0 && (
+              <Suspense fallback={lazyFallback}>
+                <AppFrames frames={frames} savedTabs={savedConfig?.tabs} />
+              </Suspense>
+            )}
+          </ShellApps>
+        </AppShell>
         <CommandPalette
           open={paletteOpen}
           onClose={() => setPaletteOpen(false)}
-          tabs={allTabs}
-          onSelectTab={setActiveTab}
-          onOpenSettings={() => setActiveTab('settings')}
+          pages={PAGES}
+          apps={paletteApps}
+          onNavigate={navigate}
           theme={theme}
           setTheme={setTheme}
-          onLogout={
-            authRequired
-              ? () => {
-                  onLogout();
-                  setActiveTab('dashboard');
-                }
-              : null
-          }
+          onLogout={logout}
         />
-        <div
-          style={
-            activeTab === 'dashboard'
-              ? undefined
-              : { visibility: 'hidden', height: 0, overflow: 'hidden' }
-          }
-        >
-          <DashboardView refreshKey={refreshKey} onOpenSettings={() => setActiveTab('settings')} />
-        </div>
-        <Suspense
-          fallback={
-            <div
-              className="lazy-fallback"
-              style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}
-            >
-              Loading…
-            </div>
-          }
-        >
-          {activeTab === 'settings' && <SettingsView theme={theme} setTheme={setTheme} />}
-          {allTabs.find((t) => t.id === activeTab && t.type === 'iframe') && (
-            <IframeView
-              url={allTabs.find((t) => t.id === activeTab).url}
-              title={allTabs.find((t) => t.id === activeTab).label}
-            />
-          )}
-        </Suspense>
       </div>
     </ConfigProvider>
   );
@@ -288,32 +404,4 @@ function readStoredConfig({ migrate = false } = {}) {
     // fall through to defaults
   }
   return defaultConfig();
-}
-
-function defaultConfig() {
-  return {
-    title: 'JAGHELM',
-    subtitle: 'Infrastructure Dashboard',
-    logoUrl: '',
-    bgImage: '',
-    bgOpacity: 0.3,
-    overlayOpacity: 0.75,
-    showDots: true,
-    accentColor: '#6366f1',
-    refreshInterval: 30,
-    searchEngine: 'google',
-    showSearch: true,
-    weatherLat: '',
-    weatherLon: '',
-    showWeather: false,
-    weatherCity: '',
-    showDockerStats: false,
-    showTodos: true,
-    showCronJobs: true,
-    tabs: [],
-    sections: {},
-    gridLayout: null,
-    gridColumns: 24,
-    links: {},
-  };
 }

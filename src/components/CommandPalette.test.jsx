@@ -9,12 +9,13 @@ const renderPalette = (props = {}, config = {}) => {
   const handlers = {
     open: true,
     onClose: vi.fn(),
-    tabs: [
-      { id: 'dashboard', label: 'Dashboard' },
-      { id: 'media', label: 'Media' },
+    pages: [
+      { id: 'overview', label: 'Overview', href: '/' },
+      { id: 'alerts', label: 'Alerts', href: '/alerts' },
+      { id: 'settings', label: 'Settings', href: '/settings' },
     ],
-    onSelectTab: vi.fn(),
-    onOpenSettings: vi.fn(),
+    apps: [{ id: 'media', label: 'Media', href: '/apps/media' }],
+    onNavigate: vi.fn(),
     theme: 'dark',
     setTheme: vi.fn(),
     onLogout: vi.fn(),
@@ -35,9 +36,7 @@ describe('CommandPalette', () => {
         <CommandPalette
           open={false}
           onClose={() => {}}
-          tabs={[]}
-          onSelectTab={() => {}}
-          onOpenSettings={() => {}}
+          onNavigate={() => {}}
           theme="dark"
           setTheme={() => {}}
         />
@@ -46,14 +45,23 @@ describe('CommandPalette', () => {
     expect(container.querySelector('.cmdk')).toBeNull();
   });
 
-  it('opens as a combobox listing tabs, Settings, and themes', () => {
+  it('opens as a combobox listing the pages, "Open <app>" for each app, and themes', () => {
     renderPalette();
     expect(screen.getByRole('combobox')).toBeInTheDocument();
     const list = screen.getByRole('listbox');
-    expect(within(list).getByText('Dashboard')).toBeInTheDocument();
-    expect(within(list).getByText('Media')).toBeInTheDocument();
+    expect(within(list).getByText('Overview')).toBeInTheDocument();
+    expect(within(list).getByText('Alerts')).toBeInTheDocument();
     expect(within(list).getByText('Settings')).toBeInTheDocument();
+    expect(within(list).getByText('Open Media')).toBeInTheDocument();
     expect(within(list).getByText(THEMES[0].name)).toBeInTheDocument();
+  });
+
+  it('a page command opens its route', async () => {
+    const user = userEvent.setup();
+    const h = renderPalette();
+    await user.type(screen.getByRole('combobox'), 'alerts');
+    await user.keyboard('{Enter}');
+    expect(h.onNavigate).toHaveBeenCalledWith('/alerts');
   });
 
   it('filters the list as you type', async () => {
@@ -62,7 +70,7 @@ describe('CommandPalette', () => {
     await user.type(screen.getByRole('combobox'), 'media');
     const opts = screen.getAllByRole('option');
     expect(opts).toHaveLength(1);
-    expect(opts[0]).toHaveTextContent('Media');
+    expect(opts[0]).toHaveTextContent('Open Media');
   });
 
   it('runs the active command on Enter and closes', async () => {
@@ -70,7 +78,7 @@ describe('CommandPalette', () => {
     const h = renderPalette();
     await user.type(screen.getByRole('combobox'), 'media');
     await user.keyboard('{Enter}');
-    expect(h.onSelectTab).toHaveBeenCalledWith('media');
+    expect(h.onNavigate).toHaveBeenCalledWith('/apps/media');
     expect(h.onClose).toHaveBeenCalled();
   });
 

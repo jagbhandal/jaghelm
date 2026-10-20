@@ -10,13 +10,14 @@
  *   server/refresh.js    — background refresh loop + per-domain refresh fns
  *   server/cache.js      — in-memory response cache + ETag helper
  *   server/errors.js     — apiError() wrapper for uniform error responses
+ *   server/accessLog.js  — one structured log line per request
  *   server/upload.js     — multer config for logo/background uploads
  *   server/httpClient.js — safeFetch with default timeout
  *   server/config.js     — services.yaml load/save/watch
  *   server/secrets.js    — AES-256-GCM encrypted credentials
  *   server/discovery.js  — Prometheus node + container discovery
  *   server/monitors.js   — Uptime Kuma monitor matching
- *   server/icons.js      — bundled icon search index
+ *   server/icons.js      — icon search index (persisted names, fetched lazily)
  *   server/icon-cache.js — local disk cache for CDN icons
  *   server/cron-store.js — cron job execution history
  *   server/integrations/ — preset gallery + fetch handler
@@ -40,6 +41,8 @@ import { initMonitors } from './monitors.js';
 import { initRegistry } from './integrations/registry.js';
 import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
+import { DATA_DIR } from './util/dataDir.js';
+import { resolveBindHost } from './util/env.js';
 import { startBackgroundRefresh, stopBackgroundRefresh } from './refresh.js';
 import * as fcmModule from './push/fcm.js';
 import { startArcane, stopArcane } from './arcane/index.js';
@@ -55,12 +58,15 @@ import { errorHandler } from './errors.js';
 import { VERSION } from './version.js';
 import { createLogger } from './util/logger.js';
 import { metricsMiddleware, metricsHandler } from './metrics.js';
+import { createAccessLog } from './accessLog.js';
 import { isDemoMode, demoMiddleware, logDemoBanner } from './demo.js';
+import { demoServicesConfig } from './demoFixtures.js';
 
 const log = createLogger('jaghelm');
 
 // Domain routes
 import { servicesRoutes } from './routes/services.js';
+import { statusRoutes } from './routes/status.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { infrastructureRoutes } from './routes/infrastructure.js';
 import { secretsRoutes } from './routes/secrets.js';
@@ -71,18 +77,20 @@ import { iconRoutes } from './routes/icons.js';
 import { cronRoutes } from './routes/cron.js';
 import { systemRoutes } from './routes/system.js';
 import { createPushRoutes } from './routes/push.js';
+import { createEmbedCheckRoutes } from './routes/embedCheck.js';
 import { getPushStore } from './push/store.js';
-import { dispatchEvents } from './push/dispatch.js';
-import { getHeldBackStore } from './watchtower/heldBackStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PORT = process.env.PORT || 3099;
+const HOST = resolveBindHost(); // JAGHELM_HOST, default 0.0.0.0
 
 const uploadsDir = join(__dirname, '..', 'uploads');
-const dataDir = join(__dirname, '..', 'data');
-if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
-if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
+// Demo mode writes nothing, not even these directories (#248).
+if (!isDemoMode()) {
+  if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
+  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+}
 
 const app = express();
 // Trust proxy: behind a reverse proxy, X-Forwarded-For determines req.ip — which the
@@ -105,25 +113,15 @@ if (trustProxy.length > 0) {
 
 // Count + time every request (Prometheus metrics) and emit a structured access
 // log line on completion. Mounted first so it brackets the whole pipeline.
-// The scrape/health endpoints are skipped in the access log to avoid spam.
+// Levels, the logged path and the skipped probe endpoints: see accessLog.js.
 app.use(metricsMiddleware);
-app.use((req, res, next) => {
-  const start = process.hrtime.bigint();
-  res.on('finish', () => {
-    if (req.path === '/metrics' || req.path === '/api/health' || req.path === '/api/readyz') return;
-    const ms = Math.round(Number(process.hrtime.bigint() - start) / 1e6);
-    const fields = { method: req.method, path: req.path, status: res.statusCode, ms };
-    if (res.statusCode >= 500) log.error(fields, 'request');
-    else if (req.path.startsWith('/api/')) log.info(fields, 'request');
-    else log.debug(fields, 'request');
-  });
-  next();
-});
+app.use(createAccessLog({ logger: log }));
 
 // Content-Security-Policy. The frontend uses React inline styles + dynamic
-// theme CSS-var injection (style ATTRIBUTES, which can't be nonced), Google
-// Fonts, and CDN dashboard-icons, and embeds operator-configured service URLs
-// via the iframe view — so style-src must keep 'unsafe-inline'. The meaningful
+// theme CSS-var injection (style ATTRIBUTES, which can't be nonced) and CDN
+// dashboard-icons, and embeds operator-configured service URLs via the iframe
+// view — so style-src must keep 'unsafe-inline'. Fonts are self-hosted (#244,
+// #284): no font or stylesheet comes from another origin. The meaningful
 // protection here is the strict script-src ('self' only): Vite bundles all JS
 // to hashed files and the SW-registration inline script was externalized to
 // /register-sw.js, so no inline/eval script is allowed. object-src/base-uri are
@@ -145,14 +143,14 @@ const extraConnect = (process.env.CSP_CONNECT_EXTRA || '')
   .filter(Boolean)
   .filter((entry) => {
     if (VALID_CSP_ORIGIN_RE.test(entry)) return true;
-    console.warn(`[csp] ignoring invalid CSP_CONNECT_EXTRA entry: ${entry}`);
+    log.warn({ entry }, 'ignoring invalid CSP_CONNECT_EXTRA entry');
     return false;
   });
 const cspDirectives = {
   defaultSrc: ["'self'"],
   scriptSrc: ["'self'"],
-  styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-  fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+  styleSrc: ["'self'", "'unsafe-inline'"],
+  fontSrc: ["'self'", 'data:'],
   imgSrc: [
     "'self'",
     'data:',
@@ -211,8 +209,8 @@ const corsOrigins = corsOriginEnv
 // default — bypasses CORS entirely and needs none of this.)
 app.use(cors({ origin: corsOrigins, exposedHeaders: ['ETag'] }));
 
-// gzip responses. The big win is /api/history — intentionally non-304 (it changes
-// every poll) and the largest repeatedly-fetched JSON; numeric JSON gzips ~80-90%.
+// gzip responses. The big win is /api/history — it changes every cycle (so it
+// rarely 304s) and is the largest repeatedly-fetched JSON; numeric JSON gzips ~80-90%.
 app.use(compression());
 
 // 1 MB request bodies are plenty for JSON config + small uploads (binary
@@ -236,11 +234,14 @@ app.use('/api/icons', iconRoutes);
 app.use('/api', systemRoutes); // /health + /readyz public; /weather authed inside
 
 app.use('/api/services', authMiddleware, servicesRoutes);
+app.use('/api/status', authMiddleware, statusRoutes);
 app.use('/api/integrations', authMiddleware, integrationRoutes);
 // Standalone secrets API is fail-closed: refuses to serve (enumerate/overwrite/
 // delete credentials) until a password is set. Does not affect integration save.
 app.use('/api/secrets', requireAuthEnabled, authMiddleware, secretsRoutes);
 app.use('/api/display-config', authMiddleware, displayConfigRoutes);
+// Whether an app tab's headers let the browser frame it (#269).
+app.use('/api/embed-check', authMiddleware, createEmbedCheckRoutes());
 app.use('/api/todos', authMiddleware, todosRoutes);
 app.use('/api/push', authMiddleware, createPushRoutes({ store: getPushStore(), fcm: fcmModule }));
 app.use('/api/upload', authMiddleware, createUploadRoutes(upload));
@@ -250,7 +251,15 @@ const distPath = join(__dirname, '..', 'dist');
 // Vite emits content-hashed filenames under /assets, so they can be cached
 // forever — serve them immutable to avoid a revalidation round-trip on every
 // reload. index.html and other root files keep the default (revalidated) cache.
-app.use('/assets', express.static(join(distPath, 'assets'), { maxAge: '1y', immutable: true }));
+// fallthrough:false makes a missing file a 404 here: falling through to the SPA
+// catch-all would answer an old tab's request for a removed chunk with
+// index.html and a 200, which the browser then fails to load as code (#256).
+// The 404 is answered here, so it doesn't reach errorHandler's error-level log.
+app.use(
+  '/assets',
+  express.static(join(distPath, 'assets'), { maxAge: '1y', immutable: true, fallthrough: false }),
+  (err, _req, res, next) => (err.status === 404 ? res.sendStatus(404) : next(err))
+);
 app.use(express.static(distPath));
 app.all('/api/*', (req, res) => res.status(404).json({ error: 'Endpoint not found' }));
 app.get('*', (req, res) => res.sendFile(join(distPath, 'index.html')));
@@ -269,14 +278,20 @@ process.on('uncaughtException', (err) => {
   log.error({ err }, 'uncaught exception (continuing)');
 });
 
-async function boot() {
+/**
+ * Start the subsystems a live dashboard runs, and return its services config.
+ * Not in demo mode: each one reaches out (discovery, the refresh loop, Kuma,
+ * push, Arcane) or writes to the data dir (secrets, the icon cache,
+ * services.yaml), and the demo guard answers every /api read itself (#248).
+ */
+async function startSubsystems() {
   const promUrl = process.env.PROMETHEUS_URL || 'http://localhost:9090';
   const kumaUrl = process.env.KUMA_URL || 'http://localhost:3001';
 
   initSecrets();
   initDiscovery(promUrl);
   initMonitors(kumaUrl, process.env.KUMA_API_KEY || '');
-  initIconCache(dataDir);
+  initIconCache(DATA_DIR);
 
   // Push (FCM) — graceful-disable when no service-account creds are present.
   // Never throws; isPushEnabled() stays false and the pipeline no-ops.
@@ -284,7 +299,7 @@ async function boot() {
 
   await initRegistry();
 
-  // Non-blocking — icon search returns empty until the index is ready
+  // Non-blocking, disk only: reads the persisted icon index; the first icon search builds it lazily
   initIconIndex().catch((err) => log.warn({ err }, 'icon index background init failed'));
 
   // Load services.yaml or auto-generate one from discovery on first boot
@@ -300,19 +315,44 @@ async function boot() {
   startConfigWatcher();
   startBackgroundRefresh();
   startArcane();
+  return config;
+}
 
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    log.info({ version: VERSION, port: PORT }, 'listening');
+/**
+ * Demo mode starts only what it serves: the integration preset gallery, which
+ * is code in the image (Settings lists it). Nothing else runs (#248).
+ */
+async function startDemo() {
+  await initRegistry();
+  return demoServicesConfig();
+}
+
+async function boot() {
+  const demo = isDemoMode();
+  const config = demo ? await startDemo() : await startSubsystems();
+
+  const server = app.listen(PORT, HOST, () => {
+    // The port bound, which PORT=0 leaves to the OS.
+    const port = server.address()?.port ?? PORT;
+    log.info({ version: VERSION, node: process.version, host: HOST, port }, 'listening');
     log.info({ nodes: Object.keys(config.nodes || {}) }, 'active nodes');
-    if (isDemoMode()) logDemoBanner(PORT);
-    if (!authEnabled()) {
+    if (demo) logDemoBanner(port);
+    // The demo is open by design: its guard refuses every write and serves no config.
+    else if (!authEnabled()) {
       log.warn(
-        { port: PORT },
+        { port },
         '⚠ NO PASSWORD SET — the dashboard is unauthenticated. Anyone who can reach this ' +
           'port can read your config and metrics. Set DASH_PASS (or a password in Settings) ' +
           'and avoid exposing this port beyond a trusted LAN.'
       );
     }
+  });
+  // A JAGHELM_HOST that isn't an address of this machine, or a port in use, fails
+  // listen(). Exit so it shows (the restart policy retries), rather than running on
+  // with nothing listening: uncaughtException above would keep it alive.
+  server.on('error', (err) => {
+    log.error({ err, host: HOST, port: PORT }, 'cannot listen');
+    process.exit(1);
   });
 
   // Graceful shutdown: stop accepting connections, cancel the background refresh timer so it can't
@@ -322,8 +362,10 @@ async function boot() {
     if (shuttingDown) return;
     shuttingDown = true;
     log.info({ signal }, 'shutting down');
-    stopBackgroundRefresh();
-    stopArcane();
+    if (!demo) {
+      stopBackgroundRefresh();
+      stopArcane();
+    }
     const forceExit = setTimeout(() => {
       log.warn('forced exit after 10s drain timeout');
       process.exit(1);

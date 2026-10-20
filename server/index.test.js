@@ -42,14 +42,19 @@ test('GET /api/secrets/keys → 403 when no password is set (fail-closed)', asyn
   assert.match(r.headers['content-type'], /json/);
 });
 
-test('raw infra passthroughs → 403 when no password is set (fail-closed)', async () => {
+test('raw infra passthroughs → JSON 404 (removed, #264)', async () => {
+  // Their fail-closed gate answered 403 in this no-auth mode, so a 404 is the
+  // route being gone, not the gate.
   for (const path of ['/api/prometheus/query?q=up', '/api/docker/containers',
                       '/api/adguard/stats', '/api/npm/stats', '/api/uptime/monitors']) {
     const r = await request(app).get(path);
-    assert.equal(r.status, 403, `${path} should be gated in no-auth mode`);
+    assert.equal(r.status, 404, `${path} should be gone`);
+    assert.match(r.headers['content-type'], /json/, `${path} should answer JSON`);
+    assert.ok(r.body.error, `${path} should carry an error`);
   }
-  // aggregated/benign routes stay open (not 403)
+  // aggregated/benign routes on the same router stay (not 404, not 403)
   const ups = await request(app).get('/api/ups');
+  assert.notEqual(ups.status, 404, '/api/ups should remain');
   assert.notEqual(ups.status, 403, '/api/ups should remain open');
 });
 
@@ -58,6 +63,21 @@ test('unknown /api/* route → JSON 404, not an HTML page', async () => {
   assert.equal(r.status, 404);
   assert.match(r.headers['content-type'], /json/);
   assert.ok(r.body.error);
+});
+
+test('GET /api/integrations/:type → JSON 404 (removed, #254); the list stays', async (t) => {
+  // A configured integration, so the 404 is the route being gone, not a miss.
+  const saved = await request(app)
+    .post('/api/integrations/save')
+    .send({ type: 'custom', instance: 'rawcheck', url: 'http://example.test' });
+  assert.equal(saved.status, 200);
+  t.after(() => request(app).delete('/api/integrations/custom_rawcheck'));
+
+  const one = await request(app).get('/api/integrations/custom_rawcheck');
+  assert.equal(one.status, 404);
+  assert.match(one.headers['content-type'], /json/);
+  const all = await request(app).get('/api/integrations');
+  assert.equal(all.status, 200);
 });
 
 test('POST /api/services/config → 400 on a non-object body', async () => {
@@ -80,6 +100,26 @@ test('POST /api/services/config → 200 on a valid config', async () => {
     .post('/api/services/config')
     .send({ nodes: { vm103: { name: 'VM 103' } }, services: {} });
   assert.equal(r.status, 200);
+  assert.equal(r.body.ok, true);
+});
+
+test('POST /api/services/config → 200 on a services.yaml generated before #265 (links object)', async () => {
+  // First-boot files carried `links` as a map of groups; the schema used to
+  // demand an array, so every Settings → Nodes/Services save of one got a 400.
+  const r = await request(app)
+    .post('/api/services/config')
+    .send({
+      nodes: { pi1: { display_name: 'Gateway Primary' } },
+      services: {},
+      integrations: {},
+      custom_integrations: {},
+      display: { title: 'JAGHELM' },
+      links: { personal: [], management: [], devops: [] },
+      tabs: [],
+      grid_layout: null,
+      grid_columns: 12,
+    });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.ok, true);
 });
 
@@ -130,6 +170,19 @@ test('CSP ENFORCES by default with a strict script-src + locked object-src', asy
   // upgrade-insecure-requests (which would break http LAN backends).
   assert.ok(!r.headers['content-security-policy-report-only'], 'report-only header absent by default');
   assert.ok(!/upgrade-insecure-requests/.test(csp), 'no upgrade-insecure-requests');
+});
+
+test('CSP lets fonts and stylesheets come from this origin only (#244)', async () => {
+  const r = await request(app).get('/api/health');
+  const directive = (name) =>
+    r.headers['content-security-policy']
+      .split(';')
+      .map((d) => d.trim().split(/\s+/))
+      .find(([n]) => n === name)
+      ?.slice(1);
+  // Fonts are self-hosted: no Google Fonts, and no other origin either.
+  assert.deepEqual(directive('font-src'), ["'self'", 'data:']);
+  assert.deepEqual(directive('style-src'), ["'self'", "'unsafe-inline'"]);
 });
 
 test('POST /api/watchtower/event → 404 (webhook removed in 2.2.0)', async () => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import './Login.css';
+// Login.css loads through styles/legacy.css, in the `legacy` cascade layer.
 
 /**
  * Startup screens shown by Root (and ErrorBoundary) instead of a blank page.

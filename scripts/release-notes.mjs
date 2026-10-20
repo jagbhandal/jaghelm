@@ -2,9 +2,13 @@
 // Usage:
 //   node scripts/release-notes.mjs server <version> [--prev <tag>] [--changelog <path>]
 //   node scripts/release-notes.mjs android <version> --apk <name> --sha256 <hex> [--changelog <path>]
+//
+// Refuses while changes/ next to the CHANGELOG holds fragments that were never folded in
+// (#357), since their entries would be missing from the notes. --allow-unfolded skips that
+// for a test build of a version already released (build-apk.yml's manual run).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { findEntry, lintChangelog } from './changelog.mjs';
+import { findEntry, fragmentDir, lintChangelog, readFragments } from './changelog.mjs';
 
 const IMAGE = 'ghcr.io/jagbhandal/jaghelm';
 const REPO_URL = 'https://github.com/jagbhandal/jaghelm';
@@ -60,10 +64,12 @@ function fail(code, msg) {
 }
 
 function main(argv) {
-  const [kind, version, ...rest] = argv;
+  const [kind, version, ...args] = argv;
   if ((kind !== 'server' && kind !== 'android') || !version) {
-    fail(2, 'usage: release-notes.mjs server <version> [--prev <tag>] [--changelog <path>]\n       release-notes.mjs android <version> --apk <name> --sha256 <hex> [--changelog <path>]');
+    fail(2, 'usage: release-notes.mjs server <version> [--prev <tag>] [--changelog <path>] [--allow-unfolded]\n       release-notes.mjs android <version> --apk <name> --sha256 <hex> [--changelog <path>] [--allow-unfolded]');
   }
+  const allowUnfolded = args.includes('--allow-unfolded');
+  const rest = args.filter((a) => a !== '--allow-unfolded');
   const opts = {};
   for (let i = 0; i < rest.length; i += 2) {
     const k = rest[i];
@@ -78,6 +84,12 @@ function main(argv) {
 
   const file = opts.changelog ?? (mobile ? 'mobile/CHANGELOG.md' : 'CHANGELOG.md');
   const text = readFileSync(file, 'utf8');
+  const unfolded = allowUnfolded ? [] : readFragments(fragmentDir(file));
+  if (unfolded.length) {
+    fail(1, `${fragmentDir(file)}/ holds fragments that are not folded into ${file}, so their entries would be missing from the notes:\n` +
+      unfolded.map((f) => `  ${f.path}`).join('\n') +
+      `\nFold them in a release PR first: node scripts/changelog-fold.mjs${mobile ? ' --mobile' : ''} (docs/RELEASING.md)`);
+  }
   const errors = lintChangelog(text, { mobile });
   if (errors.length) fail(1, errors.map((e) => `${file}: ${e}`).join('\n'));
   let entry;

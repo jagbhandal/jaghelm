@@ -1,7 +1,7 @@
 import React from 'react';
 import BackHeader from '../components/BackHeader.jsx';
-import StatusLamp from '../components/StatusLamp.jsx';
-import StatusWord from '../components/StatusWord.jsx';
+import { StatusLamp } from '@ui/status-lamp';
+import { StatusWord } from '@ui/status-word';
 import UptimeRing from '../components/UptimeRing.jsx';
 import { deriveIncidents, formatClock } from '../data/derive.js';
 import { openTarget } from '../open.js';

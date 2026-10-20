@@ -171,9 +171,13 @@ function enableWithSend(sendImpl) {
   const messagingFactory = () => ({
     send: (msg) => { sent.push(msg); return sendImpl(msg); },
   });
-  initPush({ credsPath: path, env: {}, messagingFactory, logger: makeLogger() });
-  return { dir, sent };
+  const logger = makeLogger();
+  initPush({ credsPath: path, env: {}, messagingFactory, logger });
+  return { dir, sent, logger };
 }
+
+// An error shaped like firebase-admin's FirebaseMessagingError: a `code` and a message.
+const fcmError = (code, message) => Object.assign(new Error(message), { code });
 
 const sampleEvent = {
   type: 'service_down', id: 'web', node: 'vm-101',
@@ -203,12 +207,58 @@ test('sendToToken prune: registration-token-not-registered => {ok:false, prune:t
   }
 });
 
-test('sendToToken prune: invalid-argument => {ok:false, prune:true}', async () => {
-  const { dir } = enableWithSend(() => Promise.reject(Object.assign(new Error('bad'), { code: 'messaging/invalid-argument' })));
+test('sendToToken prune: invalid-argument naming the registration token => {ok:false, prune:true}', async () => {
+  const { dir } = enableWithSend(() => Promise.reject(
+    fcmError('messaging/invalid-argument', 'The registration token is not a valid FCM registration token'),
+  ));
   try {
     const res = await sendToToken('tok-bad', sampleEvent);
     assert.equal(res.ok, false);
     assert.equal(res.prune, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sendToToken prune: legacy invalid-registration-token => {ok:false, prune:true}', async () => {
+  const { dir } = enableWithSend(() => Promise.reject(
+    fcmError('messaging/invalid-registration-token', 'Invalid registration token provided.'),
+  ));
+  try {
+    const res = await sendToToken('tok-bad', sampleEvent);
+    assert.equal(res.prune, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sendToToken keeps the token on an invalid-argument payload error, and logs why', async () => {
+  // v1 INVALID_ARGUMENT for a bad payload: firebase-admin gives it the same code as a bad token.
+  const { dir, logger } = enableWithSend(() => Promise.reject(
+    fcmError('messaging/invalid-argument', "Invalid value at 'message.data[0].value' (TYPE_STRING), 12"),
+  ));
+  try {
+    const res = await sendToToken('tok-live', sampleEvent);
+    assert.deepEqual(res, { ok: false, prune: false, error: 'messaging/invalid-argument' });
+    const [fields] = logger._calls.warn.at(-1);
+    assert.equal(fields.prune, false);
+    assert.match(fields.message, /message\.data\[0\]\.value/, 'the payload problem is logged');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sendToToken keeps the token on a non-JSON 400 (proxy or HTML error page)', async () => {
+  // firebase-admin maps any non-JSON 400 to invalid-argument.
+  const raw = `<html>${'x'.repeat(1000)}</html>`;
+  const { dir, logger } = enableWithSend(() => Promise.reject(
+    fcmError('messaging/invalid-argument', `Invalid argument provided. Raw server response: "${raw}". Status code: 400.`),
+  ));
+  try {
+    const res = await sendToToken('tok-live', sampleEvent);
+    assert.equal(res.prune, false);
+    const [fields] = logger._calls.warn.at(-1);
+    assert.ok(fields.message.length <= 200, 'the logged message is truncated');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

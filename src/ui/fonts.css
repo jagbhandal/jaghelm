@@ -1,0 +1,123 @@
+/*
+ * The new UI's faces (#284; spec §5.3, §15), self-hosted: Manrope (the
+ * default), Plus Jakarta Sans and Montserrat for text, and JetBrains Mono for
+ * hostnames, SHAs, paths and code. src/ui/typefaces.js is the one list, and
+ * scripts/fonts.test.mjs checks these rules and each file against it.
+ *
+ * Each face is two variable files, the latin and latin-ext subsets Google Fonts
+ * serves (Manrope v20, Plus Jakarta Sans v12, Montserrat v31, JetBrains Mono
+ * v24; latin fetched 2026-10-19 for #284, latin-ext for #394), under the SIL
+ * Open Font License 1.1 (src/fonts/licences/). Each rule carries Google's
+ * unicode-range, so the latin-ext file downloads only when a screen shows one of
+ * its characters (Ł, ő, ș, ž, and so on); a latin-only screen downloads the latin
+ * file alone. The rules are in Google's order, latin-ext before latin, and a
+ * browser checks the later rule first, so the seven code points both ranges
+ * claim resolve to latin first. Among them are ı, Œ and œ, which only the latin
+ * file draws: in the other order, "œuvre" would download latin-ext for nothing.
+ * Characters outside both subsets (Cyrillic, Greek, Vietnamese) fall back to the
+ * next family in --jh-font-sans or --jh-font-mono (tokens.css).
+ *
+ * A browser downloads a face only when text renders in it, so declaring all
+ * four costs nothing: the `data-typeface` switch (tokens.css) picks the one
+ * --jh-font-sans names, and only that one loads. font-display: swap shows the
+ * fallback until it arrives. There is no preload: a face nobody has picked must
+ * never download.
+ *
+ * The family names end in "Variable" so they never join today's families of the
+ * same name (src/styles/fonts.css): JetBrains Mono shares its latin file with
+ * today's screens, where it is declared at 400 and 500 only.
+ *
+ * Imported into the `theme` layer by tailwind.css.
+ */
+
+@font-face {
+  font-family: 'Manrope Variable';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('../fonts/manrope-latin-ext-wght.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Manrope Variable';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('../fonts/manrope-latin-wght.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Plus Jakarta Sans Variable';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('../fonts/plus-jakarta-sans-latin-ext-wght.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Plus Jakarta Sans Variable';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('../fonts/plus-jakarta-sans-latin-wght.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Montserrat Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../fonts/montserrat-latin-ext-wght.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Montserrat Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../fonts/montserrat-latin-wght.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('../fonts/jetbrains-mono-latin-ext-wght.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('../fonts/jetbrains-mono-latin-wght.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

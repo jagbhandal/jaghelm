@@ -1,5 +1,10 @@
 node_modules/
 dist/
+# the component gallery's build and test output (docs/GALLERY.md), and the
+# shell's browser tests' build (e2e/, playwright.e2e.config.mjs)
+dist-gallery/
+dist-e2e/
+test-results/
 .env
 uploads/
 data/

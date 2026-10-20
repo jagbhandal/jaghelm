@@ -1,87 +1,186 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useId, useState } from 'react';
+import { SLOW_AFTER_MS, useEmbedStatus } from '../hooks/useEmbedStatus.js';
 
-export default function IframeView({ url, title }) {
-  const [status, setStatus] = useState('loading'); // loading | ok | blocked
-  // Bumped by the manual "Retry" button. The load-detection effect below is
-  // keyed on it so a retry re-arms the 8s timeout (the url is unchanged on a
-  // retry, so without this the effect — and its timer — never re-runs and a
-  // still-blocked retry would spin forever).
-  const [retryNonce, setRetryNonce] = useState(0);
-  const iframeRef = useRef(null);
-  const timerRef = useRef(null);
-  // Mirror the latest status into a ref so the timeout callback below reads the
-  // current value rather than the (stale) `status` captured when the effect ran.
-  const statusRef = useRef(status);
-  statusRef.current = status;
+// One app tab's frame and its loading / slow / blocked notices. The state is
+// useEmbedStatus's; this is only how it looks today (legacy CSS variables).
+// AppFrames keeps it mounted, hidden, while another tab is open (#269).
 
-  useEffect(() => {
-    setStatus('loading');
-    // X-Frame-Options / CSP blocks don't fire onError on the iframe.
-    // We use a two-pronged detection:
-    // 1. Try to read iframe.contentWindow — cross-origin blocked iframes throw on access
-    // 2. Timeout fallback — if after 8s we still can't confirm it loaded, show the fallback
-    timerRef.current = setTimeout(() => {
-      // Read the live status via the ref — a slow-but-fine iframe that has
-      // already resolved to 'ok' must NOT be flipped to 'blocked' by this timer.
-      if (statusRef.current === 'loading') setStatus('blocked');
-    }, 8000);
+const notice = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minHeight: 'calc(100vh - 60px)',
+  gap: '16px',
+  padding: '24px 16px',
+  boxSizing: 'border-box',
+};
+const heading = { fontFamily: 'var(--font-display)', fontSize: '20px', textAlign: 'center' };
+const text = {
+  color: 'var(--text-muted)',
+  fontSize: '14px',
+  maxWidth: '440px',
+  textAlign: 'center',
+  lineHeight: 1.6,
+  margin: 0,
+};
+const primary = {
+  padding: '10px 24px',
+  background: 'var(--accent)',
+  color: '#fff',
+  borderRadius: '10px',
+  border: 'none',
+  textDecoration: 'none',
+  fontSize: '14px',
+  fontWeight: 500,
+  cursor: 'pointer',
+};
+const secondary = {
+  padding: '10px 24px',
+  background: 'var(--bg-card-inner)',
+  color: 'var(--text-primary)',
+  borderRadius: '10px',
+  border: '1px solid var(--border-color)',
+  textDecoration: 'none',
+  fontSize: '14px',
+  fontWeight: 500,
+  cursor: 'pointer',
+};
+const code = {
+  fontFamily: 'var(--font-mono)',
+  fontSize: 12,
+  background: 'var(--bg-card-inner)',
+  padding: '2px 6px',
+  borderRadius: 4,
+  overflowWrap: 'anywhere',
+};
 
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [url, retryNonce]);
+function OpenInNewTab({ url, style }) {
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" style={style}>
+      Open in new tab
+    </a>
+  );
+}
 
-  const handleLoad = () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    // If the iframe loaded successfully (even cross-origin), onload fires.
-    // But X-Frame-Options blocked pages also fire onload with an about:blank document.
-    // We check if the iframe appears to have content by probing contentWindow.
-    try {
-      const doc = iframeRef.current?.contentDocument;
-      // If we CAN access contentDocument and it's essentially empty, it was blocked
-      if (doc && (!doc.body || doc.body.innerHTML === '')) {
-        setStatus('blocked');
-        return;
-      }
-    } catch {
-      // Cross-origin — this is expected for a working cross-origin iframe. That's fine.
-    }
-    setStatus('ok');
-  };
-
-  if (status === 'blocked') {
-    return (
-      <div className="iframe-container">
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 60px)', gap: '16px' }}>
-          <span style={{ fontSize: '48px' }}>🔒</span>
-          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '20px' }}>Embedding Blocked</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '14px', maxWidth: '440px', textAlign: 'center', lineHeight: 1.6 }}>
-            <strong>{title || url}</strong> is blocking iframe embedding via X-Frame-Options or CSP headers.
-            {title?.toLowerCase().includes('kuma') && (
-              <span style={{ display: 'block', marginTop: 8, color: 'var(--text-secondary)' }}>
-                To fix: In Uptime Kuma → Settings → General, add your dashboard domain to the
-                allowed iframe origins, or set the environment variable <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12, background: 'var(--bg-card-inner)', padding: '2px 6px', borderRadius: 4 }}>UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN=true</code>
-              </span>
-            )}
-          </p>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <a href={url} target="_blank" rel="noopener noreferrer" style={{ padding: '10px 24px', background: 'var(--accent)', color: '#fff', borderRadius: '10px', textDecoration: 'none', fontSize: '14px', fontWeight: 500 }}>
-              Open in New Tab
-            </a>
-            <button onClick={() => { setStatus('loading'); setRetryNonce((n) => n + 1); }} style={{ padding: '10px 24px', background: 'var(--bg-card-inner)', color: 'var(--text-primary)', borderRadius: '10px', border: '1px solid var(--border-color)', fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}>
-              Retry
-            </button>
-          </div>
-        </div>
+function SlowNotice({ title, url, seconds, onRetry }) {
+  return (
+    <div style={notice}>
+      <h3 style={heading}>{title} is slow to load</h3>
+      <p style={text}>
+        It hasn&apos;t finished loading after {seconds} seconds. It may still be starting up, and
+        it shows here as soon as it loads.
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 10 }}>
+        <button type="button" onClick={onRetry} style={primary}>
+          Retry
+        </button>
+        <OpenInNewTab url={url} style={secondary} />
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+function BlockedNotice({ title, url, blockedBy, onRetry }) {
+  const [showHow, setShowHow] = useState(false);
+  const howId = useId();
+  const origin = window.location.origin;
+  return (
+    <div style={notice}>
+      <span style={{ fontSize: '48px' }} aria-hidden="true">
+        🔒
+      </span>
+      <h3 style={heading}>{title} won&apos;t open inside JagHelm</h3>
+      <p style={text}>
+        Its server tells browsers not to show it inside another site (an{' '}
+        <code style={code}>X-Frame-Options</code> or <code style={code}>frame-ancestors</code>{' '}
+        header). JagHelm can&apos;t override that, so it says so instead of showing a blank page.
+      </p>
+      <p style={text}>
+        Open it in a new tab, or allow JagHelm&apos;s address in that app&apos;s proxy or embedding
+        settings.
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 10 }}>
+        <OpenInNewTab url={url} style={primary} />
+        <button
+          type="button"
+          aria-expanded={showHow}
+          aria-controls={howId}
+          onClick={() => setShowHow((s) => !s)}
+          style={secondary}
+        >
+          How to allow embedding
+        </button>
+      </div>
+      <div
+        id={howId}
+        hidden={!showHow}
+        style={{ ...text, textAlign: 'left', display: showHow ? 'flex' : 'none', flexDirection: 'column', gap: 8 }}
+      >
+        {showHow && (
+          <>
+            {blockedBy && (
+              <p style={{ margin: 0 }}>
+                {title} sends <code style={code}>{blockedBy}</code>.
+              </p>
+            )}
+            <p style={{ margin: 0 }}>Change it in the app&apos;s settings, or in the reverse proxy in front of it:</p>
+            <ul style={{ margin: 0, paddingLeft: 20 }}>
+              <li>
+                Allow JagHelm&apos;s address with{' '}
+                <code style={code}>Content-Security-Policy: frame-ancestors &apos;self&apos; {origin}</code>.
+                Browsers then ignore <code style={code}>X-Frame-Options</code>, which can&apos;t name
+                another site.
+              </li>
+              <li>
+                If the app already sends a <code style={code}>frame-ancestors</code> list, add{' '}
+                <code style={code}>{origin}</code> to that list. A second header doesn&apos;t help:
+                browsers apply every one.
+              </li>
+            </ul>
+            {title.toLowerCase().includes('kuma') && (
+              <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+                Uptime Kuma: in Settings → General, add your dashboard domain to the allowed iframe
+                origins, or set the environment variable{' '}
+                <code style={code}>UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN=true</code>
+              </p>
+            )}
+            <div>
+              <button type="button" onClick={onRetry} style={secondary}>
+                Check again
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function IframeView({ tab, savedUrl, slowAfterMs = SLOW_AFTER_MS, reloads = 0 }) {
+  const { id, url } = tab;
+  const title = tab.label || url;
+  const { status, blockedBy, attempt, onLoad, retry } = useEmbedStatus({
+    tabId: String(id),
+    url,
+    savedUrl,
+    slowAfterMs,
+    reloads,
+  });
 
   return (
     <div className="iframe-container">
       {status === 'loading' && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 60px)', gap: 12 }}>
           <div className="skeleton" style={{ width: 24, height: 24, borderRadius: '50%' }} />
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)' }}>Loading {title || url}…</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)' }}>Loading {title}…</span>
         </div>
+      )}
+      {status === 'slow' && (
+        <SlowNotice title={title} url={url} seconds={Math.round(slowAfterMs / 1000)} onRetry={retry} />
+      )}
+      {status === 'blocked' && (
+        <BlockedNotice title={title} url={url} blockedBy={blockedBy} onRetry={retry} />
       )}
       {/*
         Sandbox trade-off: `allow-popups` is retained intentionally.
@@ -102,10 +201,10 @@ export default function IframeView({ url, title }) {
         Revisit if we ever expose this view to untrusted users or third-party
         URLs.
       */}
-      {/* `key={retryNonce}` forces a fresh iframe element on manual retry so the
-          same `src` is actually re-fetched (and onLoad re-fires) — re-arming the
-          detection alongside the effect's re-run. */}
-      <iframe key={retryNonce} ref={iframeRef} src={url} title={title || 'Embedded'} onLoad={handleLoad} onError={() => setStatus('blocked')}
+      {/* `key={attempt}` gives Retry a fresh iframe element, so the same `src`
+          is fetched again (and onLoad fires again) for this frame only. The
+          frame keeps loading, hidden, behind the slow notice. */}
+      <iframe key={attempt} src={url} title={title || 'Embedded'} onLoad={onLoad}
         style={{ display: status === 'ok' ? 'block' : 'none' }}
         sandbox="allow-same-origin allow-scripts allow-forms allow-popups" />
     </div>

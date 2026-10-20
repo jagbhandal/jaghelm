@@ -29,7 +29,7 @@ const SIZE_CONTROLS = [
   {
     key: 'sectionTitle',
     label: 'Section Headers',
-    desc: 'Gateway Services, Production, etc.',
+    desc: 'Node, group and panel titles',
     min: 14,
     max: 24,
     default: 17,
@@ -37,7 +37,7 @@ const SIZE_CONTROLS = [
   {
     key: 'sectionSubtitle',
     label: 'Section Subtitles',
-    desc: 'VM 103, Raspberry Pi 5, etc.',
+    desc: 'The line under a title, such as the host type',
     min: 10,
     max: 16,
     default: 12,

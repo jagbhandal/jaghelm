@@ -21,7 +21,7 @@ practical reasons:
    single user notices a blank dashboard.
 
 Targets are deliberately **modest** (99.0–99.5%, not 99.9%+). JagHelm depends on
-external systems it does not control — Prometheus, Uptime Kuma, and 42 third-party
+external systems it does not control — Prometheus, Uptime Kuma, and 35+ third-party
 app APIs. A target the app can't sustain when an *upstream* is down would just be
 alert noise. See each SLO's "Why this target" section.
 
@@ -45,10 +45,12 @@ Error budget policy that governs all three: [`error-budget-policy.md`](error-bud
 
 - **Upstream availability (Prometheus / Kuma / app APIs).** JagHelm can't fix a
   down exporter. The feed-success SLO measures whether *JagHelm* answers, not
-  whether every upstream is healthy — a node that's unreachable is logged and
-  dropped (`Promise.allSettled` in `refresh.js`), the surviving nodes still
-  render, and the request is still a 2xx. That is the intended behaviour.
-- **Per-integration correctness.** 42 presets, each with its own auth shape and
+  whether every upstream is healthy — a node Prometheus can't scrape stays on
+  the board as unreachable, a failed Prometheus or Kuma poll is flagged in the
+  payload (`sources`), a node whose refresh throws is logged and dropped
+  (`Promise.allSettled` in `refresh.js`), the surviving nodes still render, and
+  the request is still a 2xx. That is the intended behaviour.
+- **Per-integration correctness.** 35+ presets, each with its own auth shape and
   upstream. A `correctness` SLO per preset is more bookkeeping than a one-user
   homelab warrants. Re-evaluate if/when JagHelm grows a test suite.
 - **CPU / RAM / disk of the host.** Those are *displayed* metrics, not JagHelm's

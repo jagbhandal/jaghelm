@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import StatusLamp from './StatusLamp.jsx';
+import { StatusLamp } from '@ui/status-lamp';
 import { formatClock } from '../data/derive.js';
 
 /**
@@ -22,20 +22,36 @@ import { formatClock } from '../data/derive.js';
  *
  * `severity`/`summary` are computed by MobileApp from the dashboard data (with
  * `unreachable = data.error != null` threaded into `overallSeverity`). Tap = refresh.
+ * `foreground=false` (the app is in the background) pauses the 1 s heartbeat.
  */
 
 // Overall severity → colorblind-safe lamp shape (mirrors SubsystemCell's mapping).
 const SEV_SHAPE = { critical: 'slash', caution: 'disc', healthy: 'disc', unknown: 'ring' };
 
-export default function RefreshStatus({ severity, summary, lastUpdated, intervalMs, error, loading, onRefresh }) {
+export default function RefreshStatus({
+  severity,
+  summary,
+  lastUpdated,
+  intervalMs,
+  error,
+  loading,
+  foreground = true,
+  onRefresh,
+}) {
   const [now, setNow] = useState(() => Date.now());
 
   // 1s heartbeat drives the countdown text only. The progress line itself is a
-  // CSS animation (smooth, no per-frame JS in steady state).
+  // CSS animation (smooth, no per-frame JS in steady state). It runs only while
+  // the app is in the foreground (`foreground` comes from useDashboard's
+  // appStateChange listener, the one that also stops polling), and ticks at once
+  // when it restarts so a return from the background shows the real countdown.
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    if (!foreground) return undefined;
+    const tick = () => setNow(Date.now());
+    tick();
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [foreground]);
 
   const unreachable = !!error;
   const elapsed = lastUpdated == null ? null : Math.max(0, now - lastUpdated);

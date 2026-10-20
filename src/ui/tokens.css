@@ -1,0 +1,413 @@
+/*
+ * JagHelm's design tokens (#283): the values Jag signed off in the overview mock
+ * (2026-10-19), spec §5.2, §5.3 and §15. docs/design-system.md lists them with
+ * the rules for using them. scripts/ui-contrast.mjs checks every text and
+ * background pairing in both themes and all three accents, on sRGB and Display
+ * P3 screens, that each hover is visibly different from rest, that no accent
+ * reads as a status colour, and the chart colours (#386): 3:1 where charts are
+ * drawn, the ramp's steps, and the slots' separation (npm test).
+ *
+ * Three layers, all on .jh-ui and never on :root while today's CSS lives (it
+ * owns --bg, --accent, --border, --text-* there). The --jh- prefix keeps them
+ * apart from those names, so an old widget inside a new screen keeps its own.
+ *
+ *  1. Palette: OKLCH ramps, each step named by hue and lightness (graphite-198
+ *     is L 0.198). Roles read the palette; components never do. A few roles
+ *     hold their own values instead: the tints, the Fuchsia and Cyan accents,
+ *     and the chart colours, each value having one use.
+ *  2. Roles: what components use, through Tailwind (bg-surface-1, text-text-2,
+ *     bg-accent, text-crit-fg). tailwind.css maps each one to a utility.
+ *  3. Component tokens, only where no role fits (meter, track, lamp-cut).
+ *
+ * Switches, on the element that carries .jh-ui (and on every portal root):
+ *   data-theme="light"                           dark is the default
+ *   data-accent="fuchsia|cyan"                   violet is the default
+ *                                                (src/ui/accents.js lists them)
+ *   data-density="compact"                       comfortable is the default
+ *   data-typeface="plus-jakarta-sans|montserrat" manrope is the default
+ *                                                (src/ui/typefaces.js lists them)
+ *
+ * The contrast check reads this file as CSS does: by specificity, then order.
+ * It understands only the selectors used here, and fails on any other, so a
+ * new switch must be taught to it first.
+ */
+
+.jh-ui {
+  color-scheme: dark;
+
+  /* ---- 1. Palette ------------------------------------------------------ */
+
+  /* Graphite: neutrals tinted toward hue 286 (§15), not pure grey. */
+  --jh-graphite-120: oklch(0.12 0.006 286);
+  --jh-graphite-155: oklch(0.155 0.006 286);
+  --jh-graphite-172: oklch(0.172 0.007 286);
+  --jh-graphite-198: oklch(0.198 0.008 286);
+  --jh-graphite-205: oklch(0.205 0.012 286);
+  --jh-graphite-238: oklch(0.238 0.009 286);
+  --jh-graphite-285: oklch(0.285 0.01 286);
+  --jh-graphite-430: oklch(0.43 0.014 286);
+  --jh-graphite-500: oklch(0.5 0.012 286);
+  --jh-graphite-520: oklch(0.52 0.014 286);
+  --jh-graphite-580: oklch(0.58 0.012 286);
+  --jh-graphite-660: oklch(0.66 0.012 286);
+  --jh-graphite-665: oklch(0.665 0.014 286);
+  --jh-graphite-775: oklch(0.775 0.012 286);
+  --jh-graphite-930: oklch(0.93 0.007 286);
+  --jh-graphite-962: oklch(0.962 0.005 286);
+  --jh-graphite-972: oklch(0.972 0.004 286);
+  --jh-graphite-975: oklch(0.975 0.003 286);
+  --jh-graphite-982: oklch(0.982 0.003 286);
+  --jh-white: oklch(1 0 0);
+
+  /* Violet, the default accent (Arcane's hue, §5.2). */
+  --jh-violet-480: oklch(0.48 0.24 293);
+  --jh-violet-500: oklch(0.5 0.27 293);
+  --jh-violet-541: oklch(0.541 0.281 293.009);
+  --jh-violet-575: oklch(0.575 0.27 293);
+  --jh-violet-580: oklch(0.58 0.23 293);
+  --jh-violet-606: oklch(0.606 0.25 292.717);
+  --jh-violet-680: oklch(0.68 0.19 293);
+  --jh-violet-790: oklch(0.79 0.135 293);
+  --jh-violet-969: oklch(0.969 0.016 293.756);
+
+  /* Status hues. Never an accent, never decoration. */
+  --jh-green-470: oklch(0.47 0.12 163);
+  --jh-green-600: oklch(0.6 0.15 163);
+  --jh-green-765: oklch(0.765 0.177 163.223);
+  --jh-amber-500: oklch(0.5 0.13 62);
+  --jh-amber-750: oklch(0.75 0.17 75);
+  --jh-amber-828: oklch(0.828 0.189 84.429);
+  --jh-red-500: oklch(0.5 0.2 27);
+  --jh-red-600: oklch(0.6 0.22 27);
+  --jh-red-704: oklch(0.704 0.191 22.216);
+  --jh-red-770: oklch(0.77 0.16 22);
+  --jh-steel-460: oklch(0.46 0.03 250);
+  --jh-steel-600: oklch(0.6 0.03 250);
+  --jh-steel-720: oklch(0.72 0.03 250);
+  --jh-steel-760: oklch(0.76 0.03 250);
+  --jh-blue-480: oklch(0.48 0.19 260);
+  --jh-blue-550: oklch(0.55 0.2 260);
+  --jh-blue-707: oklch(0.707 0.165 254.624);
+  --jh-blue-740: oklch(0.74 0.14 254);
+
+  /* ---- 2. Roles: dark (the default theme) ------------------------------ */
+
+  /* Surfaces, darkest to lightest. Panels are surface-1 with a border. */
+  --jh-bg: var(--jh-graphite-155);
+  --jh-sidebar: var(--jh-graphite-172);
+  --jh-surface-1: var(--jh-graphite-198);
+  --jh-surface-2: var(--jh-graphite-238);
+  --jh-surface-3: var(--jh-graphite-285);
+
+  --jh-border-subtle: oklch(1 0 0 / 0.08);
+  --jh-border-strong: oklch(1 0 0 / 0.15);
+  /* The edge of a control with no fill of its own, an empty checkbox or an off
+     switch: 3:1 against the surface it sits on (WCAG 1.4.11), in both themes. */
+  --jh-control-edge: var(--jh-graphite-580);
+
+  --jh-text-1: var(--jh-graphite-975);
+  --jh-text-2: var(--jh-graphite-775);
+  --jh-text-3: var(--jh-graphite-665);
+  --jh-text-disabled: var(--jh-graphite-500);
+
+  /* Accent: interactive or selected (§5.2, §15). Each data-accent block below
+     sets the same eight; on-accent is shared by all three. */
+  --jh-accent: var(--jh-violet-541);
+  --jh-accent-hover: var(--jh-violet-575);
+  --jh-on-accent: var(--jh-violet-969);
+  --jh-accent-text: var(--jh-violet-790);
+  --jh-accent-tint: oklch(0.541 0.281 293.009 / 0.16);
+  --jh-accent-border: oklch(0.606 0.25 292.717 / 0.38);
+  --jh-focus-ring: var(--jh-violet-606);
+  --jh-row-hover: oklch(0.541 0.281 293.009 / 0.07);
+
+  /* Status roles. fg: words and icons on surfaces. tint: a row or tile's
+     background. border: its edge. solid: lamps, fills, bars. on-solid: text
+     on a solid. Maintenance and info share blue. */
+  --jh-ok-fg: var(--jh-green-765);
+  --jh-ok-tint: oklch(0.765 0.177 163.223 / 0.1);
+  --jh-ok-border: oklch(0.765 0.177 163.223 / 0.38);
+  --jh-ok-solid: var(--jh-green-765);
+  --jh-ok-on-solid: var(--jh-graphite-120);
+
+  --jh-warn-fg: var(--jh-amber-828);
+  --jh-warn-tint: oklch(0.828 0.189 84.429 / 0.1);
+  --jh-warn-border: oklch(0.828 0.189 84.429 / 0.38);
+  --jh-warn-solid: var(--jh-amber-828);
+  --jh-warn-on-solid: var(--jh-graphite-120);
+
+  --jh-crit-fg: var(--jh-red-770);
+  --jh-crit-tint: oklch(0.704 0.191 22.216 / 0.12);
+  --jh-crit-border: oklch(0.704 0.191 22.216 / 0.38);
+  --jh-crit-solid: var(--jh-red-704);
+  --jh-crit-on-solid: var(--jh-graphite-120);
+
+  --jh-unknown-fg: var(--jh-steel-760);
+  --jh-unknown-tint: oklch(0.72 0.03 250 / 0.1);
+  --jh-unknown-border: oklch(0.72 0.03 250 / 0.38);
+  --jh-unknown-solid: var(--jh-steel-720);
+  --jh-unknown-on-solid: var(--jh-graphite-120);
+
+  --jh-maintenance-fg: var(--jh-blue-740);
+  --jh-maintenance-tint: oklch(0.707 0.165 254.624 / 0.1);
+  --jh-maintenance-border: oklch(0.707 0.165 254.624 / 0.38);
+  --jh-maintenance-solid: var(--jh-blue-707);
+  --jh-maintenance-on-solid: var(--jh-graphite-120);
+
+  --jh-info-fg: var(--jh-blue-740);
+  --jh-info-tint: oklch(0.707 0.165 254.624 / 0.1);
+  --jh-info-border: oklch(0.707 0.165 254.624 / 0.38);
+  --jh-info-solid: var(--jh-blue-707);
+  --jh-info-on-solid: var(--jh-graphite-120);
+
+  /* Chart colours (#386; Jag, 2026-10-20). Roles that hold their values, as the
+     Fuchsia and Cyan accents do: each value has one use in one theme. They
+     never change with the accent. series-1 to -6 are the categorical slots in
+     order (an entity keeps its slot; one series takes slot 1). seq-1 to -7 is
+     the sequential ramp in slot 1's azure, none to most: its first steps
+     recede toward the panel. Each is clear of every status colour and of the
+     violet accent (docs/design-system.md, "Chart colours"). */
+  --jh-series-1: oklch(0.6 0.138 240); /* azure */
+  --jh-series-2: oklch(0.64 0.15 355); /* rose */
+  --jh-series-3: oklch(0.66 0.15 125); /* lime */
+  --jh-series-4: oklch(0.55 0.15 325); /* plum */
+  --jh-series-5: oklch(0.66 0.15 55); /* orange */
+  --jh-series-6: oklch(0.66 0.112 200); /* teal */
+  --jh-seq-1: oklch(0.3 0.07 240); /* #00314d */
+  --jh-seq-2: oklch(0.38 0.087 240); /* #00476c */
+  --jh-seq-3: oklch(0.459 0.105 240); /* #005e8c */
+  --jh-seq-4: oklch(0.54 0.124 240); /* #0076af */
+  --jh-seq-5: oklch(0.63 0.11 240); /* #4191c5 */
+  --jh-seq-6: oklch(0.72 0.08 240); /* #75acd2 */
+  --jh-seq-7: oklch(0.81 0.05 240); /* #a4c6de */
+
+  /* ---- 3. Component tokens --------------------------------------------- */
+
+  --jh-meter: var(--jh-violet-680); /* a meter below its threshold (§15) */
+  --jh-track: oklch(1 0 0 / 0.07); /* a meter's empty track */
+  --jh-tick: oklch(1 0 0 / 0.1); /* quarter marks on a track */
+  --jh-beat-ok: oklch(1 0 0 / 0.16); /* a healthy heartbeat bar; failures use crit-solid */
+  --jh-lamp-cut: var(--jh-surface-1); /* the slash and bar cut into warn and crit lamps */
+  --jh-scrim: oklch(0.1 0.01 286 / 0.62);
+  --jh-shadow-control: inset 0 1px 0 rgb(255 255 255 / 0.1), 0 1px 2px rgb(0 0 0 / 0.25);
+  --jh-shadow-pop: 0 24px 64px -24px rgb(0 0 0 / 0.7), 0 2px 8px -2px rgb(0 0 0 / 0.4);
+  --jh-shadow-thumb: 0 1px 2px rgb(0 0 0 / 0.3); /* a switch's thumb, both themes (the mock's) */
+  --jh-switch-thumb: var(--jh-white); /* the thumb itself, white in both themes (the mock's) */
+
+  /* ---- Type, shape, space, motion (§5.3) ------------------------------- */
+
+  /* Families (§5.3, §15), self-hosted in src/ui/fonts.css. The sans face is a
+     switch, like the accent: each data-typeface block below sets only
+     --jh-font-face, and a browser downloads only the face it names. The
+     system faces behind it show until it arrives and for characters outside
+     its latin subset. JetBrains Mono is the one monospace face. */
+  --jh-font-face: 'Manrope Variable';
+  --jh-font-sans:
+    var(--jh-font-face), ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  --jh-font-mono:
+    'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+
+  /* One radius token, mapped (§5.3): 2 heartbeat bars, 4 badges, 6 segments
+     inside a control, 8 controls and rows, 12 panels and dialogs. The scale
+     repeats tailwind.css's rounded-* values for classes that read them with
+     var(); scripts/ui-stack.test.mjs keeps the two equal. */
+  --radius: 8px;
+  --radius-xs: calc(var(--radius) - 6px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Density (§5.3): row height and panel padding. */
+  --jh-row-h: 40px;
+  --jh-pad: 20px;
+
+  /* Controls' heights (#285), the mock's in both densities: compact is
+     spacing, not smaller controls. Buttons, inputs, selects and tabs at md
+     (34), buttons at sm (30), and a segment, which its track's 2px padding
+     brings back to a control's height. */
+  --jh-control-h: 34px;
+  --jh-control-h-sm: 30px;
+  --jh-segment-h: calc(var(--jh-control-h) - 4px);
+
+  /* Page gutter: 16 on phones, 24 from 768px, 32 from 1536px (below). */
+  --jh-gutter: 16px;
+
+  /* Motion: drawers and popovers; reduced motion is honoured (tailwind.css). */
+  --jh-duration: 150ms;
+  --jh-ease: ease;
+}
+
+@media (width >= 48rem) {
+  .jh-ui {
+    --jh-gutter: 24px;
+  }
+}
+
+@media (width >= 96rem) {
+  .jh-ui {
+    --jh-gutter: 32px;
+  }
+}
+
+.jh-ui[data-density='compact'] {
+  --jh-row-h: 32px;
+  --jh-pad: 16px;
+}
+
+/* The other two typefaces (Settings → Appearance, §15). src/ui/typefaces.js
+   lists every face; each but Manrope has a block here, and src/ui/fonts.css
+   declares each one's file. */
+
+.jh-ui[data-typeface='plus-jakarta-sans'] {
+  --jh-font-face: 'Plus Jakarta Sans Variable';
+}
+
+.jh-ui[data-typeface='montserrat'] {
+  --jh-font-face: 'Montserrat Variable';
+}
+
+/* ---- Roles: light ------------------------------------------------------ */
+
+.jh-ui[data-theme='light'] {
+  color-scheme: light;
+
+  --jh-bg: var(--jh-graphite-982);
+  --jh-sidebar: var(--jh-graphite-972);
+  --jh-surface-1: var(--jh-white);
+  --jh-surface-2: var(--jh-graphite-962);
+  --jh-surface-3: var(--jh-graphite-930);
+
+  --jh-border-subtle: oklch(0.25 0.02 286 / 0.1);
+  --jh-border-strong: oklch(0.25 0.02 286 / 0.18);
+
+  --jh-text-1: var(--jh-graphite-205);
+  --jh-text-2: var(--jh-graphite-430);
+  --jh-text-3: var(--jh-graphite-520);
+  --jh-text-disabled: var(--jh-graphite-660);
+
+  --jh-accent: var(--jh-violet-541);
+  --jh-accent-hover: var(--jh-violet-500);
+  --jh-accent-text: var(--jh-violet-480);
+  --jh-accent-tint: oklch(0.541 0.281 293.009 / 0.09);
+  --jh-accent-border: oklch(0.541 0.281 293.009 / 0.32);
+  --jh-focus-ring: var(--jh-violet-541);
+  --jh-row-hover: oklch(0.541 0.281 293.009 / 0.05);
+
+  /* Lamps stay bright; the words (fg) are darkened to carry 4.5:1. */
+  --jh-ok-fg: var(--jh-green-470);
+  --jh-ok-tint: oklch(0.6 0.15 163 / 0.1);
+  --jh-ok-border: oklch(0.6 0.15 163 / 0.32);
+  --jh-ok-solid: var(--jh-green-600);
+
+  --jh-warn-fg: var(--jh-amber-500);
+  --jh-warn-tint: oklch(0.75 0.17 75 / 0.12);
+  --jh-warn-border: oklch(0.75 0.17 75 / 0.32);
+  --jh-warn-solid: var(--jh-amber-750);
+
+  --jh-crit-fg: var(--jh-red-500);
+  --jh-crit-tint: oklch(0.6 0.22 27 / 0.08);
+  --jh-crit-border: oklch(0.6 0.22 27 / 0.32);
+  --jh-crit-solid: var(--jh-red-600);
+
+  --jh-unknown-fg: var(--jh-steel-460);
+  --jh-unknown-tint: oklch(0.6 0.03 250 / 0.1);
+  --jh-unknown-border: oklch(0.6 0.03 250 / 0.32);
+  --jh-unknown-solid: var(--jh-steel-600);
+
+  --jh-maintenance-fg: var(--jh-blue-480);
+  --jh-maintenance-tint: oklch(0.55 0.2 260 / 0.1);
+  --jh-maintenance-border: oklch(0.55 0.2 260 / 0.32);
+  --jh-maintenance-solid: var(--jh-blue-550);
+  --jh-maintenance-on-solid: var(--jh-white);
+
+  --jh-info-fg: var(--jh-blue-480);
+  --jh-info-tint: oklch(0.55 0.2 260 / 0.1);
+  --jh-info-border: oklch(0.55 0.2 260 / 0.32);
+  --jh-info-solid: var(--jh-blue-550);
+  --jh-info-on-solid: var(--jh-white);
+
+  /* Chart colours: on white the ramp runs from pale to deep. */
+  --jh-series-1: oklch(0.58 0.133 240);
+  --jh-series-2: oklch(0.5 0.15 355);
+  --jh-series-3: oklch(0.56 0.141 125);
+  --jh-series-4: oklch(0.6 0.15 325);
+  --jh-series-5: oklch(0.6 0.149 55);
+  --jh-series-6: oklch(0.62 0.105 200);
+  --jh-seq-1: oklch(0.92 0.043 240); /* #cce9ff */
+  --jh-seq-2: oklch(0.84 0.08 240); /* #9bd2fa */
+  --jh-seq-3: oklch(0.76 0.11 240); /* #6bbaf0 */
+  --jh-seq-4: oklch(0.68 0.135 240); /* #36a2e3 */
+  --jh-seq-5: oklch(0.6 0.138 240); /* #0089c9 */
+  --jh-seq-6: oklch(0.511 0.117 240); /* #006da2 */
+  --jh-seq-7: oklch(0.42 0.096 240); /* #00537c */
+
+  --jh-meter: var(--jh-violet-580);
+  --jh-track: oklch(0.25 0.02 286 / 0.08);
+  --jh-tick: oklch(0.25 0.02 286 / 0.1);
+  --jh-beat-ok: oklch(0.25 0.02 286 / 0.14);
+  --jh-scrim: oklch(0.2 0.02 286 / 0.35);
+  --jh-shadow-control: inset 0 1px 0 rgb(255 255 255 / 0.28), 0 1px 2px rgb(15 23 42 / 0.08);
+  --jh-shadow-pop: 0 24px 64px -24px rgb(15 23 42 / 0.35), 0 2px 8px -2px rgb(15 23 42 / 0.12);
+}
+
+/*
+ * ---- The other two accents (Settings → Appearance, §15) ----------------
+ * src/ui/accents.js lists every accent; each but violet has a block here.
+ * Each accent sets the same eight roles in both themes, and its light block
+ * sets every role its dark block does (scripts/ui-tokens.test.mjs), so the
+ * result never depends on block order. None reads as a status colour: each
+ * mark (button, hover, link, meter, focus ring) stays at least ΔE OK 0.05
+ * from every status lamp, bar and word (docs/design-system.md, rule 2), which
+ * is why Blue, Indigo and Graphite are gone. Fuchsia darkens on hover in dark,
+ * where lightened enough to see its label would drop below 4.5:1. Cyan (hue
+ * 215, between ok's 163 and maintenance's 254) is not in the mock: its chroma
+ * is close to sRGB's limit to keep it off the steel and blue status colours,
+ * and every value is inside sRGB, so every screen paints it alike.
+ */
+
+.jh-ui[data-accent='fuchsia'] {
+  --jh-accent: oklch(0.56 0.23 328);
+  --jh-accent-hover: oklch(0.52 0.22 328);
+  --jh-accent-text: oklch(0.8 0.12 328);
+  --jh-accent-tint: oklch(0.56 0.23 328 / 0.16);
+  --jh-accent-border: oklch(0.62 0.21 328 / 0.38);
+  --jh-focus-ring: oklch(0.64 0.21 328);
+  --jh-row-hover: oklch(0.56 0.23 328 / 0.07);
+  --jh-meter: oklch(0.7 0.16 328);
+}
+
+.jh-ui[data-theme='light'][data-accent='fuchsia'] {
+  --jh-accent: oklch(0.53 0.22 328);
+  --jh-accent-hover: oklch(0.49 0.21 328);
+  --jh-accent-text: oklch(0.47 0.2 328);
+  --jh-accent-tint: oklch(0.53 0.22 328 / 0.09);
+  --jh-accent-border: oklch(0.53 0.22 328 / 0.32);
+  --jh-focus-ring: oklch(0.53 0.22 328);
+  --jh-row-hover: oklch(0.53 0.22 328 / 0.05);
+  --jh-meter: oklch(0.57 0.2 328);
+}
+
+.jh-ui[data-accent='cyan'] {
+  --jh-accent: oklch(0.52 0.09 215);
+  --jh-accent-hover: oklch(0.48 0.084 215);
+  --jh-accent-text: oklch(0.82 0.12 215);
+  --jh-accent-tint: oklch(0.52 0.09 215 / 0.16);
+  --jh-accent-border: oklch(0.62 0.1 215 / 0.38);
+  --jh-focus-ring: oklch(0.66 0.11 215);
+  --jh-row-hover: oklch(0.52 0.09 215 / 0.07);
+  --jh-meter: oklch(0.7 0.12 215);
+}
+
+.jh-ui[data-theme='light'][data-accent='cyan'] {
+  --jh-accent: oklch(0.52 0.09 215);
+  --jh-accent-hover: oklch(0.48 0.084 215);
+  --jh-accent-text: oklch(0.48 0.083 215);
+  --jh-accent-tint: oklch(0.52 0.09 215 / 0.09);
+  --jh-accent-border: oklch(0.52 0.09 215 / 0.32);
+  --jh-focus-ring: oklch(0.52 0.09 215);
+  --jh-row-hover: oklch(0.52 0.09 215 / 0.05);
+  --jh-meter: oklch(0.57 0.1 215);
+}

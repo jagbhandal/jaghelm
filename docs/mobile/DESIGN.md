@@ -30,11 +30,11 @@ The goal is a **mobile-first, monitor-on-the-go native Android app** with workin
 
 Locked via mockups. **Bottom-tab nav: Overview / Services / Infra / Alerts.**
 
-- **Overview** — health hero is a **subsystem strip** (Services / Nodes / UPS / Cron cells; green = calm, red = degraded; the cell card is alarm-tinted when degraded). Active incidents render **expanded inline** (cause + 24h uptime spark + **Open**); multiple incidents collapse behind "+N more". Below, compact node rows with CPU / MEM bars.
+- **Overview** — health hero is a **subsystem strip** (Services / Nodes / UPS / Cron cells; green = calm, red = degraded; the cell card is alarm-tinted when degraded). Active issues list one compact row per incident (lamp, status word, name, readout; the cause only on a down row). Tapping an issue row opens the detail screen of what it refers to: a down or unknown service opens Service detail, and a UPS or cron row opens Incident detail, since the app has no UPS or cron job screen. The row is a button named "{title}, {word}, {readout}", where the name spells out UNKN as "unknown"; Back (on screen or the hardware key) returns to the Overview, and the service's **Open** lives on its detail screen. The row finds its entity by the key `deriveIncidents` carries (service uid, or the incident id such as `cron:{node}:{job}`), never by its name; the map is `issueRoute` in `mobile/src/nav/issueRoute.js`, which also sends a node row to Node detail, although no row refers to a node yet. A row with nothing to open renders as plain content, not a button, and doesn't look tappable (#279). If the service or incident is gone by the next poll, its detail screen says so ("This service is no longer reported." or "This incident has resolved.") and Back still returns to the Overview. The Overview has no per-node rows (Bug #10); nodes show in the Nodes cell and on Infra. The UPS cell reads `nut_status` as push does: 1 is MAINS, 2 (on battery) and 3 (low battery) are ON BATTERY with an incident, and 0 or no reading is NO SIGNAL. The healthy hero names the UPS only when its state is known: status 1 still reads "N services up across M nodes — UPS on mains", and an unknown status or no reading adds nothing to the hero while the cell shows NO SIGNAL. The map is `upsState` in `mobile/src/data/derive.js`; the app can't bundle server code, so `upsStatusParity.test.js` holds it to `normalizeUpsStatus` in `server/push/snapshot.js` and fails if the two drift (#273).
 - **Services** — a **flat list sorted problems-first**, each row tagged with its node (services are organized per node: `vm-101`, `vm-103`, `gateway-pi`). Filter chips (All / Down / per-node), search, tap to detail. **Icons resolve via a base-aware resolver (see Icon Rendering §)** — never a relative `/api/icons/cached`.
-- **Infra** — compact **node cards** (name, type, CPU / MEM / DISK, or TEMP for the Pi, "N up / M down"); tap to node detail with the full service list for that node.
+- **Infra** — compact **node cards** (name, type, CPU / MEM / DISK, or TEMP for a node that reports temperature such as the Pi, "N up / M down"); tap to node detail with the full service list for that node. DISK replaces TEMP on the card once disk is at or above 90 % (`DISK_HOT`, push's default disk threshold and the spec §6.1 disk warn line), so a near-full disk is never hidden (#273). The detail screen has room for both and shows CPU, MEM, TEMP (when reported) and DISK, so the temperature behind an amber lamp stays visible. It doesn't change the node's lamp; that waits for the server status model (#290, #292).
 - **Alerts** — push history grouped by day; the active incident is pinned red at top; tap to incident detail.
-- **Incident detail** — full screen: status, node, cause, 24h uptime, event timeline (including "push sent"), **Open**.
+- **Incident detail** — full screen: status, node, cause, 24h uptime, **Open**. A derived incident has no event timeline, because the snapshot carries no event times; a push-event fallback (a tapped push with no live incident behind it) shows the push time. Reached from Alerts, from a UPS or cron row on the Overview, and from a tapped push.
 - **First-run** — backend URL + access token, Test & Connect, tailnet note; both values stored in the Android Keystore.
 - **Startup states** — the app renders at once; `Root.jsx` owns the boot attempt and never shows a blank screen. **Connecting to JagHelm…** while the startup auth check runs (one 10 s deadline, `BOOT_TIMEOUT_MS` in `boot.js`), then the app (first-run / re-auth / tabs as before). If the server can't be reached (timeout, network error, or a 5xx from `/auth/check` such as a proxy's 502 while JagHelm is down; a 401 or `authenticated: false` still drops to re-auth): **Can't reach JagHelm** with the saved server address, "If you're away from home, check that Tailscale is connected on this phone.", **Retry** (re-runs the check, keeps the saved session token) and **Change server** (clears the token and address as Forget device does, through the same `forgetServer()` in `mobile/src/auth/forgetServer.js`, then lands on first-run). An unexpected boot error or a malformed boot result shows **Something went wrong** + Retry (re-runs boot); a render crash anywhere (top-level `ErrorBoundary.jsx`) shows the same screen, where Retry reloads the app. Each boot attempt carries an id and only the latest may change the screen, so a superseded attempt resolving late is ignored. Sign in on the login screen uses the same 10 s deadline for the request and its body: if the server doesn't answer, the form shows "Can't reach JagHelm. If you're away from home, check that Tailscale is connected on this phone." and the button re-enables.
 - **Notification settings** — reached from the **Alerts** tab header (gear icon). Per-category toggles (Services / Hosts / UPS / Cron) + a global **"also notify on recovery"** switch + a master push on/off. The only in-app settings surface (deep config stays on desktop). See *Notification preferences* under Push Pipeline.
@@ -138,9 +138,11 @@ export function cachedIconUrl(url) {
   return `${getApiBase()}/icons/cached?url=${encodeURIComponent(url)}`;
 }
 ```
-This makes the proxied icon URL absolute and same-base on mobile, so it reaches Express over Tailscale and the auth guard injects `x-auth-token` (the icon route is protected). Web is byte-for-byte identical (`getApiBase()` → `/api`).
+This makes the proxied icon URL absolute and same-base on mobile, so it reaches Express over Tailscale. Web is byte-for-byte identical (`getApiBase()` → `/api`).
 
-**Fallback (b):** if a deployment routes via the env-CORS allow-list and prefers not to proxy, mobile presentation may render icons **directly from the CDN** (already permitted in `connect-src`/`img-src`: `https://cdn.jsdelivr.net`), skipping the proxy. Default is (a).
+> **Correction (2026-10, #255):** no token is involved. An `<img>` is loaded by the WebView, not through `apiFetch`, so nothing injects `x-auth-token`, and `/api/icons/cached` is a public route because of that. Since #255, `cachedIconUrl()` also routes only Dashboard Icons and selfh.st URLs through the cache (`server/icon-sources.js`); any other URL is returned unchanged. Whether the app can load the absolute backend URL at all under its CSP (`img-src 'self' data: blob:`) is the Android icons issue, #373.
+
+**Fallback (b):** if a deployment routes via the env-CORS allow-list and prefers not to proxy, mobile presentation may render icons **directly from the CDN**, skipping the proxy. Default is (a). That would need `https://cdn.jsdelivr.net` added to the mobile CSP's `img-src`: the shipped `mobile/index.html` allows only `'self' data: blob:` there and `'self'` in `connect-src` (corrected 2026-10; see #373).
 
 **`uploadFile()`** stays relative (web-only; mobile does no uploads) — but it is **explicitly captured as a harness gap** (the one remaining raw `/api` literal that bypasses the resolver), with the correct file attribution (`src/hooks/useData.js`, not `client.js`).
 
@@ -188,7 +190,9 @@ export async function initAuthToken() { authToken = (await secureStore.getItem('
 
 ### Transport & CORS (Express)
 
-**Default transport = Capacitor native HTTP (no CORS at all).** Backend calls are routed through Capacitor's native HTTP layer (patched `fetch`/`XHR` leaves native code, not the WebView), which **bypasses CORS entirely**. This is the **default** for three reasons: (1) the OSS backend needs **zero** app-specific config — its CORS posture stays identical to today; (2) native code reads all response headers, so the `exposedHeaders: ['ETag']` concern disappears and `useData.js` `If-None-Match` 304 caching works unmodified; (3) it removes the spoofable-`Origin` widening described below. Wiring lives in `mobile/src/nativeHttp.js`; `connect-src` in the mobile CSP can then stay tight (`'self'`).
+**Default transport = Capacitor native HTTP (no CORS at all).** Backend calls are routed through Capacitor's native HTTP layer (patched `fetch`/`XHR` leaves native code, not the WebView), which **bypasses CORS entirely**. This is the **default** for three reasons: (1) the OSS backend needs **zero** app-specific config — its CORS posture stays identical to today; (2) native code reads all response headers, so the `exposedHeaders: ['ETag']` concern disappears; (3) it removes the spoofable-`Origin` widening described below. Wiring lives in `mobile/src/nativeHttp.js`; `connect-src` in the mobile CSP can then stay tight (`'self'`).
+
+**A 304 can't come back through Capacitor's patched GET (#238).** Capacitor 8 sends a patched `GET` as a WebView request to its local interceptor (`https://localhost/_capacitor_http_interceptor_?u=…`), and the interceptor hands the native answer back as an `android.webkit.WebResourceResponse`, whose constructor throws on any 3xx status. The interceptor catches that and returns nothing, so the WebView loads the interceptor URL itself and a 304 reaches JS as a failed fetch (read from the Capacitor 8 and AOSP sources: `WebViewLocalServer.handleCapacitorHttpRequest`, `WebResourceResponse.setStatusCodeAndReasonPhrase`). `installNativeHttp()` (run from `bootMobile()`) therefore wraps `window.fetch` on the device: a `GET` to the backend (a URL on the origin of `getApiBase()`) that carries `If-None-Match` goes through the `CapacitorHttp.request` plugin call instead, which returns status, headers and body over the bridge, and is rebuilt into a `Response` (a 304 with a null body, a 200 with its JSON). The plugin gets the resolved absolute URL and follows redirects, as the interceptor path does. It hands back a JSON body it can't parse (empty or malformed) as a raw string; that string goes into the `Response` as it is, so `json()` throws as it would in a browser and the bad body never replaces the last good one, nor does its ETag: `useData.js` stores a response's ETag only together with a body that parsed (#383). Everything else — unconditional GETs such as the first load, writes, other hosts, the app's own files — keeps Capacitor's normal path. The caller's `AbortSignal` (12 s in `useData.js`) still settles the request; the plugin call itself has a 15 s native backstop. In a browser the wrapper is not installed.
 
 **Factual correction:** `cors({ origin: false })` (the unset-`CORS_ORIGIN` state, `server/index.js`) does **not** block the request server-side — `cors` calls `next()` and Express **processes** the request; it merely omits the `Access-Control-Allow-Origin` header, so only the **browser** discards the response. A non-browser client (or a spoofed `Origin`) is unaffected at the server.
 
@@ -206,6 +210,22 @@ app.use(cors({
 }));                         // ETag by default, which would silently break useData.js If-None-Match 304 caching.
 ```
 With native HTTP (the default), neither `CORS_ORIGIN` nor `exposedHeaders` is needed. **Decide once per deployment; the default is native HTTP.**
+
+### Live data polling
+
+`mobile/src/data/useDashboard.js` is the app's one live-data source: `/api/services` (the health gate: a failure sets `error`), `/api/ups` and `/api/cron/status` (a failure keeps the last value). One scheduler (`mobile/src/data/pollScheduler.js`, explicit `start`/`stop`) drives every fetch round. Rounds never overlap: a trigger during a round folds into one follow-up. The next poll is armed one refresh interval after a round lands, so the status bar's `HH:MM · next Ys` (`lastUpdated` + interval) is when it really fires. The interval is the display config's `refreshInterval` (the web dashboard's, 30 s by default, 5 s floor); a change re-arms the pending poll.
+
+Each round has a reason, which sets how it fetches. The server contract is the web dashboard's ([ARCHITECTURE.md](../ARCHITECTURE.md) §4.2, and Polling in §5): `/api/services` and `/api/ups` answer `If-None-Match` with a 304, and `/api/cron/status` has no ETag and sends `Cache-Control: private, max-age=60`.
+
+| Round | When | services, ups | cron |
+| --- | --- | --- | --- |
+| `force` | first load; a tap on the status bar | full fetch (`skipEtag`, `cache: 'reload'`) | full fetch, past the cache |
+| `poll` | every interval | `If-None-Match` | plain GET |
+| `resume` | the app returns to the foreground | `If-None-Match` | full fetch, past the cache |
+
+A 304 hands back the same body reference as the last 200 (`useData.js`), so an unchanged poll leaves the data untouched and the views' memos hold; the only re-render is the status bar's clock. A 304 counts as a success (the server confirmed the data), so `lastUpdated` moves; a failed round leaves it alone. A conditional request is never answered from an HTTP cache, so a `resume` round can send ETags and still get the server's current answer; only cron, which has no ETag, is fetched past the cache after a trip to the background.
+
+**Background.** The hook listens to `@capacitor/app` `appStateChange`. Capacitor sends `isActive: false` when the activity stops (no longer visible): the scheduler stops, with no timer left and any queued round dropped (a round in flight finishes but arms nothing). `isActive: true` (sent on every activity resume) starts it again with one `resume` round at once; while it is already running, the event does nothing, so a resume that follows a dialog rather than a trip to the background costs no fetch. The same event sets the hook's `foreground` flag, which `RefreshStatus` uses to stop its 1 s countdown heartbeat in the background and tick once on return. In a browser, `@capacitor/app` sends the same event from `visibilitychange`.
 
 ### CSP
 
@@ -268,10 +288,11 @@ Add a `<meta http-equiv="Content-Security-Policy">` to `mobile/index.html`. **CS
 <!-- Default (native-HTTP transport): connect-src stays tight; native calls bypass it. -->
 <meta http-equiv="Content-Security-Policy"
   content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
-           font-src 'self' data:; img-src 'self' data: blob: https://cdn.jsdelivr.net;
+           font-src 'self' data:; img-src 'self' data: blob:;
            connect-src 'self';">
 ```
-Fonts are **bundled locally**, so `font-src 'self'` holds and no `fonts.googleapis.com` / `fonts.gstatic.com` allowance is needed. Glassmorphism `backdrop-filter` and the theme CSS need **no** CSP relaxation. If the WebView-fetch fallback is chosen, widen `connect-src` to `'self' http://*:* https://*:*` with the honest "not the boundary" note; if CDN icons are used (Icon fallback b), keep `https://cdn.jsdelivr.net` in `img-src`/`connect-src`.
+(As shipped in `mobile/index.html`; corrected 2026-10, the snippet used to list `https://cdn.jsdelivr.net` in `img-src`, which the shipped CSP never had. See #373.)
+Fonts are **bundled locally**, so `font-src 'self'` holds and no `fonts.googleapis.com` / `fonts.gstatic.com` allowance is needed. Glassmorphism `backdrop-filter` and the theme CSS need **no** CSP relaxation. If the WebView-fetch fallback is chosen, widen `connect-src` to `'self' http://*:* https://*:*` with the honest "not the boundary" note; if CDN icons are used (Icon fallback b), add `https://cdn.jsdelivr.net` to `img-src`.
 
 ### Build chain
 
@@ -323,23 +344,25 @@ App.addListener('backButton', ({ canGoBack }) => { if (atTabRoot()) App.exitApp(
 
 ## Push Pipeline / FCM
 
-The backend originates push on infrastructure state changes. It plugs into the existing Express background poll (`server/refresh.js` → `runBackgroundRefresh`) and reuses the data the loop already produces. The detector is a **judgment-free deterministic module**: given two snapshots it emits the same event set **in the same canonical order** every time — no model, no heuristics, no wall-clock branching beyond explicit thresholds. Push is **fully optional**: with no FCM service account configured, the whole pipeline self-disables and nothing else is affected.
+The backend originates push on infrastructure state changes. It plugs into the existing Express background poll (`server/refresh.js` → `runBackgroundRefresh`) and reads what the loop already produces: since #292, the server's **status model** (`server/status/`, [ARCHITECTURE.md](../ARCHITECTURE.md) 4.7), which judges every entity once for the web, the app and push. The detector is a **judgment-free deterministic module**: given two snapshots it emits the same event set **in the same canonical order** every time — no heuristics, no wall-clock branching; every line (thresholds, hysteresis, "for 2 cycles") is the status model's. Push is **fully optional**: with no FCM service account configured, the whole pipeline self-disables and nothing else is affected.
 
 ### Architecture
 
 ```
 runBackgroundRefresh()  ──▶ refreshServices/refreshUPS/refreshGitea/...   [existing poll, ~30s]
-        │  (new, AWAITED, inside the try — after allSettled, before recordRefreshCycle)
+        ▼
+  updateStatus()  ──▶ the status model, once a cycle (also served at /api/status)   server/status/
+        │  (AWAITED, inside the try — after allSettled, before recordRefreshCycle)
         ▼
   await runPushCycle()  ──▶ guarded; self-contained try/catch; can never reject
         ▼
-  buildSnapshot(caches)  ──▶ canonical { services, hosts, ups, cron } state map   (PURE)
+  buildSnapshot(caches, prev, status) ──▶ { services, monitorOf, hosts, ups, cron, sources }   (PURE)
         ▼
-  diffSnapshots(prev,next) ──▶ Event[] (canonically sorted)   server/push/differ.js  (PURE, no I/O)
+  diffSnapshots(prev,next,status) ──▶ Event[] (canonically sorted)   server/push/differ.js  (PURE, no I/O)
         ▼
   dispatchEvents(events) ──▶ per event × per registered token   server/push/fcm.js (HTTP v1, Admin SDK)
         ▼
-  persist next snapshot → data/push-snapshot.json (completes before cycle ends)
+  advance prev snapshot (memory); write data/push-snapshot.json if its alert state changed
         ▼
   prune UNREGISTERED/INVALID tokens   server/push/tokenStore.js
 ```
@@ -348,8 +371,8 @@ New files under `server/push/` (mirrors the existing `server/<domain>.js` layout
 
 | File | Responsibility |
 |---|---|
-| `server/push/snapshot.js` | `buildSnapshot()` — flatten existing caches into a canonical comparable map (keys inserted in sorted order). Pure. |
-| `server/push/differ.js` | `diffSnapshots(prev, next, thresholds)` — deterministic differ; returns a **canonically sorted** `Event[]`. Pure, no I/O. |
+| `server/push/snapshot.js` | `buildSnapshot()` — record what the status model decided about each entity push pages for, as a canonical comparable map (keys inserted in sorted order). Pure. |
+| `server/push/differ.js` | `diffSnapshots(prev, next, status)` — deterministic differ; returns a **canonically sorted** `Event[]`, each with the model's reason. Pure, no I/O. |
 | `server/push/fcm.js` | FCM HTTP v1 via Firebase Admin SDK; `initPush()`, `isPushEnabled()`, credential bootstrap. |
 | `server/push/tokenStore.js` | Device-token registration + persistence + stale-token pruning. |
 | `server/push/dispatch.js` | Glue: events → FCM message JSON, per-token fan-out, dead-token pruning, holds + persists the prev-snapshot. |
@@ -369,8 +392,9 @@ recordRefreshCycle();
 export async function runPushCycle() {
   if (!isPushEnabled()) return;        // zero cost when push disabled
   try {
-    const next = buildSnapshot(readCaches());
-    const events = diffSnapshots(loadPrevSnapshot(), next, thresholds);
+    const prev = loadPrevSnapshot();
+    const next = buildSnapshot(readCaches(), prev, status); // from the status model (#292); holds what it can't call
+    const events = diffSnapshots(prev, next, status);
     await dispatchEvents(events);
     persistSnapshot(next);             // must complete before return
   } catch (err) { log.warn({ err }, 'push cycle failed — skipped this round'); }
@@ -382,21 +406,31 @@ export async function runPushCycle() {
 
 The detector hooks in as the **last data step of the cycle**, after `Promise.allSettled` resolves and caches are populated — so it sees exactly the data the API serves.
 
-**Snapshot** — reads the just-written caches (`getCached('services')`, `getCached('ups')`) + `cron-store.getAllStatuses()`, projecting into one canonical map keyed by stable IDs that already exist in the data layer (services use the existing `uid` = `nodeKey:container`). **Keys are inserted in sorted order** so iteration order is pinned:
+**Snapshot** (#292) — reads this cycle's status model (built from the just-written caches and one read of `cron-store.getAllStatuses()`), plus the caches' source flags and monitor identities, projecting into one canonical map keyed by stable IDs that already exist in the data layer (services use the existing `uid` = `nodeKey:container`). **Keys are inserted in sorted order** so iteration order is pinned:
 ```js
 {
-  services: { "vm-101:gitea": "up", "vm-103:grafana": "down" },           // monitor?.status || c.status
-  hosts:    { "vm-101": { reachable: true,  cpu: 0.42, mem: 0.61, disk: 0.55 },
-              "vm-103": { reachable: false, cpu: null, mem: null, disk: null } },
-  ups:      { state: "online" },                                          // nut_status → online|on_battery|unknown
-  cron:     { "pi2:npm-sync": "success", "vm103:backup": "failure" },     // latest run status per node:job
+  services: { "vm-101:gitea": "up", "vm-103:grafana": "down" },           // each Kuma-fed service: crit → down, ok → up
+  monitorOf: { "vm-101:gitea": "1", "vm-103:grafana": "7" },             // the Kuma monitor that fed each key (#395)
+  hosts:    { "vm-101": { reachable: true,  levels: { cpu: "ok", disk: "warn", mem: "ok", temp: "ok" } },
+              "vm-103": { reachable: false, levels: { cpu: "ok", disk: "ok", mem: "ok" } } },  // the model's conditions
+  ups:      { state: "online" },                                          // the model's UPS: crit → on_battery, ok → online
+  cron:     { "pi2:npm-sync": "success", "vm103:backup": "failure" },     // each job (and backup): success|failure|overdue
+  sources:  { "kuma": "ok", "nut": "ok", "prometheus": "failing" },       // ok | failing (1st failed cycle) | down
 }
 ```
 > **API name (ground truth):** the cache accessor is `getCached(key)` (`server/cache.js`), **not** `getCache`. Use `getCached`.
 
-Status normalization is explicit and total: Kuma/Docker → `up|down|unknown`; a node whose `refreshServices` outcome was `rejected` (or all-null metrics) → `reachable:false`; NUT → `online|on_battery|unknown`. Anything unrecognized → `unknown` and **never emits** (no false alarms on novel states).
+Every state is the model's: a service's from its Kuma monitor, a host's `reachable` and each reading's level (hysteresis and CPU's 2 cycles applied) from its node entity, the UPS's and each job's from theirs; the model's status word tells a pending service, an unreachable node, a failed run and an overdue one apart. What the model can't call up or down — a service pending or in maintenance, an entity a failed source made unknown, a reading whose query failed or that has no value this cycle (the model holds its level too, #462, so a sensor that skips a cycle mid-episode sends no clear and no second alert), the UPS while NUT is quiet — **holds its last known state** and never emits, so on battery, unknown, on battery sends no second `ups_on_battery`, and online, unknown, online sends nothing. **An entity with no previous state (#448)** — new to the snapshot (a node added to `services.yaml`, a reading that starts answering, a new service or job, a UPS never read, held as `unknown`), or every entity when there is no snapshot — is diffed from "no previous state": it pages once if it appears in trouble, at the model's level, and sends nothing if it appears ok (no "Host recovered" for a new node). A container with no monitor, an integration and an Arcane agent are not in it (the Arcane poller pages for its agents).
 
-**Differ** — `diffSnapshots(prev, next, thresholds) → Event[]`. No I/O, no `Date.now()`, no randomness. The previous snapshot is held in a module-level var in `dispatch.js` and **persisted to `data/push-snapshot.json`** so a restart doesn't re-fire every active incident as "new". The first cycle after boot establishes a baseline and emits nothing.
+**A Kuma monitor no container has (#390)** has a card only while it is down. The services refresh keeps the uids of the up ones beside the cached services payload, in `upWithoutCard` (it is not served), each the uid its red card has while down, as long as its last container isn't in the stopped list. The status model reads them as up services, and `buildServices` records them as `up`, so the monitor's recovery diffs on the key of its down push. A service card with the same uid wins, but a grey presence breadcrumb does not (the model judges it as a missing container), so a recovery while the monitor's stopped container still shows one is sent too. A paused monitor, or one Kuma no longer has, is in neither, so it sends nothing. See [ARCHITECTURE.md](../ARCHITECTURE.md), "Kuma monitors and containers".
+
+**A monitor's key can move (#395)**: a container takes it, its stopped container holds it only while it is down, or a monitor that remembered the same container drops out. The services refresh keeps `monitorOf` beside the cached payload (not served), the id of the monitor each monitored uid carries, and `buildSnapshot` stores it in the snapshot. The differ diffs such a key against the monitor's last state wherever its keys were (`serviceHistory`), so each outage is one `service_down` and one `service_recovered`, each on the card the monitor has at the time; a key whose monitor moved on to another key starts fresh, and so does a key whose monitor has gone (paused or deleted) when no monitor feeds it now, so a running card whose monitor is paused or deleted while down sends no false recovery. A monitor an explicit mapping gives several containers is **one** event, on the first of its cards, naming every node, however its cards come and go during the outage (#407). A card that had no monitor and a key that a monitor new to the snapshot feeds (deleted from Kuma and added again) keep their own state, as before. A snapshot written before #395 has no `monitorOf` and diffs key by key, so the deploy sends nothing. The FCM payload is unchanged.
+
+**A failed source is not an outage of what it watches (#232), and is one push of its own (#292).** The services payload says whether Prometheus and Kuma answered this cycle (`sources.prometheus.ok`, `sources.kuma.ok`), and each node which of its reads failed (`failedReads`); the UPS payload carries its own `ok`. A missing payload (a cold cache after a restart, or one past its 120 s TTL because the refresh kept failing) counts as failed, never as an empty answer. The status model makes what a failed source feeds `unknown`, and `buildSnapshot(caches, prev, status)` holds each unknown at its previous state instead of reading the failure as every host or service going away. For hosts that is per host and per reading: a reading whose query failed keeps its previous level, and `reachable` its previous value when the node's `up` query failed (or, for a node judged by metric presence, one of its metric queries did); everything else takes this cycle's. A query covers every node (#234), so a metric query that keeps failing holds that reading on every host, and, for a host with no `up` series, its reachability; a host's `up` at 0 still pages. A host missing from the payload while Prometheus fails is kept whole. The source itself — Prometheus, Kuma or the NUT exporter, failed two cycles in a row — sends one `source_down`, and one `source_recovered` when it answers. While Prometheus fails, a service missing from this cycle keeps its previous status while one present (a Kuma outage card, or the up entry of a monitor whose container wasn't seen) takes this cycle's, so Kuma keeps paging, and a recovery during the outage is sent when Kuma reports it: with no container seen, the up monitor is an entry under its card's uid (#390). Only if no node could be read at all is it sent once the container is seen again; while Kuma fails, all of `services` is kept, since Kuma sets every status that can page; while the UPS read fails, `ups` is kept. `runPushCycle` hands the builder its `prev` and advances to the result, so the kept state lasts however long the failure does, and its recovery diffs against the last real reading.
+
+With no `prev` (a first run, or a missing or unreadable file) there is nothing to keep, and the snapshot is built whatever the sources say (#461): there is no baseline to wait for. A source that failed is in its `sources` like on any cycle, so its second failed cycle in a row sends `source_down` and its recovery `source_recovered` (#439); what it feeds is unknown in the model, so a host is left out and a service or the UPS is `unknown`, which sends nothing, and each is new once the source answers: what is in trouble then pages once. A Kuma service going down, or a job failing, pages as on any cycle. Until #461 `buildSnapshot` returned null while the UPS read failed, or Prometheus failed with no host's reachability read, and that cycle was skipped. The wait dated from a baseline that was never diffed (a host recorded unreachable during the outage sent `host_recovered` later; an `unknown` UPS kept a later `on_battery` silent); since #448 a host not read is not in the snapshot and is new when read, and the UPS pages going on battery from `unknown`, so all the wait still did was silence every push meanwhile, for as long as the UPS query kept failing.
+
+**Differ** — `diffSnapshots(prev, next, status) → Event[]`. No I/O, no `Date.now()`, no randomness. The previous snapshot is held in memory (`createPushSnapshot` in `dispatch.js`) and **persisted to `data/push-snapshot.json`** so a restart doesn't re-fire every active incident as "new". The file is read once, on the first cycle; it is rewritten only when the snapshot's alert state (`alertStateKey` in `differ.js`: every state, the monitor of each service key, each host's reachability and levels, each source's state — since #292 all of the snapshot) differs from the file's, so a steady cycle writes nothing. The status model's memory starts, at boot, from the levels the file holds, so a reading inside its hysteresis band after a restart (or a threshold edited while JagHelm was stopped) is judged as if the process had kept running (#361). A failed write is retried every cycle, and shutdown writes the latest snapshot (`flush`) if the file is behind; until it lands, a restart can re-send an alert, or miss the recovery of one already sent. With no file, or an unreadable one, every entity is new (#448): the first cycle sends each open problem once and nothing for what is ok, and the snapshot it writes holds them, so the next cycle, or the next restart, sends nothing again. A file written before #292 holds readings, not levels: it is read as the levels its readings give (`upgradeSnapshot`), so the first cycle after the deploy compares levels like any other, and a reading that crossed its line since the file was written is sent. A cycle whose status model failed is skipped (nothing diffed, sent or advanced), so the next good cycle sends what changed meanwhile.
 
 **Canonical ordering (REQUIRED for the byte-identical promise).** "Same input ⇒ same event set" is necessary but not sufficient for "byte-identical array": JS object key iteration is insertion-order, and cache-population order across refreshes is not pinned. The differ therefore applies a **total, deterministic sort** to the emitted array before returning:
 > **Sort key:** ascending `(type, id)` — string-compare `type`, tiebreak by `id`. This is the canonical order; it is stated here and **asserted in the table-driven test** (the test compares the full serialized array, not a set). `buildSnapshot` also emits sorted keyed maps as belt-and-suspenders. Without this, the "byte-identical array" promise does not hold.
@@ -405,23 +439,26 @@ Status normalization is explicit and total: Kuma/Docker → `up|down|unknown`; a
 |---|---|---|---|
 | Service | `up`/`unknown` → `down` | `service_down` | critical |
 | Service | `down` → `up` | `service_recovered` | info |
-| Host | `reachable` true → false | `host_unreachable` | critical |
+| Host | `reachable` true → false, or new to the snapshot and unreachable | `host_unreachable` | critical |
 | Host | `reachable` false → true | `host_recovered` | info |
-| Host | metric crosses threshold up (`cpu`/`mem`/`disk` ≥ limit, was below) | `host_threshold` | warning |
-| Host | metric falls below threshold − hysteresis | `host_threshold_cleared` | info |
-| UPS | `online` → `on_battery` | `ups_on_battery` | critical |
+| Host | a reading's level rises (`ok` → `warn`, or to `crit`), or a reading new to the snapshot (a new host's included) is at `warn` or `crit`: CPU, memory, disk, temperature, a storage pool | `host_threshold` | warning (critical for `crit`) |
+| Host | a reading's level returns to `ok` (below its line − hysteresis) | `host_threshold_cleared` | info |
+| UPS | `online`/`unknown` (no known state) → `on_battery` | `ups_on_battery` | critical |
 | UPS | `on_battery` → `online` | `ups_restored` | info |
-| Cron | ok/new → `failure` | `cron_failed` | warning |
+| Cron | ok/new → `failure` | `cron_failed` | warning (critical for a job marked as a backup, #478) |
 | Cron | `failure` → `success` | `cron_recovered` | info |
+| Cron | → `overdue` | `cron_overdue` | warning |
+| Monitoring source | failed two cycles in a row (`down`) | `source_down` | warning |
+| Monitoring source | `down` → `ok` | `source_recovered` | info |
 
 Each `Event` is a plain serializable record:
 ```js
 { type: "service_down", id: "vm-103:grafana", node: "vm-103",
-  title: "grafana is DOWN", body: "Service grafana on vm-103 is not responding",
-  prev: "up", next: "down" }
+  title: "Service down", body: "Grafana on vm-103 · Kuma: down",
+  reason: "Kuma: down", severity: "critical", prev: "up", next: "down" }
 ```
 
-**Determinism guards (by construction):** pure exported function unit-tested with fixture snapshot pairs (same input ⇒ **byte-identical, canonically-sorted** event array, table-driven test covering every row + the no-change → `[]` case + an order-stability case where two unsorted inputs yield identical arrays); thresholds (`{ cpu: 0.90, mem: 0.90, disk: 0.90, hysteresis: 0.05 }`) are explicit config read from `display-config.json`, not magic numbers; hysteresis (the only stateful nuance) lives in the comparison, not in timers; new/removed keys handled by one documented baseline rule; no model call anywhere. This satisfies the determinism-by-construction law — atomic deterministic execution, judgment (thresholds/severities/sort key) lives in config/spec.
+**Determinism guards (by construction):** pure exported function unit-tested with fixture snapshot pairs (same input ⇒ **byte-identical, canonically-sorted** event array, table-driven test covering every row + the no-change → `[]` case + an order-stability case where two unsorted inputs yield identical arrays); every line is the status model's (`server/status/thresholds.js`, `display-config.json`'s `pushThresholds` over the spec §6.1 defaults), not a number of push's own; hysteresis lives in the model's held levels, not in the comparison or in timers; new/removed keys handled by one documented rule (a new key is diffed from no previous state, #448); no machine-learning model is called anywhere (the status model is plain code). This satisfies the determinism-by-construction law — atomic deterministic execution, judgment (thresholds/severities/sort key) lives in config/spec.
 
 ### Device-token registration + storage
 
@@ -434,11 +471,11 @@ GET    /api/push/status                            // { enabled: bool } — driv
 `server/push/tokenStore.js` persists to `data/push-tokens.json` via the existing `atomicWriteFileSync` helper (same pattern as `cron-store.js`):
 ```json
 { "<fcm-token>": { "platform": "android", "appVersion": "1.0.0",
-                   "registeredAt": "2026-06-25T...", "lastSeenAt": "2026-06-25T..." } }
+                   "registeredAt": 1782345600000, "lastSeenAt": 1782345600000 } }
 ```
-`register` upserts + refreshes `lastSeenAt` (idempotent). The client re-registers on app start so active devices stay fresh.
+`registeredAt`/`lastSeenAt` are epoch-ms numbers. `register` upserts + refreshes `lastSeenAt` (idempotent). The client re-registers on app start. A send FCM accepts also refreshes `lastSeenAt` (`dispatchEvents` → `tokenStore.markDelivered`: at most one write per dispatch, and none for a token already refreshed in the last day), so `lastSeenAt` is the last sign of life — an app start **or** an accepted push — and a phone used only to receive alerts stays fresh without the app being opened (#247).
 
-**Token-store privacy & retention.** `data/push-tokens.json` holds FCM **device tokens** (device-identifying, PII-adjacent). It is gitignored via the existing `data/` ignore (verified safe — never committed). Retention policy: per Firebase guidance a token unconnected for **30 days is stale**; `tokenStore` prunes tokens whose `lastSeenAt` is older than 30 days, plus response-driven pruning on `UNREGISTERED`/`INVALID_ARGUMENT` (below). On `DELETE /api/push/register` (logout / push-disable) the token is removed immediately. No token is retained beyond the 30-day stale window without a refresh.
+**Token-store privacy & retention.** `data/push-tokens.json` holds FCM **device tokens** (device-identifying, PII-adjacent). It is gitignored via the existing `data/` ignore (verified safe — never committed). Retention policy: a token is pruned only when FCM names it as unregistered or invalid on a send (below), or after **270 days** with no app start and no accepted push (`tokenStore.pruneStale()`, every refresh cycle) — no sooner than FCM's own 270-day expiry for an inactive Android registration (FCM's clock is the device's connection to FCM, not ours). A token FCM keeps accepting pushes for never ages out; one that gets no sends (every category muted, push disabled) still ages out on app starts alone. On load, a damaged record is dropped (not an object) or repaired (an unreadable `lastSeenAt` restarts at load time; missing prefs become the defaults) so one bad record cannot stop push delivery. On `DELETE /api/push/register` (logout / push-disable) the token is removed immediately. Until 2026-10 (#247) the backstop was 30 days on app starts alone, which silently dropped phones that received alerts but were not opened for a month.
 
 ### FCM HTTP v1 send (service account)
 
@@ -472,7 +509,7 @@ export function isPushEnabled() { return messaging !== null; }
 ```
 Via the SDK: `messaging.send(message)` or `sendEach([...])` for the per-token fan-out. Critical → `android.priority: "high"`; info/warning → normal priority (battery).
 
-**Stale-token pruning (deterministic, response-driven):** after each send, remove a token when the response is `UNREGISTERED` (404) or `INVALID_ARGUMENT` (400) **and the payload is known-valid** (such tokens are permanently invalid). `dispatch.js` collects those IDs → `tokenStore.remove(token)`. Transient errors (`UNAVAILABLE`, `INTERNAL`) are logged and retried next cycle, not pruned.
+**Stale-token pruning (deterministic, response-driven):** `fcm.sendToToken` flags a token as dead when FCM answers `UNREGISTERED` (404, `messaging/registration-token-not-registered`), the legacy `InvalidRegistration` (`messaging/invalid-registration-token`), or `INVALID_ARGUMENT` (400) whose message names the registration token. Any other `INVALID_ARGUMENT` is a payload problem (too big, bad data, bad TTL) or a non-JSON 400, which firebase-admin maps to the same code: the token is kept and FCM's message is logged. `dispatch.js` collects the flagged tokens → `tokenStore.removeToken(token)`, once each per dispatch. Transient errors (`UNAVAILABLE`, `INTERNAL`) are logged and the token is kept, but the send is not retried: `runPushCycle` advances the persisted snapshot every cycle, so that transition is not re-detected and the alert is lost.
 
 ### Client registration (Capacitor)
 
@@ -509,7 +546,7 @@ User-controllable, **filtered server-side** so a muted category is never sent (s
     "prefs": { "categories": { "service": true, "host": true, "ups": true, "cron": true, "watchtower": true },
                "notifyRecoveries": true, "enabled": true } } }
 ```
-- **Categories → event types:** `service` → `service_down`/`service_recovered`; `host` → `host_down`/`host_recovered`/`host_threshold`; `ups` → `ups_onbattery`/`ups_restored`; `cron` → `cron_failed`/`cron_recovered`/`cron_overdue`; `watchtower` (shown as *Updates*) → the Arcane types `arcane_update`/`arcane_heldback`/`arcane_cleared`/`arcane_agent_offline`/`arcane_agent_recovered`/`arcane_release`/`arcane_vulns` (mapped explicitly in `TYPE_CATEGORY`, `server/push/dispatch.js`). `arcane_cleared` and `arcane_agent_recovered` count as recoveries.
+- **Categories → event types:** `service` → `service_down`/`service_recovered`; `host` → `host_unreachable`/`host_recovered`/`host_threshold`/`host_threshold_cleared`; `ups` → `ups_on_battery`/`ups_restored`; `cron` → `cron_failed`/`cron_recovered`/`cron_overdue`; `source_down`/`source_recovered` (#292) → the category of what the source watches: Prometheus `host`, Kuma `service`, NUT `ups` (`SOURCE_CATEGORY`, `server/push/dispatch.js`); `watchtower` (shown as *Updates*) → the Arcane types `arcane_update`/`arcane_heldback`/`arcane_cleared`/`arcane_agent_offline`/`arcane_agent_recovered`/`arcane_release`/`arcane_vulns` (mapped explicitly in `TYPE_CATEGORY`, `server/push/dispatch.js`). `arcane_cleared` and `arcane_agent_recovered` count as recoveries.
 - **`notifyRecoveries`** off ⇒ `*_recovered`/`*_restored` suppressed (you get the down, not the all-clear).
 - **`enabled`** = master switch; off ⇒ no pushes to this device (token kept so re-enabling needs no re-onboarding).
 - **Defaults** (new registration): all categories on, recoveries on, enabled on.
@@ -786,7 +823,7 @@ Ordered. **Phase 0 is required-first and gates every secret-adjacent phase.**
 - **Phase 1 — Data-layer seams (additive, no mobile yet).** `src/api/baseUrl.js`; `useData.js` + `client.js` base-aware; **`cachedIconUrl()` routed through `getApiBase()`**; `src/storage/index.js` + `initAuthToken()`; CORS `exposedHeaders: ['ETag']` + env-gated `CSP_CONNECT_EXTRA` (fallback-only). Desktop behaviour byte-for-byte unchanged. Capture the remaining raw `/api`-literal (`uploadFile` in `useData.js`) as a harness gap with the **correct file attribution**.
 - **Phase 2 — Mobile scaffold + shell.** `jaghelm/mobile/` (own Vite config, `@shared` alias, `capacitor.config.ts` with `CapacitorHttp` enabled, `npx cap add android`), `mobile/src/nativeHttp.js` (default transport), bottom-tab `MobileApp.jsx`, theme-token reuse, locally-bundled fonts, `.gitignore` + `.example` templates, edge-to-edge / safe-area / `insetsHandling`, hardware back, tight mobile CSP meta. First-run screen (backend URL + token + Test & Connect) writing to Keystore via the storage adapter; theme/last-tab via Preferences.
 - **Phase 3 — Read-only UX.** Overview subsystem strip + inline incidents (**Open** only) + node rows; Services flat problems-first list + chips/search + **base-aware icons**; Infra node cards + node detail; Alerts history + incident detail. All read-only over the reused data layer. (Mute affordances disabled/hidden — descoped.)
-- **Phase 4 — Push backend (server-side).** `server/push/{snapshot,differ,fcm,tokenStore,dispatch}.js` + `server/routes/push.js`; wire **`await runPushCycle()`** into `runBackgroundRefresh` (inside try, before `recordRefreshCycle`); self-contained try/catch; `initPush()` into `boot()`; persisted snapshot; deterministic differ with **canonical `(type,id)` sort** + table-driven tests (incl. order-stability + error-isolation); 30-day token retention/prune; **per-token notification-prefs store (per-category + `notifyRecoveries` + master `enabled`, defaults-on) + a deterministic per-(event × token) pref filter in `dispatchEvents` + `GET`/`PUT /api/push/prefs`**; graceful-disable path. (Secret-adjacent ⇒ requires Phase 0.)
+- **Phase 4 — Push backend (server-side).** `server/push/{snapshot,differ,fcm,tokenStore,dispatch}.js` + `server/routes/push.js`; wire **`await runPushCycle()`** into `runBackgroundRefresh` (inside try, before `recordRefreshCycle`); self-contained try/catch; `initPush()` into `boot()`; persisted snapshot; deterministic differ with **canonical `(type,id)` sort** + table-driven tests (incl. order-stability + error-isolation); token retention/prune (shipped at 30 days on app starts; since #247 a 270-day backstop that accepted pushes also refresh); **per-token notification-prefs store (per-category + `notifyRecoveries` + master `enabled`, defaults-on) + a deterministic per-(event × token) pref filter in `dispatchEvents` + `GET`/`PUT /api/push/prefs`**; graceful-disable path. (Secret-adjacent ⇒ requires Phase 0.)
 - **Phase 5 — Push client + light actions.** Capacitor push registration, permission flow (`POST_NOTIFICATIONS`), token POST, deep-link routing into Incident detail; **Open** action; `GET /api/push/status` toggle wiring; **Notification-settings screen (Alerts-tab gear): per-category + recoveries + master toggles, optimistic `PUT /api/push/prefs`**. (Secret-adjacent ⇒ requires Phase 0.)
 - **Phase 6 — Build & distribution.** `build-apk.yml` (ephemeral runner, `if: always()` secret-shred, artifact-secret guard), keystore/`google-services.json` CI secrets, signing config with local fallback, release-attached signed APK; mobile PR-check lane.
 - **Phase 7 — Harness onboarding & ledger.** `jaghelm/.harness.yml` (honest seed), `docs/mobile/ARCHITECTURE.md`, `docs/mobile/HARNESS-STRESS-TEST.md` holds/cracks table, `.harness-ledger.md` captures, `scan.py --check` in CI, Elrond review job (advisory once registry lands); record the archetype CRACKED rows and the verification `--require` flip as tracked follow-ups.
@@ -805,11 +842,11 @@ The harness `capture` lands on the wrong enforcer if line cites drift. Re-verify
 
 **E2E test plan**
 - **Desktop regression (Phase 1 gate):** desktop web app boots and behaves byte-for-byte as before — `getApiBase()` returns `/api`, `cachedIconUrl()` returns `/api/icons/cached?...`, `initAuthToken()` restores the session from `localStorage`, the protected-route guard still injects `x-auth-token`, 304 caching intact. Snapshot/diff the desktop bundle behaviour.
-- **Differ unit tests (Phase 4 gate):** table-driven fixtures asserting every transition row emits its event with correct severity, the no-change case yields `[]`, hysteresis prevents flapping, baseline-on-first-cycle emits nothing, `unknown` never emits, the persisted snapshot survives a restart without re-firing active incidents, and **an order-stability case** where two differently-ordered logical-equivalent inputs yield a **byte-identical** canonically-`(type,id)`-sorted array.
+- **Differ unit tests (Phase 4 gate):** table-driven fixtures asserting every transition row emits its event with correct severity, the no-change case yields `[]`, hysteresis prevents flapping, a first cycle with no snapshot pages only what is in trouble (#448; it was a silent baseline before), `unknown` never emits, the persisted snapshot survives a restart without re-firing active incidents, and **an order-stability case** where two differently-ordered logical-equivalent inputs yield a **byte-identical** canonically-`(type,id)`-sorted array.
 - **Push error-isolation (Phase 4 gate):** a thrown error inside `dispatchEvents` does not propagate past `runBackgroundRefresh` and does not become an `unhandledRejection`; the snapshot is persisted only on a clean cycle; `bgRefreshRunning` clears normally.
 - **Notification-prefs filtering (Phase 4 gate):** a category toggled off suppresses exactly that category's events for that token while other tokens with it on still receive them; `notifyRecoveries:false` suppresses `*_recovered`/`*_restored` only; `enabled:false` suppresses all; unset prefs deliver everything; the pref filter is a pure `(event,prefs)→bool` that does not perturb the canonical differ output.
 - **Push graceful-disable:** with no FCM creds, boot succeeds, `runPushCycle()` is a no-op, `GET /api/push/status` → `{ enabled: false }`, `POST /api/push/register` → `{ stored: true, deliveryEnabled: false }`.
-- **Push E2E (with creds):** induce a service down/up, host unreachable, UPS on-battery, cron failure; assert exactly one push per real transition, correct `data` payload, deep-link opens the right Incident detail; assert `UNREGISTERED`/`INVALID_ARGUMENT` tokens are pruned and transient errors are not; assert 30-day-stale tokens are pruned.
+- **Push E2E (with creds):** induce a service down/up, host unreachable, UPS on-battery, cron failure; assert exactly one push per real transition, correct `data` payload, deep-link opens the right Incident detail; assert `UNREGISTERED`/`INVALID_ARGUMENT` tokens are pruned and transient errors are not; assert a token with no app start and no accepted push for 270 days is pruned, and one FCM keeps accepting is not (#247).
 - **Mobile build / shell:** `npm run mobile:build` + `npx cap sync android` succeed; `@shared` imports resolve; `./gradlew assembleRelease` (or `cap build … APK`) produces a **signed** APK; sideload onto a device, complete first-run (URL + token → Keystore), Test & Connect reaches the Tailscale backend over **native HTTP**, all four tabs render over live data **with icons resolving** (no `https://localhost/api/icons` 404s).
 - **Native secret-storage check:** assert the token is **absent** from `localStorage`/plain Preferences and present only via the secure-storage plugin; assert theme/last-tab persist via Preferences and survive a scheme change (the archetype-gap verification item).
 - **Secret-floor regression (Phase 0 gate):** `secret-scan.py` flags a bare `-----BEGIN PRIVATE KEY-----`, a `"type": "service_account"` JSON, a key pasted into `*.example`, and a key in a lockfile/min.js; missing-scanner fails CI; the post-scrub tripwire raises `ScrubAmbiguityError` on a surviving PEM; **scanner and scrubber import the same `secret_rules.RULES`** (assert a rule added to the registry is seen by both). `scan.py --check` goes red if `scripts/secret-scan.py` or `scripts/secret_rules.py` is deleted or stubbed, or if the PEM/`service_account` content signatures are absent. The **template-tracked CI assertion** fails the build if any named `.example` is untracked.  <!-- pragma: allowlist secret -->

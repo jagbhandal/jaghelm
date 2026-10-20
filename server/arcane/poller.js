@@ -16,6 +16,9 @@
  *     date" or "no longer listed" clears it, so a registry error is never "caught up".
  *   - Agent connectivity comes from the environment list's health alone, from
  *     first sight, independent of the baseline and of the per-environment reads.
+ *     agents() gives the status model (#291) each environment's health as the
+ *     last list read it, with no request of its own: none before a list was
+ *     read, and every one unknown while the list fails.
  *   - Per environment, every data fetch happens before any data state is
  *     touched. A fetch error (network, non-2xx, malformed body) leaves that
  *     environment's held-back set, seen activities and baseline exactly as they
@@ -33,6 +36,10 @@
  *     and seen list (stateStore "checks"), so a state file from before them replays none.
  *   - State advances before dispatch, and a dispatch failure is swallowed, so
  *     a push outage (or push turned off) never re-announces a backlog later.
+ *   - Updates, held-back updates, releases (and the weekly vulnerability digest,
+ *     vulnDigest.js) are events, not states (spec §6.2): they are pushes only, never
+ *     status model issues. When #267's events store lands, they are recorded there
+ *     (Alerts history) as well; nothing else about them changes.
  * The only clock is the injected `now`, read to age awaiting runs; otherwise the same
  * inputs and persisted state give the same outputs.
  * The API key stays inside the client; nothing here can log it.
@@ -137,6 +144,10 @@ export function createArcanePoller({
 }) {
   const log = logger || createLogger('arcane');
   const checkOnly = new Set(checkOnlyEnvs || []);
+  // Each environment's agent as the last environment list read it, sorted by
+  // name ({ env, state }, state envHealth's), for the status model. null until
+  // a list has been read.
+  let agents = null;
 
   const said = new Set();
   function logOnce(key, level, fields, msg) {
@@ -454,6 +465,8 @@ export function createArcanePoller({
         envs = await client.listEnvironments();
       } catch (err) {
         errors.push(`environments: ${errText(err)}`);
+        // No list, no health: the agents it last listed are unknown until it reads again.
+        if (agents) agents = agents.map(({ env }) => ({ env, state: 'unknown' }));
         readFailed(
           'environments',
           err,
@@ -495,7 +508,9 @@ export function createArcanePoller({
       }
 
       // Sorted by name so the event order does not depend on the API's list order.
-      for (const key of [...byKey.keys()].sort()) {
+      const keys = [...byKey.keys()].sort();
+      agents = keys.map((key) => ({ env: key, state: envHealth(byKey.get(key)) }));
+      for (const key of keys) {
         try {
           await pollEnv(byKey.get(key), key, events, errors);
         } catch (err) {
@@ -613,5 +628,10 @@ export function createArcanePoller({
     waitForPush().then(first, first);
   }
 
-  return { pollOnce, checkRelease, start, stop };
+  /** The agents (see `agents` above), a copy each call; null before the first list. */
+  function getAgents() {
+    return agents && agents.map((a) => ({ ...a }));
+  }
+
+  return { pollOnce, checkRelease, start, stop, agents: getAgents };
 }

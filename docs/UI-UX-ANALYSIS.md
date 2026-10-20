@@ -34,8 +34,11 @@ dashboard" bar. The gaps cluster in four areas:
   a server-save failure is invisible to the user (looks saved). *(S)*
 - **Nav bar background is a hardcoded dark-indigo** (`rgba(15,17,35,0.75)`) that
   ignores the theme — wrong on all 4 light themes. Use `--glass-bg`. *(S)*
-- **IframeView blocked-detection reads a stale `status`** in an 8s timeout closure
-  (not in deps) → a slow-but-fine iframe can show "Embedding Blocked". Use a ref. *(S)*
+- **Resolved: a slow iframe tab shown as "Embedding Blocked".** The stale-`status`
+  timeout read was fixed with a ref, and since #269 a slow app tab says "slow to
+  load" with Retry and is never called blocked; a real block is found by the
+  server's embed check. App tabs also stay loaded between switches instead of
+  reloading each time (docs/ARCHITECTURE.md, "App tabs").
 
 ## Unified prioritized recommendations
 

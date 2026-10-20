@@ -13,3 +13,15 @@ export function positiveNum(envVal, def) {
 
 /** Unit-named alias of {@link positiveNum} for the existing millisecond callers. */
 export const positiveMs = positiveNum;
+
+/** The address the server listens on when JAGHELM_HOST is unset: every IPv4 interface. */
+export const DEFAULT_BIND_HOST = '0.0.0.0';
+
+/**
+ * The address to listen on: JAGHELM_HOST, trimmed, or {@link DEFAULT_BIND_HOST}
+ * when it is unset or blank. Not validated here: a wrong address makes listen()
+ * fail, and the server exits saying so (server/index.js).
+ */
+export function resolveBindHost(env = process.env) {
+  return (env.JAGHELM_HOST || '').trim() || DEFAULT_BIND_HOST;
+}

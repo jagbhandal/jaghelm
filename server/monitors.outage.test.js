@@ -2,40 +2,53 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { initMonitors, fetchMonitors, selectOutageMonitors, parseBeatTime } = await import('./monitors.js');
+const { initMonitors, fetchMonitors, selectUnclaimedMonitors, parseBeatTime } = await import('./monitors.js');
 
-test('selectOutageMonitors: down + active + unconsumed only', () => {
+test('selectUnclaimedMonitors: up or down + active + unconsumed only', () => {
   const monitors = {
     1: { id: 1, name: 'grafana', status: 'down', active: true },
-    2: { id: 2, name: 'gitea', status: 'up', active: true },
+    2: { id: 2, name: 'gitea', status: 'up', active: true },       // up: kept for the push snapshot (#390)
     3: { id: 3, name: 'plex', status: 'down', active: true },   // consumed
     4: { id: 4, name: 'old', status: 'down', active: false },   // paused/retired
-    5: { id: 5, name: 'pending', status: 'unknown', active: true },
+    5: { id: 5, name: 'pending', status: 'unknown', active: true }, // pending: neither up nor down
+    6: { id: 6, name: 'paused-up', status: 'up', active: false },
   };
   const consumed = new Set([3]);
-  const out = selectOutageMonitors(monitors, consumed).map((m) => m.id);
-  assert.deepEqual(out, [1]);
+  const out = selectUnclaimedMonitors(monitors, consumed).map((m) => m.id);
+  assert.deepEqual(out, [1, 2]);
 });
 
-test('selectOutageMonitors: tolerates the empty-array fallback from a failed fetch', () => {
-  assert.deepEqual(selectOutageMonitors([], new Set()), []);
+test('selectUnclaimedMonitors: in id order, whatever order Kuma listed them in (#395)', () => {
+  const list = [
+    { id: 12, name: 'b', status: 'up', active: true },
+    { id: 3, name: 'a', status: 'down', active: true },
+    { id: 7, name: 'c', status: 'up', active: true },
+  ];
+  assert.deepEqual(selectUnclaimedMonitors(list, new Set()).map((m) => m.id), [3, 7, 12]);
+  assert.deepEqual(selectUnclaimedMonitors([...list].reverse(), new Set()).map((m) => m.id), [3, 7, 12]);
 });
 
-test('selectOutageMonitors: a STALE down monitor is excluded (paused/retired — heartbeat stopped)', () => {
+test('selectUnclaimedMonitors: tolerates the empty-array fallback from a failed fetch', () => {
+  assert.deepEqual(selectUnclaimedMonitors([], new Set()), []);
+});
+
+test('selectUnclaimedMonitors: a STALE monitor is excluded, down or up (paused/retired — heartbeat stopped)', () => {
   const now = 10_000_000;
   const monitors = {
     1: { id: 1, name: 'fresh-down', status: 'down', active: true, lastBeatAt: now - 30_000 },        // 30s old → fresh
     2: { id: 2, name: 'stale-down', status: 'down', active: true, lastBeatAt: now - 20 * 60_000 },   // 20min old → stale
     3: { id: 3, name: 'no-beat-time', status: 'down', active: true, lastBeatAt: null },              // unparseable → fresh default
+    4: { id: 4, name: 'stale-up', status: 'up', active: true, lastBeatAt: now - 20 * 60_000 },       // paused while up → no false recovery
+    5: { id: 5, name: 'fresh-up', status: 'up', active: true, lastBeatAt: now - 30_000 },
   };
-  const out = selectOutageMonitors(monitors, new Set(), { now, staleMs: 10 * 60_000 }).map((m) => m.id);
-  assert.deepEqual(out, [1, 3]);   // stale (2) excluded; fresh (1) + null-beat (3) kept
+  const out = selectUnclaimedMonitors(monitors, new Set(), { now, staleMs: 10 * 60_000 }).map((m) => m.id);
+  assert.deepEqual(out, [1, 3, 5]);   // stale (2, 4) excluded; fresh (1, 5) + null-beat (3) kept
 });
 
-test('selectOutageMonitors: the freshness boundary is inclusive (age === staleMs is still fresh)', () => {
+test('selectUnclaimedMonitors: the freshness boundary is inclusive (age === staleMs is still fresh)', () => {
   const now = 1_000_000;
   const monitors = { 1: { id: 1, name: 'edge', status: 'down', active: true, lastBeatAt: now - 600_000 } };
-  assert.deepEqual(selectOutageMonitors(monitors, new Set(), { now, staleMs: 600_000 }).map((m) => m.id), [1]);
+  assert.deepEqual(selectUnclaimedMonitors(monitors, new Set(), { now, staleMs: 600_000 }).map((m) => m.id), [1]);
 });
 
 test('parseBeatTime: parses a UTC Kuma timestamp and rejects junk', () => {
@@ -63,7 +76,7 @@ test('fetchMonitors: carries lastBeatAt parsed from the LATEST heartbeat time', 
       },
     });
   try {
-    const m = await fetchMonitors(true);
+    const { monitors: m } = await fetchMonitors(true);
     assert.equal(m[20].lastBeatAt, Date.parse('2026-06-27T06:01:00.000Z'));
   } finally {
     globalThis.fetch = realFetch;
@@ -90,7 +103,7 @@ test('fetchMonitors: carries active flag (false when Kuma marks inactive, true b
       },
     });
   try {
-    const m = await fetchMonitors(true);
+    const { monitors: m } = await fetchMonitors(true);
     assert.equal(m[10].active, false);
     assert.equal(m[11].active, true);
     assert.equal(m[10].status, 'down');           // heartbeat 0 → down

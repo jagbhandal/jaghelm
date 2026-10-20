@@ -7,7 +7,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
-  { ignores: ['**/dist/**', 'coverage/**', 'public/**', '**/node_modules/**', 'mobile/visual/out/**', 'mobile/android/**'] },
+  { ignores: ['**/dist/**', 'dist-gallery/**', 'dist-e2e/**', 'test-results/**', 'coverage/**', 'public/**', '**/node_modules/**', 'mobile/visual/out/**', 'mobile/android/**'] },
   js.configs.recommended,
   // Frontend (desktop `src/` + mobile app `mobile/`) — browser + React + JSX
   {
@@ -15,11 +15,16 @@ export default [
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
-      // __PUSH_ENABLED__ and __APP_VERSION__ are Vite `define`s
-      // (vite.config.mobile.js) injected at build — declare them so the
-      // build-constant reads in push/pushConfig.js and push/pushPrefsApi.js
-      // aren't no-undef errors.
-      globals: { ...globals.browser, __PUSH_ENABLED__: 'readonly', __APP_VERSION__: 'readonly' },
+      // __PUSH_ENABLED__, __APP_VERSION__ and __ANDROID_LOOK__ are Vite `define`s
+      // (vite.config.mobile.js; __ANDROID_LOOK__ in vite.config.js too) injected
+      // at build — declare them so the build-constant reads in push/pushConfig.js,
+      // push/pushPrefsApi.js and src/ui's status components aren't no-undef errors.
+      globals: {
+        ...globals.browser,
+        __PUSH_ENABLED__: 'readonly',
+        __APP_VERSION__: 'readonly',
+        __ANDROID_LOOK__: 'readonly',
+      },
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
     plugins: { 'react-hooks': reactHooks, 'react-refresh': reactRefresh },
@@ -30,13 +35,57 @@ export default [
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^[A-Z_]' }],
     },
   },
+  // The component gallery (#289, docs/GALLERY.md): a page in the browser.
+  {
+    files: ['gallery/**/*.{js,jsx}'],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'module',
+      globals: { ...globals.browser, __ANDROID_LOOK__: 'readonly' },
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^[A-Z_]' }],
+    },
+  },
+  // shadcn/ui components export their variant helpers (buttonVariants and the
+  // like) beside the component, by design; Fast Refresh just reloads those files.
+  {
+    files: ['src/ui/**/*.jsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
   // Backend + tooling — Node
   {
-    files: ['server/**/*.js', 'scripts/**/*.mjs', 'scripts/**/*.js', 'vite.config.js', 'eslint.config.js'],
+    files: [
+      'server/**/*.js',
+      'scripts/**/*.mjs',
+      'scripts/**/*.js',
+      'vite.config.js',
+      'vite.gallery.config.js',
+      'playwright.config.mjs',
+      'playwright.e2e.config.mjs',
+      'eslint.config.js',
+    ],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
       globals: { ...globals.node },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    },
+  },
+  // The gallery's and the shell's Playwright tests and the container pin: Node,
+  // with browser globals inside page.evaluate(...) and waitForFunction(...) callbacks.
+  {
+    files: ['gallery/**/*.mjs', 'e2e/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'module',
+      globals: { ...globals.node, ...globals.browser },
     },
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],

@@ -27,9 +27,36 @@ publishes `:latest` and `:sha-<short>`. A release never rebuilds: `release.yml`
 adds `:X.Y.Z` to the image that `main` already built, so the released bytes are
 the ones that were deployed from that commit.
 
+## Changelog entries during development
+
+Every PR except the release PR writes its entry as a fragment, a file of its
+own that the release PR folds in, and leaves `CHANGELOG.md` and
+`mobile/CHANGELOG.md` alone, so open PRs never conflict over `## [Unreleased]`:
+
+- `changes/<issue>-<slug>.md` for a server change,
+  `mobile/changes/<issue>-<slug>.md` for an Android app change.
+- The content is one or more subsections from
+  [The CHANGELOG format](#the-changelog-format), in that order, each with its
+  bullets, and nothing else (no summary or requirement line). For example,
+  `changes/245-access-log.md`:
+
+  ```markdown
+  ### Fixed
+  - The server's access log now records API requests with their full path.
+  ```
+
+- A PR with no user-facing change (internal CI, tests, refactors) adds no
+  fragment.
+
+`changes/README.md` and `mobile/changes/README.md` describe the same rules next
+to the files. The CHANGELOG lint (step 6 below, and `check.yml` on every PR)
+also checks each fragment, naming the file and line of a problem, and checks the
+CHANGELOG as it would be once the fragments are folded in.
+
 ## When to release
 
-Release when `## [Unreleased]` holds user-facing changes worth shipping. Pick
+Release when `## [Unreleased]` and the fragments in `changes/` (or
+`mobile/changes/`) hold user-facing changes worth shipping. Pick
 the version by [Semantic Versioning](https://semver.org/): a breaking change
 (anything under "Breaking changes") is a major bump, a new feature a minor
 bump, and fixes only a patch bump. Before 2.0.0, breaking changes shipped in
@@ -42,20 +69,34 @@ first and give the Android section a requirement line (see below).
 
 One PR per release, from a branch off `main`:
 
-1. Bump the version file: `package.json` for the server, `mobile/package.json`
+1. Fold the fragments into the CHANGELOG, for each CHANGELOG that has any:
+
+   ```bash
+   node scripts/changelog-fold.mjs            # changes/ into CHANGELOG.md
+   node scripts/changelog-fold.mjs --mobile   # mobile/changes/ into mobile/CHANGELOG.md
+   ```
+
+   It adds every fragment's bullets to `## [Unreleased]`, subsection by
+   subsection in the canonical order, after the entries already there and in
+   ascending issue-number order, then deletes the fragment files (the READMEs
+   stay). Nothing else in the file changes, and with no fragments it changes
+   nothing. If a fragment or the result would fail the lint, it prints the
+   problems and changes nothing. Commit the CHANGELOG and the deletions
+   together, and edit the folded bullets in the CHANGELOG if they need it.
+2. Bump the version file: `package.json` for the server, `mobile/package.json`
    for the Android app. The workflows refuse a tag whose version differs from
    the version file at the tagged commit.
-2. In the CHANGELOG, turn `## [Unreleased]` into `## [X.Y.Z] — YYYY-MM-DD`
+3. In the CHANGELOG, turn `## [Unreleased]` into `## [X.Y.Z] — YYYY-MM-DD`
    (em dash) and add a one-sentence summary directly under the heading. Start a
    new, empty `## [Unreleased]` above it.
-3. Android only, optional: directly under the summary, add
+4. Android only, optional: directly under the summary, add
    `Requires JagHelm server X.Y.Z or later.` The release page shows it in its
    header.
-4. Update the link references at the bottom of the file: add
+5. Update the link references at the bottom of the file: add
    `[X.Y.Z]: https://github.com/jagbhandal/jaghelm/compare/vPREV...vX.Y.Z`
    (`mobile-vPREV...mobile-vX.Y.Z` for Android) and change `[Unreleased]` to
    compare from the new tag to `HEAD`.
-5. Lint and preview locally (Node built-ins only, no install needed):
+6. Lint and preview locally (Node built-ins only, no install needed):
 
    ```bash
    node scripts/changelog-lint.mjs CHANGELOG.md
@@ -64,12 +105,14 @@ One PR per release, from a branch off `main`:
    node scripts/release-notes.mjs android X.Y.Z --apk jaghelm-android-X.Y.Z.apk --sha256 pending
    ```
 
-   The lint prints nothing and exits 0 when the file is valid. `check.yml`
-   runs the same lint on every PR to `main`.
-6. Server only: run `npm run test:ci` and raise `MIN_PASSING` in
-   `scripts/test-floor.mjs` to the `# pass` count it prints. CI fails a run that
-   passes fewer tests than this floor, so keeping it current means a silently
-   dropped test is caught.
+   The lint prints nothing and exits 0 when the file and the fragments next to
+   it are valid. `check.yml` runs the same lint on every PR to `main`.
+7. Server only: raise `MIN_PASSING` in `scripts/test-floor.mjs` to the
+   `# pass` count of the release PR's CI run (its "Main Tests" step). CI fails a
+   run that passes fewer tests than this floor, so keeping it current means a
+   silently dropped test is caught. Take the count from CI, not from a local
+   `npm run test:ci`: CI runs as root, which skips a test that needs a file root
+   can still read, so a local run as a normal user passes one more.
 
 ### The CHANGELOG format
 
@@ -81,7 +124,8 @@ Breaking changes include the migration step. No emoji, marketing headlines,
 test counts or notes on how the work was produced, and no internal CI or
 deploy-pipeline changes (those are in the git history). Bullets may be
 hard-wrapped; do not use nested bullets or code blocks inside bullets. The lint
-checks structure and emoji; tone is a review concern.
+checks structure and emoji; tone is a review concern. A fragment follows the
+same rules for its subsections and bullets, and has no summary line.
 
 ## 2. Dry run
 
@@ -92,14 +136,17 @@ as it will appear into the run's job summary.
 - **Server:** GitHub → Actions → **Release** → **Run workflow** on `main`, with
   the defaults (tag empty, `dry_run` on). It treats `main` as if it were tagged
   with its `package.json` version and runs every check: version file, CHANGELOG
-  section, the `:sha-<short>` image, its digest and cosign signature, and that
-  `:X.Y.Z` is free. The `:sha-<short>` image of `main` must exist, so wait for
+  section, no unfolded fragments in `changes/`, the `:sha-<short>` image, its
+  digest and cosign signature, and that `:X.Y.Z` is free. The `:sha-<short>` image of `main` must exist, so wait for
   `build-push.yml` to finish after the merge.
 - **Android:** GitHub → Actions → **Build Signed Mobile APK** → **Run
   workflow** on `main`. It builds and signs a test APK (version name
   `0.0.0-dispatch.N`, version code = run number) and renders the notes for the
   `mobile/package.json` version under "Dry run — checksum is of this test
-  build". A manual run is always a test build and never creates a release, even
+  build". While that version is untagged, unfolded fragments in
+  `mobile/changes/` fail the run as they would fail the tag; once it is tagged,
+  the run is a test build between releases and pending fragments are fine. A
+  manual run is always a test build and never creates a release, even
   when it is started on a tag. The test APK still reports the
   `mobile/package.json` version to the server when it registers for push.
 
@@ -141,7 +188,8 @@ four or more tag updates silently skips the release workflows (see
 1. Checks that the tagged commit is on `main` and that `package.json` has the
    tag's version.
 2. Renders the release notes from `CHANGELOG.md`. A missing or malformed
-   section stops the release here, before anything is published.
+   section, or a fragment left unfolded in `changes/`, stops the release here,
+   before anything is published.
 3. Waits, up to 15 minutes, for `ghcr.io/jagbhandal/jaghelm:sha-<short>` of the
    tagged commit, so a tag pushed seconds after the merge does not fail.
 4. Resolves that image's digest. If `:X.Y.Z` already exists at the same digest,
@@ -157,8 +205,9 @@ The job summary records the commit, digest, signature status and outcome.
 
 **Android (`build-apk.yml`, on a `mobile-v*` tag):**
 
-1. Checks that `mobile/package.json` has the tag's version and that
-   `mobile/CHANGELOG.md` has a valid section, before the build starts.
+1. Checks that `mobile/package.json` has the tag's version, that
+   `mobile/CHANGELOG.md` has a valid section, and that `mobile/changes/` holds
+   no unfolded fragments, before the build starts.
 2. Builds and signs the APK. The version name comes from the tag and the
    version code is `MAJOR × 1000000 + MINOR × 1000 + PATCH`, so each release
    installs over the previous one. The signature is verified with `apksigner`,
@@ -172,6 +221,12 @@ The job summary records the commit, digest, signature status and outcome.
    draft, the run fails without changing it.
 
 The signing secrets are described in [mobile/KEYSTORE.md](mobile/KEYSTORE.md).
+
+Both release checks refuse unfolded fragments, because their entries would be
+missing from the release page. A fragment can also land after the fold: a PR
+that merges while the release PR is open. If the dry run reports fragments that
+landed after the fold, open a follow-up PR that runs the fold and moves the new
+bullets from `[Unreleased]` into `[X.Y.Z]`, then tag that merge commit.
 
 ## 5. Verify
 
@@ -193,6 +248,8 @@ The signing secrets are described in [mobile/KEYSTORE.md](mobile/KEYSTORE.md).
 
 - `/api/health` on the deployed server returns `"version":"X.Y.Z"` and the
   tagged commit's short SHA as `revision`.
+- The server's `listening` startup log line (in Loki) shows the Node version the
+  image runs as `node`, such as `"node":"v26.12.0"`.
 - The GitHub Releases page shows the new release; Latest is the newest server
   release.
 - The APK downloads from the Android release, its SHA-256 (`sha256sum`) matches

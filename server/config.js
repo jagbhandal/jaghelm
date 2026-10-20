@@ -26,37 +26,34 @@ const DEFAULT_CONFIG = {
   nodes: {},
   services: {},
   integrations: {},
-  custom_integrations: {},
-  display: {
-    title: 'JAGHELM',
-    subtitle: 'Infrastructure Dashboard',
-    theme: 'dark',
-    accent_color: '#6366f1',
-    bg_image: '',
-    bg_opacity: 0.3,
-    overlay_opacity: 0.75,
-    show_dots: true,
-    show_search: true,
-    search_engine: 'google',
-    show_weather: true,
-    weather_lat: '39.88',
-    weather_lon: '-83.09',
-    weather_city: 'Grove City',
-    temp_unit: 'F',
-    service_detail_level: 'stats',
-    refresh_interval: 30,
-    show_todos: true,
-    show_cron_jobs: true,
-  },
-  links: {
-    personal: [],
-    management: [],
-    devops: [],
-  },
-  tabs: [],
-  grid_layout: null,
-  grid_columns: 12,
 };
+
+// Keys that older releases wrote into every generated services.yaml but that
+// nothing ever read from it: display settings, links, tabs and the grid live in
+// display-config.json, and custom integrations are entries under `integrations`.
+// A file that still has them loads and saves unchanged (they are ignored, not
+// stripped, so the server never silently drops what a user wrote); loadConfig
+// warns once per key, on the first load that sees it, that it can be deleted.
+// Remove the warning one release after it ships (#350).
+const UNREAD_KEYS = [
+  'display',
+  'custom_integrations',
+  'links',
+  'tabs',
+  'grid_layout',
+  'grid_columns',
+];
+const warnedUnreadKeys = new Set();
+
+function warnUnreadKeys(cfg) {
+  const keys = UNREAD_KEYS.filter((k) => Object.hasOwn(cfg, k) && !warnedUnreadKeys.has(k));
+  if (keys.length === 0) return;
+  for (const k of keys) warnedUnreadKeys.add(k);
+  log.warn(
+    { keys },
+    `services.yaml has keys JagHelm does not read (${keys.join(', ')}); they are ignored and can be deleted`
+  );
+}
 
 /**
  * Load config from disk. If no file exists, returns null (caller should trigger discovery).
@@ -70,6 +67,7 @@ export function loadConfig() {
     const raw = readFileSync(CONFIG_PATH, 'utf8');
     config = yaml.load(raw) || {};
     lastModified = statSync(CONFIG_PATH).mtimeMs;
+    warnUnreadKeys(config);
     log.info(
       {
         nodes: Object.keys(config.nodes || {}).length,
@@ -150,38 +148,21 @@ export function getConfig() {
 /**
  * Merge discovery results into a default config for first boot.
  * Called when no services.yaml exists.
+ *
+ * Each discovered node is named by its own Prometheus label: no label maps to a
+ * built-in name, so a fresh install never shows someone else's node names
+ * (#248). A node's `display_name` in services.yaml renames it.
  */
 export function generateDefaultConfig(discoveredNodes) {
   const cfg = structuredClone(DEFAULT_CONFIG);
 
-  // Map discovered Prometheus nodes to config entries
-  const nodeDefaults = {
-    pi1: {
-      display_name: 'Gateway Primary',
-      subtitle: 'Raspberry Pi 5',
-      icon: '🛡',
-      border_color: '#a78bfa',
-    },
-    pi2: {
-      display_name: 'Gateway Secondary',
-      subtitle: 'Raspberry Pi 5',
-      icon: '🛡',
-      border_color: '#a78bfa',
-    },
-    vm103: { display_name: 'Production', subtitle: 'VM 103', icon: '🚀', border_color: '#6366f1' },
-    vm101: { display_name: 'Staging', subtitle: 'VM 101', icon: '🔬', border_color: '#fbbf24' },
-  };
-
   for (const nodeLabel of discoveredNodes) {
-    const defaults = nodeDefaults[nodeLabel] || {
+    cfg.nodes[nodeLabel] = {
+      prometheus_node: nodeLabel,
       display_name: nodeLabel,
       subtitle: '',
       icon: '🖥',
       border_color: '#6366f1',
-    };
-    cfg.nodes[nodeLabel] = {
-      prometheus_node: nodeLabel,
-      ...defaults,
       visible: true,
       auto_discover: true,
       hide: ['prometheus', 'node-exporter', 'cadvisor'],
@@ -189,9 +170,12 @@ export function generateDefaultConfig(discoveredNodes) {
   }
 
   // No hardcoded service defaults — let auto-matching handle naming.
-  // Users with multi-instance containers (same container name on multiple nodes)
-  // can configure per-node monitor mapping via the Settings UI, which writes
-  // `monitor_per_node:` blocks to services.yaml.
+  // A container name that runs on several nodes (a replica) can be mapped to a
+  // different Kuma monitor on each with a `monitor_per_node:` block in
+  // services.yaml, keyed by the node keys above, and `monitor: false` opts a
+  // container out of monitors (monitors.js mappingOf, #240). Both are written
+  // by hand: the Settings UI edits `monitor` only, and keeps the rest of an
+  // entry when it saves.
   cfg.services = {};
 
   return cfg;

@@ -54,6 +54,21 @@ export function getAuthToken() {
   return authToken;
 }
 
+// Whether the server refuses every write: the read-only public demo (#248),
+// which says so in /api/auth/check (App sets it). The data helpers then keep a
+// change in this tab for the visit instead of sending it (useData.js).
+let readOnlyServer = false;
+
+/** Mark the server read-only (true) or writable (false). */
+export function setReadOnlyServer(on) {
+  readOnlyServer = on === true;
+}
+
+/** Whether the server refuses writes, so nothing should be sent to it. */
+export function isReadOnlyServer() {
+  return readOnlyServer;
+}
+
 /**
  * fetch wrapper that injects the auth header for protected /api calls. If `url`
  * starts with the configured API base (getApiBase()), is not the login route,

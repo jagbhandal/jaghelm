@@ -19,6 +19,24 @@ test('categoryOf maps every event type to its category', () => {
   assert.equal(categoryOf('cron_overdue'), 'cron');
 });
 
+test('categoryOf: a monitoring source down pages in the category of what it watches (#292)', () => {
+  assert.equal(categoryOf('source_down', 'prometheus'), 'host');
+  assert.equal(categoryOf('source_recovered', 'prometheus'), 'host');
+  assert.equal(categoryOf('source_down', 'kuma'), 'service');
+  assert.equal(categoryOf('source_down', 'nut'), 'ups');
+  // The installed app's 5 keys: no category of its own.
+  assert.equal(categoryOf('source_down', 'something-new'), 'host');
+});
+
+test('shouldDeliver: a source event honours its category toggle and the recoveries toggle', () => {
+  const noServices = { ...DEFAULT_PREFS, categories: { ...DEFAULT_PREFS.categories, service: false } };
+  assert.equal(shouldDeliver({ type: 'source_down', id: 'kuma' }, noServices), false);
+  assert.equal(shouldDeliver({ type: 'source_down', id: 'prometheus' }, noServices), true);
+  const noRecoveries = { ...DEFAULT_PREFS, notifyRecoveries: false };
+  assert.equal(shouldDeliver({ type: 'source_recovered', id: 'prometheus' }, noRecoveries), false);
+  assert.equal(shouldDeliver({ type: 'source_down', id: 'prometheus' }, noRecoveries), true);
+});
+
 test('DEFAULT_PREFS is all-on', () => {
   assert.deepEqual(DEFAULT_PREFS, {
     categories: { service: true, host: true, ups: true, cron: true, watchtower: true },
@@ -72,13 +90,19 @@ test('shouldDeliver: notifyRecoveries=false suppresses recovery events only', ()
 // Minimal fake store: in-memory token list + prefs map + remove tracking.
 function fakeStore({ tokens, prefsByToken }) {
   const removed = [];
+  const delivered = [];
   return {
     removed,
+    delivered,
     getAllTokens: () => tokens.map((t) => ({ token: t })),
     getPrefs: (t) => prefsByToken[t] ?? DEFAULT_PREFS,
     removeToken: (t) => {
       removed.push(t);
       return true;
+    },
+    markDelivered: (list) => {
+      delivered.push([...list]);
+      return list.length;
     },
   };
 }
@@ -143,6 +167,34 @@ test('dispatchEvents prunes a token whose send returns prune:true, once', async 
   assert.equal(fcm.calls.length, 4); // both tokens, both events
   assert.deepEqual(store.removed, ['dead']); // pruned exactly once
   assert.deepEqual(res, { sent: 4, suppressed: 0, pruned: 1 });
+});
+
+test('dispatchEvents marks FCM-accepted tokens delivered in one batch, never pruned or failed ones (#247)', async () => {
+  const store = fakeStore({
+    tokens: ['live', 'dead', 'flaky', 'muted', 'gone-mid-run'],
+    prefsByToken: { muted: { ...DEFAULT_PREFS, enabled: false } },
+  });
+  let goneSends = 0;
+  const fcm = {
+    sendToToken: async (token) => {
+      if (token === 'dead') return { ok: false, prune: true, error: 'messaging/registration-token-not-registered' };
+      if (token === 'flaky') return { ok: false, prune: false, error: 'messaging/internal-error' };
+      // Accepted on the first event, rejected as unregistered on the second.
+      if (token === 'gone-mid-run') {
+        goneSends += 1;
+        return goneSends === 1 ? { ok: true, prune: false } : { ok: false, prune: true };
+      }
+      return { ok: true, prune: false };
+    },
+  };
+  const events = [
+    { type: 'service_down', id: 'x' },
+    { type: 'cron_failed', id: 'y' },
+  ];
+  const res = await dispatchEvents(events, { store, fcm, logger: silentLog });
+  assert.deepEqual(store.delivered, [['live']], 'one batched call, accepted-and-still-valid tokens only');
+  assert.deepEqual(store.removed.sort(), ['dead', 'gone-mid-run'], 'invalid-token errors still prune');
+  assert.deepEqual(res, { sent: 8, suppressed: 2, pruned: 2 });
 });
 
 test('dispatchEvents with no events returns all-zero counts and never touches fcm', async () => {

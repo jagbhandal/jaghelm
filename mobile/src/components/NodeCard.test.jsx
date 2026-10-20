@@ -22,6 +22,14 @@ describe('NodeCard', () => {
     expect(screen.queryByText('TEMP')).toBeNull();
   });
 
+  it('shows DISK instead of TEMP when the node is at 94 % disk (#273)', () => {
+    const fullPi = { ...PI, metrics: { ...PI.metrics, diskPercent: '94' } };
+    render(<NodeCard nodeKey="gateway-pi" node={fullPi} onTap={() => {}} />);
+    expect(screen.getByText('DISK')).toBeInTheDocument();
+    expect(screen.getByText('94%')).toBeInTheDocument();
+    expect(screen.queryByText('TEMP')).toBeNull();
+  });
+
   it('shows TEMP instead of DISK when the node reports a temperature (the Pi)', () => {
     render(<NodeCard nodeKey="gateway-pi" node={PI} onTap={() => {}} />);
     expect(screen.getByText('TEMP')).toBeInTheDocument();

@@ -2,9 +2,9 @@
 // Reads ?state=<name> from URL and renders the matching screen with canned fixture data.
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import '@shared/styles/global.css';
-import '../src/styles/fonts.css';
-import '../src/MobileApp.css';
+// The app's stylesheets, as mobile/src/main.jsx loads them.
+import '../src/styles/legacy.css';
+import '@ui/tailwind.css';
 import * as fx from './fixtures.js';
 import Overview from '../src/views/Overview.jsx';
 import Services from '../src/views/Services.jsx';

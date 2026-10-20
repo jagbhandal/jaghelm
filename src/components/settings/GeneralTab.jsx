@@ -29,7 +29,7 @@ export default function GeneralTab() {
             className="settings-input"
             value={config.title || ''}
             onChange={(e) => update('title', e.target.value)}
-            placeholder="JAG-NET"
+            placeholder="JAGHELM"
           />
         </Field>
         <Field label="Subtitle">
@@ -61,7 +61,7 @@ export default function GeneralTab() {
               </button>
               {config.logoUrl && (
                 <button
-                  className="settings-btn-sm text-muted"
+                  className="settings-btn-sm muted-text"
                   onClick={() => update('logoUrl', '')}
                 >
                   Restore Default

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -117,6 +117,40 @@ test('CLI exits 1 on lint failure', () => {
 test('CLI android requires --apk and --sha256', () => {
   const r = runCli(LOG, ['android', '2.0.0']);
   assert.equal(r.status, 2);
+});
+
+// Unfolded fragments would be missing from the notes (#357): a forgotten fold, or a PR
+// that merged after the release PR ran it. Each line checks only its own changes/ dir.
+test('CLI refuses unfolded fragments of its own line only, naming them and the fold command', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'relnotes-'));
+  for (const [rel, text] of Object.entries({
+    'CHANGELOG.md': LOG,
+    'mobile/CHANGELOG.md': LOG,
+    'changes/README.md': '# Changelog fragments\n',
+    'mobile/changes/README.md': '# Changelog fragments\n',
+  })) {
+    mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    writeFileSync(path.join(dir, rel), text);
+  }
+  const run = (...args) => spawnSync(process.execPath, [SCRIPT, ...args], { cwd: dir, encoding: 'utf8' });
+  const android = ['android', '2.0.0', '--apk', 'a.apk', '--sha256', 'ff'];
+  assert.equal(run('server', '2.0.0').status, 0, 'READMEs alone do not block');
+
+  writeFileSync(path.join(dir, 'mobile/changes/2-b.md'), '### Added\n- b\n');
+  assert.equal(run('server', '2.0.0').status, 0, 'mobile fragments do not block a server release');
+  let r = run(...android);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /mobile\/changes\/2-b\.md/);
+  assert.match(r.stderr, /node scripts\/changelog-fold\.mjs --mobile/);
+  assert.equal(r.stdout, '');
+  assert.equal(run(...android, '--allow-unfolded').status, 0, 'a test build may skip the check');
+
+  writeFileSync(path.join(dir, 'changes/1-a.md'), '### Added\n- a\n');
+  r = run('server', '2.0.0');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /changes\/1-a\.md/);
+  assert.match(r.stderr, /node scripts\/changelog-fold\.mjs(?! --mobile)/);
+  assert.equal(r.stdout, '');
 });
 
 const WRAPPED = {

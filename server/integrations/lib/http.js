@@ -1,6 +1,6 @@
 import { Agent } from 'undici';
-import { fetchSafe } from '../../util/safeFetchCore.js';
-import { redactError } from '../../util/redact.js';
+import { fetchSafe, leftOrigin } from '../../util/safeFetchCore.js';
+import { redactSecrets } from '../../util/redact.js';
 
 /**
  * Safe fetch wrapper with timeout + optional per-request TLS skip.
@@ -18,13 +18,58 @@ import { redactError } from '../../util/redact.js';
  *
  * Currently `tlsSkip: true` is set only by the Proxmox preset, but the per-request
  * dispatcher pattern means any number of presets can use TLS skip safely.
+ *
+ * The Agent comes from the undici package but is driven by Node's built-in fetch,
+ * which is the undici bundled with Node (process.versions.undici). An Agent from
+ * another major fails every request with "fetch failed", so bump the undici
+ * dependency together with Node (#375; http.test.js checks the majors match).
  */
 
 const tlsSkipAgent = new Agent({ connect: { rejectUnauthorized: false } });
 
 const FETCH_TIMEOUT_MS = 8000;
 
-export async function safeFetch(url, opts = {}, skipTls = false) {
+/**
+ * An error's text with the request URL, which carries a credential, replaced
+ * by `shownUrl`: the same URL with each credential put back as its placeholder
+ * (`/api/{token}/status`). It replaces the URL as it was passed (the form
+ * assertSafeUrl and fetch quote, also when it doesn't parse) and any URL on
+ * the same host with a path, query or fragment (the parsed form, a
+ * same-origin redirect hop). Origins alone, as a refused redirect names them,
+ * stay. Without a shownUrl, everything after the origin is withheld.
+ * @param {string} text
+ * @param {string} url
+ * @param {string | undefined} shownUrl
+ */
+export function hideUrlCredential(text, url, shownUrl) {
+  let parsed = null;
+  try {
+    parsed = new URL(url);
+  } catch {
+    // Unparseable: only the string as passed can be in the message.
+  }
+  const shown = shownUrl || (parsed ? `${parsed.origin}/[redacted]` : '[a URL that carries a credential]');
+  let out = text.split(url).join(shown);
+  if (parsed) {
+    const host = parsed.host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(`https?://${host}(?=[/?#])[^\\s'"]*`, 'gi'), () => shown);
+  }
+  return out;
+}
+
+/**
+ * @param {string} url
+ * @param {RequestInit} [opts]
+ * @param {boolean} [skipTls]
+ * @param {{ credentialInUrl?: boolean, shownUrl?: string }} [cfg]
+ *   credentialInUrl: the URL carries the integration's credential (query-param
+ *   auth, or a credential placeholder in the endpoint), so a redirect to
+ *   another origin is refused. Set it from the same code that put the
+ *   credential in the URL. shownUrl: the URL as an error may show it, with the
+ *   credential as its placeholder (resolveEndpoint's shownPath); an error that
+ *   quotes the URL quotes this instead (#425).
+ */
+export async function safeFetch(url, opts = {}, skipTls = false, { credentialInUrl = false, shownUrl } = {}) {
   try {
     // SSRF guard runs per-hop inside fetchSafe (trusted=false: user-supplied URLs,
     // full guard, re-validated across redirects) + a response-body size cap.
@@ -32,7 +77,7 @@ export async function safeFetch(url, opts = {}, skipTls = false) {
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
       return await fetchSafe(url, { ...opts, signal: controller.signal },
-        { trusted: false, dispatcher: skipTls ? tlsSkipAgent : undefined });
+        { trusted: false, dispatcher: skipTls ? tlsSkipAgent : undefined, credentialInUrl });
     } finally {
       clearTimeout(timeout);
     }
@@ -40,8 +85,24 @@ export async function safeFetch(url, opts = {}, skipTls = false) {
     // Redact at the egress point: query-auth presets put the API key in the URL
     // and fetch/assertSafeUrl errors echo it. Stripping it here means no
     // downstream catch (handler, session) can leak it even if it forgets to.
-    const safe = new Error(redactError(err));
+    // A credential in the path ({token} in the endpoint) is one redaction can't
+    // find, so a URL carrying one is swapped for shownUrl first.
+    const text = (err && err.message) || String(err);
+    const safe = new Error(redactSecrets(credentialInUrl ? hideUrlCredential(text, url, shownUrl) : text));
     if (err && err.code) safe.code = err.code;
     throw safe;
   }
+}
+
+/**
+ * Whether a response from safeFetch refused the credentials the request sent: a
+ * 401 or 403 from the request's own origin. After a redirect to another origin
+ * the request no longer carried them (fetchSafe drops credential headers and
+ * bodies there), so a 401 or 403 from that host is a plain failure. The refresh
+ * loop stops repeating a login refused this way until the integration's config
+ * changes (#239).
+ * @param {Response} res
+ */
+export function isAuthRejection(res) {
+  return (res.status === 401 || res.status === 403) && !leftOrigin(res);
 }

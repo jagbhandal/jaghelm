@@ -14,11 +14,15 @@ import { cachedIconUrl, deleteCronJob } from '../../hooks/useData';
 import NodePanel from './NodePanel';
 import { toServiceCard } from './serviceCard';
 import { useConfig } from '../../context/ConfigContext.jsx';
-import { DEFAULT_LAYOUTS, migrateLayouts } from './layouts';
-import { useDashboardData } from './useDashboardData';
+import { STATIC_PANEL_KEYS, defaultLayouts, migrateLayouts } from './layouts';
+import { useDashboardData, pollPeriodMs } from './useDashboardData';
 import { useAppDataMatching } from './useAppDataMatching';
 import { useEffectiveLayouts } from './useEffectiveLayouts';
+import { useConfiguredPanels, SOURCE_PANEL_KEYS } from './configuredPanels';
 import { sourceBanner } from './sourceHealth';
+
+// What the Pipeline panel lists when /api/gitea/activity answered no list.
+const NO_COMMITS = [];
 
 /**
  * DashboardView — the main grid of node panels, dedicated section panels
@@ -32,7 +36,7 @@ import { sourceBanner } from './sourceHealth';
  *   - HelmGrid              → drag/resize-aware responsive grid
  *   - DndContext            → service-card drag between panels
  */
-export default function DashboardView({ refreshKey, onOpenSettings }) {
+export default function DashboardView({ refreshKey, tick, active, onOpenSettings }) {
   const { config, setConfig } = useConfig();
   // Mobile detection — used to disable drag/resize on small screens
   const mobileRef = useRef(null);
@@ -56,7 +60,7 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
     servicesLoaded,
     sources,
     retry,
-  } = useDashboardData(refreshKey);
+  } = useDashboardData(refreshKey, { tick, active });
 
   const removeCronJob = useCallback(
     async (node, job) => {
@@ -83,25 +87,41 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
     const now = nowBucket * Math.max(refreshIntervalMs / 2, 1000);
     const out = {};
     for (const key of Object.keys(sources)) {
-      out[key] = sourceBanner(sources[key], key, refreshIntervalMs, now);
+      // Each source goes stale on its own poll period (slow sources poll less often).
+      out[key] = sourceBanner(sources[key], key, pollPeriodMs(key, refreshIntervalMs), now);
     }
     return out;
   }, [sources, refreshIntervalMs, nowBucket]);
 
+  // Use useMemo for the `|| {}` / `|| []` fallbacks so a missing section/group
+  // doesn't allocate a fresh empty object/array on every render — that would
+  // invalidate downstream memos (nodeElements, customGroupElements) every tick
+  // and defeat the 304-stable-identity contract from useDashboardData.
+  const sc = useMemo(() => config.sections || {}, [config.sections]);
+  const customGroups = useMemo(() => config.customGroups || [], [config.customGroups]);
+
+  // UPS and Pipeline show only when the server says their source is set up
+  // (#272); the rule is in configuredPanels.js. true, false or null (not known).
+  const configured = useConfiguredPanels({ ups, commits, commitsSource: sources.commits });
+  const upsShown = configured.ups === true && sc.ups?.visible !== false;
+  const pipelineShown = configured.pipeline === true && sc.pipeline?.visible !== false;
+  const cronShown = config.showCronJobs !== false;
+
   // One page-level announcement for all DISTINCT active source errors, so a
   // global outage (e.g. Prometheus down) is announced once — not once per panel
-  // (the per-panel DegradedBanner is visual-only / not a live region).
-  const liveErrors = useMemo(
-    () =>
-      [
-        ...new Set(
-          Object.values(banners)
-            .map((b) => b && b.message)
-            .filter(Boolean)
-        ),
-      ].join('. '),
-    [banners]
-  );
+  // (the per-panel DegradedBanner is visual-only / not a live region). A source
+  // whose only panel is hidden is left out: nothing on the board shows it.
+  const liveErrors = useMemo(() => {
+    const hidden = { ups: !upsShown, commits: !pipelineShown, cron: !cronShown };
+    return [
+      ...new Set(
+        Object.entries(banners)
+          .filter(([key]) => !hidden[key])
+          .map(([, b]) => b && b.message)
+          .filter(Boolean)
+      ),
+    ].join('. ');
+  }, [banners, upsShown, pipelineShown, cronShown]);
 
   // Render a DegradedBanner element for a source's banner descriptor, or null
   // when the source is healthy (so the happy path renders nothing extra).
@@ -168,24 +188,55 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
   );
 
   // ── Layout state ──
-  // Use useMemo for the `|| {}` / `|| []` fallbacks so a missing section/group
-  // doesn't allocate a fresh empty object/array on every render — that would
-  // invalidate downstream memos (nodeElements, customGroupElements) every tick
-  // and defeat the 304-stable-identity contract from useDashboardData.
-  const sc = useMemo(() => config.sections || {}, [config.sections]);
-  const customGroups = useMemo(() => config.customGroups || [], [config.customGroups]);
-  const rawLayouts = config.gridLayout || DEFAULT_LAYOUTS;
-  const layouts = useMemo(() => migrateLayouts(rawLayouts) || DEFAULT_LAYOUTS, [rawLayouts]);
   const cols = useMemo(() => {
     const lg = config.gridColumns || 24;
     return { lg, md: Math.min(lg, 20), sm: 1 };
   }, [config.gridColumns]);
 
+  // The panels on the board. One that is not (switched off in Settings, or a
+  // source-fed panel not known to be set up) joins no layout, so it holds no
+  // empty slot; one the server says is not set up also leaves a saved layout
+  // that has it.
+  const shown = {
+    ups: upsShown,
+    pipeline: pipelineShown,
+    'cron-jobs': cronShown,
+    todos: sc.todos?.visible !== false,
+    quicklaunch: sc.quicklaunch?.visible !== false,
+  };
+  // Joined into strings, so the memos below change only when the set does.
+  const shownPanelsKey = STATIC_PANEL_KEYS.filter((k) => shown[k]).join(' ');
+  const nodeKeysKey = Object.keys(serviceData.nodes || {}).join('\n');
+
+  // The saved layout, or null. Without one the board is laid out from the
+  // nodes and panels it has (#248); a saved layout is used as it is.
+  const savedLayouts = useMemo(() => migrateLayouts(config.gridLayout), [config.gridLayout]);
+  const layouts = useMemo(
+    () =>
+      savedLayouts ||
+      defaultLayouts(nodeKeysKey ? nodeKeysKey.split('\n') : [], {
+        panels: shownPanelsKey ? shownPanelsKey.split(' ') : [],
+        cols,
+      }),
+    [savedLayouts, nodeKeysKey, shownPanelsKey, cols]
+  );
+
+  const hiddenPanels = useMemo(
+    () => STATIC_PANEL_KEYS.filter((k) => !shownPanelsKey.split(' ').includes(k)),
+    [shownPanelsKey]
+  );
+  const droppedSourcePanels = useMemo(
+    () => SOURCE_PANEL_KEYS.filter((k) => configured[k] === false),
+    [configured]
+  );
+
   const effectiveLayouts = useEffectiveLayouts(
     layouts,
     serviceData,
     customGroups,
-    config.gridColumns
+    config.gridColumns,
+    hiddenPanels,
+    droppedSourcePanels
   );
 
   const handleLayoutChange = useCallback(
@@ -379,14 +430,11 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
     // HelmGrid handles layout save via onLayoutChange — nothing extra needed here
   }, []);
 
-  // Welcome banner config
-  const wm = config.welcomeMessage || {};
-
   // First-run empty state: services have loaded, but no nodes were discovered
   // and the user hasn't created any custom groups. Show a friendly CTA instead
   // of an empty/Loading grid.
   const nodeCount = Object.keys(serviceData.nodes || {}).length;
-  const savedNodePlaceholders = (layouts.lg || layouts.md || []).some(
+  const savedNodePlaceholders = (savedLayouts?.lg || savedLayouts?.md || []).some(
     (i) => typeof i.i === 'string' && i.i.startsWith('node-')
   );
   const isEmpty =
@@ -418,9 +466,9 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
   // while /api/services is still in flight.
   const nodePlaceholders = useMemo(() => {
     const loadedNodeKeys = new Set(Object.keys(serviceData.nodes || {}).map((k) => `node-${k}`));
-    const savedKeys = (layouts.lg || layouts.md || [])
+    const savedKeys = (savedLayouts?.lg || savedLayouts?.md || [])
       .map((i) => i.i)
-      .filter((k) => k.startsWith('node-'));
+      .filter((k) => typeof k === 'string' && k.startsWith('node-'));
     return savedKeys
       .filter((k) => !loadedNodeKeys.has(k))
       .map((k) => (
@@ -432,29 +480,13 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
           </div>
         </div>
       ));
-  }, [serviceData, layouts]);
+  }, [serviceData, savedLayouts]);
 
   return (
     <div className="dashboard-content" ref={mobileRef}>
       <div className="sr-only" role="status" aria-live="polite">
         {liveErrors}
       </div>
-      {wm.enabled && wm.text && (
-        <div className="welcome-banner">
-          <div className="welcome-text" style={{ fontSize: wm.fontSize || 20 }}>
-            {wm.text}
-          </div>
-          {wm.description && (
-            <div
-              className="welcome-desc"
-              style={{ fontSize: Math.max((wm.fontSize || 20) * 0.6, 12) }}
-            >
-              {wm.description}
-            </div>
-          )}
-        </div>
-      )}
-
       {isFirstLoading ? (
         <div
           role="status"
@@ -497,7 +529,7 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
             {nodePlaceholders}
             {customGroupElements}
 
-            {sc.ups?.visible !== false && (
+            {upsShown && (
               <div key="ups">
                 <ErrorBoundary inline itemId="ups" label="UPS panel failed to render">
                   <UPSCard
@@ -508,10 +540,13 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
                 </ErrorBoundary>
               </div>
             )}
-            {sc.pipeline?.visible !== false && (
+            {pipelineShown && (
               <div key="pipeline">
                 <ErrorBoundary inline itemId="pipeline" label="Pipeline panel failed to render">
-                  <GiteaActivity commits={commits} banner={bannerEl(banners.commits)} />
+                  <GiteaActivity
+                    commits={Array.isArray(commits) ? commits : NO_COMMITS}
+                    banner={bannerEl(banners.commits)}
+                  />
                 </ErrorBoundary>
               </div>
             )}
@@ -526,7 +561,7 @@ export default function DashboardView({ refreshKey, onOpenSettings }) {
                 </ErrorBoundary>
               </div>
             )}
-            {config.showCronJobs !== false && (
+            {cronShown && (
               <div key="cron-jobs">
                 <ErrorBoundary inline itemId="cron-jobs" label="Cron Jobs panel failed to render">
                   <CronJobs

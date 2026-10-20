@@ -56,13 +56,22 @@ anywhere reachable from outside your network.
 
 - **Ships open by default.** If you leave `DASH_PASS` empty, login is disabled
   and the dashboard is reachable by anyone who can reach the port. The most
-  sensitive endpoints are fail-closed even in this mode — the standalone secrets
-  API and the raw infrastructure passthroughs (PromQL query, Docker-socket
-  container list) refuse to serve until a password is set, unless you explicitly
-  opt back in with `JAGHELM_ALLOW_OPEN_SECRETS=true` / `JAGHELM_ALLOW_OPEN_INFRA=true`.
-  Aggregated/benign endpoints stay open. Still: set `DASH_USER` / `DASH_PASS`
-  (and ideally a reverse proxy with its own auth) before exposing it. **Do not
-  put a no-password instance on the public internet.**
+  sensitive endpoint is fail-closed even in this mode — the standalone secrets
+  API refuses to serve until a password is set, unless you explicitly opt back
+  in with `JAGHELM_ALLOW_OPEN_SECRETS=true`. Aggregated/benign endpoints stay
+  open. Still: set `DASH_USER` / `DASH_PASS` (and ideally a reverse proxy with
+  its own auth) before exposing it. **Do not put a no-password instance on the
+  public internet.**
+- **The icon cache is public, even with a password set.** Icons are `<img>`
+  tags, which can't send the login token, so `/api/icons/cached` needs none. It
+  only fetches icons of the two icon repositories the picker uses (Dashboard
+  Icons and selfh.st), keeps at most 50 MB of them (`JAGHELM_ICON_CACHE_MAX_MB`)
+  and drops the least recently used past that, and fetches at most 8 at a time
+  with 256 more waiting (a `503` past that), holding at most 4 MB of icons in
+  memory. So anyone who can reach the port can make it fetch those icons, churn
+  the cache, keep the fetch queue full so new icons fail to load for a while,
+  and see which icons are cached (and so roughly which services you run), but
+  not fill the disk or memory or fetch anything else.
 - **Bridge network by default; host networking is opt-in.** The published
   `compose.yaml` uses a bridge network and publishes only the app port — the
   safer, isolated default. If JagHelm can't reach LAN exporters/services that
@@ -89,16 +98,22 @@ anywhere reachable from outside your network.
 
 ## Integrations
 
-JagHelm ships 42 integration presets. They depend on each upstream app's API,
+JagHelm ships 35+ integration presets. They depend on each upstream app's API,
 which changes independently — expect occasional drift.
 
 - **Nextcloud** can show dashes for FILES / USERS / STORAGE on some setups —
   may need additional auth or an endpoint that varies by version.
 - **PhotoPrism** preset auth was corrected recently; if metrics don't appear,
   re-save the integration in Settings to pick up the fix.
-- **Two instances of the same preset** (e.g. a primary and secondary AdGuard)
-  can collide in the response cache under some builds and serve each other's
-  data. Fixing the cache key is tracked in `docs/IMPROVEMENT-PLAN.md`.
+- **A refused login is not retried on its own.** An integration whose login
+  is refused twice in a row (HTTP 401 or 403) waits until its settings change,
+  so an app that bans an address after failed logins doesn't ban JagHelm's.
+  Its card's error note says so. If you fix the password on the app's side
+  instead, save the integration in Settings (no change needed) and it is
+  retried at the next refresh. That works however the integration was added:
+  the save keeps what the form doesn't show, such as a custom integration's
+  endpoint, auth and fields (#402). Editing its entry in `services.yaml` (any
+  change counts) or restarting JagHelm retries it too.
 - **Custom integrations** point at a JSON endpoint and extract paths you choose.
   If the upstream JSON shape changes, the card will show blanks until you update
   the extraction paths.
@@ -113,9 +128,10 @@ Honest about where the engineering floor sits today:
   plus a minimum-test-count floor, so a run that silently drops tests fails),
   the client suite (`npm run test:client`), and the mobile suite — all required
   before merge.
-  Node 22 is the validated toolchain (matching the Docker base image); newer
-  Node majors can break the jsdom-based client tests, which is why
-  `package.json` now declares a supported `engines` range.
+  Node 26 is the validated toolchain (matching the Docker base image and
+  `.nvmrc`), and `package.json` declares it in `engines`. Node 25 and later
+  ship their own `localStorage` global, which hides jsdom's, so both Vitest
+  configs turn it off in their test workers (`--no-experimental-webstorage`).
 - **Accessibility gaps.** Focus indicators, reduced-motion handling, form-label
   associations, and keyboard-driven panel reordering are incomplete. Tracked in
   Phase 4 of the plan.
@@ -126,8 +142,6 @@ Lower-stakes items the maintainer is aware of:
 
 - A `SERVICE_ICONS` constant hardcodes 40+ CDN icon URLs in the frontend —
   should move to config.
-- A legacy `/api/docker/containers` endpoint duplicates the discovery logic and
-  is a removal candidate.
 - The Settings live-preview spins up a second dashboard instance with its own
   state and fetch cycle, which is wasteful.
 
