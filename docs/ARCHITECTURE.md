@@ -93,7 +93,10 @@ server/                     Express API (Node 26, ESM)
   version.js                single source of version (reads package.json)
   metrics.js                prom-client registry + middleware + /metrics handler
   accessLog.js              one JSON log line per request (full path, no query string)
-  demo.js                   DEMO_MODE read-only sample dashboard
+  demo.js                   DEMO_MODE guard: owns /api, refuses writes, answers reads from
+                            demoFixtures.js; boot() starts no subsystem in demo mode
+  demoFixtures.js           the demo's board, shaped by the live code (assembleServices,
+                            decorateStatuses); incident and healthy scenarios
   auth/                     scrypt passwords, in-memory sessions, login rate limit, middleware
   routes/                   one router per resource (see 4.1)
   arcane/                   Arcane poller: read-only API client, state derivation, push builders,
@@ -153,7 +156,11 @@ CORS -> `express.json({ limit: '1mb' })` -> `/uploads` static -> `/metrics` ->
 (`index.html`) -> the global JSON error handler.
 It listens on `JAGHELM_HOST` (default `0.0.0.0`, every IPv4 interface) and `PORT`
 (default 3099); if it can't (an address the machine doesn't have, a port in use),
-it logs `cannot listen` and exits 1.
+it logs `cannot listen` and exits 1. The `listening` line logs the port bound.
+In demo mode `boot()` only loads the integration preset gallery: it starts no
+discovery, refresh loop, Kuma, push, Arcane, icon index or cache, reads no
+`services.yaml` and makes no directory. The demo guard answers every `/api`
+read, so the demo makes no outbound request and writes no file (docs/DEMO.md).
 
 Routers (each `server/routes/*.js`), mounted under `/api`:
 
@@ -584,10 +591,19 @@ flowchart TD
   (arrow move / Shift+arrow resize, with a live region) reposition them.
 - **Panels and first run.** The board has a panel per discovered node and custom
   group, plus the Checklist, Scheduled Jobs and Quick Launch panels. Without a
-  saved layout it starts from `DEFAULT_LAYOUTS` (`layouts.js`), which names no
-  node, so a fresh install with no node shows the "Connect your first node"
-  empty state. The UPS and Pipeline panels show only when the server says their
-  source is set up (`configuredPanels.js`). `/api/ups` carries `configured`:
+  saved layout the board is laid out by `defaultLayouts(nodes)` (`layouts.js`)
+  from the nodes `/api/services` has and the panels on show: the nodes first,
+  in their order, at most three to a row (two at the md breakpoint), spread
+  evenly so no row is left with one node, each row filling the width; then UPS
+  beside Pipeline, Scheduled Jobs beside the Checklist, then Quick Launch (a
+  panel whose pair isn't shown takes the whole row). It is regenerated as nodes
+  and panels come and go, until the first drag or resize saves a layout; a
+  saved layout is never replaced by it. A panel not on show (switched off in
+  Settings, or a source not known to be set up) is not added to a layout, so
+  it holds no empty slot. A fresh install with no node shows the "Connect your
+  first node" empty state, and the demo (`DEMO_MODE`) gets the same default
+  from its own nodes. The UPS and Pipeline panels show only when the server
+  says their source is set up (`configuredPanels.js`). `/api/ups` carries `configured`:
   true when Prometheus has the UPS's readings or saw its `nut_ups_info` series
   in the last 7 days (one query, with `last_over_time`), false when neither,
   null when the query failed. `/api/gitea/activity` answers

@@ -13,13 +13,54 @@ docker run -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:latest
 # or: DEMO_MODE=true npm start
 ```
 
+### What it shows
+
+A small made-up homelab, laid out the way a new install lays out its own:
+
+- **Three nodes** side by side (a Raspberry Pi edge box, an app server VM and
+  a NAS) with CPU, memory, disk, temperature, uptime and sparklines, and their
+  services with Docker stats and Uptime Kuma ping and uptime.
+- **One service down** (its health check failing while its container runs), so
+  the header reads "Service Disruption" and its card is red, as a live board
+  shows an outage.
+- The **UPS**, **Pipeline** (recent commits), **Scheduled Jobs** (one failed
+  backup) and **Checklist** panels, and **Quick Launch** links.
+
+`DEMO_SCENARIO=healthy` serves the same board with nothing down. The default is
+`DEMO_SCENARIO=incident`.
+
+Every name, host and link is generic (`*.example.com`); none is taken from a
+real install.
+
+### How it stays self-contained
+
 In demo mode a guard owns the entire `/api` surface (`server/demo.js`):
 
 - **Every write is refused** (`POST/PUT/DELETE/PATCH` → `403`).
-- Reads return **canned fixtures**; the request never reaches a real route, so
-  there is **no outbound fetch, no backend dependency, and the secrets API is
-  unreachable**. It is safe to expose publicly.
+- Reads return the demo's fixtures (`server/demoFixtures.js`); the request
+  never reaches a real route, so there is **no backend dependency, and the
+  secrets API is unreachable**. It is safe to expose publicly.
+- The fixtures are shaped by the live server's own code: `/api/services` is
+  built by the same `assembleServices()` that builds a live board, and the
+  parts written by hand are tested against the live code's output, so the demo
+  can't drift into a stale shape.
+- An icon is a redirect to its URL on the icon CDN, which the browser loads; the
+  server neither fetches nor stores it. Only the icon URLs the live icon cache
+  would fetch are redirected.
+- Startup runs none of the subsystems: no node discovery, refresh loop, Kuma,
+  Gitea, UPS or Arcane polling, push, icon index or icon cache, and no
+  `services.yaml`. The demo **makes no outbound request and writes no file**,
+  not even its data directory. A test boots the real server under network and
+  file-system spies to keep it that way (`server/demo.boot.test.js`).
 - A loud demo banner is logged at boot.
+
+The web app learns it is the demo from `/api/auth/check` and doesn't send it
+the display settings: moving a panel, or a change under Settings → General,
+Appearance or Links, is kept in that browser only, and loading the board shows
+no "couldn't save" error. Other edits (the checklist, services and
+integrations) are sent, refused and reported like any refused save. A render
+test (`src/demo.render.test.jsx`) renders the whole app against the demo's
+answers on every CI run.
 
 It's a demo, not a dashboard — there is no persistence and no live data.
 

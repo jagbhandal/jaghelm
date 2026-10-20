@@ -8,13 +8,14 @@ const NONE = [];
  * (nodes + custom groups), enforces min-size constraints, and auto-generates
  * the mobile (sm) breakpoint when missing.
  *
- * Source-fed panels (#272): `hidden` lists the ones not shown because their
- * source isn't known to be set up. They are not added to a layout that lacks
- * them, so they hold no slot in the grid, and a saved layout that has one keeps
- * its place while its source can't say. `dropped`, a subset, lists the ones the
- * server says are not set up: they are taken out of the layout too, so the
- * space they held is free for other panels (and a stacked phone layout has no
- * gap), and the next drag or resize saves the layout without them.
+ * `hidden` lists the panels not shown: switched off in Settings, or source-fed
+ * (#272) with a source not known to be set up. They are not added to a layout
+ * that lacks them, so they hold no slot in the grid (#248), and a saved layout
+ * that has one keeps its place while it is off or its source can't say.
+ * `dropped`, source-fed panels only, lists the ones the server says are not
+ * set up: they are taken out of the layout too, so the space they held is free
+ * for other panels (and a stacked phone layout has no gap), and the next drag
+ * or resize saves the layout without them.
  *
  * Stability: returns the previous object reference whenever the layout
  * content is unchanged, preventing react-grid-layout's compactor from

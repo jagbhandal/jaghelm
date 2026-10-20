@@ -35,6 +35,8 @@ export default function App() {
   const [authed, setAuthed] = useState(false);
   const [authRequired, setAuthRequired] = useState(null);
   const [authToken, setAuthToken] = useState('');
+  // The server is the read-only public demo (#248): it says so in the auth check.
+  const [demo, setDemo] = useState(false);
 
   // Apply the persisted theme to the document before login resolves, so the
   // login screen renders in the user's chosen theme (matching prior behaviour
@@ -68,6 +70,7 @@ export default function App() {
         if (cancelled) return;
         setAuthRequired(d.authRequired);
         setAuthed(d.authenticated);
+        setDemo(d.demo === true);
       } catch {
         if (cancelled) return;
         setAuthRequired(true);
@@ -111,12 +114,12 @@ export default function App() {
   // settings (and the save effects in AppMain) can useToast()/useConfirm().
   return (
     <OverlayProvider>
-      <AppMain authRequired={authRequired} onLogout={handleLogout} />
+      <AppMain authRequired={authRequired} demo={demo} onLogout={handleLogout} />
     </OverlayProvider>
   );
 }
 
-function AppMain({ authRequired, onLogout }) {
+function AppMain({ authRequired, demo, onLogout }) {
   const toast = useToast();
   // A chunk reload (chunkReload.js, #379) left the tab that was open; take it
   // once, so an ordinary reload still opens the dashboard.
@@ -151,8 +154,9 @@ function AppMain({ authRequired, onLogout }) {
   }, []);
 
   // Display-config save/load (localStorage + debounced server save,
-  // flush-on-unload, authoritative server load on mount).
-  useConfigPersistence(config, setConfig, setTheme, toast);
+  // flush-on-unload, authoritative server load on mount). The demo refuses
+  // writes, so nothing is sent to it: no save fails and no toast shows on load.
+  useConfigPersistence(config, setConfig, setTheme, toast, { readOnly: demo });
 
   // Apply config to the document as CSS custom properties
   // (accent/opacity/font family/font sizes/blur).

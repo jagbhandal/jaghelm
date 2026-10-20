@@ -13,12 +13,22 @@
  * @param {function} setConfig the raw useState setter from App
  * @param {function} setTheme  the theme setter (server load may seed it)
  * @param {function} toast     useToast()'s notifier (surface save failures)
+ * @param {{ readOnly?: boolean }} [options]
+ *   readOnly: the server refuses writes (the public demo, #248). Changes are
+ *   kept in this browser (localStorage) and never sent, so nothing fails and
+ *   no "couldn't save" toast shows.
  */
 
 import { useEffect, useRef } from 'react';
 import { apiFetch, getAuthToken } from '../api/client.js';
 
-export function useConfigPersistence(config, setConfig, setTheme, toast) {
+export function useConfigPersistence(
+  config,
+  setConfig,
+  setTheme,
+  toast,
+  { readOnly = false } = {}
+) {
   const configLoadedFromServer = useRef(false);
   const saveTimerRef = useRef(null);
   // Latest config + whether a debounced server save is still pending, so the
@@ -33,6 +43,8 @@ export function useConfigPersistence(config, setConfig, setTheme, toast) {
     pendingConfigRef.current = config;
     // Don't save to server until we've loaded from server first (prevents overwriting server config with defaults)
     if (!configLoadedFromServer.current) return;
+    // Nothing is sent to a read-only server, so the unload flush has nothing owed either.
+    if (readOnly) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     // From here a server write is owed; the flush handler may send it early.
     savePendingRef.current = true;
@@ -58,7 +70,7 @@ export function useConfigPersistence(config, setConfig, setTheme, toast) {
           toast("Couldn't save settings — will retry", 'error');
         });
     }, 2000);
-  }, [config, toast]);
+  }, [config, toast, readOnly]);
 
   // Flush a pending (debounced-but-unsent) server save immediately when the tab
   // is hidden or about to unload. Without this, an edit made <2s before the user

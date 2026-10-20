@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_LAYOUTS, MOBILE_PANEL_ORDER, migrateLayouts, orderForMobile } from './layouts';
+import {
+  DEFAULT_PANELS,
+  MOBILE_PANEL_ORDER,
+  defaultLayouts,
+  migrateLayouts,
+  orderForMobile,
+} from './layouts';
 
 describe('migrateLayouts', () => {
   it('renames legacy keys to their node-prefixed equivalents', () => {
@@ -64,16 +70,100 @@ describe('migrateLayouts', () => {
   });
 });
 
-describe('DEFAULT_LAYOUTS (a fresh install, no saved layout)', () => {
-  const keys = Object.values(DEFAULT_LAYOUTS).flatMap((items) => items.map((it) => it.i));
+describe('defaultLayouts (a board with no saved layout)', () => {
+  const keysOf = (layouts) => Object.values(layouts).flatMap((items) => items.map((it) => it.i));
+  // Rows of a breakpoint's layout, top to bottom: each the panel ids at one y, left to right.
+  const rows = (items) => {
+    const byY = new Map();
+    for (const it of [...items].sort((a, b) => a.y - b.y || a.x - b.x)) {
+      if (!byY.has(it.y)) byY.set(it.y, []);
+      byY.get(it.y).push(it);
+    }
+    return [...byY.values()];
+  };
+  const ids = (row) => row.map((it) => it.i);
+  const widths = (row) => row.map((it) => it.w);
+  // No two items overlap, and none leaves the grid.
+  const assertPacked = (items, cols) => {
+    for (const a of items) {
+      expect(a.x).toBeGreaterThanOrEqual(0);
+      expect(a.x + a.w).toBeLessThanOrEqual(cols);
+      for (const b of items) {
+        if (a === b) continue;
+        const apart = a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+        expect(apart, `${a.i} overlaps ${b.i}`).toBe(true);
+      }
+    }
+  };
 
-  it('names no node, so no "Loading <node>…" panel stands in for one (#272)', () => {
+  it('names no node when there is none, and no UPS or Pipeline panel by default (#272)', () => {
+    const keys = keysOf(defaultLayouts([]));
     expect(keys.filter((k) => k.startsWith('node-'))).toEqual([]);
-  });
-
-  it('names no UPS or Pipeline panel: they join the board once their source is configured', () => {
     expect(keys).not.toContain('ups');
     expect(keys).not.toContain('pipeline');
+    expect(DEFAULT_PANELS).toEqual(['cron-jobs', 'todos', 'quicklaunch']);
+  });
+
+  it('puts the nodes first, in their order, three to a row at most, each row filling the width (#248)', () => {
+    const { lg, md } = defaultLayouts(['edge', 'apps', 'storage']);
+    const [nodes] = rows(lg);
+    expect(ids(nodes)).toEqual(['node-edge', 'node-apps', 'node-storage']);
+    expect(widths(nodes)).toEqual([8, 8, 8]);
+    // Two to a row at the md breakpoint's 20 columns.
+    expect(rows(md).slice(0, 2).map(ids)).toEqual([['node-edge', 'node-apps'], ['node-storage']]);
+    expect(rows(md).slice(0, 2).map(widths)).toEqual([[10, 10], [20]]);
+  });
+
+  it('spreads the nodes evenly over the rows instead of leaving one alone on the last', () => {
+    const lgRows = (n) =>
+      rows(defaultLayouts(Array.from({ length: n }, (_, i) => `n${i}`)).lg)
+        .map(ids)
+        .filter((r) => r[0].startsWith('node-'))
+        .map((r) => r.length);
+    expect(lgRows(1)).toEqual([1]);
+    expect(lgRows(2)).toEqual([2]);
+    expect(lgRows(4)).toEqual([2, 2]);
+    expect(lgRows(5)).toEqual([3, 2]);
+    expect(lgRows(7)).toEqual([3, 2, 2]);
+    expect(widths(rows(defaultLayouts(['a']).lg)[0])).toEqual([24]);
+  });
+
+  it('pairs the panels below the nodes: UPS with Pipeline, Scheduled Jobs with the Checklist, then Quick Launch', () => {
+    const { lg } = defaultLayouts(['a', 'b'], {
+      panels: ['ups', 'pipeline', 'cron-jobs', 'todos', 'quicklaunch'],
+    });
+    expect(rows(lg).map(ids)).toEqual([
+      ['node-a', 'node-b'],
+      ['ups', 'pipeline'],
+      ['cron-jobs', 'todos'],
+      ['quicklaunch'],
+    ]);
+    expect(rows(lg).map(widths)).toEqual([[12, 12], [8, 16], [16, 8], [24]]);
+    assertPacked(lg, 24);
+  });
+
+  it('gives a panel without its pair the whole row, and places only the panels it is given', () => {
+    const { lg } = defaultLayouts(['a'], { panels: ['pipeline', 'cron-jobs', 'quicklaunch'] });
+    expect(rows(lg).map(ids)).toEqual([['node-a'], ['pipeline'], ['cron-jobs'], ['quicklaunch']]);
+    expect(rows(lg).slice(1).map(widths)).toEqual([[24], [24], [24]]);
+  });
+
+  it('fits a narrow grid: fewer nodes to a row and no panel narrower than its minimum', () => {
+    const cols = { lg: 6, md: 6 };
+    const layouts = defaultLayouts(['a', 'b', 'c'], { panels: ['ups', 'pipeline', 'todos'], cols });
+    for (const bp of ['lg', 'md']) {
+      assertPacked(layouts[bp], 6);
+      for (const it of layouts[bp]) expect(it.w).toBeGreaterThanOrEqual(it.minW);
+    }
+  });
+
+  it('never overlaps two panels, whatever the node count', () => {
+    for (let n = 0; n <= 9; n += 1) {
+      const nodes = Array.from({ length: n }, (_, i) => `n${i}`);
+      const layouts = defaultLayouts(nodes, { panels: ['ups', 'pipeline', ...DEFAULT_PANELS] });
+      assertPacked(layouts.lg, 24);
+      assertPacked(layouts.md, 20);
+    }
   });
 });
 
