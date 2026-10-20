@@ -334,7 +334,7 @@ describe('DashboardView without a saved layout (#248)', () => {
     expect(screen.queryByText(/Loading /)).not.toBeInTheDocument();
   });
 
-  it('places the UPS and Pipeline panels beside each other once their sources are set up', () => {
+  it('pairs the panels by height once the UPS and Pipeline sources are set up', () => {
     renderBoard(
       freshConfig(),
       boardData({
@@ -347,8 +347,8 @@ describe('DashboardView without a saved layout (#248)', () => {
 
     expect(lgRows()).toEqual([
       ['node-edge', 'node-apps'],
-      ['ups', 'pipeline'],
-      ['cron-jobs', 'todos'],
+      ['pipeline', 'cron-jobs'],
+      ['ups', 'todos'],
       ['quicklaunch'],
     ]);
   });

@@ -114,38 +114,70 @@ describe('defaultLayouts (a board with no saved layout)', () => {
     expect(rows(md).slice(0, 2).map(widths)).toEqual([[10, 10], [20]]);
   });
 
-  it('spreads the nodes evenly over the rows instead of leaving one alone on the last', () => {
-    const lgRows = (n) =>
-      rows(defaultLayouts(Array.from({ length: n }, (_, i) => `n${i}`)).lg)
+  it('spreads the nodes evenly over the rows: three to a row leaves no node alone (#248)', () => {
+    const nodeRows = (n, bp) =>
+      rows(defaultLayouts(Array.from({ length: n }, (_, i) => `n${i}`))[bp])
         .map(ids)
         .filter((r) => r[0].startsWith('node-'))
         .map((r) => r.length);
-    expect(lgRows(1)).toEqual([1]);
-    expect(lgRows(2)).toEqual([2]);
-    expect(lgRows(4)).toEqual([2, 2]);
-    expect(lgRows(5)).toEqual([3, 2]);
-    expect(lgRows(7)).toEqual([3, 2, 2]);
+    expect(nodeRows(1, 'lg')).toEqual([1]);
+    expect(nodeRows(2, 'lg')).toEqual([2]);
+    expect(nodeRows(4, 'lg')).toEqual([2, 2]);
+    expect(nodeRows(5, 'lg')).toEqual([3, 2]);
+    expect(nodeRows(7, 'lg')).toEqual([3, 2, 2]);
+    expect(nodeRows(10, 'lg')).toEqual([3, 3, 2, 2]);
+    for (let n = 2; n <= 12; n += 1) expect(nodeRows(n, 'lg')).not.toContain(1);
     expect(widths(rows(defaultLayouts(['a']).lg)[0])).toEqual([24]);
+    // Two to a row (md): an odd count leaves the last node alone, the whole width.
+    expect(nodeRows(3, 'md')).toEqual([2, 1]);
+    expect(nodeRows(5, 'md')).toEqual([2, 2, 1]);
+    expect(widths(rows(defaultLayouts(['a', 'b', 'c']).md)[1])).toEqual([20]);
   });
 
-  it('pairs the panels below the nodes: UPS with Pipeline, Scheduled Jobs with the Checklist, then Quick Launch', () => {
-    const { lg } = defaultLayouts(['a', 'b'], {
+  // Panels side by side start level and share the row's height, so the row below can sit flush.
+  const assertLevelRows = (items) => {
+    for (const row of rows(items))
+      expect(new Set(row.map((it) => it.h)).size, ids(row).join()).toBe(1);
+  };
+
+  it('pairs the panels by height: Pipeline with Scheduled Jobs, then UPS with the Checklist, then Quick Launch', () => {
+    const { lg, md } = defaultLayouts(['a', 'b'], {
       panels: ['ups', 'pipeline', 'cron-jobs', 'todos', 'quicklaunch'],
     });
     expect(rows(lg).map(ids)).toEqual([
       ['node-a', 'node-b'],
-      ['ups', 'pipeline'],
-      ['cron-jobs', 'todos'],
+      ['pipeline', 'cron-jobs'],
+      ['ups', 'todos'],
       ['quicklaunch'],
     ]);
-    expect(rows(lg).map(widths)).toEqual([[12, 12], [8, 16], [16, 8], [24]]);
+    // Both pairs half and half: each panel of the second pair sits under one of the first.
+    expect(rows(lg).map(widths)).toEqual([[12, 12], [12, 12], [12, 12], [24]]);
+    expect(rows(md).slice(1).map(widths)).toEqual([[10, 10], [10, 10], [20]]);
+    assertLevelRows(lg);
     assertPacked(lg, 24);
   });
 
-  it('gives a panel without its pair the whole row, and places only the panels it is given', () => {
-    const { lg } = defaultLayouts(['a'], { panels: ['pipeline', 'cron-jobs', 'quicklaunch'] });
-    expect(rows(lg).map(ids)).toEqual([['node-a'], ['pipeline'], ['cron-jobs'], ['quicklaunch']]);
-    expect(rows(lg).slice(1).map(widths)).toEqual([[24], [24], [24]]);
+  it('puts the two panels left over from the pairs side by side, the tall one wider', () => {
+    // A fresh install (no UPS, no Pipeline): Scheduled Jobs beside the Checklist.
+    const fresh = defaultLayouts(['a']).lg;
+    expect(rows(fresh).map(ids)).toEqual([['node-a'], ['cron-jobs', 'todos'], ['quicklaunch']]);
+    expect(rows(fresh).map(widths)).toEqual([[24], [16, 8], [24]]);
+    assertLevelRows(fresh);
+    // Pipeline set up, Checklist switched off: Pipeline beside the UPS.
+    const mixed = defaultLayouts(['a'], { panels: ['pipeline', 'ups', 'quicklaunch'] }).lg;
+    expect(rows(mixed).map(ids)).toEqual([['node-a'], ['pipeline', 'ups'], ['quicklaunch']]);
+    expect(rows(mixed).map(widths)).toEqual([[24], [16, 8], [24]]);
+  });
+
+  it('gives a panel left alone the whole row, and places only the panels it is given', () => {
+    const pipeline = defaultLayouts(['a'], { panels: ['pipeline', 'cron-jobs', 'todos'] }).lg;
+    expect(rows(pipeline).map(ids)).toEqual([['node-a'], ['pipeline', 'cron-jobs'], ['todos']]);
+    expect(rows(pipeline).map(widths)).toEqual([[24], [12, 12], [24]]);
+    const ups = defaultLayouts(['a'], { panels: ['ups', 'cron-jobs', 'todos'] }).lg;
+    expect(rows(ups).map(ids)).toEqual([['node-a'], ['ups', 'todos'], ['cron-jobs']]);
+    const alone = defaultLayouts([], { panels: ['todos', 'quicklaunch'] }).lg;
+    expect(rows(alone).map(ids)).toEqual([['todos'], ['quicklaunch']]);
+    expect(rows(alone).map(widths)).toEqual([[24], [24]]);
   });
 
   it('fits a narrow grid: fewer nodes to a row and no panel narrower than its minimum', () => {
@@ -173,7 +205,16 @@ describe('mobile panel order', () => {
   });
 
   it('puts Quick Launch first, then the nodes in their desktop order, then the panels, then groups', () => {
-    const lg = ['node-b', 'todos', 'group-x', 'ups', 'quicklaunch', 'node-a', 'pipeline', 'cron-jobs'];
+    const lg = [
+      'node-b',
+      'todos',
+      'group-x',
+      'ups',
+      'quicklaunch',
+      'node-a',
+      'pipeline',
+      'cron-jobs',
+    ];
     expect(orderForMobile(lg)).toEqual([
       'quicklaunch',
       'node-b',

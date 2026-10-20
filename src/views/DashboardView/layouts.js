@@ -14,21 +14,36 @@ const MIN_W = 4;
 // (configuredPanels.js), so DashboardView passes them when they show (#272).
 export const DEFAULT_PANELS = ['cron-jobs', 'todos', 'quicklaunch'];
 
-// Below the nodes, the panels go in these rows, each panel taking its share of
-// the row's width; a panel without its pair takes the whole row. Heights are
-// minimums: a panel grows to fit its content (HelmGrid).
-const PANEL_ROWS = [
-  [
-    { i: 'ups', share: 1 / 3, h: 5 },
-    { i: 'pipeline', share: 2 / 3, h: 5 },
-  ],
-  [
-    { i: 'cron-jobs', share: 2 / 3, h: 7 },
-    { i: 'todos', share: 1 / 3, h: 7 },
-  ],
-  [{ i: 'quicklaunch', share: 1, h: 4, minH: 2 }],
-];
+// Below the nodes, the panels pair up by height. HelmGrid grows a panel to fit
+// its content and only ever pushes a panel down, so a panel spanning two
+// columns of different heights lands under the taller one and leaves a hole
+// under the other. Two panels of about the same height, side by side, end
+// level, and the pair below them shares their split, so each sits under one
+// panel. The tall pair (Pipeline, Scheduled Jobs) comes first, then the short
+// pair (UPS, Checklist), each half and half. When one of a pair is not shown,
+// the two left over (one tall, one short) share a row, the tall one 2/3; a
+// panel left alone takes the whole row. Quick Launch closes the board.
+const TALL_PANELS = ['pipeline', 'cron-jobs'];
+const SHORT_PANELS = ['ups', 'todos'];
+// Minimum heights: a panel grows to fit its content (HelmGrid). Panels side by
+// side all get the row's tallest minimum, so a short pair starts the same height.
+const PANEL_H = { pipeline: 5, 'cron-jobs': 7, ups: 5, todos: 7, quicklaunch: 4 };
+const PANEL_MIN_H = { quicklaunch: 2 };
 const NODE_H = 8;
+
+/** The panel rows for `panels`, top to bottom: each a list of [panel, share of the width]. */
+function panelRows(panels) {
+  const tall = TALL_PANELS.filter((i) => panels.includes(i));
+  const short = SHORT_PANELS.filter((i) => panels.includes(i));
+  const rows = [];
+  if (tall.length === 2) rows.push(tall.map((i) => [i, 1 / 2]));
+  if (short.length === 2) rows.push(short.map((i) => [i, 1 / 2]));
+  const leftOver = [tall.length === 1 && [tall[0], 2 / 3], short.length === 1 && [short[0], 1 / 3]];
+  const left = leftOver.filter(Boolean);
+  if (left.length) rows.push(left.length === 1 ? [[left[0][0], 1]] : left);
+  if (panels.includes('quicklaunch')) rows.push([['quicklaunch', 1]]);
+  return rows;
+}
 // Nodes to a row at most, per breakpoint.
 const NODES_PER_ROW = { lg: 3, md: 2 };
 
@@ -50,8 +65,11 @@ function breakpointLayout(nodeKeys, panels, cols, perRowMax) {
   let y = 0;
 
   // Nodes first, in their order: rows of at most perRowMax (fewer when the
-  // grid is too narrow for that many at MIN_W), spread evenly so no row is
-  // left with one node, each row filling the width.
+  // grid is too narrow for that many at MIN_W), spread evenly over the fewest
+  // rows that hold them, the longer rows first, each row filling the width.
+  // Three to a row leaves no node alone in a row (2 nodes: 2; 4: 2 + 2; 7:
+  // 3 + 2 + 2). Two to a row (md, or a grid under 12 columns) leaves the last
+  // node of an odd count alone, the whole width (3: 2 + 1).
   const perRow = Math.max(1, Math.min(perRowMax, Math.floor(cols / MIN_W)));
   const rowCount = Math.ceil(nodeKeys.length / perRow);
   let next = 0;
@@ -72,26 +90,27 @@ function breakpointLayout(nodeKeys, panels, cols, perRowMax) {
     y += NODE_H;
   }
 
-  // Then the panels, paired where both show and fit side by side.
-  for (const row of PANEL_ROWS) {
-    const shown = row.filter((p) => panels.includes(p.i));
-    const ws = shown.length > 1 ? shown.map((p) => Math.round(cols * p.share)) : [cols];
-    if (shown.length > 1) ws[ws.length - 1] = cols - ws.slice(0, -1).reduce((a, b) => a + b, 0);
-    const sideBySide = shown.length > 1 && ws.every((w) => w >= MIN_W);
-    let x = 0;
-    let rowH = 0;
-    shown.forEach((p, k) => {
-      const w = sideBySide ? ws[k] : cols;
-      if (!sideBySide && k > 0) {
-        y += rowH;
-        rowH = 0;
-        x = 0;
+  // Then the panels, in their pairs where both fit side by side; one stacked
+  // on the other, each the whole width, where they don't.
+  const place = (i, x, w, h) =>
+    items.push({ i, x, y, w, h, minW: Math.min(MIN_W, cols), minH: PANEL_MIN_H[i] || 3 });
+  for (const row of panelRows(panels)) {
+    const ws = row.map(([, share]) => Math.round(cols * share));
+    ws[ws.length - 1] = cols - ws.slice(0, -1).reduce((a, b) => a + b, 0);
+    if (row.length > 1 && ws.every((w) => w >= MIN_W)) {
+      const h = Math.max(...row.map(([i]) => PANEL_H[i]));
+      let x = 0;
+      row.forEach(([i], k) => {
+        place(i, x, ws[k], h);
+        x += ws[k];
+      });
+      y += h;
+    } else {
+      for (const [i] of row) {
+        place(i, 0, cols, PANEL_H[i]);
+        y += PANEL_H[i];
       }
-      items.push({ i: p.i, x, y, w, h: p.h, minW: Math.min(MIN_W, cols), minH: p.minH || 3 });
-      x += w;
-      rowH = Math.max(rowH, p.h);
-    });
-    y += rowH;
+    }
   }
   return items;
 }
@@ -99,11 +118,12 @@ function breakpointLayout(nodeKeys, panels, cols, perRowMax) {
 /**
  * The grid for a board without a saved layout (#248): its nodes first, in
  * their /api/services order, at most three to a row (two at the md
- * breakpoint), spread evenly over the rows, each row filling the width. Then
- * the panels in `panels`: UPS beside Pipeline, Scheduled Jobs beside the
- * Checklist, then Quick Launch. A fresh install and the demo both get it; a
- * saved layout is never replaced by it (DashboardView uses this only when
- * there is none). `cols` is the grid's columns per breakpoint.
+ * breakpoint), spread evenly over the rows, each row filling the width; at two
+ * to a row an odd count leaves the last node alone. Then the panels in
+ * `panels`, paired by height: Pipeline beside Scheduled Jobs, UPS beside the
+ * Checklist, then Quick Launch (panelRows). A fresh install and the demo both
+ * get it; a saved layout is never replaced by it (DashboardView uses this only
+ * when there is none). `cols` is the grid's columns per breakpoint.
  *
  * @param {string[]} nodeKeys
  * @param {{ panels?: string[], cols?: { lg: number, md: number } }} [options]
