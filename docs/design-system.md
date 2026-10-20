@@ -80,7 +80,8 @@ the sign-off amendments in §15).
    `solid` is the lamp; its `fg` is the word, darkened to carry 4.5:1.
 7. **Panels are flat.** Only what floats over the page casts a shadow
    (`shadow-pop`): popovers, tooltips, toasts, the command palette, dialogs
-   and drawers, over a scrim (`bg-scrim`) when modal.
+   and drawers, over a scrim (`bg-scrim`) when modal, and over a lighter one
+   (`bg-scrim-nested`) when opened from another modal.
 
 ## Switches
 
@@ -94,31 +95,42 @@ popovers and menus render outside their parent):
 | `data-density` | `compact` | comfortable |
 | `data-typeface` | `plus-jakarta-sans`, `montserrat` | manrope |
 
-The `dark:` variant applies inside any root without `data-theme="light"`. Don't
-nest roots of different themes. "System" (follow the device) is Settings'
-job: it sets `data-theme` from `prefers-color-scheme`.
+Roots can nest, in any theme: each carries its own tokens, so a light root
+inside a dark one is light. The `dark:` variant applies inside any root
+without `data-theme="light"`, so it can't tell such a root from its dark
+parent; `src/ui/` doesn't use it, and `scripts/ui-stack.test.mjs` fails if a
+class does. "System" (follow the device) is Settings' job: it sets
+`data-theme` from `prefers-color-scheme`.
 
 A screen's root is a `UiRoot` ([`src/ui/root.jsx`](../src/ui/root.jsx),
 #286): `<UiRoot theme="light" density="compact">` renders the `.jh-ui`
 element with those attributes (a default sets none) and gives the same
 switches to everything portalled from the screen. It also holds the screen's
-toasts and the tooltips' shared timing.
+toasts and the tooltips' shared timing. A UiRoot inside another (a gallery of
+states in both themes) shares the outer one's toasts and tooltip timing, and a
+page has one toast viewport however many roots it holds
+([Containers](#containers)).
 
 Portalled content gets its root from
 [`src/ui/lib/portal.js`](../src/ui/lib/portal.js). The portal element gets
 `jh-ui` and each switch (`ROOT_SWITCHES`), taken from, in order:
 
-1. the `.jh-ui` root around the control that opened it (a Select's trigger, a
-   dialog's or popover's trigger), read when the control mounts, when the
-   popup opens and when the UiRoot's switches change;
-2. with no such control, the UiRoot around it: a toast has no anchor, and
-   neither has a dialog opened from code or from outside the new UI;
+1. the UiRoot around it, read again whenever its switches change. This
+   covers an overlay opened from inside another (a Select in a dialog, a
+   Confirm from a drawer), whose control sits in its parent's portal root,
+   which may not have taken the change yet; a toast, which has no control;
+   and a dialog opened from code;
+2. with no UiRoot, the `.jh-ui` root around the control that opened it (a
+   Select's trigger, a dialog's or popover's trigger), read when the control
+   mounts and when the popup opens;
 3. with neither, nothing: a bare `.jh-ui` root, dark and comfortable.
 
-An open overlay follows a switch the screen changes. A new switch goes into
-`SWITCHES` in `portal.js` as well as `tokens.css`; `scripts/ui-stack.test.mjs`
-fails until both list it, and when a Base UI portal in `src/ui/` isn't given
-the portal root's props (`{...portalRoot}`).
+An open overlay, nested or not, follows a switch the screen changes. A new
+switch goes into `SWITCHES` in `portal.js` as well as `tokens.css`;
+`scripts/ui-stack.test.mjs` fails until both list it, and when a Base UI
+portal in `src/ui/` isn't given the portal root's props (`{...portalRoot}`),
+or gets a class, a container, a switch or another spread after them. Screens
+import the components, never `@base-ui/react` itself (the same file checks).
 
 ## Contrast floors
 
@@ -253,8 +265,12 @@ light theme.
 
 `track` (a meter's empty track), `tick` (its quarter marks), `beat-ok` (a
 healthy heartbeat bar; failures use `crit-solid`), `lamp-cut` (the slash and bar
-cut into warn and crit lamps, the panel colour), `scrim`, `switch-thumb` (a
-switch's thumb, white in both themes, as the mock's), and the shadows below.
+cut into warn and crit lamps, the panel colour), `scrim`, `scrim-nested` (the
+scrim of a modal opened from another, half as strong, so the one under it
+reads as dimmed and the page under both never goes near black; derived from
+`scrim` in `tailwind.css`, so it has no `--jh-` token of its own),
+`switch-thumb` (a switch's thumb, white in both themes, as the mock's), and
+the shadows below.
 
 ### Type
 
@@ -352,9 +368,12 @@ one-offs:
   segment), `shadow-pop` (popovers, tooltips, toasts, palette, dialogs,
   drawers), `shadow-thumb`
   (a switch's thumb, the mock's `0 1px 2px` at 30 % black in both themes),
-  `bg-scrim`.
-- **Z-index:** `z-sticky` 20, `z-header` 40, `z-overlay` 50 (scrims),
-  `z-dialog` 60, `z-toast` 80.
+  `bg-scrim`, `bg-scrim-nested`.
+- **Z-index:** `z-sticky` 20, `z-header` 40, `z-overlay` 50 (unused so far),
+  `z-dialog` 60 (popups and their scrims), `z-toast` 80. The scrims share
+  `z-dialog` with the popups, so a later overlay stacks above an earlier one:
+  a modal opened from another portals after its parent's popup, and its scrim
+  covers it.
 - **Motion:** 150ms `ease` (`transition-*`, `duration-standard`,
   `ease-standard`) for drawers and popovers; animate bars only. With reduced
   motion asked for, transitions and animations are cut to nothing: the base
@@ -563,12 +582,12 @@ show every state.
 
 | Component | Import | Base UI part | Props | Keys |
 | --- | --- | --- | --- | --- |
-| `UiRoot` | `@ui/root` | Toast and Tooltip providers | `theme`, `accent`, `density`, `typeface` ([Switches](#switches)), `toastManager` | none |
+| `UiRoot` | `@ui/root` | Toast and Tooltip providers (the outermost root's) | `theme`, `accent`, `density`, `typeface` ([Switches](#switches)), `toastManager` | none |
 | `Panel` | `@ui/panel` | none | `title`, `description`, `icon`, `actions`, `flush`, `titleAs` (`h2`) | none |
-| `Dialog`, `DialogClose` | `@ui/dialog` | Dialog | `trigger` or `open` and `onOpenChange`, `title`, `description`, `footer`, `size` (`sm` 440, `md` 540, `lg` 600), `closeLabel`, `initialFocus`, `finalFocus` | Tab and Shift+Tab stay inside; Escape closes |
-| `Drawer`, `DrawerClose` | `@ui/drawer` | Dialog, at the edge | `trigger` or `open` and `onOpenChange`, `eyebrow`, `title`, `description`, `closeLabel` | as the Dialog |
-| `Confirm` | `@ui/confirm` | AlertDialog | `trigger` or `open` and `onOpenChange`, `title`, `name` (required), `detail`, `description`, `confirmLabel`, `cancelLabel`, `destructive`, `value`, `onConfirm(value)`, `onCancel` | as the Dialog; Escape cancels |
-| `Popover`, `PopoverClose` | `@ui/popover` | Popover | `trigger`, `title`, `description`, `side` (`bottom`), `align`, `openOnHover`, `open` and `onOpenChange` | Escape closes |
+| `Dialog`, `DialogClose` | `@ui/dialog` | Dialog | `trigger` or `open` and `onOpenChange`, `title` (or `aria-label`), `description`, `footer`, `size` (`sm` 440, `md` 540, `lg` 600), `closeLabel`, `initialFocus`, `finalFocus` | Tab and Shift+Tab stay inside; Escape closes the top one |
+| `Drawer`, `DrawerClose` | `@ui/drawer` | Dialog, at the edge | `trigger` or `open` and `onOpenChange`, `eyebrow`, `title` (or `aria-label`), `description`, `closeLabel` | as the Dialog |
+| `Confirm` | `@ui/confirm` | AlertDialog | `trigger` or `open` and `onOpenChange`, `title` (required), `name` (required), `detail`, `description`, `confirmLabel`, `cancelLabel`, `destructive`, `value`, `onConfirm(value)`, `onCancel` | as the Dialog; Escape cancels |
+| `Popover`, `PopoverClose` | `@ui/popover` | Popover | `trigger`, `title` (or `aria-label`; else its trigger names it), `description`, `side` (`bottom`), `align`, `openOnHover`, `open` and `onOpenChange` | Escape closes |
 | `Tooltip` | `@ui/tooltip` | Tooltip | `content`, `side` (`top`), `align`, `delay`, `closeDelay`; the trigger is its child | focus opens it; Escape closes |
 | `useToast`, `createToastManager` | `@ui/toast` | Toast | `add({ title, description, tone, action: { label, onClick }, timeout, id })`, `update`, `close`, `promise` | F6 reaches the toasts |
 | `Banner` | `@ui/banner` | none | `tone` (`crit` by default, `warn`, `unknown`, `maintenance`, `info`, `ok`), `title`, `cause`, `detail`, `action`, `icon` | none |
@@ -596,13 +615,17 @@ From the mock's Overview, Settings and Phone boards:
 - **Drawer.** The mock's detail drawer: the full height on the right, 460px
   (the whole screen on a phone), `surface-1` with a subtle left edge and
   `shadow-pop` over the scrim. Its header is the mock's 110px: an overline,
-  the title at `title`, a 13px `text-3` line, a ghost close button, a subtle
-  rule; the body has 20px of padding and 20px between sections, in both
-  densities.
+  the title at `title`, a 13px `text-3` line, a ghost close button (34px,
+  flush with the header's padding), a subtle rule; the body has 20px of
+  padding and 20px between sections, in both densities.
+- **A modal opened from another** (a Confirm from a Drawer): over its own
+  scrim, `bg-scrim-nested`, half the scrim's strength, so the drawer under it
+  reads as dimmed and the page under both stays short of black.
 - **Confirm.** The Dialog at 440px. Under the question, the thing it acts on,
   by its display name (`name`, semibold `text-1`) and `detail` (12px
-  `text-3`), in a sunken box (`bg-background`, subtle edge, 8px radius), then
-  what will happen.
+  `text-3`), quoted on `surface-2` with no edge and an 8px radius (the
+  Settings device row's anatomy), so it never reads as a field to type in,
+  then what will happen.
 - **Popover.** The mock's floating card (the "shows here" note over an app):
   `surface-2` in a `border-strong` edge, 12px radius, `shadow-pop`, 14px by
   18px of padding, an optional bold title over 13px `text-2`. It opens 6px from
@@ -655,9 +678,22 @@ info, which is not a state. They are Lucide outlines
   ("Live metrics unavailable", "Prometheus unreachable"). In a failing tone
   (`crit`, `warn`, `unknown`) a missing cause throws in development and logs
   in production.
-- **Portal roots come from the screen.** See [Switches](#switches): the root
-  around the opener, else the UiRoot's switches, so a toast or a dialog
-  opened from code matches the screen in light and compact.
+- **Portal roots come from the screen.** See [Switches](#switches): the
+  UiRoot's switches, else the root around the opener, so a toast, a dialog
+  opened from code and an overlay opened from another overlay all match the
+  screen in light and compact, and follow it when it changes.
+- **A modal opened from another stacks above it.** Base UI draws no scrim for
+  a nested dialog unless told to; here each has its own, on the popups'
+  layer, so a Confirm opened from a Drawer covers the drawer. The drawer is
+  `inert` until the Confirm closes: a click where it shows lands on the
+  Confirm's scrim, and only the Confirm's buttons or Escape answer it. The
+  nested scrim is half as strong, so the page under both isn't dimmed twice
+  to near black.
+- **One toast viewport per page.** The first UiRoot at the top of the page
+  renders it, in its switches, and it shows every root's toasts: a nested
+  root uses the outer one's, and a manager several roots share shows each
+  toast once. Several viewports would stack in the same corner and repeat the
+  "Notifications" landmark, which axe fails.
 - **The Drawer is a Dialog at the edge.** Base UI's Drawer adds swipe
   gestures and snap points, which the mock doesn't have; Base UI's advice for
   a drawer without them is a positioned Dialog.
@@ -668,23 +704,40 @@ info, which is not a state. They are Lucide outlines
   open (the first control; a destructive Confirm's Cancel), keep it there
   (Tab and Shift+Tab cycle), hide the page from screen readers and stop it
   scrolling, and give focus back to whatever opened them, a trigger or the
-  control that set `open`. Escape closes them; a click on the scrim closes a
-  Dialog or Drawer, never a Confirm, which only its buttons or Escape (a
-  cancel) close. Each is named by its title and described by its
-  description.
+  control that set `open`. Escape closes them, the top one first; a click on
+  the scrim closes a Dialog or Drawer, never a Confirm, which only its buttons
+  or Escape (a cancel) close. One opened from another makes the one under it
+  `inert` until it closes. Each is named by its title and described by its
+  description; a Dialog or Drawer without a title takes an `aria-label`, and
+  with neither it throws in development and logs in production, as a Confirm
+  without its title does.
 - **A Popover** is a non-modal dialog named by its title: focus moves in,
   Escape or a click outside closes it, and focus goes back to its trigger.
   `openOnHover` makes it an infotip, which a tooltip must not be: help that
-  matters can't live in a tooltip.
+  matters can't live in a tooltip. Without a title it is named by an
+  `aria-label`, or else by its trigger, so it is never unnamed.
 - **A Tooltip** opens on keyboard focus as well as under the pointer, and
-  never on touch. The trigger keeps its own name; when the tooltip says more,
-  the trigger is described by it (`aria-describedby`, a hidden copy that is
-  always there), so a screen reader hears it without opening it.
+  never on touch. The trigger keeps its own name (an `aria-label`, an
+  IconButton's `label`, a Button's text); when the tooltip says more, the
+  trigger is described by it (`aria-describedby`, a hidden copy that is
+  always there), so a screen reader hears it without opening it. The copies
+  sit in one hidden element in `<body>`, never beside the trigger,
+  where they would break the row's `:last-child` and `+` selectors and a
+  list's or a table's markup.
 - **Toasts** are announced: the viewport is a polite live region and a
   landmark named "Notifications", there before the first toast, and F6 jumps
-  to it. A `crit` toast is announced as an alert and stays until dismissed;
-  the others go after 5 seconds, a timer that pauses under the pointer or
-  focus. A toast added while the screen mounts still shows.
+  to it. A `crit` toast is announced as an alert and stays until dismissed,
+  whether it was added so, `update`d to crit, or is a failed `promise` (an
+  error is crit unless it names a tone; a success is ok); the others go
+  after 5 seconds, a timer that pauses under the pointer or focus, and an
+  update away from crit makes a toast polite again. Each keeps its tone's
+  icon through updates and promises. A toast added while the screen mounts
+  still shows; give one added from an effect an `id`, or React's StrictMode,
+  which runs effects twice in development, shows it twice. A manager's toasts
+  sent while no UiRoot listens (a legacy screen) wait for one, but one that
+  isn't crit and is older than its timeout is dropped rather than shown late.
+  A page has one viewport, so one "Notifications" landmark, however many
+  UiRoots it holds.
 - **A Banner is not a live region**: the same cause can show on several
   panels, so the screen announces each cause once, from one place, as today's
   dashboard does. `role="alert"` on a banner that stands alone.
@@ -701,12 +754,22 @@ info, which is not a state. They are Lucide outlines
   box shows the filled lamp, which comes with StatusLamp (#287).
 - **The drawer box's 10px radius** is the Banner's 12, as the Phone board's
   same box (the radius scale has no 10).
+- **The Dialog's title is 20/26** (`title`), where the "won't open" card it
+  is laid out from uses 18/24: the type scale has no 18, and 20 matches the
+  drawer's title.
 - **Not in the mock, derived from it:** the Dialog's layout (the "won't open"
   card's), its widths (440 for a Confirm, 540 as that card, 600 as the
-  palette), the Confirm's subject box, the Tooltip, the Toast, the
-  EmptyState's centred layout, the Popover's left-aligned text (the mock's one
-  floating card is centred), the Drawer's close button at the IconButton's 34px
-  (the mock's is 32px), and the toasts' place and timing.
+  palette), the Confirm's subject block, the lighter scrim of a nested modal,
+  the Tooltip, the Toast, the EmptyState's centred layout, the Popover's
+  left-aligned text (the mock's one floating card is centred), the Drawer's
+  close button at the IconButton's 34px (the mock's is 32px), and the toasts'
+  place and timing.
+- **Type-scale steps, kept over the mock's sizes:** the Quick Launch card's
+  title is 15px (`title-xs`; the mock's is 14) and its padding 20px when
+  comfortable (the mock's is 16); the popover's description and a small
+  EmptyState's line are 13/18 (the mock's are 13/20); the Banner's detail line
+  is 16px tall (the mock's is 20, so its box is 90px against 94); and the
+  drawer's title has no -0.01em tracking.
 
 ## Changing a token
 

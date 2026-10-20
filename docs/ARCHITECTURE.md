@@ -130,7 +130,8 @@ src/                        React 19 SPA (Vite 8)
                              popover, tooltip, toast, banner, empty-state, skeleton),
                              lib/utils.js (cn, taught the theme), lib/portal.js (portal roots
                              and the switches they copy), lib/field-context.js (how a Field
-                             labels its control), lib/tone.jsx (a tone's icon)
+                             labels its control), lib/tone.jsx (a tone's icon),
+                             lib/name.js (an overlay's required name)
 
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
@@ -748,7 +749,9 @@ stack sits beside today's CSS and must not restyle it.
   carries only the icons it uses. The controls (#285) and the containers
   (#286) are the components so far, the interactive ones built on Base UI
   primitives, and no screen uses them yet. A screen's root is a `UiRoot`
-  (`src/ui/root.jsx`), which carries its switches to every portal.
+  (`src/ui/root.jsx`), which carries its switches to every portal; roots can
+  nest, and a page has one toast viewport. Screens import the components,
+  never `@base-ui/react` itself (`scripts/ui-stack.test.mjs`).
 - **Both apps import `@ui/...`.** The Android build maps `@ui` to `../src/ui` and
   lists React and every package `src/ui/` imports in `resolve.dedupe`, so shared
   code uses the Android app's own copies: the APK build installs `mobile/` only,
