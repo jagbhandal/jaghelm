@@ -1,9 +1,8 @@
 /*
  * The app shell in a real browser (#296): the production build, every /api
- * request answered here (the demo server's own answers, demoResponse, for the
- * board; the status model's fixtures for /api/status, built by the server's
- * model from src/testing/statusFixtures.js; two embedded apps served here), at
- * 390 and 1440px.
+ * request answered here with the demo server's own answers (demoResponse), in
+ * its incident scenario, /api/status included (the status model of the demo's
+ * board, #437), and two embedded apps served here, at 390 and 1440px.
  *
  *  - The header says the model's incident sentence, and steel "No signal"
  *    when the backend can't be reached.
@@ -15,17 +14,12 @@
  *  - axe finds nothing on the shell, at both widths, dark and light: the whole
  *    Alerts page (a page of the new UI), and the shell's chrome around today's
  *    Overview, whose board later cards rebuild (#297–#300).
- *
- * /api/status is route-stubbed with the model's fixture until the demo serves
- * the model's status itself (#437).
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { demoResponse } from '../server/demo.js';
-import { NOW } from '../server/testing/statusFixtures.js';
-import { INCIDENT } from '../src/testing/statusFixtures.js';
 
 const APPS = [
   { id: 'grafana', label: 'Grafana', type: 'iframe', url: '/embedded/grafana' },
@@ -38,12 +32,19 @@ const WIDTHS = {
 // Today's themes, until #304: the shell draws a light one light.
 const THEMES = { dark: 'dark', light: 'github-light' };
 
+/** The demo's answer to `path` in its incident scenario, as its server sends it. */
+const demo = (path, method = 'GET', query = {}) =>
+  demoResponse({ method, path, query, scenario: 'incident' });
+
+/** The demo's status in its incident scenario: what the header must say. */
+const INCIDENT = demo('/api/status').body;
+
 /**
  * Opens the app at `path`, answering every request here. Returns the server's
- * state: set `status` to change what /api/status answers ('down' refuses it).
+ * state: set `down` to refuse /api/status, as a backend that can't be reached.
  */
-async function openApp(page, path = '/', { status = INCIDENT, theme = 'dark' } = {}) {
-  const server = { status };
+async function openApp(page, path = '/', { down = false, theme = 'dark' } = {}) {
+  const server = { down };
   const origin = new URL(test.info().project.use.baseURL).origin;
   await page.route(
     (url) => url.origin !== origin,
@@ -59,17 +60,9 @@ async function openApp(page, path = '/', { status = INCIDENT, theme = 'dark' } =
   await page.route('**/api/**', (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.pathname === '/api/status') {
-      if (server.status === 'down') return route.abort('connectionrefused');
-      return route.fulfill({ json: server.status });
-    }
+    if (url.pathname === '/api/status' && server.down) return route.abort('connectionrefused');
     if (url.pathname === '/api/icons/cached') return route.fulfill({ status: 404, json: {} });
-    const out = demoResponse({
-      method: request.method(),
-      path: url.pathname,
-      query: Object.fromEntries(url.searchParams),
-      scenario: 'incident',
-    });
+    const out = demo(url.pathname, request.method(), Object.fromEntries(url.searchParams));
     const body = url.pathname === '/api/display-config' ? { ...out.body, tabs: APPS } : out.body;
     return route.fulfill({ status: out.status, json: body ?? {} });
   });
@@ -117,6 +110,7 @@ test.describe('the header', () => {
   test.use({ viewport: WIDTHS.desktop });
 
   test("shows the status model's incident sentence, a link to Alerts", async ({ page }) => {
+    expect(INCIDENT.overall.state).toBe('crit');
     await openApp(page);
     const status = headerStatus(page);
     await expect(status).toHaveAttribute('data-state', 'crit');
@@ -127,7 +121,7 @@ test.describe('the header', () => {
   });
 
   test('is steel "No signal" with the backend down', async ({ page }) => {
-    await openApp(page, '/', { status: 'down' });
+    await openApp(page, '/', { down: true });
     const status = headerStatus(page);
     await expect(status).toHaveAttribute('data-state', 'unknown');
     await expect(status).toContainText('No signal');
@@ -150,10 +144,10 @@ test.describe('the header', () => {
     await page.clock.install();
     const server = await openApp(page);
     await expect(headerStatus(page)).toHaveAttribute('data-state', 'crit');
-    server.status = 'down';
+    server.down = true;
     await page.clock.runFor(30_000);
     await expect(headerStatus(page)).toHaveAttribute('data-state', 'unknown');
-    server.status = INCIDENT;
+    server.down = false;
     await page.clock.runFor(30_000);
     await expect(headerStatus(page)).toHaveAttribute('data-state', 'crit');
   });
@@ -317,8 +311,6 @@ for (const theme of Object.keys(THEMES)) {
 test('screenshots of the incident, dark, for the PR', async ({ page }) => {
   const dir = join(test.info().project.outputDir, 'shots');
   mkdirSync(dir, { recursive: true });
-  // Four minutes after the fixture's cycle, so the issues' ages read as they would.
-  await page.clock.setFixedTime(NOW + 4 * 60_000);
   await page.setViewportSize(WIDTHS.desktop);
   await openApp(page);
   await SHOWS.overview(page);
@@ -326,6 +318,9 @@ test('screenshots of the incident, dark, for the PR', async ({ page }) => {
   await page.goto('/alerts');
   await SHOWS.alerts(page);
   await page.screenshot({ path: `${dir}/desktop-alerts.png` });
+  await page.goto('/apps/grafana');
+  await SHOWS.app('Grafana')(page);
+  await page.screenshot({ path: `${dir}/desktop-app.png` });
   await page.setViewportSize(WIDTHS.phone);
   await page.goto('/');
   await SHOWS.overview(page);

@@ -67,18 +67,9 @@ async function renderDemo(scenario) {
 const headerStatus = () =>
   within(within(screen.getByRole('banner')).getByRole('status')).getByRole('link');
 
-/**
- * What the header must say for the demo's own /api/status answer in
- * `scenario`: the model's word and sentence; or, for an answer without a
- * status, "No signal" while it waits for one.
- */
-function expectedHeader(scenario) {
-  const { body } = demoResponse({ method: 'GET', path: '/api/status', query: {}, scenario });
-  if (!body?.overall) return 'No signal: Waiting for the first check';
-  const { state, sentence } = body.overall;
-  const word = { crit: 'Critical', warn: 'Warning', unknown: 'No signal' }[state] ?? 'All systems normal';
-  return `${word}: ${sentence}`;
-}
+/** The demo's own /api/status in `scenario`: the model's status of its board (#437). */
+const demoStatus = (scenario) =>
+  demoResponse({ method: 'GET', path: '/api/status', query: {}, scenario }).body;
 const panel = (title) => screen.getByText(title).closest('.glass-card');
 const gridItem = (title) => screen.getByText(title).closest('.helmgrid-item');
 
@@ -144,9 +135,12 @@ describe('the demo, rendered', () => {
   it('is not green while a service is down', async () => {
     await renderDemo('incident');
 
-    // The header says what the demo's /api/status says, and never all clear.
-    expect(headerStatus()).toHaveAccessibleName(expectedHeader('incident'));
-    expect(headerStatus()).not.toHaveAttribute('data-state', 'ok');
+    // The header says what the demo's status model says: critical, a service down.
+    expect(demoStatus('incident').overall.sentence).toMatch(/^1 service down/);
+    expect(headerStatus()).toHaveAccessibleName(
+      `Critical: ${demoStatus('incident').overall.sentence}`
+    );
+    expect(headerStatus()).toHaveAttribute('data-state', 'crit');
     // One service card is down (its status badge reads "down"): Jellyfin's.
     expect(screen.getAllByText('down')).toHaveLength(1);
     const card = within(panel('App Server')).getByText('down').parentElement.parentElement;
@@ -156,9 +150,11 @@ describe('the demo, rendered', () => {
   it('is green in the healthy scenario', async () => {
     await renderDemo('healthy');
 
-    // Never red or amber; the header says what the demo's /api/status says.
-    expect(headerStatus()).toHaveAccessibleName(expectedHeader('healthy'));
-    expect(['crit', 'warn']).not.toContain(headerStatus().getAttribute('data-state'));
+    // The quiet line: the model's sentence, never a green word.
+    expect(headerStatus()).toHaveAccessibleName(
+      `All systems normal: ${demoStatus('healthy').overall.sentence}`
+    );
+    expect(headerStatus()).toHaveAttribute('data-state', 'ok');
     expect(screen.queryAllByText('down')).toEqual([]);
     expect(screen.getAllByText('running').length).toBeGreaterThan(10);
   });

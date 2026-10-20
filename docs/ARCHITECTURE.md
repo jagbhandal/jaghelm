@@ -1576,13 +1576,13 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
 - **The app shell in a browser** (`npm run test:e2e`, Playwright in the
   gallery's container; CI's `gallery` job, after the gallery): `e2e/shell.spec.mjs`
   runs the production build under `vite preview`, answering every `/api`
-  request in the test with the demo server's own answers (`demoResponse`) and
-  `/api/status` with the model's incident fixture, at 390 and 1440px. It checks
+  request in the test with the demo server's own answers (`demoResponse`) in
+  its incident scenario, `/api/status` included, at 390 and 1440px. It checks
   the header's incident sentence and its steel "No signal" with the backend
   down (and back), that every nav entry (sidebar, phone tabs and More) opens
   its page and every old view is reachable, the app bar (Reload makes a new
-  frame; "Open in new tab" is `_blank` with `noopener noreferrer`), Back, Forward and a reload, no
-  sideways scroll on any page, and axe with every default rule, dark and
+  frame; "Open in new tab" is `_blank` with `noopener noreferrer`), Back,
+  Forward and a reload, no sideways scroll on any page, and axe with every default rule, dark and
   light, at both widths: the whole Alerts page, and the shell's chrome around
   today's Overview. It also leaves screenshots of the incident in
   `test-results/e2e/shots/`.

@@ -2,8 +2,8 @@
  * Status-model fixtures for the web's tests (#296): each is what the server's
  * own model (server/status/model.js) builds from a homelab-shaped cycle, so
  * the shell is tested against the real shape and sentences, never a
- * hand-written copy that could drift. The Playwright shell tests answer
- * /api/status with these too (e2e/).
+ * hand-written copy that could drift. (The Playwright shell tests, e2e/, use
+ * the demo's own /api/status, which the same model builds.)
  */
 import {
   inputs,
