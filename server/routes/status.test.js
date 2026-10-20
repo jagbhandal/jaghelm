@@ -2,14 +2,16 @@
  * GET /api/status (#292): the status model the background loop builds once a
  * cycle (refresh.js updateStatus), behind the same auth as every /api/* read,
  * with the cache's ETag machinery: 304 on a matching If-None-Match, one ETag
- * per value, and one ETag across cycles while the board holds still.
+ * per value, and one ETag across cycles while the board holds still. It serves
+ * the threshold lines the model judged by (#451): the defaults, or
+ * display-config.json's `pushThresholds` over them.
  *
  * Auth is frozen at module load, so DASH_PASS and the data dir are set before
  * importing the app (as cron.test.js does).
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
@@ -25,6 +27,7 @@ const { stopBackgroundRefresh, updateStatus } = await import('../refresh.js');
 const { createSession } = await import('../auth/sessions.js');
 const { getCached, setCache } = await import('../cache.js');
 const { NOW, UPS_ONLINE, monitored, node } = await import('../testing/statusFixtures.js');
+const { DEFAULT_THRESHOLDS, resolveThresholds } = await import('../status/thresholds.js');
 
 const token = createSession('admin');
 
@@ -84,7 +87,14 @@ test("/api/status: 200 with the model's shape, and an ETag", async () => {
   assert.equal(r.status, 200);
   assert.match(r.headers['content-type'], /json/);
   assert.deepEqual(r.body, JSON.parse(JSON.stringify(built)), 'the status the loop built');
-  assert.deepEqual(Object.keys(r.body), ['overall', 'issues', 'subsystems', 'entities', 'sources']);
+  assert.deepEqual(Object.keys(r.body), [
+    'overall',
+    'issues',
+    'subsystems',
+    'entities',
+    'sources',
+    'thresholds',
+  ]);
   assert.deepEqual(r.body.overall, { state: 'ok', sentence: '1 service up · 1 node healthy' });
   assert.deepEqual(
     r.body.entities.map((e) => [e.id, e.kind, e.state, e.word, e.reason]),
@@ -133,4 +143,64 @@ test('/api/status: a change on the board is a new ETag and a 200', async () => {
     [['services/vm103:app', 'crit', 'Kuma: down']]
   );
   assert.equal((await getStatus(r.headers.etag)).status, 304);
+});
+
+// ── The lines in force (#451) ────────────────────────────────────────────
+
+const configPath = join(dataDir, 'display-config.json');
+
+test('/api/status: serves the lines the model judged by, the defaults without a display config', async () => {
+  const built = cycle({ disk: '91.0' }, NOW + 150_000);
+  const r = await getStatus();
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.thresholds, resolveThresholds(undefined));
+  assert.deepEqual(r.body.thresholds, JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS)));
+  assert.deepEqual(r.body.thresholds, JSON.parse(JSON.stringify(built.thresholds)));
+  // The model judged the disk by those lines.
+  const vm103 = r.body.entities.find((e) => e.id === 'nodes/vm103');
+  assert.equal(vm103.reason, 'Disk 91 % (warning above 90 %)');
+});
+
+test("/api/status: serves display-config's pushThresholds over the defaults, as the model used them", async () => {
+  const pushThresholds = { cpu: 0.8, mem: 0.85, disk: 0.875, hysteresis: 0.03 };
+  writeFileSync(configPath, JSON.stringify({ pushThresholds }));
+  try {
+    cycle({ disk: '88.0' }, NOW + 180_000);
+    const r = await getStatus();
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.thresholds, resolveThresholds(pushThresholds));
+    assert.deepEqual(
+      [r.body.thresholds.cpu.warn, r.body.thresholds.disk, r.body.thresholds.hysteresis.fraction],
+      [0.8, { warn: 0.875, crit: 0.95 }, 0.03]
+    );
+    // 88 % is over the 87.5 % line in force, which the default 90 % is not.
+    const vm103 = r.body.entities.find((e) => e.id === 'nodes/vm103');
+    assert.equal(vm103.conditions.disk, 'warn');
+    assert.equal(vm103.reason, 'Disk 88 % (warning above 87.5 %)');
+  } finally {
+    rmSync(configPath, { force: true });
+  }
+});
+
+test('/api/status: the lines keep the ETag steady cycle to cycle, and a new line is one new ETag', async () => {
+  // Two steady cycles with the defaults: one ETag.
+  cycle({}, NOW + 210_000);
+  const first = await getStatus();
+  cycle({}, NOW + 240_000);
+  const second = await getStatus(first.headers.etag);
+  assert.ok(first.body.thresholds, 'the lines are served');
+  assert.equal(second.status, 304, 'two steady cycles, one ETag');
+  // A line moves: the status changes once, then holds again.
+  writeFileSync(configPath, JSON.stringify({ pushThresholds: { cpu: 0.8 } }));
+  try {
+    cycle({}, NOW + 270_000);
+    const moved = await getStatus(first.headers.etag);
+    assert.equal(moved.status, 200);
+    assert.notEqual(moved.headers.etag, first.headers.etag);
+    assert.equal(moved.body.thresholds.cpu.warn, 0.8);
+    cycle({}, NOW + 300_000);
+    assert.equal((await getStatus(moved.headers.etag)).status, 304, 'steady again');
+  } finally {
+    rmSync(configPath, { force: true });
+  }
 });

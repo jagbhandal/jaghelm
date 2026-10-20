@@ -13,10 +13,12 @@
  * Ported from the Android app's UsageBar: the fill clamps to the track while the
  * value prints as read (rounded, or `valueText`); no reading (null) draws an
  * empty track and a dash in the no-signal colour. UsageBar's fixed 75/90 steps give way to `warn` and
- * `crit`, in the reading's unit (spec §6.1's defaults live on the server), and
- * the server's own state, when given, wins over them (its hysteresis keeps a
- * warning until the reading drops 5 points). The Android app keeps UsageBar
- * until Phase 4.
+ * `crit`, in the reading's unit, and the server's own state, when given, wins
+ * over them (its hysteresis keeps a warning until the reading drops 5 points).
+ * A screen gives a node reading's meter the lines /api/status serves, the ones
+ * the model judged it by: `readingLines(status.thresholds, reading)` from
+ * server/status/readings.js (#451), never lines of its own. The Android app
+ * keeps UsageBar until Phase 4.
  *
  * A meter is a `meter` named by its label, its value and any threshold it
  * passed said in words ("92%, warning above 90%"). A meter never sits on

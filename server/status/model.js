@@ -15,7 +15,12 @@
  *   - `now`: the cycle's clock, in ms since the epoch.
  *
  * It returns `{ status, memory }`. `status` is the model (docs/ARCHITECTURE.md
- * §4.7): `overall`, `issues`, `subsystems`, `entities`, `sources`. `memory` is for the next call only and is never served.
+ * §4.7): `overall`, `issues`, `subsystems`, `entities`, `sources`, and
+ * `thresholds`, the lines it judged by, as given (#451): a screen draws a
+ * meter's line from them (status/readings.js), never from a copy of its own.
+ * They change only when the config does, so a steady board's status, and its
+ * ETag, hold from cycle to cycle. `memory` is for the next call only and is
+ * never served.
  *
  * Failed sources (#232): a source that failed this cycle makes the entities it
  * feeds `unknown`, with a reason naming it, never `crit`. An entity it fed last
@@ -386,7 +391,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   );
   const empty = isEmptyBoard({ entities, sources, services, integrations });
   const { overall, issues, subsystems } = summarize(entities, sourceIssues, { empty });
-  const status = { overall, issues, subsystems, entities, sources };
+  const status = { overall, issues, subsystems, entities, sources, thresholds };
 
   const memEntities = {};
   for (const [id, { entity, memo }] of built) memEntities[id] = memo ? { ...entity, memo } : entity;

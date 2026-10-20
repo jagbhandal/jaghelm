@@ -110,7 +110,8 @@ server/                     Express API (Node 26, ESM)
                             subsystems, the overall sentence and the ranked issues, the
                             one threshold config, and which cron jobs are backups
                             (backupJobs.js); built once a cycle, served at /api/status,
-                            and what push sends from (see 4.7)
+                            and what push sends from (see 4.7); readings.js, a reading's
+                            lines as the screens draw them, which the web imports too
   util/                     logger, ssrf, redact, rateLimiter, atomicWrite,
                             configSchema (zod), configMask (the config read's
                             credential markers, see 6), dataDir, asyncHandler, dedupe
@@ -877,6 +878,8 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   subsystems: [{ id, name, state, counts: { total, ok, warn, crit, unknown, maintenance }, detail }],
   entities: [{ id, kind, subsystem, name, node?, state, word, reason, metric?, conditions?, since }],
   sources: { prometheus: { state: 'ok' | 'failed', error?, since }, kuma, nut, gitea },
+  thresholds: { cpu: { warn, cycles }, mem: { warn }, disk: { warn, crit },   // the lines it judged by
+                temp: { warn, crit }, hysteresis: { fraction, celsius }, pending: { cycles } },
 }
 ```
 
@@ -980,6 +983,15 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   pools were read without it: push's snapshot drops it on that cycle, and over
   its line it sends one `host_threshold_cleared`, since the node on the screen
   no longer shows it.
+- **Thresholds** (#451) are the lines the model judged this status by, as it
+  was given them (`thresholds.js`' shape, below: usage lines as fractions of
+  1, temperature in °C): the defaults, or `display-config.json`'s
+  `pushThresholds` over them. A screen reads a meter's lines from them, never
+  from a copy of its own: `readingLines(thresholds, reading)`
+  (`status/readings.js`, dependency-free so the web imports it) gives a node
+  reading's `{ warn, crit }` in its unit, percent or °C, a storage pool taking
+  the disk's. They change only when the config does, so they don't move a
+  steady board's ETag.
 - **Issues** are the entities in `crit`, `warn` or `unknown`, plus the failed
   sources: crit before warn before unknown; within a level by subsystem order
   (sources, Services, Nodes, Power, Jobs, Backups, Integrations), then oldest
@@ -1000,12 +1012,14 @@ has always compared them. `resolveThresholds()` lays `display-config.json`'s
 `pushThresholds` (`cpu`, `mem`, `disk`, `hysteresis`) over the defaults, and
 `refresh.js`'s `getThresholds()` returns the result. Push has no lines of its
 own: it sends what the model judges, so the two can't disagree about a line.
+`/api/status` serves the set each status was judged by (`thresholds`, above),
+so the screens' meters draw the same lines.
 
 **`GET /api/status`** (`routes/status.js`, token auth like every `/api/*`
 read) serves the status the loop cached this cycle under `status`, with the
-cache's ETag (4.2: computed once per value). Reasons hold no times, so a steady
-board serves the same bytes every cycle and a poll with the last ETag gets a
-304. The status stays fresh for two refresh intervals (at least the cache's 2
+cache's ETag (4.2: computed once per value). Reasons hold no times and the
+lines change only with the config, so a steady board serves the same bytes
+every cycle and a poll with the last ETag gets a 304 (`server/routes/status.test.js`). The status stays fresh for two refresh intervals (at least the cache's 2
 minutes), so a long interval leaves no gap between cycles. Before the first
 cycle, or once the loop has built none for that long, it answers 503. It sits beside `/api/services`, `/api/ups` and
 `/api/cron/status`, which keep their shape and meaning for Android apps already
@@ -1144,8 +1158,10 @@ them on its Node side and hand a page the JSON.
   condition), and read back: the headline's word (the model's word for the
   board's state) and sentence, each tile's state, word and counts, each row's
   state, word and reason, each meter's state and the number and line the
-  model's reason gives. A meter reads its lines from the fixture's threshold
-  config, since `/api/status` doesn't serve them yet (#451).
+  model's reason gives. A meter reads its lines from the status it draws
+  (`thresholds`, #451), and readings just below, on and just above each line,
+  with the default lines and with `pushThresholds` moving them, colour each
+  meter as the model judged it.
 
 A disagreement fails it unless a named exception (`KNOWN` in each file) covers
 it, where it says. An exception that stops happening fails too, so settling
