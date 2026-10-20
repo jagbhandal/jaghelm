@@ -18,11 +18,13 @@ export const STATUSPAGE = Object.freeze({
     token: '$secret:statuspage_key', // pragma: allowlist secret
     fields: [{ key: 'up', label: 'Up', path: 'summary.up' }],
   },
-  /** Edit, then Save with nothing changed. */
+  /**
+   * Edit, then Save with nothing changed. An edit sends no `enabled`: a
+   * changed Enabled box goes to the toggle route after the save.
+   */
   saveUnchanged: {
     type: 'statuspage',
     url: 'http://status.example.test',
-    enabled: true,
     target: '',
     username: '',
     editingKey: 'statuspage',
@@ -50,10 +52,33 @@ export const ADGUARD_PRIMARY = Object.freeze({
   saveUnchanged: {
     type: 'adguard',
     url: 'http://adguard.example.test:3000',
-    enabled: true,
     instance: 'primary',
     target: 'pi1:adguard',
     username: 'admin',
     editingKey: 'adguard_primary',
+  },
+});
+
+/**
+ * Values that are set but falsy, which the form used to show as empty and an
+ * unchanged save then removed.
+ */
+export const ZEROS = Object.freeze({
+  key: 'cloudflare',
+  entry: {
+    preset: 'cloudflare',
+    url: 'https://api.cloudflare.com',
+    username: 0,
+    target: 0,
+    account_id: 0,
+  },
+  /** Edit, then Save with nothing changed. */
+  saveUnchanged: {
+    type: 'cloudflare',
+    url: 'https://api.cloudflare.com',
+    target: 0,
+    username: 0,
+    params: { account_id: 0 },
+    editingKey: 'cloudflare',
   },
 });

@@ -24,10 +24,12 @@ import yaml from 'js-yaml';
 process.env.DASH_SECRET = 'test-secret-at-least-16-chars-long'; // pragma: allowlist secret
 
 const { loadConfig, saveConfig, getConfig } = await import('../config.js');
-const { initSecrets, getSecret, listSecretKeys } = await import('../secrets.js');
+const { initSecrets, getSecret, setSecret, hasSecret, listSecretKeys } =
+  await import('../secrets.js');
 const { initRegistry } = await import('../integrations/registry.js');
+const { resolveIntegrationConfig } = await import('../integrations/lib/config.js');
 const { integrationRoutes } = await import('./integrations.js');
-const { STATUSPAGE, ADGUARD_PRIMARY } = await import('./fixtures/settingsForm.js');
+const { STATUSPAGE, ADGUARD_PRIMARY, ZEROS } = await import('./fixtures/settingsForm.js');
 
 initSecrets();
 await initRegistry();
@@ -46,6 +48,32 @@ const without = (obj, ...keys) =>
   Object.fromEntries(Object.entries(obj).filter(([k]) => !keys.includes(k)));
 const stored = () => yaml.load(fileText()).integrations;
 /** Put `text` on disk and load it, as the config watcher does after a hand edit. */
+/** What the refresh loop resolves the entry under `key` to (credentials included). */
+function resolved(key) {
+  const cfg = getConfig().integrations[key];
+  return resolveIntegrationConfig(cfg.preset || key, { ...cfg, _storageKey: key });
+}
+const patch = (key, body) => send({ method: 'PATCH', path: `/api/integrations/${key}`, body });
+/** Everything the server logs while `fn` runs. */
+async function logsOf(fn) {
+  const written = [];
+  const restore = [process.stdout, process.stderr].map((stream) => {
+    const orig = stream.write;
+    stream.write = function (chunk, ...rest) {
+      written.push(String(chunk));
+      return orig.call(this, chunk, ...rest);
+    };
+    return () => {
+      stream.write = orig;
+    };
+  });
+  try {
+    const result = await fn();
+    return { result, logs: written.join('') };
+  } finally {
+    for (const r of restore) r();
+  }
+}
 function handEdit(text) {
   writeFileSync(CONFIG_PATH, text);
   loadConfig();
@@ -93,7 +121,6 @@ const CLOUDFLARE = {
 const CLOUDFLARE_SAVE = {
   type: 'cloudflare',
   url: 'https://api.cloudflare.com',
-  enabled: true,
   target: '',
   username: '',
   params: { account_id: 'abc123' },
@@ -132,29 +159,120 @@ test('saving a gallery integration unchanged, password left blank, leaves the fi
   }
 });
 
-test('a save that changes only enabled changes only that line of a file JagHelm wrote', async () => {
+test('Enabled changed in the form: the save leaves it alone, and the toggle route changes only its line of a file JagHelm wrote', async () => {
   saveConfig(yaml.load(HAND_WRITTEN)); // JagHelm's own formatting, as after any save from Settings
   const before = fileText();
   const last = '        path: summary.up\n'; // the statuspage entry's last line
 
+  // An edit leaves `enabled` to the toggle route, whatever its body says.
   assert.equal((await save({ ...STATUSPAGE.saveUnchanged, enabled: false })).status, 200);
+  assert.equal(fileText(), before);
+
+  // The form sends the change there after the save.
+  assert.equal((await patch('statuspage', { enabled: false })).status, 200);
   const disabled = fileText();
   assert.equal(disabled, before.replace(last, `${last}    enabled: false\n`));
 
-  assert.equal((await save(STATUSPAGE.saveUnchanged)).status, 200);
+  assert.equal((await patch('statuspage', { enabled: true })).status, 200);
   assert.equal(fileText(), disabled.replace('    enabled: false\n', '    enabled: true\n'));
 });
 
-test('a save that changes enabled in a hand-formatted file keeps every value but enabled', async () => {
-  // Any write re-serialises services.yaml in JagHelm's format (comments and
-  // quoting go), as every save from Settings always has; the values stay.
+test('a toggle on a hand-formatted file keeps every value but enabled', async () => {
+  // Any write re-serialises services.yaml in JagHelm's format, so comments and
+  // quoting go, as every write from Settings always has; the values stay.
   handEdit(HAND_WRITTEN);
-  assert.equal((await save({ ...STATUSPAGE.saveUnchanged, enabled: false })).status, 200);
+  assert.equal((await patch('statuspage', { enabled: false })).status, 200);
   assert.deepEqual(stored(), {
     statuspage: { ...STATUSPAGE.entry, enabled: false },
     adguard_primary: ADGUARD_PRIMARY.entry,
     cloudflare: CLOUDFLARE,
   });
+});
+
+test('a Settings form left open does not undo a toggle made since', async () => {
+  handEdit(HAND_WRITTEN);
+  assert.equal((await send(ADGUARD_PRIMARY.disable)).status, 200);
+  // The form was opened while it was enabled. Saved unchanged, or by an older
+  // web app that sent the box's state with every save:
+  for (const body of [
+    ADGUARD_PRIMARY.saveUnchanged,
+    { ...ADGUARD_PRIMARY.saveUnchanged, enabled: true },
+  ]) {
+    assert.equal((await save(body)).status, 200);
+    assert.equal(stored().adguard_primary.enabled, false, JSON.stringify(body));
+  }
+});
+
+test('a value that is set but falsy (0) survives an unchanged save', async () => {
+  handEdit(yaml.dump({ integrations: { [ZEROS.key]: ZEROS.entry } }));
+  const before = fileText();
+  assert.equal((await save(ZEROS.saveUnchanged)).status, 200);
+  assert.equal(fileText(), before);
+});
+
+test("a save never changes an existing entry's preset: a custom adguard_stats saved from the AdGuard form", async () => {
+  // The list guesses the AdGuard form from the key's prefix, so the save
+  // names the adguard preset for an entry that has none.
+  const text = [
+    'integrations:',
+    '  adguard_stats:',
+    '    url: http://adguard.example.test:3000',
+    '    endpoint: /control/stats',
+    '    fields: [{ key: q, label: Queries, path: num_dns_queries }]',
+    '',
+  ].join('\n');
+  handEdit(text);
+  const r = await save({
+    type: 'adguard',
+    url: 'http://adguard.example.test:3000',
+    target: '',
+    username: '',
+    editingKey: 'adguard_stats',
+  });
+  assert.deepEqual(r.body, { ok: true, type: 'adguard_stats' });
+  assert.equal(fileText(), text, 'still a custom integration, under its own key');
+});
+
+test('a save for an entry removed since its form was opened is refused, not merged into another', async () => {
+  const npm = {
+    preset: 'npm',
+    url: 'http://npm-real.example.test',
+    username: 'real',
+    target: 'pi1:npm',
+  };
+  handEdit(yaml.dump({ integrations: { npm, gone: null } }));
+  const before = fileText();
+  // my_npm was deleted in another tab; its form would derive the key npm.
+  for (const editingKey of ['my_npm', 'gone']) {
+    const r = await save({
+      type: 'npm',
+      url: 'http://my-npm.example.test',
+      target: '',
+      username: 'mine',
+      editingKey,
+    });
+    assert.equal(r.status, 409, editingKey);
+    assert.match(r.body.error, /no longer configured; reload Settings/);
+  }
+  assert.equal(fileText(), before, 'npm untouched');
+});
+
+test('a password or token that is not text is refused, stores nothing and is never logged', async () => {
+  handEdit(HAND_WRITTEN);
+  const bodies = [
+    { type: 'npm', instance: 'numeric', url: 'http://n.example.test', password: 987654321 },
+    { type: 'npm', instance: 'numeric', url: 'http://n.example.test', token: 987654321 },
+    { ...STATUSPAGE.saveUnchanged, token: { value: 987654321 } },
+    { ...ADGUARD_PRIMARY.saveUnchanged, password: true },
+  ];
+  const { result, logs } = await logsOf(() => Promise.all(bodies.map(save)));
+  for (const r of result) {
+    assert.equal(r.status, 400);
+    assert.deepEqual(r.body, { error: 'password and token must be text' });
+  }
+  assert.doesNotMatch(logs, /987654321/);
+  assert.ok(!listSecretKeys().some((k) => k.startsWith('integration_npm_numeric_')));
+  assert.equal(fileText(), HAND_WRITTEN);
 });
 
 // ── Acceptance 2: the toggle changes only enabled ──
@@ -308,30 +426,13 @@ test('a blank password or token keeps a credential written by hand, under any na
 });
 
 test('a credential is never sent back or logged', async () => {
-  const written = [];
-  const capture = (stream) => {
-    const orig = stream.write;
-    stream.write = function (chunk, ...rest) {
-      written.push(String(chunk));
-      return orig.call(this, chunk, ...rest);
-    };
-    return () => {
-      stream.write = orig;
-    };
-  };
-  const restore = [capture(process.stdout), capture(process.stderr)];
-  let bodies;
-  try {
-    handEdit(HAND_WRITTEN);
-    bodies = [
-      (await save({ ...ADGUARD_PRIMARY.saveUnchanged, password: 'leak-check-pw' })).text, // pragma: allowlist secret
-      (await save({ ...STATUSPAGE.saveUnchanged, token: 'leak-check-token' })).text, // pragma: allowlist secret
-      (await send(ADGUARD_PRIMARY.disable)).text,
-    ];
-  } finally {
-    for (const r of restore) r();
-  }
-  for (const text of [...bodies, ...written]) {
+  handEdit(HAND_WRITTEN);
+  const { result: bodies, logs } = await logsOf(async () => [
+    (await save({ ...ADGUARD_PRIMARY.saveUnchanged, password: 'leak-check-pw' })).text, // pragma: allowlist secret
+    (await save({ ...STATUSPAGE.saveUnchanged, token: 'leak-check-token' })).text, // pragma: allowlist secret
+    (await send(ADGUARD_PRIMARY.disable)).text,
+  ]);
+  for (const text of [...bodies, logs]) {
     assert.doesNotMatch(text, /leak-check-/);
     assert.doesNotMatch(text, /\$secret:/);
   }
@@ -393,14 +494,66 @@ test('a changed URL, username, target or URL param replaces the stored one and k
   );
 });
 
-test('a changed instance name moves the entry to its new key and keeps its credential', async () => {
+test('a changed instance name moves the entry and its credentials to the new key', async () => {
+  setSecret('integration_adguard_primary_password', 'pw-primary');
+  // Left under the new key by an integration deleted earlier (DELETE keeps
+  // its secrets): neither may stand in for the moved entry's own.
+  setSecret('integration_adguard_secondary_password', 'pw-stale');
+  setSecret('integration_adguard_secondary_url', 'http://stale.example.test');
   handEdit(HAND_WRITTEN);
   const r = await save({ ...ADGUARD_PRIMARY.saveUnchanged, instance: 'secondary' });
   assert.equal(r.status, 200);
   assert.equal(r.body.type, 'adguard_secondary');
   const after = stored();
   assert.equal(after.adguard_primary, undefined);
-  assert.deepEqual(after.adguard_secondary, { ...ADGUARD_PRIMARY.entry, instance: 'secondary' });
+  assert.deepEqual(after.adguard_secondary, {
+    ...ADGUARD_PRIMARY.entry,
+    instance: 'secondary',
+    password: '$secret:integration_adguard_secondary_password', // pragma: allowlist secret
+  });
+  assert.equal(resolved('adguard_secondary')._password, 'pw-primary');
+  assert.equal(resolved('adguard_secondary').url, ADGUARD_PRIMARY.entry.url);
+  assert.equal(hasSecret('integration_adguard_primary_password'), false, 'the old name is gone');
+  assert.equal(hasSecret('integration_adguard_secondary_url'), false, 'the stale one is gone');
+
+  // An entry that names no secret: its preset resolves the one under its key.
+  setSecret('integration_npm_two_password', 'pw-two');
+  setSecret('integration_npm_three_password', 'pw-stale');
+  const npm = { preset: 'npm', instance: 'two', url: 'http://npm.example.test', username: 'u' };
+  handEdit(yaml.dump({ integrations: { npm_two: npm } }));
+  const edit = { type: 'npm', url: npm.url, target: '', username: 'u', editingKey: 'npm_two' };
+  assert.equal((await save({ ...edit, instance: 'three' })).status, 200);
+  assert.deepEqual(stored(), { npm_three: { ...npm, instance: 'three' } });
+  assert.equal(resolved('npm_three')._password, 'pw-two');
+  assert.equal(hasSecret('integration_npm_two_password'), false);
+
+  // A password typed in the same save is the one stored under the new key.
+  const typed = { ...edit, instance: 'four', editingKey: 'npm_three', password: 'pw-typed' }; // pragma: allowlist secret
+  assert.equal((await save(typed)).status, 200);
+  assert.equal(resolved('npm_four')._password, 'pw-typed');
+  assert.equal(stored().npm_four.password, '$secret:integration_npm_four_password'); // pragma: allowlist secret
+  assert.equal(hasSecret('integration_npm_three_password'), false);
+});
+
+test("a new integration added under a renamed one's old key leaves the renamed one's credential alone", async () => {
+  setSecret('integration_adguard_primary_password', 'pw-primary');
+  handEdit(HAND_WRITTEN);
+  assert.equal(
+    (await save({ ...ADGUARD_PRIMARY.saveUnchanged, instance: 'secondary' })).status,
+    200
+  );
+  const added = await save({
+    type: 'adguard',
+    url: 'http://other-adguard.example.test',
+    enabled: true,
+    instance: 'primary',
+    target: '',
+    username: 'x',
+    password: 'pw-new-primary', // pragma: allowlist secret
+  });
+  assert.deepEqual(added.body, { ok: true, type: 'adguard_primary' });
+  assert.equal(resolved('adguard_primary')._password, 'pw-new-primary');
+  assert.equal(resolved('adguard_secondary')._password, 'pw-primary');
 });
 
 test('an entry under a key Settings would not derive is saved where it is', async () => {

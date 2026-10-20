@@ -295,6 +295,33 @@ test('a save in Settings retries an integration written by hand too, and leaves 
   assert.equal(fixed.result.hand._status.state, 'ok');
 });
 
+test('enabling an integration from its row retries it, even when it is disabled and enabled between two refreshes (#402)', async () => {
+  let accepted = 'new';
+  const basicFor = (pw) => `Basic ${Buffer.from(`u:${pw}`).toString('base64')}`;
+  upstreams['toggle.example.test'] = async (u, init) =>
+    new Headers(init.headers).get('authorization') === basicFor(accepted)
+      ? json({ up: 'yes' })
+      : json({}, 401);
+  // `enabled: true` is written out, so disabling and enabling it again gives
+  // back the same entry, and so the same fingerprint: only the retry the
+  // toggle asks for gets it attempted.
+  const entry = custom('toggle.example.test', { auth: 'basic', username: 'u', enabled: true });
+  entry.password = 'old'; // pragma: allowlist secret
+  saveConfig({ integrations: { tog: entry } });
+  await cycle();
+  assert.equal((await cycle()).result.tog._status.state, 'auth_failed');
+  assert.deepEqual((await cycle()).hosts, [], 'parked');
+
+  accepted = 'old'; // fixed on the app's side
+  const toggle = (enabled) => request(app).patch('/api/integrations/tog').send({ enabled });
+  assert.equal((await toggle(false)).status, 200);
+  assert.equal((await toggle(true)).status, 200);
+  assert.deepEqual(getConfig().integrations.tog, entry);
+  const r = await cycle(1);
+  assert.deepEqual(r.hosts, ['toggle.example.test'], 'retried at the next refresh');
+  assert.equal(r.result.tog._status.state, 'ok');
+});
+
 test('a session login refused twice (403) waits too; a save in Settings retries it with the stored password, and so does a new secret', async () => {
   // Nginx Proxy Manager: POST /api/tokens, then GET /api/nginx/proxy-hosts.
   let secretWanted = 'new';
