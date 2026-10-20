@@ -40,6 +40,7 @@ import { dedupe } from './util/dedupe.js';
 import { isJobContainer } from './util/helperContainers.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { createLogger } from './util/logger.js';
+import { redactSecrets } from './util/redact.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
@@ -660,10 +661,49 @@ function giteaConfigured() {
   return Boolean(process.env.GITEA_URL);
 }
 
+// The longest Gitea message the log keeps, in characters.
+const GITEA_MESSAGE_MAX = 200;
+
+/** A Gitea answer's body as JSON, or undefined when it is not JSON (a proxy's error page). */
+async function giteaBody(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The repos in a repos/search answer: its `data`, or the answer itself when it
+ * is a list. null for anything else, such as the error object Gitea answers a
+ * refused request with.
+ */
+function giteaRepoList(body) {
+  if (Array.isArray(body)) return body;
+  if (Array.isArray(body?.data)) return body.data;
+  return null;
+}
+
+/**
+ * The message in a Gitea error answer, for the log: its `message`, or the
+ * `error` repos/search reports its own failures in. The token and any
+ * credential in a URL are taken out before it is cut to GITEA_MESSAGE_MAX
+ * characters, so the cut leaves no part of one. undefined without a message.
+ */
+function giteaErrorMessage(body, token) {
+  const raw = body?.message ?? body?.error;
+  if (typeof raw !== 'string' || raw === '') return undefined;
+  const text = redactSecrets(token ? raw.split(token).join('[redacted]') : raw);
+  return text.length > GITEA_MESSAGE_MAX ? `${text.slice(0, GITEA_MESSAGE_MAX)}…` : text;
+}
+
 /**
  * The payload is the repos with recent commits, newest first, or
  * GITEA_NOT_CONFIGURED when GITEA_URL is not set, which polls nothing. null
- * (nothing cached) when Gitea failed, so the route answers 502.
+ * (nothing cached) when Gitea failed, so the route answers 502. A repos/search
+ * answer without a repo list fails it too, with a log line giving the status
+ * and what Gitea said (#399).
  */
 async function _refreshGitea() {
   if (!giteaConfigured()) {
@@ -677,8 +717,16 @@ async function _refreshGitea() {
     const opts = token ? { headers: { Authorization: `token ${token}` } } : {};
 
     const reposRes = await safeFetch(`${url}/api/v1/repos/search?limit=20`, opts);
-    const reposData = await reposRes.json();
-    const repos = (reposData?.data || reposData || [])
+    const reposData = await giteaBody(reposRes);
+    const list = giteaRepoList(reposData);
+    if (!list) {
+      log.error(
+        { status: reposRes.status, message: giteaErrorMessage(reposData, token) },
+        'Gitea refresh error: no repo list in the answer'
+      );
+      return null;
+    }
+    const repos = list
       .filter((r) => !r.fork && !r.mirror && !r.archived)
       .map((r) => ({ name: r.name, fullName: r.full_name }));
 
