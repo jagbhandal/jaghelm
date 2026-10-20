@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Button } from '@ui/button';
+import { Confirm } from '@ui/confirm';
 import { Drawer, DrawerClose } from '@ui/drawer';
 import { tab } from '../testing/tab.js';
 
@@ -151,5 +152,83 @@ describe('Drawer', () => {
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(grafana).toHaveFocus());
+  });
+
+  it('needs a name: a title, or an aria-label without one', () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() => render(<Drawer defaultOpen eyebrow="Service" />)).toThrow(/title/);
+    } finally {
+      quiet.mockRestore();
+    }
+    render(<Drawer defaultOpen aria-label="Immich" />);
+    expect(screen.getByRole('dialog', { name: 'Immich' })).toBeInTheDocument();
+  });
+
+  it('a Confirm opened from it stacks above it on a lighter scrim of its own, and the drawer under it is inert', async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    const onConfirm = vi.fn();
+    render(
+      <Drawer trigger={<Button variant="ghost">Immich</Button>} eyebrow="Service" title="Immich">
+        <Button variant="primary">Open Immich</Button>
+        <Confirm
+          trigger={<Button variant="danger">Remove…</Button>}
+          title="Remove this service?"
+          name="Immich"
+          confirmLabel="Remove"
+          destructive
+          onCancel={onCancel}
+          onConfirm={onConfirm}
+        />
+      </Drawer>
+    );
+    const row = screen.getByRole('button', { name: 'Immich' });
+    await user.click(row);
+    const drawer = await screen.findByRole('dialog', { name: 'Immich' });
+    const remove = screen.getByRole('button', { name: 'Remove…' });
+    await user.click(remove);
+    const confirm = await screen.findByRole('alertdialog', { name: 'Remove this service?' });
+
+    // Base UI draws no scrim for a nested dialog unless told to: here each
+    // layer has its own, on the popups' layer, the nested one after the
+    // drawer, so it covers it, and half as strong.
+    const [scrim, nestedScrim] = document.querySelectorAll('[data-slot="scrim"]');
+    expect(scrim).toHaveClass('bg-scrim', 'z-dialog');
+    expect(nestedScrim).toHaveAttribute('data-nested');
+    expect(nestedScrim).toHaveClass('bg-scrim-nested', 'z-dialog', 'fixed', 'inset-0');
+    expect(nestedScrim).not.toHaveClass('bg-scrim');
+    expect(
+      drawer.compareDocumentPosition(nestedScrim) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      nestedScrim.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    // The drawer can't be clicked, focused or read until the Confirm closes.
+    expect(drawer).toHaveAttribute('inert');
+    expect(drawer.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(confirm).not.toHaveAttribute('inert');
+
+    // A click where the drawer is lands on the Confirm's scrim (a browser
+    // hit-tests it there): nothing behind closes, and nothing is answered.
+    await user.click(nestedScrim);
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(drawer).toBeInTheDocument();
+    expect(onCancel).not.toHaveBeenCalled();
+
+    // Escape closes only the top one, as a cancel; focus goes back to Remove…
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Immich' })).not.toHaveAttribute('inert');
+    await waitFor(() => expect(remove).toHaveFocus());
+    expect(document.querySelectorAll('[data-slot="scrim"]')).toHaveLength(1);
+
+    // Then the drawer, and focus goes back to its row.
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(row).toHaveFocus());
   });
 });

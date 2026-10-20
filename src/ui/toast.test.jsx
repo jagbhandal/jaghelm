@@ -8,6 +8,10 @@ import { createToastManager, useToast } from '@ui/toast';
 
 const NO_RING = /(^|\s|:)outline-(none|hidden|0)(\s|$)/;
 const viewport = () => document.querySelector('[data-slot="toast-viewport"]');
+const toastSaying = (title) =>
+  [...viewport().querySelectorAll('[data-slot="toast"]')].find((t) =>
+    t.textContent.includes(title)
+  );
 
 function Notify({ options, label = 'Notify' }) {
   const toast = useToast();
@@ -124,6 +128,129 @@ describe('Toast', () => {
     expect(icon).toHaveAttribute('aria-hidden', 'true');
   });
 
+  it('a promise’s toast keeps its tone: ok when it succeeds, crit when it fails, unless it names one', async () => {
+    let toast;
+    function Grab() {
+      toast = useToast();
+      return null;
+    }
+    render(
+      <UiRoot>
+        <Grab />
+      </UiRoot>
+    );
+    await act(() => toast.promise(Promise.resolve(), { loading: 'Saving', success: 'Saved' }));
+    const saved = await within(viewport()).findByRole('dialog', { name: 'Saved' });
+    expect(saved.querySelector('svg[data-tone="ok"]')).toHaveClass('text-ok-fg');
+    // Without a success state, the loading toast's words stay, with the ok shape.
+    await act(() => toast.promise(Promise.resolve(), { loading: 'Restarting Immich' }));
+    const restarted = await within(viewport()).findByRole('dialog', { name: 'Restarting Immich' });
+    await waitFor(() => expect(restarted.querySelector('svg[data-tone="ok"]')).not.toBeNull());
+    await act(() =>
+      toast
+        .promise(Promise.reject(new Error('503')), {
+          loading: 'Restarting',
+          success: 'Restarted',
+          error: { tone: 'warn', title: 'Restarted, but slow to answer' },
+        })
+        .catch(() => {})
+    );
+    const slow = await within(viewport()).findByRole('dialog', {
+      name: 'Restarted, but slow to answer',
+    });
+    expect(slow.querySelector('svg[data-tone="warn"]')).not.toBeNull();
+  });
+
+  it('a failed promise’s toast is urgent: crit, an alert, and it stays', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let toast;
+      function Grab() {
+        toast = useToast();
+        return null;
+      }
+      render(
+        <UiRoot>
+          <Grab />
+        </UiRoot>
+      );
+      await act(() =>
+        toast
+          .promise(Promise.reject(new Error('503')), {
+            loading: { title: 'Saving the checklist' },
+            success: { title: 'Saved' },
+            error: (e) => ({ tone: 'crit', title: 'Couldn’t save', description: e.message }),
+          })
+          .catch(() => {})
+      );
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('Couldn’t save');
+      // Base UI hides an urgent toast itself from screen readers: its alert
+      // copy is what they hear.
+      const failed = toastSaying('Couldn’t save');
+      expect(failed).toHaveAttribute('role', 'alertdialog');
+      expect(failed.querySelector('svg[data-tone="crit"]')).not.toBeNull();
+      // An error with no tone is crit too.
+      await act(() =>
+        toast.promise(Promise.reject(new Error('x')), { error: 'Couldn’t restart' }).catch(() => {})
+      );
+      await waitFor(() => expect(toastSaying('Couldn’t restart')).toBeDefined());
+      const plain = toastSaying('Couldn’t restart');
+      expect(plain).toHaveAttribute('role', 'alertdialog');
+      expect(plain.querySelector('svg[data-tone="crit"]')).not.toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      expect(viewport().querySelectorAll('[data-slot="toast"]')).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an update to crit makes a toast urgent, and an update back makes it polite again', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let toast;
+      function Grab() {
+        toast = useToast();
+        return null;
+      }
+      render(
+        <UiRoot>
+          <Grab />
+        </UiRoot>
+      );
+      act(() => {
+        toast.add({ id: 'save', title: 'Saving the checklist' });
+      });
+      const saving = await within(viewport()).findByRole('dialog', {
+        name: 'Saving the checklist',
+      });
+      expect(saving.querySelector('svg[data-tone]')).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+      act(() => {
+        toast.update('save', { tone: 'crit', title: 'Couldn’t save the checklist' });
+      });
+      // Announced assertively, with the crit shape, and it stays.
+      expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t save the checklist');
+      const failed = toastSaying('Couldn’t save the checklist');
+      expect(failed).toHaveAttribute('role', 'alertdialog');
+      expect(failed.querySelector('svg[data-tone="crit"]')).not.toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      expect(viewport().querySelector('[data-slot="toast"]')).not.toBeNull();
+      act(() => {
+        toast.update('save', { tone: 'ok', title: 'Saved on the second try' });
+      });
+      const saved = await within(viewport()).findByRole('dialog', {
+        name: 'Saved on the second try',
+      });
+      expect(saved.querySelector('svg[data-tone="ok"]')).not.toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(5_500));
+      await waitFor(() => expect(viewport().querySelector('[data-slot="toast"]')).toBeNull());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('dismisses with its button, and runs its action, which dismisses it too', async () => {
     const user = userEvent.setup();
     const onUndo = vi.fn();
@@ -193,6 +320,26 @@ describe('Toast', () => {
     expect(
       await within(viewport()).findByRole('dialog', { name: 'Signed in again' })
     ).toBeInTheDocument();
+  });
+
+  it('drops a held toast that went stale before any UiRoot listened, but keeps a crit one', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // Sent while a legacy screen was up, with no UiRoot to show them.
+      const toasts = createToastManager();
+      toasts.add({ title: 'Sent to 2 devices' });
+      toasts.add({ tone: 'crit', title: 'Couldn’t reach JagNAS' });
+      vi.setSystemTime(Date.now() + 6_000);
+      toasts.add({ title: 'Signed in again' });
+      render(<UiRoot toastManager={toasts} />);
+      expect(
+        await within(viewport()).findByRole('dialog', { name: 'Signed in again' })
+      ).toBeInTheDocument();
+      expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t reach JagNAS');
+      expect(within(viewport()).queryByRole('dialog', { name: 'Sent to 2 devices' })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('needs a UiRoot around it', () => {

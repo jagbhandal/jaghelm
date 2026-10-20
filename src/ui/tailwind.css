@@ -45,8 +45,10 @@
 
 /*
  * The dark variant follows the token switch: dark is the default, so `dark:`
- * applies inside any .jh-ui root without data-theme="light". Don't nest roots
- * of different themes.
+ * applies inside any .jh-ui root without data-theme="light". It can't tell a
+ * light root nested in a dark one, so src/ui/ doesn't use it
+ * (scripts/ui-stack.test.mjs): each root carries its own tokens, and roots of
+ * different themes can nest.
  */
 @custom-variant dark (&:where(.jh-ui:not([data-theme='light']), .jh-ui:not([data-theme='light']) *));
 
@@ -138,6 +140,10 @@
   --color-beat-ok: var(--jh-beat-ok);
   --color-lamp-cut: var(--jh-lamp-cut);
   --color-scrim: var(--jh-scrim);
+  /* The scrim of an overlay opened from another (a Confirm from a drawer): half
+     as strong, so the overlay under it reads as dimmed and the page under both
+     never goes near black. Derived here, so it follows the scrim in each theme. */
+  --color-scrim-nested: color-mix(in oklab, var(--jh-scrim) 50%, transparent);
   --color-switch-thumb: var(--jh-switch-thumb);
 
   /*

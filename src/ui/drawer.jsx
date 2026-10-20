@@ -17,11 +17,14 @@
  * for.
  *
  * `trigger` opens it; without one, control it with `open` and `onOpenChange`
- * (a list of rows sharing one drawer). A DialogClose closes it from inside.
+ * (a list of rows sharing one drawer). `title` names it, as the Dialog's does
+ * (an `aria-label` without one). A DialogClose closes it from inside; a
+ * Confirm opened from it stacks above it, on a lighter scrim of its own.
  */
 import { useRef } from 'react';
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { CloseButton, DialogLayer } from './dialog.jsx';
+import { hasText, requireName } from './lib/name.js';
 import { useOverlayPortal } from './lib/portal.js';
 
 function Drawer({
@@ -40,6 +43,7 @@ function Drawer({
   children,
   ...props
 }) {
+  requireName('Drawer', { title, open, props });
   const triggerRef = useRef(null);
   const [portalRoot, openChange] = useOverlayPortal(triggerRef, open, onOpenChange);
   return (
@@ -65,16 +69,18 @@ function Drawer({
             {eyebrow != null ? (
               <span className="text-overline leading-5 text-text-3 uppercase">{eyebrow}</span>
             ) : null}
-            <DialogPrimitive.Title className="text-title text-text-1">
-              {title}
-            </DialogPrimitive.Title>
+            {hasText(title) ? (
+              <DialogPrimitive.Title className="text-title text-text-1">
+                {title}
+              </DialogPrimitive.Title>
+            ) : null}
             {description != null ? (
               <DialogPrimitive.Description className="text-body-sm leading-5 text-text-3">
                 {description}
               </DialogPrimitive.Description>
             ) : null}
           </div>
-          <CloseButton label={closeLabel} size="md" className="-mt-1 -mr-1" />
+          <CloseButton label={closeLabel} size="md" />
         </div>
         <div data-slot="drawer-body" className="flex flex-col gap-5 p-5">
           {children}

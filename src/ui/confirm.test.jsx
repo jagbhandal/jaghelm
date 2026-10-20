@@ -40,6 +40,19 @@ describe('Confirm', () => {
     expect(dialog).toHaveClass('w-[440px]', 'bg-surface-1', 'rounded-xl', 'shadow-pop');
   });
 
+  it('quotes the subject on surface-2 without an edge, so it never reads as a field', async () => {
+    const user = userEvent.setup();
+    render(<RemoveDevice />);
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    const dialog = await screen.findByRole('alertdialog');
+    const subject = dialog.querySelector('[data-slot="confirm-subject"]');
+    expect(subject).toHaveClass('bg-surface-2', 'rounded-lg', 'px-3', 'py-2.5');
+    // Not the Input's recipe: no edge, not the page colour.
+    expect(subject.className).not.toMatch(/(^|\s)(border|border-[\w-]+|bg-background)(\s|$)/);
+    expect(screen.getByText('Pixel 8')).toHaveClass('font-semibold', 'text-text-1');
+    expect(screen.getByText(DEVICE.detail)).toHaveClass('text-caption', 'text-text-3');
+  });
+
   it('never shows the storage key: it travels as `value` and comes back to onConfirm', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
@@ -146,6 +159,40 @@ describe('Confirm', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays open when onConfirm throws, and a Cancel after that still cancels', async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    const onConfirm = vi.fn(() => {
+      throw new Error('The server said no');
+    });
+    // React reports an event handler's error to the window; keep it quiet.
+    const swallow = (event) => event.preventDefault();
+    window.addEventListener('error', swallow);
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      render(<RemoveDevice onConfirm={onConfirm} onCancel={onCancel} />);
+      await user.click(screen.getByRole('button', { name: 'Remove' }));
+      await user.click(await screen.findByRole('button', { name: 'Remove device' }));
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+      expect(onCancel).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener('error', swallow);
+      quiet.mockRestore();
+    }
+  });
+
+  it('needs its question as a title: without one it throws in development', () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() => render(<Confirm defaultOpen name="Pixel 8" />)).toThrow(/title/);
+    } finally {
+      quiet.mockRestore();
+    }
   });
 
   it('only its buttons or Escape close it, never a click on the scrim', async () => {

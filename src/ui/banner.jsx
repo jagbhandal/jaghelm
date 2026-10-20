@@ -4,8 +4,9 @@
  * DegradedBanner: "Live metrics unavailable — Prometheus unreachable"): the
  * title says what failed, `cause` says why, naming the thing to go and check,
  * and `detail` adds a quieter line ("Updated 3 min ago"). A banner in a
- * failing tone (crit, warn, unknown) without a cause throws in development
- * and logs in production, as an IconButton without a label does.
+ * failing tone (crit, warn, unknown) without a cause (or with a blank one)
+ * throws in development and logs in production, as an IconButton without a
+ * label does.
  *
  * It is drawn as the mock's status box at the top of the detail drawer: the
  * tone's icon (the lamp's shape, lib/tone.jsx), the title bold in the tone's
@@ -22,6 +23,7 @@
  * dashboard does. Give `role="alert"` only to a banner that stands alone.
  */
 import { cva } from 'class-variance-authority';
+import { hasText } from './lib/name.js';
 import { cn } from './lib/utils.js';
 import { ToneIcon } from './lib/tone.jsx';
 
@@ -56,7 +58,7 @@ const titles = {
 };
 
 function Banner({ tone = 'crit', title, cause, detail, action, icon, className, ...props }) {
-  if (FAILING.has(tone) && (cause == null || cause === '')) {
+  if (FAILING.has(tone) && !hasText(cause)) {
     if (import.meta.env.DEV) throw new Error(NO_CAUSE);
     console.error(NO_CAUSE);
   }

@@ -5,11 +5,13 @@
  * root's switches. The portal element is therefore made a `.jh-ui` root of its
  * own, carrying the same switches (docs/design-system.md, "Switches"):
  *
- *  1. those of the `.jh-ui` root around the control that opened it (its
- *     anchor), read when the control mounts, when the popup opens, and when
- *     the screen's switches change;
- *  2. with no anchor in a root (the toasts; a dialog opened from code, or from
- *     outside the new UI), those the UiRoot around it provides (root.jsx);
+ *  1. those the UiRoot around it provides (root.jsx), read again whenever they
+ *     change. An overlay opened from inside another (a Select in a dialog, a
+ *     Confirm from a drawer) reads them there too, never from its parent's
+ *     portal root, which may not have taken a change yet;
+ *  2. with no UiRoot (a control in a bare `.jh-ui` element), those of the
+ *     `.jh-ui` root around the control that opened it (its anchor), read when
+ *     the control mounts and when the popup opens;
  *  3. with neither, the defaults: dark, violet, comfortable, Manrope.
  *
  * scripts/ui-stack.test.mjs fails when ROOT_SWITCHES and the switches in
@@ -55,15 +57,15 @@ export function switchAttributes(values = {}) {
 export const RootSwitchesContext = createContext(null);
 
 /**
- * Props that make an element a `.jh-ui` root with the switches of the root
- * around `anchor`, or, when `anchor` sits in no root, with `switches` (the
- * attributes a UiRoot provides).
+ * Props that make an element a `.jh-ui` root with `switches` (the attributes
+ * the UiRoot around provides), or, outside any UiRoot, with the switches of
+ * the root around `anchor`.
  */
 export function portalRootProps(anchor, switches = null) {
   const props = { className: ROOT_CLASS };
-  const root = anchor?.closest?.(`.${ROOT_CLASS}`);
+  const root = switches ? null : anchor?.closest?.(`.${ROOT_CLASS}`);
   for (const name of ROOT_SWITCHES) {
-    const value = root ? root.getAttribute(name) : switches?.[name];
+    const value = switches ? switches[name] : root?.getAttribute(name);
     if (value != null) props[name] = value;
   }
   return props;
@@ -79,9 +81,9 @@ const NO_ANCHOR = { current: null };
 /**
  * The portal root's props for the overlay opened from the element behind
  * `anchorRef` (none for a toast), and `sync`, to read them again when the
- * popup opens: the screen may have changed a switch since. They are read
- * again whenever the UiRoot's switches change, so an open overlay follows
- * the screen into light or compact.
+ * popup opens: outside a UiRoot, the anchor's root may have changed a switch
+ * since. They are read again whenever the UiRoot's switches change, so an
+ * open overlay, nested or not, follows the screen into light or compact.
  */
 export function usePortalRoot(anchorRef = NO_ANCHOR) {
   const switches = useContext(RootSwitchesContext);

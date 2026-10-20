@@ -664,53 +664,135 @@ test('a portal root copies every switch the tokens read (src/ui/lib/portal.js)',
   }
 });
 
+// What, after the `{...portalRoot}` spread, would override the root it makes:
+// its class, a switch, where it renders, or another spread.
+const OVERRIDES_ROOT = new Set(['className', 'container', ...ROOT_SWITCHES]);
+
 /**
  * Base UI portals in `source` that aren't given the portal root's props
- * (`{...portalRoot}`, lib/portal.js): [`file: <Tag.Portal>`]. Such a portal
- * would render outside every `.jh-ui` root, without the tokens, the reset or
- * the screen's switches.
+ * (`{...portalRoot}`, lib/portal.js), or that override them after the spread:
+ * [`file: <Tag.Portal>`]. Such a portal would render outside every `.jh-ui`
+ * root, without the tokens, the reset or the screen's switches.
  */
 export function barePortals(source, file) {
   const out = [];
   const visit = (node) => {
     if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
       const tag = node.tagName.getText();
-      const spreadsRoot = node.attributes.properties.some(
+      const attributes = node.attributes.properties;
+      const at = attributes.findIndex(
         (a) =>
           ts.isJsxSpreadAttribute(a) &&
           ts.isIdentifier(a.expression) &&
           a.expression.text === 'portalRoot'
       );
-      if (/(^|\.)Portal$/.test(tag) && !spreadsRoot) out.push(`${file}: <${tag}>`);
+      const overridden = attributes
+        .slice(at + 1)
+        .some((a) => ts.isJsxSpreadAttribute(a) || OVERRIDES_ROOT.has(a.name.getText()));
+      if (/(^|\.)Portal$/.test(tag) && (at < 0 || overridden)) out.push(`${file}: <${tag}>`);
     }
     ts.forEachChild(node, visit);
   };
-  visit(ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JSX));
+  const kind = /\.tsx?$/.test(file) ? ts.ScriptKind.TSX : ts.ScriptKind.JSX;
+  visit(ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind));
   return out;
 }
 
 test('every Base UI portal in src/ui/ is a .jh-ui root with the screen’s switches', () => {
-  const files = walk('src/ui', ['.jsx']).filter((f) => !/\.test\.jsx$/.test(f));
+  const files = walk('src/ui', ['.js', '.jsx', '.ts', '.tsx']).filter(
+    (f) => !/\.test\.[jt]sx?$/.test(f)
+  );
   const portalling = files.filter((f) => /\.Portal\b/.test(read(f)));
   // dialog.jsx holds the layer the Dialog, the Drawer and the Confirm share.
   assert.ok(portalling.length >= 5, `expected the overlays' portals, found ${portalling}`);
   assert.deepEqual(
     files.flatMap((f) => barePortals(read(f), f)),
     [],
-    'give each portal {...portalRoot} from usePortalRoot or useOverlayPortal (lib/portal.js)'
+    'give each portal {...portalRoot} from usePortalRoot or useOverlayPortal (lib/portal.js), ' +
+      'with nothing after it that overrides the root'
   );
   // The check bites.
   const source = `<>
     <DialogPrimitive.Portal><div /></DialogPrimitive.Portal>
     <Toast.Portal className="jh-ui" />
     <Popover.Portal {...props} />
+    <Menu.Portal {...portalRoot} className="x" />
+    <Dialog.Portal {...portalRoot} container={el} />
+    <Toast.Portal {...portalRoot} data-theme="light" />
+    <Popover.Portal {...portalRoot} {...rest} />
     <Select.Portal {...portalRoot}><div /></Select.Portal>
-    <Tooltip.Portal {...portalRoot} />
+    <Tooltip.Portal keepMounted {...portalRoot} />
   </>`;
   assert.deepEqual(barePortals(source, 'x.jsx'), [
     'x.jsx: <DialogPrimitive.Portal>',
     'x.jsx: <Toast.Portal>',
     'x.jsx: <Popover.Portal>',
+    'x.jsx: <Menu.Portal>',
+    'x.jsx: <Dialog.Portal>',
+    'x.jsx: <Toast.Portal>',
+    'x.jsx: <Popover.Portal>',
+  ]);
+  assert.deepEqual(barePortals('const p = <Popover.Portal />;', 'x.js'), [
+    'x.js: <Popover.Portal>',
+  ]);
+});
+
+test('only src/ui/ imports Base UI: a screen uses the components, whose portals are roots', () => {
+  const files = [
+    ...walk('src', ['.js', '.jsx', '.mjs', '.ts', '.tsx']),
+    ...walk('mobile/src', ['.js', '.jsx', '.mjs', '.ts', '.tsx']),
+  ].filter((f) => !f.startsWith('src/ui/'));
+  assert.ok(files.length > 20, `expected the apps' modules, found ${files.length}`);
+  const importsBaseUi = (source) =>
+    /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\(\s*)['"]@base-ui\//.test(source);
+  assert.deepEqual(
+    files.filter((f) => importsBaseUi(read(f))),
+    [],
+    'import a component from @ui/ instead: a Base UI part used directly skips the portal root'
+  );
+  // The check bites.
+  for (const line of [
+    "import { Dialog } from '@base-ui/react/dialog';",
+    "const m = await import('@base-ui/react/menu');",
+    "export { Popover } from '@base-ui/react/popover';",
+  ]) {
+    assert.ok(importsBaseUi(line), line);
+  }
+  assert.ok(!importsBaseUi("expect(el).toHaveAttribute('data-base-ui-focus-guard');"));
+});
+
+/** The variants of a class name: `hover:dark:bg-x` → ['hover', 'dark']. */
+function variantsOf(name) {
+  const out = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < name.length; i++) {
+    const c = name[i];
+    if (c === '[' || c === '(') depth++;
+    else if (c === ']' || c === ')') depth--;
+    else if (c === ':' && depth === 0) {
+      out.push(name.slice(start, i));
+      start = i + 1;
+    }
+  }
+  return out;
+}
+
+test('src/ui/ never uses the dark: variant, so roots of different themes can nest', () => {
+  // `dark:` matches inside any root without data-theme="light", so it can't
+  // tell a light root nested in a dark one; the tokens can (tailwind.css).
+  const found = walk('src/ui', ['.js', '.jsx'])
+    .filter((f) => !/\.test\.jsx?$/.test(f))
+    .flatMap((f) => classNamesIn(read(f), f));
+  assert.ok(found.length > 100, 'expected the class names in src/ui/');
+  assert.deepEqual(
+    found.filter((c) => variantsOf(c.name).includes('dark')).map((c) => `${c.file}: ${c.name}`),
+    [],
+    'use the tokens, which each root sets, instead of dark:'
+  );
+  assert.deepEqual(variantsOf('hover:dark:bg-surface-2'), ['hover', 'dark']);
+  assert.deepEqual(variantsOf("[&_svg:not([class*='size-'])]:size-4"), [
+    "[&_svg:not([class*='size-'])]",
   ]);
 });
 

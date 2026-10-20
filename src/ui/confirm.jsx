@@ -10,8 +10,10 @@
  * subject, with `detail` under it; a missing name throws in development and
  * logs in production, as an IconButton without a label does. The key the
  * screen needs to act on travels as `value`, which `onConfirm` gets back and
- * which is never rendered. Under the subject, `description` says what will
- * happen.
+ * which is never rendered. The subject is a quoted block (surface-2, no edge,
+ * an 8px radius), so it never reads as a field to type in. Under it,
+ * `description` says what will happen. `title`, the question, names the
+ * dialog, and is required as the Dialog's is.
  *
  * `destructive` follows the controls' rule that danger is quiet (#285): the
  * confirm button is the `danger` button, red text and a red edge, never a red
@@ -19,11 +21,16 @@
  * action comes first, as in the mock, and Cancel is a ghost button, the
  * quietest. Focus starts on Cancel, so Enter alone never destroys anything.
  * Without `destructive` the confirm button is `primary` and focus starts on it.
+ *
+ * Opened from a Drawer or a Dialog, it stacks above it on a lighter scrim of
+ * its own, and the overlay under it can't be clicked until it closes, so only
+ * its buttons or Escape answer it (dialog.jsx).
  */
 import { useRef } from 'react';
 import { AlertDialog as AlertDialogPrimitive } from '@base-ui/react/alert-dialog';
 import { Button } from './button.jsx';
 import { DialogLayer } from './dialog.jsx';
+import { requireName } from './lib/name.js';
 import { useOverlayPortal } from './lib/portal.js';
 
 const NO_NAME = 'Confirm needs a `name`: the display name of what it acts on, never a storage key';
@@ -49,10 +56,13 @@ function Confirm({
     if (import.meta.env.DEV) throw new Error(NO_NAME);
     console.error(NO_NAME);
   }
+  requireName('Confirm', { title, open });
   const triggerRef = useRef(null);
   const cancelRef = useRef(null);
-  // Set by the confirm button, whose click runs before Base UI closes the
-  // dialog; any other way out (Cancel, Escape) is a cancel.
+  // Set by the confirm button once onConfirm has returned, before Base UI
+  // closes the dialog; any other way out (Cancel, Escape) is a cancel. An
+  // onConfirm that throws leaves it unset: the dialog stays open, and a
+  // Cancel after that still cancels.
   const confirmed = useRef(false);
   const [portalRoot, openChange] = useOverlayPortal(triggerRef, open, (next, details) => {
     if (!next) {
@@ -85,7 +95,7 @@ function Confirm({
         >
           <div
             data-slot="confirm-subject"
-            className="flex min-w-0 flex-col rounded-lg border border-border bg-background px-3 py-2.5"
+            className="flex min-w-0 flex-col rounded-lg bg-surface-2 px-3 py-2.5"
           >
             <p className="font-semibold break-words text-text-1">{name}</p>
             {detail != null ? <p className="text-caption text-text-3">{detail}</p> : null}
@@ -96,8 +106,8 @@ function Confirm({
           <AlertDialogPrimitive.Close
             render={<Button variant={destructive ? 'danger' : 'primary'} />}
             onClick={() => {
-              confirmed.current = true;
               onConfirm?.(value);
+              confirmed.current = true;
             }}
           >
             {confirmLabel}

@@ -8,15 +8,18 @@
  * 460px or the screen less 16px a side.
  *
  * Base UI's Popover does the behaviour: it is a non-modal dialog named by its
- * title; focus moves into it, Escape or a click outside closes it, and focus
+ * title, or, without one, by an `aria-label` or else by its trigger (the
+ * grouping popover is "Group: Node", as its button), so it is never unnamed;
+ * focus moves into it, Escape or a click outside closes it, and focus
  * returns to the trigger. `openOnHover` also opens it under the pointer (an
  * infotip: Base UI's advice for help behind an icon, which a tooltip would
  * hide from touch and screen reader users). It fades over 150ms (§5.3), or
  * appears at once with reduced motion asked for, and is portalled as a
- * `.jh-ui` root with the switches of the screen around its trigger.
+ * `.jh-ui` root with the screen's switches (lib/portal.js).
  */
-import { useRef } from 'react';
+import { useId, useRef } from 'react';
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
+import { hasText } from './lib/name.js';
 import { cn } from './lib/utils.js';
 import { useOverlayPortal } from './lib/portal.js';
 
@@ -39,9 +42,19 @@ function Popover({
 }) {
   const triggerRef = useRef(null);
   const [portalRoot, openChange] = useOverlayPortal(triggerRef, open, onOpenChange);
+  const ownId = useId();
+  const triggerId = trigger?.props?.id ?? ownId;
+  // Untitled and unlabelled: named by its trigger.
+  const namedByTrigger =
+    !hasText(title) && !hasText(props['aria-label']) && !props['aria-labelledby'];
   return (
     <PopoverPrimitive.Root open={open} defaultOpen={defaultOpen} onOpenChange={openChange}>
-      <PopoverPrimitive.Trigger ref={triggerRef} render={trigger} openOnHover={openOnHover} />
+      <PopoverPrimitive.Trigger
+        ref={triggerRef}
+        id={triggerId}
+        render={trigger}
+        openOnHover={openOnHover}
+      />
       <PopoverPrimitive.Portal {...portalRoot}>
         <PopoverPrimitive.Positioner
           side={side}
@@ -52,6 +65,7 @@ function Popover({
         >
           <PopoverPrimitive.Popup
             data-slot="popover"
+            {...(namedByTrigger ? { 'aria-labelledby': triggerId } : null)}
             initialFocus={initialFocus}
             finalFocus={finalFocus}
             className={cn(
@@ -60,7 +74,7 @@ function Popover({
             )}
             {...props}
           >
-            {title != null ? (
+            {hasText(title) ? (
               <PopoverPrimitive.Title className="font-bold">{title}</PopoverPrimitive.Title>
             ) : null}
             {description != null ? (

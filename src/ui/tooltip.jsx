@@ -11,16 +11,43 @@
  *
  * Base UI's tooltips are visual only, and never open on touch, so nothing may
  * live only in a tooltip (Base UI's guidance). The trigger keeps its own name
- * (an IconButton's `label`); when the tooltip says more than that name, the
- * trigger is also described by it (aria-describedby, pointing at a hidden copy
- * that is always in the page), so a screen reader hears it without opening it.
+ * (an IconButton's `label`, a Button's text); when the tooltip says more than
+ * that name, the trigger is also described by it (aria-describedby, pointing
+ * at a hidden copy that is always in the page), so a screen reader hears it
+ * without opening it. The copies live in one hidden element in <body>, never
+ * beside the trigger, where they would break its row's `:last-child` and `+`
+ * selectors, and the markup of a list it sits in.
  *
  * `children` is the trigger, one element that takes a ref and its props.
  */
-import { useId, useRef } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip';
 import { cn } from './lib/utils.js';
 import { usePortalRoot } from './lib/portal.js';
+
+/** The one hidden element in `doc` that holds the tooltips' descriptions. */
+function descriptions(doc) {
+  let el = doc.querySelector('[data-slot="tooltip-descriptions"]');
+  if (!el) {
+    el = doc.createElement('div');
+    el.hidden = true;
+    el.dataset.slot = 'tooltip-descriptions';
+    doc.body.append(el);
+  }
+  return el;
+}
+
+/** The text of a trigger's children, when they are only text. */
+function textOf(children) {
+  if (typeof children === 'string' || typeof children === 'number') return String(children);
+  if (Array.isArray(children) && children.every((c) => ['string', 'number'].includes(typeof c))) {
+    return children.join('');
+  }
+  return undefined;
+}
+
+const same = (a, b) => typeof a === 'string' && a.trim() === b.trim();
 
 function Tooltip({
   content,
@@ -35,13 +62,19 @@ function Tooltip({
   const triggerRef = useRef(null);
   const [portalRoot, syncPortalRoot] = usePortalRoot(triggerRef);
   const descriptionId = useId();
+  const [holder, setHolder] = useState(null);
+  useLayoutEffect(() => {
+    setHolder(descriptions(triggerRef.current?.ownerDocument ?? document));
+  }, []);
   const own = children?.props ?? {};
-  // Said already by the trigger's name: describing it again would repeat it.
-  const repeatsName =
-    typeof content === 'string' && (own.label === content || own['aria-label'] === content);
-  const describedBy = repeatsName
-    ? own['aria-describedby']
-    : [own['aria-describedby'], descriptionId].filter(Boolean).join(' ');
+  // Said already by the trigger's name (its aria-label, an IconButton's
+  // label, or its text): describing it again would repeat it.
+  const name = own['aria-label'] ?? own.label ?? textOf(own.children);
+  const repeatsName = typeof content === 'string' && same(name, content);
+  const describes = !repeatsName && holder != null;
+  const describedBy = describes
+    ? [own['aria-describedby'], descriptionId].filter(Boolean).join(' ')
+    : own['aria-describedby'];
   return (
     <TooltipPrimitive.Root
       onOpenChange={(open) => {
@@ -55,11 +88,7 @@ function Tooltip({
         closeDelay={closeDelay}
         aria-describedby={describedBy}
       />
-      {repeatsName ? null : (
-        <span id={descriptionId} hidden>
-          {content}
-        </span>
-      )}
+      {describes ? createPortal(<span id={descriptionId}>{content}</span>, holder) : null}
       <TooltipPrimitive.Portal {...portalRoot}>
         <TooltipPrimitive.Positioner
           side={side}

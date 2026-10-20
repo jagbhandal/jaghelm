@@ -64,6 +64,10 @@ describe('Banner', () => {
           /cause/
         );
       }
+      // A blank cause names nothing either.
+      expect(() => render(<Banner title="Live metrics unavailable" cause="   " />)).toThrow(
+        /cause/
+      );
     } finally {
       quiet.mockRestore();
     }

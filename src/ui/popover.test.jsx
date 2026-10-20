@@ -32,6 +32,28 @@ describe('Popover', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Done' })).toHaveFocus());
   });
 
+  it('is never unnamed: without a title, an aria-label names it, or else its trigger', async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <Popover trigger={<Button>Filter</Button>} aria-label="Filter the services">
+          <PopoverClose render={<Button size="sm" />}>Done</PopoverClose>
+        </Popover>
+        <Popover trigger={<Button id="group-by">Group: Node</Button>}>
+          <PopoverClose render={<Button size="sm" />}>Close</PopoverClose>
+        </Popover>
+      </>
+    );
+    await user.click(screen.getByRole('button', { name: 'Filter' }));
+    expect(await screen.findByRole('dialog', { name: 'Filter the services' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await user.click(screen.getByRole('button', { name: 'Group: Node' }));
+    const popover = await screen.findByRole('dialog', { name: 'Group: Node' });
+    // The trigger keeps the id it was given.
+    expect(popover).toHaveAttribute('aria-labelledby', 'group-by');
+  });
+
   it('is the mock’s floating card: surface-2, a strong edge, 12px radius, shadow-pop, 14 by 18px of padding', async () => {
     const user = userEvent.setup();
     render(<GroupPopover />);

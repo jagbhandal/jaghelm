@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect } from 'vitest';
 import { RefreshCw } from 'lucide-react';
+import { Button } from '@ui/button';
 import { IconButton } from '@ui/icon-button';
 import { Tooltip } from '@ui/tooltip';
 
@@ -65,16 +66,50 @@ describe('Tooltip', () => {
     expect(popup()).toBeNull();
   });
 
+  it('keeps the description out of the trigger’s row, in one hidden element for the page', () => {
+    render(
+      <ul data-testid="row">
+        <li>
+          <Tooltip content="Still loaded: opens where you left it">
+            <Button>Immich</Button>
+          </Tooltip>
+        </li>
+        <li>
+          <Tooltip content="Not opened yet">
+            <Button>Grafana</Button>
+          </Tooltip>
+        </li>
+      </ul>
+    );
+    // Nothing beside the trigger: its row's :last-child and + selectors hold,
+    // and a list or a table keeps valid markup.
+    for (const li of screen.getByTestId('row').children) expect(li.children).toHaveLength(1);
+    const immich = screen.getByRole('button', { name: 'Immich' });
+    expect(immich).toHaveAccessibleDescription('Still loaded: opens where you left it');
+    const holders = document.querySelectorAll('[data-slot="tooltip-descriptions"]');
+    expect(holders).toHaveLength(1);
+    expect(holders[0]).toHaveAttribute('hidden');
+    expect(holders[0].children).toHaveLength(2);
+    expect(screen.getByTestId('row')).not.toContainElement(holders[0]);
+  });
+
   it('adds no description that would only repeat the name', () => {
     render(
-      <Tooltip content="Reload Grafana">
-        <IconButton label="Reload Grafana">
-          <RefreshCw />
-        </IconButton>
-      </Tooltip>
+      <>
+        <Tooltip content="Reload Grafana">
+          <IconButton label="Reload Grafana">
+            <RefreshCw />
+          </IconButton>
+        </Tooltip>
+        <Tooltip content="Immich">
+          <Button>Immich</Button>
+        </Tooltip>
+      </>
     );
-    const trigger = screen.getByRole('button', { name: 'Reload Grafana' });
-    expect(trigger).not.toHaveAttribute('aria-describedby');
+    // An IconButton's label, and a Button's text.
+    for (const name of ['Reload Grafana', 'Immich']) {
+      expect(screen.getByRole('button', { name })).not.toHaveAttribute('aria-describedby');
+    }
   });
 
   it('is portalled as a .jh-ui root with the switches of the screen around its trigger', async () => {

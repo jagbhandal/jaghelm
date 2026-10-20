@@ -55,10 +55,44 @@ describe('Dialog', () => {
     );
     expect(dialog.className).not.toMatch(NO_RING);
     expect(dialog.className).not.toMatch(/blur/);
+    // The scrims share the popups' layer; a later overlay stacks above.
     const scrim = document.querySelector('[data-slot="scrim"]');
-    expect(scrim).toHaveClass('bg-scrim', 'z-overlay', 'fixed', 'inset-0');
+    expect(scrim).toHaveClass('bg-scrim', 'z-dialog', 'fixed', 'inset-0');
+    expect(scrim).not.toHaveAttribute('data-nested');
     // The title is the type scale's title step (20/26 bold).
     expect(screen.getByRole('heading', { name: 'Rename this node' })).toHaveClass('text-title');
+  });
+
+  it('is named by its title; without one, by an aria-label', () => {
+    render(<Dialog defaultOpen aria-label="Edit node" />);
+    const dialog = screen.getByRole('dialog', { name: 'Edit node' });
+    // No empty heading, which would name it nothing (aria-labelledby wins).
+    expect(dialog.querySelector('h2')).toBeNull();
+  });
+
+  it('needs a name: without a title or an aria-label it throws in development', () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() => render(<Dialog defaultOpen />)).toThrow(/title/);
+      expect(() => render(<Dialog defaultOpen title="  " />)).toThrow(/aria-label/);
+    } finally {
+      quiet.mockRestore();
+    }
+    // Closed and controlled, it may hold an empty title.
+    render(<Dialog open={false} title="" />);
+  });
+
+  it('logs a missing name in a production build instead of taking the screen down', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubEnv('DEV', false);
+    try {
+      render(<Dialog defaultOpen />);
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(logged).toHaveBeenCalledWith(expect.stringMatching(/no name/));
+    } finally {
+      vi.unstubAllEnvs();
+      logged.mockRestore();
+    }
   });
 
   it('comes in three widths', async () => {
