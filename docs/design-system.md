@@ -26,8 +26,10 @@ the sign-off amendments in §15).
   the status colours, in `npm test`. Run `node scripts/ui-contrast.mjs` to see
   the lowest ratio per rule on each screen and each accent's nearest status.
 - **Components:** the controls in `src/ui/` (#285) are listed under
-  [Components](#components), with their variants, sizes and keyboard use. No
-  screen uses them yet.
+  [Components](#components), with their variants, sizes and keyboard use, and
+  the status components (#287) under [Status components](#status-components).
+  No web screen uses them yet; the Android app's screens use the status
+  components, in its own look.
 - How the stack sits beside today's CSS: [ARCHITECTURE.md §5.1](ARCHITECTURE.md#51-ui-stack-tailwind-css-v4-shadcnui-lucide).
 
 ## The rules
@@ -508,7 +510,11 @@ Import `cn` from there, never from the `cn` package, `tailwind-merge` or
 `import { cn } from 'cn'`; switch it to `./lib/utils.js`.
 
 Keep class strings in `className`, `cn()`, `cva()` or a lookup object read by
-key, where the empty-class check reads them (rule 4).
+key, where the empty-class check reads them (rule 4). The one exception is the
+status components' `android` look ([Two looks](#two-looks)): it writes the
+Android app's own class names, which compile to nothing here. The check lets
+through only names the Android app's stylesheets style, or the block or element
+whose modifiers they style, so a misspelt utility still fails.
 
 ### Where the components differ from the mock
 
@@ -532,6 +538,136 @@ key, where the empty-class check reads them (rule 4).
   `on-accent` on its primary button inline, which confirms the intent.
 - **Not in the mock, derived from its tokens:** the danger button, tabs, the
   Select's list, a drawn checkbox, and the error line.
+
+## Status components
+
+The status components (spec §5.4, #287), moved here from the Android app and
+grown to the mock's, one file each in `src/ui/`, imported as `@ui/<file>`.
+Each takes a `state` from the status model (`ok`, `warn`, `crit`, `unknown`,
+`maintenance`, spec §6) or one of the Android app's severities (`healthy`,
+`caution`, `critical`, `unknown`), which
+[`lib/status.js`](../src/ui/lib/status.js) reads as a state. Anything else
+reads as no signal: never green, never red.
+
+| Component | Import | Props |
+| --- | --- | --- |
+| `StatusLamp` | `@ui/status-lamp` | `state`; `label`, its name (the state's word by default); `size`: `sm` (10px, the default), `lg` (14px) or px; `decorative` |
+| `StatusWord` | `@ui/status-word` | `state`; `word` (the state's word by default) |
+| `StatusBadge` | `@ui/status-word` | `state`; `word` |
+| `IssueRow` | `@ui/issue-row` | `issue` (`{ state, word, title, where, reason, age }`); `onOpen` or `href` |
+| `SubsystemStrip` | `@ui/subsystem-strip` | `cells` (`[{ key, label, state, word, value, sub }]`); `selected`, `onSelect` |
+| `AttentionPanel` | `@ui/attention-panel` | `state`, `word`, `counts`, `subline`, `action`, `issues` (IssueRow's, each with an `id` and its `onOpen` or `href`), `filter` and `onClearFilter`, `meta`, `titleAs` (`h1` by default) |
+
+Each also takes `look` ([Two looks](#two-looks)) and `className`. A state's word,
+when none is given, is the mock's: OK, Warning, Critical, No signal,
+Maintenance.
+
+### How the status components look
+
+From the mock's Overview board, and its Phone board where a component sits
+narrower than 672px (`@2xl` of its own container, so it follows the column it
+is in, not the window):
+
+- **StatusLamp.** The mock's lamps, drawn as SVG in the state's `solid`: a
+  filled disc for ok, a disc slashed from bottom left to top right for warn, a
+  disc with a level bar for crit, a 2px hollow ring for no signal, and the
+  Tokens board's wrench for maintenance. The slash and the bar are cut in
+  `lamp-cut`, 2px wide at 10px and 2.5px from 14px. A lamp always draws its
+  state's shape.
+- **StatusWord.** Bold, in the state's `fg`, at the size around it and in the
+  case it is given ("Down", "On battery").
+- **StatusBadge.** The word and its lamp, 12px semibold, on the state's `tint`
+  inside its `border`, 4px round and 20px tall.
+- **IssueRow.** From 672px, the attention panel's row: the lamp, the word
+  (13px), the title (semibold) over where (12px `text-3`), the reason in
+  `text-2`, the age (12px `text-3`) and a chevron, in the mock's columns (18,
+  96, 1.1fr, 2fr, 44 and 16px), at least 48px tall and padded by density.
+  Narrower, the Phone board's: the lamp, "title · word" over the reason (13px),
+  and the age, at least 56px tall. `row-hover` under the pointer.
+- **SubsystemStrip.** The joined annunciator strip: tiles 1px apart, the gaps
+  showing `border-subtle`, in one 12px-round frame. A tile is `surface-1`, or
+  its state's tint when it isn't ok: a lamp and an overline label, over the
+  value (`title-sm`) and `sub` (12px `text-3`). Six sit in a row from 672px,
+  three from 320px and two below that, where a tile is the Phone board's: a
+  14px value and no `sub`. With `onSelect` the tiles are toggles, `surface-2`
+  under the pointer, the selected one inside a 1.5px accent edge.
+- **AttentionPanel.** With issues, or in any state but ok and maintenance
+  (which never make an issue, spec §6.1), the mock's attention panel: a 14px
+  lamp beside the heading, at `headline` (24/30): the word in its colour, then
+  " · " and the counts, semibold in `text-2`. The subline under it in `text-2`,
+  at most 72 characters wide; the action at the top right; "Showing … only"
+  and Clear when the list is filtered; then the issues as IssueRows. Otherwise
+  the mock's quiet line: the lamp, "All systems normal" at `title-xs` in
+  `text-1`, the counts in `text-2`, and `meta` at the right in 12px `text-3`.
+  Healthy stays quiet (rule 3): no green word.
+
+### Two looks
+
+Until Phase 4 rebuilds the Android screens on `src/ui/`, each status
+component draws one of two looks:
+
+- `ui`: the above. The web's, and the default anywhere but the Android build.
+- `android`: the Android app's own components as they were in
+  `mobile/src/components/`: mono upper-case words, glass cards, the 2×2 strip
+  and its lamp shapes (`disc`, `slash`, `ring` and the UPS's `bolt`, passed as
+  `shape`). It writes the class names `MobileApp.css` styles in the `legacy`
+  layer, and its colours are the app's own. The Android build defines
+  `__ANDROID_LOOK__` (`mobile/vite.config.mobile.js`), and there every status
+  component draws this look, so the app's screens look as they did (#287
+  compared them pixel for pixel). Phase 4 deletes the define and this look.
+
+Outside the Android build, `look="android"` on a component draws that look
+for one use (its tests). The choice is a build constant
+(`DEFAULT_LOOK` in [`lib/status.js`](../src/ui/lib/status.js)), so the
+Android bundle carries none of the `ui` look's code, nor `cn`: its script
+grows by 7.6 KB (2.9 KB compressed), not the 94 KB the `ui` look and its
+packages would add. Keep a
+component's two looks as two functions behind its one-line
+`if (DEFAULT_LOOK === 'android' || look === 'android') return …`, which is
+what lets the bundler drop the other.
+
+### Accessibility of the status components
+
+- **Never colour alone.** Every state is a shape, a word and a colour. A lamp
+  is an image named by its word. Where the word is printed beside it
+  (StatusBadge, IssueRow, the panel's heading) the lamp is `decorative`, so a
+  screen reader doesn't say it twice. A subsystem tile prints no word, so its
+  lamp keeps the name. A test checks that the five states draw five different
+  shapes, each with a name.
+- **Rows.** A row that opens something is a button (`onOpen`) or a link
+  (`href`), named "title, word, where" and described by its reason and age; an
+  abbreviated word is spelled out ("UNKN" is said as "unknown"). A row with
+  nothing to open is plain content, so it neither looks nor announces as
+  tappable (#279).
+- **Strip and panel.** Selectable tiles are toggle buttons (`aria-pressed`).
+  The strip is a region named "Subsystems"; the panel is one named "Needs
+  attention", or "Status" when quiet, and its heading is the page's `h1`
+  unless `titleAs` says otherwise.
+- **Focus.** Rows and tiles draw the base style's focus ring inset, clear of
+  their neighbours.
+
+### Where the status components differ from the mock
+
+- **The slash stops at the disc's edge.** The mock's 13px cut overhangs a
+  10px lamp by 1.5px each side, which shows on a tinted row or tile as a
+  surface-coloured tick.
+- **The wrench is the lamp's size**, 10 or 14px, filling its box, so rows keep
+  their columns. The mock draws it only on its Tokens board, at 16px beside
+  10px discs.
+- **The last issue row has no bottom edge**, which doubled the panel's own in
+  the mock.
+- **Type steps over the mock's sizes:** subsystem values are `title-sm`
+  (16/22, the mock's 18/24) and the narrow tiles' `body` bold (14/20, the
+  mock's 14/18), as the mapping under [Type](#type) says. The rows keep the
+  mock's 20px lines for where and the reason, so they are its height.
+- **A lamp beside its printed word is decorative.** The mock names every lamp,
+  so a screen reader heard "Critical Critical".
+- **One frame at every width.** The Phone board splits the status box from
+  the issue list; the panel keeps one frame, with the phone's rows, and the
+  Overview (Phase 1) lays out the phone screen.
+- **Not in the mock, derived from it:** StatusBadge; a row as a link; the
+  quiet line for maintenance (its wrench and word); strips of other than six
+  tiles (four sit two by two when narrow, five in rows of three).
 
 ## Changing a token
 

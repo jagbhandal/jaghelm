@@ -126,8 +126,12 @@ src/                        React 19 SPA (Vite 8)
                              preflight.css (generated),
                              the controls (#285: button, icon-button, input, select, switch,
                              checkbox, field, segmented-control, tabs; design-system.md),
-                             lib/utils.js (cn, taught the theme), lib/portal.js (portal roots),
-                             lib/field-context.js (how a Field labels its control)
+                             the status components (#287: status-lamp, status-word,
+                             issue-row, subsystem-strip, attention-panel; the Android app
+                             uses them too), lib/status.js (the five states, their words,
+                             and the two looks), lib/utils.js (cn, taught the theme),
+                             lib/portal.js (portal roots), lib/field-context.js (how a
+                             Field labels its control)
 
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
@@ -742,13 +746,25 @@ stack sits beside today's CSS and must not restyle it.
   misread. A generated component's `import { cn } from 'cn'` is switched to it,
   and a test fails on any other `cn` in `src/ui/`. Icons come from
   `lucide-react` by name (`import { Check } from 'lucide-react'`), so a bundle
-  carries only the icons it uses. The controls (#285) are the only components
-  so far, built on Base UI primitives, and no screen uses them yet.
+  carries only the icons it uses. The components so far are the controls
+  (#285), built on Base UI primitives, which no screen uses yet, and the status
+  components (#287), which the Android app's screens use (next point).
 - **Both apps import `@ui/...`.** The Android build maps `@ui` to `../src/ui` and
   lists React and every package `src/ui/` imports in `resolve.dedupe`, so shared
   code uses the Android app's own copies: the APK build installs `mobile/` only,
   and a second React breaks hooks. A package added to `src/ui/` goes in both
   `package.json` files and that list; `scripts/ui-stack.test.mjs` checks it.
+- **The Android app's status components are the shared ones** (#287): its
+  StatusLamp, StatusWord, IssueRow, SubsystemStrip and SystemStatusCard moved
+  from `mobile/src/components/` into `src/ui/` (SystemStatusCard became
+  AttentionPanel), and its screens import them as `@ui/...`. Until Phase 4
+  rebuilds those screens, each status component also draws the Android app's
+  own look, its old markup and the class names `MobileApp.css` styles in the
+  `legacy` layer. The Android build's `__ANDROID_LOOK__` define makes every
+  status component draw that look there (`src/ui/lib/status.js`), as a build
+  constant, so the APK's bundle leaves out the web look's code and `cn`. The
+  web draws the mock's look. Phase 4 drops the define and the Android look
+  ([design-system.md](design-system.md#two-looks)).
 - **Cascade layers.** The order is `legacy, properties, theme, base, components,
   utilities`, declared at the top of every entry stylesheet. Each app's
   `styles/legacy.css` imports today's stylesheets into `legacy`, the lowest layer
