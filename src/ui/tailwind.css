@@ -218,10 +218,15 @@
   --shadow-control: var(--jh-shadow-control);
   --shadow-pop: var(--jh-shadow-pop);
 
-  /* Density and gutter: h-row, p-panel, px-gutter. */
+  /* Density and gutter: h-row, p-panel, px-gutter, and the controls' heights
+     (h-control, h-control-sm, h-segment; size-control for icon buttons).
+     src/ui/lib/utils.js lists these names for cn. */
   --spacing-row: var(--jh-row-h);
   --spacing-panel: var(--jh-pad);
   --spacing-gutter: var(--jh-gutter);
+  --spacing-control: var(--jh-control-h);
+  --spacing-control-sm: var(--jh-control-h-sm);
+  --spacing-segment: var(--jh-segment-h);
 
   --z-index-sticky: 20;
   --z-index-header: 40;

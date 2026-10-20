@@ -190,9 +190,15 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  /* Density (§5.3): row height and panel padding. */
+  /* Density (§5.3): row height, panel padding and the controls' heights
+     (#285): buttons, inputs, selects and tabs at md (34, the mock's), buttons
+     at sm (30), and a segment inside a segmented control (28). Compact takes
+     8px off a row and 4px off each control. */
   --jh-row-h: 40px;
   --jh-pad: 20px;
+  --jh-control-h: 34px;
+  --jh-control-h-sm: 30px;
+  --jh-segment-h: 28px;
 
   /* Page gutter: 16 on phones, 24 from 768px, 32 from 1536px (below). */
   --jh-gutter: 16px;
@@ -217,6 +223,9 @@
 .jh-ui[data-density='compact'] {
   --jh-row-h: 32px;
   --jh-pad: 16px;
+  --jh-control-h: 30px;
+  --jh-control-h-sm: 26px;
+  --jh-segment-h: 24px;
 }
 
 /* The other two typefaces (Settings → Appearance, §15). src/ui/typefaces.js

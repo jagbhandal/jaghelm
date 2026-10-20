@@ -92,7 +92,9 @@ export const PAIRINGS = [
     ...STATUSES.flatMap((s) => over(`${s}-tint`, 'bg', 'surface-1')),
   ].map((p) => ({ rule: 'text-3', fg: 'text-3', ...p })),
   ...[
-    ...on('bg', 'sidebar', 'surface-1', 'surface-2'),
+    // surface-3: a Select's chosen option, ticked in accent-text, under the
+    // highlight (#285).
+    ...on('bg', 'sidebar', 'surface-1', 'surface-2', 'surface-3'),
     ...over('accent-tint', 'bg', 'sidebar', 'surface-1'),
     ...over('row-hover', 'bg', 'surface-1'),
   ].map((p) => ({ rule: 'accent-text', fg: 'accent-text', ...p })),

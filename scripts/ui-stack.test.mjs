@@ -621,7 +621,7 @@ test('the density switch sizes every control, from the tokens', async () => {
   assert.deepEqual(sizes('compact'), ['32px', '30px', '26px', '24px']);
 });
 
-test("a portal root copies every switch the tokens read (src/ui/lib/portal.js)", () => {
+test('a portal root copies every switch the tokens read (src/ui/lib/portal.js)', () => {
   const header = postcss
     .parse(read('src/ui/tokens.css'))
     .nodes.find((n) => n.type === 'comment').text;
@@ -642,8 +642,7 @@ test("Base UI's positioner variables are not ones today's CSS defines", () => {
 });
 
 /** The class names among `names` that take away the focus ring the base style draws. */
-export const ringRemovers = (names) =>
-  names.filter((n) => /(^|:)outline-(none|hidden|0)$/.test(n));
+export const ringRemovers = (names) => names.filter((n) => /(^|:)outline-(none|hidden|0)$/.test(n));
 
 test('no class in src/ui/ takes the focus ring away', () => {
   const found = walk('src/ui', ['.js', '.jsx'])
