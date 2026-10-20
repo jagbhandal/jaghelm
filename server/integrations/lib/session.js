@@ -194,8 +194,9 @@ async function fetchWithToken(tokenInfo, endpoint, config, baseUrl, skipTls) {
   }
   if (config.extraHeaders) Object.assign(headers, config.extraHeaders);
 
-  const { path, credentialInUrl } = endpoint;
-  const res = await safeFetch(`${baseUrl}${path}`, { headers }, skipTls, { credentialInUrl });
+  const { path, shownPath, credentialInUrl } = endpoint;
+  const res = await safeFetch(`${baseUrl}${path}`, { headers }, skipTls,
+    { credentialInUrl, shownUrl: `${baseUrl}${shownPath}` });
   if (!res.ok) throw new Error(`Data fetch returned HTTP ${res.status}`);
   return res.json();
 }

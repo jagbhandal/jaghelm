@@ -128,7 +128,7 @@ test('traversal short-circuits to undefined on a missing branch', () => {
 test('resolveEndpoint fills a non-credential placeholder without flagging it', () => {
   assert.deepEqual(
     resolveEndpoint('/accounts/{account_id}/x?y={missing}', { account_id: 'a1' }),
-    { path: '/accounts/a1/x?y={missing}', credentialInUrl: false },
+    { path: '/accounts/a1/x?y={missing}', credentialInUrl: false, shownPath: '/accounts/a1/x?y={missing}' },
   );
 });
 
@@ -140,12 +140,16 @@ test('resolveEndpoint flags a filled credential placeholder, with or without the
     ['/api/{password}', '/api/p1'],
     ['/users/{username}', '/users/u1'],
   ]) {
-    assert.deepEqual(resolveEndpoint(endpoint, config), { path, credentialInUrl: true }, endpoint);
+    assert.deepEqual(resolveEndpoint(endpoint, config), { path, credentialInUrl: true, shownPath: endpoint }, endpoint);
   }
 });
 
 test('resolveEndpoint does not flag a credential placeholder left unfilled', () => {
-  assert.deepEqual(resolveEndpoint('/api?key={token}', {}), { path: '/api?key={token}', credentialInUrl: false });
+  assert.deepEqual(resolveEndpoint('/api?key={token}', {}), {
+    path: '/api?key={token}',
+    credentialInUrl: false,
+    shownPath: '/api?key={token}',
+  });
 });
 
 // ── resolveEndpoint: the resolved credential, never a $secret: reference (#425) ──
@@ -163,6 +167,7 @@ test('resolveEndpoint takes the resolved _ twin over the raw value it was resolv
   assert.deepEqual(resolveEndpoint('/a/{username}?k={token}&p={password}', config), {
     path: '/a/env-user?k=resolved-tok&p=resolved-pw',
     credentialInUrl: true,
+    shownPath: '/a/{username}?k={token}&p={password}',
   });
 });
 
@@ -170,11 +175,13 @@ test('resolveEndpoint falls back to the raw value only when there is no _ twin',
   assert.deepEqual(resolveEndpoint('/api?key={token}', { token: 'plain' }), {
     path: '/api?key=plain',
     credentialInUrl: true,
+    shownPath: '/api?key={token}',
   });
   // A twin that resolved to nothing, with nothing behind it, leaves the placeholder.
   assert.deepEqual(resolveEndpoint('/api?key={token}', { _token: undefined }), {
     path: '/api?key={token}',
     credentialInUrl: false,
+    shownPath: '/api?key={token}',
   });
 });
 
@@ -199,4 +206,31 @@ test('resolveEndpoint refuses a $secret: reference that did not resolve, without
       endpoint
     );
   }
+});
+
+test('resolveEndpoint shows each filled credential as its placeholder, and fills the rest', () => {
+  const config = { account_id: 'a1', _token: 'tok-1', _password: 'pw-1' };
+  assert.deepEqual(resolveEndpoint('/accounts/{account_id}/{token}/x?p={password}&m={missing}', config), {
+    path: '/accounts/a1/tok-1/x?p=pw-1&m={missing}',
+    credentialInUrl: true,
+    shownPath: '/accounts/a1/{token}/x?p={password}&m={missing}',
+  });
+});
+
+test("resolveEndpoint's refusal sends a token to Settings and anything else to services.yaml", () => {
+  const refusal = (endpoint, config) => {
+    try {
+      resolveEndpoint(endpoint, config);
+    } catch (err) {
+      return err.message;
+    }
+    assert.fail(`${endpoint} was not refused`);
+  };
+  const ref = '$secret:hand_key'; // pragma: allowlist secret
+  for (const endpoint of ['/a?k={token}', '/a?k={_token}']) {
+    assert.match(refusal(endpoint, { token: ref, _token: null }), /enter the token again in Settings and save$/);
+  }
+  assert.match(refusal('/a?p={password}', { password: ref, _password: null }), /check this integration's entry in services\.yaml$/);
+  assert.match(refusal('/u/{username}', { username: ref, _username: null }), /check this integration's entry in services\.yaml$/);
+  assert.match(refusal('/x/{account_id}', { account_id: ref }), /check this integration's entry in services\.yaml$/);
 });

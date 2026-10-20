@@ -541,18 +541,23 @@ Key properties:
 - **A URL carries the resolved credential, never a `$secret:` reference**
   (#425). `resolveIntegrationConfig` (`lib/config.js`) keeps the entry's own
   `token`, `password` and `username` (a Settings save writes `$secret:`
-  references there) and puts the resolved values in `_token`, `_password` and
+  references for the password and token; any of the three can be one written
+  by hand) and puts the resolved values in `_token`, `_password` and
   `_username`. An endpoint's `{token}`, `{password}` or `{username}` takes
   the `_` value whenever the config has one, so a preset's `.env` value wins
   there too; the raw value is used only when there is no `_` key. A
   placeholder, or a query-auth key, whose value is or looks like a `$secret:`
   reference (one that didn't resolve, or a reference in a field that is never
-  resolved) throws `UnresolvedSecretError` where the URL is built
-  (`resolveEndpoint`, `applyQueryAuth`). No request is sent, and the
-  integration's error names the placeholder and says the stored credential
-  couldn't be resolved, never the reference. A session preset fills in its
-  endpoint before it logs in, so no login is sent for a read that can't be
-  made.
+  resolved, such as `{account_id}`) throws `UnresolvedSecretError` where the
+  URL is built (`resolveEndpoint`, `applyQueryAuth`). No request is sent, and
+  the integration's error names the placeholder and says the stored
+  credential couldn't be resolved, never the reference. It says to enter the
+  token again in Settings for a token, and to check the integration's entry
+  in `services.yaml` for anything else, since a custom integration's form has
+  no password or username. A session preset fills in its endpoint before it
+  logs in, so no login is sent for a read that can't be made. The connection
+  test resolves nothing: a `$secret:` typed as a query-auth key is refused
+  with an error saying to type the token itself.
 - **Request bodies stay on their origin.** A `307` or `308` keeps the method
   and body, so a session login is re-sent, but only to the same origin or
   through the same-host upgrade; a request with a body redirected to another
@@ -564,7 +569,14 @@ Key properties:
   without a body.
 - **Credentials are redacted** (`util/redact.js`) before any error is logged *or*
   returned to the browser -- query-auth presets put the key in the URL, which
-  fetch errors would otherwise echo.
+  fetch errors would otherwise echo. A credential filled into an endpoint's
+  path (`/api/{token}/status`) is one redaction can't recognise, so every
+  call that sets `credentialInUrl` also passes `shownUrl`, the URL with each
+  credential back as its placeholder (`resolveEndpoint`'s `shownPath`,
+  `applyQueryAuth`'s `?apikey={token}`). `lib/http.js` `safeFetch` swaps the
+  request URL in an error for it before redacting, in the form it was passed
+  and parsed and on a same-origin redirect hop; without one it withholds all
+  but the origin (#425).
 - **Only the computed result is kept.** A poll returns what the preset
   computes (its fields, plus structured data such as Proxmox's VMs, storage
   pools and last backup), and drops the upstream response once the preset has

@@ -23,12 +23,20 @@ export function looksLikeSecretRef(value) {
  * reference whose secret is missing or unreadable, or a reference where a
  * credential is never resolved. The URL is not built and no request is sent.
  * The message names where the credential goes (`{token} in the endpoint`),
- * never the reference.
+ * never the reference, and says where to fix it: the token is a field in
+ * Settings for every integration, anything else is fixed in services.yaml (a
+ * custom integration's form shows no password or username).
  */
 export class UnresolvedSecretError extends Error {
-  /** @param {string} where */
-  constructor(where) {
-    super(`Couldn't resolve the stored credential for ${where}; enter it again in Settings and save`);
+  /**
+   * @param {string} where
+   * @param {{ token?: boolean }} [opts] token: the credential is the token
+   */
+  constructor(where, { token = false } = {}) {
+    const fix = token
+      ? 'enter the token again in Settings and save'
+      : "check this integration's entry in services.yaml";
+    super(`Couldn't resolve the stored credential for ${where}; ${fix}`);
     this.name = 'UnresolvedSecretError';
   }
 }
@@ -67,22 +75,31 @@ function placeholderValue(config, key) {
  *
  * Also reports whether a credential was filled in (a custom integration's
  * `/api?key={token}`), which the caller passes to safeFetch as credentialInUrl so
- * the request refuses a redirect to another origin.
+ * the request refuses a redirect to another origin, and `shownPath`: the path
+ * with every credential placeholder left as written (`/api?key={token}`), for
+ * safeFetch's shownUrl, so an error that quotes the URL never quotes the
+ * credential.
  *
- * @returns {{ path: string, credentialInUrl: boolean }}
+ * @returns {{ path: string, credentialInUrl: boolean, shownPath: string }}
  */
 export function resolveEndpoint(endpoint, config) {
   let credentialInUrl = false;
-  const path = endpoint.replace(/\{(\w+)\}/g, (match, key) => {
+  let shownPath = '';
+  let shownTo = 0;
+  const path = endpoint.replace(/\{(\w+)\}/g, (match, key, offset) => {
     const value = placeholderValue(config, key);
     if (value === UNRESOLVED || looksLikeSecretRef(value)) {
-      throw new UnresolvedSecretError(`{${key}} in the endpoint`);
+      throw new UnresolvedSecretError(`{${key}} in the endpoint`, { token: key.replace(/^_/, '') === 'token' });
     }
-    if (!value) return match;
-    if (CREDENTIAL_PARAMS.has(key.replace(/^_/, ''))) credentialInUrl = true;
-    return value;
+    const credential = !!value && CREDENTIAL_PARAMS.has(key.replace(/^_/, ''));
+    if (credential) credentialInUrl = true;
+    const filled = value ? String(value) : match;
+    shownPath += endpoint.slice(shownTo, offset) + (credential ? match : filled);
+    shownTo = offset + match.length;
+    return filled;
   });
-  return { path, credentialInUrl };
+  shownPath += endpoint.slice(shownTo);
+  return { path, credentialInUrl, shownPath };
 }
 
 /**

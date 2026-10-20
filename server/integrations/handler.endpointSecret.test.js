@@ -19,26 +19,33 @@ process.env.DASH_SECRET = 'test-secret-at-least-16-chars-long'; // pragma: allow
 const { initSecrets, setSecret } = await import('../secrets.js');
 const { initRegistry } = await import('./registry.js');
 const { fetchIntegration, testIntegration } = await import('./handler.js');
+const { resolveIntegrationConfig } = await import('./lib/config.js');
+const { hideUrlCredential } = await import('./lib/http.js');
 
 initSecrets();
 await initRegistry();
-for (const v of ['SABNZBD_URL', 'SABNZBD_API_KEY']) delete process.env[v];
+for (const v of ['SABNZBD_URL', 'SABNZBD_API_KEY', 'JAGHELM_ADGUARD_USER', 'JAGHELM_ADGUARD_PASS']) delete process.env[v];
 
 // Random, so a match in a URL or a log line can only be the value itself.
 const hex = () => randomBytes(8).toString('hex');
 
-/** A stub upstream: answers every request with `{ up: true }` and records its URL. */
+/**
+ * A stub upstream: answers every request with `{ up: true }` and records its
+ * URL, and its Authorization header in `auths`.
+ */
 function upstream(answer) {
   return new Promise((resolve) => {
     const urls = [];
+    const auths = [];
     const srv = http.createServer((req, res) => {
       urls.push(req.url);
+      auths.push(req.headers.authorization);
       if (answer) return answer(req, res);
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ up: true, token: 'session-tok' }));
     });
     srv.listen(0, '127.0.0.1', () => {
-      resolve({ url: `http://127.0.0.1:${srv.address().port}`, urls, close: () => srv.close() });
+      resolve({ url: `http://127.0.0.1:${srv.address().port}`, urls, auths, close: () => srv.close() });
     });
   });
 }
@@ -313,8 +320,127 @@ test('a connection test never puts a $secret: reference typed as the token in th
     result: await testIntegration('sabnzbd', { url: up.url, token: ref }),
   }));
 
-  for (const url of urls) assert.ok(!url.includes(name), url);
+  assert.deepEqual(urls, [], 'the test sent a request without the key');
   assert.equal(result.ok, false);
-  assert.match(result.error, UNRESOLVED);
+  assert.match(result.error, /stored-secret reference.*type the token itself/);
   assert.ok(!result.error.includes(name));
+});
+
+// ── A $secret: username resolves like a password or token ────────────────
+
+test('a {username} endpoint with a $secret: username sends the resolved username', async () => {
+  const user = `u-${hex()}`;
+  const { key, yaml } = custom({ endpoint: '/u/{username}' });
+  yaml.username = stored(key, 'username', user);
+
+  const { result, urls } = await requested(async () => ({ result: await fetchIntegration(key, yaml) }));
+
+  assert.equal(result.error, null);
+  assert.deepEqual(urls, [`/u/${user}`]);
+});
+
+test('basic auth with a $secret: username sends the resolved username', async () => {
+  const user = `u-${hex()}`;
+  const pass = `p-${hex()}`;
+  const { key, yaml } = custom({ auth: 'basic', endpoint: '/status' });
+  yaml.username = stored(key, 'username', user);
+  yaml.password = stored(key, 'password', pass);
+
+  const from = up.auths.length;
+  const result = await fetchIntegration(key, yaml);
+
+  assert.equal(result.error, null);
+  assert.deepEqual(up.auths.slice(from), [`Basic ${Buffer.from(`${user}:${pass}`).toString('base64')}`]);
+});
+
+test("a preset's $secret: username resolves too, and its .env username still wins", () => {
+  const user = `u-${hex()}`;
+  const storageKey = `adguard_${hex()}`;
+  const yaml = { url: 'http://adguard.test', username: stored(`ref_${storageKey}`, 'username', user), _storageKey: storageKey };
+
+  assert.equal(resolveIntegrationConfig('adguard', yaml)._username, user);
+
+  process.env.JAGHELM_ADGUARD_USER = 'env-user';
+  try {
+    assert.equal(resolveIntegrationConfig('adguard', yaml)._username, 'env-user');
+  } finally {
+    delete process.env.JAGHELM_ADGUARD_USER;
+  }
+});
+
+// ── A filled-in credential never shows in an error or a log line ─────────
+
+test('a filled-in token never shows in the error or the log when the URL is bad', async () => {
+  for (const [endpoint, auth, shown] of [
+    ['/api/{token}/status', 'none', 'Invalid URL: http://127.0.0.1:99999/api/{token}/status'],
+    ['/api/stats?key={token}', 'none', null],
+    ['/status', 'query', null],
+  ]) {
+    for (const how of ['$secret:', 'plaintext']) {
+      const value = `tok${hex()}`;
+      const { key, yaml } = custom({ url: 'http://127.0.0.1:99999', endpoint, auth });
+      yaml.token = how === 'plaintext' ? value : stored(key, 'token', value);
+
+      const { result, lines } = await captureLogs(() => fetchIntegration(key, yaml));
+
+      const what = `${endpoint} (${auth}, ${how})`;
+      assert.match(result.error, /^Invalid URL: http:\/\/127\.0\.0\.1:99999\//, what);
+      if (shown) assert.equal(result.error, shown, what);
+      assert.ok(!result.error.includes(value), `${what}: the token is in the error: ${result.error}`);
+      const log = JSON.stringify(lines);
+      assert.ok(lines.some((l) => l.msg === 'fetch error'), `${what}: no fetch error line`);
+      assert.ok(!log.includes(value), `${what}: the token was logged: ${log}`);
+    }
+  }
+});
+
+test("a filled-in token never shows in an extra endpoint's or a session read's error", async () => {
+  // An endpoint starting with ':' makes `${url}${endpoint}` an invalid URL whose
+  // error quotes it, while the main read or the login still works.
+  const value = `tok${hex()}`;
+  const extra = custom({ endpoint: '/status', extraEndpoints: [{ key: 'more', endpoint: ':1/more/{token}' }] });
+  extra.yaml.token = stored(extra.key, 'token', value);
+  const session = custom({
+    auth: 'session',
+    endpoint: ':1/data/{token}',
+    username: 'u',
+    password: 'p',
+    session: { loginEndpoint: '/login', loginBody: { u: '{username}', p: '{password}' }, tokenPath: 'token', tokenHeader: 'X-Token' },
+  });
+  session.yaml.token = stored(session.key, 'token', value);
+
+  const { lines, result } = await captureLogs(async () => {
+    const extraResult = await fetchIntegration(extra.key, extra.yaml);
+    assert.equal(extraResult.error, null);
+    return fetchIntegration(session.key, session.yaml);
+  });
+
+  const log = JSON.stringify(lines);
+  assert.ok(lines.some((l) => l.msg === 'extra endpoint fetch failed' && /\{token\}/.test(l.reason)), log);
+  assert.ok(lines.some((l) => l.msg === 'session auth failed' && /\{token\}/.test(l.error)), log);
+  assert.ok(result.error, 'the session read failed');
+  assert.ok(!log.includes(value), `the token was logged: ${log}`);
+  assert.ok(!result.error.includes(value), result.error);
+});
+
+test('hideUrlCredential swaps every form of the URL for the shown one, and keeps bare origins', () => {
+  const url = 'http://Host.test:8080/api/SECRET1/x?key=SECRET2';
+  const shown = 'http://Host.test:8080/api/{token}/x?key={password}';
+  assert.equal(hideUrlCredential(`Invalid URL: ${url}`, url, shown), `Invalid URL: ${shown}`);
+  assert.equal(
+    hideUrlCredential('failed http://host.test:8080/api/SECRET1/next and http://host.test:8080/api/SECRET1/x', url, shown),
+    `failed ${shown} and ${shown}`
+  );
+  assert.equal(
+    hideUrlCredential('redirected http://host.test:8080 → http://other.test', url, shown),
+    'redirected http://host.test:8080 → http://other.test'
+  );
+  // `$&` in the shown URL is text, not a replacement pattern.
+  assert.equal(hideUrlCredential(`x ${url.toLowerCase()}`, url, '/a$&b'), 'x /a$&b');
+  // No shownUrl: everything after the origin is withheld.
+  assert.equal(hideUrlCredential(`Invalid URL: ${url}`, url, undefined), 'Invalid URL: http://host.test:8080/[redacted]');
+  assert.equal(
+    hideUrlCredential('Invalid URL: http://h:99999/api/SECRET1', 'http://h:99999/api/SECRET1', undefined),
+    'Invalid URL: [a URL that carries a credential]'
+  );
 });

@@ -25,7 +25,9 @@ import { createLogger } from '../util/logger.js';
 const log = createLogger('integrations');
 
 /**
- * Append query-param auth (`?apikey=…`) to a URL for the `query` auth type.
+ * Append query-param auth (`?apikey=…`) to a URL for the `query` auth type,
+ * and `?apikey={token}` to `shownUrl`, the same URL as an error may show it
+ * (safeFetch's shownUrl; defaults to `url`).
  * No-op for any other auth type or when no token is resolved. The token is
  * URL-encoded so a raw token containing reserved chars (&, =, +, space) can't
  * corrupt the query string or split into extra params.
@@ -38,17 +40,21 @@ const log = createLogger('integrations');
  * like one, or a reference that resolved to nothing, throws
  * UnresolvedSecretError, so no request is sent and the error says why.
  */
-function applyQueryAuth(url, config) {
-  if (config.auth !== 'query') return { url, credentialInUrl: false };
+function applyQueryAuth(url, config, shownUrl = url) {
+  if (config.auth !== 'query') return { url, shownUrl, credentialInUrl: false };
   if (looksLikeSecretRef(config._token) || (!config._token && looksLikeSecretRef(config.token))) {
-    throw new UnresolvedSecretError('the token in the URL');
+    throw new UnresolvedSecretError('the token in the URL', { token: true });
   }
   if (config._token) {
     const paramName = config.queryParam || 'apikey';
     const separator = url.includes('?') ? '&' : '?';
-    return { url: `${url}${separator}${paramName}=${encodeURIComponent(config._token)}`, credentialInUrl: true };
+    return {
+      url: `${url}${separator}${paramName}=${encodeURIComponent(config._token)}`,
+      shownUrl: `${shownUrl}${separator}${paramName}={token}`,
+      credentialInUrl: true,
+    };
   }
-  return { url, credentialInUrl: false };
+  return { url, shownUrl, credentialInUrl: false };
 }
 
 /**
@@ -103,11 +109,12 @@ export async function fetchIntegration(type, yamlConfig, resolved) {
       rawData = await fetchWithSession(config);
     } else {
       const endpoint = resolveEndpoint(config.endpoint, config);
-      const { url, credentialInUrl } = applyQueryAuth(`${baseUrl}${endpoint.path}`, config);
+      const { url, shownUrl, credentialInUrl } =
+        applyQueryAuth(`${baseUrl}${endpoint.path}`, config, `${baseUrl}${endpoint.shownPath}`);
 
       const headers = buildAuthHeaders(config);
       const urlCarriesCredential = credentialInUrl || endpoint.credentialInUrl;
-      const res = await safeFetch(url, { headers }, skipTls, { credentialInUrl: urlCarriesCredential });
+      const res = await safeFetch(url, { headers }, skipTls, { credentialInUrl: urlCarriesCredential, shownUrl });
       if (!res.ok) {
         const err = new Error(`HTTP ${res.status} ${res.statusText || ''}`.trim());
         if (isAuthRejection(res) && carriesCredentials(config, urlCarriesCredential)) err.authRejected = true;
@@ -126,8 +133,9 @@ export async function fetchIntegration(type, yamlConfig, resolved) {
       const headers = buildAuthHeaders(config);
       const extraResults = await Promise.allSettled(
         extraEps.map(async (ep) => {
-          const { path, credentialInUrl } = resolveEndpoint(ep.endpoint, config);
-          const epRes = await safeFetch(`${baseUrl}${path}`, { headers }, skipTls, { credentialInUrl });
+          const { path, shownPath, credentialInUrl } = resolveEndpoint(ep.endpoint, config);
+          const epRes = await safeFetch(`${baseUrl}${path}`, { headers }, skipTls,
+            { credentialInUrl, shownUrl: `${baseUrl}${shownPath}` });
           if (!epRes.ok) {
             throw new Error(`HTTP ${epRes.status} ${epRes.statusText || ''}`.trim());
           }
@@ -242,13 +250,21 @@ export async function testIntegration(type, testConfig) {
 
     } else {
       // Non-session auth (basic, bearer, header, query)
-      const { url, credentialInUrl } = applyQueryAuth(`${baseUrl}${testEndpoint}`, config);
+      const { url, shownUrl, credentialInUrl } = applyQueryAuth(`${baseUrl}${testEndpoint}`, config);
       const headers = buildAuthHeaders(config);
-      const res = await safeFetch(url, { headers }, skipTls, { credentialInUrl });
+      const res = await safeFetch(url, { headers }, skipTls, { credentialInUrl, shownUrl });
       if (!res.ok) return { ok: false, error: `HTTP ${res.status}: ${res.statusText}` };
       return { ok: true, status: res.status };
     }
   } catch (err) {
+    // A token typed into the form that looks like a `$secret:` reference: the
+    // test sends what was typed and resolves nothing, so say that (#425).
+    if (err instanceof UnresolvedSecretError) {
+      return {
+        ok: false,
+        error: 'The token looks like a stored-secret reference, and the connection test sends the token as typed; type the token itself',
+      };
+    }
     return { ok: false, error: redactError(err) };
   }
 }
