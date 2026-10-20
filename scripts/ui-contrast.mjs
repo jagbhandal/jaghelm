@@ -10,13 +10,21 @@
 // declared. Each accent's hover must also differ visibly from its rest state
 // (HOVER_MIN_DE), and no accent may read as a status colour (STATUS_MIN_DE).
 //
-//   node scripts/ui-contrast.mjs [tokens.css]
-//     prints the lowest ratio per rule on sRGB and on Display P3 screens and
-//     each accent's nearest status colour, and fails (exit 1) on any pairing
-//     below its floor on either, on a hover too close to its rest state, or on
-//     an accent too close to a status. The file defaults to src/ui/tokens.css.
+// The chart colours (#386) are checked here too: each of the six slots 3:1
+// where a chart is drawn (a PAIRINGS rule, `series`), the sequential ramp's
+// shape (checkRamp), and the gates the palette was chosen by (checkChartPalette:
+// neighbours apart under protanopia, deuteranopia and normal vision, slots 1
+// to 3 apart in every pair, clear of the status colours and the violet accent).
 //
-// scripts/ui-contrast.test.mjs runs the same check in `npm test`.
+//   node scripts/ui-contrast.mjs [tokens.css]
+//     prints the lowest ratio per rule on sRGB and on Display P3 screens, each
+//     accent's nearest status colour and the chart colours' closest calls, and
+//     fails (exit 1) on any pairing below its floor on either, on a hover too
+//     close to its rest state, on an accent too close to a status, or on a
+//     chart gate. The file defaults to src/ui/tokens.css.
+//
+// scripts/ui-contrast.test.mjs and scripts/chart-palette.test.mjs run the same
+// checks in `npm test`.
 //
 // The colour maths follows CSS Color 4: OKLCH to OKLab to linear light with the
 // spec's matrices, the sRGB transfer function (Display P3 shares it), and alpha
@@ -52,7 +60,11 @@ const DEFAULTS = {
   typeface: DEFAULT_TYPEFACE,
 };
 
-/** Minimum contrast per rule (spec §5.2; control-edge, WCAG 1.4.11's 3:1 for a control's boundary). */
+/**
+ * Minimum contrast per rule (spec §5.2; control-edge, WCAG 1.4.11's 3:1 for a
+ * control's boundary; series, its 3:1 for a graphical object, a chart's line,
+ * bar or legend swatch).
+ */
 export const RULES = {
   'text-1': 7,
   'text-2': 4.5,
@@ -63,9 +75,14 @@ export const RULES = {
   'on-solid': 4.5,
   'focus-ring': 3,
   'control-edge': 3,
+  series: 3,
 };
 
 export const STATUSES = ['ok', 'warn', 'crit', 'unknown', 'maintenance', 'info'];
+
+/** The chart colours (#386): the six categorical slots, in order, and the ramp's seven steps, none to most. */
+export const SERIES = [1, 2, 3, 4, 5, 6].map((i) => `series-${i}`);
+export const RAMP = [1, 2, 3, 4, 5, 6, 7].map((i) => `seq-${i}`);
 
 // A background is a token, or a translucent token painted over another (`over`).
 const SURFACES = ['bg', 'sidebar', 'surface-1', 'surface-2', 'surface-3'];
@@ -119,6 +136,16 @@ export const PAIRINGS = [
     ...on('bg', 'sidebar', 'surface-1', 'surface-2'),
     ...over('row-hover', 'bg', 'surface-1'),
   ].map((p) => ({ rule: 'control-edge', fg: 'control-edge', ...p })),
+  // A chart's slots (#386): on the page, a panel, a hovered tile or a chart's
+  // tooltip (surface-2), and a hovered row (a sparkline in a list). Never on
+  // surface-3, where dark plum and light teal fall below 3:1.
+  ...SERIES.flatMap((fg) =>
+    [...on('bg', 'surface-1', 'surface-2'), ...over('row-hover', 'surface-1')].map((p) => ({
+      rule: 'series',
+      fg,
+      ...p,
+    }))
+  ),
 ];
 
 /**
@@ -552,6 +579,224 @@ export function nearestStatus({ results }) {
   return [...nearest.values()];
 }
 
+// ---- Chart colours (#386) ---------------------------------------------------
+
+/**
+ * The sequential ramp, in each theme: each step further from surface-1's
+ * lightness than the one before, by at least RAMP_MIN_STEP (OKLCH L, as
+ * written), all in slot 1's hue; and step RAMP_ORDINAL_STEP, where an ordinal
+ * scale starts, at least RAMP_ORDINAL_MIN against surface-1. The ramp is not
+ * held to 3:1: its first steps recede toward the panel by design, as a
+ * sequential scale's "none" end should.
+ */
+export const RAMP_MIN_STEP = 0.06;
+export const RAMP_ORDINAL_STEP = 3;
+export const RAMP_ORDINAL_MIN = 2;
+
+/**
+ * The gates the six slots were chosen by (#386, signed off 2026-10-20), as ΔE OK
+ * ×100 between the colours a screen paints, and chroma as written:
+ *
+ *  - adjacent: neighbouring slots in normal vision, as either screen paints them.
+ *  - adjacent-cvd: neighbouring slots under protanopia and under deuteranopia.
+ *    A line or stacked chart keeps its order, so only neighbours touch.
+ *  - first-three-cvd: slots 1 to 3 in every pair under both, so a scatter, a
+ *    map or a small multiple, where any two can meet, shows three series.
+ *  - status: every slot against every status lamp or bar (`solid`) and word
+ *    (`fg`), so a series never reads as a state.
+ *  - violet: every slot against each mark of the default accent (ACCENT_MARKS).
+ *  - chroma: every slot's OKLCH chroma, so none reads as a grey.
+ */
+export const CHART_FLOORS = {
+  adjacent: 15,
+  'adjacent-cvd': 8,
+  'first-three-cvd': 8,
+  status: 8.5,
+  violet: 12,
+  chroma: 0.1,
+};
+const FIRST_THREE = 3;
+
+/**
+ * Machado, Oliveira and Fernandes (2009) at severity 1.0, applied to linear
+ * sRGB: full protanopia and deuteranopia, the strongest red-green colour
+ * blindness, so the milder forms are covered too.
+ */
+export const MACHADO = {
+  protan: [
+    [0.152286, 1.052583, -0.204868],
+    [0.114503, 0.786281, 0.099216],
+    [-0.003882, -0.048116, 1.051998],
+  ],
+  deutan: [
+    [0.367322, 0.860646, -0.227968],
+    [0.280085, 0.672501, 0.047413],
+    [-0.01182, 0.04294, 0.968881],
+  ],
+};
+const CVDS = Object.keys(MACHADO);
+
+/** Linear sRGB as `type` ('protan' or 'deutan') sees it, clamped to 0..1. */
+export const simulateCvd = (linear, type) => clip(mul(MACHADO[type], linear));
+
+/** OKLab of a colour as an sRGB screen paints it by `method`, seen with `vision`. */
+const seenOklab = (lch, method, vision) =>
+  rgbToOklab(simulateCvd(render(lch, method).map(decode), vision).map(encode), 'srgb');
+
+/**
+ * ΔE OK ×100 between two colours, the least on any screen: in normal vision as
+ * sRGB and Display P3 screens paint them, under a CVD as sRGB screens do (the
+ * matrices are sRGB's).
+ */
+function chartDE(a, b, vision) {
+  const des =
+    vision === 'normal'
+      ? Object.keys(SPACE).map((m) => deltaEOK(paintedOklab(a, m), paintedOklab(b, m)))
+      : SCREENS.srgb.map((m) => deltaEOK(seenOklab(a, m, vision), seenOklab(b, m, vision)));
+  return 100 * Math.min(...des);
+}
+
+function opaqueColor(props, name) {
+  const { lch, alpha } = tokenColor(props, name);
+  if (alpha < 1) throw new Error(`--jh-${name} must be opaque`);
+  return lch;
+}
+
+/**
+ * The ramp in every theme and accent: { results, failures }. Each result lists
+ * its steps' lightness and hue as written, step 3's ratio on surface-1
+ * (`ordinal`) and its problems.
+ */
+export function checkRamp(css = readFileSync(TOKENS_FILE, 'utf8')) {
+  const { rules } = readTokens(css);
+  const results = contexts().map((ctx) => {
+    const props = resolveContext(rules, ctx);
+    const surface = opaqueColor(props, 'surface-1')[0];
+    const hue = opaqueColor(props, SERIES[0])[2];
+    const steps = RAMP.map((name) => {
+      const [l, , h] = opaqueColor(props, name);
+      return { name, l, h, away: l - surface };
+    });
+    const problems = [];
+    steps.forEach((step, i) => {
+      if (Math.abs(step.h - hue) > 1e-9) {
+        problems.push(`${step.name} has hue ${step.h}, not ${SERIES[0]}'s ${hue}`);
+      }
+      if (i === 0) return;
+      const prev = steps[i - 1];
+      const gap = Math.abs(step.away) - Math.abs(prev.away);
+      if (Math.sign(step.away) !== Math.sign(prev.away) || gap <= 0) {
+        problems.push(`${step.name} is not further from surface-1 than ${prev.name}`);
+      } else if (gap < RAMP_MIN_STEP) {
+        problems.push(
+          `${step.name} is ${gap.toFixed(3)} from ${prev.name}, needs ${RAMP_MIN_STEP}`
+        );
+      }
+    });
+    const ordinalStep = RAMP[RAMP_ORDINAL_STEP - 1];
+    const ordinal = pairContrast(props, { fg: ordinalStep, bg: 'surface-1' });
+    if (ordinal < RAMP_ORDINAL_MIN) {
+      problems.push(
+        `${ordinalStep} is ${formatRatio(ordinal, RAMP_ORDINAL_MIN)} on surface-1, ` +
+          `needs ${RAMP_ORDINAL_MIN}:1`
+      );
+    }
+    return {
+      ...ctx,
+      steps: steps.map(({ name, l, h }) => ({ name, l, h })),
+      minGap: Math.min(...steps.slice(1).map((s, i) => Math.abs(s.away) - Math.abs(steps[i].away))),
+      ordinal,
+      problems,
+      pass: problems.length === 0,
+    };
+  });
+  return { results, failures: results.filter((r) => !r.pass) };
+}
+
+/**
+ * Every chart gate (CHART_FLOORS) in both themes: { results, failures }. A
+ * result is { gate, theme, a, b, vision, value, min, pass }: `value` is ΔE OK
+ * ×100 (chroma for the chroma gate, which has no `b`). The slots don't change
+ * with the accent, so each theme is read once, with the violet accent.
+ */
+export function checkChartPalette(css = readFileSync(TOKENS_FILE, 'utf8')) {
+  const { rules } = readTokens(css);
+  const results = THEMES.flatMap((theme) => {
+    const props = resolveContext(rules, { theme, accent: 'violet' });
+    const color = (name) => opaqueColor(props, name);
+    const row = (gate, a, b, vision) => {
+      const value = chartDE(color(a), color(b), vision);
+      return {
+        gate,
+        theme,
+        a,
+        b,
+        vision,
+        value,
+        min: CHART_FLOORS[gate],
+        pass: value >= CHART_FLOORS[gate],
+      };
+    };
+    const out = [];
+    SERIES.slice(1).forEach((b, i) => {
+      out.push(row('adjacent', SERIES[i], b, 'normal'));
+      for (const v of CVDS) out.push(row('adjacent-cvd', SERIES[i], b, v));
+    });
+    SERIES.slice(0, FIRST_THREE).forEach((a, i) => {
+      for (const b of SERIES.slice(i + 1, FIRST_THREE)) {
+        for (const v of CVDS) out.push(row('first-three-cvd', a, b, v));
+      }
+    });
+    for (const a of SERIES) {
+      for (const m of STATUS_MARKS) out.push(row('status', a, m, 'normal'));
+      for (const m of ACCENT_MARKS) out.push(row('violet', a, m, 'normal'));
+      const value = color(a)[1];
+      out.push({
+        gate: 'chroma',
+        theme,
+        a,
+        value,
+        min: CHART_FLOORS.chroma,
+        pass: value >= CHART_FLOORS.chroma,
+      });
+    }
+    return out;
+  });
+  return { results, failures: results.filter((r) => !r.pass) };
+}
+
+/**
+ * With each accent, in each theme, the slot nearest its fill (`accent`) and the
+ * slot nearest any of its marks (ACCENT_MARKS), as ΔE OK ×100 in normal vision.
+ * Not a gate: charts never draw the accent inside the plot.
+ */
+export function nearestSlots(css = readFileSync(TOKENS_FILE, 'utf8')) {
+  const { rules } = readTokens(css);
+  return ACCENTS.flatMap((accent) =>
+    THEMES.map((theme) => {
+      const props = resolveContext(rules, { theme, accent });
+      const color = (name) => opaqueColor(props, name);
+      const pairs = SERIES.flatMap((slot) =>
+        ACCENT_MARKS.map((mark) => ({
+          slot,
+          mark,
+          de: chartDE(color(slot), color(mark), 'normal'),
+        }))
+      );
+      const least = (list) => list.reduce((a, b) => (b.de < a.de ? b : a));
+      return {
+        accent,
+        theme,
+        fill: least(pairs.filter((p) => p.mark === 'accent')),
+        mark: least(pairs),
+      };
+    })
+  );
+}
+
+/** ΔE ×100 to one decimal, rounded down, as the sign-off quotes it (8.886 is 8.8). */
+export const formatDE = (de) => (Math.floor(de * 10) / 10).toFixed(1);
+
 /** A ratio to 2 decimals, never rounded up to a floor it misses (4.4999 is 4.49). */
 export const formatRatio = (ratio, floor) =>
   `${(ratio < floor ? Math.floor(ratio * 100) / 100 : ratio).toFixed(2)}:1`;
@@ -566,8 +811,11 @@ export const describe = (r) =>
     .join(', ') +
   `, needs ${r.min}:1`;
 
-/** Markdown: the lowest ratio per rule on each screen, ruled-out pairings, hovers and status distance. */
-export function report({ results, failures }, { ruledOut = [], hover, status } = {}) {
+/**
+ * Markdown: the lowest ratio per rule on each screen, ruled-out pairings,
+ * hovers, status distance, and the chart colours' ramp and gates.
+ */
+export function report({ results, failures }, { ruledOut = [], hover, status, ramp, chart } = {}) {
   const lines = [
     '| Rule | Floor | Lowest, sRGB | Where | Lowest, Display P3 | Where |',
     '| --- | --- | --- | --- | --- | --- |',
@@ -617,6 +865,51 @@ export function report({ results, failures }, { ruledOut = [], hover, status } =
       );
     }
   }
+  if (ramp) {
+    const low = ramp.results.reduce((a, b) => (b.ordinal < a.ordinal ? b : a));
+    const gap = Math.min(...ramp.results.map((r) => r.minGap));
+    lines.push(
+      '',
+      `Ramp: step ${RAMP_ORDINAL_STEP} at ${formatRatio(low.ordinal, RAMP_ORDINAL_MIN)} on ` +
+        `surface-1 at worst (${low.theme}), needs ${RAMP_ORDINAL_MIN}:1; steps at least ` +
+        `${gap.toFixed(3)} apart in lightness, need ${RAMP_MIN_STEP}; ${ramp.failures.length} failing.`
+    );
+    for (const f of ramp.failures) {
+      for (const p of f.problems) lines.push(`- FAIL ramp (${f.theme}, ${f.accent}): ${p}`);
+    }
+  }
+  if (chart) {
+    const pair = (r) => (r.b ? `${r.a}–${r.b}` : r.a);
+    const shown = (r) => (r.gate === 'chroma' ? String(r.value) : formatDE(r.value));
+    const vision = (r) => (r.vision && r.vision !== 'normal' ? `${r.vision}, ` : '');
+    lines.push(
+      '',
+      `Chart colours (ΔE OK ×100, rounded down), the closest call per gate: ` +
+        `${chart.failures.length} failing.`
+    );
+    for (const gate of Object.keys(CHART_FLOORS)) {
+      const low = chart.results
+        .filter((r) => r.gate === gate)
+        .reduce((a, b) => (b.value < a.value ? b : a));
+      lines.push(
+        `- ${gate}: ${shown(low)}, ${pair(low)} (${vision(low)}${low.theme}), needs ${CHART_FLOORS[gate]}`
+      );
+    }
+    for (const f of chart.failures) {
+      lines.push(
+        `- FAIL ${f.gate}: ${pair(f)} (${vision(f)}${f.theme}): ${shown(f)}, needs ${f.min}`
+      );
+    }
+    if (chart.nearest) {
+      lines.push('', 'With each accent, the slot nearest its fill and nearest any of its marks:');
+      for (const n of chart.nearest) {
+        lines.push(
+          `- ${n.accent}, ${n.theme}: ${n.fill.slot} ${formatDE(n.fill.de)}; ` +
+            `${n.mark.slot}–${n.mark.mark} ${formatDE(n.mark.de)}`
+        );
+      }
+    }
+  }
   return lines.join('\n');
 }
 
@@ -626,8 +919,16 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const result = checkContrast(css);
   const hover = checkHover(css);
   const status = checkAccentStatus(css);
-  console.log(report(result, { ruledOut: checkRuledOut(css), hover, status }));
-  if (result.failures.length || hover.failures.length || status.failures.length) {
+  const ramp = checkRamp(css);
+  const chart = { ...checkChartPalette(css), nearest: nearestSlots(css) };
+  console.log(report(result, { ruledOut: checkRuledOut(css), hover, status, ramp, chart }));
+  if (
+    result.failures.length ||
+    hover.failures.length ||
+    status.failures.length ||
+    ramp.failures.length ||
+    chart.failures.length
+  ) {
     process.exitCode = 1;
   }
 }

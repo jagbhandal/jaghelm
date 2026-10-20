@@ -3,8 +3,9 @@
  * (2026-10-19), spec §5.2, §5.3 and §15. docs/design-system.md lists them with
  * the rules for using them. scripts/ui-contrast.mjs checks every text and
  * background pairing in both themes and all three accents, on sRGB and Display
- * P3 screens, that each hover is visibly different from rest, and that no
- * accent reads as a status colour (npm test).
+ * P3 screens, that each hover is visibly different from rest, that no accent
+ * reads as a status colour, and the chart colours (#386): 3:1 where charts are
+ * drawn, the ramp's steps, and the slots' separation (npm test).
  *
  * Three layers, all on .jh-ui and never on :root while today's CSS lives (it
  * owns --bg, --accent, --border, --text-* there). The --jh- prefix keeps them
@@ -157,6 +158,27 @@
   --jh-info-solid: var(--jh-blue-707);
   --jh-info-on-solid: var(--jh-graphite-120);
 
+  /* Chart colours (#386; Jag, 2026-10-20). Roles that hold their values, as the
+     Fuchsia and Cyan accents do: each value has one use in one theme. They
+     never change with the accent. series-1 to -6 are the categorical slots in
+     order (an entity keeps its slot; one series takes slot 1). seq-1 to -7 is
+     the sequential ramp in slot 1's azure, none to most: its first steps
+     recede toward the panel. Each is clear of every status colour and of the
+     violet accent (docs/design-system.md, "Chart colours"). */
+  --jh-series-1: oklch(0.6 0.138 240); /* azure */
+  --jh-series-2: oklch(0.64 0.15 355); /* rose */
+  --jh-series-3: oklch(0.66 0.15 125); /* lime */
+  --jh-series-4: oklch(0.55 0.15 325); /* plum */
+  --jh-series-5: oklch(0.66 0.15 55); /* orange */
+  --jh-series-6: oklch(0.66 0.112 200); /* teal */
+  --jh-seq-1: oklch(0.3 0.07 240); /* #00314d */
+  --jh-seq-2: oklch(0.38 0.087 240); /* #00476c */
+  --jh-seq-3: oklch(0.459 0.105 240); /* #005e8c */
+  --jh-seq-4: oklch(0.54 0.124 240); /* #0076af */
+  --jh-seq-5: oklch(0.63 0.11 240); /* #4191c5 */
+  --jh-seq-6: oklch(0.72 0.08 240); /* #75acd2 */
+  --jh-seq-7: oklch(0.81 0.05 240); /* #a4c6de */
+
   /* ---- 3. Component tokens --------------------------------------------- */
 
   --jh-meter: var(--jh-violet-680); /* a meter below its threshold (§15) */
@@ -304,6 +326,21 @@
   --jh-info-border: oklch(0.55 0.2 260 / 0.32);
   --jh-info-solid: var(--jh-blue-550);
   --jh-info-on-solid: var(--jh-white);
+
+  /* Chart colours: on white the ramp runs from pale to deep. */
+  --jh-series-1: oklch(0.58 0.133 240);
+  --jh-series-2: oklch(0.5 0.15 355);
+  --jh-series-3: oklch(0.56 0.141 125);
+  --jh-series-4: oklch(0.6 0.15 325);
+  --jh-series-5: oklch(0.6 0.149 55);
+  --jh-series-6: oklch(0.62 0.105 200);
+  --jh-seq-1: oklch(0.92 0.043 240); /* #cce9ff */
+  --jh-seq-2: oklch(0.84 0.08 240); /* #9bd2fa */
+  --jh-seq-3: oklch(0.76 0.11 240); /* #6bbaf0 */
+  --jh-seq-4: oklch(0.68 0.135 240); /* #36a2e3 */
+  --jh-seq-5: oklch(0.6 0.138 240); /* #0089c9 */
+  --jh-seq-6: oklch(0.511 0.117 240); /* #006da2 */
+  --jh-seq-7: oklch(0.42 0.096 240); /* #00537c */
 
   --jh-meter: var(--jh-violet-580);
   --jh-track: oklch(0.25 0.02 286 / 0.08);
