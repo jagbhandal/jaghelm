@@ -41,6 +41,7 @@ docs
 # presets/*.test.js)
 **/*.test.*
 server/arcane/fixtures
+server/routes/fixtures
 
 # Arcane dry-run CLI (docs/arcane/SETUP.md §9) — a dev tool run from a checkout
 # with `node scripts/arcane-poll-once.js`; the server never loads these

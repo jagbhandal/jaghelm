@@ -1,0 +1,121 @@
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import IntegrationsTab from './IntegrationsTab.jsx';
+import { OverlayProvider } from '../../../context/OverlayContext.jsx';
+import { STATUSPAGE, ADGUARD_PRIMARY } from '../../../../server/routes/fixtures/settingsForm.js';
+
+// #402: the server merges a save into the stored entry, and the toggle sets
+// only `enabled`. These pin what the form sends for two stored entries to the
+// fixtures that server/routes/integrations.merge.test.js sends to the real
+// routes, so the two sides can't drift apart.
+
+const PRESETS = [
+  {
+    type: 'adguard',
+    name: 'AdGuard Home',
+    icon: 'adguard-home',
+    description: '',
+    auth: 'basic',
+    fields: [],
+  },
+];
+
+function stubServer() {
+  const writes = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url, opts = {}) => {
+      const method = opts.method || 'GET';
+      if (method !== 'GET') writes.push({ method, url, body: JSON.parse(opts.body) });
+      if (url === '/api/integrations/presets') return Response.json(PRESETS);
+      if (url === '/api/services/config') {
+        return Response.json({
+          integrations: {
+            [STATUSPAGE.key]: STATUSPAGE.entry,
+            [ADGUARD_PRIMARY.key]: ADGUARD_PRIMARY.entry,
+          },
+        });
+      }
+      if (url === '/api/services') {
+        return Response.json({
+          nodes: {
+            pi1: { display_name: 'pi1', services: [{ uid: 'pi1:adguard', container: 'adguard' }] },
+          },
+        });
+      }
+      return Response.json({ ok: true });
+    })
+  );
+  return writes;
+}
+
+/** The configured-integration row whose name is `name`, once the list has loaded. */
+async function rowFor(name) {
+  const label = await screen.findByText(name);
+  return label.parentElement.parentElement;
+}
+
+function renderTab() {
+  render(
+    <OverlayProvider>
+      <IntegrationsTab />
+    </OverlayProvider>
+  );
+}
+
+describe('IntegrationsTab sends only what it owns (#402)', () => {
+  it('Disable on adguard_primary sends { enabled: false } to that key, and nothing else', async () => {
+    const writes = stubServer();
+    renderTab();
+    fireEvent.click(
+      within(await rowFor('AdGuard Home (primary)')).getByRole('button', { name: 'Disable' })
+    );
+    const { method, path, body } = ADGUARD_PRIMARY.disable;
+    await waitFor(() => expect(writes).toEqual([{ method, url: path, body }]));
+  });
+
+  it('Edit, then Save with nothing changed, sends the fixture body for a hand-written custom entry', async () => {
+    const writes = stubServer();
+    renderTab();
+    fireEvent.click(within(await rowFor('statuspage')).getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: /Save Integration/ }));
+    await waitFor(() =>
+      expect(writes).toEqual([
+        { method: 'POST', url: '/api/integrations/save', body: STATUSPAGE.saveUnchanged },
+      ])
+    );
+  });
+
+  it('Edit, then Save with nothing changed, sends the fixture body for adguard_primary (password left blank)', async () => {
+    const writes = stubServer();
+    renderTab();
+    fireEvent.click(
+      within(await rowFor('AdGuard Home (primary)')).getByRole('button', { name: 'Edit' })
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Save Integration/ }));
+    await waitFor(() =>
+      expect(writes).toEqual([
+        { method: 'POST', url: '/api/integrations/save', body: ADGUARD_PRIMARY.saveUnchanged },
+      ])
+    );
+  });
+
+  it('a target set back to auto-match is sent empty, so the server clears it', async () => {
+    const writes = stubServer();
+    renderTab();
+    fireEvent.click(
+      within(await rowFor('AdGuard Home (primary)')).getByRole('button', { name: 'Edit' })
+    );
+    fireEvent.change(screen.getByLabelText('Target Container'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Integration/ }));
+    await waitFor(() =>
+      expect(writes).toEqual([
+        {
+          method: 'POST',
+          url: '/api/integrations/save',
+          body: { ...ADGUARD_PRIMARY.saveUnchanged, target: '' },
+        },
+      ])
+    );
+  });
+});
