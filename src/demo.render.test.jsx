@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, within, act } from '@testing-library/react';
+import { render, screen, within, act, fireEvent } from '@testing-library/react';
 import App from './App.jsx';
+import { setReadOnlyServer } from './api/client.js';
+import { forgetLocalChanges } from './hooks/useData.js';
 // The demo server's own answers: the same function its /api guard answers with.
 import { demoResponse } from '../server/demo.js';
 
@@ -8,7 +10,8 @@ import { demoResponse } from '../server/demo.js';
 // by the demo server's guard, must show a populated board (nodes, services,
 // Quick Launch, the UPS and Pipeline panels), a status that is not green while
 // a service is down, and save nothing (no write request, no "couldn't save"
-// toast) on load.
+// toast) on load. What a visitor changes is kept in the browser for the visit,
+// with no error and no request.
 
 let requests;
 
@@ -43,12 +46,18 @@ async function advance(ms) {
   });
 }
 
-/** Render the app and let it load, then wait out the settings save debounce (2 s). */
+/**
+ * Render the app and let it load, then wait out the settings save debounce
+ * (2 s). The render, every answer and the timers all run inside act(), so each
+ * update is applied before the test looks (and React has nothing to warn of).
+ */
 async function renderDemo(scenario) {
   routeToDemo(scenario);
-  render(<App />);
-  await vi.waitFor(() => expect(screen.getByText('Network Edge')).toBeInTheDocument());
+  await act(async () => {
+    render(<App />);
+  });
   await advance(3000);
+  expect(screen.getByText('Network Edge')).toBeInTheDocument();
 }
 
 const healthLabel = () => document.querySelector('.nav-health-label');
@@ -64,6 +73,10 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
+  // The app marked the server read-only and may have kept changes: start afresh.
+  setReadOnlyServer(false);
+  forgetLocalChanges();
 });
 
 describe('the demo, rendered', () => {
@@ -133,5 +146,39 @@ describe('the demo, rendered', () => {
 
     expect(requests.filter((r) => !r.startsWith('GET '))).toEqual([]);
     expect(screen.queryByText(/Couldn.t save/)).not.toBeInTheDocument();
+  });
+
+  it('keeps a change in the browser with no error and no request: a checklist item, a scheduled job', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    await renderDemo('incident');
+    const click = async (el) => {
+      await act(async () => {
+        fireEvent.click(el);
+      });
+      // Past the refetch and any save debounce.
+      await advance(3000);
+    };
+
+    // Tick a checklist item: it stays ticked.
+    const checklist = panel('Checklist');
+    expect(within(checklist).getByText('2 remaining')).toBeInTheDocument();
+    const renew = () =>
+      within(panel('Checklist'))
+        .getByText('Renew the TLS certificate for the proxy')
+        .closest('.todo-item');
+    await click(within(renew()).getByRole('checkbox'));
+    expect(within(renew()).getByRole('checkbox')).toBeChecked();
+    expect(within(panel('Checklist')).getByText('1 remaining')).toBeInTheDocument();
+
+    // Remove the failed backup job: it stays gone after the board refetches.
+    const backupRow = within(panel('Scheduled Jobs')).getByText('nightly-backup').parentElement;
+    await click(within(backupRow).getByRole('button', { name: 'Remove' }));
+    expect(within(panel('Scheduled Jobs')).queryByText('nightly-backup')).not.toBeInTheDocument();
+    expect(within(panel('Scheduled Jobs')).getByText('scrub-check')).toBeInTheDocument();
+
+    expect(screen.queryByText(/Couldn.t save/)).not.toBeInTheDocument();
+    expect(alert).not.toHaveBeenCalled();
+    expect(requests.filter((r) => !r.startsWith('GET '))).toEqual([]);
   });
 });

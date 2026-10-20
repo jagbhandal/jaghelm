@@ -22,7 +22,12 @@ import { defaultConfig } from './defaultConfig.js';
 // dashboard render — code-split them so they don't weigh down the initial bundle.
 const IframeView = lazy(() => import('./views/IframeView'));
 const SettingsView = lazy(() => import('./views/SettingsView'));
-import { apiFetch, setAuthToken as setApiAuthToken, initAuthToken } from './api/client.js';
+import {
+  apiFetch,
+  setAuthToken as setApiAuthToken,
+  initAuthToken,
+  setReadOnlyServer,
+} from './api/client.js';
 import { secureStore } from './storage/index.js';
 import { noteActiveTab, takeReloadTab } from './chunkReload.js';
 
@@ -71,6 +76,7 @@ export default function App() {
         setAuthRequired(d.authRequired);
         setAuthed(d.authenticated);
         setDemo(d.demo === true);
+        setReadOnlyServer(d.demo === true);
       } catch {
         if (cancelled) return;
         setAuthRequired(true);
