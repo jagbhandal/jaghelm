@@ -3,8 +3,9 @@
  * board is empty (overall `empty`, "Nothing monitored yet") and has no entity,
  * so push has nothing to page about. The `first-run` fixture
  * (testing/statusScenarios.js: the services refresh's own payload for no
- * nodes, no UPS, Kuma, Gitea, integrations or jobs) runs through the status
- * model and the real push cycle (testing/pushPipeline.js) as a fresh install
+ * nodes, with Prometheus answering, and no UPS, Kuma, Gitea, integrations or
+ * jobs) runs through the status model and the real push cycle
+ * (testing/pushPipeline.js) as a fresh install
  * runs it: no snapshot file, so the first cycle is the baseline, then cycle
  * after cycle, and again after a restart.
  */
@@ -20,7 +21,7 @@ const EMPTY_SNAPSHOT = {
   hosts: {},
   ups: { state: 'unknown' },
   cron: {},
-  sources: {},
+  sources: { prometheus: 'ok' },
 };
 
 test('first run: a fresh install with nothing set up sends no push, cycle after cycle and across a restart', async () => {

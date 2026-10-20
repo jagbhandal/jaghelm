@@ -14,8 +14,10 @@ import {
   missing,
   monitored,
   node,
+  NO_UPS,
   once,
 } from '../testing/statusFixtures.js';
+import { noNodesCacheEntry } from '../refresh.js';
 import {
   EMPTY as UI_EMPTY,
   EMPTY_SENTENCE as UI_EMPTY_SENTENCE,
@@ -219,10 +221,18 @@ for (const [name, cycleInputs, state, sentence] of sentenceRows) {
   });
 }
 
+/** A cycle with no nodes in services.yaml: the services refresh's own entry for that, and no UPS. */
+function noNodes(outcome) {
+  const { payload, internal } = noNodesCacheEntry(outcome);
+  return inputs({ services: payload, internal, ups: NO_UPS });
+}
+
 // #449: with nothing set up, the board isn't ok (nobody checked anything) and
 // isn't no signal (nothing is silent): it is empty, said once, in the model.
+// server/status/emptyBoard.test.js has the boards with nothing on them that
+// are not empty, through the live refreshes.
 test('an empty board is its own overall state, empty: not ok, not no signal, and nothing to rank', () => {
-  const s = once(inputs({ nodes: {}, ups: { status: null, ok: true, configured: false } }));
+  const s = once(noNodes({ prometheusOk: true }));
   assert.equal(EMPTY, 'empty');
   assert.deepEqual(s.overall, { state: EMPTY, sentence: 'Nothing monitored yet' });
   assert.deepEqual(s.issues, []);
@@ -235,14 +245,10 @@ test('an empty board is its own overall state, empty: not ok, not no signal, and
 
 test('a board with anything on it, or only a failed source, is not empty', () => {
   const sourceOnly = once(
-    inputs({
-      nodes: {},
-      prometheusOk: false,
-      ups: { status: null, ok: true, configured: false },
-      internal: { sourceErrors: { prometheus: 'Prometheus query failed: fetch failed' } },
-    })
+    noNodes({ prometheusOk: false, prometheusError: 'Prometheus query failed: fetch failed' })
   );
   assert.deepEqual(sourceOnly.overall, { state: 'warn', sentence: 'Prometheus unreachable' });
+  assert.equal(sourceOnly.issues[0].reason, 'Prometheus query failed: fetch failed');
   const oneNode = once(
     inputs({ nodes: { a: node() }, ups: { status: null, ok: true, configured: false } })
   );
@@ -252,7 +258,7 @@ test('a board with anything on it, or only a failed source, is not empty', () =>
 test('the empty board is named and worded as src/ui/lib/status.js has it, outside the five states', () => {
   assert.equal(EMPTY, UI_EMPTY);
   assert.ok(!UI_STATES.includes(UI_EMPTY));
-  const s = once(inputs({ nodes: {}, ups: { status: null, ok: true, configured: false } }));
+  const s = once(noNodes({ prometheusOk: true }));
   assert.equal(s.overall.sentence, UI_EMPTY_SENTENCE);
 });
 

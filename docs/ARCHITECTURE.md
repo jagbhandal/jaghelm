@@ -316,7 +316,11 @@ A failed upstream poll is never read as an empty answer. A Prometheus query
 that errors, times out or returns no query result rejects (`promQuery` in
 `discovery.js`), and Kuma's `fetchMonitors` returns `ok: false` when it loaded
 no monitors. The `/api/services` payload says which answered this cycle,
-`sources: { prometheus: { ok }, kuma: { ok } }`, and `/api/ups` carries its own
+`sources: { prometheus: { ok }, kuma: { ok } }`. With no nodes in
+services.yaml there is nothing to read, so the refresh asks Prometheus one
+probe query (`vector(1)`) and the payload carries only
+`sources: { prometheus: { ok } }` (`noNodesCacheEntry`, #449): a first run with
+a wrong `PROMETHEUS_URL` is a failed source, not an empty board. `/api/ups` carries its own
 `ok` (and `configured: null`, since a failed query can't say whether there is a
 UPS). Each node also carries `reachable`, from Prometheus' `up` series for that
 node: true when any of its targets answered the last scrape, false when none
@@ -840,10 +844,18 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
 - **States** are `ok | warn | crit | unknown | maintenance`, the names
   `src/ui/lib/status.js` uses (a test keeps them in step). Worst-of order:
   `crit` > `warn` > `unknown` > `maintenance` > `ok`.
-- **An empty board** (#449): with no entity and no failed source (nothing is
-  set up, as on a first run), `overall.state` is `empty` (`EMPTY` in
-  `summary.js` and in `src/ui/lib/status.js`, kept in step by a test) and the
-  sentence is "Nothing monitored yet". It is the board's state only, never an
+- **An empty board** (#449): when nothing is set up and every read that ran
+  answered, `overall.state` is `empty` (`EMPTY` in `summary.js` and in
+  `src/ui/lib/status.js`, kept in step by a test) and the sentence is "Nothing
+  monitored yet". The model decides it (`isEmptyBoard` in `model.js`): no
+  entity; no source listed but Prometheus, and Prometheus answered (a `KUMA_URL`
+  or `GITEA_URL` that is set is something set up, whatever it answers); and the
+  services and integrations refreshes each left their payload. A failed UPS
+  read fails Prometheus, so it is covered too. A board with nothing on it for
+  any other reason is `unknown` with the same sentence, and one whose
+  Prometheus doesn't answer is a failed source ("Prometheus unreachable"),
+  never calm (`server/status/emptyBoard.test.js`, through the live
+  refreshes). It is the board's state only, never an
   entity's or a subsystem's (an empty subsystem stays `ok` with `total: 0`):
   not `ok`, since nobody checked anything, and not `unknown`, since nothing
   went silent. It is no issue, and push sends nothing on it (there is nothing
@@ -905,7 +917,7 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   in issue order ("2 services down · Prometheus unreachable · 1 job failed"),
   then "N no signal"; with only unknowns, "31 up · 1 no signal"; healthy, the
   quiet line ("All 32 services up · 6 nodes healthy"). With nothing on the
-  board, "Nothing monitored yet" and `empty`.
+  board, "Nothing monitored yet", with `empty` or `unknown` (above).
 
 **The threshold config** (`thresholds.js`, [ADR 0006](adr/0006-one-severity-table.md)):
 `DEFAULT_THRESHOLDS` holds every number, usage lines as fractions of 1 as push

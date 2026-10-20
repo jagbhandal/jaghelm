@@ -73,9 +73,19 @@ being wrong.
   a health nobody checked, and not `unknown`, which means something went
   silent. No entity or subsystem is ever `empty`: an empty subsystem stays `ok`
   with a total of 0, as before.
+- **Only when nothing is set up and every read that ran answered**
+  (`isEmptyBoard` in `server/status/model.js`): no entity, no source listed
+  but Prometheus, Prometheus answering, and the services and integrations
+  payloads there. A board with nothing on it for any other reason stays
+  `unknown`: Kuma or Gitea set up with no nodes, a refresh that left nothing.
+  With no nodes, the services refresh asks Prometheus one probe query and
+  carries the answer in its payload's `sources` flag, so a wrong
+  `PROMETHEUS_URL` on a first run is a failed source, "Prometheus
+  unreachable", not a calm empty board.
 - **It is answered once, in the model**, so every client reading
   `/api/status` (the web, the Android app from Phase 1, the demo) says the
   same. It is no issue and pages nothing. The web's attention panel and header
   show it as their quiet line, with no lamp, since there is no state to show.
-- The old endpoints are unchanged (`/api/services`' `overallHealth` stays
-  `unknown` with no nodes).
+- The old endpoints keep their meaning: `/api/services`' `overallHealth`
+  stays `unknown` with no nodes, and its payload gains the `sources` flag a
+  board with nodes already carries.

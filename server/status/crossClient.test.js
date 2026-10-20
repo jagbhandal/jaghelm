@@ -469,7 +469,8 @@ test('cross-client fixtures: first run has nothing to show and the empty snapsho
   const { status } = runScenario('first-run', { now: NOW });
   assert.deepEqual(status.entities, []);
   assert.deepEqual(status.issues, []);
-  assert.deepEqual(status.sources, {});
+  // Prometheus answered the services refresh's probe (#449).
+  assert.deepEqual(status.sources, { prometheus: { state: 'ok', since: NOW } });
   assert.ok(
     status.subsystems.every((s) => s.counts.total === 0),
     'no subsystem has anything'
@@ -480,7 +481,7 @@ test('cross-client fixtures: first run has nothing to show and the empty snapsho
     hosts: {},
     ups: { state: 'unknown' },
     cron: {},
-    sources: {},
+    sources: { prometheus: 'ok' },
   });
 });
 

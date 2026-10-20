@@ -133,7 +133,7 @@ Severity is computed once, on the server, and every consumer renders it: the web
 
 - **Per entity** (service, container, node, UPS, job, backup, integration): `{ id, kind, state, reason, metric?, since? }`, where `state` is one of `ok | warn | crit | unknown | maintenance` and `reason` is a short human sentence ("Disk 94 % (warning above 90 %)", "Kuma: HTTP 502", "No data: Prometheus unreachable").
 - **Per subsystem** (Services, Nodes, Power, Jobs, Backups, Integrations): worst-of state plus counts ("31 / 32 up").
-- **Overall:** worst-of state, a one-line sentence ("2 services down · UPS on battery"), and a ranked issue list (crit before warn before unknown; within a level, by subsystem order, then age). With nothing on the board (no entity, no failed source: a first run), the overall state is `empty` and the sentence "Nothing monitored yet" (#449).
+- **Overall:** worst-of state, a one-line sentence ("2 services down · UPS on battery"), and a ranked issue list (crit before warn before unknown; within a level, by subsystem order, then age). When nothing is set up and every read that ran answered (a first run), the overall state is `empty` and the sentence "Nothing monitored yet" (#449).
 - **Sources:** `{ prometheus, kuma, nut, gitea, … }`, each `ok | failed` with the error, from the per-source flag introduced by #232. **When a source fails, the entities it feeds become `unknown` with a reason naming the source; they never become `crit`.** The overall sentence names the failed source, and push sends a single "monitoring source down" event instead of one per entity.
 - **Thresholds** (CPU, memory, disk, temperature, UPS) live in one server config with today's defaults, editable in Settings → Notifications.
 - **Transport:** one endpoint (e.g. `/api/status`) with an ETag, polled by both clients; push's differ consumes the same model.
@@ -162,7 +162,7 @@ Today three sets disagree: web turns amber at 70 % and red at 90 % on any usage;
 
 - Recovery uses hysteresis: 5 points for percentages, 5 °C for temperature.
 - Worst-of order: `crit` > `warn` > `unknown` > `maintenance` > `ok`. `unknown` entities appear in the issue list (steel) and break the quiet line ("31 up · 1 no signal"). `maintenance` does not: it shows in the subsystem detail ("1 in maintenance").
-- An empty board (nothing set up) is neither `ok` (nobody checked) nor `unknown` (nothing went silent): its overall state is `empty`, the board's alone, never an entity's. It is no issue, pages nothing, and the screens show it as the quiet line, "Nothing monitored yet", until first run's guided setup takes that slot (#449, ADR 0006).
+- An empty board (nothing set up, and every read that ran answered) is neither `ok` (nobody checked) nor `unknown` (nothing went silent): its overall state is `empty`, the board's alone, never an entity's. It is no issue, pages nothing, and the screens show it as the quiet line, "Nothing monitored yet", until first run's guided setup takes that slot. A board with nothing on it for any other reason (Kuma or Gitea set up with no nodes, a refresh that left nothing) stays `unknown`, and a Prometheus that doesn't answer is a failed source (#449, ADR 0006).
 - Push sends a notification when an entity enters `warn` or `crit` and when it recovers, subject to the category toggles in Settings → Notifications.
 - All numbers are defaults in the server threshold config.
 

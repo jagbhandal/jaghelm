@@ -356,12 +356,33 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
       SUBSYSTEM_ORDER[a.subsystem] - SUBSYSTEM_ORDER[b.subsystem] ||
       (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   );
-  const { overall, issues, subsystems } = summarize(entities, sourceIssues);
+  const empty = isEmptyBoard({ entities, sources, services, integrations });
+  const { overall, issues, subsystems } = summarize(entities, sourceIssues, { empty });
   const status = { overall, issues, subsystems, entities, sources };
 
   const memEntities = {};
   for (const [id, { entity, memo }] of built) memEntities[id] = memo ? { ...entity, memo } : entity;
   return { status, memory: { entities: memEntities, sources } };
+}
+
+/**
+ * Whether the board is empty (#449, summary.js EMPTY): nothing is set up, and
+ * every read that ran answered. So: no entity; no source listed but
+ * Prometheus, and it answered (a Kuma or Gitea that is set up is something
+ * set up, whatever it says); and the services and integrations refreshes each
+ * left their payload (a refresh that threw, or one past its TTL, leaves none).
+ * The UPS read needs no check of its own: it goes through Prometheus, and the
+ * services payload always carries Prometheus's flag (with no nodes, from the
+ * refresh's probe), so a failed UPS read is a failed Prometheus (above).
+ * Anything else with nothing on the board is unknown, never calm.
+ */
+function isEmptyBoard({ entities, sources, services, integrations }) {
+  return (
+    entities.length === 0 &&
+    Object.entries(sources).every(([name, s]) => name === 'prometheus' && s.state === 'ok') &&
+    services != null &&
+    isObject(integrations)
+  );
 }
 
 /**

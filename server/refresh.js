@@ -639,6 +639,28 @@ export function servicesCacheEntry(assembled, { prometheusOk, kumaOk, prometheus
   };
 }
 
+// What the services refresh asks Prometheus when services.yaml has no nodes:
+// there is nothing to read, only whether it answers (#449).
+const PROMETHEUS_PROBE = 'vector(1)';
+
+/**
+ * The services refresh's cache entry when services.yaml has no nodes (#449):
+ * an empty board, with the flag a board with nodes carries
+ * (servicesCacheEntry) saying whether Prometheus answered the probe, and why
+ * not. So the status model sees a Prometheus that doesn't answer as a failed
+ * source: a first run with a wrong PROMETHEUS_URL says "Prometheus
+ * unreachable", not that nothing is monitored. Kuma isn't read with no nodes,
+ * so it has no flag.
+ *
+ * @param {{ prometheusOk: boolean, prometheusError?: string|null }} outcome
+ */
+export function noNodesCacheEntry({ prometheusOk, prometheusError = null }) {
+  return {
+    payload: { nodes: {}, overallHealth: 'unknown', sources: { prometheus: { ok: prometheusOk } } },
+    internal: { sourceErrors: { prometheus: prometheusOk ? null : prometheusError } },
+  };
+}
+
 /**
  * Where a monitor no running container got goes, down or up (#390): its node
  * and the uid its card has, `{ nodeKey, idPart, uid, remembered }`, or null with
@@ -679,8 +701,14 @@ async function _refreshServices() {
   try {
     const config = getConfig();
     if (!config || !config.nodes || Object.keys(config.nodes).length === 0) {
-      setCache('services', { nodes: {}, overallHealth: 'unknown' });
-      return { nodes: {}, overallHealth: 'unknown' };
+      const outcome = await promQuery(PROMETHEUS_PROBE).then(
+        () => ({ prometheusOk: true }),
+        (err) => ({ prometheusOk: false, prometheusError: err?.message || String(err) })
+      );
+      reportPrometheus({ ok: outcome.prometheusOk, error: outcome.prometheusError });
+      const { payload, internal } = noNodesCacheEntry(outcome);
+      setCache('services', payload, internal);
+      return payload;
     }
 
     // Monitors are best-effort; if Kuma is down we still want node data.

@@ -11,8 +11,8 @@
  *   fails: its node batch throws and the UPS read fails with it, as
  *   refresh.js handles that. Kuma and the cron reports carry on.
  * - `first-run`: nothing set up: services.yaml has no nodes (the refresh's
- *   own payload for that), Prometheus has no UPS, and there is no Kuma, Gitea,
- *   integration or cron job.
+ *   own payload for that, Prometheus answering its probe), Prometheus has no
+ *   UPS, and there is no Kuma, Gitea, integration or cron job.
  * - `thresholds`: the healthy board, two cycles, with node readings on, over,
  *   just under and (after falling back) held inside the lines of the threshold
  *   table (status/thresholds.js): the readings the other fixtures never reach.
@@ -36,7 +36,7 @@ import {
   demoServicesConfig,
   demoStatusCycle,
 } from '../demoFixtures.js';
-import { assembleServices, servicesCacheEntry } from '../refresh.js';
+import { assembleServices, noNodesCacheEntry, servicesCacheEntry } from '../refresh.js';
 import { createStatusTracker, readStatusInputs } from '../status/index.js';
 import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
 
@@ -165,17 +165,14 @@ function prometheusDownCycle(now) {
 
 /** A cycle of a fresh install with nothing set up. */
 function firstRunCycle() {
-  // What the services refresh caches with no nodes in services.yaml: no
-  // sources' flags, nothing kept beside it.
-  const cached = {
-    services: { nodes: {}, overallHealth: 'unknown' },
-    ups: NO_UPS,
-    integrations: {},
-  };
+  // What the services refresh caches with no nodes in services.yaml, its
+  // probe answered (refresh.js noNodesCacheEntry, #449).
+  const { payload, internal } = noNodesCacheEntry({ prometheusOk: true });
+  const cached = { services: payload, ups: NO_UPS, integrations: {} };
   return {
     caches: {
       getCached: (key) => cached[key] ?? null,
-      getCachedInternal: () => null,
+      getCachedInternal: (key) => (key === 'services' ? internal : null),
       getAllCronStatuses: () => [],
     },
     extra: { env: {}, backupJobs: [] },
