@@ -1074,9 +1074,11 @@ that changed:
   reads is unchanged: `type`, `id`, `node`, `severity`, with each id namespace
   as before (`server/push/androidPayload.test.js`).
 - A backup pages as the job did: `cron_failed`, `cron_overdue` and
-  `cron_recovered`, with the same id, node and severity, so an installed app
-  routes it as before; only its reason is the backup's ("Last backup failed:
-  …"). Marking or unmarking a job sends nothing: the snapshot keys a job by
+  `cron_recovered`, with the same id and node, so an installed app routes it
+  as before; its reason is the backup's ("Last backup failed: …"). One
+  difference (#478): a failed backup's `cron_failed` is `critical` (high
+  priority), because the model judges it `crit`; a failed job stays
+  `warning`, and an overdue backup stays `warning` as the model's `warn`. Marking or unmarking a job sends nothing: the snapshot keys a job by
   `node:job` either way.
 - A container with no monitor, an integration and an Arcane agent send nothing,
   as before: the Arcane poller pages for its agents itself

@@ -445,7 +445,7 @@ With no `prev` (a first run, or a missing or unreadable file) there is nothing t
 | Host | a reading's level returns to `ok` (below its line − hysteresis) | `host_threshold_cleared` | info |
 | UPS | `online`/`unknown` (no known state) → `on_battery` | `ups_on_battery` | critical |
 | UPS | `on_battery` → `online` | `ups_restored` | info |
-| Cron | ok/new → `failure` | `cron_failed` | warning |
+| Cron | ok/new → `failure` | `cron_failed` | warning (critical for a job marked as a backup, #478) |
 | Cron | `failure` → `success` | `cron_recovered` | info |
 | Cron | → `overdue` | `cron_overdue` | warning |
 | Monitoring source | failed two cycles in a row (`down`) | `source_down` | warning |
