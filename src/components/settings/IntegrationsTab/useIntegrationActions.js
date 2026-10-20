@@ -56,6 +56,9 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
       // `enabled` to the toggle route (below), so a form left open can't undo
       // a toggle made elsewhere since (#402).
       if (!editingType) body.enabled = form.enabled;
+      // And it says it is new, so the server refuses it, rather than merging
+      // it into another integration, when its key is taken (#414).
+      if (!editingType) body.create = true;
       if (form.instance.trim())
         body.instance = form.instance
           .trim()
@@ -98,7 +101,9 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
           onAfterSave?.();
         }, 800);
       } else {
-        setSaveStatus({ error: data.error || 'Save failed' });
+        // `field` names the form field the error belongs to: 'instance' when
+        // the key it would take is another integration's (#414).
+        setSaveStatus({ error: data.error || 'Save failed', field: data.field });
       }
     } catch (err) {
       setSaveStatus({ error: err.message });

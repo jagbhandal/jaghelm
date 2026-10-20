@@ -131,6 +131,10 @@ router.post(
 // `editingKey` (an older web app's toggle sent those). An edit leaves it to the
 // toggle route, so a form left open can't undo a toggle made since. An edit
 // whose entry is gone is refused (409) rather than merged into another one.
+// A save never lands on a key another integration holds (#414): a rename onto
+// one, or an add the form marks `create`, is refused (409) naming it, before
+// anything is stored. A save without `editingKey` or `create` still merges
+// into the entry under its key, since an older web app's toggle posts that.
 // The preset of an existing entry is never changed. A save that changes
 // nothing writes nothing, so services.yaml stays byte-for-byte as it was
 // (every write re-serialises the whole file); it still asks for a retry.
@@ -151,6 +155,28 @@ function storedEntry(integrations, key) {
   if (typeof key !== 'string' || !Object.hasOwn(integrations, key)) return null;
   const entry = integrations[key];
   return entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : null;
+}
+
+/** An integration's name as the Settings list shows it (HomeView.jsx). */
+function listName(key, entry) {
+  const presetType = entry.preset || (key.includes('_') ? key.split('_')[0] : key);
+  const name = getPreset(presetType)?.name;
+  if (!isBlank(entry.instance)) return `${name || presetType} (${entry.instance})`;
+  return name || key;
+}
+
+/**
+ * Why a save onto `key`, which `holder` already holds, is refused: it names
+ * the holder as the list does, and says what to change when the form has an
+ * Instance Name field (a preset's form).
+ */
+function takenKeyError(key, holder, type) {
+  const name = listName(key, holder);
+  const taken =
+    name === key
+      ? `Integration '${key}' already uses that key`
+      : `${name} already uses the key '${key}'`;
+  return getPreset(type) ? `${taken}; choose another instance name` : taken;
 }
 
 /** Set an owned field: an empty value removes it, unless it is already empty. */
@@ -219,6 +245,18 @@ router.post('/save', (req, res) => {
       instanceOwned = !!instance && formInstance(base.instance) !== instance;
     }
     const moving = !!base && storageKey !== baseKey;
+
+    // A rename onto a key another integration holds used to delete this entry
+    // and write over that one, its secrets too (#414); an add from the form
+    // (`create`) onto a taken key merged into that integration. Both are
+    // refused before any secret is stored, so nothing changes.
+    const creating = !editing && body.create === true;
+    const holder = moving || creating ? storedEntry(integrations, storageKey) : null;
+    if (holder) {
+      return res
+        .status(409)
+        .json({ error: takenKeyError(storageKey, holder, type), field: 'instance' });
+    }
 
     // setSecret returns false when the secrets manager is uninitialized (no
     // DASH_SECRET). Writing entry.password="$secret:…" anyway would persist a

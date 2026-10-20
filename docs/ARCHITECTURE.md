@@ -1020,6 +1020,15 @@ All state is files under the data dir (no DB):
     removed under the new key too, since a preset resolves those names ahead
     of the entry's `$secret:` reference. A reference to an old name is pointed
     at the new one, and the old names are removed once the move is written.
+  - **A taken key is refused** (#414). A save never lands on a key another
+    integration holds: a rename onto one, or a new integration from the form
+    (which sends `create: true`) under one, is refused with a 409
+    `{ error, field: "instance" }` that names that integration as the
+    Settings list does, before any secret is stored, so `services.yaml` and
+    `secrets.json` are unchanged. The form shows it beside its Instance Name
+    field. A save with neither `editingKey` nor `create` still merges into the
+    entry under the key it derives, because the toggle of web apps before
+    #402 posts exactly that.
   - **The enable toggle** (`PATCH /api/integrations/:key`, body
     `{ "enabled": true|false }` and nothing else) sets `enabled` alone, writes
     nothing when the entry is already in that state, and asks for a retry when

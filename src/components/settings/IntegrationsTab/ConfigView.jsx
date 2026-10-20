@@ -14,7 +14,7 @@ import { FieldRow as FieldGroup } from '../Field';
  *   form            — useConfigForm() return value
  *   allContainers   — flat array of containers for the target dropdown
  *   testStatus      — null | 'testing' | { ok, status?, error?, instructions? }
- *   saveStatus      — null | 'saving' | 'saved' | { error }
+ *   saveStatus      — null | 'saving' | 'saved' | { error, field? } (field: 'instance' shows it beside that field)
  *   handleTest      — () => Promise<void>
  *   handleSave      — () => Promise<void>
  *   handleDelete    — (storageKey) => Promise<boolean> (true only on confirmed success)
@@ -39,6 +39,10 @@ export default function ConfigView({
   const neededFields = AUTH_FIELDS[authType] || [];
   const presetName = selectedPreset?.name || 'Custom Integration';
   const isEditing = !!editingType;
+  const saveError = saveStatus && typeof saveStatus === 'object' ? saveStatus.error : null;
+  // A key taken by another integration is the instance name's to fix (#414),
+  // so it shows beside that field when the form has one.
+  const instanceError = isPreset && saveStatus?.field === 'instance' ? saveError : null;
 
   return (
     <div>
@@ -87,7 +91,7 @@ export default function ConfigView({
 
         {/* Instance Name — for multiple instances of the same app */}
         {isPreset && (
-          <FieldGroup label="Instance Name" hint="Optional. Use when running multiple instances (e.g. primary, secondary). Leave blank for single instances.">
+          <FieldGroup label="Instance Name" hint="Optional. Use when running multiple instances (e.g. primary, secondary). Leave blank for single instances." error={instanceError}>
             <input
               className="settings-input mono"
               value={form.instance}
@@ -276,13 +280,13 @@ export default function ConfigView({
         )}
 
         {/* Save error */}
-        {saveStatus && typeof saveStatus === 'object' && saveStatus.error && (
+        {saveError && !instanceError && (
           <div style={{
             padding: '10px 14px', borderRadius: 10,
             background: 'var(--red-bg)', border: '1px solid var(--red-border)',
             fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--red)',
           }}>
-            Save error: {saveStatus.error}
+            Save error: {saveError}
           </div>
         )}
       </div>
