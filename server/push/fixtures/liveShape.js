@@ -1,10 +1,19 @@
 /**
- * The live install's shape on 2026-10-19 (vm-103), close enough for push tests:
- * four nodes in board order, the containers each runs, the Kuma monitors, and
- * services.yaml as it stands. Three explicit mappings name no Kuma monitor
- * (#342: gateway-npm, gateway-tunnel and tailscale), and 19 container names get
- * no monitor (the boot line "Containers with no matching Kuma monitor").
- * Vaultwarden is not pinned yet, so it runs unmonitored on pi2.
+ * Modelled on the live install on 2026-10-19 (vm-103), by name only: the four
+ * nodes in board order, the containers cAdvisor reported running on each, the
+ * 26 Kuma monitors the boot line counted, and the three explicit mappings of
+ * services.yaml that name monitors Kuma lacks (#342: gateway-npm,
+ * gateway-tunnel and tailscale). Vaultwarden is not pinned, so it runs
+ * unmonitored on pi2.
+ *
+ * Every node hides cadvisor, node-exporter and prometheus: no live monitor
+ * matches them and the live boot line does not list them, so the live board
+ * does not show them. With that, assembleServices reports UNMATCHED, the 19
+ * names of the live "Containers with no matching Kuma monitor" line.
+ *
+ * Made up, not live: the monitor ids (this list's order), every status, the
+ * metrics, the cron runs, and where the service registry last saw the monitors
+ * no container has.
  *
  * `liveCycle()` assembles one refresh cycle of it, and `liveCaches()` is what
  * the services refresh leaves in the cache for the push snapshot to read. Used
@@ -16,15 +25,25 @@ import { assembleServices } from '../../refresh.js';
 export const NODE_ORDER = ['vm101', 'vm103', 'pi2', 'pi1'];
 
 export const CONTAINERS = {
-  vm101: ['arcane-agent', 'cadvisor', 'node-exporter'],
+  vm101: [
+    'alloy',
+    'arcane-agent',
+    'cadvisor',
+    'code-server',
+    'node-exporter',
+    'nut-exporter',
+    'prometheus',
+  ],
   vm103: [
     'alloy',
     'arcane',
     'cadvisor',
-    'dozzle',
+    'collabora',
+    'docker-socket-proxy',
     'gitea',
     'gitea-runner',
     'grafana',
+    'homeassistant',
     'immich-machine-learning',
     'immich-postgres',
     'immich-redis',
@@ -37,7 +56,13 @@ export const CONTAINERS = {
     'nextcloud-db',
     'nextcloud-redis',
     'node-exporter',
+    'nut-exporter',
+    'omada-controller',
     'prometheus',
+    'searxng',
+    'stirling-pdf',
+    'tailscale',
+    'tempo',
     'uptime-kuma',
     'vaultwarden',
     'wikijs',
@@ -45,25 +70,32 @@ export const CONTAINERS = {
     'wikijs-redis',
   ],
   pi2: [
+    'adguard-secondary',
     'adguard-sync',
+    'alloy',
     'arcane-agent',
     'cadvisor',
     'gateway-npm',
     'gateway-tunnel',
+    'haproxy',
     'node-exporter',
     'tailscale',
     'vaultwarden',
   ],
   pi1: [
     'adguard',
+    'alloy',
     'arcane-agent',
     'cadvisor',
     'gateway-npm',
     'gateway-tunnel',
+    'haproxy',
     'node-exporter',
-    'tailscale',
   ],
 };
+
+// What every node hides (a node's `hide` in services.yaml).
+export const HIDDEN = ['cadvisor', 'node-exporter', 'prometheus'];
 
 export const MONITOR_NAMES = [
   'Gitea',
@@ -82,10 +114,50 @@ export const MONITOR_NAMES = [
   'NPM Pi Primary',
   'NPM Pi Secondary',
   'Grafana',
-  'Prometheus',
-  'Grafana Alloy',
   'JagHelm',
-  'Gitea SSH',
+  'Adguard Secondary',
+  'Collabora',
+  'Home Assistant',
+  'Omada Controller',
+  'SearXNG',
+  'Stirling-PDF',
+  'Tempo',
+  'Uptime Kuma',
+  'VS Code Server',
+];
+
+// The monitors no container has: they are on the board only while down.
+export const CONTAINERLESS = [
+  'Pi Gateway (Ping)',
+  'NAS (Ping)',
+  'NAS UI',
+  'Network Switch',
+  'Proxmox UI',
+  'NPM Pi Primary',
+  'NPM Pi Secondary',
+];
+
+// The live boot line "Containers with no matching Kuma monitor".
+export const UNMATCHED = [
+  'adguard-sync',
+  'alloy',
+  'arcane-agent',
+  'docker-socket-proxy',
+  'gateway-npm',
+  'gateway-tunnel',
+  'gitea-runner',
+  'haproxy',
+  'immich-machine-learning',
+  'immich-postgres',
+  'immich-redis',
+  'loki-proxy',
+  'nextcloud-cron',
+  'nextcloud-db',
+  'nextcloud-redis',
+  'nut-exporter',
+  'tailscale',
+  'wikijs-postgres',
+  'wikijs-redis',
 ];
 
 // The three mappings to monitors Kuma does not have (#342).
@@ -105,7 +177,7 @@ const LAST_SEEN = {
 };
 
 export const NOW = 1_782_345_600_000;
-const NODE_CFG = { display_name: 'Node' };
+const NODE_CFG = { display_name: 'Node', hide: HIDDEN };
 const METRICS = { cpu: '12.5', memPercent: '41.0', diskPercent: '63.0' };
 
 /**
