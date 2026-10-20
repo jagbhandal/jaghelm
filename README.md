@@ -235,6 +235,8 @@ CPU, memory, network RX/TX for every Docker container via cAdvisor. Service card
 Connect AdGuard, Plex, Sonarr, Proxmox, Cloudflare, Vaultwarden, and dozens more through the Settings → Integrations gallery. Each preset has known endpoints, auth shape, and field formatting baked in. Test-before-save catches misconfiguration before credentials hit disk. Custom integrations available for anything not in the gallery — point it at a JSON endpoint, pick paths to extract, save.
  
 Credentials are encrypted with AES-256-GCM (PBKDF2-derived key from `DASH_SECRET`) before being written to `secrets.json`.
+
+An integration that fails is retried after 30 seconds, then 1, 2, 4 and 8 minutes, then every 10 minutes until it answers, and its card shows the failure meanwhile. One whose login is refused twice in a row (HTTP 401 or 403) is not retried until its settings change, so an app that bans an address after failed logins doesn't ban JagHelm's. For an integration added from the gallery, saving it in Settings, changed or not, retries it at the next refresh. For one written in `services.yaml`, edit the file (any change counts) or restart JagHelm; a save in Settings would drop what the form doesn't show (#402). A restart retries every integration.
  
 ### Embedded service tabs
  

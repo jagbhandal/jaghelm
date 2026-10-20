@@ -105,6 +105,17 @@ which changes independently — expect occasional drift.
   may need additional auth or an endpoint that varies by version.
 - **PhotoPrism** preset auth was corrected recently; if metrics don't appear,
   re-save the integration in Settings to pick up the fix.
+- **A refused login is not retried on its own.** An integration whose login
+  is refused twice in a row (HTTP 401 or 403) waits until its settings change,
+  so an app that bans an address after failed logins doesn't ban JagHelm's.
+  Its card's error note says so. If you fix the password on the app's side
+  instead, how to try again depends on where the integration came from:
+  - **Added from the Settings gallery:** save it in Settings (no change
+    needed). It is retried at the next refresh.
+  - **Written in `services.yaml`:** edit the file (any change counts) or
+    restart JagHelm. Don't save it in Settings: the save rebuilds the entry
+    from the form and drops what the form doesn't show, such as a custom
+    integration's endpoint, auth and fields (#402).
 - **Custom integrations** point at a JSON endpoint and extract paths you choose.
   If the upstream JSON shape changes, the card will show blanks until you update
   the extraction paths.
