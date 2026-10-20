@@ -31,29 +31,30 @@ describe('Banner', () => {
   });
 
   it('shows the tone as the lamp’s shape, never colour alone', () => {
-    const shapes = {
-      crit: 'lucide-circle-minus',
-      warn: 'lucide-circle-slash',
-      unknown: 'lucide-circle',
-      maintenance: 'lucide-wrench',
-      info: 'lucide-info',
-    };
+    const shapes = { crit: 'bar', warn: 'slash', unknown: 'ring', maintenance: 'wrench' };
     for (const [tone, shape] of Object.entries(shapes)) {
       const { container, unmount } = render(
         <Banner tone={tone} title={`${tone} title`} cause="Why" />
       );
       const icon = container.querySelector(`svg[data-tone="${tone}"]`);
-      expect(icon).toHaveClass(shape, `text-${tone}-fg`);
+      expect(icon).toHaveAttribute('data-shape', shape);
+      expect(icon).toHaveClass(`text-${tone}-solid`);
       expect(icon).toHaveAttribute('aria-hidden', 'true');
       unmount();
     }
+    const { container } = render(<Banner tone="info" title="info title" cause="Why" />);
+    const info = container.querySelector('svg[data-tone="info"]');
+    expect(info).toHaveClass('lucide-info', 'text-info-fg');
+    expect(info).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('keeps healthy quiet: an ok banner has no tint', () => {
     render(<Banner tone="ok" title="Connected" cause="Answered in 142 ms" />);
     const banner = screen.getByText('Connected').closest('[data-slot="banner"]');
     expect(banner.className).not.toMatch(/bg-ok/);
-    expect(banner.querySelector('svg[data-tone="ok"]')).toHaveClass('fill-current', 'text-ok-fg');
+    const lamp = banner.querySelector('svg[data-tone="ok"]');
+    expect(lamp).toHaveAttribute('data-shape', 'disc');
+    expect(lamp).toHaveClass('text-ok-solid');
   });
 
   it('requires a cause in a failing tone: it throws in development', () => {

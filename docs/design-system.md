@@ -673,13 +673,15 @@ From the mock's Overview, Settings and Phone boards:
 
 ### Tones
 
-A Banner's and a toast's `tone` shows as an icon in the tone's word colour
-(`fg`) whose shape echoes its lamp, so status never rests on colour (rule 3):
-a filled disc for ok, a slashed disc for warn, a disc with a bar for crit, a
-hollow ring for no signal (`unknown`), a wrench for maintenance, an "i" for
-info, which is not a state. They are Lucide outlines
-([`lib/tone.jsx`](../src/ui/lib/tone.jsx)) until the shared StatusLamp
-(#287) is in `src/ui/`. A toast with no tone is neutral and shows none.
+A Banner's and a toast's `tone` shows as the tone's StatusLamp, 14px and
+decorative ([`lib/tone.jsx`](../src/ui/lib/tone.jsx)), so status never rests
+on colour (rule 3): a filled disc for ok, a slashed disc for warn, a disc with
+a bar for crit, a hollow ring for no signal (`unknown`), a wrench for
+maintenance. Info, which is not a state, shows Lucide's Info at the same 14px
+in its word colour (`fg`), so every title starts at the same place. The icon
+sits centred on the title's first line. On a tinted Banner the slash and the
+bar show in `lamp-cut`, as on the strip's tinted tiles. A toast with no tone
+is neutral and shows none.
 
 ### Decisions
 
@@ -770,8 +772,6 @@ info, which is not a state. They are Lucide outlines
 
 ### Where the containers differ from the mock
 
-- **Tone icons** are Lucide outlines of the lamps' shapes; the mock's drawer
-  box shows the filled lamp, which comes with StatusLamp (#287).
 - **The drawer box's 10px radius** is the Banner's 12, as the Phone board's
   same box (the radius scale has no 10).
 - **The Dialog's title is 20/26** (`title`), where the "won't open" card it

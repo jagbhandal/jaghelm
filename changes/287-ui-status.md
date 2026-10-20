@@ -4,6 +4,7 @@
   slashed disc for a warning, a disc with a bar for critical, a hollow ring for
   no signal and a wrench for maintenance), status words and badges, issue rows,
   the subsystem strip and the attention panel. A status is always a shape and a
-  word as well as a colour, and screen readers say it. Nothing on screen uses
-  them yet, and today's screens look as before; the stylesheet the browser
-  downloads grows by about 1.2 KB compressed.
+  word as well as a colour, and screen readers say it. The banners and toasts
+  show their status with the same lamps. Nothing on screen uses them yet, and
+  today's screens look as before; the stylesheet the browser downloads grows by
+  about 1.2 KB compressed.

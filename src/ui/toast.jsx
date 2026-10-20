@@ -115,7 +115,10 @@ function ToastViewport() {
             data-slot="toast"
             className="flex items-start gap-3 rounded-xl border border-border-strong bg-surface-2 py-3 pr-2.5 pl-4 text-body-sm text-text-1 shadow-pop transition-[opacity,translate] data-ending-style:opacity-0 data-limited:hidden data-starting-style:translate-y-2 data-starting-style:opacity-0"
           >
-            <ToneIcon tone={toast.data?.tone} className="mt-px" />
+            {/* The title's first line, centred; hidden without a tone. */}
+            <span className="flex h-5 shrink-0 items-center empty:hidden">
+              <ToneIcon tone={toast.data?.tone} />
+            </span>
             <div className="flex min-w-0 flex-1 flex-col gap-0.5 pt-px">
               <ToastPrimitive.Title className="font-semibold break-words" />
               <ToastPrimitive.Description className="break-words text-text-2" />
