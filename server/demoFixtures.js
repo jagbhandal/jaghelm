@@ -437,6 +437,23 @@ function demoStatusCaches(scenario, now) {
 }
 
 /**
+ * What one live cycle of this board gives the status model, as the loop reads
+ * it (refresh.js updateStatus): the caches for readStatusInputs(), its extras
+ * (the environment, and the jobs the demo display config marks as backups),
+ * and that config's thresholds. demoStatus builds /api/status from it, and the
+ * cross-client status fixtures (testing/statusScenarios.js, #293) build their
+ * `healthy` and `incident` from it, so both are the board the demo serves.
+ */
+export function demoStatusCycle({ scenario = 'incident', now = Date.now() } = {}) {
+  const config = demoDisplayConfig();
+  return {
+    caches: demoStatusCaches(scenario, now),
+    extra: { env: STATUS_ENV, backupJobs: resolveBackupJobs(config.backupJobs).jobs },
+    thresholds: thresholdsOf(config),
+  };
+}
+
+/**
  * /api/status: the status model of this board, built as the live loop builds
  * it (refresh.js updateStatus): readStatusInputs() over the board's caches,
  * the demo display config's thresholds and backup jobs, and a status tracker
@@ -446,13 +463,10 @@ function demoStatusCaches(scenario, now) {
  * no Arcane, so no agents.
  */
 export function demoStatus({ scenario = 'incident', now = Date.now() } = {}) {
-  const config = demoDisplayConfig();
+  const { caches, extra, thresholds } = demoStatusCycle({ scenario, now });
   return createStatusTracker().update({
-    inputs: readStatusInputs(demoStatusCaches(scenario, now), {
-      env: STATUS_ENV,
-      backupJobs: resolveBackupJobs(config.backupJobs).jobs,
-    }),
-    thresholds: thresholdsOf(config),
+    inputs: readStatusInputs(caches, extra),
+    thresholds,
     now,
   });
 }
