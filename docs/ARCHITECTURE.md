@@ -1212,8 +1212,10 @@ flowchart TD
   entity, where, reason, age) and "All alerts"; with none, the quiet line
   with the model's sentence ("All systems normal · All 12 services up · 3
   nodes healthy"); on an empty board, "Nothing monitored yet" with no lamp
-  (#449). No signal is a Banner over the last status, which is kept, and the
-  first load a placeholder. It renders only while the Overview is open (its
+  (#449). No signal is a Banner over the last status, which is kept, saying
+  how long ago it was said on its own clock (`useAgo`, as the header's
+  "Updated 20 min ago": nothing else changes while the polls fail); the first
+  load is a placeholder. It renders only while the Overview is open (its
   state is the poll's), and is memoised on the poll, so the board's tick
   doesn't re-render it. Each row is a link to an in-page anchor on today's board
   until entities have URLs (#309, `entityAnchors.js`): a place on the board
@@ -1223,9 +1225,17 @@ flowchart TD
   to its panel (`UPSCard`); a job to its row in Scheduled Jobs (`CronJobs`),
   and a backup to its job's row, since the board lists backups as jobs. An
   integration, an Arcane agent and a monitoring source have no place on the
-  board, so their rows are plain content. A click or Enter focuses the place
+  board, so their rows are plain content. Whether the board draws a place is
+  the board's own say: each place puts its anchor on a list while it is
+  mounted (`usePlace`, `usePlaces`) and the rows read that list
+  (`useRowLink`), so they follow every rule that hides one (a section
+  switched off, no UPS, Scheduled Jobs off, a collapsed card, a service moved
+  into a group) without restating any; a row whose places are all off the
+  board is plain content too (#279). A click or Enter focuses the place
   (`tabindex="-1"` unless it has one) and scrolls its top into view, clear of
-  the sticky header (`scroll-padding-top` on the page, `global.css`). A
+  the sticky header (`scroll-padding-top` on the page, `global.css`); a click
+  with a modifier key or the middle button is the browser's (a new tab or
+  window), and this tab stays where it was. A
   wrapper (`.overview-status`, `global.css`) lines the status up with the
   board's cards: the board's padding plus HelmGrid's margin. Later cards
   rebuild the board under it (#298–#300) and take over the gutter.

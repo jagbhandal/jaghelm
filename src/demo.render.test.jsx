@@ -18,8 +18,11 @@ import { demoResponse } from '../server/demo.js';
 let requests;
 let notFound; // the requests the demo answered 404, as it answers a path it doesn't know
 
-/** Answer every request as the demo server would, in `scenario`, recording each. */
-function routeToDemo(scenario) {
+/**
+ * Answer every request as the demo server would, in `scenario`, recording each;
+ * `edit` maps a path to a change to the demo's answer to it.
+ */
+function routeToDemo(scenario, edit = {}) {
   requests = [];
   notFound = [];
   vi.stubGlobal(
@@ -37,7 +40,8 @@ function routeToDemo(scenario) {
       if (out.status === 404) notFound.push(`${method} ${url.pathname}`);
       if (out.location)
         return new Response(null, { status: out.status, headers: { Location: out.location } });
-      return new Response(JSON.stringify(out.body), {
+      const body = edit[url.pathname] ? edit[url.pathname](out.body) : out.body;
+      return new Response(JSON.stringify(body), {
         status: out.status,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -56,8 +60,8 @@ async function advance(ms) {
  * (2 s). The render, every answer and the timers all run inside act(), so each
  * update is applied before the test looks (and React has nothing to warn of).
  */
-async function renderDemo(scenario) {
-  routeToDemo(scenario);
+async function renderDemo(scenario, edit) {
+  routeToDemo(scenario, edit);
   await act(async () => {
     render(<App />);
   });
@@ -259,6 +263,50 @@ describe("the demo's Overview status", () => {
     backup.focus();
     await user.keyboard('{Enter}');
     expect(document.activeElement).toBe(place('jobs/storage:nightly-backup'));
+  });
+
+  it('a click with a modifier key is the browser’s: the page stays where it is', async () => {
+    await renderDemo('incident');
+    const [jellyfin] = rowLinks();
+    const card = place('services/apps:jellyfin');
+    const scroll = vi.spyOn(card, 'scrollIntoView');
+    for (const modifier of ['ctrlKey', 'metaKey', 'shiftKey']) {
+      fireEvent.click(jellyfin, { [modifier]: true });
+    }
+    expect(scroll).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(card);
+  });
+
+  // #279: a row whose place the board doesn't draw opens nothing, so it is plain.
+  it('with Scheduled Jobs off, the backup’s row is plain content, and Enter does nothing', async () => {
+    await renderDemo('incident', {
+      '/api/display-config': (config) => ({ ...config, showCronJobs: false }),
+    });
+    expect(screen.queryByText('Scheduled Jobs')).toBeNull();
+    expect(place('jobs/storage:nightly-backup')).toBeNull();
+    const rows = within(screen.getByRole('region', { name: 'Needs attention' })).getAllByRole(
+      'listitem'
+    );
+    const backup = rows[1].querySelector('[data-slot="issue-row"]');
+    expect(backup).toHaveTextContent('nightly-backup');
+    expect(backup.tagName).toBe('DIV');
+    expect(within(rows[1]).queryByRole('link')).toBeNull();
+    expect(backup).not.toHaveClass('cursor-pointer');
+    // Jellyfin's card is still drawn: its row is still a link.
+    expect(within(rows[0]).getByRole('link')).toHaveAttribute(
+      'href',
+      `#${entityAnchor('services/apps:jellyfin')}`
+    );
+
+    // Not in the tab order, and Enter or a click on it moves nothing.
+    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView');
+    backup.focus();
+    expect(document.activeElement).not.toBe(backup);
+    fireEvent.keyDown(backup, { key: 'Enter' });
+    fireEvent.click(backup);
+    expect(scroll).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe('');
+    scroll.mockRestore();
   });
 
   it("healthy: the quiet line, with the model's sentence", async () => {

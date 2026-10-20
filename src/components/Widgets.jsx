@@ -4,7 +4,7 @@ import { useConfig } from '../context/ConfigContext.jsx';
 import { safeUrl } from '../utils/safeUrl.js';
 import { fmtSpan } from '../util/span.js';
 import { renderIcon, iconSlugUrl } from '../utils/icon.jsx';
-import { entityAnchor } from '../shell/entityAnchors.js';
+import { usePlace, usePlaces, entityAnchor } from '../shell/entityAnchors.js';
 
 // Shared: compute background style from section config
 function sectionBgStyle(sec) {
@@ -44,9 +44,10 @@ export const UPSCard = React.memo(function UPSCard({ upsData, borderColor, banne
           : 'var(--text-muted)';
   const rt = upsData?.runtime ? Math.floor(upsData.runtime / 60) : null;
   // The panel's anchor: the Overview's issue row for the UPS leads here (#297).
+  const anchor = usePlace('power/ups');
   return (
     <div
-      id={entityAnchor('power/ups')}
+      id={anchor}
       className="glass-card node-card"
       style={{ borderTop: `2px solid ${borderColor || 'var(--green)'}`, ...sectionBgStyle(sec) }}
     >
@@ -250,6 +251,10 @@ export const CronJobs = React.memo(function CronJobs({ nodes, banner, onRemove }
   };
 
   const isEmpty = !nodes || nodes.length === 0;
+  // Each job row's anchor: the Overview's issue row for the job, or for the
+  // backup it is, leads there (#297).
+  const jobId = (nodeEntry, jobEntry) => `jobs/${nodeEntry.node}:${jobEntry.job}`;
+  usePlaces((nodes ?? []).flatMap((n) => (n.jobs ?? []).map((j) => jobId(n, j))));
 
   return (
     <div
@@ -317,12 +322,10 @@ export const CronJobs = React.memo(function CronJobs({ nodes, banner, onRemove }
                   const statusColor = isSuccess ? 'var(--green)' : 'var(--red)';
                   const overdue = jobEntry.overdue === true;
 
-                  // The job's anchor: the Overview's issue row for this job,
-                  // or for the backup it is, leads here (#297).
                   return (
                     <div
                       key={jobEntry.job}
-                      id={entityAnchor(`jobs/${nodeEntry.node}:${jobEntry.job}`)}
+                      id={entityAnchor(jobId(nodeEntry, jobEntry))}
                       style={{
                         background: 'rgba(255,255,255,0.03)',
                         borderRadius: 6,

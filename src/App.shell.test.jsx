@@ -375,14 +375,14 @@ describe('the Overview', () => {
       expect.stringContaining('vm103'),
       expect.stringContaining('pi'),
     ]);
-    // Each row a link to its entity's place on the board, until entity URLs (#309).
-    expect(rows.map((r) => within(r).getByRole('link').getAttribute('href'))).toEqual([
-      '#entity-services/vm103:immich',
-      '#entity-power/ups',
-      '#entity-nodes/vm103',
-      '#entity-nodes/pi',
+    // A row links to its entity's place on the board (#309 brings URLs), and
+    // this board draws none (no /api/services): each row is plain content.
+    expect(rows.map((r) => r.querySelector('[data-slot="issue-row"]').tagName)).toEqual([
+      'DIV',
+      'DIV',
+      'DIV',
+      'DIV',
     ]);
-    expect(within(rows[0]).getByRole('link')).toHaveAccessibleName('Immich, Down, Service · vm103');
     // All alerts, as the mock has it, in accent-text, opens the Alerts page.
     const all = within(panel).getByRole('link', { name: 'All alerts' });
     expect(all).toHaveAttribute('href', '/alerts');
@@ -434,13 +434,21 @@ describe('the Overview', () => {
       await screen.findByRole('region', { name: 'Needs attention' });
       server.statusDown = true;
       await act(() => vi.advanceTimersByTimeAsync(30_000));
-      const said = overviewStatus().querySelector('[data-slot="banner"]');
-      expect(said).toHaveAttribute('data-tone', 'unknown');
-      expect(said).toHaveTextContent(/^No signal.*Can't reach JagHelmThis is what it said/);
+      const said = () => overviewStatus().querySelector('[data-slot="banner"]');
+      expect(said()).toHaveAttribute('data-tone', 'unknown');
+      expect(said()).toHaveTextContent(
+        /^No signal.*Can't reach JagHelmThis is what it said 30 s ago\.$/
+      );
       // A blip doesn't blank the panel.
       expect(
         within(overviewStatus()).getByRole('region', { name: 'Needs attention' })
       ).toHaveTextContent('Immich');
+
+      // The polls keep failing, so nothing new arrives: the age keeps its own
+      // clock, as the header's "Updated" does.
+      await act(() => vi.advanceTimersByTimeAsync(20 * 60_000));
+      expect(said()).toHaveTextContent(/This is what it said 20 min ago\.$/);
+      expect(within(banner()).getByText('Updated 20 min ago')).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

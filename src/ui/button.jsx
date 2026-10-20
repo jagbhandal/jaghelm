@@ -16,7 +16,9 @@
  * densities; so is each variant's padding. The focus ring is the base style's
  * (tailwind.css), which every control keeps. Built on Base UI's Button, which
  * keeps a disabled button out of the tab order. A link drawn as a button puts
- * `buttonVariants()` on its <a>.
+ * `cn(buttonVariants(...))` on its <a>, through cn as Button does, so a
+ * tone's text colour wins over its variant's (a bare buttonVariants() leaves
+ * both, and the ghost's text-2 beats accent-text).
  */
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { cva } from 'class-variance-authority';

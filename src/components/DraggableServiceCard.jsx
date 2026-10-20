@@ -1,7 +1,7 @@
 import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import ServiceCard from './ServiceCard';
-import { entityAnchor } from '../shell/entityAnchors.js';
+import { usePlace } from '../shell/entityAnchors.js';
 
 /**
  * DraggableServiceCard — Wraps a ServiceCard to make it draggable between panels.
@@ -39,10 +39,11 @@ export default function DraggableServiceCard({ service, sourcePanel, showDockerS
   };
 
   // The card's anchor: the Overview's issue row for this service leads here (#297).
+  const anchor = usePlace(`services/${uid}`);
   return (
     <div
       ref={setNodeRef}
-      id={entityAnchor(`services/${uid}`)}
+      id={anchor}
       style={style}
       {...(disabled ? {} : { ...listeners, ...attributes })}
     >

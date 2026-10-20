@@ -15,7 +15,16 @@
  * own); a backup to its job's row, since the board lists backups as jobs.
  * Integrations, Arcane agents and monitoring sources have no place of their
  * own on the board, so their rows lead nowhere and are plain content.
+ *
+ * Whether the board draws a place is the board's own say: each place, as it
+ * mounts, puts its anchor on a list (usePlace, usePlaces) and takes it off as
+ * it unmounts, so the rows follow every rule that hides one (a section
+ * switched off, the UPS panel with no UPS, Scheduled Jobs off, a collapsed
+ * card, a service moved into a group) without restating any. A row whose
+ * places are all off the board is plain content too (#279): no link, no
+ * chevron, nothing on Enter.
  */
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
 
 /**
  * The anchor of the place that draws `entityId`: the id behind a prefix, every
@@ -67,12 +76,74 @@ export function openAnchor(anchors) {
   return false;
 }
 
+// The anchors of the places the board draws now, each with how many places
+// carry it, and a snapshot of them, replaced on each change.
+const counts = new Map();
+const listeners = new Set();
+let drawn = new Set();
+
+function changed() {
+  drawn = new Set(counts.keys());
+  for (const listener of listeners) listener();
+}
+
+function subscribe(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** Puts `anchor` on the list of places drawn; returns what takes it off. */
+function put(anchor) {
+  counts.set(anchor, (counts.get(anchor) ?? 0) + 1);
+  changed();
+  return () => {
+    const left = counts.get(anchor) - 1;
+    if (left > 0) counts.set(anchor, left);
+    else counts.delete(anchor);
+    changed();
+  };
+}
+
+/** The anchors of the places the board draws now (a snapshot: a new Set on each change). */
+export const drawnAnchors = () => drawn;
+
 /**
- * An issue row's link on the Overview: `href` to its entity's anchor and
- * `onOpen` to move there, or nothing for an entity with no place on the board.
+ * For a component that draws the places of `entityIds` while it is mounted:
+ * puts their anchors on the list, and takes them off when it unmounts or
+ * draws others.
  */
-export function rowLink(entity) {
-  const anchors = anchorsOf(entity);
+export function usePlaces(entityIds) {
+  const key = entityIds.join('\n');
+  useEffect(() => {
+    if (!key) return undefined;
+    const offs = key.split('\n').map((id) => put(entityAnchor(id)));
+    return () => offs.forEach((off) => off());
+  }, [key]);
+}
+
+/**
+ * For a component that draws the place of `entityId`, when `shown`: its
+ * anchor, to put as the place's `id` (undefined when not shown), on the list
+ * while it is mounted.
+ */
+export function usePlace(entityId, shown = true) {
+  usePlaces(shown ? [entityId] : []);
+  return shown ? entityAnchor(entityId) : undefined;
+}
+
+/**
+ * An issue row's link on the Overview, given the anchors drawn: `href` to the
+ * first of its entity's places the board draws and `onOpen` to move there, or
+ * nothing when the board draws none of them.
+ */
+export function rowLink(entity, drawnNow) {
+  const anchors = anchorsOf(entity).filter((a) => drawnNow.has(a));
   if (anchors.length === 0) return {};
   return { href: `#${anchors[0]}`, onOpen: () => openAnchor(anchors) };
+}
+
+/** rowLink, kept to the places the board draws: a new function each time they change. */
+export function useRowLink() {
+  const drawnNow = useSyncExternalStore(subscribe, drawnAnchors, drawnAnchors);
+  return useMemo(() => (entity) => rowLink(entity, drawnNow), [drawnNow]);
 }

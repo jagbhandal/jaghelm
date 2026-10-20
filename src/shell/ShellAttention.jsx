@@ -10,7 +10,9 @@
  * 6 nodes healthy"); on an empty board, "Nothing monitored yet" (#449).
  *
  * Without a signal it says so, as a Banner, and still shows what the server
- * last said, so a blip doesn't blank the panel. Before the first answer, a
+ * last said, so a blip doesn't blank the panel; how long ago it said it runs
+ * on its own clock (useAgo, as the header's "Updated 20 min ago"), since
+ * nothing else changes while the polls fail. Before the first answer, a
  * placeholder.
  *
  *   titleAs   the panel's heading element: h2 under the page's own h1
@@ -21,10 +23,15 @@
  */
 import { useSyncExternalStore } from 'react';
 import { AttentionPanel } from '@ui/attention-panel';
-import { agoText, NO_SIGNAL } from '@ui/app-header';
+import { NO_SIGNAL, useAgo } from '@ui/app-header';
 import { Banner } from '@ui/banner';
 import { Skeleton } from '@ui/skeleton';
 import { countsText, issueRows } from './statusView.js';
+
+/** "This is what it said 20 min ago.", ticking on its own while the banner shows. */
+function SaidAgo({ at }) {
+  return `This is what it said ${useAgo(at)}.`;
+}
 
 export function ShellAttention({
   status,
@@ -48,9 +55,7 @@ export function ShellAttention({
           tone="unknown"
           title="No signal"
           cause={NO_SIGNAL[reach] ?? NO_SIGNAL.down}
-          detail={
-            status && at != null ? `This is what it said ${agoText(Date.now() - at)}.` : undefined
-          }
+          detail={status && at != null ? <SaidAgo at={at} /> : undefined}
         />
       )}
       {reach === 'loading' && (

@@ -1,5 +1,15 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { anchorsOf, entityAnchor, openAnchor, rowLink } from './entityAnchors.js';
+import { act, render, renderHook } from '@testing-library/react';
+import {
+  anchorsOf,
+  drawnAnchors,
+  entityAnchor,
+  openAnchor,
+  rowLink,
+  usePlace,
+  usePlaces,
+  useRowLink,
+} from './entityAnchors.js';
 
 // Where an issue row on the Overview leads (#297): the place on today's board
 // that draws its entity, by the status model's id (docs/ARCHITECTURE.md §4.7).
@@ -104,15 +114,78 @@ describe('openAnchor', () => {
 });
 
 describe('rowLink', () => {
-  it('a row with a place: a link to its anchor that moves there', () => {
+  const service = { id: 'services/vm103:immich', kind: 'service', node: 'vm103' };
+
+  it('a row whose place the board draws: a link to its anchor that moves there', () => {
     const card = place('services/vm103:immich');
-    const link = rowLink({ id: 'services/vm103:immich', kind: 'service', node: 'vm103' });
+    const link = rowLink(service, new Set([entityAnchor('services/vm103:immich')]));
     expect(link.href).toBe('#entity-services/vm103:immich');
     link.onOpen();
     expect(document.activeElement).toBe(card);
   });
 
-  it('a row with no place: nothing to open, so the row is plain content', () => {
-    expect(rowLink({ id: 'sources/kuma', kind: 'source' })).toEqual({});
+  it("a service whose card isn't drawn: its node's card", () => {
+    expect(rowLink(service, new Set([entityAnchor('nodes/vm103')])).href).toBe(
+      '#entity-nodes/vm103'
+    );
+  });
+
+  it('a row with no place drawn, or none at all: nothing to open, so plain content', () => {
+    expect(rowLink(service, new Set())).toEqual({});
+    expect(rowLink({ id: 'jobs/a:b', kind: 'job' }, new Set([entityAnchor('jobs/a:c')]))).toEqual(
+      {}
+    );
+    expect(rowLink({ id: 'sources/kuma', kind: 'source' }, new Set())).toEqual({});
+  });
+});
+
+// The board says which places it draws: each puts its anchor on the list while
+// it is mounted, so the rows follow whatever hides one.
+describe('the places drawn', () => {
+  function Card({ id, shown }) {
+    return <div id={usePlace(id, shown)} />;
+  }
+  function Jobs({ ids }) {
+    usePlaces(ids);
+    return null;
+  }
+
+  it('a place is on the list while it is mounted and shown, and its id is its anchor', () => {
+    const { container, rerender, unmount } = render(<Card id="nodes/pve" />);
+    expect(container.firstChild).toHaveAttribute('id', entityAnchor('nodes/pve'));
+    expect(drawnAnchors().has(entityAnchor('nodes/pve'))).toBe(true);
+    rerender(<Card id="nodes/pve" shown={false} />);
+    expect(container.firstChild).not.toHaveAttribute('id');
+    expect(drawnAnchors().has(entityAnchor('nodes/pve'))).toBe(false);
+    rerender(<Card id="nodes/pve" />);
+    unmount();
+    expect(drawnAnchors().size).toBe(0);
+  });
+
+  it('a list of places follows what is drawn; one anchor drawn twice stays until both go', () => {
+    const { rerender, unmount } = render(
+      <>
+        <Jobs ids={['jobs/a:x', 'jobs/a:y']} />
+        <Card id="jobs/a:x" />
+      </>
+    );
+    expect([...drawnAnchors()].sort()).toEqual([
+      entityAnchor('jobs/a:x'),
+      entityAnchor('jobs/a:y'),
+    ]);
+    rerender(<Jobs ids={['jobs/a:y']} />);
+    expect([...drawnAnchors()]).toEqual([entityAnchor('jobs/a:y')]);
+    unmount();
+    expect(drawnAnchors().size).toBe(0);
+  });
+
+  it('useRowLink links a row once its place is drawn, and unlinks it when it goes', () => {
+    const job = { id: 'jobs/a:x', kind: 'job', node: 'a', name: 'x' };
+    const { result } = renderHook(() => useRowLink());
+    expect(result.current(job)).toEqual({});
+    const board = render(<Card id="jobs/a:x" />);
+    expect(result.current(job).href).toBe(`#${entityAnchor('jobs/a:x')}`);
+    act(() => board.unmount());
+    expect(result.current(job)).toEqual({});
   });
 });

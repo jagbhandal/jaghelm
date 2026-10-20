@@ -972,7 +972,7 @@ entity has, so it has no lamp or word of its own.
 | `StatusLamp` | `@ui/status-lamp` | `state`; `label`, its name (the state's word by default); `size`: `sm` (10px, the default), `lg` (14px) or px; `decorative` |
 | `StatusWord` | `@ui/status-word` | `state`; `word` (the state's word by default) |
 | `StatusBadge` | `@ui/status-word` | `state`; `word` |
-| `IssueRow` | `@ui/issue-row` | `issue` (`{ state, word, title, where, reason, age }`); `onOpen` or `href` |
+| `IssueRow` | `@ui/issue-row` | `issue` (`{ state, word, title, where, reason, age }`); `onOpen` or `href`, or both: a link's `onOpen` runs on a plain click or Enter only, a modified or middle click being the browser's |
 | `SubsystemStrip` | `@ui/subsystem-strip` | `cells` (`[{ key, label, state, word, value, sub }]`); `selected`, `onSelect` |
 | `AttentionPanel` | `@ui/attention-panel` | `state`, `word`, `counts`, `subline`, `action`, `issues` (IssueRow's, each with an `id` and its `onOpen` or `href`), `filter` and `onClearFilter`, `meta`, `titleAs` (`h1` by default) |
 

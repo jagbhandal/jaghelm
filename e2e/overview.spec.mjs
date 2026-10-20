@@ -5,18 +5,19 @@
  *  - Incident: the issue count and every issue row are on screen without
  *    scrolling: inside the window, under the header and above the phone's
  *    tabs.
- *  - Healthy: the quiet line, and no red, amber or green anywhere in the
- *    status area but its one small lamp: every colour each element draws
+ *  - Healthy, dark and light: the quiet line, and no red, amber or green
+ *    anywhere in the status area but its one small lamp: every colour each element draws
  *    (text, fill, edges, outline, shadows, SVG paint), read in OKLCH.
  *  - An issue row, clicked or by Enter, brings its entity's place on today's
- *    board into view, clear of the header, and focuses it.
+ *    board into view, clear of the header, and focuses it; a Ctrl-click opens
+ *    a new tab and leaves this one where it was.
  *  - Screenshots of both scenarios at both sizes, dark and light, for the PR,
  *    in test-results/e2e/shots/.
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
-import { WIDTHS, demo, openApp } from './app.mjs';
+import { THEMES, WIDTHS, demo, openApp } from './app.mjs';
 
 const STATUS = {
   incident: demo('/api/status').body,
@@ -176,22 +177,24 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
       expect(found).toContainEqual(expect.objectContaining({ hue: 'red', text: 'Critical' }));
     });
 
-    test('healthy: the quiet line, and no red, amber or green but its small lamp', async ({
-      page,
-    }) => {
-      await openOverview(page, 'healthy');
-      const line = statusArea(page).getByRole('region', { name: 'Status' });
-      await expect(line.getByRole('heading', { level: 2 })).toHaveText('All systems normal');
-      await expect(line).toContainText(STATUS.healthy.overall.sentence);
-      await expect(statusArea(page).getByRole('region', { name: 'Needs attention' })).toHaveCount(
-        0
-      );
+    for (const theme of Object.keys(THEMES)) {
+      test(`healthy, ${theme}: the quiet line, and no red, amber or green but its small lamp`, async ({
+        page,
+      }) => {
+        await openOverview(page, 'healthy', theme);
+        const line = statusArea(page).getByRole('region', { name: 'Status' });
+        await expect(line.getByRole('heading', { level: 2 })).toHaveText('All systems normal');
+        await expect(line).toContainText(STATUS.healthy.overall.sentence);
+        await expect(statusArea(page).getByRole('region', { name: 'Needs attention' })).toHaveCount(
+          0
+        );
 
-      const { found, unread, lamps } = await statusColours(page);
-      expect(unread).toEqual([]);
-      expect(lamps, 'one lamp, the small one').toEqual([{ size: 10, state: 'ok' }]);
-      expect(found, 'red, amber or green in the status area').toEqual([]);
-    });
+        const { found, unread, lamps } = await statusColours(page);
+        expect(unread).toEqual([]);
+        expect(lamps, 'one lamp, the small one').toEqual([{ size: 10, state: 'ok' }]);
+        expect(found, 'red, amber or green in the status area').toEqual([]);
+      });
+    }
 
     test("an issue row brings its entity's place on the board into view, by click and by Enter", async ({
       page,
@@ -218,6 +221,22 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
       await expect(card).toBeFocused();
       await expect(card).toBeInViewport();
       expect((await card.boundingBox()).y, 'clear of the header').toBeGreaterThanOrEqual(area.top);
+    });
+
+    test('a Ctrl-click on a row is the browser’s: a new tab, and this one stays put', async ({
+      page,
+    }) => {
+      await openOverview(page, 'incident');
+      const job = place(page, 'entity-jobs/storage:nightly-backup');
+      const row = statusArea(page).getByRole('link', { name: /^nightly-backup, Failed/ });
+      const opened = page.context().waitForEvent('page');
+      await row.click({ modifiers: ['ControlOrMeta'] });
+      const tab = await opened;
+      expect(new URL(tab.url()).hash).toBe('#entity-jobs/storage:nightly-backup');
+      await tab.close();
+      expect(await page.evaluate(() => window.scrollY)).toBe(0);
+      await expect(job).not.toBeFocused();
+      expect(new URL(page.url()).hash).toBe('');
     });
 
     for (const theme of ['dark', 'light']) {
