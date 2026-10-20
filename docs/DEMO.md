@@ -5,8 +5,9 @@ but neither a backend nor a public demo requires exposing anything writable.
 
 ## Read-only public demo (`DEMO_MODE`)
 
-Set `DEMO_MODE=true` to serve a **fully self-contained, read-only** instance —
-ideal for a public link, a screenshot, or kicking the tyres:
+Set `DEMO_MODE=true` to serve a **self-contained, read-only** instance (apart
+from the board's icons, which the browser loads from the icon CDN) — ideal for
+a public link, a screenshot, or kicking the tyres:
 
 ```bash
 docker run -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:latest
@@ -49,18 +50,24 @@ In demo mode a guard owns the entire `/api` surface (`server/demo.js`):
   would fetch are redirected.
 - Startup runs none of the subsystems: no node discovery, refresh loop, Kuma,
   Gitea, UPS or Arcane polling, push, icon index or icon cache, and no
-  `services.yaml`. The demo **makes no outbound request and writes no file**,
-  not even its data directory. A test boots the real server under network and
-  file-system spies to keep it that way (`server/demo.boot.test.js`).
+  `services.yaml`. The **server** makes no outbound request and writes no
+  file, not even its data directory (the browser loads the board's icons from
+  the icon CDN, above). A test boots the real server under network and
+  file-system spies, with its timers run fast enough to cover a day, to keep
+  it that way (`server/demo.boot.test.js`).
 - A loud demo banner is logged at boot.
 
-The web app learns it is the demo from `/api/auth/check` and doesn't send it
-the display settings: moving a panel, or a change under Settings → General,
-Appearance or Links, is kept in that browser only, and loading the board shows
-no "couldn't save" error. Other edits (the checklist, services and
-integrations) are sent, refused and reported like any refused save. A render
-test (`src/demo.render.test.jsx`) renders the whole app against the demo's
-answers on every CI run.
+The web app learns it is the demo from `/api/auth/check` and sends it no
+save. What a visitor changes is kept in that browser for the visit, with no
+"couldn't save" error: moving a panel; Settings → General, Appearance and
+Links; ticking, adding or removing a checklist item; removing a scheduled job;
+editing a node or service in Settings; a new logo or background. A reload
+brings back the demo's own board, apart from where the panels were moved.
+Integrations and the password are held by the server alone, so there is
+nothing to change in the browser: testing or saving an integration, or
+changing the password, shows the demo's "This is a read-only demo" answer in
+the form. A render test (`src/demo.render.test.jsx`) renders the whole app
+against the demo's answers on every CI run.
 
 It's a demo, not a dashboard — there is no persistence and no live data.
 

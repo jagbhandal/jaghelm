@@ -14,7 +14,8 @@
  *     (icon-sources.js) are redirected, so it is no open redirect.
  *   - boot() in index.js starts none of the subsystems in demo mode: no
  *     discovery, refresh loop, Kuma, push, Arcane, icon cache or services.yaml,
- *     so the demo makes no outbound request and writes no file (#248).
+ *     so the server makes no outbound request and writes no file (#248). The
+ *     browser still loads the board's icons from the icon CDN (above).
  *   - /metrics is at the root (not /api) and is unaffected.
  *
  * Mounted FIRST on /api in server/index.js when isDemoMode() is true, ahead of

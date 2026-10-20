@@ -162,7 +162,8 @@ it logs `cannot listen` and exits 1. The `listening` line logs the port bound.
 In demo mode `boot()` only loads the integration preset gallery: it starts no
 discovery, refresh loop, Kuma, push, Arcane, icon index or cache, reads no
 `services.yaml` and makes no directory. The demo guard answers every `/api`
-read, so the demo makes no outbound request and writes no file (docs/DEMO.md).
+read, so the server makes no outbound request and writes no file; the browser
+still loads the board's icons from the icon CDN (docs/DEMO.md).
 
 Routers (each `server/routes/*.js`), mounted under `/api`:
 
@@ -647,16 +648,24 @@ flowchart TD
 - **HelmGrid** is a custom, dependency-light layout engine: pure math in
   `gridMath.js` (snap, overlap-resolve, content-fit), per-item measurement +
   rendering in `GridItem.jsx`, and lifecycle (breakpoints, drag/resize, commit)
-  in `HelmGrid.jsx`. Panels auto-grow to fit content; pointer **and keyboard**
+  in `HelmGrid.jsx`. Panels auto-grow to fit content (`GridItem` re-measures a
+  panel whenever it resizes); pointer **and keyboard**
   (arrow move / Shift+arrow resize, with a live region) reposition them.
 - **Panels and first run.** The board has a panel per discovered node and custom
   group, plus the Checklist, Scheduled Jobs and Quick Launch panels. Without a
   saved layout the board is laid out by `defaultLayouts(nodes)` (`layouts.js`)
-  from the nodes `/api/services` has and the panels on show: the nodes first,
-  in their order, at most three to a row (two at the md breakpoint), spread
-  evenly so no row is left with one node, each row filling the width; then UPS
-  beside Pipeline, Scheduled Jobs beside the Checklist, then Quick Launch (a
-  panel whose pair isn't shown takes the whole row). It is regenerated as nodes
+  from the nodes `/api/services` has and the panels on show. The nodes come
+  first, in their order, at most three to a row (two at the md breakpoint,
+  fewer on a narrow grid), spread evenly over the rows, each row filling the
+  width: three to a row leaves no node alone in a row, two to a row leaves the
+  last node of an odd count alone, the whole width. Then the panels, paired by
+  height: HelmGrid grows a panel to its content and only pushes panels down, so
+  a panel under two of different heights leaves a hole under the shorter one.
+  Pipeline sits beside Scheduled Jobs, then UPS beside the Checklist, each half
+  and half, so each panel of the second pair sits under one of the first; then
+  Quick Launch. When one of a pair isn't shown, the two left over share a row,
+  the tall one 2/3 (on a fresh install, Scheduled Jobs beside the Checklist); a
+  panel left alone takes the whole row. It is regenerated as nodes
   and panels come and go, until the first drag or resize saves a layout; a
   saved layout is never replaced by it. A panel not on show (switched off in
   Settings, or a source not known to be set up) is not added to a layout, so
