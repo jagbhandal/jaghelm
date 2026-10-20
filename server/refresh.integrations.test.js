@@ -22,7 +22,7 @@ for (const v of ['NPM_URL', 'NPM_USER', 'NPM_PASS']) delete process.env[v];
 
 const { saveConfig, loadConfig, getConfig } = await import('./config.js');
 const { initSecrets, setSecret } = await import('./secrets.js');
-const { initRegistry } = await import('./integrations/registry.js');
+const { initRegistry, getPresetFull } = await import('./integrations/registry.js');
 const { refreshIntegrations } = await import('./refresh.js');
 const { getCached } = await import('./cache.js');
 const { integrationRoutes } = await import('./routes/integrations.js');
@@ -486,4 +486,36 @@ test('each integration is resolved once a cycle: the fetch reuses the config its
     { reads: 1, hosts: [] },
     'backing off: read once, for its fingerprint'
   );
+});
+
+test('#468: a fetch that throws keeps its preset and target in its entry, so a failed Proxmox read is still known for its node', async () => {
+  saveConfig({
+    integrations: {
+      pmx: { preset: 'proxmox', url: 'http://pmx.example.test', target: 'pve:pve', instance: 'a' },
+    },
+  });
+  // The fetch resolves the preset's config outside its own error handling: a
+  // preset that throws there makes the fetch throw.
+  const preset = getPresetFull('proxmox');
+  Object.defineProperty(preset, 'boom', {
+    enumerable: true,
+    configurable: true,
+    get() {
+      throw new Error('the fetch threw');
+    },
+  });
+  try {
+    const { result, hosts } = await cycle();
+    assert.deepEqual(hosts, [], 'nothing was fetched');
+    const { _status, ...entry } = result.pmx;
+    assert.deepEqual(entry, {
+      _error: 'the fetch threw',
+      _target: 'pve:pve',
+      _instance: 'a',
+      _preset: 'proxmox',
+    });
+    assert.equal(_status.state, 'backing_off');
+  } finally {
+    delete preset.boom;
+  }
 });

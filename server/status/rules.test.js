@@ -108,7 +108,10 @@ const nodeRows = [
     'unread while Prometheus answered: it has not scraped the node yet (#470)',
     node(
       { cpu: null, memPercent: null, diskPercent: null, temp: null },
-      { reachable: null, failedReads: ['containers', 'cpu', 'disk', 'mem', 'reachable', 'temp', 'uptime'] }
+      {
+        reachable: null,
+        failedReads: ['containers', 'cpu', 'disk', 'mem', 'reachable', 'temp', 'uptime'],
+      }
     ),
     { prometheusOk: true },
     'unknown',
@@ -307,6 +310,92 @@ test('judgeNode: a reading held at ok with no value is left out, its level and C
   // With nothing held (a VM has no temperature sensor), there is nothing to keep.
   const vm = judgeNode(node({ temp: null }), { prometheusOk: true, thresholds: T });
   assert.equal(Object.hasOwn(vm.memo.levels, 'temp'), false);
+});
+
+// #468: a storage pool whose read failed, or that reports no size.
+const tankHeld = { levels: { 'pool:tank': 'warn', 'pool:ok': 'ok' }, streak: {} };
+
+test("judgeNode: while the node's pools are not read, a pool it held and that isn't listed keeps its level (#468)", () => {
+  const v = judgeNode(node(), {
+    prometheusOk: true,
+    pools: [],
+    poolsRead: false,
+    memo: tankHeld,
+    thresholds: T,
+  });
+  assert.deepEqual(
+    [v.state, v.reason, v.metric, v.conditions['pool:tank']],
+    ['warn', 'Storage pool tank: no reading (warning held until below 85 %)', undefined, 'unknown']
+  );
+  assert.equal(Object.hasOwn(v.conditions, 'pool:ok'), false, 'held at ok: left out');
+  assert.deepEqual(
+    [v.memo.levels['pool:tank'], v.memo.levels['pool:ok']],
+    ['warn', 'ok'],
+    'both kept for next cycle'
+  );
+  // A pool that is listed is judged as on any cycle, beside the held one.
+  const both = judgeNode(node(), {
+    prometheusOk: true,
+    pools: [{ name: 'ok', percent: 96, totalGB: '100.0' }],
+    poolsRead: false,
+    memo: tankHeld,
+    thresholds: T,
+  });
+  assert.deepEqual(
+    [both.state, both.reason],
+    [
+      'crit',
+      'Storage pool ok 96 % (critical above 95 %) · Storage pool tank: no reading (warning held until below 85 %)',
+    ]
+  );
+});
+
+test("judgeNode: once the node's pools are read, a pool that isn't listed has ended (#468)", () => {
+  const v = judgeNode(node(), {
+    prometheusOk: true,
+    pools: [{ name: 'other', percent: 40, totalGB: '100.0' }],
+    poolsRead: true,
+    memo: tankHeld,
+    thresholds: T,
+  });
+  assert.deepEqual([v.state, v.reason], ['ok', 'Healthy']);
+  assert.deepEqual(
+    Object.keys(v.memo.levels).filter((k) => k.startsWith('pool:')),
+    ['pool:other']
+  );
+  assert.equal(Object.hasOwn(v.conditions, 'pool:tank'), false);
+});
+
+test('judgeNode: a pool with no size is no reading, never 0 % (#468)', () => {
+  const inactive = { name: 'tank', percent: 0, usedGB: '0.0', totalGB: '0.0' };
+  const held = judgeNode(node(), {
+    prometheusOk: true,
+    pools: [inactive],
+    poolsRead: true,
+    memo: tankHeld,
+    thresholds: T,
+  });
+  assert.deepEqual(
+    [held.state, held.reason, held.memo.levels['pool:tank']],
+    ['warn', 'Storage pool tank: no reading (warning held until below 85 %)', 'warn']
+  );
+  // With no level held, it is left out: no condition, so no meter at 0 %.
+  const fresh = judgeNode(node(), {
+    prometheusOk: true,
+    pools: [inactive],
+    poolsRead: true,
+    thresholds: T,
+  });
+  assert.deepEqual([fresh.state, Object.hasOwn(fresh.conditions, 'pool:tank')], ['ok', false]);
+  // A pool with a size at 0 % is a reading, and an empty pool.
+  const empty = judgeNode(node(), {
+    prometheusOk: true,
+    pools: [{ ...inactive, totalGB: '100.0' }],
+    poolsRead: true,
+    memo: tankHeld,
+    thresholds: T,
+  });
+  assert.deepEqual([empty.state, empty.conditions['pool:tank']], ['ok', 'ok']);
 });
 
 const serviceRows = [

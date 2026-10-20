@@ -387,6 +387,35 @@ test('#448: a reading new to the snapshot pages if it appears at warn or crit, a
   );
 });
 
+test('#468: a reading that leaves the snapshot over its line sends its clear; at ok, nothing', () => {
+  assert.deepEqual(
+    sentFor(
+      ...levels({ disk: 'ok', 'pool:a': 'warn', 'pool:b': 'crit', 'pool:c': 'ok' }, { disk: 'ok' })
+    ),
+    [
+      'host_threshold_cleared n1:pool:a info warn->null',
+      'host_threshold_cleared n1:pool:b info crit->null',
+    ]
+  );
+  assert.deepEqual(
+    diffSnapshots(...levels({ 'pool:a': 'warn' }, {}))[0].title,
+    'Host storage pool a normal'
+  );
+  // A host that leaves the snapshot (its node left services.yaml) sends nothing.
+  assert.deepEqual(
+    diffSnapshots(host({ n1: { reachable: true, levels: { 'pool:a': 'warn' } } }), host({})),
+    []
+  );
+  // Nor does a host that goes unreachable: that is its own push.
+  assert.deepEqual(
+    sentFor(
+      host({ n1: { reachable: true, levels: { 'pool:a': 'warn' } } }),
+      host({ n1: { reachable: false, levels: {} } })
+    ),
+    ['host_unreachable n1 critical true->false']
+  );
+});
+
 test('#448: a host first seen unreachable (no levels) that comes back over its line sends the reading too', () => {
   const prev = host({ n1: { reachable: false, levels: {} } });
   const next = host({ n1: { reachable: true, levels: { cpu: 'ok', disk: 'warn' } } });
