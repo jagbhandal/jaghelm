@@ -1027,3 +1027,59 @@ test('assemble (#395): a pinned replica, and a stopped container the monitor did
   });
   assert.deepEqual(monitoredUids(other.nodes), ['vm101:nextcloud down']);
 });
+
+// ---- What the status model reads beside the payload (#290) ----
+
+test('assemble: a running card whose monitor is pending or in maintenance keeps status unknown; kumaStatusOf names it', () => {
+  const r = run({
+    nodeResults: [['vm103', nodeCfg, nodeData([
+      { container: 'gitea', status: 'running', docker: {} },
+      { container: 'grafana', status: 'running', docker: {} },
+      { container: 'loki', status: 'running', docker: {} },
+    ])]],
+    monitors: {
+      1: { id: 1, name: 'gitea', status: 'unknown', kumaStatus: 'pending', active: true },
+      2: { id: 2, name: 'grafana', status: 'unknown', kumaStatus: 'maintenance', active: true },
+      3: { id: 3, name: 'loki', status: 'up', kumaStatus: 'up', active: true },
+    },
+  });
+  const status = Object.fromEntries(r.nodes.vm103.services.map((s) => [s.container, s.status]));
+  assert.deepEqual(status, { gitea: 'unknown', grafana: 'unknown', loki: 'up' });
+  assert.deepEqual(r.kumaStatusOf, { 'vm103:gitea': 'pending', 'vm103:grafana': 'maintenance' });
+  assert.deepEqual(r.kumaWithoutCard, {});
+});
+
+test('assemble: a pending or maintenance monitor with no container is placed after the up and down ones, taking none of their uids', () => {
+  // Monitor 1 (pending) and monitor 2 (down) both last ran as `nextcloud`. The
+  // down one keeps the uid it would have had without the pending one.
+  const r = run({
+    nodeResults: [['vm103', nodeCfg, nodeData([])]],
+    monitors: {
+      1: { id: 1, name: 'Nextcloud Cron', status: 'unknown', kumaStatus: 'pending', active: true },
+      2: { id: 2, name: 'Nextcloud', status: 'down', kumaStatus: 'down', active: true },
+      3: { id: 3, name: 'NAS', status: 'unknown', kumaStatus: 'maintenance', active: true },
+    },
+    lastSeen: { 1: 'vm103', 2: 'vm103', 3: 'vm103' },
+    lastSeenContainer: { 1: 'nextcloud', 2: 'nextcloud' },
+  });
+  assert.equal(r.nodes.vm103.services.find((s) => s.status === 'down').uid, 'vm103:nextcloud');
+  assert.deepEqual(r.kumaWithoutCard, { 'vm103:Nextcloud Cron': 'pending', 'vm103:NAS': 'maintenance' });
+  assert.deepEqual(r.upWithoutCard, []);
+  assert.equal(r.nodes.vm103.services.length, 1, 'neither draws a card');
+});
+
+test('assemble: a missing container that was a Kuma monitor’s last container is backedBy that monitor', () => {
+  const r = run({
+    nodeResults: [['vm103', nodeCfg, nodeData([{ container: 'gitea', status: 'running', docker: {} }])]],
+    monitors: { 1: { id: 1, name: 'Immich', status: 'up', active: true }, 2: { id: 2, name: 'gitea', status: 'up', active: true } },
+    lastSeen: { 1: 'vm103', 2: 'vm103' },
+    lastSeenContainer: { 1: 'immich-server', 2: 'gitea' },
+    containerRegistry: fakeRegistry([
+      { container: 'immich-server', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 },
+      { container: 'immich-redis', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 },
+    ]),
+  });
+  const presence = r.nodes.vm103.services.filter((s) => s.source === 'presence').map((s) => s.uid).sort();
+  assert.deepEqual(presence, ['vm103:immich-redis', 'vm103:immich-server']);
+  assert.deepEqual(r.backedBy, { 'vm103:immich-server': 'Immich' });
+});

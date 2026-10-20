@@ -654,3 +654,79 @@ test('logs: Prometheus failing logs one warning, and its recovery one info line'
     p.done();
   }
 });
+
+// ── The status model (#290) ──────────────────────────────────────────────
+//
+// The same pipeline into the status model: the real refreshes, the real
+// caches read by readStatusInputs, one tracker carrying its memory. A failed
+// source is one issue, and what it feeds is no signal, never crit.
+
+const { createStatusTracker, readStatusInputs } = await import('./status/index.js');
+const { DEFAULT_THRESHOLDS } = await import('./status/thresholds.js');
+
+function statusPipeline() {
+  const tracker = createStatusTracker();
+  return async function cycle() {
+    await Promise.all([refreshServices(), refreshUPS()]);
+    const inputs = readStatusInputs(caches, { env: { KUMA_URL: KUMA } });
+    return tracker.update({ inputs, thresholds: DEFAULT_THRESHOLDS, now: Date.now() });
+  };
+}
+
+const critIds = (s) => s.entities.filter((e) => e.state === 'crit').map((e) => e.id);
+const sourceIssueIds = (s) => s.issues.filter((i) => i.kind === 'source').map((i) => i.id);
+
+for (const failure of ['http500', 'timeout']) {
+  test(`status model: Prometheus failing (${failure}) is one source issue, its entities no signal, no crit`, async () => {
+    reset();
+    world.radarr = 'up';
+    const cycle = statusPipeline();
+    const before = await cycle();
+    assert.equal(before.overall.state, 'ok');
+    assert.deepEqual(before.issues, []);
+
+    world.prometheus = failure;
+    const after = await cycle();
+    assert.deepEqual(critIds(after), []);
+    assert.deepEqual(sourceIssueIds(after), ['sources/prometheus']);
+    assert.match(after.sources.prometheus.error, failure === 'http500' ? /HTTP 500/ : /timeout/);
+    for (const id of ['nodes/vm103', 'nodes/pi', 'nodes/nas', 'power/ups', 'services/vm103:postgres', 'services/pi:adguard']) {
+      const e = after.entities.find((x) => x.id === id);
+      assert.deepEqual([e?.state, e?.reason], ['unknown', 'No data: Prometheus unreachable'], id);
+    }
+    // Kuma still answers: its services are judged, here up.
+    assert.equal(after.entities.find((x) => x.id === 'services/vm103:radarr').state, 'ok');
+    assert.equal(after.sources.kuma.state, 'ok');
+  });
+}
+
+test('status model: Kuma failing past its ceiling is one source issue; a service it had down is no signal, not crit', async () => {
+  reset(); // radarr down
+  const cycle = statusPipeline();
+  try {
+    const before = await cycle();
+    assert.deepEqual(critIds(before), ['services/vm103:radarr']);
+
+    world.kuma = 'refused';
+    afterKumaCeiling();
+    const after = await cycle();
+    assert.deepEqual(critIds(after), []);
+    assert.deepEqual(sourceIssueIds(after), ['sources/kuma']);
+    const radarr = after.entities.find((x) => x.id === 'services/vm103:radarr');
+    assert.deepEqual([radarr.kind, radarr.state, radarr.reason], ['service', 'unknown', 'No data: Kuma unreachable']);
+    assert.equal(after.sources.kuma.error, 'fetch failed');
+    assert.ok(after.entities.filter((e) => e.subsystem === 'nodes').every((e) => e.state === 'ok'));
+  } finally {
+    clockBack();
+  }
+});
+
+test('status model: why a source failed is kept beside the cached payload, not in it', async () => {
+  reset();
+  world.prometheus = 'http500';
+  await refreshServices();
+  const keysOf = (v) => (v && typeof v === 'object' ? Object.entries(v).flatMap(([k, x]) => [k, ...keysOf(x)]) : []);
+  assert.equal(keysOf(getCached('services')).includes('sourceErrors'), false, 'not in the served data');
+  assert.match(getCachedInternal('services').sourceErrors.prometheus, /HTTP 500/);
+  assert.equal(getCachedInternal('services').sourceErrors.kuma, null);
+});

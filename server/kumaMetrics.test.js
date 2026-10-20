@@ -141,6 +141,18 @@ test('parseKumaMetrics: pending(2)/maintenance(3) → unknown', () => {
   assert.equal(m[3].status, 'unknown');
 });
 
+test('parseKumaMetrics: kumaStatus keeps pending(2) and maintenance(3) apart (#258)', () => {
+  const m = parseKumaMetrics(
+    ['1 1', '2 0', '3 2', '4 3', '5 7'].map((p) => p.split(' ')).map(([id, v]) => `monitor_status{monitor_id="${id}",monitor_name="M${id}"} ${v}`).join('\n')
+  );
+  assert.deepEqual(
+    [1, 2, 3, 4, 5].map((id) => m[id].kumaStatus),
+    ['up', 'down', 'pending', 'maintenance', 'unknown']
+  );
+  // A monitor seen only through its response time has no status yet.
+  assert.equal(parseKumaMetrics('monitor_response_time{monitor_id="9"} 5')[9].kumaStatus, 'unknown');
+});
+
 test('parseKumaMetrics: NaN response_time → ping null', () => {
   const m = parseKumaMetrics(
     'monitor_status{monitor_id="1",monitor_name="X"} 1\nmonitor_response_time{monitor_id="1"} NaN'
