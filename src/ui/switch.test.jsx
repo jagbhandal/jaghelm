@@ -13,7 +13,11 @@ describe('Switch', () => {
     expect(sw).toHaveAttribute('data-slot', 'switch');
     // 36 x 20 track: surface-3 off, the accent on; a 16px thumb.
     expect(sw).toHaveClass('h-5', 'w-9', 'rounded-full', 'bg-surface-3', 'data-checked:bg-accent');
-    expect(sw.firstElementChild).toHaveClass('size-4', 'data-checked:translate-x-4');
+    expect(sw.firstElementChild).toHaveClass(
+      'size-4',
+      'shadow-thumb',
+      'data-checked:translate-x-4'
+    );
     expect(sw.className).not.toMatch(NO_RING);
   });
 

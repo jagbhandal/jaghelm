@@ -1,10 +1,12 @@
 /*
  * Switch (spec §5.4, #285): an on/off setting that applies at once, as the
  * mock's toggles (.tog): a 36 x 20 track, surface-3 off and the accent on, a
- * 16px on-accent thumb that slides 16px. Base UI's Switch: role="switch",
- * Space toggles it, and a hidden checkbox carries it in a form. Name it with
- * an enclosing <label>, a Field, or aria-label. The mock's locked toggle is a
- * disabled one. Its size is the same in both densities.
+ * 16px on-accent thumb that slides 16px. The thumb is lifted by shadow-thumb,
+ * the mock's shadow in both themes (shadow-control is too faint to show it on
+ * a light track). Base UI's Switch: role="switch", Space toggles it, and a
+ * hidden checkbox carries it in a form. Name it with an enclosing <label>, a
+ * Field, or aria-label. The mock's locked toggle is a disabled one. Its size
+ * is the same in both densities.
  */
 import { Switch as SwitchPrimitive } from '@base-ui/react/switch';
 import { cn } from './lib/utils.js';
@@ -19,7 +21,7 @@ function Switch({ className, ...props }) {
       )}
       {...props}
     >
-      <SwitchPrimitive.Thumb className="size-4 rounded-full bg-on-accent shadow-control transition-transform data-checked:translate-x-4" />
+      <SwitchPrimitive.Thumb className="size-4 rounded-full bg-on-accent shadow-thumb transition-transform data-checked:translate-x-4" />
     </SwitchPrimitive.Root>
   );
 }

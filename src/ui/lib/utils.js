@@ -34,8 +34,8 @@ export const SPACING = Object.freeze([
   'segment',
 ]);
 
-/** The shadows: `shadow-control` and `shadow-pop` (`--shadow-*`). */
-export const SHADOWS = Object.freeze(['control', 'pop']);
+/** The shadows: `shadow-control`, `shadow-pop` and `shadow-thumb` (`--shadow-*`). */
+export const SHADOWS = Object.freeze(['control', 'pop', 'thumb']);
 
 export const cn = createCn({
   extend: {

@@ -324,7 +324,9 @@ one-offs:
   `size-control` and `size-control-sm` for square icon buttons.
 - **Page gutter:** `px-gutter`, 16px on phones, 24 from 768px, 32 from 1536px.
 - **Elevation:** `shadow-control` (the slight lift on buttons and the selected
-  segment), `shadow-pop` (popovers, palette, dialogs, drawers), `bg-scrim`.
+  segment), `shadow-pop` (popovers, palette, dialogs, drawers), `shadow-thumb`
+  (a switch's thumb, the mock's `0 1px 2px` at 30 % black in both themes),
+  `bg-scrim`.
 - **Z-index:** `z-sticky` 20, `z-header` 40, `z-overlay` 50 (scrims),
   `z-dialog` 60, `z-toast` 80.
 - **Motion:** 150ms `ease` (`transition-*`, `duration-standard`,
@@ -389,7 +391,8 @@ From the mock's Settings and Overview boards:
     `<a>`.
 - **IconButton.** Square, 34px (`size-control`) or 30 at sm, ghost by default,
   as the mock's theme, reload and close buttons. `label` becomes its
-  accessible name; it throws without one (or an `aria-labelledby`).
+  accessible name; it throws without one (or an `aria-label` or
+  `aria-labelledby`).
 - **Input** and the **Select** trigger: the mock's `.field`, `bg-background` in
   a `border-border-strong` edge, 13px `text-1`, placeholder `text-3`, 10px
   padding. Their focus ring sits 1px out, as the mock's does. An invalid one's
@@ -399,7 +402,7 @@ From the mock's Settings and Overview boards:
   on `surface-3`, the chosen one ticked in `accent-text`. It opens below the
   trigger, not over it, portalled ([Switches](#switches)).
 - **Switch.** The mock's `.tog`: a 36 × 20 track, `surface-3` off and `accent`
-  on, a 16px `on-accent` thumb with `shadow-control`. The mock's locked toggle
+  on, a 16px `on-accent` thumb with `shadow-thumb`. The mock's locked toggle
   is a disabled one.
 - **Checkbox.** 16px, `rounded-sm`, `bg-background` in a `border-strong` edge;
   checked or mixed, `accent` with an `on-accent` tick or bar. The mock uses the

@@ -48,16 +48,20 @@ describe('IconButton', () => {
     }
   });
 
-  it('takes its name from aria-labelledby instead of a label', () => {
+  it('takes its name from aria-label or aria-labelledby instead of a label', () => {
     render(
       <>
         <span id="close-name">Close the drawer</span>
         <IconButton aria-labelledby="close-name">
           <X />
         </IconButton>
+        <IconButton aria-label="Reload">
+          <RefreshCw />
+        </IconButton>
       </>
     );
     expect(screen.getByRole('button', { name: 'Close the drawer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
   });
 
   it('activates with Enter and Space', async () => {

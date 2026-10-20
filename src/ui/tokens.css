@@ -163,6 +163,7 @@
   --jh-scrim: oklch(0.1 0.01 286 / 0.62);
   --jh-shadow-control: inset 0 1px 0 rgb(255 255 255 / 0.1), 0 1px 2px rgb(0 0 0 / 0.25);
   --jh-shadow-pop: 0 24px 64px -24px rgb(0 0 0 / 0.7), 0 2px 8px -2px rgb(0 0 0 / 0.4);
+  --jh-shadow-thumb: 0 1px 2px rgb(0 0 0 / 0.3); /* a switch's thumb, both themes (the mock's) */
 
   /* ---- Type, shape, space, motion (§5.3) ------------------------------- */
 

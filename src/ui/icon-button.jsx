@@ -4,7 +4,8 @@
  * following the density switch. Ghost by default, as the mock draws every one;
  * the Button's other variants work too. An icon has no name, so `label` is
  * required: it becomes the accessible name, and the component throws without
- * one (or an aria-labelledby) rather than ship a button nobody can identify.
+ * one (or an aria-label or aria-labelledby) rather than ship a button nobody
+ * can identify.
  */
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { buttonVariants } from './button.jsx';
@@ -16,8 +17,8 @@ const squares = {
 };
 
 function IconButton({ label, variant = 'ghost', size = 'md', className, ...props }) {
-  if (!label && !props['aria-labelledby']) {
-    throw new Error('IconButton needs a `label` (or aria-labelledby): an icon alone has no name');
+  if (!label && !props['aria-label'] && !props['aria-labelledby']) {
+    throw new Error('IconButton needs a `label`: an icon alone has no name');
   }
   return (
     <ButtonPrimitive

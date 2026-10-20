@@ -214,9 +214,11 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  /* Elevation: panels are flat; only popovers, dialogs and drawers cast a shadow. */
+  /* Elevation: panels are flat; only popovers, dialogs and drawers cast a
+     shadow. shadow-thumb lifts a switch's thumb off its track. */
   --shadow-control: var(--jh-shadow-control);
   --shadow-pop: var(--jh-shadow-pop);
+  --shadow-thumb: var(--jh-shadow-thumb);
 
   /* Density and gutter: h-row, p-panel, px-gutter, and the controls' heights
      (h-control, h-control-sm, h-segment; size-control for icon buttons).

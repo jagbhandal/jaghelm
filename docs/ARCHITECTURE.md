@@ -706,8 +706,8 @@ stack sits beside today's CSS and must not restyle it.
   variable there too, which is why the radius scale is in both `tokens.css` and
   `tailwind.css`. The one exception is the two variables Base UI sets inline on
   a popup's positioner (`--anchor-width`, `--available-height`), which the
-  test allows by name and checks that today's CSS never defines. Never add a `:root`, `html` or `body` rule or
-  a `@theme` block without `reference`. `scripts/ui-stack.test.mjs` compiles the
+  test allows by name and checks that today's CSS never defines. Never add a
+  `:root`, `html` or `body` rule or a `@theme` block without `reference`. `scripts/ui-stack.test.mjs` compiles the
   stack and fails on an unlayered rule, a root selector, a base rule outside
   `@scope (.jh-ui)`, a `var()` read that `.jh-ui` doesn't declare, the two
   radius scales drifting apart, a class in `src/ui/` that compiles to nothing
