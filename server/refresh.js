@@ -1050,8 +1050,8 @@ export function retryIntegrationNow(key) {
  * The /api/integrations payload: one entry per enabled integration, in config
  * order. An entry is the integration's fields plus `_`-prefixed internals:
  * `_error` when the fetch failed (with no fields), `_vms` / `_storagePools` /
- * `_lastBackup` (Proxmox), `_target`, `_instance`, `_preset`, and `_status`,
- * its backoff state (integrations/backoff.js).
+ * `_lastBackup` (Proxmox), `_target`, `_instance` and `_preset` (on a failed
+ * fetch too), and `_status`, its backoff state (integrations/backoff.js).
  *
  * Only the integrations that are due are fetched, through at most CONCURRENCY
  * at a time. One that is backing off or whose login was refused is not queued
@@ -1105,15 +1105,19 @@ async function _refreshIntegrations() {
         if (result.vms) entry._vms = result.vms;
         if (result.storagePools) entry._storagePools = result.storagePools;
         if (result.lastBackup) entry._lastBackup = result.lastBackup;
-        if (cfg.target) entry._target = cfg.target;
-        if (cfg.instance) entry._instance = cfg.instance;
-        // Stamp the preset identity so the client can detect integration type
-        // directly (e.g. proxmox child panels) rather than sniffing output fields.
-        entry._preset = handlerType;
         authRejected = !!result.authRejected;
       } catch (err) {
         entry = { _error: String((err && err.message) || err) };
       }
+      // Stamped on a fetch that threw too, so a failed read is still known for
+      // what it is and where: the status model holds a Proxmox node's pools
+      // through one, and reads a node with no Proxmox entry as having none
+      // set up (#468).
+      if (cfg.target) entry._target = cfg.target;
+      if (cfg.instance) entry._instance = cfg.instance;
+      // Stamp the preset identity so the client can detect integration type
+      // directly (e.g. proxmox child panels) rather than sniffing output fields.
+      entry._preset = handlerType;
       byKey[key] = integrationBackoff.record(key, fingerprint, entry, { authRejected }, at);
     };
 

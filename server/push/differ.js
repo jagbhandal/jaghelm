@@ -284,6 +284,11 @@ function levelsOf(host) {
  * first, or a sensor or pool that starts answering) at warn or crit sends
  * host_threshold at its level, and nothing at ok. `prev` is null in those
  * events: there was no previous state.
+ *
+ * A reading that leaves a reachable host's levels (a storage pool a Proxmox
+ * read that succeeded no longer lists: push/snapshot.js buildHosts, #468) at
+ * warn or crit sends host_threshold_cleared, with `next` null: it has no state
+ * now. At ok it sends nothing. A host that leaves the snapshot sends nothing.
  */
 function diffHosts(prev, next, words, events) {
   for (const node of Object.keys(next)) {
@@ -360,6 +365,24 @@ function diffHosts(prev, next, words, events) {
           next: a,
         });
       }
+    }
+    // A reading that left the snapshot ended its episode in the model: a
+    // storage pool a Proxmox read that succeeded no longer lists (#468). Over
+    // its line, that is its clear, as the node on the screen no longer shows it.
+    for (const key of Object.keys(was).sort()) {
+      const b = was[key];
+      if (Object.hasOwn(now, key) || (b !== 'warn' && b !== 'crit')) continue;
+      events.push({
+        type: 'host_threshold_cleared',
+        id: `${node}:${key}`,
+        node,
+        title: `Host ${readingLabel(key)} normal`,
+        body: line(name, reason),
+        severity: SEVERITY.host_threshold_cleared,
+        reason,
+        prev: b,
+        next: null,
+      });
     }
   }
 }

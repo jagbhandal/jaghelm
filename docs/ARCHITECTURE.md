@@ -930,7 +930,8 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   Kuma monitor (`backedBy`). A node is crit when Prometheus can't scrape it
   (`up` is 0, or no `up` series and no metric) while Prometheus answers.
   Proxmox storage pools feed their node's disk rule (the node `_target` names,
-  else `pve`).
+  else `pve`). A pool listed with no size (storage Proxmox lists but can't
+  read, which the preset gives 0 %) has no reading, not 0 % (#468).
 - **Failed sources** (#232's flags, read by `sourcesOk` in `model.js`, which
   push reads too): an entity a failed source feeds is `unknown`, with a reason
   naming it, never crit. A node
@@ -962,6 +963,23 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   over its line keeps its node at that level until one of the two. Push's
   snapshot holds such a reading the same way, so the screen and push agree on
   whether its episode is open.
+- **A storage pool whose read failed** (#468) is a reading with no value: while
+  a node's pools are not read, each pool the model held a level for and that
+  isn't listed keeps it, as above, with the same reason ("Storage pool
+  local-lvm: no reading (warning held until below 85 %)"). `proxmoxPools` in
+  `model.js` says which nodes' pools were read. A node with Proxmox entries
+  has its pools read when each one fetched its pool list; a fetch that failed
+  (`_error`) or whose storage read failed (the preset then gives no list, not
+  an empty one) is not a read. The integrations refresh stamps `_preset` and
+  `_target` on an entry whose fetch threw too, so a Proxmox integration that is
+  still set up always has an entry for its node. A node no Proxmox entry names
+  has none set up any more (the integration was removed, disabled or pointed
+  at another node): its pools were read, as an empty list. With no
+  integrations payload (the refresh failed, or its cache is cold or past its
+  TTL), no node's pools were read. A pool's episode ends only when the node's
+  pools were read without it: push's snapshot drops it on that cycle, and over
+  its line it sends one `host_threshold_cleared`, since the node on the screen
+  no longer shows it.
 - **Issues** are the entities in `crit`, `warn` or `unknown`, plus the failed
   sources: crit before warn before unknown; within a level by subsystem order
   (sources, Services, Nodes, Power, Jobs, Backups, Integrations), then oldest
@@ -1026,12 +1044,16 @@ that changed:
 - A level that rises (ok to warn, warn to crit) sends `host_threshold`,
   `critical` for crit; one back to ok sends `host_threshold_cleared`; crit
   falling to warn sends nothing. The model holds a level through its hysteresis
-  band and waits CPU's 2 cycles, so push does too (#361).
+  band and waits CPU's 2 cycles, so push does too (#361). A storage pool at
+  warn or crit that a Proxmox read that succeeded no longer lists, or whose
+  node has no Proxmox integration any more, leaves the snapshot with its
+  `host_threshold_cleared` (#468); one at ok leaves quietly.
 - What the model can't call up or down holds its last known state and sends
   nothing: a service pending or in maintenance, an entity a failed source made
   unknown, a reading whose query failed or that has no value this cycle (the
   model holds its level too, so a sensor that skips a cycle mid-episode sends
-  no "back to normal" and no second alert, #462), the UPS while NUT is quiet or
+  no "back to normal" and no second alert, #462), a storage pool whose Proxmox
+  read failed (#468, the same hold), the UPS while NUT is quiet or
   its read fails. So down, pending, up still sends the recovery, and down, pending, down
   sends no second `service_down`; on battery, unknown, on battery sends no
   second `ups_on_battery`, and online, unknown, online sends nothing.

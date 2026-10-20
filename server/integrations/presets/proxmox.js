@@ -47,9 +47,14 @@ export default {
     const total = vms.length;
 
     // ── Storage pools ──
-    const storageRaw = raw?._extra?.storage?.data || [];
+    // Only from a storage read that answered: the handler attaches just the
+    // extra endpoints that did. A failed one gives no list (undefined), not an
+    // empty one, so the status model holds each pool's level instead of reading
+    // every pool as gone (#468).
+    const storageRead = raw?._extra?.storage;
+    const storageRaw = storageRead?.data || [];
     // Filter to pools that store VM images/disks, skip backup-only and ISO-only pools
-    const storagePools = storageRaw
+    const storagePools = !storageRead ? undefined : storageRaw
       .filter(s => {
         const content = s.content || '';
         // Include pools that can hold VM images or rootdir (LXC)
