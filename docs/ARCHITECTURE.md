@@ -906,6 +906,19 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   `warn` issue, `sources/<name>`, ranked first in its level. Gitea is listed in
   `sources` but is no issue: nothing on the board depends on it. Kuma is
   listed once `KUMA_URL` is set or a service is on the board.
+- **A reading with no value** this cycle (#462: a sensor or exporter that
+  didn't answer, `null` in `/api/services`) keeps the level the model held for
+  it, and CPU's run of cycles over its line, as a failed read does, so 78 °C,
+  no reading, 73 °C, 76 °C is one warning with one `since`. Held at warn or
+  crit, the node stays at that level, with a reason that gives no number
+  ("Temperature: no reading (warning held until below 70 °C)") and no
+  `metric`; its condition is `unknown`, since a meter has no value to draw.
+  Held at ok, it is left out, as a reading that was never read is (a VM has no
+  temperature sensor). It holds until the reading is read again or the node
+  leaves `services.yaml`, however long that takes, so a sensor removed while
+  over its line keeps its node at that level until one of the two. Push's
+  snapshot holds such a reading the same way, so the screen and push agree on
+  whether its episode is open.
 - **Issues** are the entities in `crit`, `warn` or `unknown`, plus the failed
   sources: crit before warn before unknown; within a level by subsystem order
   (sources, Services, Nodes, Power, Jobs, Backups, Integrations), then oldest
@@ -973,8 +986,10 @@ that changed:
   band and waits CPU's 2 cycles, so push does too (#361).
 - What the model can't call up or down holds its last known state and sends
   nothing: a service pending or in maintenance, an entity a failed source made
-  unknown, a reading whose query failed, the UPS while NUT is quiet or its read
-  fails. So down, pending, up still sends the recovery, and down, pending, down
+  unknown, a reading whose query failed or that has no value this cycle (the
+  model holds its level too, so a sensor that skips a cycle mid-episode sends
+  no "back to normal" and no second alert, #462), the UPS while NUT is quiet or
+  its read fails. So down, pending, up still sends the recovery, and down, pending, down
   sends no second `service_down`; on battery, unknown, on battery sends no
   second `ups_on_battery`, and online, unknown, online sends nothing.
 - An entity with no previous state (#448) is diffed from "no previous state":

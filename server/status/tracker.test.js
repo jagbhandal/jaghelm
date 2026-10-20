@@ -208,3 +208,88 @@ test('buildStatus: the memory is not part of the status', () => {
   assert.equal(JSON.stringify(status).includes('memo'), false);
   assert.ok(memory.entities['nodes/n1'].memo.streak.cpu);
 });
+
+// ── #462: a reading with no value for a cycle ────────────────────────────
+
+/** The model over `temps` (°C, null for no reading), one a cycle, on node n1. */
+function temperatures(temps, tracker = createStatusTracker(), start = 0) {
+  return temps.map((temp, i) => {
+    const status = tracker.update({
+      inputs: inputs({ nodes: { n1: node({ temp: temp === null ? null : String(temp) }) } }),
+      thresholds: T,
+      now: NOW + (start + i) * 30_000,
+    });
+    return status.entities.find((e) => e.id === 'nodes/n1');
+  });
+}
+
+test('#462: 78 → no reading → 73 → 76 °C is one warning in the model, since its first cycle', () => {
+  const n1 = temperatures([78, null, 73, 76, 69]);
+  assert.deepEqual(
+    n1.map((e) => [e.state, e.conditions.temp, e.reason]),
+    [
+      ['warn', 'warn', 'Temperature 78 °C (warning above 75 °C)'],
+      ['warn', 'unknown', 'Temperature: no reading (warning held until below 70 °C)'],
+      ['warn', 'warn', 'Temperature 73 °C (warning until below 70 °C)'],
+      ['warn', 'warn', 'Temperature 76 °C (warning above 75 °C)'],
+      ['ok', 'ok', 'Healthy'],
+    ]
+  );
+  assert.deepEqual(
+    n1.slice(0, 4).map((e) => e.since),
+    [NOW, NOW, NOW, NOW],
+    'one episode: its since never moves'
+  );
+});
+
+test("#462: CPU's run of cycles over its line survives a cycle with no reading", () => {
+  const tracker = createStatusTracker();
+  const cpu = (value, i) =>
+    tracker
+      .update({
+        inputs: inputs({ nodes: { n1: node({ cpu: value }) } }),
+        thresholds: T,
+        now: NOW + i * 30_000,
+      })
+      .entities.find((e) => e.id === 'nodes/n1');
+  // 95 %, no reading, 95 %: its second cycle over the line, so it warns.
+  assert.deepEqual(
+    ['95', null, '95'].map((v, i) => cpu(v, i).state),
+    ['ok', 'ok', 'warn']
+  );
+  // A warning it holds survives one too, and so does its hysteresis band.
+  assert.deepEqual(
+    [null, '87', '84'].map((v, i) => {
+      const e = cpu(v, 3 + i);
+      return [e.state, e.conditions.cpu];
+    }),
+    [
+      ['warn', 'unknown'],
+      ['warn', 'warn'],
+      ['ok', 'ok'],
+    ]
+  );
+});
+
+test('#462: a reading that never comes back holds its level until its node goes; the node back is new', () => {
+  const tracker = createStatusTracker();
+  // Over its line, then 40 cycles (20 minutes) with no reading: held throughout.
+  const held = temperatures([78, ...Array(40).fill(null)], tracker);
+  assert.ok(
+    held.slice(1).every((e) => e.state === 'warn' && e.since === NOW),
+    'held at warn, one episode, however long'
+  );
+  // The node leaves services.yaml (Prometheus answering): it is gone, its memory with it.
+  const gone = tracker.update({
+    inputs: inputs({ nodes: {} }),
+    thresholds: T,
+    now: NOW + 41 * 30_000,
+  });
+  assert.equal(
+    gone.entities.some((e) => e.id === 'nodes/n1'),
+    false
+  );
+  // Back with the sensor at 73 °C, inside the old band: judged fresh, ok.
+  const [back] = temperatures([73], tracker, 42);
+  assert.deepEqual([back.state, back.conditions.temp], ['ok', 'ok']);
+});

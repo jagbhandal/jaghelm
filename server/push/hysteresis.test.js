@@ -22,7 +22,7 @@ import { resolveThresholds } from '../status/thresholds.js';
 const FIELD = { cpu: 'cpu', mem: 'memPercent', disk: 'diskPercent' };
 const OK = { prometheus: { ok: true }, kuma: { ok: true } };
 
-/** One cycle's caches: host h with `metric` at `fraction`, everything else calm. */
+/** One cycle's caches: host h with `metric` at `fraction` (null: no reading), everything else calm. */
 function reading(metric, fraction) {
   return cachesOf({
     services: {
@@ -32,7 +32,7 @@ function reading(metric, fraction) {
           cpu: '10',
           memPercent: '40',
           diskPercent: '50',
-          [FIELD[metric]]: String(fraction * 100),
+          [FIELD[metric]]: fraction === null ? null : String(fraction * 100),
         }),
       },
     },
@@ -164,4 +164,87 @@ test('a line lowered while JagHelm is stopped: the restart judges the reading ag
   await b.cycle(reading('mem', 0.95), { thresholds: lower });
   assert.deepEqual(b.sent, ['host_threshold h:mem']);
   b.close();
+});
+
+// ── #462: a reading with no value for a cycle ────────────────────────────
+// A sensor that answers only some cycles (common for temperature and SMART
+// exporters) sends a cycle with no value. The model holds the level it had,
+// so the episode is still one: one alert, and its "back to normal" when it is.
+
+/** One cycle's caches: host h with the hottest sensor at `celsius` (null: no reading). */
+function temperature(celsius) {
+  return cachesOf({
+    services: {
+      sources: OK,
+      nodes: { h: node({ temp: celsius === null ? null : String(celsius) }) },
+    },
+    ups: UPS_ONLINE,
+  });
+}
+
+/** Runs `caches` (one a cycle) through `pipeline`; returns what each cycle sent. */
+async function playCaches(list, pipeline) {
+  const perCycle = [];
+  for (const caches of list) {
+    const before = pipeline.sent.length;
+    await pipeline.cycle(caches);
+    perCycle.push(pipeline.sent.slice(before));
+  }
+  return perCycle;
+}
+
+test('#462: 78 → no reading → 73 → 76 °C sends one host_threshold and no clear', async () => {
+  const p = pushPipeline();
+  try {
+    const sent = await playCaches([45, 78, null, 73, 76, 69].map(temperature), p);
+    assert.deepEqual(sent, [
+      [], // the baseline
+      ['host_threshold h:temp'],
+      [], // no reading: held at warn
+      [], // inside the band: still warn (was: host_threshold_cleared)
+      [], // over the line again: the same episode (was: a second host_threshold)
+      ['host_threshold_cleared h:temp'], // below 70 °C: it ends
+    ]);
+    assert.equal(p.events[0].severity, 'warning');
+  } finally {
+    p.close();
+  }
+});
+
+for (const metric of ['mem', 'disk']) {
+  test(`#462: on ${metric}, 95 % → no reading → 87 % → 93 % is one episode`, async () => {
+    const sent = await play(metric, [0.5, 0.95, null, 0.87, 0.93, 0.8]);
+    assert.deepEqual(sent, [[], ['host_threshold'], [], [], [], ['host_threshold_cleared']]);
+  });
+}
+
+test("#462: CPU's 2 cycles survive a cycle with no reading: 95 %, none, 95 % pages on the third", async () => {
+  assert.deepEqual(await play('cpu', [0.5, 0.95, null, 0.95]), [[], [], [], ['host_threshold']]);
+});
+
+test('#462: a reading that never comes back holds its episode until its node goes: nothing is sent, and the node back is new', async () => {
+  const p = pushPipeline();
+  try {
+    await playCaches([temperature(45), temperature(78)], p);
+    assert.deepEqual(p.sent, ['host_threshold h:temp']);
+    // 40 cycles with no reading, with a restart among them: nothing.
+    await playCaches(Array(20).fill(temperature(null)), p);
+    p.restart();
+    await playCaches(Array(20).fill(temperature(null)), p);
+    assert.deepEqual(p.sent, ['host_threshold h:temp'], 'no clear, no second alert');
+    assert.equal(p.status.entities.find((e) => e.id === 'nodes/h').state, 'warn');
+    assert.equal(JSON.parse(readFileSync(p.path, 'utf8')).hosts.h.levels.temp, 'warn');
+
+    // The node leaves services.yaml: its episode ends with it, silently.
+    const empty = cachesOf({ services: { sources: OK, nodes: {} }, ups: UPS_ONLINE });
+    await p.cycle(empty);
+    assert.deepEqual(p.sent, ['host_threshold h:temp'], 'no clear for a node that went');
+    assert.equal(Object.hasOwn(JSON.parse(readFileSync(p.path, 'utf8')).hosts, 'h'), false);
+
+    // Back, it is new (#448): 73 °C is ok, so nothing; over its line, one alert.
+    const back = await playCaches([temperature(73), temperature(76)], p);
+    assert.deepEqual(back, [[], ['host_threshold h:temp']]);
+  } finally {
+    p.close();
+  }
 });

@@ -182,6 +182,122 @@ test('judgeNode: conditions give each reading its state; metric is the worst rea
   );
 });
 
+// #462: a reading with no value this cycle (a sensor that didn't answer), the
+// level the model held for it last cycle, and what the node says.
+const heldRows = [
+  // name, the node's readings, held levels, state, reason
+  [
+    'temperature held at warn',
+    { temp: null },
+    { temp: 'warn' },
+    'warn',
+    'Temperature: no reading (warning held until below 70 °C)',
+  ],
+  [
+    'temperature held at crit',
+    { temp: null },
+    { temp: 'crit' },
+    'crit',
+    'Temperature: no reading (critical held until below 80 °C)',
+  ],
+  [
+    'disk held at crit',
+    { diskPercent: null },
+    { disk: 'crit' },
+    'crit',
+    'Disk: no reading (critical held until below 90 %)',
+  ],
+  [
+    'memory held at warn',
+    { memPercent: null },
+    { mem: 'warn' },
+    'warn',
+    'Memory: no reading (warning held until below 85 %)',
+  ],
+  [
+    'CPU held at warn',
+    { cpu: null },
+    { cpu: 'warn' },
+    'warn',
+    'CPU: no reading (warning held until below 85 %)',
+  ],
+  [
+    'memory held at crit, which it has no line for (a damaged snapshot): at warn',
+    { memPercent: null },
+    { mem: 'crit' },
+    'warn',
+    'Memory: no reading (warning held until below 85 %)',
+  ],
+  [
+    'a held one beside a reading that was read, worst first',
+    { diskPercent: '97.0', temp: null },
+    { temp: 'warn' },
+    'crit',
+    'Disk 97 % (critical above 95 %) · Temperature: no reading (warning held until below 70 °C)',
+  ],
+];
+
+for (const [name, metrics, levels, state, reason] of heldRows) {
+  test(`judgeNode: no value this cycle, ${name} (#462)`, () => {
+    const v = judgeNode(node(metrics), {
+      prometheusOk: true,
+      memo: { levels, streak: {} },
+      thresholds: T,
+    });
+    assert.deepEqual([v.state, v.reason], [state, reason]);
+    for (const [key, level] of Object.entries(levels)) {
+      assert.equal(v.memo.levels[key], level, `${key}: the level is kept for next cycle`);
+      assert.equal(v.conditions[key], 'unknown', `${key}: no value, so no meter colour`);
+    }
+  });
+}
+
+test('judgeNode: a held reading claims no value it does not have: no number, no metric (#462)', () => {
+  const held = judgeNode(node({ temp: null }), {
+    prometheusOk: true,
+    memo: { levels: { temp: 'warn', cpu: 'ok', mem: 'ok', disk: 'ok' }, streak: {} },
+    thresholds: T,
+  });
+  assert.equal(held.word, 'Warning');
+  assert.equal(held.metric, undefined, 'the metric is the reading behind the state: there is none');
+  assert.doesNotMatch(held.reason, /^Temperature \d/, 'no reading is printed');
+  // Beside a read reading at the same level, that one is the metric.
+  const both = judgeNode(node({ temp: null, memPercent: '92.0' }), {
+    prometheusOk: true,
+    memo: { levels: { temp: 'warn' }, streak: {} },
+    thresholds: T,
+  });
+  assert.deepEqual(both.metric, { name: 'mem', value: 92, unit: '%' });
+});
+
+test('judgeNode: a storage pool with no value keeps the level it held (#462)', () => {
+  const v = judgeNode(node(), {
+    prometheusOk: true,
+    pools: [{ name: 'tank', percent: null }],
+    memo: { levels: { 'pool:tank': 'warn' }, streak: {} },
+    thresholds: T,
+  });
+  assert.deepEqual(
+    [v.state, v.reason, v.conditions['pool:tank'], v.memo.levels['pool:tank']],
+    ['warn', 'Storage pool tank: no reading (warning held until below 85 %)', 'unknown', 'warn']
+  );
+});
+
+test('judgeNode: a reading held at ok with no value is left out, its level and CPU run kept (#462)', () => {
+  const v = judgeNode(node({ temp: null, cpu: null }), {
+    prometheusOk: true,
+    memo: { levels: { temp: 'ok', cpu: 'ok' }, streak: { cpu: { n: 1 } } },
+    thresholds: T,
+  });
+  assert.deepEqual([v.state, v.reason], ['ok', 'Healthy']);
+  assert.deepEqual(v.conditions, { disk: 'ok', mem: 'ok' }, 'nothing open: no meter for them');
+  assert.deepEqual(v.memo.levels, { disk: 'ok', mem: 'ok', temp: 'ok', cpu: 'ok' });
+  assert.deepEqual(v.memo.streak, { cpu: { n: 1 } }, "CPU's run of cycles over its line is kept");
+  // With nothing held (a VM has no temperature sensor), there is nothing to keep.
+  const vm = judgeNode(node({ temp: null }), { prometheusOk: true, thresholds: T });
+  assert.equal(Object.hasOwn(vm.memo.levels, 'temp'), false);
+});
+
 const serviceRows = [
   // name, input, state, word, reason
   ['up', { status: 'up' }, 'ok', 'Up', 'Kuma: up'],
