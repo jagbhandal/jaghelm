@@ -3,8 +3,10 @@
 // at, and each file is the one pinned by its sha256; the new UI's faces follow
 // the one list in src/ui/typefaces.js, as src/ui/fonts.css, tokens.css and
 // docs/design-system.md do; the default faces' vendored files fit the 60 KB
-// budget; and the type scale and root typography are the ones the docs and the
-// signed-off mock give. docs/design-system.md, "Type".
+// budget; text such as "Łódź" draws in the new UI's faces from their latin-ext
+// files, which latin text never needs (#394); and the type scale and root
+// typography are the ones the docs and the signed-off mock give.
+// docs/design-system.md, "Type".
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -109,12 +111,66 @@ export function fontFace(buf) {
   return { weights: [weight, weight], italic };
 }
 
+/** The code points a font file draws: those its Windows Unicode BMP cmap (format 4) maps to a glyph. */
+export function fontChars(buf) {
+  const { cmap } = woff2Tables(buf);
+  for (let i = 0; i < cmap.readUInt16BE(2); i++) {
+    const record = 4 + i * 8;
+    if (cmap.readUInt16BE(record) !== 3 || cmap.readUInt16BE(record + 2) !== 1) continue;
+    const at = cmap.readUInt32BE(record + 4);
+    assert.equal(cmap.readUInt16BE(at), 4, 'the Windows Unicode BMP cmap must be format 4');
+    const segments = cmap.readUInt16BE(at + 6) / 2;
+    const ends = at + 14;
+    const starts = ends + segments * 2 + 2; // after reservedPad
+    const deltas = starts + segments * 2;
+    const offsets = deltas + segments * 2;
+    const chars = new Set();
+    for (let s = 0; s < segments; s++) {
+      const start = cmap.readUInt16BE(starts + s * 2);
+      const end = cmap.readUInt16BE(ends + s * 2);
+      const delta = cmap.readUInt16BE(deltas + s * 2);
+      const offset = cmap.readUInt16BE(offsets + s * 2);
+      for (let c = start; c <= end && c !== 0xffff; c++) {
+        let glyph = c;
+        if (offset) {
+          glyph = cmap.readUInt16BE(offsets + s * 2 + offset + (c - start) * 2);
+          if (glyph === 0) continue;
+        }
+        if ((glyph + delta) & 0xffff) chars.add(c);
+      }
+    }
+    return chars;
+  }
+  throw new Error('no Windows Unicode BMP cmap');
+}
+
+/** A font file's family name: its name table's name ID 1, Windows Unicode, US English. */
+export function fontName(buf) {
+  const { name } = woff2Tables(buf);
+  const strings = name.readUInt16BE(4);
+  for (let i = 0; i < name.readUInt16BE(2); i++) {
+    const r = 6 + i * 12;
+    const [platform, encoding, language, id, length, offset] = [0, 2, 4, 6, 8, 10].map((o) =>
+      name.readUInt16BE(r + o)
+    );
+    if (platform !== 3 || encoding !== 1 || language !== 0x409 || id !== 1) continue;
+    const at = strings + offset;
+    return Buffer.from(name.subarray(at, at + length))
+      .swap16()
+      .toString('utf16le');
+  }
+  throw new Error('no Windows Unicode family name');
+}
+
 // ---- Reading the stylesheets -----------------------------------------------------
 
-/** The @font-face rules of a stylesheet: [{ family, style, weights, display, file, range }]. */
-function fontFaces(rel) {
+/**
+ * The @font-face rules of a stylesheet, `rel` or `css` compiled from it, in
+ * order: [{ family, style, weights, display, file, range }].
+ */
+function fontFaces(rel, css = read(rel)) {
   const faces = [];
-  postcss.parse(read(rel)).walkAtRules('font-face', (rule) => {
+  postcss.parse(css).walkAtRules('font-face', (rule) => {
     const d = {};
     rule.walkDecls((decl) => (d[decl.prop] = decl.value.replace(/\s+/g, ' ').trim()));
     const url = d.src.match(/^url\('([^']+)'\) format\('woff2'\)$/);
@@ -132,9 +188,37 @@ function fontFaces(rel) {
   return faces;
 }
 
+// Google Fonts' unicode-range for each subset, as its CSS API serves it.
 const LATIN =
   'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, ' +
   'U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD';
+const LATIN_EXT =
+  'U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, ' +
+  'U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, ' +
+  'U+2C60-2C7F, U+A720-A7FF';
+
+/** The unicode-range a file's subset needs, by the subset in its name. */
+const subsetRange = (file) => (/-latin-ext-/.test(file) ? LATIN_EXT : LATIN);
+
+/** The [lo, hi] spans of a unicode-range ('U+0100-02BA, U+2020, …'). */
+function spans(range) {
+  return range.split(', ').map((part) => {
+    const m = part.match(/^U\+([0-9A-F]{1,6})(?:-([0-9A-F]{1,6}))?$/);
+    assert.ok(m, `unicode-range part ${part}`);
+    const lo = parseInt(m[1], 16);
+    return [lo, m[2] ? parseInt(m[2], 16) : lo];
+  });
+}
+
+/** Whether a unicode-range contains code point `cp`. */
+const inRange = (range, cp) => spans(range).some(([lo, hi]) => lo <= cp && cp <= hi);
+
+/** Every code point in a unicode-range. */
+const rangeChars = (range) =>
+  spans(range).flatMap(([lo, hi]) => Array.from({ length: hi - lo + 1 }, (_, i) => lo + i));
+
+/** 'U+0131' for 0x131. */
+const hex = (cp) => `U+${cp.toString(16).toUpperCase().padStart(4, '0')}`;
 
 /** The licence file for a family: 'JetBrains Mono Variable' → JetBrainsMono-OFL.txt. */
 const licence = (family) =>
@@ -202,8 +286,15 @@ test('every @font-face points at a file that draws the face it declares', () => 
     const where = `${face.family} ${face.style} ${face.weights.join('-')} (${face.file})`;
     assert.ok(existsSync(path.join(ROOT, face.file)), `${where}: no such file`);
     assert.equal(face.display, 'swap', `${where}: font-display must be swap`);
-    assert.equal(face.range, LATIN, `${where}: the latin subset's unicode-range`);
-    const has = fontFace(readFileSync(path.join(ROOT, face.file)));
+    assert.equal(face.range, subsetRange(face.file), `${where}: its subset's unicode-range`);
+    const buf = readFileSync(path.join(ROOT, face.file));
+    // The file is the family's own: its name ID 1 is the family, in some files
+    // with more words after it ("Manrope ExtraLight", "DM Sans 9pt"). So two
+    // faces' files swapped, in the list and in fonts.css alike, fail here.
+    const named = fontName(buf);
+    const family = face.family.replace(/ Variable$/, '');
+    assert.ok(named === family || named.startsWith(`${family} `), `${where}: the file is ${named}`);
+    const has = fontFace(buf);
     assert.equal(has.italic, face.style === 'italic', `${where}: font-style`);
     assert.ok(
       has.weights[0] <= face.weights[0] && face.weights[1] <= has.weights[1],
@@ -236,7 +327,8 @@ test('every @font-face points at a file that draws the face it declares', () => 
 
 // Each vendored file's sha256, pinned to the file Google Fonts served for it on
 // 2026-10-19 (the URL above each; src/styles/fonts.css and src/ui/fonts.css give
-// the requests). A file that changes, by a swap or a re-fetch, fails here: check
+// the requests; the latin-ext files, #394, are from the same requests as their
+// latin files). A file that changes, by a swap or a re-fetch, fails here: check
 // the new file against its source and update the pin in the same change.
 const PINNED = Object.freeze({
   // https://fonts.gstatic.com/s/dmsans/v17/rP2rp2ywxg089UriCZaSExd86J3t9jz86Mvy4qCRAL19DksVat_XDV30TGc.woff2
@@ -248,17 +340,29 @@ const PINNED = Object.freeze({
   'fira-code-latin-wght.woff2': '771bf4b79a97fc005d12866168bd39d868a9dd3d5903008fe8b796723c8a56f4',
   // https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2
   'inter-latin-wght.woff2': '3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62',
+  // https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPx7cwhsk.woff2
+  'jetbrains-mono-latin-ext-wght.woff2':
+    'db5ff4db83e580426280e9337a58dc57d3a83784a1b03ad80914651594441d52',
   // https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwg.woff2
   'jetbrains-mono-latin-wght.woff2':
     '83c005d49d8a6a50474c73a5a36ac0468076e9c4a29da7bdb14995d80560a5be',
+  // https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggmxSuXd.woff2
+  'manrope-latin-ext-wght.woff2':
+    '3911b66d9f2e005a4b989223405d0e5032619c668597ba467cc76a23c8fffcfb',
   // https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggexSg.woff2
   'manrope-latin-wght.woff2': 'a30ddcd349703aff7464c34bef3fffdff405ee50c113440d7c8693c02d210972',
+  // https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459Wdhyzbi.woff2
+  'montserrat-latin-ext-wght.woff2':
+    '54d9a78b7ff60b689ad9f3017ffac8547b5d871afec733f6c1c3ae36577ee504',
   // https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459Wlhyw.woff2
   'montserrat-latin-wght.woff2': '06b16db7a969135d48d38c49183be7fb88d4452e2a3011957c7851941f4e4879',
   // https://fonts.gstatic.com/s/nunito/v32/XRXV3I6Li01BKofINeaB.woff2
   'nunito-latin-wght.woff2': 'ba344451eab25b217a165363b1982048a5e5830a0daf36577973955a04cac793',
   // https://fonts.gstatic.com/s/outfit/v15/QGYvz_MVcBeNP4NJtEtq.woff2
   'outfit-latin-wght.woff2': '6c18d579fd87c3776be068b762cbc83fde3acb543d49eabd3ade842eb987e887',
+  // https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko40yyygA.woff2
+  'plus-jakarta-sans-latin-ext-wght.woff2':
+    '38e3b8fd8045048eb311d90170a4429ed2c8f405852dc3d91b5af8452758703f',
   // https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko20yw.woff2
   'plus-jakarta-sans-latin-wght.woff2':
     '153fc85b70298beeb1d61a5f723331649e7f23bb77302a66e61cb3e2fbdb5e79',
@@ -301,20 +405,30 @@ test('one typeface list: fonts.css, tokens.css and the docs follow src/ui/typefa
   const others = ids.filter((id) => id !== DEFAULT_TYPEFACE);
   const byId = Object.fromEntries(TYPEFACES.map((t) => [t.id, t]));
 
-  // fonts.css: one face per typeface and the mono, as the list gives them.
+  // fonts.css: two faces per typeface and the mono, as the list gives them: the
+  // latin-ext file, then the latin one, in Google's order and with its ranges
+  // (#394), so the code points both claim go to latin. Each face's latin-ext
+  // file is its latin file's partner, by name (and by family, in the test above).
+  for (const { family, file, latinExtFile } of [...TYPEFACES, MONO_TYPEFACE]) {
+    assert.match(file, /-latin-wght\.woff2$/, `${family}: its latin file`);
+    assert.equal(
+      latinExtFile,
+      file.replace('-latin-', '-latin-ext-'),
+      `${family}: its latin-ext file`
+    );
+  }
   assert.deepEqual(
-    fontFaces(UI_FONTS).map(({ family, style, weights, file }) => ({
+    fontFaces(UI_FONTS).map(({ family, style, weights, file, range }) => ({
       family,
       style,
       weights,
       file,
+      range,
     })),
-    [...TYPEFACES, MONO_TYPEFACE].map(({ family, weights, file }) => ({
-      family,
-      style: 'normal',
-      weights,
-      file: `${FONTS}/${file}`,
-    })),
+    [...TYPEFACES, MONO_TYPEFACE].flatMap(({ family, weights, file, latinExtFile }) => [
+      { family, style: 'normal', weights, file: `${FONTS}/${latinExtFile}`, range: LATIN_EXT },
+      { family, style: 'normal', weights, file: `${FONTS}/${file}`, range: LATIN },
+    ]),
     UI_FONTS
   );
 
@@ -368,6 +482,73 @@ test('the vendored woff2 bytes of the default faces (Manrope and JetBrains Mono)
       `${MONO_TYPEFACE.label} (${size(MONO_TYPEFACE)} B), are ${total} B, over ${BUDGET} B ` +
       '(woff2 is already compressed, so this is about what crosses the wire)'
   );
+});
+
+// How a browser draws text in one of the new UI's families: for each character
+// it checks the family's @font-face rules, the last defined first, and takes the
+// first whose unicode-range has it, downloading that rule's file if it hasn't
+// (CSS Fonts 4, "Font matching", step 5). So a screen showing "Łódź" downloads
+// the active face's latin-ext file for the Ł and the ź, and draws all four
+// characters in that face; a latin-only screen never touches the file.
+test('"Łódź" draws in each face from its latin-ext file, which latin text never downloads (#394)', () => {
+  const faces = fontFaces(UI_FONTS);
+  const both = rangeChars(LATIN).filter((cp) => inRange(LATIN_EXT, cp));
+  assert.deepEqual(
+    both.map(hex),
+    ['U+0131', 'U+0152', 'U+0153', 'U+0304', 'U+0308', 'U+0329', 'U+2020'],
+    'the code points both ranges claim'
+  );
+  for (const t of [...TYPEFACES, MONO_TYPEFACE]) {
+    const rules = faces.filter((f) => f.family === t.family).reverse();
+    const pick = (cp) => rules.find((f) => inRange(f.range, cp))?.file;
+    const ext = `${FONTS}/${t.latinExtFile}`;
+    const latin = `${FONTS}/${t.file}`;
+    const draws = {
+      [ext]: fontChars(readFileSync(path.join(ROOT, ext))),
+      [latin]: fontChars(readFileSync(path.join(ROOT, latin))),
+    };
+    const word = [...'Łódź'].map((c) => c.codePointAt(0));
+    assert.deepEqual(word.map(pick), [ext, latin, latin, ext], `${t.label}: the files for Łódź`);
+    for (const cp of word) {
+      assert.ok(draws[pick(cp)].has(cp), `${t.label}: ${pick(cp)} doesn't draw ${hex(cp)}`);
+    }
+    // Without the latin-ext file, Ł and ź would fall back to the system face.
+    assert.ok(!draws[latin].has(0x141) && !draws[latin].has(0x17a), `${t.label}: latin has Ł, ź`);
+
+    // Latin text never downloads the latin-ext file. Nothing up to U+00FF is in
+    // latin-ext's range, and the latin file draws printable ASCII and the Latin-1
+    // letters.
+    for (let cp = 0; cp <= 0xff; cp++) {
+      const at = `${t.label}: ${hex(cp)}`;
+      assert.ok(!inRange(LATIN_EXT, cp), `${at} is in latin-ext's range`);
+      const printable = (cp >= 0x20 && cp <= 0x7e) || cp >= 0xc0;
+      if (printable) assert.ok(draws[latin].has(cp), `${at}: ${latin} doesn't draw it`);
+    }
+    // And every code point in latin's range that the latin file draws resolves
+    // to it, so the latin rule must come last: the seven code points both ranges
+    // claim include ı, Œ and œ, which the latin file draws and latin-ext doesn't.
+    for (const cp of rangeChars(LATIN)) {
+      if (cp > 0xff && !draws[latin].has(cp)) continue;
+      assert.equal(pick(cp), latin, `${t.label}: ${hex(cp)} is the latin file's`);
+    }
+    for (const cp of [0x131, 0x152, 0x153]) {
+      assert.ok(draws[latin].has(cp) && !draws[ext].has(cp), `${t.label}: ${hex(cp)}`);
+    }
+  }
+});
+
+// Both apps get fonts.css through tailwind.css (`@import … layer(theme)`), so
+// what ships is the compiled stack. This checks, without a build, that the
+// compile keeps all eight rules and their order, which the latin-first lookup
+// above depends on.
+test("the compiled stack keeps fonts.css's rules, in order", async () => {
+  const compiler = await compile(read(STACK), {
+    base: path.join(ROOT, 'src/ui'),
+    onDependency() {},
+  });
+  const compiled = fontFaces(STACK, compiler.build([]));
+  assert.equal(compiled.length, 2 * (TYPEFACES.length + 1));
+  assert.deepEqual(compiled, fontFaces(UI_FONTS));
 });
 
 // ---- The type scale and the root's typography ---------------------------------------

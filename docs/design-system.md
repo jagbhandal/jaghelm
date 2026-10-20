@@ -275,9 +275,10 @@ the shadows below.
 ### Type
 
 **Faces.** Self-hosted, never from a CDN or Google Fonts (#244, #284). Each is
-the variable latin subset Google Fonts serves, under the SIL Open Font License
-1.1; the files and their licences are in `src/fonts/`. `data-typeface` picks
-the sans face (Settings → Appearance, #321); there is one monospace face.
+two variable files, the latin and latin-ext subsets Google Fonts serves (#394),
+under the SIL Open Font License 1.1; the files and their licences are in
+`src/fonts/`. `data-typeface` picks the sans face (Settings → Appearance, #321);
+there is one monospace face.
 
 | Face | `data-typeface` | Weights | Use |
 | --- | --- | --- | --- |
@@ -289,14 +290,21 @@ the sans face (Settings → Appearance, #321); there is one monospace face.
 - **Only what a screen uses downloads.** A browser fetches a face when text
   renders in it: the picked sans face, and JetBrains Mono once a screen shows
   mono text. Nothing is preloaded, so a face nobody picked never downloads.
-  `font-display: swap` shows the system face until the file arrives, and
-  characters outside the latin subset always use it.
-- **Budget: fonts on first load ≤ 60 KB** for the default setup. Manrope
-  (24.3 KB) and JetBrains Mono (30.7 KB) come to 55.0 KB, 57.1 KB on the wire
-  with JagHelm's response headers, and a test fails when the files pass 60 KB.
-  Plus Jakarta Sans is 26.7 KB and Montserrat 37.1 KB. Until Phase 1 replaces
-  them, today's screens load their own three files first (98.3 KB, the same
-  files Google Fonts served them); the new UI shares JetBrains Mono's.
+  `font-display: swap` shows the system face until the file arrives.
+- **latin-ext only when the text needs it.** Each face's two `@font-face` rules
+  carry Google's `unicode-range`, so its latin-ext file downloads only once a
+  screen shows one of that subset's characters, such as the Ł and ź of a node
+  named Łódź, and the whole word then draws in the face. The latin-ext files are
+  Manrope 14.8 KB, Plus Jakarta Sans 21.2 KB, Montserrat 69.0 KB and JetBrains
+  Mono 11.4 KB. Characters outside both subsets (Cyrillic, Greek, Vietnamese)
+  use the system face.
+- **Budget: fonts on first load ≤ 60 KB** for the default setup on latin text,
+  which downloads no latin-ext file. Manrope (24.3 KB) and JetBrains Mono
+  (30.7 KB) come to 55.0 KB, 57.1 KB on the wire with JagHelm's response
+  headers, and a test fails when the files pass 60 KB. Plus Jakarta Sans is
+  26.7 KB and Montserrat 37.1 KB. Until Phase 1 replaces them, today's screens
+  load their own three files first (98.3 KB, the same files Google Fonts served
+  them); the new UI shares JetBrains Mono's latin file.
 - **Use the families by role** (`font-sans`, `font-mono`), never by name.
   `font-mono` turns off JetBrains Mono's programming ligatures, as the mock
   does, so a hostname or a SHA reads character by character.
@@ -784,13 +792,15 @@ mock first.
   switches and accents tables above. A test fails until all of them agree, and
   the check fails if any of its colours sits within ΔE OK 0.05 of a status
   colour.
-- A new typeface goes into `src/ui/typefaces.js`, its woff2 into `src/fonts/`
-  with its licence in `src/fonts/licences/`, an `@font-face` into
-  `src/ui/fonts.css`, a `data-typeface` block into `tokens.css` (and its id in
-  that file's header), and a row in the switches and typefaces tables above.
-  `scripts/fonts.test.mjs` fails until all of them agree with each other and
-  with the file (its weights and style), and if the default face and the mono
-  go over 60 KB.
+- A new typeface goes into `src/ui/typefaces.js`, its latin and latin-ext woff2
+  files from Google Fonts into `src/fonts/` (each pinned by its sha256 in
+  `scripts/fonts.test.mjs`) with its licence in `src/fonts/licences/`, two
+  `@font-face` rules into `src/ui/fonts.css` (latin-ext, then latin, with
+  Google's `unicode-range`), a `data-typeface` block into `tokens.css` (and its
+  id in that file's header), and a row in the switches and typefaces tables
+  above. `scripts/fonts.test.mjs` fails until all of them agree with each other
+  and with the files (their family, weights, style and characters), and if the
+  default face and the mono go over 60 KB.
 - A new colour role needs a utility in `tailwind.css`'s `@theme` block, and its
   pairings in `PAIRINGS` in `scripts/ui-contrast.mjs`. A plausible pairing
   that fails and that the mock never draws goes in `FORBIDDEN` instead, and in

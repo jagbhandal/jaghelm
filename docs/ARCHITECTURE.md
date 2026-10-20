@@ -121,7 +121,8 @@ src/                        React 19 SPA (Vite 8)
   styles/global.css          today's themes (10) + their tokens + component styles
   styles/fonts.css           today's fonts, self-hosted: the files Google Fonts served (see 5.1)
   styles/legacy.css          imports global.css and fonts.css into the `legacy` cascade layer
-  fonts/                     every woff2 the web app ships (latin subsets) and their OFL licences
+  fonts/                     every woff2 the web app ships (latin subsets; latin-ext too for the
+                             new UI's faces) and their OFL licences
   ui/                        the redesign's component library, shared with Android (see 5.1):
                              tailwind.css (the stack's stylesheet), tokens.css (the design
                              tokens, docs/design-system.md), accents.js (the accents offered),
@@ -866,17 +867,21 @@ stack sits beside today's CSS and must not restyle it.
   picked. The new UI's faces are in `src/ui/fonts.css` (Manrope by default, Plus
   Jakarta Sans or Montserrat by `data-typeface`, JetBrains Mono), under family
   names ending in "Variable" so they never join today's families; JetBrains
-  Mono's file is shared, so it downloads once. A browser downloads a face only
-  when text renders in it, and nothing is preloaded. `scripts/fonts.test.mjs`
-  checks that every `@font-face` matches its file and licence, that nothing
-  names Google Fonts or loads a font or stylesheet from elsewhere, and the new
-  UI's 60 KB budget; [design-system.md](design-system.md#type) has the faces and
-  the scale. The Android app keeps its own copies (`mobile/src/fonts/`) for
-  today's screens.
+  Mono's latin file is shared, so it downloads once. Each new face is a latin
+  and a latin-ext file with Google's `unicode-range`, so the latin-ext file
+  downloads only for text that needs it, such as "Łódź" (#394); today's faces
+  are latin only. A browser downloads a face only when text renders in it, and
+  nothing is preloaded. `scripts/fonts.test.mjs` checks that every `@font-face`
+  matches its file and licence and each file its pinned sha256, that nothing
+  names Google Fonts or loads a font or stylesheet from elsewhere, that "Łódź"
+  draws in each new face from its latin-ext file while latin text never needs
+  it, and the new UI's 60 KB budget;
+  [design-system.md](design-system.md#type) has the faces and the scale. The
+  Android app keeps its own copies (`mobile/src/fonts/`) for today's screens.
 - **When the old CSS is gone,** drop the `legacy` layer and the scoping: import
   Tailwind's own preflight, move the tokens to `:root` and drop `reference`.
   Delete `src/styles/fonts.css` and every file in `src/fonts/` but the new UI's
-  four faces.
+  four faces (eight files: latin and latin-ext).
 
 ## 6. Data model
 
