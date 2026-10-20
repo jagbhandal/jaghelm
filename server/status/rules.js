@@ -550,8 +550,9 @@ export function judgeIntegration(entry) {
 
 /**
  * An Arcane agent (spec §6.1, §6.2): offline → warn, in the Integrations
- * subsystem. `state` is arcane/derive.js envHealth's: 'up', 'down' or 'unknown'.
- * #291 feeds it.
+ * subsystem. `state` is arcane/derive.js envHealth's: 'up', 'down' or 'unknown',
+ * from the environment list the Arcane poller last read (#291); unknown while
+ * that list fails.
  *
  * @param {{ state: unknown }} agent
  */

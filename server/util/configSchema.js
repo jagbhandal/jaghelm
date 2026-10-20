@@ -39,6 +39,11 @@ export const servicesConfigSchema = z
   })
   .passthrough();
 
+// Two keys are hand-edited and validated where they are read, not here, so a
+// web save (which sends back the whole config it read) is never refused over
+// them: `pushThresholds` (status/thresholds.js) and `backupJobs`, the cron jobs
+// that are backups (status/backupJobs.js, #291), whose bad entries the loop
+// drops with one log line.
 export const displayConfigSchema = z
   .object({
     theme: z.string().max(64).optional(),

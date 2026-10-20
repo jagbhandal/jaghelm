@@ -8,6 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { buildMessage } from './fcm.js';
 import { cachesOf, pushPipeline } from '../testing/pushPipeline.js';
 import {
   NOW,
@@ -253,5 +254,69 @@ test('words: a missing container, a failing integration send nothing', async () 
     assert.deepEqual(p.sent, []);
   } finally {
     p.close();
+  }
+});
+
+// An Arcane agent is a model entity (#291), but its pushes stay the Arcane
+// poller's own (arcane_agent_offline after 2 polls down, arcane_agent_recovered):
+// the status push sends nothing for it, so an outage is one push, not two.
+test('words: an Arcane agent going offline and back sends nothing from the status push', async () => {
+  const p = pushPipeline();
+  try {
+    const agents = (state) => [
+      { env: 'vm-101', state },
+      { env: 'vm-103', state: 'up' },
+    ];
+    await p.cycle(board(), { arcaneAgents: agents('up') });
+    const down = await p.cycle(board(), { arcaneAgents: agents('down') });
+    assert.deepEqual(
+      down.issues.map((e) => [e.id, e.state]),
+      [['integrations/arcane:vm-101', 'warn']],
+      'the screens show it'
+    );
+    await p.cycle(board(), { arcaneAgents: agents('down') });
+    const back = await p.cycle(board(), { arcaneAgents: agents('up') });
+    assert.deepEqual(back.issues, []);
+    assert.deepEqual(p.sent, []);
+  } finally {
+    p.close();
+  }
+});
+
+// A job marked as a backup (#291) pages as the job did: the phone gets the same
+// type, id, node and severity (the Android keys), so an installed app routes
+// and shows it as before. Only the reason words are the backup's.
+test('words: a job marked as a backup pages with the same Android keys as before it was marked', async () => {
+  const data = async (backupJobs, cycles, advanceMs = 0) => {
+    const p = pushPipeline({ start: NOW });
+    try {
+      for (const [i, c] of cycles.entries()) {
+        if (i === cycles.length - 1) p.advance(advanceMs);
+        await p.cycle(c, { backupJobs });
+      }
+      return p.events.map((e) => ({ data: buildMessage('phone', e).data, body: e.body }));
+    } finally {
+      p.close();
+    }
+  };
+  const failing = [
+    board({ cron: jobs(cronRun('success')) }),
+    board({ cron: jobs(cronRun('failure', 30_000, { error: 'exit 3' })) }),
+  ];
+  const late = [
+    board({ cron: jobs(cronRun('success', 0, { expected_every_seconds: 60 })) }),
+    board({ cron: jobs(cronRun('success', 0, { expected_every_seconds: 60 })) }),
+  ];
+  for (const [what, cycles, advanceMs, type, asJob, asBackup] of [
+    ['failed', failing, 0, 'cron_failed', 'Last run failed: exit 3', 'Last backup failed: exit 3'],
+    ['overdue', late, 3_600_000, 'cron_overdue', /Overdue/, /Overdue/],
+  ]) {
+    const job = await data([], cycles, advanceMs);
+    const backup = await data(['n1:restic'], cycles, advanceMs);
+    assert.equal(job.length, 1, what);
+    assert.deepEqual(backup.map((e) => e.data), job.map((e) => e.data), `${what}: same data`);
+    assert.deepEqual(backup[0].data, { type, id: 'n1:restic', node: 'n1', severity: 'warning' });
+    assert.match(job[0].body, typeof asJob === 'string' ? new RegExp(`· ${asJob}$`) : asJob);
+    assert.match(backup[0].body, typeof asBackup === 'string' ? new RegExp(`· ${asBackup}$`) : asBackup);
   }
 });

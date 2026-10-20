@@ -28,6 +28,7 @@ import { assembleServices, servicesCacheEntry, thresholdsOf } from './refresh.js
 import { decorateStatuses } from './cron-overdue.js';
 import { generateDefaultConfig } from './config.js';
 import { createStatusTracker, readStatusInputs } from './status/index.js';
+import { resolveBackupJobs } from './status/backupJobs.js';
 
 export const DEMO_SCENARIOS = Object.freeze(['incident', 'healthy']);
 
@@ -438,15 +439,20 @@ function demoStatusCaches(scenario, now) {
 /**
  * /api/status: the status model of this board, built as the live loop builds
  * it (refresh.js updateStatus): readStatusInputs() over the board's caches,
- * the demo display config's thresholds, and a status tracker as a fresh boot
- * has it (no memory: the demo runs no push to seed one from). Built on every
- * request, about as cheap as /api/services, so every `since` is that request's
- * time, except a job's, which is its last run's.
+ * the demo display config's thresholds and backup jobs, and a status tracker
+ * as a fresh boot has it (no memory: the demo runs no push to seed one from).
+ * Built on every request, about as cheap as /api/services, so every `since` is
+ * that request's time, except a job's, which is its last run's. The demo has
+ * no Arcane, so no agents.
  */
 export function demoStatus({ scenario = 'incident', now = Date.now() } = {}) {
+  const config = demoDisplayConfig();
   return createStatusTracker().update({
-    inputs: readStatusInputs(demoStatusCaches(scenario, now), { env: STATUS_ENV }),
-    thresholds: thresholdsOf(demoDisplayConfig()),
+    inputs: readStatusInputs(demoStatusCaches(scenario, now), {
+      env: STATUS_ENV,
+      backupJobs: resolveBackupJobs(config.backupJobs).jobs,
+    }),
+    thresholds: thresholdsOf(config),
     now,
   });
 }
@@ -455,7 +461,11 @@ export function demoStatus({ scenario = 'incident', now = Date.now() } = {}) {
 
 const link = (name, icon, host) => ({ name, icon, url: `https://${host}.example.com` });
 
-/** /api/display-config: no saved layout, so the board places the nodes itself. */
+/**
+ * /api/display-config: no saved layout, so the board places the nodes itself.
+ * The storage node's nightly backup is marked as a backup (#291), so the status
+ * model judges it as one: its failed run in `incident` is a failed backup.
+ */
 export function demoDisplayConfig() {
   return {
     title: 'JagHelm',
@@ -468,6 +478,7 @@ export function demoDisplayConfig() {
     showTodos: true,
     showCronJobs: true,
     refreshInterval: 30,
+    backupJobs: ['storage:nightly-backup'],
     tabs: [],
     sections: {},
     gridLayout: null,

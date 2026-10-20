@@ -248,7 +248,9 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
     }
   }
 
-  // ── Integrations, and the Arcane agents (#291 feeds them) ──
+  // ── Integrations, and the Arcane agents (the poller's last read, #291).
+  // Arcane's updates, held-back updates, releases and digests are events, not
+  // entities (spec §6.2): they stay pushes, and #267 records them. ──
   for (const [key, entry] of Object.entries(objectOr(integrations))) {
     if (!isObject(entry)) continue;
     const base = {
