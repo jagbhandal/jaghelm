@@ -124,7 +124,8 @@ describe('Toast', () => {
     await user.click(screen.getByRole('button', { name: 'Notify' }));
     const toast = await within(viewport()).findByRole('dialog', { name: 'Connected in 142 ms' });
     const icon = toast.querySelector('svg[data-tone="ok"]');
-    expect(icon).toHaveClass('text-ok-fg', 'fill-current');
+    expect(icon).toHaveClass('text-ok-solid');
+    expect(icon).toHaveAttribute('data-shape', 'disc');
     expect(icon).toHaveAttribute('aria-hidden', 'true');
   });
 
@@ -141,7 +142,7 @@ describe('Toast', () => {
     );
     await act(() => toast.promise(Promise.resolve(), { loading: 'Saving', success: 'Saved' }));
     const saved = await within(viewport()).findByRole('dialog', { name: 'Saved' });
-    expect(saved.querySelector('svg[data-tone="ok"]')).toHaveClass('text-ok-fg');
+    expect(saved.querySelector('svg[data-tone="ok"]')).toHaveClass('text-ok-solid');
     // Without a success state, the loading toast's words stay, with the ok shape.
     await act(() => toast.promise(Promise.resolve(), { loading: 'Restarting Immich' }));
     const restarted = await within(viewport()).findByRole('dialog', { name: 'Restarting Immich' });

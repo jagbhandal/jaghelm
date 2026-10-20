@@ -98,7 +98,7 @@ Purple means "interactive or selected", and it also tints section icon chips and
 | --- | --- | --- | --- |
 | `ok` | green | filled disc | healthy |
 | `warn` | amber | slashed disc | degraded, caution |
-| `crit` | red | ring with bar | down, critical |
+| `crit` | red | disc with a bar (as the mock) | down, critical |
 | `unknown` | steel grey | hollow ring | no signal: the source failed or has no data |
 | `maintenance` | blue | wrench | planned work (Kuma maintenance) |
 | `info` | blue | — | neutral information, not a state |

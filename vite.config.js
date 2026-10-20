@@ -7,6 +7,12 @@ export default defineConfig({
   // Tailwind CSS v4 compiles src/ui/tailwind.css, the new UI stack's stylesheet
   // (docs/ARCHITECTURE.md, "UI stack").
   plugins: [react(), tailwindcss()],
+  define: {
+    // The status components in src/ui/ draw the web's look here, as a build
+    // constant, so this bundle leaves out the Android look they also carry
+    // until Phase 4 (#326; src/ui/lib/status.js, mobile/vite.config.mobile.js).
+    __ANDROID_LOOK__: 'false',
+  },
   resolve: {
     alias: {
       // The shared component library (shadcn/ui, components.json). The Android

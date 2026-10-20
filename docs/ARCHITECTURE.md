@@ -132,10 +132,14 @@ src/                        React 19 SPA (Vite 8)
                              checkbox, field, segmented-control, tabs; design-system.md),
                              the containers (#286: root, panel, dialog, drawer, confirm,
                              popover, tooltip, toast, banner, empty-state, skeleton),
-                             lib/utils.js (cn, taught the theme), lib/portal.js (portal roots
-                             and the switches they copy), lib/field-context.js (how a Field
-                             labels its control), lib/tone.jsx (a tone's icon),
-                             lib/name.js (an overlay's required name)
+                             the status components (#287: status-lamp, status-word,
+                             issue-row, subsystem-strip, attention-panel; the Android app
+                             uses them too), lib/status.js (the five states, their words,
+                             and the two looks), lib/utils.js (cn, taught the theme),
+                             lib/portal.js (portal roots and the switches they copy),
+                             lib/field-context.js (how a Field labels its control),
+                             lib/tone.jsx (a tone's icon), lib/name.js (an overlay's
+                             required name)
 
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
@@ -799,17 +803,32 @@ stack sits beside today's CSS and must not restyle it.
   misread. A generated component's `import { cn } from 'cn'` is switched to it,
   and a test fails on any other `cn` in `src/ui/`. Icons come from
   `lucide-react` by name (`import { Check } from 'lucide-react'`), so a bundle
-  carries only the icons it uses. The controls (#285) and the containers
-  (#286) are the components so far, the interactive ones built on Base UI
-  primitives, and no screen uses them yet. A screen's root is a `UiRoot`
-  (`src/ui/root.jsx`), which carries its switches to every portal; roots can
-  nest, and a page has one toast viewport. Screens import the components,
-  never `@base-ui/react` itself (`scripts/ui-stack.test.mjs`).
+  carries only the icons it uses. The components so far are the controls
+  (#285) and the containers (#286), which no screen uses yet, and the status
+  components (#287), which the Android app's screens use (next point). The
+  interactive controls and containers are built on Base UI primitives. A
+  screen's root is a `UiRoot` (`src/ui/root.jsx`), which carries its switches
+  to every portal; roots can nest, and a page has one toast viewport. Screens
+  import the components, never `@base-ui/react` itself
+  (`scripts/ui-stack.test.mjs`).
 - **Both apps import `@ui/...`.** The Android build maps `@ui` to `../src/ui` and
   lists React and every package `src/ui/` imports in `resolve.dedupe`, so shared
   code uses the Android app's own copies: the APK build installs `mobile/` only,
   and a second React breaks hooks. A package added to `src/ui/` goes in both
   `package.json` files and that list; `scripts/ui-stack.test.mjs` checks it.
+- **The Android app's status components are the shared ones** (#287): its
+  StatusLamp, StatusWord, IssueRow, SubsystemStrip and SystemStatusCard moved
+  from `mobile/src/components/` into `src/ui/` (SystemStatusCard became
+  AttentionPanel), and its screens import them as `@ui/...`. As a stopgap
+  until Phase 4 rebuilds those screens (#326, which removes it), each status
+  component also draws the Android app's own look, its old markup and the
+  class names `MobileApp.css` styles in the `legacy` layer. The
+  `__ANDROID_LOOK__` define picks the look per build: true in the Android
+  build, false in the web's (`src/ui/lib/status.js`). Each component reads it
+  directly, so the bundler sees a literal and each bundle leaves the other
+  look out: the APK carries neither `cn`, Lucide nor the web look's code, bar
+  the lamp marks its own lamp borrows
+  ([design-system.md](design-system.md#two-looks)).
 - **Cascade layers.** The order is `legacy, properties, theme, base, components,
   utilities`, declared at the top of every entry stylesheet. Each app's
   `styles/legacy.css` imports today's stylesheets into `legacy`, the lowest layer
