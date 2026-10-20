@@ -58,12 +58,16 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
           .trim()
           .toLowerCase()
           .replace(/[^a-z0-9-]/g, '');
-      if (form.target) body.target = form.target;
-      if (form.username) body.username = form.username;
+      // The server merges this into the stored entry (#402): target and
+      // username are always sent, so emptying one clears it; a blank password
+      // or token is left out and keeps the stored one.
+      body.target = form.target;
+      body.username = form.username;
       if (form.password) body.password = form.password;
       if (form.token) body.token = form.token;
       if (Object.keys(form.params).length > 0) body.params = form.params;
-      // When editing, send the original storage key so server can remove it if the key changed
+      // When editing, send the original storage key: the server merges into
+      // that entry, and moves it to a new key only when the instance changed.
       if (editingType) body.editingKey = editingType;
 
       const res = await apiFetch('/api/integrations/save', {
@@ -112,23 +116,19 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
   };
 
   // ── Toggle enabled/disabled ──
+  // Sends only the new state: the server changes `enabled` and nothing else
+  // in the stored entry (#402).
   const handleToggle = async (type, currentConfig) => {
+    const enabled = currentConfig.enabled === false; // flip it
     try {
-      const body = {
-        type,
-        url: currentConfig.url,
-        enabled: currentConfig.enabled === false, // flip it
-      };
-      if (currentConfig.username) body.username = currentConfig.username;
-      // Don't send password/token — they're already stored as $secret refs
-      const res = await apiFetch('/api/integrations/save', {
-        method: 'POST',
+      const res = await apiFetch(`/api/integrations/${encodeURIComponent(type)}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ enabled }),
       });
       const data = res.ok ? await res.json().catch(() => ({})) : {};
       if (!res.ok || data.ok === false) {
-        toast(`Failed to ${body.enabled ? 'enable' : 'disable'} ${type}.`, 'error');
+        toast(`Failed to ${enabled ? 'enable' : 'disable'} ${type}.`, 'error');
         return;
       }
       refetch();

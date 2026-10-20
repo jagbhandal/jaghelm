@@ -29,11 +29,7 @@ import { serviceRegistry } from './serviceRegistry.js';
 import { containerRegistry } from './containerRegistry.js';
 import { fetchIntegration } from './integrations/handler.js';
 import { createIntegrationBackoff } from './integrations/backoff.js';
-import {
-  configFingerprint,
-  resolveIntegrationConfig,
-  savedFromSettings,
-} from './integrations/lib/config.js';
+import { configFingerprint, resolveIntegrationConfig } from './integrations/lib/config.js';
 import { setCache } from './cache.js';
 import { safeFetch } from './httpClient.js';
 import { dedupe } from './util/dedupe.js';
@@ -835,8 +831,9 @@ const integrationBackoff = createIntegrationBackoff({ logger: log });
 /**
  * Attempt the integration stored under `key` in the next refresh, whatever its
  * backoff, as a changed config would. The Settings save calls it, so saving an
- * integration, changed or not, is the way to say "try again". A call while the
- * integration's fetch is in flight holds for the refresh after it.
+ * integration, changed or not, is the way to say "try again", and so does
+ * enabling it from its row in Settings. A call while the integration's fetch
+ * is in flight holds for the refresh after it.
  */
 export function retryIntegrationNow(key) {
   integrationBackoff.retryNow(key, performance.now());
@@ -910,13 +907,7 @@ async function _refreshIntegrations() {
       } catch (err) {
         entry = { _error: String((err && err.message) || err) };
       }
-      byKey[key] = integrationBackoff.record(
-        key,
-        fingerprint,
-        entry,
-        { authRejected, savedFromSettings: savedFromSettings(key, cfg) },
-        at
-      );
+      byKey[key] = integrationBackoff.record(key, fingerprint, entry, { authRejected }, at);
     };
 
     // Bounded fan-out: a fully-wired board can have 30-50+ integrations; firing them

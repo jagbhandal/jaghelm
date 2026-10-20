@@ -178,7 +178,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/health`, `/api/readyz` | public | liveness / readiness probes |
 | `/metrics` | public | Prometheus exposition |
 | `/api/services` | token | discovered nodes + services (background-refreshed, ETag) |
-| `/api/integrations` | token | per-integration live data (background-refreshed, ETag) |
+| `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6) |
 | `/api/display-config` | token | the display config blob |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
@@ -582,11 +582,10 @@ Key properties:
     holds no fetch slot and spends no timeout: its entry is the one its last
     attempt left, served again, `_error` included, as the failure was served
     when it happened (no last good data). A parked integration's `_error` ends
-    with a fixed hint: "(login refused twice; not retried until it is saved in
-    Settings)" for an entry exactly as a save in Settings writes it
-    (`savedFromSettings` in `lib/config.js`), and "(... not retried until
-    services.yaml changes or JagHelm restarts)" for one written by hand,
-    which a save in Settings would rebuild and lose parts of (#402).
+    with a fixed hint, "(login refused twice; not retried until it is saved in
+    Settings)", the same for every integration: a save in Settings keeps an
+    entry however it was written (see 6, #402), so it is a retry for any of
+    them.
   - **`_status`.** Every entry in `/api/integrations` carries
     `_status: { state, since, failures, nextAttemptAt }`, with `state` one of
     `ok`, `backing_off` and `auth_failed`, `since` when that state began,
@@ -918,6 +917,26 @@ All state is files under the data dir (no DB):
   the Kuma monitor mapping `monitor` / `monitor_per_node`, see 4.2) and
   integration configs (each secret value stored separately, encrypted). Hot-reloaded on an
   external edit; read copy-on-read; `POST /api/services/config` validated by Zod.
+  `saveConfig` re-serialises the whole file, so a write drops its comments and
+  hand formatting.
+  - **An integration's save in Settings merges** (`POST /api/integrations/save`,
+    #402). The form's values go into the stored entry, and only what the form
+    owns changes: the URL (required), `enabled`, the username and target
+    (sent empty to remove them), the preset's URL params (allow-listed; empty
+    removes), and a typed password or token, stored as
+    `$secret:integration_<key>_password|token`. A blank password or token keeps
+    what is stored: a plaintext value or a `$secret:` under any name. Every
+    other key stays (a custom integration's `endpoint`, `auth`, `authHeader`,
+    `fields`, or anything written by hand), and an existing entry's `preset`
+    is never changed. The instance name is part of the key: a changed one moves
+    the entry to its new key, an unchanged one keeps it where it is, even
+    under a key Settings would not derive (`my_npm`). A save that changes
+    nothing writes nothing, so the file stays byte-for-byte as it was; it
+    still asks for a retry (4.3).
+  - **The enable toggle** (`PATCH /api/integrations/:key`, body
+    `{ "enabled": true|false }` and nothing else) sets `enabled` alone, writes
+    nothing when the entry is already in that state, and asks for a retry when
+    it enables.
 - **display config** -- title, theme, layout (`{lg,md,sm}` grid item arrays),
   sections (per-panel visibility/order/colour), nav/search/weather flags,
   links, tabs, fonts. Read copy-on-read; validated by Zod.

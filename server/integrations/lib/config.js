@@ -90,38 +90,3 @@ export function configFingerprint(yamlConfig, resolved) {
   ]);
   return createHash('sha256').update(material).digest('hex');
 }
-
-// The keys a save in Settings writes (routes/integrations.js POST /save),
-// besides the preset's own urlParams.
-const SETTINGS_KEYS = new Set(['url', 'enabled', 'preset', 'instance', 'target', 'username', 'password', 'token']);
-
-/**
- * Whether services.yaml holds `entry` under `key` exactly as a save in Settings
- * writes it, so that saving it again from Settings keeps it: a preset, stored
- * under the key Settings derives from its preset and instance, with its
- * password and token (if any) under the secret names Settings gives them, and
- * nothing the form does not send. A custom integration, or an entry written or
- * extended by hand, is not: the save rebuilds the entry from the form and drops
- * the rest (#402). The refresh loop uses it to say how to retry an integration
- * whose login was refused (#239).
- */
-export function savedFromSettings(key, entry) {
-  if (!entry || typeof entry !== 'object') return false;
-  const preset = typeof entry.preset === 'string' ? getPresetFull(entry.preset) : null;
-  if (!preset) return false;
-  const { instance } = entry;
-  // Settings lowercases an instance name and keeps only a-z, 0-9 and "-".
-  if (instance !== undefined && !(typeof instance === 'string' && /^[a-z0-9-]+$/.test(instance))) {
-    return false;
-  }
-  if (key !== (instance ? `${entry.preset}_${instance}` : entry.preset)) return false;
-  const params = new Set((preset.urlParams || []).map((p) => p.key));
-  for (const [k, v] of Object.entries(entry)) {
-    if (k === 'password' || k === 'token') {
-      if (v !== `$secret:integration_${key}_${k}`) return false;
-    } else if (!SETTINGS_KEYS.has(k) && !params.has(k)) {
-      return false;
-    }
-  }
-  return true;
-}
