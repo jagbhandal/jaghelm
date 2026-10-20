@@ -1,41 +1,121 @@
 /**
- * Portalled content (a Select's list; popovers, dialogs and menus with #286)
- * renders at the end of <body>, outside the screen's `.jh-ui` root, where it
- * would lose the tokens, the scoped reset and the root's switches. The portal
- * element is therefore made a `.jh-ui` root of its own, carrying the same
- * switches as the root around the control that opened it
- * (docs/design-system.md, "Switches"). scripts/ui-stack.test.mjs fails when
- * ROOT_SWITCHES and the switches in tokens.css's header disagree.
+ * Portalled content (a Select's list, a dialog, a drawer, a popover, a
+ * tooltip, the toasts) renders at the end of <body>, outside the screen's
+ * `.jh-ui` root, where it would lose the tokens, the scoped reset and the
+ * root's switches. The portal element is therefore made a `.jh-ui` root of its
+ * own, carrying the same switches (docs/design-system.md, "Switches"):
+ *
+ *  1. those of the `.jh-ui` root around the control that opened it (its
+ *     anchor), read when the control mounts, when the popup opens, and when
+ *     the screen's switches change;
+ *  2. with no anchor in a root (the toasts; a dialog opened from code, or from
+ *     outside the new UI), those the UiRoot around it provides (root.jsx);
+ *  3. with neither, the defaults: dark, violet, comfortable, Manrope.
+ *
+ * scripts/ui-stack.test.mjs fails when ROOT_SWITCHES and the switches in
+ * tokens.css's header disagree, and when a Base UI portal in src/ui/ is not
+ * given these props.
  */
-import { useCallback, useLayoutEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from 'react';
+import { DEFAULT_ACCENT } from '../accents.js';
+import { DEFAULT_TYPEFACE } from '../typefaces.js';
+
+/** The class that makes an element a root of the new UI (tokens.css, preflight.css). */
+export const ROOT_CLASS = 'jh-ui';
+
+/**
+ * The switches, as UiRoot's props name them: the attribute each one sets on
+ * the root, and the value that needs no attribute (tokens.css's defaults).
+ */
+export const SWITCHES = Object.freeze({
+  theme: Object.freeze({ attribute: 'data-theme', default: 'dark' }),
+  accent: Object.freeze({ attribute: 'data-accent', default: DEFAULT_ACCENT }),
+  density: Object.freeze({ attribute: 'data-density', default: 'comfortable' }),
+  typeface: Object.freeze({ attribute: 'data-typeface', default: DEFAULT_TYPEFACE }),
+});
 
 /** The attributes a `.jh-ui` root switches on (tokens.css). */
-export const ROOT_SWITCHES = Object.freeze([
-  'data-theme',
-  'data-accent',
-  'data-density',
-  'data-typeface',
-]);
+export const ROOT_SWITCHES = Object.freeze(Object.values(SWITCHES).map((s) => s.attribute));
 
-/** Props that make an element a `.jh-ui` root with the switches of the root around `anchor`. */
-export function portalRootProps(anchor) {
-  const props = { className: 'jh-ui' };
-  const root = anchor?.closest?.('.jh-ui');
+/**
+ * The attributes for switch values given by name ({ theme: 'light' }): a
+ * default or a missing value sets none, as tokens.css reads no attribute as
+ * the default.
+ */
+export function switchAttributes(values = {}) {
+  const attributes = {};
+  for (const [name, { attribute, default: fallback }] of Object.entries(SWITCHES)) {
+    const value = values[name];
+    if (value != null && value !== '' && value !== fallback) attributes[attribute] = value;
+  }
+  return attributes;
+}
+
+/** The switches of the UiRoot around a component, as attributes; null outside one. */
+export const RootSwitchesContext = createContext(null);
+
+/**
+ * Props that make an element a `.jh-ui` root with the switches of the root
+ * around `anchor`, or, when `anchor` sits in no root, with `switches` (the
+ * attributes a UiRoot provides).
+ */
+export function portalRootProps(anchor, switches = null) {
+  const props = { className: ROOT_CLASS };
+  const root = anchor?.closest?.(`.${ROOT_CLASS}`);
   for (const name of ROOT_SWITCHES) {
-    const value = root?.getAttribute(name);
+    const value = root ? root.getAttribute(name) : switches?.[name];
     if (value != null) props[name] = value;
   }
   return props;
 }
 
+const sameProps = (a, b) => {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k]);
+};
+
+const NO_ANCHOR = { current: null };
+
 /**
- * The portal root's props for the control behind `anchorRef`, read when the
- * control mounts, and `sync`, to read them again when the popup opens (the
- * screen may have switched theme or density since).
+ * The portal root's props for the overlay opened from the element behind
+ * `anchorRef` (none for a toast), and `sync`, to read them again when the
+ * popup opens: the screen may have changed a switch since. They are read
+ * again whenever the UiRoot's switches change, so an open overlay follows
+ * the screen into light or compact.
  */
-export function usePortalRoot(anchorRef) {
-  const [props, setProps] = useState(() => portalRootProps(null));
-  const sync = useCallback(() => setProps(portalRootProps(anchorRef.current)), [anchorRef]);
+export function usePortalRoot(anchorRef = NO_ANCHOR) {
+  const switches = useContext(RootSwitchesContext);
+  // The anchor is not in the page until the first layout effect reads it.
+  const [props, setProps] = useState(() => portalRootProps(null, switches));
+  const sync = useCallback(() => {
+    const next = portalRootProps(anchorRef.current, switches);
+    setProps((prev) => (sameProps(prev, next) ? prev : next));
+  }, [anchorRef, switches]);
   useLayoutEffect(sync, [sync]);
   return [props, sync];
+}
+
+/**
+ * For an overlay with an open state (Base UI's Root): its portal root's props,
+ * and the `onOpenChange` to give the Root, which reads the switches again on
+ * opening before calling the caller's own. A controlled `open` that turns true
+ * from outside reads them too.
+ */
+export function useOverlayPortal(anchorRef, open, onOpenChange) {
+  const [props, sync] = usePortalRoot(anchorRef);
+  const callback = useRef(onOpenChange);
+  useLayoutEffect(() => {
+    callback.current = onOpenChange;
+  });
+  useLayoutEffect(() => {
+    if (open) sync();
+  }, [open, sync]);
+  const openChange = useCallback(
+    (next, details) => {
+      if (next) sync();
+      callback.current?.(next, details);
+    },
+    [sync]
+  );
+  return [props, openChange];
 }
