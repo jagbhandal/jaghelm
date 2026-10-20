@@ -1,4 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  useRef,
+  lazy,
+  Suspense,
+} from 'react';
 import NavBar from './components/NavBar';
 import LoginPage from './components/LoginPage';
 import CommandPalette from './components/CommandPalette';
@@ -16,6 +24,7 @@ const IframeView = lazy(() => import('./views/IframeView'));
 const SettingsView = lazy(() => import('./views/SettingsView'));
 import { apiFetch, setAuthToken as setApiAuthToken, initAuthToken } from './api/client.js';
 import { secureStore } from './storage/index.js';
+import { noteActiveTab, takeReloadTab } from './chunkReload.js';
 
 /**
  * App — outer shell owning auth resolution and the login screen. The
@@ -109,7 +118,11 @@ export default function App() {
 
 function AppMain({ authRequired, onLogout }) {
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  // A chunk reload (chunkReload.js, #379) left the tab that was open; take it
+  // once, so an ordinary reload still opens the dashboard.
+  const [activeTab, setActiveTab] = useState(() => takeReloadTab() || 'dashboard');
+  // Before the browser paints, so the tab is noted before its chunk can fail.
+  useLayoutEffect(() => noteActiveTab(activeTab), [activeTab]);
   const [theme, setTheme] = useState(() => localStorage.getItem('jaghelm-theme') || 'dark');
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [overallHealth, setOverallHealth] = useState('up');
@@ -186,6 +199,13 @@ function AppMain({ authRequired, onLogout }) {
     { id: 'dashboard', label: 'Dashboard', type: 'dashboard' },
     ...(config.tabs || []),
   ];
+
+  // A restored tab the config no longer has would hide the dashboard and show
+  // nothing in its place, so fall back to the dashboard.
+  const tabKnown = activeTab === 'settings' || allTabs.some((t) => t.id === activeTab);
+  useEffect(() => {
+    if (!tabKnown) setActiveTab('dashboard');
+  }, [tabKnown]);
 
   return (
     <ConfigProvider config={config} setConfig={setConfig}>
