@@ -35,11 +35,37 @@ export function redactSecrets(input) {
     const colon = info.indexOf(':');
     return colon === -1 ? '://[redacted]@' : `://${info.slice(0, colon)}:[redacted]@`;
   });
+  // A password with a raw #, / or ? stops that pattern short of its @, and makes
+  // the URL one the parser refuses, so it never reached a request either. Each
+  // token (text up to whitespace or a quote) holding such a URL loses everything
+  // between :// and its last @. A URL that parses is left to the rule above, so
+  // an @ in its path or fragment stays.
+  if (s.includes('://') && s.includes('@')) s = s.replace(/[^\s'"]+/g, redactUnparsedUserinfo);
   s = s.replace(SECRET_PARAMS, '$1[redacted]');
   // Belt-and-suspenders: drop the entire query string off any http(s) URL so a
   // secret in an unexpected param name can't slip through.
   s = s.replace(/(https?:\/\/[^\s'"]+?)\?[^\s'"]*/gi, '$1?[redacted]');
   return s;
+}
+
+/**
+ * One token of redactSecrets: a token holding `scheme://` and then `@`, whose
+ * URL doesn't parse, loses everything between the `://` and its last `@`. Not
+ * caught: a password holding whitespace or a quote (the token ends there), one
+ * whose raw `#` or `/` follows only digits (the URL then parses, as
+ * `user@host:port`), and a second URL in the same token.
+ * @param {string} tok
+ */
+function redactUnparsedUserinfo(tok) {
+  const sep = tok.indexOf('://');
+  const at = tok.lastIndexOf('@');
+  if (sep === -1 || at < sep) return tok;
+  // The scheme: the run of scheme characters before ://, from its first letter.
+  let start = sep;
+  while (start > 0 && /[a-z0-9+.-]/i.test(tok[start - 1])) start--;
+  while (start < sep && !/[a-z]/i.test(tok[start])) start++;
+  if (start === sep || URL.canParse(tok.slice(start))) return tok;
+  return `${tok.slice(0, sep)}://[redacted]${tok.slice(at)}`;
 }
 
 /**

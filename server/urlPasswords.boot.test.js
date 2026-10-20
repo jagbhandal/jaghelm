@@ -6,8 +6,9 @@
  *
  * Boots the real server (`node server/index.js`) at LOG_LEVEL=debug and reads
  * everything it writes to stdout and stderr: a first boot (no services.yaml, so
- * node discovery runs and fails), and a boot with a node configured whose
- * refresh cycles fail. A preload runs setInterval fast (any period becomes at
+ * node discovery runs and fails), a boot with a node configured whose refresh
+ * cycles fail, and the same with a password holding a raw #, a URL Node can't
+ * parse, which the SSRF guard's "Invalid URL" error names. A preload runs setInterval fast (any period becomes at
  * most 50 ms), so the cycles after the first, which log at debug, come within
  * the second the test watches.
  */
@@ -41,18 +42,19 @@ syncBuiltinESMExports();
 );
 
 /**
- * Boot the server on `dataDir` until `done(lines)` holds (or 30 s pass), stop it,
- * and return everything it wrote and the JSON lines in it.
+ * Boot the server on `dataDir`, with `url` for both URLs, until `done(lines)`
+ * holds (or 30 s pass), stop it, and return everything it wrote and the JSON
+ * lines in it.
  */
-async function boot(dataDir, done) {
+async function boot(dataDir, done, url = CRED_URL) {
   const env = {
     ...process.env,
     JAGHELM_DATA_DIR: dataDir,
     JAGHELM_HOST: '127.0.0.1',
     PORT: '0',
     LOG_LEVEL: 'debug',
-    PROMETHEUS_URL: CRED_URL,
-    KUMA_URL: CRED_URL,
+    PROMETHEUS_URL: url,
+    KUMA_URL: url,
     KUMA_API_KEY: 'k', // the /metrics path first, then the status page
     // An entry the CSP check refuses, which index.js warns about.
     CSP_CONNECT_EXTRA: `${CRED_URL}/x y`,
@@ -98,11 +100,11 @@ async function boot(dataDir, done) {
 const find = (lines, msg, extra = () => true) => lines.filter((l) => l.msg === msg && extra(l));
 
 /** The boot lines name the host, with the password taken out. */
-function assertBootLines(lines, out) {
+function assertBootLines(lines, out, redactedUrl = REDACTED_URL) {
   const [prom] = find(lines, 'Prometheus URL');
-  assert.equal(prom?.promUrl, REDACTED_URL, out);
+  assert.equal(prom?.promUrl, redactedUrl, out);
   const [kuma] = find(lines, 'Uptime Kuma URL');
-  assert.equal(kuma?.kumaUrl, REDACTED_URL, out);
+  assert.equal(kuma?.kumaUrl, redactedUrl, out);
   const [csp] = find(lines, 'ignoring invalid CSP_CONNECT_EXTRA entry');
   assert.equal(csp?.entry, `${REDACTED_URL}/x y`, out);
 }
@@ -118,18 +120,22 @@ test('a first boot with credentials in both URLs logs neither password', async (
   assert.match(String(discovery?.err), /includes credentials: http:\/\/jag:\[redacted\]@127\.0\.0\.1:9\//, out);
 });
 
-test('failing refresh cycles with credentials in both URLs log neither password', async () => {
-  const dataDir = join(root, 'cycles');
+/** A data dir whose services.yaml has one node, so each cycle queries Prometheus. */
+function dataDirWithNode(name) {
+  const dataDir = join(root, name);
   mkdirSync(dataDir);
   writeFileSync(
     join(dataDir, 'services.yaml'),
     'nodes:\n  pi:\n    prometheus_node: pi\n    display_name: pi\n    visible: true\nservices: {}\n'
   );
-  const stillFailing = (ls, source) => find(ls, 'data source still failing', (l) => l.source === source).length >= 2;
-  const { out, lines } = await boot(
-    dataDir,
-    (ls) => stillFailing(ls, 'prometheus') && stillFailing(ls, 'kuma') && find(ls, 'UPS read failed').length >= 2
-  );
+  return dataDir;
+}
+
+const stillFailing = (ls, source) => find(ls, 'data source still failing', (l) => l.source === source).length >= 2;
+const cyclesFailed = (ls) => stillFailing(ls, 'prometheus') && stillFailing(ls, 'kuma') && find(ls, 'UPS read failed').length >= 2;
+
+test('failing refresh cycles with credentials in both URLs log neither password', async () => {
+  const { out, lines } = await boot(dataDirWithNode('cycles'), cyclesFailed);
 
   assert.ok(!out.includes('hunter2'), out);
   assertBootLines(lines, out);
@@ -146,4 +152,20 @@ test('failing refresh cycles with credentials in both URLs log neither password'
   assert.ok(noMonitors.length >= 2, out);
   for (const l of noMonitors) assert.match(String(l.err), refusal, out);
   for (const l of find(lines, 'UPS read failed')) assert.match(String(l.err), refusal, out);
+});
+
+test('a password with a raw # (a URL Node cannot parse) is not logged either', async () => {
+  const url = 'http://jag:ab#hunter2@127.0.0.1:9'; // pragma: allowlist secret
+  const { out, lines } = await boot(dataDirWithNode('unparsed'), cyclesFailed, url);
+
+  assert.ok(!out.includes('hunter2'), out);
+  // The whole userinfo goes: the parser can't say where the password starts.
+  assertBootLines(lines, out, 'http://[redacted]@127.0.0.1:9');
+  // The failing cycles log the SSRF guard's "Invalid URL" with the URL in it.
+  const invalid = /Invalid URL: http:\/\/\[redacted\]@127\.0\.0\.1:9\//;
+  for (const source of ['prometheus', 'kuma']) {
+    const [failed] = find(lines, 'data source failed; push alerts keep its last known state until it recovers', (l) => l.source === source);
+    assert.match(String(failed?.error), invalid, `${source}: ${out}`);
+  }
+  for (const l of find(lines, 'UPS read failed')) assert.match(String(l.err), invalid, out);
 });

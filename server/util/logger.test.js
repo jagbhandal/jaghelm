@@ -102,7 +102,8 @@ test('an Error: its message, stack and cause, and properties such as url and inp
   assert.ok(entries[2].stack.includes(REDACTED_URL), entries[2].stack);
   assert.equal(entries[3].result.error.url, `${REDACTED_URL}/api/v1/query`);
   assert.equal(entries[3].result.error.input, `${REDACTED_URL}/api/v1/query`);
-  assert.equal(entries[3].invalid.input, `${REDACTED_URL}:bad`);
+  // A URL that doesn't parse loses everything between :// and its last @.
+  assert.equal(entries[3].invalid.input, 'http://[redacted]@127.0.0.1:9:bad');
 });
 
 test('a URL object is written as its address, redacted', () => {
@@ -173,4 +174,65 @@ test('a line with no credentials is written unchanged, a URL without them keeps 
     none: null,
     list: [1, 'two'],
   });
+});
+
+test('a log call never throws: a circular field is written as a placeholder', () => {
+  const loop = { name: 'a', [CRED_URL]: 1 }; // a key to redact: the copy must not loop either
+  loop.self = loop;
+  const list = [CRED_URL];
+  list.push(list);
+  const shared = { url: CRED_URL };
+  let out;
+  assert.doesNotThrow(() => {
+    out = capture(() => log.warn({ loop, list, a: shared, b: shared, deep: { inner: { up: loop } } }, 'x'));
+  });
+  assertNoSecret(out.raw);
+  const [e] = out.entries;
+  assert.equal(e.msg, 'x');
+  assert.deepEqual(e.loop, { name: 'a', [REDACTED_URL]: 1, self: '[Circular]' });
+  assert.deepEqual(e.list, [REDACTED_URL, '[Circular]']);
+  // The same object twice is no cycle: written both times.
+  assert.deepEqual(e.a, { url: REDACTED_URL });
+  assert.deepEqual(e.b, { url: REDACTED_URL });
+  assert.deepEqual(e.deep.inner.up, { name: 'a', [REDACTED_URL]: 1, self: '[Circular]' });
+});
+
+test('a log call never throws: a BigInt field is written as a string', () => {
+  const { entries } = capture(() => log.info({ bytes: 12n, nested: { n: 2n ** 70n } }, 'x'));
+  assert.equal(entries[0].bytes, '12');
+  assert.equal(entries[0].nested.n, String(2n ** 70n));
+});
+
+test('a log call never throws: fields that cannot be written leave a line with the module and message', () => {
+  const throwingToJSON = { toJSON: () => { throw new Error(`no JSON for ${CRED_URL}`); } };
+  const throwingGetter = { get url() { throw new Error(`no ${CRED_URL}`); } };
+  const throwingString = { toString: () => { throw new Error('no string'); } };
+  let out;
+  assert.doesNotThrow(() => {
+    out = capture(() => {
+      log.error({ value: throwingToJSON }, `failed for ${CRED_URL}`);
+      log.error(throwingGetter, 'getter');
+      log.error({ a: 1 }, 'joined', throwingString);
+      log.error({ v: { toJSON: () => { throw throwingString; } } }, 'thrown non-Error');
+    });
+  });
+  assertNoSecret(out.raw);
+  const [a, b, c, d] = out.entries;
+  const keys = ({ time, ...rest }) => (assert.ok(time), Object.keys(rest).sort());
+  for (const e of [a, b, d]) assert.deepEqual(keys(e), ['level', 'logError', 'module', 'msg']);
+  assert.deepEqual([a.level, a.module, a.msg], ['error', 'test', `failed for ${REDACTED_URL}`]);
+  assert.equal(a.logError, `the line could not be written in full: no JSON for ${REDACTED_URL}`);
+  assert.equal(b.msg, 'getter');
+  assert.equal(b.logError, `the line could not be written in full: no ${REDACTED_URL}`);
+  // The message itself could not be built: the line says why, without one.
+  assert.deepEqual(keys(c), ['level', 'logError', 'module']);
+  assert.equal(c.logError, 'the line could not be written in full: no string');
+  assert.equal(d.msg, 'thrown non-Error');
+  assert.equal(d.logError, 'the line could not be written in full: unknown error');
+});
+
+test('a String object is redacted like a string', () => {
+  const { raw, entries } = capture(() => log.info({ url: new String(CRED_URL) }, 'x'));
+  assertNoSecret(raw);
+  assert.equal(entries[0].url, REDACTED_URL);
 });
