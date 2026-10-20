@@ -76,6 +76,7 @@ import { iconRoutes } from './routes/icons.js';
 import { cronRoutes } from './routes/cron.js';
 import { systemRoutes } from './routes/system.js';
 import { createPushRoutes } from './routes/push.js';
+import { createEmbedCheckRoutes } from './routes/embedCheck.js';
 import { getPushStore } from './push/store.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -237,6 +238,8 @@ app.use('/api/integrations', authMiddleware, integrationRoutes);
 // delete credentials) until a password is set. Does not affect integration save.
 app.use('/api/secrets', requireAuthEnabled, authMiddleware, secretsRoutes);
 app.use('/api/display-config', authMiddleware, displayConfigRoutes);
+// Whether an app tab's headers let the browser frame it (#269).
+app.use('/api/embed-check', authMiddleware, createEmbedCheckRoutes());
 app.use('/api/todos', authMiddleware, todosRoutes);
 app.use('/api/push', authMiddleware, createPushRoutes({ store: getPushStore(), fcm: fcmModule }));
 app.use('/api/upload', authMiddleware, createUploadRoutes(upload));

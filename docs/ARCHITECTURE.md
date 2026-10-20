@@ -97,6 +97,8 @@ server/                     Express API (Node 26, ESM)
                             demoFixtures.js; boot() starts no subsystem in demo mode
   demoFixtures.js           the demo's board, shaped by the live code (assembleServices,
                             decorateStatuses); incident and healthy scenarios
+  embedCheck.js             reads an app tab's X-Frame-Options / CSP frame-ancestors and says
+                            whether the browser will frame it (see 5, "App tabs")
   auth/                     scrypt passwords, in-memory sessions, login rate limit, middleware
   routes/                   one router per resource (see 4.1)
   arcane/                   Arcane poller: read-only API client, state derivation, push builders,
@@ -112,12 +114,16 @@ src/                        React 19 SPA (Vite 8)
   api/client.js             apiFetch -- explicit auth-injecting fetch wrapper
   context/                  ConfigContext (config + update via setIn), OverlayContext (toast/confirm)
   hooks/useData.js          fetchJson (304-aware), weather, search engines
+  hooks/useAppFrames.js,    app tabs: which frames are mounted, and each frame's load state
+  hooks/useEmbedStatus.js   (logic only; see 5, "App tabs")
   utils/setIn.js            immutable structural-sharing deep-set
   components/HelmGrid/       custom grid engine (gridMath, GridItem, HelmGrid)
   components/settings/       shared primitives + 13 settings tabs (+ IntegrationsTab module)
   components/                NodeCard, ServiceCard, Widgets, NavBar, overlays, etc.
   views/DashboardView/       grid + panels + useDashboardData (304-stable) + per-source health
   views/SettingsView.jsx     13-tab settings shell + collapsible live preview
+  views/AppFrames.jsx,       app tabs as they look today: the host keeping visited frames, and
+  views/IframeView.jsx       one frame with its loading, slow and blocked notices
   styles/global.css          today's themes (10) + their tokens + component styles
   styles/fonts.css           today's fonts, self-hosted: the files Google Fonts served (see 5.1)
   styles/legacy.css          imports global.css and fonts.css into the `legacy` cascade layer
@@ -180,6 +186,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/services` | token | discovered nodes + services (background-refreshed, ETag) |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag) |
 | `/api/display-config` | token | the display config blob |
+| `/api/embed-check/:tabId` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs") |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
 | `/api/icons/cached` | public | icon-repository icons from the local icon cache (an `<img>` can't send the token; see 6) |
@@ -662,7 +669,8 @@ flowchart TD
   APP --> NAV["NavBar<br/>(search, weather, theme picker, mobile menu)"]
   APP --> DV["DashboardView"]
   APP --> SV["SettingsView (13 tabs)"]
-  APP --> IV["IframeView"]
+  APP --> AF["AppFrames<br/>(useAppFrames)"]
+  AF --> IV["IframeView per app<br/>(useEmbedStatus)"]
   DV --> HG["HelmGrid engine"]
   HG --> GI["GridItem (+ keyboard handle)"]
   DV --> NP["NodePanel / NodeCard / ServiceCard / Widgets"]
@@ -737,6 +745,39 @@ flowchart TD
   last value while polling is paused (the "Updated" clock keeps counting) and
   catches up on return. The navbar refetches weather at most every 10 minutes.
   The Settings preview loads once when shown and refreshes only on its button.
+- **App tabs.** An `iframe` tab in the config is an app. Its frame mounts on the
+  first visit and stays mounted while another tab is open (`useAppFrames`), so
+  coming back finds the app where it was left: its page, scroll and sign-in.
+  `AppFrames` hides the other frames with `visibility: hidden` at full size, not
+  `display: none`, so an app laid out to its window isn't redrawn at zero size
+  on every switch. Frames are kept in first-visit order, not config order,
+  because moving an iframe in the DOM reloads it. A tab removed from the config
+  unmounts its frame; an edited URL reloads it. The logic (the hooks) is apart
+  from today's look (`AppFrames`, `IframeView`) so the sidebar's Apps group
+  (#296) can reuse it.
+  - **Load state** (`useEmbedStatus`): loading; slow, when the frame hasn't
+    loaded after 8 s (it keeps loading behind a "slow to load" notice with
+    Retry, and shows as soon as it loads); shown; or blocked. Retry gives that
+    frame a new iframe element, so only it reloads, and asks the server afresh.
+  - **Blocked** means the app's own headers refuse framing. The page can't see
+    that: a cross-origin frame's headers can't be read, and Chromium fires
+    `load` for a refused frame too. So the server reads them.
+    `GET /api/embed-check/:tabId?origin=<page origin>` looks the URL up in the
+    saved display config by tab id (never a URL from the request), sends one
+    GET with no cookie or credential, follows redirects only on the same
+    hostname (each hop through `assertSafeUrl`), gives up after 3 s, and reads
+    `X-Frame-Options` and `Content-Security-Policy` without reading the body
+    (`server/embedCheck.js`). `frameVerdict` applies them as a browser does
+    (the HTML spec's X-Frame-Options check, CSP3 frame-ancestors matching; a
+    frame-ancestors list replaces X-Frame-Options) against the page's origin,
+    and names the header that blocks. Answers are cached per tab for 5 minutes,
+    1 minute for a failure; Retry reads again once the answer is 5 s old; past
+    the cache, 30 reads a minute at most.
+  - **Unknown.** When the server can't read the app (it can't reach it, doesn't
+    trust its certificate, or is redirected to another host; the demo answers
+    nothing), the frame shows whatever the browser puts in it. The page also
+    ignores an answer about a URL other than the one it shows, since the saved
+    config trails an edit by up to 2 s.
 - **Design system.** 10 themes (`themes.js` + `[data-theme]` token blocks),
   generic `--space-*` / `--text-*` scales plus semantic `--fs-*` card tokens,
   and a global `:focus-visible` ring + reduced-motion handling.

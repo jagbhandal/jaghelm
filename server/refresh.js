@@ -91,8 +91,9 @@ function displayConfigId() {
   }
 }
 
-/** The parsed display-config.json, or null on missing/error. */
-function readDisplayConfig() {
+/** The parsed display-config.json, or null on missing/error. The embed check
+ * (routes/embedCheck.js) reads the saved app tabs through it too. */
+export function readDisplayConfig() {
   const id = displayConfigId();
   if (cachedDisplayConfig !== undefined && id === cachedDisplayConfigId) return cachedDisplayConfig;
   cachedDisplayConfigId = id;

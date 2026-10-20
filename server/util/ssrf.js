@@ -4,8 +4,10 @@
  * (server/integrations/lib/http.js and server/httpClient.js), which cover all
  * integration, session-auth, and infra-proxy requests. A few internal calls
  * still use raw fetch to hardcoded/operator-configured endpoints (Prometheus
- * discovery, Kuma monitors, and the icon cache, which fetches only URLs it
- * rebuilds from its own allowlist, server/icon-sources.js); folding those into
+ * discovery, Kuma monitors, the icon cache, which fetches only URLs it
+ * rebuilds from its own allowlist, server/icon-sources.js, and the app-tab
+ * embed check, server/embedCheck.js, which calls assertSafeUrl on every hop
+ * itself because it follows no redirect to another host); folding those into
  * one shared client is a tracked follow-up (see docs/IMPROVEMENT-PLAN.md).
  *
  * JagHelm is a homelab dashboard, so private/loopback hosts ARE legitimate
