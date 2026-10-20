@@ -79,3 +79,47 @@ test('always blocks the IPv6 unspecified address :: (0.0.0.0 equivalent), even o
   assert.throws(() => assertSafeUrl('http://[::ffff:0.0.0.0]/'), /Blocked host/);
   assert.throws(() => assertSafeUrl('http://[0:0:0:0:0:0:0:0]/'), /Blocked host/);
 });
+
+test('the metadata address and 0/8 written as IPv6 are blocked too, even outside strict mode', () => {
+  delete process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS;
+  // Node connects an IPv4-mapped literal over IPv4, so each of these reaches
+  // 169.254.169.254. The URL parser turns every spelling into its hex form.
+  for (const u of [
+    'http://[::ffff:169.254.169.254]/latest/meta-data/',
+    'http://[::ffff:a9fe:a9fe]/',
+    'http://[0:0:0:0:0:ffff:a9fe:a9fe]/',
+    'http://[::FFFF:A9FE:A9FE]/',
+    'http://[::169.254.169.254]/', // IPv4-compatible (deprecated)
+    'http://[::a9fe:a9fe]/',
+    'http://[::ffff:0:a9fe:a9fe]/', // IPv4-translated
+    'http://[::ffff:0.1.2.3]/', // 0/8
+  ]) {
+    assert.throws(() => assertSafeUrl(u), /Blocked host/, u);
+    assert.throws(() => assertSafeUrl(u, { trusted: true }), /Blocked host/, u);
+  }
+});
+
+test('other IPv6 addresses, and mapped addresses that are not blocked as IPv4, still pass', () => {
+  delete process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS;
+  for (const u of [
+    'http://[2001:db8::1]/',
+    'http://[fd00::1]:8080/',
+    'http://[::ffff:8.8.8.8]/',
+    'http://[::ffff:192.168.1.10]/', // private is allowed outside strict mode, as for IPv4
+    'http://[::1]/',
+    'http://[64:ff9b::a9fe:a9fe]/', // NAT64: an IPv6 address the OS connects to as IPv6
+  ]) {
+    assert.doesNotThrow(() => assertSafeUrl(u), u);
+  }
+});
+
+test('strict mode treats IPv4-compatible IPv6 as its IPv4 address', () => {
+  process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS = 'true';
+  try {
+    assert.throws(() => assertSafeUrl('http://[::127.0.0.1]/'), /Blocked/);
+    assert.throws(() => assertSafeUrl('http://[::a00:5]/'), /Blocked/); // 10.0.0.5
+    assert.doesNotThrow(() => assertSafeUrl('http://[::ffff:8.8.8.8]/'));
+  } finally {
+    delete process.env.JAGHELM_BLOCK_PRIVATE_NETWORKS;
+  }
+});

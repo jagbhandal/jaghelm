@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import SubsystemStrip from './SubsystemStrip.jsx';
+import { SubsystemStrip } from '@ui/subsystem-strip';
 
 // New cell shape (Task 1 contract): { key, label, severity, word, detail }.
 const CELLS = [

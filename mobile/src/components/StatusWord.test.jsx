@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import StatusWord from './StatusWord.jsx';
+import { StatusWord } from '@ui/status-word';
 
 // Severity → CSS color variable
 const SEVERITY_COLOR = {

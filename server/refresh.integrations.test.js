@@ -11,7 +11,7 @@
  */
 import { test, mock, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import express from 'express';
 import request from 'supertest';
@@ -27,7 +27,6 @@ const { refreshIntegrations } = await import('./refresh.js');
 const { getCached } = await import('./cache.js');
 const { integrationRoutes } = await import('./routes/integrations.js');
 const { PARKED_HINT } = await import('./integrations/backoff.js');
-const { savedFromSettings } = await import('./integrations/lib/config.js');
 
 // A stored secret that fails to decrypt: each read of it logs an error, as every
 // secret read does while DASH_SECRET is unset, so its log lines count the reads.
@@ -207,8 +206,8 @@ test('a login refused twice in a row (401) is not retried until its config chang
   const failed = second.result.nas;
   assert.equal(
     failed._error,
-    `HTTP 401 (${PARKED_HINT.file})`,
-    'written in services.yaml, so the hint names the file, not a save in Settings'
+    `HTTP 401 (${PARKED_HINT})`,
+    'written in services.yaml, and a save in Settings retries it as it does any other (#402)'
   );
   assert.deepEqual(failed._status, {
     state: 'auth_failed',
@@ -248,6 +247,81 @@ test('a login refused twice in a row (401) is not retried until its config chang
   assert.equal(fixed.result.nas._status.state, 'ok');
 });
 
+test('a save in Settings retries an integration written by hand too, and leaves services.yaml as it was (#402)', async () => {
+  // A custom integration with an API key header, written by hand: before #402
+  // the save rebuilt it from the form as { url, enabled } and lost the rest.
+  let keyWanted = 'new';
+  upstreams['hand.example.test'] = async (u, init) =>
+    new Headers(init.headers).get('x-api-key') === keyWanted ? json({ up: 'yes' }) : json({}, 401);
+  setSecret('hand_key', 'old');
+  const path = join(process.env.JAGHELM_DATA_DIR, 'services.yaml');
+  const text = [
+    '# Written by hand.',
+    'integrations:',
+    '  hand:',
+    '    url: http://hand.example.test',
+    '    endpoint: /status',
+    '    auth: header',
+    '    authHeader: X-Api-Key',
+    '    token: $secret:hand_key', // pragma: allowlist secret
+    '    fields: [{ key: up, label: Up, path: up }]',
+    '',
+  ].join('\n');
+  writeFileSync(path, text);
+  loadConfig();
+
+  await cycle();
+  const parked = (await cycle()).result.hand;
+  assert.equal(parked._status.state, 'auth_failed');
+  assert.equal(parked._error, `HTTP 401 (${PARKED_HINT})`);
+  assert.deepEqual((await cycle()).hosts, [], 'parked');
+
+  // The key is fixed on the app's side; the integration is saved from its
+  // form in Settings with nothing changed (the token field left blank).
+  keyWanted = 'old';
+  const r = await save({
+    type: 'hand',
+    url: 'http://hand.example.test',
+    enabled: true,
+    target: '',
+    username: '',
+    editingKey: 'hand',
+  });
+  assert.equal(r.status, 200);
+  assert.equal(readFileSync(path, 'utf8'), text, 'services.yaml is not rewritten');
+  const fixed = await cycle(1);
+  assert.deepEqual(fixed.hosts, ['hand.example.test'], 'retried at the next refresh');
+  assert.equal(fixed.result.hand.Up, 'yes');
+  assert.equal(fixed.result.hand._status.state, 'ok');
+});
+
+test('enabling an integration from its row retries it, even when it is disabled and enabled between two refreshes (#402)', async () => {
+  let accepted = 'new';
+  const basicFor = (pw) => `Basic ${Buffer.from(`u:${pw}`).toString('base64')}`;
+  upstreams['toggle.example.test'] = async (u, init) =>
+    new Headers(init.headers).get('authorization') === basicFor(accepted)
+      ? json({ up: 'yes' })
+      : json({}, 401);
+  // `enabled: true` is written out, so disabling and enabling it again gives
+  // back the same entry, and so the same fingerprint: only the retry the
+  // toggle asks for gets it attempted.
+  const entry = custom('toggle.example.test', { auth: 'basic', username: 'u', enabled: true });
+  entry.password = 'old'; // pragma: allowlist secret
+  saveConfig({ integrations: { tog: entry } });
+  await cycle();
+  assert.equal((await cycle()).result.tog._status.state, 'auth_failed');
+  assert.deepEqual((await cycle()).hosts, [], 'parked');
+
+  accepted = 'old'; // fixed on the app's side
+  const toggle = (enabled) => request(app).patch('/api/integrations/tog').send({ enabled });
+  assert.equal((await toggle(false)).status, 200);
+  assert.equal((await toggle(true)).status, 200);
+  assert.deepEqual(getConfig().integrations.tog, entry);
+  const r = await cycle(1);
+  assert.deepEqual(r.hosts, ['toggle.example.test'], 'retried at the next refresh');
+  assert.equal(r.result.tog._status.state, 'ok');
+});
+
 test('a session login refused twice (403) waits too; a save in Settings retries it with the stored password, and so does a new secret', async () => {
   // Nginx Proxy Manager: POST /api/tokens, then GET /api/nginx/proxy-hosts.
   let secretWanted = 'new';
@@ -275,8 +349,8 @@ test('a session login refused twice (403) waits too; a save in Settings retries 
   assert.equal(r.result.npm._status.state, 'auth_failed');
   assert.equal(
     r.result.npm._error,
-    `All session auth methods failed (${PARKED_HINT.settings})`,
-    'added from the gallery, so the hint says to save it in Settings'
+    `All session auth methods failed (${PARKED_HINT})`,
+    'the hint says to save it in Settings'
   );
   assert.equal(r.result.npm._preset, 'npm');
   for (let i = 0; i < 25; i++) r = await cycle();
@@ -412,50 +486,4 @@ test('each integration is resolved once a cycle: the fetch reuses the config its
     { reads: 1, hosts: [] },
     'backing off: read once, for its fingerprint'
   );
-});
-
-test('savedFromSettings is true for every entry a save in Settings writes, and false for one written or extended by hand', async () => {
-  saveConfig({ integrations: {} });
-  const saves = [
-    { type: 'npm', url: 'http://a.example.test', username: 'u', password: 'p' },
-    {
-      type: 'adguard',
-      instance: 'primary',
-      url: 'b.example.test',
-      username: 'u',
-      password: 'p',
-      target: 'adguard',
-    },
-    {
-      type: 'cloudflare',
-      url: 'https://api.cloudflare.com',
-      token: 't',
-      params: { account_id: 'acc' },
-    },
-    { type: 'npm', instance: 'three', url: 'http://c.example.test', enabled: false },
-  ];
-  for (const body of saves) assert.equal((await save(body)).status, 200, body.type);
-  const stored = getConfig().integrations;
-  assert.deepEqual(Object.keys(stored), ['npm', 'adguard_primary', 'cloudflare', 'npm_three']);
-  for (const [key, entry] of Object.entries(stored)) {
-    assert.equal(savedFromSettings(key, entry), true, `${key}: ${JSON.stringify(entry)}`);
-  }
-
-  const url = 'http://d.example.test';
-  const byHand = {
-    'a custom integration': [
-      'mine',
-      custom('d.example.test', { auth: 'header', token: '$secret:mine' }), // pragma: allowlist secret
-    ],
-    'a preset entry with no preset key': ['npm', { url, username: 'u' }],
-    'a password in the file': ['npm', { preset: 'npm', url, username: 'u', password: 'hunter2' }],
-    'a secret under another name': ['npm', { preset: 'npm', url, password: '$secret:npm_pw' }], // pragma: allowlist secret
-    'a key the form does not send': ['npm', { preset: 'npm', url, endpoint: '/api/other' }],
-    'a key Settings would not derive': ['my_npm', { preset: 'npm', url }],
-    'an instance Settings would rename': ['npm_Two', { preset: 'npm', instance: 'Two', url }],
-    'an unknown preset': ['nope', { preset: 'nope', url }],
-  };
-  for (const [what, [key, entry]] of Object.entries(byHand)) {
-    assert.equal(savedFromSettings(key, entry), false, what);
-  }
 });

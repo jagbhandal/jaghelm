@@ -184,7 +184,7 @@ data/
 └── icon-cache/            # CDN icons served locally after the first load (a cache, at most 50 MB; safe to delete)
 ```
  
-`services.yaml` is hot-reloaded — edit it on disk and JagHelm picks up the change without restarting.
+`services.yaml` is hot-reloaded — edit it on disk and JagHelm picks up the change without restarting. A save in Settings that changes it rewrites the whole file in JagHelm's own layout, so comments in it are not kept.
  
 ### Environment variables
  
@@ -237,11 +237,13 @@ Connect AdGuard, Plex, Sonarr, Proxmox, Cloudflare, Vaultwarden, and dozens more
  
 Credentials are encrypted with AES-256-GCM (PBKDF2-derived key from `DASH_SECRET`) before being written to `secrets.json`.
 
-An integration that fails is retried after 30 seconds, then 1, 2, 4 and 8 minutes, then every 10 minutes until it answers, and its card shows the failure meanwhile. One whose login is refused twice in a row (HTTP 401 or 403) is not retried until its settings change, so an app that bans an address after failed logins doesn't ban JagHelm's. For an integration added from the gallery, saving it in Settings, changed or not, retries it at the next refresh. For one written in `services.yaml`, edit the file (any change counts) or restart JagHelm; a save in Settings would drop what the form doesn't show (#402). A restart retries every integration.
+An integration that fails is retried after 30 seconds, then 1, 2, 4 and 8 minutes, then every 10 minutes until it answers, and its card shows the failure meanwhile. One whose login is refused twice in a row (HTTP 401 or 403) is not retried until its settings change, so an app that bans an address after failed logins doesn't ban JagHelm's. Saving it in Settings, changed or not, retries it at the next refresh. So does editing its entry in `services.yaml` (any change counts), and a restart retries every integration.
+
+Saving an integration in Settings changes only what its form shows: the URL, username, target container, password or token (a blank one keeps the stored credential), the preset's URL parameters, the instance name and Enabled. Anything else in its `services.yaml` entry stays as written, such as a custom integration's endpoint, auth and fields, and a save that changes nothing leaves the file untouched. A changed instance name moves the integration to its new name, with its stored password and token. The Enable and Disable buttons change only `enabled`, and a Settings form left open doesn't undo them unless its own Enabled box was changed.
  
 ### Embedded service tabs
  
-Add your existing monitoring tools as iframe tabs in the top nav — Grafana, Uptime Kuma, Portainer, Proxmox, anything web-accessible. They render inside JagHelm rather than opening new browser tabs. Configurable per tab from Settings.
+Add your existing monitoring tools as iframe tabs in the top nav — Grafana, Uptime Kuma, Portainer, Proxmox, anything web-accessible. They render inside JagHelm rather than opening new browser tabs. Configurable per tab from Settings. A tab you have opened stays loaded when you switch away, so it is where you left it when you come back. An app that is slow to start says so, with a Retry; one whose server refuses to be shown inside another site says that instead, with "Open in new tab" and how to allow embedding.
  
 ### HelmGrid layout engine
  

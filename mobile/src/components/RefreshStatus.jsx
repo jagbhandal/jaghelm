@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import StatusLamp from './StatusLamp.jsx';
+import { StatusLamp } from '@ui/status-lamp';
 import { formatClock } from '../data/derive.js';
 
 /**

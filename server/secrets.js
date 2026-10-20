@@ -174,6 +174,19 @@ export function deleteSecret(name) {
 }
 
 /**
+ * Copy the secret stored under `from` to `to`, replacing what `to` held. The
+ * stored value is copied as it is, still encrypted, so no plaintext is handled
+ * and it works without DASH_SECRET. Returns false, and changes nothing, when
+ * there is no secret under `from`.
+ */
+export function copySecret(from, to) {
+  if (!Object.hasOwn(secrets, from)) return false;
+  secrets[to] = { ...secrets[from] };
+  persistSecrets();
+  return true;
+}
+
+/**
  * List all secret key names (never values).
  */
 export function listSecretKeys() {

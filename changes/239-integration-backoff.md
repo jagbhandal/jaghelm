@@ -15,6 +15,6 @@
   could get JagHelm's address banned by an app that bans after failed logins.
   An integration whose login is refused twice in a row (HTTP 401 or 403) is
   not retried until its settings change, and its card's error says how to
-  retry it. For one added from the gallery, saving it in Settings, even
-  unchanged, retries it at the next refresh. For one written in
-  `services.yaml`, edit the file or restart JagHelm.
+  retry it: saving it in Settings, even unchanged, retries it at the next
+  refresh. Editing its entry in `services.yaml` or restarting JagHelm does
+  too.

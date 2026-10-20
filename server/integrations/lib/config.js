@@ -14,6 +14,21 @@ import { resolveCredential, getSecret } from '../../secrets.js';
  * available unmodified for callers that need them.
  */
 
+/**
+ * The secrets a preset's credentials resolve from by the integration's storage
+ * key, ahead of the `$secret:` reference in its entry:
+ * `integration_<key>_<field>`. A save in Settings stores a typed password or
+ * token under these names, and moves them with an entry whose key changes
+ * (routes/integrations.js), so a secret left under the new key can't stand in
+ * for the entry's own.
+ */
+export const KEYED_SECRET_FIELDS = Object.freeze(['url', 'username', 'password', 'token']);
+
+/** The name of an integration's keyed secret, such as integration_npm_password. */
+export function keyedSecretName(key, field) {
+  return `integration_${key}_${field}`;
+}
+
 /** Resolve $secret:key_name references to decrypted values. */
 function resolveSecretRef(value) {
   if (!value || typeof value !== 'string') return value;
@@ -50,16 +65,16 @@ export function resolveIntegrationConfig(type, yamlConfig) {
 
   if (preset?.envKeys) {
     if (preset.envKeys.url) {
-      resolved.url = resolveCredential(preset.envKeys.url, `integration_${secretKey}_url`) || config.url;
+      resolved.url = resolveCredential(preset.envKeys.url, keyedSecretName(secretKey, 'url')) || config.url;
     }
     if (preset.envKeys.username) {
-      resolved._username = resolveCredential(preset.envKeys.username, `integration_${secretKey}_username`) || config.username;
+      resolved._username = resolveCredential(preset.envKeys.username, keyedSecretName(secretKey, 'username')) || config.username;
     }
     if (preset.envKeys.password) {
-      resolved._password = resolveCredential(preset.envKeys.password, `integration_${secretKey}_password`) || resolveSecretRef(config.password);
+      resolved._password = resolveCredential(preset.envKeys.password, keyedSecretName(secretKey, 'password')) || resolveSecretRef(config.password);
     }
     if (preset.envKeys.token) {
-      resolved._token = resolveCredential(preset.envKeys.token, `integration_${secretKey}_token`) || resolveSecretRef(config.token);
+      resolved._token = resolveCredential(preset.envKeys.token, keyedSecretName(secretKey, 'token')) || resolveSecretRef(config.token);
     }
   } else {
     // Custom integration — resolve $secret: refs in credentials
@@ -89,39 +104,4 @@ export function configFingerprint(yamlConfig, resolved) {
     resolved?._token ?? null,
   ]);
   return createHash('sha256').update(material).digest('hex');
-}
-
-// The keys a save in Settings writes (routes/integrations.js POST /save),
-// besides the preset's own urlParams.
-const SETTINGS_KEYS = new Set(['url', 'enabled', 'preset', 'instance', 'target', 'username', 'password', 'token']);
-
-/**
- * Whether services.yaml holds `entry` under `key` exactly as a save in Settings
- * writes it, so that saving it again from Settings keeps it: a preset, stored
- * under the key Settings derives from its preset and instance, with its
- * password and token (if any) under the secret names Settings gives them, and
- * nothing the form does not send. A custom integration, or an entry written or
- * extended by hand, is not: the save rebuilds the entry from the form and drops
- * the rest (#402). The refresh loop uses it to say how to retry an integration
- * whose login was refused (#239).
- */
-export function savedFromSettings(key, entry) {
-  if (!entry || typeof entry !== 'object') return false;
-  const preset = typeof entry.preset === 'string' ? getPresetFull(entry.preset) : null;
-  if (!preset) return false;
-  const { instance } = entry;
-  // Settings lowercases an instance name and keeps only a-z, 0-9 and "-".
-  if (instance !== undefined && !(typeof instance === 'string' && /^[a-z0-9-]+$/.test(instance))) {
-    return false;
-  }
-  if (key !== (instance ? `${entry.preset}_${instance}` : entry.preset)) return false;
-  const params = new Set((preset.urlParams || []).map((p) => p.key));
-  for (const [k, v] of Object.entries(entry)) {
-    if (k === 'password' || k === 'token') {
-      if (v !== `$secret:integration_${key}_${k}`) return false;
-    } else if (!SETTINGS_KEYS.has(k) && !params.has(k)) {
-      return false;
-    }
-  }
-  return true;
 }

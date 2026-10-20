@@ -97,6 +97,8 @@ server/                     Express API (Node 26, ESM)
                             demoFixtures.js; boot() starts no subsystem in demo mode
   demoFixtures.js           the demo's board, shaped by the live code (assembleServices,
                             decorateStatuses); incident and healthy scenarios
+  embedCheck.js             reads an app tab's X-Frame-Options / CSP frame-ancestors and says
+                            whether the browser will frame it (see 5, "App tabs")
   auth/                     scrypt passwords, in-memory sessions, login rate limit, middleware
   routes/                   one router per resource (see 4.1)
   arcane/                   Arcane poller: read-only API client, state derivation, push builders,
@@ -112,12 +114,16 @@ src/                        React 19 SPA (Vite 8)
   api/client.js             apiFetch -- explicit auth-injecting fetch wrapper
   context/                  ConfigContext (config + update via setIn), OverlayContext (toast/confirm)
   hooks/useData.js          fetchJson (304-aware), weather, search engines
+  hooks/useAppFrames.js,    app tabs: which frames are mounted, and each frame's load state
+  hooks/useEmbedStatus.js   (logic only; see 5, "App tabs")
   utils/setIn.js            immutable structural-sharing deep-set
   components/HelmGrid/       custom grid engine (gridMath, GridItem, HelmGrid)
   components/settings/       shared primitives + 13 settings tabs (+ IntegrationsTab module)
   components/                NodeCard, ServiceCard, Widgets, NavBar, overlays, etc.
   views/DashboardView/       grid + panels + useDashboardData (304-stable) + per-source health
   views/SettingsView.jsx     13-tab settings shell + collapsible live preview
+  views/AppFrames.jsx,       app tabs as they look today: the host keeping visited frames, and
+  views/IframeView.jsx       one frame with its loading, slow and blocked notices
   styles/global.css          today's themes (10) + their tokens + component styles
   styles/fonts.css           today's fonts, self-hosted: the files Google Fonts served (see 5.1)
   styles/legacy.css          imports global.css and fonts.css into the `legacy` cascade layer
@@ -132,10 +138,14 @@ src/                        React 19 SPA (Vite 8)
                              checkbox, field, segmented-control, tabs; design-system.md),
                              the containers (#286: root, panel, dialog, drawer, confirm,
                              popover, tooltip, toast, banner, empty-state, skeleton),
-                             lib/utils.js (cn, taught the theme), lib/portal.js (portal roots
-                             and the switches they copy), lib/field-context.js (how a Field
-                             labels its control), lib/tone.jsx (a tone's icon),
-                             lib/name.js (an overlay's required name)
+                             the status components (#287: status-lamp, status-word,
+                             issue-row, subsystem-strip, attention-panel; the Android app
+                             uses them too), lib/status.js (the five states, their words,
+                             and the two looks), lib/utils.js (cn, taught the theme),
+                             lib/portal.js (portal roots and the switches they copy),
+                             lib/field-context.js (how a Field labels its control),
+                             lib/tone.jsx (a tone's icon), lib/name.js (an overlay's
+                             required name)
 
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
@@ -178,8 +188,9 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/health`, `/api/readyz` | public | liveness / readiness probes |
 | `/metrics` | public | Prometheus exposition |
 | `/api/services` | token | discovered nodes + services (background-refreshed, ETag) |
-| `/api/integrations` | token | per-integration live data (background-refreshed, ETag) |
+| `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6) |
 | `/api/display-config` | token | the display config blob |
+| `/api/embed-check/:tabId` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs") |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
 | `/api/icons/cached` | public | icon-repository icons from the local icon cache (an `<img>` can't send the token; see 6) |
@@ -506,8 +517,9 @@ Key properties:
 - **One guarded chokepoint.** Every outbound request goes through
   `lib/http.js` `safeFetch`, which calls `assertSafeUrl` (`util/ssrf.js`) by
   construction -- blocking cloud-metadata IPs, decimal/hex/octal IPv4, and
-  IPv4-mapped IPv6, with a `trusted` flag exempting operator infra (Prometheus/
-  Kuma) from the strict private-network block.
+  IPv4-mapped IPv6 (an IPv6 literal carrying an IPv4 address is checked as that
+  address, in every mode), with a `trusted` flag exempting operator infra
+  (Prometheus/Kuma) from the strict private-network block.
 - **Credential headers stay on their origin.** Redirects are followed in code
   (`util/safeFetchCore.js`), and a hop to a different origin (scheme, host or
   port) forwards only `Accept`, `Accept-Encoding`, `Content-Type` and
@@ -582,11 +594,10 @@ Key properties:
     holds no fetch slot and spends no timeout: its entry is the one its last
     attempt left, served again, `_error` included, as the failure was served
     when it happened (no last good data). A parked integration's `_error` ends
-    with a fixed hint: "(login refused twice; not retried until it is saved in
-    Settings)" for an entry exactly as a save in Settings writes it
-    (`savedFromSettings` in `lib/config.js`), and "(... not retried until
-    services.yaml changes or JagHelm restarts)" for one written by hand,
-    which a save in Settings would rebuild and lose parts of (#402).
+    with a fixed hint, "(login refused twice; not retried until it is saved in
+    Settings)", the same for every integration: a save in Settings keeps an
+    entry however it was written (see 6, #402), so it is a retry for any of
+    them.
   - **`_status`.** Every entry in `/api/integrations` carries
     `_status: { state, since, failures, nextAttemptAt }`, with `state` one of
     `ok`, `backing_off` and `auth_failed`, `since` when that state began,
@@ -671,7 +682,8 @@ flowchart TD
   APP --> NAV["NavBar<br/>(search, weather, theme picker, mobile menu)"]
   APP --> DV["DashboardView"]
   APP --> SV["SettingsView (13 tabs)"]
-  APP --> IV["IframeView"]
+  APP --> AF["AppFrames<br/>(useAppFrames)"]
+  AF --> IV["IframeView per app<br/>(useEmbedStatus)"]
   DV --> HG["HelmGrid engine"]
   HG --> GI["GridItem (+ keyboard handle)"]
   DV --> NP["NodePanel / NodeCard / ServiceCard / Widgets"]
@@ -746,6 +758,51 @@ flowchart TD
   last value while polling is paused (the "Updated" clock keeps counting) and
   catches up on return. The navbar refetches weather at most every 10 minutes.
   The Settings preview loads once when shown and refreshes only on its button.
+- **App tabs.** An `iframe` tab in the config is an app. Its frame mounts on the
+  first visit and stays mounted while another tab is open (`useAppFrames`), so
+  coming back finds the app where it was left: its page, scroll and sign-in.
+  `AppFrames` hides the other frames with `visibility: hidden` at full size, not
+  `display: none`, so an app laid out to its window isn't redrawn at zero size
+  on every switch; each hidden slot is clipped, so it adds no scroll height.
+  Frames are kept in first-visit order, not config order, because moving an
+  iframe in the DOM reloads it. A tab removed from the config unmounts its
+  frame. A hidden frame keeps the URL it last showed: the URL field in Settings
+  changes the config on every key, so an edited URL loads when its tab is next
+  opened, never a partial one while typing. The logic (the hooks) is apart
+  from today's look (`AppFrames`, `IframeView`) so the sidebar's Apps group
+  (#296) can reuse it.
+  - **Load state** (`useEmbedStatus`): loading; slow, when the frame hasn't
+    loaded after 8 s (it keeps loading behind a "slow to load" notice with
+    Retry, and shows as soon as it loads); shown; or blocked. Retry gives that
+    frame a new iframe element, so only it reloads, and asks the server afresh.
+  - **Blocked** means the app's own headers refuse framing. The page can't see
+    that: a cross-origin frame's headers can't be read, and Chromium fires
+    `load` for a refused frame too. So the server reads them.
+    `GET /api/embed-check/:tabId?origin=<page origin>` looks the URL up in the
+    saved display config by tab id (never a URL from the request), sends one
+    GET with no cookie or credential, follows redirects only on the same host
+    (hostname and port; `http://app` to `https://app` is followed), each hop
+    through `assertSafeUrl`, gives up after 3 s, and reads `X-Frame-Options`
+    and `Content-Security-Policy` from a 2xx answer without reading the body
+    (`server/embedCheck.js`). A 401, 403 or 5xx answers a request without the
+    user's cookie (a proxy's login, an app starting up), so its headers say
+    nothing about the app: that is unknown, not blocked. `frameVerdict` applies them as a browser does
+    (the HTML spec's X-Frame-Options check, CSP3 frame-ancestors matching; a
+    frame-ancestors list replaces X-Frame-Options) against the page's origin,
+    and names the header that blocks. Answers are cached per tab for 5 minutes,
+    1 minute for a failure; Retry reads again once the answer is 5 s old; past
+    the cache, 30 reads a minute at most.
+  - **Asked about the saved URL only.** The server checks the URL it has saved
+    for the tab, and the config is saved 2 s after the last edit. So the page
+    asks only when the frame shows the URL the server has: `useConfigPersistence`
+    returns the saved config (the mount load's, then each save once the server
+    takes it), and `useEmbedStatus` asks when its frame's URL is that tab's
+    saved URL. An edited URL is checked when its save lands, never per key, and
+    an answer names the URL it is about, which the page checks again.
+  - **Unknown.** When the server can't read the app (it can't reach it, doesn't
+    trust its certificate, gets a non-2xx answer or is redirected to another
+    host; the demo answers nothing), or before the URL is saved, the frame
+    shows whatever the browser puts in it.
 - **Design system.** 10 themes (`themes.js` + `[data-theme]` token blocks),
   generic `--space-*` / `--text-*` scales plus semantic `--fs-*` card tokens,
   and a global `:focus-visible` ring + reduced-motion handling.
@@ -808,17 +865,32 @@ stack sits beside today's CSS and must not restyle it.
   misread. A generated component's `import { cn } from 'cn'` is switched to it,
   and a test fails on any other `cn` in `src/ui/`. Icons come from
   `lucide-react` by name (`import { Check } from 'lucide-react'`), so a bundle
-  carries only the icons it uses. The controls (#285) and the containers
-  (#286) are the components so far, the interactive ones built on Base UI
-  primitives, and no screen uses them yet. A screen's root is a `UiRoot`
-  (`src/ui/root.jsx`), which carries its switches to every portal; roots can
-  nest, and a page has one toast viewport. Screens import the components,
-  never `@base-ui/react` itself (`scripts/ui-stack.test.mjs`).
+  carries only the icons it uses. The components so far are the controls
+  (#285) and the containers (#286), which no screen uses yet, and the status
+  components (#287), which the Android app's screens use (next point). The
+  interactive controls and containers are built on Base UI primitives. A
+  screen's root is a `UiRoot` (`src/ui/root.jsx`), which carries its switches
+  to every portal; roots can nest, and a page has one toast viewport. Screens
+  import the components, never `@base-ui/react` itself
+  (`scripts/ui-stack.test.mjs`).
 - **Both apps import `@ui/...`.** The Android build maps `@ui` to `../src/ui` and
   lists React and every package `src/ui/` imports in `resolve.dedupe`, so shared
   code uses the Android app's own copies: the APK build installs `mobile/` only,
   and a second React breaks hooks. A package added to `src/ui/` goes in both
   `package.json` files and that list; `scripts/ui-stack.test.mjs` checks it.
+- **The Android app's status components are the shared ones** (#287): its
+  StatusLamp, StatusWord, IssueRow, SubsystemStrip and SystemStatusCard moved
+  from `mobile/src/components/` into `src/ui/` (SystemStatusCard became
+  AttentionPanel), and its screens import them as `@ui/...`. As a stopgap
+  until Phase 4 rebuilds those screens (#326, which removes it), each status
+  component also draws the Android app's own look, its old markup and the
+  class names `MobileApp.css` styles in the `legacy` layer. The
+  `__ANDROID_LOOK__` define picks the look per build: true in the Android
+  build, false in the web's (`src/ui/lib/status.js`). Each component reads it
+  directly, so the bundler sees a literal and each bundle leaves the other
+  look out: the APK carries neither `cn`, Lucide nor the web look's code, bar
+  the lamp marks its own lamp borrows
+  ([design-system.md](design-system.md#two-looks)).
 - **Cascade layers.** The order is `legacy, properties, theme, base, components,
   utilities`, declared at the top of every entry stylesheet. Each app's
   `styles/legacy.css` imports today's stylesheets into `legacy`, the lowest layer
@@ -927,6 +999,40 @@ All state is files under the data dir (no DB):
   the Kuma monitor mapping `monitor` / `monitor_per_node`, see 4.2) and
   integration configs (each secret value stored separately, encrypted). Hot-reloaded on an
   external edit; read copy-on-read; `POST /api/services/config` validated by Zod.
+  `saveConfig` re-serialises the whole file, so a write drops its comments and
+  hand formatting.
+  - **An integration's save in Settings merges** (`POST /api/integrations/save`,
+    #402). The form's values go into the stored entry, and only what the form
+    owns changes: the URL (required), the username and target (sent empty to
+    remove them), the preset's URL params (allow-listed; empty removes), and a
+    typed password or token (text only, else 400), stored under the
+    integration's keyed secret name, `integration_<key>_password|token`
+    (`keyedSecretName` in `lib/config.js`). A blank password or token keeps
+    what is stored: a plaintext value or a `$secret:` under any name. Every
+    other key stays (a custom integration's `endpoint`, `auth`, `authHeader`,
+    `fields`, or anything written by hand), and an existing entry's `preset`
+    is never changed. A save that changes nothing writes nothing, so the file
+    stays byte-for-byte as it was; it still asks for a retry (4.3).
+  - **`enabled` belongs to the toggle once an entry exists.** A save that
+    creates an entry sets it, and so does one without an `editingKey` (the
+    toggle of web apps before #402 went through the save). An edit
+    (`editingKey` sent) leaves it alone: the form sends a changed Enabled box
+    to the toggle route after the save, so a form left open can't undo a toggle
+    made since. An edit whose entry is gone (deleted in another tab) is refused
+    with a 409 rather than merged into whatever is under the key it derives.
+  - **The key.** The instance name is part of it: a changed one moves the
+    entry to its new key, and an unchanged one keeps it where it is, even
+    under a key Settings would not derive (`my_npm`). A move takes the entry's
+    keyed secrets (`KEYED_SECRET_FIELDS`: url, username, password, token) with
+    it: each one under the old key is copied, still encrypted, to the new
+    key's name, replacing anything left there; one the old key doesn't have is
+    removed under the new key too, since a preset resolves those names ahead
+    of the entry's `$secret:` reference. A reference to an old name is pointed
+    at the new one, and the old names are removed once the move is written.
+  - **The enable toggle** (`PATCH /api/integrations/:key`, body
+    `{ "enabled": true|false }` and nothing else) sets `enabled` alone, writes
+    nothing when the entry is already in that state, and asks for a retry when
+    it enables.
 - **display config** -- title, theme, layout (`{lg,md,sm}` grid item arrays),
   sections (per-panel visibility/order/colour), nav/search/weather flags,
   links, tabs, fonts. Read copy-on-read; validated by Zod.

@@ -136,20 +136,26 @@ function withoutReference(css) {
     .replace('@theme inline reference {', '@theme inline {');
 }
 
-/** Class names today's screens use: legacy selectors, and class props outside src/ui/. */
-function legacyClassNames() {
+const isLegacy = (f) => !f.startsWith('src/ui/') && !/\.test\.[jt]sx?$/.test(f);
+
+/** The class names in the selectors of today's stylesheets under `dirs`. */
+function legacySelectorNames(dirs = ['src', 'mobile/src']) {
   const names = new Set();
-  const legacy = (f) => !f.startsWith('src/ui/') && !/\.test\.[jt]sx?$/.test(f);
-  const sheets = [...walk('src', ['.css']), ...walk('mobile/src', ['.css'])].filter(legacy);
-  for (const f of sheets) {
+  for (const f of dirs.flatMap((d) => walk(d, ['.css'])).filter(isLegacy)) {
     postcss.parse(read(f)).walkRules((rule) => {
       for (const [, name] of rule.selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) names.add(name);
     });
   }
+  return names;
+}
+
+/** Class names today's screens use: legacy selectors, and class props outside src/ui/. */
+function legacyClassNames() {
+  const names = legacySelectorNames();
   // Every string in a className (or fooClassName) prop. A piece ending in '-' is the
   // stem of a name built at runtime, such as `issue-row--${severity}`.
   const modules = [...walk('src', ['.js', '.jsx']), ...walk('mobile/src', ['.js', '.jsx'])];
-  for (const f of modules.filter(legacy)) {
+  for (const f of modules.filter(isLegacy)) {
     const file = ts.createSourceFile(f, read(f), ts.ScriptTarget.Latest, false, ts.ScriptKind.JSX);
     const visit = (node, inClassProp) => {
       if (ts.isJsxAttribute(node)) inClassProp = /className$/i.test(node.name.text ?? '');
@@ -492,6 +498,39 @@ test('src/ui imports only packages the Android app installs and dedupes', () => 
   }
 });
 
+// The status components' `android` look (src/ui/lib/status.js), a stopgap until
+// Phase 4 (#326), writes the class names the Android app's own stylesheets
+// style, in the legacy layer, so its screens look as before. They compile to
+// nothing in the stack by design. A name is let through only in one of the five
+// status component files, only as one of the Android blocks they write or an
+// element of one (`sys-status-card__word`), and only when MobileApp.css and its
+// kin style it or its modifiers. So a misspelt utility fails, and so does an
+// Android class name anywhere else (`chip`, `secondary` and `note` are styled
+// there too), which on the web would do nothing.
+const STATUS_FILES = new Set([
+  'src/ui/status-lamp.jsx',
+  'src/ui/status-word.jsx',
+  'src/ui/issue-row.jsx',
+  'src/ui/subsystem-strip.jsx',
+  'src/ui/attention-panel.jsx',
+]);
+const ANDROID_BLOCKS =
+  /^(status-lamp|status-word|issue-row|subsystem-cell|subsys-strip|sys-status-card)(__[\w-]+)?$/;
+
+/** Class names in the Android app's stylesheets, and the blocks and elements of their modifiers. */
+function androidHooks() {
+  const names = legacySelectorNames(['mobile/src']);
+  for (const name of [...names]) {
+    const at = name.indexOf('--');
+    if (at > 0) names.add(name.slice(0, at));
+  }
+  return names;
+}
+
+/** Whether a `{ file, name }` that compiles to nothing is the Android look's, as above. */
+const isAndroidHook = (hooks, { file, name }) =>
+  STATUS_FILES.has(file) && ANDROID_BLOCKS.test(name) && hooks.has(name);
+
 test('every class in src/ui/ compiles to CSS', async () => {
   const found = walk('src/ui', ['.js', '.jsx'])
     .filter((f) => !/\.test\.jsx?$/.test(f))
@@ -500,13 +539,70 @@ test('every class in src/ui/ compiles to CSS', async () => {
     found.some((c) => c.name === 'inline-flex'),
     'no class names found in src/ui/'
   );
+  for (const f of STATUS_FILES)
+    assert.ok(
+      found.some((c) => c.file === f),
+      `${f} not found`
+    );
+  const hooks = androidHooks();
+  assert.ok(
+    hooks.has('status-lamp') && hooks.has('sys-status-card__word'),
+    'Android hooks not found'
+  );
+  assert.ok(
+    !hooks.has('inline-flex') && !hooks.has('glass-card'),
+    'only Android selectors are hooks'
+  );
   const empty = new Set(await uncompiled(found.map((c) => c.name)));
   assert.deepEqual(
-    found.filter((c) => empty.has(c.name)).map((c) => `${c.file}: ${c.name}`),
+    found
+      .filter((c) => empty.has(c.name) && !isAndroidHook(hooks, c))
+      .map((c) => `${c.file}: ${c.name}`),
     [],
     "these classes compile to nothing: Tailwind's default sizes, colours, fonts, radii and " +
       'shadows are cleared (docs/design-system.md, rule 4). Use the scale (text-body-sm, ' +
       'text-caption...) and the roles'
+  );
+});
+
+test("the class check lets through the Android look's class names in the status components, and nothing else", async () => {
+  const hooks = androidHooks();
+  // Generic names the Android app's stylesheets also style: before #287's fix
+  // pass, any file in src/ui/ could write them and pass.
+  for (const name of ['chip', 'secondary', 'note']) assert.ok(hooks.has(name), name);
+  const badge = 'src/ui/status-word.jsx';
+  const cases = [
+    // Styled by MobileApp.css; an element whose modifiers it styles.
+    { file: 'src/ui/status-lamp.jsx', name: 'status-lamp' },
+    { file: 'src/ui/attention-panel.jsx', name: 'sys-status-card__word' },
+    // A misspelt hook, and an element of a block that no stylesheet styles.
+    { file: 'src/ui/status-lamp.jsx', name: 'status-lampp' },
+    { file: 'src/ui/issue-row.jsx', name: 'issue-row__mian' },
+    // Android names outside the status blocks, on StatusBadge's web look.
+    { file: badge, name: 'chip' },
+    { file: badge, name: 'secondary' },
+    { file: badge, name: 'note' },
+    // A status block outside the status component files.
+    { file: 'src/ui/button.jsx', name: 'status-lamp' },
+    // A class only the web's legacy CSS styles; a cleared Tailwind size.
+    { file: badge, name: 'glass-card' },
+    { file: badge, name: 'text-sm' },
+  ];
+  const empty = new Set(await uncompiled(cases.map((c) => c.name)));
+  assert.deepEqual(
+    cases
+      .filter((c) => empty.has(c.name) && !isAndroidHook(hooks, c))
+      .map((c) => `${c.file}: ${c.name}`),
+    [
+      'src/ui/status-lamp.jsx: status-lampp',
+      'src/ui/issue-row.jsx: issue-row__mian',
+      `${badge}: chip`,
+      `${badge}: secondary`,
+      `${badge}: note`,
+      'src/ui/button.jsx: status-lamp',
+      `${badge}: glass-card`,
+      `${badge}: text-sm`,
+    ]
   );
 });
 

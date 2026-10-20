@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import SystemStatusCard from './SystemStatusCard.jsx';
+import { AttentionPanel as SystemStatusCard } from '@ui/attention-panel';
 
 describe('SystemStatusCard', () => {
   describe('content rendering', () => {

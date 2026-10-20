@@ -69,7 +69,8 @@ function Banner({ tone = 'crit', title, cause, detail, action, icon, className, 
       className={cn(bannerVariants({ tone }), className)}
       {...props}
     >
-      <span className="flex shrink-0 pt-0.5">{icon ?? <ToneIcon tone={tone} />}</span>
+      {/* The first line's height, so any icon sits centred on the title. */}
+      <span className="flex h-5 shrink-0 items-center">{icon ?? <ToneIcon tone={tone} />}</span>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <p className={cn('font-bold', titles[tone])}>{title}</p>
         {cause != null ? <p className="text-text-2">{cause}</p> : null}
