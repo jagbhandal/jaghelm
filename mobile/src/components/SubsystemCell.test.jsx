@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import SubsystemCell from './SubsystemCell.jsx';
+import { SubsystemCell } from '@ui/subsystem-strip';
 
 /** Convenience factory — override only the fields you care about. */
 const makeCell = (overrides = {}) => ({

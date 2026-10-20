@@ -1,6 +1,6 @@
 import React from 'react';
 import UsageBar from './UsageBar.jsx';
-import StatusLamp from './StatusLamp.jsx';
+import { StatusLamp } from '@ui/status-lamp';
 import { nodeSeverity, nodeUpDown, parseMetricPct, thirdMetric, severityToShape, nodeSeverityWord } from '../data/derive.js';
 
 /**

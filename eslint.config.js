@@ -15,11 +15,16 @@ export default [
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
-      // __PUSH_ENABLED__ and __APP_VERSION__ are Vite `define`s
+      // __PUSH_ENABLED__, __APP_VERSION__ and __ANDROID_LOOK__ are Vite `define`s
       // (vite.config.mobile.js) injected at build — declare them so the
-      // build-constant reads in push/pushConfig.js and push/pushPrefsApi.js
-      // aren't no-undef errors.
-      globals: { ...globals.browser, __PUSH_ENABLED__: 'readonly', __APP_VERSION__: 'readonly' },
+      // build-constant reads in push/pushConfig.js, push/pushPrefsApi.js and
+      // src/ui/lib/status.js aren't no-undef errors.
+      globals: {
+        ...globals.browser,
+        __PUSH_ENABLED__: 'readonly',
+        __APP_VERSION__: 'readonly',
+        __ANDROID_LOOK__: 'readonly',
+      },
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
     plugins: { 'react-hooks': reactHooks, 'react-refresh': reactRefresh },

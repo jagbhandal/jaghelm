@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
-import SystemStatusCard from '../components/SystemStatusCard.jsx';
-import SubsystemStrip from '../components/SubsystemStrip.jsx';
-import IssueRow from '../components/IssueRow.jsx';
+// The status components are the shared library's (src/ui/), in the Android
+// app's own look until Phase 4 (src/ui/lib/status.js).
+import { AttentionPanel } from '@ui/attention-panel';
+import { SubsystemStrip } from '@ui/subsystem-strip';
+import { IssueRow } from '@ui/issue-row';
 import StatusBanner from '../components/StatusBanner.jsx';
 import {
   overallSeverity, deriveSubsystems, deriveIncidents, deriveHero,
@@ -32,7 +34,7 @@ export default function Overview({ data, nav }) {
 
   return (
     <section className="mobile-view" aria-label="Overview">
-      <SystemStatusCard
+      <AttentionPanel
         severity={hero.severity}
         headline={hero.headline}
         word={hero.word}

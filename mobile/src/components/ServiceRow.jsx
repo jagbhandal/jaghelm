@@ -1,8 +1,8 @@
 import React from 'react';
 import { getServiceIcon } from '@shared/hooks/useData.js';
 import { lastSeenLabel } from '@shared/util/relativeTime.js';
-import StatusLamp from './StatusLamp.jsx';
-import StatusWord from './StatusWord.jsx';
+import { StatusLamp } from '@ui/status-lamp';
+import { StatusWord } from '@ui/status-word';
 import { statusToShape, statusToSeverity } from '../data/derive.js';
 
 /**

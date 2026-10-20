@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import IssueRow from './IssueRow.jsx';
+import { IssueRow } from '@ui/issue-row';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

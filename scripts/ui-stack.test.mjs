@@ -136,20 +136,26 @@ function withoutReference(css) {
     .replace('@theme inline reference {', '@theme inline {');
 }
 
-/** Class names today's screens use: legacy selectors, and class props outside src/ui/. */
-function legacyClassNames() {
+const isLegacy = (f) => !f.startsWith('src/ui/') && !/\.test\.[jt]sx?$/.test(f);
+
+/** The class names in the selectors of today's stylesheets under `dirs`. */
+function legacySelectorNames(dirs = ['src', 'mobile/src']) {
   const names = new Set();
-  const legacy = (f) => !f.startsWith('src/ui/') && !/\.test\.[jt]sx?$/.test(f);
-  const sheets = [...walk('src', ['.css']), ...walk('mobile/src', ['.css'])].filter(legacy);
-  for (const f of sheets) {
+  for (const f of dirs.flatMap((d) => walk(d, ['.css'])).filter(isLegacy)) {
     postcss.parse(read(f)).walkRules((rule) => {
       for (const [, name] of rule.selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) names.add(name);
     });
   }
+  return names;
+}
+
+/** Class names today's screens use: legacy selectors, and class props outside src/ui/. */
+function legacyClassNames() {
+  const names = legacySelectorNames();
   // Every string in a className (or fooClassName) prop. A piece ending in '-' is the
   // stem of a name built at runtime, such as `issue-row--${severity}`.
   const modules = [...walk('src', ['.js', '.jsx']), ...walk('mobile/src', ['.js', '.jsx'])];
-  for (const f of modules.filter(legacy)) {
+  for (const f of modules.filter(isLegacy)) {
     const file = ts.createSourceFile(f, read(f), ts.ScriptTarget.Latest, false, ts.ScriptKind.JSX);
     const visit = (node, inClassProp) => {
       if (ts.isJsxAttribute(node)) inClassProp = /className$/i.test(node.name.text ?? '');
@@ -492,6 +498,21 @@ test('src/ui imports only packages the Android app installs and dedupes', () => 
   }
 });
 
+// The status components' `android` look (src/ui/lib/status.js) writes the class
+// names the Android app's own stylesheets style, in the legacy layer, so its
+// screens look as before until Phase 4. They compile to nothing in the stack by
+// design. Only a name those stylesheets style is let through, or the block or
+// element whose modifiers they style (`sys-status-card__word` for
+// `sys-status-card__word--critical`), so a misspelt utility still fails.
+function androidHooks() {
+  const names = legacySelectorNames(['mobile/src']);
+  for (const name of [...names]) {
+    const at = name.indexOf('--');
+    if (at > 0) names.add(name.slice(0, at));
+  }
+  return names;
+}
+
 test('every class in src/ui/ compiles to CSS', async () => {
   const found = walk('src/ui', ['.js', '.jsx'])
     .filter((f) => !/\.test\.jsx?$/.test(f))
@@ -500,7 +521,18 @@ test('every class in src/ui/ compiles to CSS', async () => {
     found.some((c) => c.name === 'inline-flex'),
     'no class names found in src/ui/'
   );
-  const empty = new Set(await uncompiled(found.map((c) => c.name)));
+  const hooks = androidHooks();
+  assert.ok(
+    hooks.has('status-lamp') && hooks.has('sys-status-card__word'),
+    'Android hooks not found'
+  );
+  assert.ok(
+    !hooks.has('inline-flex') && !hooks.has('glass-card'),
+    'only Android selectors are hooks'
+  );
+  const empty = new Set(
+    (await uncompiled(found.map((c) => c.name))).filter((name) => !hooks.has(name))
+  );
   assert.deepEqual(
     found.filter((c) => empty.has(c.name)).map((c) => `${c.file}: ${c.name}`),
     [],
@@ -508,6 +540,15 @@ test('every class in src/ui/ compiles to CSS', async () => {
       'shadows are cleared (docs/design-system.md, rule 4). Use the scale (text-body-sm, ' +
       'text-caption...) and the roles'
   );
+});
+
+test("the class check lets through the Android look's class names, and nothing else", async () => {
+  const hooks = androidHooks();
+  // Styled by MobileApp.css; a BEM block whose modifiers it styles; a misspelt
+  // hook; a class only the web's legacy CSS styles; a cleared Tailwind size.
+  const names = ['status-lamp', 'sys-status-card__word', 'status-lampp', 'glass-card', 'text-sm'];
+  const empty = (await uncompiled(names)).filter((name) => !hooks.has(name));
+  assert.deepEqual(empty, ['glass-card', 'status-lampp', 'text-sm']);
 });
 
 test('the class check reads className, cn() and cva(), and catches what compiles to nothing', async () => {
