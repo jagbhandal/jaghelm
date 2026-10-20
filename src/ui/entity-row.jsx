@@ -9,7 +9,8 @@
  * name's column starts at the name's own width, and nothing else claims any
  * of it: the meta and the trailing figure start from nothing and widen into
  * the room the name leaves, up to their own width (a strip short of room
- * loses its oldest beats from the left), and the detail fills what is left
+ * loses its oldest beats from the left; narrower than 672px a heartbeat strip
+ * shows its newest 12, as the Phone board's), and the detail fills what is left
  * after them, ending in an ellipsis. Only a name wider than the whole row ends
  * in one. From 672px of its own container the name and the detail
  * share a line, the name keeping at least the mock's name column (3/7 of the
@@ -25,8 +26,8 @@
  * colour otherwise. `row-hover` shows over the tint under the pointer.
  *
  * A row that opens something is a button (`onOpen`) or a link (`href`), named
- * "name, word" and described by its detail, meta and trailing figure (an
- * UptimeBar's summary); its lamp is then decorative. A row with nothing to
+ * "name, word" and described by its detail, meta (unless only a dash) and
+ * trailing figure (an UptimeBar's summary); its lamp is then decorative. A row with nothing to
  * open is plain content, its lamp named by the word. A Sparkline inside a row
  * that opens is `decorative`: a focusable chart inside a button is a control
  * inside a control.
@@ -36,6 +37,8 @@ import { ChevronRight } from 'lucide-react';
 import { StatusLamp } from './status-lamp.jsx';
 import { cn } from './lib/utils.js';
 import { WORDS, spoken, toState } from './lib/status.js';
+
+const DASH = /^\s*[—–-]\s*$/;
 
 const detailColour = {
   ok: 'text-text-1',
@@ -63,7 +66,12 @@ function EntityRow({
   const opens = Boolean(href || onOpen);
   const Tag = href ? 'a' : onOpen ? 'button' : 'div';
   const has = { detail: detail != null, meta: meta != null, trailing: trailing != null };
-  const described = ['detail', 'meta', 'trailing'].filter((k) => has[k]).map((k) => `${id}-${k}`);
+  // A meta that is only a dash ("no latency") says nothing: it stays on screen
+  // and out of the row's description.
+  const saysMeta = has.meta && !(typeof meta === 'string' && DASH.test(meta));
+  const described = [has.detail && 'detail', saysMeta && 'meta', has.trailing && 'trailing']
+    .filter(Boolean)
+    .map((k) => `${id}-${k}`);
   const action =
     Tag === 'button'
       ? { type: 'button', onClick: () => onOpen() }
@@ -92,7 +100,7 @@ function EntityRow({
           s === 'crit' && '@2xl:bg-crit-tint'
         )}
       >
-        <span className="flex w-3 shrink-0 justify-center @2xl:w-4">
+        <span className="flex w-3 shrink-0 @2xl:w-4">
           <StatusLamp state={s} label={said} decorative={opens} />
         </span>
         <span
@@ -131,7 +139,7 @@ function EntityRow({
           <span
             data-slot="entity-trailing"
             id={`${id}-trailing`}
-            className="flex max-w-max min-w-0 grow-1000 basis-0 items-center justify-end overflow-hidden"
+            className="flex max-w-max min-w-0 grow-1000 basis-0 items-center justify-end overflow-hidden @max-2xl:[&_[data-slot=beat]:nth-last-child(n+13)]:hidden"
           >
             {trailing}
           </span>

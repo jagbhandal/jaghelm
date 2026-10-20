@@ -14,7 +14,11 @@
  * dot ringed in the panel's colour). Readings are drawn against `domain`,
  * 0–100 by default, so a flat line at 90 % reads differently from one at 10 %;
  * `domain="auto"` uses the readings' own range (latency). A missing reading
- * (null) breaks the line. Fewer than two readings draw nothing.
+ * (null) breaks the line. Fewer than two readings draw nothing. It is
+ * `width` × `height` px (a flex column doesn't stretch it); in a wider root
+ * (`className="w-full"`) it fills the root's width at the same height, drawn
+ * at that size (measured), so its line stays 1.5 or 2px and its dots round,
+ * however wide it is.
  *
  * `points` are numbers, or `{ time, value }` (time in ms or a Date). A tooltip
  * gives the value and time of the point nearest the pointer, or of the point
@@ -27,7 +31,7 @@
  * order, for a sparkline inside something that opens (a node card, a row):
  * that one's name says what matters, and the pointer still gets the tooltip.
  */
-import { useId, useMemo, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip';
 import { cn } from './lib/utils.js';
 import { useOverlayPortal } from './lib/portal.js';
@@ -119,13 +123,33 @@ function Sparkline({
   const [dismissed, setDismissed] = useState(false);
   const [said, setSaid] = useState('');
 
+  const chartRef = useRef(null);
+  // The width it is drawn at: `width`, or the width its root gives it (a
+  // `w-full` root), measured, so the line and dots never scale with the box.
+  const [boxWidth, setBoxWidth] = useState(null);
+  const w = boxWidth ?? width;
+
   const data = useMemo(() => normalise(points), [points]);
   const readings = data.filter((d) => d.value != null);
   const inset = INSETS[area ? 'area' : 'line'];
   const geo = useMemo(
-    () => (readings.length < 2 ? null : geometry(data, { width, height, domain, inset })),
-    [data, readings.length, width, height, domain, inset]
+    () => (readings.length < 2 ? null : geometry(data, { width: w, height, domain, inset })),
+    [data, readings.length, w, height, domain, inset]
   );
+  const drawn = geo != null;
+  useLayoutEffect(() => {
+    const el = chartRef.current;
+    if (!el) return undefined;
+    const measure = () => {
+      const measured = Math.round(el.getBoundingClientRect().width * 100) / 100;
+      setBoxWidth(measured > 0 ? measured : null);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [drawn]);
 
   const open = active != null && !dismissed && (hovering || focused);
   const [portalRoot, openChange] = useOverlayPortal(rootRef, open, (next) => {
@@ -159,7 +183,7 @@ function Sparkline({
     if (e.pointerType === 'touch') return;
     const box = svgRef.current?.getBoundingClientRect();
     if (!box?.width) return;
-    const x = ((e.clientX - box.left) / box.width) * width;
+    const x = ((e.clientX - box.left) / box.width) * w;
     let nearest = 0;
     geo.xy.forEach((p, i) => {
       if (Math.abs(p.x - x) < Math.abs(geo.xy[nearest].x - x)) nearest = i;
@@ -204,7 +228,7 @@ function Sparkline({
   const anchor = {
     getBoundingClientRect() {
       const box = svgRef.current?.getBoundingClientRect() ?? new DOMRect();
-      const x = box.left + ((point?.x ?? width) * box.width) / width;
+      const x = box.left + ((point?.x ?? w) * box.width) / w;
       return new DOMRect(x, box.top, 0, 0);
     },
   };
@@ -234,10 +258,11 @@ function Sparkline({
       ref={rootRef}
       data-slot="sparkline"
       aria-hidden={decorative || undefined}
-      className={cn('relative inline-block align-middle', className)}
+      className={cn('relative inline-block w-fit align-middle', className)}
       {...props}
     >
       <span
+        ref={chartRef}
         data-slot="sparkline-chart"
         className="block rounded-sm"
         onPointerMove={onPointerMove}
@@ -246,12 +271,12 @@ function Sparkline({
       >
         <svg
           ref={svgRef}
-          viewBox={`0 0 ${width} ${height}`}
-          width={width}
+          viewBox={`0 0 ${w} ${height}`}
+          width={w}
           height={height}
           aria-hidden="true"
           focusable="false"
-          className="block h-auto w-full overflow-visible"
+          className="block max-w-full overflow-visible"
         >
           {area && geo.area && (
             <path data-slot="sparkline-area" d={geo.area} className="fill-series-1/14" />

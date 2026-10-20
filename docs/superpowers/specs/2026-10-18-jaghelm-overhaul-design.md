@@ -121,7 +121,7 @@ The UX audit proposed violet for maintenance; with purple now the accent, mainte
 | --- | --- |
 | Shell | AppHeader with annunciator, Nav (sidebar on desktop, bottom tabs on phones), CommandPalette |
 | Status | StatusLamp, StatusWord/Badge, AttentionPanel, IssueRow, SubsystemStrip |
-| Data | EntityRow (density variants), MetricMeter, Sparkline (with tooltip), StatStrip, Table, UptimeBar (Kuma-style heartbeat strip), Chart |
+| Data | EntityRow (density variants), MetricMeter, Sparkline (with tooltip), FactList (an entity's facts as label and value, the mock's drawer list; this table first called it StatStrip), Table, UptimeBar (Kuma-style heartbeat strip), Chart |
 | Containers | Panel, Drawer, Dialog/Confirm, Popover, Tooltip, Toast, Banner (cause-naming), EmptyState, Skeleton |
 | Controls | Button (primary, secondary, ghost, danger × sm, md), IconButton, Input, Select, Switch, Checkbox, Field, SegmentedControl, Tabs |
 

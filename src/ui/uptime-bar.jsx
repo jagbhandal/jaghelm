@@ -16,8 +16,10 @@
  * empty beats and keeps the newest, so strips in a list line up.
  *
  * It is an image named by what it shows, "Heartbeats: 2 failures in the last
- * 30 checks", counting only checks with data. The name is hidden text inside
- * it, so a row that holds it (EntityRow) is described by it too.
+ * 30 checks", counting only checks with data; a strip with no data at all says
+ * so ("No data in the last 30 checks"), and one with no checks "No checks
+ * yet". The name is hidden text inside it, so a row that holds it (EntityRow)
+ * is described by it too.
  */
 import { useId } from 'react';
 import { cn } from './lib/utils.js';
@@ -48,7 +50,12 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
  */
 export function beatSummary(beats = []) {
   const checks = beats.map(beatOf).filter((b) => b !== 'none');
-  if (!checks.length) return 'No checks yet';
+  if (!checks.length) {
+    // Checks with no signal (a source down) are not a monitor that has none yet.
+    const unknown = beats.filter((b) => b === 'unknown').length;
+    if (!unknown) return 'No checks yet';
+    return `No data in ${unknown === 1 ? 'the last check' : `the last ${unknown} checks`}`;
+  }
   const failed = checks.filter((b) => b === 'crit').length;
   const warned = checks.filter((b) => b === 'warn').length;
   const span = checks.length === 1 ? 'the last check' : `the last ${checks.length} checks`;

@@ -1119,10 +1119,16 @@ until Phase 4 (#326).
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`) |
 | `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
 | `EntityRow` | `@ui/entity-row` | `state`, `word`, `name`, `detail`, `meta`, `trailing`; `onOpen` or `href` |
-| `StatStrip` | `@ui/stat-strip` | `stats` (`[{ key, label, value, sub, visual }]`) |
-| `Table` | `@ui/table` | `caption` (or `aria-label`), `columns` (`[{ key, header, numeric, cell, className }]`), `rows`, `rowKey` (`id`), `onRowOpen`, `empty`, `minWidth` |
+| `FactList` | `@ui/fact-list` | `facts` (`[{ key, label, value }]`) |
+| `Table` | `@ui/table` | `caption` (or `aria-label`, or `aria-labelledby`), `columns` (`[{ key, header, numeric, cell, className }]`), `rows`, `rowKey` (`id`), `onRowOpen`, `empty`, `minWidth` |
 
 Each also takes `className`, and passes other props to its root.
+
+Spec §5.4's **StatStrip is FactList**. The mock draws an entity's figures
+(a UPS's charge, runtime, load and input; a service's monitor, latency and
+host) as the detail drawer's two-column list on both its Overview and Phone
+boards, and has no strip of figures; the drawer's integration stats (#310) go
+there too.
 
 ### How the data components look
 
@@ -1148,8 +1154,9 @@ Chart colours board:
   `domain="auto"`; a missing reading breaks the line; fewer than two readings
   draw nothing. Under the pointer, or with the keyboard on it, the nearest
   point gets the same dot and a tooltip above the chart (the Tooltip's frame,
-  #286): the value in bold and the time in `text-2`. It scales to a wider
-  root (`className="w-full"`).
+  #286): the value in bold and the time in `text-2`. In a wider root
+  (`className="w-full"`) it fills the root's width at its own height, drawn at
+  that size, so the line stays 1.5 or 2px and the dots round.
 - **UptimeBar.** Kuma's heartbeat strip, oldest on the left. Only failures
   light up: `crit` beats are `crit-solid`, `warn` beats (Kuma's pending)
   `warn-solid`; every other check, maintenance included, is the quiet
@@ -1158,27 +1165,30 @@ Chart colours board:
   6 × 22 (the drawer), `lg` 8 × 26 (the phone's detail screen, spread with
   `justify-between`). `count` pads the oldest end with empty beats, so strips
   in a list line up.
-- **EntityRow.** The Services row. From 672px of its own container: the lamp,
-  the name (semibold), the detail (13px), the meta (12px `text-3`,
+- **EntityRow.** The Services row. From 672px of its own container: the lamp
+  (at the start of a 16px column), the name (semibold), the detail (13px), the meta (12px `text-3`,
   right-aligned in 64px), the trailing figure and a chevron, `h-row` tall
   (40px, 32 compact) and padded by `p-panel`, with the name keeping at least
   the mock's name column (3/7 of the name and detail) so details line up down
-  a list. Narrower, the Phone board's row: the name over the detail (12px) and
-  the trailing figure, 12px taller than `h-row`. Both keep the mock's 20px
+  a list. Narrower, the Phone board's row: the lamp in a 12px column, the name
+  over the detail (12px) and the trailing figure, 12px taller than `h-row`; a
+  heartbeat strip there shows its newest 12 beats, as the Phone board's, so
+  the detail keeps its room. Both keep the mock's 20px
   lines. The detail is `text-1` when healthy and the state's word colour
   otherwise; a critical row is tinted `crit-tint` from 672px, as the Overview
   board's (the Phone board's list leaves it plain). `row-hover` under the
   pointer, over the tint.
-- **StatStrip.** The subsystem strip's frame for figures that are not states:
-  tiles 1px apart (`border-subtle`) in one 12px-round frame, each an overline
-  label over the value (`title-sm` from 672px, 14px bold below), an optional
-  line under it (12px `text-3`) and an optional `visual`. No lamp, no tint.
-  Six sit in a row from 672px, three from 320px and two below, with the
-  subsystem strip's columns, so no row has an empty slot.
+- **FactList.** The detail drawer's facts: a label column in `text-3` and a
+  value column, semibold in `text-1`, 10px between rows and 12px between the
+  columns. From 384px of its own container it is the Overview drawer's (a
+  130px label column, 13px on the mock's 20px line); narrower, the Phone
+  board's detail screen (120px, 14px). Labels wrap in their column, values in
+  theirs. Without facts it draws nothing.
 - **Table.** The Infrastructure table: `surface-1` in a subtle edge, 12px
   round, overline headers (`text-3`, the mock's 20px line, 10px above and
   below), rows `h-row` tall with a subtle rule between them, 13px text,
-  16px of padding at the ends and 12 between columns. The first column is
+  12px between columns and 16px at both ends of the first and last, as the
+  mock pads them. The first column is
   bold. Numeric columns are right-aligned, header too, in tabular figures.
   Cells keep to one line, so a row stays one `h-row` tall (a column's
   `className` can set `whitespace-normal`), and a table wider than its frame
@@ -1190,10 +1200,11 @@ Chart colours board:
   An EntityRow's name column starts at the name's own width; the meta and the
   trailing figure start from nothing and grow into the room it leaves, up to
   their own width (a strip short of room loses its oldest beats from the
-  left); the detail fills what is left after them, ending in an ellipsis. Only
-  a name wider than the whole row ends in one. Pass every row in a list the
-  same parts (`meta="—"` where there is none, an UptimeBar with the same
-  `count`), so they line up.
+  left; on a phone-width row a heartbeat strip shows only its newest 12); the
+  detail fills what is left after them, ending in an ellipsis. Only a name
+  wider than the whole row ends in one. Pass every row in a list the same
+  parts (`meta="—"` where there is none, which stays out of the row's
+  description; an UptimeBar with the same `count`), so they line up.
 - **Beside a meter, slot 1 only.** A strip, row or card that holds a
   MetricMeter draws its chart as a Sparkline ([Chart colours](#chart-colours)).
 - **Never on `surface-3`.** Meters and sparklines sit on the page, a panel,
@@ -1220,22 +1231,27 @@ Chart colours board:
   focus ring goes around the chart, never on the line. `decorative` hides it
   from assistive tech and the tab order; the pointer still gets the tooltip.
 - **UptimeBar** is an image named by its summary, "Heartbeats: 5 failures in
-  the last 30 checks, including the latest", counting only checks with data.
+  the last 30 checks, including the latest", counting only checks with data
+  (with none, "No data in the last 30 checks"; with no checks, "No checks
+  yet"). On a phone-width row it shows 12 beats and still sums up them all.
   The name is hidden text inside it, so an EntityRow holding it is described
   by it.
 - **EntityRow** is a button (`onOpen`) or a link (`href`) named "name, word"
-  and described by its detail, meta and trailing figure, with a decorative
+  and described by its detail, meta (not a dash alone) and trailing figure,
+  with a decorative
   lamp; with nothing to open it is plain content and its lamp is named by the
   word. The focus ring is drawn inset.
-- **StatStrip** is a description list: each label a term, its value and line
-  its details.
+- **FactList** is a description list: each label a term, its value the
+  definition.
 - **Table** is a `<table>` named by its `caption` (hidden: the panel's heading
-  shows it) or an `aria-label`, with `scope`d column headers and each row
+  shows it), an `aria-label`, or its section's heading (`aria-labelledby`, as
+  the mock names its sections), with `scope`d column headers and each row
   named by its first cell, a row header; without a name it throws in
   development and logs in production. With `onRowOpen`, that first cell is a
   button, so Tab reaches each row and Enter or Space opens it, and a click
-  anywhere on the row opens it too. While it scrolls, its frame is a region
-  named by the caption that Tab reaches, so the keyboard can scroll it.
+  anywhere on the row opens it too, except on a link or control a cell holds.
+  While it scrolls, its frame is a region named as the table that Tab
+  reaches, so the keyboard can scroll it.
 
 ### Where the data components differ from the mock
 
@@ -1244,7 +1260,8 @@ Chart colours board:
   single series slot 1 and keeps the accent out of plots.
 - **The threshold tick** is not in the mock, whose meters have only the
   quarter ticks: it shows where the meter leaves the accent, so a reading past
-  its threshold shows by more than colour.
+  its threshold shows by more than colour. Jag's call (#288); taking it out is
+  one element in `metric-meter.jsx`.
 - **No reading keeps the track.** UsageBar hid its bar; the empty track keeps a
   grid of meters in line.
 - **The table's headers are on the type scale's 20px line**, as the mock's
@@ -1255,10 +1272,11 @@ Chart colours board:
   beats are 16px tall (the mock's 18): one `sm` size for both rows.
 - **Not in the mock, derived from it:** the Sparkline's tooltip, its keyboard
   and its active dot; UptimeBar's `warn` beats, maintenance kept quiet, and
-  its `md` and `lg` sizes (the drawers' beats); the StatStrip as a whole (the
-  subsystem strip's frame, without the status) and its `visual`; the meta and
-  trailing figure giving way to the name; the table's row header, its open
-  button and its scrolling region; the empty-table line.
+  its `md` and `lg` sizes (the drawers' beats); FactList's switch between the
+  drawer's and the phone's sizes at 384px of its container (the boards show
+  the two, not where one becomes the other); the meta and trailing figure
+  giving way to the name; the table's row header, its open button and its
+  scrolling region; the empty-table line.
 
 ## Changing a token
 

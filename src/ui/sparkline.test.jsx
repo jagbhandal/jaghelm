@@ -223,11 +223,46 @@ describe('Sparkline', () => {
   it('passes className to its root; the chart in it takes the focus ring, and fills a wider root', () => {
     render(<Sparkline label="CPU" points={CPU} className="w-full" data-testid="cpu" />);
     expect(screen.getByTestId('cpu')).toHaveClass('w-full', 'inline-block');
+    expect(screen.getByTestId('cpu')).not.toHaveClass('w-fit');
     const chart = screen.getByRole('img');
     expect(chart).toHaveClass('block', 'rounded-sm');
     expect(chart.className).not.toMatch(/(^|\s|:)outline-(none|hidden|0)(\s|$)/);
-    expect(chart.querySelector('svg')).toHaveClass('w-full', 'h-auto');
+    expect(chart.querySelector('svg')).toHaveClass('max-w-full');
     expect(chart.querySelector('svg')).toHaveAttribute('width', '96');
+  });
+
+  it('keeps its own width where a layout would stretch it, unless its root is given one', () => {
+    render(<Sparkline label="CPU" points={CPU} data-testid="cpu" />);
+    // fit-content, so a flex column doesn't stretch it to its width.
+    expect(screen.getByTestId('cpu')).toHaveClass('w-fit');
+  });
+
+  it('draws at the width its root gives it, its height and line kept: never scaled', () => {
+    const box = (width) => ({
+      left: 0,
+      top: 0,
+      right: width,
+      bottom: 24,
+      width,
+      height: 24,
+      x: 0,
+      y: 0,
+    });
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      return box(this.dataset.slot === 'sparkline-chart' ? 480 : 0);
+    });
+    const { rerender } = render(<Sparkline label="CPU" points={[0, 50, 100]} className="w-full" />);
+    const svg = screen.getByRole('img').querySelector('svg');
+    // The view box is the box it is drawn in, so nothing in it scales.
+    expect(svg).toHaveAttribute('viewBox', '0 0 480 24');
+    expect(svg).toHaveAttribute('width', '480');
+    expect(svg).toHaveAttribute('height', '24');
+    expect(line()).toHaveAttribute('stroke-width', '1.5');
+    expect(line()).toHaveAttribute('d', 'M1 23L240 12L479 1');
+    rerender(<Sparkline label="CPU" points={[0, 50, 100]} className="w-full" area />);
+    expect(line()).toHaveAttribute('stroke-width', '2');
+    expect(document.querySelector('[data-slot="sparkline-end"]')).toHaveAttribute('r', '3.5');
+    expect(document.querySelector('[data-slot="sparkline-end"]')).toHaveAttribute('cx', '476');
   });
 
   it('needs a label unless decorative: without one it throws in development', () => {

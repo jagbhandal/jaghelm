@@ -69,7 +69,9 @@ describe('Table', () => {
     expect(table).toHaveClass('w-full', 'border-collapse', 'text-body-sm');
     const header = screen.getByRole('columnheader', { name: 'Node' });
     expect(header).toHaveClass('text-overline', 'text-text-3', 'uppercase', 'py-2.5', 'px-3');
-    expect(header).toHaveClass('first:pl-4', 'last:pr-4');
+    // 12px between columns, 16px at both ends of the first and last, as the mock.
+    expect(header).toHaveClass('px-3', 'first:px-4', 'last:px-4');
+    expect(screen.getByRole('cell', { name: 'Hypervisor' })).toHaveClass('first:px-4', 'last:px-4');
     const [, row] = screen.getAllByRole('row');
     expect(row).toHaveClass('h-row', 'border-t', 'border-border-subtle');
     expect(screen.getByRole('rowheader', { name: 'Proxmox' })).toHaveClass(
@@ -114,6 +116,34 @@ describe('Table', () => {
     expect(onRowOpen).toHaveBeenCalledTimes(2);
     const row = screen.getAllByRole('row')[1];
     expect(row).toHaveClass('cursor-pointer', 'hover:bg-row-hover');
+  });
+
+  it('leaves a link or control a cell holds to itself: its click does not open the row', async () => {
+    const user = userEvent.setup();
+    const onRowOpen = vi.fn();
+    const columns = [
+      ...COLUMNS,
+      { key: 'grafana', header: 'Links', cell: (row) => <a href={`#${row.id}`}>Grafana</a> },
+    ];
+    render(<Table caption="Nodes" columns={columns} rows={ROWS} onRowOpen={onRowOpen} />);
+    await user.click(screen.getAllByRole('link', { name: 'Grafana' })[0]);
+    expect(onRowOpen).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Proxmox' }));
+    expect(onRowOpen).toHaveBeenCalledWith(ROWS[0]);
+  });
+
+  it('can be named by its section’s heading, as the mock names its sections', () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(900);
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(358);
+    render(
+      <section>
+        <h2 id="infra-h">Infrastructure</h2>
+        <Table aria-labelledby="infra-h" columns={COLUMNS} rows={ROWS} />
+      </section>
+    );
+    expect(screen.getByRole('table', { name: 'Infrastructure' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Infrastructure' })).toHaveAttribute('tabindex', '0');
+    expect(document.querySelector('caption')).toBeNull();
   });
 
   it('says so when there are no rows, across every column', () => {

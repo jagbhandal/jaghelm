@@ -43,8 +43,10 @@ describe('EntityRow', () => {
     const row = screen.getByRole('button', { name: 'Immich, Down' });
     expect(row).toHaveAttribute('type', 'button');
     expect(row).toHaveAccessibleDescription(
-      'Kuma: HTTP 502 for 4 min — Heartbeats: 5 failures in the last 30 checks, including the latest'
+      'Kuma: HTTP 502 for 4 min Heartbeats: 5 failures in the last 30 checks, including the latest'
     );
+    // The dash stays on screen; it says nothing, so it is no part of the description.
+    expect(screen.getByText('—')).toBeInTheDocument();
     await user.click(row);
     expect(onOpen).toHaveBeenCalledOnce();
     expect(onOpen).toHaveBeenCalledWith();
@@ -53,6 +55,10 @@ describe('EntityRow', () => {
   it("draws the mock's service row: lamp, name, detail in its state's colour, meta, chevron", () => {
     render(<EntityRow {...IMMICH} onOpen={() => {}} />);
     const row = screen.getByRole('button');
+    // The lamp at the start of its column (12px narrow, 16px wide), as the mock's.
+    const column = row.querySelector('[data-slot="status-lamp"]').parentElement;
+    expect(column).toHaveClass('flex', 'w-3', '@2xl:w-4');
+    expect(column.className).not.toMatch(/justify-/);
     expect(row).toHaveAttribute('data-slot', 'entity-row');
     expect(row).toHaveAttribute('data-state', 'crit');
     // The name says the state, so the lamp is its shape only.
@@ -157,6 +163,18 @@ describe('EntityRow', () => {
       expect(part(row, 'detail')).toHaveClass('leading-5', '@2xl:leading-5');
       expect(part(row, 'meta')).toHaveClass('hidden', '@2xl:block');
       expect(row.querySelector('svg.lucide')).toHaveClass('hidden', '@2xl:block');
+    });
+
+    it("narrow: a heartbeat strip shows its newest 12, as the Phone board's, so the detail keeps its room", () => {
+      render(<EntityRow {...IMMICH} trailing={<UptimeBar beats={ups(30)} />} onOpen={() => {}} />);
+      const trailing = part(screen.getByRole('button'), 'trailing');
+      // Below 672px every beat but the last 12 is hidden; the strip's name
+      // still sums up all 30. Chromium: at 358px, 30 beats leave "Kuma: HTTP
+      // 502 for 4 min" whole (the PR's measurements).
+      expect(trailing).toHaveClass('@max-2xl:[&_[data-slot=beat]:nth-last-child(n+13)]:hidden');
+      const beats = trailing.querySelectorAll('[data-slot="beat"]');
+      expect(beats).toHaveLength(30);
+      expect(beats[0].parentElement.lastElementChild).toBe(beats[29]);
     });
   });
 

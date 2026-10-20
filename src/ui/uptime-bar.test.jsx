@@ -30,8 +30,13 @@ describe('beatSummary', () => {
     expect(beatSummary([null, null, 'ok', 'crit', 'maintenance'])).toBe(
       '1 failure in the last 3 checks'
     );
-    expect(beatSummary([null, 'unknown', undefined])).toBe('No checks yet');
+    expect(beatSummary([null, undefined])).toBe('No checks yet');
     expect(beatSummary([])).toBe('No checks yet');
+  });
+
+  it('says a strip with no signal has no data, not that it has no checks', () => {
+    expect(beatSummary(Array(30).fill('unknown'))).toBe('No data in the last 30 checks');
+    expect(beatSummary([null, 'unknown'])).toBe('No data in the last check');
   });
 });
 

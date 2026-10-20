@@ -141,7 +141,7 @@ src/                        React 19 SPA (Vite 8)
                              the status components (#287: status-lamp, status-word,
                              issue-row, subsystem-strip, attention-panel; the Android app
                              uses them too), the data components (#288: metric-meter,
-                             sparkline, uptime-bar, entity-row, stat-strip, table),
+                             sparkline, uptime-bar, entity-row, fact-list, table),
                              lib/status.js (the five states, their words,
                              and the two looks), lib/utils.js (cn, taught the theme),
                              lib/portal.js (portal roots and the switches they copy),
