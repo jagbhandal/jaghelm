@@ -1,0 +1,137 @@
+exports[`Arcane pushes are unchanged in content: every type, as the phone receives it (#291) 1`] = `
+[
+  {
+    "token": "phone",
+    "notification": {
+      "title": "Updates · vm-103",
+      "body": "1 update held back: homeassistant"
+    },
+    "data": {
+      "type": "arcane_heldback",
+      "id": "arcane:vm-103:heldback",
+      "node": "vm-103",
+      "severity": "info"
+    },
+    "android": {
+      "priority": "normal",
+      "notification": {
+        "channelId": "jaghelm-incidents"
+      }
+    }
+  },
+  {
+    "token": "phone",
+    "notification": {
+      "title": "Updates · vm-103",
+      "body": "1 caught up: immich-server"
+    },
+    "data": {
+      "type": "arcane_cleared",
+      "id": "arcane:vm-103:cleared",
+      "node": "vm-103",
+      "severity": "info"
+    },
+    "android": {
+      "priority": "normal",
+      "notification": {
+        "channelId": "jaghelm-incidents"
+      }
+    }
+  },
+  {
+    "token": "phone",
+    "notification": {
+      "title": "Updates · vm-103",
+      "body": "1 updated: gitea · 1 failed: nextcloud"
+    },
+    "data": {
+      "type": "arcane_update",
+      "id": "arcane:vm-103:update",
+      "node": "vm-103",
+      "severity": "warning"
+    },
+    "android": {
+      "priority": "normal",
+      "notification": {
+        "channelId": "jaghelm-incidents"
+      }
+    }
+  },
+  {
+    "token": "phone",
+    "notification": {
+      "title": "Arcane · vm-101",
+      "body": "Agent disconnected; Arcane cannot manage vm-101"
+    },
+    "data": {
+      "type": "arcane_agent_offline",
+      "id": "arcane:vm-101:agent",
+      "node": "vm-101",
+      "severity": "warning"
+    },
+    "android": {
+      "priority": "normal",
+      "notification": {
+        "channelId": "jaghelm-incidents"
+      }
+    }
+  },
+  {
+    "token": "phone",
+    "notification": {
+      "title": "Arcane · vm-101",
+      "body": "Agent reconnected"
+    },
+    "data": {
+      "type": "arcane_agent_recovered",
+      "id": "arcane:vm-101:agent",
+      "node": "vm-101",
+      "severity": "info"
+    },
+    "android": {
+      "priority": "normal",
+      "notification": {
+        "channelId": "jaghelm-incidents"
+      }
+    }
+  },
+  {
+    "token": "phone",
+    "notification": {
+      "title": "Arcane 2.17.0 available",
+      "body": "Running 2.16.1. Upgrade by PR: bump the pinned tag."
+    },
+    "data": {
+      "type": "arcane_release",
+      "id": "arcane:release",
+      "node": "arcane",
+      "severity": "info"
+    },
+    "android": {
+      "priority": "normal",
+      "notification": {
+        "channelId": "jaghelm-incidents"
+      }
+    }
+  },
+  {
+    "token": "phone",
+    "notification": {
+      "title": "Vulnerabilities · vm-103",
+      "body": "3 new critical, 11 new high (fix available) · 9 images · top: nextcloud 2C, immich-server 1C · KEV 1 (1 new) · 2 fixed · 1 image not scanned in 9 days: redis · still failing: whoami"
+    },
+    "data": {
+      "type": "arcane_vulns",
+      "id": "arcane:vm-103:vulns",
+      "node": "vm-103",
+      "severity": "warning"
+    },
+    "android": {
+      "priority": "normal",
+      "notification": {
+        "channelId": "jaghelm-incidents"
+      }
+    }
+  }
+]
+`;
