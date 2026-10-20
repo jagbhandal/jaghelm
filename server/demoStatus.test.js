@@ -69,6 +69,12 @@ function liveStatusOf(scenario) {
     store[node] = Object.fromEntries(jobs.map(({ job, runs }) => [job, runs]));
   }
   writeFileSync(join(DATA_DIR, 'cron-jobs.json'), JSON.stringify(store));
+  // The display config the demo serves is the live one: its thresholds, and
+  // the jobs it marks as backups (#291), which the loop reads from the file.
+  writeFileSync(
+    join(DATA_DIR, 'display-config.json'),
+    JSON.stringify(served('/api/display-config', scenario))
+  );
   // A live install with Kuma and Gitea set up, as the demo's board shows (its
   // services carry Kuma monitors, its Pipeline panel Gitea commits). Only for
   // the loop's step: the demo must not need them in its own environment.
@@ -92,11 +98,12 @@ test('demo /api/status: incident: the headline and issues are what the live loop
   assert.deepEqual(demo.overall, live.overall, 'the headline');
   assert.deepEqual(demo.issues, live.issues, 'the issue list');
   assert.deepEqual(demo, live, 'and the rest of the status');
-  // Not vacuous: the incident board has its two issues.
-  assert.deepEqual(live.overall, { state: 'crit', sentence: '1 service down · 1 job failed' });
+  // Not vacuous: the incident board has its two issues, and the failed
+  // nightly backup is a backup, as docs/DEMO.md says (#291).
+  assert.deepEqual(live.overall, { state: 'crit', sentence: '1 service down · 1 backup failed' });
   assert.deepEqual(
     live.issues.map((i) => i.id),
-    ['services/apps:jellyfin', 'jobs/storage:nightly-backup']
+    ['services/apps:jellyfin', 'backups/storage:nightly-backup']
   );
 });
 

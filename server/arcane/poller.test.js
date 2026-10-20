@@ -1763,3 +1763,85 @@ test('image checks: a failed check read leaves the environment unchanged', async
     ['arcane-check']
   );
 });
+
+// ── The agents the status model shows (#291) ─────────────────────────────
+
+test('agents: none before the first environment list, then each listed environment by name with its health', async (t) => {
+  const h = setup(t);
+  assert.equal(h.poller.agents(), null, 'not polled yet: no agents, not unknown ones');
+  setStatus(h.s, PI2, 'offline');
+  await h.poller.pollOnce();
+  assert.deepEqual(h.poller.agents(), [
+    { env: 'pi-1', state: 'up' }, // standby is up
+    { env: 'pi-2', state: 'down' },
+    { env: 'vm-101', state: 'up' },
+    { env: 'vm-103', state: 'up' },
+  ]);
+  // The model sees the agent down on the first poll; the push waits for the
+  // second (OFFLINE_AFTER_POLLS), as before.
+  assert.deepEqual(h.dispatched, []);
+
+  setStatus(h.s, PI2, 'online');
+  setStatus(h.s, VM101, 'pending');
+  await h.poller.pollOnce();
+  assert.deepEqual(h.poller.agents(), [
+    { env: 'pi-1', state: 'up' },
+    { env: 'pi-2', state: 'up' },
+    { env: 'vm-101', state: 'unknown' },
+    { env: 'vm-103', state: 'up' },
+  ]);
+});
+
+test('agents: a copy each time, so a reader cannot change what the poller holds', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce();
+  h.poller.agents()[0].state = 'down';
+  h.poller.agents().push({ env: 'x', state: 'down' });
+  assert.deepEqual(
+    h.poller.agents().map((a) => a.state),
+    ['up', 'up', 'up', 'up']
+  );
+});
+
+test('agents: a failed environment list makes every known agent unknown until the list reads again', async (t) => {
+  const h = setup(t);
+  h.s.fail.environments = new ArcaneError('Arcane request failed: connect ECONNREFUSED', null);
+  await h.poller.pollOnce();
+  assert.equal(h.poller.agents(), null, 'never read: still none');
+
+  delete h.s.fail.environments;
+  await h.poller.pollOnce();
+  h.s.fail.environments = new ArcaneError('Arcane HTTP 401 for /api/environments', 401);
+  await h.poller.pollOnce();
+  assert.deepEqual(h.poller.agents(), [
+    { env: 'pi-1', state: 'unknown' },
+    { env: 'pi-2', state: 'unknown' },
+    { env: 'vm-101', state: 'unknown' },
+    { env: 'vm-103', state: 'unknown' },
+  ]);
+
+  delete h.s.fail.environments;
+  await h.poller.pollOnce();
+  assert.ok(h.poller.agents().every((a) => a.state === 'up'));
+});
+
+test('agents: a disabled, removed, unsafely named or shared-name environment is no agent', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce();
+  h.s.envs.find((e) => e.id === PI1).enabled = false;
+  h.s.envs = h.s.envs.filter((e) => e.id !== PI2);
+  h.s.envs.push(
+    { id: '7', name: 'bad name', status: 'offline', enabled: true },
+    { id: '9', name: 'vm-101', status: 'offline', enabled: true }
+  );
+  await h.poller.pollOnce();
+  assert.deepEqual(h.poller.agents(), [{ env: 'vm-103', state: 'up' }]);
+});
+
+test('agents: reading them makes no Arcane request', async (t) => {
+  const h = setup(t);
+  await h.poller.pollOnce();
+  const calls = h.s.calls.length;
+  for (let i = 0; i < 3; i++) h.poller.agents();
+  assert.equal(h.s.calls.length, calls);
+});

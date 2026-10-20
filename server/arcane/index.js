@@ -10,6 +10,7 @@ import { createArcaneStateStore } from './stateStore.js';
 import { createArcanePoller } from './poller.js';
 import { createVulnStateStore } from './vulnStateStore.js';
 import { createVulnDigest } from './vulnDigest.js';
+import { setArcaneAgentsSource } from './agents.js';
 import { createHeldBackStore } from '../watchtower/heldBackStore.js';
 import { recordRun } from '../cron-store.js';
 import { dispatchEvents } from '../push/dispatch.js';
@@ -55,6 +56,9 @@ export function startArcane({ env = process.env, demo = isDemoMode(), deps = {} 
     checkEverySeconds: cfg.checkEverySeconds,
     logger: log,
   });
+  // The status model reads the agents from this poller's last environment list.
+  const agentsOf = poller;
+  setArcaneAgentsSource(() => agentsOf.agents?.() ?? null);
   poller.start({ pollMs: cfg.pollMs, releaseMs: cfg.releaseMs });
   digest = makeDigest({
     client: createArcaneClient({
@@ -77,6 +81,7 @@ export function startArcane({ env = process.env, demo = isDemoMode(), deps = {} 
 }
 
 export function stopArcane() {
+  setArcaneAgentsSource(null);
   if (poller) poller.stop();
   if (digest) digest.stop();
   poller = null;

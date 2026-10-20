@@ -48,8 +48,13 @@ test('demo: GET /api/status is the status model of the demo board, in both scena
       }
       assert.ok(!Object.hasOwn(e, 'memo'), `${e.id}: the model's memory is never served`);
     }
-    // Every board entity is judged: 12 services, 3 nodes, the UPS, 4 jobs.
+    // Every board entity is judged: 12 services, 3 nodes, the UPS, 3 jobs and
+    // the nightly backup, which the demo's display config marks as one (#291).
     assert.equal(status.entities.length, 20);
+    assert.deepEqual(
+      status.entities.filter((e) => e.subsystem === 'backups').map((e) => [e.id, e.kind]),
+      [['backups/storage:nightly-backup', 'backup']]
+    );
     assert.deepEqual(Object.keys(status.sources).sort(), ['gitea', 'kuma', 'nut', 'prometheus']);
     for (const s of Object.values(status.sources)) assert.equal(s.state, 'ok');
   };
@@ -57,12 +62,13 @@ test('demo: GET /api/status is the status model of the demo board, in both scena
   const incident = await request(app).get('/api/status');
   assert.equal(incident.status, 200);
   shapeOf(incident.body);
-  assert.deepEqual(incident.body.overall, { state: 'crit', sentence: '1 service down · 1 job failed' });
+  // A failed backup, as docs/DEMO.md calls it (#291).
+  assert.deepEqual(incident.body.overall, { state: 'crit', sentence: '1 service down · 1 backup failed' });
   assert.deepEqual(
     incident.body.issues.map((i) => [i.id, i.state, i.reason]),
     [
       ['services/apps:jellyfin', 'crit', 'Kuma: down'],
-      ['jobs/storage:nightly-backup', 'warn', 'Last run failed: repository is locked by another process'],
+      ['backups/storage:nightly-backup', 'crit', 'Last backup failed: repository is locked by another process'],
     ]
   );
 

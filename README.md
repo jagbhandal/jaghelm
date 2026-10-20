@@ -175,7 +175,7 @@ Most things are configurable from the Settings UI (sidebar nav, 13 sections). Fo
 ```
 data/
 ├── services.yaml          # nodes, services, integrations
-├── display-config.json    # theme, layout, sections, links
+├── display-config.json    # theme, layout, sections, links, backup jobs
 ├── secrets.json           # AES-256-GCM encrypted credentials
 ├── auth.json              # password hash (if changed via UI)
 ├── cron-jobs.json         # cron job execution history
@@ -220,6 +220,16 @@ Jobs report with `POST /api/cron/report`. `secret` must match `JAGHELM_CRON_SECR
 ```
 
 `GET /api/cron/status` reports `overdue` and `seconds_since_report` for every job (`seconds_since_report` is null if a run has no timestamp), and `expected_every_seconds` only for jobs that declared one. A job is overdue when it has not reported within the interval plus `max(25% of the interval, 10 minutes)`. `DELETE /api/cron/jobs/:node/:job` (session auth, URL-encode both segments) removes a job and its history.
+
+#### Marking jobs as backups
+
+A job is a backup only when `backupJobs` in `data/display-config.json` names it, as `"node:job"` (the node and job its reports send):
+
+```json
+{ "backupJobs": ["pve:proxmox-backup", "nas:b2-sync"] }
+```
+
+A backup shows under Backups instead of Jobs in `/api/status`, and is judged more strictly than a job: a failed last run is critical, overdue a warning (a job is a warning either way). Its push notifications are the job's, unchanged. Proxmox backup results reported by a PVE notification webhook arrive as a job like any other, so name that job here too. Edit the file (JagHelm reads it again on the next refresh) or save the whole config with `POST /api/display-config`; a Settings page for the list comes later. An entry that isn't a `"node:job"` string is ignored, with one warning in the log.
 
 ## Features
  
