@@ -829,7 +829,7 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
 
 ```js
 {
-  overall: { state, sentence },     // "2 services down · UPS on battery"
+  overall: { state, sentence },     // "2 services down · UPS on battery"; state may be 'empty'
   issues: [entity, …],              // ranked, see below
   subsystems: [{ id, name, state, counts: { total, ok, warn, crit, unknown, maintenance }, detail }],
   entities: [{ id, kind, subsystem, name, node?, state, word, reason, metric?, conditions?, since }],
@@ -840,6 +840,18 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
 - **States** are `ok | warn | crit | unknown | maintenance`, the names
   `src/ui/lib/status.js` uses (a test keeps them in step). Worst-of order:
   `crit` > `warn` > `unknown` > `maintenance` > `ok`.
+- **An empty board** (#449): with no entity and no failed source (nothing is
+  set up, as on a first run), `overall.state` is `empty` (`EMPTY` in
+  `summary.js` and in `src/ui/lib/status.js`, kept in step by a test) and the
+  sentence is "Nothing monitored yet". It is the board's state only, never an
+  entity's or a subsystem's (an empty subsystem stays `ok` with `total: 0`):
+  not `ok`, since nobody checked anything, and not `unknown`, since nothing
+  went silent. It is no issue, and push sends nothing on it (there is nothing
+  to page about; `server/push/firstRun.test.js`). The web's attention panel
+  and header draw it as their quiet line, without a lamp; a client that
+  doesn't know it reads it as no signal, as it reads any state it doesn't
+  know. Only the overall can be `empty`, and only in `/api/status`; the old
+  endpoints keep theirs (`/api/services`' `overallHealth` is still `unknown`).
 - **Entities**, with their ids: a card of `/api/services` is a `service` when a
   Kuma monitor gives its state and a `container` otherwise
   (`services/<uid>`); an up, pending or in-maintenance monitor no card is drawn
@@ -892,8 +904,8 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
 - **The sentence**: with warnings or worse, each kind of problem with its count
   in issue order ("2 services down · Prometheus unreachable · 1 job failed"),
   then "N no signal"; with only unknowns, "31 up · 1 no signal"; healthy, the
-  quiet line ("All 32 services up · 6 nodes healthy"). With nothing to judge,
-  "Nothing monitored yet" and `unknown`.
+  quiet line ("All 32 services up · 6 nodes healthy"). With nothing on the
+  board, "Nothing monitored yet" and `empty`.
 
 **The threshold config** (`thresholds.js`, [ADR 0006](adr/0006-one-severity-table.md)):
 `DEFAULT_THRESHOLDS` holds every number, usage lines as fractions of 1 as push
@@ -1004,9 +1016,8 @@ one is deleting its entry. Today's: a failed backup is crit on the screen but
 pushes at `warning` (#446, Jag to decide); a node new to the push snapshot is
 a baseline, so it sends "Host recovered" (or nothing, if unreachable) and a
 reading already over its line doesn't page (#448); a UPS with no known state
-in the snapshot doesn't page on battery; an empty board's attention panel
-isn't quiet (#449); a meter rounds a reading the model rounds down (94.6 %
-reads "95%" on the meter, "94 %" in the reason, #450). The legacy
+in the snapshot doesn't page on battery; a meter rounds a reading the model
+rounds down (94.6 % reads "95%" on the meter, "94 %" in the reason, #450). The legacy
 derivations (`src/utils/thresholds.js`, `mobile/src/data/derive.js`) are
 outside it; #306, #325 and #326 delete them, and Android's screens join it in
 #325.
@@ -1065,7 +1076,9 @@ flowchart TD
   304, and asks nothing while the browser tab is hidden; on return it asks at
   once. The header shows the model's overall state as its lamp and word, and
   its sentence, which carries the counts ("1 service down · UPS on battery · 1
-  no signal"); healthy reads "All systems normal" in text-1, never green. The
+  no signal"); healthy reads "All systems normal" in text-1, never green. An
+  empty board (nothing set up, #449) reads the model's "Nothing monitored yet"
+  in text-1, with no lamp, and the Alerts page shows the same quiet line. The
   whole of it links to Alerts, inside a polite live region. When the server
   can't be reached the header says steel "No signal" with "Can't reach
   JagHelm", as the Android app does; a 503 before the first cycle (or an

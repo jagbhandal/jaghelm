@@ -5,6 +5,17 @@
  */
 import { worstOf } from './rules.js';
 
+/**
+ * The overall state of an empty board (#449): nothing is set up, so there is
+ * no entity and no failed source. It is the board's alone, never an entity's
+ * or a subsystem's, so it is none of the five STATES: not ok, since nobody
+ * checked anything, and not unknown, since nothing went silent. It is never an
+ * issue and push sends nothing for it (there is nothing to page about); a
+ * client shows it as the quiet line, saying the sentence, "Nothing monitored
+ * yet". src/ui/lib/status.js names it the same (a test keeps them in step).
+ */
+export const EMPTY = 'empty';
+
 /** The six subsystems, in the order the strip shows them (spec §6). */
 export const SUBSYSTEMS = Object.freeze([
   { id: 'services', name: 'Services' },
@@ -103,6 +114,7 @@ function phrase(issue, n) {
 /**
  * The overall sentence (spec §6, §8):
  *
+ * - With nothing on the board (the EMPTY state): "Nothing monitored yet".
  * - With warnings or worse: each kind of problem with its count, in issue
  *   order ("2 services down · UPS on battery"), a failed source by name
  *   ("Prometheus unreachable"), then "N no signal".
@@ -138,8 +150,8 @@ export function sentenceOf(ranked, entities, subsystems) {
 
 /**
  * Everything the model says about the whole board: the overall state (the
- * worst of every entity and failed source; unknown when there is nothing to
- * judge), its sentence, the ranked issues and the subsystems.
+ * worst of every entity and failed source; EMPTY when there is nothing on the
+ * board), its sentence, the ranked issues and the subsystems.
  *
  * @param {any[]} entities
  * @param {any[]} sourceIssues
@@ -148,7 +160,7 @@ export function summarize(entities, sourceIssues) {
   const subsystems = subsystemsOf(entities);
   const issues = rankIssues([...sourceIssues, ...entities.filter((e) => isIssue(e.state))]);
   const everything = [...entities, ...sourceIssues];
-  const state = everything.length === 0 ? 'unknown' : worstOf(everything.map((e) => e.state));
+  const state = everything.length === 0 ? EMPTY : worstOf(everything.map((e) => e.state));
   return {
     overall: { state, sentence: sentenceOf(issues, entities, subsystems) },
     issues,

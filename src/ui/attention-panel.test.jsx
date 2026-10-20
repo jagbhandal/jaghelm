@@ -155,6 +155,29 @@ describe('AttentionPanel', () => {
     expect(screen.getByRole('heading')).toHaveTextContent('Warning · 1 warning');
   });
 
+  // #449: with nothing set up the model's board is empty, its own overall
+  // state: no issue, nothing silent, and no health anybody checked.
+  it('is the quiet line when nothing is set up (empty): no lamp, no alarm, the sentence once', () => {
+    const { rerender } = render(<AttentionPanel state="empty" counts="Nothing monitored yet" />);
+    const line = screen.getByRole('region', { name: 'Status' });
+    expect(line).toHaveAttribute('data-state', 'empty');
+    const heading = within(line).getByRole('heading', { level: 1, name: 'Nothing monitored yet' });
+    expect(heading).toHaveClass('text-title-xs');
+    expect(within(line).getAllByText('Nothing monitored yet')).toHaveLength(1);
+    // No state to show, so no lamp, and none of a state's words.
+    expect(line.querySelector('[data-slot="status-lamp"]')).toBeNull();
+    expect(line.querySelector('[data-slot="status-word"]')).toBeNull();
+    expect(within(line).queryByText('No signal')).toBeNull();
+    expect(within(line).queryByText('All systems normal')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Needs attention' })).toBeNull();
+    // Without the sentence it says the same; with a word, the word heads it.
+    rerender(<AttentionPanel state="empty" />);
+    expect(screen.getByRole('heading', { name: 'Nothing monitored yet' })).toBeInTheDocument();
+    rerender(<AttentionPanel state="empty" word="Set up JagHelm" counts="Nothing monitored yet" />);
+    expect(screen.getByRole('heading', { name: 'Set up JagHelm' })).toBeInTheDocument();
+    expect(screen.getByText('Nothing monitored yet')).toHaveClass('text-text-2');
+  });
+
   it('takes another heading level', () => {
     render(<AttentionPanel state="crit" titleAs="h2" />);
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Critical');

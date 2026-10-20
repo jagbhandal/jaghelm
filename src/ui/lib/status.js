@@ -32,6 +32,19 @@
 /** The five states, as the status model lists them (spec §6). */
 export const STATES = Object.freeze(['ok', 'warn', 'crit', 'unknown', 'maintenance']);
 
+/**
+ * The overall state of an empty board (#449): with nothing set up, the status
+ * model's `overall.state` is this, named as server/status/summary.js names it.
+ * It is the board's alone, none of the five: no entity has it, so it has no
+ * lamp, word or colour. AttentionPanel and AppHeader draw it as their quiet
+ * line, saying the model's sentence ("Nothing monitored yet"); anywhere else
+ * `toState` reads it as no signal, as it reads any value it doesn't know.
+ */
+export const EMPTY = 'empty';
+
+/** What an empty board says when the caller gives no sentence: the model's. */
+export const EMPTY_SENTENCE = 'Nothing monitored yet';
+
 /** The word a state reads as when the caller gives none (the mock's Tokens board). */
 export const WORDS = Object.freeze({
   ok: 'OK',

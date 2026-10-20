@@ -16,7 +16,13 @@ import {
   node,
   once,
 } from '../testing/statusFixtures.js';
-import { rankIssues, sentenceOf, subsystemsOf } from './summary.js';
+import {
+  EMPTY as UI_EMPTY,
+  EMPTY_SENTENCE as UI_EMPTY_SENTENCE,
+  STATES as UI_STATES,
+} from '../../src/ui/lib/status.js';
+import { STATES } from './rules.js';
+import { EMPTY, rankIssues, sentenceOf, subsystemsOf } from './summary.js';
 
 const issue = (id, state, subsystem, since) => ({
   id,
@@ -143,7 +149,7 @@ const sentenceRows = [
   [
     'nothing at all',
     inputs({ nodes: {}, ups: { status: null, ok: true, configured: false } }),
-    'unknown',
+    'empty',
     'Nothing monitored yet',
   ],
   [
@@ -212,6 +218,43 @@ for (const [name, cycleInputs, state, sentence] of sentenceRows) {
     assert.equal(s.overall.sentence, sentence);
   });
 }
+
+// #449: with nothing set up, the board isn't ok (nobody checked anything) and
+// isn't no signal (nothing is silent): it is empty, said once, in the model.
+test('an empty board is its own overall state, empty: not ok, not no signal, and nothing to rank', () => {
+  const s = once(inputs({ nodes: {}, ups: { status: null, ok: true, configured: false } }));
+  assert.equal(EMPTY, 'empty');
+  assert.deepEqual(s.overall, { state: EMPTY, sentence: 'Nothing monitored yet' });
+  assert.deepEqual(s.issues, []);
+  assert.deepEqual(s.entities, []);
+  // It is the board's state, never an entity's or a subsystem's: an empty
+  // subsystem stays ok with a total of 0, and no client shows it.
+  assert.ok(!STATES.includes(EMPTY));
+  assert.ok(s.subsystems.every((sub) => sub.state === 'ok' && sub.counts.total === 0));
+});
+
+test('a board with anything on it, or only a failed source, is not empty', () => {
+  const sourceOnly = once(
+    inputs({
+      nodes: {},
+      prometheusOk: false,
+      ups: { status: null, ok: true, configured: false },
+      internal: { sourceErrors: { prometheus: 'Prometheus query failed: fetch failed' } },
+    })
+  );
+  assert.deepEqual(sourceOnly.overall, { state: 'warn', sentence: 'Prometheus unreachable' });
+  const oneNode = once(
+    inputs({ nodes: { a: node() }, ups: { status: null, ok: true, configured: false } })
+  );
+  assert.deepEqual(oneNode.overall, { state: 'ok', sentence: '1 node healthy' });
+});
+
+test('the empty board is named and worded as src/ui/lib/status.js has it, outside the five states', () => {
+  assert.equal(EMPTY, UI_EMPTY);
+  assert.ok(!UI_STATES.includes(UI_EMPTY));
+  const s = once(inputs({ nodes: {}, ups: { status: null, ok: true, configured: false } }));
+  assert.equal(s.overall.sentence, UI_EMPTY_SENTENCE);
+});
 
 test('overall sentence: a failed source is named', () => {
   const s = once(

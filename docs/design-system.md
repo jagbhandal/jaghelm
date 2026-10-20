@@ -963,7 +963,9 @@ Each takes a `state` from the status model (`ok`, `warn`, `crit`, `unknown`,
 `maintenance`, spec §6) or one of the Android app's severities (`healthy`,
 `caution`, `critical`, `unknown`), which
 [`lib/status.js`](../src/ui/lib/status.js) reads as a state. Anything else
-reads as no signal: never green, never red.
+reads as no signal: never green, never red. AttentionPanel also takes the
+overall state `empty` (`EMPTY`, a board with nothing set up, #449), which no
+entity has, so it has no lamp or word of its own.
 
 | Component | Import | Props |
 | --- | --- | --- |
@@ -1030,7 +1032,11 @@ is in, not the window):
   `meta` at the right in 12px `text-3`. Healthy stays quiet (rule 3): no green
   word. Maintenance doesn't break the quiet line (spec §6.1): its heading
   still says "All systems normal", its lamp is the wrench, and the strip's
-  tile under it says what is in maintenance ("1 in maintenance").
+  tile under it says what is in maintenance ("1 in maintenance"). An empty
+  board (`empty`, nothing set up, #449) is the quiet line with no lamp: its
+  heading is `word`, or else the sentence in `counts`, the model's "Nothing
+  monitored yet", said once. It never says "All systems normal", since nobody
+  checked anything, nor "No signal", since nothing went silent.
 
 ### Two looks
 
@@ -1111,6 +1117,7 @@ draws the Android lamp; nothing there uses it.
   820px, where an ellipsis alone would cut it.
 - **Not in the mock, derived from it:** StatusBadge; a row as a link; the
   quiet line for maintenance (the wrench beside "All systems normal", §6.1);
+  the quiet line of an empty board, with no lamp (#449);
   maintenance tiles left untinted; strips of other than six tiles (four sit
   two by two when narrow, five as 3 + 2 or 2 + 2 + 1 with the last tile
   wider); the line a filter with nothing in it shows; the tiles' names.
@@ -1339,7 +1346,9 @@ From the mock's Main and Phone boards:
   the word in `text-title-xs` in its state's `fg`, then the model's sentence
   in `text-2` (`text-1` under the pointer), cut short with an ellipsis rather
   than wrapped. Healthy (ok, or only maintenance) says "All systems normal" in
-  `text-1`: no green word (rule 3). No signal is the steel ring and "No
+  `text-1`: no green word (rule 3). An empty board (nothing set up, #449) is
+  the model's "Nothing monitored yet" in `text-1`, with no lamp: neither "All
+  systems normal" nor "No signal". No signal is the steel ring and "No
   signal" in `unknown-fg`, with why in `text-2`. Before the first answer a
   14px skeleton disc and a 160px bar stand in. "Updated 12 s ago" in
   `caption` `text-3`, from 640px. From 1024px the search button is the mock's:

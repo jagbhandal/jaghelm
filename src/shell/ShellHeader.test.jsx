@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, within } from '@testing-library/react';
 import { UiRoot } from '@ui/root';
 import { StatusLamp } from '@ui/status-lamp';
 import { ShellHeader } from './ShellChrome.jsx';
-import { DEGRADED, HEALTHY, INCIDENT, NO_SIGNAL } from '../testing/statusFixtures.js';
+import { DEGRADED, FIRST_RUN, HEALTHY, INCIDENT, NO_SIGNAL } from '../testing/statusFixtures.js';
 
 // The header (#296, #275): the model's state and sentence, with its counts;
 // steel "No signal" without a backend; and "updated Xs ago" ticking on its own,
@@ -49,7 +49,8 @@ function renderHeader(props) {
 }
 
 const status = () => screen.getByRole('status');
-const link = () => screen.getByRole('link', { name: /^(Critical|Warning|No signal|All systems)/ });
+const link = () =>
+  screen.getByRole('link', { name: /^(Critical|Warning|No signal|All systems|Nothing monitored)/ });
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -90,6 +91,23 @@ describe('the header says what the status model says', () => {
     expect(link()).toHaveAccessibleName('All systems normal: 1 service up · 2 nodes healthy');
     expect(link()).toHaveAttribute('data-state', 'ok');
     expect(screen.getByText('All systems normal')).not.toHaveClass('text-ok-fg');
+  });
+
+  // #449: nothing is set up, so nothing is wrong and nothing is silent.
+  it('first run, nothing monitored yet: the quiet line with no lamp, never the No signal alarm', () => {
+    renderHeader({ status: FIRST_RUN, reach: 'ok' });
+    expect(FIRST_RUN.overall).toEqual({ state: 'empty', sentence: 'Nothing monitored yet' });
+    expect(link()).toHaveAccessibleName('Nothing monitored yet');
+    expect(link()).toHaveAttribute('href', '/alerts');
+    expect(link()).toHaveAttribute('data-state', 'empty');
+    expect(screen.getByText('Nothing monitored yet')).toHaveClass('text-text-1');
+    // Said once: the model's sentence is the whole line.
+    expect(within(status()).getAllByText('Nothing monitored yet')).toHaveLength(1);
+    // No state, so no lamp: no steel ring, no "No signal", no status colour.
+    expect(status().querySelector('[data-slot="status-lamp"]')).toBeNull();
+    expect(screen.queryByText('No signal')).toBeNull();
+    expect(screen.queryByText('All systems normal')).toBeNull();
+    expect(status().querySelector('[data-slot="status-word"]')).toBeNull();
   });
 
   it('the backend unreachable: steel "No signal", whatever it last said', () => {

@@ -1259,6 +1259,10 @@ function AttentionPanelMaintenanceState() {
   );
 }
 
+function AttentionPanelFirstRunState() {
+  return <AttentionPanel state="empty" counts="Nothing monitored yet" />;
+}
+
 function AttentionPanelNarrowState() {
   return (
     <Stack width={390}>
@@ -1625,6 +1629,18 @@ function AppHeaderState() {
   );
 }
 
+function AppHeaderFirstRunState() {
+  return (
+    <Stack width={912}>
+      <AppHeader
+        status={{ state: 'empty', sentence: 'Nothing monitored yet' }}
+        updated={<UpdatedAgo at={ANSWERED} />}
+        onOpenPalette={noop}
+      />
+    </Stack>
+  );
+}
+
 const icon = (glyph) => createElement(glyph, { 'aria-hidden': 'true' });
 
 /** The sidebar's groups, as the shell builds them (src/shell/nav.js). */
@@ -1770,6 +1786,7 @@ export const RENDERS = Object.freeze({
   'attention-panel-filtered-empty': AttentionPanelFilteredEmptyState,
   'attention-panel-quiet': AttentionPanelQuietState,
   'attention-panel-maintenance': AttentionPanelMaintenanceState,
+  'attention-panel-first-run': AttentionPanelFirstRunState,
   'attention-panel-narrow': AttentionPanelNarrowState,
 
   'metric-meter': MetricMeterState,
@@ -1786,6 +1803,7 @@ export const RENDERS = Object.freeze({
   'chart-colours': ChartColoursState,
 
   'app-header': AppHeaderState,
+  'app-header-first-run': AppHeaderFirstRunState,
   'side-nav': () => <SideNavState />,
   'side-nav-collapsed': () => <SideNavState collapsed open="alerts" />,
   'side-nav-unload': () => <SideNavState open="arcane" />,

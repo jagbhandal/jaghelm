@@ -293,17 +293,6 @@ const describeFinding = (f) =>
  */
 const KNOWN = [
   {
-    name: 'an empty board is not quiet',
-    issue: '#449',
-    why:
-      'With nothing set up the model has no issues, and calls the board ' +
-      'unknown, as it has nothing to judge (status/summary.js summarize). AttentionPanel goes quiet only ' +
-      'for ok and maintenance, so a first run reads "No signal · Nothing monitored yet" in the attention ' +
-      'panel, with no rows, instead of a quiet line. Spec §8 gives first run a guided setup (Phase 3).',
-    at: ['first-run'],
-    covers: (f) => f.subject === 'headline' && f.what === 'quiet',
-  },
-  {
     name: 'a meter rounds the reading the model floors',
     issue: '#450',
     why:

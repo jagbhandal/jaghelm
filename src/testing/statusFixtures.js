@@ -12,6 +12,7 @@ import {
   once,
   UPS_ONLINE,
 } from '../../server/testing/statusFixtures.js';
+import { scenarioStatus } from '../../server/testing/statusScenarios.js';
 
 const services = (nodeName, list) =>
   list.map(([name, status]) =>
@@ -69,3 +70,9 @@ export const NO_SIGNAL = once(
     },
   })
 );
+
+/**
+ * A first run, nothing set up: the cross-client suite's `first-run` fixture
+ * (server/testing/statusScenarios.js), an empty board (#449).
+ */
+export const FIRST_RUN = scenarioStatus('first-run', { now: Date.parse('2026-10-20T09:00:00Z') });

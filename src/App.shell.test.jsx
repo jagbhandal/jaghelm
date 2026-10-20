@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, within, fireEvent, act, cleanup } from '@testing-library/react';
 import App from './App.jsx';
 import { SIDEBAR_PREF } from './shell/ShellChrome.jsx';
-import { INCIDENT, HEALTHY } from './testing/statusFixtures.js';
+import { FIRST_RUN, INCIDENT, HEALTHY } from './testing/statusFixtures.js';
 
 // The app shell (#296): the header, the grouped sidebar and the phone's tabs
 // around every page, the URL as the page, and every old view still reachable.
@@ -374,5 +374,20 @@ describe('the Alerts page', () => {
     expect(await screen.findByRole('region', { name: 'Status' })).toHaveTextContent(
       `All systems normal${HEALTHY.overall.sentence}`
     );
+  });
+
+  // #449: a first run has nothing set up, so nothing needs attention.
+  it('on a first run, nothing monitored yet: the quiet line, no attention panel, no alarm', async () => {
+    stubServer({ status: FIRST_RUN });
+    await renderApp('/alerts');
+    const line = await screen.findByRole('region', { name: 'Status' });
+    expect(line).toHaveTextContent(/^Nothing monitored yet$/);
+    expect(screen.queryByRole('region', { name: 'Needs attention' })).toBeNull();
+    // The header says the same, quietly, and Alerts has no badge.
+    await waitFor(() =>
+      expect(within(banner()).getByRole('status')).toHaveTextContent('Nothing monitored yet')
+    );
+    expect(within(banner()).queryByText('No signal')).toBeNull();
+    expect(entry('Alerts')).toHaveAccessibleName('Alerts');
   });
 });

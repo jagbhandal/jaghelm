@@ -456,7 +456,7 @@ test('cross-client fixtures: each headline, as the model says it', () => {
     healthy: 'ok: All 12 services up · 3 nodes healthy',
     incident: 'crit: 1 service down · 1 backup failed',
     'source-down': 'warn: Prometheus unreachable · 16 no signal',
-    'first-run': 'unknown: Nothing monitored yet',
+    'first-run': 'empty: Nothing monitored yet',
     thresholds: 'crit: 1 node critical · 2 nodes in warning',
     'every-state':
       'crit: 1 node unreachable · UPS on battery · 1 container missing · 1 service pending · ' +

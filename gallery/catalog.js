@@ -166,6 +166,11 @@ export const CATALOG = Object.freeze([
   ),
   s('attention-panel-quiet', 'Status', 'AttentionPanel: the quiet line'),
   s('attention-panel-maintenance', 'Status', 'AttentionPanel: the quiet line in maintenance'),
+  s(
+    'attention-panel-first-run',
+    'Status',
+    'AttentionPanel: the quiet line on a first run, nothing monitored yet'
+  ),
   s('attention-panel-narrow', 'Status', 'AttentionPanel: an incident below 672px'),
 
   // Data components (#288) and chart colours (#386)
@@ -208,6 +213,7 @@ export const CATALOG = Object.freeze([
     'AppHeader: an incident, healthy on Settings, no signal, and before the first answer',
     { accent: true }
   ),
+  s('app-header-first-run', 'Shell', 'AppHeader: a first run, nothing monitored yet'),
   s('side-nav', 'Shell', 'SideNav: an open app, loaded apps, the Alerts count, Add app', {
     accent: true,
   }),

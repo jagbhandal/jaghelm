@@ -58,3 +58,24 @@ against spec §6.1's 90/95, and to let Android drop its `DISK_HOT` literal.
 - Changing a number is one edit, in one file, covered by the table tests
   (`server/status/severityTable.test.js`). Settings → Notifications edits the
   table from Phase 3.
+
+## Amendment: the empty board (#449)
+
+The table judges entities, and an overall state was the worst of them. With
+nothing set up (a first run: no entity and no failed source) there is nothing
+to take the worst of, and the model called the board `unknown`, so the web
+drew the no-signal alarm, "No signal · Nothing monitored yet", about nothing
+being wrong.
+
+- **The overall has a sixth value, `empty`**, for that board alone, with the
+  sentence "Nothing monitored yet" (`EMPTY` in `server/status/summary.js`,
+  named the same in `src/ui/lib/status.js`). It is not `ok`, which would claim
+  a health nobody checked, and not `unknown`, which means something went
+  silent. No entity or subsystem is ever `empty`: an empty subsystem stays `ok`
+  with a total of 0, as before.
+- **It is answered once, in the model**, so every client reading
+  `/api/status` (the web, the Android app from Phase 1, the demo) says the
+  same. It is no issue and pages nothing. The web's attention panel and header
+  show it as their quiet line, with no lamp, since there is no state to show.
+- The old endpoints are unchanged (`/api/services`' `overallHealth` stays
+  `unknown` with no nodes).
