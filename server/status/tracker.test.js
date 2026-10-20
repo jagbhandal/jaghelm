@@ -12,12 +12,13 @@ import {
   card,
   cronNode,
   cronRun,
+  cycles,
   inputs,
   missing,
   monitored,
   node,
 } from '../testing/statusFixtures.js';
-import { buildStatus } from './model.js';
+import { buildStatus, proxmoxPools } from './model.js';
 import { createStatusTracker, memoryFromLevels, readStatusInputs } from './index.js';
 import { DEFAULT_THRESHOLDS } from './thresholds.js';
 
@@ -292,4 +293,77 @@ test('#462: a reading that never comes back holds its level until its node goes;
   // Back with the sensor at 73 °C, inside the old band: judged fresh, ok.
   const [back] = temperatures([73], tracker, 42);
   assert.deepEqual([back.state, back.conditions.temp], ['ok', 'ok']);
+});
+
+// ── #468: a storage pool whose Proxmox read failed ───────────────────────
+
+const PVE = { pve: node({}, { display_name: 'pve' }) };
+const lvm = (percent) => ({ name: 'local-lvm', percent, totalGB: '100.0' });
+const proxmox = (extra) => ({
+  proxmox: { _preset: 'proxmox', _target: 'pve:pve', _status: { state: 'ok' }, ...extra },
+});
+
+test('#468: proxmoxPools: the pools each node’s reads listed, and whether that is the whole list', () => {
+  const got = proxmoxPools({
+    a: { _preset: 'proxmox', _target: 'n1:pve', _storagePools: [lvm(50)] },
+    b: { _preset: 'proxmox', _target: 'n2:pve', _storagePools: [lvm(50)] },
+    c: { _preset: 'proxmox', _target: 'n2:pve2', _error: 'HTTP 500' },
+    d: { _preset: 'proxmox', _target: 'n3:pve' }, // its storage read failed: no list
+    e: { _preset: 'proxmox', _storagePools: [] }, // no target: "pve"
+    f: { _error: 'boom' }, // failed before it was known as Proxmox: no node
+    g: { _preset: 'gitea', _target: 'n4:gitea' },
+  });
+  assert.deepEqual(Object.fromEntries(got), {
+    n1: { pools: [lvm(50)], read: true },
+    n2: { pools: [lvm(50)], read: false },
+    n3: { pools: [], read: false },
+    pve: { pools: [], read: true },
+  });
+  assert.deepEqual(proxmoxPools(null), new Map(), 'no payload: no node has its pools read');
+});
+
+test('#468: pool at warn → its Proxmox fetch fails → back inside the band is one warning in the model, since its first cycle', () => {
+  const failed = proxmox({ _error: 'HTTP 500 Internal Server Error' });
+  const listed = (percent) => proxmox({ _storagePools: [lvm(percent)] });
+  const statuses = cycles(
+    [listed(93), failed, null, listed(88), listed(93), listed(80)].map((integrations) =>
+      inputs({ nodes: PVE, integrations })
+    )
+  );
+  const pve = statuses.map((s) => s.entities.find((e) => e.id === 'nodes/pve'));
+  assert.deepEqual(
+    pve.map((e) => [e.state, e.conditions['pool:local-lvm'], e.reason]),
+    [
+      ['warn', 'warn', 'Storage pool local-lvm 93 % (warning above 90 %)'],
+      ['warn', 'unknown', 'Storage pool local-lvm: no reading (warning held until below 85 %)'],
+      ['warn', 'unknown', 'Storage pool local-lvm: no reading (warning held until below 85 %)'],
+      ['warn', 'warn', 'Storage pool local-lvm 88 % (warning until below 85 %)'],
+      ['warn', 'warn', 'Storage pool local-lvm 93 % (warning above 90 %)'],
+      ['ok', 'ok', 'Healthy'],
+    ]
+  );
+  assert.deepEqual(
+    pve.slice(0, 5).map((e) => e.since),
+    Array(5).fill(NOW),
+    'one episode: its since never moves'
+  );
+});
+
+test('#468: a read that succeeds and no longer lists a pool ends its episode in the model', () => {
+  const statuses = cycles(
+    [
+      proxmox({ _storagePools: [lvm(93)] }),
+      proxmox({ _storagePools: [] }),
+      proxmox({ _storagePools: [lvm(88)] }), // back inside the old band: judged fresh
+    ].map((integrations) => inputs({ nodes: PVE, integrations }))
+  );
+  const pve = statuses.map((s) => s.entities.find((e) => e.id === 'nodes/pve'));
+  assert.deepEqual(
+    pve.map((e) => [e.state, e.conditions['pool:local-lvm'] ?? null]),
+    [
+      ['warn', 'warn'],
+      ['ok', null],
+      ['ok', 'ok'],
+    ]
+  );
 });

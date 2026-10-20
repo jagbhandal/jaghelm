@@ -210,6 +210,28 @@ test('buildHosts: a node with no data (its up read failed, or kept while Prometh
   assert.equal(over.a.reachable, true);
 });
 
+test("buildHosts: a storage pool leaves only when its node's pools were read without it (#468)", () => {
+  const prev = {
+    a: { reachable: true, levels: { disk: 'ok', 'pool:gone': 'warn', 'pool:kept': 'ok' } },
+  };
+  const judged = statusOf(
+    nodeEntity('a', { state: 'ok', conditions: { disk: 'ok', 'pool:kept': 'ok' } })
+  );
+  const reads = (read) => new Map([['a', { pools: [{ name: 'kept', percent: 40 }], read }]]);
+  assert.deepEqual(buildHosts(judged, prev, reads(true)).a.levels, {
+    disk: 'ok',
+    'pool:kept': 'ok',
+  });
+  // Not read (a fetch failed), or no read for the node at all: held.
+  assert.deepEqual(buildHosts(judged, prev, reads(false)).a.levels, prev.a.levels);
+  assert.deepEqual(buildHosts(judged, prev, new Map()).a.levels, prev.a.levels);
+  // The model didn't judge its readings this cycle (no data, or unreachable): held, read or not.
+  const noData = statusOf(nodeEntity('a', { state: 'unknown', word: 'No signal' }));
+  assert.deepEqual(buildHosts(noData, prev, reads(true)).a, prev.a);
+  const away = statusOf(nodeEntity('a', { state: 'crit', word: 'Unreachable', conditions: {} }));
+  assert.deepEqual(buildHosts(away, prev, reads(true)).a.levels, prev.a.levels);
+});
+
 // ── the UPS, cron, sources ───────────────────────────────────────────────
 
 test('buildUps: crit is on battery, ok online, anything else holds; no UPS in the model is null', () => {

@@ -105,6 +105,17 @@ function fractionOf(raw) {
   return Number.isFinite(n) ? coerceFraction(raw) : null;
 }
 
+/**
+ * A Proxmox storage pool's usage as a 0..1 fraction, or null when there is
+ * none: no percent, or a pool that reports no size (`totalGB` not above 0).
+ * Proxmox lists storage it can't read (inactive, unmounted) with no size, and
+ * the preset gives it 0 %, which is no reading, not an empty pool (#468).
+ */
+function poolFraction(p) {
+  if (p.totalGB !== undefined && p.totalGB !== null && !(parseFloat(p.totalGB) > 0)) return null;
+  return fractionOf(p.percent);
+}
+
 function celsiusOf(raw) {
   if (raw === null || raw === undefined || raw === '') return null;
   const n = typeof raw === 'number' ? raw : parseFloat(raw);
@@ -175,6 +186,11 @@ const CELSIUS = {
  *   condition is `unknown`, as there is no value for a meter. Held at ok, it
  *   is left out. It holds until the reading is read again or the node goes
  *   from services.yaml, as push's snapshot holds it.
+ * - A storage pool has no value this cycle, and holds the same way, when its
+ *   node's pools were not read (`poolsRead` false: a Proxmox fetch failed, or
+ *   its storage read did, #468) and it isn't listed, or when it is listed with
+ *   no size (an inactive pool's 0 % is no reading). A pool's episode ends only
+ *   when the node's pools were read and it isn't listed.
  * - CPU warns only after `cpu.cycles` cycles in a row at or above its line.
  *
  * `conditions` gives each reading's state, so a meter is coloured by the
@@ -182,9 +198,14 @@ const CELSIUS = {
  * not ok, worst first.
  *
  * @param {object|null} node  the /api/services node, or null when it is missing this cycle
- * @param {{ prometheusOk: boolean, pools?: Array<{ name: string, percent: unknown }>, memo?: any, thresholds: import('./thresholds.js').Thresholds }} ctx
+ * @param {{ prometheusOk: boolean, pools?: Array<{ name: string, percent: unknown, totalGB?: unknown }>, poolsRead?: boolean, memo?: any, thresholds: import('./thresholds.js').Thresholds }} ctx
+ *   pools: the storage pools the node's Proxmox reads listed this cycle;
+ *   poolsRead: whether those reads are the whole list (model.js proxmoxPools)
  */
-export function judgeNode(node, { prometheusOk, pools = [], memo = null, thresholds }) {
+export function judgeNode(
+  node,
+  { prometheusOk, pools = [], poolsRead = true, memo = null, thresholds }
+) {
   const prevLevels = memo?.levels ?? {};
   const prevStreak = memo?.streak ?? {};
   const noData = {
@@ -327,13 +348,22 @@ export function judgeNode(node, { prometheusOk, pools = [], memo = null, thresho
     });
   }
 
-  // Proxmox storage pools on this node feed the disk rule (spec §8).
-  const poolList = [...pools]
-    .filter((p) => p && typeof p.name === 'string')
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  // Proxmox storage pools on this node feed the disk rule (spec §8). One the
+  // model held a level for that isn't listed while the node's pools were not
+  // read (#468) has no value this cycle, as does one with no size, so both are
+  // held as above.
+  const poolList = [...pools].filter((p) => p && typeof p.name === 'string');
+  if (!poolsRead) {
+    const listed = new Set(poolList.map((p) => p.name));
+    for (const key of Object.keys(prevLevels)) {
+      const name = key.slice('pool:'.length);
+      if (key.startsWith('pool:') && !listed.has(name)) poolList.push({ name, percent: null });
+    }
+  }
+  poolList.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   for (const p of poolList) {
     const key = `pool:${p.name}`;
-    const v = fractionOf(p.percent);
+    const v = poolFraction(p);
     if (v === null) {
       hold(key, `Storage pool ${p.name}`, usage(thresholds.disk), 1.5);
       continue;

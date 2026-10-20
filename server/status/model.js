@@ -90,14 +90,31 @@ function settle(base, verdict, before, now) {
   return { entity, memo: verdict.memo };
 }
 
-/** Proxmox storage pools by the node they belong to (`_target`'s node, else "pve", as the web reads them). */
-function poolsByNode(integrations) {
+/**
+ * The Proxmox storage pools each node's reads listed this cycle, by the node
+ * they belong to (`_target`'s node, else "pve", as the web reads them), and
+ * whether those reads are the whole list (#468): `read` is true only when the
+ * node has a Proxmox entry and every one fetched its pools. A fetch that failed
+ * (`_error`), or one that has no pool list (its storage read failed), is a
+ * failed read of the node's pools, not "no pools". So is a node with no
+ * Proxmox entry: the refresh left no payload, a fetch failed before it was
+ * known as Proxmox (it carries no `_preset`), or none is set up. While a
+ * node's pools are not read, a pool the model held a level for keeps it
+ * (judgeNode), and push's snapshot keeps it too (push/snapshot.js buildHosts),
+ * so a pool's episode ends only when a read that succeeded no longer lists it.
+ *
+ * @param {unknown} integrations  the /api/integrations payload
+ * @returns {Map<string, { pools: any[], read: boolean }>}
+ */
+export function proxmoxPools(integrations) {
   const out = new Map();
   for (const entry of Object.values(objectOr(integrations))) {
-    if (!isObject(entry) || entry._preset !== 'proxmox' || !Array.isArray(entry._storagePools))
-      continue;
+    if (!isObject(entry) || entry._preset !== 'proxmox') continue;
     const node = entry._target ? splitUid(String(entry._target))[0] : 'pve';
-    out.set(node, [...(out.get(node) ?? []), ...entry._storagePools]);
+    const at = out.get(node) ?? { pools: [], read: true };
+    if (entry._error || !Array.isArray(entry._storagePools)) at.read = false;
+    else at.pools.push(...entry._storagePools);
+    out.set(node, at);
   }
   return out;
 }
@@ -196,10 +213,11 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   }
 
   // ── Nodes ──
-  const pools = poolsByNode(integrations);
+  const pools = proxmoxPools(integrations);
   for (const [nodeKey, node] of Object.entries(nodes)) {
     if (!isObject(node)) continue;
     const id = `nodes/${nodeKey}`;
+    const read = pools.get(nodeKey);
     add(
       {
         id,
@@ -210,7 +228,8 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
       },
       judgeNode(node, {
         prometheusOk: ok.prometheus,
-        pools: pools.get(nodeKey) ?? [],
+        pools: read?.pools ?? [],
+        poolsRead: read?.read ?? false,
         memo: prev[id]?.memo,
         thresholds,
       })

@@ -6,8 +6,9 @@
  * on the side the model holds it on (#361).
  *
  * PURE given its inputs: the model's status for this cycle, the previous
- * snapshot, and the caches (only for which sources answered, and the monitor
- * identities the services refresh keeps beside its payload). No clock, no I/O.
+ * snapshot, and the caches (only for which sources answered, the monitor
+ * identities the services refresh keeps beside its payload, and which nodes'
+ * storage pools Proxmox read, #468). No clock, no I/O.
  *
  * Snapshot shape (every map's keys inserted in ascending sorted order):
  *   services:  "NODE:ID" -> "up" | "down" | "unknown", for each service the
@@ -34,7 +35,7 @@
  * snapshot (see buildSnapshot), rather than read as every host, service or the
  * UPS going away.
  */
-import { sourcesOk } from '../status/model.js';
+import { proxmoxPools, sourcesOk } from '../status/model.js';
 import { judgeUps, levelOf, WORDS } from '../status/rules.js';
 import { serviceHistory } from './differ.js';
 
@@ -148,10 +149,17 @@ export function buildMonitorOf(monitorOf, services) {
  * value this cycle (a sensor that didn't answer) keeps its level too, and an
  * unreachable node keeps every level for when it comes back.
  *
+ * A storage pool holds the same way while its node's pools were not read (a
+ * Proxmox fetch failed, #468), as the model holds it. It leaves the map when
+ * the model ends its episode: on a cycle the model judged the node's readings
+ * and the node's pools were read (`pools`, model.js proxmoxPools) without it.
+ * The differ then sends its clear if it was over its line.
+ *
  * @param {any} status
  * @param {Record<string, any>} [prevHosts]
+ * @param {Map<string, { pools: any[], read: boolean }>} [pools]  this cycle's proxmoxPools
  */
-export function buildHosts(status, prevHosts = {}) {
+export function buildHosts(status, prevHosts = {}, pools = new Map()) {
   const held = isObject(prevHosts) ? prevHosts : {};
   const entries = [];
   for (const e of entitiesOf(status)) {
@@ -169,6 +177,16 @@ export function buildHosts(status, prevHosts = {}) {
     }
     for (const [reading, level] of Object.entries(e.conditions)) {
       if (LEVELS.has(level)) levels[reading] = level;
+    }
+    const read = pools.get(node);
+    if (read?.read) {
+      // The pools the model judged (status/rules.js judgeNode takes only named ones).
+      const listed = new Set(
+        read.pools.filter((p) => typeof p?.name === 'string').map((p) => `pool:${p.name}`)
+      );
+      for (const reading of Object.keys(levels)) {
+        if (reading.startsWith('pool:') && !listed.has(reading)) delete levels[reading];
+      }
     }
     entries.push([node, { reachable: true, levels: sortedObject(Object.entries(levels)) }]);
   }
@@ -330,7 +348,7 @@ export function buildSnapshot(caches, prev, status) {
     upWithoutCard: internal?.upWithoutCard,
   });
   const monitorOf = buildMonitorOf(internal?.monitorOf, services);
-  const hosts = buildHosts(status, prev?.hosts);
+  const hosts = buildHosts(status, prev?.hosts, proxmoxPools(caches.getCached('integrations')));
   const kept = prev ? keepServices(prev, services, monitorOf, ok) : { services, monitorOf };
   const ups = buildUps(status, prev?.ups);
   return {
