@@ -38,7 +38,11 @@ describe('Field', () => {
 
   it('wires an error with aria-describedby and aria-invalid, beside the help text', () => {
     render(
-      <Field label="URL" description="Where JagHelm reaches the app." error="Enter a URL that starts with https://">
+      <Field
+        label="URL"
+        description="Where JagHelm reaches the app."
+        error="Enter a URL that starts with https://"
+      >
         <Input />
       </Field>
     );

@@ -19,16 +19,19 @@ describe('Select', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(trigger).toHaveAttribute('data-slot', 'select');
     // Drawn like the Input: the mock's .field select.
-    expect(trigger).toHaveClass('h-control', 'border-border-strong', 'bg-background', 'text-body-sm');
+    expect(trigger).toHaveClass(
+      'h-control',
+      'border-border-strong',
+      'bg-background',
+      'text-body-sm'
+    );
     expect(trigger.className).not.toMatch(NO_RING);
     expect(trigger.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('shows a placeholder until something is chosen', () => {
     render(<Select aria-label="Search engine" items={REFRESH} placeholder="Choose one" />);
-    expect(screen.getByRole('combobox', { name: 'Search engine' })).toHaveTextContent(
-      'Choose one'
-    );
+    expect(screen.getByRole('combobox', { name: 'Search engine' })).toHaveTextContent('Choose one');
   });
 
   it('opens with the arrow keys, moves, picks with Enter, and returns focus', async () => {
@@ -56,7 +59,9 @@ describe('Select', () => {
     expect(screen.getByRole('option', { name: 'Every 60 s' })).toHaveFocus();
     await user.keyboard('{Enter}');
     expect(onValueChange).toHaveBeenCalledWith('60', expect.anything());
-    await waitFor(() => expect(listbox).not.toBeInTheDocument());
+    // Closed: no longer exposed to assistive tech (Base UI keeps it mounted, hidden).
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(listbox).not.toBeVisible();
     expect(trigger).toHaveTextContent('Every 60 s');
     expect(trigger).toHaveFocus();
   });
@@ -75,9 +80,9 @@ describe('Select', () => {
     const trigger = screen.getByRole('combobox', { name: 'Data refresh' });
     trigger.focus();
     await user.keyboard('{Enter}');
-    const listbox = await screen.findByRole('listbox');
+    await screen.findByRole('listbox');
     await user.keyboard('{ArrowDown}{Escape}');
-    await waitFor(() => expect(listbox).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(onValueChange).not.toHaveBeenCalled();
     expect(trigger).toHaveTextContent('Every 30 s');
     expect(trigger).toHaveFocus();
@@ -140,13 +145,28 @@ describe('Select', () => {
     expect(locked).toHaveClass('data-disabled:opacity-55');
   });
 
-  it('skips a disabled option with the arrow keys', async () => {
+  it('lets the arrow keys reach a disabled option, which Enter cannot pick', async () => {
     const user = userEvent.setup();
+    const onValueChange = vi.fn();
     const items = [REFRESH[0], { ...REFRESH[1], disabled: true }, REFRESH[2]];
-    render(<Select aria-label="Data refresh" items={items} defaultValue="30" />);
-    screen.getByRole('combobox', { name: 'Data refresh' }).focus();
+    render(
+      <Select
+        aria-label="Data refresh"
+        items={items}
+        defaultValue="30"
+        onValueChange={onValueChange}
+      />
+    );
+    const trigger = screen.getByRole('combobox', { name: 'Data refresh' });
+    trigger.focus();
     await user.keyboard('{ArrowDown}');
     await screen.findByRole('listbox');
+    await user.keyboard('{ArrowDown}');
+    const disabled = screen.getByRole('option', { name: 'Every 60 s' });
+    expect(disabled).toHaveFocus();
+    expect(disabled).toHaveAttribute('aria-disabled', 'true');
+    await user.keyboard('{Enter}');
+    expect(onValueChange).not.toHaveBeenCalled();
     await user.keyboard('{ArrowDown}');
     expect(screen.getByRole('option', { name: 'Every 2 min' })).toHaveFocus();
   });

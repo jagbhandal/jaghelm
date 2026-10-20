@@ -15,7 +15,12 @@ describe('Checkbox', () => {
     const box = screen.getByRole('checkbox', { name: 'Open in a new browser tab' });
     expect(box).toHaveAttribute('aria-checked', 'false');
     expect(box).toHaveAttribute('data-slot', 'checkbox');
-    expect(box).toHaveClass('size-4', 'rounded-sm', 'border-border-strong', 'data-checked:bg-accent');
+    expect(box).toHaveClass(
+      'size-4',
+      'rounded-sm',
+      'border-border-strong',
+      'data-checked:bg-accent'
+    );
     expect(box.className).not.toMatch(NO_RING);
     expect(box.querySelector('svg')).toBeNull();
   });

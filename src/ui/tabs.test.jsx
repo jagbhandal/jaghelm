@@ -31,7 +31,10 @@ describe('Tabs', () => {
     expect(list).toHaveClass('border-b', 'border-border');
     const tab = screen.getByRole('tab', { name: 'Overview' });
     expect(tab).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: 'Containers' })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('tab', { name: 'Containers' })).toHaveAttribute(
+      'aria-selected',
+      'false'
+    );
     const panel = screen.getByRole('tabpanel');
     expect(panel).toHaveTextContent('Uptime and checks');
     expect(panel).toHaveAttribute('aria-labelledby', tab.id);
@@ -61,7 +64,13 @@ describe('Tabs', () => {
     expect(containers).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tabpanel')).toHaveTextContent('Three containers');
     expect(onValueChange).toHaveBeenLastCalledWith('containers', expect.anything());
-    // The disabled tab is skipped.
+    // A disabled tab can be reached, so it can be found, but never shows its panel.
+    await user.keyboard('{ArrowRight}');
+    const logs = screen.getByRole('tab', { name: 'Logs' });
+    expect(logs).toHaveFocus();
+    expect(logs).toHaveAttribute('aria-disabled', 'true');
+    expect(logs).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('Three containers');
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'History' })).toHaveFocus();
     await user.keyboard('{Home}');
