@@ -22,6 +22,10 @@ import yaml from 'js-yaml';
 
 const { loadConfig, getConfig } = await import('../config.js');
 const { servicesRoutes } = await import('./services.js');
+const { initRegistry, listPresets } = await import('../integrations/registry.js');
+
+// The route masks what a preset's endpoint fills in, so it needs the presets.
+await initRegistry();
 
 const CONFIG_PATH = join(process.env.JAGHELM_DATA_DIR, 'services.yaml');
 
@@ -337,4 +341,141 @@ test('POST never answers or logs a credential, whether it saves or refuses', asy
   );
   for (const r of answers) assertNoCredential(r.text, `the ${r.status} answer`);
   assertNoCredential(logs, 'the log');
+});
+
+// ── Since the review: endpoints, placeholders, other names, arrays ───────
+
+// Every other place a credential can live: a key in an endpoint's query, a
+// value an endpoint fills in through a placeholder (the entry's own or its
+// preset's), a credential under another name, a fallback session's login body,
+// and entries in arrays.
+const MORE = [
+  'nodes:',
+  '  pi1: { display_name: Gateway, visible: true }',
+  'integrations:',
+  '  plex:',
+  '    url: http://plex.example.test:32400',
+  '    endpoint: /status/sessions?X-Plex-Token=plex-secret-a1', // pragma: allowlist secret
+  '  stats:',
+  '    url: http://stats.example.test',
+  '    endpoint: /api/stats?apikey=query-secret-b2', // pragma: allowlist secret
+  '    extraEndpoints:',
+  '      - { key: one, endpoint: "/one?token=extra-secret-c3" }', // pragma: allowlist secret
+  '      - { key: two, endpoint: /two }',
+  '  sites:',
+  '    url: http://sites.example.test',
+  '    endpoint: /sites/{site_code}/summary',
+  '    site_code: placeholder-secret-d4', // pragma: allowlist secret
+  '  nextdns:',
+  '    url: https://api.nextdns.io',
+  '    profile_id: preset-placeholder-e5', // pragma: allowlist secret
+  '  cloudflare_two:',
+  '    preset: cloudflare',
+  '    url: https://api.cloudflare.com',
+  '    account_id: acc-visible',
+  '  named:',
+  '    url: http://named.example.test',
+  '    apiKey: name-secret-f6', // pragma: allowlist secret
+  '    client_secret: name-secret-g7', // pragma: allowlist secret
+  '    cookie: name-secret-h8', // pragma: allowlist secret
+  '    key: name-secret-i9', // pragma: allowlist secret
+  '    fields: [{ key: up, label: Up, path: a.up }]',
+  '  photos:',
+  '    url: http://photos.example.test',
+  '    auth: session',
+  '    authFallback: alt',
+  '    alt: { loginEndpoint: /login2, loginBody: "user=root&secret=fallback-secret-j0" }', // pragma: allowlist secret
+  'custom_integrations:',
+  '  - { name: a, url: "http://a.example.test", token: array-secret-a }', // pragma: allowlist secret
+  '  - { name: b, url: "http://b.example.test", token: array-secret-b }', // pragma: allowlist secret
+  '',
+].join('\n');
+const MORE_SECRETS = [
+  'plex-secret-a1',
+  'query-secret-b2',
+  'extra-secret-c3',
+  'placeholder-secret-d4',
+  'preset-placeholder-e5',
+  'name-secret-f6',
+  'name-secret-g7',
+  'name-secret-h8',
+  'name-secret-i9',
+  'fallback-secret-j0',
+  'array-secret-a',
+  'array-secret-b',
+];
+
+test('GET /config: an endpoint key, a placeholder value, other names and a fallback login are masked', async () => {
+  handEdit(MORE);
+  const r = await read();
+  for (const c of MORE_SECRETS) assert.ok(!r.text.includes(c), `the answer carries ${c}`);
+  const i = r.body.integrations;
+  assert.deepEqual(i.plex.endpoint, STORED);
+  assert.deepEqual(i.stats.endpoint, STORED);
+  assert.deepEqual(i.stats.extraEndpoints, [
+    { key: 'one', endpoint: STORED },
+    { key: 'two', endpoint: '/two' },
+  ]);
+  assert.equal(i.sites.endpoint, '/sites/{site_code}/summary');
+  assert.deepEqual(i.sites.site_code, STORED);
+  // nextdns's preset endpoint fills in profile_id.
+  assert.deepEqual(i.nextdns.profile_id, STORED);
+  // Cloudflare's account_id is a URL parameter the form shows and saves.
+  assert.equal(i.cloudflare_two.account_id, 'acc-visible');
+  for (const k of ['apiKey', 'client_secret', 'cookie', 'key']) assert.deepEqual(i.named[k], STORED, k);
+  assert.deepEqual(i.named.fields, [{ key: 'up', label: 'Up', path: 'a.up' }]);
+  assert.deepEqual(i.photos.alt.loginBody, STORED);
+  assert.deepEqual(r.body.custom_integrations.map((e) => [e.name, e.token]), [
+    ['a', STORED],
+    ['b', STORED],
+  ]);
+});
+
+test('GET, edit one node, POST: every one of those credentials is kept', async () => {
+  handEdit(MORE);
+  const cfg = (await read()).body;
+  const edited = { ...cfg, nodes: { ...cfg.nodes, pi1: { ...cfg.nodes.pi1, visible: false } } };
+  assert.equal((await write(edited)).status, 200);
+  const want = yaml.load(MORE);
+  want.nodes.pi1.visible = false;
+  assert.deepEqual(yaml.load(fileText()), want);
+  assert.ok(!fileText().includes('$stored'), 'a marker was written');
+});
+
+test('GET, reorder the arrays, POST: each element keeps its own credential', async () => {
+  handEdit(MORE);
+  const cfg = (await read()).body;
+  cfg.custom_integrations.reverse();
+  cfg.integrations.stats.extraEndpoints.reverse();
+  assert.equal((await write(cfg)).status, 200);
+  const onDisk = yaml.load(fileText());
+  assert.deepEqual(onDisk.custom_integrations.map((e) => [e.name, e.token]), [
+    ['b', 'array-secret-b'], // pragma: allowlist secret
+    ['a', 'array-secret-a'], // pragma: allowlist secret
+  ]);
+  assert.deepEqual(onDisk.integrations.stats.extraEndpoints, [
+    { key: 'two', endpoint: '/two' },
+    { key: 'one', endpoint: '/one?token=extra-secret-c3' }, // pragma: allowlist secret
+  ]);
+
+  // An element whose name changed has nothing stored under it.
+  handEdit(MORE);
+  const renamed = (await read()).body;
+  renamed.custom_integrations[0].name = 'c';
+  const r = await write(renamed);
+  assert.equal(r.status, 409, r.text);
+  assert.equal(fileText(), MORE);
+});
+
+test("no preset's URL parameter is masked, so the integration form never gets a marker", async () => {
+  const presets = listPresets().filter((p) => p.urlParams?.length);
+  assert.ok(presets.length > 0, 'no preset has a URL parameter');
+  for (const p of presets) {
+    const entry = { preset: p.type, url: 'http://x.example.test' };
+    for (const { key } of p.urlParams) entry[key] = 'value';
+    handEdit(yaml.dump({ integrations: { [`${p.type}_check`]: entry, [p.type]: entry } }));
+    const r = await read();
+    assert.deepEqual(r.body.integrations[`${p.type}_check`], entry, p.type);
+    assert.deepEqual(r.body.integrations[p.type], entry, p.type);
+  }
 });

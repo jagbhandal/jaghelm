@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act, within } from '@testing-library/react';
+import { render, screen, fireEvent, act, within, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import SettingsView from './SettingsView';
@@ -63,28 +63,35 @@ const LIVE = {
   },
 };
 
-/** A server that answers the config masked and merges each post as the route does. */
-function stubServer() {
+/**
+ * A server that answers the config masked and merges each post as the route
+ * does, against `disk` (services.yaml as stored, which a test may change).
+ */
+function stubServer(disk = structuredClone(ON_DISK)) {
   const posts = [];
   const merged = [];
+  let reads = 0;
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url, opts = {}) => {
       if (url === '/api/services/config' && opts.method === 'POST') {
         const body = JSON.parse(opts.body);
         posts.push(body);
-        const r = restoreCredentials(body, ON_DISK);
+        const r = restoreCredentials(body, disk);
         if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
         merged.push(r.config);
         return Response.json({ ok: true });
       }
-      if (url === '/api/services/config') return Response.json(maskCredentials(ON_DISK));
+      if (url === '/api/services/config') {
+        reads += 1;
+        return Response.json(maskCredentials(disk));
+      }
       if (url === '/api/services') return Response.json(LIVE);
       if (url === '/api/services/monitors') return Response.json([]);
       return Response.json({});
     })
   );
-  return { posts, merged };
+  return { posts, merged, reads: () => reads };
 }
 
 function Harness() {
@@ -153,5 +160,29 @@ describe('Settings Nodes and Services tabs post the stored-credential markers ba
     editAndFlush(() => fireEvent.click(screen.getByRole('button', { name: 'Hide' })));
     await act(async () => {});
     expectRoundTrip(server, onDiskWith('nas', { hide: ['watchtower'] }));
+  });
+
+  it('a refused save says why, and the screen shows what is stored again', async () => {
+    const disk = structuredClone(ON_DISK);
+    const server = stubServer(disk);
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
+    const nodeCard = async () =>
+      (await screen.findByText('Gateway')).closest('div[style*="border-left"]');
+    const card = await nodeCard();
+    // Another tab removes npm's password after this one read the config.
+    delete disk.integrations.npm.password;
+    editAndFlush(() => fireEvent.click(within(card).getByRole('checkbox')));
+    expect(within(card).getByRole('checkbox')).not.toBeChecked();
+
+    // The 409's message is shown, and the config is read again.
+    expect(
+      await screen.findByText(/No credential is stored at integrations\.npm\.password/)
+    ).toBeInTheDocument();
+    expect(server.merged).toEqual([]);
+    await waitFor(() => expect(server.reads()).toBe(2));
+    await waitFor(async () =>
+      expect(within(await nodeCard()).getByRole('checkbox')).toBeChecked()
+    );
   });
 });
