@@ -14,6 +14,7 @@ import BackupTab from '../components/settings/BackupTab';
 import IntegrationsTab from '../components/settings/IntegrationsTab';
 import DashboardView from './DashboardView';
 import { apiFetch, isReadOnlyServer } from '../api/client.js';
+import { useToast } from '../context/OverlayContext.jsx';
 
 // The services config as last edited in this tab, when the server is the
 // read-only demo (#248): it refuses the save, so the edit is kept here for the
@@ -67,6 +68,7 @@ function previewDefaultVisible() {
 }
 
 export default function SettingsView({ theme, setTheme }) {
+  const toast = useToast();
   const [activeSection, setActiveSection] = useState('general');
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   // Live preview visibility. Defaults to the viewport-derived value (hidden on
@@ -103,26 +105,39 @@ export default function SettingsView({ theme, setTheme }) {
     }
   }, [activeSection, fetchServerData]);
 
-  // Save server config with debounce
-  const saveServerConfig = useCallback((newConfig) => {
-    setServerConfig(newConfig);
-    if (isReadOnlyServer()) {
-      localServerConfig = newConfig;
-      return;
-    }
-    setServerSaving(true);
-    if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
-    serverSaveTimer.current = setTimeout(() => {
-      apiFetch('/api/services/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newConfig),
-      })
-        .then((r) => r.json())
-        .then(() => setServerSaving(false))
-        .catch(() => setServerSaving(false));
-    }, 1500);
-  }, []);
+  // Save server config with debounce. A save the server refuses (a stale
+  // credential marker is a 409, #413) or that fails is never silent: the
+  // server's reason is shown, and the stored config is read again so the
+  // screen matches what is saved.
+  const saveServerConfig = useCallback(
+    (newConfig) => {
+      setServerConfig(newConfig);
+      if (isReadOnlyServer()) {
+        localServerConfig = newConfig;
+        return;
+      }
+      setServerSaving(true);
+      if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
+      serverSaveTimer.current = setTimeout(() => {
+        apiFetch('/api/services/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newConfig),
+        })
+          .then(async (r) => {
+            if (r.ok) return;
+            const data = await r.json().catch(() => ({}));
+            throw new Error(data?.error || `HTTP ${r.status}`);
+          })
+          .catch((err) => {
+            toast(`Not saved: ${err.message}`, 'error');
+            fetchServerData();
+          })
+          .finally(() => setServerSaving(false));
+      }, 1500);
+    },
+    [toast, fetchServerData]
+  );
 
   return (
     <div className="settings-page">

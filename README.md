@@ -184,7 +184,7 @@ data/
 └── icon-cache/            # CDN icons served locally after the first load (a cache, at most 50 MB; safe to delete)
 ```
  
-`services.yaml` is hot-reloaded — edit it on disk and JagHelm picks up the change without restarting. A save in Settings that changes it rewrites the whole file in JagHelm's own layout, so comments in it are not kept.
+`services.yaml` is hot-reloaded — edit it on disk and JagHelm picks up the change without restarting. A save in Settings that changes it rewrites the whole file in JagHelm's own layout, so comments in it are not kept. The credentials in it never reach the browser: Settings reads a password or token (plain text or a `$secret:` reference), a value under another credential's name (`apikey`, `secret`, `cookie` and the like), a header value under `extraHeaders`, a session's `loginBody`, an endpoint with a key in its query string, and a value an endpoint fills in through a `{name}` placeholder only as `{ "$stored": true }`, and a save in Settings keeps each stored one. A key or password written into an integration's URL is still shown as it is.
  
 ### Environment variables
  
