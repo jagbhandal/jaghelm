@@ -14,10 +14,12 @@ import { demoResponse } from '../server/demo.js';
 // with no error and no request.
 
 let requests;
+let notFound; // the requests the demo answered 404, as it answers a path it doesn't know
 
 /** Answer every request as the demo server would, in `scenario`, recording each. */
 function routeToDemo(scenario) {
   requests = [];
+  notFound = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input, init = {}) => {
@@ -30,6 +32,7 @@ function routeToDemo(scenario) {
         query: Object.fromEntries(url.searchParams),
         scenario,
       });
+      if (out.status === 404) notFound.push(`${method} ${url.pathname}`);
       if (out.location)
         return new Response(null, { status: out.status, headers: { Location: out.location } });
       return new Response(JSON.stringify(out.body), {
@@ -166,6 +169,16 @@ describe('the demo, rendered', () => {
     expect(requests.filter((r) => !r.startsWith('GET '))).toEqual([]);
     expect(screen.queryByText(/Couldn.t save/)).not.toBeInTheDocument();
   });
+
+  it.each(['incident', 'healthy'])(
+    'reads on load only what the demo answers: no request is a 404 (%s, #437)',
+    async (scenario) => {
+      await renderDemo(scenario);
+
+      expect(requests.length).toBeGreaterThan(5);
+      expect(notFound).toEqual([]);
+    }
+  );
 
   it('keeps a change in the browser with no error and no request: a checklist item, a scheduled job', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
