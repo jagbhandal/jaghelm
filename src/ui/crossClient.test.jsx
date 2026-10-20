@@ -3,8 +3,8 @@
  * same input can never give one answer on the screen and another in a push.
  *
  * Each fixture (server/testing/statusScenarios.js: healthy, incident,
- * source-down, first-run, thresholds) is built as the live loop builds
- * /api/status, and its status is drawn with the src/ui status components, the
+ * source-down, first-run, thresholds, every-state, low-battery) is built as
+ * the live loop builds /api/status, and its status is drawn with the src/ui status components, the
  * way a screen draws the model (Board, below): the attention panel from the
  * overall state, sentence and issues; a subsystem tile per subsystem that has
  * anything; a row per entity; a meter per node reading. Then the screen is
@@ -13,6 +13,10 @@
  * meter's state, number and line. The push side, the same fixtures through
  * the real push cycle, is server/status/crossClient.test.js (`npm run
  * test:ci`); this file runs in `npm run test:client`.
+ *
+ * A meter takes its lines (its threshold tick, and "warning above 90%") from
+ * the fixture's threshold config, the one the model was given: /api/status
+ * doesn't serve them yet (#451), so a screen has nowhere else to read them.
  *
  * A disagreement fails the suite unless a named exception in KNOWN covers it,
  * in the fixtures it names. An exception that no longer happens fails too, so
@@ -57,7 +61,8 @@ const MODEL_WORD = {
 // ── The screen: the model drawn with src/ui ──────────────────────────────
 
 // Each node reading: where /api/services has its value (the model serves only
-// the worst one, as `metric`), its unit, and its lines in the threshold config.
+// the worst one, as `metric`), its unit, and its lines in the threshold config
+// (not served by /api/status yet, #451).
 const READINGS = {
   cpu: { field: 'cpu', unit: '%', lines: (t) => ({ warn: t.cpu.warn * 100 }) },
   mem: { field: 'memPercent', unit: '%', lines: (t) => ({ warn: t.mem.warn * 100 }) },
@@ -282,15 +287,16 @@ const describeFinding = (f) =>
 // ── Known divergences ────────────────────────────────────────────────────
 
 /**
- * The disagreements the suite knows about, each named, with the fixtures it
- * shows in and where it is being settled. Each one covers only its own
+ * The disagreements the suite knows about, each named, with the issue that
+ * settles it and the fixtures it shows in. Each one covers only its own
  * findings, only there, and must still happen there.
  */
 const KNOWN = [
   {
     name: 'an empty board is not quiet',
+    issue: '#449',
     why:
-      'Found by this suite (#293). With nothing set up the model has no issues, and calls the board ' +
+      'With nothing set up the model has no issues, and calls the board ' +
       'unknown, as it has nothing to judge (status/summary.js summarize). AttentionPanel goes quiet only ' +
       'for ok and maintenance, so a first run reads "No signal · Nothing monitored yet" in the attention ' +
       'panel, with no rows, instead of a quiet line. Spec §8 gives first run a guided setup (Phase 3).',
@@ -299,8 +305,9 @@ const KNOWN = [
   },
   {
     name: 'a meter rounds the reading the model floors',
+    issue: '#450',
     why:
-      'Found by this suite (#293). The model shows a reading rounded down, so it never reads as over a ' +
+      'The model shows a reading rounded down, so it never reads as over a ' +
       'line it is under (status/rules.js wholePct): a 94.6 % disk is "Disk 94 %" on the screen\'s rows ' +
       'and in the push. MetricMeter prints Math.round of the value it is given, "95%", next to a 95 % ' +
       'crit line it is under.',
@@ -324,7 +331,7 @@ describe('cross-client, screen', () => {
       for (const k of here) {
         expect(
           findings.some((f) => k.covers(f)),
-          `known divergence "${k.name}" no longer happens in ${name}: delete it from KNOWN`
+          `known divergence "${k.name}" (${k.issue}) no longer happens in ${name}: delete it from KNOWN`
         ).toBe(true);
       }
     });

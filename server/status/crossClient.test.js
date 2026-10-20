@@ -3,11 +3,11 @@
  * same input can never give one answer on the screen and another in a push.
  *
  * Each fixture (testing/statusScenarios.js: healthy, incident, source-down,
- * first-run, thresholds) is built as the live loop builds /api/status. Its
- * status then goes through the real push cycle (snapshot, differ, dispatch,
- * the FCM message the phone receives), from two starting points: an empty
- * snapshot (the first-run board's: every issue is new) and the healthy
- * board's. Every push is checked against the model's entity it is about,
+ * first-run, thresholds, every-state, low-battery) is built as the live loop
+ * builds /api/status. Its status then goes through the real push cycle
+ * (snapshot, differ, dispatch, the FCM message the phone receives), from two
+ * starting points: an empty snapshot (the first-run board's: every issue is
+ * new) and the healthy board's. Every push is checked against the model's entity it is about,
  * found through the FCM `data` keys the Android app reads: the state its
  * severity says, the word its type stands for, and the reason. Every issue the
  * model pages for must have its push. The screen side, the same fixtures
@@ -205,17 +205,18 @@ function describe(f) {
 // ── Known divergences ────────────────────────────────────────────────────
 
 /**
- * The disagreements the suite knows about, each named, with where it shows
- * (fixture, starting snapshot) and where it is being settled. Each one covers
+ * The disagreements the suite knows about, each named, with the issue that
+ * settles it and where it shows (fixture, starting snapshot). Each one covers
  * only its own findings, only where it says, and must still happen there.
  */
 const KNOWN = [
   {
     name: 'a failed backup pushes as a warning',
+    issue: '#446',
     why:
       'The model calls a failed backup crit (the screen shows it red), but its push stays cron_failed at ' +
       '"warning", normal priority on Android, as a job\'s does. Jag has not decided whether it should ' +
-      'page as critical (PR #446, "One thing to decide"). If it should, delete this entry.',
+      'page as critical (the question in PR #446). If it should, delete this entry.',
     at: [
       ['incident', 'empty'],
       ['incident', 'healthy'],
@@ -228,18 +229,39 @@ const KNOWN = [
   },
   {
     name: 'a host new to the push snapshot',
+    issue: '#448',
     why:
-      'Found by this suite (#293). A node the push snapshot has no entry for (one added to ' +
-      'services.yaml; after a first run, every node) sends "Host recovered" at "info" with the ' +
-      "model's reason, and takes each reading's level as its baseline (push/differ.js diffHosts), so " +
-      'a reading already over its line pages only once it falls back and crosses again. The screen ' +
-      'shows the node warn or crit.',
-    at: [['thresholds', 'empty']],
+      'A node the push snapshot has no entry for (one added to services.yaml; after a first run, ' +
+      'every node) is a baseline (push/differ.js diffHosts): reachable, it sends "Host recovered" at ' +
+      '"info" with the model\'s reason, and a reading already over its line pages only once it falls ' +
+      'back and crosses again; unreachable, it sends nothing. The screen shows the node warn or crit.',
+    at: [
+      ['thresholds', 'empty'],
+      ['every-state', 'empty'],
+    ],
     covers: (f, { prev }) =>
       f.subject.startsWith('nodes/') &&
       !Object.hasOwn(prev.hosts ?? {}, f.subject.slice('nodes/'.length)) &&
       ((f.what === 'severity' && f.push === 'info') ||
-        (f.what === 'missing' && f.type === 'host_threshold')),
+        (f.what === 'missing' && (f.type === 'host_threshold' || f.type === 'host_unreachable'))),
+  },
+  {
+    name: 'a UPS with no known state does not page on battery',
+    issue: 'found by #293, to be filed',
+    why:
+      'The push snapshot keeps the UPS as online, on_battery or unknown, and the differ pages only ' +
+      'online to on_battery (push/differ.js diffUps: "any state involving unknown => no event"). A UPS ' +
+      'new to the snapshot, or one whose NUT exporter was quiet, that is on battery or low battery ' +
+      'sends nothing. The screen shows it crit.',
+    at: [
+      ['every-state', 'empty'],
+      ['low-battery', 'empty'],
+    ],
+    covers: (f, { prev }) =>
+      f.subject === 'power/ups' &&
+      f.what === 'missing' &&
+      f.type === 'ups_on_battery' &&
+      prev.ups?.state !== 'online',
   },
 ];
 
@@ -320,7 +342,7 @@ for (const name of STATUS_SCENARIOS) {
       for (const k of here) {
         assert.ok(
           findings.some((f) => k.covers(f, { prev })),
-          `known divergence "${k.name}" no longer happens in ${name} from ${from}: delete it from KNOWN`
+          `known divergence "${k.name}" (${k.issue}) no longer happens in ${name} from ${from}: delete it from KNOWN`
         );
       }
     });
@@ -348,6 +370,28 @@ const SENT = {
   },
   'source-down': { empty: ['source_down prometheus'], healthy: ['source_down prometheus'] },
   'first-run': { empty: [], healthy: [] },
+  'every-state': {
+    // The unreachable node and the UPS: KNOWN, #448 and the UPS entry.
+    empty: [
+      'cron_failed apps:db-dump',
+      'cron_overdue apps:image-prune',
+      'cron_overdue storage:nightly-backup',
+      'host_recovered apps',
+      'host_recovered storage',
+    ],
+    healthy: [
+      'cron_failed apps:db-dump',
+      'cron_overdue apps:image-prune',
+      'cron_overdue storage:nightly-backup',
+      'host_unreachable edge',
+      'ups_on_battery ups',
+    ],
+  },
+  'low-battery': {
+    // The UPS: KNOWN's UPS entry.
+    empty: ['host_recovered apps', 'host_recovered edge', 'host_recovered storage'],
+    healthy: ['ups_on_battery ups'],
+  },
   thresholds: {
     empty: ['host_recovered apps', 'host_recovered edge', 'host_recovered storage'],
     healthy: [
@@ -414,6 +458,10 @@ test('cross-client fixtures: each headline, as the model says it', () => {
     'source-down': 'warn: Prometheus unreachable · 16 no signal',
     'first-run': 'unknown: Nothing monitored yet',
     thresholds: 'crit: 1 node critical · 2 nodes in warning',
+    'every-state':
+      'crit: 1 node unreachable · UPS on battery · 1 container missing · 1 service pending · ' +
+      '1 job overdue · 1 job failed · 1 backup overdue · 1 integration failing · 1 Arcane agent offline',
+    'low-battery': 'crit: UPS low battery',
   });
 });
 
