@@ -7,11 +7,13 @@ import {
   ADGUARD_PRIMARY,
   ZEROS,
 } from '../../../../server/routes/fixtures/settingsForm.js';
+import { maskCredentials } from '../../../../server/util/configMask.js';
 
 // #402: the server merges a save into the stored entry, and the toggle sets
 // only `enabled`. These pin what the form sends for stored entries to the
 // fixtures that server/routes/integrations.merge.test.js sends to the real
-// routes, so the two sides can't drift apart.
+// routes, so the two sides can't drift apart. The config is served as the
+// server answers it (#413): each stored credential is { "$stored": true }.
 
 const PRESETS = [
   {
@@ -43,13 +45,15 @@ function stubServer() {
       if (body) writes.push({ method, url, body });
       if (url === '/api/integrations/presets') return Response.json(PRESETS);
       if (url === '/api/services/config') {
-        return Response.json({
-          integrations: {
-            [STATUSPAGE.key]: STATUSPAGE.entry,
-            [ADGUARD_PRIMARY.key]: ADGUARD_PRIMARY.entry,
-            [ZEROS.key]: ZEROS.entry,
-          },
-        });
+        return Response.json(
+          maskCredentials({
+            integrations: {
+              [STATUSPAGE.key]: STATUSPAGE.entry,
+              [ADGUARD_PRIMARY.key]: ADGUARD_PRIMARY.entry,
+              [ZEROS.key]: ZEROS.entry,
+            },
+          })
+        );
       }
       if (url === '/api/services') {
         return Response.json({
@@ -116,6 +120,19 @@ describe('IntegrationsTab sends only what it owns (#402)', () => {
         { method: 'POST', url: '/api/integrations/save', body: ADGUARD_PRIMARY.saveUnchanged },
       ])
     );
+  });
+
+  it('a stored credential read as { "$stored": true } is not shown, and Save sends none (#413)', async () => {
+    const writes = stubServer();
+    renderTab();
+    fireEvent.click(
+      within(await rowFor('AdGuard Home (primary)')).getByRole('button', { name: 'Edit' })
+    );
+    expect(screen.getByLabelText('Password')).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: /Save Integration/ }));
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0].body).not.toHaveProperty('password');
+    expect(JSON.stringify(writes)).not.toContain('$stored');
   });
 
   it('a target set back to auto-match is sent empty, so the server clears it', async () => {
