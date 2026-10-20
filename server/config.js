@@ -148,38 +148,21 @@ export function getConfig() {
 /**
  * Merge discovery results into a default config for first boot.
  * Called when no services.yaml exists.
+ *
+ * Each discovered node is named by its own Prometheus label: no label maps to a
+ * built-in name, so a fresh install never shows someone else's node names
+ * (#248). A node's `display_name` in services.yaml renames it.
  */
 export function generateDefaultConfig(discoveredNodes) {
   const cfg = structuredClone(DEFAULT_CONFIG);
 
-  // Map discovered Prometheus nodes to config entries
-  const nodeDefaults = {
-    pi1: {
-      display_name: 'Gateway Primary',
-      subtitle: 'Raspberry Pi 5',
-      icon: '🛡',
-      border_color: '#a78bfa',
-    },
-    pi2: {
-      display_name: 'Gateway Secondary',
-      subtitle: 'Raspberry Pi 5',
-      icon: '🛡',
-      border_color: '#a78bfa',
-    },
-    vm103: { display_name: 'Production', subtitle: 'VM 103', icon: '🚀', border_color: '#6366f1' },
-    vm101: { display_name: 'Staging', subtitle: 'VM 101', icon: '🔬', border_color: '#fbbf24' },
-  };
-
   for (const nodeLabel of discoveredNodes) {
-    const defaults = nodeDefaults[nodeLabel] || {
+    cfg.nodes[nodeLabel] = {
+      prometheus_node: nodeLabel,
       display_name: nodeLabel,
       subtitle: '',
       icon: '🖥',
       border_color: '#6366f1',
-    };
-    cfg.nodes[nodeLabel] = {
-      prometheus_node: nodeLabel,
-      ...defaults,
       visible: true,
       auto_discover: true,
       hide: ['prometheus', 'node-exporter', 'cadvisor'],

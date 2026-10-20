@@ -60,6 +60,7 @@ import { createLogger } from './util/logger.js';
 import { metricsMiddleware, metricsHandler } from './metrics.js';
 import { createAccessLog } from './accessLog.js';
 import { isDemoMode, demoMiddleware, logDemoBanner } from './demo.js';
+import { demoServicesConfig } from './demoFixtures.js';
 
 const log = createLogger('jaghelm');
 
@@ -83,8 +84,11 @@ const PORT = process.env.PORT || 3099;
 const HOST = resolveBindHost(); // JAGHELM_HOST, default 0.0.0.0
 
 const uploadsDir = join(__dirname, '..', 'uploads');
-if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
-if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+// Demo mode writes nothing, not even these directories (#248).
+if (!isDemoMode()) {
+  if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
+  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+}
 
 const app = express();
 // Trust proxy: behind a reverse proxy, X-Forwarded-For determines req.ip — which the
@@ -269,7 +273,13 @@ process.on('uncaughtException', (err) => {
   log.error({ err }, 'uncaught exception (continuing)');
 });
 
-async function boot() {
+/**
+ * Start the subsystems a live dashboard runs, and return its services config.
+ * Not in demo mode: each one reaches out (discovery, the refresh loop, Kuma,
+ * push, Arcane) or writes to the data dir (secrets, the icon cache,
+ * services.yaml), and the demo guard answers every /api read itself (#248).
+ */
+async function startSubsystems() {
   const promUrl = process.env.PROMETHEUS_URL || 'http://localhost:9090';
   const kumaUrl = process.env.KUMA_URL || 'http://localhost:3001';
 
@@ -300,14 +310,32 @@ async function boot() {
   startConfigWatcher();
   startBackgroundRefresh();
   startArcane();
+  return config;
+}
+
+/**
+ * Demo mode starts only what it serves: the integration preset gallery, which
+ * is code in the image (Settings lists it). Nothing else runs (#248).
+ */
+async function startDemo() {
+  await initRegistry();
+  return demoServicesConfig();
+}
+
+async function boot() {
+  const demo = isDemoMode();
+  const config = demo ? await startDemo() : await startSubsystems();
 
   const server = app.listen(PORT, HOST, () => {
-    log.info({ version: VERSION, node: process.version, host: HOST, port: PORT }, 'listening');
+    // The port bound, which PORT=0 leaves to the OS.
+    const port = server.address()?.port ?? PORT;
+    log.info({ version: VERSION, node: process.version, host: HOST, port }, 'listening');
     log.info({ nodes: Object.keys(config.nodes || {}) }, 'active nodes');
-    if (isDemoMode()) logDemoBanner(PORT);
-    if (!authEnabled()) {
+    if (demo) logDemoBanner(port);
+    // The demo is open by design: its guard refuses every write and serves no config.
+    else if (!authEnabled()) {
       log.warn(
-        { port: PORT },
+        { port },
         '⚠ NO PASSWORD SET — the dashboard is unauthenticated. Anyone who can reach this ' +
           'port can read your config and metrics. Set DASH_PASS (or a password in Settings) ' +
           'and avoid exposing this port beyond a trusted LAN.'
@@ -329,8 +357,10 @@ async function boot() {
     if (shuttingDown) return;
     shuttingDown = true;
     log.info({ signal }, 'shutting down');
-    stopBackgroundRefresh();
-    stopArcane();
+    if (!demo) {
+      stopBackgroundRefresh();
+      stopArcane();
+    }
     const forceExit = setTimeout(() => {
       log.warn('forced exit after 10s drain timeout');
       process.exit(1);

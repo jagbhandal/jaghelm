@@ -1,4 +1,4 @@
-import { apiFetch } from '../api/client.js';
+import { apiFetch, isReadOnlyServer } from '../api/client.js';
 import { iconSlugUrl } from '../utils/iconCdn.js';
 import { getApiBase } from '../api/baseUrl.js';
 // The server's own allowlist (dependency-free), so the client sends the cache
@@ -97,6 +97,30 @@ async function requestJson(url, opts) {
   return text ? JSON.parse(text) : null;
 }
 
+// ── A read-only server (the public demo, #248) ───────────────────────────
+// It refuses every write, so the helpers below don't send one: the change is
+// kept in this tab for the visit, and the matching read answers with it. A
+// reload starts again from the server's data.
+let localTodos = null;
+const removedCronJobs = new Set();
+const cronJobKey = (node, job) => JSON.stringify([node, job]);
+
+/** /api/cron/status without the jobs removed in this tab. */
+function withoutRemovedCronJobs(statuses) {
+  return statuses
+    .map((n) => ({
+      ...n,
+      jobs: n.jobs.filter((j) => !removedCronJobs.has(cronJobKey(n.node, j.job))),
+    }))
+    .filter((n) => n.jobs.length > 0);
+}
+
+/** Forget the changes kept in this tab (tests start each case afresh). */
+export function forgetLocalChanges() {
+  localTodos = null;
+  removedCronJobs.clear();
+}
+
 /**
  * Fetch all node + service data in one call.
  * Returns null if data unchanged (304), otherwise:
@@ -128,7 +152,10 @@ export async function getGiteaActivity(skipEtag) {
   return fetchJson(`${getApiBase()}/gitea/activity`, skipEtag);
 }
 export async function getCronStatus(skipEtag) {
-  return fetchJson(`${getApiBase()}/cron/status`, skipEtag);
+  const statuses = await fetchJson(`${getApiBase()}/cron/status`, skipEtag);
+  return removedCronJobs.size && Array.isArray(statuses)
+    ? withoutRemovedCronJobs(statuses)
+    : statuses;
 }
 
 // Phase 3: Integration Engine
@@ -157,6 +184,10 @@ export async function deleteIntegration(type) {
 }
 
 export async function deleteCronJob(node, job) {
+  if (isReadOnlyServer()) {
+    removedCronJobs.add(cronJobKey(node, job));
+    return null;
+  }
   const url = `${getApiBase()}/cron/jobs/${encodeURIComponent(node)}/${encodeURIComponent(job)}`;
   try {
     return await requestJson(url, { method: 'DELETE' });
@@ -176,11 +207,16 @@ export async function getWeather(lat, lon) {
 }
 
 export async function getTodos() {
+  if (isReadOnlyServer() && localTodos) return localTodos;
   const r = await apiFetch(`${getApiBase()}/todos`, { signal: AbortSignal.timeout(12000) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
 export async function saveTodos(todos) {
+  if (isReadOnlyServer()) {
+    localTodos = todos;
+    return;
+  }
   // Route through requestJson so a failed save REJECTS (was silently swallowed:
   // the old code awaited the fetch but never checked r.ok, so a 500 looked like
   // a successful save). Caller awaits for completion only; no body is returned.
@@ -192,6 +228,8 @@ export async function saveTodos(todos) {
 }
 
 export async function uploadFile(file, type) {
+  // The image stays in this tab: an object URL for the visit, never sent.
+  if (isReadOnlyServer()) return { url: URL.createObjectURL(file) };
   const form = new FormData();
   form.append('file', file);
   // HARNESS-GAP (ledger #1): the one remaining raw '/api' literal that bypasses

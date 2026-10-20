@@ -93,7 +93,10 @@ server/                     Express API (Node 26, ESM)
   version.js                single source of version (reads package.json)
   metrics.js                prom-client registry + middleware + /metrics handler
   accessLog.js              one JSON log line per request (full path, no query string)
-  demo.js                   DEMO_MODE read-only sample dashboard
+  demo.js                   DEMO_MODE guard: owns /api, refuses writes, answers reads from
+                            demoFixtures.js; boot() starts no subsystem in demo mode
+  demoFixtures.js           the demo's board, shaped by the live code (assembleServices,
+                            decorateStatuses); incident and healthy scenarios
   auth/                     scrypt passwords, in-memory sessions, login rate limit, middleware
   routes/                   one router per resource (see 4.1)
   arcane/                   Arcane poller: read-only API client, state derivation, push builders,
@@ -155,7 +158,12 @@ CORS -> `express.json({ limit: '1mb' })` -> `/uploads` static -> `/metrics` ->
 (`index.html`) -> the global JSON error handler.
 It listens on `JAGHELM_HOST` (default `0.0.0.0`, every IPv4 interface) and `PORT`
 (default 3099); if it can't (an address the machine doesn't have, a port in use),
-it logs `cannot listen` and exits 1.
+it logs `cannot listen` and exits 1. The `listening` line logs the port bound.
+In demo mode `boot()` only loads the integration preset gallery: it starts no
+discovery, refresh loop, Kuma, push, Arcane, icon index or cache, reads no
+`services.yaml` and makes no directory. The demo guard answers every `/api`
+read, so the server makes no outbound request and writes no file; the browser
+still loads the board's icons from the icon CDN (docs/DEMO.md).
 
 Routers (each `server/routes/*.js`), mounted under `/api`:
 
@@ -640,14 +648,31 @@ flowchart TD
 - **HelmGrid** is a custom, dependency-light layout engine: pure math in
   `gridMath.js` (snap, overlap-resolve, content-fit), per-item measurement +
   rendering in `GridItem.jsx`, and lifecycle (breakpoints, drag/resize, commit)
-  in `HelmGrid.jsx`. Panels auto-grow to fit content; pointer **and keyboard**
+  in `HelmGrid.jsx`. Panels auto-grow to fit content (`GridItem` re-measures a
+  panel whenever it resizes); pointer **and keyboard**
   (arrow move / Shift+arrow resize, with a live region) reposition them.
 - **Panels and first run.** The board has a panel per discovered node and custom
   group, plus the Checklist, Scheduled Jobs and Quick Launch panels. Without a
-  saved layout it starts from `DEFAULT_LAYOUTS` (`layouts.js`), which names no
-  node, so a fresh install with no node shows the "Connect your first node"
-  empty state. The UPS and Pipeline panels show only when the server says their
-  source is set up (`configuredPanels.js`). `/api/ups` carries `configured`:
+  saved layout the board is laid out by `defaultLayouts(nodes)` (`layouts.js`)
+  from the nodes `/api/services` has and the panels on show. The nodes come
+  first, in their order, at most three to a row (two at the md breakpoint,
+  fewer on a narrow grid), spread evenly over the rows, each row filling the
+  width: three to a row leaves no node alone in a row, two to a row leaves the
+  last node of an odd count alone, the whole width. Then the panels, paired by
+  height: HelmGrid grows a panel to its content and only pushes panels down, so
+  a panel under two of different heights leaves a hole under the shorter one.
+  Pipeline sits beside Scheduled Jobs, then UPS beside the Checklist, each half
+  and half, so each panel of the second pair sits under one of the first; then
+  Quick Launch. When one of a pair isn't shown, the two left over share a row,
+  the tall one 2/3 (on a fresh install, Scheduled Jobs beside the Checklist); a
+  panel left alone takes the whole row. It is regenerated as nodes
+  and panels come and go, until the first drag or resize saves a layout; a
+  saved layout is never replaced by it. A panel not on show (switched off in
+  Settings, or a source not known to be set up) is not added to a layout, so
+  it holds no empty slot. A fresh install with no node shows the "Connect your
+  first node" empty state, and the demo (`DEMO_MODE`) gets the same default
+  from its own nodes. The UPS and Pipeline panels show only when the server
+  says their source is set up (`configuredPanels.js`). `/api/ups` carries `configured`:
   true when Prometheus has the UPS's readings or saw its `nut_ups_info` series
   in the last 7 days (one query, with `last_over_time`), false when neither,
   null when the query failed. `/api/gitea/activity` answers

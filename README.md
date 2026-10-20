@@ -21,15 +21,19 @@
 
 ## Try it in 10 seconds — no Prometheus needed
 
-JagHelm ships a **self-contained read-only demo** (canned data, every write
-refused — no backend, no config). Kick the tyres before wiring up your stack:
+JagHelm ships a **self-contained read-only demo**: a made-up three-node
+homelab with one service down, every write refused, no backend, no config, and
+no request out from the server (your browser loads the board's icons from the
+icon CDN). Kick the tyres before wiring up your stack:
 
 ```bash
 docker run --rm -e DEMO_MODE=true -p 3099:3099 ghcr.io/jagbhandal/jaghelm:latest
 ```
 
-Then open **http://localhost:3099**, drag a panel around, flip a theme. Like it?
-**⭐ Star the repo** and [point it at your real stack](#quick-start).
+Then open **http://localhost:3099**, drag a panel around, flip a theme. Add
+`-e DEMO_SCENARIO=healthy` for the same board with nothing down
+([more](docs/DEMO.md)). Like it? **⭐ Star the repo** and
+[point it at your real stack](#quick-start).
 
 > Built in the open · MIT · signed container images · 1,000+ automated tests · 0 direct-dependency vulnerabilities.
 
@@ -241,7 +245,7 @@ Add your existing monitoring tools as iframe tabs in the top nav — Grafana, Up
  
 ### HelmGrid layout engine
  
-Custom drag-resize grid built for this app. Panels auto-grow to fit content, snap to grid on drag, push each other down on overlap. Column count is configurable (6–24); panels reposition when you change density. Resize handles on SE and SW corners. Mobile breakpoint stacks everything into a single column.
+Custom drag-resize grid built for this app. Panels auto-grow to fit content, snap to grid on drag, push each other down on overlap. Column count is configurable (6–24); panels reposition when you change density. Resize handles on SE and SW corners. Mobile breakpoint stacks everything into a single column. Until you move a panel, the board lays itself out from the nodes it finds: the nodes first, up to three side by side, then the other panels in pairs of about the same height (Pipeline beside Scheduled Jobs, UPS beside the Checklist), then Quick Launch; once you arrange it, your layout is kept as you left it.
  
 ### Themes and typography
  

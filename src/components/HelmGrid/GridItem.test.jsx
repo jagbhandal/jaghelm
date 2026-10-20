@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import GridItem from './GridItem.jsx';
 
 // GridItem exposes a keyboard-only move/resize handle so a panel is reachable
@@ -98,5 +98,62 @@ describe('GridItem keyboard handle', () => {
   it('omits the handle entirely when the grid is not draggable (mobile)', () => {
     renderItem({ draggable: false });
     expect(screen.queryByRole('button', { name: /reposition/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('GridItem content height', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  // A ResizeObserver that records what it watches and can be fired by hand.
+  const stubObserver = () => {
+    const observers = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb) {
+          this.cb = cb;
+          this.watched = [];
+          observers.push(this);
+        }
+        observe(el) {
+          this.watched.push(el);
+        }
+        unobserve() {}
+        disconnect() {}
+      }
+    );
+    return observers;
+  };
+
+  it('watches the panel, not the keyboard handle, and re-measures when the panel resizes (#248)', () => {
+    const observers = stubObserver();
+    // requestAnimationFrame runs the measure at once.
+    vi.stubGlobal('requestAnimationFrame', (fn) => {
+      fn();
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    let natural = 400;
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => natural);
+    const onContentHeight = vi.fn();
+    render(
+      <GridItem {...baseProps({ onContentHeight })}>
+        <div data-testid="panel" className="section-header">
+          Panel A
+        </div>
+      </GridItem>
+    );
+
+    const watched = observers.flatMap((o) => o.watched);
+    expect(watched).toEqual([screen.getByTestId('panel')]);
+    expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 400);
+
+    // Made wider, the panel's content takes less height: measured again.
+    natural = 250;
+    observers[0].cb([]);
+    expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 250);
   });
 });

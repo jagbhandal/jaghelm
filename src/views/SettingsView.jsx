@@ -13,7 +13,12 @@ import SecurityTab from '../components/settings/SecurityTab';
 import BackupTab from '../components/settings/BackupTab';
 import IntegrationsTab from '../components/settings/IntegrationsTab';
 import DashboardView from './DashboardView';
-import { apiFetch } from '../api/client.js';
+import { apiFetch, isReadOnlyServer } from '../api/client.js';
+
+// The services config as last edited in this tab, when the server is the
+// read-only demo (#248): it refuses the save, so the edit is kept here for the
+// visit and shown again when Settings reloads the config.
+let localServerConfig = null;
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: '🏠', desc: 'Title, logo, branding' },
@@ -84,7 +89,8 @@ export default function SettingsView({ theme, setTheme }) {
       apiFetch('/api/services/monitors').then((r) => (r.ok ? r.json() : null)),
     ])
       .then(([cfg, svc, mon]) => {
-        if (cfg) setServerConfig(cfg);
+        if (isReadOnlyServer() && localServerConfig) setServerConfig(localServerConfig);
+        else if (cfg) setServerConfig(cfg);
         if (svc) setLiveServices(svc);
         if (Array.isArray(mon)) setMonitorNames(mon);
       })
@@ -100,6 +106,10 @@ export default function SettingsView({ theme, setTheme }) {
   // Save server config with debounce
   const saveServerConfig = useCallback((newConfig) => {
     setServerConfig(newConfig);
+    if (isReadOnlyServer()) {
+      localServerConfig = newConfig;
+      return;
+    }
     setServerSaving(true);
     if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
     serverSaveTimer.current = setTimeout(() => {

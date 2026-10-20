@@ -14,7 +14,7 @@ import { cachedIconUrl, deleteCronJob } from '../../hooks/useData';
 import NodePanel from './NodePanel';
 import { toServiceCard } from './serviceCard';
 import { useConfig } from '../../context/ConfigContext.jsx';
-import { DEFAULT_LAYOUTS, migrateLayouts } from './layouts';
+import { STATIC_PANEL_KEYS, defaultLayouts, migrateLayouts } from './layouts';
 import { useDashboardData, pollPeriodMs } from './useDashboardData';
 import { useAppDataMatching } from './useAppDataMatching';
 import { useEffectiveLayouts } from './useEffectiveLayouts';
@@ -194,18 +194,42 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
   );
 
   // ── Layout state ──
-  const rawLayouts = config.gridLayout || DEFAULT_LAYOUTS;
-  const layouts = useMemo(() => migrateLayouts(rawLayouts) || DEFAULT_LAYOUTS, [rawLayouts]);
   const cols = useMemo(() => {
     const lg = config.gridColumns || 24;
     return { lg, md: Math.min(lg, 20), sm: 1 };
   }, [config.gridColumns]);
 
-  // A source-fed panel not known to be set up joins no layout; one the server
-  // says is not set up also leaves a saved layout that has it.
-  const hiddenSourcePanels = useMemo(
-    () => SOURCE_PANEL_KEYS.filter((k) => configured[k] !== true),
-    [configured]
+  // The panels on the board. One that is not (switched off in Settings, or a
+  // source-fed panel not known to be set up) joins no layout, so it holds no
+  // empty slot; one the server says is not set up also leaves a saved layout
+  // that has it.
+  const shown = {
+    ups: upsShown,
+    pipeline: pipelineShown,
+    'cron-jobs': cronShown,
+    todos: sc.todos?.visible !== false,
+    quicklaunch: sc.quicklaunch?.visible !== false,
+  };
+  // Joined into strings, so the memos below change only when the set does.
+  const shownPanelsKey = STATIC_PANEL_KEYS.filter((k) => shown[k]).join(' ');
+  const nodeKeysKey = Object.keys(serviceData.nodes || {}).join('\n');
+
+  // The saved layout, or null. Without one the board is laid out from the
+  // nodes and panels it has (#248); a saved layout is used as it is.
+  const savedLayouts = useMemo(() => migrateLayouts(config.gridLayout), [config.gridLayout]);
+  const layouts = useMemo(
+    () =>
+      savedLayouts ||
+      defaultLayouts(nodeKeysKey ? nodeKeysKey.split('\n') : [], {
+        panels: shownPanelsKey ? shownPanelsKey.split(' ') : [],
+        cols,
+      }),
+    [savedLayouts, nodeKeysKey, shownPanelsKey, cols]
+  );
+
+  const hiddenPanels = useMemo(
+    () => STATIC_PANEL_KEYS.filter((k) => !shownPanelsKey.split(' ').includes(k)),
+    [shownPanelsKey]
   );
   const droppedSourcePanels = useMemo(
     () => SOURCE_PANEL_KEYS.filter((k) => configured[k] === false),
@@ -217,7 +241,7 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
     serviceData,
     customGroups,
     config.gridColumns,
-    hiddenSourcePanels,
+    hiddenPanels,
     droppedSourcePanels
   );
 
@@ -419,7 +443,7 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
   // and the user hasn't created any custom groups. Show a friendly CTA instead
   // of an empty/Loading grid.
   const nodeCount = Object.keys(serviceData.nodes || {}).length;
-  const savedNodePlaceholders = (layouts.lg || layouts.md || []).some(
+  const savedNodePlaceholders = (savedLayouts?.lg || savedLayouts?.md || []).some(
     (i) => typeof i.i === 'string' && i.i.startsWith('node-')
   );
   const isEmpty =
@@ -451,9 +475,9 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
   // while /api/services is still in flight.
   const nodePlaceholders = useMemo(() => {
     const loadedNodeKeys = new Set(Object.keys(serviceData.nodes || {}).map((k) => `node-${k}`));
-    const savedKeys = (layouts.lg || layouts.md || [])
+    const savedKeys = (savedLayouts?.lg || savedLayouts?.md || [])
       .map((i) => i.i)
-      .filter((k) => k.startsWith('node-'));
+      .filter((k) => typeof k === 'string' && k.startsWith('node-'));
     return savedKeys
       .filter((k) => !loadedNodeKeys.has(k))
       .map((k) => (
@@ -465,7 +489,7 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
           </div>
         </div>
       ));
-  }, [serviceData, layouts]);
+  }, [serviceData, savedLayouts]);
 
   return (
     <div className="dashboard-content" ref={mobileRef}>

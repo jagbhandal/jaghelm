@@ -17,8 +17,6 @@ const log = createLogger('cron-store');
 const STORE_PATH = join(DATA_DIR, 'cron-jobs.json');
 const MAX_RUNS = 3;
 
-if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-
 /** Load the full cron store. Structure: { [node]: { [job]: [ ...runs ] } } */
 function load() {
   try {
@@ -31,6 +29,8 @@ function load() {
 
 function save(store) {
   try {
+    // Made here, not on import: importing this module writes nothing (#248).
+    mkdirSync(DATA_DIR, { recursive: true });
     atomicWriteFileSync(STORE_PATH, JSON.stringify(store, null, 2));
   } catch (err) {
     log.error({ err }, 'Failed to save');
