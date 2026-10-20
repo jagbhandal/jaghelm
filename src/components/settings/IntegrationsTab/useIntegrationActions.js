@@ -51,8 +51,11 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
       const body = {
         type: selectedPreset?.type || editingType || '_custom',
         url: form.url,
-        enabled: form.enabled,
       };
+      // A new integration is saved with its Enabled box. An edit leaves
+      // `enabled` to the toggle route (below), so a form left open can't undo
+      // a toggle made elsewhere since (#402).
+      if (!editingType) body.enabled = form.enabled;
       if (form.instance.trim())
         body.instance = form.instance
           .trim()
@@ -76,6 +79,19 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
         body: JSON.stringify(body),
       });
       const data = await res.json();
+      if (data.ok && editingType && form.enabled !== form.enabledAtOpen) {
+        const toggled = await apiFetch(`/api/integrations/${encodeURIComponent(data.type)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: form.enabled }),
+        });
+        if (!toggled.ok) {
+          setSaveStatus({
+            error: `Saved, but could not ${form.enabled ? 'enable' : 'disable'} it (HTTP ${toggled.status})`,
+          });
+          return;
+        }
+      }
       if (data.ok) {
         setSaveStatus('saved');
         setTimeout(() => {

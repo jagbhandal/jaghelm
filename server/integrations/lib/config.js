@@ -14,6 +14,21 @@ import { resolveCredential, getSecret } from '../../secrets.js';
  * available unmodified for callers that need them.
  */
 
+/**
+ * The secrets a preset's credentials resolve from by the integration's storage
+ * key, ahead of the `$secret:` reference in its entry:
+ * `integration_<key>_<field>`. A save in Settings stores a typed password or
+ * token under these names, and moves them with an entry whose key changes
+ * (routes/integrations.js), so a secret left under the new key can't stand in
+ * for the entry's own.
+ */
+export const KEYED_SECRET_FIELDS = Object.freeze(['url', 'username', 'password', 'token']);
+
+/** The name of an integration's keyed secret, such as integration_npm_password. */
+export function keyedSecretName(key, field) {
+  return `integration_${key}_${field}`;
+}
+
 /** Resolve $secret:key_name references to decrypted values. */
 function resolveSecretRef(value) {
   if (!value || typeof value !== 'string') return value;
@@ -50,16 +65,16 @@ export function resolveIntegrationConfig(type, yamlConfig) {
 
   if (preset?.envKeys) {
     if (preset.envKeys.url) {
-      resolved.url = resolveCredential(preset.envKeys.url, `integration_${secretKey}_url`) || config.url;
+      resolved.url = resolveCredential(preset.envKeys.url, keyedSecretName(secretKey, 'url')) || config.url;
     }
     if (preset.envKeys.username) {
-      resolved._username = resolveCredential(preset.envKeys.username, `integration_${secretKey}_username`) || config.username;
+      resolved._username = resolveCredential(preset.envKeys.username, keyedSecretName(secretKey, 'username')) || config.username;
     }
     if (preset.envKeys.password) {
-      resolved._password = resolveCredential(preset.envKeys.password, `integration_${secretKey}_password`) || resolveSecretRef(config.password);
+      resolved._password = resolveCredential(preset.envKeys.password, keyedSecretName(secretKey, 'password')) || resolveSecretRef(config.password);
     }
     if (preset.envKeys.token) {
-      resolved._token = resolveCredential(preset.envKeys.token, `integration_${secretKey}_token`) || resolveSecretRef(config.token);
+      resolved._token = resolveCredential(preset.envKeys.token, keyedSecretName(secretKey, 'token')) || resolveSecretRef(config.token);
     }
   } else {
     // Custom integration — resolve $secret: refs in credentials

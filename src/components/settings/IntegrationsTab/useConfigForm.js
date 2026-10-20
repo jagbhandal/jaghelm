@@ -14,22 +14,27 @@ export function useConfigForm() {
   const [password, setPassword] = useState('');
   const [token, setToken] = useState('');
   const [enabled, setEnabled] = useState(true);
+  // The Enabled box as the form opened, so a save sends it only when changed.
+  const [enabledAtOpen, setEnabledAtOpen] = useState(true);
   const [params, setParams] = useState({});
   const [instance, setInstance] = useState('');
   const [target, setTarget] = useState('');
 
   const populate = (preset, existingConfig) => {
     setUrl(existingConfig?.url || '');
-    setUsername(existingConfig?.username || '');
+    // `??`, not `||`: a stored value that is set but falsy (0) is shown and
+    // sent back as it is, so an unchanged save keeps it (#402).
+    setUsername(existingConfig?.username ?? '');
     setPassword(''); // Never prefill passwords
     setToken('');    // Never prefill tokens
     setEnabled(existingConfig?.enabled !== false);
+    setEnabledAtOpen(existingConfig?.enabled !== false);
     setInstance(existingConfig?.instance || '');
-    setTarget(existingConfig?.target || '');
+    setTarget(existingConfig?.target ?? '');
     // Load URL params from existing config
     const newParams = {};
     for (const p of (preset?.urlParams || [])) {
-      newParams[p.key] = existingConfig?.[p.key] || '';
+      newParams[p.key] = existingConfig?.[p.key] ?? '';
     }
     setParams(newParams);
   };
@@ -39,7 +44,7 @@ export function useConfigForm() {
     username, setUsername,
     password, setPassword,
     token, setToken,
-    enabled, setEnabled,
+    enabled, setEnabled, enabledAtOpen,
     params, setParams,
     instance, setInstance,
     target, setTarget,

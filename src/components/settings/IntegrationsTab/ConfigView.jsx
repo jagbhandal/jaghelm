@@ -161,7 +161,7 @@ export default function ConfigView({
           <FieldGroup key={p.key} label={p.label}>
             <input
               className="settings-input mono"
-              value={form.params[p.key] || ''}
+              value={form.params[p.key] ?? ''}
               onChange={e => form.setParams(prev => ({ ...prev, [p.key]: e.target.value }))}
               placeholder={p.placeholder || p.label}
             />

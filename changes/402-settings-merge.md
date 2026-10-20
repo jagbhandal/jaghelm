@@ -19,3 +19,18 @@
   `my_npm`) stays under that key when it is saved in Settings, as long as its
   instance name is not changed. It used to move to the key Settings derives,
   replacing any integration already stored there.
+- Changing an integration's instance name in Settings keeps its stored
+  password and token: they move with it to the new name. They used to stay
+  under the old name, so the renamed integration lost its credential, or
+  picked up one left there by an integration removed earlier.
+- A Settings form left open no longer undoes an Enable or Disable made since
+  in another tab: saving it changes whether the integration is enabled only
+  when its own Enabled box was changed. Saving the form of an integration
+  removed in the meantime is refused with a message to reload, instead of
+  overwriting another integration.
+- A stored value of 0 (an account ID, for example) is shown in its Settings
+  form and kept when the form is saved. It used to show as empty and be
+  removed.
+### Security
+- A save whose password or token is not text is refused. Its value used to be
+  written to the server log in the error.

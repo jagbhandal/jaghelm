@@ -921,18 +921,32 @@ All state is files under the data dir (no DB):
   hand formatting.
   - **An integration's save in Settings merges** (`POST /api/integrations/save`,
     #402). The form's values go into the stored entry, and only what the form
-    owns changes: the URL (required), `enabled`, the username and target
-    (sent empty to remove them), the preset's URL params (allow-listed; empty
-    removes), and a typed password or token, stored as
-    `$secret:integration_<key>_password|token`. A blank password or token keeps
+    owns changes: the URL (required), the username and target (sent empty to
+    remove them), the preset's URL params (allow-listed; empty removes), and a
+    typed password or token (text only, else 400), stored under the
+    integration's keyed secret name, `integration_<key>_password|token`
+    (`keyedSecretName` in `lib/config.js`). A blank password or token keeps
     what is stored: a plaintext value or a `$secret:` under any name. Every
     other key stays (a custom integration's `endpoint`, `auth`, `authHeader`,
     `fields`, or anything written by hand), and an existing entry's `preset`
-    is never changed. The instance name is part of the key: a changed one moves
-    the entry to its new key, an unchanged one keeps it where it is, even
-    under a key Settings would not derive (`my_npm`). A save that changes
-    nothing writes nothing, so the file stays byte-for-byte as it was; it
-    still asks for a retry (4.3).
+    is never changed. A save that changes nothing writes nothing, so the file
+    stays byte-for-byte as it was; it still asks for a retry (4.3).
+  - **`enabled` belongs to the toggle once an entry exists.** A save that
+    creates an entry sets it, and so does one without an `editingKey` (the
+    toggle of web apps before #402 went through the save). An edit
+    (`editingKey` sent) leaves it alone: the form sends a changed Enabled box
+    to the toggle route after the save, so a form left open can't undo a toggle
+    made since. An edit whose entry is gone (deleted in another tab) is refused
+    with a 409 rather than merged into whatever is under the key it derives.
+  - **The key.** The instance name is part of it: a changed one moves the
+    entry to its new key, and an unchanged one keeps it where it is, even
+    under a key Settings would not derive (`my_npm`). A move takes the entry's
+    keyed secrets (`KEYED_SECRET_FIELDS`: url, username, password, token) with
+    it: each one under the old key is copied, still encrypted, to the new
+    key's name, replacing anything left there; one the old key doesn't have is
+    removed under the new key too, since a preset resolves those names ahead
+    of the entry's `$secret:` reference. A reference to an old name is pointed
+    at the new one, and the old names are removed once the move is written.
   - **The enable toggle** (`PATCH /api/integrations/:key`, body
     `{ "enabled": true|false }` and nothing else) sets `enabled` alone, writes
     nothing when the entry is already in that state, and asks for a retry when

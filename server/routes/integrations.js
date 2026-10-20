@@ -21,9 +21,10 @@ import { isDeepStrictEqual } from 'node:util';
 import { Router } from 'express';
 
 import { getConfig, saveConfig } from '../config.js';
-import { setSecret } from '../secrets.js';
+import { copySecret, deleteSecret, hasSecret, setSecret } from '../secrets.js';
 import { getPreset, listPresets } from '../integrations/registry.js';
 import { testIntegration } from '../integrations/handler.js';
+import { KEYED_SECRET_FIELDS, keyedSecretName } from '../integrations/lib/config.js';
 import { refreshIntegrations, retryIntegrationNow } from '../refresh.js';
 import { respondWarmCached } from '../cache.js';
 import { apiError } from '../errors.js';
@@ -117,21 +118,28 @@ router.post(
 // under a secret name Settings doesn't derive, and any key written by hand.
 // Now only what the form owns changes:
 //   - url, always sent and required (normalized);
-//   - enabled, when sent as true or false;
 //   - username and target, when sent: an empty one is removed;
 //   - the preset's URL params, when sent (allow-listed): an empty one is removed;
-//   - password and token, only when typed: blank keeps what is stored, a
-//     plaintext value or a `$secret:` under any name;
+//   - password and token, only when typed (text only): blank keeps what is
+//     stored, a plaintext value or a `$secret:` under any name;
 //   - fields, when sent;
-//   - instance, which is part of the key: a changed one moves the entry to
-//     its new key; an unchanged one keeps the entry where it is, even under a
-//     key Settings would not derive (`my_npm`, `npm_Two`).
+//   - instance, which is part of the key: a changed one moves the entry, and
+//     its keyed secrets with it, to its new key; an unchanged one keeps the
+//     entry where it is, even under a key Settings would not derive (`my_npm`,
+//     `npm_Two`).
+// `enabled` is set by a save that creates the entry, or one without an
+// `editingKey` (an older web app's toggle sent those). An edit leaves it to the
+// toggle route, so a form left open can't undo a toggle made since. An edit
+// whose entry is gone is refused (409) rather than merged into another one.
 // The preset of an existing entry is never changed. A save that changes
 // nothing writes nothing, so services.yaml stays byte-for-byte as it was
 // (every write re-serialises the whole file); it still asks for a retry.
 
 /** True for a value the form sends for an empty field. */
 const isBlank = (v) => v === undefined || v === null || v === '';
+
+/** True when an edit names the entry it edits (the web form sends it then). */
+const isSent = (v) => v !== undefined && v !== null && v !== '';
 
 /** An instance name as the web form normalizes it (lowercase a-z, 0-9, -). */
 function formInstance(v) {
@@ -160,6 +168,13 @@ router.post('/save', (req, res) => {
   if (!SAFE_ID.test(type) || (instance && !SAFE_ID.test(instance))) {
     return apiError(res, 400, 'Invalid type or instance (letters, digits, _ - only; max 64)');
   }
+  // A credential is text. Anything else used to reach setSecret, whose error
+  // (with the value in it) was then logged.
+  for (const value of [password, token]) {
+    if (value !== undefined && value !== null && typeof value !== 'string') {
+      return apiError(res, 400, 'password and token must be text');
+    }
+  }
   const unsupported = getPreset(type)?.unsupported;
   if (unsupported) {
     return apiError(res, 400, `Integration unavailable: ${unsupported}`);
@@ -174,45 +189,62 @@ router.post('/save', (req, res) => {
     // under the key this save derives (the gallery adding it again, or an
     // older web app's toggle, which sent the key as the type).
     const derivedKey = instance ? `${type}_${instance}` : type;
+    const editing = isSent(editingKey);
     let baseKey = null;
-    let base = storedEntry(integrations, editingKey);
-    if (base) baseKey = editingKey;
-    else if ((base = storedEntry(integrations, derivedKey))) baseKey = derivedKey;
+    let base = null;
+    if (editing) {
+      base = storedEntry(integrations, editingKey);
+      // Removed (or replaced) since the form was opened, in another tab or by
+      // a hand edit: merging into whatever is under the derived key would
+      // overwrite a different integration.
+      if (!base) {
+        return apiError(
+          res,
+          409,
+          `Integration '${editingKey}' is no longer configured; reload Settings and try again`
+        );
+      }
+      baseKey = editingKey;
+    } else if ((base = storedEntry(integrations, derivedKey))) {
+      baseKey = derivedKey;
+    }
 
     let storageKey = derivedKey;
     let instanceOwned = !!instance;
-    if (base && baseKey === editingKey) {
-      // Editing: the key changes only when the instance name does.
+    if (editing) {
+      // The key changes only when the instance name does.
       instanceOwned = formInstance(base.instance) !== (instance || '');
       if (!instanceOwned) storageKey = editingKey;
     } else if (base) {
       instanceOwned = !!instance && formInstance(base.instance) !== instance;
     }
+    const moving = !!base && storageKey !== baseKey;
 
     // setSecret returns false when the secrets manager is uninitialized (no
     // DASH_SECRET). Writing entry.password="$secret:…" anyway would persist a
     // config pointing at a credential that was never stored — the integration
     // silently has no credential and fails later with no save-time error. Surface
     // it as a 500 now, matching the standalone secrets route.
-    if (password && !setSecret(`integration_${storageKey}_password`, password)) {
-      return apiError(res, 500, 'Secrets manager not initialized (DASH_SECRET missing?)');
-    }
-    if (token && !setSecret(`integration_${storageKey}_token`, token)) {
-      return apiError(res, 500, 'Secrets manager not initialized (DASH_SECRET missing?)');
+    const typed = { password, token };
+    for (const field of ['password', 'token']) {
+      if (typed[field] && !setSecret(keyedSecretName(storageKey, field), typed[field])) {
+        return apiError(res, 500, 'Secrets manager not initialized (DASH_SECRET missing?)');
+      }
     }
 
     // A new entry keeps the shape and key order a save has always written.
     const entry = base ? { ...base } : { url: cleanUrl, enabled: enabled !== false };
     entry.url = cleanUrl;
-    if (typeof enabled === 'boolean' && (entry.enabled !== false) !== enabled) {
+    if (!editing && typeof enabled === 'boolean' && (entry.enabled !== false) !== enabled) {
       entry.enabled = enabled;
     }
     if (!base && getPreset(type)) entry.preset = type;
     if (instanceOwned) setOwned(entry, 'instance', instance);
     if (Object.hasOwn(body, 'target')) setOwned(entry, 'target', body.target);
     if (Object.hasOwn(body, 'username')) setOwned(entry, 'username', body.username);
-    if (password) entry.password = `$secret:integration_${storageKey}_password`;
-    if (token) entry.token = `$secret:integration_${storageKey}_token`;
+    for (const field of ['password', 'token']) {
+      if (typed[field]) entry[field] = `$secret:${keyedSecretName(storageKey, field)}`;
+    }
 
     // URL params (e.g. account_id for Cloudflare presets) — allow-listed to the
     // preset's declared urlParams; unknown keys are dropped (no config injection).
@@ -221,14 +253,34 @@ router.post('/save', (req, res) => {
     // Custom fields (only for non-preset integrations)
     if (customFields) entry.fields = customFields;
 
-    const unchanged = base && storageKey === baseKey && isDeepStrictEqual(entry, base);
+    // A move takes the entry's keyed secrets with it. What the old key held is
+    // copied to the new key (still encrypted), replacing anything left there,
+    // and a `$secret:` reference to the old name now names the new one. When
+    // the old key held nothing, whatever is left under the new key is removed,
+    // so it can't stand in for the entry's own credential. The old names are
+    // removed once the move is written; until then the entry still uses them.
+    const leftBehind = [];
+    if (moving) {
+      for (const field of KEYED_SECRET_FIELDS) {
+        const from = keyedSecretName(baseKey, field);
+        const to = keyedSecretName(storageKey, field);
+        if (!typed[field] && !copySecret(from, to)) deleteSecret(to);
+        if (hasSecret(from)) leftBehind.push(from);
+        if ((field === 'password' || field === 'token') && entry[field] === `$secret:${from}`) {
+          entry[field] = `$secret:${to}`;
+        }
+      }
+    }
+
+    const unchanged = base && !moving && isDeepStrictEqual(entry, base);
     if (!unchanged) {
       // A changed instance name moves the entry: drop it under its old key.
-      if (baseKey && baseKey !== storageKey) delete integrations[baseKey];
+      if (moving) delete integrations[baseKey];
       integrations[storageKey] = entry;
       // saveConfig returns false on a write failure (or a reentrant save) — surface
       // that as a 500 instead of reporting success, matching services.js POST /config.
       if (!saveConfig(config)) return apiError(res, 500, 'Failed to persist config');
+      for (const name of leftBehind) deleteSecret(name);
     }
     // A save is the way to say "try again": the next refresh attempts it even
     // when its login was refused and nothing in it changed (#239).
