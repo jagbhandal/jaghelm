@@ -93,6 +93,32 @@ export const ADGUARD_SECONDARY = Object.freeze({
 });
 
 /**
+ * The custom builder adding a second custom integration (#414). It has no
+ * Instance Name field and always derives `_custom`, so with one stored there
+ * the save is refused with `refused`, which the form shows as a save error.
+ */
+export const CUSTOM_BUILDER = Object.freeze({
+  key: '_custom',
+  entry: { url: 'http://first.example.test' },
+  /** + Custom Integration, a Base URL, then Save. */
+  add: {
+    type: '_custom',
+    url: 'http://second.example.test',
+    enabled: true,
+    target: '',
+    username: '',
+    create: true,
+  },
+  refused: {
+    status: 409,
+    body: {
+      error: "A custom integration is already saved under '_custom'; edit or remove it first",
+      field: 'instance',
+    },
+  },
+});
+
+/**
  * Values that are set but falsy, which the form used to show as empty and an
  * unchanged save then removed.
  */

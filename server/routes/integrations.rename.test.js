@@ -29,7 +29,8 @@ const { initSecrets, setSecret, hasSecret } = await import('../secrets.js');
 const { initRegistry } = await import('../integrations/registry.js');
 const { resolveIntegrationConfig } = await import('../integrations/lib/config.js');
 const { integrationRoutes } = await import('./integrations.js');
-const { ADGUARD_PRIMARY, ADGUARD_SECONDARY } = await import('./fixtures/settingsForm.js');
+const { ADGUARD_PRIMARY, ADGUARD_SECONDARY, CUSTOM_BUILDER } =
+  await import('./fixtures/settingsForm.js');
 
 initSecrets();
 await initRegistry();
@@ -225,22 +226,12 @@ test('a new integration added from the Settings form onto a taken key is refused
   assert.equal(fileText(), before.file);
   assert.equal(secretsText(), before.secrets);
 
-  // The custom builder has no instance field; its refusal says only whose key it is.
-  handEdit(yaml.dump({ integrations: { _custom: { url: 'http://first.example.test' } } }));
-  const custom = await save({
-    type: '_custom',
-    url: 'http://second.example.test',
-    enabled: true,
-    target: '',
-    username: '',
-    create: true,
-  });
-  assert.equal(custom.status, 409);
-  assert.deepEqual(custom.body, {
-    error: "Integration '_custom' already uses that key",
-    field: 'instance',
-  });
-  assert.deepEqual(stored(), { _custom: { url: 'http://first.example.test' } });
+  // The custom builder has no instance field; its refusal says what to do instead.
+  handEdit(yaml.dump({ integrations: { [CUSTOM_BUILDER.key]: CUSTOM_BUILDER.entry } }));
+  const custom = await save(CUSTOM_BUILDER.add);
+  assert.equal(custom.status, CUSTOM_BUILDER.refused.status);
+  assert.deepEqual(custom.body, CUSTOM_BUILDER.refused.body);
+  assert.deepEqual(stored(), { [CUSTOM_BUILDER.key]: CUSTOM_BUILDER.entry });
 
   // Onto a free key, it is added as before.
   const added = await save({
