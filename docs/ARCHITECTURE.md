@@ -332,25 +332,45 @@ too: the parts of the node whose queries failed this cycle (`NODE_READS`:
 failure on every node: the `up` query failing leaves every node's reachability
 unread, and a metric query failing that metric. A node missing from an answer
 that succeeded has no data for that reading, which is not a failure.
-No `up` series for a node is told from Prometheus's own state, not from what
-the process has seen (#470): a Prometheus that has just started (a reboot that
-brings it up with JagHelm, or one back after an outage longer than its
-lookback) answers every query with no series until it scrapes. When the `up`
-query answered and a node has no `up` series and no CPU, memory or disk
-reading, discovery reads Prometheus's target list
+A node `up` alone would leave unreachable is checked against Prometheus's own
+state, not against what the process has seen (#470): a Prometheus that has
+just started (a reboot that brings it up with JagHelm, or one back after an
+outage longer than its lookback) answers every query with no series until it
+scrapes. When the `up` query answered and a node has `up` 0, or no `up` series
+and no CPU, memory or disk reading, discovery reads Prometheus's target list
 (`GET /api/v1/targets?state=active`, `promTargets`), once for the cycle,
-through the same client as the queries. A node with a target (matched on the
-same `node` label) that Prometheus hasn't scraped yet (`health` "unknown", or
-no last scrape) is unread: every part in `failedReads`, while Prometheus counts
-as answering. A node with no target of its own is left as it is, so with no
-metric either the model judges it unreachable and push pages
-`host_unreachable` once. If the targets read fails, those nodes are unread and
-Prometheus counts as failed, with the targets read's error. A cycle in which
-every node has an `up` series (or metrics) reads no targets, so a Prometheus
-proxy that allows only queries costs nothing until a node loses its `up`
+through the same client as the queries; a node's targets are those with its
+`node` label. Prometheus writes an `up` sample on every scrape, 0 included, so
+a target with no `up` series is never the host's fault:
+
+- No `up` series and no target: left as it is, so with no metric either the
+  model judges it unreachable and push pages `host_unreachable` once.
+- No `up` series, and no target of the node scraped yet (`health` "unknown",
+  or no last scrape): unread, every part in `failedReads`, while Prometheus
+  counts as answering.
+- No `up` series, and a target of the node scraped: Prometheus scraped it and
+  stored nothing, as when a full disk fails its writes. `up` is asked again
+  for those nodes, since a first scrape that ended between the `up` query and
+  the targets read looks the same. A node with its `up` series by then is
+  unread for the cycle; for one still without, Prometheus counts as failed,
+  "Prometheus scraped <nodes> but stored no up series", and the node is
+  unread. That is one `source_down`, not a `host_unreachable` per node.
+- `up` 0 while a target of the node is not scraped yet, or has answered a
+  scrape since the query: unread for the cycle, while Prometheus counts as
+  answering. On a reboot Prometheus can scrape cAdvisor before it listens
+  while node-exporter is still unscraped, which makes the node's `up` 0. A
+  host really down has every target scraped and down within one scrape
+  interval, so this delays its page by at most that.
+
+If the targets read fails, a node with no `up` series is unread and
+Prometheus counts as failed, with the targets read's error; a node with `up` 0
+keeps it, as Prometheus's own answer. A cycle in which every node has `up` 1
+(or no `up` series but metrics) reads no targets, so a Prometheus proxy that
+allows only queries costs nothing until a node reads 0 or loses its `up`
 series. Prometheus counts as failed for the cycle when any node query fails,
-or that targets read. While Prometheus fails, or a node is unread because it
-hasn't been scraped, no presence breadcrumbs are drawn, since a container
+the targets read fails, or it stored no `up` series for a node it scraped.
+While Prometheus fails, or a node is unread because it hasn't been scraped, no
+presence breadcrumbs are drawn, since a container
 missing from the list may still be running. The status model makes what a failed source feeds unknown (4.7), and
 only that: for a host, only the readings whose queries failed. Push holds an
 unknown at its last known state, so a metric query that keeps failing holds
@@ -769,8 +789,9 @@ integration connection-test endpoint.
   monitor count or source changed; and one line per boot for containers no
   monitor went to. A `services.yaml` mapping to a monitor Kuma does not have
   (or a paused one), a `monitor_per_node` key that is no node, and a mapping of
-  the wrong type each warn once per boot. Prometheus failing (any node query of the cycle, or
-  the targets read a node with no `up` series needed) and Kuma failing (no
+  the wrong type each warn once per boot. Prometheus failing (any node query of the cycle,
+  the targets read a node with no `up` series needed, or no `up` series stored
+  for a node it scraped) and Kuma failing (no
   monitors loaded: unreachable, non-2xx, or a status page with none) each warn
   once, with the error, and their recovery logs once at info with how long it
   was down; the failed cycles in between log at debug
@@ -912,9 +933,11 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   naming it, never crit. A node
   whose `up` read failed is unknown; one whose metric read failed has that
   condition unknown, so it is unknown unless a reading that was read is worse.
-  A node Prometheus has a target for but hasn't scraped yet (4.2, #470) is
-  unknown while Prometheus answers, with the reason "No data: not scraped by
-  Prometheus yet", and so are the containers it ran, kept from last cycle.
+  A node Prometheus has a target for but hasn't scraped yet (4.2, #470), or
+  whose `up` is 0 while one of its targets hasn't been scraped, is unknown
+  while Prometheus answers, with the reason "No data: not scraped by
+  Prometheus yet", and so are the containers it ran, kept from last cycle. A
+  node Prometheus scraped and stored no `up` series for is Prometheus failing.
   What the failed source fed last cycle and no longer reports (the container
   list, the nodes, the UPS while Prometheus fails) is kept, as unknown, until
   it answers. Prometheus counts as failed when the services refresh says so or
@@ -1029,13 +1052,16 @@ that changed:
   a job failing pages as on any cycle. (Before, the first snapshot waited for
   the UPS read and Prometheus, which silenced every push meanwhile, for as
   long as the UPS query kept failing.)
-- A Prometheus that hasn't scraped yet (#470; 4.2) sends nothing for its
-  nodes: each is unknown until scraped, so with a snapshot it holds as it was
-  and sends no `host_unreachable` and no `host_recovered`, and with none it is
-  new once read and pages then only if in trouble. That holds whichever of
-  JagHelm and Prometheus started first, since the rule reads Prometheus's
-  targets each time; the guard it replaced (#232's `upSeriesSeen`) lived in
-  the process's memory, and a restart lost it.
+- A Prometheus that hasn't scraped yet (#470; 4.2), all of a node or part of
+  it, sends nothing for its nodes: each is unknown until scraped, so with a
+  snapshot it holds as it was and sends no `host_unreachable` and no
+  `host_recovered`, and with none it is new once read and pages then only if
+  in trouble. That holds whichever of JagHelm and Prometheus started first,
+  since the rule reads Prometheus's targets each time; the guard it replaced
+  (#232's `upSeriesSeen`) lived in the process's memory, and a restart lost
+  it. A Prometheus that scrapes and stores nothing (a full disk) is a failed
+  source: one `source_down` after two cycles and one `source_recovered`, no
+  host push.
 - A monitoring source (Prometheus, Kuma, NUT) the model lists as failed for two
   cycles in a row (about a minute) sends one `source_down`, and one
   `source_recovered` when it answers. The snapshot keeps each source as `ok`,

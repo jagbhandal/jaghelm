@@ -160,8 +160,8 @@ const CELSIUS = {
  *   `reachable`, or, for a node with no `up` series, a metric read failed), or
  *   the node is missing from a failed cycle → unknown, never crit. With
  *   `reachable` unread while Prometheus answered, Prometheus has a target for
- *   the node that it has not scraped yet (#470, discovery.js), and the reason
- *   says so.
+ *   the node that it has not scraped yet (no `up` series, or `up` 0 from the
+ *   targets it has: #470, discovery.js), and the reason says so.
  * - Unreachable: `up` is 0, or it has no `up` series and no metric, while
  *   Prometheus answered → crit (push pages it as host_unreachable).
  * - Each reading that was read: its level (levelOf). A reading whose query

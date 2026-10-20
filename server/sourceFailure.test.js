@@ -50,8 +50,10 @@ const CONTAINERS = { vm103: ['gitea', 'radarr', 'postgres'], pi: ['adguard'], na
 // What each upstream does this cycle. Tests change it between cycles.
 const world = {
   // 'fresh': Prometheus answers every query, but has scraped nothing yet: its
-  // targets are known and not scraped (#470).
-  prometheus: 'ok', // 'ok' | 'http500' | 'timeout' | 'containers500' | 'fresh'
+  // targets are known and not scraped (#470). 'empty': it scrapes, its targets
+  // healthy, but stores nothing (a full disk failing its writes), so every
+  // query answers with no series (#470).
+  prometheus: 'ok', // 'ok' | 'http500' | 'timeout' | 'containers500' | 'fresh' | 'empty'
   kuma: 'ok', // 'ok' | 'http500' | 'refused'
   up: { vm103: 1, pi: 1, nas: 1 },
   radarr: 'down', // Kuma's status for radarr
@@ -60,9 +62,13 @@ const world = {
   rejects: null, // (query) => true for a query Prometheus answers with HTTP 400
   // #470: nodes Prometheus has no series and no target for (a host gone from it).
   gone: [],
-  // #470: how /api/v1/targets answers: 'ok' (each node's target, not gone),
+  // #470: how /api/v1/targets answers: 'ok' (each node's targets, not gone),
   // or 'http403' (a proxy that lets only queries through).
   targets: 'ok',
+  // #470: nodes whose node-exporter Prometheus hasn't scraped yet, while it has
+  // their cAdvisor (a reboot): their `up` is world.up's (cAdvisor's), and they
+  // have no other series.
+  unscraped: [],
 };
 // How many times Prometheus's target list was read (#470).
 let targetReads = 0;
@@ -78,6 +84,7 @@ function reset() {
     rejects: null,
     gone: [],
     targets: 'ok',
+    unscraped: [],
   });
 }
 
@@ -101,7 +108,7 @@ function promAnswer(q) {
     throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
   }
   if (world.rejects?.(q)) return json(400, { status: 'error', errorType: 'bad_data', error: 'parse error' });
-  if (world.prometheus === 'fresh') return vector([]);
+  if (world.prometheus === 'fresh' || world.prometheus === 'empty') return vector([]);
   // One query reads the four UPS series, told apart by name (#234).
   if (q.includes('nut_')) {
     return vector([
@@ -114,7 +121,8 @@ function promAnswer(q) {
   // carries its `node` label, and series that share a query their name.
   const nodes = [...q.matchAll(/node=~"([^"]+)"/g)]
     .flatMap((m) => m[1].split('|'))
-    .filter((node) => !world.gone.includes(node));
+    .filter((node) => !world.gone.includes(node))
+    .filter((node) => q.includes('up{') || !world.unscraped.includes(node));
   const perNode = (fn) => vector(nodes.flatMap((node) => fn(node).map((s) => ({ ...s, metric: { node, ...s.metric } }))));
   if (q.includes('container_')) {
     if (world.prometheus === 'containers500') {
@@ -143,21 +151,26 @@ function promAnswer(q) {
   return vector([]);
 }
 
-// Prometheus's active targets (#470): one per node it has, scraped unless it
-// has just started.
+// Prometheus's active targets (#470): each node's node-exporter and cAdvisor,
+// scraped unless it has just started (or, for node-exporter, the node is
+// world.unscraped).
 function targetsAnswer() {
   targetReads += 1;
   if (world.prometheus === 'http500') return json(500, { status: 'error', errorType: 'internal', error: 'boom' });
   if (world.prometheus === 'timeout') throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
   if (world.targets === 'http403') return json(403, { status: 'error', error: 'forbidden' });
   const fresh = world.prometheus === 'fresh';
+  const target = (node, port, job, scraped) => ({
+    labels: { instance: `${node}:${port}`, job, node },
+    health: scraped ? (world.up[node] > 0 ? 'up' : 'down') : 'unknown',
+    lastScrape: scraped ? new Date(EVAL * 1000).toISOString() : '0001-01-01T00:00:00Z',
+  });
   const activeTargets = Object.keys(world.up)
     .filter((node) => !world.gone.includes(node))
-    .map((node) => ({
-      labels: { instance: `${node}:9100`, job: 'node', node },
-      health: fresh ? 'unknown' : world.up[node] > 0 ? 'up' : 'down',
-      lastScrape: fresh ? '0001-01-01T00:00:00Z' : new Date(EVAL * 1000).toISOString(),
-    }));
+    .flatMap((node) => [
+      target(node, 9100, 'node', !fresh && !world.unscraped.includes(node)),
+      target(node, 8080, 'cadvisor', !fresh),
+    ]);
   return json(200, { status: 'success', data: { activeTargets, droppedTargets: [] } });
 }
 
@@ -664,6 +677,85 @@ test('#470: the targets read failing holds a gone node unread; it pages once the
     world.targets = 'ok';
     await p.cycle();
     assert.deepEqual(p.sent, ['host_unreachable nas']);
+  } finally {
+    p.done();
+  }
+});
+
+test('#470: Prometheus scraping but storing nothing (a full disk failing its writes) pages once that it is failing, and no host', async () => {
+  reset();
+  const p = pipeline();
+  try {
+    await p.boot();
+    // Its targets are scraped and healthy, but past its lookback no series is
+    // left: no node has an up series or a metric.
+    world.prometheus = 'empty';
+    const sent = await perCycle(p, 3);
+    const services = getCached('services');
+    assert.equal(services.sources.prometheus.ok, false, 'Prometheus scraped them: its up series should be there');
+    assert.equal(p.status.sources.prometheus.state, 'failed');
+    assert.equal(p.status.sources.prometheus.error, 'Prometheus scraped vm103, pi, nas but stored no up series');
+    for (const node of ['vm103', 'pi', 'nas']) {
+      assert.deepEqual(services.nodes[node].failedReads, [...NODE_READS], node);
+      assert.equal(entity(p, `nodes/${node}`).state, 'unknown', node);
+    }
+    assert.deepEqual(sent, [[], ['source_down prometheus'], []], 'one push for the source, none per host');
+    assert.equal(
+      p.events.find((e) => e.type === 'source_down').body,
+      'Prometheus · Prometheus scraped vm103, pi, nas but stored no up series'
+    );
+
+    // The disk freed: the series are back.
+    world.prometheus = 'ok';
+    const back = await perCycle(p, 2);
+    assert.deepEqual(back, [['source_recovered prometheus'], []], 'no host_unreachable, no host_recovered');
+    assert.equal(entity(p, 'nodes/pi').state, 'ok');
+  } finally {
+    p.done();
+  }
+});
+
+test('#470: a reboot where Prometheus scraped vm103\'s cAdvisor before it listened (up 0), and not its node-exporter yet: no push, then healthy with no push', async () => {
+  reset();
+  world.radarr = 'up';
+  world.unscraped = ['vm103'];
+  world.up.vm103 = 0;
+  const p = pipeline();
+  try {
+    // JagHelm's first cycle, with no snapshot, as on the reboot.
+    await p.cycle();
+    let services = getCached('services');
+    assert.equal(services.sources.prometheus.ok, true);
+    assert.equal(services.nodes.vm103.reachable, false, 'max by (node) (up) is cAdvisor\'s 0');
+    assert.deepEqual(services.nodes.vm103.failedReads, [...NODE_READS], 'its node-exporter is not scraped yet: unread');
+    assert.deepEqual(
+      [entity(p, 'nodes/vm103').state, entity(p, 'nodes/vm103').reason],
+      ['unknown', NOT_SCRAPED]
+    );
+    assert.deepEqual(services.nodes.pi.failedReads, [], 'the other nodes are read as usual');
+    assert.deepEqual(p.sent, [], 'no host_unreachable');
+
+    // The next scrape: node-exporter answers, and cAdvisor now listens.
+    world.unscraped = [];
+    world.up.vm103 = 1;
+    const reads = targetReads;
+    await p.cycle();
+    services = getCached('services');
+    assert.equal(targetReads, reads, 'every node has up 1: no targets read');
+    assert.equal(entity(p, 'nodes/vm103').state, 'ok');
+    assert.deepEqual(p.sent, [], 'no host_recovered');
+
+    // vm103 really goes down: every target of it scraped and down. It pages once.
+    world.up.vm103 = 0;
+    const down = await perCycle(p, 2);
+    assert.deepEqual(down, [['host_unreachable vm103'], []]);
+    assert.deepEqual(
+      [entity(p, 'nodes/vm103').state, entity(p, 'nodes/vm103').reason],
+      ['crit', "Unreachable: Prometheus can't scrape it"]
+    );
+    world.up.vm103 = 1;
+    await p.cycle();
+    assert.deepEqual(p.sent, ['host_unreachable vm103', 'host_recovered vm103']);
   } finally {
     p.done();
   }

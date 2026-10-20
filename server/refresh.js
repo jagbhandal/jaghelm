@@ -728,7 +728,8 @@ async function _refreshServices() {
 
     // Prometheus failed this cycle if any query did: every node's `ok` is then
     // false, with the same `failedReads` naming what the failed queries feed.
-    // So did the targets read, when a node with no `up` series needed it: only
+    // So did the targets read, when a node with no `up` series needed it, and
+    // so does a node Prometheus scraped but stored no `up` series for: only
     // those nodes' `ok` is false then (discovery.js, #470).
     const nodeResults = [];
     const promErrors = [];

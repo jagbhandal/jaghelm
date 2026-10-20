@@ -14,9 +14,10 @@
  * so the refresh loop can tell a Prometheus outage from a host that stopped
  * reporting.
  *
- * Nor is a node Prometheus hasn't scraped yet (#470): a node with no `up`
- * series is looked up in Prometheus's target list (promTargets()), read only
- * on a cycle that has such a node, so the happy path asks nothing more.
+ * Nor is a node Prometheus hasn't scraped yet, or scraped and stored nothing
+ * for (#470): a node with `up` 0 or no `up` series is looked up in
+ * Prometheus's target list (promTargets()), read only on a cycle that has such
+ * a node, so the happy path asks nothing more.
  */
 
 import { createLogger } from './util/logger.js';
@@ -473,17 +474,27 @@ export const NODE_QUERIES = 13;
  * A node missing from an answer that succeeded has no data for that reading,
  * which is not a failure.
  *
- * No `up` series is told from Prometheus's own state, not from what this
- * process saw (#470): when the `up` query answered and a node has no `up`
- * series and no CPU, memory or disk reading (so the model would judge it
- * unreachable), Prometheus's target list is read, once for the call
- * (promTargets()). Such a node with a target (the same `node` label) that
- * Prometheus has not scraped yet is unread: every part in `failedReads`, `ok`
- * unchanged, as Prometheus failed at nothing. A node with no target of its own
- * is left as it is. When the targets read fails, each such node is unread, with
- * `ok` false and the targets read's `error`; a node with an `up` series is not
- * touched. A cycle where every node has an `up` series, or metrics, reads no
- * targets.
+ * A node the model would judge unreachable is first checked against
+ * Prometheus's own state, not what this process saw (#470). When the `up`
+ * query answered and a node has `up` 0, or no `up` series and no CPU, memory
+ * or disk reading, Prometheus's target list is read, once for the call
+ * (promTargets()); a node's targets are those with its `node` label.
+ * Prometheus writes an `up` sample on every scrape, 0 included, so:
+ * - No `up` series, no target: left as it is (the model pages it unreachable).
+ * - No `up` series, every target not scraped yet: unread (every part in
+ *   `failedReads`), `ok` unchanged, as Prometheus failed at nothing.
+ * - No `up` series, a target scraped: Prometheus stored nothing for it (a full
+ *   disk failing its writes). `up` is asked again for those nodes, as a scrape
+ *   that ended between the `up` query and the targets read looks the same: a
+ *   node with an `up` series by then is unread for the call, `ok` unchanged;
+ *   one still with none is unread with `ok` false and an `error` naming them.
+ * - `up` 0 while a target of the node is not scraped yet, or answered its scrape
+ *   since (a reboot: cAdvisor scraped before it listens, node-exporter not yet):
+ *   unread, `ok` unchanged. With every target scraped and down, as it is.
+ * When the targets read fails, each node with no `up` series is unread, with
+ * `ok` false and the targets read's `error`; a node with `up` 0 keeps it, as
+ * Prometheus's own answer. A node with `up` 1 is never touched, and a call
+ * where every node has `up` 1, or no `up` series but metrics, reads no targets.
  */
 export async function getNodesData(nodeLabels) {
   const labels = [...new Set(nodeLabels)];
@@ -551,7 +562,7 @@ export async function getNodesData(nodeLabels) {
       }),
     });
   }
-  if (answers[keys.indexOf('up')] !== null) await markUnscraped(out);
+  if (answers[keys.indexOf('up')] !== null) await checkTargets(out);
   return out;
 }
 
@@ -566,25 +577,62 @@ function notScrapedYet(t) {
 }
 
 /**
- * getNodesData's nodes with no `up` series and no usage reading, looked up in
- * Prometheus's target list (#470; see getNodesData). Updates `out` in place.
+ * getNodesData's nodes that `up` alone would leave unreachable, checked
+ * against Prometheus's target list (#470; see getNodesData). Updates `out` in
+ * place.
  */
-async function markUnscraped(out) {
-  const unsure = [...out].filter(([, d]) => d.reachable === null && !hasUsage(d.metrics));
-  if (unsure.length === 0) return;
+async function checkTargets(out) {
+  const noUp = [...out].filter(([, d]) => d.reachable === null && !hasUsage(d.metrics));
+  const down = [...out].filter(([, d]) => d.reachable === false);
+  if (noUp.length === 0 && down.length === 0) return;
   let targets;
   try {
     targets = await promTargets();
   } catch (err) {
-    for (const [label, d] of unsure) {
-      out.set(label, { ...d, ok: false, error: d.error ?? err.message, failedReads: [...NODE_READS] });
-    }
+    for (const [label, d] of noUp) unread(out, label, d, err.message);
+    log.debug({ err: err.message }, 'Prometheus targets read failed');
     return;
   }
-  const pending = new Set(targets.filter(notScrapedYet).map((t) => t?.labels?.node));
-  for (const [label, d] of unsure) {
-    if (pending.has(label)) out.set(label, { ...d, failedReads: [...NODE_READS] });
+  const targetsOf = (label) => targets.filter((t) => t?.labels?.node === label);
+  for (const [label, d] of down) {
+    if (targetsOf(label).some((t) => notScrapedYet(t) || t.health === 'up')) unread(out, label, d);
   }
+  const scraped = [];
+  for (const [label, d] of noUp) {
+    const mine = targetsOf(label);
+    if (mine.length === 0) continue;
+    if (mine.every(notScrapedYet)) unread(out, label, d);
+    else scraped.push([label, d]);
+  }
+  if (scraped.length > 0) await checkStored(out, scraped);
+}
+
+/**
+ * Nodes with no `up` series and a target Prometheus has scraped (checkTargets),
+ * asked for `up` again: those still with none are unread with `ok` false, as
+ * Prometheus stored nothing for them; the others are unread for this call.
+ */
+async function checkStored(out, nodes) {
+  const labels = nodes.map(([label]) => label);
+  let byNode;
+  try {
+    byNode = splitByNode(await promQuery(`max by (node) (up{${nodeMatcher(labels)}})`));
+  } catch (err) {
+    for (const [label, d] of nodes) unread(out, label, d, err.message);
+    return;
+  }
+  const missing = labels.filter((label) => !byNode.has(label));
+  const error = `Prometheus scraped ${missing.join(', ')} but stored no up series`;
+  for (const [label, d] of nodes) unread(out, label, d, missing.includes(label) ? error : null);
+}
+
+/**
+ * Mark node `label` (its result `d`) unread: every part in `failedReads`. With
+ * an `error`, Prometheus failed it: `ok` false, and the first error kept.
+ */
+function unread(out, label, d, error = null) {
+  const failure = error ? { ok: false, error: d.error ?? error } : {};
+  out.set(label, { ...d, ...failure, failedReads: [...NODE_READS] });
 }
 
 function formatUptime(s) {

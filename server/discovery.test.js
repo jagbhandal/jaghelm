@@ -254,10 +254,12 @@ test('getNodesData, one node: failedReads names the parts whose queries failed',
 
 // ── #470: no `up` series is told from Prometheus's own targets ───────────
 // A Prometheus that has just started answers every query with no series until
-// it scrapes. A node with no `up` series is then asked about once a cycle, in
-// Prometheus's target list: a target of that node not scraped yet makes the
-// node unread (no signal), and no target at all leaves it as before (with no
-// metric either, the model judges it unreachable).
+// it scrapes. A node with no `up` series, or `up` 0, is then asked about once a
+// cycle, in Prometheus's target list: a target of that node not scraped yet
+// makes the node unread (no signal), and no target at all leaves it as before
+// (with no metric either, the model judges it unreachable). Prometheus writes
+// `up` on every scrape, so a scraped target with no `up` series is Prometheus
+// storing nothing: a failure of its own.
 
 const { NODE_READS } = await import('./discovery.js');
 const TARGETS_PATH = '/api/v1/targets';
@@ -327,17 +329,149 @@ test('#470: a node with no up series and no target of its own is as before: noth
   }
 });
 
-test('#470: a node with no up series whose target has been scraped is as before', async () => {
+/**
+ * A Prometheus whose `up` query answers `ups[i]` on its i-th ask (the last
+ * one after that; each a map of node to value, a node left out having no
+ * series), with no other series, and whose target list is `targets`. `ups`
+ * entries may be a function, to fail the ask.
+ */
+function promWithUp(ups, targets) {
+  const reads = [];
+  const upQueries = [];
+  const fetch = async (url) => {
+    const u = String(url);
+    reads.push(u);
+    if (new URL(u).pathname === TARGETS_PATH) return targets();
+    const q = decodeURIComponent(u);
+    if (!q.includes('max by (node) (up{')) return promResult([]);
+    upQueries.push(q);
+    const up = ups[Math.min(upQueries.length, ups.length) - 1];
+    if (typeof up === 'function') return up();
+    return answer(200, {
+      status: 'success',
+      data: { result: Object.entries(up).map(([node, v]) => ({ metric: { node }, value: [0, String(v)] })) },
+    });
+  };
+  return { fetch, upQueries, targetReads: () => reads.filter((u) => new URL(u).pathname === TARGETS_PATH) };
+}
+
+test('#470: no up series while a target of the node has been scraped: Prometheus stored nothing, the node is unread and the result ok:false naming it', async () => {
   for (const health of ['up', 'down']) {
-    const prom = coldProm(() => targetsAnswer([target('vm-test', health)]));
+    // vm-test-3 has its up series: untouched. Its other target was scraped too.
+    const prom = promWithUp([{ 'vm-test-3': 1 }], () =>
+      targetsAnswer([
+        target('vm-test', health),
+        { ...target('vm-test-2', 'unknown'), labels: { ...target('vm-test-2', 'up').labels, job: 'cadvisor' } },
+        target('vm-test-2', health),
+        target('vm-test-3', 'up'),
+      ])
+    );
     globalThis.fetch = prom.fetch;
     try {
-      const data = await nodeData('vm-test');
-      assert.equal(data.ok, true, health);
-      assert.deepEqual(data.failedReads, [], health);
+      const data = await getNodesData(['vm-test', 'vm-test-2', 'vm-test-3']);
+      for (const node of ['vm-test', 'vm-test-2']) {
+        const d = data.get(node);
+        assert.equal(d.ok, false, `${health} ${node}`);
+        assert.equal(d.error, 'Prometheus scraped vm-test, vm-test-2 but stored no up series', `${health} ${node}`);
+        assert.deepEqual(d.failedReads, [...NODE_READS], `${health} ${node}`);
+        assert.equal(d.reachable, null);
+      }
+      assert.equal(data.get('vm-test-3').ok, true);
+      assert.deepEqual(data.get('vm-test-3').failedReads, []);
+      assert.equal(prom.targetReads().length, 1, health);
+      assert.equal(prom.upQueries.length, 2, `${health}: up asked again, for those nodes only`);
+      assert.match(prom.upQueries[1], /up\{node=~"vm-test\|vm-test-2"\}/);
     } finally {
       globalThis.fetch = realFetch;
     }
+  }
+});
+
+test('#470: a node scraped between the up query and the targets read has its up series when asked again: unread, nothing failed', async () => {
+  const prom = promWithUp([{}, { 'vm-test': 1 }], () => targetsAnswer([target('vm-test', 'up')]));
+  globalThis.fetch = prom.fetch;
+  try {
+    const data = await nodeData('vm-test');
+    assert.equal(data.ok, true);
+    assert.equal(data.error, null);
+    assert.deepEqual(data.failedReads, [...NODE_READS]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('#470: the up query asked again failing makes the node unread, and the result ok:false with why', async () => {
+  const prom = promWithUp([{}, async () => answer(500, { status: 'error', error: 'boom' })], () =>
+    targetsAnswer([target('vm-test', 'up')])
+  );
+  globalThis.fetch = prom.fetch;
+  try {
+    const data = await nodeData('vm-test');
+    assert.equal(data.ok, false);
+    assert.equal(data.error, 'Prometheus answered HTTP 500');
+    assert.deepEqual(data.failedReads, [...NODE_READS]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+// A reboot: Prometheus scraped the node's cAdvisor before it listened (up 0),
+// and not its node-exporter yet, so `max by (node) (up)` is 0.
+const cadvisor = (node, health) => ({
+  ...target(node, health),
+  labels: { instance: `${node}:8080`, job: 'cadvisor', node },
+});
+
+test('#470: up 0 while a target of the node is not scraped yet, or answered since, is unread, and nothing failed', async () => {
+  for (const [why, targets] of [
+    ['node-exporter not scraped yet', [cadvisor('vm-test', 'down'), target('vm-test', 'unknown')]],
+    ['node-exporter with no last scrape', [cadvisor('vm-test', 'down'), { ...target('vm-test', 'up'), lastScrape: undefined }]],
+    ['cAdvisor answered since the up query', [cadvisor('vm-test', 'up'), target('vm-test', 'down')]],
+  ]) {
+    const prom = promWithUp([{ 'vm-test': 0 }], () => targetsAnswer(targets));
+    globalThis.fetch = prom.fetch;
+    try {
+      const data = await nodeData('vm-test');
+      assert.equal(data.ok, true, why);
+      assert.equal(data.reachable, false, why);
+      assert.deepEqual(data.failedReads, [...NODE_READS], why);
+      assert.equal(prom.targetReads().length, 1, why);
+      assert.equal(prom.upQueries.length, 1, `${why}: up not asked again`);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+});
+
+test('#470: up 0 with every target of the node scraped and down, or none of its own, is as before', async () => {
+  for (const [why, targets] of [
+    ['every target down', [cadvisor('vm-test', 'down'), target('vm-test', 'down'), target('other', 'unknown')]],
+    ['no target of its own', [target('other', 'unknown')]],
+  ]) {
+    const prom = promWithUp([{ 'vm-test': 0 }], () => targetsAnswer(targets));
+    globalThis.fetch = prom.fetch;
+    try {
+      const data = await nodeData('vm-test');
+      assert.equal(data.ok, true, why);
+      assert.equal(data.reachable, false, why);
+      assert.deepEqual(data.failedReads, [], why);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+});
+
+test('#470: up 0 when the targets read fails stands, as Prometheus\'s own answer: nothing unread, nothing failed', async () => {
+  const prom = promWithUp([{ 'vm-test': 0 }], async () => answer(403, { error: 'forbidden' }));
+  globalThis.fetch = prom.fetch;
+  try {
+    const data = await nodeData('vm-test');
+    assert.equal(data.ok, true);
+    assert.equal(data.reachable, false);
+    assert.deepEqual(data.failedReads, []);
+    assert.equal(prom.targetReads().length, 1);
+  } finally {
+    globalThis.fetch = realFetch;
   }
 });
 
