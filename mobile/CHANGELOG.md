@@ -4,6 +4,27 @@ All notable changes to the JagHelm Android app are documented here. The format i
 
 ## [Unreleased]
 
+### Changed
+- The app stops refreshing while it is in the background and refreshes at once when you come back to it, so it no longer uses data and battery while closed and no longer opens on data up to one refresh old.
+- Refreshes after the first load ask the server only for what changed: an unchanged service list or UPS reading comes back as a short `304 Not Modified` instead of the full data. Tapping the status bar still fetches everything.
+- The countdown in the status bar now matches when the next refresh really happens, including after a slow refresh or a change to the refresh interval.
+- The node detail screen shows both TEMP and DISK for a node that reports both,
+  such as the Pi, so you can see its temperature and how full its disk is.
+- Tapping a row under Active issues on the Overview opens its detail screen: a
+  down or unknown service opens that service, and a UPS or cron row opens the
+  incident with its cause. Back returns to the Overview. A service's row no
+  longer opens the service's web page directly; use Open on the service screen.
+- TalkBack reads an unknown service's row as "unknown" instead of spelling out
+  "UNKN".
+
+### Fixed
+- The UPS cell no longer shows MAINS while the UPS is on battery. It reads the
+  UPS status the way push and the web dashboard do: on battery and low battery
+  show ON BATTERY with an alert, and an unknown status shows NO SIGNAL instead
+  of a battery alarm.
+- A node card shows DISK instead of TEMP once its disk is 90 % full or more, so
+  a nearly full disk on a node that reports its temperature is no longer hidden.
+
 ## [1.2.0] — 2026-10-18
 
 The update notification toggle is now labelled Updates.
