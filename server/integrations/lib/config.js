@@ -11,7 +11,9 @@ import { resolveCredential, getSecret } from '../../secrets.js';
  *
  * Resolved credentials are placed under _-prefixed keys (_username, _password,
  * _token) so the original yaml fields ($secret:refs, plain values) remain
- * available unmodified for callers that need them.
+ * available unmodified for callers that need them. Whatever sends a credential
+ * reads the _ key: auth headers, query auth, and an endpoint's {token},
+ * {password} or {username} (resolveEndpoint in extract.js, #425).
  */
 
 /**
@@ -68,7 +70,7 @@ export function resolveIntegrationConfig(type, yamlConfig) {
       resolved.url = resolveCredential(preset.envKeys.url, keyedSecretName(secretKey, 'url')) || config.url;
     }
     if (preset.envKeys.username) {
-      resolved._username = resolveCredential(preset.envKeys.username, keyedSecretName(secretKey, 'username')) || config.username;
+      resolved._username = resolveCredential(preset.envKeys.username, keyedSecretName(secretKey, 'username')) || resolveSecretRef(config.username);
     }
     if (preset.envKeys.password) {
       resolved._password = resolveCredential(preset.envKeys.password, keyedSecretName(secretKey, 'password')) || resolveSecretRef(config.password);
@@ -78,7 +80,7 @@ export function resolveIntegrationConfig(type, yamlConfig) {
     }
   } else {
     // Custom integration — resolve $secret: refs in credentials
-    resolved._username = config.username;
+    resolved._username = resolveSecretRef(config.username);
     resolved._password = resolveSecretRef(config.password);
     resolved._token = resolveSecretRef(config.token);
   }
