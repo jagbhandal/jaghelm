@@ -125,8 +125,8 @@ translucent token painted over that surface.
 `control-edge` is the edge of a control with no fill of its own, an empty
 checkbox or an off switch. WCAG 1.4.11 asks 3:1 of the boundary that shows
 where a control is; `border-strong` (1.4:1 to 1.5:1) and `surface-3` on the page
-(1.2:1 in light) are too faint for it. Its worst case is 3.84:1 (light, on
-surface-2).
+(1.2:1 in light) are too faint for it. Its worst case is 3.77:1 (light, in a
+hovered row on the page).
 
 Ruled out by name, because they fall below 4.5:1 somewhere and the mock never
 draws them (`FORBIDDEN` in the script):
