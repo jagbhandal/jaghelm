@@ -194,7 +194,13 @@ JAGHELM_ADGUARD_USER=admin
 JAGHELM_ADGUARD_PASS=secret
  
 JAGHELM_NPM_URL=http://192.168.x.x:81
-JAGHELM_GITEA_TOKEN=...
+```
+
+The Pipeline panel (recent Gitea commits) reads `GITEA_URL` and `GITEA_TOKEN`, without the prefix for now (#249 adds the `JAGHELM_` names). With `GITEA_URL` unset, JagHelm polls no Gitea and the dashboard has no Pipeline panel.
+
+```env
+GITEA_URL=http://192.168.x.x:3000
+GITEA_TOKEN=...
 ```
  
 The server listens on every IPv4 interface (`0.0.0.0`) on `PORT` (default 3099). Set `JAGHELM_HOST` to listen on one address instead, such as `127.0.0.1` for a reverse proxy on the same host with `network_mode: host`. In a bridge-network container keep the default (see `env.example`).
@@ -247,7 +253,7 @@ Ten themes (six dark, four light) inspired by common editor schemes — One Dark
  
 ### UPS power monitoring
  
-If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, JagHelm shows battery percentage, runtime, and load in a dedicated panel.
+If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, JagHelm shows battery percentage, runtime, load and the UPS model in a dedicated panel. JagHelm reads the UPS named `apcups` in NUT; other names are not read yet (#249). The panel shows once Prometheus has that UPS, and stays, reading "Unknown", while its exporter has been quiet for up to 7 days; without one the dashboard has no UPS panel. The Pipeline panel (recent Gitea commits) shows when `GITEA_URL` is set (see [Environment variables](#environment-variables)), with a banner while Gitea is unreachable.
  
 ### UI configuration with file escape hatch
  

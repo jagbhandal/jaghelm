@@ -4,16 +4,19 @@
  * ones it sends now, against a fixed list of series, and records every instant
  * query it answers so a test can count them.
  *
- * A series is { labels, value, rate? }: `labels` includes `__name__`, `value`
- * is the instant value, and `rate` is what rate() or irate() over a range gives
- * for it (a counter's per-second increase). rate() skips a series without one.
+ * A series is { labels, value, rate?, quiet? }: `labels` includes `__name__`,
+ * `value` is the instant value, and `rate` is what rate() or irate() over a
+ * range gives for it (a counter's per-second increase). rate() skips a series
+ * without one. A `quiet` series was scraped within any range asked but has no
+ * sample now (its exporter has gone away): only last_over_time() finds it.
  *
  * Supported: selectors with =, !=, =~ and !~ (regexes anchored, as Prometheus
  * does; strings in "…" with only \\ and \" escapes, which Prometheus also
  * accepts), answering their series sorted by label set as Prometheus does, so
  * code that keeps the first or the last series reads what it would live;
- * rate(sel[d]) and irate(sel[d]); sum, max, min, avg and count, each
- * with an optional `by (…)` before or after its argument; numbers; - + * /
+ * rate(sel[d]) and irate(sel[d]); last_over_time(sel[d]), which keeps the
+ * name as the homelab's Prometheus 3.15 does; sum, max, min, avg and count,
+ * each with an optional `by (…)` before or after its argument; numbers; - + * /
  * between scalars and vectors (vector with vector matched one to one on every
  * label but the name, which arithmetic drops); `or` (which matches label sets
  * without the name, as Prometheus does). Anything else is a parse error,
@@ -232,10 +235,17 @@ class Parser {
         vector: sel.vector.filter((s) => s.rate !== undefined).map((s) => ({ labels: withoutName(s.labels), value: s.rate })),
       };
     }
+    if (name === 'last_over_time') {
+      this.expect('op', '(');
+      const sel = this.selector(this.expect('id'), { withQuiet: true });
+      this.expect('range');
+      this.expect('op', ')');
+      return sel;
+    }
     return this.selector(name);
   }
 
-  selector(name) {
+  selector(name, { withQuiet = false } = {}) {
     const matchers = name ? [{ label: '__name__', op: '=', v: name }] : [];
     if (this.is('op', '{')) {
       this.next();
@@ -251,7 +261,7 @@ class Parser {
     if (matchers.length === 0) throw new Error('a selector needs a matcher');
     return {
       vector: this.series
-        .filter((s) => matchers.every((m) => matches(s.labels[m.label] ?? '', m)))
+        .filter((s) => (withQuiet || !s.quiet) && matchers.every((m) => matches(s.labels[m.label] ?? '', m)))
         .sort((a, b) => compareLabels(a.labels, b.labels))
         .map((s) => ({ labels: s.labels, value: s.value, rate: s.rate })),
     };

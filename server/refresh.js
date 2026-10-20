@@ -591,19 +591,35 @@ const UPS_METRICS = {
   load: 'nut_load',
 };
 
+// A UPS whose exporter has gone quiet still counts as set up for this long.
+const UPS_SEEN_WITHIN = '7d';
+
+// The UPS readings, plus the exporter's info series as last seen within
+// UPS_SEEN_WITHIN: one query (#234).
+const UPS_QUERY =
+  `{__name__=~"${Object.values(UPS_METRICS).join('|')}",ups="apcups"}` +
+  ` or last_over_time(nut_ups_info{ups="apcups"}[${UPS_SEEN_WITHIN}])`;
+
 /**
- * The payload is `{ status, charge, runtime, load, ok }`, read with one query
- * for all four series (#234). A value is null when Prometheus has no series for
- * it (no UPS) or the query failed; `ok` is false when it failed (#232), so the
- * push snapshot keeps the last UPS state instead of reading the failure as
- * "unknown". A Prometheus outage is logged by the services refresh, which
- * queries the same Prometheus every cycle.
+ * The payload is `{ status, charge, runtime, load, ok, configured, model }`,
+ * read with one query (#234). A value is null when Prometheus has no series for
+ * it (no UPS, or its exporter is quiet) or the query failed; `ok` is false when
+ * it failed (#232), so the push snapshot keeps the last UPS state instead of
+ * reading the failure as "unknown". A Prometheus outage is logged by the
+ * services refresh, which queries the same Prometheus every cycle.
+ *
+ * `configured` says whether this install has a UPS (#272): true when a reading
+ * is there now or the exporter's info series was seen within UPS_SEEN_WITHIN,
+ * false when neither, null when the query failed (not known). The dashboard
+ * shows the UPS panel by it. `model` is the UPS's description or model from
+ * that info series, or null. Nothing else from its labels is sent: they also
+ * carry the exporter's address, the driver and USB ids.
  */
 async function _refreshUPS() {
   try {
     let series = null;
     try {
-      series = await promQuery(`{__name__=~"${Object.values(UPS_METRICS).join('|')}",ups="apcups"}`);
+      series = await promQuery(UPS_QUERY);
     } catch (err) {
       log.debug({ err }, 'UPS read failed');
     }
@@ -615,7 +631,13 @@ async function _refreshUPS() {
       if (val !== null && (k === 'charge' || k === 'load')) val = val * 100;
       results[k] = val;
     }
+    // Found by its labels, not its name: older Prometheus versions drop the
+    // name in last_over_time.
+    const info = series?.find((r) => r.metric?.description || r.metric?.model)?.metric;
     results.ok = series !== null;
+    results.configured =
+      series === null ? null : Object.keys(UPS_METRICS).some((k) => results[k] !== null) || Boolean(info);
+    results.model = info?.description || info?.model || null;
     setCache('ups', results);
     return results;
   } catch (err) {
@@ -629,9 +651,27 @@ export async function refreshGitea() {
   return dedupe('gitea', _refreshGitea);
 }
 
+// What /api/gitea/activity answers when no Gitea is set up (#272): the
+// dashboard hides its Pipeline panel. Frozen: it is cached and served as is.
+const GITEA_NOT_CONFIGURED = Object.freeze({ configured: false });
+
+/** Whether a Gitea is set up: GITEA_URL is set (#249 adds the JAGHELM_ name). */
+function giteaConfigured() {
+  return Boolean(process.env.GITEA_URL);
+}
+
+/**
+ * The payload is the repos with recent commits, newest first, or
+ * GITEA_NOT_CONFIGURED when GITEA_URL is not set, which polls nothing. null
+ * (nothing cached) when Gitea failed, so the route answers 502.
+ */
 async function _refreshGitea() {
+  if (!giteaConfigured()) {
+    setCache('gitea', GITEA_NOT_CONFIGURED);
+    return GITEA_NOT_CONFIGURED;
+  }
   try {
-    const url = process.env.GITEA_URL || 'http://localhost:3060';
+    const url = process.env.GITEA_URL;
     const token = process.env.GITEA_TOKEN || '';
     // Header, not ?token= — Gitea logs full request URLs, which would leak it.
     const opts = token ? { headers: { Authorization: `token ${token}` } } : {};
@@ -927,6 +967,9 @@ export function startBackgroundRefresh() {
   const intervalMs = getRefreshIntervalMs();
   scheduleBackgroundRefresh(intervalMs);
   log.info({ intervalSec: intervalMs / 1000 }, 'background loop started');
+  // Once per boot, not per cycle: without GITEA_URL nothing is polled and the
+  // dashboard has no Pipeline panel, which a deploy check can see here.
+  if (!giteaConfigured()) log.info('Gitea panel off: GITEA_URL is not set');
   // Warm the cache immediately so the first dashboard load isn't a cold miss
   runBackgroundRefresh();
 }
