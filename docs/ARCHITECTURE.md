@@ -116,8 +116,10 @@ server/                     Express API (Node 26, ESM)
                             credential markers, see 6), dataDir, asyncHandler, dedupe
   testing/                  test-only helpers: a mock Prometheus that evaluates JagHelm's
                             PromQL over homelab-shaped series, the pre-#234 node reader, the
-                            status model's input builders (statusFixtures.js), and the
-                            loop's status-and-push step as refresh.js runs it (pushPipeline.js)
+                            status model's input builders (statusFixtures.js), the
+                            loop's status-and-push step as refresh.js runs it (pushPipeline.js),
+                            and the named status fixtures the cross-client suite runs on
+                            (statusScenarios.js, see 4.7)
 
 src/                        React 19 SPA (Vite 8)
   main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + view switch
@@ -947,6 +949,46 @@ that changed:
   digests are pushes only, never model issues; #267 records them in Alerts
   history.
 
+**The cross-client suite** (#293, spec §6's proof) holds the screens and push
+to the model: the same input can't give one answer on a screen and another in
+a push. Its fixtures (`server/testing/statusScenarios.js`) are named boards,
+each a list of cycles built as the loop builds them (`readStatusInputs` over
+the caches a refresh would leave, through one tracker), never status JSON
+written by hand: `healthy` and `incident` are the demo's boards
+(`demoStatusCycle` in `demoFixtures.js`, the same inputs `demoStatus` serves);
+`source-down` is the healthy board and then two cycles of Prometheus failing;
+`first-run` has nothing set up; `thresholds` puts node readings on, over, just
+under and held inside the lines of the threshold table. They are Node-only; an
+e2e or gallery run can import them on its Node side and hand a page the JSON.
+
+- **Push** (`server/status/crossClient.test.js`, `npm run test:ci`): each
+  fixture's status goes through the real push cycle, from an empty snapshot and
+  from the healthy board's, until it settles. Each push is matched to its
+  entity by the FCM `data` keys the Android app reads, and must carry the
+  entity's state (by its severity: critical, warning, info), the word its type
+  stands for ("Service down" is the model's Down), and the model's reason; the
+  app must route it to that entity. Every issue the model pages for must have
+  its push.
+- **Screen** (`src/ui/crossClient.test.jsx`, `npm run test:client`): each
+  fixture's status is drawn with the `src/ui` status components as a screen
+  draws the model (the attention panel, a tile per subsystem that has
+  anything, a row per entity, a meter per node reading coloured by its
+  condition), and read back: the headline's word (the model's word for the
+  board's state) and sentence, each tile's state, word and counts, each row's
+  state, word and reason, each meter's state and the number and line the
+  model's reason gives.
+
+A disagreement fails it unless a named exception (`KNOWN` in each file) covers
+it, where it says. An exception that stops happening fails too, so settling
+one is deleting its entry. Today's: a failed backup is crit on the screen but
+pushes at `warning` (#446, Jag to decide); a node new to the push snapshot
+sends "Host recovered" and never pages a reading already over its line; an
+empty board's attention panel isn't quiet; a meter rounds a reading the model
+rounds down (94.6 % reads "95%" on the meter, "94 %" in the reason). The legacy
+derivations (`src/utils/thresholds.js`, `mobile/src/data/derive.js`) are
+outside it; #306, #325 and #326 delete them, and Android's screens join it in
+#325.
+
 ## 5. Frontend architecture
 
 ```mermaid
@@ -1520,6 +1562,12 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   hook, the old-tab chunk reload, its per-build guard and stall watchdog
   (`src/chunkReload.test.jsx`) and the tab it reopens (`src/App.reloadTab.test.jsx`),
   and the `src/ui/` components.
+- **Cross-client status suite** (both of the above): five named status fixtures
+  (`server/testing/statusScenarios.js`) through the real push cycle
+  (`server/status/crossClient.test.js`, in `test:ci`) and through the `src/ui`
+  status components (`src/ui/crossClient.test.jsx`, in `test:client`): every
+  push and every status word, count, state and meter on the screen must agree
+  with the model, or be a named exception (see 4.7).
 - **Component gallery** (`npm run gallery:test`, Playwright in its pinned
   container; CI's `gallery` job): every state of every `src/ui/` component, in
   both themes and densities and the three accents where colour follows the
