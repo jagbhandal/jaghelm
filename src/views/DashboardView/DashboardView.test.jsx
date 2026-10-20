@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ConfigProvider } from '../../context/ConfigContext.jsx';
 import DashboardView from './DashboardView';
 import { useDashboardData } from './useDashboardData';
+import { defaultConfig } from '../../defaultConfig.js';
 
 // What the board renders on a fresh install and on an existing one (#272).
 //
@@ -61,28 +62,48 @@ function boardData(overrides = {}) {
 // The config a fresh install runs with: /api/display-config answered null, so
 // App keeps its built-in defaults (no saved layout, no section settings).
 function freshConfig(overrides = {}) {
-  return {
-    title: 'JAGHELM',
-    refreshInterval: 30,
-    sections: {},
-    gridLayout: null,
-    gridColumns: 24,
-    links: {},
-    ...overrides,
-  };
+  return { ...defaultConfig(), ...overrides };
 }
 
 const node = (name) => ({ display_name: name, services: [], metrics: {} });
 
-// No UPS: Prometheus answered and has no NUT series.
-const NO_UPS = { status: null, charge: null, runtime: null, load: null, ok: true };
-const UPS_ONLINE = { status: 1, charge: 100, runtime: 1800, load: 20, ok: true };
+// /api/ups bodies. No UPS: Prometheus answered and has never seen one.
+const NO_UPS = {
+  status: null,
+  charge: null,
+  runtime: null,
+  load: null,
+  ok: true,
+  configured: false,
+  model: null,
+};
+const UPS_ONLINE = {
+  status: 1,
+  charge: 100,
+  runtime: 1800,
+  load: 20,
+  ok: true,
+  configured: true,
+  model: 'Example UPS 900',
+};
+// Set up, its exporter quiet: no readings, but seen within the last 7 days.
+const UPS_DARK = { ...NO_UPS, configured: true, model: 'Example UPS 900' };
+// Prometheus failed, so whether there is a UPS is not known.
+const UPS_UNKNOWN = { ...NO_UPS, ok: false, configured: null };
 
-// Gitea unreachable: /api/gitea/activity fails, so commits stay at their [] seed.
+// /api/gitea/activity without GITEA_URL.
+const NO_GITEA = { configured: false };
+
+// Gitea set up and unreachable: /api/gitea/activity answers 502, so commits
+// stay at their [] seed.
 const GITEA_DOWN = (sources) => ({
   ...sources,
   commits: source({ error: 'HTTP 502' }),
 });
+
+// Sources, the default ones with `overrides` on top.
+const sourcesWith = (overrides) => ({ ...boardData().sources, ...overrides });
+const answered = (overrides = {}) => source({ lastSuccessMs: Date.now(), ...overrides });
 
 function renderBoard(config, data) {
   useDashboardData.mockReturnValue(data);
@@ -107,6 +128,14 @@ function renderBoard(config, data) {
 const panel = (title) => screen.getByText(title).closest('.glass-card');
 
 const gridLayouts = () => JSON.parse(screen.getByTestId('grid').getAttribute('data-layouts'));
+// The page-level live region (dnd-kit adds an assertive one of its own).
+const liveRegion = () => {
+  const polite = screen
+    .getAllByRole('status')
+    .filter((el) => el.getAttribute('aria-live') === 'polite');
+  expect(polite).toHaveLength(1);
+  return polite[0];
+};
 const ids = (items) => items.map((it) => it.i);
 
 beforeEach(() => {
@@ -131,13 +160,18 @@ describe('DashboardView on a fresh install', () => {
     expect(screen.queryByText(/Loading gateway/i)).not.toBeInTheDocument();
   });
 
-  it('hides the UPS and Pipeline panels when neither source is configured', () => {
+  it('hides the UPS and Pipeline panels when the server says neither is set up, and announces neither', () => {
     renderBoard(
       freshConfig(),
       boardData({
         serviceData: { nodes: { pve1: node('Proxmox') } },
         ups: NO_UPS,
-        sources: GITEA_DOWN(boardData().sources),
+        commits: NO_GITEA,
+        // The latest polls failed; the answers before them still hold.
+        sources: sourcesWith({
+          ups: answered({ error: 'HTTP 502' }),
+          commits: answered({ error: 'HTTP 502' }),
+        }),
       })
     );
 
@@ -151,20 +185,51 @@ describe('DashboardView on a fresh install', () => {
       expect(ids(layouts[bp])).not.toContain('ups');
       expect(ids(layouts[bp])).not.toContain('pipeline');
     }
+    // Nothing on the board shows them, so the live region doesn't announce them.
+    expect(liveRegion()).not.toHaveTextContent(/Gitea/);
+    expect(liveRegion()).not.toHaveTextContent(/UPS/);
   });
 
-  it('shows the UPS panel once the UPS reports, and keeps it with its down state after', () => {
+  it('shows a UPS that is set up but dark at load: "Unknown", with its model as the subtitle', () => {
+    renderBoard(
+      freshConfig(),
+      boardData({ serviceData: { nodes: { pve1: node('Proxmox') } }, ups: UPS_DARK })
+    );
+
+    expect(screen.getByText('UPS Power')).toBeInTheDocument();
+    expect(screen.getByText('Unknown')).toBeInTheDocument();
+    expect(within(panel('UPS Power')).getByText('Example UPS 900')).toBeInTheDocument();
+  });
+
+  it('shows the UPS panel when set up, keeps it while Prometheus fails, and hides it when the server says it is gone', () => {
     const data = boardData({ serviceData: { nodes: { pve1: node('Proxmox') } }, ups: UPS_ONLINE });
     const { rerenderWith } = renderBoard(freshConfig(), data);
 
     expect(screen.getByText('UPS Power')).toBeInTheDocument();
     expect(screen.getByText('Online')).toBeInTheDocument();
 
-    // The NUT exporter goes away: Prometheus has no UPS series any more.
-    rerenderWith({ ...data, ups: NO_UPS });
-
+    rerenderWith({ ...data, ups: UPS_UNKNOWN });
     expect(screen.getByText('UPS Power')).toBeInTheDocument();
     expect(screen.getByText('Unknown')).toBeInTheDocument();
+
+    rerenderWith({ ...data, ups: NO_UPS });
+    expect(screen.queryByText('UPS Power')).not.toBeInTheDocument();
+  });
+
+  it('shows a Gitea that fails at load (502), with its banner, and announces it', () => {
+    renderBoard(
+      freshConfig(),
+      boardData({
+        serviceData: { nodes: { pve1: node('Proxmox') } },
+        sources: GITEA_DOWN(boardData().sources),
+      })
+    );
+
+    expect(screen.getByText('Pipeline Activity')).toBeInTheDocument();
+    expect(
+      within(panel('Pipeline Activity')).getByText(/Pipeline activity unavailable/)
+    ).toBeInTheDocument();
+    expect(liveRegion()).toHaveTextContent(/Gitea unreachable/);
   });
 
   it('shows the Pipeline panel once Gitea answers, and keeps it with its banner when Gitea fails', () => {
@@ -188,7 +253,7 @@ describe('DashboardView on a fresh install', () => {
       boardData({
         serviceData: { nodes: { pve1: node('Proxmox') } },
         commits: [],
-        sources: { ...boardData().sources, commits: source({ lastSuccessMs: Date.now() }) },
+        sources: sourcesWith({ commits: answered() }),
       })
     );
 
@@ -196,19 +261,46 @@ describe('DashboardView on a fresh install', () => {
     expect(screen.getByText('No recent commits')).toBeInTheDocument();
   });
 
-  it('does not take a demo-style {} answer for a UPS or a Gitea', () => {
-    renderBoard(
-      freshConfig(),
-      boardData({
-        serviceData: { nodes: { pve1: node('Proxmox') } },
-        ups: {},
-        commits: {},
-        sources: { ...boardData().sources, commits: source({ lastSuccessMs: Date.now() }) },
-      })
-    );
+  it('shows neither panel before the server answers, nor for a demo-style {} answer', () => {
+    const data = boardData({ serviceData: { nodes: { pve1: node('Proxmox') } } });
+    const { rerenderWith } = renderBoard(freshConfig(), data);
 
     expect(screen.queryByText('UPS Power')).not.toBeInTheDocument();
     expect(screen.queryByText('Pipeline Activity')).not.toBeInTheDocument();
+
+    rerenderWith({ ...data, ups: {}, commits: {}, sources: sourcesWith({ commits: answered() }) });
+
+    expect(screen.queryByText('UPS Power')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pipeline Activity')).not.toBeInTheDocument();
+  });
+
+  it('does not announce a source whose panel is switched off in Settings', () => {
+    renderBoard(
+      freshConfig({ sections: { pipeline: { visible: false } } }),
+      boardData({
+        serviceData: { nodes: { pve1: node('Proxmox') } },
+        sources: GITEA_DOWN(boardData().sources),
+      })
+    );
+
+    expect(screen.queryByText('Pipeline Activity')).not.toBeInTheDocument();
+    expect(liveRegion()).not.toHaveTextContent(/Gitea/);
+  });
+
+  it('titles the UPS panel with the subtitle set in Settings, then the model, then "Battery backup"', () => {
+    const nodes = { pve1: node('Proxmox') };
+    const { unmount } = renderBoard(
+      freshConfig({ sections: { ups: { subtitle: 'Rack UPS' } } }),
+      boardData({ serviceData: { nodes }, ups: UPS_ONLINE })
+    );
+    expect(within(panel('UPS Power')).getByText('Rack UPS')).toBeInTheDocument();
+    unmount();
+
+    renderBoard(
+      freshConfig(),
+      boardData({ serviceData: { nodes }, ups: { ...UPS_ONLINE, model: null } })
+    );
+    expect(within(panel('UPS Power')).getByText('Battery backup')).toBeInTheDocument();
   });
 });
 
@@ -233,6 +325,7 @@ describe('DashboardView on an existing install', () => {
   };
 
   it('renders the node panels a saved layout names, at their saved positions', () => {
+    // Gitea hasn't answered yet: its panel waits, keeping its place.
     renderBoard(
       freshConfig({ gridLayout: SAVED }),
       boardData({ serviceData: { nodes: NODES }, ups: UPS_ONLINE })
@@ -245,12 +338,12 @@ describe('DashboardView on an existing install', () => {
     expect(gridLayouts().lg).toEqual(SAVED.lg);
   });
 
-  it('keeps the UPS and Pipeline panels a saved layout names, showing their down state', () => {
+  it('keeps the UPS and Pipeline panels a saved layout names while they are down, showing their down state', () => {
     renderBoard(
       freshConfig({ gridLayout: SAVED }),
       boardData({
         serviceData: { nodes: NODES },
-        ups: NO_UPS,
+        ups: UPS_DARK,
         sources: GITEA_DOWN(boardData().sources),
       })
     );
@@ -264,7 +357,26 @@ describe('DashboardView on an existing install', () => {
     expect(gridLayouts().lg).toEqual(SAVED.lg);
   });
 
-  it('leaves a saved layout untouched when it names no UPS or Pipeline panel and neither is configured', () => {
+  it('hides the UPS and Pipeline panels the server says are not set up, even when the saved layout names them', () => {
+    renderBoard(
+      freshConfig({ gridLayout: SAVED }),
+      boardData({
+        serviceData: { nodes: NODES },
+        ups: NO_UPS,
+        commits: NO_GITEA,
+        sources: sourcesWith({ commits: answered() }),
+      })
+    );
+
+    expect(screen.queryByText('UPS Power')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pipeline Activity')).not.toBeInTheDocument();
+    // Dropped from the layout, so the space they held is free; the rest is as saved.
+    expect(gridLayouts().lg).toEqual(
+      SAVED.lg.filter((it) => it.i !== 'ups' && it.i !== 'pipeline')
+    );
+  });
+
+  it('leaves a saved layout untouched when it names no UPS or Pipeline panel and neither is set up', () => {
     const saved = {
       lg: SAVED.lg.filter((it) => it.i !== 'ups' && it.i !== 'pipeline'),
     };
@@ -273,7 +385,8 @@ describe('DashboardView on an existing install', () => {
       boardData({
         serviceData: { nodes: NODES },
         ups: NO_UPS,
-        sources: GITEA_DOWN(boardData().sources),
+        commits: NO_GITEA,
+        sources: sourcesWith({ commits: answered() }),
       })
     );
 
@@ -291,13 +404,12 @@ describe('DashboardView on an existing install', () => {
     expect(screen.queryByText('UPS Power')).not.toBeInTheDocument();
   });
 
-  it('shows a panel switched on in Settings even before its source reports', () => {
+  it('does not show a panel switched on in Settings whose source is not set up', () => {
     renderBoard(
-      freshConfig({ sections: { ups: { visible: true } } }),
-      boardData({ serviceData: { nodes: { pve1: node('Proxmox') } }, ups: NO_UPS })
+      freshConfig({ gridLayout: SAVED, sections: { ups: { visible: true } } }),
+      boardData({ serviceData: { nodes: NODES }, ups: NO_UPS })
     );
 
-    expect(screen.getByText('UPS Power')).toBeInTheDocument();
-    expect(screen.getByText('Unknown')).toBeInTheDocument();
+    expect(screen.queryByText('UPS Power')).not.toBeInTheDocument();
   });
 });

@@ -21,6 +21,9 @@ import { useEffectiveLayouts } from './useEffectiveLayouts';
 import { useConfiguredPanels, SOURCE_PANEL_KEYS } from './configuredPanels';
 import { sourceBanner } from './sourceHealth';
 
+// What the Pipeline panel lists when /api/gitea/activity answered no list.
+const NO_COMMITS = [];
+
 /**
  * DashboardView — the main grid of node panels, dedicated section panels
  * (UPS, Gitea, todos, cron, quick launch), and user-defined custom groups.
@@ -96,20 +99,35 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
     return out;
   }, [sources, refreshIntervalMs, nowBucket]);
 
+  // Use useMemo for the `|| {}` / `|| []` fallbacks so a missing section/group
+  // doesn't allocate a fresh empty object/array on every render — that would
+  // invalidate downstream memos (nodeElements, customGroupElements) every tick
+  // and defeat the 304-stable-identity contract from useDashboardData.
+  const sc = useMemo(() => config.sections || {}, [config.sections]);
+  const customGroups = useMemo(() => config.customGroups || [], [config.customGroups]);
+
+  // UPS and Pipeline show only when the server says their source is set up
+  // (#272); the rule is in configuredPanels.js. true, false or null (not known).
+  const configured = useConfiguredPanels({ ups, commits, commitsSource: sources.commits });
+  const upsShown = configured.ups === true && sc.ups?.visible !== false;
+  const pipelineShown = configured.pipeline === true && sc.pipeline?.visible !== false;
+  const cronShown = config.showCronJobs !== false;
+
   // One page-level announcement for all DISTINCT active source errors, so a
   // global outage (e.g. Prometheus down) is announced once — not once per panel
-  // (the per-panel DegradedBanner is visual-only / not a live region).
-  const liveErrors = useMemo(
-    () =>
-      [
-        ...new Set(
-          Object.values(banners)
-            .map((b) => b && b.message)
-            .filter(Boolean)
-        ),
-      ].join('. '),
-    [banners]
-  );
+  // (the per-panel DegradedBanner is visual-only / not a live region). A source
+  // whose only panel is hidden is left out: nothing on the board shows it.
+  const liveErrors = useMemo(() => {
+    const hidden = { ups: !upsShown, commits: !pipelineShown, cron: !cronShown };
+    return [
+      ...new Set(
+        Object.entries(banners)
+          .filter(([key]) => !hidden[key])
+          .map(([, b]) => b && b.message)
+          .filter(Boolean)
+      ),
+    ].join('. ');
+  }, [banners, upsShown, pipelineShown, cronShown]);
 
   // Render a DegradedBanner element for a source's banner descriptor, or null
   // when the source is healthy (so the happy path renders nothing extra).
@@ -176,12 +194,6 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
   );
 
   // ── Layout state ──
-  // Use useMemo for the `|| {}` / `|| []` fallbacks so a missing section/group
-  // doesn't allocate a fresh empty object/array on every render — that would
-  // invalidate downstream memos (nodeElements, customGroupElements) every tick
-  // and defeat the 304-stable-identity contract from useDashboardData.
-  const sc = useMemo(() => config.sections || {}, [config.sections]);
-  const customGroups = useMemo(() => config.customGroups || [], [config.customGroups]);
   const rawLayouts = config.gridLayout || DEFAULT_LAYOUTS;
   const layouts = useMemo(() => migrateLayouts(rawLayouts) || DEFAULT_LAYOUTS, [rawLayouts]);
   const cols = useMemo(() => {
@@ -189,22 +201,24 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
     return { lg, md: Math.min(lg, 20), sm: 1 };
   }, [config.gridColumns]);
 
-  // UPS and Pipeline show only once their source is configured (#272); the
-  // rule is in configuredPanels.js.
-  const configured = useConfiguredPanels({
-    config,
-    ups,
-    commits,
-    commitsLastSuccessMs: sources.commits?.lastSuccessMs,
-  });
-  const unconfigured = useMemo(() => SOURCE_PANEL_KEYS.filter((k) => !configured[k]), [configured]);
+  // A source-fed panel not known to be set up joins no layout; one the server
+  // says is not set up also leaves a saved layout that has it.
+  const hiddenSourcePanels = useMemo(
+    () => SOURCE_PANEL_KEYS.filter((k) => configured[k] !== true),
+    [configured]
+  );
+  const droppedSourcePanels = useMemo(
+    () => SOURCE_PANEL_KEYS.filter((k) => configured[k] === false),
+    [configured]
+  );
 
   const effectiveLayouts = useEffectiveLayouts(
     layouts,
     serviceData,
     customGroups,
     config.gridColumns,
-    unconfigured
+    hiddenSourcePanels,
+    droppedSourcePanels
   );
 
   const handleLayoutChange = useCallback(
@@ -516,7 +530,7 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
             {nodePlaceholders}
             {customGroupElements}
 
-            {configured.ups && sc.ups?.visible !== false && (
+            {upsShown && (
               <div key="ups">
                 <ErrorBoundary inline itemId="ups" label="UPS panel failed to render">
                   <UPSCard
@@ -527,10 +541,13 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
                 </ErrorBoundary>
               </div>
             )}
-            {configured.pipeline && sc.pipeline?.visible !== false && (
+            {pipelineShown && (
               <div key="pipeline">
                 <ErrorBoundary inline itemId="pipeline" label="Pipeline panel failed to render">
-                  <GiteaActivity commits={commits} banner={bannerEl(banners.commits)} />
+                  <GiteaActivity
+                    commits={Array.isArray(commits) ? commits : NO_COMMITS}
+                    banner={bannerEl(banners.commits)}
+                  />
                 </ErrorBoundary>
               </div>
             )}
@@ -545,7 +562,7 @@ export default function DashboardView({ refreshKey, tick, active, onHealth, onOp
                 </ErrorBoundary>
               </div>
             )}
-            {config.showCronJobs !== false && (
+            {cronShown && (
               <div key="cron-jobs">
                 <ErrorBoundary inline itemId="cron-jobs" label="Cron Jobs panel failed to render">
                   <CronJobs
