@@ -1,94 +1,116 @@
 /**
  * The demo's /api/status (#437) is what the live loop builds from the demo's
- * board: the payloads the demo serves are put where a live cycle's refreshes
- * put theirs (the caches, the cron store), the loop's own status step
- * (refresh.js updateStatus, with the live caches, env and thresholds) builds
- * the status, and the demo must answer the same. So the demo's fixture-to-input
- * wiring can't drift from the live one: a payload it leaves out, a scenario it
- * mixes up, a clock it doesn't pass, all change what it answers.
+ * board, as a board that has been running a while (#442).
+ *
+ * - Its clocks: the status is built from a warm-up cycle 15 minutes before the
+ *   request, then the request's, so every `since` is the warm-up clock (a
+ *   job's is its last run), never "since now". Nothing is kept between
+ *   requests.
+ * - Its drift from the live loop: the payloads the demo serves are put where a
+ *   live cycle's refreshes put theirs, the loop's own status step runs at the
+ *   same two clocks (testing/demoLiveStatus.js), and the demo must answer the
+ *   same. So the demo's fixture-to-input wiring can't drift from the live one:
+ *   a payload it leaves out, a scenario it mixes up, a clock it doesn't pass,
+ *   all change what it answers. `incident` here; `healthy` in
+ *   demoStatus.healthy.test.js, so each starts from a fresh boot's tracker.
  *
  * Runs outside demo mode, in its own process (node:test spawns per file), so
  * the loop's tracker starts as on a fresh boot with push not set up.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 
-delete process.env.DEMO_MODE;
-delete process.env.KUMA_URL;
-delete process.env.GITEA_URL;
-
-const { DATA_DIR } = await import('./util/dataDir.js');
-const { setCache } = await import('./cache.js');
-const { assembleServices, servicesCacheEntry, stopBackgroundRefresh, updateStatus } =
-  await import('./refresh.js');
-const { demoResponse, isDemoMode } = await import('./demo.js');
-const { demoMonitors, demoNodeReadings, demoServicesConfig } = await import('./demoFixtures.js');
+const { NOW, isDemoMode, liveStatusOf, served, stopBackgroundRefresh } =
+  await import('./testing/demoLiveStatus.js');
+const { DEMO_SCENARIOS, DEMO_WARM_UP_MS, demoStatusCycle } = await import('./demoFixtures.js');
+const { readStatusInputs } = await import('./status/index.js');
 
 after(() => stopBackgroundRefresh());
 
-const NOW = Date.parse('2026-10-19T12:00:00Z');
-const served = (path, scenario) => {
-  const out = demoResponse({ path, scenario, now: NOW });
-  assert.equal(out.status, 200, path);
-  return out.body;
-};
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const WARM_UP = NOW - 15 * MINUTE;
 
-/**
- * Puts what the demo serves for `scenario` where a live cycle puts it, and
- * runs the loop's status step.
- */
-function liveStatusOf(scenario) {
-  // /api/services and what the services refresh keeps beside it: the live
-  // refresh's own entry for the demo's node readings and monitors.
-  const config = demoServicesConfig();
-  const readings = demoNodeReadings();
-  const assembled = assembleServices({
-    nodeResults: Object.entries(config.nodes).map(([key, nodeCfg]) => [
-      key,
-      nodeCfg,
-      readings[key],
-    ]),
-    monitors: demoMonitors(scenario, NOW),
-    config,
-    lastSeenNodeOf: () => null,
-    lastSeenContainerOf: () => null,
-    containerRegistry: null,
-    now: () => NOW,
-  });
-  const { payload, internal } = servicesCacheEntry(assembled, { prometheusOk: true, kumaOk: true });
-  assert.deepEqual(payload, served('/api/services', scenario), 'the board the demo serves');
-  setCache('services', payload, internal);
-  setCache('ups', served('/api/ups', scenario));
-  setCache('integrations', served('/api/integrations', scenario));
-  // The cron store holds each job's runs, newest first: the runs the demo's
-  // /api/cron/status lists.
-  const store = {};
+/** Each job's last run, by "node:job", from what the demo's /api/cron/status lists. */
+function lastRuns(scenario) {
+  const out = {};
   for (const { node, jobs } of served('/api/cron/status', scenario)) {
-    store[node] = Object.fromEntries(jobs.map(({ job, runs }) => [job, runs]));
+    for (const { job, runs } of jobs) {
+      out[`${node}:${job}`] = Math.max(...runs.map((r) => Date.parse(r.timestamp)));
+    }
   }
-  writeFileSync(join(DATA_DIR, 'cron-jobs.json'), JSON.stringify(store));
-  // The display config the demo serves is the live one: its thresholds, and
-  // the jobs it marks as backups (#291), which the loop reads from the file.
-  writeFileSync(
-    join(DATA_DIR, 'display-config.json'),
-    JSON.stringify(served('/api/display-config', scenario))
-  );
-  // A live install with Kuma and Gitea set up, as the demo's board shows (its
-  // services carry Kuma monitors, its Pipeline panel Gitea commits). Only for
-  // the loop's step: the demo must not need them in its own environment.
-  process.env.KUMA_URL = 'http://kuma.example.com';
-  process.env.GITEA_URL = 'http://git.example.com';
-  try {
-    const status = updateStatus([], NOW);
-    assert.ok(status, 'the model built');
-    return status;
-  } finally {
-    delete process.env.KUMA_URL;
-    delete process.env.GITEA_URL;
-  }
+  return out;
 }
+
+/** Every time in `value` (ISO timestamps, and epoch-ms numbers from 2000 to 2100), by path. */
+function timesIn(value, path, out = []) {
+  if (typeof value === 'string' && /^\d{4}-\d\d-\d\dT/.test(value)) {
+    out.push([path, Date.parse(value)]);
+  } else if (typeof value === 'number' && value >= 946_684_800_000 && value < 4_102_444_800_000) {
+    out.push([path, value]);
+  } else if (value !== null && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) timesIn(v, `${path}.${k}`, out);
+  }
+  return out;
+}
+
+test("demo /api/status: incident: Jellyfin is down since the warm-up clock, not the request's (#442)", () => {
+  const jellyfinOf = (status) => status.issues.find((i) => i.id === 'services/apps:jellyfin');
+  const status = served('/api/status', 'incident');
+  assert.ok(jellyfinOf(status), 'Jellyfin is an issue');
+  assert.equal(jellyfinOf(status).since, WARM_UP, 'down for 15 minutes when the request comes in');
+
+  // Nothing is kept between requests: the same request answers the same, and
+  // one an hour later is a board that has been running as long at its clock.
+  assert.deepEqual(served('/api/status', 'incident'), status);
+  const later = served('/api/status', 'incident', NOW + HOUR);
+  assert.equal(jellyfinOf(later).since, NOW + HOUR - 15 * MINUTE);
+});
+
+test('demo /api/status: every since is the warm-up clock, or a job its last run, in both scenarios (#442)', () => {
+  for (const scenario of DEMO_SCENARIOS) {
+    const status = served('/api/status', scenario);
+    const ran = lastRuns(scenario);
+    let jobs = 0;
+    for (const e of status.entities) {
+      if (e.kind === 'job' || e.kind === 'backup') {
+        // Its run, as /api/cron/status lists it: never a time before the run.
+        jobs += 1;
+        assert.equal(e.since, ran[`${e.node}:${e.name}`], `${scenario}: ${e.id}`);
+      } else {
+        assert.equal(e.since, WARM_UP, `${scenario}: ${e.id}`);
+      }
+    }
+    assert.equal(jobs, 4, `${scenario}: every job and backup was checked`);
+    for (const [name, s] of Object.entries(status.sources)) {
+      assert.equal(s.since, WARM_UP, `${scenario}: the ${name} source`);
+    }
+    for (const issue of status.issues) {
+      assert.equal(
+        issue.since,
+        status.entities.find((e) => e.id === issue.id).since,
+        `${scenario}: ${issue.id}`
+      );
+    }
+  }
+});
+
+test('demo /api/status: the warm-up cycle reads nothing from after its clock (#442)', () => {
+  // Both cycles read the board as it is at the request. That is the board at
+  // the warm-up clock too only while every time in it is before the warm-up:
+  // a cron run in between would be seen by the warm-up cycle before it ran.
+  for (const scenario of DEMO_SCENARIOS) {
+    const { caches, extra } = demoStatusCycle({ scenario, now: NOW });
+    const times = timesIn(readStatusInputs(caches, extra), 'inputs');
+    assert.ok(times.length > 0, `${scenario}: the cron runs are times`);
+    for (const [path, t] of times) {
+      assert.ok(
+        t <= NOW - DEMO_WARM_UP_MS,
+        `${scenario}: ${path} is ${new Date(t).toISOString()}, after the warm-up clock`
+      );
+    }
+  }
+});
 
 test('demo /api/status: incident: the headline and issues are what the live loop builds for the same board (#437)', () => {
   assert.equal(isDemoMode(), false, 'the live side runs outside demo mode');
@@ -105,16 +127,4 @@ test('demo /api/status: incident: the headline and issues are what the live loop
     live.issues.map((i) => i.id),
     ['services/apps:jellyfin', 'backups/storage:nightly-backup']
   );
-});
-
-test('demo /api/status: healthy: the same as the live loop builds for that board (#437)', () => {
-  // The loop's tracker carries the incident cycle's memory into this one. At
-  // the same clock nothing it holds differs from a fresh boot's: the entities
-  // that changed state take this cycle's time, the others kept the same one.
-  const live = liveStatusOf('healthy');
-  const demo = served('/api/status', 'healthy');
-
-  assert.deepEqual(demo, live);
-  assert.deepEqual(live.overall, { state: 'ok', sentence: 'All 12 services up · 3 nodes healthy' });
-  assert.deepEqual(live.issues, []);
 });

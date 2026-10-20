@@ -48,7 +48,9 @@ In demo mode a guard owns the entire `/api` surface (`server/demo.js`):
   built by the same `assembleServices()` that builds a live board,
   `/api/status` by the same status model from the demo's own payloads and
   display config (which marks the nightly backup as a backup, so the
-  `incident` headline is "1 service down · 1 backup failed"), and the
+  `incident` headline is "1 service down · 1 backup failed"), as a board that
+  has been running for 15 minutes (its down service has been down that long,
+  not "since now"), and the
   parts written by hand are tested against the live code's output, so the demo
   can't drift into a stale shape.
 - An icon is a redirect to its URL on the icon CDN, which the browser loads; the

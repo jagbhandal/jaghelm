@@ -118,8 +118,9 @@ server/                     Express API (Node 26, ESM)
                             PromQL over homelab-shaped series, the pre-#234 node reader, the
                             status model's input builders (statusFixtures.js), the
                             loop's status-and-push step as refresh.js runs it (pushPipeline.js),
-                            and the named status fixtures the cross-client suite runs on
-                            (statusScenarios.js, see 4.7)
+                            the named status fixtures the cross-client suite runs on
+                            (statusScenarios.js, see 4.7), and the live loop's side of the
+                            demo's /api/status drift test (demoLiveStatus.js, see 4.7)
 
 src/                        React 19 SPA (Vite 8)
   main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + the shell and its
@@ -919,11 +920,20 @@ built from the payloads the demo serves (`demoStatus` in `demoFixtures.js`):
 `readStatusInputs` with the demo's board as the caches, the demo display
 config's thresholds and backup jobs (it marks the nightly backup as one, so the
 `incident` headline reads "1 service down · 1 backup failed"; the demo has no
-Arcane), and a tracker as a fresh boot has it (no push to seed it from), on
-every request. So every `since` is that request's time (its down
-service is down "since now"), except a job's, which is its last run's.
-`server/demoStatus.test.js` puts the same payloads in the live caches and cron
-store and checks that the loop's own `updateStatus` gives the same status.
+Arcane). It answers as a board that has been running a while (#442): a new
+tracker on every request (nothing is kept between requests, and there is no
+push to seed it from) runs over the same board twice, at a warm-up clock 15
+minutes before the request and then at the request's (`demoStatusCycles`). So
+every `since` is the warm-up clock (its down service has been down 15 minutes,
+not "since now"), except a job's, which is its last run's, and a "for 2
+cycles" rule has had its two. Both cycles read the board as it is at the
+request; that is also the board at the warm-up clock, since every time the
+model reads in it (the cron runs, the newest an hour old) is before the
+warm-up, which a test checks. `server/demoStatus.test.js` (`incident`) and
+`server/demoStatus.healthy.test.js` put the same payloads in the live caches
+and cron store, run the loop's own `updateStatus` at the same two clocks, and
+check that it gives the same status (`server/testing/demoLiveStatus.js`; one
+file per scenario, so each loop starts from a fresh boot's tracker).
 
 **Push** (`push/snapshot.js`, `push/differ.js`, #292) is built on the model, so
 a notification says what the screens say. The snapshot records, per entity push
@@ -984,7 +994,8 @@ a push. Its fixtures (`server/testing/statusScenarios.js`) are named boards,
 each a list of cycles built as the loop builds them (`readStatusInputs` over
 the caches a refresh would leave, through one tracker), never status JSON
 written by hand: `healthy` and `incident` are the demo's boards
-(`demoStatusCycle` in `demoFixtures.js`, the same inputs `demoStatus` serves);
+(`demoStatusCycles` in `demoFixtures.js`, the same warm-up and request cycles
+`demoStatus` serves);
 `source-down` is the healthy board and then two cycles of Prometheus failing;
 `first-run` has nothing set up; `thresholds` puts node readings on, over, just
 under and held inside the lines of the threshold table; `every-state` has one
