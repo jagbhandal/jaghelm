@@ -14,6 +14,9 @@ import { compile } from '@tailwindcss/node';
 import { Scanner } from '@tailwindcss/oxide';
 import postcss from 'postcss';
 import ts from 'typescript';
+import { readTokens, resolveContext } from './ui-contrast.mjs';
+import { SHADOWS, SPACING, TYPE_STEPS } from '../src/ui/lib/utils.js';
+import { ROOT_SWITCHES } from '../src/ui/lib/portal.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(path.join(ROOT, p), 'utf8');
@@ -28,9 +31,12 @@ const STACK = 'src/ui/tailwind.css';
 const SHARED_CLASSES = ['flex-1', 'sr-only'];
 
 // Variables the new UI may read without declaring them under .jh-ui (Tailwind's
-// own --tw-* aside, which it registers with @property). None so far: a legacy
-// name such as --text-sm or --accent would carry today's value into the new UI.
-const UNDECLARED_VARS = new Set();
+// own --tw-* aside, which it registers with @property). A legacy name such as
+// --text-sm or --accent would carry today's value into the new UI, so only
+// these: Base UI sets them inline on a popup's positioner, the trigger's width
+// and the room left on screen (#285). A test below fails if today's CSS ever
+// defines one.
+const UNDECLARED_VARS = new Set(['--anchor-width', '--available-height']);
 
 /** Repo-relative paths under `dir` with one of `exts`. */
 function walk(dir, exts) {
@@ -352,7 +358,7 @@ test('only src/ui/ is scanned for class names, tests excluded', async () => {
 
 test("the compiled stack can't reach today's screens", async () => {
   const css = await buildStack();
-  assert.match(css, /\.bg-primary\s*\{/, 'expected the Button utilities in the compiled CSS');
+  assert.match(css, /\.bg-accent\s*\{/, 'expected the Button utilities in the compiled CSS');
   assert.match(css, /@scope \(\.jh-ui\)\s*\{\s*:scope,\s*\*,/, 'expected the scoped preflight');
   assert.deepEqual(reachProblems(css), []);
 });
@@ -406,7 +412,7 @@ test('the radius scale under .jh-ui matches the rounded-* utilities', async () =
   postcss
     .parse(compiler.build([]))
     .walkRules('.jh-ui', (rule) => rule.walkDecls(/^--radius-/, (d) => scale.set(d.prop, d.value)));
-  assert.ok(scale.has('--radius-md'), 'the Button reads --radius-md');
+  assert.ok(scale.has('--radius-md'), 'expected the radius scale under .jh-ui');
   const utilities = new Map();
   const classes = [...scale.keys()].map((v) => `rounded-${v.slice('--radius-'.length)}`);
   postcss.parse(compiler.build(classes)).walkRules((rule) => {
@@ -565,4 +571,94 @@ test('the class check reads the values of a lookup object, never its keys', asyn
   const names = namesIn(source);
   assert.deepEqual(names, ['bg-green-500', 'h-7', 'h-8', 'p-2', 'text-body', 'text-sm']);
   assert.deepEqual(await uncompiled(names), ['bg-green-500', 'text-sm']);
+});
+
+/** Names in tailwind.css's @theme block under `--<ns>-`, less sub-keys (`--text-x--line-height`). */
+function themeNames(ns) {
+  const theme = postcss
+    .parse(read(STACK))
+    .nodes.find((n) => n.type === 'atrule' && n.name === 'theme');
+  const names = [];
+  theme.walkDecls((d) => {
+    const m = d.prop.match(new RegExp(`^--${ns}-([a-z][\\w-]*)$`));
+    if (m && !m[1].includes('--') && d.value !== 'initial') names.push(m[1]);
+  });
+  return names;
+}
+
+test("cn knows the theme's type steps, named spacing and shadows (src/ui/lib/utils.js)", () => {
+  // Without these, cn reads text-caption as a colour and drops it beside
+  // text-crit-fg, and never lets a caller's h-9 replace h-control.
+  assert.deepEqual([...TYPE_STEPS], themeNames('text'), 'TYPE_STEPS and tailwind.css --text-*');
+  assert.deepEqual([...SPACING], themeNames('spacing'), 'SPACING and tailwind.css --spacing-*');
+  assert.deepEqual([...SHADOWS], themeNames('shadow'), 'SHADOWS and tailwind.css --shadow-*');
+});
+
+test('the density switch sizes every control, from the tokens', async () => {
+  // Each height utility reads its token...
+  const compiler = await compileStack();
+  const heights = new Map();
+  const classes = ['h-control', 'h-control-sm', 'h-segment', 'size-control', 'size-control-sm'];
+  postcss.parse(compiler.build(classes)).walkRules((rule) => {
+    const cls = rule.selector.slice(1);
+    if (classes.includes(cls)) rule.walkDecls(/^(height|width)$/, (d) => heights.set(cls, d.value));
+  });
+  assert.deepEqual(Object.fromEntries(heights), {
+    'h-control': 'var(--jh-control-h)',
+    'h-control-sm': 'var(--jh-control-h-sm)',
+    'h-segment': 'var(--jh-segment-h)',
+    'size-control': 'var(--jh-control-h)',
+    'size-control-sm': 'var(--jh-control-h-sm)',
+  });
+  // ...and data-density="compact" on the root changes each one.
+  const { rules } = readTokens(read('src/ui/tokens.css'));
+  const sizes = (density) => {
+    const props = resolveContext(rules, { density });
+    return ['row-h', 'control-h', 'control-h-sm', 'segment-h'].map((t) => props[`--jh-${t}`]);
+  };
+  // The mock's 34px and 30px controls and 28px segments, and 4px less in compact.
+  assert.deepEqual(sizes('comfortable'), ['40px', '34px', '30px', '28px']);
+  assert.deepEqual(sizes('compact'), ['32px', '30px', '26px', '24px']);
+});
+
+test("a portal root copies every switch the tokens read (src/ui/lib/portal.js)", () => {
+  const header = postcss
+    .parse(read('src/ui/tokens.css'))
+    .nodes.find((n) => n.type === 'comment').text;
+  const switches = [...header.matchAll(/\b(data-[a-z]+)="/g)].map((m) => m[1]);
+  assert.ok(switches.length >= 4, "expected the switches in tokens.css's header");
+  assert.deepEqual([...ROOT_SWITCHES].sort(), [...new Set(switches)].sort());
+});
+
+test("Base UI's positioner variables are not ones today's CSS defines", () => {
+  const sheets = [...walk('src', ['.css']), ...walk('mobile/src', ['.css'])].filter(
+    (f) => !f.startsWith('src/ui/')
+  );
+  for (const f of sheets) {
+    postcss.parse(read(f)).walkDecls(/^--/, (d) => {
+      assert.ok(!UNDECLARED_VARS.has(d.prop), `${f} defines ${d.prop}, which the new UI reads`);
+    });
+  }
+});
+
+/** The class names among `names` that take away the focus ring the base style draws. */
+export const ringRemovers = (names) =>
+  names.filter((n) => /(^|:)outline-(none|hidden|0)$/.test(n));
+
+test('no class in src/ui/ takes the focus ring away', () => {
+  const found = walk('src/ui', ['.js', '.jsx'])
+    .filter((f) => !/\.test\.jsx?$/.test(f))
+    .flatMap((f) => classNamesIn(read(f), f));
+  assert.deepEqual(
+    ringRemovers(found.map((c) => c.name)),
+    [],
+    'every control keeps the 2px focus ring (tailwind.css base); move it with outline-offset-*'
+  );
+  // The check bites: each way of hiding the ring is caught.
+  const source = `<b className="outline-none focus:outline-hidden focus-visible:outline-0 -outline-offset-2 outline-offset-1" />`;
+  assert.deepEqual(ringRemovers(namesIn(source)), [
+    'focus-visible:outline-0',
+    'focus:outline-hidden',
+    'outline-none',
+  ]);
 });
