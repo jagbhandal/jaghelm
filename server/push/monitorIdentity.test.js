@@ -49,21 +49,37 @@ function homelab(nodeOrder, seen = {}) {
           metrics: { cpu: '10', memPercent: '20', diskPercent: '30' },
           reachable: true,
           failedReads: [],
-          containers: order((running[nodeKey] || []).map((container) => ({ container, status: 'running', docker: {} }))),
+          containers: order(
+            (running[nodeKey] || []).map((container) => ({
+              container,
+              status: 'running',
+              docker: {},
+            }))
+          ),
         },
       ]),
-      monitors: order(monitors.map((m) => ({ ping: 1, uptime24: 1, active: true, lastBeatAt: null, ...m }))),
+      monitors: order(
+        monitors.map((m) => ({ ping: 1, uptime24: 1, active: true, lastBeatAt: null, ...m }))
+      ),
       config: { nodes: Object.fromEntries(nodeOrder.map((k) => [k, {}])), services },
       lastSeenNodeOf: (id) => registry.get(String(id))?.nodeKey ?? null,
       lastSeenContainerOf: (id) => registry.get(String(id))?.container ?? null,
       containerRegistry: {
         recordSeen() {},
         getMissing: () =>
-          order(stopped.map(([container, lastSeenNode]) => ({ container, lastSeenNode, lastSeenAt: NOW - 120_000, ageMs: 120_000 }))),
+          order(
+            stopped.map(([container, lastSeenNode]) => ({
+              container,
+              lastSeenNode,
+              lastSeenAt: NOW - 120_000,
+              ageMs: 120_000,
+            }))
+          ),
       },
       now: () => NOW,
     });
-    for (const s of r.seen) registry.set(String(s.monitorId), { nodeKey: s.nodeKey, container: s.container });
+    for (const s of r.seen)
+      registry.set(String(s.monitorId), { nodeKey: s.nodeKey, container: s.container });
     return r;
   };
 }
@@ -116,11 +132,18 @@ function pushPipeline() {
 
 const nextcloud = (status) => [{ id: 1, name: 'Nextcloud', status }];
 const adguards = (primary, secondary = 'down') => [
-  { id: 1, name: 'Adguard Primary', ...(typeof primary === 'string' ? { status: primary } : primary) },
+  {
+    id: 1,
+    name: 'Adguard Primary',
+    ...(typeof primary === 'string' ? { status: primary } : primary),
+  },
   { id: 2, name: 'Adguard Secondary', status: secondary },
 ];
 // The old matcher left both remembering pi2's adguard-sync.
-const ADGUARD_SEEN = { 1: { nodeKey: 'pi2', container: 'adguard-sync' }, 2: { nodeKey: 'pi2', container: 'adguard-sync' } };
+const ADGUARD_SEEN = {
+  1: { nodeKey: 'pi2', container: 'adguard-sync' },
+  2: { nodeKey: 'pi2', container: 'adguard-sync' },
+};
 
 /**
  * The cases of #395. Each has the home lab, its cycles (the first is the
@@ -132,13 +155,41 @@ const SCENARIOS = [
     name: 'a: a down monitor that a new container takes, then recovers',
     nodes: ['vm103'],
     cycles: [
-      { running: { vm103: ['gitea'] }, monitors: [{ id: 1, name: 'Gitea', status: 'up' }, { id: 2, name: 'Grafana', status: 'up' }] },
-      { running: { vm103: ['gitea'] }, monitors: [{ id: 1, name: 'Gitea', status: 'up' }, { id: 2, name: 'Grafana', status: 'down' }] },
+      {
+        running: { vm103: ['gitea'] },
+        monitors: [
+          { id: 1, name: 'Gitea', status: 'up' },
+          { id: 2, name: 'Grafana', status: 'up' },
+        ],
+      },
+      {
+        running: { vm103: ['gitea'] },
+        monitors: [
+          { id: 1, name: 'Gitea', status: 'up' },
+          { id: 2, name: 'Grafana', status: 'down' },
+        ],
+      },
       // The grafana container appears while the monitor is still down, and takes it.
-      { running: { vm103: ['gitea', 'grafana'] }, monitors: [{ id: 1, name: 'Gitea', status: 'up' }, { id: 2, name: 'Grafana', status: 'down' }] },
-      { running: { vm103: ['gitea', 'grafana'] }, monitors: [{ id: 1, name: 'Gitea', status: 'up' }, { id: 2, name: 'Grafana', status: 'up' }] },
+      {
+        running: { vm103: ['gitea', 'grafana'] },
+        monitors: [
+          { id: 1, name: 'Gitea', status: 'up' },
+          { id: 2, name: 'Grafana', status: 'down' },
+        ],
+      },
+      {
+        running: { vm103: ['gitea', 'grafana'] },
+        monitors: [
+          { id: 1, name: 'Gitea', status: 'up' },
+          { id: 2, name: 'Grafana', status: 'up' },
+        ],
+      },
     ],
-    main: ['service_down vm103:Grafana', 'service_down vm103:grafana', 'service_recovered vm103:grafana'],
+    main: [
+      'service_down vm103:Grafana',
+      'service_down vm103:grafana',
+      'service_recovered vm103:grafana',
+    ],
     sent: ['service_down vm103:Grafana', 'service_recovered vm103:grafana'],
   },
   {
@@ -149,8 +200,16 @@ const SCENARIOS = [
       // nextcloud stops and the monitor goes down: the outage is on its card.
       { stopped: [['nextcloud', 'vm103']], monitors: nextcloud('down') },
       // nextcloud-app comes up healthy and takes the monitor, now up.
-      { running: { vm103: ['nextcloud-app'] }, stopped: [['nextcloud', 'vm103']], monitors: nextcloud('up') },
-      { running: { vm103: ['nextcloud-app'] }, stopped: [['nextcloud', 'vm103']], monitors: nextcloud('up') },
+      {
+        running: { vm103: ['nextcloud-app'] },
+        stopped: [['nextcloud', 'vm103']],
+        monitors: nextcloud('up'),
+      },
+      {
+        running: { vm103: ['nextcloud-app'] },
+        stopped: [['nextcloud', 'vm103']],
+        monitors: nextcloud('up'),
+      },
     ],
     main: ['service_down vm103:nextcloud'],
     sent: ['service_down vm103:nextcloud', 'service_recovered vm103:nextcloud-app'],
@@ -205,7 +264,11 @@ const SCENARIOS = [
       { running: { pi2: ['adguard-primary'] }, monitors: adguards('up') },
       { running: { pi2: ['adguard-primary'] }, monitors: adguards('up', 'up') },
     ],
-    main: ['service_down pi2:Adguard Secondary', 'service_down pi2:adguard-sync', 'service_recovered pi2:adguard-sync'],
+    main: [
+      'service_down pi2:Adguard Secondary',
+      'service_down pi2:adguard-sync',
+      'service_recovered pi2:adguard-sync',
+    ],
     sent: ['service_down pi2:Adguard Secondary', 'service_recovered pi2:adguard-sync'],
   },
   {
@@ -216,10 +279,22 @@ const SCENARIOS = [
     name: 'the replica corner: both copies of an unpinned replica stop',
     nodes: ['vm103', 'pi2'],
     cycles: [
-      { running: { vm103: ['vaultwarden'], pi2: ['vaultwarden'] }, monitors: [{ id: 1, name: 'Vaultwarden', status: 'up' }] },
-      { stopped: [['vaultwarden', 'pi2']], monitors: [{ id: 1, name: 'Vaultwarden', status: 'down' }] },
-      { stopped: [['vaultwarden', 'pi2']], monitors: [{ id: 1, name: 'Vaultwarden', status: 'up' }] },
-      { stopped: [['vaultwarden', 'pi2']], monitors: [{ id: 1, name: 'Vaultwarden', status: 'up' }] },
+      {
+        running: { vm103: ['vaultwarden'], pi2: ['vaultwarden'] },
+        monitors: [{ id: 1, name: 'Vaultwarden', status: 'up' }],
+      },
+      {
+        stopped: [['vaultwarden', 'pi2']],
+        monitors: [{ id: 1, name: 'Vaultwarden', status: 'down' }],
+      },
+      {
+        stopped: [['vaultwarden', 'pi2']],
+        monitors: [{ id: 1, name: 'Vaultwarden', status: 'up' }],
+      },
+      {
+        stopped: [['vaultwarden', 'pi2']],
+        monitors: [{ id: 1, name: 'Vaultwarden', status: 'up' }],
+      },
     ],
     main: ['service_down pi2:vaultwarden'],
     sent: ['service_down pi2:vaultwarden', 'service_recovered vm103:vaultwarden'],
@@ -280,12 +355,15 @@ function shuffler(seed) {
 // iterates in id order whatever order it was built in, and every consumer takes
 // a list as well. Each node's containers and the stopped containers are
 // shuffled too, as discovery and the container registry might return them.
-test('push (#395): what is sent, and the snapshot written, do not depend on Kuma\'s or discovery\'s order', async () => {
+test("push (#395): what is sent, and the snapshot written, do not depend on Kuma's or discovery's order", async () => {
   for (const scenario of SCENARIOS) {
     const want = await play(scenario);
     for (const reversed of [true, false]) {
       for (let seed = 1; seed <= 12; seed += 1) {
-        const order = reversed && seed === 1 ? (list) => [...list].reverse() : shuffler(seed * 7919 + (reversed ? 1 : 0));
+        const order =
+          reversed && seed === 1
+            ? (list) => [...list].reverse()
+            : shuffler(seed * 7919 + (reversed ? 1 : 0));
         const got = await play(scenario, { order });
         assert.deepEqual(got.sent, want.sent, `${scenario.name}, seed ${seed}`);
         assert.equal(got.file, want.file, `${scenario.name}, seed ${seed}: the snapshot file`);

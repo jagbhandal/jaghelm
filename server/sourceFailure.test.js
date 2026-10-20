@@ -555,6 +555,21 @@ test('a monitor no container has: upWithoutCard is kept beside the cached payloa
   }
 });
 
+test('the monitor each monitored key carries is kept beside the cached payload, and in the push snapshot (#395)', async () => {
+  reset();
+  const p = pipeline();
+  try {
+    await p.cycle(); // gitea and radarr have their monitors; NAS (Ping) is up with no container
+    const keysOf = (v) => (v && typeof v === 'object' ? Object.entries(v).flatMap(([k, x]) => [k, ...keysOf(x)]) : []);
+    assert.equal(keysOf(getCached('services')).includes('monitorOf'), false, 'not in the served data');
+    const want = { [NAS_PING]: '3', 'vm103:gitea': '1', 'vm103:radarr': '2' };
+    assert.deepEqual(getCachedInternal('services').monitorOf, want, 'kept beside it for push');
+    assert.deepEqual(p.snapshot.prev().monitorOf, want, 'postgres and adguard have no monitor');
+  } finally {
+    p.done();
+  }
+});
+
 test('a monitor no container has: a restart while it is down sends exactly one recovery', async () => {
   reset();
   const before = pipeline();

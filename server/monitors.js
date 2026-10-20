@@ -647,7 +647,8 @@ export function logUnmatchedContainers({ unmatched, containerCount, monitors }) 
 
 /**
  * The monitors no running container got this cycle that are `up` or `down`, in
- * the map's order. assembleServices places all of them in one pass (#390): a
+ * id order, so where each is placed does not depend on the order Kuma listed
+ * them in (#395). assembleServices places all of them in one pass (#390): a
  * down one becomes a synthesised red card, so an outage stays visible after the
  * container disappears from cAdvisor; an up one is an entry only the push
  * snapshot reads, under the same uid, so its recovery is sent.
@@ -674,12 +675,14 @@ export function selectUnclaimedMonitors(
   consumedIds,
   { now = Date.now(), staleMs = MONITOR_STALE_MS } = {}
 ) {
-  return Object.values(monitors).filter(
-    (m) =>
-      m &&
-      (m.status === 'down' || m.status === 'up') &&
-      m.active !== false &&
-      !consumedIds.has(m.id) &&
-      (m.lastBeatAt == null || now - m.lastBeatAt <= staleMs)
-  );
+  return Object.values(monitors)
+    .filter(
+      (m) =>
+        m &&
+        (m.status === 'down' || m.status === 'up') &&
+        m.active !== false &&
+        !consumedIds.has(m.id) &&
+        (m.lastBeatAt == null || now - m.lastBeatAt <= staleMs)
+    )
+    .sort((a, b) => compareIds(a.id, b.id));
 }

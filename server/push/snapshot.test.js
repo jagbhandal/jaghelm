@@ -10,6 +10,7 @@ import {
   buildHosts,
   buildUps,
   buildSnapshot,
+  buildMonitorOf,
 } from './snapshot.js';
 import { NODE_READS } from '../discovery.js';
 
@@ -214,14 +215,15 @@ test('buildUps: numeric status mapped to state; missing -> unknown', () => {
 
 // ── Task 4: buildSnapshot (composed PURE snapshot via injectable seam) ───────
 
-function fakeCaches({ services, ups, cron }) {
+function fakeCaches({ services, ups, cron, internal = null }) {
   return {
     getCached: (key) => (key === 'services' ? services : key === 'ups' ? ups : null),
+    getCachedInternal: (key) => (key === 'services' ? internal : null),
     getAllCronStatuses: () => cron ?? [],
   };
 }
 
-test('buildSnapshot: composes all four sub-maps from injected caches', () => {
+test('buildSnapshot: composes all five sub-maps from injected caches', () => {
   const caches = fakeCaches({
     services: {
       nodes: {
@@ -233,10 +235,12 @@ test('buildSnapshot: composes all four sub-maps from injected caches', () => {
     },
     ups: { status: 2 }, // 2 = On Battery (OB) per the NUT decode
     cron: [{ node: 'vm103', jobs: [{ job: 'backup', runs: [{ status: 'failure' }] }] }],
+    internal: { upWithoutCard: [], monitorOf: { 'vm103:web': 4 } },
   });
   const snap = buildSnapshot(caches);
   assert.deepEqual(snap, {
     services: { 'vm103:db': 'up', 'vm103:web': 'down' },
+    monitorOf: { 'vm103:web': '4' },
     hosts: { vm103: { reachable: true, cpu: 0.2, mem: 0.3, disk: 0.4 } },
     ups: { state: 'on_battery' },
     cron: { 'vm103:backup': 'failure' },
@@ -248,11 +252,12 @@ test('buildSnapshot: composes all four sub-maps from injected caches', () => {
 const EMPTY_SERVICES = { nodes: {}, overallHealth: 'unknown' };
 const NO_UPS = { status: null, charge: null, runtime: null, load: null, ok: true };
 
-test('buildSnapshot: top-level keys are exactly the four, in fixed order', () => {
+test('buildSnapshot: top-level keys are exactly the five, in fixed order', () => {
   const snap = buildSnapshot(fakeCaches({ services: EMPTY_SERVICES, ups: NO_UPS, cron: [] }));
-  assert.deepEqual(Object.keys(snap), ['services', 'hosts', 'ups', 'cron']);
+  assert.deepEqual(Object.keys(snap), ['services', 'monitorOf', 'hosts', 'ups', 'cron']);
   assert.deepEqual(snap, {
     services: {},
+    monitorOf: {},
     hosts: {},
     ups: { state: 'unknown' },
     cron: {},
@@ -306,7 +311,7 @@ test('LAW: every unrecognized value collapses to unknown / reachable:false', () 
 
 test('LAW: sources answering with nothing yield a well-formed baseline snapshot', () => {
   const snap = buildSnapshot(fakeCaches({ services: EMPTY_SERVICES, ups: NO_UPS, cron: null }));
-  assert.deepEqual(snap, { services: {}, hosts: {}, ups: { state: 'unknown' }, cron: {} });
+  assert.deepEqual(snap, { services: {}, monitorOf: {}, hosts: {}, ups: { state: 'unknown' }, cron: {} });
 });
 
 // ── cron overdue ─────────────────────────────────────────────────────────────
@@ -502,4 +507,52 @@ test('buildSnapshot: a host missing from the payload is kept while Prometheus fa
 test('buildSnapshot: a payload without source flags counts as answered', () => {
   const caches = fakeCaches({ services: { nodes: {} }, ups: { status: 1 }, cron: [] });
   assert.deepEqual(buildSnapshot(caches, PREV), buildSnapshot(caches));
+});
+
+// ── #395: the monitor that fed each service key ──────────────────────────────
+
+test('buildMonitorOf: the keys of services only, ids as strings, sorted; junk is dropped', () => {
+  const services = { 'vm103:b': 'up', 'vm103:a': 'down', 'pi:c': 'up' };
+  assert.deepEqual(
+    buildMonitorOf({ 'vm103:b': 2, 'vm103:a': '1', 'vm103:gone': 3, 'pi:c': null }, services),
+    { 'vm103:a': '1', 'vm103:b': '2' }
+  );
+  assert.deepEqual(Object.keys(buildMonitorOf({ 'vm103:b': 2, 'vm103:a': 1 }, services)), ['vm103:a', 'vm103:b']);
+  for (const junk of [undefined, null, 'x', ['vm103:a'], { 'vm103:a': '' }, { 'vm103:a': NaN }, { 'vm103:a': {} }]) {
+    assert.deepEqual(buildMonitorOf(junk, services), {}, JSON.stringify(junk));
+  }
+});
+
+test('buildSnapshot: monitorOf comes from beside the cached payload, for the keys of this snapshot', () => {
+  const snap = buildSnapshot(
+    fakeCaches({
+      services: { nodes: { vm103: { services: [{ uid: 'vm103:grafana', status: 'down' }, { uid: 'vm103:redis', status: 'up' }] } } },
+      ups: NO_UPS,
+      internal: { upWithoutCard: ['vm103:NAS UI'], monitorOf: { 'vm103:grafana': 7, 'vm103:NAS UI': 11 } },
+    })
+  );
+  assert.deepEqual(snap.services, { 'vm103:grafana': 'down', 'vm103:NAS UI': 'up', 'vm103:redis': 'up' });
+  assert.deepEqual(snap.monitorOf, { 'vm103:grafana': '7', 'vm103:NAS UI': '11' });
+});
+
+const PREV_OWNED = { ...PREV, monitorOf: { 'vm103:gitea': '1', 'vm103:radarr': '2' } };
+const owned = (opts, monitorOf) => {
+  const caches = failedCycle(opts);
+  return { ...caches, getCachedInternal: () => ({ upWithoutCard: [], monitorOf }) };
+};
+
+test('buildSnapshot: Kuma failed -> the monitor of every key is kept with it', () => {
+  const snap = buildSnapshot(owned({ kuma: false }, { 'vm103:gitea': 9 }), PREV_OWNED);
+  assert.deepEqual(snap.monitorOf, PREV_OWNED.monitorOf);
+  // A snapshot written before #395 has none to keep.
+  assert.deepEqual(buildSnapshot(owned({ kuma: false }, { 'vm103:gitea': 9 }), PREV).monitorOf, {});
+});
+
+test('buildSnapshot: Prometheus failed -> a kept key keeps its monitor, a present one has this cycle\'s', () => {
+  const prev = { ...PREV_OWNED, monitorOf: { ...PREV_OWNED.monitorOf, 'vm103:postgres': '3' } };
+  const snap = buildSnapshot(owned({ prometheus: false }, { 'vm103:radarr': 2 }), prev);
+  assert.deepEqual(snap.monitorOf, {
+    'vm103:postgres': '3', // not seen this cycle: kept, with its monitor
+    'vm103:radarr': '2', // present: this cycle's
+  }, 'vm103:gitea is present with no monitor this cycle');
 });

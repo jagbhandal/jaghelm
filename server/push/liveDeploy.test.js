@@ -76,7 +76,10 @@ function deployed() {
     pruneStale() {},
     markDelivered() {},
   };
-  const snapshot = createPushSnapshot({ path, logger: { info() {}, warn() {}, error() {}, debug() {} } });
+  const snapshot = createPushSnapshot({
+    path,
+    logger: { info() {}, warn() {}, error() {}, debug() {} },
+  });
   return {
     sent,
     path,
@@ -94,7 +97,11 @@ function deployed() {
 
 test('deploy (#395): the old snapshot loads, the first cycle sends nothing, and NAS UI still recovers', async () => {
   const old = JSON.parse(readFileSync(FIXTURE, 'utf8'));
-  assert.deepEqual(Object.keys(old), ['services', 'hosts', 'ups', 'cron'], 'written before #395: no monitor identity');
+  assert.deepEqual(
+    Object.keys(old),
+    ['services', 'hosts', 'ups', 'cron'],
+    'written before #395: no monitor identity'
+  );
   assert.equal(old.services['vm103:NAS UI'], 'down');
 
   const live = deployed();
@@ -108,13 +115,21 @@ test('deploy (#395): the old snapshot loads, the first cycle sends nothing, and 
       const written = JSON.parse(readFileSync(live.path, 'utf8'));
       assert.deepEqual(written.services, old.services, 'the same state as the old file');
       assert.deepEqual(written.hosts, old.hosts);
-      assert.equal(written.monitorOf['vm103:NAS UI'], '11', 'rewritten with the monitor each key was fed by');
+      assert.equal(
+        written.monitorOf['vm103:NAS UI'],
+        '11',
+        'rewritten with the monitor each key was fed by'
+      );
 
       for (let i = 0; i < 3; i += 1) await live.push(liveCycle({ status: { 'NAS UI': 'down' } }));
       assert.deepEqual(live.sent, [], 'nor do the cycles after it');
 
       await live.push(liveCycle());
-      assert.deepEqual(live.sent, ['service_recovered vm103:NAS UI'], 'the outage the old file held still recovers');
+      assert.deepEqual(
+        live.sent,
+        ['service_recovered vm103:NAS UI'],
+        'the outage the old file held still recovers'
+      );
       await live.push(liveCycle());
       assert.deepEqual(live.sent, ['service_recovered vm103:NAS UI']);
     });
@@ -125,7 +140,9 @@ test('deploy (#395): the old snapshot loads, the first cycle sends nothing, and 
   const warnings = logs.filter((l) => l.level === 'warn' || l.level === 'error');
   assert.deepEqual(
     warnings.map((l) => `${l.containerName} -> ${l.explicitMonitor}`).sort(),
-    Object.entries(SERVICES_YAML).map(([name, m]) => `${name} -> ${m.monitor}`).sort(),
+    Object.entries(SERVICES_YAML)
+      .map(([name, m]) => `${name} -> ${m.monitor}`)
+      .sort(),
     'only the three broken mappings warn (#342), once each'
   );
   assert.ok(warnings.every((l) => /names no Kuma monitor/.test(l.msg)));
@@ -136,13 +153,26 @@ test('deploy (#395): the 19 unmonitored containers and the three broken mappings
   const plain = ['gateway-npm', 'gateway-tunnel', 'tailscale', ...r.unmatched];
   const keys = Object.keys(r.monitorOf ?? {});
   for (const name of new Set(plain)) {
-    assert.equal(keys.some((uid) => uid.endsWith(`:${name}`)), false, `${name} feeds no monitor`);
+    assert.equal(
+      keys.some((uid) => uid.endsWith(`:${name}`)),
+      false,
+      `${name} feeds no monitor`
+    );
   }
   const live = deployed();
   try {
     // Every monitor goes down and back up: only monitors are sent, each once each way.
     const all = Object.fromEntries(
-      ['Gitea', 'Immich', 'Nextcloud', 'Loki', 'Wikijs', 'Arcane', 'Vaultwarden', 'Adguard Primary'].map((n) => [n, 'down'])
+      [
+        'Gitea',
+        'Immich',
+        'Nextcloud',
+        'Loki',
+        'Wikijs',
+        'Arcane',
+        'Vaultwarden',
+        'Adguard Primary',
+      ].map((n) => [n, 'down'])
     );
     await live.push(liveCycle({ status: { 'NAS UI': 'down' } }));
     await live.push(liveCycle({ status: { ...all, 'NAS UI': 'down' } }));

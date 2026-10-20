@@ -951,3 +951,23 @@ test('push (#390): a container taking or leaving the monitor moves it to one key
     'service_recovered vm103:grafana',
   ]);
 });
+
+// ── the monitor each uid carries, for the push snapshot (#395) ──
+
+test('assemble (#395): monitorOf names the monitor of each running card, red card and up entry, and nothing else', () => {
+  const r = run({
+    nodeResults: [
+      ['vm103', nodeCfg, nodeData([{ container: 'gitea', status: 'running', docker: {} }, { container: 'redis', status: 'running', docker: {} }])],
+    ],
+    monitors: {
+      1: { id: 1, name: 'Gitea', status: 'up', active: true },
+      2: { id: 2, name: 'NAS UI', status: 'down', active: true },
+      3: { id: 3, name: 'Network Switch', status: 'up', active: true },
+      4: { id: 4, name: 'Pending', status: 'unknown', active: true },
+    },
+    lastSeen: { 2: 'vm103', 3: 'vm103' },
+    containerRegistry: fakeRegistry([{ container: 'old', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 }]),
+  });
+  assert.deepEqual(r.monitorOf, { 'vm103:gitea': '1', 'vm103:NAS UI': '2', 'vm103:Network Switch': '3' });
+  assert.ok(cards(r.nodes).some((s) => s.uid === 'vm103:old' && s.source === 'presence'), 'a breadcrumb carries none');
+});

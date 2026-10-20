@@ -18,6 +18,16 @@ test('selectUnclaimedMonitors: up or down + active + unconsumed only', () => {
   assert.deepEqual(out, [1, 2]);
 });
 
+test('selectUnclaimedMonitors: in id order, whatever order Kuma listed them in (#395)', () => {
+  const list = [
+    { id: 12, name: 'b', status: 'up', active: true },
+    { id: 3, name: 'a', status: 'down', active: true },
+    { id: 7, name: 'c', status: 'up', active: true },
+  ];
+  assert.deepEqual(selectUnclaimedMonitors(list, new Set()).map((m) => m.id), [3, 7, 12]);
+  assert.deepEqual(selectUnclaimedMonitors([...list].reverse(), new Set()).map((m) => m.id), [3, 7, 12]);
+});
+
 test('selectUnclaimedMonitors: tolerates the empty-array fallback from a failed fetch', () => {
   assert.deepEqual(selectUnclaimedMonitors([], new Set()), []);
 });

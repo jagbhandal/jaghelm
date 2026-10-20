@@ -44,8 +44,25 @@ export const CONTAINERS = {
     'wikijs-postgres',
     'wikijs-redis',
   ],
-  pi2: ['adguard-sync', 'arcane-agent', 'cadvisor', 'gateway-npm', 'gateway-tunnel', 'node-exporter', 'tailscale', 'vaultwarden'],
-  pi1: ['adguard', 'arcane-agent', 'cadvisor', 'gateway-npm', 'gateway-tunnel', 'node-exporter', 'tailscale'],
+  pi2: [
+    'adguard-sync',
+    'arcane-agent',
+    'cadvisor',
+    'gateway-npm',
+    'gateway-tunnel',
+    'node-exporter',
+    'tailscale',
+    'vaultwarden',
+  ],
+  pi1: [
+    'adguard',
+    'arcane-agent',
+    'cadvisor',
+    'gateway-npm',
+    'gateway-tunnel',
+    'node-exporter',
+    'tailscale',
+  ],
 };
 
 export const MONITOR_NAMES = [
@@ -118,11 +135,16 @@ export function liveCycle({ status = {}, order = (list) => list } = {}) {
         metrics: METRICS,
         reachable: true,
         failedReads: [],
-        containers: order(CONTAINERS[nodeKey].map((container) => ({ container, status: 'running', docker: {} }))),
+        containers: order(
+          CONTAINERS[nodeKey].map((container) => ({ container, status: 'running', docker: {} }))
+        ),
       },
     ]),
     monitors,
-    config: { nodes: Object.fromEntries(NODE_ORDER.map((k) => [k, NODE_CFG])), services: SERVICES_YAML },
+    config: {
+      nodes: Object.fromEntries(NODE_ORDER.map((k) => [k, NODE_CFG])),
+      services: SERVICES_YAML,
+    },
     lastSeenNodeOf: (id) => LAST_SEEN[byId.get(Number(id))]?.nodeKey ?? null,
     lastSeenContainerOf: (id) => LAST_SEEN[byId.get(Number(id))]?.container ?? null,
     containerRegistry: null,
@@ -135,15 +157,36 @@ export function liveCaches(r) {
   return {
     getCached: (key) => {
       if (key === 'services') {
-        return { nodes: r.nodes, overallHealth: r.overallHealth, sources: { prometheus: { ok: true }, kuma: { ok: true } } };
+        return {
+          nodes: r.nodes,
+          overallHealth: r.overallHealth,
+          sources: { prometheus: { ok: true }, kuma: { ok: true } },
+        };
       }
       if (key === 'ups') return { status: 1, charge: 100, runtime: 3600, load: 20, ok: true };
       return null;
     },
-    getCachedInternal: (key) => (key === 'services' ? { upWithoutCard: r.upWithoutCard, monitorOf: r.monitorOf } : null),
+    getCachedInternal: (key) =>
+      key === 'services' ? { upWithoutCard: r.upWithoutCard, monitorOf: r.monitorOf } : null,
     getAllCronStatuses: () => [
-      { node: 'vm103', jobs: [{ job: 'restic-backup', runs: [{ status: 'success', timestamp: new Date(NOW - 3_600_000).toISOString() }] }] },
-      { node: 'nas', jobs: [{ job: 'b2-sync', runs: [{ status: 'failure', timestamp: new Date(NOW - 7_200_000).toISOString() }] }] },
+      {
+        node: 'vm103',
+        jobs: [
+          {
+            job: 'restic-backup',
+            runs: [{ status: 'success', timestamp: new Date(NOW - 3_600_000).toISOString() }],
+          },
+        ],
+      },
+      {
+        node: 'nas',
+        jobs: [
+          {
+            job: 'b2-sync',
+            runs: [{ status: 'failure', timestamp: new Date(NOW - 7_200_000).toISOString() }],
+          },
+        ],
+      },
     ],
     now: () => NOW,
   };
