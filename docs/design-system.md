@@ -1029,8 +1029,10 @@ is in, not the window):
   the filter leaves none, "Nothing in Jobs needs attention" in 13px `text-3`
   where the list would be. Otherwise the mock's quiet line: the lamp, "All
   systems normal" at `title-xs` in `text-1`, the counts in `text-2`, and
-  `meta` at the right in 12px `text-3`. Healthy stays quiet (rule 3): no green
-  word. Maintenance doesn't break the quiet line (spec §6.1): its heading
+  `meta` at the right in 12px `text-3`. With a filter (the Overview's strip,
+  #298), "Showing … only" in 13px `text-2` and Clear sit at the right of the
+  quiet line too, before `meta`, since the board under it is filtered.
+  Healthy stays quiet (rule 3): no green word. Maintenance doesn't break the quiet line (spec §6.1): its heading
   still says "All systems normal", its lamp is the wrench, and the strip's
   tile under it says what is in maintenance ("1 in maintenance"). An empty
   board (`empty`, nothing set up, #449) is the quiet line with no lamp: its

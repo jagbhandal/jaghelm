@@ -26,6 +26,7 @@ import { navigate, useRoute } from './router/useRoute.js';
 import { pathTo } from './router/routes.js';
 import { ShellHeader, ShellSideNav, ShellTabs } from './shell/ShellChrome.jsx';
 import { OverviewStatus } from './shell/OverviewStatus.jsx';
+import { clearOverviewFilter, useOverviewFilter } from './shell/overviewFilter.js';
 import { appsOf, navGroups } from './shell/nav.js';
 import { alertsBadge } from './shell/statusView.js';
 
@@ -213,6 +214,10 @@ function AppMain({ authRequired, demo, onLogout }) {
   const pageVisible = usePageVisible();
   const onOverview = route.id === 'overview';
   const dashboardActive = onOverview && pageVisible;
+  // The subsystem the Overview is filtered to (#298): the URL's `?subsystem=`,
+  // when the model's strip shows it.
+  const overviewFilter = useOverviewFilter(poll.status);
+  const filter = onOverview ? overviewFilter : null;
 
   // Set up refresh interval — debounced so slider dragging doesn't spam intervals
   useEffect(() => {
@@ -338,9 +343,20 @@ function AppMain({ authRequired, demo, onLogout }) {
             <h1 className="sr-only">Overview</h1>
             {/* Its state is the poll's: nothing to keep while another page is open. */}
             {onOverview && (
-              <OverviewStatus status={poll.status} reach={poll.reach} updated={poll.updated} />
+              <OverviewStatus
+                status={poll.status}
+                reach={poll.reach}
+                updated={poll.updated}
+                filter={filter?.id ?? null}
+              />
             )}
-            <DashboardView tick={tick} active={dashboardActive} onOpenSettings={openSettings} />
+            <DashboardView
+              tick={tick}
+              active={dashboardActive}
+              onOpenSettings={openSettings}
+              filter={filter}
+              onClearFilter={clearOverviewFilter}
+            />
           </div>
           <Suspense fallback={lazyFallback}>
             {route.id === 'alerts' && (

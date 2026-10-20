@@ -126,13 +126,16 @@ src/                        React 19 SPA (Vite 8)
   main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + the shell and its
                             pages, by route (see 5, "Shell and routing")
   router/                   routes.js (the route table: paths, params, the routes hidden until
-                            their page exists), useRoute.js (the History API router)
+                            their page exists), useRoute.js (the History API router, and a
+                            query parameter, useSearchParam)
   shell/                    the shell wired: ShellChrome.jsx (header, sidebar, phone tabs and
                             More sheet, fed from the route, the config and the status poll),
                             nav.js (the nav as data), AlertsPage.jsx, OverviewStatus.jsx (the
-                            Overview's top), ShellAttention.jsx (the attention panel both
-                            draw), statusView.js (how the status model's issues are counted
-                            and worded), entityAnchors.js (where an Overview issue row leads)
+                            Overview's top: its status and subsystem strip), ShellAttention.jsx
+                            (the attention panel both draw), statusView.js (how the status
+                            model's issues are counted and worded, and its subsystems made
+                            the strip's cells), overviewFilter.js (the strip's filter, in the
+                            URL), entityAnchors.js (where an Overview issue row leads)
   api/client.js             apiFetch -- explicit auth-injecting fetch wrapper
   context/                  ConfigContext (config + update via setIn), OverlayContext (toast/confirm)
   hooks/useData.js          fetchJson (304-aware), weather, search engines
@@ -1145,7 +1148,7 @@ flowchart TD
   SH --> HD["AppHeader<br/>(useStatus: /api/status)"]
   SH --> SN["SideNav (≥ 768px) /<br/>BottomTabs + More sheet (< 768px)"]
   APP --> CPAL["CommandPalette<br/>(pages, apps, themes, links)"]
-  SH --> OS["/ : OverviewStatus<br/>(the poll's status: ShellAttention)"]
+  SH --> OS["/ : OverviewStatus<br/>(the poll's status: ShellAttention,<br/>SubsystemStrip, the ?subsystem= filter)"]
   SH --> DV["/ : DashboardView"]
   SH --> AP["/alerts : AlertsPage<br/>(ShellAttention)"]
   SH --> SV["/settings/:section? : SettingsView (13 tabs)"]
@@ -1238,7 +1241,35 @@ flowchart TD
   window), and this tab stays where it was. A
   wrapper (`.overview-status`, `global.css`) lines the status up with the
   board's cards: the board's padding plus HelmGrid's margin. Later cards
-  rebuild the board under it (#298–#300) and take over the gutter.
+  rebuild the board under it (#299, #300) and take over the gutter.
+- **The subsystem strip and its filter** (#298, spec §8 item 2). Under the
+  status, in the same `ShellSection`, `SubsystemStrip` has a tile per
+  subsystem the model has anything in (`counts.total` above 0), in the
+  model's order: its state's lamp, its name, and the model's `detail` ("11 /
+  12 up") as the value (`subsystemCells`, `statusView.js`). The lamp is named
+  by the model's word for the subsystem's worst entity ("Down", "Failed"),
+  the first of its ranked issues in that state; the client judges nothing. A
+  subsystem that isn't set up has no tile, and an empty board has no strip.
+  Each tile is a toggle button (`aria-pressed`) that filters the page to its
+  subsystem, one at a time; pressing the pressed one, or Clear, shows
+  everything. The filter is the URL's `?subsystem=` (`overviewFilter.js`,
+  `useSearchParam`): a press pushes a history entry without scrolling, so
+  Back undoes it and a link or a reload opens the page filtered; a value the
+  strip doesn't show is no filter. Filtered, the attention panel's rows are
+  that subsystem's alone and it says "Showing Nodes only" with Clear (the
+  quiet line says it too); its heading and sentence stay the whole board's.
+  Today's board keeps that subsystem's panels (`boardFilter.js`): Services
+  the node cards with a service of their own and the custom groups, Nodes
+  the node cards, Power the UPS panel, Jobs and Backups Scheduled Jobs;
+  Pipeline, Checklist and Quick Launch belong to none. The panels kept rise
+  into the space left (`compactUp`, `gridMath.js`), and can't be dragged or
+  resized while filtered: a drag saves the layout it sees, which would drop
+  the hidden panels. Integrations have no panel on today's board (their
+  numbers show on their services' cards), so, as for a section switched off
+  (Scheduled Jobs off, the UPS panel hidden), the board shows a note in its
+  place, "No section on the board for Integrations", with "Show the whole
+  board". The rows' links follow: a panel the filter hides takes its anchor
+  off the list of places drawn.
 - **State.** `ConfigContext` exposes `config`, the stable `setConfig`, and a
   memoised `update(path, value)` built on `setIn` (immutable structural-sharing
   deep-set) -- so leaf cards memoise and don't re-render on unrelated edits.
@@ -1246,7 +1277,8 @@ flowchart TD
   focus-restore, reduced-motion). `api/client.js` `apiFetch` injects the auth
   token explicitly (replacing an old `window.fetch` monkey-patch).
 - **HelmGrid** is a custom, dependency-light layout engine: pure math in
-  `gridMath.js` (snap, overlap-resolve, content-fit), per-item measurement +
+  `gridMath.js` (snap, overlap-resolve, content-fit, and `compactUp` for the
+  board filtered to a subsystem, #298), per-item measurement +
   rendering in `GridItem.jsx`, and lifecycle (breakpoints, drag/resize, commit)
   in `HelmGrid.jsx`. Panels auto-grow to fit content (`GridItem` re-measures a
   panel whenever it resizes); pointer **and keyboard**
@@ -1842,9 +1874,16 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   the incident, the issue count and every issue row are on screen without
   scrolling (inside the window, under the header, above the phone's tabs);
   healthy, the quiet line, with no red, amber or green in the status area but
-  its one 10px lamp (every colour each element draws, read in OKLCH); and an
+  its 10px lamps, the line's and the strip's (every colour each element
+  draws, read in OKLCH); and an
   issue row, clicked or by Enter, brings its entity's place on the board into
-  view, clear of the header, and focuses it. Both leave screenshots in
+  view, clear of the header, and focuses it. The subsystem strip (#298): on
+  screen under the status without scrolling, a tile per subsystem the model
+  has anything in, nothing in a tile cut off and no sideways scroll (at 360px
+  too); a tile, clicked or by Space and Enter (its focus ring showing),
+  filters the rows and the board and back, Back and Forward follow the URL,
+  and a filter with no panel on the board shows its note; axe on the
+  filtered status and the note. Both leave screenshots in
   `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through

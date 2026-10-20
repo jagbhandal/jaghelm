@@ -19,6 +19,10 @@
  *   action    the panel's top-right element (the Overview's "All alerts")
  *   linkOf    entity -> { href, onOpen } for its row, or {} for a row that
  *             opens nothing; rows open nothing without it
+ *   filter    a subsystem's id (the Overview's strip, #298): the rows are
+ *             that subsystem's alone, and the panel says "Showing Nodes only"
+ *             with Clear (`onClearFilter`); the heading and sentence stay
+ *             the whole board's
  *   busyLabel what the placeholder says to a screen reader
  */
 import { useSyncExternalStore } from 'react';
@@ -40,14 +44,22 @@ export function ShellAttention({
   titleAs = 'h2',
   action,
   linkOf,
+  filter = null,
+  onClearFilter,
   busyLabel = 'Loading status',
 }) {
   // Re-render on each answer, so the ages move with the clock.
   const at = useSyncExternalStore(updated.subscribe, updated.get);
   const now = at ?? Date.now();
-  const rows = issueRows(status, now);
-  const issues = linkOf ? rows.map((row, i) => ({ ...row, ...linkOf(status.issues[i]) })) : rows;
-  const quiet = issues.length === 0;
+  const all = status?.issues ?? [];
+  const shown = filter ? all.filter((i) => i.subsystem === filter) : all;
+  const rows = issueRows({ issues: shown }, now);
+  const issues = linkOf ? rows.map((row, i) => ({ ...row, ...linkOf(shown[i]) })) : rows;
+  // Quiet is the whole board's, not the filter's.
+  const quiet = all.length === 0;
+  const filterName = filter
+    ? (status?.subsystems?.find((s) => s.id === filter)?.name ?? filter)
+    : undefined;
   return (
     <>
       {reach !== 'ok' && reach !== 'loading' && (
@@ -72,6 +84,8 @@ export function ShellAttention({
           subline={quiet ? undefined : status.overall.sentence}
           action={action}
           issues={issues}
+          filter={filterName}
+          onClearFilter={filter ? onClearFilter : undefined}
         />
       )}
     </>

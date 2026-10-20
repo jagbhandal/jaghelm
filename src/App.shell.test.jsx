@@ -418,6 +418,33 @@ describe('the Overview', () => {
     expect(screen.queryByRole('region', { name: 'Needs attention' })).toBeNull();
   });
 
+  // #298: the subsystem strip under the status, from the same poll.
+  it('has the subsystem strip under the status: a tile per subsystem with anything in it', async () => {
+    stubServer({ status: HEALTHY });
+    await renderApp();
+    const strip = await screen.findByRole('region', { name: 'Subsystems' });
+    expect(overviewStatus()).toContainElement(strip);
+    const configured = HEALTHY.subsystems.filter((s) => s.counts.total > 0);
+    // This board has no job, backup or integration: their tiles are left out.
+    expect(configured.map((s) => s.id)).toEqual(['services', 'nodes', 'power']);
+    const labels = within(strip)
+      .getAllByRole('button')
+      .map((b) => b.getAttribute('aria-label'));
+    expect(labels).toHaveLength(configured.length);
+    configured.forEach((s, n) => {
+      expect(labels[n].startsWith(`${s.name}, `)).toBe(true);
+      expect(labels[n].endsWith(`, ${s.detail}`)).toBe(true);
+    });
+    expect(server.requests.filter((r) => r === '/api/status')).toHaveLength(1);
+  });
+
+  it('on an empty board: no strip', async () => {
+    stubServer({ status: FIRST_RUN });
+    await renderApp();
+    await screen.findByRole('region', { name: 'Status' });
+    expect(screen.queryByRole('region', { name: 'Subsystems' })).toBeNull();
+  });
+
   it('is a placeholder before the first answer', async () => {
     stubServer();
     server.statusPending = true;

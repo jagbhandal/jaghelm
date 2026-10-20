@@ -1,7 +1,7 @@
 /**
  * How the shell words the status model (#296). The server judges every state
  * (spec §6); these only count and phrase what it sent, for the header's Alerts
- * badge and the Alerts page's issue rows.
+ * badge, the Alerts page's issue rows and the Overview's subsystem strip.
  */
 
 /** The noun before an issue's node, by the entity's kind (docs/ARCHITECTURE.md §4.7). */
@@ -73,4 +73,43 @@ export function alertsBadge(status, reach) {
     state: issues[0].state,
     label: plural(issues.length, 'issue', 'issues'),
   };
+}
+
+/**
+ * A subsystem's word: the model's word for its worst entity (the first of its
+ * ranked issues in that state, else the first entity in it), as the strip's
+ * lamp names it ("Down", "On battery", "Healthy"). The model gives a subsystem
+ * a state, not a word, and the word for a state is its entity's.
+ */
+function subsystemWord(status, subsystem) {
+  const match = (e) => e.subsystem === subsystem.id && e.state === subsystem.state;
+  return (status.issues?.find(match) ?? status.entities?.find(match))?.word;
+}
+
+/**
+ * The model's subsystems as SubsystemStrip cells (#298, spec §8 item 2), in
+ * the model's order: one per subsystem with anything in it (an unconfigured
+ * one shows no panel, spec §8), its state, word and the model's `detail`
+ * ("11 / 12 up") as the value. None on an empty board.
+ */
+export function subsystemCells(status) {
+  return (status?.subsystems ?? [])
+    .filter((s) => s.counts?.total > 0)
+    .map((s) => ({
+      key: s.id,
+      label: s.name,
+      state: s.state,
+      word: subsystemWord(status, s),
+      value: s.detail,
+    }));
+}
+
+/**
+ * The subsystem the Overview is filtered to, `{ id, name }`, when `id` names
+ * one the strip shows; otherwise null, and the Overview shows everything.
+ */
+export function subsystemFilter(status, id) {
+  if (!id) return null;
+  const s = (status?.subsystems ?? []).find((x) => x.id === id && x.counts?.total > 0);
+  return s ? { id: s.id, name: s.name } : null;
 }
