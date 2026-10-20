@@ -1,12 +1,15 @@
 import React, { lazy, Suspense } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
   installChunkReload,
   chunkReloadPending,
+  noteActiveTab,
+  takeReloadTab,
   RELOAD_KEY,
-  RELOAD_WINDOW_MS,
+  TAB_KEY,
+  RELOAD_STALL_MS,
 } from './chunkReload.js';
 
 // What Vite's preload helper (__vitePreload) does around every lazy import() in a
@@ -34,37 +37,47 @@ function failChunk() {
   return event;
 }
 
-let uninstall = () => {};
-let clock = 1_000_000;
-const now = () => clock;
+// The entry chunk URLs of three deploys, as main.jsx passes them.
+const BUILD_A = 'https://helm.example/assets/index-AAAA1111.js';
+const BUILD_B = 'https://helm.example/assets/index-BBBB2222.js';
+const BUILD_C = 'https://helm.example/assets/index-CCCC3333.js';
 
-/** Start a "page": install the listener as main.jsx does, with a fake reload. */
+/** A reload() that throws, as when the navigation is refused outright. */
+const blockedReload = () =>
+  vi.fn(() => {
+    throw new DOMException('navigation blocked', 'SecurityError');
+  });
+
+let uninstall = () => {};
+
+/** Start a "page" on a build: install the listener as main.jsx does, with a fake reload. */
 function loadPage(options = {}) {
   uninstall();
   const reload = vi.fn();
-  uninstall = installChunkReload({ reload, now, ...options });
+  uninstall = installChunkReload({ build: BUILD_A, reload, ...options });
   return reload;
 }
 
 beforeEach(() => {
   window.sessionStorage.clear();
-  clock = 1_000_000;
+  noteActiveTab(null);
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
 afterEach(() => {
   uninstall();
   uninstall = () => {};
+  vi.useRealTimers();
 });
 
-describe('chunk reload guard', () => {
+describe('chunk reload guard: one reload per build', () => {
   it('reloads once on the first chunk failure and swallows the error', () => {
     const reload = loadPage();
     const event = failChunk();
     expect(reload).toHaveBeenCalledTimes(1);
     expect(event.defaultPrevented).toBe(true);
     expect(chunkReloadPending()).toBe(true);
-    expect(window.sessionStorage.getItem(RELOAD_KEY)).toBe(String(clock));
+    expect(window.sessionStorage.getItem(RELOAD_KEY)).toBe(BUILD_A);
   });
 
   it('a further failure while that reload is under way neither reloads again nor surfaces', () => {
@@ -76,38 +89,50 @@ describe('chunk reload guard', () => {
     expect(second.defaultPrevented).toBe(true);
   });
 
-  it('a second failure after the reload lets the error through to the error screen', () => {
-    loadPage();
+  it('a second failure on the same build lets the error through, however long after', () => {
+    vi.useFakeTimers({ now: new Date('2026-10-19T12:00:00Z') });
+    loadPage({ build: BUILD_B });
     failChunk();
-    clock += 5_000;
-    const reload = loadPage(); // the reloaded page, same tab session
+    vi.setSystemTime(new Date('2026-10-19T12:10:00Z')); // the user clicks again ten minutes on
+    const reload = loadPage({ build: BUILD_B }); // the reload got the same build back
     const event = failChunk();
     expect(reload).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
     expect(chunkReloadPending()).toBe(false);
   });
 
-  it('the flag expires, so a later deploy in the same tab reloads again', () => {
-    loadPage();
+  it('a new build reloads again', () => {
+    loadPage({ build: BUILD_A });
     failChunk();
-    clock += RELOAD_WINDOW_MS - 1;
-    let reload = loadPage();
-    failChunk();
-    expect(reload).not.toHaveBeenCalled();
-
-    clock += 2; // now past the window since the first reload
-    reload = loadPage();
+    const reload = loadPage({ build: BUILD_B }); // the reload landed on the new build
     const event = failChunk();
     expect(reload).toHaveBeenCalledTimes(1);
     expect(event.defaultPrevented).toBe(true);
-    expect(window.sessionStorage.getItem(RELOAD_KEY)).toBe(String(clock));
+    expect(window.sessionStorage.getItem(RELOAD_KEY)).toBe(BUILD_B);
   });
 
-  it('a failure on a page with no chunk failure yet reloads even when the flag holds junk', () => {
-    window.sessionStorage.setItem(RELOAD_KEY, 'not-a-time');
+  it('two quick deploys each get their reload, and a broken chunk then shows the error', () => {
+    for (const build of [BUILD_A, BUILD_B, BUILD_C]) {
+      const reload = loadPage({ build });
+      expect(failChunk().defaultPrevented, build).toBe(true);
+      expect(reload, build).toHaveBeenCalledTimes(1);
+    }
+    const reload = loadPage({ build: BUILD_C });
+    expect(failChunk().defaultPrevented).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('a flag holding junk still reloads', () => {
+    window.sessionStorage.setItem(RELOAD_KEY, 'not-a-build');
     const reload = loadPage();
     expect(failChunk().defaultPrevented).toBe(true);
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('without a build identity it never reloads', () => {
+    const reload = loadPage({ build: '' });
+    expect(failChunk().defaultPrevented).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
   });
 
   describe('when sessionStorage is unusable, it never reloads and the error goes through', () => {
@@ -120,14 +145,16 @@ describe('chunk reload guard', () => {
           throw new DOMException('blocked', 'SecurityError');
         },
         setItem() {},
+        removeItem() {},
       }),
       'setItem throws': () => ({
         getItem: () => null,
         setItem() {
           throw new DOMException('quota', 'QuotaExceededError');
         },
+        removeItem() {},
       }),
-      'writes are not kept': () => ({ getItem: () => null, setItem() {} }),
+      'writes are not kept': () => ({ getItem: () => null, setItem() {}, removeItem() {} }),
     };
     for (const [name, getStorage] of Object.entries(cases)) {
       it(name, () => {
@@ -140,11 +167,71 @@ describe('chunk reload guard', () => {
     }
   });
 
+  it('a reload that throws lets the error through', () => {
+    const reload = blockedReload();
+    loadPage({ reload });
+    noteActiveTab('settings');
+    const event = failChunk();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(false);
+    expect(chunkReloadPending()).toBe(false);
+    // No reload happened, so nothing is left for a later boot to restore.
+    expect(window.sessionStorage.getItem(TAB_KEY)).toBeNull();
+  });
+
+  it('a reload that never navigates stops counting as pending after the watchdog', () => {
+    vi.useFakeTimers();
+    loadPage();
+    failChunk();
+    vi.advanceTimersByTime(RELOAD_STALL_MS - 1);
+    expect(chunkReloadPending()).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(chunkReloadPending()).toBe(false);
+    // Still the same build, so the next failure goes to the error screen.
+    expect(failChunk().defaultPrevented).toBe(false);
+  });
+
   it('uninstalling stops listening', () => {
     const reload = loadPage();
     uninstall();
     expect(failChunk().defaultPrevented).toBe(false);
     expect(reload).not.toHaveBeenCalled();
+  });
+});
+
+describe('chunk reload: the open tab comes back', () => {
+  it('stores the open tab before reloading, but not the dashboard, the default anyway', () => {
+    loadPage({ build: BUILD_A });
+    noteActiveTab('dashboard');
+    failChunk();
+    expect(window.sessionStorage.getItem(TAB_KEY)).toBeNull();
+
+    loadPage({ build: BUILD_B });
+    noteActiveTab('settings');
+    failChunk();
+    expect(window.sessionStorage.getItem(TAB_KEY)).toBe('settings');
+  });
+
+  it('stores nothing when the failure goes to the error screen', () => {
+    loadPage({ build: BUILD_B });
+    noteActiveTab('settings');
+    failChunk();
+    loadPage({ build: BUILD_B }); // the same build again: this failure is let through
+    noteActiveTab('grafana');
+    failChunk();
+    expect(window.sessionStorage.getItem(TAB_KEY)).toBe('settings');
+  });
+
+  it('takeReloadTab reads the stored tab once, and gives null when storage throws', () => {
+    window.sessionStorage.setItem(TAB_KEY, 'grafana');
+    expect(takeReloadTab()).toBe('grafana');
+    expect(takeReloadTab()).toBeNull();
+    expect(window.sessionStorage.getItem(TAB_KEY)).toBeNull();
+
+    const blocked = () => {
+      throw new DOMException('The operation is insecure.', 'SecurityError');
+    };
+    expect(takeReloadTab(blocked)).toBeNull();
   });
 });
 
@@ -169,14 +256,13 @@ describe('a lazy view whose chunk is gone, through the root ErrorBoundary', () =
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('second failure in the same session: shows the normal error screen', async () => {
+  it('second failure on the same build: shows the normal error screen', async () => {
     loadPage();
     const first = renderLazyView();
     await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
     first.unmount();
 
-    clock += 3_000;
-    const reload = loadPage(); // the page the reload brought up
+    const reload = loadPage(); // the page the reload brought up, still on this build
     renderLazyView();
     expect(await screen.findByText('Something went wrong')).toBeInTheDocument();
     expect(screen.getByText(/Failed to fetch dynamically imported module/)).toBeInTheDocument();
@@ -192,5 +278,35 @@ describe('a lazy view whose chunk is gone, through the root ErrorBoundary', () =
     renderLazyView();
     expect(await screen.findByText('Something went wrong')).toBeInTheDocument();
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('a reload that throws: shows the normal error screen', async () => {
+    const reload = blockedReload();
+    loadPage({ reload });
+    renderLazyView();
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('a reload that never navigates: blank at first, the error screen after the watchdog', async () => {
+    vi.useFakeTimers();
+    const reload = loadPage(); // a no-op, as when the navigation is cancelled
+    const { container } = renderLazyView();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(container).toBeEmptyDOMElement();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RELOAD_STALL_MS - 1);
+    });
+    expect(container).toBeEmptyDOMElement();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reload Dashboard' })).toBeInTheDocument();
   });
 });

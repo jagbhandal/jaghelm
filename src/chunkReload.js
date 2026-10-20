@@ -5,31 +5,47 @@
 // (#256), the import fails and React would show the full-screen error. Vite's
 // preload helper wraps every lazy import() in the build and fires a cancelable
 // `vite:preloadError` on window when one fails, whether a preloaded dependency
-// or the import itself. On the first failure we cancel it and reload, so the
-// page comes back on the new build.
+// or the import itself. On the first failure in a build we cancel it and
+// reload, so the page comes back on the new build, on the tab that was open.
 //
-// The guard is a timestamp in sessionStorage: a failure within RELOAD_WINDOW_MS
-// of the last reload in this tab is let through to the normal error screen, so
-// a chunk that is broken in the current build can't reload in a loop. The flag
-// expires rather than being cleared on success, because nothing outside
-// App.jsx learns that a lazy chunk loaded (Vite only reports failures), and
-// clearing it when the page boots would re-arm the reload before the retry: the
-// reload lands on the dashboard, and the chunk loads only on the next click.
-// When sessionStorage is blocked or doesn't keep what it is given, we never
-// reload: the error screen is better than a possible loop.
+// The same event also fires for a chunk that is served but throws while it
+// evaluates, and for a fetch that fails because the browser is offline. Both
+// get the one reload too. Offline, the reload brings back the cached shell of
+// the same build; either way the retry fails on a build that already reloaded,
+// so the error screen shows.
+//
+// The guard is the build itself: main.jsx passes the entry chunk's URL, whose
+// content hash changes whenever any lazy chunk's name does. Before reloading we
+// store that build in sessionStorage. A failure on a build that is already
+// stored there means the reload didn't bring a new build (the chunk is broken
+// in this one), so it goes to the normal error screen, however much later it
+// happens. The next deploy is a different build and gets its own reload. When
+// sessionStorage is blocked or doesn't keep what it is given, we never reload:
+// the error screen is better than a possible loop.
 //
 // Cancelling the event makes the import resolve to undefined, and React then
 // throws while rendering the lazy view. ErrorBoundary asks chunkReloadPending()
 // and renders nothing meanwhile, so the error screen doesn't flash before the
-// page goes.
+// page goes. If reload() throws, the event isn't cancelled and the error shows.
+// If the page is still here RELOAD_STALL_MS after asking (the navigation was
+// cancelled), pending ends and the boundaries show the error screen.
+//
+// The open tab: App.jsx reports it through noteActiveTab(). Just before the
+// reload we store it under TAB_KEY, which only this path writes, and AppMain
+// takes it once at boot (takeReloadTab), so an ordinary reload still opens the
+// dashboard.
 
 export const RELOAD_KEY = 'jaghelm-chunk-reload';
+export const TAB_KEY = 'jaghelm-chunk-reload-tab';
 
-// Long enough to cover the retry right after a reload; short enough that the
-// next deploy, minutes later, can reload the same tab again.
-export const RELOAD_WINDOW_MS = 60_000;
+// A reload normally replaces the page in well under a second; one still here
+// after this long isn't going to happen.
+export const RELOAD_STALL_MS = 10_000;
 
 let pending = false;
+let stallTimer = null;
+let currentTab = null;
+const stallListeners = new Set();
 
 /** True once a reload has been started; the page is about to be replaced. */
 export function chunkReloadPending() {
@@ -37,43 +53,96 @@ export function chunkReloadPending() {
 }
 
 /**
- * Record a reload in storage and say whether it may go ahead: false when the
- * last one was less than RELOAD_WINDOW_MS ago, or when storage throws or loses
- * the write. Never throws.
+ * Call `listener` if a started reload stalls: pending has just ended and the
+ * page is still here. Returns a function that stops listening.
  */
-function claimReload(getStorage, at) {
+export function onChunkReloadStall(listener) {
+  stallListeners.add(listener);
+  return () => stallListeners.delete(listener);
+}
+
+/** App.jsx reports the open tab here, for the page a chunk reload brings up. */
+export function noteActiveTab(tab) {
+  currentTab = tab;
+}
+
+/** The tab a chunk reload left for this boot, read once; null when none. Never throws. */
+export function takeReloadTab(getStorage = () => window.sessionStorage) {
   try {
     const storage = getStorage();
-    const last = Number(storage.getItem(RELOAD_KEY));
-    if (last && at - last < RELOAD_WINDOW_MS) return false;
-    const stamp = String(at);
-    storage.setItem(RELOAD_KEY, stamp);
-    return storage.getItem(RELOAD_KEY) === stamp;
+    const tab = storage.getItem(TAB_KEY);
+    storage.removeItem(TAB_KEY);
+    return tab;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Record this build as reloaded and say whether the reload may go ahead: false
+ * when this build already reloaded once, or when storage throws or loses the
+ * write. Never throws.
+ */
+function claimReload(getStorage, build) {
+  try {
+    const storage = getStorage();
+    if (storage.getItem(RELOAD_KEY) === build) return false;
+    storage.setItem(RELOAD_KEY, build);
+    return storage.getItem(RELOAD_KEY) === build;
   } catch {
     return false;
   }
 }
 
+/** Store or drop the open tab for the next boot. Never throws. */
+function keepTab(getStorage, tab) {
+  try {
+    if (tab && tab !== 'dashboard') getStorage().setItem(TAB_KEY, tab);
+    else getStorage().removeItem(TAB_KEY);
+  } catch {
+    // The reload still helps; it lands on the dashboard.
+  }
+}
+
 /**
  * Listen for `vite:preloadError` on window. Called once from main.jsx before the
- * app renders. The options exist for tests. Returns a function that removes the
- * listener and clears the pending state.
+ * app renders, with `build` naming the running build. The other options exist
+ * for tests. Returns a function that removes the listener and clears the
+ * pending state.
  */
 export function installChunkReload({
+  build,
   getStorage = () => window.sessionStorage,
   reload = () => window.location.reload(),
-  now = () => Date.now(),
 } = {}) {
   const onPreloadError = (event) => {
-    if (!pending && !claimReload(getStorage, now())) return;
-    event.preventDefault();
-    if (pending) return;
+    if (pending) {
+      // A view's CSS preload and its import() can both fail in one page.
+      event.preventDefault();
+      return;
+    }
+    if (!build || !claimReload(getStorage, build)) return;
+    keepTab(getStorage, currentTab);
     pending = true;
-    reload();
+    try {
+      reload();
+    } catch {
+      pending = false;
+      keepTab(getStorage, null);
+      return;
+    }
+    event.preventDefault();
+    stallTimer = setTimeout(() => {
+      stallTimer = null;
+      pending = false;
+      for (const listener of [...stallListeners]) listener();
+    }, RELOAD_STALL_MS);
   };
   window.addEventListener('vite:preloadError', onPreloadError);
   return () => {
     window.removeEventListener('vite:preloadError', onPreloadError);
+    clearTimeout(stallTimer);
+    stallTimer = null;
     pending = false;
   };
 }

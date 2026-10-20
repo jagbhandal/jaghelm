@@ -1,5 +1,5 @@
 import React from 'react';
-import { chunkReloadPending } from '../chunkReload.js';
+import { chunkReloadPending, onChunkReloadStall } from '../chunkReload.js';
 
 /**
  * ErrorBoundary — catches render errors in its subtree.
@@ -11,7 +11,8 @@ import { chunkReloadPending } from '../chunkReload.js';
  *     boundary stays the last resort for anything the inline ones don't cover.
  *
  * While the page is reloading for a chunk a deploy removed (chunkReload.js),
- * it renders nothing instead, so the error screen doesn't flash first.
+ * it renders nothing instead, so the error screen doesn't flash first. If that
+ * reload stalls, it re-renders and shows its normal error after all.
  *
  * `itemId` is logged with the caught error to identify the failing panel/item.
  */
@@ -28,6 +29,13 @@ export default class ErrorBoundary extends React.Component {
   componentDidCatch(error, info) {
     const where = this.props.itemId ? ` [${this.props.itemId}]` : '';
     console.error(`[ErrorBoundary]${where} Caught render error:`, error, info.componentStack);
+    if (chunkReloadPending() && !this.stopWatching) {
+      this.stopWatching = onChunkReloadStall(() => this.forceUpdate());
+    }
+  }
+
+  componentWillUnmount() {
+    this.stopWatching?.();
   }
 
   render() {

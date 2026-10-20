@@ -619,15 +619,31 @@ flowchart TD
   or an iframe tab asks for a chunk the deploy removed, and gets a 404.
   `src/chunkReload.js`, installed by `main.jsx`, listens for Vite's
   `vite:preloadError` (fired for every failed lazy import in a build), cancels
-  it and reloads the page once, onto the new build. A sessionStorage timestamp
-  guards it: a failure within 60 s of the last reload in that tab goes through
-  to the root `ErrorBoundary`'s error screen, so a chunk broken in the current
-  build can't loop, and later deploys can reload the tab again. Blocked
-  sessionStorage means no reload. While the reload is under way, `ErrorBoundary`
-  renders nothing, because the cancelled import resolves empty and the lazy view
-  throws. The Android app doesn't need this: its only lazy chunks are
-  Capacitor's browser fallbacks for its plugins, bundled in the APK, which
-  can't change while the app runs.
+  it and reloads the page once, onto the new build, which reopens the tab that
+  was open. The guard is the build: `main.jsx` passes the entry chunk's URL,
+  whose hash changes whenever any lazy chunk's name does, and the reload stores
+  it in sessionStorage. A chunk failure on a build that already reloaded once
+  goes through to the root `ErrorBoundary`'s error screen, whenever it happens,
+  so a chunk broken in the current build can't loop. Each later deploy is a new
+  build and gets its own reload. Blocked sessionStorage means no reload. While
+  the reload is under way, `ErrorBoundary` renders nothing, because the
+  cancelled import resolves empty and the lazy view throws. If `reload()` throws,
+  the error shows at once; if the page is still there 10 s after asking (the
+  navigation was cancelled), the error screen shows then.
+  - **The open tab.** Just before reloading, `chunkReload.js` stores the open
+    tab's id under a sessionStorage key only it writes. `AppMain` takes it once
+    at boot and opens that tab, or the dashboard when the config no longer has
+    it. An ordinary reload still opens the dashboard.
+  - **Also covered, one reload then the error screen.** The same event fires
+    for a chunk that is served but throws while it evaluates, and for a fetch
+    that fails because the browser is offline. Each gets the one reload. A chunk
+    that throws on the new build too shows the error screen straight after it.
+    Offline, the service worker answers the reload with the cached shell of the
+    same build, so the retry fails on a build that already reloaded and the
+    error screen shows, with its Reload button for when the network is back.
+  - **Android.** The Android app doesn't need this: its only lazy chunks are
+    Capacitor's browser fallbacks for its plugins, bundled in the APK, which
+    can't change while the app runs.
 
 ### 5.1 UI stack (Tailwind CSS v4, shadcn/ui, Lucide)
 
@@ -862,7 +878,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
 - **Client** (`npm run test:client`, Vitest + jsdom + React Testing Library):
   NavBar/config-driven rendering, settings primitives, the keyboard grid handle,
   per-source health banners, overlay/confirm semantics, the 304-stable data
-  hook, the old-tab chunk reload and its loop guard (`src/chunkReload.test.jsx`),
+  hook, the old-tab chunk reload, its per-build guard and stall watchdog
+  (`src/chunkReload.test.jsx`) and the tab it reopens (`src/App.reloadTab.test.jsx`),
   and the `src/ui/` components.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through
