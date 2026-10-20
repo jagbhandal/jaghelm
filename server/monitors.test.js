@@ -51,6 +51,29 @@ test('monitors: a fresh ok fetch primes the cache with live statuses', async () 
   }
 });
 
+test('monitors: the status page path keeps pending and maintenance as kumaStatus (#258)', async () => {
+  const body = {
+    publicGroupList: [{ monitorList: [1, 2, 3, 4].map((id) => ({ id, name: `m${id}` })) }],
+    heartbeatList: { 1: [{ status: 1 }], 2: [{ status: 0 }], 3: [{ status: 2 }], 4: [{ status: 3 }] },
+    uptimeList: {},
+  };
+  globalThis.fetch = async () => mockResponse({ ok: true, body });
+  try {
+    const { monitors: m } = await fetchMonitors(true);
+    assert.deepEqual(
+      [1, 2, 3, 4].map((id) => [m[id].status, m[id].kumaStatus]),
+      [
+        ['up', 'up'],
+        ['down', 'down'],
+        ['unknown', 'pending'],
+        ['unknown', 'maintenance'],
+      ]
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test('monitors: a stale cache PAST the ceiling is NOT served on !ok', async () => {
   // Kuma now returns 5xx on the status-page endpoint.
   globalThis.fetch = async () => mockResponse({ ok: false, body: {} });

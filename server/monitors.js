@@ -7,7 +7,7 @@ import { createLogger } from './util/logger.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
 import { safeFetch } from './httpClient.js';
 import { positiveMs } from './util/env.js';
-import { parseKumaMetrics, statusFromValue } from './kumaMetrics.js';
+import { kumaStatusFromValue, parseKumaMetrics, statusFromValue } from './kumaMetrics.js';
 
 const log = createLogger('monitors');
 
@@ -161,6 +161,7 @@ async function fetchFromStatusPage() {
       id,
       name: pub.name,
       status: statusFromValue(latest?.status),
+      kumaStatus: kumaStatusFromValue(latest?.status),
       ping: latest?.ping || 0,
       uptime24: uptimeList[`${id}_24`] || 0,
       active: pub.active !== false,
@@ -248,6 +249,9 @@ export async function getMonitorNames() {
     .map((m) => m.name)
     .sort();
 }
+
+/** A monitor Kuma reports up or down: the ones placed on the board. */
+const isUpOrDown = (m) => m.status === 'down' || m.status === 'up';
 
 // ── Matching monitors to containers (#240) ───────────────────────────────
 //
@@ -669,17 +673,20 @@ export function logUnmatchedContainers({ unmatched, containerCount, monitors }) 
  * `lastBeatAt: null` + `active: true` by construction — paused monitors are
  * absent from /metrics entirely, so this staleness guard is intentionally INERT
  * for that source.
+ *
+ * `pick` chooses by status: up or down by default. The status model asks for
+ * the pending and in-maintenance ones too (#290), by `kumaStatus`.
  */
 export function selectUnclaimedMonitors(
   monitors,
   consumedIds,
-  { now = Date.now(), staleMs = MONITOR_STALE_MS } = {}
+  { now = Date.now(), staleMs = MONITOR_STALE_MS, pick = isUpOrDown } = {}
 ) {
   return Object.values(monitors)
     .filter(
       (m) =>
         m &&
-        (m.status === 'down' || m.status === 'up') &&
+        pick(m) &&
         m.active !== false &&
         !consumedIds.has(m.id) &&
         (m.lastBeatAt == null || now - m.lastBeatAt <= staleMs)

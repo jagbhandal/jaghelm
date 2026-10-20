@@ -104,11 +104,15 @@ server/                     Express API (Node 26, ESM)
   arcane/                   Arcane poller: read-only API client, state derivation, push builders,
                             persisted state, dry-run module (see 4.2)
   integrations/             the integration engine (presets + handler + lib, see 4.3)
+  status/                   the status model: every entity's state, reason and since, the
+                            subsystems, the overall sentence and the ranked issues, and the
+                            one threshold config push reads too (see 4.7)
   util/                     logger, ssrf, redact, rateLimiter, atomicWrite,
                             configSchema (zod), configMask (the config read's
                             credential markers, see 6), dataDir, asyncHandler, dedupe
   testing/                  test-only helpers: a mock Prometheus that evaluates JagHelm's
-                            PromQL over homelab-shaped series, and the pre-#234 node reader
+                            PromQL over homelab-shaped series, the pre-#234 node reader, and
+                            the status model's input builders (statusFixtures.js)
 
 src/                        React 19 SPA (Vite 8)
   main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + view switch
@@ -472,6 +476,17 @@ before #395 has no `monitorOf` and diffs as one where no key had a monitor,
 which is how every key was diffed before, so the deploy sends nothing; its
 first cycle writes the new format.
 
+Beside `upWithoutCard` and `monitorOf`, the services refresh keeps four more
+things for the status model only (4.7), so `/api/services` keeps its shape and
+meaning (spec §6.3): which running cards' monitors Kuma reports pending or in
+maintenance (`kumaStatusOf`; their `status` stays `unknown`), the monitors no
+running container got that are pending or in maintenance (`kumaWithoutCard`,
+placed after the up and down ones so they take none of their uids), which grey
+presence cards were a Kuma monitor's last container (`backedBy`), and why
+Prometheus or Kuma failed (`sourceErrors`). Kuma's own status (`up`, `down`,
+`pending`, `maintenance`) comes from `kumaStatus` on each monitor
+(`kumaMetrics.js`, both the `/metrics` and the status-page paths).
+
 The service registry's `seen` list has one record per monitor, the last node in
 the pass for one mapped explicitly to a container on several nodes. A record is
 written only when a monitor's node or container changes, so cycles that match
@@ -715,6 +730,105 @@ integration connection-test endpoint.
 - **Two probes**: `/api/health` (liveness; reflects refresh-loop liveness -- 503
   when wedged) and `/api/readyz` (readiness; distinguishes "not ready yet" from
   "down"), backing the Docker `HEALTHCHECK` and the deploy gate.
+
+### 4.7 Status model
+
+`server/status/` judges every entity JagHelm watches, once, on the server (spec
+§6, #290), so no client and no push path judges one for itself. It is built
+but not yet called: #292 runs it once per background cycle, after the
+refreshes, serves it at `/api/status` and builds push on it. Until then it
+costs the refresh loop nothing. Built from the homelab-shaped fixture (4 nodes,
+63 entities), one build takes about 0.04 ms.
+
+**`buildStatus({ inputs, thresholds, memory, now })`** (`model.js`) is a pure,
+deterministic function: the same inputs, memory and clock give the same JSON,
+whatever order the payloads list things in. It returns `{ status, memory }`;
+`memory` is for the next call only (levels, "for N cycles" runs and each
+entity's `since`) and is never served. `createStatusTracker()` (`index.js`)
+keeps the memory from one cycle to the next.
+
+**Inputs** (`readStatusInputs(caches)`, the same cache seam as the push
+snapshot): the cached `/api/services`, `/api/ups` and `/api/integrations`
+payloads, what the services refresh keeps beside its payload (4.2), the cron
+store's statuses, whether `KUMA_URL` and `GITEA_URL` are set, and the cycle's
+error set (`runCycleRefreshes`, for Gitea). `backupJobs` (the cron jobs marked
+as backups) and `arcaneAgents` come from #291; until then there are none.
+
+**The status:**
+
+```js
+{
+  overall: { state, sentence },     // "2 services down · UPS on battery"
+  issues: [entity, …],              // ranked, see below
+  subsystems: [{ id, name, state, counts: { total, ok, warn, crit, unknown, maintenance }, detail }],
+  entities: [{ id, kind, subsystem, name, node?, state, word, reason, metric?, conditions?, since }],
+  sources: { prometheus: { state: 'ok' | 'failed', error?, since }, kuma, nut, gitea },
+}
+```
+
+- **States** are `ok | warn | crit | unknown | maintenance`, the names
+  `src/ui/lib/status.js` uses (a test keeps them in step). Worst-of order:
+  `crit` > `warn` > `unknown` > `maintenance` > `ok`.
+- **Entities**, with their ids: a card of `/api/services` is a `service` when a
+  Kuma monitor gives its state and a `container` otherwise
+  (`services/<uid>`); an up, pending or in-maintenance monitor no card is drawn
+  for is a service too, so the count holds when one goes down. Then `node`
+  (`nodes/<key>`), `ups` (`power/ups`, only when a UPS is set up), `job` and
+  `backup` (`jobs/<node>:<job>`, `backups/<node>:<job>`), `integration`
+  (`integrations/<key>`) and `agent`, an Arcane agent
+  (`integrations/arcane:<env>`). `word` is the short status word an issue row
+  shows ("Down", "On battery"); `reason` a short sentence ("Disk 94 % (warning
+  above 90 %)", "No data: Prometheus unreachable"). Reasons hold no times, so a
+  steady board gives the same status every cycle and an ETag holds: `since`
+  (ms since the epoch) is when the entity entered its state, from the
+  readings where they say (a job's run, when it became overdue, a container
+  last seen, an integration's `_status.since`), else the first cycle that saw
+  it. A node's `conditions` gives each reading its state (`disk`, `mem`,
+  `cpu`, `temp`, `pool:<name>`), so a meter is coloured by the server's rule.
+  `metric` is the reading behind a node's or the UPS's state.
+- **Severity** is spec §6.1's table (`rules.js`, one function per kind), its
+  numbers in `thresholds.js`. Kuma down is crit; pending is a warning only
+  once it has lasted `pending.cycles` (2) cycles in a row, and on its first
+  pending cycle a service stays as it was (#258); maintenance is
+  `maintenance`, which is not an issue and doesn't break the quiet line. A
+  missing container is a warning, or crit when it was the last container of a
+  Kuma monitor (`backedBy`). A node is crit when Prometheus can't scrape it
+  (`up` is 0, or no `up` series and no metric) while Prometheus answers.
+  Proxmox storage pools feed their node's disk rule (the node `_target` names,
+  else `pve`).
+- **Failed sources** (#232's flags, read by push's `sourcesOk`): an entity a
+  failed source feeds is `unknown`, with a reason naming it, never crit. A node
+  whose `up` read failed is unknown; one whose metric read failed has that
+  condition unknown, so it is unknown unless a reading that was read is worse.
+  What the failed source fed last cycle and no longer reports (the container
+  list, the nodes, the UPS while Prometheus fails) is kept, as unknown, until
+  it answers. Prometheus counts as failed when the services refresh says so or
+  the UPS query failed; NUT when Prometheus answers but the exporter has no
+  `nut_status`. Each failed monitoring source (Prometheus, Kuma, NUT) is one
+  `warn` issue, `sources/<name>`, ranked first in its level. Gitea is listed in
+  `sources` but is no issue: nothing on the board depends on it. Kuma is
+  listed once `KUMA_URL` is set or a service is on the board.
+- **Issues** are the entities in `crit`, `warn` or `unknown`, plus the failed
+  sources: crit before warn before unknown; within a level by subsystem order
+  (sources, Services, Nodes, Power, Jobs, Backups, Integrations), then oldest
+  first, then by id.
+- **Subsystems**, in strip order: Services, Nodes, Power, Jobs, Backups,
+  Integrations. Each is the worst of its entities, with counts by state and a
+  detail ("31 / 32 up · 1 in maintenance", "On mains"). One with no entities
+  has `total: 0`, and a client shows no panel for it.
+- **The sentence**: with warnings or worse, each kind of problem with its count
+  in issue order ("2 services down · Prometheus unreachable · 1 job failed"),
+  then "N no signal"; with only unknowns, "31 up · 1 no signal"; healthy, the
+  quiet line ("All 32 services up · 6 nodes healthy"). With nothing to judge,
+  "Nothing monitored yet" and `unknown`.
+
+**The threshold config** (`thresholds.js`, [ADR 0006](adr/0006-one-severity-table.md)):
+`DEFAULT_THRESHOLDS` holds every number, usage lines as fractions of 1 as push
+has always compared them. `resolveThresholds()` lays `display-config.json`'s
+`pushThresholds` (`cpu`, `mem`, `disk`, `hysteresis`) over the defaults, and
+`refresh.js`'s `getThresholds()` returns the result; `getPushThresholds()` is a
+view of the same (`pushThresholdsOf`), so push and the model can't disagree
+about a line.
 
 ## 5. Frontend architecture
 
@@ -1265,7 +1379,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
 - **Backend** (`node --test`, `npm run test:ci`): the AES-GCM secrets round-trip +
   tamper, the SSRF guard vectors, credential redaction, the upload allowlist,
   config schema/copy-on-read (incl. a `SIGKILL`-mid-write chaos test), route
-  contracts, rate limiting, `/health` + `/readyz`, and the pure HelmGrid
+  contracts, rate limiting, `/health` + `/readyz`, the status model (one test
+  per row of spec §6.1's severity table in `server/status/severityTable.test.js`,
+  each rule table-driven, and source-down fixtures through the real
+  `assembleServices`), and the pure HelmGrid
   `gridMath`, the service-worker precache injector, and the worker's install,
   activate and fetch handlers run against a fake cache (`scripts/sw.test.mjs`).
   Node reads run against a mock Prometheus (`server/testing/mockPrometheus.js`)
@@ -1332,6 +1449,7 @@ change; `doc-counts.test.mjs` fails on one.
 | [0003](adr/0003-scoped-tls-bypass.md) | Per-request, opt-in TLS-verify bypass for self-signed infra |
 | [0004](adr/0004-config-copy-on-read.md) | Config is copy-on-read + synchronous atomic writes |
 | [0005](adr/0005-event-driven-deploy.md) | Event-driven build->deploy trigger (opt-in, fallback-preserving) |
+| [0006](adr/0006-one-severity-table.md) | One severity table, judged on the server; push reads the same thresholds |
 
 ## 10. Known tradeoffs
 

@@ -18,7 +18,8 @@ process.env.JAGHELM_DATA_DIR = dataDir;
 process.env.LOG_LEVEL = 'info'; // the parse-warning test reads the warn line
 const configPath = join(dataDir, 'display-config.json');
 
-const { getPushThresholds, stopBackgroundRefresh } = await import('./refresh.js');
+const { getPushThresholds, getThresholds, stopBackgroundRefresh } = await import('./refresh.js');
+const { DEFAULT_THRESHOLDS, pushThresholdsOf } = await import('./status/thresholds.js');
 const { displayConfigRoutes } = await import('./routes/displayConfig.js');
 const { atomicWriteFileSync } = await import('./util/atomicWrite.js');
 
@@ -45,6 +46,17 @@ const T0 = 1_760_000_000;
 
 test('push thresholds: the defaults when there is no display config', () => {
   assert.deepEqual(getPushThresholds(), { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 });
+});
+
+test('push and the status model read one threshold config (#290)', () => {
+  assert.deepEqual(getThresholds(), DEFAULT_THRESHOLDS);
+  replaceConfig({ pushThresholds: { cpu: 0.7, disk: 0.8, hysteresis: 0.02 } });
+  const t = getThresholds();
+  assert.deepEqual([t.cpu.warn, t.mem.warn, t.disk.warn, t.disk.crit, t.hysteresis.fraction], [0.7, 0.9, 0.8, 0.95, 0.02]);
+  assert.deepEqual(getPushThresholds(), pushThresholdsOf(t));
+  assert.deepEqual(getPushThresholds(), { cpu: 0.7, mem: 0.9, disk: 0.8, hysteresis: 0.02 });
+  replaceConfig({});
+  assert.deepEqual(getPushThresholds(), pushThresholdsOf(getThresholds()));
 });
 
 test('push thresholds: a hand edit is picked up on the next read', () => {

@@ -110,9 +110,27 @@ export function statusFromValue(v) {
   return v === 1 ? 'up' : v === 0 ? 'down' : 'unknown';
 }
 
+// Kuma's own status values, the status page's heartbeat `status` included.
+const KUMA_STATUS = new Map([
+  [0, 'down'],
+  [1, 'up'],
+  [2, 'pending'],
+  [3, 'maintenance'],
+]);
+
+/**
+ * A monitor's status as Kuma reports it: 'up', 'down', 'pending' (retrying a
+ * failed check), 'maintenance' or 'unknown'. `status` (statusFromValue) folds
+ * pending and maintenance into 'unknown', which /api/services keeps showing
+ * (spec §6.3); only the status model reads this one (#258, #290).
+ */
+export function kumaStatusFromValue(v) {
+  return KUMA_STATUS.get(v) ?? 'unknown';
+}
+
 /**
  * Parse a full `/metrics` body into the monitor map keyed by id:
- *   { [id]: { id:Number, name, status, ping, uptime24, active:true, lastBeatAt:null } }
+ *   { [id]: { id:Number, name, status, kumaStatus, ping, uptime24, active:true, lastBeatAt:null } }
  *
  * Series WITHOUT a `monitor_id` label are skipped — that includes every Kuma
  * system metric and (critically) Kuma < 2.1, whose monitor series lack
@@ -131,6 +149,7 @@ export function parseKumaMetrics(text) {
         id: Number(id),
         name: name || '',
         status: 'unknown',
+        kumaStatus: 'unknown',
         ping: null,
         uptime24: null,
         active: true,
@@ -154,7 +173,9 @@ export function parseKumaMetrics(text) {
     if (!/^\d+$/.test(id ?? '')) continue;
 
     if (p.name === 'monitor_status') {
-      ensure(id, p.labels.monitor_name).status = statusFromValue(p.value);
+      const m = ensure(id, p.labels.monitor_name);
+      m.status = statusFromValue(p.value);
+      m.kumaStatus = kumaStatusFromValue(p.value);
     } else if (p.name === 'monitor_response_time') {
       const m = ensure(id, p.labels.monitor_name);
       m.ping = Number.isFinite(p.value) ? p.value : null;

@@ -199,6 +199,7 @@ export function demoMonitors(scenario, now) {
       id,
       name,
       status: down ? 'down' : 'up',
+      kumaStatus: down ? 'down' : 'up',
       ping: down ? 0 : ping,
       uptime24: down ? 0.9612 : uptime24,
       active: true,

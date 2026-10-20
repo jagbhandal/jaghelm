@@ -43,6 +43,7 @@ import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
 import { buildSnapshot, liveCaches } from './push/snapshot.js';
 import { getPushStore } from './push/store.js';
 import * as fcm from './push/fcm.js';
+import { DEFAULT_THRESHOLDS, pushThresholdsOf, resolveThresholds } from './status/thresholds.js';
 
 const log = createLogger('refresh');
 
@@ -60,7 +61,9 @@ let lastRefreshComplete = 0; // ms epoch of the last finished cycle (0 = never)
 // The prev cycle's snapshot is held in memory and persisted beside the other
 // data/ stores when it changes, and on shutdown. Exported for that test.
 export const pushSnapshot = createPushSnapshot({ path: join(DATA_DIR, 'push-snapshot.json'), logger: log });
-const DEFAULT_PUSH_THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
+// Push's host thresholds are a view of the server's one threshold config
+// (status/thresholds.js), which the status model reads too (#290).
+const DEFAULT_PUSH_THRESHOLDS = Object.freeze(pushThresholdsOf(DEFAULT_THRESHOLDS));
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -104,19 +107,19 @@ export function readDisplayConfig() {
   return cachedDisplayConfig;
 }
 
-// Thresholds come from display-config when present, else the defaults.
+/**
+ * The server's thresholds in force (status/thresholds.js): the defaults, with
+ * display-config.json's `pushThresholds` over them. The status model and push
+ * both read these, so they can never disagree about a line.
+ */
+export function getThresholds() {
+  return resolveThresholds(readDisplayConfig()?.pushThresholds);
+}
+
+/** Push's host thresholds: CPU, memory and disk warn lines and the hysteresis, from getThresholds(). */
 export function getPushThresholds() {
-  const data = readDisplayConfig();
-  const t = data?.pushThresholds;
-  if (t && typeof t === 'object') {
-    return {
-      cpu: typeof t.cpu === 'number' ? t.cpu : DEFAULT_PUSH_THRESHOLDS.cpu,
-      mem: typeof t.mem === 'number' ? t.mem : DEFAULT_PUSH_THRESHOLDS.mem,
-      disk: typeof t.disk === 'number' ? t.disk : DEFAULT_PUSH_THRESHOLDS.disk,
-      hysteresis: typeof t.hysteresis === 'number' ? t.hysteresis : DEFAULT_PUSH_THRESHOLDS.hysteresis,
-    };
-  }
-  return DEFAULT_PUSH_THRESHOLDS;
+  const t = readDisplayConfig()?.pushThresholds;
+  return t && typeof t === 'object' ? pushThresholdsOf(getThresholds()) : DEFAULT_PUSH_THRESHOLDS;
 }
 
 function formatContainerName(name) {
@@ -229,12 +232,29 @@ function serviceRank(s) {
  * snapshot keeps it, so a monitor's state goes with it when its uid changes
  * (#395). Like `upWithoutCard`, it is for push only.
  *
- * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown', unmatched: string[], containerCount: number, upWithoutCard: string[], monitorOf: Record<string, string> }}
+ * Three more maps are for the status model only (status/, #290), kept beside
+ * the payload like those two, so the payload keeps its shape and meaning
+ * (spec §6.3):
+ *  - `kumaStatusOf` (uid -> 'pending' | 'maintenance'): the running cards
+ *    whose monitor Kuma reports pending or in maintenance. Their `status`
+ *    stays 'unknown', as today.
+ *  - `kumaWithoutCard` (uid -> 'pending' | 'maintenance'): the active monitors
+ *    no running container got that are pending or in maintenance, each under
+ *    the uid placeMonitor gives it. They are placed after the up and down
+ *    ones, so they take no uid one of those would have had.
+ *  - `backedBy` (uid -> monitor name): the grey presence cards of containers
+ *    that were the last container of a Kuma monitor Kuma still has (the
+ *    service registry's): a missing container that backs a monitored service.
+ *
+ * @returns {{ nodes: object, seen: Array<{monitorId:any, nodeKey:string, container:string}>, outageCount: number, breadcrumbCount: number, overallHealth: 'down'|'degraded'|'up'|'unknown', unmatched: string[], containerCount: number, upWithoutCard: string[], monitorOf: Record<string, string>, kumaStatusOf: Record<string, string>, kumaWithoutCard: Record<string, string>, backedBy: Record<string, string> }}
  */
 export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf, lastSeenContainerOf, containerRegistry, now = Date.now, presenceKnown = true }) {
   const consumed = new Set();
   const seen = new Map(); // monitor id -> { monitorId, nodeKey, container }, last in the pass
   const monitorOf = {}; // uid -> the id of the monitor it carries (#395)
+  const kumaStatusOf = {}; // uid -> 'pending' | 'maintenance', for the status model (#290)
+  const kumaWithoutCard = {}; // uid -> 'pending' | 'maintenance', a monitor with no card (#290)
+  const backedBy = {}; // presence uid -> the Kuma monitor its container last ran as (#290)
   const runningOn = new Map(); // container name -> the last node it runs on in this pass
   const nowMs = now();
   const entries = nodeResults.filter(Boolean);
@@ -293,6 +313,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
         consumed.add(monitor.id);
         withMonitor.add(c.container);
         monitorOf[`${nodeKey}:${c.container}`] = String(monitor.id);
+        if (isPendingOrMaintenance(monitor)) kumaStatusOf[`${nodeKey}:${c.container}`] = monitor.kumaStatus;
         // Remember the container too, so a later outage's synth card can reuse
         // this exact uid (keeps down→recovery on ONE key for the push differ).
         seen.set(monitor.id, { monitorId: monitor.id, nodeKey, container: c.container });
@@ -383,11 +404,28 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
       source: 'monitor',
     });
   }
+  // The pending and in-maintenance ones, for the status model only, after the
+  // up and down ones so they take no uid of theirs.
+  for (const m of selectUnclaimedMonitors(monitors, consumed, { now: nowMs, pick: isPendingOrMaintenance })) {
+    const place = placeMonitor(m, { nodes, nodeKeys, taken, owner: undefined, lastSeenNodeOf, lastSeenContainerOf });
+    if (!place) continue;
+    taken.add(place.uid);
+    kumaWithoutCard[place.uid] = m.kumaStatus;
+  }
 
   // (c) Breadcrumb synthesis — vanished, established, UNMONITORED containers.
   let breadcrumbCount = 0;
   if (containerRegistry && presenceKnown) {
     const candidates = containerRegistry.getMissing({ now: nowMs });
+    // The container each monitor Kuma has last ran as, lowest monitor id first.
+    const backing = new Map();
+    if (candidates.length > 0 && lastSeenContainerOf) {
+      const byId = Object.values(monitors).filter(Boolean).sort((a, b) => Number(a.id) - Number(b.id));
+      for (const m of byId) {
+        const last = lastSeenContainerOf(m.id);
+        if (last && !backing.has(last)) backing.set(last, m.name);
+      }
+    }
     for (const cand of candidates) {
       if (runningOn.has(cand.container)) continue;                // running somewhere this cycle
       if (isJobContainer(cand.container)) continue;               // a CI job, done
@@ -412,6 +450,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
         docker: null,
         integration: null,
       });
+      if (backing.has(cand.container)) backedBy[`${nodeKey}:${cand.container}`] = backing.get(cand.container);
       breadcrumbCount += 1;
     }
   }
@@ -447,7 +486,15 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     containerCount,
     upWithoutCard,
     monitorOf,
+    kumaStatusOf,
+    kumaWithoutCard,
+    backedBy,
   };
+}
+
+/** A monitor Kuma reports pending or in maintenance (kumaMetrics.js kumaStatusFromValue). */
+function isPendingOrMaintenance(m) {
+  return m.kumaStatus === 'pending' || m.kumaStatus === 'maintenance';
 }
 
 /**
@@ -544,7 +591,7 @@ async function _refreshServices() {
     const prometheusOk = promErrors.length === 0;
     reportPrometheus({ ok: prometheusOk, error: promErrors[0] });
 
-    const { nodes, seen, overallHealth, unmatched, containerCount, upWithoutCard, monitorOf } = assembleServices({
+    const assembled = assembleServices({
       nodeResults,
       monitors,
       config,
@@ -554,6 +601,8 @@ async function _refreshServices() {
       now: Date.now,
       presenceKnown: prometheusOk,
     });
+    const { nodes, seen, overallHealth, unmatched, containerCount, upWithoutCard, monitorOf } = assembled;
+    const { kumaStatusOf, kumaWithoutCard, backedBy } = assembled;
 
     // Remember where each running, monitored service lives (and which container
     // it maps to) so an outage that later loses its container still lands on its
@@ -573,10 +622,13 @@ async function _refreshServices() {
     // read as every host or service going down. `upWithoutCard`, the uids of
     // the up monitors no card is drawn for (#390), and `monitorOf`, the monitor
     // each monitored uid carries (#395), are for the push snapshot only, so
-    // they are kept beside the payload, not in the served JSON.
+    // they are kept beside the payload, not in the served JSON. So are the
+    // status model's (#290): `kumaStatusOf`, `kumaWithoutCard`, `backedBy`
+    // (see assembleServices) and `sourceErrors`, why Prometheus or Kuma failed.
     const sources = { prometheus: { ok: prometheusOk }, kuma: { ok: kuma.ok } };
     const result = { nodes, overallHealth, sources };
-    setCache('services', result, { upWithoutCard, monitorOf });
+    const sourceErrors = { prometheus: promErrors[0] ?? null, kuma: kuma.ok ? null : (kuma.error ?? null) };
+    setCache('services', result, { upWithoutCard, monitorOf, kumaStatusOf, kumaWithoutCard, backedBy, sourceErrors });
 
     // Record this cycle's usage into the ring buffer so the UI can draw a
     // glance-context sparkline. Only the bounded usage percents (CPU/RAM/disk);
