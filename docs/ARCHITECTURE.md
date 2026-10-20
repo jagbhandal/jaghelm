@@ -477,6 +477,10 @@ replica stop (vaultwarden on vm103 and pi2), the red card is drawn on vm103,
 where the monitor ran, not on pi2. Its card never takes the uid of a card
 already on that node (its last container still running there, matched to
 nothing or to something else now), and then goes under the monitor's name.
+A grey breadcrumb is not drawn on a red card's uid either: when the stopped
+container the monitor last ran as doesn't get it by name (a mapping that has
+since gone), the red card is placed under that container, and is its one
+card (#438).
 
 Such a card, of a monitor no container has ("Pi Gateway (Ping)", "NAS (Ping)"),
 exists only while the monitor is down: up, it draws nothing on the board. The
@@ -559,7 +563,8 @@ meaning (spec §6.3): which running cards' monitors Kuma reports pending or in
 maintenance (`kumaStatusOf`; their `status` stays `unknown`), the monitors no
 running container got that are pending or in maintenance (`kumaWithoutCard`,
 placed after the up and down ones so they take none of their uids), which grey
-presence cards were a Kuma monitor's last container (`backedBy`), and why
+presence cards were a Kuma monitor's last container, with Kuma's status for
+that monitor (`backedBy`, which the model judges them by, #438), and why
 Prometheus or Kuma failed (`sourceErrors`). Kuma's own status (`up`, `down`,
 `pending`, `maintenance`) comes from `kumaStatus` on each monitor
 (`kumaMetrics.js`, both the `/metrics` and the status-page paths).
@@ -926,8 +931,15 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   once it has lasted `pending.cycles` (2) cycles in a row, and on its first
   pending cycle a service stays as it was (#258); maintenance is
   `maintenance`, which is not an issue and doesn't break the quiet line. A
-  missing container is a warning, or crit when it was the last container of a
-  Kuma monitor (`backedBy`). A node is crit when Prometheus can't scrape it
+  missing container is a warning. One that was the last container of a Kuma
+  monitor (`backedBy`) follows the monitor, and is never crit, since the
+  service is an entity of its own (#438): the monitor up, a warning whose
+  reason says so ("Missing: the container is gone; Kuma monitor Immich is
+  up"); pending, unknown; in maintenance, `maintenance`. While the monitor is
+  down, its red card is the one crit: the services refresh draws no grey card
+  for a container that holds its down monitor or whose uid the monitor's red
+  card has (4.2), and one the monitor has moved off (a new container took it)
+  is a warning. A node is crit when Prometheus can't scrape it
   (`up` is 0, or no `up` series and no metric) while Prometheus answers.
   Proxmox storage pools feed their node's disk rule (the node `_target` names,
   else `pve`).
