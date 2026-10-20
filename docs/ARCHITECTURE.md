@@ -124,8 +124,9 @@ src/                        React 19 SPA (Vite 8)
                              tokens, docs/design-system.md), accents.js (the accents offered),
                              typefaces.js (the faces offered), fonts.css (their @font-face),
                              preflight.css (generated),
-                             shadcn/ui components (button.jsx, a stock placeholder until #285),
-                             lib/utils.js
+                             the controls (#285: button, icon-button, input, select, switch,
+                             checkbox, field, segmented-control, tabs; design-system.md),
+                             lib/utils.js (cn, taught the theme), lib/portal.js (portal roots)
 
 public/sw.js                service worker (precache injected at build)
 components.json             shadcn/ui CLI settings (JSX, Base UI, `@ui` -> src/ui/)
@@ -629,10 +630,13 @@ stack sits beside today's CSS and must not restyle it.
   shadcn/ui is set up in `components.json`: JSX (no
   TypeScript), the Base UI primitives (style `base-nova`), and the `@ui` alias for
   `src/ui/` (`tsconfig.json` `paths`, so `npx shadcn add <name>` writes
-  `src/ui/<name>.jsx`). Components import `cn` from the `cn` package, as the shadcn
-  registry now generates them. Icons come from `lucide-react` by name
-  (`import { Check } from 'lucide-react'`), so a bundle carries only the icons it
-  uses. `src/ui/button.jsx` is the only component so far and no screen uses it.
+  `src/ui/<name>.jsx`). Components import `cn` from `src/ui/lib/utils.js`: the
+  `cn` package, as the shadcn registry generates it, taught the theme's type
+  steps, named spacing and shadows, which it would otherwise misread (a
+  generated component's `import { cn } from 'cn'` is switched to it). Icons come
+  from `lucide-react` by name (`import { Check } from 'lucide-react'`), so a
+  bundle carries only the icons it uses. The controls (#285) are the only
+  components so far, built on Base UI primitives, and no screen uses them yet.
 - **Both apps import `@ui/...`.** The Android build maps `@ui` to `../src/ui` and
   lists React and every package `src/ui/` imports in `resolve.dedupe`, so shared
   code uses the Android app's own copies: the APK build installs `mobile/` only,
@@ -698,14 +702,17 @@ stack sits beside today's CSS and must not restyle it.
   `dark` variant applies inside a `.jh-ui` root without `data-theme="light"`.
   Every variable a class reads with `var()` must be declared under `.jh-ui`: a
   role reads its token (`bg-surface-1` reads `--jh-surface-1`), and a class that
-  reads a variable itself (the Button's `rounded-[min(var(--radius-md),10px)]`)
-  needs that variable there too, which is why the radius scale is in both
-  `tokens.css` and `tailwind.css`. Never add a `:root`, `html` or `body` rule or
+  reads a variable itself (such as `rounded-[var(--radius-md)]`) needs that
+  variable there too, which is why the radius scale is in both `tokens.css` and
+  `tailwind.css`. The one exception is the two variables Base UI sets inline on
+  a popup's positioner (`--anchor-width`, `--available-height`), which the
+  test allows by name and checks that today's CSS never defines. Never add a `:root`, `html` or `body` rule or
   a `@theme` block without `reference`. `scripts/ui-stack.test.mjs` compiles the
   stack and fails on an unlayered rule, a root selector, a base rule outside
   `@scope (.jh-ui)`, a `var()` read that `.jh-ui` doesn't declare, the two
-  radius scales drifting apart, or a class in `src/ui/` that compiles to nothing
-  (with Tailwind's sizes cleared, `text-sm` would silently do so).
+  radius scales drifting apart, a class in `src/ui/` that compiles to nothing
+  (with Tailwind's sizes cleared, `text-sm` would silently do so) or that
+  removes the focus ring, or `cn`'s lists drifting from the theme.
 - **Fonts are self-hosted** (#244, #284): no font or stylesheet comes from
   another origin, and the server CSP allows fonts and styles from `'self'` only
   (`server/index.test.js`). Every woff2 lives in `src/fonts/` with its OFL
