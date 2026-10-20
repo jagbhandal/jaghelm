@@ -243,7 +243,7 @@ Saving an integration in Settings changes only what its form shows: the URL, use
  
 ### Embedded service tabs
  
-Add your existing monitoring tools as iframe tabs in the top nav — Grafana, Uptime Kuma, Portainer, Proxmox, anything web-accessible. They render inside JagHelm rather than opening new browser tabs. Configurable per tab from Settings.
+Add your existing monitoring tools as iframe tabs in the top nav — Grafana, Uptime Kuma, Portainer, Proxmox, anything web-accessible. They render inside JagHelm rather than opening new browser tabs. Configurable per tab from Settings. A tab you have opened stays loaded when you switch away, so it is where you left it when you come back. An app that is slow to start says so, with a Retry; one whose server refuses to be shown inside another site says that instead, with "Open in new tab" and how to allow embedding.
  
 ### HelmGrid layout engine
  

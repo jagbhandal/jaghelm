@@ -399,13 +399,15 @@ One of JagHelm's standout features is the ability to embed your web-based tools 
 3. Enter a name (e.g. "Uptime Kuma") and the URL (e.g. `http://your-kuma-host:3001`)
 4. Save
 
-The new tab appears in the top navigation bar. Click it to load the service inline. Click "Dashboard" to go back.
+The new tab appears in the top navigation bar. Click it to load the service inline. Click "Dashboard" to go back. The tab stays loaded while you are elsewhere, so it is where you left it when you come back.
+
+If the service hasn't loaded after 8 seconds, the tab says it is slow to load and offers Retry; the service keeps loading and shows as soon as it is ready. If its server refuses to be shown inside another site, the tab says it won't open inside JagHelm and offers "Open in new tab" and "How to allow embedding". JagHelm's server finds that out by reading the service's headers, so it has to be able to reach the service's URL; when it can't, the tab shows whatever the browser shows.
 
 **Tips for embedded tabs:**
 
 - **Uptime Kuma:** If embedding is blocked, set the environment variable `UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN=true` on your Kuma container, or add your JagHelm domain to the allowed iframe origins in Kuma's settings.
 - **Grafana:** Set `allow_embedding = true` in `grafana.ini` under `[security]`, and set `cookie_samesite = none` if accessing across different hostnames.
-- **Proxmox:** Proxmox blocks iframe embedding by default. Use the tab for LAN access where same-origin policies are relaxed, or use Tailscale for consistent access.
+- **Proxmox:** Proxmox VE's web UI sends no `X-Frame-Options` or `frame-ancestors` header (checked on Proxmox VE 9.2), so its headers don't stop it opening inside JagHelm, and being on the LAN or on Tailscale makes no difference to that. Two other things can: its own certificate on `https://your-proxmox:8006`, which a browser won't let you accept inside a frame (use an address behind your reverse proxy with a trusted certificate, or open the address in a normal tab and accept the certificate there first), and its sign-in cookie, which a browser that blocks third-party cookies drops when Proxmox and JagHelm are on different sites (give both addresses under the same domain, such as `proxmox.example.com` and `jaghelm.example.com`). If your reverse proxy adds `X-Frame-Options`, the tab says so.
 
 ---
 
@@ -468,9 +470,13 @@ JagHelm matches Kuma monitors to containers by name, ignoring case and punctuati
 
 **Fix:** Go to Settings > Services, find the container, and select the correct Kuma monitor from the dropdown. That sets `monitor:`, which applies on every machine the container runs on; for a different monitor on each machine, use `monitor_per_node:` in `services.yaml`, and to keep a container off monitors altogether, `monitor: false` (see [Step 5](#6-step-5-add-uptime-kuma-optional)). A monitor you map goes only to the containers mapped to it. If the mapped monitor is renamed, deleted or paused in Kuma, the container shows no monitor and JagHelm's log warns about the mapping once; pick the monitor again, or resume it.
 
-### Embedded tab shows "Embedding Blocked"
+### Embedded tab says the service "won't open inside JagHelm"
 
-The service is sending `X-Frame-Options` or `Content-Security-Policy` headers that prevent iframe embedding. Each service has its own setting to allow this — see the tips in [Step 8](#9-step-8-embed-services-as-tabs).
+The service is sending `X-Frame-Options` or `Content-Security-Policy` headers that prevent iframe embedding; "How to allow embedding" names the one it sends. Allow JagHelm's address with `Content-Security-Policy: frame-ancestors 'self' https://your-jaghelm-address` in the service or in the reverse proxy in front of it (browsers then ignore `X-Frame-Options`), or add the address to the service's own `frame-ancestors` list if it sends one. Each service has its own setting for this — see the tips in [Step 8](#9-step-8-embed-services-as-tabs). Then click "Check again".
+
+### Embedded tab says the service "is slow to load"
+
+The service hasn't finished loading after 8 seconds. That is not a block: it keeps loading and shows when it is ready. Retry reloads that tab only.
 
 ### JagHelm container won't start
 

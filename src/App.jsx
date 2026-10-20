@@ -16,11 +16,12 @@ import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
 import { useThemeVars } from './hooks/useThemeVars.js';
 import { usePageVisible } from './hooks/usePageVisible.js';
 import { useConfigPersistence } from './hooks/useConfigPersistence.js';
+import { useAppFrames } from './hooks/useAppFrames.js';
 import { defaultConfig } from './defaultConfig.js';
 
-// Settings (13-tab tree) and the iframe view aren't needed for the default
+// Settings (13-tab tree) and the app frames aren't needed for the default
 // dashboard render — code-split them so they don't weigh down the initial bundle.
-const IframeView = lazy(() => import('./views/IframeView'));
+const AppFrames = lazy(() => import('./views/AppFrames'));
 const SettingsView = lazy(() => import('./views/SettingsView'));
 import {
   apiFetch,
@@ -162,7 +163,7 @@ function AppMain({ authRequired, demo, onLogout }) {
   // Display-config save/load (localStorage + debounced server save,
   // flush-on-unload, authoritative server load on mount). The demo refuses
   // writes, so nothing is sent to it: no save fails and no toast shows on load.
-  useConfigPersistence(config, setConfig, setTheme, toast, { readOnly: demo });
+  const savedConfig = useConfigPersistence(config, setConfig, setTheme, toast, { readOnly: demo });
 
   // Apply config to the document as CSS custom properties
   // (accent/opacity/font family/font sizes/blur).
@@ -216,6 +217,17 @@ function AppMain({ authRequired, demo, onLogout }) {
   useEffect(() => {
     if (!tabKnown) setActiveTab('dashboard');
   }, [tabKnown]);
+
+  // App tabs mount on their first visit and stay loaded, hidden, after (#269).
+  const appFrames = useAppFrames(allTabs, activeTab);
+  const lazyFallback = (
+    <div
+      className="lazy-fallback"
+      style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}
+    >
+      Loading…
+    </div>
+  );
 
   return (
     <ConfigProvider config={config} setConfig={setConfig}>
@@ -277,24 +289,15 @@ function AppMain({ authRequired, demo, onLogout }) {
             onOpenSettings={() => setActiveTab('settings')}
           />
         </div>
-        <Suspense
-          fallback={
-            <div
-              className="lazy-fallback"
-              style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}
-            >
-              Loading…
-            </div>
-          }
-        >
+        <Suspense fallback={lazyFallback}>
           {activeTab === 'settings' && <SettingsView theme={theme} setTheme={setTheme} />}
-          {allTabs.find((t) => t.id === activeTab && t.type === 'iframe') && (
-            <IframeView
-              url={allTabs.find((t) => t.id === activeTab).url}
-              title={allTabs.find((t) => t.id === activeTab).label}
-            />
-          )}
         </Suspense>
+        {/* A boundary of its own: Settings' chunk loading must not hide the frames. */}
+        {appFrames.length > 0 && (
+          <Suspense fallback={lazyFallback}>
+            <AppFrames frames={appFrames} savedTabs={savedConfig?.tabs} />
+          </Suspense>
+        )}
       </div>
     </ConfigProvider>
   );
