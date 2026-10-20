@@ -1,5 +1,5 @@
 import { Agent } from 'undici';
-import { fetchSafe } from '../../util/safeFetchCore.js';
+import { fetchSafe, leftOrigin } from '../../util/safeFetchCore.js';
 import { redactError } from '../../util/redact.js';
 
 /**
@@ -58,4 +58,17 @@ export async function safeFetch(url, opts = {}, skipTls = false, { credentialInU
     if (err && err.code) safe.code = err.code;
     throw safe;
   }
+}
+
+/**
+ * Whether a response from safeFetch refused the credentials the request sent: a
+ * 401 or 403 from the request's own origin. After a redirect to another origin
+ * the request no longer carried them (fetchSafe drops credential headers and
+ * bodies there), so a 401 or 403 from that host is a plain failure. The refresh
+ * loop stops repeating a login refused this way until the integration's config
+ * changes (#239).
+ * @param {Response} res
+ */
+export function isAuthRejection(res) {
+  return (res.status === 401 || res.status === 403) && !leftOrigin(res);
 }
