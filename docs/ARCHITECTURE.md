@@ -198,7 +198,8 @@ changes/                    CHANGELOG fragments, one per PR (mobile/changes/ for
                             the release PR folds them into the CHANGELOG (RELEASING.md)
 .github/workflows/          build-push.yml (test -> build -> sign -> GHCR), release.yml (tag ->
                             promote by digest -> GitHub Release), build-apk.yml (signed APK)
-.gitea/workflows/           check.yml (PR gate), deploy.yml (pin -> health-gate -> rollback)
+.gitea/workflows/           check.yml (PR gate), deploy.yml (stage image + compose.yaml -> recreate ->
+                            health-gate -> rollback)
 docs/adr/                   architecture decision records (0001-0005)
 ```
 
@@ -1754,8 +1755,10 @@ flowchart LR
   GH -.->|"event-driven dispatch (opt-in, ADR 0005)"| DEP
   PR -->|"push trigger (fallback)"| DEP["Gitea deploy.yml (self-hosted)"]
   subgraph DEP2["deploy.yml"]
-    PIN["pull + pin :sha-short"] --> GATE["health gate<br/>(Docker health + /api/health)"]
-    GATE -->|"fail"| RB["auto-rollback to prev image"]
+    KEY["pin vm-103 host key<br/>(VM103_HOST_KEY)"] --> STAGE["stage: pull :sha-short<br/>+ deliver and verify compose.yaml"]
+    STAGE --> SWITCH["retag :latest + recreate"]
+    SWITCH --> GATE["health gate<br/>(Docker health + /api/health)"]
+    GATE -->|"fail"| RB["auto-rollback to prev image<br/>+ prev compose.yaml"]
     GATE -->|"pass"| LIVE["live on prod"]
   end
 ```
@@ -1783,11 +1786,34 @@ flowchart LR
   release job attaches it to a GitHub Release with notes from
   `mobile/CHANGELOG.md`. A manual run is a
   test build and creates no release.
-- **Deploy** ([deploy.yml](../.gitea/workflows/deploy.yml)) runs on the
-  self-hosted Gitea runner labelled `vm103` (no other workflow may use that
-  label): pull and **pin this commit's `:sha-<short>`** image,
-  recreate behind a **health gate** that auto-rolls-back to the previous image on
-  failure.
+- **Deploy** ([deploy.yml](../.gitea/workflows/deploy.yml)) runs on vm-103's
+  self-hosted Gitea runner, labelled `vm103` (no other workflow may use that
+  label), and reaches the host over SSH that verifies a
+  **pinned host key** (the `VM103_HOST_KEY` repository variable; without it the
+  deploy fails before any SSH). It pulls and **pins this commit's
+  `:sha-<short>`** image and **delivers this commit's `compose.yaml`** to the
+  stack directory: written as `compose.yaml.new`, checked by sha256 on the host,
+  the old copy kept as `compose.yaml.prev`, renamed into place and validated with
+  `docker compose config` before the container is recreated, so compose changes
+  reach production with the release. The log records the repo and host hashes
+  and a diff of the host copy. It then recreates behind a **health gate**; any
+  failure after the host was changed rolls back the previous image **and** the
+  previous `compose.yaml` together. The deploy owns `compose.yaml` on the host:
+  host-specific additions (a secrets mount, host networking) go in
+  `compose.override.yaml`, which Compose merges and the deploy never touches.
+  Before the container is touched, the deploy refuses a merged config that
+  drops host networking or a mount the running container has (such a drop can
+  deploy "healthy" while push quietly stops), unless a hand-made
+  `compose.accept-drops` file in the stack directory accepts it for one deploy;
+  and it refuses a `compose.yaml` change when the commit's own image was not
+  available.
+  Configuration (Gitea repository settings, Actions):
+
+  | Kind | Name | Use |
+  |------|------|-----|
+  | Variable | `VM103_HOST_KEY` | Required. vm-103's host key as one known_hosts line (`<address> ssh-ed25519 AAAA…`), from `ssh-keyscan -t ed25519 <address>` with the fingerprint checked on vm-103. Update it after a rebuild. |
+  | Variable | `COSIGN_VERIFY` | Optional. `true` verifies the image signature before deploying. |
+  | Job token | `GITEA_TOKEN` (automatic) | Reads `compose.yaml` at the deployed commit from the Gitea API; the job limits it to `contents: read`. Nothing to set. |
 - **Event-driven trigger** ([ADR 0005](adr/0005-event-driven-deploy.md)): the
   build dispatches the deploy when the image is ready, replacing a GHCR poll. It
   is opt-in and fallback-preserving -- the push trigger remains until verified.
