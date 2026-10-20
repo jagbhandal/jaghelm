@@ -357,10 +357,14 @@ is up, or the container has been gone longer than `JAGHELM_PRESENCE_TTL_MS`, it
 holds nothing: a running container can have the monitor (`nextcloud` renamed to
 `nextcloud-app`), and the stopped one leaves a grey presence breadcrumb like any
 container with no monitor. A down monitor no running container got is drawn on
-the stopped container's node, else its last-seen node; its card never takes the
-uid of a card already on that node (its last container still running there,
-matched to nothing or to something else now), and then goes under the
-monitor's name.
+the stopped container's node, else its last-seen node. When that stopped
+container is the one the monitor last ran as, the monitor's last-seen node
+comes first while it is on the board: the container registry keeps one record
+per name, with the last node in the pass, so when both copies of an unpinned
+replica stop (vaultwarden on vm103 and pi2), the red card is drawn on vm103,
+where the monitor ran, not on pi2. Its card never takes the uid of a card
+already on that node (its last container still running there, matched to
+nothing or to something else now), and then goes under the monitor's name.
 
 Such a card, of a monitor no container has ("Pi Gateway (Ping)", "NAS (Ping)"),
 exists only while the monitor is down: up, it draws nothing on the board. The
@@ -390,14 +394,14 @@ the container to be seen again.
 A monitor feeds one key of the push snapshot a cycle: the card of the running
 container that has it, else its own uid. That key can move. A container takes
 the monitor (one appears whose name matches); a stopped container holds it only
-while it is down, so a down placement and an up one can differ (an unpinned
-replica whose copies have both stopped goes down on `pi2:vaultwarden` and comes
-back up on `vm103:vaultwarden`); another container takes it in the cycle it
-recovers (nextcloud stops, the monitor goes down, nextcloud-app comes up
-healthy); or two monitors remember the same container (left by the old
-matcher), and when the one earlier in id order drops out (a Kuma Pending retry,
-a pause, a container claiming it) the other moves onto the container's uid, and
-back when it returns.
+while it is down, so a down placement and an up one can differ (the down
+monitor goes to an older `nextcloud` that stopped, the better match, and comes
+back up on `nextcloud-app`, the container it last ran as); another container
+takes it in the cycle it recovers (nextcloud stops, the monitor goes down,
+nextcloud-app comes up healthy); or two monitors remember the same container
+(left by the old matcher), and when the one earlier in id order drops out (a
+Kuma Pending retry, a pause, a container claiming it) the other moves onto the
+container's uid, and back when it returns.
 
 So the push snapshot keeps the monitor's identity (#395). The services refresh
 keeps `monitorOf` beside the cached payload, like `upWithoutCard` and for push
@@ -413,11 +417,17 @@ than the key's alone (`serviceHistory` in `push/differ.js`):
 - A key whose monitor last cycle feeds another key now starts with no
   previous status, whatever feeds it now: its state went with the monitor, so
   the key sends no false recovery and no repeat `service_down`.
-- Every other key keeps its own previous state, as before: a card with no
-  monitor, a key whose monitor has gone from the snapshot (paused, deleted from
-  Kuma, Pending) whoever has it now, and the cards of a monitor that an
-  explicit mapping gives several containers, which are sent card by card.
-  Taking a monitor that was already up sends nothing.
+- A key whose monitor has gone from the snapshot (paused or deleted: the
+  `/metrics` source leaves a paused monitor out) and that no monitor feeds now
+  starts with no previous status too: its state was the monitor's, so a
+  running card whose monitor is paused or deleted while down sends no false
+  recovery, as a monitor with no container sends nothing then. Unpaused while
+  still down, it pages again, as one with no container does.
+- Every other key keeps its own previous state, as before: a card that had no
+  monitor last cycle, a key that a monitor new to the snapshot feeds now (one
+  deleted from Kuma and added again, under a new id), and the cards of a
+  monitor that an explicit mapping gives several containers, which are sent
+  card by card. Taking a monitor that was already up sends nothing.
 
 `monitorOf` is part of `alertStateKey`, so the file is rewritten when only the
 monitor of a key changes, and a restart keeps it. While a source fails, a key

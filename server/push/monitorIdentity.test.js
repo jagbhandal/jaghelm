@@ -139,6 +139,11 @@ const adguards = (primary, secondary = 'down') => [
   },
   { id: 2, name: 'Adguard Secondary', status: secondary },
 ];
+// Gitea, and Grafana unless it is left out (`null`: deleted, or paused).
+const grafana = (status) => [
+  { id: 1, name: 'Gitea', status: 'up' },
+  ...(status === null ? [] : [{ id: 2, name: 'Grafana', status }]),
+];
 // The old matcher left both remembering pi2's adguard-sync.
 const ADGUARD_SEEN = {
   1: { nodeKey: 'pi2', container: 'adguard-sync' },
@@ -148,7 +153,7 @@ const ADGUARD_SEEN = {
 /**
  * The cases of #395. Each has the home lab, its cycles (the first is the
  * baseline), what main sent, and what is sent now: one service_down and one
- * service_recovered per outage.
+ * service_recovered per outage, unless `now` says otherwise.
  */
 const SCENARIOS = [
   {
@@ -274,8 +279,9 @@ const SCENARIOS = [
   {
     // The container registry has one record per container name, with the last
     // node in the pass (pi2), and the service registry the node of the running
-    // card that had the monitor (vm103). A stopped container competes only for a
-    // down monitor, so the down placement goes to pi2 and the up one to vm103.
+    // card that had the monitor (vm103). The stopped container that gets the
+    // down monitor is the one it last ran as, so its red card is drawn on vm103,
+    // where the up entry is too. Main drew it on pi2.
     name: 'the replica corner: both copies of an unpinned replica stop',
     nodes: ['vm103', 'pi2'],
     cycles: [
@@ -297,7 +303,35 @@ const SCENARIOS = [
       },
     ],
     main: ['service_down pi2:vaultwarden'],
-    sent: ['service_down pi2:vaultwarden', 'service_recovered vm103:vaultwarden'],
+    sent: ['service_down vm103:vaultwarden', 'service_recovered vm103:vaultwarden'],
+  },
+  {
+    // Kuma's /metrics, the live source, leaves a deleted monitor out.
+    name: 'a running card whose monitor is deleted while down',
+    now: 'no false service_recovered',
+    nodes: ['vm103'],
+    cycles: [
+      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana('up') },
+      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana('down') },
+      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana(null) },
+      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana(null) },
+    ],
+    main: ['service_down vm103:grafana', 'service_recovered vm103:grafana'],
+    sent: ['service_down vm103:grafana'],
+  },
+  {
+    // /metrics leaves a paused monitor out too, until it is unpaused.
+    name: 'a running card whose monitor is paused while down, then unpaused up',
+    now: 'no false service_recovered',
+    nodes: ['vm103'],
+    cycles: [
+      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana('up') },
+      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana('down') },
+      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana(null) },
+      { running: { vm103: ['gitea', 'grafana'] }, monitors: grafana('up') },
+    ],
+    main: ['service_down vm103:grafana', 'service_recovered vm103:grafana'],
+    sent: ['service_down vm103:grafana'],
   },
 ];
 
@@ -317,7 +351,7 @@ async function play(scenario, { restartEachCycle = false, order } = {}) {
 }
 
 for (const scenario of SCENARIOS) {
-  test(`push (#395) ${scenario.name}: one service_down, one service_recovered`, async () => {
+  test(`push (#395) ${scenario.name}: ${scenario.now ?? 'one service_down, one service_recovered'}`, async () => {
     const { sent } = await play(scenario);
     assert.notDeepEqual(scenario.main, scenario.sent, 'the case is one main gets wrong');
     assert.deepEqual(sent, scenario.sent);

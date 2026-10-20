@@ -188,8 +188,10 @@ function serviceRank(s) {
  *      does not depend on the order discovery listed them in.
  *  (b) Monitors no running container got — each active one reporting `down`
  *      or `up` is placed (placeMonitor): on the node of the stopped container
- *      that got the monitor, under its name; otherwise on the monitor's
- *      last-seen node, under the container it was last matched to (base spec).
+ *      that got the monitor, under its name (on the monitor's last-seen node
+ *      when that container is the one it last ran as); otherwise on the
+ *      monitor's last-seen node, under the container it was last matched to
+ *      (base spec).
  *      A uid is never one a card already on the node has, or one a monitor
  *      placed earlier in the pass took: a monitor whose last container still
  *      runs there, matched to something else now, is under the monitor's name.
@@ -460,9 +462,13 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
  * to the new one, #395).
  *
  * The node is that of the stopped container that got the (down) monitor
- * (`owner`), else the monitor's last-seen node, else the first node. The uid
- * reuses the container the monitor was last matched to (the owner, else the
- * service registry's), the uid its running card had, so a down→recovery
+ * (`owner`), else the monitor's last-seen node, else the first node. When the
+ * owner is the container the monitor last ran as, the monitor's last-seen node
+ * comes first while it is on the board: the container registry keeps one
+ * record per name, with the last node in the pass, so when both copies of an
+ * unpinned replica stop, the owner's node can be the copy the monitor was not
+ * on. The uid reuses the container the monitor was last matched to (the owner,
+ * else the service registry's), the uid its running card had, so a down→recovery
  * transition stays on ONE key: the push differ only emits a recovery when
  * 'down' and 'up' share a key. It falls back to the monitor's name for a
  * monitor that never had a container, or when the uid is `taken` (a running
@@ -470,10 +476,13 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
  * name and id.
  */
 function placeMonitor(m, { nodes, nodeKeys, taken, owner, lastSeenNodeOf, lastSeenContainerOf }) {
-  let nodeKey = owner ? owner.lastSeenNode : lastSeenNodeOf(m.id);
+  const lastNode = lastSeenNodeOf(m.id);
+  const lastContainer = lastSeenContainerOf ? lastSeenContainerOf(m.id) : null;
+  const ownerIsLast = !!owner && owner.container === lastContainer && !!lastNode && !!nodes[lastNode];
+  let nodeKey = owner && !ownerIsLast ? owner.lastSeenNode : lastNode;
   if (!nodeKey || !nodes[nodeKey]) nodeKey = nodeKeys[0];
   if (!nodeKey || !nodes[nodeKey]) return null;
-  const remembered = owner ? owner.container : lastSeenContainerOf ? lastSeenContainerOf(m.id) : null;
+  const remembered = owner ? owner.container : lastContainer;
   const free = (part) => !!part && !taken.has(`${nodeKey}:${part}`);
   const idPart = [remembered, m.name].find(free) || `${m.name} (${m.id})`;
   return { nodeKey, idPart, uid: `${nodeKey}:${idPart}`, remembered };

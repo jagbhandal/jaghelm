@@ -971,3 +971,59 @@ test('assemble (#395): monitorOf names the monitor of each running card, red car
   assert.deepEqual(r.monitorOf, { 'vm103:gitea': '1', 'vm103:NAS UI': '2', 'vm103:Network Switch': '3' });
   assert.ok(cards(r.nodes).some((s) => s.uid === 'vm103:old' && s.source === 'presence'), 'a breadcrumb carries none');
 });
+
+// ── where a down monitor's stopped container is drawn (#395) ──
+//
+// The container registry keeps one record per container name, with the last
+// node in the pass: pi2 for vaultwarden, which runs on vm103 and pi2. The
+// service registry has the node of the running card that had the monitor.
+const VW_STOPPED = fakeRegistry([{ container: 'vaultwarden', lastSeenNode: 'pi2', lastSeenAt: 1000, ageMs: 120_000 }]);
+const vwStopped = ({ status, lastSeen = 'vm103', config = { services: {} } }) =>
+  run({
+    nodeResults: VW_NODES.map((nodeKey) => [nodeKey, nodeCfg, nodeData([])]),
+    monitors: vaultwarden(status),
+    lastSeen: { 9: lastSeen },
+    lastSeenContainer: { 9: 'vaultwarden' },
+    containerRegistry: VW_STOPPED,
+    config,
+  });
+
+test('assemble (#395): both copies of an unpinned replica stop: the red card is on the node the monitor last ran on', () => {
+  const up = run({
+    nodeResults: VW_NODES.map((nodeKey) => [nodeKey, nodeCfg, nodeData([])]),
+    monitors: vaultwarden('up'),
+    lastSeen: { 9: 'vm103' },
+    lastSeenContainer: { 9: 'vaultwarden' },
+  });
+  const down = vwStopped({ status: 'down' });
+  assert.deepEqual(monitoredUids(down.nodes), ['vm103:vaultwarden down'], "not pi2, the container registry's node");
+  assert.equal(down.breadcrumbCount, 0, 'Kuma owns the stopped container');
+  const back = vwStopped({ status: 'up' });
+  assert.deepEqual(back.upWithoutCard, ['vm103:vaultwarden'], 'the up entry has the same uid');
+  assert.deepEqual(pushes(up, down), ['service_down vm103:vaultwarden']);
+  assert.deepEqual(pushes(down, back), ['service_recovered vm103:vaultwarden']);
+  // With the monitor's last-seen node off the board, the stopped container's node, as before.
+  assert.deepEqual(monitoredUids(vwStopped({ status: 'down', lastSeen: 'vm102' }).nodes), ['pi2:vaultwarden down']);
+});
+
+test('assemble (#395): a pinned replica, and a stopped container the monitor did not last run as, are drawn as before', () => {
+  // Pinned to vm103: pi2's stopped copy gets no monitor, so the red card is on
+  // the monitor's last-seen node, and pi2's copy leaves a breadcrumb.
+  const config = { nodes: Object.fromEntries(VW_NODES.map((n) => [n, {}])), services: { vaultwarden: { monitor_per_node: { vm103: 'Vaultwarden' } } } };
+  const pinned = vwStopped({ status: 'down', config });
+  assert.deepEqual(monitoredUids(pinned.nodes), ['vm103:vaultwarden down']);
+  assert.deepEqual(cards(pinned.nodes).filter((s) => s.source === 'presence').map((s) => s.uid), ['pi2:vaultwarden']);
+  // Nextcloud last ran as vm103's nextcloud-app; an old nextcloud that stopped
+  // on vm101 is the better match for the down monitor, so it is drawn there.
+  const other = run({
+    nodeResults: [
+      ['vm101', nodeCfg, nodeData([])],
+      ['vm103', nodeCfg, nodeData([{ container: 'nextcloud-app', status: 'running', docker: {} }])],
+    ],
+    monitors: { 3: { id: 3, name: 'Nextcloud', status: 'down', active: true } },
+    lastSeen: { 3: 'vm103' },
+    lastSeenContainer: { 3: 'nextcloud-app' },
+    containerRegistry: fakeRegistry([{ container: 'nextcloud', lastSeenNode: 'vm101', lastSeenAt: 1000, ageMs: 120_000 }]),
+  });
+  assert.deepEqual(monitoredUids(other.nodes), ['vm101:nextcloud down']);
+});
