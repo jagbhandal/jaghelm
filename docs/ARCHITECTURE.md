@@ -140,7 +140,9 @@ src/                        React 19 SPA (Vite 8)
                              popover, tooltip, toast, banner, empty-state, skeleton),
                              the status components (#287: status-lamp, status-word,
                              issue-row, subsystem-strip, attention-panel; the Android app
-                             uses them too), lib/status.js (the five states, their words,
+                             uses them too), the data components (#288: metric-meter,
+                             sparkline, uptime-bar, entity-row, fact-list, table),
+                             lib/status.js (the five states, their words,
                              and the two looks), lib/utils.js (cn, taught the theme),
                              lib/portal.js (portal roots and the switches they copy),
                              lib/field-context.js (how a Field labels its control),
@@ -873,8 +875,9 @@ stack sits beside today's CSS and must not restyle it.
   and a test fails on any other `cn` in `src/ui/`. Icons come from
   `lucide-react` by name (`import { Check } from 'lucide-react'`), so a bundle
   carries only the icons it uses. The components so far are the controls
-  (#285) and the containers (#286), which no screen uses yet, and the status
-  components (#287), which the Android app's screens use (next point). The
+  (#285), the containers (#286) and the data components (#288), which no
+  screen uses yet, and the status components (#287), which the Android app's
+  screens use (next point). The
   interactive controls and containers are built on Base UI primitives. A
   screen's root is a `UiRoot` (`src/ui/root.jsx`), which carries its switches
   to every portal; roots can nest, and a page has one toast viewport. Screens
