@@ -103,19 +103,23 @@ server/                     Express API (Node 26, ESM)
   auth/                     scrypt passwords, in-memory sessions, login rate limit, middleware
   routes/                   one router per resource (see 4.1)
   arcane/                   Arcane poller: read-only API client, state derivation, push builders,
-                            persisted state, dry-run module (see 4.2)
+                            persisted state, dry-run module (see 4.2), and the agents the
+                            status model reads from it (agents.js, see 4.7)
   integrations/             the integration engine (presets + handler + lib, see 4.3)
   status/                   the status model: every entity's state, reason and since, the
-                            subsystems, the overall sentence and the ranked issues, and the
-                            one threshold config; built once a cycle, served at /api/status,
+                            subsystems, the overall sentence and the ranked issues, the
+                            one threshold config, and which cron jobs are backups
+                            (backupJobs.js); built once a cycle, served at /api/status,
                             and what push sends from (see 4.7)
   util/                     logger, ssrf, redact, rateLimiter, atomicWrite,
                             configSchema (zod), configMask (the config read's
                             credential markers, see 6), dataDir, asyncHandler, dedupe
   testing/                  test-only helpers: a mock Prometheus that evaluates JagHelm's
                             PromQL over homelab-shaped series, the pre-#234 node reader, the
-                            status model's input builders (statusFixtures.js), and the
-                            loop's status-and-push step as refresh.js runs it (pushPipeline.js)
+                            status model's input builders (statusFixtures.js), the
+                            loop's status-and-push step as refresh.js runs it (pushPipeline.js),
+                            and the named status fixtures the cross-client suite runs on
+                            (statusScenarios.js, see 4.7)
 
 src/                        React 19 SPA (Vite 8)
   main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + the shell and its
@@ -546,7 +550,10 @@ runs, and its image watcher's checks, into the cron store. On its own weekly tim
 reads Arcane's stored vulnerability scan results for the environments in
 `ARCANE_VULN_DIGEST_ENVS` and pushes a digest per environment when something is new
 (`arcane_vulns`), recording each digest as the `arcane-vuln-digest` cron job. Its `arcane_*` push types map to the `watchtower` preference category (labelled Updates
-in the app). Setup: [arcane/SETUP.md](arcane/SETUP.md).
+in the app). Those pushes are events, not states (spec §6.2): only an agent is a status model
+entity (4.7). The poller keeps each environment's agent health from the last environment list
+it read (`agents()`), and `arcane/agents.js` hands it to the model, which makes no Arcane
+request of its own. Setup: [arcane/SETUP.md](arcane/SETUP.md).
 
 ### 4.3 Integration engine
 
@@ -800,8 +807,23 @@ the last good snapshot and a change made meanwhile is still sent.
 snapshot): the cached `/api/services`, `/api/ups` and `/api/integrations`
 payloads, what the services refresh keeps beside its payload (4.2), the cron
 store's statuses, whether `KUMA_URL` and `GITEA_URL` are set, and the cycle's
-error set (`runCycleRefreshes`, for Gitea). `backupJobs` (the cron jobs marked
-as backups) and `arcaneAgents` come from #291; until then there are none.
+error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
+(#291), with no read of their own:
+
+- **`backupJobs`**, which cron jobs are backups: `display-config.json`'s
+  `backupJobs`, a list of `"node:job"` keys (`"pve:proxmox-backup"` for the
+  Proxmox vzdump results, which the PVE notification webhook reports as a cron
+  job), read from the display config the loop already holds for the thresholds
+  (`status/backupJobs.js`). A job is a backup only when the list names it,
+  never by its name. An entry that isn't a `"node:job"` string is dropped, with
+  one warning until the list changes; the save itself
+  (`POST /api/display-config`) keeps what it is sent, since a web save sends
+  back the whole config it read. Settings edits the list from Phase 3 (P3-3).
+- **`arcaneAgents`**: each Arcane environment's agent, `{ env, state }`, with
+  `state` the poller's `envHealth` from the environment list it last read
+  (4.2, `arcane/agents.js`): `null` when Arcane isn't set up and before its
+  first list, so no agents rather than unknown ones; every agent `unknown`
+  while the list fails.
 
 **The status:**
 
@@ -823,7 +845,8 @@ as backups) and `arcaneAgents` come from #291; until then there are none.
   (`services/<uid>`); an up, pending or in-maintenance monitor no card is drawn
   for is a service too, so the count holds when one goes down. Then `node`
   (`nodes/<key>`), `ups` (`power/ups`, only when a UPS is set up), `job` and
-  `backup` (`jobs/<node>:<job>`, `backups/<node>:<job>`), `integration`
+  `backup` (`jobs/<node>:<job>`, `backups/<node>:<job>`, a backup being a job
+  `backupJobs` names), `integration`
   (`integrations/<key>`) and `agent`, an Arcane agent
   (`integrations/arcane:<env>`). `word` is the short status word an issue row
   shows ("Down", "On battery"); `reason` a short sentence ("Disk 94 % (warning
@@ -894,8 +917,10 @@ here.
 **In demo mode** the demo guard answers `/api/status` (#437) with the model
 built from the payloads the demo serves (`demoStatus` in `demoFixtures.js`):
 `readStatusInputs` with the demo's board as the caches, the demo display
-config's thresholds, and a tracker as a fresh boot has it (no push to seed it
-from), on every request. So every `since` is that request's time (its down
+config's thresholds and backup jobs (it marks the nightly backup as one, so the
+`incident` headline reads "1 service down · 1 backup failed"; the demo has no
+Arcane), and a tracker as a fresh boot has it (no push to seed it from), on
+every request. So every `since` is that request's time (its down
 service is down "since now"), except a job's, which is its last run's.
 `server/demoStatus.test.js` puts the same payloads in the live caches and cron
 store and checks that the loop's own `updateStatus` gives the same status.
@@ -927,8 +952,64 @@ that changed:
   "pve · Disk 94 % (warning above 90 %)". The FCM `data` block the Android app
   reads is unchanged: `type`, `id`, `node`, `severity`, with each id namespace
   as before (`server/push/androidPayload.test.js`).
+- A backup pages as the job did: `cron_failed`, `cron_overdue` and
+  `cron_recovered`, with the same id, node and severity, so an installed app
+  routes it as before; only its reason is the backup's ("Last backup failed:
+  …"). Marking or unmarking a job sends nothing: the snapshot keys a job by
+  `node:job` either way.
 - A container with no monitor, an integration and an Arcane agent send nothing,
-  as before: the Arcane poller pages for its agents itself.
+  as before: the Arcane poller pages for its agents itself
+  (`arcane_agent_offline` after 2 polls down, `arcane_agent_recovered`), so an
+  agent outage is one push. Arcane's updates, held-back updates, releases and
+  digests are pushes only, never model issues; #267 records them in Alerts
+  history.
+
+**The cross-client suite** (#293, spec §6's proof) holds the screens and push
+to the model: the same input can't give one answer on a screen and another in
+a push. Its fixtures (`server/testing/statusScenarios.js`) are named boards,
+each a list of cycles built as the loop builds them (`readStatusInputs` over
+the caches a refresh would leave, through one tracker), never status JSON
+written by hand: `healthy` and `incident` are the demo's boards
+(`demoStatusCycle` in `demoFixtures.js`, the same inputs `demoStatus` serves);
+`source-down` is the healthy board and then two cycles of Prometheus failing;
+`first-run` has nothing set up; `thresholds` puts node readings on, over, just
+under and held inside the lines of the threshold table; `every-state` has one
+of every other state (a node unreachable, the UPS on battery, a job failed, a
+job and a backup overdue, a service pending and one in maintenance, a container
+missing, an integration failing, an Arcane agent offline); `low-battery` has
+the UPS on low battery. They are Node-only; an e2e or gallery run can import
+them on its Node side and hand a page the JSON.
+
+- **Push** (`server/status/crossClient.test.js`, `npm run test:ci`): each
+  fixture's status goes through the real push cycle, from an empty snapshot and
+  from the healthy board's, until it settles. Each push is matched to its
+  entity by the FCM `data` keys the Android app reads, and must carry the
+  entity's state (by its severity: critical, warning, info), the word its type
+  stands for ("Service down" is the model's Down), and the model's reason; the
+  app must route it to that entity. Every issue the model pages for must have
+  its push.
+- **Screen** (`src/ui/crossClient.test.jsx`, `npm run test:client`): each
+  fixture's status is drawn with the `src/ui` status components as a screen
+  draws the model (the attention panel, a tile per subsystem that has
+  anything, a row per entity, a meter per node reading coloured by its
+  condition), and read back: the headline's word (the model's word for the
+  board's state) and sentence, each tile's state, word and counts, each row's
+  state, word and reason, each meter's state and the number and line the
+  model's reason gives. A meter reads its lines from the fixture's threshold
+  config, since `/api/status` doesn't serve them yet (#451).
+
+A disagreement fails it unless a named exception (`KNOWN` in each file) covers
+it, where it says. An exception that stops happening fails too, so settling
+one is deleting its entry. Today's: a failed backup is crit on the screen but
+pushes at `warning` (#446, Jag to decide); a node new to the push snapshot is
+a baseline, so it sends "Host recovered" (or nothing, if unreachable) and a
+reading already over its line doesn't page (#448); a UPS with no known state
+in the snapshot doesn't page on battery; an empty board's attention panel
+isn't quiet (#449); a meter rounds a reading the model rounds down (94.6 %
+reads "95%" on the meter, "94 %" in the reason, #450). The legacy
+derivations (`src/utils/thresholds.js`, `mobile/src/data/derive.js`) are
+outside it; #306, #325 and #326 delete them, and Android's screens join it in
+#325.
 
 ## 5. Frontend architecture
 
@@ -1542,7 +1623,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   each rule table-driven, and source-down fixtures through the real
   `assembleServices`), push built on it (the hysteresis table and its restart
   case, one push per failed source, the model's reason in every push, the FCM
-  payload the Android app reads), `/api/status` and its ETag, contract tests
+  payload the Android app reads), backups and Arcane agents end to end (the
+  display config and the poller through the loop to `/api/status`), every
+  Arcane push pinned as a snapshot (`server/arcane/pushContent.test.js`),
+  `/api/status` and its ETag, contract tests
   that freeze `/api/services`, `/api/ups` and `/api/cron/status`
   (`server/routes/contract.test.js`), and the pure HelmGrid
   `gridMath`, the service-worker precache injector, and the worker's install,
@@ -1563,6 +1647,12 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   (`src/hooks/useAppFrames.test.jsx`), and the `src/ui/` components. The
   status fixtures (`src/testing/statusFixtures.js`) are built by the server's
   own model, never written by hand.
+- **Cross-client status suite** (both of the above): seven named status fixtures
+  (`server/testing/statusScenarios.js`) through the real push cycle
+  (`server/status/crossClient.test.js`, in `test:ci`) and through the `src/ui`
+  status components (`src/ui/crossClient.test.jsx`, in `test:client`): every
+  push and every status word, count, state and meter on the screen must agree
+  with the model, or be a named exception (see 4.7).
 - **Component gallery** (`npm run gallery:test`, Playwright in its pinned
   container; CI's `gallery` job): every state of every `src/ui/` component, in
   both themes and densities and the three accents where colour follows the

@@ -31,8 +31,11 @@ export const liveCaches = {
  * @param {object} [caches]  getCached, getCachedInternal, getAllCronStatuses
  * @param {{ cycleErrors?: string[], backupJobs?: string[], arcaneAgents?: Array<{ env: string, state: string }> | null, env?: Record<string, string | undefined> }} [extra]
  *   cycleErrors: runCycleRefreshes' error set (it says whether Gitea failed);
- *   backupJobs and arcaneAgents: #291's (none until then); env: where
- *   KUMA_URL and GITEA_URL are read from.
+ *   backupJobs: the "node:job" keys display-config.json marks as backups
+ *   (status/backupJobs.js); arcaneAgents: the Arcane poller's agents
+ *   (arcane/agents.js; null: Arcane not set up or not polled yet); env: where
+ *   KUMA_URL and GITEA_URL are read from. The loop passes all of them
+ *   (refresh.js updateStatus, #291).
  */
 export function readStatusInputs(caches = liveCaches, extra = {}) {
   const { cycleErrors = [], backupJobs = [], arcaneAgents = null, env = process.env } = extra;

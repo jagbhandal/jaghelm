@@ -44,7 +44,9 @@ import { buildSnapshot, heldLevels, upgradeSnapshot } from './push/snapshot.js';
 import { getPushStore } from './push/store.js';
 import * as fcm from './push/fcm.js';
 import { createStatusTracker, liveCaches, memoryFromLevels, readStatusInputs } from './status/index.js';
+import { createBackupJobsReader } from './status/backupJobs.js';
 import { resolveThresholds } from './status/thresholds.js';
+import { getArcaneAgents } from './arcane/agents.js';
 
 const log = createLogger('refresh');
 
@@ -94,6 +96,10 @@ const statusTracker = createStatusTracker({
 // The message of the model failure last logged (null: it built last cycle), so
 // a failure that repeats every cycle logs once.
 let statusModelError = null;
+// display-config.json's backupJobs, the cron jobs that are backups (#291),
+// read each cycle from the display config the loop already holds; what it
+// drops is logged once.
+const backupJobsOf = createBackupJobsReader({ logger: log });
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -159,6 +165,9 @@ export function getThresholds() {
  * Builds this cycle's status from what the refreshes cached (reading
  * cron-jobs.json once, for the model and so for push), keeps it for
  * /api/status and returns it. `cycleErrors` is runCycleRefreshes' error set.
+ * The display config gives the thresholds and which jobs are backups
+ * (`backupJobs`, #291); the Arcane poller's last read gives the agents
+ * (arcane/agents.js), with no Arcane request of the model's own.
  *
  * It never throws. If the model throws (an input it can't read), it logs the
  * error once until the error changes or the model builds again, keeps the
@@ -170,9 +179,14 @@ export function getThresholds() {
 export function updateStatus(cycleErrors = [], now = Date.now()) {
   let status;
   try {
+    const displayConfig = readDisplayConfig();
     status = statusTracker.update({
-      inputs: readStatusInputs(liveCaches, { cycleErrors }),
-      thresholds: getThresholds(),
+      inputs: readStatusInputs(liveCaches, {
+        cycleErrors,
+        backupJobs: backupJobsOf(displayConfig),
+        arcaneAgents: getArcaneAgents(),
+      }),
+      thresholds: thresholdsOf(displayConfig),
       now,
     });
   } catch (err) {

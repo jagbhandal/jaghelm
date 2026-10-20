@@ -85,12 +85,16 @@ export function pushPipeline({
     /**
      * One cycle. `thresholds` replaces the pipeline's for this cycle and the
      * next ones (a hand edit of display-config.json); `backupJobs` are the
-     * cron jobs marked as backups (#291).
+     * cron jobs marked as backups and `arcaneAgents` the Arcane poller's
+     * agents (#291).
      */
-    async cycle(caches, { cycleErrors = [], thresholds: t, backupJobs = [] } = {}) {
+    async cycle(
+      caches,
+      { cycleErrors = [], thresholds: t, backupJobs = [], arcaneAgents = null } = {}
+    ) {
       if (t) thresholds = t;
       const status = tracker.update({
-        inputs: readStatusInputs(caches, { cycleErrors, env, backupJobs }),
+        inputs: readStatusInputs(caches, { cycleErrors, env, backupJobs, arcaneAgents }),
         thresholds,
         now,
       });
