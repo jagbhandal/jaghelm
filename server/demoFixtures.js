@@ -440,9 +440,9 @@ function demoStatusCaches(scenario, now) {
  * What one live cycle of this board gives the status model, as the loop reads
  * it (refresh.js updateStatus): the caches for readStatusInputs(), its extras
  * (the environment, and the jobs the demo display config marks as backups),
- * and that config's thresholds. demoStatus builds /api/status from it, and the
- * cross-client status fixtures (testing/statusScenarios.js, #293) build their
- * `healthy` and `incident` from it, so both are the board the demo serves.
+ * and that config's thresholds. demoStatusCycles runs it twice for
+ * /api/status, and the other cross-client status fixtures
+ * (testing/statusScenarios.js, #293) start from its `healthy` board.
  */
 export function demoStatusCycle({ scenario = 'incident', now = Date.now() } = {}) {
   const config = demoDisplayConfig();
@@ -454,21 +454,59 @@ export function demoStatusCycle({ scenario = 'incident', now = Date.now() } = {}
 }
 
 /**
+ * How long the demo's board has been running when a request comes in (#442).
+ * Long enough that an issue's age reads as a board that has been up a while
+ * ("15 m", not "0 s"), and far past any "for 2 cycles" rule (a minute at the
+ * default 30 s refresh). Short enough that every time the model reads in the
+ * board (the cron runs; the newest is an hour old) is before it, which
+ * demoStatusCycles relies on.
+ */
+export const DEMO_WARM_UP_MS = 15 * MINUTE;
+
+/**
+ * The cycles /api/status is built from, oldest first, each
+ * `{ caches, extra, thresholds, now }`: a warm-up cycle DEMO_WARM_UP_MS before
+ * `now`, then `now`, over the same board (#442). So the demo answers as a
+ * board that has been running a while, not as a fresh boot: every `since` is
+ * the warm-up clock (a job's is its last run), and a "for 2 cycles" rule has
+ * had its two. The cross-client fixtures' `healthy` and `incident`
+ * (testing/statusScenarios.js) are these cycles, so they are what the demo
+ * serves.
+ *
+ * Both cycles read the board as it is at `now`. That is also the board as it
+ * was at the warm-up clock, because nothing in it happened in between: every
+ * time the model reads is before the warm-up (server/demoStatus.test.js checks
+ * it). Building the board again at the warm-up clock would not be: its ages are
+ * fixed, so every cron run would move back with the clock, and a job's `since`
+ * would be a run before the one /api/cron/status lists.
+ */
+export function demoStatusCycles({ scenario = 'incident', now = Date.now() } = {}) {
+  const cycle = demoStatusCycle({ scenario, now });
+  return [now - DEMO_WARM_UP_MS, now].map((at) => ({ ...cycle, now: at }));
+}
+
+/**
  * /api/status: the status model of this board, built as the live loop builds
  * it (refresh.js updateStatus): readStatusInputs() over the board's caches,
- * the demo display config's thresholds and backup jobs, and a status tracker
- * as a fresh boot has it (no memory: the demo runs no push to seed one from).
- * Built on every request, about as cheap as /api/services, so every `since` is
- * that request's time, except a job's, which is its last run's. The demo has
- * no Arcane, so no agents.
+ * the demo display config's thresholds and backup jobs, through one status
+ * tracker over demoStatusCycles, so a board that has been running for
+ * DEMO_WARM_UP_MS. The tracker is new on every request: nothing is kept
+ * between requests (and the demo runs no push to seed it from), so the answer
+ * depends on the scenario and the clock alone. Every `since` is the warm-up
+ * clock, except a job's, which is its last run's. Two model runs per request,
+ * still about as cheap as /api/services. The demo has no Arcane, so no agents.
  */
 export function demoStatus({ scenario = 'incident', now = Date.now() } = {}) {
-  const { caches, extra, thresholds } = demoStatusCycle({ scenario, now });
-  return createStatusTracker().update({
-    inputs: readStatusInputs(caches, extra),
-    thresholds,
-    now,
-  });
+  const tracker = createStatusTracker();
+  let status = null;
+  for (const cycle of demoStatusCycles({ scenario, now })) {
+    status = tracker.update({
+      inputs: readStatusInputs(cycle.caches, cycle.extra),
+      thresholds: cycle.thresholds,
+      now: cycle.now,
+    });
+  }
+  return status;
 }
 
 // ── Display config and the checklist ─────────────────────────────────────

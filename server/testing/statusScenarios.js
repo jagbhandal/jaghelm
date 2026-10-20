@@ -5,8 +5,10 @@
  * into one status tracker. Nothing here is status JSON written by hand, so a
  * fixture can only say what the model says.
  *
- * - `healthy`, `incident`: the demo's two boards (demoFixtures.js
- *   demoStatusCycle), one source of truth with what the demo serves.
+ * - `healthy`, `incident`: the demo's two boards, as the demo builds its
+ *   /api/status from them (demoFixtures.js demoStatusCycles: a warm-up cycle
+ *   15 minutes before `now`, then `now`, #442), one source of truth with what
+ *   the demo serves.
  * - `source-down`: the healthy board, then two cycles in which Prometheus
  *   fails: its node batch throws and the UPS read fails with it, as
  *   refresh.js handles that. Kuma and the cron reports carry on.
@@ -35,6 +37,7 @@ import {
   demoNodeReadings,
   demoServicesConfig,
   demoStatusCycle,
+  demoStatusCycles,
 } from '../demoFixtures.js';
 import { assembleServices, servicesCacheEntry } from '../refresh.js';
 import { createStatusTracker, readStatusInputs } from '../status/index.js';
@@ -50,7 +53,10 @@ export const STATUS_SCENARIOS = Object.freeze([
   'low-battery',
 ]);
 
-/** A background cycle's length: the cycles of a scenario are this far apart. */
+/**
+ * A background cycle's length: the cycles of a scenario are this far apart,
+ * except the demo boards', whose warm-up is 15 minutes back (#442).
+ */
 export const CYCLE_MS = 30_000;
 
 /** What Prometheus failing leaves in the UPS cache (refresh.js _refreshUPS: the query threw). */
@@ -321,8 +327,8 @@ export function scenarioCycles(name, { now = Date.now() } = {}) {
   switch (name) {
     case 'healthy':
     case 'incident':
-      cycles = [(t) => demoStatusCycle({ scenario: name, now: t })];
-      break;
+      // The demo's own cycles, as it builds /api/status (#442).
+      return demoStatusCycles({ scenario: name, now });
     case 'source-down':
       cycles = [
         (t) => demoStatusCycle({ scenario: 'healthy', now: t }),
