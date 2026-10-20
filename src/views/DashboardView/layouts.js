@@ -6,27 +6,23 @@
  * `display-config.json` payloads keep working after key changes.
  */
 
-// 24-column grid; minW:4 ≈ 17% (six panels per row), minH:3 ≈ 156px
+// 24-column grid; minW:4 ≈ 17% (six panels per row), minH:3 ≈ 156px.
+//
+// Only the panels every install has. It names no node: node panels come from
+// the nodes discovered (useEffectiveLayouts adds them), so a fresh install
+// shows the "Connect your first node" empty state instead of a "Loading …"
+// panel for a node it doesn't have (#272). The UPS and Pipeline panels join
+// the same way once their source is configured (configuredPanels.js).
 export const DEFAULT_LAYOUTS = {
   lg: [
-    { i: 'node-gateway', x: 0, y: 0, w: 24, h: 7, minW: 4, minH: 3 },
-    { i: 'node-production', x: 0, y: 7, w: 24, h: 7, minW: 4, minH: 3 },
-    { i: 'node-staging', x: 0, y: 14, w: 12, h: 6, minW: 4, minH: 3 },
-    { i: 'ups', x: 12, y: 14, w: 12, h: 5, minW: 4, minH: 3 },
-    { i: 'pipeline', x: 0, y: 20, w: 16, h: 5, minW: 4, minH: 3 },
-    { i: 'todos', x: 16, y: 20, w: 8, h: 5, minW: 4, minH: 3 },
-    { i: 'cron-jobs', x: 0, y: 25, w: 24, h: 7, minW: 4, minH: 3 },
-    { i: 'quicklaunch', x: 0, y: 32, w: 24, h: 4, minW: 4, minH: 2 },
+    { i: 'cron-jobs', x: 0, y: 0, w: 16, h: 7, minW: 4, minH: 3 },
+    { i: 'todos', x: 16, y: 0, w: 8, h: 7, minW: 4, minH: 3 },
+    { i: 'quicklaunch', x: 0, y: 7, w: 24, h: 4, minW: 4, minH: 2 },
   ],
   md: [
-    { i: 'node-gateway', x: 0, y: 0, w: 20, h: 7 },
-    { i: 'node-production', x: 0, y: 7, w: 20, h: 7 },
-    { i: 'node-staging', x: 0, y: 14, w: 20, h: 6 },
-    { i: 'ups', x: 0, y: 20, w: 20, h: 5 },
-    { i: 'pipeline', x: 0, y: 25, w: 20, h: 5 },
-    { i: 'todos', x: 0, y: 30, w: 20, h: 5 },
-    { i: 'cron-jobs', x: 0, y: 35, w: 20, h: 7 },
-    { i: 'quicklaunch', x: 0, y: 42, w: 20, h: 4 },
+    { i: 'cron-jobs', x: 0, y: 0, w: 20, h: 7 },
+    { i: 'todos', x: 0, y: 7, w: 20, h: 5 },
+    { i: 'quicklaunch', x: 0, y: 12, w: 20, h: 4 },
   ],
 };
 
@@ -79,20 +75,40 @@ export function migrateLayouts(layouts) {
   return changed ? migrated : layouts;
 }
 
-// Mobile breakpoint ordering — explicit so retired panels don't surface in unwanted positions.
+// Phone-width (sm) order, used when the layout has no sm breakpoint of its own.
+// `node-*` stands for every node panel, in the order the desktop layout has them.
+// Anything not named (custom groups) follows, in desktop order.
 export const MOBILE_PANEL_ORDER = [
   'quicklaunch',
-  'node-pi1',
-  'node-pi2',
-  'node-vm103',
-  'node-vm101',
-  'node-pve',
-  'node-nas',
+  'node-*',
   'ups',
   'pipeline',
   'todos',
   'cron-jobs',
 ];
 
-// Static panels that the layout reconciler must always include.
+/** `keys` (a desktop layout's panel ids, in its order) in MOBILE_PANEL_ORDER. */
+export function orderForMobile(keys) {
+  const placed = new Set();
+  const out = [];
+  const take = (k) => {
+    if (!placed.has(k)) {
+      placed.add(k);
+      out.push(k);
+    }
+  };
+  for (const entry of MOBILE_PANEL_ORDER) {
+    if (entry.endsWith('*')) {
+      const prefix = entry.slice(0, -1);
+      keys.filter((k) => k.startsWith(prefix)).forEach(take);
+    } else if (keys.includes(entry)) {
+      take(entry);
+    }
+  }
+  keys.forEach(take);
+  return out;
+}
+
+// Static panels the layout reconciler adds when a layout lacks them. The UPS and
+// Pipeline panels are added only once their source is configured (#272).
 export const STATIC_PANEL_KEYS = ['ups', 'pipeline', 'todos', 'cron-jobs', 'quicklaunch'];

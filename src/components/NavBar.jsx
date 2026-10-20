@@ -208,7 +208,7 @@ export default React.memo(function NavBar({
         ) : (
           <img src="/logo.svg" alt="" className="nav-logo-img" />
         )}
-        <span className="nav-logo">{config?.title || 'JAG-NET'}</span>
+        <span className="nav-logo">{config?.title || 'JAGHELM'}</span>
         <span className="nav-health-label" role="status" aria-live="polite">
           {hl}
         </span>

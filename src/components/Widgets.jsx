@@ -56,7 +56,9 @@ export const UPSCard = React.memo(function UPSCard({ upsData, borderColor, banne
         </div>
         <div>
           <div className="section-title">{sec.title || 'UPS Power'}</div>
-          <div className="section-subtitle">{sec.subtitle || 'APC Back-UPS ES 600M1'}</div>
+          <div className="section-subtitle">
+            {sec.subtitle || upsData?.model || 'Battery backup'}
+          </div>
         </div>
       </div>
       {banner}

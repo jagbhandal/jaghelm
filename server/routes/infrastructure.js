@@ -4,8 +4,10 @@
  * Thin readers of data the background refresh loop already collected. UPS and
  * Gitea use its warm cache, with cold-start fallbacks.
  *
- *   GET /api/ups              → battery + load (warm-cached via refresh loop)
- *   GET /api/gitea/activity   → recent commits (warm-cached via refresh loop)
+ *   GET /api/ups              → battery + load, whether a UPS is set up and its
+ *                               model (warm-cached via refresh loop)
+ *   GET /api/gitea/activity   → recent commits, or { configured: false } without
+ *                               GITEA_URL (warm-cached via refresh loop)
  *   GET /api/history          → sparkline series (ETag, not cached)
  */
 
