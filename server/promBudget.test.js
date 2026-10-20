@@ -17,9 +17,9 @@ import { createMockPrometheus, homelabSeries } from './testing/mockPrometheus.js
 
 const { initDiscovery, NODE_QUERIES } = await import('./discovery.js');
 const { saveConfig } = await import('./config.js');
-const { getCached } = await import('./cache.js');
+const { getCached, getCachedInternal } = await import('./cache.js');
 const { refreshServices, refreshUPS } = await import('./refresh.js');
-const { buildSnapshot } = await import('./push/snapshot.js');
+const { snapshotAfter } = await import('./testing/pushPipeline.js');
 
 const realFetch = globalThis.fetch;
 process.on('exit', () => {
@@ -175,7 +175,9 @@ test('the model falls back to the model label, and nothing else from the info se
 
 // ── #232, batched ────────────────────────────────────────────────────────
 
-const caches = { getCached, getAllCronStatuses: () => [], now: () => 0 };
+const caches = { getCached, getCachedInternal, getAllCronStatuses: () => [] };
+// The push snapshot of this cycle's caches after `prev`, built from the model (#292).
+const buildSnapshot = (c, prev) => snapshotAfter(c, prev).snapshot;
 const setValue = (mock, name, node, value) => {
   for (const s of mock.series) if (s.labels.__name__ === name && s.labels.node === node) s.value = value;
 };
@@ -216,9 +218,8 @@ test('a metric query failing holds that metric for every host, and only that met
   const held = buildSnapshot(caches, prev);
   for (const label of labels) {
     assert.deepEqual(getCached('services').nodes[label].failedReads, ['cpu'], label);
-    assert.equal(held.hosts[label].cpu, prev.hosts[label].cpu, `${label} cpu held`);
-    assert.ok(held.hosts[label].cpu > 0);
-    assert.equal(held.hosts[label].mem, 0.95, `${label} memory read this cycle`);
+    assert.equal(held.hosts[label].levels.cpu, prev.hosts[label].levels.cpu, `${label} cpu held`);
+    assert.equal(held.hosts[label].levels.mem, 'warn', `${label} memory read this cycle: 95 %`);
     assert.equal(held.hosts[label].reachable, true);
   }
 });

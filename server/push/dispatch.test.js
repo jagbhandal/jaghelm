@@ -19,6 +19,24 @@ test('categoryOf maps every event type to its category', () => {
   assert.equal(categoryOf('cron_overdue'), 'cron');
 });
 
+test('categoryOf: a monitoring source down pages in the category of what it watches (#292)', () => {
+  assert.equal(categoryOf('source_down', 'prometheus'), 'host');
+  assert.equal(categoryOf('source_recovered', 'prometheus'), 'host');
+  assert.equal(categoryOf('source_down', 'kuma'), 'service');
+  assert.equal(categoryOf('source_down', 'nut'), 'ups');
+  // The installed app's 5 keys: no category of its own.
+  assert.equal(categoryOf('source_down', 'something-new'), 'host');
+});
+
+test('shouldDeliver: a source event honours its category toggle and the recoveries toggle', () => {
+  const noServices = { ...DEFAULT_PREFS, categories: { ...DEFAULT_PREFS.categories, service: false } };
+  assert.equal(shouldDeliver({ type: 'source_down', id: 'kuma' }, noServices), false);
+  assert.equal(shouldDeliver({ type: 'source_down', id: 'prometheus' }, noServices), true);
+  const noRecoveries = { ...DEFAULT_PREFS, notifyRecoveries: false };
+  assert.equal(shouldDeliver({ type: 'source_recovered', id: 'prometheus' }, noRecoveries), false);
+  assert.equal(shouldDeliver({ type: 'source_down', id: 'prometheus' }, noRecoveries), true);
+});
+
 test('DEFAULT_PREFS is all-on', () => {
   assert.deepEqual(DEFAULT_PREFS, {
     categories: { service: true, host: true, ups: true, cron: true, watchtower: true },

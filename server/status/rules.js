@@ -18,11 +18,23 @@
  * Pure: no clock (it is passed in), no I/O, no module state.
  */
 import { graceSeconds, isOverdue } from '../cron-overdue.js';
-import { coerceFraction } from '../push/snapshot.js';
 import { redactSecrets } from '../util/redact.js';
 
 /** The five states, named as src/ui/lib/status.js names them (a test keeps them in step). */
 export const STATES = Object.freeze(['ok', 'warn', 'crit', 'unknown', 'maintenance']);
+
+/**
+ * The status words push reads beside an entity's state (push/snapshot.js,
+ * #292): a service that is ok or warn only because Kuma is retrying a check
+ * (Pending) holds its last known state, a crit node is unreachable or over a
+ * line, and a job's warning is a failed run or an overdue one.
+ */
+export const WORDS = Object.freeze({
+  pending: 'Pending',
+  unreachable: 'Unreachable',
+  failed: 'Failed',
+  overdue: 'Overdue',
+});
 
 // Worst-of order (spec §6.1): crit > warn > unknown > maintenance > ok.
 const RANK = { ok: 0, maintenance: 1, unknown: 2, warn: 3, crit: 4 };
@@ -67,11 +79,23 @@ export function spanText(seconds) {
   return `${Math.round(s / 86400)} d`;
 }
 
+/**
+ * A host metric (percentage string "0".."100" or bare number) as a 0..1
+ * fraction, clamped. Non-finite / null / junk => 0.
+ */
+export function coerceFraction(raw) {
+  const n = typeof raw === 'number' ? raw : parseFloat(raw);
+  if (!Number.isFinite(n)) return 0;
+  const frac = n / 100;
+  if (frac < 0) return 0;
+  if (frac > 1) return 1;
+  return frac;
+}
+
 /** A usage reading (percent string or number) as a 0..1 fraction, or null when there is none. */
 function fractionOf(raw) {
   if (raw === null || raw === undefined || raw === '') return null;
   const n = typeof raw === 'number' ? raw : parseFloat(raw);
-  // Finite readings go through push's own coercion, so both compare the same number.
   return Number.isFinite(n) ? coerceFraction(raw) : null;
 }
 
@@ -130,7 +154,7 @@ const CELSIUS = {
  *   `reachable`, or, for a node with no `up` series, a metric read failed), or
  *   the node is missing from a failed cycle → unknown, never crit.
  * - Unreachable: `up` is 0, or it has no `up` series and no metric, while
- *   Prometheus answered → crit (push/snapshot.js buildHosts reads it the same).
+ *   Prometheus answered → crit (push pages it as host_unreachable).
  * - Each reading that was read: its level (levelOf). A reading whose query
  *   failed is `unknown`; one with no data (a VM has no temperature sensor) is
  *   left out.
@@ -172,7 +196,7 @@ export function judgeNode(node, { prometheusOk, pools = [], memo = null, thresho
   if (!reachable) {
     return {
       state: 'crit',
-      word: 'Unreachable',
+      word: WORDS.unreachable,
       reason:
         node.reachable === false
           ? "Unreachable: Prometheus can't scrape it"
@@ -323,7 +347,7 @@ export function judgeService({ status, kumaStatus, kumaOk, prev = null, now, thr
     if (pending.n >= thresholds.pending.cycles) {
       return {
         state: 'warn',
-        word: 'Pending',
+        word: WORDS.pending,
         reason: 'Kuma: pending (retrying its check)',
         sinceHint: pending.since,
         memo: { pending },
@@ -341,7 +365,7 @@ export function judgeService({ status, kumaStatus, kumaOk, prev = null, now, thr
       if (prev.metric) held.metric = prev.metric;
       return held;
     }
-    return { state: 'ok', word: 'Pending', reason: 'Kuma: pending', memo: { pending } };
+    return { state: 'ok', word: WORDS.pending, reason: 'Kuma: pending', memo: { pending } };
   }
   if (status === 'down') return { state: 'crit', word: 'Down', reason: 'Kuma: down' };
   if (status === 'up') return { state: 'ok', word: 'Up', reason: 'Kuma: up' };
@@ -381,7 +405,8 @@ export function judgeContainer({ card, backedBy = null, containersRead }) {
 /**
  * The UPS, from the /api/ups payload (spec §6.1): on battery or low battery →
  * crit; on mains → ok. nut_status 1 is online, 2 on battery, 3 low battery
- * (push/snapshot.js normalizeUpsStatus); 0 is NUT's own "unknown".
+ * (push reads it through this rule: push/snapshot.js normalizeUpsStatus); 0 is
+ * NUT's own "unknown".
  *
  * - The UPS query failed (`ok: false`) → unknown, naming Prometheus.
  * - No nut_status reading while the UPS is set up: the NUT exporter has gone
@@ -449,13 +474,13 @@ export function judgeJob({ run, now, backup = false }) {
       const reason = failedText('Last backup');
       return {
         state: 'crit',
-        word: 'Failed',
+        word: WORDS.failed,
         reason: overdue ? `${reason} · overdue` : reason,
         sinceHint: ranHint,
       };
     }
     if (overdue)
-      return { state: 'warn', word: 'Overdue', reason: overdueText, sinceHint: overdueSince };
+      return { state: 'warn', word: WORDS.overdue, reason: overdueText, sinceHint: overdueSince };
     if (run.status === 'success')
       return { state: 'ok', word: 'OK', reason: 'Last backup succeeded', sinceHint: ranHint };
     return {
@@ -466,9 +491,14 @@ export function judgeJob({ run, now, backup = false }) {
     };
   }
   if (overdue)
-    return { state: 'warn', word: 'Overdue', reason: overdueText, sinceHint: overdueSince };
+    return { state: 'warn', word: WORDS.overdue, reason: overdueText, sinceHint: overdueSince };
   if (run.status === 'failure')
-    return { state: 'warn', word: 'Failed', reason: failedText('Last run'), sinceHint: ranHint };
+    return {
+      state: 'warn',
+      word: WORDS.failed,
+      reason: failedText('Last run'),
+      sinceHint: ranHint,
+    };
   if (run.status === 'success')
     return { state: 'ok', word: 'OK', reason: 'Last run succeeded', sinceHint: ranHint };
   return {

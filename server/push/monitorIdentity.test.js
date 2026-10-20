@@ -15,17 +15,12 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 import { assembleServices } from '../refresh.js';
-import { buildSnapshot } from './snapshot.js';
-import { createPushSnapshot, runPushCycle } from './dispatch.js';
+import { pushPipeline as statusPush } from '../testing/pushPipeline.js';
 import { liveCaches, NOW } from './fixtures/liveShape.js';
 
-const THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
-const silent = { info() {}, warn() {}, error() {}, debug() {} };
 const STALE = NOW - 11 * 60_000; // past JAGHELM_MONITOR_STALE_MS: Kuma stopped checking it (paused)
 
 /**
@@ -85,52 +80,27 @@ function homelab(nodeOrder, seen = {}) {
 }
 
 /**
- * The push side: the real cycle over a snapshot file. `restart` before a cycle
- * stops and starts JagHelm: the snapshot is flushed, and read back from the file.
+ * The push side: the status model and the real push cycle over a snapshot file
+ * (testing/pushPipeline.js). `restart` before a cycle stops and starts
+ * JagHelm: the snapshot is flushed and read back from the file, and the model
+ * starts again from the levels it holds.
  */
 function pushPipeline() {
-  const dir = mkdtempSync(join(tmpdir(), 'jaghelm-push-identity-'));
-  const path = join(dir, 'push-snapshot.json');
-  const sent = [];
-  const fcm = {
-    isPushEnabled: () => true,
-    sendToToken: async (_token, event) => {
-      sent.push(`${event.type} ${event.id}`);
-      return { ok: true, prune: false };
-    },
-  };
-  const store = {
-    getAllTokens: () => [{ token: 'phone' }],
-    getPrefs: () => ({ enabled: true, categories: {}, notifyRecoveries: true }),
-    removeToken() {},
-    pruneStale() {},
-    markDelivered() {},
-  };
-  let snapshot = createPushSnapshot({ path, logger: silent });
+  const p = statusPush();
   return {
-    sent,
-    path,
-    async push(r) {
-      await runPushCycle({
-        buildSnapshotFn: (prev) => buildSnapshot(liveCaches(r), prev),
-        store,
-        fcm,
-        snapshot,
-        thresholds: THRESHOLDS,
-        logger: silent,
-      });
-    },
-    restart() {
-      snapshot.flush();
-      snapshot = createPushSnapshot({ path, logger: silent });
-    },
-    close() {
-      rmSync(dir, { recursive: true, force: true });
-    },
+    sent: p.sent,
+    events: p.events,
+    path: p.path,
+    push: (r) => p.cycle(liveCaches(r)),
+    restart: () => p.restart(),
+    close: () => p.close(),
   };
 }
 
 const nextcloud = (status) => [{ id: 1, name: 'Nextcloud', status }];
+const tailscale = (status) => [{ id: 1, name: 'Tailscale', status }];
+const tailscaleOn = (nodes) => Object.fromEntries(nodes.map((n) => [n, ['tailscale']]));
+const TAILSCALE_YAML = { tailscale: { monitor: 'Tailscale' } };
 const adguards = (primary, secondary = 'down') => [
   {
     id: 1,
@@ -333,6 +303,72 @@ const SCENARIOS = [
     main: ['service_down vm103:grafana', 'service_recovered vm103:grafana'],
     sent: ['service_down vm103:grafana'],
   },
+  // #407: a monitor services.yaml maps to a container that runs on several
+  // nodes is one outage, so one push each way, whichever of its cards come
+  // and go during it. tailscale runs on pi2 and vm103.
+  {
+    issue: '#407',
+    name: "a monitor on two nodes goes down, pi2's container stops, the monitor recovers",
+    nodes: ['vm103', 'pi2'],
+    cycles: [
+      {
+        running: tailscaleOn(['vm103', 'pi2']),
+        services: TAILSCALE_YAML,
+        monitors: tailscale('up'),
+      },
+      {
+        running: tailscaleOn(['vm103', 'pi2']),
+        services: TAILSCALE_YAML,
+        monitors: tailscale('down'),
+      },
+      { running: tailscaleOn(['vm103']), services: TAILSCALE_YAML, monitors: tailscale('down') },
+      { running: tailscaleOn(['vm103']), services: TAILSCALE_YAML, monitors: tailscale('up') },
+    ],
+    // #407's table: pi2 never recovers.
+    main: [
+      'service_down pi2:tailscale',
+      'service_down vm103:tailscale',
+      'service_recovered vm103:tailscale',
+    ],
+    sent: ['service_down pi2:tailscale', 'service_recovered vm103:tailscale'],
+  },
+  {
+    issue: '#407',
+    name: "as above, but pi2's container returns before the recovery",
+    nodes: ['vm103', 'pi2'],
+    cycles: [
+      {
+        running: tailscaleOn(['vm103', 'pi2']),
+        services: TAILSCALE_YAML,
+        monitors: tailscale('up'),
+      },
+      {
+        running: tailscaleOn(['vm103', 'pi2']),
+        services: TAILSCALE_YAML,
+        monitors: tailscale('down'),
+      },
+      { running: tailscaleOn(['vm103']), services: TAILSCALE_YAML, monitors: tailscale('down') },
+      {
+        running: tailscaleOn(['vm103', 'pi2']),
+        services: TAILSCALE_YAML,
+        monitors: tailscale('down'),
+      },
+      {
+        running: tailscaleOn(['vm103', 'pi2']),
+        services: TAILSCALE_YAML,
+        monitors: tailscale('up'),
+      },
+    ],
+    // #407's table: a repeat service_down for pi2.
+    main: [
+      'service_down pi2:tailscale',
+      'service_down vm103:tailscale',
+      'service_down pi2:tailscale',
+      'service_recovered pi2:tailscale',
+      'service_recovered vm103:tailscale',
+    ],
+    sent: ['service_down pi2:tailscale', 'service_recovered pi2:tailscale'],
+  },
 ];
 
 /** Run a scenario's cycles through the push pipeline; returns what was sent and the last snapshot file. */
@@ -351,7 +387,7 @@ async function play(scenario, { restartEachCycle = false, order } = {}) {
 }
 
 for (const scenario of SCENARIOS) {
-  test(`push (#395) ${scenario.name}: ${scenario.now ?? 'one service_down, one service_recovered'}`, async () => {
+  test(`push (${scenario.issue ?? '#395'}) ${scenario.name}: ${scenario.now ?? 'one service_down, one service_recovered'}`, async () => {
     const { sent } = await play(scenario);
     assert.notDeepEqual(scenario.main, scenario.sent, 'the case is one main gets wrong');
     assert.deepEqual(sent, scenario.sent);

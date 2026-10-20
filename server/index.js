@@ -66,6 +66,7 @@ const log = createLogger('jaghelm');
 
 // Domain routes
 import { servicesRoutes } from './routes/services.js';
+import { statusRoutes } from './routes/status.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { infrastructureRoutes } from './routes/infrastructure.js';
 import { secretsRoutes } from './routes/secrets.js';
@@ -233,6 +234,7 @@ app.use('/api/icons', iconRoutes);
 app.use('/api', systemRoutes); // /health + /readyz public; /weather authed inside
 
 app.use('/api/services', authMiddleware, servicesRoutes);
+app.use('/api/status', authMiddleware, statusRoutes);
 app.use('/api/integrations', authMiddleware, integrationRoutes);
 // Standalone secrets API is fail-closed: refuses to serve (enumerate/overwrite/
 // delete credentials) until a password is set. Does not affect integration save.

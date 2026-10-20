@@ -1,6 +1,6 @@
 /**
- * The push thresholds come from display-config.json, which the background loop
- * used to re-read every cycle. It is now parsed again only when the file
+ * The thresholds (the status model's, so push's too, #292) come from
+ * display-config.json, which the background loop used to re-read every cycle. It is now parsed again only when the file
  * changes (one stat per read compares its mtime, size and inode), so a hand
  * edit still takes effect on the next cycle, and the displayConfig POST route
  * invalidates the cache too (#241).
@@ -18,8 +18,8 @@ process.env.JAGHELM_DATA_DIR = dataDir;
 process.env.LOG_LEVEL = 'info'; // the parse-warning test reads the warn line
 const configPath = join(dataDir, 'display-config.json');
 
-const { getPushThresholds, getThresholds, stopBackgroundRefresh } = await import('./refresh.js');
-const { DEFAULT_THRESHOLDS, pushThresholdsOf } = await import('./status/thresholds.js');
+const { getThresholds, stopBackgroundRefresh } = await import('./refresh.js');
+const { DEFAULT_THRESHOLDS } = await import('./status/thresholds.js');
 const { displayConfigRoutes } = await import('./routes/displayConfig.js');
 const { atomicWriteFileSync } = await import('./util/atomicWrite.js');
 
@@ -44,46 +44,46 @@ function rewriteInPlace(text, mtimeSec) {
 
 const T0 = 1_760_000_000;
 
-test('push thresholds: the defaults when there is no display config', () => {
-  assert.deepEqual(getPushThresholds(), { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 });
+// The CPU warn line in force: what the hand-edit tests below read.
+const cpuLine = () => getThresholds().cpu.warn;
+
+test('thresholds: the defaults when there is no display config', () => {
+  assert.deepEqual(getThresholds(), DEFAULT_THRESHOLDS);
 });
 
-test('push and the status model read one threshold config (#290)', () => {
-  assert.deepEqual(getThresholds(), DEFAULT_THRESHOLDS);
+test('the status model reads display-config\'s pushThresholds over the defaults (#290)', () => {
   replaceConfig({ pushThresholds: { cpu: 0.7, disk: 0.8, hysteresis: 0.02 } });
   const t = getThresholds();
   assert.deepEqual([t.cpu.warn, t.mem.warn, t.disk.warn, t.disk.crit, t.hysteresis.fraction], [0.7, 0.9, 0.8, 0.95, 0.02]);
-  assert.deepEqual(getPushThresholds(), pushThresholdsOf(t));
-  assert.deepEqual(getPushThresholds(), { cpu: 0.7, mem: 0.9, disk: 0.8, hysteresis: 0.02 });
   replaceConfig({});
-  assert.deepEqual(getPushThresholds(), pushThresholdsOf(getThresholds()));
+  assert.deepEqual(getThresholds(), DEFAULT_THRESHOLDS);
 });
 
-test('push thresholds: a hand edit is picked up on the next read', () => {
+test('thresholds: a hand edit is picked up on the next read', () => {
   replaceConfig({ pushThresholds: { cpu: 0.7 } });
-  assert.equal(getPushThresholds().cpu, 0.7);
+  assert.equal(cpuLine(), 0.7);
   replaceConfig({ pushThresholds: { cpu: 0.6 } });
-  assert.equal(getPushThresholds().cpu, 0.6);
+  assert.equal(cpuLine(), 0.6);
 });
 
-test('push thresholds: re-read when the file changes, not otherwise', () => {
+test('thresholds: re-read when the file changes, not otherwise', () => {
   rewriteInPlace(JSON.stringify({ pushThresholds: { cpu: 0.7 } }), T0);
-  assert.equal(getPushThresholds().cpu, 0.7);
+  assert.equal(cpuLine(), 0.7);
   // Same inode, size and mtime: the cached copy is served, the file is not read.
   rewriteInPlace(JSON.stringify({ pushThresholds: { cpu: 0.6 } }), T0);
-  assert.equal(getPushThresholds().cpu, 0.7);
+  assert.equal(cpuLine(), 0.7);
   utimesSync(configPath, T0 + 1, T0 + 1);
-  assert.equal(getPushThresholds().cpu, 0.6, 'a new mtime: re-read');
+  assert.equal(cpuLine(), 0.6, 'a new mtime: re-read');
 });
 
-test('push thresholds: a file restored with an older mtime is re-read', () => {
+test('thresholds: a file restored with an older mtime is re-read', () => {
   rewriteInPlace(JSON.stringify({ pushThresholds: { cpu: 0.7 } }), T0 + 100);
-  assert.equal(getPushThresholds().cpu, 0.7);
+  assert.equal(cpuLine(), 0.7);
   rewriteInPlace(JSON.stringify({ pushThresholds: { cpu: 0.6 } }), T0);
-  assert.equal(getPushThresholds().cpu, 0.6);
+  assert.equal(cpuLine(), 0.6);
 });
 
-test('push thresholds: a file that fails to parse falls back to the defaults with one warning', (t) => {
+test('thresholds: a file that fails to parse falls back to the defaults with one warning', (t) => {
   const warnings = [];
   const realWrite = process.stderr.write.bind(process.stderr);
   t.mock.method(process.stderr, 'write', (chunk, ...rest) => {
@@ -92,28 +92,28 @@ test('push thresholds: a file that fails to parse falls back to the defaults wit
     return true;
   });
   rewriteInPlace('{"pushThresholds": {"cpu": 0.7', T0 + 200);
-  assert.equal(getPushThresholds().cpu, 0.9);
-  assert.equal(getPushThresholds().cpu, 0.9);
+  assert.equal(cpuLine(), 0.9);
+  assert.equal(cpuLine(), 0.9);
   assert.equal(warnings.length, 1, 'once per bad file, not every read');
   rewriteInPlace('{"pushThresholds": {"cpu": 0.6', T0 + 201);
-  getPushThresholds();
+  cpuLine();
   assert.equal(warnings.length, 2, 'a different bad file warns again');
   replaceConfig({ pushThresholds: { cpu: 0.6 } });
-  assert.equal(getPushThresholds().cpu, 0.6);
+  assert.equal(cpuLine(), 0.6);
   assert.equal(warnings.length, 2);
   mock.restoreAll();
 });
 
-test('push thresholds: a display-config save takes effect, interval unchanged or not', async () => {
+test('thresholds: a display-config save takes effect, interval unchanged or not', async () => {
   const app = express().use(express.json()).use('/api/display-config', displayConfigRoutes);
   replaceConfig({ refreshInterval: 30, pushThresholds: { cpu: 0.7 } });
-  assert.equal(getPushThresholds().cpu, 0.7);
+  assert.equal(cpuLine(), 0.7);
 
   const same = await request(app).post('/api/display-config').send({ refreshInterval: 30, pushThresholds: { cpu: 0.5 } });
   assert.equal(same.status, 200);
-  assert.equal(getPushThresholds().cpu, 0.5, 'saved with the same interval');
+  assert.equal(cpuLine(), 0.5, 'saved with the same interval');
 
   const changed = await request(app).post('/api/display-config').send({ refreshInterval: 60, pushThresholds: { cpu: 0.4 } });
   assert.equal(changed.status, 200);
-  assert.equal(getPushThresholds().cpu, 0.4, 'saved with a new interval (loop restart)');
+  assert.equal(cpuLine(), 0.4, 'saved with a new interval (loop restart)');
 });

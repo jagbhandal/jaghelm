@@ -1,12 +1,12 @@
 // @ts-check
 /**
  * The server's one threshold config (spec §6.1, #290): every number the status
- * model and push use to judge a reading. Push's host thresholds are a view of
- * it (pushThresholdsOf), so the two can never disagree about where a line is.
+ * model uses to judge a reading. Push sends what the model judges (#292), so
+ * it has no lines of its own.
  *
  * Usage lines are fractions of 1, as push has always compared them (a node's
  * `cpu`, `memPercent` and `diskPercent` arrive as percent strings and are read
- * as `n / 100`, coerceFraction in push/snapshot.js). Temperature is in °C.
+ * as `n / 100`, coerceFraction in rules.js). Temperature is in °C.
  *
  * Today only the four push values can be changed, by hand, in
  * display-config.json under `pushThresholds` ({ cpu, mem, disk, hysteresis },
@@ -70,21 +70,5 @@ export function resolveThresholds(pushThresholds) {
       celsius: d.hysteresis.celsius,
     },
     pending: { cycles: d.pending.cycles },
-  };
-}
-
-/**
- * Push's host thresholds (push/differ.js), read from the same config: CPU,
- * memory and disk fire at their warn lines and clear `hysteresis` below them.
- *
- * @param {Thresholds} thresholds
- * @returns {{ cpu: number, mem: number, disk: number, hysteresis: number }}
- */
-export function pushThresholdsOf(thresholds) {
-  return {
-    cpu: thresholds.cpu.warn,
-    mem: thresholds.mem.warn,
-    disk: thresholds.disk.warn,
-    hysteresis: thresholds.hysteresis.fraction,
   };
 }

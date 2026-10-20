@@ -13,7 +13,6 @@ const silentLog = { info() {}, warn() {}, error() {}, debug() {} };
 // A minimal snapshot pair: baseline has a service up, next has it down.
 const SNAP_UP = { services: { 'n1:svc': 'up' }, hosts: {}, ups: { state: 'online' }, cron: {} };
 const SNAP_DOWN = { services: { 'n1:svc': 'down' }, hosts: {}, ups: { state: 'online' }, cron: {} };
-const THRESHOLDS = { cpu: 0.9, mem: 0.9, disk: 0.9, hysteresis: 0.05 };
 
 function tmpSnapshotPath() {
   const dir = mkdtempSync(join(tmpdir(), 'jaghelm-push-'));
@@ -55,7 +54,6 @@ test('runPushCycle BASELINE: no prev file => persists snapshot, dispatches nothi
       store: oneTokenStore(),
       fcm,
       snapshot: createPushSnapshot({ path, logger: silentLog }),
-      thresholds: THRESHOLDS,
       logger: silentLog,
     });
     assert.equal(fcm.calls.length, 0, 'no dispatch on baseline');
@@ -76,7 +74,6 @@ test('runPushCycle WITH PREV: diffs, dispatches the change, persists new snapsho
       store: oneTokenStore(),
       fcm,
       snapshot: createPushSnapshot({ path, logger: silentLog }),
-      thresholds: THRESHOLDS,
       logger: silentLog,
     });
     // up -> down => one service_down dispatched to the one token
@@ -102,7 +99,6 @@ test('runPushCycle DISABLED: fcm.isPushEnabled false => no-op, no file write, no
       store: oneTokenStore(),
       fcm,
       snapshot: createPushSnapshot({ path, logger: silentLog }),
-      thresholds: THRESHOLDS,
       logger: silentLog,
     });
     assert.equal(built, false, 'snapshot not even built when push disabled');
@@ -130,8 +126,7 @@ test('runPushCycle ERROR ISOLATION: a throwing dep => resolves, never rejects', 
         store: oneTokenStore(),
         fcm: throwingFcm,
         snapshot: createPushSnapshot({ path, logger: silentLog }),
-        thresholds: THRESHOLDS,
-        logger: silentLog,
+          logger: silentLog,
       })
     );
   } finally {
@@ -153,7 +148,6 @@ test('runPushCycle RETENTION: pruneStale called on every cycle, even when push i
       store: fakeStore,
       fcm: disabledFcm,
       snapshot: createPushSnapshot({ path, logger: silentLog }),
-      thresholds: THRESHOLDS,
       logger: silentLog,
     });
     assert.equal(pruneCallCount, 1, 'pruneStale must be called once per cycle regardless of push-enabled state');
@@ -177,7 +171,6 @@ test('runPushCycle #247: a phone not opened for 31 days still gets the alert, an
       store,
       fcm,
       snapshot: createPushSnapshot({ path, logger: silentLog }),
-      thresholds: THRESHOLDS,
       logger: silentLog,
     });
     assert.deepEqual(fcm.calls, [{ token: 'phone', type: 'service_down' }], 'the alert reached the phone');
@@ -189,9 +182,10 @@ test('runPushCycle #247: a phone not opened for 31 days still gets the alert, an
 
 // ── Write on change (#241) ────────────────────────────────────────────────
 
+// A snapshot whose host's CPU is at `cpu`, the level the model holds it at.
 const host = (cpu) => ({
   services: { 'n1:svc': 'up' },
-  hosts: { n1: { reachable: true, cpu, mem: 0.3, disk: 0.4 } },
+  hosts: { n1: { reachable: true, levels: { cpu, disk: 'ok', mem: 'ok' } } },
   ups: { state: 'online' },
   cron: {},
 });
@@ -214,13 +208,12 @@ function writeSpy({ failOn = [] } = {}) {
 }
 
 // One push cycle against `snapshot`, with `snap` as this cycle's state.
-function cycle(snapshot, snap, fcm, thresholds = THRESHOLDS) {
+function cycle(snapshot, snap, fcm) {
   return runPushCycle({
     buildSnapshotFn: () => snap,
     store: oneTokenStore(),
     fcm,
     snapshot,
-    thresholds,
     logger: silentLog,
   });
 }
@@ -239,18 +232,20 @@ test('runPushCycle steady state: an unchanged state is written once, then never'
   }
 });
 
-test('runPushCycle: metrics moving on the same side of their threshold are not written', async () => {
+test('runPushCycle: a level that holds is not written; a level that changes is (#292: no readings in the file)', async () => {
   const { dir, path } = tmpSnapshotPath();
   const spy = writeSpy();
   const fcm = enabledFcm();
   try {
     const snapshot = createPushSnapshot({ path, write: spy.write, logger: silentLog });
-    for (const cpu of [0.42, 0.47, 0.61, 0.89]) await cycle(snapshot, host(cpu), fcm);
+    for (let i = 0; i < 4; i += 1) await cycle(snapshot, host('ok'), fcm);
     assert.equal(spy.attempts, 1, 'baseline only');
-    await cycle(snapshot, host(0.95), fcm);
+    await cycle(snapshot, host('warn'), fcm);
     assert.deepEqual(fcm.calls, [{ token: 'a', type: 'host_threshold' }]);
-    assert.equal(spy.attempts, 2, 'crossing the threshold is written');
-    assert.equal(spy.written[1].hosts.n1.cpu, 0.95);
+    assert.equal(spy.attempts, 2, 'the new level is written');
+    assert.deepEqual(spy.written[1].hosts.n1, { reachable: true, levels: { cpu: 'warn', disk: 'ok', mem: 'ok' } });
+    await cycle(snapshot, host('warn'), fcm);
+    assert.equal(spy.attempts, 2, 'held: not written');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -286,40 +281,6 @@ test('runPushCycle restart: diffs against the last persisted state, no re-alert,
     // Restart after it recovered during the downtime: the recovery is sent.
     await cycle(createPushSnapshot({ path, logger: silentLog }), SNAP_UP, fcm);
     assert.deepEqual(fcm.calls.map((c) => c.type), ['service_down', 'service_recovered']);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('runPushCycle restart: an older metric reading on disk does not raise a false alert', async () => {
-  const { dir, path } = tmpSnapshotPath();
-  const fcm = enabledFcm();
-  try {
-    const first = createPushSnapshot({ path, logger: silentLog });
-    for (const cpu of [0.95, 0.97, 0.99]) await cycle(first, host(cpu), fcm); // high throughout
-    assert.equal(JSON.parse(readFileSync(path, 'utf8')).hosts.n1.cpu, 0.95, 'file kept the first high reading');
-    await cycle(createPushSnapshot({ path, logger: silentLog }), host(0.98), fcm);
-    assert.equal(fcm.calls.length, 0, 'still high after the restart: nothing new');
-    await cycle(createPushSnapshot({ path, logger: silentLog }), host(0.2), fcm);
-    assert.deepEqual(fcm.calls, [{ token: 'a', type: 'host_threshold_cleared' }]);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('runPushCycle: a thresholds change rewrites the snapshot when a stored metric changes side', async () => {
-  const { dir, path } = tmpSnapshotPath();
-  const lower = { ...THRESHOLDS, cpu: 0.8 };
-  const fcm = enabledFcm();
-  try {
-    const first = createPushSnapshot({ path, logger: silentLog });
-    await cycle(first, host(0.5), fcm); // baseline written at 0.5
-    await cycle(first, host(0.85), fcm); // below 0.9: not written
-    await cycle(first, host(0.85), fcm, lower); // above the new 0.8: written
-    assert.equal(JSON.parse(readFileSync(path, 'utf8')).hosts.n1.cpu, 0.85);
-    // Without the rewrite, a restart would diff 0.5 -> 0.85 and alert.
-    await cycle(createPushSnapshot({ path, logger: silentLog }), host(0.85), fcm, lower);
-    assert.equal(fcm.calls.length, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -384,42 +345,8 @@ test('runPushCycle: a dispatch that throws leaves prev alone, so the next cycle 
   }
 });
 
-// The file can lag memory by readings that stay on one side of their
-// threshold. If the threshold is edited while JagHelm is stopped, a lagging
-// reading can sit on the other side of the new one, so shutdown writes the
-// latest snapshot (flush) and the restart diffs against the last reading, as
-// it did when the file was written every cycle.
-test('createPushSnapshot flush: a threshold lowered across a restart still raises the alert', async () => {
-  const { dir, path } = tmpSnapshotPath();
-  const lower = { ...THRESHOLDS, cpu: 0.8 };
-  try {
-    const first = createPushSnapshot({ path, logger: silentLog });
-    for (const cpu of [0.85, 0.7, 0.6]) await cycle(first, host(cpu), enabledFcm()); // all below 0.9
-    assert.equal(JSON.parse(readFileSync(path, 'utf8')).hosts.n1.cpu, 0.85, 'the file lags memory');
-    first.flush(); // shutdown
-    const afterRestart = enabledFcm();
-    await cycle(createPushSnapshot({ path, logger: silentLog }), host(0.82), afterRestart, lower);
-    assert.deepEqual(afterRestart.calls.map((c) => c.type), ['host_threshold'], '0.60 -> 0.82 crosses 0.8');
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('createPushSnapshot flush: a threshold lowered across a restart raises no alert the reading already passed', async () => {
-  const { dir, path } = tmpSnapshotPath();
-  const lower = { ...THRESHOLDS, cpu: 0.8 };
-  try {
-    const first = createPushSnapshot({ path, logger: silentLog });
-    for (const cpu of [0.5, 0.85, 0.85]) await cycle(first, host(cpu), enabledFcm());
-    first.flush();
-    const afterRestart = enabledFcm();
-    await cycle(createPushSnapshot({ path, logger: silentLog }), host(0.85), afterRestart, lower);
-    assert.equal(afterRestart.calls.length, 0, '0.85 -> 0.85: no crossing');
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
+// A threshold edited while JagHelm is stopped, and a restart inside a
+// hysteresis band, are the status model's to judge: push/hysteresis.test.js.
 test('createPushSnapshot flush: writes nothing when the file is current or there is no snapshot', async () => {
   const { dir, path } = tmpSnapshotPath();
   const spy = writeSpy();
@@ -436,15 +363,18 @@ test('createPushSnapshot flush: writes nothing when the file is current or there
   }
 });
 
-test('createPushSnapshot flush: a failed write is logged, not thrown', async () => {
+test('createPushSnapshot flush: writes the file if a failed write left it behind; a failed write is logged, not thrown', async () => {
   const { dir, path } = tmpSnapshotPath();
-  const spy = writeSpy({ failOn: [2] });
+  const spy = writeSpy({ failOn: [2, 3] });
   try {
     const snapshot = createPushSnapshot({ path, write: spy.write, logger: silentLog });
-    await cycle(snapshot, host(0.5), enabledFcm());
-    await cycle(snapshot, host(0.6), enabledFcm());
-    assert.doesNotThrow(() => snapshot.flush());
-    assert.equal(spy.attempts, 2);
+    await cycle(snapshot, host('ok'), enabledFcm());
+    await cycle(snapshot, host('warn'), enabledFcm()); // the write fails: the file is behind
+    assert.doesNotThrow(() => snapshot.flush()); // and so does this one
+    assert.equal(spy.attempts, 3);
+    snapshot.flush();
+    assert.equal(spy.attempts, 4, 'a later flush writes it');
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), host('warn'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -467,8 +397,7 @@ test('runPushCycle hands buildSnapshotFn the previous snapshot (null on the base
         store: oneTokenStore(),
         fcm: enabledFcm(),
         snapshot,
-        thresholds: THRESHOLDS,
-        logger: silentLog,
+          logger: silentLog,
       });
     }
     assert.deepEqual(seen, [null, SNAP_UP]);
@@ -489,7 +418,6 @@ test('runPushCycle: a null snapshot skips the cycle, so the baseline waits for o
       store: oneTokenStore(),
       fcm,
       snapshot,
-      thresholds: THRESHOLDS,
       logger: silentLog,
     });
   try {

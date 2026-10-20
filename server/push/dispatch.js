@@ -34,9 +34,20 @@ export const TYPE_CATEGORY = Object.freeze({
   arcane_vulns: 'watchtower',
 });
 
-/** Map an event type to its preference category. */
-export function categoryOf(type) {
-  return Object.hasOwn(TYPE_CATEGORY, type) ? TYPE_CATEGORY[type] : type.split('_')[0];
+/**
+ * A monitoring source that is down pages in the category of what it watches
+ * (#292): Prometheus the hosts, Kuma the services, the NUT exporter the UPS.
+ * The installed Android app has a strict 5-key prefs shape, so the source
+ * events get no category of their own.
+ */
+export const SOURCE_CATEGORY = Object.freeze({ prometheus: 'host', kuma: 'service', nut: 'ups' });
+const SOURCE_TYPES = new Set(['source_down', 'source_recovered']);
+
+/** Map an event (its type, and for a source event its id) to its preference category. */
+export function categoryOf(type, id) {
+  if (Object.hasOwn(TYPE_CATEGORY, type)) return TYPE_CATEGORY[type];
+  if (SOURCE_TYPES.has(type)) return Object.hasOwn(SOURCE_CATEGORY, id) ? SOURCE_CATEGORY[id] : 'host';
+  return type.split('_')[0];
 }
 
 /**
@@ -45,7 +56,7 @@ export function categoryOf(type) {
  */
 export function shouldDeliver(event, prefs) {
   if (!prefs.enabled) return false;
-  if (prefs.categories[categoryOf(event.type)] === false) return false;
+  if (prefs.categories[categoryOf(event.type, event.id)] === false) return false;
   if (RECOVERY_TYPES.has(event.type) && !prefs.notifyRecoveries) return false;
   return true;
 }
@@ -111,20 +122,16 @@ export async function dispatchEvents(events, { store, fcm, logger = defaultLog }
  * The previous cycle's snapshot, which the next cycle diffs against. It lives
  * in memory; the file at `path` is for restarts: read on first use, so a
  * restart diffs against the last persisted state (no re-alert, no missed
- * change), and rewritten only when alertStateKey changes, so a CPU reading
- * that moves without crossing its threshold costs no write.
- *
- * That leaves the file's readings behind memory's, on the same side of the
- * thresholds they were written under. flush() writes the latest snapshot on
- * shutdown, so a threshold edited while JagHelm is stopped is judged against
- * the last reading. After a crash it is judged against the last written one,
- * and a reading between the old and the new threshold can add or drop one
- * threshold alert.
+ * change), and rewritten only when alertStateKey changes. The snapshot holds
+ * states and levels, not readings (#292), so a steady board costs no write,
+ * and the status model is seeded with the file's levels at boot (#361), so a
+ * restart keeps every episode.
  *
  * A failed write is logged and retried every cycle until it lands. Memory moves
  * on regardless, so the running process does not send the alert again. Until
  * the write lands, a restart diffs against the older file: it can re-send an
- * alert, or miss the recovery of one already sent.
+ * alert, or miss the recovery of one already sent. flush() writes the latest
+ * snapshot on shutdown if the file is behind.
  *
  * @param {object}   opts
  * @param {string}   opts.path     the persisted snapshot file
@@ -166,10 +173,10 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, logger =
       return prev;
     },
     /** Make `snap` the next cycle's prev, and write it if the file is behind. */
-    advance(snap, thresholds) {
+    advance(snap) {
       prev = snap;
       loaded = true;
-      if (persisted !== null && alertStateKey(persisted, thresholds) === alertStateKey(snap, thresholds)) return;
+      if (persisted !== null && alertStateKey(persisted) === alertStateKey(snap)) return;
       persist(snap);
     },
     /** Write the in-memory snapshot if the file holds an older one (shutdown). */
@@ -185,9 +192,11 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, logger =
  * one, dispatch the resulting events, then advance the previous snapshot
  * (ALWAYS — even on baseline — so the next cycle has a prev).
  *
- * The builder is handed the previous snapshot, so the parts fed by a source
- * that failed this cycle can be kept from it (buildSnapshot, #232). Advancing to
- * that snapshot keeps them for the next cycle too, however long the failure.
+ * The builder is handed the previous snapshot, so what the status model can't
+ * call, and the parts fed by a source that failed this cycle, can be kept from
+ * it (buildSnapshot, #232, #292). Advancing to that snapshot keeps them for the
+ * next cycle too, however long the failure. `status` is the model the snapshot
+ * was built from: each event takes its words from it.
  * A builder that returns null has no snapshot to give (a baseline taken while a
  * source fails would record its failure as state): the cycle is skipped, and
  * nothing is diffed, sent or advanced.
@@ -199,14 +208,14 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, logger =
  *
  * @param {object} deps
  * @param {Function} deps.buildSnapshotFn  (prev) => Snapshot | null (injected; fakeable)
+ * @param {object|null} [deps.status]      the status model of this cycle (the events' words)
  * @param {object}   deps.store            token store
  * @param {object}   deps.fcm              fcm module
  * @param {object}   deps.snapshot         prev-snapshot memory (createPushSnapshot)
- * @param {object}   deps.thresholds       diff thresholds
  * @param {object}   [deps.logger]
  * @returns {Promise<void>}
  */
-export async function runPushCycle({ buildSnapshotFn, store, fcm, snapshot, thresholds, logger = defaultLog }) {
+export async function runPushCycle({ buildSnapshotFn, status = null, store, fcm, snapshot, logger = defaultLog }) {
   try {
     store.pruneStale();
     if (!fcm.isPushEnabled()) return;
@@ -219,7 +228,7 @@ export async function runPushCycle({ buildSnapshotFn, store, fcm, snapshot, thre
     }
 
     if (prev !== null) {
-      const events = diffSnapshots(prev, snap, thresholds);
+      const events = diffSnapshots(prev, snap, status);
       if (events.length > 0) {
         const counts = await dispatchEvents(events, { store, fcm, logger });
         logger.info({ ...counts, events: events.length }, 'push cycle dispatched');
@@ -228,7 +237,7 @@ export async function runPushCycle({ buildSnapshotFn, store, fcm, snapshot, thre
 
     // Advance only after a clean dispatch: one that throws leaves prev as it
     // was, so the next cycle diffs against it again instead of dropping the alert.
-    snapshot.advance(snap, thresholds);
+    snapshot.advance(snap);
   } catch (err) {
     // Swallow EVERYTHING. This runs inside the refresh loop; it must never
     // reject or the loop's allSettled accounting / health gate could be hurt.

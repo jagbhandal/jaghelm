@@ -11,8 +11,9 @@ import assert from 'node:assert/strict';
 
 import { parseKumaMetrics } from '../kumaMetrics.js';
 import { buildServices } from '../push/snapshot.js';
+import { cachesOfAssembled, snapshotAfter } from '../testing/pushPipeline.js';
 import { assembleServices } from '../refresh.js';
-import { NOW, cycles, entityOf, inputs } from '../testing/statusFixtures.js';
+import { NOW, cycles, entityOf, inputs, once } from '../testing/statusFixtures.js';
 
 const KUMA_VALUE = { up: 1, down: 0, pending: 2, maintenance: 3 };
 
@@ -158,17 +159,26 @@ test('#258: a monitor no container has, pending or in maintenance, stays a servi
   );
 });
 
-test('#258: /api/services and the push snapshot read pending and maintenance as before', () => {
+test('#258: /api/services reads pending and maintenance as before; push holds them at the last known state (#292)', () => {
   const { r } = refresh({ App: 'pending', NAS: 'maintenance' });
   const app = r.nodes.n1.services.find((s) => s.uid === 'n1:app');
   assert.equal(app.status, 'unknown', 'the served card keeps its status');
   assert.deepEqual(r.kumaStatusOf, { 'n1:app': 'pending' });
   assert.equal('kumaStatus' in app, false, 'nothing new in the served card');
-  // Push sees what it saw before: the pending card unknown, the containerless
-  // maintenance monitor not at all.
-  assert.deepEqual(buildServices({ nodes: r.nodes }, r.upWithoutCard), {
+  // Push holds a pending or in-maintenance service where it was: up before,
+  // so up, with no push either way.
+  const before = snapshotAfter(cachesOfAssembled(refresh({ App: 'up', NAS: 'up' }).r)).snapshot;
+  assert.deepEqual(before.services, { 'n1:app': 'up', 'n1:NAS': 'up' });
+  const held = snapshotAfter(cachesOfAssembled(r), before).snapshot;
+  assert.deepEqual(held.services, { 'n1:app': 'up', 'n1:NAS': 'up' });
+  assert.deepEqual(
+    held.monitorOf,
+    { 'n1:app': '1', 'n1:NAS': '2' },
+    'the containerless one keeps its monitor'
+  );
+  // Never known: unknown, which never pages.
+  assert.deepEqual(buildServices(once(refresh({ App: 'pending' }).inputs)), {
     'n1:app': 'unknown',
-    'n1:db': 'up',
   });
 });
 

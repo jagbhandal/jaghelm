@@ -23,7 +23,6 @@
  * node, the UPS) is kept, as `unknown`, until the source answers again. The
  * failed source is itself one `warn` issue.
  */
-import { sourcesOk } from '../push/snapshot.js';
 import {
   errorText,
   judgeAgent,
@@ -44,6 +43,22 @@ const SUBSYSTEM_ORDER = Object.fromEntries(SUBSYSTEMS.map((s, i) => [s.id, i]));
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const objectOr = (v) => (isObject(v) ? v : {});
 const arrayOr = (v) => (Array.isArray(v) ? v : []);
+
+/**
+ * Which upstreams answered this cycle, from the flags their payloads carry
+ * (#232). A missing payload (a cold cache after a restart, or one past its TTL
+ * because the refresh failed) did not answer. A payload without a flag (an
+ * older one, or the one written when no nodes are configured) did. Push reads
+ * the same flags (push/snapshot.js), so both judge one failure.
+ */
+export function sourcesOk(servicesCache, upsCache) {
+  const services = servicesCache != null;
+  return {
+    prometheus: services && servicesCache.sources?.prometheus?.ok !== false,
+    kuma: services && servicesCache.sources?.kuma?.ok !== false,
+    ups: upsCache != null && upsCache.ok !== false,
+  };
+}
 
 /** "node:container" -> [node, container] (the part after the first colon). */
 function splitUid(uid) {
@@ -106,7 +121,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
     cycleErrors = [],
   } = inputs ?? {};
 
-  // Which upstreams answered: push's own reading of the payload flags (#232).
+  // Which upstreams answered (#232).
   const ok = sourcesOk(services, ups);
   const internal = objectOr(servicesInternal);
   const nodes = objectOr(services?.nodes);

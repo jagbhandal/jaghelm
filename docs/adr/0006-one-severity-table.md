@@ -26,12 +26,13 @@ against spec §6.1's 90/95, and to let Android drop its `DISK_HOT` literal.
   hottest sensor warns at 75 °C and is critical at 85 °C; a level holds until
   the reading falls 5 points (5 °C) below its line. There is no amber at 70 %.
 - **Push's line is the table's line.** It keeps push's 90 % (so paging barely
-  changes) and push reads its thresholds through the same config:
-  `getPushThresholds()` is `pushThresholdsOf(getThresholds())`, and
-  `display-config.json`'s hand-edited `pushThresholds` moves the model's lines
-  and push's together. A test feeds the same readings to push's differ and to
-  the model and checks they agree on every crossing
-  (`server/status/thresholds.test.js`).
+  changes), and `display-config.json`'s hand-edited `pushThresholds` moves the
+  model's lines. Since #292 push has no lines of its own: it sends what the
+  model judges (each reading's level in the node's `conditions`), so the two
+  can't disagree, and a test feeds the same readings through the model and the
+  real push cycle to show it (`server/status/thresholds.test.js`).
+  `getPushThresholds()`, `pushThresholdsOf()` and `DEFAULT_PUSH_THRESHOLDS` are
+  gone.
 - **The server judges; clients render.** The model gives every node entity a
   `conditions` map, the state of each reading (`{ disk: 'warn', cpu: 'ok', … }`,
   hysteresis applied), and the reason and status word for the entity. A meter
@@ -47,11 +48,16 @@ against spec §6.1's 90/95, and to let Android drop its `DISK_HOT` literal.
   - `src/utils/thresholds.js` (`USAGE_WARN`, `USAGE_CRITICAL` and their helpers);
   - in `mobile/src/data/derive.js`, `DISK_HOT` and its comment, `CPU_HOT`,
     `TEMP_HOT` and `nodeSeverity`.
-- Push still keeps its own timing until #292 builds it on the model: it fires on
-  the first cycle over the CPU line (the model waits 2), and its hysteresis
-  compares each reading with the previous one rather than with a held level, so
-  a reading that drifts down through the 5-point band never sends a "back to
-  normal", and one that dips into the band and rises again alerts twice.
+- Push took the model's timing with #292: it alerts on CPU after 2 cycles over
+  the line, as the model warns, and its hysteresis is the model's held level
+  (#361 fixed by construction), so a reading that drifts down through the
+  5-point band sends its "back to normal" and one that dips into the band and
+  rises again doesn't alert twice. Temperature and storage pools page too, and
+  a disk reaching 95 % sends a second, critical alert. A restart keeps each held
+  level: the model starts from the levels the push snapshot file holds.
+- `mobile/src/data/derive.js`'s comment on `DISK_HOT` still cites
+  `DEFAULT_PUSH_THRESHOLDS.disk`, which #292 removed; the comment goes with
+  `DISK_HOT` in Phase 4.
 - Changing a number is one edit, in one file, covered by the table tests
   (`server/status/severityTable.test.js`). Settings → Notifications edits the
   table from Phase 3.
