@@ -6,6 +6,10 @@ All notable changes to JagHelm are documented here. The format is based on
 
 ## [Unreleased]
 
+## [3.0.0] — 2026-10-20
+
+Push alerts and the new `/api/status` now come from one status model, so a Prometheus restart no longer floods the phone; JagHelm asks Prometheus 14 queries per refresh instead of 90, runs on Node 26, and has the redesign's building blocks in place, not yet on screen.
+
 ### Breaking changes
 - Running the server from a checkout (`node server/index.js` or `npm start`)
   instead of the image now needs Node 26, the version in `.nvmrc`. Under Node 22
@@ -1026,7 +1030,8 @@ First public release.
 - Stored credentials encrypted with AES-256-GCM.
 - Password authentication with scrypt hashing.
 
-[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/jagbhandal/jaghelm/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/jagbhandal/jaghelm/compare/v2.3.0...v3.0.0
 [2.3.0]: https://github.com/jagbhandal/jaghelm/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/jagbhandal/jaghelm/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/jagbhandal/jaghelm/compare/v2.0.0...v2.1.0
