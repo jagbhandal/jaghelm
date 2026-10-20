@@ -10,8 +10,10 @@
  * Open Font License 1.1 (src/fonts/licences/). Each rule carries Google's
  * unicode-range, so the latin-ext file downloads only when a screen shows one of
  * its characters (Ł, ő, ș, ž, and so on); a latin-only screen downloads the latin
- * file alone. The rules are in Google's order, latin-ext before latin, so the
- * few code points both claim (U+0304, U+0308, U+0329, U+2020) go to latin.
+ * file alone. The rules are in Google's order, latin-ext before latin, and a
+ * browser checks the later rule first, so the seven code points both ranges
+ * claim resolve to latin first. Among them are ı, Œ and œ, which only the latin
+ * file draws: in the other order, "œuvre" would download latin-ext for nothing.
  * Characters outside both subsets (Cyrillic, Greek, Vietnamese) fall back to the
  * next family in --jh-font-sans or --jh-font-mono (tokens.css).
  *

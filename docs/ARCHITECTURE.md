@@ -773,9 +773,9 @@ stack sits beside today's CSS and must not restyle it.
   matches its file and licence and each file its pinned sha256, that nothing
   names Google Fonts or loads a font or stylesheet from elsewhere, that "Łódź"
   draws in each new face from its latin-ext file while latin text never needs
-  it, and the new UI's 60 KB budget; [design-system.md](design-system.md#type) has the faces and
-  the scale. The Android app keeps its own copies (`mobile/src/fonts/`) for
-  today's screens.
+  it, and the new UI's 60 KB budget;
+  [design-system.md](design-system.md#type) has the faces and the scale. The
+  Android app keeps its own copies (`mobile/src/fonts/`) for today's screens.
 - **When the old CSS is gone,** drop the `legacy` layer and the scoping: import
   Tailwind's own preflight, move the tokens to `:root` and drop `reference`.
   Delete `src/styles/fonts.css` and every file in `src/fonts/` but the new UI's

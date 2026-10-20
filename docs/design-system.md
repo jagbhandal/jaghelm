@@ -361,8 +361,8 @@ mock first.
   Google's `unicode-range`), a `data-typeface` block into `tokens.css` (and its
   id in that file's header), and a row in the switches and typefaces tables
   above. `scripts/fonts.test.mjs` fails until all of them agree with each other
-  and with the files (their weights, style and characters), and if the default
-  face and the mono go over 60 KB.
+  and with the files (their family, weights, style and characters), and if the
+  default face and the mono go over 60 KB.
 - A new colour role needs a utility in `tailwind.css`'s `@theme` block, and its
   pairings in `PAIRINGS` in `scripts/ui-contrast.mjs`. A plausible pairing
   that fails and that the mock never draws goes in `FORBIDDEN` instead, and in
