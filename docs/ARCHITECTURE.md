@@ -513,8 +513,9 @@ Key properties:
 - **One guarded chokepoint.** Every outbound request goes through
   `lib/http.js` `safeFetch`, which calls `assertSafeUrl` (`util/ssrf.js`) by
   construction -- blocking cloud-metadata IPs, decimal/hex/octal IPv4, and
-  IPv4-mapped IPv6, with a `trusted` flag exempting operator infra (Prometheus/
-  Kuma) from the strict private-network block.
+  IPv4-mapped IPv6 (an IPv6 literal carrying an IPv4 address is checked as that
+  address, in every mode), with a `trusted` flag exempting operator infra
+  (Prometheus/Kuma) from the strict private-network block.
 - **Credential headers stay on their origin.** Redirects are followed in code
   (`util/safeFetchCore.js`), and a hop to a different origin (scheme, host or
   port) forwards only `Accept`, `Accept-Encoding`, `Content-Type` and

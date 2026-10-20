@@ -13,3 +13,9 @@
   find this out, so it has to be able to reach the tab's URL; when it can't,
   the tab shows what the browser shows. Retry, and "Check again", reload only
   that tab.
+### Security
+- The server's outbound URL check now refuses the cloud metadata address
+  (169.254.169.254) and 0.0.0.0/8 when they are written as IPv6, such as
+  http://[::ffff:169.254.169.254]/, which the server connected to as IPv4. An
+  IPv6 address that carries an IPv4 address is checked as that IPv4 address,
+  in strict mode too.
