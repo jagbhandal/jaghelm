@@ -278,6 +278,8 @@ describe('Select', () => {
     trigger.focus();
     await user.keyboard('{ArrowDown}');
     await screen.findByRole('listbox');
+    // The list puts focus on the chosen option a frame after it opens.
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Every 30 s' })).toHaveFocus());
     await user.keyboard('{ArrowDown}');
     const disabled = screen.getByRole('option', { name: 'Every 60 s' });
     expect(disabled).toHaveFocus();

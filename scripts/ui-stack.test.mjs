@@ -24,7 +24,7 @@ import {
   Z_INDEX,
   cn,
 } from '../src/ui/lib/utils.js';
-import { ROOT_SWITCHES } from '../src/ui/lib/portal.js';
+import { ROOT_SWITCHES, SWITCHES } from '../src/ui/lib/portal.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(path.join(ROOT, p), 'utf8');
@@ -656,6 +656,125 @@ test('a portal root copies every switch the tokens read (src/ui/lib/portal.js)',
   const switches = [...header.matchAll(/\b(data-[a-z]+)="/g)].map((m) => m[1]);
   assert.ok(switches.length >= 4, "expected the switches in tokens.css's header");
   assert.deepEqual([...ROOT_SWITCHES].sort(), [...new Set(switches)].sort());
+  // UiRoot sets no attribute for a default (#286), so each default must be the
+  // one tokens.css shows with no attribute.
+  for (const { attribute, default: fallback } of Object.values(SWITCHES)) {
+    const line = header.split('\n').find((l) => l.includes(`${attribute}="`));
+    assert.match(line, new RegExp(`${fallback} is the default`), `${attribute}: ${line}`);
+  }
+});
+
+/**
+ * Base UI portals in `source` that aren't given the portal root's props
+ * (`{...portalRoot}`, lib/portal.js): [`file: <Tag.Portal>`]. Such a portal
+ * would render outside every `.jh-ui` root, without the tokens, the reset or
+ * the screen's switches.
+ */
+export function barePortals(source, file) {
+  const out = [];
+  const visit = (node) => {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const tag = node.tagName.getText();
+      const spreadsRoot = node.attributes.properties.some(
+        (a) =>
+          ts.isJsxSpreadAttribute(a) &&
+          ts.isIdentifier(a.expression) &&
+          a.expression.text === 'portalRoot'
+      );
+      if (/(^|\.)Portal$/.test(tag) && !spreadsRoot) out.push(`${file}: <${tag}>`);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JSX));
+  return out;
+}
+
+test('every Base UI portal in src/ui/ is a .jh-ui root with the screen’s switches', () => {
+  const files = walk('src/ui', ['.jsx']).filter((f) => !/\.test\.jsx$/.test(f));
+  const portalling = files.filter((f) => /\.Portal\b/.test(read(f)));
+  // dialog.jsx holds the layer the Dialog, the Drawer and the Confirm share.
+  assert.ok(portalling.length >= 5, `expected the overlays' portals, found ${portalling}`);
+  assert.deepEqual(
+    files.flatMap((f) => barePortals(read(f), f)),
+    [],
+    'give each portal {...portalRoot} from usePortalRoot or useOverlayPortal (lib/portal.js)'
+  );
+  // The check bites.
+  const source = `<>
+    <DialogPrimitive.Portal><div /></DialogPrimitive.Portal>
+    <Toast.Portal className="jh-ui" />
+    <Popover.Portal {...props} />
+    <Select.Portal {...portalRoot}><div /></Select.Portal>
+    <Tooltip.Portal {...portalRoot} />
+  </>`;
+  assert.deepEqual(barePortals(source, 'x.jsx'), [
+    'x.jsx: <DialogPrimitive.Portal>',
+    'x.jsx: <Toast.Portal>',
+    'x.jsx: <Popover.Portal>',
+  ]);
+});
+
+// Motion that isn't §5.3's: a duration, delay or easing of its own, or a
+// keyframe animation (§5.3: "animate bars only"; none of src/ui/ is a bar yet).
+const OWN_MOTION = /^(duration|delay|ease|animate)-(?!standard$)/;
+
+test('motion is §5.3’s 150ms, and reduced motion cuts it, portals included', async () => {
+  const files = walk('src/ui', ['.js', '.jsx']).filter((f) => !/\.test\.jsx?$/.test(f));
+  const found = files.flatMap((f) => classNamesIn(read(f), f));
+  assert.deepEqual(
+    found.filter((c) => OWN_MOTION.test(utilityOf(c.name))).map((c) => `${c.file}: ${c.name}`),
+    [],
+    'transitions take the token (--jh-duration, --jh-ease): drop the duration, delay or easing'
+  );
+  assert.deepEqual(
+    ['duration-300', 'hover:delay-75', 'ease-in-out', 'animate-pulse', 'data-open:animate-in']
+      .concat(['duration-standard', 'ease-standard', 'transition-opacity'])
+      .filter((n) => OWN_MOTION.test(utilityOf(n))),
+    ['duration-300', 'hover:delay-75', 'ease-in-out', 'animate-pulse', 'data-open:animate-in'],
+    'the check bites'
+  );
+  // dialog.jsx draws the Drawer's and the Confirm's layer too.
+  for (const name of ['dialog', 'popover', 'tooltip', 'toast']) {
+    assert.ok(
+      found.some((c) => c.file === `src/ui/${name}.jsx` && /^transition/.test(utilityOf(c.name))),
+      `${name}.jsx: expected its 150ms transition`
+    );
+  }
+
+  const tokens = resolveContext(readTokens(read('src/ui/tokens.css')).rules, {});
+  assert.equal(tokens['--jh-duration'], '150ms');
+  assert.equal(tokens['--jh-ease'], 'ease');
+
+  const tree = postcss.parse(await buildStack(read(STACK)));
+  const durations = new Set();
+  tree.walkDecls('transition-duration', (d) => {
+    if (d.parent.parent?.type !== 'atrule' || !/reduce/.test(d.parent.parent.params))
+      durations.add(d.value);
+  });
+  assert.ok(durations.size > 0, 'expected the transitions in the compiled stack');
+  assert.deepEqual(
+    [...durations].filter((v) => !/^(var\(--tw-duration, )?var\(--jh-duration\)\)?$/.test(v)),
+    [],
+    'every transition runs for --jh-duration'
+  );
+
+  // The base style cuts every transition and animation inside a .jh-ui root
+  // with reduced motion asked for; !important in the lowest new layer beats
+  // even a utility's !important. Every portal is such a root (above).
+  let cut = null;
+  tree.walkAtRules('media', (media) => {
+    if (!/prefers-reduced-motion:\s*reduce/.test(media.params)) return;
+    let p = media.parent;
+    while (p && !(p.type === 'atrule' && p.name === 'scope')) p = p.parent;
+    if (p?.params !== '(.jh-ui)' || p.parent?.params !== 'base') return;
+    media.walkRules((rule) => {
+      if (rule.selectors.includes('*')) cut = rule;
+    });
+  });
+  assert.ok(cut, 'expected the reduced-motion rule in the base layer, scoped to .jh-ui');
+  const decls = Object.fromEntries(cut.nodes.map((d) => [d.prop, `${d.value} ${d.important}`]));
+  assert.equal(decls['transition-duration'], '0.01ms true');
+  assert.equal(decls['animation-duration'], '0.01ms true');
 });
 
 test("Base UI's positioner variables are not ones today's CSS defines", () => {
