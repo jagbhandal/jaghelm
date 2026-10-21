@@ -5,7 +5,7 @@ import App from './App.jsx';
 import { entityAnchor } from './shell/entityAnchors.js';
 import { setReadOnlyServer } from './api/client.js';
 import { forgetLocalChanges } from './hooks/useData.js';
-import { VIEW_PREF } from './shell/OverviewInfrastructure.jsx';
+import { VIEW_PREF } from './shell/infrastructureView.js';
 import { nasDiskIncident } from './testing/statusFixtures.js';
 // The demo server's own answers: the same function its /api guard answers with.
 import { demoResponse } from '../server/demo.js';

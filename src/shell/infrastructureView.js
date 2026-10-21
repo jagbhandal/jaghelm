@@ -19,8 +19,13 @@
  * The temperature is the model's °C, or °F when the user picked it (Settings,
  * `tempUnit`): the reading and its lines are converted, so the meter still
  * colours and prints as the model judged it.
+ *
+ * And the section's cards / table choice, kept per browser
+ * (useInfrastructureView).
  */
+import { useCallback, useState } from 'react';
 import { readingLines, shownReading } from '../../server/status/readings.js';
+import { prefs } from '../storage/index.js';
 import { entityAnchor } from './entityAnchors.js';
 import { countsText } from './statusView.js';
 
@@ -175,4 +180,22 @@ export function servicesText({ total, up, down }) {
   return [`${up} / ${total} ${total === 1 ? 'service' : 'services'} up`, down && `${down} down`]
     .filter(Boolean)
     .join(' · ');
+}
+
+/** Where the section's cards / table choice is kept, per browser (`prefs`). */
+export const VIEW_PREF = 'jaghelm-infrastructure-view';
+const VIEWS = ['cards', 'table'];
+
+/** The section's view, `cards` or `table`, and what changes it: kept per browser. */
+export function useInfrastructureView() {
+  const [view, setView] = useState(() => {
+    const stored = prefs.get(VIEW_PREF);
+    return VIEWS.includes(stored) ? stored : 'cards';
+  });
+  const choose = useCallback((next) => {
+    if (!VIEWS.includes(next)) return;
+    setView(next);
+    prefs.set(VIEW_PREF, next);
+  }, []);
+  return [view, choose];
 }

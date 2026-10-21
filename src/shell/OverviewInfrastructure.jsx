@@ -5,8 +5,8 @@
  * (the readings and the hour of CPU), put together by infrastructureView.js.
  * It judges nothing itself.
  *
- * Cards or table is a choice kept per browser (`prefs`, VIEW_PREF), cards by
- * default; with storage blocked it lasts the visit. Each node it draws puts
+ * Cards or table is a choice kept per browser (useInfrastructureView), cards
+ * by default; with storage blocked it lasts the visit. Each node it draws puts
  * its anchor on the list of places (entityAnchors.js), so the attention
  * panel's row for a node leads to its card, or its row in the table.
  *
@@ -16,32 +16,17 @@
  * old, with Retry, over the last ones it had. It sits on today's board, lined
  * up with its cards (`margin`, HelmGrid's), in a root of its own.
  */
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useMemo } from 'react';
 import { Banner } from '@ui/banner';
 import { Button } from '@ui/button';
 import { ShellSection } from '@ui/app-shell';
 import { InfrastructureSection } from '@ui/infrastructure-section';
-import { prefs } from '../storage/index.js';
 import { usePlaces } from './entityAnchors.js';
-import { infrastructureCount, infrastructureNodes } from './infrastructureView.js';
-
-/** Where the cards / table choice is kept, per browser. */
-export const VIEW_PREF = 'jaghelm-infrastructure-view';
-const VIEWS = ['cards', 'table'];
-
-/** The section's view, `cards` or `table`, and what changes it: kept per browser. */
-export function useInfrastructureView() {
-  const [view, setView] = useState(() => {
-    const stored = prefs.get(VIEW_PREF);
-    return VIEWS.includes(stored) ? stored : 'cards';
-  });
-  const choose = useCallback((next) => {
-    if (!VIEWS.includes(next)) return;
-    setView(next);
-    prefs.set(VIEW_PREF, next);
-  }, []);
-  return [view, choose];
-}
+import {
+  infrastructureCount,
+  infrastructureNodes,
+  useInfrastructureView,
+} from './infrastructureView.js';
 
 // The words for readings that stopped coming, from /api/services' health
 // (sourceHealth.js sourceBanner: `message` on a failed read, `staleNote`
