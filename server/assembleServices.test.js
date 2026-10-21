@@ -1085,5 +1085,48 @@ test('assemble: a missing container that was a Kuma monitor’s last container i
   });
   const presence = r.nodes.vm103.services.filter((s) => s.source === 'presence').map((s) => s.uid).sort();
   assert.deepEqual(presence, ['vm103:immich-redis', 'vm103:immich-server']);
-  assert.deepEqual(r.backedBy, { 'vm103:immich-server': 'Immich' });
+  assert.deepEqual(r.backedBy, { 'vm103:immich-server': { monitor: 'Immich', status: 'up' } });
+});
+
+test('assemble (#438): backedBy carries Kuma’s status for the monitor, pending and maintenance included', () => {
+  const backed = (monitor) =>
+    run({
+      nodeResults: [['vm103', nodeCfg, nodeData([])]],
+      monitors: { 1: { id: 1, name: 'Immich', active: true, ...monitor } },
+      lastSeen: { 1: 'vm103' },
+      lastSeenContainer: { 1: 'immich-server' },
+      containerRegistry: fakeRegistry([{ container: 'immich-server', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 }]),
+    }).backedBy['vm103:immich-server']?.status;
+  assert.equal(backed({ status: 'up', kumaStatus: 'up' }), 'up');
+  assert.equal(backed({ status: 'unknown', kumaStatus: 'pending' }), 'pending');
+  assert.equal(backed({ status: 'unknown', kumaStatus: 'maintenance' }), 'maintenance');
+  assert.equal(backed({ status: 'unknown', kumaStatus: 'unknown' }), 'unknown');
+  // Down, the stopped container holds the monitor: a red card, no grey one.
+  assert.equal(backed({ status: 'down', kumaStatus: 'down' }), undefined);
+});
+
+test('assemble (#438): no grey breadcrumb on the uid of a down monitor’s red card', () => {
+  // "Photos" doesn't match immich-server by name (its mapping is gone), so the
+  // stopped container doesn't get it, and the red card is placed under the
+  // container the monitor last ran as. The breadcrumb would share that uid.
+  const r = run({
+    nodeResults: [['vm103', nodeCfg, nodeData([])]],
+    monitors: { 1: { id: 1, name: 'Photos', status: 'down', active: true } },
+    lastSeen: { 1: 'vm103' },
+    lastSeenContainer: { 1: 'immich-server' },
+    containerRegistry: fakeRegistry([{ container: 'immich-server', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 }]),
+  });
+  assert.deepEqual(r.nodes.vm103.services.map((s) => `${s.uid} ${s.source} ${s.status}`), ['vm103:immich-server monitor down']);
+  assert.equal(r.breadcrumbCount, 0);
+  assert.deepEqual(r.backedBy, {});
+  // Up, the monitor draws no card: the breadcrumb is back, on the up entry's uid.
+  const up = run({
+    nodeResults: [['vm103', nodeCfg, nodeData([])]],
+    monitors: { 1: { id: 1, name: 'Photos', status: 'up', active: true } },
+    lastSeen: { 1: 'vm103' },
+    lastSeenContainer: { 1: 'immich-server' },
+    containerRegistry: fakeRegistry([{ container: 'immich-server', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 }]),
+  });
+  assert.deepEqual(up.nodes.vm103.services.map((s) => `${s.uid} ${s.source}`), ['vm103:immich-server presence']);
+  assert.deepEqual(up.upWithoutCard, ['vm103:immich-server']);
 });

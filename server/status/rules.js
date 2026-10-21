@@ -455,26 +455,48 @@ export function judgeService({ status, kumaStatus, kumaOk, prev = null, now, thr
 
 /**
  * A container with no Kuma monitor of its own (spec §6.1): running → ok;
- * missing (a grey presence card: it stopped within the last 24 hours) → warn,
- * or crit when it backs a monitored service (`backedBy`, the Kuma monitor it
- * last ran as); its container list unread (Prometheus failed) → unknown.
+ * missing (a grey presence card: it stopped within the last 24 hours) → warn;
+ * its container list unread (Prometheus failed) → unknown.
  *
- * @param {{ card: any, backedBy?: string|null, containersRead: boolean }} input
+ * A missing container that was the last container of a Kuma monitor
+ * (`backedBy`: the monitor's name and Kuma's status for it) follows the
+ * monitor (#438), and is never crit, since the service is an entity of its
+ * own: up → warn, saying the service is up; pending → unknown; in maintenance
+ * → maintenance (those two since the model first saw them: they are the
+ * monitor's state, not the container's). Down → warn: the monitor's own card
+ * is the crit. The services refresh draws no grey card for a container whose
+ * down monitor's red card is its own (refresh.js assembleServices), so a
+ * down one here is a container the monitor has moved off (a new container
+ * has it, or another stopped one).
+ *
+ * @param {{ card: any, backedBy?: { monitor: string, status: string }|null, containersRead: boolean }} input
  */
 export function judgeContainer({ card, backedBy = null, containersRead }) {
   if (!containersRead)
     return { state: 'unknown', word: 'No signal', reason: 'No data: Prometheus unreachable' };
   if (card?.source === 'presence') {
     const sinceHint = Number.isFinite(card.lastSeenAt) ? card.lastSeenAt : undefined;
-    if (backedBy) {
-      return {
-        state: 'crit',
-        word: 'Missing',
-        reason: `Missing: it backs the Kuma monitor ${backedBy}`,
-        sinceHint,
-      };
+    const monitor = typeof backedBy?.monitor === 'string' ? backedBy.monitor : null;
+    switch (monitor && backedBy.status) {
+      case 'up':
+      case 'down':
+        return {
+          state: 'warn',
+          word: 'Missing',
+          reason: `Missing: the container is gone; Kuma monitor ${monitor} is ${backedBy.status}`,
+          sinceHint,
+        };
+      case 'pending':
+        return { state: 'unknown', word: 'No signal', reason: `Kuma: ${monitor} pending` };
+      case 'maintenance':
+        return {
+          state: 'maintenance',
+          word: 'Maintenance',
+          reason: `Kuma: ${monitor} in maintenance`,
+        };
+      default:
+        return { state: 'warn', word: 'Missing', reason: 'Missing: no longer running', sinceHint };
     }
-    return { state: 'warn', word: 'Missing', reason: 'Missing: no longer running', sinceHint };
   }
   return { state: 'ok', word: 'Running', reason: 'Running' };
 }

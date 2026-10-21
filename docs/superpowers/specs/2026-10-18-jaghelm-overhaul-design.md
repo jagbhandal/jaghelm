@@ -151,7 +151,7 @@ Today three sets disagree: web turns amber at 70 % and red at 90 % on any usage;
 | Node temperature (hottest sensor) | ≥ 75 °C | ≥ 85 °C |
 | Node: no metrics while Prometheus is healthy | — | unreachable |
 | Service (Kuma) | pending for more than one cycle | down |
-| Container that backs a monitored service, missing | — | missing |
+| Container that backs a monitored service, missing | missing (it follows its Kuma monitor: unknown while that is pending, maintenance while it is in maintenance) | — (while the monitor is down, its own card is the crit, #438) |
 | Other container, missing | missing | — |
 | UPS | — | on battery, or low battery |
 | Job (cron) | failed last run, or overdue | — |

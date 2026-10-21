@@ -756,7 +756,7 @@ test('buildSnapshot is pure: the same inputs twice give byte-identical snapshots
 });
 
 test("a missing card that backs a monitor, while the monitor is up, is the monitor's up entry to push (#390)", () => {
-  // The model judges the breadcrumb (crit: it backs NAS UI); push reads the up entry.
+  // The model judges the breadcrumb (a warning, NAS UI being up, #438); push reads the up entry.
   const { snapshot, status } = snapshotAfter(
     cachesOf({
       services: {
@@ -766,12 +766,13 @@ test("a missing card that backs a monitor, while the monitor is up, is the monit
       internal: {
         upWithoutCard: ['vm103:nas-ui'],
         monitorOf: { 'vm103:nas-ui': 1 },
-        backedBy: { 'vm103:nas-ui': 'NAS UI' },
+        backedBy: { 'vm103:nas-ui': { monitor: 'NAS UI', status: 'up' } },
       },
       ups: NO_UPS,
     })
   );
-  assert.equal(status.entities.find((e) => e.id === 'services/vm103:nas-ui').kind, 'container');
+  const breadcrumb = status.entities.find((e) => e.id === 'services/vm103:nas-ui');
+  assert.deepEqual([breadcrumb.kind, breadcrumb.state], ['container', 'warn']);
   assert.deepEqual(snapshot.services, { 'vm103:nas-ui': 'up' });
 });
 

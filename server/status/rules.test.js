@@ -453,11 +453,41 @@ for (const [name, input, state, word, reason] of serviceRows) {
 const containerRows = [
   ['running', { card: card('n:a'), containersRead: true }, 'ok', 'Running'],
   ['missing', { card: missing('n:a'), containersRead: true }, 'warn', 'Missing: no longer running'],
+  // A missing container that was a Kuma monitor's last container follows the
+  // monitor (#438): never crit, since the service has its own entity.
   [
-    'missing, backs a monitor',
-    { card: missing('n:a'), backedBy: 'App', containersRead: true },
-    'crit',
-    'Missing: it backs the Kuma monitor App',
+    'missing, backs a monitor that is up',
+    { card: missing('n:a'), backedBy: { monitor: 'App', status: 'up' }, containersRead: true },
+    'warn',
+    'Missing: the container is gone; Kuma monitor App is up',
+  ],
+  [
+    'missing, backs a monitor that is down',
+    { card: missing('n:a'), backedBy: { monitor: 'App', status: 'down' }, containersRead: true },
+    'warn',
+    'Missing: the container is gone; Kuma monitor App is down',
+  ],
+  [
+    'missing, backs a monitor that is pending',
+    { card: missing('n:a'), backedBy: { monitor: 'App', status: 'pending' }, containersRead: true },
+    'unknown',
+    'Kuma: App pending',
+  ],
+  [
+    'missing, backs a monitor in maintenance',
+    {
+      card: missing('n:a'),
+      backedBy: { monitor: 'App', status: 'maintenance' },
+      containersRead: true,
+    },
+    'maintenance',
+    'Kuma: App in maintenance',
+  ],
+  [
+    'missing, backs a monitor with no status',
+    { card: missing('n:a'), backedBy: { monitor: 'App', status: 'unknown' }, containersRead: true },
+    'warn',
+    'Missing: no longer running',
   ],
   [
     'container list unread',

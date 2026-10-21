@@ -139,18 +139,37 @@ test('§6.1 row "Service (Kuma)": warn when pending for more than one cycle, cri
   assert.equal(entityOf(down, id).reason, 'Kuma: down');
 });
 
-test('§6.1 row "Container that backs a monitored service, missing": crit', () => {
-  const s = once(
-    inputs({
-      nodes: { n1: node({}, { services: [missing('n1:immich-server', NOW - 120_000)] }) },
-      internal: { backedBy: { 'n1:immich-server': 'Immich' } },
-    })
+test('§6.1 row "Container that backs a monitored service, missing": warn, following its monitor; never crit (#438)', () => {
+  const backing = (status) =>
+    once(
+      inputs({
+        nodes: { n1: node({}, { services: [missing('n1:immich-server', NOW - 120_000)] }) },
+        internal: { backedBy: { 'n1:immich-server': { monitor: 'Immich', status } } },
+      })
+    );
+  const e = (status) => entityOf(backing(status), 'services/n1:immich-server');
+  assert.equal(e('up').kind, 'container');
+  assert.deepEqual(
+    [e('up').state, e('up').word, e('up').reason],
+    ['warn', 'Missing', 'Missing: the container is gone; Kuma monitor Immich is up']
   );
-  const e = entityOf(s, 'services/n1:immich-server');
-  assert.equal(e.kind, 'container');
-  assert.equal(e.state, 'crit');
-  assert.equal(e.reason, 'Missing: it backs the Kuma monitor Immich');
-  assert.equal(e.since, NOW - 120_000, 'since is when it was last seen');
+  assert.equal(e('up').since, NOW - 120_000, 'since is when it was last seen');
+  // Down, the monitor's own card is the crit: the container is a warning.
+  assert.deepEqual(
+    [e('down').state, e('down').reason],
+    ['warn', 'Missing: the container is gone; Kuma monitor Immich is down']
+  );
+  assert.deepEqual(
+    [e('pending').state, e('pending').word, e('pending').reason],
+    ['unknown', 'No signal', 'Kuma: Immich pending']
+  );
+  assert.deepEqual(
+    [e('maintenance').state, e('maintenance').word, e('maintenance').reason],
+    ['maintenance', 'Maintenance', 'Kuma: Immich in maintenance']
+  );
+  for (const status of ['up', 'down', 'pending', 'maintenance', 'unknown']) {
+    assert.notEqual(backing(status).overall.state, 'crit', status);
+  }
 });
 
 test('§6.1 row "Other container, missing": warn', () => {
