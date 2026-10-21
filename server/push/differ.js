@@ -506,10 +506,32 @@ function diffUps(prev, next, words, events) {
 const SOURCE_NAMES = { prometheus: 'Prometheus', kuma: 'Kuma', nut: 'NUT' };
 
 /**
+ * The status model itself, as a source (#440): its key in the snapshot's
+ * `sources`, and the id and node of its source events. While it throws there
+ * is no status, so no other push is sent: its source_down says so, at
+ * `critical`, and its words are fixed, since there is no model to take them
+ * from.
+ */
+export const STATUS_CHECK = 'status';
+const STATUS_CHECK_TEXT = {
+  source_down: {
+    title: 'JagHelm status check failing',
+    body: "JagHelm can't work out the status, so no other alerts are sent until it can. The server log says why.",
+    severity: 'critical',
+  },
+  source_recovered: {
+    title: 'JagHelm status check recovered',
+    body: 'Alerts are on again. Anything that changed meanwhile is sent now.',
+    severity: SEVERITY.source_recovered,
+  },
+};
+
+/**
  * A monitoring source that is down (failed for two cycles in a row,
  * push/snapshot.js buildSources) is one source_down, whatever it fed (spec §6):
  * the entities it feeds are unknown in the model, which never pages. Its
  * recovery is one source_recovered. One failed cycle on its own sends nothing.
+ * The status check (STATUS_CHECK) is diffed the same way, with its own words.
  */
 function diffSources(prev, next, words, events) {
   for (const name of Object.keys(next)) {
@@ -518,11 +540,17 @@ function diffSources(prev, next, words, events) {
     const down = before !== 'down' && after === 'down';
     const recovered = before === 'down' && after === 'ok';
     if (!down && !recovered) continue;
+    const type = down ? 'source_down' : 'source_recovered';
+    if (name === STATUS_CHECK) {
+      const { title, body, severity } = STATUS_CHECK_TEXT[type];
+      events.push({ type, id: name, node: name, title, body, severity, reason: undefined, prev: before, next: after });
+      continue;
+    }
     const issue = words.entity(`sources/${name}`);
     const label = issue?.name ?? SOURCE_NAMES[name] ?? name;
     const reason = down ? issue?.reason : undefined;
     events.push({
-      type: down ? 'source_down' : 'source_recovered',
+      type,
       id: name,
       node: name,
       title: down ? 'Monitoring source down' : 'Monitoring source recovered',

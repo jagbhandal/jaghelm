@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createPushSnapshot, runPushCycle } from '../push/dispatch.js';
-import { buildSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from '../push/snapshot.js';
+import { buildSnapshot, cycleSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from '../push/snapshot.js';
 import { createStatusTracker, memoryFromLevels, readStatusInputs } from '../status/index.js';
 import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
 
@@ -94,7 +94,9 @@ export function pushPipeline({
      * cron jobs marked as backups and `arcaneAgents` the Arcane poller's
      * agents (#291). `push: false` is a cycle push sits out (FCM not up yet,
      * the boot race), and `failSend` one whose dispatch throws: either way the
-     * model moves on and the snapshot doesn't (#469).
+     * model moves on and the snapshot doesn't (#469). `modelThrows` is a
+     * cycle whose status model threw (#440): there is no status, and the
+     * snapshot is built as refresh.js builds it then (cycleSnapshot).
      */
     async cycle(
       caches,
@@ -105,20 +107,23 @@ export function pushPipeline({
         arcaneAgents = null,
         push = true,
         failSend = false,
+        modelThrows = false,
       } = {}
     ) {
       if (t) thresholds = t;
-      const status = tracker.update({
-        inputs: readStatusInputs(caches, { cycleErrors, env, backupJobs, arcaneAgents }),
-        thresholds,
-        now,
-      });
+      const status = modelThrows
+        ? null
+        : tracker.update({
+            inputs: readStatusInputs(caches, { cycleErrors, env, backupJobs, arcaneAgents }),
+            thresholds,
+            now,
+          });
       pipeline.status = status;
       now += CYCLE_MS;
       pushUp = push;
       sendFails = failSend;
       await runPushCycle({
-        buildSnapshotFn: (prev) => buildSnapshot(caches, prev, status),
+        buildSnapshotFn: (prev) => cycleSnapshot(caches, prev, status),
         status,
         store: onePhone(),
         fcm,

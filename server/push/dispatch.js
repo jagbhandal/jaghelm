@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from 'fs';
 
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { createLogger } from '../util/logger.js';
-import { alertStateKey, diffSnapshots, RECOVERY_TYPES } from './differ.js';
+import { alertStateKey, diffSnapshots, RECOVERY_TYPES, STATUS_CHECK } from './differ.js';
 
 const defaultLog = createLogger('push-dispatch');
 
@@ -43,10 +43,18 @@ export const TYPE_CATEGORY = Object.freeze({
 export const SOURCE_CATEGORY = Object.freeze({ prometheus: 'host', kuma: 'service', nut: 'ups' });
 const SOURCE_TYPES = new Set(['source_down', 'source_recovered']);
 
-/** Map an event (its type, and for a source event its id) to its preference category. */
+/**
+ * Map an event (its type, and for a source event its id) to its preference
+ * category. null for the status check's events (#440): while the status model
+ * fails no category pages, so its push belongs to all of them, and no
+ * category switch turns it off.
+ */
 export function categoryOf(type, id) {
   if (Object.hasOwn(TYPE_CATEGORY, type)) return TYPE_CATEGORY[type];
-  if (SOURCE_TYPES.has(type)) return Object.hasOwn(SOURCE_CATEGORY, id) ? SOURCE_CATEGORY[id] : 'host';
+  if (SOURCE_TYPES.has(type)) {
+    if (id === STATUS_CHECK) return null;
+    return Object.hasOwn(SOURCE_CATEGORY, id) ? SOURCE_CATEGORY[id] : 'host';
+  }
   return type.split('_')[0];
 }
 
@@ -56,7 +64,8 @@ export function categoryOf(type, id) {
  */
 export function shouldDeliver(event, prefs) {
   if (!prefs.enabled) return false;
-  if (prefs.categories[categoryOf(event.type, event.id)] === false) return false;
+  const category = categoryOf(event.type, event.id);
+  if (category !== null && prefs.categories[category] === false) return false;
   if (RECOVERY_TYPES.has(event.type) && !prefs.notifyRecoveries) return false;
   return true;
 }
