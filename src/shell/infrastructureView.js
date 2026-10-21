@@ -125,6 +125,7 @@ export function infrastructureNodes({
     .sort((a, b) => rank(a.e) - rank(b.e) || a.order - b.order)
     .map(({ e }) => {
       const node = services?.nodes?.[e.node] ?? null;
+      const counts = servicesOf(status, e.node);
       const metrics = node?.metrics ?? null;
       const readings = READINGS.filter((r) => hasReading(r, e, metrics)).map((r) =>
         readingOf(r, e, metrics, status.thresholds, tempUnit)
@@ -154,7 +155,8 @@ export function infrastructureNodes({
         word: e.word,
         reason: e.state === 'ok' ? null : e.reason,
         readings,
-        services: servicesOf(status, e.node),
+        serviceCounts: counts,
+        services: servicesText(counts),
         uptime: read && metrics?.uptime ? `Up ${metrics.uptime}` : null,
         trend,
       };

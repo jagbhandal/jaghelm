@@ -5,7 +5,12 @@
  * numbers written here by hand.
  */
 import { describe, it, expect } from 'vitest';
-import { infrastructureCount, infrastructureNodes, READINGS } from './infrastructureView.js';
+import {
+  infrastructureCount,
+  infrastructureNodes,
+  READINGS,
+  servicesText,
+} from './infrastructureView.js';
 import { entityAnchor } from './entityAnchors.js';
 import { demoBoard, nasDiskIncident } from '../testing/statusFixtures.js';
 import { cycles, inputs, node } from '../../server/testing/statusFixtures.js';
@@ -193,10 +198,17 @@ describe('the Infrastructure section, from the model', () => {
       );
       const up = hosted.filter((e) => e.state === 'ok').length;
       const down = hosted.filter((e) => e.state === 'crit').length;
-      expect(n.services, n.key).toEqual({ total: hosted.length, up, down });
+      expect(n.serviceCounts, n.key).toEqual({ total: hosted.length, up, down });
+      expect(n.services, n.key).toBe(servicesText({ total: hosted.length, up, down }));
     }
     // The incident's down service (Jellyfin) is on the apps node.
-    expect(nodes.find((n) => n.key === 'apps').services.down).toBe(1);
+    const apps = nodes.find((n) => n.key === 'apps');
+    expect(apps.serviceCounts.down).toBe(1);
+    expect(apps.services).toBe(
+      `${apps.serviceCounts.up} / ${apps.serviceCounts.total} services up · 1 down`
+    );
+    expect(servicesText({ total: 0, up: 0, down: 0 })).toBe('No services');
+    expect(servicesText({ total: 1, up: 1, down: 0 })).toBe('1 / 1 service up');
   });
 
   it("the trend: the node's CPU over the last hour, printed by the rule", () => {
