@@ -56,7 +56,15 @@ function warnUnreadKeys(cfg) {
 }
 
 /**
- * Load config from disk. If no file exists, returns null (caller should trigger discovery).
+ * Load config from disk. Returns null only when no file exists (the caller runs
+ * discovery and saves a new one); every other outcome returns a config.
+ *
+ * A file that can't be used (unparseable, empty, comments only, or not a
+ * mapping) is a failed read, not an empty board (#463): an editor's
+ * truncate-then-write would otherwise drop every host and service for one
+ * cycle and re-page every open problem on the next. The previous config stays
+ * until the file changes again. With no previous config (at boot) the board
+ * starts empty, and the file is never overwritten by discovery.
  */
 export function loadConfig() {
   try {
@@ -65,7 +73,11 @@ export function loadConfig() {
       return null;
     }
     const raw = readFileSync(CONFIG_PATH, 'utf8');
-    config = yaml.load(raw) || {};
+    const parsed = yaml.load(raw);
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return keepAfterFailedRead('services.yaml is empty or not a mapping');
+    }
+    config = parsed;
     lastModified = statSync(CONFIG_PATH).mtimeMs;
     warnUnreadKeys(config);
     log.info(
@@ -79,9 +91,23 @@ export function loadConfig() {
     // honor the same copy-on-read contract — no caller ever holds the canonical ref.
     return getConfig();
   } catch (err) {
-    log.error({ err }, 'Failed to load services.yaml');
-    return null;
+    return keepAfterFailedRead('Failed to load services.yaml', err);
   }
+}
+
+/**
+ * A read that produced no usable config (#463): keep the previous one, or
+ * start from an empty one when there is none, without touching the file.
+ * `yaml.load` returns undefined for an empty or comments-only document.
+ */
+function keepAfterFailedRead(msg, err) {
+  if (config) {
+    log.warn({ err }, `${msg}; keeping the previous config until the file changes again`);
+  } else {
+    config = {};
+    log.error({ err }, `${msg}; starting with an empty board and not overwriting the file`);
+  }
+  return getConfig();
 }
 
 /**
