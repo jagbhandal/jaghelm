@@ -45,9 +45,6 @@ async function probe(page) {
   return out;
 }
 
-/** The age a place says the status is: "30 s ago". */
-const ageIn = (text) => /last known (.+?)(?::|$)/.exec(text ?? '')?.[1] ?? null;
-
 /** The Overview on the NAS incident, everything drawn, with the clock in the test's hands. */
 async function openIncident(page, theme) {
   await page.clock.install();
@@ -102,15 +99,20 @@ for (const [size, viewport] of Object.entries(WIDTHS)) {
             ).toEqual([]);
           }
 
-          // The same age in the header and the panel, moving on.
-          const ages = async () => [
-            ageIn(await headerLink(page).getAttribute('aria-label')) ??
-              ageIn(await headerLink(page).textContent()),
-            ageIn(await panel(page).getByRole('heading', { level: 2 }).textContent()),
-          ];
-          const [first] = await ages();
+          // The same age in the header and the panel, read in one frame (the
+          // clock runs on), moving on.
+          const ages = () =>
+            page.evaluate(() => {
+              const age = (text) => /last known (.+?)(?::|$)/.exec(text ?? '')?.[1] ?? null;
+              const header = document.querySelector('[data-slot="header-status"] a');
+              const heading = document.querySelector(
+                '[data-slot="overview-status"] [data-slot="attention-panel"] h2'
+              );
+              return [age(header?.textContent), age(heading?.textContent)];
+            });
+          const [first, again] = await ages();
           expect(first).toMatch(/s ago$/);
-          expect(await ages()).toEqual([first, first]);
+          expect(again).toBe(first);
           await page.clock.runFor(90_000);
           await expect(panel(page).getByRole('heading', { level: 2 })).toContainText(
             'last known 2 min ago'
