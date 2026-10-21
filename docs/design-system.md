@@ -1512,9 +1512,8 @@ From the mock's Main board, its Infrastructure section:
 - **The card opens nothing yet** (the mock's is a button to the drawer, #309).
 - **Temperatures follow Settings' unit** (°F by default, as the board had it);
   the mock shows °C.
-- **The table** names its state column "State" with "Healthy" as the model
-  words it, adds a Services column where the mock has Workload, and puts the
-  role from services.yaml's `subtitle`.
+- **The table's Services column** is the mock's Workload (the hosted
+  services' counts), and its Role is services.yaml's `subtitle` for the node.
 
 ## Changing a token
 
