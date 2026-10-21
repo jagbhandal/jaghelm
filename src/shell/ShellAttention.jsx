@@ -35,7 +35,7 @@ import { AttentionPanel } from '@ui/attention-panel';
 import { Banner } from '@ui/banner';
 import { Skeleton } from '@ui/skeleton';
 import { countsText, issueRows, lastKnownLine } from './statusView.js';
-import { STALE_STATE, useStatusFreshness } from './statusFreshness.js';
+import { drawnState, useStatusFreshness } from './statusFreshness.js';
 
 export function ShellAttention({
   status,
@@ -54,9 +54,10 @@ export function ShellAttention({
   const now = at ?? Date.now();
   const all = status?.issues ?? [];
   const shown = filter ? all.filter((i) => i.subsystem === filter) : all;
-  const rows = issueRows({ issues: shown }, now).map((row) =>
-    freshness.stale ? { ...row, state: STALE_STATE } : row
-  );
+  const rows = issueRows({ issues: shown }, now).map((row) => ({
+    ...row,
+    state: drawnState(row.state, freshness),
+  }));
   const issues = linkOf ? rows.map((row, i) => ({ ...row, ...linkOf(shown[i]) })) : rows;
   // Quiet is the whole board's, not the filter's.
   const quiet = all.length === 0;
@@ -66,7 +67,7 @@ export function ShellAttention({
   const said = status
     ? freshness.stale
       ? {
-          state: STALE_STATE,
+          state: drawnState(status.overall.state, freshness),
           counts: lastKnownLine(freshness, status),
           subline: freshness.cause,
         }
