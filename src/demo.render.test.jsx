@@ -5,6 +5,8 @@ import App from './App.jsx';
 import { entityAnchor } from './shell/entityAnchors.js';
 import { setReadOnlyServer } from './api/client.js';
 import { forgetLocalChanges } from './hooks/useData.js';
+import { VIEW_PREF } from './shell/OverviewInfrastructure.jsx';
+import { nasDiskIncident } from './testing/statusFixtures.js';
 // The demo server's own answers: the same function its /api guard answers with.
 import { demoResponse } from '../server/demo.js';
 
@@ -74,7 +76,7 @@ async function renderDemo(scenario, edit, { path = '/', ready = 'Network Edge', 
     render(<App />);
   });
   await advance(3000);
-  expect(screen.getByText(ready)).toBeInTheDocument();
+  expect(legacy(ready)).toBeInTheDocument();
 }
 
 // The header's status link (#296): the lamp's state, and what it says.
@@ -84,8 +86,14 @@ const headerStatus = () =>
 /** The demo's own /api/status in `scenario`: the model's status of its board (#437). */
 const demoStatus = (scenario) =>
   demoResponse({ method: 'GET', path: '/api/status', query: {}, scenario }).body;
-const panel = (title) => screen.getByText(title).closest('.glass-card');
-const gridItem = (title) => screen.getByText(title).closest('.helmgrid-item');
+// A panel of today's board, by its title. A node's name is also on its card in
+// the Infrastructure section (#299), so the title is the one in a panel.
+const legacy = (title) => {
+  const all = screen.getAllByText(title);
+  return all.find((el) => el.closest('.glass-card')) ?? all[0];
+};
+const panel = (title) => legacy(title).closest('.glass-card');
+const gridItem = (title) => legacy(title).closest('.helmgrid-item');
 
 beforeEach(() => {
   localStorage.clear();
@@ -108,7 +116,7 @@ describe('the demo, rendered', () => {
     await renderDemo('incident');
 
     for (const name of ['Network Edge', 'App Server', 'Storage']) {
-      expect(screen.getByText(name)).toBeInTheDocument();
+      expect(legacy(name)).toBeInTheDocument();
     }
     expect(within(panel('App Server')).getByText('Nextcloud')).toBeInTheDocument();
     expect(within(panel('Network Edge')).getByText('Adguard Home')).toBeInTheDocument();
@@ -240,7 +248,11 @@ describe("the demo's Overview status", () => {
 
     expect(within(place('services/apps:jellyfin')).getByText('Jellyfin')).toBeInTheDocument();
     expect(panel('App Server')).toContainElement(place('services/apps:jellyfin'));
-    expect(place('nodes/apps')).toContainElement(panel('App Server'));
+    // A node's place is its card in the Infrastructure section (#299); its
+    // panel below, with its service cards, carries no anchor.
+    expect(place('nodes/apps')).toHaveAttribute('data-slot', 'node-card');
+    expect(place('nodes/apps')).toHaveAccessibleName('App Server');
+    expect(document.querySelectorAll(`[id="${entityAnchor('nodes/apps')}"]`)).toHaveLength(1);
     expect(place('power/ups')).toBe(panel('UPS Power'));
     expect(within(place('jobs/storage:nightly-backup')).getByText('nightly-backup')).toBeTruthy();
     expect(panel('Scheduled Jobs')).toContainElement(place('jobs/storage:nightly-backup'));
@@ -344,7 +356,8 @@ describe("the demo's subsystem strip", () => {
   // Today's panels, by their titles.
   const NODES = ['Network Edge', 'App Server', 'Storage'];
   const OTHERS = ['UPS Power', 'Pipeline Activity', 'Checklist', 'Scheduled Jobs', 'Quick Launch'];
-  const drawn = (titles) => titles.filter((t) => screen.queryByText(t));
+  const drawn = (titles) =>
+    titles.filter((t) => screen.queryAllByText(t).some((el) => el.closest('.glass-card')));
 
   /** The model's word for a subsystem: its worst entity's, the ranked issues first. */
   function modelWord(status, subsystem) {
@@ -594,5 +607,132 @@ describe("the demo's subsystem strip", () => {
     expect(document.querySelectorAll('.helmgrid-resize-handle')).toHaveLength(0);
     await click(tile('Nodes'));
     expect(handles()).toHaveLength(all);
+  });
+});
+
+// The Infrastructure section (#299, spec §8 item 3): above today's board, a
+// card per node the model has, or a table; the node's state the model's, its
+// meters coloured only at or over the lines /api/status serves.
+describe("the demo's Infrastructure section", () => {
+  const section = () => screen.getByRole('region', { name: 'Infrastructure' });
+  const card = (name) => within(section()).getByRole('article', { name });
+  const place = (entityId) => document.getElementById(entityAnchor(entityId));
+  const strip = () => screen.getByRole('region', { name: 'Subsystems' });
+  const tile = (name) => within(strip()).getByRole('button', { name: new RegExp(`^${name},`) });
+  const click = async (el) => {
+    await act(async () => {
+      fireEvent.click(el);
+    });
+  };
+
+  for (const scenario of ['incident', 'healthy']) {
+    it(`${scenario}: a card per node the model has, in its state, above the board`, async () => {
+      await renderDemo(scenario);
+      const status = demoStatus(scenario);
+      const nodes = status.entities.filter((e) => e.kind === 'node');
+      const services = demoResponse({ method: 'GET', path: '/api/services', query: {}, scenario });
+      const cards = within(section()).getAllByRole('article');
+      // In services.yaml's order, as the board lays its panels out.
+      expect(cards.map((c) => c.dataset.node)).toEqual(
+        Object.keys(services.body.nodes).map((k) => `nodes/${k}`)
+      );
+      expect(cards).toHaveLength(nodes.length);
+      for (const e of nodes) {
+        expect(card(e.name)).toHaveAttribute('data-state', e.state);
+        // Healthy: the lamp, named by the model's word, and nothing louder.
+        expect(within(card(e.name)).getByRole('img', { name: e.word })).toBeInTheDocument();
+      }
+      expect(within(section()).getByText(`${nodes.length} nodes`)).toBeInTheDocument();
+      // Every meter neutral: the demo's readings are all under their lines.
+      const meters = section().querySelectorAll('[data-slot="metric-meter"]');
+      expect(meters.length).toBeGreaterThan(0);
+      for (const m of meters) {
+        expect(m).toHaveAttribute('data-state', 'ok');
+        expect(m.querySelector('[data-slot="meter-fill"]')).toHaveClass('bg-meter');
+      }
+      // Above today's board.
+      const board = document.querySelector('.helmgrid-item');
+      expect(section().compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+  }
+
+  it("the incident: the NAS at 94.6 % disk reads as a warning, 94, and its row leads to its card", async () => {
+    const board = nasDiskIncident({ now: Date.now() });
+    await renderDemo('incident', {
+      '/api/status': () => board.status,
+      '/api/services': () => board.services,
+    });
+    const nas = card('Storage');
+    expect(nas).toHaveAttribute('data-state', 'warn');
+    expect(within(nas).getByText('Warning')).toBeInTheDocument();
+    expect(nas).toHaveTextContent('Disk 94 % (warning above 90 %)');
+    const disk = nas.querySelector('[data-reading="disk"]');
+    expect(disk).toHaveAttribute('data-state', 'warn');
+    expect(disk).toHaveAttribute('aria-valuetext', '94%, warning above 90%');
+    expect(within(section()).getByText('3 nodes · 1 warning')).toBeInTheDocument();
+
+    const row = within(screen.getByRole('region', { name: 'Needs attention' })).getByRole('link', {
+      name: /^Storage, Warning/,
+    });
+    expect(row).toHaveAttribute('href', `#${entityAnchor('nodes/storage')}`);
+    await click(row);
+    expect(document.activeElement).toBe(nas);
+  });
+
+  it('Nodes: the section stays, with the node panels; another filter hides it, and the panel takes the anchor', async () => {
+    await renderDemo('incident');
+    await click(tile('Nodes'));
+    expect(section()).toBeInTheDocument();
+    expect(place('nodes/apps')).toBe(card('App Server'));
+    expect(panel('App Server')).toBeInTheDocument();
+
+    // Services: the section is the Nodes subsystem's, so it goes; a service's
+    // row can still lead to its node's panel, which carries the anchor again.
+    await click(tile('Services'));
+    expect(screen.queryByRole('region', { name: 'Infrastructure' })).toBeNull();
+    expect(place('nodes/apps')).toContainElement(panel('App Server'));
+
+    await click(tile('Backups'));
+    expect(screen.queryByRole('region', { name: 'Infrastructure' })).toBeNull();
+    expect(place('nodes/apps')).toBeNull();
+
+    await click(tile('Backups'));
+    expect(place('nodes/apps')).toBe(card('App Server'));
+  });
+
+  it('cards or a table, the choice kept in this browser', async () => {
+    await renderDemo('incident');
+    const view = () => within(section()).getByRole('radiogroup', { name: 'Node view' });
+    expect(within(view()).getByRole('radio', { name: 'Cards' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    await click(within(view()).getByRole('radio', { name: 'Table' }));
+    expect(localStorage.getItem(VIEW_PREF)).toBe('table');
+    const table = within(section()).getByRole('table', { name: 'Infrastructure' });
+    expect(within(table).getAllByRole('row')).toHaveLength(4);
+    expect(within(section()).queryAllByRole('article')).toEqual([]);
+    // The anchor moves with it: the node's name in its row.
+    expect(within(table).getAllByRole('rowheader')[1]).toContainElement(place('nodes/apps'));
+  });
+
+  it('opens in the view this browser kept', async () => {
+    localStorage.setItem(VIEW_PREF, 'table');
+    await renderDemo('healthy');
+    expect(within(section()).getByRole('table', { name: 'Infrastructure' })).toBeInTheDocument();
+  });
+
+  it('with storage blocked: cards, and the toggle still works for the visit', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key) => {
+      if (key === VIEW_PREF) throw new Error('SecurityError');
+      return null;
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation((key) => {
+      if (key === VIEW_PREF) throw new Error('QuotaExceededError');
+    });
+    await renderDemo('healthy');
+    expect(within(section()).getAllByRole('article').length).toBeGreaterThan(0);
+    await click(within(section()).getByRole('radio', { name: 'Table' }));
+    expect(within(section()).getByRole('table', { name: 'Infrastructure' })).toBeInTheDocument();
   });
 });

@@ -513,17 +513,6 @@ html { scroll-padding-top: 64px; }
   .settings-grid-2, .settings-grid-3 { grid-template-columns: 1fr; }
 }
 
-/* ── Pre-attentive card halo (src/components/NodeCard.jsx) ───────────────────
-   When a node's real usage is elevated/critical, ring + glow the whole card so
-   trouble jumps off the board before you read it. Keeps the base --shadow-card
-   and stacks the halo on top; the inline borderTop accent still wins. */
-.node-card--warn { box-shadow: var(--shadow-card), inset 0 0 0 1px var(--amber-border), 0 0 16px -6px var(--amber); border-color: var(--amber-border); }
-.node-card--critical { box-shadow: var(--shadow-card), inset 0 0 0 1px var(--red), 0 0 22px -5px var(--red); border-color: var(--red-border); }
-
-/* Glance-context sparkline behind a metric value (src/components/Sparkline.jsx).
-   Sits between the value and the usage bar; stretches to the tile width. */
-.metric-sparkline { display: block; width: 100%; height: 16px; margin-top: 2px; }
-
 /* "Why is this dashed?" integration doctor (src/components/ServiceCard.jsx).
    A native <details> — collapsed, keyboard + SR accessible. The ⚠ glyph carries
    the warning colour; the label stays in --text-secondary for contrast. */

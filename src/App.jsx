@@ -356,6 +356,8 @@ function AppMain({ authRequired, demo, onLogout }) {
               onOpenSettings={openSettings}
               filter={filter}
               onClearFilter={clearOverviewFilter}
+              status={poll.status}
+              reach={poll.reach}
             />
           </div>
           <Suspense fallback={lazyFallback}>

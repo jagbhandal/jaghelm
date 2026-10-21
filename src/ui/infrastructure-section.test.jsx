@@ -140,7 +140,7 @@ describe('InfrastructureSection', () => {
       <InfrastructureSection nodes={[]} count="2 nodes" loading onViewChange={() => {}} />
     );
     expect(section()).toHaveAttribute('aria-busy', 'true');
-    expect(section()).toHaveTextContent('Loading the nodes');
+    expect(section()).toHaveTextContent('The nodes are loading');
     expect(section()).not.toHaveTextContent('2 nodes');
     expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
     expect(within(section()).queryAllByRole('article')).toEqual([]);

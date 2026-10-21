@@ -108,7 +108,7 @@ const COLUMNS = [
 function Loading() {
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-      <span className="sr-only">Loading the nodes</span>
+      <span className="sr-only">The nodes are loading</span>
       {[0, 1, 2].map((i) => (
         <Skeleton key={i} className="h-48 rounded-xl" />
       ))}

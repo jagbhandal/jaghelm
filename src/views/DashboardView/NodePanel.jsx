@@ -2,20 +2,9 @@ import React from 'react';
 import NodeCard from '../../components/NodeCard';
 import { usePlace } from '../../shell/entityAnchors.js';
 import DroppablePanel from '../../components/DroppablePanel';
-import { useConfig } from '../../context/ConfigContext.jsx';
 import { ProxmoxVMList, ProxmoxStoragePools, ProxmoxBackupStatus } from './ProxmoxPanels';
 import { toServiceCard } from './serviceCard';
 
-/**
- * Builds the metric tiles displayed on a NodeCard from the raw node payload.
- *
- * Logic:
- *   - CPU is always shown.
- *   - RAM uses a "used/total GB" tile when total > 4 GB; otherwise a percent tile (Pi).
- *   - Temp tile only when the node reports a sensor reading.
- *   - Disk tile only when the node reports filesystem stats; switches to TB > 1000 GB.
- *   - Uptime is always last.
- */
 /**
  * Resolves which discovered node a proxmox integration entry belongs to.
  *
@@ -56,68 +45,20 @@ export function proxmoxChildrenForNode(integrationData, nodeKey) {
   return null;
 }
 
-function buildMetrics(node, tempUnit = 'F', nodeKey, history) {
-  const m = node.metrics || {};
-  const metrics = [];
-  // The ~1h usage series for this node's CPU/RAM/disk, for the sparklines.
-  const hist = (field) => history?.[`${nodeKey}:${field}`];
-
-  metrics.push({
-    label: 'CPU',
-    value: m.cpu,
-    unit: '%',
-    percent: parseFloat(m.cpu),
-    history: hist('cpu'),
-  });
-
-  if (m.memTotalGB && parseFloat(m.memTotalGB) > 4) {
-    metrics.push({
-      label: 'RAM (GB)',
-      value: `${m.memUsedGB || '—'}/${m.memTotalGB || '—'}`,
-      percent: parseFloat(m.memPercent),
-      withCachePercent: parseFloat(m.memWithCachePercent) || null,
-      cacheGB: m.memCacheGB || null,
-      small: true,
-      history: hist('mem'),
-    });
-  } else {
-    metrics.push({
-      label: 'RAM',
-      value: m.memPercent,
-      unit: '%',
-      percent: parseFloat(m.memPercent),
-      withCachePercent: parseFloat(m.memWithCachePercent) || null,
-      cacheGB: m.memCacheGB || null,
-      history: hist('mem'),
-    });
-  }
-
-  if (m.temp != null) {
-    const value = tempUnit === 'C' ? m.temp : ((parseFloat(m.temp) * 9) / 5 + 32).toFixed(1);
-    metrics.push({ label: 'Temp', value, unit: `°${tempUnit}` });
-  }
-
-  if (m.diskTotal != null) {
-    metrics.push({
-      label: `Disk (${m.diskUnit || 'GB'})`,
-      value: `${m.diskUsed || '—'}/${m.diskTotal || '—'}`,
-      percent: parseFloat(m.diskPercent),
-      small: true,
-      history: hist('disk'),
-    });
-  }
-
-  metrics.push({ label: 'Uptime', value: m.uptime, small: true });
-
-  return metrics;
-}
-
 /**
- * Renders a single discovered node as a draggable, droppable panel.
+ * Renders a single discovered node as a draggable, droppable panel: its
+ * service cards and its Proxmox lists. Its readings (CPU, memory, disk,
+ * temperature, the hour of CPU) are the Overview's Infrastructure section's
+ * (#299), so the panel draws none.
  *
  * Hides containers that have been "claimed" by a custom group so they don't
  * appear in two places. Augments each container with its app-data (Tier 3
  * integration metrics) when available.
+ *
+ * `anchored`: whether the panel is the node's place on the board, which the
+ * Overview's issue row for the node leads to (#297). The Infrastructure
+ * section's card is, while that section is drawn; under a filter that hides
+ * it (Services), the panel is.
  */
 export default function NodePanel({
   nodeKey,
@@ -128,16 +69,13 @@ export default function NodePanel({
   integrationData,
   isMobile,
   banner,
-  history,
+  anchored = true,
 }) {
-  const { config } = useConfig();
-  // The card's anchor: the Overview's issue row for this node leads here (#297).
-  const anchor = usePlace(`nodes/${nodeKey}`, sectionCfg.visible !== false);
+  const anchor = usePlace(`nodes/${nodeKey}`, anchored && sectionCfg.visible !== false);
   if (sectionCfg.visible === false) return null;
 
   const gridKey = `node-${nodeKey}`;
   const borderColor = node.border_color || sectionCfg.borderColor || 'var(--accent)';
-  const metrics = buildMetrics(node, config.tempUnit, nodeKey, history);
 
   const serviceRank = (c) => (c.status === 'down' ? 0 : c.status === 'unknown' ? 1 : 2);
   const services = (node.services || [])
@@ -158,7 +96,6 @@ export default function NodePanel({
         <NodeCard
           sectionKey={nodeKey}
           borderColor={borderColor}
-          metrics={metrics}
           services={services}
           nodeData={node}
           panelId={gridKey}

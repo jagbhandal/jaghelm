@@ -83,18 +83,13 @@ describe('NodeCard', () => {
     expect(screen.getByText('Gitea')).toBeInTheDocument();
   });
 
-  it('renders node metrics with label, value, and unit', () => {
-    renderInDnd(
-      <NodeCard
-        sectionKey="production"
-        nodeData={{ display_name: 'Production' }}
-        services={[]}
-        metrics={[{ label: 'CPU', value: 42, unit: '%', percent: 42 }]}
-      />
+  it('draws no readings: they are the Infrastructure section’s (#299)', () => {
+    const { container } = renderInDnd(
+      <NodeCard sectionKey="production" nodeData={{ display_name: 'Production' }} services={[]} />
     );
-    expect(screen.getByText('CPU')).toBeInTheDocument();
-    expect(screen.getByText('42')).toBeInTheDocument();
-    expect(screen.getByText('%')).toBeInTheDocument();
+    expect(container.querySelector('.node-metrics')).toBeNull();
+    expect(container.querySelector('.glass-card')).toHaveClass('node-card');
+    expect(container.querySelector('.glass-card').className).not.toMatch(/node-card--/);
   });
 
   it('renders children passed through', () => {

@@ -21,6 +21,7 @@ import { useEffectiveLayouts } from './useEffectiveLayouts';
 import { useConfiguredPanels, SOURCE_PANEL_KEYS } from './configuredPanels';
 import { sourceBanner } from './sourceHealth';
 import { boardSections, emptyBoardReason, filterLayouts } from './boardFilter';
+import { OverviewInfrastructure } from '../../shell/OverviewInfrastructure.jsx';
 import { ShellSection } from '@ui/app-shell';
 import { Panel } from '@ui/panel';
 import { EmptyState } from '@ui/empty-state';
@@ -49,6 +50,12 @@ const NO_COMMITS = [];
  * keeps none, a note in their place says why (emptyBoardReason) and offers the
  * whole board (`onClearFilter`), or, while the panel's source hasn't answered,
  * a placeholder.
+ *
+ * At its top, the Overview's Infrastructure section (#299): the nodes, from
+ * the header's poll (`status`, `reach`) and this board's readings. It is the
+ * Nodes subsystem's, so a filter to another subsystem hides it; while it is
+ * drawn, each node's anchor is its card there, and the node panels below,
+ * which keep the node's service cards and Proxmox lists, carry none.
  */
 export default function DashboardView({
   refreshKey,
@@ -57,6 +64,8 @@ export default function DashboardView({
   onOpenSettings,
   filter = null,
   onClearFilter,
+  status = null,
+  reach = null,
 }) {
   const { config, setConfig } = useConfig();
   // Mobile detection — used to disable drag/resize on small screens
@@ -294,6 +303,8 @@ export default function DashboardView({
   // services is fully healthy, so "app metrics missing" is still surfaced
   // without ever stacking two banners on one card.
   const servicesB = banners.services;
+  // The Infrastructure section shows unfiltered and under the Nodes filter.
+  const infraShown = filter == null || filter.id === 'nodes';
   const nodeBanner = servicesB?.message || servicesB?.staleNote ? servicesB : banners.integrations;
   const nodeElements = useMemo(
     () =>
@@ -313,7 +324,7 @@ export default function DashboardView({
                 claimedContainers={claimedContainers}
                 integrationData={integrationData}
                 isMobile={isMobile}
-                history={history}
+                anchored={!infraShown}
                 banner={
                   nodeBanner?.message || nodeBanner?.staleNote ? (
                     <DegradedBanner
@@ -335,7 +346,7 @@ export default function DashboardView({
       claimedContainers,
       integrationData,
       isMobile,
-      history,
+      infraShown,
       nodeBanner,
       retry,
     ]
@@ -365,7 +376,6 @@ export default function DashboardView({
                   <NodeCard
                     sectionKey={`group-${group.id}`}
                     borderColor={borderColor}
-                    metrics={null}
                     services={services}
                     nodeData={{
                       display_name: group.title,
@@ -549,6 +559,20 @@ export default function DashboardView({
       <div className="sr-only" role="status" aria-live="polite">
         {liveErrors}
       </div>
+      {infraShown && (
+        <OverviewInfrastructure
+          status={status}
+          reach={reach}
+          services={serviceData}
+          servicesLoaded={servicesLoaded}
+          history={history}
+          sections={sc}
+          tempUnit={config.tempUnit || 'F'}
+          health={servicesB}
+          onRetry={retry}
+          margin={isMobile ? 12 : 16}
+        />
+      )}
       {isFirstLoading ? (
         <div
           role="status"
@@ -564,7 +588,7 @@ export default function DashboardView({
         </div>
       ) : isEmpty ? (
         <DashboardEmptyState onOpenSettings={onOpenSettings} />
-      ) : keptKey === '' ? (
+      ) : keptKey === '' && filterId !== 'nodes' ? (
         <BoardFilterEmpty
           filter={filter}
           reason={emptyBoardReason(filter.id, {
