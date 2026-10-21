@@ -146,7 +146,14 @@ describe('Table', () => {
     expect(document.querySelector('caption')).toBeNull();
   });
 
-  it('says so when there are no rows, across every column', () => {
+  it('holds what its cells position, so a scrolled-off column never widens the page (#299)', () => {
+    render(<Table caption="Nodes" columns={COLUMNS} rows={ROWS} minWidth={720} />);
+    // A cell's words for screen readers are positioned out of the flow: inside
+    // the frame, not the page.
+    expect(document.querySelector('[data-slot="table"]')).toHaveClass('relative');
+  });
+
+    it('says so when there are no rows, across every column', () => {
     render(<Table caption="Nodes" columns={COLUMNS} rows={[]} empty="No nodes yet" />);
     const cell = screen.getByRole('cell', { name: 'No nodes yet' });
     expect(cell).toHaveAttribute('colspan', '5');

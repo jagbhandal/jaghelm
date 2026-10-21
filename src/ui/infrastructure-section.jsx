@@ -9,7 +9,9 @@
  *
  *  - cards: a NodeCard each, in columns at least 260px wide (one to a row on
  *    a phone), the cards of a row as tall as the tallest;
- *  - table: the mock's Infrastructure table (Table): node, role, CPU, memory,
+ *  - table: the mock's Infrastructure table (Table, its hidden caption
+ *    "Nodes", so its frame, when it scrolls, isn't a second "Infrastructure"
+ *    region): node, role, CPU, memory,
  *    disk, temperature, services, state. A reading prints as its meter does
  *    (`shown`), in its state's word colour only at or over its line, with the
  *    state said to screen readers; no reading is a dash. The state is the
@@ -171,7 +173,7 @@ function InfrastructureSection({
       {loading ? (
         <Loading />
       ) : table ? (
-        <Table aria-labelledby={`${id}-title`} columns={COLUMNS} rows={nodes} minWidth={720} />
+        <Table caption="Nodes" columns={COLUMNS} rows={nodes} minWidth={720} />
       ) : (
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
           {nodes.map((node) => (

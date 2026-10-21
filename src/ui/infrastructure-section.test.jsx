@@ -94,9 +94,9 @@ describe('InfrastructureSection', () => {
     expect(onViewChange).toHaveBeenCalledWith('table');
   });
 
-  it('table view: a table named by the heading, a row per node, readings as the meters print them', () => {
+  it('table view: a table, "Nodes", a row per node, readings as the meters print them', () => {
     render(<InfrastructureSection nodes={NODES} view="table" onViewChange={() => {}} />);
-    const table = within(section()).getByRole('table', { name: 'Infrastructure' });
+    const table = within(section()).getByRole('table', { name: 'Nodes' });
     expect(
       within(table)
         .getAllByRole('columnheader')

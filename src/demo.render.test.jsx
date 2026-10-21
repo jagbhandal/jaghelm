@@ -711,7 +711,7 @@ describe("the demo's Infrastructure section", () => {
     );
     await click(within(view()).getByRole('radio', { name: 'Table' }));
     expect(localStorage.getItem(VIEW_PREF)).toBe('table');
-    const table = within(section()).getByRole('table', { name: 'Infrastructure' });
+    const table = within(section()).getByRole('table', { name: 'Nodes' });
     expect(within(table).getAllByRole('row')).toHaveLength(4);
     expect(within(section()).queryAllByRole('article')).toEqual([]);
     // The anchor moves with it: the node's name in its row.
@@ -721,7 +721,7 @@ describe("the demo's Infrastructure section", () => {
   it('opens in the view this browser kept', async () => {
     localStorage.setItem(VIEW_PREF, 'table');
     await renderDemo('healthy');
-    expect(within(section()).getByRole('table', { name: 'Infrastructure' })).toBeInTheDocument();
+    expect(within(section()).getByRole('table', { name: 'Nodes' })).toBeInTheDocument();
   });
 
   it('with storage blocked: cards, and the toggle still works for the visit', async () => {
@@ -735,6 +735,6 @@ describe("the demo's Infrastructure section", () => {
     await renderDemo('healthy');
     expect(within(section()).getAllByRole('article').length).toBeGreaterThan(0);
     await click(within(section()).getByRole('radio', { name: 'Table' }));
-    expect(within(section()).getByRole('table', { name: 'Infrastructure' })).toBeInTheDocument();
+    expect(within(section()).getByRole('table', { name: 'Nodes' })).toBeInTheDocument();
   });
 });
