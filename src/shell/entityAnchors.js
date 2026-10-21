@@ -6,7 +6,10 @@
  * §4.7):
  *
  *   services/<node>:<container>   a service card (DraggableServiceCard)
- *   nodes/<key>                   a node's card (NodePanel)
+ *   nodes/<key>                   a node's card in the Infrastructure section
+ *                                 (OverviewInfrastructure, #299), or its row
+ *                                 in the table; its NodePanel while a filter
+ *                                 hides the section
  *   power/ups                     the UPS panel (UPSCard)
  *   jobs/<node>:<job>             a job's row in Scheduled Jobs (CronJobs)
  *
