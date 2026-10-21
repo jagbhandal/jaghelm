@@ -224,7 +224,11 @@ export const CATALOG = Object.freeze([
   s('infrastructure-table', 'Overview', 'InfrastructureSection: the table, in the incident', {
     accent: true,
   }),
-  s('infrastructure-narrow', 'Overview', "InfrastructureSection: a phone's width, a card a row"),
+  s(
+    'infrastructure-narrow',
+    'Overview',
+    "InfrastructureSection: a phone's width, a card a row, no toggle (the table needs 720px)"
+  ),
 
   // Shell (#296)
   s(

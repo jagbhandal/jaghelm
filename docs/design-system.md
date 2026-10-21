@@ -1465,8 +1465,10 @@ From the mock's Main board, its Infrastructure section:
   "Nodes": node (swatch, name, host in mono `text-3`), role, CPU, memory, disk,
   temperature, services and state (the lamp and the model's word, `text-1`
   when healthy); a reading in its state's word colour, semibold, only at or
-  over its line, a dash for none. While loading, three 192px placeholder
-  cards and no count.
+  over its line, a dash for none. The table needs 720px: in a narrower
+  section (a phone) the section draws the cards and no toggle, so the state
+  and every reading stay in view; the table returns when it fits. While
+  loading, three 192px placeholder cards and no count.
 - **NodeCard.** The mock's node card: `surface-1` in a subtle edge, 12px
   round, 16px of padding, 14px between its parts. The name in `text-title-xs`
   after the swatch; the host (mono) and subtitle in 12px `text-3` under it; at
@@ -1488,6 +1490,8 @@ From the mock's Main board, its Infrastructure section:
   the meter and the word never disagree.
 - **No old number as current.** A reading the model didn't judge this cycle
   is no reading: a dash, with no trend or uptime beside it.
+- **One reading, one number, one unit.** A meter prints what the model's
+  reason prints: the number by `shownReading`, a temperature in °C.
 - **The user's colour is a swatch.** Never a card's edge, tint or a meter.
 
 ### Accessibility of the Overview sections
@@ -1510,8 +1514,6 @@ From the mock's Main board, its Infrastructure section:
   the model counts services, not containers, and the card is narrow on a
   phone.
 - **The card opens nothing yet** (the mock's is a button to the drawer, #309).
-- **Temperatures follow Settings' unit** (°F by default, as the board had it);
-  the mock shows °C.
 - **The table's Services column** is the mock's Workload (the hosted
   services' counts), and its Role is services.yaml's `subtitle` for the node.
 

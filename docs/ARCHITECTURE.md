@@ -1386,15 +1386,19 @@ flowchart TD
   status colour only at or over it. A reading the model didn't judge this
   cycle (the node unreachable or with no signal, its query failed, no value)
   has no value, a dash, so an old number never shows as current; the trend
-  and uptime go with it. Temperatures follow Settings' unit (`tempUnit`, °F
-  by default, as the board had it): the reading and its lines converted, the
-  model's reason still in °C. Under the meters: the hosted services' up and
+  and uptime go with it. Temperatures are in the model's °C, the unit its
+  reason gives, so the meter and the reason print one number in one unit;
+  Settings' `tempUnit` stays the weather's (one setting for both is #494).
+  Under the meters: the hosted services' up and
   down counts (the model's service and container entities on the node), the
   uptime and the last hour of CPU (a Sparkline, its tooltip printed by
   `shownReading`). The user's colour for a node shows only as a 10px swatch.
-  The table has the same readings, coloured the same way. Cards or table is
-  kept per browser (`prefs`, `jaghelm-infrastructure-view`), cards by
-  default; with storage blocked the choice lasts the visit. Each node drawn
+  The table has the same readings, coloured the same way; it needs 720px, so
+  in a narrower section (a phone, a tablet) the section draws the cards and
+  offers no toggle, rather than scroll the state and the readings off to the
+  side, and the table comes back when it fits. Cards or table is kept per
+  browser (`prefs`, `jaghelm-infrastructure-view`), cards by default; with
+  storage blocked the choice lasts the visit. Each node drawn
   puts its anchor on the list of places (the card, or its name in the table),
   so an issue row for a node leads there; the node panels below carry none
   while the section is drawn. It shows unfiltered and under the Nodes filter,
@@ -1404,7 +1408,8 @@ flowchart TD
   with Retry. Today's node panels below keep the node's service cards and
   Proxmox lists until #300 rebuilds them; their readings, and with them the
   web's old 70 % / 90 % colours (`src/utils/thresholds.js`, the card halo and
-  the old Sparkline), are gone.
+  the old Sparkline) and the used / total GB, are gone. A node panel starts at
+  its minimum height and grows to its content ("Panels and first run").
 - **State.** `ConfigContext` exposes `config`, the stable `setConfig`, and a
   memoised `update(path, value)` built on `setIn` (immutable structural-sharing
   deep-set) -- so leaf cards memoise and don't re-render on unrelated edits.
@@ -1432,9 +1437,21 @@ flowchart TD
   and half, so each panel of the second pair sits under one of the first; then
   Quick Launch. When one of a pair isn't shown, the two left over share a row,
   the tall one 2/3 (on a fresh install, Scheduled Jobs beside the Checklist); a
-  panel left alone takes the whole row. It is regenerated as nodes
+  panel left alone takes the whole row. A node panel starts at its minimum
+  height (3 rows), as it holds only its service cards and Proxmox lists, and
+  HelmGrid grows it to them: a taller start would stay empty, since HelmGrid
+  grows a panel but never shrinks one. It is regenerated as nodes
   and panels come and go, until the first drag or resize saves a layout; a
-  saved layout is never replaced by it. A panel not on show (switched off in
+  saved layout is never replaced by it. A saved layout carries its version
+  beside its breakpoints (`{ version, lg, md, sm }`, `LAYOUT_VERSION` in
+  `layouts.js`; none is version 1), and `migrateLayouts` brings an older one
+  up to date before it is drawn: version 2 (#299) puts each node panel back
+  to its minimum height and moves every panel up into the space that leaves
+  (`compactUp`), since a layout saved before kept each node panel as tall as
+  the reading tiles it no longer has. DashboardView saves the result with its
+  version once, and every drag or resize saves the version with the layout,
+  so the step never runs again on a layout and a height the user sets after
+  it stays. A panel not on show (switched off in
   Settings, or a source not known to be set up) is not added to a layout, so
   it holds no empty slot. A fresh install with no node shows the "Connect your
   first node" empty state, and the demo (`DEMO_MODE`) gets the same default
@@ -2068,7 +2085,12 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   accent's; the incident's amber only on the NAS's card (its word, its disk
   meter at "94%" and its reason), no red; a node's issue row brings its card
   into view and focuses it; the Nodes filter keeps the section and Services
-  hides it. All three leave screenshots in `test-results/e2e/shots/`.
+  hides it. At 390 and 360px with the table chosen, the section draws the
+  cards, with the NAS's warning and its "94%" on screen and nothing to scroll
+  sideways. Each node panel below is as tall as its content (within a grid
+  row), on the default layout and on a layout saved before #299, which is
+  saved again with its version. All three leave screenshots in
+  `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through
   the Android build's `@ui` alias.
