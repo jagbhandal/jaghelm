@@ -23,6 +23,7 @@ import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { axeFindings, openApp, statusHues } from './app.mjs';
 import { nasDiskIncident } from '../src/testing/statusFixtures.js';
+import { VIEW_PREF } from '../src/shell/infrastructureView.js';
 
 const VIEWPORTS = {
   desktop: { width: 1440, height: 900 },
@@ -46,12 +47,16 @@ const swatchSizes = (page) =>
     );
 const card = (page, name) => section(page).getByRole('article', { name });
 
-/** Opens the Overview on `board` ('healthy' or 'incident'), with the section drawn. */
-async function openBoard(page, board, theme) {
+/**
+ * Opens the Overview on `board` ('healthy' or 'incident'), with the section
+ * drawn: in `view` when this browser kept one, under `config`.
+ */
+async function openBoard(page, board, theme, { view, config } = {}) {
   const nas = nasDiskIncident();
   const answers =
     board === 'incident' ? { '/api/status': nas.status, '/api/services': nas.services } : {};
-  await openApp(page, '/', { scenario: board, theme, answers });
+  if (view) await page.addInitScript(([key, v]) => localStorage.setItem(key, v), [VIEW_PREF, view]);
+  await openApp(page, '/', { scenario: board, theme, answers, config });
   await expect(section(page).getByRole('article').first()).toBeVisible();
   await expect(page.locator('.section-title', { hasText: 'Network Edge' })).toBeVisible();
   return nas;
@@ -84,6 +89,62 @@ function clipping(page) {
     return out;
   });
 }
+
+/**
+ * Each node panel of today's board (its service cards and Proxmox lists): how
+ * tall it is drawn, and its content's own height, measured as HelmGrid
+ * measures it (the item at its natural height).
+ */
+// The demo's nodes, by the titles of their panels.
+const NODE_TITLES = ['Network Edge', 'App Server', 'Storage'];
+
+function nodePanels(page) {
+  return page.evaluate(
+    (titles) =>
+      [...document.querySelectorAll('.helmgrid-item')]
+        .filter((el) => titles.includes(el.querySelector('.section-title')?.textContent))
+        .map((el) => {
+          const height = el.getBoundingClientRect().height;
+          const kept = el.style.height;
+          el.style.height = 'auto';
+          const content = el.scrollHeight;
+          el.style.height = kept;
+          return { name: el.querySelector('.section-title')?.textContent, height, content };
+        }),
+    NODE_TITLES
+  );
+}
+
+/** The node panels drawn taller than their content by a grid row (52px) or more. */
+async function emptyNodePanels(page) {
+  const panels = await nodePanels(page);
+  expect(panels.map((p) => p.name).sort()).toEqual([...NODE_TITLES].sort());
+  return panels.filter((p) => p.height - p.content >= 52).map((p) => p.name);
+}
+
+// A layout saved before #299, with the reading tiles: each node panel 12 rows.
+const OLD_LAYOUT = Object.fromEntries(
+  [
+    ['lg', 24],
+    ['md', 20],
+  ].map(([bp, cols]) => {
+    const w = cols / 2;
+    const at = (i, x, y, width, h, minH = 3) => ({ i, x, y, w: width, h, minW: 4, minH });
+    return [
+      bp,
+      [
+        at('node-edge', 0, 0, w, 12),
+        at('node-apps', w, 0, w, 12),
+        at('node-storage', 0, 12, cols, 12),
+        at('pipeline', 0, 24, w, 7),
+        at('cron-jobs', w, 24, w, 7),
+        at('ups', 0, 31, w, 7),
+        at('todos', w, 31, w, 7),
+        at('quicklaunch', 0, 38, cols, 4, 2),
+      ],
+    ];
+  })
+);
 
 /** The section, and with `page` the whole Overview from the top, for the PR. */
 async function shoot(page, file, { whole = false } = {}) {
@@ -129,6 +190,8 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         if (size !== 'narrow')
           await shoot(page, `infrastructure-healthy-cards-${size}-${theme}`, { whole: true });
 
+        // The table needs 720px: a phone draws the cards (below).
+        if (size !== 'desktop') return;
         await section(page).getByRole('radio', { name: 'Table' }).click();
         await expect(section(page).getByRole('table', { name: 'Nodes' })).toBeVisible();
         expect(await clipping(page)).toEqual([]);
@@ -138,7 +201,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
             new AxeBuilder({ page }).include('[data-slot="infrastructure-section"]')
           )
         ).toEqual([]);
-        if (size !== 'narrow') await shoot(page, `infrastructure-healthy-table-${size}-${theme}`);
+        await shoot(page, `infrastructure-healthy-table-${size}-${theme}`);
       });
 
       test(`incident, ${theme}: the NAS warns at 94 %, in amber only there; nothing cut off`, async ({
@@ -182,6 +245,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         if (size !== 'narrow')
           await shoot(page, `infrastructure-incident-cards-${size}-${theme}`, { whole: true });
 
+        if (size !== 'desktop') return;
         await section(page).getByRole('radio', { name: 'Table' }).click();
         const table = section(page).getByRole('table', { name: 'Nodes' });
         const row = table.getByRole('row', { name: /^Storage/ });
@@ -192,9 +256,54 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
             new AxeBuilder({ page }).include('[data-slot="infrastructure-section"]')
           )
         ).toEqual([]);
-        if (size !== 'narrow') await shoot(page, `infrastructure-incident-table-${size}-${theme}`);
+        await shoot(page, `infrastructure-incident-table-${size}-${theme}`);
       });
     }
+
+    if (size !== 'desktop') {
+      test('the table chosen: the cards here, the NAS warning and its 94 % in view, no sideways scroll', async ({
+        page,
+      }) => {
+        await openBoard(page, 'incident', 'dark', { view: 'table' });
+        await expect(section(page)).toHaveAttribute('data-view', 'cards');
+        await expect(section(page).getByRole('table')).toHaveCount(0);
+        await expect(section(page).getByRole('radiogroup', { name: 'Node view' })).toHaveCount(0);
+        const nas = card(page, 'Storage');
+        const word = nas.locator('[data-slot="node-state"]');
+        const disk = nas.locator('[data-reading="disk"]');
+        await expect(word).toHaveText('Warning');
+        await expect(disk).toHaveText(/94%/);
+        for (const el of [word, disk]) {
+          await el.scrollIntoViewIfNeeded();
+          await expect(el).toBeInViewport({ ratio: 1 });
+          const box = await el.boundingBox();
+          expect(box.x).toBeGreaterThanOrEqual(0);
+          expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+        }
+        expect(await clipping(page)).toEqual([]);
+      });
+    }
+
+    test('the node panels below are as tall as their content: the default layout', async ({
+      page,
+    }) => {
+      await openBoard(page, 'healthy', 'dark');
+      await expect.poll(() => emptyNodePanels(page)).toEqual([]);
+    });
+
+    test('and a layout saved before #299, brought up once and saved with its version', async ({
+      page,
+    }) => {
+      await openBoard(page, 'healthy', 'dark', { config: { gridLayout: OLD_LAYOUT } });
+      await expect.poll(() => emptyNodePanels(page)).toEqual([]);
+      const saved = await page.evaluate(
+        () => JSON.parse(localStorage.getItem('jaghelm-config')).gridLayout
+      );
+      expect(saved.version).toBe(2);
+      for (const bp of ['lg', 'md'])
+        for (const item of saved[bp].filter((it) => it.i.startsWith('node-')))
+          expect(item.h, `${bp} ${item.i}`).toBe(3);
+    });
 
     test("a node's issue row brings its card into view, and focuses it", async ({ page }) => {
       await openBoard(page, 'incident', 'dark');
