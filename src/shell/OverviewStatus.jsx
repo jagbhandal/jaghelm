@@ -6,20 +6,31 @@
  * the wiring with the Alerts page (ShellAttention): no signal is a Banner over
  * the last status, and the first load a placeholder.
  *
+ * Under it, the subsystem strip (#298, spec §8 item 2): a tile per subsystem
+ * the model has anything in, in its order, with its state, word and detail
+ * ("11 / 12 up"), from the same poll (statusView.js subsystemCells). Each
+ * tile is a toggle that filters the page to its subsystem (`filter`, the
+ * URL's, overviewFilter.js): the panel's rows narrow to it, and the board
+ * below to its panels (DashboardView). Pressing it again, or Clear, shows
+ * everything.
+ *
  * It is the new UI over today's board, which later cards rebuild (#298–#300):
  * a root of its own (ShellSection) inside a wrapper that lines it up with the
  * board's cards (`.overview-status`, global.css). Memoised on the poll, so the
  * board's tick doesn't re-render it; each answer re-renders only its ages, and
  * a place coming onto the board or leaving it, only its links.
  */
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { ShellSection } from '@ui/app-shell';
 import { buttonVariants } from '@ui/button';
+import { SubsystemStrip } from '@ui/subsystem-strip';
 import { cn } from '@ui/lib/utils';
 import { followLink } from '../router/useRoute.js';
 import { pathTo } from '../router/routes.js';
 import { ShellAttention } from './ShellAttention.jsx';
 import { useRowLink } from './entityAnchors.js';
+import { clearOverviewFilter, filterOverview } from './overviewFilter.js';
+import { subsystemCells } from './statusView.js';
 
 const ALERTS = pathTo('alerts');
 // The panel's action, the mock's "All alerts →": a link drawn as an accent
@@ -33,8 +44,14 @@ const allAlerts = (
   </a>
 );
 
-export const OverviewStatus = memo(function OverviewStatus({ status, reach, updated }) {
+export const OverviewStatus = memo(function OverviewStatus({
+  status,
+  reach,
+  updated,
+  filter = null,
+}) {
   const linkOf = useRowLink();
+  const cells = useMemo(() => subsystemCells(status), [status]);
   return (
     <div className="overview-status" data-slot="overview-status">
       <ShellSection>
@@ -44,7 +61,12 @@ export const OverviewStatus = memo(function OverviewStatus({ status, reach, upda
           updated={updated}
           action={allAlerts}
           linkOf={linkOf}
+          filter={filter}
+          onClearFilter={clearOverviewFilter}
         />
+        {cells.length > 0 && (
+          <SubsystemStrip cells={cells} selected={filter} onSelect={filterOverview} />
+        )}
       </ShellSection>
     </div>
   );

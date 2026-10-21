@@ -7,7 +7,8 @@
  * the live loop builds /api/status, and its status is drawn with the src/ui status components, the
  * way a screen draws the model (Board, below): the attention panel from the
  * overall state, sentence and issues; a subsystem tile per subsystem that has
- * anything; a row per entity; a meter per node reading. Then the screen is
+ * anything, as the Overview's strip makes them (src/shell/statusView.js
+ * subsystemCells); a row per entity; a meter per node reading. Then the screen is
  * read back and checked against the model: the headline's word and sentence
  * (or the quiet line's heading), each tile's state, word and counts, each row's state and word, and each
  * meter's state, number and line. The push side, the same fixtures through
@@ -34,6 +35,7 @@ import { EntityRow } from './entity-row.jsx';
 import { MetricMeter, meterState } from './metric-meter.jsx';
 import { SubsystemStrip } from './subsystem-strip.jsx';
 import { STATES } from './lib/status.js';
+import { subsystemCells } from '../shell/statusView.js';
 import { runScenario, STATUS_SCENARIOS } from '../../server/testing/statusScenarios.js';
 import { cycles, inputs, node, once } from '../../server/testing/statusFixtures.js';
 import { readingLines } from '../../server/status/readings.js';
@@ -95,15 +97,8 @@ function worstOf(status, subsystem) {
  */
 function Board({ status, services }) {
   const quiet = status.issues.length === 0;
-  const cells = status.subsystems
-    .filter((s) => s.counts.total > 0)
-    .map((s) => ({
-      key: s.id,
-      label: s.name,
-      state: s.state,
-      word: worstOf(status, s)?.word,
-      value: s.detail,
-    }));
+  // The Overview's own cells (#298), so the suite checks what the page draws.
+  const cells = subsystemCells(status);
   return (
     <>
       <AttentionPanel

@@ -165,6 +165,11 @@ export const CATALOG = Object.freeze([
     'AttentionPanel: filtered to a subsystem with nothing'
   ),
   s('attention-panel-quiet', 'Status', 'AttentionPanel: the quiet line'),
+  s(
+    'attention-panel-quiet-filtered',
+    'Status',
+    'AttentionPanel: the quiet line, filtered to a subsystem'
+  ),
   s('attention-panel-maintenance', 'Status', 'AttentionPanel: the quiet line in maintenance'),
   s(
     'attention-panel-first-run',

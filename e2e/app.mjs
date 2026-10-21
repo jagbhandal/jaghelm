@@ -24,13 +24,14 @@ export const demo = (path, { method = 'GET', query = {}, scenario = 'incident' }
 
 /**
  * Opens the app at `path`, answering every request here, as the demo in
- * `scenario` (incident by default). Returns the server's state: set `down` to
- * refuse /api/status, as a backend that can't be reached.
+ * `scenario` (incident by default), with `config` over the demo's display
+ * config. Returns the server's state: set `down` to refuse /api/status, as a
+ * backend that can't be reached.
  */
 export async function openApp(
   page,
   path = '/',
-  { down = false, theme = 'dark', scenario = 'incident' } = {}
+  { down = false, theme = 'dark', scenario = 'incident', config = {} } = {}
 ) {
   const server = { down };
   const origin = new URL(test.info().project.use.baseURL).origin;
@@ -55,7 +56,8 @@ export async function openApp(
       query: Object.fromEntries(url.searchParams),
       scenario,
     });
-    const body = url.pathname === '/api/display-config' ? { ...out.body, tabs: APPS } : out.body;
+    const body =
+      url.pathname === '/api/display-config' ? { ...out.body, tabs: APPS, ...config } : out.body;
     return route.fulfill({ status: out.status, json: body ?? {} });
   });
   await page.addInitScript((id) => localStorage.setItem('jaghelm-theme', id), THEMES[theme]);

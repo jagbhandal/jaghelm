@@ -1029,8 +1029,10 @@ is in, not the window):
   the filter leaves none, "Nothing in Jobs needs attention" in 13px `text-3`
   where the list would be. Otherwise the mock's quiet line: the lamp, "All
   systems normal" at `title-xs` in `text-1`, the counts in `text-2`, and
-  `meta` at the right in 12px `text-3`. Healthy stays quiet (rule 3): no green
-  word. Maintenance doesn't break the quiet line (spec §6.1): its heading
+  `meta` at the right in 12px `text-3`. With a filter (the Overview's strip,
+  #298), "Showing … only" in 13px `text-2` and Clear sit at the right of the
+  quiet line too, before `meta`, since the board under it is filtered.
+  Healthy stays quiet (rule 3): no green word. Maintenance doesn't break the quiet line (spec §6.1): its heading
   still says "All systems normal", its lamp is the wrench, and the strip's
   tile under it says what is in maintenance ("1 in maintenance"). An empty
   board (`empty`, nothing set up, #449) is the quiet line with no lamp: its
@@ -1319,7 +1321,7 @@ router, the config and the status poll ([ARCHITECTURE.md](ARCHITECTURE.md),
 | --- | --- | --- |
 | `AppShell` | `@ui/app-shell` | `switches` (the roots' theme, accent, density, typeface), `header`, `sidebar`, `tabs`, and the page as `children` |
 | `ShellPage` | `@ui/app-shell` | `title` (the page's h1), `description`, `actions`; a page of the new UI inside the shell |
-| `ShellSection` | `@ui/app-shell` | its `children`: a part of a page in the new UI beside today's views (the Overview's status, #297) |
+| `ShellSection` | `@ui/app-shell` | its `children`: a part of a page in the new UI beside today's views (the Overview's status and strip, #297, #298) |
 | `ShellApps` | `@ui/app-shell` | `label` (names the open app's region), `bar` (the open app's AppBar); holds the embedded apps' frames |
 | `AppHeader` | `@ui/app-header` | `name`, `logoUrl`, `status` (`{ reach, state, word, sentence, href, current }`), `updated` (an element, `UpdatedAgo`), `onOpenPalette`, `shortcut`, `settingsHref`, `settingsCurrent`, `onLogout`, `onNavigate` |
 | `UpdatedAgo` | `@ui/app-header` | `at` (ms since the epoch) |
@@ -1345,9 +1347,10 @@ From the mock's Main and Phone boards:
   ([ARCHITECTURE.md](ARCHITECTURE.md), "UI stack"). A `ShellPage` is its own
   root: the page gutter (16, 24, 32px by width), at most 1024px wide, its
   title in `text-title`, its description in `text-2`. A `ShellSection` is a
-  root too, with no gutter of its own: its children stacked 24px apart, as a
-  ShellPage stacks them, in a page that is still today's (the Overview's
-  status over today's board, #297).
+  root too, with no gutter or background of its own: its children stacked
+  24px apart, as a ShellPage stacks them, in a page that is still today's
+  (the Overview's status and subsystem strip over today's board, #297,
+  #298), which shows between them.
 - **AppHeader.** 48px on `bg`, a subtle bottom edge, 16px (24px from 768px) at
   the sides. The brand: the mock's helm mark, the wheel in `on-accent` on a
   28px `accent` square, or the instance's own logo; the name in 15px
