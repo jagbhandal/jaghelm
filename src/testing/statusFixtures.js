@@ -13,6 +13,8 @@ import {
   UPS_ONLINE,
 } from '../../server/testing/statusFixtures.js';
 import { scenarioStatus } from '../../server/testing/statusScenarios.js';
+import { demoHistory, demoStatusCycles } from '../../server/demoFixtures.js';
+import { createStatusTracker, readStatusInputs, resolveThresholds } from '../../server/status/index.js';
 
 const services = (nodeName, list) =>
   list.map(([name, status]) =>
@@ -76,3 +78,48 @@ export const NO_SIGNAL = once(
  * (server/testing/statusScenarios.js), an empty board (#449).
  */
 export const FIRST_RUN = scenarioStatus('first-run', { now: Date.parse('2026-10-20T09:00:00Z') });
+
+/**
+ * A demo board as a client gets it (#299): `/api/status`, `/api/services` and
+ * `/api/history`, built as the demo builds them (demoFixtures.js), with the
+ * storage node's metrics replaced by `storage` (strings, as discovery formats
+ * them) and the lines from `pushThresholds` when given. The status goes
+ * through the model, never written by hand, so it says what the model says.
+ *
+ * @param {{ scenario?: 'incident' | 'healthy', storage?: Record<string, string>,
+ *   pushThresholds?: object, now?: number }} [opts]
+ */
+export function demoBoard({ scenario = 'incident', storage = {}, pushThresholds, now = Date.now() } = {}) {
+  const tracker = createStatusTracker();
+  let status = null;
+  let services = null;
+  for (const cycle of demoStatusCycles({ scenario, now })) {
+    const base = cycle.caches.getCached('services');
+    services = {
+      ...base,
+      nodes: {
+        ...base.nodes,
+        storage: { ...base.nodes.storage, metrics: { ...base.nodes.storage.metrics, ...storage } },
+      },
+    };
+    const caches = {
+      ...cycle.caches,
+      getCached: (key) => (key === 'services' ? services : cycle.caches.getCached(key)),
+    };
+    status = tracker.update({
+      inputs: readStatusInputs(caches, cycle.extra),
+      thresholds: pushThresholds ? resolveThresholds(pushThresholds) : cycle.thresholds,
+      now: cycle.now,
+    });
+  }
+  // As a client reads them: JSON.
+  return JSON.parse(JSON.stringify({ status, services, history: demoHistory() }));
+}
+
+/**
+ * The incident on the Infrastructure section (#299): the demo's incident with
+ * its NAS (the storage node) at 94.6 % disk, under the 95 % crit line, so a
+ * warning that reads 94, on the meter and in the model's reason alike (#450).
+ */
+export const nasDiskIncident = (opts = {}) =>
+  demoBoard({ ...opts, scenario: 'incident', storage: { diskPercent: '94.6' } });
