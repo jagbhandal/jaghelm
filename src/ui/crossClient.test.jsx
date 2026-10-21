@@ -16,8 +16,9 @@
  * test:ci`); this file runs in `npm run test:client`.
  *
  * A meter takes its lines (its threshold tick, and "warning above 90%") from
- * the fixture's threshold config, the one the model was given: /api/status
- * doesn't serve them yet (#451), so a screen has nowhere else to read them.
+ * the status itself: /api/status serves the lines the model judged by
+ * (`thresholds`, #451), and server/status/readings.js reads a reading's lines
+ * out of them, in its unit, for the model and the screens alike.
  *
  * A disagreement fails the suite unless a named exception in KNOWN covers it,
  * in the fixtures it names. An exception that no longer happens fails too, so
@@ -28,18 +29,19 @@
  * screens join this suite in #325, when they render the model.
  */
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { cleanup, render } from '@testing-library/react';
 import { AttentionPanel } from './attention-panel.jsx';
 import { EntityRow } from './entity-row.jsx';
-import { MetricMeter } from './metric-meter.jsx';
+import { MetricMeter, meterState } from './metric-meter.jsx';
 import { SubsystemStrip } from './subsystem-strip.jsx';
 import { STATES } from './lib/status.js';
 import { subsystemCells } from '../shell/statusView.js';
 import { runScenario, STATUS_SCENARIOS } from '../../server/testing/statusScenarios.js';
-import { cycles, inputs, node } from '../../server/testing/statusFixtures.js';
+import { cycles, inputs, node, once } from '../../server/testing/statusFixtures.js';
+import { readingLines } from '../../server/status/readings.js';
 import { judgeNode, judgeService } from '../../server/status/rules.js';
 import { EMPTY } from '../../server/status/summary.js';
-import { DEFAULT_THRESHOLDS } from '../../server/status/thresholds.js';
+import { DEFAULT_THRESHOLDS, resolveThresholds } from '../../server/status/thresholds.js';
 
 const NOW = Date.parse('2026-10-19T12:00:00Z');
 const noop = () => {};
@@ -70,17 +72,13 @@ const QUIET_HEADING = 'All systems normal';
 // ── The screen: the model drawn with src/ui ──────────────────────────────
 
 // Each node reading: where /api/services has its value (the model serves only
-// the worst one, as `metric`), its unit, and its lines in the threshold config
-// (not served by /api/status yet, #451).
+// the worst one, as `metric`) and its unit. Its lines are the status's own
+// (`thresholds`, #451).
 const READINGS = {
-  cpu: { field: 'cpu', unit: '%', lines: (t) => ({ warn: t.cpu.warn * 100 }) },
-  mem: { field: 'memPercent', unit: '%', lines: (t) => ({ warn: t.mem.warn * 100 }) },
-  disk: {
-    field: 'diskPercent',
-    unit: '%',
-    lines: (t) => ({ warn: t.disk.warn * 100, crit: t.disk.crit * 100 }),
-  },
-  temp: { field: 'temp', unit: '°C', lines: (t) => ({ warn: t.temp.warn, crit: t.temp.crit }) },
+  cpu: { field: 'cpu', unit: '%' },
+  mem: { field: 'memPercent', unit: '%' },
+  disk: { field: 'diskPercent', unit: '%' },
+  temp: { field: 'temp', unit: '°C' },
 };
 
 /** The worst entity of a subsystem, by the model's ranking: its word is the tile's. */
@@ -95,9 +93,9 @@ function worstOf(status, subsystem) {
  * sentence is the quiet line when nothing needs attention), a tile per
  * subsystem that has anything (spec §8: what isn't set up shows no panel), a
  * row per entity, and each node's meters, valued from /api/services and
- * coloured by the model's `conditions`, with the server's lines.
+ * coloured by the model's `conditions`, with the lines /api/status serves.
  */
-function Board({ status, services, thresholds }) {
+function Board({ status, services }) {
   const quiet = status.issues.length === 0;
   // The Overview's own cells (#298), so the suite checks what the page draws.
   const cells = subsystemCells(status);
@@ -137,7 +135,7 @@ function Board({ status, services, thresholds }) {
             {Object.entries(e.conditions)
               .filter(([reading]) => Object.hasOwn(READINGS, reading))
               .map(([reading, state]) => {
-                const { field, unit, lines } = READINGS[reading];
+                const { field, unit } = READINGS[reading];
                 const raw = services?.nodes?.[e.node]?.metrics?.[field];
                 const value = raw == null ? null : Number(raw);
                 return (
@@ -147,7 +145,7 @@ function Board({ status, services, thresholds }) {
                       value={value}
                       unit={unit}
                       state={state}
-                      {...lines(thresholds)}
+                      {...readingLines(status.thresholds, reading)}
                     />
                   </div>
                 );
@@ -181,11 +179,7 @@ const READING_REASON =
  */
 function disagreements({ status, cycle }) {
   const { container } = render(
-    <Board
-      status={status}
-      services={cycle.caches.getCached('services')}
-      thresholds={cycle.thresholds}
-    />
+    <Board status={status} services={cycle.caches.getCached('services')} />
   );
   const doc = container.ownerDocument;
   const findings = [];
@@ -337,10 +331,7 @@ describe('cross-client, screen', () => {
     const board = (temp) => inputs({ nodes: { n1: node({ temp }) } });
     const [, status] = cycles([board('78.0'), board(null)]);
     const services = board(null).services;
-    const cycle = {
-      caches: { getCached: (k) => (k === 'services' ? services : null) },
-      thresholds: DEFAULT_THRESHOLDS,
-    };
+    const cycle = { caches: { getCached: (k) => (k === 'services' ? services : null) } };
     expect(disagreements({ status, cycle }).map(describeFinding)).toEqual([]);
     const n1 = status.entities.find((e) => e.id === 'nodes/n1');
     expect([n1.state, n1.reason]).toEqual([
@@ -354,6 +345,86 @@ describe('cross-client, screen', () => {
     expect(meter.textContent).toContain('No data');
     expect(meter.textContent).not.toMatch(/\d+\s*°C/);
   });
+
+  // Readings just below, on and just above each line, with the lines in force:
+  // the defaults, and display-config.json's pushThresholds moving them (#451).
+  // Each is [percent, the model's level].
+  const LINE_CASES = [
+    {
+      name: 'the defaults',
+      pushThresholds: undefined,
+      disk: [
+        ['89.9', 'ok'],
+        ['90.0', 'warn'],
+        ['90.1', 'warn'],
+        ['94.4', 'warn'],
+        ['95.0', 'crit'],
+        ['95.1', 'crit'],
+      ],
+      mem: [
+        ['89.9', 'ok'],
+        ['90.0', 'warn'],
+        ['90.1', 'warn'],
+      ],
+    },
+    {
+      name: "display-config's pushThresholds",
+      pushThresholds: { disk: 0.8, mem: 0.85 },
+      disk: [
+        ['79.9', 'ok'],
+        ['80.0', 'warn'],
+        ['80.1', 'warn'],
+        ['94.4', 'warn'],
+        ['95.0', 'crit'],
+        ['95.1', 'crit'],
+      ],
+      mem: [
+        ['84.9', 'ok'],
+        ['85.0', 'warn'],
+        ['85.1', 'warn'],
+      ],
+    },
+  ];
+
+  for (const { name, pushThresholds, ...byReading } of LINE_CASES) {
+    it(`meters colour from the lines /api/status serves, below, on and above each line: ${name} (#451)`, () => {
+      const thresholds = resolveThresholds(pushThresholds);
+      for (const [reading, rows] of Object.entries(byReading)) {
+        const { field } = READINGS[reading];
+        for (const [percent, level] of rows) {
+          const board = inputs({ nodes: { n1: node({ [field]: percent }) } });
+          // What a client gets: the status as JSON, its lines with it.
+          const served = JSON.parse(JSON.stringify(once(board, { thresholds })));
+          const at = `${reading} ${percent} %, ${name}`;
+          expect(served.thresholds, at).toEqual(JSON.parse(JSON.stringify(thresholds)));
+          const n1 = served.entities.find((e) => e.id === 'nodes/n1');
+          expect(n1.conditions[reading], at).toBe(level);
+          const cycle = {
+            caches: { getCached: (k) => (k === 'services' ? board.services : null) },
+          };
+          expect(disagreements({ status: served, cycle }).map(describeFinding), at).toEqual([]);
+          // The served lines alone colour the meter as the model judged it.
+          const lines = readingLines(served.thresholds, reading);
+          expect(meterState(Number(percent), lines), at).toBe(level);
+          const meter = document.querySelector(
+            `[data-node="nodes/n1"] [data-reading="${reading}"] [data-slot="metric-meter"]`
+          );
+          expect(meter.dataset.state, at).toBe(level);
+          // Its threshold tick is the served warn line.
+          expect(meter.querySelector('[data-slot="meter-threshold"]'), at).toHaveStyle({
+            left: `${lines.warn}%`,
+          });
+          if (level !== 'ok') {
+            const line = level === 'crit' ? lines.crit : lines.warn;
+            expect(meter.getAttribute('aria-valuetext'), at).toContain(
+              `${level === 'crit' ? 'critical' : 'warning'} above ${line}%`
+            );
+          }
+          cleanup();
+        }
+      }
+    });
+  }
 
   it("the headline says the model's word for every state the board can be in", () => {
     // The fixtures reach crit, warn and unknown; this covers maintenance too.

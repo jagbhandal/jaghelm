@@ -1136,7 +1136,7 @@ until Phase 4 (#326).
 
 | Component | Import | Props |
 | --- | --- | --- |
-| `MetricMeter` | `@ui/metric-meter` | `label`; `value` (a number, or null for no reading); `max` (100); `unit` (`%`); `warn`, `crit` (thresholds, in the reading's unit); `state` (the server's, which wins over the thresholds); `valueText` (the printed value; the rounded value and unit by default) |
+| `MetricMeter` | `@ui/metric-meter` | `label`; `value` (a number, or null for no reading); `max` (100); `unit` (`%`); `warn`, `crit` (thresholds, in the reading's unit; for a node reading, `readingLines(status.thresholds, reading)`); `state` (the server's, which wins over the thresholds); `valueText` (the printed value; the rounded value and unit by default) |
 | `meterState` | `@ui/metric-meter` | `(value, { warn, crit })`: `ok`, `warn`, `crit`, or `unknown` without a reading |
 | `Sparkline` | `@ui/sparkline` | `label` (its name; required unless `decorative`); `points` (numbers, or `{ time, value }`); `domain` (`[0, 100]`, or `auto`); `width`, `height` (96 × 24); `area`; `unit`, `formatValue`, `formatTime` (HH:MM); `decorative` |
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`) |
@@ -1169,7 +1169,9 @@ Chart colours board:
   without colour. The fill clamps to the track and grows over 150ms; the value
   prints as read ("130%"). No reading: an empty track and a dash in the
   no-signal word colour. Ported from the Android app's UsageBar, whose fixed
-  75/90 steps become `warn` and `crit` (spec §6.1's defaults are the server's).
+  75/90 steps become `warn` and `crit`. A node reading's lines are the ones
+  `/api/status` serves, the model's (`readingLines(status.thresholds, reading)`
+  in `server/status/readings.js`, #451): a screen keeps none of its own.
 - **Sparkline.** One series in slot 1, `series-1` ([Chart colours](#chart-colours)).
   The plain line is the node card's: 96 × 24, a 1.5px line. `area` is the
   Chart colours board's: a 2px line over a 14 % fill, the latest reading a

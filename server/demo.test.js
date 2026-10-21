@@ -16,7 +16,8 @@ process.env.DEMO_MODE = 'true';
 delete process.env.DASH_PASS;
 
 const { app } = await import('./index.js');
-const { stopBackgroundRefresh } = await import('./refresh.js');
+const { stopBackgroundRefresh, thresholdsOf } = await import('./refresh.js');
+const { demoDisplayConfig } = await import('./demoFixtures.js');
 
 after(() => {
   stopBackgroundRefresh();
@@ -36,7 +37,16 @@ test('demo: GET /api/services returns the demo board (no backend), down by defau
 
 test('demo: GET /api/status is the status model of the demo board, in both scenarios (#437)', async () => {
   const shapeOf = (status) => {
-    assert.deepEqual(Object.keys(status).sort(), ['entities', 'issues', 'overall', 'sources', 'subsystems']);
+    assert.deepEqual(Object.keys(status).sort(), [
+      'entities',
+      'issues',
+      'overall',
+      'sources',
+      'subsystems',
+      'thresholds',
+    ]);
+    // The lines it judged by: the demo display config's (#451).
+    assert.deepEqual(status.thresholds, JSON.parse(JSON.stringify(thresholdsOf(demoDisplayConfig()))));
     assert.deepEqual(Object.keys(status.overall).sort(), ['sentence', 'state']);
     assert.deepEqual(
       status.subsystems.map((s) => s.id),
