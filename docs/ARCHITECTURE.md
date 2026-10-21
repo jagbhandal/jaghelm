@@ -136,7 +136,9 @@ src/                        React 19 SPA (Vite 8)
                             (the attention panel both draw), statusView.js (how the status
                             model's issues are counted and worded, and its subsystems made
                             the strip's cells), overviewFilter.js (the strip's filter, in the
-                            URL), entityAnchors.js (where an Overview issue row leads)
+                            URL), entityAnchors.js (where an Overview issue row leads),
+                            OverviewInfrastructure.jsx and infrastructureView.js (the
+                            Overview's Infrastructure section, its nodes from the model)
   api/client.js             apiFetch -- explicit auth-injecting fetch wrapper
   context/                  ConfigContext (config + update via setIn), OverlayContext (toast/confirm)
   hooks/useData.js          fetchJson (304-aware), weather, search engines
@@ -171,7 +173,8 @@ src/                        React 19 SPA (Vite 8)
                              uses them too), the data components (#288: metric-meter,
                              sparkline, uptime-bar, entity-row, fact-list, table),
                              the shell (#296: app-shell, app-header, side-nav,
-                             bottom-tabs, app-bar),
+                             bottom-tabs, app-bar), the Overview's sections (#299:
+                             node-card, infrastructure-section),
                              lib/status.js (the five states, their words,
                              and the two looks), lib/utils.js (cn, taught the theme),
                              lib/portal.js (portal roots and the switches they copy),
@@ -186,7 +189,8 @@ gallery/                    the component gallery (development and CI only, docs
                             Playwright image); built by vite.gallery.config.js, tested by
                             playwright.config.mjs, never part of the production build
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
-                            what they share in app.mjs; see 8): the production build served
+                            infrastructure.spec.mjs, what they share in app.mjs; see 8): the
+                            production build served
                             by `vite preview`, every /api request answered in the test; run
                             by playwright.e2e.config.mjs in the gallery's container
 
@@ -1236,9 +1240,10 @@ them on its Node side and hand a page the JSON.
 - **Screen** (`src/ui/crossClient.test.jsx`, `npm run test:client`): each
   fixture's status is drawn with the `src/ui` status components as a screen
   draws the model (the attention panel, a tile per subsystem that has
-  anything, a row per entity, a meter per node reading coloured by its
-  condition), and read back: the headline's word (the model's word for the
-  board's state) and sentence, each tile's state, word and counts, each row's
+  anything, a row per entity, and the Overview's Infrastructure section, a
+  meter per node reading coloured by its condition, drawn through the page's
+  own `infrastructureNodes` and `InfrastructureSection`), and read back: the
+  headline's word (the model's word for the board's state) and sentence, each tile's state, word and counts, each row's
   state, word and reason, each meter's state and the number and line the
   model's reason gives. A meter reads its lines from the status it draws
   (`thresholds`, #451), and readings just below, on and just above each line,
@@ -1248,10 +1253,10 @@ them on its Node side and hand a page the JSON.
 A disagreement fails it unless a named exception (`KNOWN` in each file) covers
 it, where it says. An exception that stops happening fails too, so settling
 one is deleting its entry. There are none today: #478 settled the failed
-backup's push severity and #450 the meter's number. The legacy
-derivations (`src/utils/thresholds.js`, `mobile/src/data/derive.js`) are
-outside it; #306, #325 and #326 delete them, and Android's screens join it in
-#325.
+backup's push severity and #450 the meter's number. Android's legacy
+derivation (`mobile/src/data/derive.js`) is outside it; #325 and #326 delete
+it, and Android's screens join it in #325. The web's, `src/utils/thresholds.js`,
+went with the node cards' old readings (#299).
 
 ## 5. Frontend architecture
 
@@ -1267,6 +1272,7 @@ flowchart TD
   APP --> CPAL["CommandPalette<br/>(pages, apps, themes, links)"]
   SH --> OS["/ : OverviewStatus<br/>(the poll's status: ShellAttention,<br/>SubsystemStrip, the ?subsystem= filter)"]
   SH --> DV["/ : DashboardView"]
+  DV --> OI["OverviewInfrastructure<br/>(the poll's status + the board's readings:<br/>InfrastructureSection, cards or table)"]
   SH --> AP["/alerts : AlertsPage<br/>(ShellAttention)"]
   SH --> SV["/settings/:section? : SettingsView (13 tabs)"]
   SH --> AF["/apps/:id : AppFrames<br/>(useAppFrames)"]
@@ -1341,7 +1347,9 @@ flowchart TD
   until entities have URLs (#309, `entityAnchors.js`): a place on the board
   carries the anchor of the entity it draws, by the model's id. A service or
   container leads to its card (`DraggableServiceCard`), else its node's card
-  (a pending monitor has no card); a node to its card (`NodePanel`); the UPS
+  (a pending monitor has no card); a node to its card in the Infrastructure
+  section (#299; its `NodePanel` under the Services filter, which hides the
+  section); the UPS
   to its panel (`UPSCard`); a job to its row in Scheduled Jobs (`CronJobs`),
   and a backup to its job's row, since the board lists backups as jobs. An
   integration, an Arcane agent and a monitoring source have no place on the
@@ -1358,7 +1366,7 @@ flowchart TD
   window), and this tab stays where it was. A
   wrapper (`.overview-status`, `global.css`) lines the status up with the
   board's cards: the board's padding plus HelmGrid's margin. Later cards
-  rebuild the board under it (#299, #300) and take over the gutter.
+  rebuild the board under it (#300) and take over the gutter.
 - **The subsystem strip and its filter** (#298, spec §8 item 2). Under the
   status, in the same `ShellSection`, `SubsystemStrip` has a tile per
   subsystem the model has anything in (`counts.total` above 0), in the
@@ -1379,7 +1387,8 @@ flowchart TD
   quiet line says it too); its heading and sentence stay the whole board's.
   Today's board keeps that subsystem's panels (`boardFilter.js`): Services
   the node cards with a service of their own (not all moved into a group),
-  the nodes still loading and the custom groups, Nodes the node cards, Power
+  the nodes still loading and the custom groups, Nodes the Infrastructure
+  section (#299) and the node cards, Power
   the UPS panel, Jobs and Backups Scheduled Jobs; Pipeline, Checklist and
   Quick Launch belong to none. The panels kept rise into the space left
   (`compactUp`, `gridMath.js`), and can't be dragged or resized while
@@ -1393,6 +1402,48 @@ flowchart TD
   today's board at all (Integrations, whose numbers show on their services'
   cards). Each note offers "Show the whole board". The rows' links follow: a
   panel the filter hides takes its anchor off the list of places drawn.
+- **The Infrastructure section** (#299, spec §8 item 3). At the top of
+  today's board (`DashboardView` draws it, lined up with the board's cards by
+  HelmGrid's margin), the nodes as cards or a table (`OverviewInfrastructure`
+  in `src/shell`, drawing `InfrastructureSection` and `NodeCard` from
+  `src/ui`). It reads the header's poll for the model and the board's own
+  `/api/services` and `/api/history`, so it adds no request, and judges
+  nothing (`infrastructureView.js`): one card per node entity the model has,
+  in services.yaml's order, a node hidden in Settings left out; its lamp,
+  word and reason the entity's (healthy is the lamp alone); a meter each for
+  CPU, memory, disk and temperature (the last only for a node with a sensor),
+  valued from `/api/services`, its state the model's level for that reading
+  (the entity's `conditions`, so a reading held in its hysteresis band, or a
+  CPU spike before its second cycle, reads as the model judged it) and its
+  lines the ones `/api/status` serves (`readingLines`), printed by
+  `shownReading` (#450). A meter is the accent's below its line and takes a
+  status colour only at or over it. A reading the model didn't judge this
+  cycle (the node unreachable or with no signal, its query failed, no value)
+  has no value, a dash, so an old number never shows as current; the trend
+  and uptime go with it. Temperatures are in the model's °C, the unit its
+  reason gives, so the meter and the reason print one number in one unit;
+  Settings' `tempUnit` stays the weather's (one setting for both is #494).
+  Under the meters: the hosted services' up and
+  down counts (the model's service and container entities on the node), the
+  uptime and the last hour of CPU (a Sparkline, its tooltip printed by
+  `shownReading`). The user's colour for a node shows only as a 10px swatch.
+  The table has the same readings, coloured the same way; it needs 720px, so
+  in a narrower section (a phone, a tablet) the section draws the cards and
+  offers no toggle, rather than scroll the state and the readings off to the
+  side, and the table comes back when it fits. Cards or table is kept per
+  browser (`prefs`, `jaghelm-infrastructure-view`), cards by default; with
+  storage blocked the choice lasts the visit. Each node drawn
+  puts its anchor on the list of places (the card, or its name in the table),
+  so an issue row for a node leads there; the node panels below carry none
+  while the section is drawn. It shows unfiltered and under the Nodes filter,
+  and another filter hides it. Before the first status or `/api/services`
+  answer, three placeholder cards; with no node, nothing; when
+  `/api/services` stops answering, a Banner over the last readings says so,
+  with Retry. Today's node panels below keep the node's service cards and
+  Proxmox lists until #300 rebuilds them; their readings, and with them the
+  web's old 70 % / 90 % colours (`src/utils/thresholds.js`, the card halo and
+  the old Sparkline) and the used / total GB, are gone. A node panel starts at
+  its minimum height and grows to its content ("Panels and first run").
 - **State.** `ConfigContext` exposes `config`, the stable `setConfig`, and a
   memoised `update(path, value)` built on `setIn` (immutable structural-sharing
   deep-set) -- so leaf cards memoise and don't re-render on unrelated edits.
@@ -1420,9 +1471,21 @@ flowchart TD
   and half, so each panel of the second pair sits under one of the first; then
   Quick Launch. When one of a pair isn't shown, the two left over share a row,
   the tall one 2/3 (on a fresh install, Scheduled Jobs beside the Checklist); a
-  panel left alone takes the whole row. It is regenerated as nodes
+  panel left alone takes the whole row. A node panel starts at its minimum
+  height (3 rows), as it holds only its service cards and Proxmox lists, and
+  HelmGrid grows it to them: a taller start would stay empty, since HelmGrid
+  grows a panel but never shrinks one. It is regenerated as nodes
   and panels come and go, until the first drag or resize saves a layout; a
-  saved layout is never replaced by it. A panel not on show (switched off in
+  saved layout is never replaced by it. A saved layout carries its version
+  beside its breakpoints (`{ version, lg, md, sm }`, `LAYOUT_VERSION` in
+  `layouts.js`; none is version 1), and `migrateLayouts` brings an older one
+  up to date before it is drawn: version 2 (#299) puts each node panel back
+  to its minimum height and moves every panel up into the space that leaves
+  (`compactUp`), since a layout saved before kept each node panel as tall as
+  the reading tiles it no longer has. DashboardView saves the result with its
+  version once, and every drag or resize saves the version with the layout,
+  so the step never runs again on a layout and a height the user sets after
+  it stays. A panel not on show (switched off in
   Settings, or a source not known to be set up) is not added to a layout, so
   it holds no empty slot. A fresh install with no node shows the "Connect your
   first node" empty state, and the demo (`DEMO_MODE`) gets the same default
@@ -1994,9 +2057,15 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   Forward; `src/shell/ShellHeader.test.jsx`: each state of the header, and a
   render count proving the "updated" tick re-renders nothing else), the status
   poll's request budget (`src/App.polling.test.jsx`), the loaded-app cap
-  (`src/hooks/useAppFrames.test.jsx`), and the `src/ui/` components. The
+  (`src/hooks/useAppFrames.test.jsx`), the Infrastructure section's nodes
+  against the model's fixtures (`src/shell/infrastructureView.test.jsx`) and
+  on the demo (`src/demo.render.test.jsx`), a saved layout's version step,
+  run once (`layouts.test.jsx`, `DashboardView.test.jsx`), and the `src/ui/`
+  components. The
   status fixtures (`src/testing/statusFixtures.js`) are built by the server's
-  own model, never written by hand.
+  own model, never written by hand: the demo's boards as a client gets them
+  (`demoBoard`), with a node's readings or the lines moved, among them the
+  incident with the NAS at 94.6 % disk (`nasDiskIncident`).
 - **Cross-client status suite** (both of the above): seven named status fixtures
   (`server/testing/statusScenarios.js`) through the real push cycle
   (`server/status/crossClient.test.js`, in `test:ci`) and through the `src/ui`
@@ -2041,7 +2110,22 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   too); a tile, clicked or by Space and Enter (its focus ring showing),
   filters the rows and the board and back, Back and Forward follow the URL,
   and a filter whose panel is switched off says so; axe on the
-  filtered status and the note. Both leave screenshots in
+  filtered status and the note. The Infrastructure section (#299,
+  `e2e/infrastructure.spec.mjs`), at 1440, 390 and 360px, dark and light, on
+  the demo's healthy board and on its incident with the NAS at 94.6 % disk
+  (`nasDiskIncident`, `src/testing/statusFixtures.js`, built through the model,
+  answered in place of the demo's `/api/status` and `/api/services`): nothing
+  in a card or the table cut off and no sideways scroll, in both views; axe on
+  the section; healthy, no red, amber or green in it but its 10px ok lamps
+  (the users' node colours, 10px swatches, set aside), so every meter is the
+  accent's; the incident's amber only on the NAS's card (its word, its disk
+  meter at "94%" and its reason), no red; a node's issue row brings its card
+  into view and focuses it; the Nodes filter keeps the section and Services
+  hides it. At 390 and 360px with the table chosen, the section draws the
+  cards, with the NAS's warning and its "94%" on screen and nothing to scroll
+  sideways. Each node panel below is as tall as its content (within a grid
+  row), on the default layout and on a layout saved before #299, which is
+  saved again with its version. All three leave screenshots in
   `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through

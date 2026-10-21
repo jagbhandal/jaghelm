@@ -19,7 +19,9 @@
  * its cells wrap), so rows stay one `h-row` tall; a table wider than its
  * frame scrolls inside it (`minWidth`, 720px in the mock), and only then is
  * the frame a region, named as the table, that Tab reaches, so the keyboard
- * can scroll it. Cells are 12px apart, 16px at the table's ends, as the mock's.
+ * can scroll it. The frame holds what a cell positions too (a cell's words for
+ * screen readers, `sr-only`), so nothing in a scrolled-off column reaches
+ * past it and scrolls the page sideways (#299). Cells are 12px apart, 16px at the table's ends, as the mock's.
  */
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { cn } from './lib/utils.js';
@@ -86,7 +88,7 @@ function Table({
       ref={frameRef}
       data-slot="table"
       className={cn(
-        'overflow-x-auto rounded-xl border border-border-subtle bg-surface-1',
+        'relative overflow-x-auto rounded-xl border border-border-subtle bg-surface-1',
         className
       )}
       {...(overflows ? { role: 'region', tabIndex: 0, ...name } : {})}

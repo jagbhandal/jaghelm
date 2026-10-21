@@ -8,7 +8,9 @@
  * way a screen draws the model (Board, below): the attention panel from the
  * overall state, sentence and issues; a subsystem tile per subsystem that has
  * anything, as the Overview's strip makes them (src/shell/statusView.js
- * subsystemCells); a row per entity; a meter per node reading. Then the screen is
+ * subsystemCells); a row per entity; the Overview's Infrastructure section, a
+ * card per node with a meter per reading (src/shell/infrastructureView.js
+ * infrastructureNodes, InfrastructureSection). Then the screen is
  * read back and checked against the model: the headline's word and sentence
  * (or the quiet line's heading), each tile's state, word and counts, each row's state and word, and each
  * meter's state, number and line. The push side, the same fixtures through
@@ -24,9 +26,10 @@
  * in the fixtures it names. An exception that no longer happens fails too, so
  * deleting it is the whole change once it is settled.
  *
- * Not covered: the legacy derivations, src/utils/thresholds.js (deleted by
- * #306) and mobile/src/data/derive.js (deleted by #325 and #326). Android's
- * screens join this suite in #325, when they render the model.
+ * Not covered: the Android app's legacy derivation, mobile/src/data/derive.js
+ * (deleted by #325 and #326); the web's, src/utils/thresholds.js, went with
+ * the node cards' old readings (#299). Android's screens join this suite in
+ * #325, when they render the model.
  */
 import { describe, it, expect } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
@@ -34,8 +37,10 @@ import { AttentionPanel } from './attention-panel.jsx';
 import { EntityRow } from './entity-row.jsx';
 import { MetricMeter, meterState } from './metric-meter.jsx';
 import { SubsystemStrip } from './subsystem-strip.jsx';
+import { InfrastructureSection } from './infrastructure-section.jsx';
 import { STATES } from './lib/status.js';
 import { subsystemCells } from '../shell/statusView.js';
+import { infrastructureNodes } from '../shell/infrastructureView.js';
 import { runScenario, STATUS_SCENARIOS } from '../../server/testing/statusScenarios.js';
 import { cycles, inputs, node, once } from '../../server/testing/statusFixtures.js';
 import { readingLines } from '../../server/status/readings.js';
@@ -72,14 +77,20 @@ const QUIET_HEADING = 'All systems normal';
 // ── The screen: the model drawn with src/ui ──────────────────────────────
 
 // Each node reading: where /api/services has its value (the model serves only
-// the worst one, as `metric`) and its unit. Its lines are the status's own
-// (`thresholds`, #451).
+// the worst one, as `metric`). Its lines are the status's own (`thresholds`,
+// #451).
 const READINGS = {
-  cpu: { field: 'cpu', unit: '%' },
-  mem: { field: 'memPercent', unit: '%' },
-  disk: { field: 'diskPercent', unit: '%' },
-  temp: { field: 'temp', unit: '°C' },
+  cpu: { field: 'cpu' },
+  mem: { field: 'memPercent' },
+  disk: { field: 'diskPercent' },
+  temp: { field: 'temp' },
 };
+
+/** A node reading's meter on the screen: the Infrastructure section's card. */
+const meterIn = (root, nodeId, reading) =>
+  root.querySelector(
+    `[data-node="${nodeId}"] [data-slot="metric-meter"][data-reading="${reading}"]`
+  );
 
 /** The worst entity of a subsystem, by the model's ranking: its word is the tile's. */
 function worstOf(status, subsystem) {
@@ -92,8 +103,9 @@ function worstOf(status, subsystem) {
  * board's state and sentence and the ranked issues in the attention panel (the
  * sentence is the quiet line when nothing needs attention), a tile per
  * subsystem that has anything (spec §8: what isn't set up shows no panel), a
- * row per entity, and each node's meters, valued from /api/services and
- * coloured by the model's `conditions`, with the lines /api/status serves.
+ * row per entity, and the Infrastructure section: each node's meters, valued
+ * from /api/services and coloured by the model's `conditions`, with the lines
+ * /api/status serves.
  */
 function Board({ status, services }) {
   const quiet = status.issues.length === 0;
@@ -128,30 +140,8 @@ function Board({ status, services }) {
           </li>
         ))}
       </ul>
-      {status.entities
-        .filter((e) => e.kind === 'node' && e.conditions)
-        .map((e) => (
-          <section key={e.id} data-node={e.id}>
-            {Object.entries(e.conditions)
-              .filter(([reading]) => Object.hasOwn(READINGS, reading))
-              .map(([reading, state]) => {
-                const { field, unit } = READINGS[reading];
-                const raw = services?.nodes?.[e.node]?.metrics?.[field];
-                const value = raw == null ? null : Number(raw);
-                return (
-                  <div key={reading} data-reading={reading} data-raw={value ?? ''}>
-                    <MetricMeter
-                      label={`${e.id} ${reading}`}
-                      value={value}
-                      unit={unit}
-                      state={state}
-                      {...readingLines(status.thresholds, reading)}
-                    />
-                  </div>
-                );
-              })}
-          </section>
-        ))}
+      {/* The Overview's own section (#299), so the suite checks what the page draws. */}
+      <InfrastructureSection nodes={infrastructureNodes({ status, services })} />
     </>
   );
 }
@@ -179,9 +169,8 @@ const READING_REASON =
  * model, screen }`.
  */
 function disagreements({ status, cycle }) {
-  const { container } = render(
-    <Board status={status} services={cycle.caches.getCached('services')} />
-  );
+  const services = cycle.caches.getCached('services');
+  const { container } = render(<Board status={status} services={services} />);
   const doc = container.ownerDocument;
   const findings = [];
   const say = (subject, what, model, screen, extra = {}) =>
@@ -251,29 +240,34 @@ function disagreements({ status, cycle }) {
 
   // Each node reading's meter: its state, and the number and line the model's reason says.
   for (const e of status.entities.filter((x) => x.kind === 'node' && x.conditions)) {
-    const meterOf = (reading) =>
-      container.querySelector(
-        `[data-node="${e.id}"] [data-reading="${reading}"] [data-slot="metric-meter"]`
-      );
+    const meterOf = (reading) => meterIn(container, e.id, reading);
+    const rawOf = (reading) =>
+      Number(services?.nodes?.[e.node]?.metrics?.[READINGS[reading]?.field]);
     for (const [reading, level] of Object.entries(e.conditions)) {
+      // A storage pool has no meter on the card: its reason says it.
+      if (!Object.hasOwn(READINGS, reading)) continue;
       const meter = meterOf(reading);
-      if (meter && meter.dataset.state !== level)
+      if (!meter) say(`${e.id} ${reading}`, 'meter', level, 'none drawn');
+      else if (meter.dataset.state !== level)
         say(`${e.id} ${reading}`, 'meter state', level, meter.dataset.state);
     }
     for (const part of e.reason.split(' · ')) {
       const m = READING_REASON.exec(part);
       if (!m) continue;
-      const [, label, number, , said, how, line, unit] = m;
+      const [, label, number, readUnit, said, how, line, unit] = m;
       const reading = LABEL_READING[label];
       const meter = meterOf(reading);
       const text = meter?.getAttribute('aria-valuetext') ?? '';
-      const raw = Number(meter?.parentElement.dataset.raw);
+      const raw = rawOf(reading);
       const subject = `${e.id} ${reading}`;
       if (meter?.dataset.state !== SAID[said])
         say(subject, 'meter state', SAID[said], meter?.dataset.state);
       if (!text.includes(said)) say(subject, 'meter word', said, text);
-      const printed = /^-?[\d.]+/.exec(text)?.[0];
+      // The number and its unit, as the reason writes them ("86 °C"): one
+      // reading, one number, one unit, on the meter and in the reason.
+      const [, printed, printedUnit] = /^(-?[\d.]+)([^\d\s,]*)/.exec(text) ?? [];
       if (printed !== number) say(subject, 'number', number, printed, { raw });
+      if (printedUnit !== readUnit) say(subject, 'unit', readUnit, printedUnit, { raw });
       if (how === 'above' && !text.includes(`above ${line}${unit}`))
         say(subject, 'line', `${said} above ${line}${unit}`, text);
     }
@@ -324,9 +318,7 @@ describe('cross-client, screen', () => {
       'warn',
       'Temperature: no reading (warning held until below 70 °C)',
     ]);
-    const meter = document.querySelector(
-      '[data-node="nodes/n1"] [data-reading="temp"] [data-slot="metric-meter"]'
-    );
+    const meter = meterIn(document, 'nodes/n1', 'temp');
     expect(meter.dataset.state).toBe('unknown');
     expect(meter.textContent).toContain('No data');
     expect(meter.textContent).not.toMatch(/\d+\s*°C/);
@@ -412,9 +404,7 @@ describe('cross-client, screen', () => {
           // The served lines alone colour the meter as the model judged it.
           const lines = readingLines(served.thresholds, reading);
           expect(meterState(Number(percent), lines), at).toBe(level);
-          const meter = document.querySelector(
-            `[data-node="nodes/n1"] [data-reading="${reading}"] [data-slot="metric-meter"]`
-          );
+          const meter = meterIn(document, 'nodes/n1', reading);
           expect(meter.dataset.state, at).toBe(level);
           // Its threshold tick is the served warn line.
           expect(meter.querySelector('[data-slot="meter-threshold"]'), at).toHaveStyle({
@@ -450,9 +440,7 @@ describe('cross-client, screen', () => {
       expect(disagreements({ status, cycle }).map(describeFinding), disk).toEqual([]);
       const n1 = status.entities.find((e) => e.id === 'nodes/n1');
       expect(n1.reason, disk).toBe(reason);
-      const meter = document.querySelector(
-        '[data-node="nodes/n1"] [data-reading="disk"] [data-slot="metric-meter"]'
-      );
+      const meter = meterIn(document, 'nodes/n1', 'disk');
       expect(meter.querySelector('.font-bold').textContent, disk).toBe(shown);
       expect(meter.getAttribute('aria-valuetext').split(',')[0], disk).toBe(shown);
       cleanup();
@@ -482,6 +470,16 @@ describe('cross-client, screen', () => {
       }
     }
     expect(wrong).toEqual([]);
+  });
+
+  it('a temperature reads as its reason says it, number and unit, on the default path (#299)', () => {
+    const { status, cycle } = runScenario('thresholds', { now: NOW });
+    expect(disagreements({ status, cycle }).map(describeFinding)).toEqual([]);
+    const storage = status.entities.find((e) => e.id === 'nodes/storage');
+    expect(storage.reason).toContain('Temperature 86 °C (critical above 85 °C)');
+    const meter = meterIn(document, 'nodes/storage', 'temp');
+    expect(meter.getAttribute('aria-valuetext')).toBe('86°C, critical above 85°C');
+    expect(meter).toHaveTextContent('86°C');
   });
 
   it("the headline says the model's word for every state the board can be in", () => {

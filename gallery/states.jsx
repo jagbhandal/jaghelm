@@ -60,6 +60,7 @@ import { UptimeBar } from '@ui/uptime-bar';
 import { EntityRow } from '@ui/entity-row';
 import { FactList } from '@ui/fact-list';
 import { Table } from '@ui/table';
+import { InfrastructureSection } from '@ui/infrastructure-section';
 import { AppHeader, UpdatedAgo } from '@ui/app-header';
 import { SideNav, appMonogram } from '@ui/side-nav';
 import { BottomTabs } from '@ui/bottom-tabs';
@@ -361,6 +362,134 @@ const SERVICE_FACTS = [
   { key: 'uptime', label: 'Uptime, 30 days', value: '99.94 %' },
   { key: 'host', label: 'Host', value: <code>vm-103</code> },
   { key: 'url', label: 'Address', value: 'https://photos.jagbhandal.com/api/server/ping' },
+];
+
+// The Infrastructure section's nodes (#299), as src/shell/infrastructureView.js
+// gives them: the default lines (spec §6.1), each reading's state the model's,
+// `shown` as the model's rule prints it.
+const LINES = {
+  cpu: { warn: 90, band: 5 },
+  mem: { warn: 90, band: 5 },
+  disk: { warn: 90, crit: 95, band: 5 },
+  temp: { warn: 75, crit: 85, band: 5 },
+};
+const LABELS = { cpu: 'CPU', mem: 'Memory', disk: 'Disk', temp: 'Temp' };
+const nodeReading = (key, value, state = 'ok') => ({
+  key,
+  label: LABELS[key],
+  value,
+  unit: key === 'temp' ? '°C' : '%',
+  max: 100,
+  state: value == null ? null : state,
+  ...LINES[key],
+  shown: value == null ? null : `${Math.floor(value)}${key === 'temp' ? '°C' : '%'}`,
+});
+const cpuTrend = (values) => ({
+  points: values,
+  label: 'CPU, last hour',
+  formatValue: (v) => `${Math.floor(v)}%`,
+});
+const infraNode = (id, fields) => ({
+  id: `nodes/${id}`,
+  anchor: `entity-nodes/${id}`,
+  host: id,
+  reason: null,
+  trend: null,
+  uptime: null,
+  ...fields,
+});
+
+const EDGE = infraNode('edge', {
+  name: 'Network Edge',
+  subtitle: 'Raspberry Pi 4',
+  colour: '#a78bfa',
+  state: 'ok',
+  word: 'Healthy',
+  readings: [
+    nodeReading('cpu', 6.2),
+    nodeReading('mem', 18.4),
+    nodeReading('disk', 31.2),
+    nodeReading('temp', 47.3),
+  ],
+  services: '5 / 5 services up',
+  uptime: 'Up 41d 6h',
+  trend: cpuTrend([5, 6, 7, 6, 5, 8, 9, 7, 6, 6, 5, 7, 8, 6, 6, 7, 6, 5, 6, 6]),
+});
+const APPS = infraNode('apps', {
+  name: 'App Server',
+  subtitle: 'Proxmox VM',
+  colour: '#6366f1',
+  state: 'ok',
+  word: 'Healthy',
+  readings: [nodeReading('cpu', 23.8), nodeReading('mem', 62.2), nodeReading('disk', 60.6)],
+  services: '9 / 9 services up',
+  uptime: 'Up 12d 3h',
+  trend: cpuTrend([22, 24, 21, 28, 35, 31, 27, 26, 30, 42, 38, 33, 29, 27, 25, 31, 26, 24, 23, 24]),
+});
+const STORAGE = infraNode('storage', {
+  name: 'Storage',
+  subtitle: 'NAS',
+  colour: '#14b8a6',
+  state: 'ok',
+  word: 'Healthy',
+  readings: [
+    nodeReading('cpu', 9.4),
+    nodeReading('mem', 41.6),
+    nodeReading('disk', 66.2),
+    nodeReading('temp', 41.0),
+  ],
+  services: '5 / 5 services up',
+  uptime: 'Up 87d 14h',
+  trend: cpuTrend([8, 9, 11, 10, 9, 9, 12, 14, 11, 10, 9, 9, 8, 10, 9, 9, 10, 9, 9, 9]),
+});
+const NODES_HEALTHY = [EDGE, APPS, STORAGE];
+const NODES_INCIDENT = [
+  {
+    ...STORAGE,
+    state: 'warn',
+    word: 'Warning',
+    reason: 'Disk 94 % (warning above 90 %)',
+    readings: [
+      nodeReading('cpu', 9.4),
+      nodeReading('mem', 41.6),
+      nodeReading('disk', 94.6, 'warn'),
+      nodeReading('temp', 41.0),
+    ],
+  },
+  {
+    ...APPS,
+    state: 'crit',
+    word: 'Critical',
+    reason: 'Disk 96 % (critical above 95 %)',
+    readings: [
+      nodeReading('cpu', 23.8),
+      nodeReading('mem', 62.2),
+      nodeReading('disk', 96.2, 'crit'),
+    ],
+    services: '8 / 9 services up · 1 down',
+  },
+  {
+    ...EDGE,
+    state: 'unknown',
+    word: 'No signal',
+    reason: 'No data: Prometheus unreachable',
+    readings: EDGE.readings.map((r) => nodeReading(r.key, null)),
+    uptime: null,
+    trend: null,
+  },
+  infraNode('media', {
+    name: 'Media Server',
+    subtitle: 'Docker host',
+    colour: '#f472b6',
+    state: 'ok',
+    word: 'Healthy',
+    readings: [nodeReading('cpu', 31.0), nodeReading('mem', 71.9), nodeReading('disk', 48.3)],
+    services: '6 / 6 services up',
+    uptime: 'Up 3d 2h',
+    trend: cpuTrend([
+      30, 34, 29, 33, 41, 36, 32, 30, 34, 38, 31, 30, 29, 33, 35, 31, 30, 32, 31, 31,
+    ]),
+  }),
 ];
 
 // ---------------------------------------------------------------- controls
@@ -1536,6 +1665,14 @@ function TableScrollState() {
   );
 }
 
+function InfrastructureState({ nodes, count, view = 'cards', width = 900 }) {
+  return (
+    <Stack width={width}>
+      <InfrastructureSection nodes={nodes} count={count} view={view} onViewChange={noop} />
+    </Stack>
+  );
+}
+
 const SLOTS = ['Azure', 'Rose', 'Lime', 'Plum', 'Orange', 'Teal'];
 
 function Slots() {
@@ -1818,6 +1955,28 @@ export const RENDERS = Object.freeze({
   'table-empty': TableEmptyState,
   'table-scroll': TableScrollState,
   'chart-colours': ChartColoursState,
+
+  infrastructure: () => <InfrastructureState nodes={NODES_HEALTHY} count="3 nodes" />,
+  'infrastructure-incident': () => (
+    <InfrastructureState
+      nodes={NODES_INCIDENT}
+      count="4 nodes · 1 critical, 1 warning, 1 no signal"
+    />
+  ),
+  'infrastructure-table': () => (
+    <InfrastructureState
+      nodes={NODES_INCIDENT}
+      count="4 nodes · 1 critical, 1 warning, 1 no signal"
+      view="table"
+    />
+  ),
+  'infrastructure-narrow': () => (
+    <InfrastructureState
+      nodes={NODES_INCIDENT.slice(0, 2)}
+      count="2 nodes · 1 critical, 1 warning"
+      width={328}
+    />
+  ),
 
   'app-header': AppHeaderState,
   'app-header-first-run': AppHeaderFirstRunState,

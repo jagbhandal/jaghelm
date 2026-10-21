@@ -42,7 +42,10 @@ async function noSideScroll(page) {
 
 /** Each page, as it shows when open. */
 const SHOWS = {
-  overview: (page) => expect(page.getByText('Network Edge')).toBeVisible(),
+  // Today's board's node panel: the node's name is on its card in the
+  // Infrastructure section too (#299).
+  overview: (page) =>
+    expect(page.locator('.section-title', { hasText: 'Network Edge' })).toBeVisible(),
   alerts: (page) => expect(page.getByRole('heading', { level: 1, name: 'Alerts' })).toBeVisible(),
   settings: (page) =>
     expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible(),

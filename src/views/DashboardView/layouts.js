@@ -3,8 +3,10 @@
  *
  * `defaultLayouts` builds the grid a board without a saved layout gets, from
  * the nodes it has. `migrateLayouts` updates legacy layout keys (renamed or
- * retired panels) so old `display-config.json` payloads keep working.
+ * retired panels) so old `display-config.json` payloads keep working, and
+ * brings a layout saved before LAYOUT_VERSION up to it.
  */
+import { compactUp } from '../../components/HelmGrid/gridMath.js';
 
 // 24-column grid; minW:4 ≈ 17% (six panels per row), minH:3 ≈ 156px.
 const MIN_W = 4;
@@ -29,7 +31,12 @@ const SHORT_PANELS = ['ups', 'todos'];
 // side all get the row's tallest minimum, so a short pair starts the same height.
 const PANEL_H = { pipeline: 5, 'cron-jobs': 7, ups: 5, todos: 7, quicklaunch: 4 };
 const PANEL_MIN_H = { quicklaunch: 2 };
-const NODE_H = 8;
+// A node panel holds its service cards and Proxmox lists; its readings are the
+// Overview's Infrastructure section's (#299). It starts at its minimum and
+// HelmGrid grows it to its content: a taller start would stay empty, since
+// HelmGrid grows a panel but never shrinks one.
+const NODE_MIN_H = 3;
+const NODE_H = NODE_MIN_H;
 
 /** The panel rows for `panels`, top to bottom: each a list of [panel, share of the width]. */
 function panelRows(panels) {
@@ -83,7 +90,7 @@ function breakpointLayout(nodeKeys, panels, cols, perRowMax) {
         w,
         h: NODE_H,
         minW: Math.min(MIN_W, cols),
-        minH: 3,
+        minH: NODE_MIN_H,
       });
       x += w;
     }
@@ -148,13 +155,61 @@ const LEGACY_KEY_MAP = {
 // Keys that should be stripped from saved layouts (retired/renamed nodes).
 const STRIP_KEYS = new Set(['node-pi']);
 
+/**
+ * The version of a saved layout's shape, kept beside its breakpoints
+ * (`{ version, lg, md, sm }`); a layout without one is version 1.
+ *
+ *   2  (#299) node panels hold no readings: a layout saved before kept each
+ *      node panel at the height its reading tiles needed, which HelmGrid never
+ *      shrinks, so it showed empty space where they were. Brought up to 2
+ *      once: each node panel back to its minimum height and every panel moved
+ *      up into the space that leaves (compactUp), so HelmGrid grows each node
+ *      panel to its content again. A height set after that is the user's, and
+ *      stays.
+ */
+export const LAYOUT_VERSION = 2;
+
+/** A saved layout's version (1 when it has none). */
+export function layoutVersion(layouts) {
+  const v = layouts?.version;
+  return Number.isInteger(v) && v > 0 ? v : 1;
+}
+
+/** A layout as it is saved: its breakpoints with LAYOUT_VERSION beside them. */
+export function versionedLayouts(layouts) {
+  return layouts ? { ...layouts, version: LAYOUT_VERSION } : layouts;
+}
+
+/** Version 1 to 2: node panels to their minimum height, then everything moved up. */
+function shrinkNodes(items) {
+  let shrunk = false;
+  const out = items.map((item) => {
+    if (typeof item.i !== 'string' || !item.i.startsWith('node-')) return item;
+    const h = item.minH || NODE_MIN_H;
+    if (item.h === h) return item;
+    shrunk = true;
+    return { ...item, h };
+  });
+  return shrunk ? compactUp(out) : items;
+}
+
+/**
+ * A saved layout, ready to draw: its breakpoints only (the version left out),
+ * legacy keys renamed, retired and duplicate panels dropped, and, when it was
+ * saved before LAYOUT_VERSION, brought up to it (shrinkNodes). The same object
+ * when nothing changed. DashboardView saves the result with its version once
+ * (versionedLayouts), so the step from an older version never runs twice.
+ */
 export function migrateLayouts(layouts) {
   if (!layouts) return null;
 
   const migrated = {};
-  let changed = false;
+  let changed = Object.hasOwn(layouts, 'version');
+  const before = layoutVersion(layouts);
 
-  for (const [bp, items] of Object.entries(layouts)) {
+  for (const [bp, entry] of Object.entries(layouts)) {
+    if (!Array.isArray(entry)) continue;
+    const items = entry;
     // De-dupe `i` per breakpoint, keeping the FIRST occurrence. Renaming a
     // legacy key (e.g. "gateway" → "node-gateway") can collide with an already-
     // migrated "node-gateway" already present in the saved layout, producing two
@@ -182,6 +237,13 @@ export function migrateLayouts(layouts) {
         seen.add(item.i);
         return true;
       });
+    if (before < 2) {
+      const shrunk = shrinkNodes(migrated[bp]);
+      if (shrunk !== migrated[bp]) {
+        migrated[bp] = shrunk;
+        changed = true;
+      }
+    }
   }
 
   return changed ? migrated : layouts;
