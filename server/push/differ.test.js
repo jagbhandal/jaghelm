@@ -751,6 +751,37 @@ test('source words: the issue\'s reason going down; "answering again" coming bac
   );
 });
 
+test('the status check (#440): one source_down at critical on its second failed cycle, one recovery; a blip sends nothing', () => {
+  assert.deepEqual(diffSnapshots(sources({}), sources({ status: 'failing' })), [], 'one failed cycle');
+  assert.deepEqual(sentFor(sources({ status: 'failing' }), sources({ status: 'down' })), [
+    'source_down status critical failing->down',
+  ]);
+  assert.deepEqual(diffSnapshots(sources({ status: 'down' }), sources({ status: 'down' })), []);
+  assert.deepEqual(sentFor(sources({ status: 'down' }), sources({ status: 'ok' })), [
+    'source_recovered status info down->ok',
+  ]);
+  // It builds again after one failed cycle, or the cycle after its recovery: it leaves the snapshot quietly.
+  assert.deepEqual(diffSnapshots(sources({ status: 'failing' }), sources({})), []);
+  assert.deepEqual(diffSnapshots(sources({ status: 'ok' }), sources({})), []);
+});
+
+test('the status check\'s words are its own: nothing comes from a model', () => {
+  const pair = [sources({ status: 'failing' }), sources({ status: 'down' })];
+  const [down] = diffSnapshots(...pair);
+  // A status that even names a source "status" changes nothing.
+  const named = {
+    entities: [{ id: 'sources/status', kind: 'source', name: 'Something', state: 'warn', reason: 'leaked' }],
+  };
+  assert.deepEqual(diffSnapshots(...pair, named), [down]);
+  assert.deepEqual(diffSnapshots(...pair, STATUS), [down]);
+  assert.deepEqual(
+    [down.title, down.node, down.reason],
+    ['JagHelm status check failing', 'status', undefined]
+  );
+  const [back] = diffSnapshots(sources({ status: 'down' }), sources({ status: 'ok' }), named);
+  assert.equal(back.title, 'JagHelm status check recovered');
+});
+
 // ── Determinism ──────────────────────────────────────────────────────────
 
 test('canonical sort: two insertion-order permutations produce byte-identical arrays', () => {
@@ -949,6 +980,8 @@ test('alertStateKey: a level, reachability, status or source change gives a new 
   assert.notEqual(alertStateKey({ ...base, ups: { state: 'on_battery' } }), key);
   assert.notEqual(alertStateKey({ ...base, cron: { 'n1:backup': 'failure' } }), key);
   assert.notEqual(alertStateKey({ ...base, sources: { prometheus: 'failing' } }), key);
+  // The status check's run (#440): the file must keep it for a restart.
+  assert.notEqual(alertStateKey({ ...base, sources: { prometheus: 'ok', status: 'failing' } }), key);
   // When a hold began: the differ reads it (#469), and the file must keep it.
   assert.notEqual(
     alertStateKey({ ...base, hosts: { n1: { ...base.hosts.n1, heldSince: { mem: 1 } } } }),

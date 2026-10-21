@@ -216,9 +216,11 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, upgrade 
  * it (buildSnapshot, #232, #292). Advancing to that snapshot keeps them for the
  * next cycle too, however long the failure. `status` is the model the snapshot
  * was built from: each event takes its words from it.
- * A builder that returns null has no snapshot to give (the cycle has no status
- * model: refresh.js runStatusAndPush): the cycle is skipped, and nothing is
- * diffed, sent or advanced.
+ * A builder that returns null has no snapshot to give: the cycle is skipped,
+ * and nothing is diffed, sent or advanced. The loop's builder always gives
+ * one (push/snapshot.js cycleSnapshot): for a cycle whose status model threw,
+ * the previous snapshot with the status check's failed cycle counted (#440),
+ * so a model that keeps throwing pages once instead of silencing push.
  *
  * Total error isolation: the entire body is wrapped so it can NEVER reject.
  * It runs inside the background refresh loop and must never break that loop.
@@ -242,7 +244,6 @@ export async function runPushCycle({ buildSnapshotFn, status = null, store, fcm,
     const prev = snapshot.prev();
     const snap = buildSnapshotFn(prev);
     if (snap === null) {
-      // The cycle has no status model (refresh.js runStatusAndPush).
       logger.debug('push cycle skipped: no snapshot this cycle');
       return;
     }
