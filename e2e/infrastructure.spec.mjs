@@ -90,7 +90,13 @@ async function shoot(page, file, { whole = false } = {}) {
   const dir = join(test.info().project.outputDir, 'shots');
   mkdirSync(dir, { recursive: true });
   await page.mouse.move(0, 0);
+  // The phone's tabs are fixed over the page: out of the section's picture.
+  const style = await page.addStyleTag({
+    content: '[data-slot="bottom-tabs"] { visibility: hidden !important; }',
+  });
+  await section(page).evaluate((el) => el.scrollIntoView({ block: 'start' }));
   await section(page).screenshot({ path: `${dir}/${file}.png` });
+  await style.evaluate((el) => el.remove());
   if (whole) {
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: `${dir}/${file}-page.png`, fullPage: true });
