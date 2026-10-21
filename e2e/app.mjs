@@ -27,14 +27,16 @@ export const demo = (path, { method = 'GET', query = {}, scenario = 'incident' }
  * `scenario` (incident by default), with `config` over the demo's display
  * config, and `answers` (a body by path, such as a board's /api/status and
  * /api/services) in place of the demo's. Returns the server's state: set
- * `down` to refuse /api/status, as a backend that can't be reached.
+ * `down` to refuse /api/status, as a backend that can't be reached, or
+ * `expired` to answer it 503, as the server does once its status is past the
+ * cache's TTL (#480).
  */
 export async function openApp(
   page,
   path = '/',
   { down = false, theme = 'dark', scenario = 'incident', config = {}, answers = {} } = {}
 ) {
-  const server = { down };
+  const server = { down, expired: false };
   const origin = new URL(test.info().project.use.baseURL).origin;
   await page.route(
     (url) => url.origin !== origin,
@@ -51,6 +53,8 @@ export async function openApp(
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === '/api/status' && server.down) return route.abort('connectionrefused');
+    if (url.pathname === '/api/status' && server.expired)
+      return route.fulfill({ status: 503, json: { error: 'Status not yet available' } });
     if (url.pathname === '/api/icons/cached') return route.fulfill({ status: 404, json: {} });
     if (Object.hasOwn(answers, url.pathname))
       return route.fulfill({ status: 200, json: answers[url.pathname] });
