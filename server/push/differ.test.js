@@ -436,10 +436,7 @@ test('#469: a reading whose hold ran out leaves silently; one that leaves inside
   // With no clock, no hold has run out.
   assert.equal(diffSnapshots(prev, next).length, 2);
   // A reading with no start (never held) that leaves sends its clear at any time.
-  assert.equal(
-    diffSnapshots(...levels({ 'pool:a': 'warn' }, {}), null, start + 9 * DAY).length,
-    1
-  );
+  assert.equal(diffSnapshots(...levels({ 'pool:a': 'warn' }, {}), null, start + 9 * DAY).length, 1);
 });
 
 test('#448: a host first seen unreachable (no levels) that comes back over its line sends the reading too', () => {

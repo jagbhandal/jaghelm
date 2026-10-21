@@ -264,12 +264,14 @@ test('buildHosts: a reading kept with no level read this cycle carries when its 
     levels: { cpu: 'ok', disk: 'ok', temp: 'ok' },
   });
   // A pool that ends (#468) takes its start with it.
-  const pools = { a: { reachable: true, levels: { 'pool:x': 'warn' }, heldSince: { 'pool:x': NOW } } };
+  const pools = {
+    a: { reachable: true, levels: { 'pool:x': 'warn' }, heldSince: { 'pool:x': NOW } },
+  };
   const calm = statusOf(nodeEntity('a', { state: 'ok', conditions: {} }));
-  assert.deepEqual(
-    buildHosts(calm, pools, () => ({ pools: [], read: true }), NOW + 1).a,
-    { reachable: true, levels: {} }
-  );
+  assert.deepEqual(buildHosts(calm, pools, () => ({ pools: [], read: true }), NOW + 1).a, {
+    reachable: true,
+    levels: {},
+  });
 });
 
 test('buildHosts: a hold with no start (a snapshot written before #469, or a damaged one) starts now; an unreachable or no-data node keeps its holds as they are (#469)', () => {

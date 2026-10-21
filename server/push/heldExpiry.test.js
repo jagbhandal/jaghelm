@@ -191,7 +191,9 @@ test('#469: a snapshot written before #469 (a held level with no heldSince) star
       JSON.stringify({
         services: {},
         monitorOf: {},
-        hosts: { h: { reachable: true, levels: { cpu: 'ok', disk: 'ok', mem: 'ok', temp: 'warn' } } },
+        hosts: {
+          h: { reachable: true, levels: { cpu: 'ok', disk: 'ok', mem: 'ok', temp: 'warn' } },
+        },
         ups: { state: 'online' },
         cron: {},
         sources: { prometheus: 'ok' },

@@ -543,7 +543,10 @@ test('judgeNode: a reading held with no value keeps when its hold began, from it
     now: NOW + DAY - 1,
     thresholds: T,
   });
-  assert.deepEqual([later.state, later.memo.levels.temp, later.memo.held], ['warn', 'warn', { temp: NOW }]);
+  assert.deepEqual(
+    [later.state, later.memo.levels.temp, later.memo.held],
+    ['warn', 'warn', { temp: NOW }]
+  );
   // Read again, it has no hold; the next cycle with no value starts a new one.
   const read = judgeNode(node({ temp: '76' }), {
     prometheusOk: true,
@@ -573,7 +576,10 @@ test('judgeNode: a reading held 24 h is forgotten, its level and CPU run with it
     thresholds: T,
   });
   // Temperature's 24 h are up; CPU's are a millisecond short.
-  assert.deepEqual([v.state, v.reason], ['warn', 'CPU: no reading (warning held until below 85 %)']);
+  assert.deepEqual(
+    [v.state, v.reason],
+    ['warn', 'CPU: no reading (warning held until below 85 %)']
+  );
   assert.equal(Object.hasOwn(v.conditions, 'temp'), false);
   assert.deepEqual(v.memo.levels, { cpu: 'warn', mem: 'ok', disk: 'ok' });
   assert.deepEqual(v.memo.streak, { cpu: { n: 4 } });
@@ -609,8 +615,16 @@ test('judgeNode: a held pool, and a reading whose query fails, are on the same c
     now: NOW,
     thresholds: T,
   });
-  assert.deepEqual([first.conditions.temp, first.memo.levels.temp, first.memo.held], ['unknown', 'warn', { temp: NOW }]);
-  const over = judgeNode(failing, { prometheusOk: true, memo: first.memo, now: NOW + DAY, thresholds: T });
+  assert.deepEqual(
+    [first.conditions.temp, first.memo.levels.temp, first.memo.held],
+    ['unknown', 'warn', { temp: NOW }]
+  );
+  const over = judgeNode(failing, {
+    prometheusOk: true,
+    memo: first.memo,
+    now: NOW + DAY,
+    thresholds: T,
+  });
   assert.deepEqual([over.state, over.conditions.temp], ['unknown', 'unknown'], 'still no reading');
   assert.equal(Object.hasOwn(over.memo.levels, 'temp'), false, 'its level is forgotten');
   assert.equal(over.memo.held, undefined);
