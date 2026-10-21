@@ -85,11 +85,16 @@ function clipping(page) {
   });
 }
 
-async function shoot(page, file) {
+/** The section, and with `page` the whole Overview from the top, for the PR. */
+async function shoot(page, file, { whole = false } = {}) {
   const dir = join(test.info().project.outputDir, 'shots');
   mkdirSync(dir, { recursive: true });
   await page.mouse.move(0, 0);
   await section(page).screenshot({ path: `${dir}/${file}.png` });
+  if (whole) {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: `${dir}/${file}-page.png`, fullPage: true });
+  }
 }
 
 for (const [size, viewport] of Object.entries(VIEWPORTS)) {
@@ -115,7 +120,8 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
             new AxeBuilder({ page }).include('[data-slot="infrastructure-section"]')
           )
         ).toEqual([]);
-        if (size !== 'narrow') await shoot(page, `infrastructure-healthy-cards-${size}-${theme}`);
+        if (size !== 'narrow')
+          await shoot(page, `infrastructure-healthy-cards-${size}-${theme}`, { whole: true });
 
         await section(page).getByRole('radio', { name: 'Table' }).click();
         await expect(section(page).getByRole('table', { name: 'Nodes' })).toBeVisible();
@@ -167,7 +173,8 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
             new AxeBuilder({ page }).include('[data-slot="infrastructure-section"]')
           )
         ).toEqual([]);
-        if (size !== 'narrow') await shoot(page, `infrastructure-incident-cards-${size}-${theme}`);
+        if (size !== 'narrow')
+          await shoot(page, `infrastructure-incident-cards-${size}-${theme}`, { whole: true });
 
         await section(page).getByRole('radio', { name: 'Table' }).click();
         const table = section(page).getByRole('table', { name: 'Nodes' });
