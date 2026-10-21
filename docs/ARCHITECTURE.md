@@ -1702,6 +1702,13 @@ All state is files under the data dir (no DB):
   external edit; read copy-on-read; `POST /api/services/config` validated by Zod.
   `saveConfig` re-serialises the whole file, so a write drops its comments and
   hand formatting.
+  - **A read that yields no usable config is a failed read** (#463): an
+    unparseable file, or one that is empty, comments only or not a mapping
+    (an editor's truncate-then-write), keeps the previous config until the
+    file changes again, with one warning. At boot, with nothing to keep, the
+    board starts empty and the file is left as it is: only a missing file
+    runs first-boot discovery and writes a new one. `nodes: {}` written on
+    purpose is a real config and empties the board.
   - **The config read never carries a credential** (#413).
     `GET /api/services/config` answers with each credential that is set as
     the marker `{ "$stored": true }`, never its value or its `$secret:`
