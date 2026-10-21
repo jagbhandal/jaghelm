@@ -1253,6 +1253,18 @@ function AttentionPanelQuietState() {
   return <AttentionPanel state="ok" counts="32 services, 6 nodes" meta="Last incident 2 d ago" />;
 }
 
+// #298: the Overview's strip filtered on a quiet board.
+function AttentionPanelQuietFilteredState() {
+  return (
+    <AttentionPanel
+      state="ok"
+      counts="All 12 services up · 3 nodes healthy"
+      filter="Nodes"
+      onClearFilter={noop}
+    />
+  );
+}
+
 function AttentionPanelMaintenanceState() {
   return (
     <AttentionPanel
@@ -1789,6 +1801,7 @@ export const RENDERS = Object.freeze({
   'attention-panel-filtered': AttentionPanelFilteredState,
   'attention-panel-filtered-empty': AttentionPanelFilteredEmptyState,
   'attention-panel-quiet': AttentionPanelQuietState,
+  'attention-panel-quiet-filtered': AttentionPanelQuietFilteredState,
   'attention-panel-maintenance': AttentionPanelMaintenanceState,
   'attention-panel-first-run': AttentionPanelFirstRunState,
   'attention-panel-narrow': AttentionPanelNarrowState,

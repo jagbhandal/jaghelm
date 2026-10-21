@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { ageText, alertsBadge, countsText, issueRows, whereOf } from './statusView.js';
+import {
+  ageText,
+  alertsBadge,
+  countsText,
+  issueRows,
+  subsystemCells,
+  subsystemFilter,
+  whereOf,
+} from './statusView.js';
+import { scenarioStatus } from '../../server/testing/statusScenarios.js';
 
 const NOW = 1_782_345_600_000;
 
@@ -75,5 +84,62 @@ describe('statusView', () => {
     expect(alertsBadge(status, 'down')).toBeNull();
     expect(alertsBadge({ issues: [] }, 'ok')).toBeNull();
     expect(alertsBadge(null, 'loading')).toBeNull();
+  });
+});
+
+// The Overview's subsystem strip (#298): the model's subsystems as they are,
+// checked against /api/status as the server's own model builds it
+// (server/testing/statusScenarios.js), never against numbers written here.
+describe('the subsystem strip, from the model', () => {
+  const at = (name) => scenarioStatus(name, { now: NOW });
+
+  /** The model's word for a subsystem: its worst entity's, the ranked issues first. */
+  function modelWord(status, subsystem) {
+    const match = (e) => e.subsystem === subsystem.id && e.state === subsystem.state;
+    return (status.issues.find(match) ?? status.entities.find(match)).word;
+  }
+
+  for (const name of ['healthy', 'incident', 'every-state', 'source-down']) {
+    it(`${name}: a cell per subsystem that has anything, in the model's order, with its state, word and detail`, () => {
+      const status = at(name);
+      const configured = status.subsystems.filter((s) => s.counts.total > 0);
+      expect(configured.length).toBeGreaterThan(0);
+      expect(subsystemCells(status)).toEqual(
+        configured.map((s) => ({
+          key: s.id,
+          label: s.name,
+          state: s.state,
+          word: modelWord(status, s),
+          value: s.detail,
+        }))
+      );
+    });
+  }
+
+  it('leaves out a subsystem with nothing in it, and has no cell on an empty board', () => {
+    const healthy = at('healthy');
+    const none = healthy.subsystems.filter((s) => s.counts.total === 0).map((s) => s.id);
+    expect(none.length).toBeGreaterThan(0);
+    for (const id of none) {
+      expect(subsystemCells(healthy).map((c) => c.key)).not.toContain(id);
+    }
+    expect(subsystemCells(at('first-run'))).toEqual([]);
+    expect(subsystemCells(null)).toEqual([]);
+    expect(subsystemCells({ overall: {}, issues: [] })).toEqual([]);
+  });
+
+  it("names the filter by the model's subsystem, only one the strip shows", () => {
+    const incident = at('incident');
+    const nodes = incident.subsystems.find((s) => s.id === 'nodes');
+    expect(subsystemFilter(incident, 'nodes')).toEqual({
+      id: 'nodes',
+      name: nodes.name,
+      detail: nodes.detail,
+    });
+    const none = incident.subsystems.find((s) => s.counts.total === 0);
+    expect(subsystemFilter(incident, none.id)).toBeNull();
+    expect(subsystemFilter(incident, 'bogus')).toBeNull();
+    expect(subsystemFilter(incident, null)).toBeNull();
+    expect(subsystemFilter(null, 'nodes')).toBeNull();
   });
 });

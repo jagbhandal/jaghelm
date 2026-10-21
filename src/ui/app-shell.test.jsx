@@ -77,6 +77,8 @@ describe('AppShell', () => {
     expect(section).toHaveAttribute('data-theme', 'light');
     expect(section).toHaveAttribute('data-slot', 'shell-section');
     expect(section).toHaveClass('flex', 'flex-col', 'gap-6');
+    // Today's page shows between its children, not the root's own background.
+    expect(section).toHaveClass('bg-transparent');
     // Beside today's view, which stays outside every root.
     expect(root(screen.getByText('an old view'))).toBeNull();
   });

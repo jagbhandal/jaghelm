@@ -65,6 +65,24 @@ export function resolveOverlaps(layout) {
   return sorted;
 }
 
+/**
+ * Move each item up into the space left above it, as far as the items above it
+ * in its columns let it, keeping its x, w and h: the board filtered to one
+ * subsystem (#298) has its panels at the top, in the places they keep among
+ * themselves, with no holes where the others were. Overlaps are resolved first.
+ * Pure: a new list, top to bottom.
+ */
+export function compactUp(layout) {
+  const placed = [];
+  const byTop = resolveOverlaps(layout).sort((a, b) => (a.y !== b.y ? a.y - b.y : a.x - b.x));
+  for (const item of byTop) {
+    let y = item.y;
+    while (y > 0 && !placed.some((p) => collides(p, { ...item, y: y - 1 }))) y -= 1;
+    placed.push(y === item.y ? { ...item } : { ...item, y });
+  }
+  return placed;
+}
+
 /** Bottom row of the layout (y + h of the lowest item), or 0 for empty layouts. */
 export function getBottom(layout) {
   if (!layout || !layout.length) return 0;

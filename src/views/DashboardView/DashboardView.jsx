@@ -20,6 +20,12 @@ import { useAppDataMatching } from './useAppDataMatching';
 import { useEffectiveLayouts } from './useEffectiveLayouts';
 import { useConfiguredPanels, SOURCE_PANEL_KEYS } from './configuredPanels';
 import { sourceBanner } from './sourceHealth';
+import { boardSections, emptyBoardReason, filterLayouts } from './boardFilter';
+import { ShellSection } from '@ui/app-shell';
+import { Panel } from '@ui/panel';
+import { EmptyState } from '@ui/empty-state';
+import { Button } from '@ui/button';
+import { Skeleton } from '@ui/skeleton';
 
 // What the Pipeline panel lists when /api/gitea/activity answered no list.
 const NO_COMMITS = [];
@@ -35,8 +41,23 @@ const NO_COMMITS = [];
  *   - NodePanel             → renders one node card (with Proxmox children)
  *   - HelmGrid              → drag/resize-aware responsive grid
  *   - DndContext            → service-card drag between panels
+ *
+ * `filter`, the subsystem the Overview's strip is filtered to (`{ id, name,
+ * detail }`, the model's, #298), keeps only that subsystem's panels
+ * (boardFilter.js), risen to the top and fixed in place: a filtered board
+ * can't be dragged or resized, since a drag saves the layout it sees. When it
+ * keeps none, a note in their place says why (emptyBoardReason) and offers the
+ * whole board (`onClearFilter`), or, while the panel's source hasn't answered,
+ * a placeholder.
  */
-export default function DashboardView({ refreshKey, tick, active, onOpenSettings }) {
+export default function DashboardView({
+  refreshKey,
+  tick,
+  active,
+  onOpenSettings,
+  filter = null,
+  onClearFilter,
+}) {
   const { config, setConfig } = useConfig();
   // Mobile detection — used to disable drag/resize on small screens
   const mobileRef = useRef(null);
@@ -376,6 +397,28 @@ export default function DashboardView({ refreshKey, tick, active, onOpenSettings
     [customGroups, allServicesFlat, sc, isMobile, groupBanner, retry]
   );
 
+  // The Overview's filter (#298): the panels it keeps. A node's card counts as
+  // a services panel only when it draws a service card of its own (one not
+  // moved into a group), or while it is still loading.
+  const { loadedNodes, nodesWithServices } = useMemo(() => {
+    const loaded = new Set();
+    const withServices = new Set();
+    for (const [nodeKey, node] of Object.entries(serviceData.nodes || {})) {
+      loaded.add(`node-${nodeKey}`);
+      const own = (node.services || []).some(
+        (s) => !claimedContainers.has(`${nodeKey}:${s.container}`)
+      );
+      if (own) withServices.add(`node-${nodeKey}`);
+    }
+    return { loadedNodes: loaded, nodesWithServices: withServices };
+  }, [serviceData, claimedContainers]);
+  const filterId = filter?.id ?? null;
+  const keep = useMemo(
+    () => boardSections(filterId, { loadedNodes, nodesWithServices }),
+    [filterId, loadedNodes, nodesWithServices]
+  );
+  const kept = (key) => !keep || keep(key);
+
   // Human-readable panel names for the grid's keyboard move/resize handle — the
   // raw grid id (e.g. "node-pve1") is a developer key, not something to read to
   // a screen-reader user. Mirrors the visible section titles.
@@ -482,6 +525,25 @@ export default function DashboardView({ refreshKey, tick, active, onOpenSettings
       ));
   }, [serviceData, savedLayouts]);
 
+  // The grid's children and layout, kept to the filter's panels.
+  const gridNodes = keep ? nodeElements.filter((el) => keep(el.key)) : nodeElements;
+  const gridPlaceholders = keep ? nodePlaceholders.filter((el) => keep(el.key)) : nodePlaceholders;
+  const gridGroups = keep ? customGroupElements.filter((el) => keep(el.key)) : customGroupElements;
+  const keptKey = keep
+    ? [
+        ...[...gridNodes, ...gridPlaceholders, ...gridGroups].map((el) => el.key),
+        ...STATIC_PANEL_KEYS.filter((k) => shown[k] && keep(k)),
+      ].join('\n')
+    : null;
+  const gridLayouts = useMemo(
+    () =>
+      keptKey === null
+        ? effectiveLayouts
+        : filterLayouts(effectiveLayouts, new Set(keptKey ? keptKey.split('\n') : [])),
+    [effectiveLayouts, keptKey]
+  );
+  const fixed = isMobile || keep !== null;
+
   return (
     <div className="dashboard-content" ref={mobileRef}>
       <div className="sr-only" role="status" aria-live="polite">
@@ -502,6 +564,19 @@ export default function DashboardView({ refreshKey, tick, active, onOpenSettings
         </div>
       ) : isEmpty ? (
         <DashboardEmptyState onOpenSettings={onOpenSettings} />
+      ) : keptKey === '' ? (
+        <BoardFilterEmpty
+          filter={filter}
+          reason={emptyBoardReason(filter.id, {
+            upsHidden: sc.ups?.visible === false,
+            // `ups` is the last answer's body; a failure is the source's error.
+            upsAnswered: ups != null || sources.ups?.error != null,
+            cronShown,
+            servicesLoaded,
+          })}
+          onClear={onClearFilter}
+          margin={isMobile ? 12 : 16}
+        />
       ) : (
         <DndContext
           sensors={sensors}
@@ -511,25 +586,25 @@ export default function DashboardView({ refreshKey, tick, active, onOpenSettings
         >
           <HelmGrid
             className="layout"
-            layouts={effectiveLayouts}
+            layouts={gridLayouts}
             breakpoints={{ lg: 1200, md: 768, sm: 480 }}
             cols={cols}
             rowHeight={36}
             margin={isMobile ? [12, 12] : [16, 16]}
-            draggable={!isMobile}
+            draggable={!fixed}
             dragHandle=".section-header"
-            resizable={!isMobile}
+            resizable={!fixed}
             onLayoutChange={handleLayoutChange}
             onDrag={handlePanelDrag}
             onDragStop={handlePanelDragStop}
             onResizeStop={handlePanelResizeStop}
             labels={gridLabels}
           >
-            {nodeElements}
-            {nodePlaceholders}
-            {customGroupElements}
+            {gridNodes}
+            {gridPlaceholders}
+            {gridGroups}
 
-            {upsShown && (
+            {upsShown && kept('ups') && (
               <div key="ups">
                 <ErrorBoundary inline itemId="ups" label="UPS panel failed to render">
                   <UPSCard
@@ -540,7 +615,7 @@ export default function DashboardView({ refreshKey, tick, active, onOpenSettings
                 </ErrorBoundary>
               </div>
             )}
-            {pipelineShown && (
+            {pipelineShown && kept('pipeline') && (
               <div key="pipeline">
                 <ErrorBoundary inline itemId="pipeline" label="Pipeline panel failed to render">
                   <GiteaActivity
@@ -550,7 +625,7 @@ export default function DashboardView({ refreshKey, tick, active, onOpenSettings
                 </ErrorBoundary>
               </div>
             )}
-            {sc.todos?.visible !== false && (
+            {shown.todos && kept('todos') && (
               <div key="todos">
                 <ErrorBoundary inline itemId="todos" label="Todos panel failed to render">
                   <TodoCard
@@ -561,7 +636,7 @@ export default function DashboardView({ refreshKey, tick, active, onOpenSettings
                 </ErrorBoundary>
               </div>
             )}
-            {cronShown && (
+            {cronShown && kept('cron-jobs') && (
               <div key="cron-jobs">
                 <ErrorBoundary inline itemId="cron-jobs" label="Cron Jobs panel failed to render">
                   <CronJobs
@@ -572,7 +647,7 @@ export default function DashboardView({ refreshKey, tick, active, onOpenSettings
                 </ErrorBoundary>
               </div>
             )}
-            {sc.quicklaunch?.visible !== false && (
+            {shown.quicklaunch && kept('quicklaunch') && (
               <div key="quicklaunch">
                 <ErrorBoundary
                   inline
@@ -590,6 +665,65 @@ export default function DashboardView({ refreshKey, tick, active, onOpenSettings
           </DragOverlay>
         </DndContext>
       )}
+    </div>
+  );
+}
+
+// What the note says for each reason (emptyBoardReason). The subsystem is set
+// up (the model says so), so no note says it isn't.
+const NOTES = {
+  off: ({ name }, { panel }) => ({
+    title: `${panel} is switched off`,
+    description: `Switch it on in Settings to see ${name} here.`,
+  }),
+  unread: ({ id, name, detail }) => ({
+    title: id === 'power' ? 'No UPS reading on the board' : `Nothing on the board for ${name}`,
+    description: `${name}, as the status reads it: ${detail}.`,
+  }),
+  none: ({ id, name }) => ({
+    title: `No section on the board for ${name}`,
+    description:
+      id === 'integrations'
+        ? "Today's board has none for them yet: an integration's numbers show on its service's card."
+        : "Today's board has none for it yet.",
+  }),
+};
+
+/**
+ * What the board shows when the Overview's filter (#298) keeps none of its
+ * panels, in the new UI, lined up with the board's cards (HelmGrid's margin):
+ * a placeholder while the panel's source hasn't answered, otherwise a note
+ * saying why (NOTES) with "Show the whole board".
+ */
+function BoardFilterEmpty({ filter, reason, onClear, margin }) {
+  if (reason.why === 'loading') {
+    return (
+      <div data-slot="board-filter-empty" aria-busy="true" style={{ margin }}>
+        <ShellSection>
+          <span className="sr-only">Loading the board</span>
+          <Skeleton style={{ height: 120 }} />
+        </ShellSection>
+      </div>
+    );
+  }
+  const { title, description } = NOTES[reason.why](filter, reason);
+  return (
+    <div data-slot="board-filter-empty" style={{ margin }}>
+      <ShellSection>
+        <Panel>
+          <EmptyState
+            title={title}
+            description={description}
+            action={
+              onClear && (
+                <Button variant="secondary" size="sm" onClick={onClear}>
+                  Show the whole board
+                </Button>
+              )
+            }
+          />
+        </Panel>
+      </ShellSection>
     </div>
   );
 }

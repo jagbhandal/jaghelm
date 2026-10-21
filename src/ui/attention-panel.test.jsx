@@ -136,6 +136,28 @@ describe('AttentionPanel', () => {
     expect(screen.queryByRole('list')).toBeNull();
   });
 
+  // #298: a filter from the subsystem strip on a quiet board still says so,
+  // with its Clear, at the end of the line.
+  it('says the filter on the quiet line too, with Clear', async () => {
+    const user = userEvent.setup();
+    const onClearFilter = vi.fn();
+    render(
+      <AttentionPanel
+        state="ok"
+        counts="All 12 services up · 3 nodes healthy"
+        filter="Nodes"
+        onClearFilter={onClearFilter}
+      />
+    );
+    const line = screen.getByRole('region', { name: 'Status' });
+    expect(within(line).getByRole('heading', { name: 'All systems normal' })).toBeInTheDocument();
+    const note = within(line).getByText('Showing Nodes only');
+    expect(note.parentElement).toHaveClass('ml-auto', 'text-body-sm', 'text-text-2');
+    expect(screen.queryByText(/needs attention/)).toBeNull();
+    await user.click(within(line).getByRole('button', { name: 'Clear' }));
+    expect(onClearFilter).toHaveBeenCalledOnce();
+  });
+
   // Spec §6.1: maintenance doesn't break the quiet line; the subsystem detail
   // under it ("1 in maintenance") says what is in maintenance.
   it('stays quiet for maintenance, which is never an issue, and not for a warning', () => {

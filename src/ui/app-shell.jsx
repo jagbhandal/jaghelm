@@ -19,7 +19,9 @@
  *              as the Overview's status over today's board (#297): its own
  *              UiRoot with the shell's switches, its children stacked 24px
  *              apart, as a ShellPage stacks them. No gutter: the page around
- *              it has one.
+ *              it has one. No background either: today's page shows between
+ *              its children (the Overview's status and strip, #298), as it
+ *              does around them.
  *   ShellApps  where the embedded apps are drawn (AppFrames): a region named
  *              by the open app, its `bar` (AppBar) on top, in a root of its
  *              own, and the frames filling the window under them (and above
@@ -101,7 +103,7 @@ function ShellSection({ className, children, ...props }) {
     <UiRoot
       {...switches}
       data-slot="shell-section"
-      className={cn('flex flex-col gap-6', className)}
+      className={cn('flex flex-col gap-6 bg-transparent', className)}
       {...props}
     >
       {children}
