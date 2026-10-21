@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
-import { useRoute, navigate, followLink } from './useRoute.js';
+import { useRoute, useSearchParam, navigate, followLink } from './useRoute.js';
 
 // The router on the History API (#296): the URL is the page. A link pushes an
 // entry, Back and Forward come back through popstate, and a path with no page
@@ -88,6 +88,49 @@ describe('useRoute', () => {
     act(() => navigate('/settings', { replace: true }));
     expect(scrollTo).not.toHaveBeenCalled();
     scrollTo.mockRestore();
+  });
+
+  // The Overview's filter (#298): a new entry, so Back undoes it, without
+  // moving the page under the strip that set it.
+  it('navigate(…, { scroll: false }) pushes an entry and leaves the page where it is', () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    render(<Where />);
+    const before = window.history.length;
+    act(() => navigate('/?subsystem=nodes', { scroll: false }));
+    expect(window.location.search).toBe('?subsystem=nodes');
+    expect(window.history.length).toBe(before + 1);
+    expect(scrollTo).not.toHaveBeenCalled();
+    scrollTo.mockRestore();
+  });
+});
+
+describe('useSearchParam', () => {
+  function Param() {
+    return <p data-testid="param">{String(useSearchParam('subsystem'))}</p>;
+  }
+  const param = () => screen.getByTestId('param').textContent;
+
+  it('reads a query parameter, and follows navigate() and Back', () => {
+    window.history.replaceState(null, '', '/?subsystem=power');
+    render(<Param />);
+    expect(param()).toBe('power');
+    act(() => navigate('/?subsystem=nodes'));
+    expect(param()).toBe('nodes');
+    act(() => navigate('/'));
+    expect(param()).toBe('null');
+    act(() => {
+      window.history.replaceState(null, '', '/?subsystem=jobs');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(param()).toBe('jobs');
+  });
+
+  it('decodes the value, and is null without one', () => {
+    window.history.replaceState(null, '', '/?subsystem=a%20b&x=1');
+    render(<Param />);
+    expect(param()).toBe('a b');
+    act(() => navigate('/?x=1'));
+    expect(param()).toBe('null');
   });
 });
 

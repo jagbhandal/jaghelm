@@ -20,9 +20,10 @@ let notFound; // the requests the demo answered 404, as it answers a path it doe
 
 /**
  * Answer every request as the demo server would, in `scenario`, recording each;
- * `edit` maps a path to a change to the demo's answer to it.
+ * `edit` maps a path to a change to the demo's answer to it. A path in `hold`
+ * is never answered, and one in `fail` is answered 503.
  */
-function routeToDemo(scenario, edit = {}) {
+function routeToDemo(scenario, edit = {}, { hold = [], fail = [] } = {}) {
   requests = [];
   notFound = [];
   vi.stubGlobal(
@@ -31,6 +32,12 @@ function routeToDemo(scenario, edit = {}) {
       const url = new URL(String(input), 'http://demo.test');
       const method = (init.method || 'GET').toUpperCase();
       requests.push(`${method} ${url.pathname}`);
+      if (hold.includes(url.pathname)) return new Promise(() => {});
+      if (fail.includes(url.pathname))
+        return new Response(JSON.stringify({ error: 'unavailable' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        });
       const out = demoResponse({
         method,
         path: url.pathname,
@@ -60,13 +67,14 @@ async function advance(ms) {
  * (2 s). The render, every answer and the timers all run inside act(), so each
  * update is applied before the test looks (and React has nothing to warn of).
  */
-async function renderDemo(scenario, edit) {
-  routeToDemo(scenario, edit);
+async function renderDemo(scenario, edit, { path = '/', ready = 'Network Edge', hold, fail } = {}) {
+  routeToDemo(scenario, edit, { hold, fail });
+  window.history.replaceState(null, '', path);
   await act(async () => {
     render(<App />);
   });
   await advance(3000);
-  expect(screen.getByText('Network Edge')).toBeInTheDocument();
+  expect(screen.getByText(ready)).toBeInTheDocument();
 }
 
 // The header's status link (#296): the lamp's state, and what it says.
@@ -87,6 +95,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  window.history.replaceState(null, '', '/');
   vi.useRealTimers();
   vi.restoreAllMocks();
   // The app marked the server read-only and may have kept changes: start afresh.
@@ -316,5 +325,274 @@ describe("the demo's Overview status", () => {
       `All systems normal${demoStatus('healthy').overall.sentence}`
     );
     expect(screen.queryByRole('region', { name: 'Needs attention' })).toBeNull();
+  });
+});
+
+// The subsystem strip (#298): under the status, a tile per subsystem the
+// model has anything in, each a toggle that filters the rows above and the
+// board below to it, kept in the URL (`?subsystem=`).
+describe("the demo's subsystem strip", () => {
+  const strip = () => screen.getByRole('region', { name: 'Subsystems' });
+  const tile = (name) => within(strip()).getByRole('button', { name: new RegExp(`^${name},`) });
+  const attention = () => screen.getByRole('region', { name: 'Needs attention' });
+  const rows = () => within(attention()).queryAllByRole('listitem');
+  const click = async (el) => {
+    await act(async () => {
+      fireEvent.click(el);
+    });
+  };
+  // Today's panels, by their titles.
+  const NODES = ['Network Edge', 'App Server', 'Storage'];
+  const OTHERS = ['UPS Power', 'Pipeline Activity', 'Checklist', 'Scheduled Jobs', 'Quick Launch'];
+  const drawn = (titles) => titles.filter((t) => screen.queryByText(t));
+
+  /** The model's word for a subsystem: its worst entity's, the ranked issues first. */
+  function modelWord(status, subsystem) {
+    const match = (e) => e.subsystem === subsystem.id && e.state === subsystem.state;
+    return (status.issues.find(match) ?? status.entities.find(match)).word;
+  }
+
+  for (const scenario of ['incident', 'healthy']) {
+    it(`${scenario}: a tile per subsystem the model has anything in, with its state, word and detail`, async () => {
+      await renderDemo(scenario);
+      const status = demoStatus(scenario);
+      const configured = status.subsystems.filter((s) => s.counts.total > 0);
+      const left = status.subsystems.filter((s) => s.counts.total === 0);
+      // The demo sets up no integration: its tile is left out.
+      expect(left.map((s) => s.id)).toEqual(['integrations']);
+
+      const tiles = within(strip()).getAllByRole('button');
+      expect(tiles.map((t) => t.getAttribute('aria-label'))).toEqual(
+        configured.map((s) => `${s.name}, ${modelWord(status, s)}, ${s.detail}`)
+      );
+      configured.forEach((s, n) => {
+        expect(tiles[n]).toHaveAttribute('data-state', s.state);
+        expect(tiles[n]).toHaveTextContent(s.name);
+        expect(tiles[n]).toHaveTextContent(s.detail);
+        expect(tiles[n]).toHaveAttribute('aria-pressed', 'false');
+      });
+      expect(within(strip()).queryByRole('button', { name: /^Integrations/ })).toBeNull();
+
+      // Under the status, in the Overview's status area.
+      const area = document.querySelector('[data-slot="overview-status"]');
+      const top = within(area).getByRole('region', {
+        name: scenario === 'incident' ? 'Needs attention' : 'Status',
+      });
+      expect(area).toContainElement(strip());
+      expect(top.compareDocumentPosition(strip()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+  }
+
+  it('Nodes, clicked: the rows and the board narrow to the nodes; clicked again, all is back', async () => {
+    await renderDemo('incident');
+    const heading = within(attention()).getByRole('heading', { level: 2 }).textContent;
+    expect(rows()).toHaveLength(2);
+
+    await click(tile('Nodes'));
+    expect(tile('Nodes')).toHaveAttribute('aria-pressed', 'true');
+    expect(window.location.search).toBe('?subsystem=nodes');
+    // The headline stays the board's; the rows are the nodes', and there are none.
+    expect(within(attention()).getByRole('heading', { level: 2 })).toHaveTextContent(heading);
+    expect(within(attention()).getByText('Showing Nodes only')).toBeInTheDocument();
+    expect(rows()).toHaveLength(0);
+    expect(within(attention()).getByText('Nothing in Nodes needs attention')).toBeInTheDocument();
+    // The board: the node cards alone.
+    expect(drawn(NODES)).toEqual(NODES);
+    expect(drawn(OTHERS)).toEqual([]);
+
+    await click(tile('Nodes'));
+    expect(tile('Nodes')).toHaveAttribute('aria-pressed', 'false');
+    expect(window.location.search).toBe('');
+    expect(rows()).toHaveLength(2);
+    expect(within(attention()).queryByText(/^Showing/)).toBeNull();
+    expect(drawn(NODES)).toEqual(NODES);
+    expect(drawn(OTHERS)).toEqual(OTHERS);
+  });
+
+  it('Services: its rows, and the panels with service cards; one filter at a time; Clear', async () => {
+    await renderDemo('incident');
+    await click(tile('Services'));
+    expect(rows().map((r) => r.textContent)).toEqual([expect.stringContaining('Jellyfin')]);
+    // Its card is drawn, so its row still leads there.
+    expect(within(rows()[0]).getByRole('link')).toHaveAttribute(
+      'href',
+      `#${entityAnchor('services/apps:jellyfin')}`
+    );
+    expect(drawn(NODES)).toEqual(NODES);
+    expect(drawn(OTHERS)).toEqual([]);
+
+    // Another tile moves the filter there.
+    await click(tile('Backups'));
+    expect(tile('Services')).toHaveAttribute('aria-pressed', 'false');
+    expect(tile('Backups')).toHaveAttribute('aria-pressed', 'true');
+    expect(rows().map((r) => r.textContent)).toEqual([expect.stringContaining('nightly-backup')]);
+    expect(drawn(NODES)).toEqual([]);
+    expect(drawn(OTHERS)).toEqual(['Scheduled Jobs']);
+
+    await click(within(attention()).getByRole('button', { name: 'Clear' }));
+    expect(window.location.search).toBe('');
+    expect(rows()).toHaveLength(2);
+    expect(drawn(OTHERS)).toEqual(OTHERS);
+  });
+
+  it('by keyboard: Space on a tile filters, Enter on it again clears', async () => {
+    await renderDemo('incident');
+    vi.useRealTimers();
+    const user = userEvent.setup();
+    tile('Power').focus();
+    await user.keyboard(' ');
+    expect(tile('Power')).toHaveAttribute('aria-pressed', 'true');
+    expect(window.location.search).toBe('?subsystem=power');
+    expect(drawn(OTHERS)).toEqual(['UPS Power']);
+    expect(drawn(NODES)).toEqual([]);
+    expect(document.activeElement).toBe(tile('Power'));
+    await user.keyboard('{Enter}');
+    expect(tile('Power')).toHaveAttribute('aria-pressed', 'false');
+    expect(drawn(OTHERS)).toEqual(OTHERS);
+  });
+
+  it('the filter is the URL: a link opens filtered, and Back and Forward follow it', async () => {
+    await renderDemo('incident', undefined, { path: '/?subsystem=jobs', ready: 'Scheduled Jobs' });
+    expect(tile('Jobs')).toHaveAttribute('aria-pressed', 'true');
+    expect(drawn(NODES)).toEqual([]);
+    expect(rows()).toHaveLength(0);
+
+    await act(async () => {
+      window.history.replaceState(null, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(tile('Jobs')).toHaveAttribute('aria-pressed', 'false');
+    expect(drawn(NODES)).toEqual(NODES);
+
+    await act(async () => {
+      window.history.replaceState(null, '', '/?subsystem=nodes');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(tile('Nodes')).toHaveAttribute('aria-pressed', 'true');
+    expect(drawn(OTHERS)).toEqual([]);
+  });
+
+  it.each(['/?subsystem=integrations', '/?subsystem=bogus', '/?subsystem='])(
+    "a subsystem the strip doesn't show in the URL (%s): the whole board, and the URL drops it",
+    async (path) => {
+      window.history.replaceState(null, '', '/');
+      const entries = window.history.length;
+      await renderDemo('incident', undefined, { path });
+      expect(within(strip()).queryByRole('button', { pressed: true })).toBeNull();
+      expect(within(attention()).queryByText(/^Showing/)).toBeNull();
+      expect(drawn(NODES)).toEqual(NODES);
+      expect(drawn(OTHERS)).toEqual(OTHERS);
+      // Replaced, not a new entry: Back doesn't return to it, and it can't
+      // filter the page later, once that subsystem is set up.
+      expect(window.location.pathname + window.location.search).toBe('/');
+      expect(window.history.length).toBe(entries);
+    }
+  );
+
+  // Nothing of the subsystem is on the board. It is set up (the strip shows
+  // it), so the note never says it isn't: it says why.
+  const note = () => document.querySelector('[data-slot="board-filter-empty"]');
+  const NOT_SET_UP = /none yet|not set up|isn't set up/i;
+
+  it('a filter whose panel is switched off says so, and offers the whole board', async () => {
+    await renderDemo(
+      'incident',
+      { '/api/display-config': (config) => ({ ...config, showCronJobs: false }) },
+      { path: '/?subsystem=backups', ready: 'Showing Backups only' }
+    );
+    expect(drawn(NODES)).toEqual([]);
+    expect(drawn(OTHERS)).toEqual([]);
+    expect(note()).toHaveTextContent(
+      'Scheduled Jobs is switched offSwitch it on in Settings to see Backups here.'
+    );
+    expect(note()).not.toHaveTextContent(NOT_SET_UP);
+    await click(within(note()).getByRole('button', { name: 'Show the whole board' }));
+    expect(window.location.search).toBe('');
+    expect(drawn(NODES)).toEqual(NODES);
+    expect(note()).toBeNull();
+  });
+
+  it("Power before /api/ups answers: a placeholder, never a note that it isn't set up", async () => {
+    await renderDemo('incident', undefined, {
+      path: '/?subsystem=power',
+      ready: 'Showing Power only',
+      hold: ['/api/ups'],
+    });
+    expect(tile('Power')).toHaveAttribute('aria-pressed', 'true');
+    expect(note()).toHaveAttribute('aria-busy', 'true');
+    expect(note()).toHaveTextContent(/^Loading the board$/);
+    expect(note()).not.toHaveTextContent(NOT_SET_UP);
+    expect(drawn(NODES)).toEqual([]);
+  });
+
+  it('Power with /api/ups failing: no UPS reading, with what the status says, never "none yet"', async () => {
+    await renderDemo('incident', undefined, {
+      path: '/?subsystem=power',
+      ready: 'Showing Power only',
+      fail: ['/api/ups'],
+    });
+    const power = demoStatus('incident').subsystems.find((s) => s.id === 'power');
+    expect(note()).toHaveTextContent(
+      `No UPS reading on the boardPower, as the status reads it: ${power.detail}.`
+    );
+    expect(note()).not.toHaveTextContent(NOT_SET_UP);
+    expect(note()).not.toHaveTextContent(/switched off/);
+    expect(
+      within(note()).getByRole('button', { name: 'Show the whole board' })
+    ).toBeInTheDocument();
+  });
+
+  it('Services with a saved layout while /api/services is out: its nodes loading, no note', async () => {
+    const lg = ['edge', 'apps', 'storage'].map((n, k) => ({
+      i: `node-${n}`,
+      x: k * 8,
+      y: 0,
+      w: 8,
+      h: 8,
+    }));
+    await renderDemo(
+      'incident',
+      { '/api/display-config': (config) => ({ ...config, gridLayout: { lg } }) },
+      { path: '/?subsystem=services', ready: 'Showing Services only', hold: ['/api/services'] }
+    );
+    expect(screen.getByText('Loading edge…')).toBeInTheDocument();
+    expect(screen.getByText('Loading storage…')).toBeInTheDocument();
+    expect(note()).toBeNull();
+  });
+
+  // A node whose services all moved into a custom group draws no service card
+  // of its own: Services leaves its card out and keeps the group; Nodes keeps
+  // every node card and leaves the group out.
+  it('a node whose services all moved into a group: Services keeps the group, not the node', async () => {
+    const group = {
+      id: 'edge-apps',
+      title: 'Edge apps',
+      containers: ['edge:adguard-home', 'edge:nginx-proxy-manager', 'edge:wireguard'],
+    };
+    await renderDemo(
+      'incident',
+      { '/api/display-config': (config) => ({ ...config, customGroups: [group] }) },
+      { ready: 'Edge apps' }
+    );
+    await click(tile('Services'));
+    expect(drawn(['Edge apps', ...NODES])).toEqual(['Edge apps', 'App Server', 'Storage']);
+    await click(tile('Nodes'));
+    expect(drawn(['Edge apps', ...NODES])).toEqual(NODES);
+    await click(tile('Nodes'));
+    expect(drawn(['Edge apps', ...NODES])).toEqual(['Edge apps', ...NODES]);
+  });
+
+  // A drag or resize saves the layout it sees, so a filtered board can't be
+  // rearranged: it would save the board without the panels it hides.
+  it('a filtered board has no move handles, so its layout is never saved without the rest', async () => {
+    await renderDemo('incident');
+    const handles = () => screen.queryAllByRole('button', { name: /^Reposition / });
+    const all = handles().length;
+    expect(all).toBeGreaterThan(5);
+    await click(tile('Nodes'));
+    expect(handles()).toEqual([]);
+    expect(document.querySelectorAll('.helmgrid-resize-handle')).toHaveLength(0);
+    await click(tile('Nodes'));
+    expect(handles()).toHaveLength(all);
   });
 });

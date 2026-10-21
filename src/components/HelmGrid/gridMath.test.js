@@ -15,6 +15,7 @@ import {
   nudge,
   grow,
   autoArrange,
+  compactUp,
 } from './gridMath.js';
 
 // Shared fixtures. gap is [horizontal, vertical] in px.
@@ -342,4 +343,32 @@ test('autoArrange preserves size/min fields, leaves no overlaps, and handles emp
       assert.equal(collides(out[i], out[j]), false);
     }
   }
+});
+
+// ── compactUp (#298: the Overview's board, filtered to a subsystem) ─────────
+
+const at = (i, x, y, w, h) => ({ i, x, y, w, h });
+
+test('compactUp moves each panel up into the space left above it, keeping columns and sizes', () => {
+  // Nodes on top were filtered out: the UPS and Scheduled Jobs, side by side
+  // further down, rise to the top, still side by side.
+  const out = compactUp([at('ups', 0, 16, 12, 5), at('cron-jobs', 12, 16, 12, 7)]);
+  assert.deepEqual(out, [at('ups', 0, 0, 12, 5), at('cron-jobs', 12, 0, 12, 7)]);
+});
+
+test('compactUp keeps the order: a panel never rises past one above it in its columns', () => {
+  const out = compactUp([
+    at('a', 0, 0, 12, 5),
+    at('b', 0, 9, 24, 5), // a hole of 4 rows above it
+    at('c', 12, 20, 12, 3), // could fit beside a, but b is in the way
+  ]);
+  assert.deepEqual(out, [at('a', 0, 0, 12, 5), at('b', 0, 5, 24, 5), at('c', 12, 10, 12, 3)]);
+});
+
+test('compactUp resolves overlaps first, and leaves the input alone', () => {
+  const input = [at('a', 0, 2, 24, 4), at('b', 0, 3, 24, 4)];
+  const copy = structuredClone(input);
+  assert.deepEqual(compactUp(input), [at('a', 0, 0, 24, 4), at('b', 0, 4, 24, 4)]);
+  assert.deepEqual(input, copy);
+  assert.deepEqual(compactUp([]), []);
 });

@@ -12,6 +12,7 @@
  *   issues    the IssueRow `issue`s, each with its own `id`, and `onOpen`
  *             or `href` to open it
  *   filter, onClearFilter   the subsystem the list is filtered to, and Clear
+ *             (the quiet line says it too: the board under it is filtered)
  *   meta      the quiet line's caption ("Last incident 2 d ago")
  *   titleAs   the heading's element: h1, as the Overview's own heading
  *
@@ -21,7 +22,8 @@
  * `text-2`, the sentence under them, then the list of IssueRows; filtered to a
  * subsystem with none, one quiet line says so. Otherwise it is the mock's
  * quiet line: a lamp, "All systems normal" in `text-1`, the counts, and
- * `meta`. Healthy stays quiet (rule 3): no green word. Maintenance doesn't
+ * `meta`; with a filter, "Showing … only" and Clear at its end (#298), as
+ * the board under it is filtered. Healthy stays quiet (rule 3): no green word. Maintenance doesn't
  * break the quiet line either (§6.1): the heading still says all is normal,
  * the lamp is the wrench, and the strip's tile under the line says what is in
  * maintenance. An empty board (`EMPTY`: nothing is set up, #449) is the quiet
@@ -118,6 +120,7 @@ function UiAttentionPanel({
 
   if (quiet) {
     const said = word || (empty ? counts || EMPTY_SENTENCE : 'All systems normal');
+    const filtered = Boolean(filter);
     return (
       <section
         data-slot="attention-panel"
@@ -133,7 +136,19 @@ function UiAttentionPanel({
         {!empty && <StatusLamp state={s} decorative />}
         <Title className="text-title-xs">{said}</Title>
         {counts && counts !== said && <span className="text-text-2">{counts}</span>}
-        {meta && <span className="ml-auto text-caption text-text-3">{meta}</span>}
+        {filtered && (
+          <span className="ml-auto flex items-center gap-2 text-body-sm text-text-2">
+            <span>Showing {filter} only</span>
+            {onClearFilter && (
+              <Button variant="ghost" size="sm" tone="accent" onClick={onClearFilter}>
+                Clear
+              </Button>
+            )}
+          </span>
+        )}
+        {meta && (
+          <span className={cn('text-caption text-text-3', !filtered && 'ml-auto')}>{meta}</span>
+        )}
       </section>
     );
   }

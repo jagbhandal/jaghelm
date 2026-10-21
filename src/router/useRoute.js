@@ -6,8 +6,12 @@
  *   useRoute()            the open route and its params; re-renders on a
  *                         navigation or Back and Forward. A path with no page
  *                         is replaced by the Overview's.
+ *   useSearchParam(name)  a query parameter of the URL (the Overview's
+ *                         `?subsystem=` filter, #298), or null; re-renders
+ *                         when it changes.
  *   navigate(to, opts)    push `to` (or replace, with { replace: true });
- *                         nothing when it is the page already open.
+ *                         nothing when it is the page already open. A push
+ *                         starts at the top unless { scroll: false }.
  *   followLink(e, href)   a link's onClick: navigates in the page on a plain
  *                         left click and leaves a modified or middle click to
  *                         the browser, so "open in a new tab" still works.
@@ -34,18 +38,34 @@ export function useLocationPath() {
 }
 
 /**
- * Open `to`, a path in this app. A new page starts at the top; Back restores
- * where the browser left it.
+ * The query parameter `name` of the URL, decoded, or null without one. A
+ * string, so an unchanged value re-renders nothing.
+ *
+ * @param {string} name
+ * @returns {string | null}
+ */
+export function useSearchParam(name) {
+  return useSyncExternalStore(
+    subscribe,
+    () => new URLSearchParams(window.location.search).get(name),
+    () => null
+  );
+}
+
+/**
+ * Open `to`, a path in this app. A new page starts at the top, unless `scroll`
+ * is false (a change within the page, such as the Overview's filter); Back
+ * restores where the browser left it.
  *
  * @param {string} to
- * @param {{ replace?: boolean }} [options]
+ * @param {{ replace?: boolean, scroll?: boolean }} [options]
  */
-export function navigate(to, { replace = false } = {}) {
+export function navigate(to, { replace = false, scroll = !replace } = {}) {
   const here = window.location.pathname + window.location.search + window.location.hash;
   if (to === here) return;
   if (replace) window.history.replaceState(null, '', to);
   else window.history.pushState(null, '', to);
-  if (!replace) window.scrollTo(0, 0);
+  if (scroll) window.scrollTo(0, 0);
   for (const listener of [...listeners]) listener();
 }
 
