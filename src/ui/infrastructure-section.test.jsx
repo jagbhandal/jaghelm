@@ -133,6 +133,33 @@ describe('InfrastructureSection', () => {
     expect(within(section()).queryAllByRole('article')).toEqual([]);
   });
 
+  it('narrower than the table (a phone): the cards, with every state and reading in view, and no toggle', () => {
+    const at = (width) =>
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
+        return new DOMRect(0, 0, this.dataset?.slot === 'infrastructure-section' ? width : 0, 0);
+      });
+    const spy = at(358);
+    const { unmount } = render(
+      <InfrastructureSection nodes={NODES} view="table" onViewChange={() => {}} />
+    );
+    expect(section()).toHaveAttribute('data-view', 'cards');
+    expect(within(section()).queryByRole('table')).toBeNull();
+    expect(within(section()).queryByRole('radiogroup')).toBeNull();
+    const nas = within(section()).getByRole('article', { name: 'Storage' });
+    expect(within(nas).getByText('Warning')).toBeInTheDocument();
+    expect(nas.querySelector('[data-reading="disk"]')).toHaveAttribute('data-state', 'warn');
+    unmount();
+    spy.mockRestore();
+
+    // Wide enough again: the table it was asked for, and the toggle.
+    const wide = at(1100);
+    render(<InfrastructureSection nodes={NODES} view="table" onViewChange={() => {}} />);
+    expect(section()).toHaveAttribute('data-view', 'table');
+    expect(within(section()).getByRole('table', { name: 'Nodes' })).toBeInTheDocument();
+    expect(within(section()).getByRole('radiogroup', { name: 'Node view' })).toBeInTheDocument();
+    wide.mockRestore();
+  });
+
   it('loading: busy, placeholder cards, no count and no nodes', () => {
     const { container } = render(
       <InfrastructureSection nodes={[]} count="2 nodes" loading onViewChange={() => {}} />
