@@ -162,12 +162,7 @@ function InfrastructureSection({
       {loading ? (
         <Loading />
       ) : table ? (
-        <Table
-          aria-labelledby={`${id}-title`}
-          columns={COLUMNS}
-          rows={nodes}
-          minWidth={720}
-        />
+        <Table aria-labelledby={`${id}-title`} columns={COLUMNS} rows={nodes} minWidth={720} />
       ) : (
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
           {nodes.map((node) => (

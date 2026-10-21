@@ -120,7 +120,9 @@ describe('the Infrastructure section, from the model', () => {
   it("with pushThresholds moving the lines: each meter's lines are the ones /api/status serves", () => {
     const pushThresholds = { disk: 0.8, mem: 0.85 };
     const { status, services } = nasDiskIncident({ now: NOW, pushThresholds });
-    expect(status.thresholds).toEqual(JSON.parse(JSON.stringify(resolveThresholds(pushThresholds))));
+    expect(status.thresholds).toEqual(
+      JSON.parse(JSON.stringify(resolveThresholds(pushThresholds)))
+    );
     const nas = infrastructureNodes({ status, services, ...C }).find((n) => n.key === 'storage');
     expect(reading(nas, 'disk')).toMatchObject({ warn: 80, crit: 95, band: 5, state: 'warn' });
     expect(reading(nas, 'mem')).toMatchObject({ warn: 85, band: 5 });

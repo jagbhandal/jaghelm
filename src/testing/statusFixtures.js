@@ -14,7 +14,11 @@ import {
 } from '../../server/testing/statusFixtures.js';
 import { scenarioStatus } from '../../server/testing/statusScenarios.js';
 import { demoHistory, demoStatusCycles } from '../../server/demoFixtures.js';
-import { createStatusTracker, readStatusInputs, resolveThresholds } from '../../server/status/index.js';
+import {
+  createStatusTracker,
+  readStatusInputs,
+  resolveThresholds,
+} from '../../server/status/index.js';
 
 const services = (nodeName, list) =>
   list.map(([name, status]) =>
@@ -89,7 +93,12 @@ export const FIRST_RUN = scenarioStatus('first-run', { now: Date.parse('2026-10-
  * @param {{ scenario?: 'incident' | 'healthy', storage?: Record<string, string>,
  *   pushThresholds?: object, now?: number }} [opts]
  */
-export function demoBoard({ scenario = 'incident', storage = {}, pushThresholds, now = Date.now() } = {}) {
+export function demoBoard({
+  scenario = 'incident',
+  storage = {},
+  pushThresholds,
+  now = Date.now(),
+} = {}) {
   const tracker = createStatusTracker();
   let status = null;
   let services = null;

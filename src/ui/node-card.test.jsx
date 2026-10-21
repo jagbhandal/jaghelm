@@ -48,7 +48,13 @@ describe('NodeCard', () => {
 
   it('healthy: the lamp alone, named by the word, and no reason', () => {
     const { container } = render(
-      <NodeCard name="vm" state="ok" word="Healthy" reason="Healthy" readings={READINGS.slice(0, 2)} />
+      <NodeCard
+        name="vm"
+        state="ok"
+        word="Healthy"
+        reason="Healthy"
+        readings={READINGS.slice(0, 2)}
+      />
     );
     const state = container.querySelector('[data-slot="node-state"]');
     expect(within(state).getByRole('img', { name: 'Healthy' })).toBeInTheDocument();

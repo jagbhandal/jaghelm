@@ -211,6 +211,21 @@ export const CATALOG = Object.freeze([
     'Chart colours: the six slots and the ramp, on bg, surface-1 and surface-2'
   ),
 
+  // The Overview's sections (#299)
+  s('infrastructure', 'Overview', 'InfrastructureSection: cards, every node healthy', {
+    accent: true,
+  }),
+  s(
+    'infrastructure-incident',
+    'Overview',
+    'InfrastructureSection: cards, a warning, a critical node and one with no signal',
+    { accent: true }
+  ),
+  s('infrastructure-table', 'Overview', 'InfrastructureSection: the table, in the incident', {
+    accent: true,
+  }),
+  s('infrastructure-narrow', 'Overview', "InfrastructureSection: a phone's width, a card a row"),
+
   // Shell (#296)
   s(
     'app-header',

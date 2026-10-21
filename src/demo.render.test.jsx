@@ -652,11 +652,13 @@ describe("the demo's Infrastructure section", () => {
       }
       // Above today's board.
       const board = document.querySelector('.helmgrid-item');
-      expect(section().compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(
+        section().compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
     });
   }
 
-  it("the incident: the NAS at 94.6 % disk reads as a warning, 94, and its row leads to its card", async () => {
+  it('the incident: the NAS at 94.6 % disk reads as a warning, 94, and its row leads to its card', async () => {
     const board = nasDiskIncident({ now: Date.now() });
     await renderDemo('incident', {
       '/api/status': () => board.status,

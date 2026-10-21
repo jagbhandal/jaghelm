@@ -97,16 +97,11 @@ describe('InfrastructureSection', () => {
   it('table view: a table named by the heading, a row per node, readings as the meters print them', () => {
     render(<InfrastructureSection nodes={NODES} view="table" onViewChange={() => {}} />);
     const table = within(section()).getByRole('table', { name: 'Infrastructure' });
-    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
-      'Node',
-      'Role',
-      'CPU',
-      'Memory',
-      'Disk',
-      'Temp',
-      'Services',
-      'State',
-    ]);
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent)
+    ).toEqual(['Node', 'Role', 'CPU', 'Memory', 'Disk', 'Temp', 'Services', 'State']);
     const rows = within(table).getAllByRole('row').slice(1);
     expect(rows).toHaveLength(2);
     const storage = rows[1];
