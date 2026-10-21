@@ -18,6 +18,14 @@ describe('meterState', () => {
     expect(meterState(140, disk)).toBe('crit');
   });
 
+  it("compares on the model's grid: a reading exactly on a line is on it (#450)", () => {
+    // 29 % read back from a fraction is 28.999999999999996; the meter and the
+    // model both compare whole hundredths (server/status/readings.js atOrOver).
+    expect(meterState(0.29 * 100, { warn: 29 })).toBe('warn');
+    expect(meterState(91.29, { warn: 91.3 })).toBe('ok');
+    expect(meterState(91.3, { warn: 91.3 })).toBe('warn');
+  });
+
   it('reads only the thresholds it is given', () => {
     expect(meterState(99, { warn: 90 })).toBe('warn'); // CPU and memory: no crit
     expect(meterState(99, { crit: 95 })).toBe('crit');
@@ -107,11 +115,60 @@ describe('MetricMeter', () => {
     expect(screen.getByRole('meter')).toHaveAttribute('aria-valuemax', '200');
   });
 
-  it('rounds the printed value unless given its own text', () => {
+  it("prints the value rounded down unless given its own text: the model's one rule (#450)", () => {
     const { rerender } = render(<MetricMeter label="CPU" value={33.6} />);
-    expect(screen.getByText('34%')).toBeInTheDocument();
+    expect(screen.getByText('33%')).toBeInTheDocument();
     rerender(<MetricMeter label="CPU" value={33.6} valueText="33.6 %" />);
     expect(screen.getByText('33.6 %')).toBeInTheDocument();
+  });
+
+  it('never prints a number at or over a line the reading is under: 94.6 % by a 95 % line is 94 (#450)', () => {
+    const cases = [
+      [94.6, '94%', 'warn', '94%, warning above 90%'],
+      [95, '95%', 'crit', '95%, critical above 95%'],
+      [95.4, '95%', 'crit', '95%, critical above 95%'],
+      [89.9, '89%', 'ok', '89%'],
+    ];
+    for (const [value, shown, state, said] of cases) {
+      const { unmount } = render(<MetricMeter label="Disk" value={value} warn={90} crit={95} />);
+      const meter = screen.getByRole('meter', { name: 'Disk' });
+      expect(screen.getByText(shown), `${value}`).toBeInTheDocument();
+      expect(meter, `${value}`).toHaveAttribute('data-state', state);
+      expect(meter, `${value}`).toHaveAttribute('aria-valuetext', said);
+      unmount();
+    }
+  });
+
+  it('prints a reading under 0 as 0, as the model reads it (#450)', () => {
+    // CPU is 100 less the idle rate, which can come out at −0.3.
+    render(<MetricMeter label="CPU" value={-0.3} warn={90} />);
+    expect(screen.getByText('0%')).toBeInTheDocument();
+    expect(screen.getByRole('meter')).toHaveAttribute('aria-valuetext', '0%');
+  });
+
+  it("beside a line with a fraction, prints the reading to that line's decimals (#450)", () => {
+    const cases = [
+      [87.4, '87.4%', 'ok'],
+      [87.5, '87.5%', 'warn'],
+      [87.6, '87.6%', 'warn'],
+      [92, '92%', 'warn'],
+    ];
+    for (const [value, shown, state] of cases) {
+      const { unmount } = render(<MetricMeter label="Disk" value={value} warn={87.5} crit={95} />);
+      expect(screen.getByText(shown), `${value}`).toBeInTheDocument();
+      expect(screen.getByRole('meter'), `${value}`).toHaveAttribute('data-state', state);
+      unmount();
+    }
+    expect(
+      render(<MetricMeter label="Disk" value={87.6} warn={87.5} crit={95} />).container.firstChild
+    ).toHaveAttribute('aria-valuetext', '87.6%, warning above 87.5%');
+  });
+
+  it('takes the hysteresis as `band`, so a reading held over a fractional clear line reads over it (#450)', () => {
+    render(<MetricMeter label="Disk" value={87.6} warn={90} crit={95} band={2.5} state="warn" />);
+    const meter = screen.getByRole('meter', { name: 'Disk' });
+    expect(screen.getByText('87.6%')).toHaveClass('text-warn-fg');
+    expect(meter).not.toHaveAttribute('band');
   });
 
   it("has no reading: an empty track, a no-signal dash, said as 'No data', never a meter", () => {

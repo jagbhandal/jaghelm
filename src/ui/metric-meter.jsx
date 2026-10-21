@@ -11,8 +11,14 @@
  * shows without colour.
  *
  * Ported from the Android app's UsageBar: the fill clamps to the track while the
- * value prints as read (rounded, or `valueText`); no reading (null) draws an
- * empty track and a dash in the no-signal colour. UsageBar's fixed 75/90 steps give way to `warn` and
+ * value prints as read, or as `valueText`; no reading (null) draws an empty
+ * track and a dash in the no-signal colour. The value prints by the status
+ * model's one rule for a reading (`shownReading`, server/status/readings.js,
+ * #450), the one its reasons use: rounded down, so 94.6 by a 95 line reads 94,
+ * never at a line it is under; beside a line with a fraction (87.5), to that
+ * line's decimals. `band` is the hysteresis in the same unit (readingLines
+ * gives it), so a reading held over a clear line with a fraction reads over it
+ * too. UsageBar's fixed 75/90 steps give way to `warn` and
  * `crit`, in the reading's unit, and the server's own state, when given, wins
  * over them (its hysteresis keeps a warning until the reading drops 5 points).
  * A screen gives a node reading's meter the lines /api/status serves, the ones
@@ -26,6 +32,7 @@
  * "Data components").
  */
 import { useId } from 'react';
+import { atOrOver, lineNumber, shownReading } from '../../server/status/readings.js';
 import { cn } from './lib/utils.js';
 
 const fills = {
@@ -47,11 +54,13 @@ const isReading = (v) => typeof v === 'number' && Number.isFinite(v);
 /**
  * The state of a reading against its thresholds: `crit` at or above `crit`,
  * `warn` at or above `warn`, `ok` below both, `unknown` without a reading.
+ * "At or above" is the status model's own comparison (atOrOver, #450): on its
+ * grid of whole hundredths, so a reading exactly on a line is on it.
  */
 export function meterState(value, { warn, crit } = {}) {
   if (!isReading(value)) return 'unknown';
-  if (isReading(crit) && value >= crit) return 'crit';
-  if (isReading(warn) && value >= warn) return 'warn';
+  if (isReading(crit) && atOrOver(value, crit)) return 'crit';
+  if (isReading(warn) && atOrOver(value, warn)) return 'warn';
   return 'ok';
 }
 
@@ -64,6 +73,7 @@ function MetricMeter({
   unit = '%',
   warn,
   crit,
+  band,
   state,
   valueText,
   className,
@@ -72,7 +82,7 @@ function MetricMeter({
   const id = useId();
   const read = isReading(value);
   const s = read && Object.hasOwn(fills, state) ? state : meterState(value, { warn, crit });
-  const shown = valueText ?? (read ? `${Math.round(value)}${unit}` : null);
+  const shown = valueText ?? (read ? `${shownReading(value, { warn, crit, band })}${unit}` : null);
   const pct = read ? clamp((value / max) * 100, 0, 100) : 0;
   // The threshold it leaves the accent at: warn, or crit when there is no warn.
   const turn = isReading(warn) ? warn : isReading(crit) ? crit : null;
@@ -80,11 +90,9 @@ function MetricMeter({
   // The threshold the reading is past, when it is (the server's state may hold a
   // warning below it).
   const limit = s === 'crit' ? crit : s === 'warn' ? warn : null;
-  const passed = isReading(limit) && value >= limit ? limit : null;
-  const said =
-    s === 'ok'
-      ? shown
-      : [shown, passed != null ? `${SAID[s]} above ${passed}${unit}` : SAID[s]].join(', ');
+  const passed = isReading(limit) && atOrOver(value, limit) ? limit : null;
+  const word = passed != null ? `${SAID[s]} above ${lineNumber(passed)}${unit}` : SAID[s];
+  const said = s === 'ok' ? shown : `${shown}, ${word}`;
 
   const meter = read
     ? {

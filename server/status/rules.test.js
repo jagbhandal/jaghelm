@@ -34,7 +34,7 @@ import {
   spanText,
   worstOf,
 } from './rules.js';
-import { DEFAULT_THRESHOLDS as T } from './thresholds.js';
+import { DEFAULT_THRESHOLDS as T, resolveThresholds } from './thresholds.js';
 
 test('the model names the five states exactly as src/ui/lib/status.js does', () => {
   assert.deepEqual([...STATES], [...UI_STATES]);
@@ -182,6 +182,122 @@ for (const [name, n, ctx, state, word, reason] of nodeRows) {
     assert.deepEqual([v.state, v.word, v.reason], [state, word, reason]);
   });
 }
+
+// #450: one rule for showing a reading (status/readings.js shownReading), the
+// one every meter uses: rounded down, so it never shows at or over a line it
+// is under; beside a line with a fraction, to that line's decimals.
+const shownRows = [
+  // name, thresholds, readings, memo levels, state, reason, metric value
+  [
+    '94.6 % under the 95 % crit line',
+    T,
+    { diskPercent: '94.6' },
+    null,
+    'warn',
+    'Disk 94 % (warning above 90 %)',
+    94,
+  ],
+  [
+    '95.0 % on the crit line',
+    T,
+    { diskPercent: '95.0' },
+    null,
+    'crit',
+    'Disk 95 % (critical above 95 %)',
+    95,
+  ],
+  [
+    '95.4 % over the crit line',
+    T,
+    { diskPercent: '95.4' },
+    null,
+    'crit',
+    'Disk 95 % (critical above 95 %)',
+    95,
+  ],
+  ['74.6 °C under the 75 °C line', T, { temp: '74.6' }, null, 'ok', 'Healthy', undefined],
+  [
+    '75.4 °C over the 75 °C line',
+    T,
+    { temp: '75.4' },
+    null,
+    'warn',
+    'Temperature 75 °C (warning above 75 °C)',
+    75,
+  ],
+  [
+    'a disk on a fractional line (pushThresholds.disk 0.875)',
+    resolveThresholds({ disk: 0.875 }),
+    { diskPercent: '87.5' },
+    null,
+    'warn',
+    'Disk 87.5 % (warning above 87.5 %)',
+    87.5,
+  ],
+  [
+    'a disk just over a fractional line',
+    resolveThresholds({ disk: 0.875 }),
+    { diskPercent: '87.6' },
+    null,
+    'warn',
+    'Disk 87.6 % (warning above 87.5 %)',
+    87.6,
+  ],
+  [
+    'a disk just under a fractional line',
+    resolveThresholds({ disk: 0.875 }),
+    { diskPercent: '87.4' },
+    null,
+    'ok',
+    'Healthy',
+    undefined,
+  ],
+  [
+    'memory on a line to a hundredth (pushThresholds.mem 0.9125)',
+    resolveThresholds({ mem: 0.9125 }),
+    { memPercent: '91.3' },
+    null,
+    'warn',
+    'Memory 91.3 % (warning above 91.25 %)',
+    91.3,
+  ],
+  [
+    'CPU on a fractional line, its 2 cycles done',
+    resolveThresholds({ cpu: 0.825 }),
+    { cpu: '82.5' },
+    { cpu: 'warn' },
+    'warn',
+    'CPU 82.5 % (warning above 82.5 % for 2 cycles)',
+    82.5,
+  ],
+  [
+    'held over a fractional clear line (pushThresholds.hysteresis 0.025)',
+    resolveThresholds({ hysteresis: 0.025 }),
+    { diskPercent: '87.6' },
+    { disk: 'warn' },
+    'warn',
+    'Disk 87.6 % (warning until below 87.5 %)',
+    87.6,
+  ],
+];
+
+for (const [name, thresholds, readings, levels, state, reason, value] of shownRows) {
+  test(`judgeNode: a reading as every meter shows it, ${name} (#450)`, () => {
+    const memo = levels ? { levels, streak: { cpu: { n: 1 } } } : null;
+    const v = judgeNode(node(readings), { prometheusOk: true, thresholds, memo });
+    assert.deepEqual([v.state, v.reason, v.metric?.value], [state, reason, value]);
+  });
+}
+
+test('judgeNode: a pool on a fractional line reads as its meter does (#450)', () => {
+  const v = judgeNode(node(), {
+    prometheusOk: true,
+    thresholds: resolveThresholds({ disk: 0.875 }),
+    pools: [{ name: 'tank', percent: '87.6' }],
+  });
+  assert.equal(v.reason, 'Storage pool tank 87.6 % (warning above 87.5 %)');
+  assert.deepEqual(v.metric, { name: 'pool:tank', value: 87.6, unit: '%' });
+});
 
 test('judgeNode: conditions give each reading its state; metric is the worst reading', () => {
   const v = judgeNode(node({ diskPercent: '96.0', memPercent: '91.0', temp: null }), {
@@ -507,6 +623,13 @@ for (const [name, input, state, reason] of containerRows) {
 const upsRows = [
   ['on mains', { status: 1, charge: 100, ok: true }, 'ok', 'On mains'],
   ['on battery', { status: 2, charge: 64.4, ok: true }, 'crit', 'On battery (64 % charge)'],
+  // One rule for a percentage (#450): rounded down, as a meter shows it.
+  [
+    'on battery at 64.6 %',
+    { status: 2, charge: 64.6, ok: true },
+    'crit',
+    'On battery (64 % charge)',
+  ],
   ['on battery, no charge reading', { status: 2, charge: null, ok: true }, 'crit', 'On battery'],
   ['low battery', { status: 3, charge: 9, ok: true }, 'crit', 'Low battery (9 % charge)'],
   ['NUT says unknown', { status: 0, ok: true }, 'unknown', 'NUT reports the UPS status as unknown'],

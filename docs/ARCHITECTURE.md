@@ -1012,9 +1012,34 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   `pushThresholds` over them. A screen reads a meter's lines from them, never
   from a copy of its own: `readingLines(thresholds, reading)`
   (`status/readings.js`, dependency-free so the web imports it) gives a node
-  reading's `{ warn, crit }` in its unit, percent or °C, a storage pool taking
-  the disk's. They change only when the config does, so they don't move a
-  steady board's ETag.
+  reading's `{ warn, crit, band }` in its unit, percent or °C (`band` is the
+  hysteresis), a storage pool taking the disk's. They change only when the
+  config does, so they don't move a steady board's ETag.
+- **A reading as shown** (#450): one rule, `shownReading(value, lines)` in
+  `status/readings.js`, writes every reading in a reason (and a node's or the
+  UPS's `metric.value`), and every meter on the web prints by it, so a meter
+  and a reason never show one reading as two numbers. It rounds down, so a
+  reading never shows at or over a line it hasn't crossed: 94.6 % by the 95 %
+  line is "94", 95.0 is "95". Whole, unless one of the reading's lines, or
+  where a level on it clears (the line less the hysteresis), has a fraction
+  (a hand-edited `pushThresholds`, 0.875): then to that line's decimals, at
+  most two, so 87.6 % by an 87.5 % line is "87.6", never "87", and a reading
+  over a line never reads under it either. Lines are written to a hundredth
+  (`pct`, `lineNumber`). A reading under 0 shows 0, as the model reads usage
+  clamped at 0 (CPU, 100 less the idle rate, can come out at −0.3). Rounding
+  down also keeps a reason, and the ETag, steady while a reading moves inside
+  its whole number.
+- **One comparison with a line** (#450): the model's levels (`levelOf`, its
+  hysteresis clear, CPU's run, the "above" or "until below" of a reason) and a
+  meter's state (`meterState`) all ask `atOrOver` in `status/readings.js`,
+  which compares on one grid, whole hundredths of the display unit
+  (`toHundredths`, rounded once on each side). The model reads usage as
+  fractions and the meter as percents, and a reading parsed from "91.3" and
+  divided by 100 is 0.9129999999999999 while the line 0.913 is not, so compared
+  as they were, a reading exactly on one in eight one-decimal lines was judged
+  under it while the meter drew it on it. Push has no comparison of its own:
+  its differ diffs the model's levels, and a pre-#292 snapshot is read through
+  `levelOf` too.
 - **Issues** are the entities in `crit`, `warn` or `unknown`, plus the failed
   sources: crit before warn before unknown; within a level by subsystem order
   (sources, Services, Nodes, Power, Jobs, Backups, Integrations), then oldest
@@ -1188,9 +1213,8 @@ them on its Node side and hand a page the JSON.
 
 A disagreement fails it unless a named exception (`KNOWN` in each file) covers
 it, where it says. An exception that stops happening fails too, so settling
-one is deleting its entry. Today's: a failed backup is crit on the screen but
-pushes at `warning` (#446, Jag to decide); a meter rounds a reading the model
-rounds down (94.6 % reads "95%" on the meter, "94 %" in the reason, #450). The legacy
+one is deleting its entry. There are none today: #478 settled the failed
+backup's push severity and #450 the meter's number. The legacy
 derivations (`src/utils/thresholds.js`, `mobile/src/data/derive.js`) are
 outside it; #306, #325 and #326 delete them, and Android's screens join it in
 #325.
