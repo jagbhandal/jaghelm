@@ -75,6 +75,39 @@ describe('the Infrastructure section, from the model', () => {
     }
   });
 
+  // #495: with a stale status, no level from it is drawn as current.
+  it('stale: every node and meter no signal, the words, reasons and readings kept, the count how old', () => {
+    const { status, services, history } = nasDiskIncident({ now: NOW });
+    const fresh = infrastructureNodes({ status, services, history });
+    const freshness = { stale: true, note: 'No signal · last known 3 min ago' };
+    const stale = infrastructureNodes({ status, services, history, freshness });
+    expect(stale.map((n) => n.state)).toEqual(fresh.map(() => 'unknown'));
+    for (const [i, n] of stale.entries()) {
+      expect(n).toMatchObject({
+        word: fresh[i].word,
+        reason: fresh[i].reason,
+        services: fresh[i].services,
+        uptime: fresh[i].uptime,
+      });
+      for (const [j, r] of n.readings.entries()) {
+        const was = fresh[i].readings[j];
+        // A reading keeps its number and lines, drawn as no signal.
+        expect(r).toEqual({ ...was, state: was.state == null ? null : 'unknown' });
+      }
+    }
+    const nas = stale.find((n) => n.key === 'storage');
+    expect(nas).toMatchObject({ word: 'Warning', reason: 'Disk 94 % (warning above 90 %)' });
+    expect(reading(nas, 'disk')).toMatchObject({ value: 94.6, state: 'unknown', shown: '94%' });
+    expect(infrastructureCount(stale, freshness)).toBe(
+      '3 nodes · No signal · last known 3 min ago'
+    );
+    // Fresh again: the model's levels.
+    const levels = (nodes) => nodes.map((n) => [n.state, ...n.readings.map((r) => r.state)]);
+    expect(
+      levels(infrastructureNodes({ status, services, history, freshness: { stale: false } }))
+    ).toEqual(levels(fresh));
+  });
+
   it('the incident: the NAS at 94.6 % disk is a warning, its meter warn, and it reads 94', () => {
     const { status, services, history } = nasDiskIncident({ now: NOW });
     const nas = infrastructureNodes({ status, services, history }).find((n) => n.key === 'storage');

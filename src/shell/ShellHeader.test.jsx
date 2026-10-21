@@ -110,11 +110,41 @@ describe('the header says what the status model says', () => {
     expect(status().querySelector('[data-slot="status-word"]')).toBeNull();
   });
 
-  it('the backend unreachable: steel "No signal", whatever it last said', () => {
+  // #480: what it last said stays, as last known, never in its colour.
+  it('the backend unreachable: steel "No signal", and what it last knew, how long ago', () => {
     renderHeader({ status: INCIDENT, reach: 'down' });
-    expect(link()).toHaveAccessibleName("No signal: Can't reach JagHelm");
+    expect(link()).toHaveAccessibleName(
+      'No signal: last known just now: Critical · 2 critical, 1 warning, 1 no signal'
+    );
     expect(link()).toHaveAttribute('data-state', 'unknown');
     expect(screen.getByText('No signal')).toHaveClass('text-unknown-fg');
+    expect(status().querySelector('[data-slot="status-lamp"]')).toHaveAttribute(
+      'data-state',
+      'unknown'
+    );
+    // Its age moves on while the polls fail, as "Updated" does.
+    act(() => {
+      vi.advanceTimersByTime(3 * 60_000);
+    });
+    expect(link()).toHaveAccessibleName(/^No signal: last known 3 min ago: Critical/);
+    expect(screen.getByText('Updated 3 min ago')).toBeInTheDocument();
+  });
+
+  it('healthy, then unreachable: never "All systems normal" on its own, never a green lamp', () => {
+    renderHeader({ status: HEALTHY, reach: 'down' });
+    expect(link()).toHaveAccessibleName('No signal: last known just now: All systems normal');
+    expect(link()).toHaveAttribute('data-state', 'unknown');
+    expect(status().querySelector('[data-state="ok"]')).toBeNull();
+  });
+
+  it('a 503 after a status (past its TTL): No signal, what it last knew', () => {
+    renderHeader({ status: DEGRADED, reach: 'waiting' });
+    expect(link()).toHaveAccessibleName('No signal: last known just now: Warning · 1 warning');
+  });
+
+  it('nothing known, the backend unreachable: No signal, and why', () => {
+    renderHeader({ status: null, reach: 'down', updated: store(null) });
+    expect(link()).toHaveAccessibleName("No signal: Can't reach JagHelm");
   });
 
   it('no status yet (503): No signal, waiting', () => {

@@ -88,6 +88,18 @@ describe('MetricMeter', () => {
     expect(meter).toHaveAttribute('aria-valuetext', '87%, warning');
   });
 
+  // #495: a reading whose status is stale has no current level: no signal,
+  // never judged here against its lines.
+  it('no current level (state unknown): its number in text-2 on a steel fill, said "no signal", never judged', () => {
+    render(<MetricMeter label="Disk" value={94.6} warn={90} crit={95} state="unknown" />);
+    const meter = screen.getByRole('meter', { name: 'Disk' });
+    expect(meter).toHaveAttribute('data-state', 'unknown');
+    expect(fill(meter)).toHaveClass('bg-unknown-solid');
+    expect(fill(meter)).not.toHaveClass('bg-warn-solid');
+    expect(screen.getByText('94%')).toHaveClass('text-text-2');
+    expect(meter).toHaveAttribute('aria-valuetext', '94%, no signal');
+  });
+
   it('is a meter named by its label, its value and any threshold it passed said in words', () => {
     const { rerender } = render(<MetricMeter label="Disk" value={92} warn={90} crit={95} />);
     const meter = screen.getByRole('meter', { name: 'Disk' });
