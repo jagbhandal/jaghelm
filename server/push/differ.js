@@ -543,7 +543,17 @@ function diffSources(prev, next, words, events) {
     const type = down ? 'source_down' : 'source_recovered';
     if (name === STATUS_CHECK) {
       const { title, body, severity } = STATUS_CHECK_TEXT[type];
-      events.push({ type, id: name, node: name, title, body, severity, reason: undefined, prev: before, next: after });
+      events.push({
+        type,
+        id: name,
+        node: name,
+        title,
+        body,
+        severity,
+        reason: undefined,
+        prev: before,
+        next: after,
+      });
       continue;
     }
     const issue = words.entity(`sources/${name}`);
