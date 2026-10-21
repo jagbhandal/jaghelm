@@ -7,7 +7,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { lineNumber, percentOf, readingLines, shownReading } from './readings.js';
+import { node } from '../testing/statusFixtures.js';
+import {
+  atOrOver,
+  lineNumber,
+  percentOf,
+  readingLines,
+  shownReading,
+  toHundredths,
+} from './readings.js';
+import { coerceFraction, judgeNode, levelOf } from './rules.js';
 import { DEFAULT_THRESHOLDS, resolveThresholds } from './thresholds.js';
 
 test('readingLines: each reading the model judges, in its unit, with the defaults', () => {
@@ -104,7 +113,10 @@ test('shownReading: beside a line with a fraction, to its decimals, so a reading
   ];
   for (const [value, shown] of rows) assert.equal(shownReading(value, half), shown, `${value}`);
   // A line to a hundredth (0.9125): two decimals.
-  assert.equal(shownReading(91.249, { warn: 91.25 }), 91.24);
+  assert.equal(shownReading(91.24, { warn: 91.25 }), 91.24);
+  // Finer than a hundredth, a reading is on the grid first, as the model judges it.
+  assert.equal(shownReading(91.249, { warn: 91.25 }), 91.25);
+  assert.equal(shownReading(91.244, { warn: 91.25 }), 91.24);
   assert.equal(shownReading(91.25, { warn: 91.25 }), 91.25);
   // A hysteresis with a fraction (0.025) puts the clear line on a half: a
   // reading held over it must not read under it.
@@ -112,24 +124,116 @@ test('shownReading: beside a line with a fraction, to its decimals, so a reading
   assert.equal(shownReading(87.5, { warn: 90, crit: 95, band: 2.5 }), 87.5);
 });
 
-test('shownReading: on either side of any line to a hundredth, the reading shown is on the same side', () => {
-  const lines = [57, 80, 87.5, 90, 91.25, 95, 99.9];
-  for (const line of lines) {
-    for (const band of [5, 2.5, 0.75]) {
-      const set = { warn: line, band };
-      const clear = lineNumber(line - band);
-      for (let step = -300; step <= 300; step += 1) {
-        // Readings as discovery formats them (one decimal), and to a hundredth.
-        const near = [(line + step / 100).toFixed(2), (line + step / 10).toFixed(1)];
-        for (const value of near.map(Number)) {
-          const shown = shownReading(value, set);
-          assert.equal(shown >= line, value >= line, `${value} beside ${line}: shown ${shown}`);
-          assert.equal(shown >= clear, value >= clear, `${value} beside ${clear}: shown ${shown}`);
-          assert.ok(shown <= value + 1e-9, `${value} shown as ${shown}: never above the reading`);
-        }
+test('shownReading: a reading under 0 shows 0, as the model reads it (#450)', () => {
+  // CPU is 100 − the idle rate, which can come out a little under 0; the model
+  // reads usage clamped to 0 (rules.js coerceFraction).
+  assert.equal(shownReading(-0.3, { warn: 90, band: 5 }), 0);
+  assert.equal(shownReading(-0.3), 0);
+  assert.equal(shownReading(-12, { warn: 87.5 }), 0);
+  assert.equal(coerceFraction('-0.3'), 0);
+  const v = judgeNode(node({ cpu: '-0.3' }), {
+    prometheusOk: true,
+    thresholds: DEFAULT_THRESHOLDS,
+  });
+  assert.equal(v.conditions.cpu, 'ok');
+});
+
+test('atOrOver: a reading and a line compared on one grid, whole hundredths of the unit (#450)', () => {
+  // 91.3 % read as a fraction is 0.9129999999999999 in floating point; the
+  // line 0.913 is not: on the grid both are 9130.
+  assert.ok(91.3 / 100 < 0.913, 'the float error this guards against');
+  assert.equal(atOrOver(91.3 / 100, 0.913, 100), true);
+  assert.equal(atOrOver(91.29 / 100, 0.913, 100), false);
+  assert.equal(atOrOver(91.3, 91.3), true);
+  assert.equal(atOrOver(75, 75), true);
+  assert.equal(atOrOver(74.99, 75), false);
+  // A clear line is on the grid too: 0.95 − 0.05 is 0.8999999999999999.
+  assert.equal(atOrOver(0.9, 0.95 - 0.05, 100), true);
+  assert.deepEqual([91.3, 0.29 * 100, -0.3, 12.345].map(toHundredths), [9130, 2900, -30, 1235]);
+});
+
+// Every one-decimal line from 0.1 % to 99.9 %, as display-config.json holds it
+// (a fraction, 0.913) and /api/status serves it, with readings as discovery
+// formats them (percent strings): exactly on the line and a hundredth either
+// side, through the model as the loop runs it (judgeNode) and the meter's own
+// number and comparison, against the decimal truth.
+const TENTHS = Array.from({ length: 999 }, (_, i) => i + 1);
+const lineOf = (tenths) => Number(`0.${String(tenths).padStart(3, '0')}`);
+const reading = (hundredths) => (hundredths / 100).toFixed(2);
+
+test('every one-decimal line: a reading on it, or a hundredth either side, is judged as the meter shows it (#450)', () => {
+  const wrong = [];
+  for (const tenths of TENTHS) {
+    const served = JSON.parse(JSON.stringify(resolveThresholds({ mem: lineOf(tenths) })));
+    const lines = readingLines(served, 'mem');
+    if (lines.warn !== tenths / 10) wrong.push(`line ${lineOf(tenths)} served as ${lines.warn}`);
+    for (const delta of [-1, 0, 1]) {
+      const r = reading(tenths * 10 + delta);
+      const over = delta >= 0;
+      const model = judgeNode(node({ memPercent: r }), { prometheusOk: true, thresholds: served });
+      const shown = shownReading(Number(r), lines);
+      const at = `${r} % by a ${lines.warn} % line`;
+      if ((model.conditions.mem === 'warn') !== over)
+        wrong.push(`${at}: model ${model.conditions.mem}`);
+      if (atOrOver(Number(r), lines.warn) !== over) wrong.push(`${at}: meter's state`);
+      if (atOrOver(shown, lines.warn) !== over) wrong.push(`${at}: meter shows ${shown}`);
+      if (over && model.metric?.value !== shown)
+        wrong.push(`${at}: reason ${model.metric?.value}, meter ${shown}`);
+    }
+  }
+  assert.deepEqual(wrong, []);
+});
+
+test('every one-decimal line: a level held over its clear line, or a hundredth either side, reads as it is held (#450)', () => {
+  const wrong = [];
+  for (const [hysteresis, bandTenths] of [
+    [0.05, 50],
+    [0.025, 25],
+  ]) {
+    for (const tenths of TENTHS.filter((t) => t > bandTenths)) {
+      const served = JSON.parse(
+        JSON.stringify(resolveThresholds({ mem: lineOf(tenths), hysteresis }))
+      );
+      const lines = readingLines(served, 'mem');
+      const clear = lineNumber(lines.warn - lines.band);
+      for (const delta of [-1, 0, 1]) {
+        const r = reading((tenths - bandTenths) * 10 + delta);
+        const held = delta >= 0;
+        const memo = { levels: { mem: 'warn' }, streak: {} };
+        const model = judgeNode(node({ memPercent: r }), {
+          prometheusOk: true,
+          thresholds: served,
+          memo,
+        });
+        const shown = shownReading(Number(r), lines);
+        const at = `${r} % by a ${clear} % clear line`;
+        if ((model.conditions.mem === 'warn') !== held)
+          wrong.push(`${at}: model ${model.conditions.mem}`);
+        if (atOrOver(shown, clear) !== held) wrong.push(`${at}: shows ${shown}`);
+        if (held && !model.reason.startsWith(`Memory ${shown} % (warning until below ${clear} %)`))
+          wrong.push(`${at}: ${model.reason}`);
       }
     }
   }
+  assert.deepEqual(wrong, []);
+});
+
+test('every line to a hundredth: the model and the meter agree on its side, on it and a hundredth either side (#450)', () => {
+  const wrong = [];
+  for (let hundredths = 1; hundredths < 10000; hundredths += 1) {
+    const line = Number(`0.${String(hundredths).padStart(4, '0')}`);
+    const lines = readingLines(resolveThresholds({ disk: line }), 'disk');
+    for (const delta of [-1, 0, 1]) {
+      const r = reading(hundredths + delta);
+      const over = delta >= 0;
+      const v = Number(r) / 100;
+      if ((levelOf(v, undefined, { warn: line }, 0.05) === 'warn') !== over)
+        wrong.push(`${r} by ${line}: model`);
+      if (atOrOver(shownReading(Number(r), lines), lines.warn) !== over)
+        wrong.push(`${r} by ${lines.warn}: shown ${shownReading(Number(r), lines)}`);
+    }
+  }
+  assert.deepEqual(wrong, []);
 });
 
 test('lineNumber: a line in its unit, to a hundredth, without floating-point noise', () => {

@@ -1137,7 +1137,7 @@ until Phase 4 (#326).
 | Component | Import | Props |
 | --- | --- | --- |
 | `MetricMeter` | `@ui/metric-meter` | `label`; `value` (a number, or null for no reading); `max` (100); `unit` (`%`); `warn`, `crit` (thresholds, in the reading's unit; for a node reading, `readingLines(status.thresholds, reading)`); `band` (the hysteresis, in the same unit: only sets how many decimals print); `state` (the server's, which wins over the thresholds); `valueText` (the printed value; by default the value rounded down, as the model writes it, and the unit) |
-| `meterState` | `@ui/metric-meter` | `(value, { warn, crit })`: `ok`, `warn`, `crit`, or `unknown` without a reading |
+| `meterState` | `@ui/metric-meter` | `(value, { warn, crit })`: `ok`, `warn`, `crit`, or `unknown` without a reading; "at or above" is the status model's comparison, on its grid of hundredths (`atOrOver`) |
 | `Sparkline` | `@ui/sparkline` | `label` (its name; required unless `decorative`); `points` (numbers, or `{ time, value }`); `domain` (`[0, 100]`, or `auto`); `width`, `height` (96 × 24); `area`; `unit`, `formatValue`, `formatTime` (HH:MM); `decorative` |
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`) |
 | `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
@@ -1170,7 +1170,7 @@ Chart colours board:
   prints as read ("130%"), by the status model's one rule for a reading
   (`shownReading`, #450): rounded down, so 94.6 by a 95 line prints "94%",
   never at a line it is under, and beside a line with a fraction (87.5) to
-  that line's decimals ("87.6%"). No reading: an empty track and a dash in the
+  that line's decimals ("87.6%"); under 0, "0%". No reading: an empty track and a dash in the
   no-signal word colour. Ported from the Android app's UsageBar, whose fixed
   75/90 steps become `warn` and `crit`. A node reading's lines are the ones
   `/api/status` serves, the model's (`readingLines(status.thresholds, reading)`

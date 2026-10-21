@@ -1005,8 +1005,21 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   (a hand-edited `pushThresholds`, 0.875): then to that line's decimals, at
   most two, so 87.6 % by an 87.5 % line is "87.6", never "87", and a reading
   over a line never reads under it either. Lines are written to a hundredth
-  (`pct`, `lineNumber`). Rounding down also keeps a reason, and the ETag,
-  steady while a reading moves inside its whole number.
+  (`pct`, `lineNumber`). A reading under 0 shows 0, as the model reads usage
+  clamped at 0 (CPU, 100 less the idle rate, can come out at −0.3). Rounding
+  down also keeps a reason, and the ETag, steady while a reading moves inside
+  its whole number.
+- **One comparison with a line** (#450): the model's levels (`levelOf`, its
+  hysteresis clear, CPU's run, the "above" or "until below" of a reason) and a
+  meter's state (`meterState`) all ask `atOrOver` in `status/readings.js`,
+  which compares on one grid, whole hundredths of the display unit
+  (`toHundredths`, rounded once on each side). The model reads usage as
+  fractions and the meter as percents, and a reading parsed from "91.3" and
+  divided by 100 is 0.9129999999999999 while the line 0.913 is not, so compared
+  as they were, a reading exactly on one in eight one-decimal lines was judged
+  under it while the meter drew it on it. Push has no comparison of its own:
+  its differ diffs the model's levels, and a pre-#292 snapshot is read through
+  `levelOf` too.
 - **Issues** are the entities in `crit`, `warn` or `unknown`, plus the failed
   sources: crit before warn before unknown; within a level by subsystem order
   (sources, Services, Nodes, Power, Jobs, Backups, Integrations), then oldest

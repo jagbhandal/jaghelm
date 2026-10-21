@@ -32,7 +32,7 @@
  * "Data components").
  */
 import { useId } from 'react';
-import { lineNumber, shownReading } from '../../server/status/readings.js';
+import { atOrOver, lineNumber, shownReading } from '../../server/status/readings.js';
 import { cn } from './lib/utils.js';
 
 const fills = {
@@ -54,11 +54,13 @@ const isReading = (v) => typeof v === 'number' && Number.isFinite(v);
 /**
  * The state of a reading against its thresholds: `crit` at or above `crit`,
  * `warn` at or above `warn`, `ok` below both, `unknown` without a reading.
+ * "At or above" is the status model's own comparison (atOrOver, #450): on its
+ * grid of whole hundredths, so a reading exactly on a line is on it.
  */
 export function meterState(value, { warn, crit } = {}) {
   if (!isReading(value)) return 'unknown';
-  if (isReading(crit) && value >= crit) return 'crit';
-  if (isReading(warn) && value >= warn) return 'warn';
+  if (isReading(crit) && atOrOver(value, crit)) return 'crit';
+  if (isReading(warn) && atOrOver(value, warn)) return 'warn';
   return 'ok';
 }
 
@@ -88,7 +90,7 @@ function MetricMeter({
   // The threshold the reading is past, when it is (the server's state may hold a
   // warning below it).
   const limit = s === 'crit' ? crit : s === 'warn' ? warn : null;
-  const passed = isReading(limit) && value >= limit ? limit : null;
+  const passed = isReading(limit) && atOrOver(value, limit) ? limit : null;
   const word = passed != null ? `${SAID[s]} above ${lineNumber(passed)}${unit}` : SAID[s];
   const said = s === 'ok' ? shown : `${shown}, ${word}`;
 

@@ -19,7 +19,7 @@
  */
 import { graceSeconds, isOverdue } from '../cron-overdue.js';
 import { redactSecrets } from '../util/redact.js';
-import { lineNumber, percentOf, readingLines, shownReading } from './readings.js';
+import { atOrOver, lineNumber, percentOf, readingLines, shownReading } from './readings.js';
 
 /** The five states, named as src/ui/lib/status.js names them (a test keeps them in step). */
 export const STATES = Object.freeze(['ok', 'warn', 'crit', 'unknown', 'maintenance']);
@@ -123,17 +123,29 @@ function celsiusOf(raw) {
   return Number.isFinite(n) ? n : null;
 }
 
+// Usage readings and lines are fractions of 1: one of them is 100 of the
+// percent they are shown in (readings.js atOrOver's `unit`).
+const FRACTION = 100;
+
 /**
  * A reading's level against a warn line and an optional crit line, with
  * hysteresis: a level reached holds until the reading falls `hysteresis` below
- * its line (push/differ.js clears at `limit - hysteresis` the same way).
+ * its line. Push has no comparison of its own: its differ diffs these levels,
+ * and a pre-#292 snapshot is read through this too (push/snapshot.js
+ * heldLevels).
+ *
+ * Each comparison is made on the grid of whole hundredths of the display unit
+ * (readings.js atOrOver, #450), the one a meter uses, so a reading exactly on
+ * a line is on it however the two were computed. `unit` is what one of the
+ * value's units is in that unit: FRACTION (the default) for usage, 1 for °C.
  */
-export function levelOf(value, prevLevel, { warn, crit }, hysteresis) {
-  if (crit != null && value >= crit) return 'crit';
-  if (crit != null && prevLevel === 'crit' && value >= crit - hysteresis) return 'crit';
-  if (warn != null && value >= warn) return 'warn';
-  if (warn != null && (prevLevel === 'warn' || prevLevel === 'crit') && value >= warn - hysteresis)
-    return 'warn';
+export function levelOf(value, prevLevel, { warn, crit }, hysteresis, unit = FRACTION) {
+  const over = (line) => atOrOver(value, line, unit);
+  const held = prevLevel === 'warn' || prevLevel === 'crit';
+  if (crit != null && over(crit)) return 'crit';
+  if (crit != null && prevLevel === 'crit' && over(crit - hysteresis)) return 'crit';
+  if (warn != null && over(warn)) return 'warn';
+  if (warn != null && held && over(warn - hysteresis)) return 'warn';
   return 'ok';
 }
 
@@ -156,16 +168,18 @@ const LEVEL_WORD = { warn: 'warning', crit: 'critical' };
  * below 85 %)". `lines` are the reading's (readings.js readingLines), which
  * say how it is shown.
  */
-function levelReason(label, value, level, enter, clear, { reading, line }, lines) {
+function levelReason(label, value, level, enter, clear, { reading, line, unit }, lines) {
   const word = LEVEL_WORD[level];
-  if (value >= enter) return `${label} ${reading(value, lines)} (${word} above ${line(enter)})`;
+  if (atOrOver(value, enter, unit))
+    return `${label} ${reading(value, lines)} (${word} above ${line(enter)})`;
   return `${label} ${reading(value, lines)} (${word} until below ${line(clear)})`;
 }
 
-const PERCENT = { reading: readingPct, line: pct };
+const PERCENT = { reading: readingPct, line: pct, unit: FRACTION };
 const CELSIUS = {
   reading: (v, lines) => `${shownReading(v, lines)} °C`,
   line: (v) => `${lineNumber(v)} °C`,
+  unit: 1,
 };
 
 /**
@@ -300,7 +314,7 @@ export function judgeNode(
         hold('temp', r.label, celsius, order);
         continue;
       }
-      const level = levelOf(v, prevLevels.temp, thresholds.temp, h.celsius);
+      const level = levelOf(v, prevLevels.temp, thresholds.temp, h.celsius, CELSIUS.unit);
       levels.temp = level;
       conditions.temp = level;
       if (level !== 'ok') {
@@ -325,10 +339,11 @@ export function judgeNode(
     if (r.key === 'cpu') {
       // Warn only after `cycles` cycles in a row at or above the line; then it
       // holds by hysteresis like the others.
-      const high = v >= thresholds.cpu.warn;
+      const high = atOrOver(v, thresholds.cpu.warn, FRACTION);
       const run = high ? (prevStreak.cpu?.n ?? 0) + 1 : 0;
       if (high) streak.cpu = { n: run };
-      const held = prevLevels.cpu === 'warn' && v >= thresholds.cpu.warn - h.fraction;
+      const held =
+        prevLevels.cpu === 'warn' && atOrOver(v, thresholds.cpu.warn - h.fraction, FRACTION);
       level = run >= thresholds.cpu.cycles || held ? 'warn' : 'ok';
     } else {
       level = levelOf(
@@ -344,7 +359,7 @@ export function judgeNode(
     const enter = r.key === 'disk' ? thresholds.disk[level] : thresholds[r.key].warn;
     const lines = readingLines(thresholds, r.key);
     let reason = levelReason(r.label, v, level, enter, enter - h.fraction, PERCENT, lines);
-    if (r.key === 'cpu' && v >= enter)
+    if (r.key === 'cpu' && atOrOver(v, enter, FRACTION))
       reason = `CPU ${readingPct(v, lines)} (warning above ${pct(enter)} for ${thresholds.cpu.cycles} cycles)`;
     found.push({
       key: r.key,

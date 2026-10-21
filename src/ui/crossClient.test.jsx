@@ -459,6 +459,31 @@ describe('cross-client, screen', () => {
     }
   });
 
+  it('every one-decimal line: the meter colours a reading on it, or a hundredth either side, as the model judges it (#450)', () => {
+    // display-config.json holds a line as a fraction (0.913); discovery gives
+    // a reading as a percent string. The model compares them as fractions, the
+    // meter as percents: both on one grid, so they agree exactly on the line.
+    const wrong = [];
+    for (let tenths = 1; tenths < 1000; tenths += 1) {
+      const line = Number(`0.${String(tenths).padStart(3, '0')}`);
+      // The set as /api/status serves it.
+      const served = JSON.parse(JSON.stringify(resolveThresholds({ mem: line })));
+      const lines = readingLines(served, 'mem');
+      for (const delta of [-1, 0, 1]) {
+        const percent = ((tenths * 10 + delta) / 100).toFixed(2);
+        const model = judgeNode(node({ memPercent: percent }), {
+          prometheusOk: true,
+          thresholds: served,
+        }).conditions.mem;
+        const meter = meterState(Number(percent), lines);
+        const want = delta >= 0 ? 'warn' : 'ok';
+        if (model !== want || meter !== want)
+          wrong.push(`${percent} % by ${lines.warn} %: model ${model}, meter ${meter}`);
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
   it("the headline says the model's word for every state the board can be in", () => {
     // The fixtures reach crit, warn and unknown; this covers maintenance too.
     for (const state of STATES.filter((s) => s !== 'ok')) {

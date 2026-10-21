@@ -18,6 +18,14 @@ describe('meterState', () => {
     expect(meterState(140, disk)).toBe('crit');
   });
 
+  it("compares on the model's grid: a reading exactly on a line is on it (#450)", () => {
+    // 29 % read back from a fraction is 28.999999999999996; the meter and the
+    // model both compare whole hundredths (server/status/readings.js atOrOver).
+    expect(meterState(0.29 * 100, { warn: 29 })).toBe('warn');
+    expect(meterState(91.29, { warn: 91.3 })).toBe('ok');
+    expect(meterState(91.3, { warn: 91.3 })).toBe('warn');
+  });
+
   it('reads only the thresholds it is given', () => {
     expect(meterState(99, { warn: 90 })).toBe('warn'); // CPU and memory: no crit
     expect(meterState(99, { crit: 95 })).toBe('crit');
@@ -129,6 +137,13 @@ describe('MetricMeter', () => {
       expect(meter, `${value}`).toHaveAttribute('aria-valuetext', said);
       unmount();
     }
+  });
+
+  it('prints a reading under 0 as 0, as the model reads it (#450)', () => {
+    // CPU is 100 less the idle rate, which can come out at −0.3.
+    render(<MetricMeter label="CPU" value={-0.3} warn={90} />);
+    expect(screen.getByText('0%')).toBeInTheDocument();
+    expect(screen.getByRole('meter')).toHaveAttribute('aria-valuetext', '0%');
   });
 
   it("beside a line with a fraction, prints the reading to that line's decimals (#450)", () => {

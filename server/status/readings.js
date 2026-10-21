@@ -10,7 +10,10 @@
  *
  * And the one rule for showing a reading beside them (#450, shownReading):
  * the model's reasons and every meter print a reading through it, so a meter
- * and a reason never show one reading as two numbers.
+ * and a reason never show one reading as two numbers. Every comparison of a
+ * reading with a line, the model's (rules.js levelOf) and a meter's, is made
+ * on one grid, whole hundredths of the reading's unit (toHundredths, atOrOver),
+ * so floating-point error never decides a reading exactly on a line.
  *
  * Dependency-free on purpose: the web imports it (src/ui/), as it imports
  * server/icon-sources.js, and the server's runtime image holds server/ but
@@ -21,29 +24,57 @@
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 
 /**
+ * The grid every reading and line is compared and shown on (#450): a value in
+ * its display unit (a percent, or °C) as whole hundredths of it, rounded once.
+ * 91.3 % read as a fraction is 0.9129999999999999 in floating point and the
+ * line 0.913 is not, so compared as they are, a reading exactly on that line
+ * was under it; on the grid both are 9130.
+ *
+ * @param {number} value  in its display unit
+ * @returns {number}  an integer
+ */
+export function toHundredths(value) {
+  return Math.round(value * 100);
+}
+
+/**
+ * Whether a reading is at or over a line, on the grid (toHundredths): the one
+ * comparison the model's levels (rules.js levelOf, its hysteresis clear and
+ * CPU's run) and a meter's state make. `unit` is what one of the arguments'
+ * units is in the display unit: 100 for a fraction of 1 (the model's usage
+ * readings and lines), 1 for a percent or °C.
+ *
+ * @param {number} value
+ * @param {number} line
+ * @param {number} [unit]
+ */
+export function atOrOver(value, line, unit = 1) {
+  return toHundredths(value * unit) >= toHundredths(line * unit);
+}
+
+/**
  * A usage line, a fraction of 1 as status/thresholds.js holds it, as a
- * percentage to a hundredth, without floating-point noise (0.57 is 57, not
- * 56.99999999999999).
+ * percentage on the grid (0.57 is 57, not 56.99999999999999).
  *
  * @param {number} fraction
  */
 export function percentOf(fraction) {
-  return Math.round(fraction * 10000) / 100;
+  return toHundredths(fraction * 100) / 100;
 }
 
 /**
  * A line in its own unit (percent or °C) as it is written beside a reading:
- * to a hundredth, without floating-point noise (95 − 5 is 90, 87.5 stays 87.5).
+ * on the grid, to a hundredth (95 − 5 is 90, 87.5 stays 87.5).
  *
  * @param {number} line
  */
 export function lineNumber(line) {
-  return Math.round(line * 100) / 100;
+  return toHundredths(line) / 100;
 }
 
 /** How many decimals a line needs, to a hundredth: 0 (90), 1 (87.5) or 2 (91.25). */
 function decimalsOf(/** @type {number} */ line) {
-  const hundredths = Math.round(Math.abs(line) * 100);
+  const hundredths = Math.abs(toHundredths(line));
   if (hundredths % 100 === 0) return 0;
   return hundredths % 10 === 0 ? 1 : 2;
 }
@@ -55,8 +86,10 @@ function decimalsOf(/** @type {number} */ line) {
  * by, or where a level on it clears (the line less `band`), has a fraction:
  * then to that line's decimals, at most two, so a reading over a line never
  * reads as under it either (87.6 % by an 87.5 % line shows 87.6, not 87). Lines
- * finer than a hundredth (a hand-edited 0.87567) are shown to a hundredth, and
- * the rule holds to that.
+ * finer than a hundredth (a hand-edited 0.87567) are shown, and judged, on the
+ * grid of hundredths, so the rule holds there too. Under 0 it shows 0: the
+ * model reads usage clamped at 0 (rules.js coerceFraction), and CPU, 100 less
+ * the idle rate, can come out at −0.3.
  *
  * Rounding down, rather than to the nearest, also keeps a reason steady while
  * a reading moves within its whole number, so a steady board's status, and its
@@ -70,11 +103,11 @@ export function shownReading(value, lines = {}) {
   const { warn, crit, band } = lines;
   const at = [warn, crit].filter(num).map((l) => /** @type {number} */ (l));
   const all = num(band) ? [...at, ...at.map((l) => l - /** @type {number} */ (band))] : at;
-  const decimals = Math.max(0, ...all.map((l) => decimalsOf(lineNumber(l))));
-  const scale = 10 ** decimals;
-  // The nudge undoes floating-point error, not a reading: the model reads
-  // usage as a fraction, and 0.29 × 100 is 28.999999999999996.
-  return Math.floor(value * scale + 1e-9) / scale;
+  const decimals = Math.max(0, ...all.map(decimalsOf));
+  // Rounded down on the grid, in whole steps of the decimals shown: an
+  // integer sum, so 0.29 × 100 (28.999999999999996) is 29, as the model judges it.
+  const step = 10 ** (2 - decimals);
+  return (Math.floor(Math.max(0, toHundredths(value)) / step) * step) / 100;
 }
 
 // Each reading the model judges (status/rules.js judgeNode), the row of the
