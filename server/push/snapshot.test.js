@@ -17,6 +17,7 @@ import {
   buildSources,
   buildUps,
   heldLevels,
+  heldSinceOf,
   normalizeUpsStatus,
   serviceStateOf,
   upgradeSnapshot,
@@ -182,14 +183,23 @@ test('buildHosts: a reading the model could not read holds its level; an unreach
   };
   const out = buildHosts(
     statusOf(
-      // The CPU query failed; there is no temperature reading this cycle.
-      nodeEntity('a', { state: 'unknown', conditions: { cpu: 'unknown', disk: 'ok' } }),
+      // The CPU query failed; there is no temperature reading this cycle, so
+      // the model holds it, and serves when that began (#469).
+      nodeEntity('a', {
+        state: 'unknown',
+        conditions: { cpu: 'unknown', disk: 'ok' },
+        heldSince: { temp: NOW },
+      }),
       nodeEntity('b', { state: 'crit', word: 'Unreachable', conditions: {} })
     ),
     prev
   );
   assert.deepEqual(out, {
-    a: { reachable: true, levels: { cpu: 'warn', disk: 'ok', temp: 'ok' } },
+    a: {
+      reachable: true,
+      levels: { cpu: 'warn', disk: 'ok', temp: 'ok' },
+      heldSince: { temp: NOW },
+    },
     b: { reachable: false, levels: { disk: 'crit' } },
   });
 });
@@ -231,6 +241,115 @@ test("buildHosts: a storage pool leaves only when its node's pools were read wit
   assert.deepEqual(buildHosts(noData, prev, reads(true)).a, prev.a);
   const away = statusOf(nodeEntity('a', { state: 'crit', word: 'Unreachable', conditions: {} }));
   assert.deepEqual(buildHosts(away, prev, reads(true)).a.levels, prev.a.levels);
+});
+
+// #469: a hold lasts 24 h from its first cycle, then the reading leaves.
+const DAY = 24 * 60 * 60 * 1000;
+
+test("buildHosts: a hold's start is the model's, copied; a reading the model holds no more leaves (#469)", () => {
+  // The model holds temp with no value since NOW, and disk's query failed.
+  const judged = statusOf(
+    nodeEntity('a', {
+      state: 'warn',
+      conditions: { cpu: 'ok', disk: 'unknown', temp: 'unknown' },
+      heldSince: { temp: NOW },
+    })
+  );
+  // Whatever start the previous entry has, or none, the model's is copied.
+  for (const was of [undefined, NOW - 5 * DAY, NOW + 9]) {
+    const prev = {
+      a: {
+        reachable: true,
+        levels: { cpu: 'ok', disk: 'warn', temp: 'warn' },
+        ...(was === undefined ? {} : { heldSince: { temp: was } }),
+      },
+    };
+    assert.deepEqual(buildHosts(judged, prev).a, {
+      reachable: true,
+      levels: { cpu: 'ok', disk: 'warn', temp: 'warn' },
+      heldSince: { temp: NOW },
+    });
+  }
+  const prev = {
+    a: {
+      reachable: true,
+      levels: { cpu: 'ok', disk: 'warn', temp: 'warn', 'pool:x': 'ok' },
+      heldSince: { temp: NOW },
+    },
+  };
+  // Its 24 h up, the model holds temp no more (no condition, no start): it leaves.
+  const forgot = statusOf(
+    nodeEntity('a', { state: 'unknown', conditions: { cpu: 'ok', disk: 'unknown' } })
+  );
+  assert.deepEqual(buildHosts(forgot, prev).a, {
+    reachable: true,
+    levels: { cpu: 'ok', disk: 'warn', 'pool:x': 'ok' },
+  });
+  // The pool at ok stays while its node's pools are not read, and leaves once
+  // a read no longer lists it (#468), as the model ends it.
+  assert.deepEqual(buildHosts(forgot, prev, () => ({ pools: [], read: true })).a.levels, {
+    cpu: 'ok',
+    disk: 'warn',
+  });
+  // Read again, a reading has no hold.
+  const read = statusOf(
+    nodeEntity('a', { state: 'ok', conditions: { cpu: 'ok', disk: 'ok', temp: 'ok' } })
+  );
+  assert.deepEqual(buildHosts(read, prev).a, {
+    reachable: true,
+    levels: { cpu: 'ok', disk: 'ok', 'pool:x': 'ok', temp: 'ok' },
+  });
+});
+
+test("buildHosts: an unreachable or no-data node keeps its levels, with the model's starts (#469)", () => {
+  const held = {
+    a: { reachable: true, levels: { disk: 'ok', temp: 'warn' }, heldSince: { temp: NOW - 1 } },
+  };
+  const away = statusOf(
+    nodeEntity('a', {
+      state: 'crit',
+      word: 'Unreachable',
+      conditions: {},
+      heldSince: { temp: NOW },
+    })
+  );
+  assert.deepEqual(buildHosts(away, held).a, {
+    reachable: false,
+    levels: { disk: 'ok', temp: 'warn' },
+    heldSince: { temp: NOW },
+  });
+  const noData = statusOf(
+    nodeEntity('a', { state: 'unknown', word: 'No signal', heldSince: { temp: NOW } })
+  );
+  assert.deepEqual(buildHosts(noData, held).a, { ...held.a, heldSince: { temp: NOW } });
+  // A start for no level, or that is no time, is left out.
+  const junk = statusOf(
+    nodeEntity('a', {
+      state: 'warn',
+      conditions: { disk: 'ok', temp: 'unknown' },
+      heldSince: { temp: 'yesterday', gone: NOW },
+    })
+  );
+  assert.deepEqual(buildHosts(junk, held).a, {
+    reachable: true,
+    levels: { disk: 'ok', temp: 'warn' },
+  });
+});
+
+test("heldSinceOf: when each held reading's hold began, by node; anything but a time, or for no level, is left out (#469)", () => {
+  const snap = {
+    hosts: {
+      a: {
+        reachable: true,
+        levels: { temp: 'warn', disk: 'ok', cpu: 'ok' },
+        heldSince: { temp: NOW, disk: 'x', gone: NOW },
+      },
+      b: { reachable: true, levels: { temp: 'ok' } },
+      c: 'junk',
+    },
+  };
+  assert.deepEqual(heldSinceOf(snap), { a: { temp: NOW } });
+  assert.deepEqual(heldSinceOf(null), {});
 });
 
 // ── the UPS, cron, sources ───────────────────────────────────────────────

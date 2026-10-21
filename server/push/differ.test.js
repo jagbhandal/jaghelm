@@ -416,6 +416,30 @@ test('#468: a reading that leaves the snapshot over its line sends its clear; at
   );
 });
 
+test('#469: a reading that leaves while held with no value (it has a start) sends nothing; one last read sends its clear', () => {
+  const prev = host({
+    n1: {
+      reachable: true,
+      levels: { disk: 'ok', 'pool:a': 'warn', temp: 'crit', mem: 'warn' },
+      heldSince: { temp: 1_782_345_600_000 },
+    },
+  });
+  const next = host({ n1: { reachable: true, levels: { disk: 'ok' } } });
+  assert.deepEqual(
+    diffSnapshots(prev, next).map((e) => `${e.type} ${e.id}`),
+    ['host_threshold_cleared n1:mem', 'host_threshold_cleared n1:pool:a'],
+    'temp, held with no value, leaves silently (its 24 h were up in the model)'
+  );
+  // Held with no value and then read normal: that is a reading, and its clear.
+  assert.deepEqual(
+    diffSnapshots(
+      prev,
+      host({ n1: { reachable: true, levels: { ...prev.hosts.n1.levels, temp: 'ok' } } })
+    ).map((e) => `${e.type} ${e.id}`),
+    ['host_threshold_cleared n1:temp']
+  );
+});
+
 test('#448: a host first seen unreachable (no levels) that comes back over its line sends the reading too', () => {
   const prev = host({ n1: { reachable: false, levels: {} } });
   const next = host({ n1: { reachable: true, levels: { cpu: 'ok', disk: 'warn' } } });
@@ -925,6 +949,11 @@ test('alertStateKey: a level, reachability, status or source change gives a new 
   assert.notEqual(alertStateKey({ ...base, ups: { state: 'on_battery' } }), key);
   assert.notEqual(alertStateKey({ ...base, cron: { 'n1:backup': 'failure' } }), key);
   assert.notEqual(alertStateKey({ ...base, sources: { prometheus: 'failing' } }), key);
+  // When a hold began: the differ reads it (#469), and the file must keep it.
+  assert.notEqual(
+    alertStateKey({ ...base, hosts: { n1: { ...base.hosts.n1, heldSince: { mem: 1 } } } }),
+    key
+  );
 });
 
 test('alertStateKey: a change of the monitor that fed a service key gives a new key (#395)', () => {

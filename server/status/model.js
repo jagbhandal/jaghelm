@@ -76,11 +76,20 @@ function splitUid(uid) {
  * The entity for `base` and its verdict, with its `since`: kept from last
  * cycle while the state holds, else the verdict's own time (a job's run, a
  * container last seen, an integration's `_status.since`), else `now`.
+ *
+ * A node serves when each of its held readings' hold began (`heldSince`,
+ * #469), from its memo: push's snapshot copies it, so the model is the one
+ * place a hold is timed, and it is seeded back from the snapshot at boot.
  */
 function settle(base, verdict, before, now) {
   const entity = { ...base, state: verdict.state, word: verdict.word, reason: verdict.reason };
   if (verdict.metric) entity.metric = verdict.metric;
   if (verdict.conditions) entity.conditions = verdict.conditions;
+  const held = base.kind === 'node' ? objectOr(verdict.memo?.held) : {};
+  const starts = Object.keys(held)
+    .filter((k) => Number.isFinite(held[k]))
+    .sort();
+  if (starts.length > 0) entity.heldSince = Object.fromEntries(starts.map((k) => [k, held[k]]));
   const same =
     before &&
     before.kind === base.kind &&
@@ -244,6 +253,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
         pools: read.pools,
         poolsRead: read.read,
         memo: prev[id]?.memo,
+        now,
         thresholds,
       })
     );

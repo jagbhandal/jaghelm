@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createPushSnapshot, runPushCycle } from '../push/dispatch.js';
-import { buildSnapshot, heldLevels, upgradeSnapshot } from '../push/snapshot.js';
+import { buildSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from '../push/snapshot.js';
 import { createStatusTracker, memoryFromLevels, readStatusInputs } from '../status/index.js';
 import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
 
@@ -32,10 +32,13 @@ export function onePhone() {
   };
 }
 
-/** A tracker seeded, as the loop's is, from what `snapshot` holds. */
+/** A tracker seeded, as the loop's is, from what `snapshot` holds: its levels, and when each hold began (#469). */
 export function seededTracker(snapshot) {
   return createStatusTracker({
-    seed: (thresholds) => memoryFromLevels(heldLevels(snapshot.prev(), thresholds)),
+    seed: (thresholds) => {
+      const prev = snapshot.prev();
+      return memoryFromLevels(heldLevels(prev, thresholds), { heldSince: heldSinceOf(prev) });
+    },
   });
 }
 
@@ -64,11 +67,14 @@ export function pushPipeline({
   let snapshot = open();
   let tracker = seededTracker(snapshot);
   let now = start;
+  let pushUp = true;
+  let sendFails = false;
   const sent = [];
   const events = [];
   const fcm = {
-    isPushEnabled: () => true,
+    isPushEnabled: () => pushUp,
     sendToToken: async (_token, event) => {
+      if (sendFails) throw new Error('FCM send failed');
       sent.push(`${event.type} ${event.id}`);
       events.push(event);
       return { ok: true, prune: false };
@@ -86,11 +92,20 @@ export function pushPipeline({
      * One cycle. `thresholds` replaces the pipeline's for this cycle and the
      * next ones (a hand edit of display-config.json); `backupJobs` are the
      * cron jobs marked as backups and `arcaneAgents` the Arcane poller's
-     * agents (#291).
+     * agents (#291). `push: false` is a cycle push sits out (FCM not up yet,
+     * the boot race), and `failSend` one whose dispatch throws: either way the
+     * model moves on and the snapshot doesn't (#469).
      */
     async cycle(
       caches,
-      { cycleErrors = [], thresholds: t, backupJobs = [], arcaneAgents = null } = {}
+      {
+        cycleErrors = [],
+        thresholds: t,
+        backupJobs = [],
+        arcaneAgents = null,
+        push = true,
+        failSend = false,
+      } = {}
     ) {
       if (t) thresholds = t;
       const status = tracker.update({
@@ -100,6 +115,8 @@ export function pushPipeline({
       });
       pipeline.status = status;
       now += CYCLE_MS;
+      pushUp = push;
+      sendFails = failSend;
       await runPushCycle({
         buildSnapshotFn: (prev) => buildSnapshot(caches, prev, status),
         status,
@@ -109,6 +126,10 @@ export function pushPipeline({
         logger: silent,
       });
       return status;
+    },
+    /** When the next cycle runs, by the pipeline's clock. */
+    get now() {
+      return now;
     },
     /** Moves the pipeline's clock on by `ms` (each cycle moves it CYCLE_MS). */
     advance(ms) {
@@ -186,7 +207,9 @@ export function snapshotAfter(
   prev = null,
   { thresholds = DEFAULT_THRESHOLDS, now = 1_782_345_600_000, cycleErrors = [] } = {}
 ) {
-  const tracker = createStatusTracker({ seed: (t) => memoryFromLevels(heldLevels(prev, t)) });
+  const tracker = createStatusTracker({
+    seed: (t) => memoryFromLevels(heldLevels(prev, t), { heldSince: heldSinceOf(prev) }),
+  });
   const status = tracker.update({
     inputs: readStatusInputs(caches, { cycleErrors, env: {} }),
     thresholds,

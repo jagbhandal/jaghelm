@@ -21,8 +21,10 @@ import {
   once,
 } from '../testing/statusFixtures.js';
 import {
+  HOLD_LIMIT_MS,
   STATES,
   errorText,
+  holdSince,
   judgeAgent,
   judgeContainer,
   judgeIntegration,
@@ -371,6 +373,7 @@ for (const [name, metrics, levels, state, reason] of heldRows) {
   test(`judgeNode: no value this cycle, ${name} (#462)`, () => {
     const v = judgeNode(node(metrics), {
       prometheusOk: true,
+      now: NOW,
       memo: { levels, streak: {} },
       thresholds: T,
     });
@@ -385,6 +388,7 @@ for (const [name, metrics, levels, state, reason] of heldRows) {
 test('judgeNode: a held reading claims no value it does not have: no number, no metric (#462)', () => {
   const held = judgeNode(node({ temp: null }), {
     prometheusOk: true,
+    now: NOW,
     memo: { levels: { temp: 'warn', cpu: 'ok', mem: 'ok', disk: 'ok' }, streak: {} },
     thresholds: T,
   });
@@ -394,6 +398,7 @@ test('judgeNode: a held reading claims no value it does not have: no number, no 
   // Beside a read reading at the same level, that one is the metric.
   const both = judgeNode(node({ temp: null, memPercent: '92.0' }), {
     prometheusOk: true,
+    now: NOW,
     memo: { levels: { temp: 'warn' }, streak: {} },
     thresholds: T,
   });
@@ -403,6 +408,7 @@ test('judgeNode: a held reading claims no value it does not have: no number, no 
 test('judgeNode: a storage pool with no value keeps the level it held (#462)', () => {
   const v = judgeNode(node(), {
     prometheusOk: true,
+    now: NOW,
     pools: [{ name: 'tank', percent: null }],
     memo: { levels: { 'pool:tank': 'warn' }, streak: {} },
     thresholds: T,
@@ -416,6 +422,7 @@ test('judgeNode: a storage pool with no value keeps the level it held (#462)', (
 test('judgeNode: a reading held at ok with no value is left out, its level and CPU run kept (#462)', () => {
   const v = judgeNode(node({ temp: null, cpu: null }), {
     prometheusOk: true,
+    now: NOW,
     memo: { levels: { temp: 'ok', cpu: 'ok' }, streak: { cpu: { n: 1 } } },
     thresholds: T,
   });
@@ -434,6 +441,7 @@ const tankHeld = { levels: { 'pool:tank': 'warn', 'pool:ok': 'ok' }, streak: {} 
 test("judgeNode: while the node's pools are not read, a pool it held and that isn't listed keeps its level (#468)", () => {
   const v = judgeNode(node(), {
     prometheusOk: true,
+    now: NOW,
     pools: [],
     poolsRead: false,
     memo: tankHeld,
@@ -452,6 +460,7 @@ test("judgeNode: while the node's pools are not read, a pool it held and that is
   // A pool that is listed is judged as on any cycle, beside the held one.
   const both = judgeNode(node(), {
     prometheusOk: true,
+    now: NOW,
     pools: [{ name: 'ok', percent: 96, totalGB: '100.0' }],
     poolsRead: false,
     memo: tankHeld,
@@ -469,6 +478,7 @@ test("judgeNode: while the node's pools are not read, a pool it held and that is
 test("judgeNode: once the node's pools are read, a pool that isn't listed has ended (#468)", () => {
   const v = judgeNode(node(), {
     prometheusOk: true,
+    now: NOW,
     pools: [{ name: 'other', percent: 40, totalGB: '100.0' }],
     poolsRead: true,
     memo: tankHeld,
@@ -486,6 +496,7 @@ test('judgeNode: a pool with no size is no reading, never 0 % (#468)', () => {
   const inactive = { name: 'tank', percent: 0, usedGB: '0.0', totalGB: '0.0' };
   const held = judgeNode(node(), {
     prometheusOk: true,
+    now: NOW,
     pools: [inactive],
     poolsRead: true,
     memo: tankHeld,
@@ -506,12 +517,175 @@ test('judgeNode: a pool with no size is no reading, never 0 % (#468)', () => {
   // A pool with a size at 0 % is a reading, and an empty pool.
   const empty = judgeNode(node(), {
     prometheusOk: true,
+    now: NOW,
     pools: [{ ...inactive, totalGB: '100.0' }],
     poolsRead: true,
     memo: tankHeld,
     thresholds: T,
   });
   assert.deepEqual([empty.state, empty.conditions['pool:tank']], ['ok', 'ok']);
+});
+
+// #469: a hold lasts 24 h from its first cycle, then the reading is forgotten.
+const DAY = 24 * 60 * 60 * 1000;
+
+test('holdSince: a hold begins on its first cycle, keeps that start, and is over at 24 h; it needs a clock (#469)', () => {
+  assert.equal(HOLD_LIMIT_MS, DAY);
+  assert.equal(holdSince(undefined, NOW), NOW, 'no start yet: this cycle starts it');
+  assert.equal(holdSince(NOW, NOW + DAY - 1), NOW, 'kept, short of 24 h');
+  assert.equal(holdSince(NOW, NOW + DAY), null, 'over at 24 h');
+  assert.equal(holdSince('junk', NOW), NOW, 'a start that is no time starts now');
+  for (const clock of [undefined, null, 'now', NaN])
+    assert.throws(() => holdSince(NOW, clock), TypeError, `now = ${String(clock)}`);
+  // So does a node with a reading held with no value, judged with no clock.
+  assert.throws(
+    () =>
+      judgeNode(node({ temp: null }), {
+        prometheusOk: true,
+        memo: { levels: { temp: 'warn' }, streak: {} },
+        thresholds: T,
+      }),
+    TypeError
+  );
+});
+
+test('judgeNode: a reading held with no value keeps when its hold began, from its first cycle (#469)', () => {
+  const first = judgeNode(node({ temp: null }), {
+    prometheusOk: true,
+    memo: { levels: { temp: 'warn', cpu: 'ok' }, streak: {} },
+    now: NOW,
+    thresholds: T,
+  });
+  assert.deepEqual(first.memo.held, { temp: NOW });
+  const later = judgeNode(node({ temp: null }), {
+    prometheusOk: true,
+    memo: first.memo,
+    now: NOW + DAY - 1,
+    thresholds: T,
+  });
+  assert.deepEqual(
+    [later.state, later.memo.levels.temp, later.memo.held],
+    ['warn', 'warn', { temp: NOW }]
+  );
+  // Read again, it has no hold; the next cycle with no value starts a new one.
+  const read = judgeNode(node({ temp: '76' }), {
+    prometheusOk: true,
+    memo: later.memo,
+    now: NOW + DAY,
+    thresholds: T,
+  });
+  assert.deepEqual([read.state, read.memo.held], ['warn', undefined]);
+  const again = judgeNode(node({ temp: null }), {
+    prometheusOk: true,
+    memo: read.memo,
+    now: NOW + DAY + 1,
+    thresholds: T,
+  });
+  assert.deepEqual([again.state, again.memo.held], ['warn', { temp: NOW + DAY + 1 }]);
+});
+
+test('judgeNode: a reading held 24 h is forgotten, its level and CPU run with it, and shown nowhere (#469)', () => {
+  const v = judgeNode(node({ temp: null, cpu: null }), {
+    prometheusOk: true,
+    memo: {
+      levels: { temp: 'warn', cpu: 'warn', mem: 'ok', disk: 'ok' },
+      streak: { cpu: { n: 4 } },
+      held: { temp: NOW, cpu: NOW + 1 },
+    },
+    now: NOW + DAY,
+    thresholds: T,
+  });
+  // Temperature's 24 h are up; CPU's are a millisecond short.
+  assert.deepEqual(
+    [v.state, v.reason],
+    ['warn', 'CPU: no reading (warning held until below 85 %)']
+  );
+  assert.equal(Object.hasOwn(v.conditions, 'temp'), false);
+  assert.deepEqual(v.memo.levels, { cpu: 'warn', mem: 'ok', disk: 'ok' });
+  assert.deepEqual(v.memo.streak, { cpu: { n: 4 } });
+  assert.deepEqual(v.memo.held, { cpu: NOW + 1 });
+  const next = judgeNode(node({ temp: null, cpu: null }), {
+    prometheusOk: true,
+    memo: v.memo,
+    now: NOW + DAY + 1,
+    thresholds: T,
+  });
+  assert.deepEqual([next.state, next.reason], ['ok', 'Healthy']);
+  assert.deepEqual(next.memo.levels, { mem: 'ok', disk: 'ok' });
+  assert.deepEqual(next.memo.streak, {}, "CPU's run goes with it");
+  assert.equal(next.memo.held, undefined);
+});
+
+test('judgeNode: a reading whose read failed is frozen, never timed: a failed query, a pool its node could not read (#469)', () => {
+  // A failed query keeps its level and any start a quiet spell gave it, however long.
+  const failing = node({}, { failedReads: ['temp'] });
+  const first = judgeNode(failing, {
+    prometheusOk: true,
+    memo: { levels: { temp: 'warn' }, streak: {} },
+    now: NOW,
+    thresholds: T,
+  });
+  assert.deepEqual(
+    [first.conditions.temp, first.memo.levels.temp, first.memo.held],
+    ['unknown', 'warn', undefined]
+  );
+  const later = judgeNode(failing, {
+    prometheusOk: true,
+    memo: { levels: { temp: 'warn' }, streak: {}, held: { temp: NOW } },
+    now: NOW + 3 * DAY,
+    thresholds: T,
+  });
+  assert.deepEqual(
+    [later.state, later.conditions.temp, later.memo.levels.temp, later.memo.held],
+    ['unknown', 'unknown', 'warn', { temp: NOW }],
+    'frozen: its start kept, not ended'
+  );
+  // Quiet again after that spell, its 24 h are up: it ends then.
+  const quiet = judgeNode(node({ temp: null }), {
+    prometheusOk: true,
+    memo: later.memo,
+    now: NOW + 3 * DAY + 1,
+    thresholds: T,
+  });
+  assert.deepEqual([quiet.state, Object.hasOwn(quiet.memo.levels, 'temp')], ['ok', false]);
+
+  // A pool its node's Proxmox read could not read: held on the screen, frozen.
+  const unread = judgeNode(node(), {
+    prometheusOk: true,
+    pools: [],
+    poolsRead: false,
+    memo: { levels: { 'pool:tank': 'warn' }, streak: {} },
+    now: NOW + 5 * DAY,
+    thresholds: T,
+  });
+  assert.deepEqual(
+    [unread.state, unread.conditions['pool:tank'], unread.memo.levels['pool:tank']],
+    ['warn', 'unknown', 'warn']
+  );
+  assert.equal(unread.memo.held, undefined, 'no start: it is not timed');
+  // A pool listed with no size has no value: timed, and ended at 24 h.
+  const inactive = { name: 'tank', percent: 0, usedGB: '0.0', totalGB: '0.0' };
+  const timed = judgeNode(node(), {
+    prometheusOk: true,
+    pools: [inactive],
+    poolsRead: true,
+    memo: { levels: { 'pool:tank': 'warn' }, streak: {}, held: { 'pool:tank': NOW } },
+    now: NOW + DAY,
+    thresholds: T,
+  });
+  assert.deepEqual([timed.state, Object.hasOwn(timed.memo.levels, 'pool:tank')], ['ok', false]);
+});
+
+test('judgeNode: an unreachable node, or one with no data, keeps its holds as they are (#469)', () => {
+  const memo = { levels: { temp: 'warn' }, streak: {}, held: { temp: NOW } };
+  const away = judgeNode(
+    node({ cpu: null, memPercent: null, diskPercent: null }, { reachable: false }),
+    { prometheusOk: true, memo, now: NOW + 2 * DAY, thresholds: T }
+  );
+  assert.equal(away.state, 'crit');
+  assert.deepEqual([away.memo.levels, away.memo.held], [{ temp: 'warn' }, { temp: NOW }]);
+  const noData = judgeNode(null, { prometheusOk: false, memo, now: NOW + 2 * DAY, thresholds: T });
+  assert.equal(noData.memo, memo);
 });
 
 const serviceRows = [

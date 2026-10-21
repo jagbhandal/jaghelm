@@ -126,6 +126,20 @@ test("memoryFromLevels: only each node's levels; a node it seeds that Prometheus
   );
 });
 
+test('#469: memoryFromLevels: a node is seeded with when each of its holds began, as the snapshot keeps it', () => {
+  const memory = memoryFromLevels(
+    { n1: { temp: 'warn', cpu: 'ok' }, n2: { cpu: 'ok' } },
+    { heldSince: { n1: { temp: NOW }, gone: { temp: NOW } } }
+  );
+  assert.deepEqual(memory.entities['nodes/n1'].memo, {
+    levels: { temp: 'warn', cpu: 'ok' },
+    streak: {},
+    held: { temp: NOW },
+  });
+  assert.deepEqual(memory.entities['nodes/n2'].memo, { levels: { cpu: 'ok' }, streak: {} });
+  assert.equal(Object.hasOwn(memory.entities, 'nodes/gone'), false, 'no levels, no node');
+});
+
 function board(order = (list) => list) {
   const services = order([
     missing('n1:redis'),
@@ -393,4 +407,20 @@ test('#468: the Proxmox integration removed: a pool it held ends in the model; n
       ['ok', null],
     ]
   );
+});
+
+test('#469: a node serves when each of its holds began, from its first cycle with no value, until it is read', () => {
+  const tracker = createStatusTracker();
+  const temp = (value, i) =>
+    tracker
+      .update({
+        inputs: inputs({ nodes: { n1: node({ temp: value }) } }),
+        thresholds: T,
+        now: NOW + i * 30_000,
+      })
+      .entities.find((e) => e.id === 'nodes/n1');
+  assert.equal(temp('78', 0).heldSince, undefined);
+  assert.deepEqual(temp(null, 1).heldSince, { temp: NOW + 30_000 });
+  assert.deepEqual(temp(null, 2).heldSince, { temp: NOW + 30_000 }, 'kept, not restarted');
+  assert.equal(temp('76', 3).heldSince, undefined, 'read again: no hold');
 });

@@ -8,7 +8,8 @@
  * PURE given its inputs: the model's status for this cycle, the previous
  * snapshot, and the caches (only for which sources answered, the monitor
  * identities the services refresh keeps beside its payload, and which nodes'
- * storage pools Proxmox read, #468). No clock, no I/O.
+ * storage pools Proxmox read, #468). No clock, no I/O: a held reading is timed
+ * by the model, whose starts it copies (#469).
  *
  * Snapshot shape (every map's keys inserted in ascending sorted order):
  *   services:  "NODE:ID" -> "up" | "down" | "unknown", for each service the
@@ -17,8 +18,11 @@
  *   monitorOf: "NODE:ID" -> the id of the Kuma monitor that fed that service key
  *              (#395); a snapshot written before #395 has none
  *   hosts:     "NODE" -> { reachable, levels: { cpu, mem, disk, temp,
- *              "pool:<name>": "ok" | "warn" | "crit" } }, the model's
- *              `conditions`; a snapshot written before #292 holds readings here
+ *              "pool:<name>": "ok" | "warn" | "crit" }, heldSince? }, the
+ *              model's `conditions`; `heldSince` (#469), only while the host
+ *              has a reading held with no value: reading -> when its hold
+ *              began (ms since the epoch), the model's node `heldSince`; a
+ *              snapshot written before #292 holds readings here
  *   ups:       { state: "online" | "on_battery" | "unknown" }
  *   cron:      "NODE:JOB" -> "success" | "failure" | "overdue" | "unknown"
  *   sources:   "prometheus" | "kuma" | "nut" -> "ok" | "failing" | "down"
@@ -152,11 +156,19 @@ export function buildMonitorOf(monitorOf, services) {
  * unreachable node keeps every level for when it comes back.
  *
  * A storage pool holds the same way while its node's pools were not read (a
- * Proxmox fetch failed, #468), as the model holds it. It leaves the map when
- * the model ends its episode: on a cycle the model judged the node's readings
- * and the node's pools were read (`poolsOf`, model.js proxmoxPools) without it,
- * which includes a node no Proxmox entry names any more. The differ then sends
- * its clear if it was over its line.
+ * Proxmox fetch failed, #468), as the model holds it.
+ *
+ * The model is the one place a hold is timed (#469): each node serves when
+ * each of its holds began (`heldSince`, status/rules.js judgeNode), and the
+ * entry copies it, never working one out from `prevHosts`. A reading kept
+ * from `prevHosts` with no level read this cycle stays while the model still
+ * holds it: it has a start (no value), its condition is `unknown` (its read
+ * failed, or it is held over its line), or it is a pool whose node's pools
+ * were not read. Otherwise the model holds it no more and it leaves the map
+ * on this cycle, as it left the model: a pool a read no longer lists (#468,
+ * which includes a node no Proxmox entry names any more), or a reading whose
+ * 24 h with no value are up (#469). The differ sends the first one's clear if
+ * it was over its line, and nothing for the second (it had a start).
  *
  * @param {any} status
  * @param {Record<string, any>} [prevHosts]
@@ -171,30 +183,51 @@ export function buildHosts(status, prevHosts = {}, poolsOf = NO_POOL_READS) {
     const node = keyOf(e.id);
     const before = Object.hasOwn(held, node) ? held[node] : null;
     const levels = isObject(before?.levels) ? { ...before.levels } : {};
+    const starts = timesOf(e.heldSince); // the model's (#469)
     if (e.state === 'crit' && e.word === WORDS.unreachable) {
-      entries.push([node, { reachable: false, levels: sortedObject(Object.entries(levels)) }]);
+      entries.push([node, hostEntry(false, levels, starts)]);
       continue;
     }
     if (!isObject(e.conditions)) {
-      if (before) entries.push([node, before]); // no data: hold
+      // No data: hold the entry, with the model's starts.
+      if (before) {
+        const kept = isObject(before.levels)
+          ? hostEntry(before.reachable === true, levels, starts)
+          : before;
+        entries.push([node, kept]);
+      }
       continue;
     }
+    const readNow = new Set();
     for (const [reading, level] of Object.entries(e.conditions)) {
-      if (LEVELS.has(level)) levels[reading] = level;
+      if (!LEVELS.has(level)) continue;
+      levels[reading] = level;
+      readNow.add(reading);
     }
-    const read = poolsOf(node);
-    if (read.read) {
-      // The pools the model judged (status/rules.js judgeNode takes only named ones).
-      const listed = new Set(
-        read.pools.filter((p) => typeof p?.name === 'string').map((p) => `pool:${p.name}`)
-      );
-      for (const reading of Object.keys(levels)) {
-        if (reading.startsWith('pool:') && !listed.has(reading)) delete levels[reading];
-      }
+    const poolsRead = poolsOf(node).read;
+    for (const reading of Object.keys(levels)) {
+      if (readNow.has(reading) || Object.hasOwn(starts, reading)) continue;
+      if (e.conditions[reading] === 'unknown') continue;
+      if (reading.startsWith('pool:') && !poolsRead) continue;
+      delete levels[reading]; // the model holds it no more
     }
-    entries.push([node, { reachable: true, levels: sortedObject(Object.entries(levels)) }]);
+    entries.push([node, hostEntry(true, levels, starts)]);
   }
   return sortedObject(entries);
+}
+
+/** A map of hold starts with only times in it (the model's `heldSince`, #469). */
+function timesOf(map) {
+  if (!isObject(map)) return {};
+  return Object.fromEntries(Object.entries(map).filter(([, at]) => Number.isFinite(at)));
+}
+
+/** A host's entry: its levels, and when each held reading's hold began when it has any (#469). */
+function hostEntry(reachable, levels, heldSince) {
+  const kept = Object.entries(heldSince).filter(([reading]) => Object.hasOwn(levels, reading));
+  const entry = { reachable, levels: sortedObject(Object.entries(levels)) };
+  if (kept.length > 0) entry.heldSince = sortedObject(kept);
+  return entry;
 }
 
 /**
@@ -395,6 +428,37 @@ export function heldLevels(snapshot, thresholds) {
     out[node] = legacy;
   }
   return out;
+}
+
+/**
+ * When each held reading's hold began, by node (#469), for the status model's
+ * memory at boot beside heldLevels (status/index.js memoryFromLevels): the
+ * starts the model served and the snapshot copied, back to the model, so a
+ * restart doesn't start a hold's 24 h again. Only times for a reading the host
+ * holds a level for; a snapshot written before #469 has none, and its holds
+ * start on the first cycle that reads it (status/rules.js holdSince).
+ *
+ * @param {object|null} snapshot
+ * @returns {Record<string, Record<string, number>>}
+ */
+export function heldSinceOf(snapshot) {
+  const out = {};
+  const hosts = isObject(snapshot?.hosts) ? snapshot.hosts : {};
+  for (const [node, host] of Object.entries(hosts)) {
+    const since = startsOf(host);
+    if (Object.keys(since).length > 0) out[node] = since;
+  }
+  return out;
+}
+
+/** A host entry's hold starts: a time for each reading it holds a level for, junk left out. */
+function startsOf(host) {
+  if (!isObject(host) || !isObject(host.heldSince) || !isObject(host.levels)) return {};
+  return Object.fromEntries(
+    Object.entries(host.heldSince).filter(
+      ([reading, at]) => Object.hasOwn(host.levels, reading) && Number.isFinite(at)
+    )
+  );
 }
 
 /**

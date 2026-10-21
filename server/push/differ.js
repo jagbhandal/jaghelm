@@ -270,6 +270,12 @@ function levelsOf(host) {
   return levels && typeof levels === 'object' && !Array.isArray(levels) ? levels : null;
 }
 
+/** When each held reading of a host entry began its hold (#469); none before #469. */
+function startsOf(host) {
+  const since = host?.heldSince;
+  return since && typeof since === 'object' && !Array.isArray(since) ? since : {};
+}
+
 /**
  * Reachability, then each reading's level as the model holds it (hysteresis
  * included: status/rules.js levelOf). A level that rises (ok to warn, ok or
@@ -289,6 +295,10 @@ function levelsOf(host) {
  * read that succeeded no longer lists: push/snapshot.js buildHosts, #468) at
  * warn or crit sends host_threshold_cleared, with `next` null: it has no state
  * now. At ok it sends nothing. A host that leaves the snapshot sends nothing.
+ * Nor does a reading that leaves while it was held with no value (it has a
+ * start in `prev`'s `heldSince`, #469): nothing was read, so nothing is
+ * cleared. The model forgets such a reading when its 24 h are up, and
+ * buildHosts drops it on that cycle.
  */
 function diffHosts(prev, next, words, events) {
   for (const node of Object.keys(next)) {
@@ -369,9 +379,12 @@ function diffHosts(prev, next, words, events) {
     // A reading that left the snapshot ended its episode in the model: a
     // storage pool a Proxmox read that succeeded no longer lists (#468). Over
     // its line, that is its clear, as the node on the screen no longer shows it.
+    const began = startsOf(before);
     for (const key of Object.keys(was).sort()) {
       const b = was[key];
       if (Object.hasOwn(now, key) || (b !== 'warn' && b !== 'crit')) continue;
+      // Held with no value (#469): it leaves silently.
+      if (Object.hasOwn(began, key)) continue;
       events.push({
         type: 'host_threshold_cleared',
         id: `${node}:${key}`,
@@ -389,8 +402,10 @@ function diffHosts(prev, next, words, events) {
 
 /**
  * What diffSnapshots reads from a snapshot when it is `prev`: every state, the
- * monitor that fed each service key, each host's reachability and levels, and
- * each source's run of failed cycles. Two snapshots with the same key give the
+ * monitor that fed each service key, each host's reachability and levels and
+ * which of its readings are held with no value, with when that began (#469:
+ * the file must keep it, so a restart doesn't start the 24 h again), and each
+ * source's run of failed cycles. Two snapshots with the same key give the
  * same alerts against any `next`, so the persisted snapshot is rewritten only
  * when this changes (createPushSnapshot). The snapshot holds no readings since
  * #292, so that is all of it. Keep it in step with the reads in diffServices,

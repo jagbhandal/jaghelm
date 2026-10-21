@@ -61,7 +61,8 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
  * once, before the first build, for the memory to start from (null: none).
  * The background loop seeds it with the levels push last persisted (#361), so
  * a restart doesn't forget that a reading inside a hysteresis band is still
- * over its line (memoryFromLevels).
+ * over its line, and with when each hold began (#469), so a restart doesn't
+ * start a hold's 24 h again (memoryFromLevels).
  *
  * @param {{ seed?: (thresholds: import('./thresholds.js').Thresholds) => any }} [opts]
  */
@@ -101,10 +102,15 @@ export function createStatusTracker({ seed } = {}) {
  * it is not seeded, so the model doesn't keep it as unknown while Prometheus
  * fails.
  *
+ * `heldSince`, when given, maps a node key to when each of its held readings'
+ * hold began (push/snapshot.js heldSinceOf, #469), so a restart keeps a hold's
+ * 24 h running from where push's snapshot has it, and the model and the
+ * snapshot end it on the same cycle.
+ *
  * @param {Record<string, Record<string, string>>} levels
- * @param {{ nodes?: string[] | null }} [opts]
+ * @param {{ nodes?: string[] | null, heldSince?: Record<string, Record<string, number>> }} [opts]
  */
-export function memoryFromLevels(levels, { nodes = null } = {}) {
+export function memoryFromLevels(levels, { nodes = null, heldSince = {} } = {}) {
   const configured = Array.isArray(nodes) ? new Set(nodes) : null;
   const entities = {};
   for (const [nodeKey, byReading] of Object.entries(levels ?? {})) {
@@ -119,6 +125,9 @@ export function memoryFromLevels(levels, { nodes = null } = {}) {
       node: nodeKey,
       memo: { levels: { ...byReading }, streak: {} },
     };
+    const held = heldSince?.[nodeKey];
+    if (held && typeof held === 'object' && Object.keys(held).length > 0)
+      entities[id].memo.held = { ...held };
   }
   return { entities, sources: {} };
 }
