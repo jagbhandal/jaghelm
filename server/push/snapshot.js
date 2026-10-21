@@ -25,7 +25,10 @@
  *              snapshot written before #292 holds readings here
  *   ups:       { state: "online" | "on_battery" | "unknown" }
  *   cron:      "NODE:JOB" -> "success" | "failure" | "overdue" | "unknown"
- *   sources:   "prometheus" | "kuma" | "nut" -> "ok" | "failing" | "down"
+ *   sources:   "prometheus" | "kuma" | "nut" -> "ok" | "failing" | "down";
+ *              and "status", the status model itself (#440), only while it
+ *              throws ("failing", then "down") and "ok" on the cycle it builds
+ *              again after it paged
  *
  * What the model can't call up or down holds the last known state, so it
  * never pages and loses no recovery: a service pending or in maintenance, an
@@ -38,10 +41,14 @@
  * container list): the part of the snapshot it feeds is kept from the previous
  * snapshot (see buildSnapshot), rather than read as every host, service or the
  * UPS going away.
+ *
+ * A status model that throws (#440) leaves a cycle with no status: then the
+ * snapshot is the previous one as it was, but for the status check's own run
+ * of failed cycles (cycleSnapshot), which pages like a failed source.
  */
 import { proxmoxPools, sourcesOk } from '../status/model.js';
 import { judgeUps, levelOf, WORDS } from '../status/rules.js';
-import { serviceHistory } from './differ.js';
+import { serviceHistory, STATUS_CHECK } from './differ.js';
 
 // The monitoring sources whose failure pages (spec §6.1), in key order.
 const MONITORING_SOURCES = ['kuma', 'nut', 'prometheus'];
@@ -279,10 +286,24 @@ export function buildCron(status, prevCron = {}) {
 }
 
 /**
- * Each monitoring source the model lists: ok, or failing on its first failed
- * cycle, and down from its second in a row (#292: one push, after about a
- * minute, so a blip pages nothing). A source the model doesn't list this cycle
- * (the services payload is missing, so it can't say) keeps its last state.
+ * A source's state after a cycle, from its state before it: ok when it
+ * answered, failing on its first failed cycle, and down from its second in a
+ * row (#292: one push, after about a minute, so a blip pages nothing).
+ */
+export function nextSourceState(before, failed) {
+  if (!failed) return 'ok';
+  return before === 'failing' || before === 'down' ? 'down' : 'failing';
+}
+
+/**
+ * Each monitoring source the model lists, by nextSourceState. A source the
+ * model doesn't list this cycle (the services payload is missing, so it can't
+ * say) keeps its last state.
+ *
+ * The status check (#440): `status` is a model that built, so a run of failed
+ * cycles is over. One that paged ("down") is "ok" for this cycle, which sends
+ * its recovery; otherwise it is left out, so a board whose model builds has
+ * only the monitoring sources here.
  */
 export function buildSources(status, prevSources = {}) {
   const held = isObject(prevSources) ? prevSources : {};
@@ -295,10 +316,39 @@ export function buildSources(status, prevSources = {}) {
       if (before !== undefined) entries.push([name, before]);
       continue;
     }
-    if (s.state !== 'failed') entries.push([name, 'ok']);
-    else entries.push([name, before === 'failing' || before === 'down' ? 'down' : 'failing']);
+    entries.push([name, nextSourceState(before, s.state === 'failed')]);
   }
+  if (held[STATUS_CHECK] === 'down') entries.push([STATUS_CHECK, 'ok']);
   return sortedObject(entries);
+}
+
+/** A snapshot that knows nothing (a first run's), fresh each time. */
+const nothingKnown = () => ({
+  services: {},
+  monitorOf: {},
+  hosts: {},
+  ups: { state: 'unknown' },
+  cron: {},
+  sources: {},
+});
+
+/**
+ * The snapshot of a cycle whose status model threw (#440): `prev` as it is,
+ * so nothing is diffed, sent or lost for what the model judges, and the next
+ * cycle it builds diffs against the last good state; only the status check's
+ * own run of failed cycles moves on (nextSourceState), in `sources`, so its
+ * second failed cycle in a row pages once, and the file keeps that across a
+ * restart. It reads nothing of the model, which has no output. With no
+ * `prev` (a first run), nothing is known of anything else either.
+ *
+ * @param {object|null} prev
+ * @returns {object}
+ */
+export function modelFailedSnapshot(prev) {
+  const base = isObject(prev) ? prev : nothingKnown();
+  const held = isObject(base.sources) ? base.sources : {};
+  const state = nextSourceState(held[STATUS_CHECK], true);
+  return { ...base, sources: sortedObject(Object.entries({ ...held, [STATUS_CHECK]: state })) };
 }
 
 /**
@@ -396,6 +446,20 @@ export function buildSnapshot(caches, prev, status) {
     cron: buildCron(status, prev?.cron),
     sources: buildSources(status, prev?.sources),
   };
+}
+
+/**
+ * The snapshot of one push cycle (refresh.js runStatusAndPush): built from the
+ * cycle's status model (buildSnapshot), or, when the model threw and there is
+ * no status, `prev` with the status check's failed cycle (modelFailedSnapshot).
+ *
+ * @param {{ getCached: (key: string) => *, getCachedInternal?: (key: string) => * }} caches
+ * @param {object|null} prev
+ * @param {any} status  this cycle's status model, or null when it threw
+ * @returns {object}
+ */
+export function cycleSnapshot(caches, prev, status) {
+  return status ? buildSnapshot(caches, prev, status) : modelFailedSnapshot(prev);
 }
 
 /**

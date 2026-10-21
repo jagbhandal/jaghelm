@@ -1,7 +1,7 @@
 /**
  * System routes: health probe and proxied weather data.
  *
- *   GET /api/health   → public — returns version + uptime
+ *   GET /api/health   → public — liveness, version, uptime and the status model's health
  *   GET /api/weather  → auth   — proxies open-meteo with caching
  */
 
@@ -13,7 +13,7 @@ import { apiError } from '../errors.js';
 import { safeFetch } from '../httpClient.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { VERSION, REVISION } from '../version.js';
-import { getRefreshHealth } from '../refresh.js';
+import { getRefreshHealth, getStatusModelHealth } from '../refresh.js';
 
 const router = Router();
 
@@ -21,12 +21,16 @@ router.get('/health', (req, res) => {
   // Reflect real liveness: the Docker HEALTHCHECK + deploy verify gate read this,
   // so a static 'ok' would let a wedged refresh loop (stale data) pass as healthy.
   // 'starting' (pre-first-cycle) still reports ok so a booting container isn't killed.
+  // A status model that throws (#440) is in `statusModel` and leaves `status`
+  // alone: the loop is alive, a restart can't mend the input, and the deploy
+  // gate's "status":"ok" would roll a deploy back over it.
   const refresh = getRefreshHealth();
   const healthy = refresh.state !== 'stale';
   res.status(healthy ? 200 : 503).json({
     status: healthy ? 'ok' : 'degraded',
     refresh: refresh.state,
     refreshAgeMs: refresh.ageMs,
+    statusModel: getStatusModelHealth(),
     uptime: process.uptime(),
     version: VERSION,
     revision: REVISION,

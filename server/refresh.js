@@ -41,7 +41,7 @@ import { redactSecrets } from './util/redact.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
-import { buildSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from './push/snapshot.js';
+import { cycleSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from './push/snapshot.js';
 import { getPushStore } from './push/store.js';
 import * as fcm from './push/fcm.js';
 import { createStatusTracker, liveCaches, memoryFromLevels, readStatusInputs } from './status/index.js';
@@ -101,6 +101,13 @@ const statusTracker = createStatusTracker({
 // The message of the model failure last logged (null: it built last cycle), so
 // a failure that repeats every cycle logs once.
 let statusModelError = null;
+// The status model's run of failed cycles, for /api/health (#440): null while
+// it builds; else when the run began (the first failed cycle's clock), how
+// many cycles it has failed and the last error's class. This process's own:
+// push keeps its count in the push snapshot, across a restart.
+let statusModelFailure = null;
+// Whether the model has run yet this process (false: /api/health says starting).
+let statusModelRan = false;
 // display-config.json's backupJobs, the cron jobs that are backups (#291),
 // read each cycle from the display config the loop already holds; what it
 // drops is logged once.
@@ -176,7 +183,9 @@ export function getThresholds() {
  *
  * It never throws. If the model throws (an input it can't read), it logs the
  * error once until the error changes or the model builds again, keeps the
- * last status for /api/status, and returns null: push skips that cycle.
+ * last status for /api/status, counts the failed cycle for /api/health
+ * (getStatusModelHealth), and returns null: push then holds its snapshot and
+ * pages the failure itself after 2 cycles in a row (#440, runStatusAndPush).
  *
  * The status stays fresh in the cache for two refresh intervals (at least the
  * cache's 120 s), so /api/status has one between cycles however long they are.
@@ -195,30 +204,76 @@ export function updateStatus(cycleErrors = [], now = Date.now()) {
       now,
     });
   } catch (err) {
+    statusModelRan = true;
+    statusModelFailure = {
+      since: statusModelFailure?.since ?? now,
+      failedCycles: (statusModelFailure?.failedCycles ?? 0) + 1,
+      error: errorClassOf(err),
+    };
     const message = String(err?.message ?? err);
     if (message !== statusModelError) {
-      log.error({ err }, 'status model failed: /api/status keeps the last status, and push skips the cycle');
+      log.error(
+        { err },
+        'status model failed: /api/status keeps the last status, and push holds its snapshot (one push after 2 cycles)'
+      );
       statusModelError = message;
     }
     return null;
   }
-  if (statusModelError !== null) {
-    log.info('status model built again');
-    statusModelError = null;
+  statusModelRan = true;
+  if (statusModelFailure !== null) {
+    log.info(
+      { failedCycles: statusModelFailure.failedCycles, since: new Date(statusModelFailure.since).toISOString() },
+      'status model built again'
+    );
+    statusModelFailure = null;
   }
+  statusModelError = null;
   const intervalMs = bgRefreshIntervalMs ?? getRefreshIntervalMs();
   setCache('status', status, null, { ttlMs: Math.max(CACHE_TTL_MS, 2 * intervalMs) });
   return status;
 }
 
 /**
+ * An error's class for /api/health ("TypeError"): never its message, which
+ * can quote the input the model couldn't read. A name that isn't a plain
+ * identifier is "Error".
+ */
+function errorClassOf(err) {
+  const name = err?.name;
+  return typeof name === 'string' && /^[A-Za-z_$][\w$]{0,63}$/.test(name) ? name : 'Error';
+}
+
+/**
+ * The status model's health, for /api/health (#440): `starting` before its
+ * first cycle, `ok` while it builds, and `degraded` while it throws, with the
+ * error's class, since when (ISO) and for how many cycles in a row. Nothing
+ * of the input or the error's message. In this process's memory: after a
+ * restart, the run counts from the restart's first cycle.
+ */
+export function getStatusModelHealth() {
+  if (statusModelFailure !== null) {
+    return {
+      state: 'degraded',
+      error: statusModelFailure.error,
+      since: new Date(statusModelFailure.since).toISOString(),
+      failedCycles: statusModelFailure.failedCycles,
+    };
+  }
+  return { state: statusModelRan ? 'ok' : 'starting' };
+}
+
+/**
  * The status-and-push half of a background cycle, after the refreshes: the
  * status model (updateStatus), then the push cycle on it. It can NEVER reject:
- * updateStatus never throws, and runPushCycle swallows everything. A cycle
- * with no status (the model threw) is skipped by push: nothing is diffed,
- * sent or advanced, so the next cycle the model builds diffs against the last
- * good snapshot and a change made meanwhile is still sent. No-ops when push is
- * disabled (beyond the status and token pruning).
+ * updateStatus never throws, and runPushCycle swallows everything. In a cycle
+ * with no status (the model threw), push diffs and sends nothing the model
+ * judges, and keeps that part of its snapshot as it was, so the next cycle
+ * the model builds diffs against the last good snapshot and a change made
+ * meanwhile is still sent. It counts the failed cycle as a source's (#440,
+ * push/snapshot.js modelFailedSnapshot): the second in a row sends one
+ * "JagHelm status check failing", and the cycle it builds again one recovery.
+ * No-ops when push is disabled (beyond the status and token pruning).
  *
  * `now` is the model's clock. Push reads none: a held reading is timed by the
  * model alone, and the snapshot copies its starts (#469).
@@ -226,7 +281,7 @@ export function updateStatus(cycleErrors = [], now = Date.now()) {
 export async function runStatusAndPush(cycleErrors = [], now = Date.now()) {
   const status = updateStatus(cycleErrors, now);
   await runPushCycle({
-    buildSnapshotFn: (prev) => (status ? buildSnapshot(liveCaches, prev, status) : null),
+    buildSnapshotFn: (prev) => cycleSnapshot(liveCaches, prev, status),
     status,
     store: getPushStore(),
     fcm,

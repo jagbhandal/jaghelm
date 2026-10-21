@@ -16,3 +16,12 @@ test('GET /api/health reports package version and 7-char build revision', async 
   assert.equal(res.body.revision, '1a830fe');
   assert.equal(res.body.version, pkg.version);
 });
+
+test("GET /api/health reports the status model's health beside the loop's, starting before its first cycle (#440)", async () => {
+  const app = express();
+  app.use('/api', systemRouter);
+  const res = await request(app).get('/api/health');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.status, 'ok');
+  assert.deepEqual(res.body.statusModel, { state: 'starting' });
+});

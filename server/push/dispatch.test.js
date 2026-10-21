@@ -37,6 +37,22 @@ test('shouldDeliver: a source event honours its category toggle and the recoveri
   assert.equal(shouldDeliver({ type: 'source_down', id: 'prometheus' }, noRecoveries), true);
 });
 
+test('the status check\'s push (#440) is in no category: no category switch turns it off; push off and the recoveries switch still do', () => {
+  assert.equal(categoryOf('source_down', 'status'), null);
+  assert.equal(categoryOf('source_recovered', 'status'), null);
+  const allOff = {
+    ...DEFAULT_PREFS,
+    categories: { service: false, host: false, ups: false, cron: false, watchtower: false },
+  };
+  assert.equal(shouldDeliver({ type: 'source_down', id: 'status' }, allOff), true);
+  assert.equal(shouldDeliver({ type: 'source_recovered', id: 'status' }, allOff), true);
+  assert.equal(shouldDeliver({ type: 'source_down', id: 'prometheus' }, allOff), false, 'only the status check');
+  assert.equal(shouldDeliver({ type: 'source_down', id: 'status' }, { ...DEFAULT_PREFS, enabled: false }), false);
+  const noRecoveries = { ...DEFAULT_PREFS, notifyRecoveries: false };
+  assert.equal(shouldDeliver({ type: 'source_recovered', id: 'status' }, noRecoveries), false);
+  assert.equal(shouldDeliver({ type: 'source_down', id: 'status' }, noRecoveries), true);
+});
+
 test('DEFAULT_PREFS is all-on', () => {
   assert.deepEqual(DEFAULT_PREFS, {
     categories: { service: true, host: true, ups: true, cron: true, watchtower: true },
