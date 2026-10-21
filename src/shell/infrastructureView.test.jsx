@@ -129,8 +129,9 @@ describe('the Infrastructure section, from the model', () => {
   });
 
   it('a node with no signal shows that: no reading drawn as current, no trend, no uptime', () => {
-    const { status, services } = scenario('source-down');
-    const history = { 'apps:cpu': [10, 20, 30] };
+    const { status } = scenario('source-down');
+    // The board's last readings, still in the browser from before the failure.
+    const { services, history } = demoBoard({ scenario: 'healthy', now: NOW });
     const nodes = infrastructureNodes({ status, services, history, ...C });
     // Prometheus failing keeps the nodes, unknown, with the source's reason.
     expect(nodes.length).toBeGreaterThan(0);
@@ -145,10 +146,20 @@ describe('the Infrastructure section, from the model', () => {
 
   it('an unreachable node: its word and reason, and no readings, even with numbers in /api/services', () => {
     const { status, services } = scenario('every-state');
-    const edge = infrastructureNodes({ status, services, ...C }).find((n) => n.key === 'edge');
+    // Numbers for it in the payload, as a client may still hold from before.
+    const held = demoBoard({ scenario: 'healthy', now: NOW }).services.nodes.edge.metrics;
+    const board = {
+      ...services,
+      nodes: { ...services.nodes, edge: { ...services.nodes.edge, metrics: held } },
+    };
+    const edge = infrastructureNodes({ status, services: board, ...C }).find(
+      (n) => n.key === 'edge'
+    );
     const e = status.entities.find((x) => x.id === 'nodes/edge');
     expect([edge.state, edge.word, edge.reason]).toEqual(['crit', e.word, e.reason]);
+    expect(held.cpu).toBeTruthy();
     expect(edge.readings.every((r) => r.value === null)).toBe(true);
+    expect([edge.uptime, edge.trend]).toEqual([null, null]);
   });
 
   it('a reading whose query failed, or with no value this cycle, has no value; the rest stay', () => {
