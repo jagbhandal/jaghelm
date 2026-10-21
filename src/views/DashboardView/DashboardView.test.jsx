@@ -1,9 +1,11 @@
-import { render, screen, within } from '@testing-library/react';
+import { useState } from 'react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ConfigProvider } from '../../context/ConfigContext.jsx';
 import DashboardView from './DashboardView';
 import { useDashboardData } from './useDashboardData';
 import { defaultConfig } from '../../defaultConfig.js';
+import { LAYOUT_VERSION } from './layouts';
 
 // What the board renders on a fresh install and on an existing one (#272).
 //
@@ -18,8 +20,10 @@ vi.mock('./useDashboardData', () => ({
 }));
 
 vi.mock('../../components/HelmGrid', () => ({
-  default: ({ children, layouts }) => (
+  // A drag's save, as HelmGrid hands it on: every breakpoint as drawn.
+  default: ({ children, layouts, onLayoutChange }) => (
     <div data-testid="grid" data-layouts={JSON.stringify(layouts)}>
+      <span data-testid="drag-save" onClick={() => onLayoutChange?.(layouts.lg, layouts)} />
       {children}
     </div>
   ),
@@ -366,7 +370,9 @@ describe('DashboardView without a saved layout (#248)', () => {
 
 describe('DashboardView on an existing install', () => {
   // A layout saved before #272, naming the panels the old defaults shipped.
+  // Saved since #299 (version 2), so its node panels' heights are its own.
   const SAVED = {
+    version: 2,
     lg: [
       { i: 'node-gateway', x: 0, y: 0, w: 24, h: 7, minW: 4, minH: 3 },
       { i: 'node-production', x: 0, y: 7, w: 24, h: 7, minW: 4, minH: 3 },
@@ -438,6 +444,7 @@ describe('DashboardView on an existing install', () => {
 
   it('leaves a saved layout untouched when it names no UPS or Pipeline panel and neither is set up', () => {
     const saved = {
+      version: 2,
       lg: SAVED.lg.filter((it) => it.i !== 'ups' && it.i !== 'pipeline'),
     };
     renderBoard(
@@ -471,5 +478,73 @@ describe('DashboardView on an existing install', () => {
     );
 
     expect(screen.queryByText('UPS Power')).not.toBeInTheDocument();
+  });
+});
+
+// #299: node panels lost their reading tiles, so a layout saved before kept
+// each at a height with nothing in it (HelmGrid grows a panel, never shrinks
+// one). Brought up to LAYOUT_VERSION once, and saved with its version.
+describe('a layout saved before #299', () => {
+  // Saved with the reading tiles: node panels 8 and 12 rows tall.
+  const OLD = {
+    lg: [
+      { i: 'node-edge', x: 0, y: 0, w: 12, h: 8, minW: 4, minH: 3 },
+      { i: 'node-apps', x: 12, y: 0, w: 12, h: 12, minW: 4, minH: 3 },
+      { i: 'cron-jobs', x: 0, y: 12, w: 12, h: 7, minW: 4, minH: 3 },
+      { i: 'todos', x: 12, y: 12, w: 12, h: 7, minW: 4, minH: 3 },
+    ],
+  };
+  const NODES = { edge: node('Edge'), apps: node('Apps') };
+
+  /** The board under a config that changes as the board sets it. */
+  function Live({ initial, onConfig }) {
+    const [config, setConfig] = useState(initial);
+    onConfig(config);
+    return (
+      <ConfigProvider config={config} setConfig={setConfig}>
+        <DashboardView refreshKey={0} tick={0} active onOpenSettings={vi.fn()} />
+      </ConfigProvider>
+    );
+  }
+
+  function renderLive(gridLayout) {
+    useDashboardData.mockReturnValue(boardData({ serviceData: { nodes: NODES }, ups: NO_UPS }));
+    const seen = [];
+    render(<Live initial={freshConfig({ gridLayout })} onConfig={(c) => seen.push(c)} />);
+    return seen;
+  }
+  const byId = (items) => Object.fromEntries(items.map((it) => [it.i, it]));
+
+  it('is drawn and saved once with its node panels at their minimum, everything moved up', () => {
+    const seen = renderLive(OLD);
+    const saved = seen.at(-1).gridLayout;
+    expect(saved.version).toBe(LAYOUT_VERSION);
+    const lg = byId(saved.lg);
+    // HelmGrid grows each node panel back to its content from there.
+    expect([lg['node-edge'].h, lg['node-apps'].h]).toEqual([3, 3]);
+    expect([lg['cron-jobs'].y, lg.todos.y]).toEqual([3, 3]);
+    expect(byId(gridLayouts().lg)['node-apps'].h).toBe(3);
+    // Saved once: one change to the layout, not one per render.
+    expect(new Set(seen.map((c) => c.gridLayout)).size).toBe(2);
+  });
+
+  it('never again: a height set after it is the user’s, and stays', () => {
+    const mine = {
+      version: LAYOUT_VERSION,
+      lg: OLD.lg.map((it) => (it.i === 'node-apps' ? { ...it, h: 10 } : it)),
+    };
+    const seen = renderLive(mine);
+    expect(seen.every((c) => c.gridLayout === mine)).toBe(true);
+    expect(byId(gridLayouts().lg)['node-apps'].h).toBe(10);
+  });
+
+  it('a drag saves the layout with its version, so the step never runs on it', () => {
+    const seen = renderLive({ version: LAYOUT_VERSION, lg: OLD.lg });
+    act(() => {
+      fireEvent.click(screen.getByTestId('drag-save'));
+    });
+    const saved = seen.at(-1).gridLayout;
+    expect(saved.version).toBe(LAYOUT_VERSION);
+    expect(byId(saved.lg)['node-apps'].h).toBe(12);
   });
 });

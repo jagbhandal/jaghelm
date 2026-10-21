@@ -62,15 +62,14 @@ export const OverviewInfrastructure = memo(function OverviewInfrastructure({
   servicesLoaded,
   history,
   sections,
-  tempUnit,
   health,
   onRetry,
   margin = 16,
 }) {
   const [view, setView] = useInfrastructureView();
   const nodes = useMemo(
-    () => infrastructureNodes({ status, services, history, sections, tempUnit }),
-    [status, services, history, sections, tempUnit]
+    () => infrastructureNodes({ status, services, history, sections }),
+    [status, services, history, sections]
   );
   const loading = status == null ? reach === 'loading' : !servicesLoaded;
   usePlaces(loading ? [] : nodes.map((n) => n.id));

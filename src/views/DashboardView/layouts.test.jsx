@@ -5,6 +5,9 @@ import {
   defaultLayouts,
   migrateLayouts,
   orderForMobile,
+  LAYOUT_VERSION,
+  layoutVersion,
+  versionedLayouts,
 } from './layouts';
 
 describe('migrateLayouts', () => {
@@ -25,6 +28,7 @@ describe('migrateLayouts', () => {
     // Without de-duping, the rename produces two items with i==="node-gateway"
     // and react-grid-layout (which keys on i) drops/overlaps one.
     const saved = {
+      version: 2,
       lg: [
         { i: 'node-gateway', x: 0, y: 0, w: 24, h: 7 },
         { i: 'ups', x: 0, y: 7, w: 12, h: 5 },
@@ -67,6 +71,52 @@ describe('migrateLayouts', () => {
   it('returns null for nullish input', () => {
     expect(migrateLayouts(null)).toBeNull();
     expect(migrateLayouts(undefined)).toBeNull();
+  });
+
+  // #299: node panels lost their reading tiles; a layout saved before is
+  // brought up to LAYOUT_VERSION once (DashboardView saves it with it).
+  const OLD = {
+    lg: [
+      { i: 'node-edge', x: 0, y: 0, w: 12, h: 8, minH: 3 },
+      { i: 'node-apps', x: 12, y: 0, w: 12, h: 12, minH: 3 },
+      { i: 'cron-jobs', x: 0, y: 12, w: 24, h: 7, minH: 3 },
+    ],
+    sm: [
+      { i: 'node-edge', x: 0, y: 0, w: 1, h: 8, minH: 3 },
+      { i: 'cron-jobs', x: 0, y: 8, w: 1, h: 7, minH: 3 },
+    ],
+  };
+  const at = (items) => items.map(({ i, y, h }) => [i, y, h]);
+
+  it('a layout saved before #299: node panels to their minimum, every panel moved up', () => {
+    const out = migrateLayouts(OLD);
+    expect(at(out.lg)).toEqual([
+      ['node-edge', 0, 3],
+      ['node-apps', 0, 3],
+      ['cron-jobs', 3, 7],
+    ]);
+    expect(at(out.sm)).toEqual([
+      ['node-edge', 0, 3],
+      ['cron-jobs', 3, 7],
+    ]);
+    expect(layoutVersion(OLD)).toBe(1);
+  });
+
+  it('a layout of the current version keeps its heights, and is drawn without its version', () => {
+    const saved = versionedLayouts(OLD);
+    expect(saved).toEqual({ ...OLD, version: LAYOUT_VERSION });
+    expect(layoutVersion(saved)).toBe(LAYOUT_VERSION);
+    const out = migrateLayouts(saved);
+    expect(out).toEqual({ lg: OLD.lg, sm: OLD.sm });
+    expect(Object.hasOwn(out, 'version')).toBe(false);
+    // The step after a save is idempotent too: what it drew, saved, stays.
+    const once = versionedLayouts(migrateLayouts(OLD));
+    expect(migrateLayouts(once)).toEqual(migrateLayouts(OLD));
+  });
+
+  it('a layout with no node panel taller than its minimum is left as it was', () => {
+    const saved = { lg: [{ i: 'ups', x: 0, y: 4, w: 12, h: 5 }] };
+    expect(migrateLayouts(saved)).toBe(saved);
   });
 });
 

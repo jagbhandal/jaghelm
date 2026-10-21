@@ -14,7 +14,14 @@ import { cachedIconUrl, deleteCronJob } from '../../hooks/useData';
 import NodePanel from './NodePanel';
 import { toServiceCard } from './serviceCard';
 import { useConfig } from '../../context/ConfigContext.jsx';
-import { STATIC_PANEL_KEYS, defaultLayouts, migrateLayouts } from './layouts';
+import {
+  LAYOUT_VERSION,
+  STATIC_PANEL_KEYS,
+  defaultLayouts,
+  layoutVersion,
+  migrateLayouts,
+  versionedLayouts,
+} from './layouts';
 import { useDashboardData, pollPeriodMs } from './useDashboardData';
 import { useAppDataMatching } from './useAppDataMatching';
 import { useEffectiveLayouts } from './useEffectiveLayouts';
@@ -241,6 +248,15 @@ export default function DashboardView({
   // The saved layout, or null. Without one the board is laid out from the
   // nodes and panels it has (#248); a saved layout is used as it is.
   const savedLayouts = useMemo(() => migrateLayouts(config.gridLayout), [config.gridLayout]);
+  // A layout saved before LAYOUT_VERSION is saved again, brought up to it, with
+  // its version (#299): once, so a later height of the user's own stays.
+  useEffect(() => {
+    const saved = config.gridLayout;
+    if (!saved || layoutVersion(saved) >= LAYOUT_VERSION) return;
+    setConfig((p) =>
+      p.gridLayout === saved ? { ...p, gridLayout: versionedLayouts(migrateLayouts(saved)) } : p
+    );
+  }, [config.gridLayout, setConfig]);
   const layouts = useMemo(
     () =>
       savedLayouts ||
@@ -270,7 +286,7 @@ export default function DashboardView({
   );
 
   const handleLayoutChange = useCallback(
-    (_, allLayouts) => setConfig((p) => ({ ...p, gridLayout: allLayouts })),
+    (_, allLayouts) => setConfig((p) => ({ ...p, gridLayout: versionedLayouts(allLayouts) })),
     [setConfig]
   );
 
@@ -567,7 +583,6 @@ export default function DashboardView({
           servicesLoaded={servicesLoaded}
           history={history}
           sections={sc}
-          tempUnit={config.tempUnit || 'F'}
           health={servicesB}
           onRetry={retry}
           margin={isMobile ? 12 : 16}

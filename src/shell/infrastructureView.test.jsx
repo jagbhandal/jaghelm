@@ -19,7 +19,6 @@ import { readingLines, shownReading } from '../../server/status/readings.js';
 import { resolveThresholds } from '../../server/status/thresholds.js';
 
 const NOW = Date.parse('2026-10-20T09:00:00Z');
-const C = { tempUnit: 'C' };
 
 /** A scenario as a client gets it: the status, and the /api/services it was built from. */
 function scenario(name) {
@@ -33,7 +32,7 @@ const nodeEntities = (status) => status.entities.filter((e) => e.kind === 'node'
 describe('the Infrastructure section, from the model', () => {
   it("healthy: a node per node entity, in services.yaml's order, each the model's state and word", () => {
     const { status, services, history } = demoBoard({ scenario: 'healthy', now: NOW });
-    const nodes = infrastructureNodes({ status, services, history, ...C });
+    const nodes = infrastructureNodes({ status, services, history });
     expect(nodes.map((n) => n.key)).toEqual(Object.keys(services.nodes));
     for (const n of nodes) {
       const e = status.entities.find((x) => x.id === n.id);
@@ -55,7 +54,7 @@ describe('the Infrastructure section, from the model', () => {
 
   it("each reading: its value from /api/services, its state the model's condition, its lines the served ones", () => {
     const { status, services, history } = demoBoard({ scenario: 'healthy', now: NOW });
-    for (const n of infrastructureNodes({ status, services, history, ...C })) {
+    for (const n of infrastructureNodes({ status, services, history })) {
       const e = status.entities.find((x) => x.id === n.id);
       const metrics = services.nodes[n.key].metrics;
       for (const { key, field } of READINGS) {
@@ -78,9 +77,7 @@ describe('the Infrastructure section, from the model', () => {
 
   it('the incident: the NAS at 94.6 % disk is a warning, its meter warn, and it reads 94', () => {
     const { status, services, history } = nasDiskIncident({ now: NOW });
-    const nas = infrastructureNodes({ status, services, history, ...C }).find(
-      (n) => n.key === 'storage'
-    );
+    const nas = infrastructureNodes({ status, services, history }).find((n) => n.key === 'storage');
     const e = status.entities.find((x) => x.id === 'nodes/storage');
     expect([e.state, e.word, e.reason]).toEqual([
       'warn',
@@ -91,14 +88,14 @@ describe('the Infrastructure section, from the model', () => {
     expect(reading(nas, 'disk')).toMatchObject({ value: 94.6, state: 'warn', shown: '94%' });
     // The others stay as the model judged them: below their lines, ok.
     for (const key of ['cpu', 'mem', 'temp']) expect(reading(nas, key).state).toBe('ok');
-    expect(infrastructureCount(infrastructureNodes({ status, services, ...C }))).toBe(
+    expect(infrastructureCount(infrastructureNodes({ status, services }))).toBe(
       '3 nodes · 1 warning'
     );
   });
 
   it("the thresholds fixture: on, over and under each line, and held in its band, as the model's conditions", () => {
     const { status, services } = scenario('thresholds');
-    const nodes = infrastructureNodes({ status, services, ...C });
+    const nodes = infrastructureNodes({ status, services });
     const seen = new Set();
     for (const e of nodeEntities(status)) {
       const n = nodes.find((x) => x.id === e.id);
@@ -123,7 +120,7 @@ describe('the Infrastructure section, from the model', () => {
     expect(status.thresholds).toEqual(
       JSON.parse(JSON.stringify(resolveThresholds(pushThresholds)))
     );
-    const nas = infrastructureNodes({ status, services, ...C }).find((n) => n.key === 'storage');
+    const nas = infrastructureNodes({ status, services }).find((n) => n.key === 'storage');
     expect(reading(nas, 'disk')).toMatchObject({ warn: 80, crit: 95, band: 5, state: 'warn' });
     expect(reading(nas, 'mem')).toMatchObject({ warn: 85, band: 5 });
   });
@@ -132,7 +129,7 @@ describe('the Infrastructure section, from the model', () => {
     const { status } = scenario('source-down');
     // The board's last readings, still in the browser from before the failure.
     const { services, history } = demoBoard({ scenario: 'healthy', now: NOW });
-    const nodes = infrastructureNodes({ status, services, history, ...C });
+    const nodes = infrastructureNodes({ status, services, history });
     // Prometheus failing keeps the nodes, unknown, with the source's reason.
     expect(nodes.length).toBeGreaterThan(0);
     for (const n of nodes) {
@@ -152,9 +149,7 @@ describe('the Infrastructure section, from the model', () => {
       ...services,
       nodes: { ...services.nodes, edge: { ...services.nodes.edge, metrics: held } },
     };
-    const edge = infrastructureNodes({ status, services: board, ...C }).find(
-      (n) => n.key === 'edge'
-    );
+    const edge = infrastructureNodes({ status, services: board }).find((n) => n.key === 'edge');
     const e = status.entities.find((x) => x.id === 'nodes/edge');
     expect([edge.state, edge.word, edge.reason]).toEqual(['crit', e.word, e.reason]);
     expect(held.cpu).toBeTruthy();
@@ -166,7 +161,7 @@ describe('the Infrastructure section, from the model', () => {
     // The hottest sensor at 78 °C, then a cycle it doesn't answer (#462).
     const board = (temp) => inputs({ nodes: { n1: node({ temp }) } });
     const [, status] = cycles([board('78.0'), board(null)]);
-    const n1 = infrastructureNodes({ status, services: board(null).services, ...C })[0];
+    const n1 = infrastructureNodes({ status, services: board(null).services })[0];
     expect(reading(n1, 'temp')).toMatchObject({ value: null, state: 'unknown' });
     expect(reading(n1, 'disk')).toMatchObject({ value: 50, state: 'ok' });
     expect(n1.reason).toBe('Temperature: no reading (warning held until below 70 °C)');
@@ -174,7 +169,7 @@ describe('the Infrastructure section, from the model', () => {
     // A failed disk query, with a number still in the payload.
     const failed = inputs({ nodes: { n1: node({}, { failedReads: ['disk'] }) } });
     const [one] = cycles([failed]);
-    const n = infrastructureNodes({ status: one, services: failed.services, ...C })[0];
+    const n = infrastructureNodes({ status: one, services: failed.services })[0];
     expect(reading(n, 'disk')).toMatchObject({ value: null, state: 'unknown' });
     expect(reading(n, 'cpu').value).toBe(10);
   });
@@ -182,29 +177,31 @@ describe('the Infrastructure section, from the model', () => {
   it('a node with no temperature sensor has no temperature meter', () => {
     const board = inputs({ nodes: { vm: node({ temp: null }) } });
     const [status] = cycles([board]);
-    const vm = infrastructureNodes({ status, services: board.services, ...C })[0];
+    const vm = infrastructureNodes({ status, services: board.services })[0];
     expect(vm.readings.map((r) => r.key)).toEqual(['cpu', 'mem', 'disk']);
   });
 
-  it('in °F: the temperature and its lines in °F, still shown by the rule, still the model’s state', () => {
+  it("the temperature is the model's °C, the number and unit its reason gives, whatever Settings' unit", () => {
     const board = (temp) => inputs({ nodes: { n1: node({ temp }) } });
-    for (const [temp, level, shown] of [
-      ['74.6', 'ok', '166°F'],
-      ['75.0', 'warn', '167°F'],
-      ['86.0', 'crit', '186°F'],
+    for (const [temp, level, shown, reason] of [
+      ['74.6', 'ok', '74°C', 'Healthy'],
+      ['75.0', 'warn', '75°C', 'Temperature 75 °C (warning above 75 °C)'],
+      ['86.0', 'crit', '86°C', 'Temperature 86 °C (critical above 85 °C)'],
     ]) {
       const [status] = cycles([board(temp)]);
+      // The weather's unit is Settings' (`tempUnit`); the node's stays the model's (#494).
       const n1 = infrastructureNodes({ status, services: board(temp).services, tempUnit: 'F' })[0];
       const t = reading(n1, 'temp');
-      expect(t, temp).toMatchObject({ unit: '°F', state: level, warn: 167, crit: 185, band: 9 });
+      expect(t, temp).toMatchObject({ unit: '°C', state: level, warn: 75, crit: 85, band: 5 });
       expect(t.shown, temp).toBe(shown);
-      expect(t.value, temp).toBeCloseTo((Number(temp) * 9) / 5 + 32, 6);
+      expect(status.entities[0].reason, temp).toBe(reason);
+      if (level !== 'ok') expect(reason.replace(' °C', '°C'), temp).toContain(shown);
     }
   });
 
   it('services: up and down counts of what the node hosts, from the model', () => {
     const { status, services } = demoBoard({ scenario: 'incident', now: NOW });
-    const nodes = infrastructureNodes({ status, services, ...C });
+    const nodes = infrastructureNodes({ status, services });
     for (const n of nodes) {
       const hosted = status.entities.filter(
         (e) => (e.kind === 'service' || e.kind === 'container') && e.node === n.key
@@ -226,9 +223,7 @@ describe('the Infrastructure section, from the model', () => {
 
   it("the trend: the node's CPU over the last hour, printed by the rule", () => {
     const { status, services, history } = demoBoard({ scenario: 'healthy', now: NOW });
-    const apps = infrastructureNodes({ status, services, history, ...C }).find(
-      (n) => n.key === 'apps'
-    );
+    const apps = infrastructureNodes({ status, services, history }).find((n) => n.key === 'apps');
     expect(apps.trend.points).toEqual(history['apps:cpu']);
     expect(apps.trend.label).toBe('CPU, last hour');
     const lines = readingLines(status.thresholds, 'cpu');
@@ -240,11 +235,11 @@ describe('the Infrastructure section, from the model', () => {
   it('leaves out a node hidden in Settings, and draws one /api/services has yet to list', () => {
     const { status, services } = demoBoard({ scenario: 'healthy', now: NOW });
     const sections = { edge: { visible: false } };
-    expect(infrastructureNodes({ status, services, sections, ...C }).map((n) => n.key)).toEqual(
+    expect(infrastructureNodes({ status, services, sections }).map((n) => n.key)).toEqual(
       Object.keys(services.nodes).filter((k) => k !== 'edge')
     );
     const { storage, ...rest } = services.nodes;
-    const fewer = infrastructureNodes({ status, services: { ...services, nodes: rest }, ...C });
+    const fewer = infrastructureNodes({ status, services: { ...services, nodes: rest } });
     expect(fewer.map((n) => n.key)).toEqual([...Object.keys(rest), 'storage']);
     expect(fewer.at(-1).readings.every((r) => r.value === null)).toBe(true);
     expect(storage).toBeTruthy();

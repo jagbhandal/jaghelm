@@ -16,9 +16,9 @@
  *  - the hosted services' up and down counts are the model's service and
  *    container entities on that node.
  *
- * The temperature is the model's °C, or °F when the user picked it (Settings,
- * `tempUnit`): the reading and its lines are converted, so the meter still
- * colours and prints as the model judged it.
+ * The temperature is in the model's °C, as its reason says it, so the meter
+ * and the reason print one number in one unit. Settings' unit (`tempUnit`,
+ * the weather's) doesn't reach it: one unit for both is #494.
  *
  * And the section's cards / table choice, kept per browser
  * (useInfrastructureView).
@@ -46,31 +46,14 @@ const num = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
-const fahrenheit = (c) => (c * 9) / 5 + 32;
-
-/**
- * A temperature reading and its lines in `unit` ('C' or 'F'): the meter's
- * unit, scale and lines. A band is a difference, so it scales without the
- * offset.
- */
-function temperature(value, lines, unit) {
-  if (unit !== 'F') return { value, unit: '°C', max: 100, lines };
-  const out = {};
-  if (lines.warn != null) out.warn = fahrenheit(lines.warn);
-  if (lines.crit != null) out.crit = fahrenheit(lines.crit);
-  if (lines.band != null) out.band = (lines.band * 9) / 5;
-  return { value: value == null ? null : fahrenheit(value), unit: '°F', max: 212, lines: out };
-}
-
 /** One reading's meter: `{ key, label, value, unit, max, state, warn, crit, band, shown }`. */
-function readingOf({ key, label, field }, entity, metrics, thresholds, tempUnit) {
+function readingOf({ key, label, field }, entity, metrics, thresholds) {
   const level = entity.conditions?.[key];
-  const raw = JUDGED.has(level) ? num(metrics?.[field]) : null;
-  const served = readingLines(thresholds, key);
-  const { value, unit, max, lines } =
-    key === 'temp'
-      ? temperature(raw, served, tempUnit)
-      : { value: raw, unit: '%', max: 100, lines: served };
+  const value = JUDGED.has(level) ? num(metrics?.[field]) : null;
+  const lines = readingLines(thresholds, key);
+  // Percent of 100, or °C on a 0–100 °C scale.
+  const unit = key === 'temp' ? '°C' : '%';
+  const max = 100;
   return {
     key,
     label,
@@ -107,15 +90,9 @@ function servicesOf(status, nodeKey) {
  * Settings (`sections[key].visible === false`) is left out, as on the board.
  *
  * @param {{ status: any, services?: any, history?: Record<string, number[]>,
- *   sections?: Record<string, any>, tempUnit?: 'C' | 'F' }} board
+ *   sections?: Record<string, any> }} board
  */
-export function infrastructureNodes({
-  status,
-  services = null,
-  history = null,
-  sections = {},
-  tempUnit = 'C',
-}) {
+export function infrastructureNodes({ status, services = null, history = null, sections = {} }) {
   const entities = (status?.entities ?? []).filter((e) => e.kind === 'node');
   if (entities.length === 0) return [];
   const listed = Object.keys(services?.nodes ?? {});
@@ -133,7 +110,7 @@ export function infrastructureNodes({
       const counts = servicesOf(status, e.node);
       const metrics = node?.metrics ?? null;
       const readings = READINGS.filter((r) => hasReading(r, e, metrics)).map((r) =>
-        readingOf(r, e, metrics, status.thresholds, tempUnit)
+        readingOf(r, e, metrics, status.thresholds)
       );
       // Whether the model read the node this cycle; the last hour of CPU, only
       // while the CPU reading is current.
