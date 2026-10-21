@@ -6,9 +6,10 @@
  * on the side the model holds it on (#361).
  *
  * PURE given its inputs: the model's status for this cycle, the previous
- * snapshot, and the caches (only for which sources answered, the monitor
+ * snapshot, the caches (only for which sources answered, the monitor
  * identities the services refresh keeps beside its payload, and which nodes'
- * storage pools Proxmox read, #468). No clock, no I/O.
+ * storage pools Proxmox read, #468), and the cycle's clock, the one the model
+ * was built with (only to time a held reading, #469). No I/O.
  *
  * Snapshot shape (every map's keys inserted in ascending sorted order):
  *   services:  "NODE:ID" -> "up" | "down" | "unknown", for each service the
@@ -17,8 +18,10 @@
  *   monitorOf: "NODE:ID" -> the id of the Kuma monitor that fed that service key
  *              (#395); a snapshot written before #395 has none
  *   hosts:     "NODE" -> { reachable, levels: { cpu, mem, disk, temp,
- *              "pool:<name>": "ok" | "warn" | "crit" } }, the model's
- *              `conditions`; a snapshot written before #292 holds readings here
+ *              "pool:<name>": "ok" | "warn" | "crit" }, heldSince? }, the
+ *              model's `conditions`; `heldSince` (#469), only when the host
+ *              has a held reading: reading -> when its hold began (ms since
+ *              the epoch); a snapshot written before #292 holds readings here
  *   ups:       { state: "online" | "on_battery" | "unknown" }
  *   cron:      "NODE:JOB" -> "success" | "failure" | "overdue" | "unknown"
  *   sources:   "prometheus" | "kuma" | "nut" -> "ok" | "failing" | "down"
@@ -36,7 +39,7 @@
  * UPS going away.
  */
 import { proxmoxPools, sourcesOk } from '../status/model.js';
-import { judgeUps, levelOf, WORDS } from '../status/rules.js';
+import { holdSince, judgeUps, levelOf, WORDS } from '../status/rules.js';
 import { serviceHistory } from './differ.js';
 
 // The monitoring sources whose failure pages (spec §6.1), in key order.
@@ -158,12 +161,22 @@ export function buildMonitorOf(monitorOf, services) {
  * which includes a node no Proxmox entry names any more. The differ then sends
  * its clear if it was over its line.
  *
+ * A hold lasts 24 h (#469). A reading kept from `prevHosts` with no level read
+ * this cycle (its query failed, it has no value, its pool wasn't read) is
+ * held, and `heldSince` records when that began: kept from the previous entry,
+ * else this cycle. Once a hold has lasted HOLD_LIMIT_MS (status/rules.js
+ * holdSince, the rule the model's judgeNode applies on this cycle's clock) the
+ * reading leaves the map, and the differ sends nothing for it. A reading read
+ * this cycle has no hold. An unreachable node, or one with no data, keeps its
+ * holds as they are, as the model does.
+ *
  * @param {any} status
  * @param {Record<string, any>} [prevHosts]
  * @param {(node: string) => { pools: any[], read: boolean }} [poolsOf]  this
  *   cycle's proxmoxPools; without it, no node's pools were read
+ * @param {number} [now]  the cycle's clock, the model's; without it no hold is timed
  */
-export function buildHosts(status, prevHosts = {}, poolsOf = NO_POOL_READS) {
+export function buildHosts(status, prevHosts = {}, poolsOf = NO_POOL_READS, now = undefined) {
   const held = isObject(prevHosts) ? prevHosts : {};
   const entries = [];
   for (const e of entitiesOf(status)) {
@@ -171,16 +184,20 @@ export function buildHosts(status, prevHosts = {}, poolsOf = NO_POOL_READS) {
     const node = keyOf(e.id);
     const before = Object.hasOwn(held, node) ? held[node] : null;
     const levels = isObject(before?.levels) ? { ...before.levels } : {};
+    const starts = startsOf(before);
     if (e.state === 'crit' && e.word === WORDS.unreachable) {
-      entries.push([node, { reachable: false, levels: sortedObject(Object.entries(levels)) }]);
+      entries.push([node, hostEntry(false, levels, starts)]);
       continue;
     }
     if (!isObject(e.conditions)) {
       if (before) entries.push([node, before]); // no data: hold
       continue;
     }
+    const readNow = new Set();
     for (const [reading, level] of Object.entries(e.conditions)) {
-      if (LEVELS.has(level)) levels[reading] = level;
+      if (!LEVELS.has(level)) continue;
+      levels[reading] = level;
+      readNow.add(reading);
     }
     const read = poolsOf(node);
     if (read.read) {
@@ -192,9 +209,25 @@ export function buildHosts(status, prevHosts = {}, poolsOf = NO_POOL_READS) {
         if (reading.startsWith('pool:') && !listed.has(reading)) delete levels[reading];
       }
     }
-    entries.push([node, { reachable: true, levels: sortedObject(Object.entries(levels)) }]);
+    // What is kept with no level read this cycle is held, for 24 h (#469).
+    const heldSince = {};
+    for (const reading of Object.keys(levels)) {
+      if (readNow.has(reading)) continue;
+      const since = holdSince(starts[reading], now);
+      if (since === null) delete levels[reading];
+      else if (since !== undefined) heldSince[reading] = since;
+    }
+    entries.push([node, hostEntry(true, levels, heldSince)]);
   }
   return sortedObject(entries);
+}
+
+/** A host's entry: its levels, and when each held reading's hold began when it has any (#469). */
+function hostEntry(reachable, levels, heldSince) {
+  const kept = Object.entries(heldSince).filter(([reading]) => Object.hasOwn(levels, reading));
+  const entry = { reachable, levels: sortedObject(Object.entries(levels)) };
+  if (kept.length > 0) entry.heldSince = sortedObject(kept);
+  return entry;
 }
 
 /**
@@ -336,12 +369,16 @@ function keepHosts(prevHosts, hosts, ok) {
  * in the snapshot, and when it is read it is new, so it sends no recovery; the
  * UPS pages going on battery from `unknown`. The wait only silenced push.
  *
+ * `now` is the cycle's clock, the one the model was built with: a held
+ * reading's 24 h are timed on it (buildHosts, #469).
+ *
  * @param {{ getCached: (key: string) => *, getCachedInternal?: (key: string) => * }} caches
  * @param {object|null} prev
  * @param {any} status  the status model built from the same caches this cycle
+ * @param {number} [now]  the cycle's clock (without it, no hold is timed)
  * @returns {object}
  */
-export function buildSnapshot(caches, prev, status) {
+export function buildSnapshot(caches, prev, status, now = undefined) {
   const servicesCache = caches.getCached('services');
   const upsCache = caches.getCached('ups');
   const ok = sourcesOk(servicesCache, upsCache);
@@ -352,7 +389,12 @@ export function buildSnapshot(caches, prev, status) {
     upWithoutCard: internal?.upWithoutCard,
   });
   const monitorOf = buildMonitorOf(internal?.monitorOf, services);
-  const hosts = buildHosts(status, prev?.hosts, proxmoxPools(caches.getCached('integrations')));
+  const hosts = buildHosts(
+    status,
+    prev?.hosts,
+    proxmoxPools(caches.getCached('integrations')),
+    now
+  );
   const kept = prev ? keepServices(prev, services, monitorOf, ok) : { services, monitorOf };
   const ups = buildUps(status, prev?.ups);
   return {

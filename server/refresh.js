@@ -41,7 +41,7 @@ import { redactSecrets } from './util/redact.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
 import { recordRefreshCycle } from './metrics.js';
 import { createPushSnapshot, runPushCycle } from './push/dispatch.js';
-import { buildSnapshot, heldLevels, upgradeSnapshot } from './push/snapshot.js';
+import { buildSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from './push/snapshot.js';
 import { getPushStore } from './push/store.js';
 import * as fcm from './push/fcm.js';
 import { createStatusTracker, liveCaches, memoryFromLevels, readStatusInputs } from './status/index.js';
@@ -77,16 +77,20 @@ export const pushSnapshot = createPushSnapshot({
 // runs) lives in this process, so it starts from the levels push last
 // persisted (#361): a reading still inside a hysteresis band after a restart
 // is still over its line, and sends neither a repeat alert nor a false
-// "back to normal". Only when push is set up: without it the file is not
-// push's live state. Only the nodes services.yaml still has are seeded. A seed
-// that fails (an unreadable file is already null) starts the model without it.
+// "back to normal". With them, when each held reading's hold began (#469), so
+// a restart doesn't start its 24 h again and the model and push end it on the
+// same cycle. Only when push is set up: without it the file is not push's live
+// state. Only the nodes services.yaml still has are seeded. A seed that fails
+// (an unreadable file is already null) starts the model without it.
 const statusTracker = createStatusTracker({
   seed: (thresholds) => {
     if (!fcm.isPushConfigured() && !fcm.isPushEnabled()) return null;
     try {
       const nodes = getConfig()?.nodes;
-      return memoryFromLevels(heldLevels(pushSnapshot.prev(), thresholds), {
+      const prev = pushSnapshot.prev();
+      return memoryFromLevels(heldLevels(prev, thresholds), {
         nodes: nodes && typeof nodes === 'object' ? Object.keys(nodes) : null,
+        heldSince: heldSinceOf(prev),
       });
     } catch (err) {
       log.warn({ err }, 'push snapshot levels not usable; the status model starts without them');
@@ -215,12 +219,17 @@ export function updateStatus(cycleErrors = [], now = Date.now()) {
  * sent or advanced, so the next cycle the model builds diffs against the last
  * good snapshot and a change made meanwhile is still sent. No-ops when push is
  * disabled (beyond the status and token pruning).
+ *
+ * The cycle has one clock, `now`: the model, push's snapshot and its differ
+ * all read it, so a held reading's 24 h end on the same cycle in all three
+ * (#469).
  */
-export async function runStatusAndPush(cycleErrors = []) {
-  const status = updateStatus(cycleErrors);
+export async function runStatusAndPush(cycleErrors = [], now = Date.now()) {
+  const status = updateStatus(cycleErrors, now);
   await runPushCycle({
-    buildSnapshotFn: (prev) => (status ? buildSnapshot(liveCaches, prev, status) : null),
+    buildSnapshotFn: (prev) => (status ? buildSnapshot(liveCaches, prev, status, now) : null),
     status,
+    now,
     store: getPushStore(),
     fcm,
     snapshot: pushSnapshot,

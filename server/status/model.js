@@ -244,6 +244,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
         pools: read.pools,
         poolsRead: read.read,
         memo: prev[id]?.memo,
+        now,
         thresholds,
       })
     );

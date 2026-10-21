@@ -679,6 +679,8 @@ test('buildSnapshot: a failed metric query holds that level only; a failed up qu
   assert.deepEqual(snap.hosts.pi, {
     reachable: true,
     levels: { cpu: 'warn', disk: 'ok', mem: 'warn', temp: 'ok' },
+    // Held from this cycle, for at most 24 h (#469).
+    heldSince: { cpu: NOW, disk: NOW },
   });
   assert.deepEqual(snap.hosts.vm103, PREV.hosts.vm103);
 });

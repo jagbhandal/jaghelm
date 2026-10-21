@@ -195,6 +195,11 @@ const ALL_NODE_READS = ['reachable', 'cpu', 'mem', 'disk', 'uptime', 'temp', 'co
 
 const LEVEL_WORD = { warn: 'warning', crit: 'critical' };
 
+/** A node's memo: its levels and CPU's run, and when each hold began when it has any (#469). */
+function memoOf(levels, streak, held) {
+  return Object.keys(held).length > 0 ? { levels, streak, held } : { levels, streak };
+}
+
 /**
  * "Disk 94 % (warning above 90 %)", or, held by hysteresis, "… (warning until
  * below 85 %)". `lines` are the reading's (readings.js readingLines), which
@@ -235,8 +240,14 @@ const CELSIUS = {
  *   starts another. Held at warn or crit, the node stays at that level, with a
  *   reason that says there is no reading and no number or metric; its
  *   condition is `unknown`, as there is no value for a meter. Held at ok, it
- *   is left out. It holds until the reading is read again or the node goes
- *   from services.yaml, as push's snapshot holds it.
+ *   is left out. It holds until the reading is read again, the node goes from
+ *   services.yaml, or the hold has lasted 24 h (#469, holdSince), as push's
+ *   snapshot holds it.
+ * - A hold, of a reading with no value or of one whose query failed, is timed
+ *   from its first cycle (`memo.held`, seeded at boot from push's snapshot).
+ *   After HOLD_LIMIT_MS the reading is forgotten, level and CPU run: it leaves
+ *   the verdict, silently, and is new when it is read again. An unreachable
+ *   node, or one with no data, keeps its holds as they are.
  * - A storage pool has no value this cycle, and holds the same way, when its
  *   node's pools were not read (`poolsRead` false: a Proxmox fetch failed, or
  *   its storage read did, #468) and it isn't listed, or when it is listed with
@@ -249,16 +260,18 @@ const CELSIUS = {
  * not ok, worst first.
  *
  * @param {object|null} node  the /api/services node, or null when it is missing this cycle
- * @param {{ prometheusOk: boolean, pools?: Array<{ name: string, percent: unknown, totalGB?: unknown }>, poolsRead?: boolean, memo?: any, thresholds: import('./thresholds.js').Thresholds }} ctx
+ * @param {{ prometheusOk: boolean, pools?: Array<{ name: string, percent: unknown, totalGB?: unknown }>, poolsRead?: boolean, memo?: any, now?: number, thresholds: import('./thresholds.js').Thresholds }} ctx
  *   pools: the storage pools the node's Proxmox reads listed this cycle;
- *   poolsRead: whether those reads are the whole list (model.js proxmoxPools)
+ *   poolsRead: whether those reads are the whole list (model.js proxmoxPools);
+ *   now: the cycle's clock, which times a hold (without it, none is timed)
  */
 export function judgeNode(
   node,
-  { prometheusOk, pools = [], poolsRead = true, memo = null, thresholds }
+  { prometheusOk, pools = [], poolsRead = true, memo = null, now, thresholds }
 ) {
   const prevLevels = memo?.levels ?? {};
   const prevStreak = memo?.streak ?? {};
+  const prevHeld = memo?.held ?? {};
   const noData = {
     state: 'unknown',
     word: 'No signal',
@@ -292,26 +305,40 @@ export function judgeNode(
           ? "Unreachable: Prometheus can't scrape it"
           : 'Unreachable: no metrics from Prometheus',
       conditions: {},
-      memo: { levels: prevLevels, streak: {} },
+      memo: memoOf(prevLevels, {}, prevHeld),
     };
   }
 
   const h = thresholds.hysteresis;
   const levels = {};
   const streak = {};
+  const held = {};
   const conditions = {};
   /** @type {Array<{ key: string, state: string, reason: string, metric?: object, order: number }>} */
   const found = [];
   let order = 0;
 
+  // A reading with no level read this cycle (its query failed, or it has no
+  // value) keeps the level the model held for it and CPU's run, for at most
+  // HOLD_LIMIT_MS from the first such cycle (#469). Returns the level kept,
+  // or undefined: none was held, or its hold is over and it is forgotten.
+  const keep = (key) => {
+    const before = prevLevels[key];
+    const since = before ? holdSince(prevHeld[key], now) : undefined;
+    if (since === null) return undefined;
+    if (prevStreak[key]) streak[key] = prevStreak[key];
+    if (!before) return undefined;
+    levels[key] = before;
+    if (since !== undefined) held[key] = since;
+    return before;
+  };
+
   // A reading with no value this cycle: what the model held for it is kept
   // (#462). `lines` are its warn and crit lines, `band` its hysteresis and
   // `line` how a line is written.
   const hold = (key, label, { lines, band, line }, at) => {
-    if (prevStreak[key]) streak[key] = prevStreak[key];
-    const before = prevLevels[key];
+    const before = keep(key);
     if (!before) return;
-    levels[key] = before;
     // At most the level its lines allow: a reading with no crit line holds warn.
     const level = before === 'crit' && lines.crit == null ? 'warn' : before;
     if (level !== 'warn' && level !== 'crit') return;
@@ -330,8 +357,7 @@ export function judgeNode(
     order += 1;
     if (failed.includes(r.read)) {
       conditions[r.key] = 'unknown';
-      if (prevLevels[r.key]) levels[r.key] = prevLevels[r.key];
-      if (prevStreak[r.key]) streak[r.key] = prevStreak[r.key];
+      keep(r.key);
       found.push({
         key: r.key,
         state: 'unknown',
@@ -445,7 +471,7 @@ export function judgeNode(
     });
   }
 
-  const memoOut = { levels, streak };
+  const memoOut = memoOf(levels, streak, held);
   if (found.length === 0)
     return { state: 'ok', word: 'Healthy', reason: 'Healthy', conditions, memo: memoOut };
   found.sort(
