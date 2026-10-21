@@ -32,7 +32,8 @@ the sign-off amendments in §15).
   under [Components](#components), [Containers](#containers),
   [Status components](#status-components) and
   [Data components](#data-components), with their variants, sizes and keyboard
-  use. No web screen uses them yet; the Android app's screens use the status
+  use; the shell (#296) and the Overview's sections (#299) are built on them
+  ([Shell](#shell), [Overview sections](#overview-sections)). No web screen uses them yet; the Android app's screens use the status
   components, in its own look.
 - **Gallery:** every state of every component above, in both themes and both
   densities and, where colour follows the accent, all three accents, on one
@@ -1222,7 +1223,9 @@ Chart colours board:
   bold. Numeric columns are right-aligned, header too, in tabular figures.
   Cells keep to one line, so a row stays one `h-row` tall (a column's
   `className` can set `whitespace-normal`), and a table wider than its frame
-  scrolls inside it (`minWidth`; the mock's is 720px).
+  scrolls inside it (`minWidth`; the mock's is 720px). The frame holds what
+  its cells position (words for screen readers, `sr-only`), so a column
+  scrolled out of view never widens the page (#299).
 
 ### Rules for the data components
 
@@ -1243,9 +1246,11 @@ Chart colours board:
 - **Severity is the server's** (spec §6). A meter's `warn` and `crit` come
   from the server's threshold config, and its `state`, when the server sends
   one, wins: its hysteresis holds a warning until the reading drops 5 points.
-- **Inside something that opens** (a node card, an EntityRow with `onOpen`),
-  a Sparkline is `decorative`: a focusable chart inside a button is a control
-  inside a control, and the row's name says what matters.
+- **Inside something that opens** (an EntityRow with `onOpen`, a node card
+  once it opens its drawer, #309), a Sparkline is `decorative`: a focusable
+  chart inside a button is a control inside a control, and the row's name
+  says what matters. The node card opens nothing yet, so its Sparkline is
+  not.
 
 ### Accessibility of the data components
 
@@ -1428,6 +1433,88 @@ From the mock's Main and Phone boards:
   Infrastructure pages exist (#313); the mock has all five.
 - **Labels are 12px, not 11px** (the type floor), and the phone's count is the
   mock's solid; the sidebar's is the mock's tint.
+
+## Overview sections
+
+The Overview's sections in the new UI, one file each in `src/ui/`, built on
+the components above; `src/shell/` feeds them the status model
+([ARCHITECTURE.md](ARCHITECTURE.md), "The Infrastructure section"). The
+[gallery](GALLERY.md) shows each in its states (group Overview), and
+`e2e/infrastructure.spec.mjs` runs the section in a browser.
+
+| Component | Import | Props |
+| --- | --- | --- |
+| `InfrastructureSection` | `@ui/infrastructure-section` | `nodes` (each `{ id, anchor, name, host, subtitle, colour, state, word, reason, readings, services, uptime, trend }`), `count` ("3 nodes · 1 warning"), `view` (`cards` or `table`), `onViewChange` (none, no toggle), `loading`, `banner`, `title` (`Infrastructure`) |
+| `NodeCard` | `@ui/node-card` | `name`, `host`, `subtitle`, `colour` (the user's, a swatch), `state`, `word`, `reason`, `readings` (MetricMeter's props each, with `key`), `services` and `uptime` (the footer's lines), `trend` (`{ points, label, formatValue }`) |
+| `NodeSwatch` | `@ui/node-card` | `colour` |
+
+A reading in `nodes` also carries `shown`, its value as the table prints it
+(by the model's rule, as the meter does), or null for no reading.
+
+### How the Overview sections look
+
+From the mock's Main board, its Infrastructure section:
+
+- **InfrastructureSection.** A heading row: the section's icon (Lucide
+  `Server`) in a 32px accent chip, the title in `text-title-sm`, the count in
+  13px `text-3`, and at the end the Cards / Table SegmentedControl, named
+  "Node view". When the row runs out of room the count goes under the title
+  and the toggle to a line of its own, at the right. Cards are in columns at
+  least 260px wide, 12px apart (one to a row on a phone), the cards of a row as
+  tall as the tallest. The table is the Table component, its hidden caption
+  "Nodes": node (swatch, name, host in mono `text-3`), role, CPU, memory, disk,
+  temperature, services and state (the lamp and the model's word, `text-1`
+  when healthy); a reading in its state's word colour, semibold, only at or
+  over its line, a dash for none. While loading, three 192px placeholder
+  cards and no count.
+- **NodeCard.** The mock's node card: `surface-1` in a subtle edge, 12px
+  round, 16px of padding, 14px between its parts. The name in `text-title-xs`
+  after the swatch; the host (mono) and subtitle in 12px `text-3` under it; at
+  the right the lamp alone when healthy, else the word (12px bold, its
+  state's `fg`) beside the lamp. The meters two to a row, 12px by 16px apart;
+  the model's reason in 12px semibold in its state's `fg` when not healthy;
+  under a subtle rule the services and uptime in 12px (`text-2`, `text-3`) and
+  the trend, a 96 × 24 Sparkline.
+- **NodeSwatch.** 10 × 10, 2px round, the user's colour for the node, hidden
+  from assistive tech: the node's only colour of its own (spec §5.2).
+
+### Rules for the Overview sections
+
+- **The model's, never the section's.** A node's state, word and reason are
+  its entity's; a meter's state is the model's level for that reading and its
+  lines are the ones `/api/status` serves. Below its line a meter is the
+  accent's (`bg-meter`); it takes `warn-solid` or `crit-solid` only at or over
+  its line, or while the model holds that level inside its hysteresis band, so
+  the meter and the word never disagree.
+- **No old number as current.** A reading the model didn't judge this cycle
+  is no reading: a dash, with no trend or uptime beside it.
+- **The user's colour is a swatch.** Never a card's edge, tint or a meter.
+
+### Accessibility of the Overview sections
+
+- The section is a region named by its heading; the toggle a radio group,
+  "Node view"; each card an article named by the node's name, its lamp named
+  by the word when healthy (decorative beside the word otherwise), each meter
+  a `meter` ("94%, warning above 90%"), its Sparkline an image named "CPU,
+  last hour" that Tab reaches. The table's row header is the node's name; a
+  coloured reading adds its state for screen readers (", warning").
+- A page links to a node by the card's `id` (or its name's in the table); the
+  card takes focus when a link lands on it.
+
+### Where the Overview sections differ from the mock
+
+- **The sparkline is azure, slot 1** (the data components' rule), and is the
+  card's last hour of CPU; the mock's footer drew it in the meter's violet.
+- **The footer has two lines**, the services ("3 / 3 services up · 1 down")
+  over the uptime, where the mock has one ("42 / 42 containers · up 6 d"):
+  the model counts services, not containers, and the card is narrow on a
+  phone.
+- **The card opens nothing yet** (the mock's is a button to the drawer, #309).
+- **Temperatures follow Settings' unit** (°F by default, as the board had it);
+  the mock shows °C.
+- **The table** names its state column "State" with "Healthy" as the model
+  words it, adds a Services column where the mock has Workload, and puts the
+  role from services.yaml's `subtitle`.
 
 ## Changing a token
 
