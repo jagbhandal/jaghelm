@@ -657,22 +657,38 @@ export function logUnmatchedContainers({ unmatched, containerCount, monitors }) 
  * container disappears from cAdvisor; an up one is an entry only the push
  * snapshot reads, under the same uid, so its recovery is sent.
  *
- * Each has a FRESH heartbeat: a paused/retired monitor stops beating, goes
- * stale and is excluded, so it can't leave a phantom red card or send a false
- * recovery (the status-page `active` flag is unreliable for this, though
- * `active: false` excludes one too). A pending one (`unknown`) and one Kuma no
- * longer has are not in it either, and nor is one already claimed by a running
- * container this cycle.
+/**
+ * Whether Kuma still checks a monitor, so its status says something: it isn't
+ * paused (`active: false`) and its heartbeat isn't stale. A paused/retired
+ * monitor stops beating and goes stale (the status-page `active` flag is
+ * unreliable for this, reading null on real Kuma, though `active: false`
+ * counts too). A monitor whose heartbeat time is missing/unparseable
+ * (`lastBeatAt == null`) is treated as fresh: we only EXCLUDE on a
+ * positively-stale beat, never miss a real outage over a parse gap.
+ * Metrics-path monitors (the /metrics source) carry `lastBeatAt: null` +
+ * `active: true` by construction — paused monitors are absent from /metrics
+ * entirely, so this guard is intentionally INERT for that source.
+ */
+export function isFreshMonitor(m, { now = Date.now(), staleMs = MONITOR_STALE_MS } = {}) {
+  return m.active !== false && (m.lastBeatAt == null || now - m.lastBeatAt <= staleMs);
+}
+
+/**
+ * The monitors no running container got this cycle that are `up` or `down`, in
+ * id order, so where each is placed does not depend on the order Kuma listed
+ * them in (#395). assembleServices places all of them in one pass (#390): a
+ * down one becomes a synthesised red card, so an outage stays visible after the
+ * container disappears from cAdvisor; an up one is an entry only the push
+ * snapshot reads, under the same uid, so its recovery is sent.
+ *
+ * Each is fresh (isFreshMonitor): a paused/retired monitor is excluded, so it
+ * can't leave a phantom red card or send a false recovery. A pending one
+ * (`unknown`) and one Kuma no longer has are not in it either, and nor is one
+ * already claimed by a running container this cycle.
  *
  * `monitors` is the id→monitor map from fetchMonitors (an array works too:
  * Object.values handles both). `consumedIds` is a Set of
- * monitor ids already rendered as a running container's card. A monitor whose
- * heartbeat time is missing/unparseable (`lastBeatAt == null`) is treated as
- * fresh: we only EXCLUDE on a positively-stale beat, never miss a real outage
- * over a parse gap. Metrics-path monitors (the /metrics source) carry
- * `lastBeatAt: null` + `active: true` by construction — paused monitors are
- * absent from /metrics entirely, so this staleness guard is intentionally INERT
- * for that source.
+ * monitor ids already rendered as a running container's card.
  *
  * `pick` chooses by status: up or down by default. The status model asks for
  * the pending and in-maintenance ones too (#290), by `kumaStatus`.
@@ -683,13 +699,6 @@ export function selectUnclaimedMonitors(
   { now = Date.now(), staleMs = MONITOR_STALE_MS, pick = isUpOrDown } = {}
 ) {
   return Object.values(monitors)
-    .filter(
-      (m) =>
-        m &&
-        pick(m) &&
-        m.active !== false &&
-        !consumedIds.has(m.id) &&
-        (m.lastBeatAt == null || now - m.lastBeatAt <= staleMs)
-    )
+    .filter((m) => m && pick(m) && !consumedIds.has(m.id) && isFreshMonitor(m, { now, staleMs }))
     .sort((a, b) => compareIds(a.id, b.id));
 }

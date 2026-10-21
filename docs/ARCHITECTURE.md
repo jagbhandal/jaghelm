@@ -471,8 +471,12 @@ running card had) rather than passing to a running lookalike. Once the monitor
 is up, or the container has been gone longer than `JAGHELM_PRESENCE_TTL_MS`, it
 holds nothing: a running container can have the monitor (`nextcloud` renamed to
 `nextcloud-app`), and the stopped one leaves a grey presence breadcrumb like any
-container with no monitor. A down monitor no running container got is drawn on
-the stopped container's node, else its last-seen node. When that stopped
+container with no monitor. So does one whose down monitor is paused (a stale
+heartbeat, or `active: false`, on the status-page path; `isFreshMonitor` in
+`monitors.js`): a paused monitor draws no red card, so the container keeping
+its grey card is what keeps it on the board (#438). A down monitor no running
+container got is drawn on the stopped container's node, else its last-seen
+node. When that stopped
 container is the one the monitor last ran as, the monitor's last-seen node
 comes first while it is on the board: the container registry keeps one record
 per name, with the last node in the pass, so when both copies of an unpinned
@@ -483,7 +487,9 @@ nothing or to something else now), and then goes under the monitor's name.
 A grey breadcrumb is not drawn on a red card's uid either: when the stopped
 container the monitor last ran as doesn't get it by name (a mapping that has
 since gone), the red card is placed under that container, and is its one
-card (#438).
+card (#438). The model then reads that uid as the service, so the outage
+pages; before #438 the grey card took the uid as a container, which push
+doesn't read, and the outage sent nothing.
 
 Such a card, of a monitor no container has ("Pi Gateway (Ping)", "NAS (Ping)"),
 exists only while the monitor is down: up, it draws nothing on the board. The
@@ -942,8 +948,10 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   down, its red card is the one crit: the services refresh draws no grey card
   for a container that holds its down monitor or whose uid the monitor's red
   card has (4.2), and one the monitor has moved off (a new container took it)
-  is a warning. A node is crit when Prometheus can't scrape it
-  (`up` is 0, or no `up` series and no metric) while Prometheus answers.
+  is a warning. A paused monitor (`isFreshMonitor`) vouches for nothing: its
+  container is a plain missing one, "Missing: no longer running". A node is
+  crit when Prometheus can't scrape it (`up` is 0, or no `up` series and no
+  metric) while Prometheus answers.
   Proxmox storage pools feed their node's disk rule (the node `_target` names,
   else `pve`). A pool listed with no size (storage Proxmox lists but can't
   read, which the preset gives 0 %) has no reading, not 0 % (#468).

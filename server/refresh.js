@@ -21,6 +21,7 @@ import {
   fetchMonitors,
   assignMonitors,
   checkMonitorMappings,
+  isFreshMonitor,
   logUnmatchedContainers,
   mappingOf,
   selectUnclaimedMonitors,
@@ -302,9 +303,10 @@ function serviceRank(s) {
  *  (c) Breadcrumb synthesis — established, UNMONITORED containers that have
  *      vanished (absent past grace, within TTL) become grey `unknown`
  *      `source:'presence'` cards on their last-seen node. Skipped if the
- *      container is running anywhere this cycle, if it got a (down) monitor in
- *      the matching or a down monitor's red card has its uid (Kuma owns it:
- *      its outage is the monitor's red card, #438), or if it is a CI job's.
+ *      container is running anywhere this cycle, if it got a down monitor in
+ *      the matching that isn't paused (isFreshMonitor: a paused one draws no
+ *      red card) or a down monitor's red card has its uid (Kuma owns it: its
+ *      outage is the monitor's red card, #438), or if it is a CI job's.
  *      Skipped altogether when `presenceKnown` is false: a
  *      Prometheus query failed this cycle, or a node is unread because
  *      Prometheus hasn't scraped it yet (#470), so a container missing from
@@ -398,12 +400,13 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
     nodeOrder,
   });
 
-  // The stopped containers that got a (down) monitor: Kuma owns them.
+  // The stopped containers that got a (down) monitor: Kuma owns them. Not by a
+  // paused one, which draws no red card: the container keeps its grey card.
   const stoppedOwner = new Map(); // monitor id -> the first stopped container that got it
   const ownedStopped = new Set();
   stopped.forEach((v, j) => {
     const m = assigned[running.length + j];
-    if (!m) return;
+    if (!m || !isFreshMonitor(m, { now: nowMs })) return;
     ownedStopped.add(v.container);
     if (!stoppedOwner.has(m.id)) stoppedOwner.set(m.id, v);
   });
@@ -536,7 +539,7 @@ export function assembleServices({ nodeResults, monitors, config, lastSeenNodeOf
       const byId = Object.values(monitors).filter(Boolean).sort((a, b) => Number(a.id) - Number(b.id));
       for (const m of byId) {
         const last = lastSeenContainerOf(m.id);
-        if (last && !backing.has(last)) backing.set(last, { monitor: m.name, status: monitorStatus(m) });
+        if (last && !backing.has(last)) backing.set(last, { monitor: m.name, status: monitorStatus(m, nowMs) });
       }
     }
     // The uids of the cards already drawn: the running containers' and the red cards.
@@ -617,8 +620,13 @@ function isPendingOrMaintenance(m) {
   return m.kumaStatus === 'pending' || m.kumaStatus === 'maintenance';
 }
 
-/** Kuma's status for a monitor: 'up', 'down', 'pending', 'maintenance' or 'unknown'. */
-function monitorStatus(m) {
+/**
+ * Kuma's status for a monitor: 'up', 'down', 'pending', 'maintenance', or
+ * 'unknown' when it has none or is paused (isFreshMonitor): a paused monitor
+ * vouches for nothing, whatever its last beat said.
+ */
+function monitorStatus(m, nowMs) {
+  if (!isFreshMonitor(m, { now: nowMs })) return 'unknown';
   if (isPendingOrMaintenance(m)) return m.kumaStatus;
   return m.status === 'up' || m.status === 'down' ? m.status : 'unknown';
 }
