@@ -416,27 +416,28 @@ test('#468: a reading that leaves the snapshot over its line sends its clear; at
   );
 });
 
-test('#469: a reading whose hold ran out leaves silently; one that leaves inside its 24 h sends its clear', () => {
-  const DAY = 24 * 60 * 60 * 1000;
-  const start = 1_782_345_600_000;
+test('#469: a reading that leaves while held with no value (it has a start) sends nothing; one last read sends its clear', () => {
   const prev = host({
     n1: {
       reachable: true,
-      levels: { disk: 'ok', 'pool:a': 'warn', temp: 'crit' },
-      heldSince: { 'pool:a': start, temp: start },
+      levels: { disk: 'ok', 'pool:a': 'warn', temp: 'crit', mem: 'warn' },
+      heldSince: { temp: 1_782_345_600_000 },
     },
   });
   const next = host({ n1: { reachable: true, levels: { disk: 'ok' } } });
-  assert.deepEqual(diffSnapshots(prev, next, null, start + DAY), [], 'nothing was read');
   assert.deepEqual(
-    diffSnapshots(prev, next, null, start + DAY - 1).map((e) => `${e.type} ${e.id}`),
-    ['host_threshold_cleared n1:pool:a', 'host_threshold_cleared n1:temp'],
-    'a held pool a read no longer lists has ended (#468)'
+    diffSnapshots(prev, next).map((e) => `${e.type} ${e.id}`),
+    ['host_threshold_cleared n1:mem', 'host_threshold_cleared n1:pool:a'],
+    'temp, held with no value, leaves silently (its 24 h were up in the model)'
   );
-  // With no clock, no hold has run out.
-  assert.equal(diffSnapshots(prev, next).length, 2);
-  // A reading with no start (never held) that leaves sends its clear at any time.
-  assert.equal(diffSnapshots(...levels({ 'pool:a': 'warn' }, {}), null, start + 9 * DAY).length, 1);
+  // Held with no value and then read normal: that is a reading, and its clear.
+  assert.deepEqual(
+    diffSnapshots(
+      prev,
+      host({ n1: { reachable: true, levels: { ...prev.hosts.n1.levels, temp: 'ok' } } })
+    ).map((e) => `${e.type} ${e.id}`),
+    ['host_threshold_cleared n1:temp']
+  );
 });
 
 test('#448: a host first seen unreachable (no levels) that comes back over its line sends the reading too', () => {

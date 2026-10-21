@@ -77,9 +77,9 @@ export const pushSnapshot = createPushSnapshot({
 // runs) lives in this process, so it starts from the levels push last
 // persisted (#361): a reading still inside a hysteresis band after a restart
 // is still over its line, and sends neither a repeat alert nor a false
-// "back to normal". With them, when each held reading's hold began (#469), so
-// a restart doesn't start its 24 h again and the model and push end it on the
-// same cycle. Only when push is set up: without it the file is not push's live
+// "back to normal". With them, when each held reading's hold began (#469):
+// the starts the model served and push copied, so a restart doesn't start
+// a hold's 24 h again. Only when push is set up: without it the file is not push's live
 // state. Only the nodes services.yaml still has are seeded. A seed that fails
 // (an unreadable file is already null) starts the model without it.
 const statusTracker = createStatusTracker({
@@ -220,16 +220,14 @@ export function updateStatus(cycleErrors = [], now = Date.now()) {
  * good snapshot and a change made meanwhile is still sent. No-ops when push is
  * disabled (beyond the status and token pruning).
  *
- * The cycle has one clock, `now`: the model, push's snapshot and its differ
- * all read it, so a held reading's 24 h end on the same cycle in all three
- * (#469).
+ * `now` is the model's clock. Push reads none: a held reading is timed by the
+ * model alone, and the snapshot copies its starts (#469).
  */
 export async function runStatusAndPush(cycleErrors = [], now = Date.now()) {
   const status = updateStatus(cycleErrors, now);
   await runPushCycle({
-    buildSnapshotFn: (prev) => (status ? buildSnapshot(liveCaches, prev, status, now) : null),
+    buildSnapshotFn: (prev) => (status ? buildSnapshot(liveCaches, prev, status) : null),
     status,
-    now,
     store: getPushStore(),
     fcm,
     snapshot: pushSnapshot,

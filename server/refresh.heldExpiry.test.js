@@ -1,9 +1,9 @@
 /**
  * #469 through the loop's own wiring (refresh.js runStatusAndPush): the status
  * model is seeded, at boot, with when each hold in the push snapshot file
- * began, and the model, the snapshot and the differ read one clock a cycle. So
- * a reading held since before the restart ends 24 h after its hold began, on
- * the board and in the file on the same cycle, and nothing is sent.
+ * began, and push copies the starts the model serves. So a reading held since
+ * before the restart ends 24 h after its hold began, on the board and in the
+ * file on the same cycle, and nothing is sent.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -76,11 +76,12 @@ function refreshed(celsius) {
 const h = () => getCached('status').entities.find((e) => e.id === 'nodes/h');
 const filed = () => JSON.parse(readFileSync(snapshotFile, 'utf8')).hosts.h;
 
-test('#469: the loop seeds the model with when each hold began and gives model and push one clock: both forget the reading at 24 h, sending nothing; back hot, one page', async () => {
+test('#469: the loop seeds the model with when each hold began, and push copies the model: both forget the reading at 24 h, sending nothing; back hot, one page', async () => {
   refreshed(null);
   await runStatusAndPush([], BEGAN + DAY - 30_000);
   assert.deepEqual([h().state, h().conditions.temp], ['warn', 'unknown'], 'held from the file');
-  assert.deepEqual([filed().levels.temp, filed().heldSince], ['warn', { temp: BEGAN }]);
+  // The start the model serves is the file's, not this cycle's: the seed carried it.
+  assert.deepEqual(h().heldSince, { temp: BEGAN });
 
   await runStatusAndPush([], BEGAN + DAY);
   assert.deepEqual([h().state, h().reason], ['ok', 'Healthy']);

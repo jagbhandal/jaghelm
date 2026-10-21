@@ -1,12 +1,11 @@
 /**
  * Pure incident differ — the determinism centerpiece of the push pipeline.
  *
- * diffSnapshots(prev, next, status, now) compares two push snapshots and
- * returns a canonically-sorted, byte-deterministic array of incident events.
- * It is PURE: no Date.now, no I/O, no module-level mutable state. Same input
- * => same output, same order, every time. The cycle's clock is passed in
- * (`now`, only to tell a held reading whose 24 h are up, #469); all clock/I/O
- * (tokenStore, runPushCycle) lives OUTSIDE this file.
+ * diffSnapshots(prev, next, status) compares two push snapshots and returns a
+ * canonically-sorted, byte-deterministic array of incident events. It is PURE
+ * and CLOCK-FREE: no Date.now, no I/O, no module-level mutable state. Same
+ * input => same output, same order, every time. All clock/I/O (tokenStore,
+ * runPushCycle) lives OUTSIDE this file.
  *
  * It judges nothing (#292): the snapshot holds what the status model decided
  * (server/status/, push/snapshot.js), a service's state, each host reading's
@@ -30,7 +29,7 @@
  * wherever that monitor's key was last cycle (#395), and a monitor is one event
  * however many cards it feeds (#407): see serviceHistory and diffServices.
  */
-import { holdSince, judgeService } from '../status/rules.js';
+import { judgeService } from '../status/rules.js';
 
 /**
  * event.type -> severity. host_threshold is 'warning' for a reading that
@@ -79,10 +78,8 @@ const NO_STATE = Object.freeze({
  *                              every entity is new, #448)
  * @param {object} next         this cycle's snapshot
  * @param {object|null} [status] the status model `next` was built from: the words
- * @param {number} [now]        the cycle's clock, the one `next` was built with
- *                              (#469); without it no hold has run out
  */
-export function diffSnapshots(prev, next, status = null, now = undefined) {
+export function diffSnapshots(prev, next, status = null) {
   if (prev === null || prev === undefined) prev = NO_STATE;
   const words = wordsFrom(status);
   const events = [];
@@ -94,7 +91,7 @@ export function diffSnapshots(prev, next, status = null, now = undefined) {
     words,
     events
   );
-  diffHosts(prev.hosts || {}, next.hosts || {}, words, events, now);
+  diffHosts(prev.hosts || {}, next.hosts || {}, words, events);
   diffUps(prev.ups, next.ups, words, events);
   diffCron(prev.cron || {}, next.cron || {}, words, events);
   diffSources(prev.sources || {}, next.sources || {}, words, events);
@@ -298,12 +295,12 @@ function startsOf(host) {
  * read that succeeded no longer lists: push/snapshot.js buildHosts, #468) at
  * warn or crit sends host_threshold_cleared, with `next` null: it has no state
  * now. At ok it sends nothing. A host that leaves the snapshot sends nothing.
- * Nor does a held reading that leaves because its hold has lasted 24 h (#469):
- * nothing was read, so nothing is cleared. That is the rule buildHosts dropped
- * it by (status/rules.js holdSince), on the start `prev` holds for it and the
- * same clock.
+ * Nor does a reading that leaves while it was held with no value (it has a
+ * start in `prev`'s `heldSince`, #469): nothing was read, so nothing is
+ * cleared. The model forgets such a reading when its 24 h are up, and
+ * buildHosts drops it on that cycle.
  */
-function diffHosts(prev, next, words, events, clock) {
+function diffHosts(prev, next, words, events) {
   for (const node of Object.keys(next)) {
     const known =
       Object.hasOwn(prev, node) && prev[node] !== null && typeof prev[node] === 'object';
@@ -386,8 +383,8 @@ function diffHosts(prev, next, words, events, clock) {
     for (const key of Object.keys(was).sort()) {
       const b = was[key];
       if (Object.hasOwn(now, key) || (b !== 'warn' && b !== 'crit')) continue;
-      // Its hold ran out (#469): it leaves silently.
-      if (Number.isFinite(began[key]) && holdSince(began[key], clock) === null) continue;
+      // Held with no value (#469): it leaves silently.
+      if (Object.hasOwn(began, key)) continue;
       events.push({
         type: 'host_threshold_cleared',
         id: `${node}:${key}`,
@@ -406,9 +403,9 @@ function diffHosts(prev, next, words, events, clock) {
 /**
  * What diffSnapshots reads from a snapshot when it is `prev`: every state, the
  * monitor that fed each service key, each host's reachability and levels and
- * when each of its held readings' hold began (#469: the file must keep that
- * start, so a restart doesn't start the 24 h again), and each source's run of
- * failed cycles. Two snapshots with the same key give the
+ * which of its readings are held with no value, with when that began (#469:
+ * the file must keep it, so a restart doesn't start the 24 h again), and each
+ * source's run of failed cycles. Two snapshots with the same key give the
  * same alerts against any `next`, so the persisted snapshot is rewritten only
  * when this changes (createPushSnapshot). The snapshot holds no readings since
  * #292, so that is all of it. Keep it in step with the reads in diffServices,

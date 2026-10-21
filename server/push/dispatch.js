@@ -222,13 +222,10 @@ export function createPushSnapshot({ path, write = atomicWriteFileSync, upgrade 
  * @param {object}   deps.store            token store
  * @param {object}   deps.fcm              fcm module
  * @param {object}   deps.snapshot         prev-snapshot memory (createPushSnapshot)
- * @param {number}   [deps.now]            the cycle's clock, the one the model and the
- *                                         snapshot were built with (#469: the differ
- *                                         tells a held reading whose 24 h are up by it)
  * @param {object}   [deps.logger]
  * @returns {Promise<void>}
  */
-export async function runPushCycle({ buildSnapshotFn, status = null, store, fcm, snapshot, now = undefined, logger = defaultLog }) {
+export async function runPushCycle({ buildSnapshotFn, status = null, store, fcm, snapshot, logger = defaultLog }) {
   try {
     store.pruneStale();
     if (!fcm.isPushEnabled()) return;
@@ -243,7 +240,7 @@ export async function runPushCycle({ buildSnapshotFn, status = null, store, fcm,
 
     // With no prev (no file, or an unreadable one) every entity is new: what
     // is in trouble pages once, what is ok sends nothing (#448).
-    const events = diffSnapshots(prev, snap, status, now);
+    const events = diffSnapshots(prev, snap, status);
     if (events.length > 0) {
       const counts = await dispatchEvents(events, { store, fcm, logger });
       logger.info({ ...counts, events: events.length }, 'push cycle dispatched');

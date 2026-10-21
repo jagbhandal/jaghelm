@@ -67,11 +67,14 @@ export function pushPipeline({
   let snapshot = open();
   let tracker = seededTracker(snapshot);
   let now = start;
+  let pushUp = true;
+  let sendFails = false;
   const sent = [];
   const events = [];
   const fcm = {
-    isPushEnabled: () => true,
+    isPushEnabled: () => pushUp,
     sendToToken: async (_token, event) => {
+      if (sendFails) throw new Error('FCM send failed');
       sent.push(`${event.type} ${event.id}`);
       events.push(event);
       return { ok: true, prune: false };
@@ -89,26 +92,34 @@ export function pushPipeline({
      * One cycle. `thresholds` replaces the pipeline's for this cycle and the
      * next ones (a hand edit of display-config.json); `backupJobs` are the
      * cron jobs marked as backups and `arcaneAgents` the Arcane poller's
-     * agents (#291).
+     * agents (#291). `push: false` is a cycle push sits out (FCM not up yet,
+     * the boot race), and `failSend` one whose dispatch throws: either way the
+     * model moves on and the snapshot doesn't (#469).
      */
     async cycle(
       caches,
-      { cycleErrors = [], thresholds: t, backupJobs = [], arcaneAgents = null } = {}
+      {
+        cycleErrors = [],
+        thresholds: t,
+        backupJobs = [],
+        arcaneAgents = null,
+        push = true,
+        failSend = false,
+      } = {}
     ) {
       if (t) thresholds = t;
-      // One clock for the cycle: the model, the snapshot and the differ (#469).
-      const at = now;
       const status = tracker.update({
         inputs: readStatusInputs(caches, { cycleErrors, env, backupJobs, arcaneAgents }),
         thresholds,
-        now: at,
+        now,
       });
       pipeline.status = status;
       now += CYCLE_MS;
+      pushUp = push;
+      sendFails = failSend;
       await runPushCycle({
-        buildSnapshotFn: (prev) => buildSnapshot(caches, prev, status, at),
+        buildSnapshotFn: (prev) => buildSnapshot(caches, prev, status),
         status,
-        now: at,
         store: onePhone(),
         fcm,
         snapshot,
@@ -204,5 +215,5 @@ export function snapshotAfter(
     thresholds,
     now,
   });
-  return { snapshot: buildSnapshot(caches, prev, status, now), status };
+  return { snapshot: buildSnapshot(caches, prev, status), status };
 }

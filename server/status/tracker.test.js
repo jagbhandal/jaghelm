@@ -408,3 +408,19 @@ test('#468: the Proxmox integration removed: a pool it held ends in the model; n
     ]
   );
 });
+
+test('#469: a node serves when each of its holds began, from its first cycle with no value, until it is read', () => {
+  const tracker = createStatusTracker();
+  const temp = (value, i) =>
+    tracker
+      .update({
+        inputs: inputs({ nodes: { n1: node({ temp: value }) } }),
+        thresholds: T,
+        now: NOW + i * 30_000,
+      })
+      .entities.find((e) => e.id === 'nodes/n1');
+  assert.equal(temp('78', 0).heldSince, undefined);
+  assert.deepEqual(temp(null, 1).heldSince, { temp: NOW + 30_000 });
+  assert.deepEqual(temp(null, 2).heldSince, { temp: NOW + 30_000 }, 'kept, not restarted');
+  assert.equal(temp('76', 3).heldSince, undefined, 'read again: no hold');
+});
