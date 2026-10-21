@@ -12,7 +12,8 @@
  * tile is a toggle that filters the page to its subsystem (`filter`, the
  * URL's, overviewFilter.js): the panel's rows narrow to it, and the board
  * below to its panels (DashboardView). Pressing it again, or Clear, shows
- * everything.
+ * everything. With a stale status, the tiles keep their counts, as last
+ * known, but are drawn as no signal (statusFreshness.js, #480).
  *
  * It is the new UI over today's board, which later cards rebuild (#298–#300):
  * a root of its own (ShellSection) inside a wrapper that lines it up with the
@@ -30,6 +31,7 @@ import { pathTo } from '../router/routes.js';
 import { ShellAttention } from './ShellAttention.jsx';
 import { useRowLink } from './entityAnchors.js';
 import { clearOverviewFilter, filterOverview } from './overviewFilter.js';
+import { useStatusFreshness } from './statusFreshness.js';
 import { subsystemCells } from './statusView.js';
 
 const ALERTS = pathTo('alerts');
@@ -51,7 +53,8 @@ export const OverviewStatus = memo(function OverviewStatus({
   filter = null,
 }) {
   const linkOf = useRowLink();
-  const cells = useMemo(() => subsystemCells(status), [status]);
+  const freshness = useStatusFreshness({ status, reach, updated });
+  const cells = useMemo(() => subsystemCells(status, freshness), [status, freshness]);
   return (
     <div className="overview-status" data-slot="overview-status">
       <ShellSection>

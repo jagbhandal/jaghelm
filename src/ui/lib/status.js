@@ -45,6 +45,17 @@ export const EMPTY = 'empty';
 /** What an empty board says when the caller gives no sentence: the model's. */
 export const EMPTY_SENTENCE = 'Nothing monitored yet';
 
+/**
+ * Why there is no signal: the server can't be reached; it has no status yet
+ * (a 503 before its first check); or the status it had is past its TTL (a 503
+ * after one, #480).
+ */
+export const NO_SIGNAL = Object.freeze({
+  down: "Can't reach JagHelm",
+  waiting: 'Waiting for the first check',
+  expired: "JagHelm's status is out of date",
+});
+
 /** The word a state reads as when the caller gives none (the mock's Tokens board). */
 export const WORDS = Object.freeze({
   ok: 'OK',

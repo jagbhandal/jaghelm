@@ -9,11 +9,16 @@
  * line with the model's sentence ("All systems normal · All 32 services up ·
  * 6 nodes healthy"); on an empty board, "Nothing monitored yet" (#449).
  *
- * Without a signal it says so, as a Banner, and still shows what the server
- * last said, so a blip doesn't blank the panel; how long ago it said it runs
- * on its own clock (useAgo, as the header's "Updated 20 min ago"), since
- * nothing else changes while the polls fail. Before the first answer, a
- * placeholder.
+ * Without a signal (a failed poll, or a status past its TTL), it follows the
+ * one rule for a stale status (statusFreshness.js, #480): what the server
+ * last said stays, so a blip doesn't blank the panel, but none of it in its
+ * colour. The panel's lamp is the steel ring, its heading "No signal · last
+ * known 20 min ago: Critical · 2 critical" (the header says the same words),
+ * the line under it why ("Can't reach JagHelm"), and its rows keep their
+ * words, reasons and ages, each with the steel ring. The age runs on the one
+ * clock (useAgo), since nothing else changes while the polls fail. With no
+ * status to show, a Banner says "No signal" and why. Before the first answer,
+ * a placeholder.
  *
  *   titleAs   the panel's heading element: h2 under the page's own h1
  *   action    the panel's top-right element (the Overview's "All alerts")
@@ -27,15 +32,10 @@
  */
 import { useSyncExternalStore } from 'react';
 import { AttentionPanel } from '@ui/attention-panel';
-import { NO_SIGNAL, useAgo } from '@ui/app-header';
 import { Banner } from '@ui/banner';
 import { Skeleton } from '@ui/skeleton';
-import { countsText, issueRows } from './statusView.js';
-
-/** "This is what it said 20 min ago.", ticking on its own while the banner shows. */
-function SaidAgo({ at }) {
-  return `This is what it said ${useAgo(at)}.`;
-}
+import { countsText, issueRows, lastKnownLine } from './statusView.js';
+import { STALE_STATE, useStatusFreshness } from './statusFreshness.js';
 
 export function ShellAttention({
   status,
@@ -50,25 +50,36 @@ export function ShellAttention({
 }) {
   // Re-render on each answer, so the ages move with the clock.
   const at = useSyncExternalStore(updated.subscribe, updated.get);
+  const freshness = useStatusFreshness({ status, reach, updated });
   const now = at ?? Date.now();
   const all = status?.issues ?? [];
   const shown = filter ? all.filter((i) => i.subsystem === filter) : all;
-  const rows = issueRows({ issues: shown }, now);
+  const rows = issueRows({ issues: shown }, now).map((row) =>
+    freshness.stale ? { ...row, state: STALE_STATE } : row
+  );
   const issues = linkOf ? rows.map((row, i) => ({ ...row, ...linkOf(shown[i]) })) : rows;
   // Quiet is the whole board's, not the filter's.
   const quiet = all.length === 0;
   const filterName = filter
     ? (status?.subsystems?.find((s) => s.id === filter)?.name ?? filter)
     : undefined;
+  const said = status
+    ? freshness.stale
+      ? {
+          state: STALE_STATE,
+          counts: lastKnownLine(freshness, status),
+          subline: freshness.cause,
+        }
+      : {
+          state: status.overall.state,
+          counts: quiet ? status.overall.sentence : countsText(status.issues),
+          subline: quiet ? undefined : status.overall.sentence,
+        }
+    : null;
   return (
     <>
-      {reach !== 'ok' && reach !== 'loading' && (
-        <Banner
-          tone="unknown"
-          title="No signal"
-          cause={NO_SIGNAL[reach] ?? NO_SIGNAL.down}
-          detail={status && at != null ? <SaidAgo at={at} /> : undefined}
-        />
+      {freshness.stale && !status && (
+        <Banner tone="unknown" title="No signal" cause={freshness.cause} />
       )}
       {reach === 'loading' && (
         <div aria-busy="true">
@@ -76,12 +87,12 @@ export function ShellAttention({
           <Skeleton style={{ height: 80 }} />
         </div>
       )}
-      {status && (
+      {said && (
         <AttentionPanel
           titleAs={titleAs}
-          state={status.overall.state}
-          counts={quiet ? status.overall.sentence : countsText(status.issues)}
-          subline={quiet ? undefined : status.overall.sentence}
+          state={said.state}
+          counts={said.counts}
+          subline={said.subline}
           action={action}
           issues={issues}
           filter={filterName}

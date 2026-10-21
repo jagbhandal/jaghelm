@@ -13,8 +13,11 @@
  *              up, #449) is quiet too, with no lamp: the model's sentence,
  *              "Nothing monitored yet", in text-1, never "No signal" and never
  *              "All systems normal". `reach` other than 'ok' is no signal:
- *              the steel ring and "No signal", with why ("Can't reach
- *              JagHelm"), the same word and colour as the Android app.
+ *              the steel ring and "No signal", the same word and colour as
+ *              the Android app, then `lastKnown` when the shell has a last
+ *              status ("last known 3 min ago: All systems normal", #480),
+ *              else why ("Can't reach JagHelm"). Nothing from the last
+ *              status is drawn in its colour.
  *              `reach` 'loading', before the first answer, is a placeholder,
  *              neither a state nor no signal. A live region, so a change is
  *              announced.
@@ -29,7 +32,6 @@
  * `onNavigate(event, href)` handles a link's click (the router's followLink),
  * so a modified click still opens a new browser tab.
  */
-import { useEffect, useState } from 'react';
 import { LogOut, Search, SlidersHorizontal } from 'lucide-react';
 import { buttonVariants } from './button.jsx';
 import { IconButton } from './icon-button.jsx';
@@ -38,19 +40,14 @@ import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { Tooltip } from './tooltip.jsx';
 import { cn } from './lib/utils.js';
-import { EMPTY, EMPTY_SENTENCE, WORDS, toState } from './lib/status.js';
+import { agoText, useAgo } from './lib/ago.js';
+import { EMPTY, EMPTY_SENTENCE, NO_SIGNAL, WORDS, toState } from './lib/status.js';
 
 /**
  * The overall states that read as quiet: maintenance never breaks the quiet
  * line (§6.1), and an empty board has nothing to break it (#449).
  */
 const QUIET = new Set(['ok', 'maintenance', EMPTY]);
-
-/** What the header says when it has no status to show, by why. */
-export const NO_SIGNAL = Object.freeze({
-  down: "Can't reach JagHelm",
-  waiting: 'Waiting for the first check',
-});
 
 /** The mock's helm mark: the wheel, in on-accent, on an accent square. */
 function HelmMark({ className }) {
@@ -79,35 +76,6 @@ function HelmMark({ className }) {
   );
 }
 
-/** How long ago `ms` was, as the header says it: "just now", "12 s", "3 min", "2 h", "4 d". */
-export function agoText(ms) {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  if (s < 5) return 'just now';
-  if (s < 60) return `${s} s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m} min ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} h ago`;
-  return `${Math.floor(h / 24)} d ago`;
-}
-
-/**
- * How long ago `at` was (ms since the epoch), as agoText says it, on a clock
- * of its own that ticks each second, so only the component that asks
- * re-renders; null while `at` is. UpdatedAgo's, and the "No signal" banner's
- * "This is what it said 20 min ago" (#297).
- */
-export function useAgo(at) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (at == null) return undefined;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [at]);
-  return at == null ? null : agoText(now - at);
-}
-
 /**
  * "Updated 12 s ago", for the time `at` (ms since the epoch; nothing before
  * the first update). It keeps its own clock (useAgo), so it re-renders alone.
@@ -127,7 +95,7 @@ function UpdatedAgo({ at, className, ...props }) {
 }
 
 function HeaderStatus({ status = {}, onNavigate }) {
-  const { reach = 'ok', state, word, sentence, href = '/alerts', current } = status;
+  const { reach = 'ok', state, word, sentence, href = '/alerts', current, lastKnown } = status;
   if (reach === 'loading') {
     // Before the first answer: no state to show yet, and not "No signal" either.
     return (
@@ -150,8 +118,13 @@ function HeaderStatus({ status = {}, onNavigate }) {
   const said = !signal
     ? WORDS.unknown
     : word || (empty ? sentence || EMPTY_SENTENCE : quiet ? 'All systems normal' : WORDS[s]);
-  // An empty board's sentence is its whole line, said once.
-  const says = !signal ? NO_SIGNAL[reach] || NO_SIGNAL.down : sentence !== said ? sentence : null;
+  // An empty board's sentence is its whole line, said once. Without a signal,
+  // what was last known, or else why.
+  const says = !signal
+    ? lastKnown || NO_SIGNAL[reach] || NO_SIGNAL.down
+    : sentence !== said
+      ? sentence
+      : null;
   return (
     <div role="status" data-slot="header-status" className="flex min-w-0 flex-1">
       <a
@@ -273,4 +246,4 @@ function AppHeader({
   );
 }
 
-export { AppHeader, HelmMark, UpdatedAgo };
+export { AppHeader, HelmMark, UpdatedAgo, NO_SIGNAL, agoText, useAgo };

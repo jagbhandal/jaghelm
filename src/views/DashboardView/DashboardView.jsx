@@ -59,10 +59,11 @@ const NO_COMMITS = [];
  * a placeholder.
  *
  * At its top, the Overview's Infrastructure section (#299): the nodes, from
- * the header's poll (`status`, `reach`) and this board's readings. It is the
- * Nodes subsystem's, so a filter to another subsystem hides it; while it is
- * drawn, each node's anchor is its card there, and the node panels below,
- * which keep the node's service cards and Proxmox lists, carry none.
+ * the header's poll (`status`, `reach`, `updated`) and this board's
+ * readings. It is the Nodes subsystem's, so a filter to another subsystem
+ * hides it; while it is drawn, each node's anchor is its card there, and the
+ * node panels below, which keep the node's service cards and Proxmox lists,
+ * carry none.
  */
 export default function DashboardView({
   refreshKey,
@@ -73,6 +74,7 @@ export default function DashboardView({
   onClearFilter,
   status = null,
   reach = null,
+  updated = null,
 }) {
   const { config, setConfig } = useConfig();
   // Mobile detection — used to disable drag/resize on small screens
@@ -579,6 +581,7 @@ export default function DashboardView({
         <OverviewInfrastructure
           status={status}
           reach={reach}
+          updated={updated}
           services={serviceData}
           servicesLoaded={servicesLoaded}
           history={history}

@@ -1,8 +1,11 @@
 /**
  * How the shell words the status model (#296). The server judges every state
  * (spec §6); these only count and phrase what it sent, for the header's Alerts
- * badge, the Alerts page's issue rows and the Overview's subsystem strip.
+ * badge, the Alerts page's issue rows and the Overview's subsystem strip,
+ * and what a stale status last said (#480).
  */
+import { EMPTY, EMPTY_SENTENCE, WORDS, toState } from '../ui/lib/status.js';
+import { drawnState, isStale, lastKnownCaption } from './statusFreshness.js';
 
 /** The noun before an issue's node, by the entity's kind (docs/ARCHITECTURE.md §4.7). */
 const KIND = Object.freeze({
@@ -66,7 +69,7 @@ export function countsText(issues = []) {
  * signal (the count would be stale).
  */
 export function alertsBadge(status, reach) {
-  const issues = reach === 'ok' ? (status?.issues ?? []) : [];
+  const issues = isStale(reach) ? [] : (status?.issues ?? []);
   if (issues.length === 0) return null;
   return {
     count: issues.length,
@@ -91,16 +94,21 @@ function subsystemWord(status, subsystem) {
  * the model's order: one per subsystem with anything in it (an unconfigured
  * one shows no panel, spec §8), its state, word and the model's `detail`
  * ("11 / 12 up") as the value. None on an empty board.
+ *
+ * With a stale status (`freshness`, statusFreshness.js, #480), each cell
+ * keeps its word and counts, as last known, but is drawn as no signal, and
+ * says so under its count ("Last known 3 min ago").
  */
-export function subsystemCells(status) {
+export function subsystemCells(status, freshness) {
   return (status?.subsystems ?? [])
     .filter((s) => s.counts?.total > 0)
     .map((s) => ({
       key: s.id,
       label: s.name,
-      state: s.state,
+      state: drawnState(s.state, freshness),
       word: subsystemWord(status, s),
       value: s.detail,
+      sub: freshness?.stale ? lastKnownCaption(freshness) : undefined,
     }));
 }
 
@@ -113,4 +121,31 @@ export function subsystemFilter(status, id) {
   if (!id) return null;
   const s = (status?.subsystems ?? []).find((x) => x.id === id && x.counts?.total > 0);
   return s ? { id: s.id, name: s.name, detail: s.detail } : null;
+}
+
+/**
+ * What a status said at its top, as a stale screen quotes it: "All systems
+ * normal", "Nothing monitored yet", or its word and counts ("Critical · 2
+ * critical, 1 warning").
+ */
+export function headlineOf(status) {
+  const state = status?.overall?.state;
+  const issues = status?.issues ?? [];
+  if (issues.length === 0 && state === EMPTY) return status.overall.sentence || EMPTY_SENTENCE;
+  if (issues.length === 0 && (state === 'ok' || state === 'maintenance')) {
+    return 'All systems normal';
+  }
+  const word = WORDS[toState(state)];
+  const counts = countsText(issues);
+  return counts ? `${word} · ${counts}` : word;
+}
+
+/**
+ * "last known 3 min ago: All systems normal": what the header and the
+ * attention panel say after "No signal", the same words in both; null while
+ * fresh, or with nothing known.
+ */
+export function lastKnownLine(freshness, status) {
+  if (!freshness?.stale || !freshness.lastKnown || !status) return null;
+  return `${freshness.lastKnown}: ${headlineOf(status)}`;
 }
