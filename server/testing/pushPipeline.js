@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createPushSnapshot, runPushCycle } from '../push/dispatch.js';
-import { buildSnapshot, heldLevels, upgradeSnapshot } from '../push/snapshot.js';
+import { buildSnapshot, heldLevels, heldSinceOf, upgradeSnapshot } from '../push/snapshot.js';
 import { createStatusTracker, memoryFromLevels, readStatusInputs } from '../status/index.js';
 import { DEFAULT_THRESHOLDS } from '../status/thresholds.js';
 
@@ -32,10 +32,13 @@ export function onePhone() {
   };
 }
 
-/** A tracker seeded, as the loop's is, from what `snapshot` holds. */
+/** A tracker seeded, as the loop's is, from what `snapshot` holds: its levels, and when each hold began (#469). */
 export function seededTracker(snapshot) {
   return createStatusTracker({
-    seed: (thresholds) => memoryFromLevels(heldLevels(snapshot.prev(), thresholds)),
+    seed: (thresholds) => {
+      const prev = snapshot.prev();
+      return memoryFromLevels(heldLevels(prev, thresholds), { heldSince: heldSinceOf(prev) });
+    },
   });
 }
 
@@ -93,22 +96,29 @@ export function pushPipeline({
       { cycleErrors = [], thresholds: t, backupJobs = [], arcaneAgents = null } = {}
     ) {
       if (t) thresholds = t;
+      // One clock for the cycle: the model, the snapshot and the differ (#469).
+      const at = now;
       const status = tracker.update({
         inputs: readStatusInputs(caches, { cycleErrors, env, backupJobs, arcaneAgents }),
         thresholds,
-        now,
+        now: at,
       });
       pipeline.status = status;
       now += CYCLE_MS;
       await runPushCycle({
-        buildSnapshotFn: (prev) => buildSnapshot(caches, prev, status),
+        buildSnapshotFn: (prev) => buildSnapshot(caches, prev, status, at),
         status,
+        now: at,
         store: onePhone(),
         fcm,
         snapshot,
         logger: silent,
       });
       return status;
+    },
+    /** When the next cycle runs, by the pipeline's clock. */
+    get now() {
+      return now;
     },
     /** Moves the pipeline's clock on by `ms` (each cycle moves it CYCLE_MS). */
     advance(ms) {
@@ -186,11 +196,13 @@ export function snapshotAfter(
   prev = null,
   { thresholds = DEFAULT_THRESHOLDS, now = 1_782_345_600_000, cycleErrors = [] } = {}
 ) {
-  const tracker = createStatusTracker({ seed: (t) => memoryFromLevels(heldLevels(prev, t)) });
+  const tracker = createStatusTracker({
+    seed: (t) => memoryFromLevels(heldLevels(prev, t), { heldSince: heldSinceOf(prev) }),
+  });
   const status = tracker.update({
     inputs: readStatusInputs(caches, { cycleErrors, env: {} }),
     thresholds,
     now,
   });
-  return { snapshot: buildSnapshot(caches, prev, status), status };
+  return { snapshot: buildSnapshot(caches, prev, status, now), status };
 }

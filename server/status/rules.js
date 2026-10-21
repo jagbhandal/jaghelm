@@ -149,6 +149,38 @@ export function levelOf(value, prevLevel, { warn, crit }, hysteresis, unit = FRA
   return 'ok';
 }
 
+/**
+ * How long a reading keeps a level with nothing read for it (#469): one with
+ * no value (#462), a storage pool whose read failed (#468), one whose query
+ * failed. From the first such cycle; then it is forgotten, silently.
+ */
+export const HOLD_LIMIT_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * When the hold of a reading held this cycle began, or null once it has lasted
+ * HOLD_LIMIT_MS: the reading is then forgotten, level and all, and sends
+ * nothing (nothing was read). `since` is the start an earlier cycle recorded;
+ * with none (the hold starts this cycle, or a snapshot written before #469
+ * holds the level with no start) it is `now`, so an old snapshot's hold runs
+ * its full 24 h from the first cycle that reads it.
+ *
+ * The one rule for both places a reading is held (#469): the status model
+ * (judgeNode) and push's snapshot (push/snapshot.js buildHosts, and its differ)
+ * ask it with the cycle's one clock and the start the snapshot keeps, which
+ * seeds the model at boot, so they forget a reading on the same cycle, across
+ * restarts too. With no clock (`now` not a time) nothing is over and nothing
+ * starts: undefined when there is no start.
+ *
+ * @param {unknown} since  the hold's recorded start, in ms since the epoch
+ * @param {unknown} now    the cycle's clock
+ * @returns {number | null | undefined}
+ */
+export function holdSince(since, now) {
+  const start = Number.isFinite(since) ? since : now;
+  if (!Number.isFinite(start)) return undefined;
+  return Number.isFinite(now) && now - start >= HOLD_LIMIT_MS ? null : start;
+}
+
 // ── Node ─────────────────────────────────────────────────────────────────
 
 // What a node reading is called in a sentence, and its Prometheus read

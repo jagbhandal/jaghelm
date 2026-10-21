@@ -398,6 +398,36 @@ export function heldLevels(snapshot, thresholds) {
 }
 
 /**
+ * When each held reading's hold began, by node (#469), for the status model's
+ * memory at boot beside heldLevels (status/index.js memoryFromLevels), so a
+ * restart doesn't start a hold's 24 h again. Only times for a reading the host
+ * holds a level for; a snapshot written before #469 has none, and its holds
+ * start on the first cycle that reads it (status/rules.js holdSince).
+ *
+ * @param {object|null} snapshot
+ * @returns {Record<string, Record<string, number>>}
+ */
+export function heldSinceOf(snapshot) {
+  const out = {};
+  const hosts = isObject(snapshot?.hosts) ? snapshot.hosts : {};
+  for (const [node, host] of Object.entries(hosts)) {
+    const since = startsOf(host);
+    if (Object.keys(since).length > 0) out[node] = since;
+  }
+  return out;
+}
+
+/** A host entry's hold starts: a time for each reading it holds a level for, junk left out. */
+function startsOf(host) {
+  if (!isObject(host) || !isObject(host.heldSince) || !isObject(host.levels)) return {};
+  return Object.fromEntries(
+    Object.entries(host.heldSince).filter(
+      ([reading, at]) => Object.hasOwn(host.levels, reading) && Number.isFinite(at)
+    )
+  );
+}
+
+/**
  * A snapshot as this version writes it. One written before #292 holds each
  * host's readings, not their levels: each host gets the levels those readings
  * give (heldLevels), so the first cycle after the deploy compares levels like

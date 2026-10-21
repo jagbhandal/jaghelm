@@ -17,6 +17,7 @@ import {
   buildSources,
   buildUps,
   heldLevels,
+  heldSinceOf,
   normalizeUpsStatus,
   serviceStateOf,
   upgradeSnapshot,
@@ -231,6 +232,86 @@ test("buildHosts: a storage pool leaves only when its node's pools were read wit
   assert.deepEqual(buildHosts(noData, prev, reads(true)).a, prev.a);
   const away = statusOf(nodeEntity('a', { state: 'crit', word: 'Unreachable', conditions: {} }));
   assert.deepEqual(buildHosts(away, prev, reads(true)).a.levels, prev.a.levels);
+});
+
+// #469: a hold lasts 24 h from its first cycle, then the reading leaves.
+const DAY = 24 * 60 * 60 * 1000;
+
+test('buildHosts: a reading kept with no level read this cycle carries when its hold began, and leaves at 24 h (#469)', () => {
+  // The CPU query failed (unknown); the temperature, held at ok, has no condition.
+  const judged = statusOf(
+    nodeEntity('a', { state: 'unknown', conditions: { cpu: 'unknown', disk: 'ok' } })
+  );
+  const prev = { a: { reachable: true, levels: { cpu: 'warn', disk: 'warn', temp: 'ok' } } };
+  const first = buildHosts(judged, prev, undefined, NOW);
+  assert.deepEqual(first.a, {
+    reachable: true,
+    levels: { cpu: 'warn', disk: 'ok', temp: 'ok' },
+    heldSince: { cpu: NOW, temp: NOW },
+  });
+  assert.deepEqual(buildHosts(judged, first, undefined, NOW + DAY - 1).a, first.a, 'kept');
+  assert.deepEqual(
+    buildHosts(judged, first, undefined, NOW + DAY).a,
+    { reachable: true, levels: { disk: 'ok' } },
+    'at 24 h both leave, and when they began with them'
+  );
+  // Read again, a reading has no hold.
+  const read = statusOf(
+    nodeEntity('a', { state: 'ok', conditions: { cpu: 'ok', disk: 'ok', temp: 'ok' } })
+  );
+  assert.deepEqual(buildHosts(read, first, undefined, NOW + 1).a, {
+    reachable: true,
+    levels: { cpu: 'ok', disk: 'ok', temp: 'ok' },
+  });
+  // A pool that ends (#468) takes its start with it.
+  const pools = { a: { reachable: true, levels: { 'pool:x': 'warn' }, heldSince: { 'pool:x': NOW } } };
+  const calm = statusOf(nodeEntity('a', { state: 'ok', conditions: {} }));
+  assert.deepEqual(
+    buildHosts(calm, pools, () => ({ pools: [], read: true }), NOW + 1).a,
+    { reachable: true, levels: {} }
+  );
+});
+
+test('buildHosts: a hold with no start (a snapshot written before #469, or a damaged one) starts now; an unreachable or no-data node keeps its holds as they are (#469)', () => {
+  const judged = statusOf(
+    nodeEntity('a', { state: 'warn', conditions: { disk: 'ok', temp: 'unknown' } })
+  );
+  const old = { a: { reachable: true, levels: { disk: 'ok', temp: 'warn' } } };
+  assert.deepEqual(buildHosts(judged, old, undefined, NOW + 5 * DAY).a, {
+    ...old.a,
+    heldSince: { temp: NOW + 5 * DAY },
+  });
+  const junk = { a: { ...old.a, heldSince: { temp: 'yesterday', disk: NOW } } };
+  assert.deepEqual(buildHosts(judged, junk, undefined, NOW).a.heldSince, { temp: NOW });
+  // With no clock nothing is timed (and a start a previous cycle gave is kept).
+  assert.deepEqual(buildHosts(judged, old).a, old.a);
+
+  const held = {
+    a: { reachable: true, levels: { disk: 'ok', temp: 'warn' }, heldSince: { temp: NOW } },
+  };
+  const away = statusOf(nodeEntity('a', { state: 'crit', word: 'Unreachable', conditions: {} }));
+  assert.deepEqual(buildHosts(away, held, undefined, NOW + 2 * DAY).a, {
+    ...held.a,
+    reachable: false,
+  });
+  const noData = statusOf(nodeEntity('a', { state: 'unknown', word: 'No signal' }));
+  assert.deepEqual(buildHosts(noData, held, undefined, NOW + 2 * DAY).a, held.a);
+});
+
+test("heldSinceOf: when each held reading's hold began, by node; anything but a time, or for no level, is left out (#469)", () => {
+  const snap = {
+    hosts: {
+      a: {
+        reachable: true,
+        levels: { temp: 'warn', disk: 'ok', cpu: 'ok' },
+        heldSince: { temp: NOW, disk: 'x', gone: NOW },
+      },
+      b: { reachable: true, levels: { temp: 'ok' } },
+      c: 'junk',
+    },
+  };
+  assert.deepEqual(heldSinceOf(snap), { a: { temp: NOW } });
+  assert.deepEqual(heldSinceOf(null), {});
 });
 
 // ── the UPS, cron, sources ───────────────────────────────────────────────

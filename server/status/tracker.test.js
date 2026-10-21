@@ -126,6 +126,20 @@ test("memoryFromLevels: only each node's levels; a node it seeds that Prometheus
   );
 });
 
+test('#469: memoryFromLevels: a node is seeded with when each of its holds began, as the snapshot keeps it', () => {
+  const memory = memoryFromLevels(
+    { n1: { temp: 'warn', cpu: 'ok' }, n2: { cpu: 'ok' } },
+    { heldSince: { n1: { temp: NOW }, gone: { temp: NOW } } }
+  );
+  assert.deepEqual(memory.entities['nodes/n1'].memo, {
+    levels: { temp: 'warn', cpu: 'ok' },
+    streak: {},
+    held: { temp: NOW },
+  });
+  assert.deepEqual(memory.entities['nodes/n2'].memo, { levels: { cpu: 'ok' }, streak: {} });
+  assert.equal(Object.hasOwn(memory.entities, 'nodes/gone'), false, 'no levels, no node');
+});
+
 function board(order = (list) => list) {
   const services = order([
     missing('n1:redis'),

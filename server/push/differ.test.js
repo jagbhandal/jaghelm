@@ -416,6 +416,32 @@ test('#468: a reading that leaves the snapshot over its line sends its clear; at
   );
 });
 
+test('#469: a reading whose hold ran out leaves silently; one that leaves inside its 24 h sends its clear', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const start = 1_782_345_600_000;
+  const prev = host({
+    n1: {
+      reachable: true,
+      levels: { disk: 'ok', 'pool:a': 'warn', temp: 'crit' },
+      heldSince: { 'pool:a': start, temp: start },
+    },
+  });
+  const next = host({ n1: { reachable: true, levels: { disk: 'ok' } } });
+  assert.deepEqual(diffSnapshots(prev, next, null, start + DAY), [], 'nothing was read');
+  assert.deepEqual(
+    diffSnapshots(prev, next, null, start + DAY - 1).map((e) => `${e.type} ${e.id}`),
+    ['host_threshold_cleared n1:pool:a', 'host_threshold_cleared n1:temp'],
+    'a held pool a read no longer lists has ended (#468)'
+  );
+  // With no clock, no hold has run out.
+  assert.equal(diffSnapshots(prev, next).length, 2);
+  // A reading with no start (never held) that leaves sends its clear at any time.
+  assert.equal(
+    diffSnapshots(...levels({ 'pool:a': 'warn' }, {}), null, start + 9 * DAY).length,
+    1
+  );
+});
+
 test('#448: a host first seen unreachable (no levels) that comes back over its line sends the reading too', () => {
   const prev = host({ n1: { reachable: false, levels: {} } });
   const next = host({ n1: { reachable: true, levels: { cpu: 'ok', disk: 'warn' } } });
@@ -925,6 +951,11 @@ test('alertStateKey: a level, reachability, status or source change gives a new 
   assert.notEqual(alertStateKey({ ...base, ups: { state: 'on_battery' } }), key);
   assert.notEqual(alertStateKey({ ...base, cron: { 'n1:backup': 'failure' } }), key);
   assert.notEqual(alertStateKey({ ...base, sources: { prometheus: 'failing' } }), key);
+  // When a hold began: the differ reads it (#469), and the file must keep it.
+  assert.notEqual(
+    alertStateKey({ ...base, hosts: { n1: { ...base.hosts.n1, heldSince: { mem: 1 } } } }),
+    key
+  );
 });
 
 test('alertStateKey: a change of the monitor that fed a service key gives a new key (#395)', () => {
