@@ -2025,7 +2025,9 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   poll's request budget (`src/App.polling.test.jsx`), the loaded-app cap
   (`src/hooks/useAppFrames.test.jsx`), the Infrastructure section's nodes
   against the model's fixtures (`src/shell/infrastructureView.test.jsx`) and
-  on the demo (`src/demo.render.test.jsx`), and the `src/ui/` components. The
+  on the demo (`src/demo.render.test.jsx`), a saved layout's version step,
+  run once (`layouts.test.jsx`, `DashboardView.test.jsx`), and the `src/ui/`
+  components. The
   status fixtures (`src/testing/statusFixtures.js`) are built by the server's
   own model, never written by hand: the demo's boards as a client gets them
   (`demoBoard`), with a node's readings or the lines moved, among them the

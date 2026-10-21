@@ -1514,6 +1514,8 @@ From the mock's Main board, its Infrastructure section:
   the model counts services, not containers, and the card is narrow on a
   phone.
 - **The card opens nothing yet** (the mock's is a button to the drawer, #309).
+- **No table on a phone.** The mock draws the table on its desktop board
+  only; below 720px of section the cards stand in and the toggle goes.
 - **The table's Services column** is the mock's Workload (the hosted
   services' counts), and its Role is services.yaml's `subtitle` for the node.
 
