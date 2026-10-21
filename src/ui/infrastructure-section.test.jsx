@@ -124,6 +124,9 @@ describe('InfrastructureSection', () => {
     expect(cells[3].firstChild).toHaveClass('text-warn-fg');
     expect(cells[1].firstChild.className).not.toMatch(/text-(warn|crit|ok)-fg/);
     expect(within(cells[6]).getByText('Warning')).toHaveClass('text-warn-fg');
+    // Healthy stays quiet: the word in the row's own colour, beside its lamp.
+    const healthy = within(within(rows[0]).getAllByRole('cell')[6]).getByText('Healthy');
+    expect(healthy.className).not.toMatch(/text-(ok|warn|crit)-fg/);
     // A node with no temperature sensor: a plain dash.
     expect(within(rows[0]).getAllByRole('cell')[4]).toHaveTextContent(/^—$/);
     // No cards in table view.

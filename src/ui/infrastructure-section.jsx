@@ -2,9 +2,9 @@
  * InfrastructureSection (spec §8 item 3; #299): the Overview's nodes, as the
  * mock's Infrastructure section. A heading row: the section's icon in a 32px
  * accent chip, "Infrastructure" (16px bold), the count in 13px text-3
- * ("3 nodes · 1 warning"), and at its end the Cards / Table SegmentedControl
- * ("Node view"), which moves to a line of its own when the row runs out of
- * room. Under it an optional `banner` (a Banner saying the readings are old),
+ * ("3 nodes · 1 warning"), under the heading when they don't fit side by
+ * side, and at its end the Cards / Table SegmentedControl ("Node view"),
+ * which moves to a line of its own when the row runs out of room. Under it an optional `banner` (a Banner saying the readings are old),
  * then the nodes:
  *
  *  - cards: a NodeCard each, in columns at least 260px wide (one to a row on
@@ -12,8 +12,9 @@
  *  - table: the mock's Infrastructure table (Table): node, role, CPU, memory,
  *    disk, temperature, services, state. A reading prints as its meter does
  *    (`shown`), in its state's word colour only at or over its line, with the
- *    state said to screen readers; no reading is a dash. Wider than its frame
- *    (720px), it scrolls inside it.
+ *    state said to screen readers; no reading is a dash. The state is the
+ *    lamp and the model's word, the word in text-1 when healthy. Wider than
+ *    its frame (720px), it scrolls inside it.
  *
  * Each node is `{ id, anchor, name, host, subtitle, colour, state, word,
  * reason, readings, services, uptime, trend }` (NodeCard's props, `services`
@@ -95,10 +96,16 @@ const COLUMNS = [
     header: 'State',
     cell: (node) => {
       const s = toState(node.state);
+      const word = node.word || WORDS[s];
+      // Healthy stays quiet: its lamp, and the word in the row's own colour.
       return (
         <span className="inline-flex items-center gap-2">
           <StatusLamp state={s} decorative />
-          <StatusWord state={s} word={node.word || WORDS[s]} />
+          {s === 'ok' ? (
+            <span className="font-semibold">{word}</span>
+          ) : (
+            <StatusWord state={s} word={word} className="font-semibold" />
+          )}
         </span>
       );
     },
@@ -144,10 +151,12 @@ function InfrastructureSection({
         >
           <Server />
         </span>
-        <h2 id={`${id}-title`} className="text-title-sm">
-          {title}
-        </h2>
-        {count && !loading && <span className="text-body-sm text-text-3">{count}</span>}
+        <div className="flex min-w-min flex-1 flex-wrap items-baseline gap-x-3">
+          <h2 id={`${id}-title`} className="text-title-sm">
+            {title}
+          </h2>
+          {count && !loading && <span className="text-body-sm text-text-3">{count}</span>}
+        </div>
         {onViewChange && (
           <SegmentedControl
             aria-label="Node view"
