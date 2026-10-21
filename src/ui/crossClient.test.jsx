@@ -141,7 +141,7 @@ function Board({ status, services }) {
         ))}
       </ul>
       {/* The Overview's own section (#299), so the suite checks what the page draws. */}
-      <InfrastructureSection nodes={infrastructureNodes({ status, services, tempUnit: 'C' })} />
+      <InfrastructureSection nodes={infrastructureNodes({ status, services })} />
     </>
   );
 }
@@ -254,7 +254,7 @@ function disagreements({ status, cycle }) {
     for (const part of e.reason.split(' · ')) {
       const m = READING_REASON.exec(part);
       if (!m) continue;
-      const [, label, number, , said, how, line, unit] = m;
+      const [, label, number, readUnit, said, how, line, unit] = m;
       const reading = LABEL_READING[label];
       const meter = meterOf(reading);
       const text = meter?.getAttribute('aria-valuetext') ?? '';
@@ -263,8 +263,11 @@ function disagreements({ status, cycle }) {
       if (meter?.dataset.state !== SAID[said])
         say(subject, 'meter state', SAID[said], meter?.dataset.state);
       if (!text.includes(said)) say(subject, 'meter word', said, text);
-      const printed = /^-?[\d.]+/.exec(text)?.[0];
+      // The number and its unit, as the reason writes them ("86 °C"): one
+      // reading, one number, one unit, on the meter and in the reason.
+      const [, printed, printedUnit] = /^(-?[\d.]+)([^\d\s,]*)/.exec(text) ?? [];
       if (printed !== number) say(subject, 'number', number, printed, { raw });
+      if (printedUnit !== readUnit) say(subject, 'unit', readUnit, printedUnit, { raw });
       if (how === 'above' && !text.includes(`above ${line}${unit}`))
         say(subject, 'line', `${said} above ${line}${unit}`, text);
     }
@@ -467,6 +470,16 @@ describe('cross-client, screen', () => {
       }
     }
     expect(wrong).toEqual([]);
+  });
+
+  it('a temperature reads as its reason says it, number and unit, on the default path (#299)', () => {
+    const { status, cycle } = runScenario('thresholds', { now: NOW });
+    expect(disagreements({ status, cycle }).map(describeFinding)).toEqual([]);
+    const storage = status.entities.find((e) => e.id === 'nodes/storage');
+    expect(storage.reason).toContain('Temperature 86 °C (critical above 85 °C)');
+    const meter = meterIn(document, 'nodes/storage', 'temp');
+    expect(meter.getAttribute('aria-valuetext')).toBe('86°C, critical above 85°C');
+    expect(meter).toHaveTextContent('86°C');
   });
 
   it("the headline says the model's word for every state the board can be in", () => {
