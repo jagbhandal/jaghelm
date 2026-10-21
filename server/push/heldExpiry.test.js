@@ -355,6 +355,7 @@ test('#469: a reading whose query keeps failing is frozen, not timed: held past 
     const failing = host({ temp: null }, { failed: ['temp'] });
     const began = p.now;
     await cycle(p, failing);
+    assert.equal(board(p).heldSince, undefined, 'no start: a failed read is not timed');
     nextCycleAt(p, began + 3 * DAY);
     assert.deepEqual(temp(await cycle(p, failing)), []);
     assert.deepEqual(
@@ -362,7 +363,10 @@ test('#469: a reading whose query keeps failing is frozen, not timed: held past 
       ['unknown', 'warn', undefined],
       'kept, with no start: it is not timed'
     );
-    // The query answers again, back normal: the phone gets its "back to normal".
+    // The query answers again inside the band: still the same warning, in both.
+    assert.deepEqual(temp(await cycle(p, temperature(73))), []);
+    assert.equal(board(p).conditions.temp, 'warn');
+    // Back normal: the phone gets its "back to normal".
     assert.deepEqual(temp(await cycle(p, temperature(60))), ['host_threshold_cleared h:temp']);
   } finally {
     p.close();

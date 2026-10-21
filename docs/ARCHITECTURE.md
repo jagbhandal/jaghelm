@@ -891,7 +891,7 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   overall: { state, sentence },     // "2 services down · UPS on battery"; state may be 'empty'
   issues: [entity, …],              // ranked, see below
   subsystems: [{ id, name, state, counts: { total, ok, warn, crit, unknown, maintenance }, detail }],
-  entities: [{ id, kind, subsystem, name, node?, state, word, reason, metric?, conditions?, since }],
+  entities: [{ id, kind, subsystem, name, node?, state, word, reason, metric?, conditions?, heldSince?, since }],
   sources: { prometheus: { state: 'ok' | 'failed', error?, since }, kuma, nut, gitea },
   thresholds: { cpu: { warn, cycles }, mem: { warn }, disk: { warn, crit },   // the lines it judged by
                 temp: { warn, crit }, hysteresis: { fraction, celsius }, pending: { cycles } },
@@ -989,24 +989,33 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   leaves `services.yaml`, or the hold has lasted 24 h (below). Push's snapshot
   holds such a reading the same way, so the screen and push agree on whether
   its episode is open.
-- **A hold lasts 24 h** (#469). A reading kept with no level read for it (no
-  value, a storage pool whose read failed, or a query that failed) is held from
-  its first such cycle. After `HOLD_LIMIT_MS` (24 h, `rules.js`) it is
-  forgotten, its level and CPU's run with it: it leaves the node's reason and
-  conditions, so a sensor removed while over its line no longer keeps its node
-  at warn. Nothing is sent, as nothing was read; read again later, it is a new
-  reading (#448), so over its line it pages once and inside its old band it is
-  ok. A reading read again before then ends its hold, and its next gap starts
-  a new 24 h. The model (`judgeNode`, `memo.held`) and push's snapshot
-  (`buildHosts`, a host's `heldSince`) both ask `holdSince` with the cycle's
-  one clock (`runStatusAndPush` passes it to the model, the snapshot and the
-  differ), and the model is seeded at boot with the starts the snapshot keeps,
-  so the two forget a reading on the same cycle, across restarts too. A
-  snapshot written before #469 has no start: its holds start on the first
-  cycle that reads it. An unreachable node, or one with no data, keeps its
-  holds as they are, and a hold's 24 h count from its start throughout, so a
-  reading still unread on the first cycle its node is judged again after them
-  is forgotten then.
+- **A hold of a reading with no value lasts 24 h** (#469). Such a reading (a
+  sensor or collector gone, a pool Proxmox lists with no size) is held from
+  its first cycle with none. After `HOLD_LIMIT_MS` (24 h, `rules.js`
+  `holdSince`) it is forgotten, its level and CPU's run with it: it leaves the
+  node's reason and conditions, so a sensor removed while over its line no
+  longer keeps its node at warn. Nothing is sent, as nothing was read; read
+  again later, it is a new reading (#448), so over its line it pages once and
+  inside its old band it is ok. A reading read again before then ends its
+  hold, and its next gap starts a new 24 h.
+  - **The model alone times it.** `judgeNode` keeps each start in the node's
+    memo (`memo.held`) and the node entity serves it, `heldSince: { <reading>:
+    <ms> }`, only while the node has such a hold. Push's snapshot copies it
+    (`buildHosts`), never working one out for itself, and drops a reading on
+    the cycle the model stops holding it. At boot the model is seeded with the
+    starts the file keeps (`heldSinceOf`). So a cycle push sits out (a
+    dispatch that throws, the FCM boot race) can't put the two out of step,
+    and a restart doesn't start the 24 h again. A snapshot written before
+    #469 has no start: its holds start on the first cycle that reads them.
+  - **A reading whose read failed is frozen, never timed**: one whose
+    Prometheus query fails while the node's `up` answers, and a pool its
+    node's Proxmox read couldn't read. It keeps its level, its run and any
+    start as they are, however long, as a node with no data or an unreachable
+    one keeps all of its readings. The failure is on the board as its own
+    issue meanwhile, and once the read answers normal the phone gets its
+    "back to normal". A hold's 24 h count from its start throughout, so a
+    reading quiet again after such a spell, past its 24 h, is forgotten on
+    that cycle.
 - **A storage pool whose read failed** (#468) is a reading with no value: while
   a node's pools are not read, each pool the model held a level for and that
   isn't listed keeps it, as above, with the same reason ("Storage pool
@@ -1020,11 +1029,11 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   has none set up any more (the integration was removed, disabled or pointed
   at another node): its pools were read, as an empty list. With no
   integrations payload (the refresh failed, or its cache is cold or past its
-  TTL), no node's pools were read. A pool's episode ends when the node's pools
-  were read without it: push's snapshot drops it on that cycle, and over its
-  line it sends one `host_threshold_cleared`, since the node on the screen no
-  longer shows it. Or, still unread, when its hold has lasted 24 h (#469,
-  above): then it ends silently.
+  TTL), no node's pools were read. A pool's episode ends only when the node's
+  pools were read without it: push's snapshot drops it on that cycle, and over
+  its line it sends one `host_threshold_cleared`, since the node on the screen
+  no longer shows it. While unread it is frozen, not timed (#469, above); a
+  pool listed with no size has no value, and is timed.
 - **Thresholds** (#451) are the lines the model judged this status by, as it
   was given them (`thresholds.js`' shape, below: usage lines as fractions of
   1, temperature in °C): the defaults, or `display-config.json`'s
@@ -1118,9 +1127,10 @@ file per scenario, so each loop starts from a fresh boot's tracker).
 a notification says what the screens say. The snapshot records, per entity push
 pages for, what the model decided: a Kuma-fed service's up or down, each host's
 reachability and the level of each reading (its `conditions`: CPU, memory,
-disk, temperature, each Proxmox storage pool), with when each held reading's
-hold began (`heldSince`, #469), the UPS (on battery or online) and each job and
-backup (success, failure, overdue). The differ only sees where that changed:
+disk, temperature, each Proxmox storage pool), with the model's start for
+each reading held with no value (`heldSince`, #469), the UPS (on battery or
+online) and each job and backup (success, failure, overdue). The differ only
+sees where that changed:
 
 - A level that rises (ok to warn, warn to crit) sends `host_threshold`,
   `critical` for crit; one back to ok sends `host_threshold_cleared`; crit
@@ -1135,10 +1145,12 @@ backup (success, failure, overdue). The differ only sees where that changed:
   model holds its level too, so a sensor that skips a cycle mid-episode sends
   no "back to normal" and no second alert, #462), a storage pool whose Proxmox
   read failed (#468, the same hold), the UPS while NUT is quiet or
-  its read fails. A held reading holds for 24 h at most (#469): then it leaves
-  the snapshot on the cycle it leaves the model, and the differ sends nothing
-  for it (it sends the clear of a reading that leaves over its line only while
-  its hold, if any, is inside its 24 h). So down, pending, up still sends the recovery, and down, pending, down
+  its read fails. A reading held with no value holds for 24 h at most (#469):
+  then it leaves the snapshot on the cycle it leaves the model, and the
+  differ sends nothing for it. A reading that leaves with a start in the
+  previous snapshot was held with no value, so it never sends a clear; one
+  that leaves without one (a pool a read no longer lists) sends its clear
+  over its line. Push reads no clock for this: the starts are the model's. So down, pending, up still sends the recovery, and down, pending, down
   sends no second `service_down`; on battery, unknown, on battery sends no
   second `ups_on_battery`, and online, unknown, online sends nothing.
 - An entity with no previous state (#448) is diffed from "no previous state":
