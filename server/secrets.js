@@ -6,7 +6,7 @@
  */
 
 import crypto from 'crypto';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { atomicWriteFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
@@ -174,6 +174,21 @@ export function deleteSecret(name) {
 }
 
 /**
+ * Delete each of `names` that is stored, with one write of secrets.json.
+ * Returns how many were deleted.
+ */
+export function deleteSecrets(names) {
+  let deleted = 0;
+  for (const name of names) {
+    if (!Object.hasOwn(secrets, name)) continue;
+    delete secrets[name];
+    deleted++;
+  }
+  if (deleted) persistSecrets();
+  return deleted;
+}
+
+/**
  * Copy the secret stored under `from` to `to`, replacing what `to` held. The
  * stored value is copied as it is, still encrypted, so no plaintext is handled
  * and it works without DASH_SECRET. Returns false, and changes nothing, when
@@ -184,6 +199,46 @@ export function copySecret(from, to) {
   secrets[to] = { ...secrets[from] };
   persistSecrets();
   return true;
+}
+
+/** secrets.json's bytes, null when there is none, undefined when it can't be read. */
+function storeFileBytes() {
+  try {
+    return readFileSync(SECRETS_PATH);
+  } catch (err) {
+    return err.code === 'ENOENT' ? null : undefined;
+  }
+}
+
+/**
+ * The store as it is now, for restoreSecrets to put back (#502): every name
+ * with its stored value, still encrypted, and secrets.json's bytes. Taken
+ * before a change that is undone if what it goes with fails, such as an
+ * integration's save whose services.yaml write is refused.
+ */
+export function snapshotSecrets() {
+  return { secrets: { ...secrets }, file: storeFileBytes() };
+}
+
+/**
+ * Put the store back as `snapshot` found it: the same names, in the same
+ * order, with the same values, and secrets.json byte-for-byte as it was (or
+ * gone again, when there was none). The file is written only when it changed
+ * since, so a change whose own write failed (a full disk) needs no write to
+ * undo. When it couldn't be read at the snapshot, it is written from the
+ * restored store.
+ */
+export function restoreSecrets(snapshot) {
+  secrets = { ...snapshot.secrets };
+  if (snapshot.file === undefined) return persistSecrets();
+  const now = storeFileBytes();
+  if (snapshot.file === null ? now === null : now && now.equals(snapshot.file)) return;
+  try {
+    if (snapshot.file === null) unlinkSync(SECRETS_PATH);
+    else atomicWriteFileSync(SECRETS_PATH, snapshot.file, { mode: 0o600 });
+  } catch (err) {
+    log.error({ err }, 'Failed to restore secrets.json');
+  }
 }
 
 /**

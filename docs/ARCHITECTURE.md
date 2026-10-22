@@ -88,7 +88,8 @@ server/                     Express API (Node 26, ESM)
   icon-sources.js           the icon repositories it may fetch from; the web client imports it too
   config.js                 services.yaml: load, hot-reload watch, copy-on-read, its version,
                             and the one atomic writer, over the version read (see 6)
-  secrets.js                AES-256-GCM secret store (per-install KDF salt)
+  secrets.js                AES-256-GCM secret store (per-install KDF salt), and the
+                            snapshot a failed integration save is undone to (see 4.4)
   cron-store.js             cron history (bounded)
   errors.js                 apiError + global JSON error handler
   version.js                single source of version (reads package.json)
@@ -783,7 +784,20 @@ Key properties:
   schema (`util/configSchema.js`) on read, so a malformed file fails loudly.
 - **Secrets** (`secrets.js`) are AES-256-GCM encrypted with a **per-install
   random KDF salt** (`data/.secrets-salt`, legacy-static-salt fallback). All
-  credential stores write `0600`.
+  credential stores write `0600`. An integration's secrets (the
+  `integration_*` names a Settings save writes) live and die with its entry
+  in `services.yaml`, which is the record (#415, #502). A save stores what
+  it needs before writing the file; when that write fails or is refused, the
+  store goes back to its snapshot from before the save (`snapshotSecrets` /
+  `restoreSecrets`), so `secrets.json` ends byte-for-byte as it was. A delete
+  drops the `integration_<key>_*` secrets no remaining entry uses once the
+  file is written. A secret is in use while an entry's key makes it that
+  entry's keyed secret, or a `$secret:` reference anywhere in the config
+  names it (`integrations/unusedSecrets.js`); other names are the user's and
+  never dropped. A crash between the two writes can only leave unused
+  secrets: a sweep at boot drops them and logs how many, never which, unless
+  `services.yaml` is missing, unreadable or doesn't parse. An entry removed by
+  hand loses its stored credentials at the next start the same way.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
   secrets/auth/config/cron and the icon cache never split across locations.
 
@@ -2072,6 +2086,9 @@ All state is files under the data dir (no DB):
     `{ "enabled": true|false }` and nothing else) sets `enabled` alone, writes
     nothing when the entry is already in that state, and asks for a retry when
     it enables.
+  - **Delete** (`DELETE /api/integrations/:key`) removes the entry and then
+    its secrets (4.4), so a new integration under that key starts with no
+    credential. A save whose write fails stores nothing (4.4).
 - **display config** -- title, theme, layout (`{lg,md,sm}` grid item arrays),
   sections (per-panel visibility/order/colour), nav/search/weather flags,
   links, tabs, fonts. Read copy-on-read; validated by Zod.
