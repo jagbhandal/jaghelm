@@ -186,6 +186,7 @@ src/                        React 19 SPA (Vite 8)
                              issue-row, subsystem-strip, attention-panel; the Android app
                              uses them too), the data components (#288: metric-meter,
                              sparkline, uptime-bar, entity-row, fact-list, table),
+                             the sign-in screen (#305: login-form),
                              the shell (#296: app-shell, app-header, side-nav,
                              bottom-tabs, app-bar), the Overview's sections (#299:
                              node-card, infrastructure-section; #300: services-section),
@@ -206,7 +207,8 @@ gallery/                    the component gallery (development and CI only, docs
                             playwright.config.mjs, never part of the production build
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
-                            phone-split.spec.mjs, what they share in app.mjs; see 8): the
+                            phone-split.spec.mjs, login.spec.mjs, what they share in
+                            app.mjs; see 8): the
                             production build served
                             by `vite preview`, every /api request answered in the test; run
                             by playwright.e2e.config.mjs in the gallery's container
@@ -2576,6 +2578,14 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through
   the Android build's `@ui` alias.
+- **The sign-in page in a browser** (#305, `e2e/login.spec.mjs`, with the
+  shell's tests): the production build with a server that asks for a sign-in
+  and takes one username and password, at 390 and 1440px, dark and light.
+  axe finds nothing blank, with a wrong password's error on its field and with
+  the sign-in failing to reach the server, and nothing scrolls sideways; a
+  wrong password sent with Enter puts the error on the password field and
+  focus there, and the right one opens the shell with the token stored.
+  Screenshots of each go to `test-results/e2e/shots/`.
 - **Repo guards** (`node --test`, `scripts/*.test.mjs`): the deploy runner pin,
   the secret floor (`.gitignore`, tracked templates, the scanner catching a
   planted key) and its wiring in `check.yml`, the docs' preset and test
