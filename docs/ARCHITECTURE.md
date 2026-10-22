@@ -2105,7 +2105,8 @@ flowchart TD
   3 minutes for a slow one at 30 s. It is judged at the hook's `healthNow`,
   which steps every half interval, on the same clock the hook reads each
   source's last answer on, so a source that answers every poll never shows
-  one (#545). The utilities (#301) poll on their own,
+  one, and a note clears as soon as its source answers again, a 304 too
+  (#545). The utilities (#301) poll on their own,
   only while drawn and the browser tab shows: Pipeline `/api/gitea/activity`
   every third interval (90 s at 30 s), with the board's ETag, so the rail's
   read beside the board's is a 304; the Checklist reads `/api/todos` once when

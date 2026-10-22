@@ -30,6 +30,20 @@ vi.mock('../../components/HelmGrid', () => ({
   ),
 }));
 
+// NodePanel as it is, its renders counted: a healthy tick renders none (#545).
+const nodePanelRenders = vi.hoisted(() => ({ count: 0 }));
+vi.mock('./NodePanel', async (importOriginal) => {
+  const { createElement } = await import('react');
+  const real = await importOriginal();
+  return {
+    ...real,
+    default: (props) => {
+      nodePanelRenders.count += 1;
+      return createElement(real.default, props);
+    },
+  };
+});
+
 // TodoCard loads /api/todos and needs the toast context; neither is under test.
 vi.mock('../../components/TodoCard', () => ({
   default: () => <div>Checklist panel</div>,
@@ -649,5 +663,24 @@ describe('DashboardView stale notes (#545)', () => {
       sources: sourcesWith({ ups: source({ lastSuccessMs: healthNow - 5000 }) }),
     });
     expect(within(panel('UPS Power')).getByText('updated 5s ago')).toBeInTheDocument();
+  });
+
+  it('a healthy tick, the clock a step on, renders no node panel again (#252)', () => {
+    const KEYS = ['services', 'ups', 'commits', 'cron', 'integrations'];
+    const answeredAt = (at) =>
+      sourcesWith(Object.fromEntries(KEYS.map((k) => [k, source({ lastSuccessMs: at })])));
+    const healthNow = Date.now();
+    const data = boardData({
+      serviceData: { nodes: { pve1: node('Proxmox'), pve2: node('Backup') } },
+      healthNow,
+      sources: answeredAt(healthNow - 1000),
+    });
+    const { rerenderWith } = renderBoard(freshConfig({ refreshInterval: 2 }), data);
+    const drawn = nodePanelRenders.count;
+    expect(drawn).toBeGreaterThan(0);
+
+    // The next step: the hook's sources rebuilt, every source answered again.
+    rerenderWith({ ...data, healthNow: healthNow + 1000, sources: answeredAt(healthNow) });
+    expect(nodePanelRenders.count).toBe(drawn);
   });
 });

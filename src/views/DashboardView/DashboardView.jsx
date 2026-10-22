@@ -135,7 +135,9 @@ export default function DashboardView({
   // IDENTICAL content and the node/group memos keep their identity; the step
   // is still far finer than the staleness threshold, so "updated Nm ago" flips
   // promptly once it crosses. It is the hook's, not a clock of this view's own:
-  // `sources` read the last answers on it (#545).
+  // `sources` read the last answers on it (#545). A healthy source's banner is
+  // the same frozen HEALTHY every step, so a healthy tick rebuilds no node
+  // panel (#252).
   const banners = useMemo(() => {
     const out = {};
     for (const key of Object.keys(sources)) {

@@ -459,4 +459,45 @@ describe('useDashboardData — no stale note on a source that answers every poll
     // 5.7 s silent at the step's start: 3 polls due, 2 missed.
     expect(upsNote()).toBe('updated 5s ago');
   });
+
+  it('clears a stale note the moment its source answers again, a 304 too; a healthy 304 tick draws nothing', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // 200 with an ETag at load, then 304 to every request that sends it back.
+    fetch.mockImplementation((url, opts) =>
+      Promise.resolve(
+        opts?.headers?.['If-None-Match']
+          ? jsonResponse(null, { status: 304 })
+          : jsonResponse(String(url) === '/api/services' ? { nodes: {} } : {}, { etag: 'W/"1"' })
+      )
+    );
+    const T0 = BASE;
+    vi.setSystemTime(T0);
+    let renders = 0;
+    const { result, rerender } = renderHook(
+      ({ tick }) => {
+        renders += 1;
+        return useDashboardData(0, { tick, active: true, refreshIntervalMs: INTERVAL });
+      },
+      { initialProps: { tick: 0 } }
+    );
+    await settle();
+    const note = () =>
+      sourceBanner(result.current.sources.services, 'services', INTERVAL, result.current.healthNow)
+        .staleNote;
+
+    // A healthy tick whose answers are all 304s: its own render, nothing more.
+    vi.setSystemTime(T0 + INTERVAL);
+    rerender({ tick: 1 });
+    const afterTick = renders;
+    await settle();
+    expect(renders).toBe(afterTick);
+    expect(note()).toBeNull();
+
+    // The laptop slept 5 minutes: no visibilitychange, the board still active.
+    vi.setSystemTime(T0 + INTERVAL + 5 * 60_000);
+    rerender({ tick: 2 }); // the tick's render, before its answers
+    expect(note()).toBe('updated 5m ago');
+    await settle(); // its answers: 304s, no new data
+    expect(note()).toBeNull();
+  });
 });
