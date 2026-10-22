@@ -80,8 +80,8 @@ describe('WidgetsTab coordinate drafts re-sync on external config change', () =>
 
 // #307: the weather, the clock and the web search are back (the Overview's rail
 // and the Launch page), so their switches say where; the dead "Show checklist
-// panel" switch is gone (the Checklist's own is in Settings → Sections, and a
-// saved "hidden" moved there, overviewSections.js).
+// panel" switch is gone (it never hid the Checklist, whose own switch is in
+// Settings → Sections).
 describe('WidgetsTab switches (#307)', () => {
   it('says where each extra shows, and has the clock’s, on by default', () => {
     render(<Harness initialConfig={baseConfig()} />);

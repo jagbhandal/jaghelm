@@ -52,22 +52,22 @@ export function sectionShown(config, id) {
   return !(switches && typeof switches === 'object' && switches[id] === false);
 }
 
+// Keys an older JagHelm saved that nothing reads: Settings → Widgets' "Show
+// checklist panel on dashboard" (`showTodos`), which nothing drawn ever read,
+// so the Checklist showed whatever it said (its switch is Settings → Sections',
+// `sections.todos.visible`), and `showDockerStats`, which no panel used.
+const DEAD_KEYS = ['showTodos', 'showDockerStats'];
+
 /**
- * The display config with the switches an older JagHelm saved moved to where
- * they work now, or the same object when there is none. Settings → Widgets'
- * "Show checklist panel on dashboard" (`showTodos`) stopped doing anything with
- * the new shell (#301): the Checklist has its own switch in Settings → Sections
- * (`sections.todos.visible`), which the board and the rail read. A saved
- * "hidden" becomes that switch off, so nobody's choice is lost; either way
- * `showTodos` goes.
+ * The display config without the keys nothing reads, or the same object when
+ * it has none. Nothing else changes: a stored `showTodos: false` hides no
+ * Checklist, since it never did, and `sections.todos` stays as it is. The
+ * server's copy loses them the next time the display config is saved.
  */
-export function migrateDisplayConfig(config) {
-  if (!config || typeof config !== 'object' || !Object.hasOwn(config, 'showTodos')) return config;
-  const { showTodos, ...rest } = config;
-  if (showTodos !== false) return rest;
-  const sections = rest.sections && typeof rest.sections === 'object' ? rest.sections : {};
-  return {
-    ...rest,
-    sections: { ...sections, todos: { ...sections.todos, visible: false } },
-  };
+export function dropDeadKeys(config) {
+  if (!config || typeof config !== 'object') return config;
+  if (!DEAD_KEYS.some((key) => Object.hasOwn(config, key))) return config;
+  const rest = { ...config };
+  for (const key of DEAD_KEYS) delete rest[key];
+  return rest;
 }

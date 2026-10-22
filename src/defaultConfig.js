@@ -20,7 +20,6 @@ export function defaultConfig() {
     showWeather: false,
     weatherCity: '',
     showClock: true,
-    showDockerStats: false,
     showCronJobs: true,
     tabs: [],
     sections: {},

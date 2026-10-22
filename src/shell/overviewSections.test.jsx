@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { OVERVIEW_SECTIONS, migrateDisplayConfig, sectionShown } from './overviewSections.js';
+import { OVERVIEW_SECTIONS, dropDeadKeys, sectionShown } from './overviewSections.js';
 
 // #307: a show/hide switch per Overview section, in the shared display config,
-// and the dead switches it supersedes moved to where they work.
+// and the dead keys an older JagHelm saved dropped.
 describe('the Overview sections a user can hide', () => {
   it('lists the attention panel (locked), the strip, Infrastructure, Services and the rail', () => {
     expect(OVERVIEW_SECTIONS.map((s) => [s.id, Boolean(s.locked)])).toEqual([
@@ -38,34 +38,32 @@ describe('the Overview sections a user can hide', () => {
   });
 });
 
-describe('migrateDisplayConfig: the dead Widgets → "Show checklist panel" switch', () => {
-  it('moves a saved "hidden" to the Checklist’s own switch, so the choice is kept', () => {
+describe('dropDeadKeys: the keys nothing reads', () => {
+  // Widgets' "Show checklist panel" (showTodos) was never read by anything
+  // drawn: the Checklist showed whatever it said, so dropping it hides nothing.
+  it('drops a saved showTodos and leaves the Checklist’s own switch as it is', () => {
     const config = { showTodos: false, sections: { ups: { visible: false } }, title: 'Lab' };
-    const next = migrateDisplayConfig(config);
-    expect(next).toEqual({
-      sections: { ups: { visible: false }, todos: { visible: false } },
-      title: 'Lab',
-    });
+    const next = dropDeadKeys(config);
+    expect(next).toEqual({ sections: { ups: { visible: false } }, title: 'Lab' });
+    expect(next.sections.todos).toBeUndefined();
     expect(config.showTodos).toBe(false);
+    expect(dropDeadKeys({ showTodos: true })).toEqual({});
   });
 
-  it('keeps the Checklist’s other settings when it moves the switch', () => {
-    const next = migrateDisplayConfig({
-      showTodos: false,
-      sections: { todos: { title: 'Jobs', borderColor: '#fff' } },
-    });
-    expect(next.sections.todos).toEqual({ title: 'Jobs', borderColor: '#fff', visible: false });
+  it('never overrides an explicit visible: a Checklist switched on stays on', () => {
+    const next = dropDeadKeys({ showTodos: false, sections: { todos: { visible: true } } });
+    expect(next).toEqual({ sections: { todos: { visible: true } } });
+    const off = dropDeadKeys({ showTodos: true, sections: { todos: { visible: false } } });
+    expect(off).toEqual({ sections: { todos: { visible: false } } });
   });
 
-  it('drops a saved "shown": the Checklist’s own switch already says what to do', () => {
-    const off = { showTodos: true, sections: { todos: { visible: false } } };
-    expect(migrateDisplayConfig(off)).toEqual({ sections: { todos: { visible: false } } });
-    expect(migrateDisplayConfig({ showTodos: true })).toEqual({});
+  it('drops showDockerStats, which no panel reads', () => {
+    expect(dropDeadKeys({ showDockerStats: false, theme: 'dark' })).toEqual({ theme: 'dark' });
   });
 
-  it('returns the same config when there is nothing to move', () => {
+  it('returns the same config when there is nothing to drop', () => {
     const config = { sections: {}, showWeather: true };
-    expect(migrateDisplayConfig(config)).toBe(config);
-    expect(migrateDisplayConfig(null)).toBe(null);
+    expect(dropDeadKeys(config)).toBe(config);
+    expect(dropDeadKeys(null)).toBe(null);
   });
 });

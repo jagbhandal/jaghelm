@@ -6,6 +6,11 @@
   something is wrong.
 - Settings → Widgets has a switch for the clock, on unless you turn it off.
 
+### Removed
+- Settings → Widgets no longer has a "Show checklist panel" switch. It never
+  hid the Checklist, so nothing you see changes; the Checklist's switch is in
+  Settings → Sections.
+
 ### Fixed
 - The weather, the clock and the web search are back; 3.0.0 dropped them with
   the old header. On a window 1440px wide or more, the weather and the clock
@@ -13,6 +18,3 @@
   has them at any width, with the web search beside them, which opens your
   search engine's results in a new tab. They follow Settings → Widgets as
   before: the weather shows once it is switched on and has a place.
-- A Checklist you had hidden with Settings → Widgets' "Show checklist panel"
-  switch, which had stopped working, is hidden again: the choice moves to the
-  Checklist's own switch in Settings → Sections, and the old switch is gone.

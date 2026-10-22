@@ -2497,10 +2497,11 @@ All state is files under the data dir (no DB):
   sections (per-panel visibility/order/colour), `overviewSections` (the
   Overview's show/hide switches, #307), search/weather/clock flags
   (`showSearch`, `showWeather`, `showClock`), links, tabs, fonts. Read
-  copy-on-read; validated by Zod. The client moves a switch an older
-  JagHelm saved to where it works now (`migrateDisplayConfig`,
-  `src/shell/overviewSections.js`): the dead `showTodos` becomes
-  `sections.todos.visible`, and goes.
+  copy-on-read; validated by Zod (`overviewSections` only takes on or off).
+  The client drops two keys nothing reads (`dropDeadKeys`,
+  `src/shell/overviewSections.js`): `showTodos`, Widgets' old "Show
+  checklist panel", which nothing drawn ever read, and `showDockerStats`.
+  Nothing else changes; the server's copy loses them at the next save.
 - **secrets** -- AES-256-GCM blob, keyed by integration storage key.
 - **config version key** -- `config-version.key`: 32 random bytes (mode 0600)
   that `services.yaml`'s version is an HMAC with (#423, above). Made on first

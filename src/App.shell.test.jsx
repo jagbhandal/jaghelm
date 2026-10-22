@@ -897,31 +897,37 @@ describe("today's extras and the Overview's sections", () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Subsystems' })).toBeNull());
   });
 
-  it('a saved "hide the checklist" (the old Widgets switch) moves to the Checklist’s own switch', async () => {
+  it('a saved showTodos (the old Widgets switch, never read) hides no Checklist, and the save drops it', async () => {
     wide(true);
     stubServer({ config: LINKS, serverConfig: { ...LINKS, title: 'Lab', showTodos: false } });
     await renderApp();
     const region = await screen.findByRole('region', { name: 'Utilities' });
-    await waitFor(() =>
-      expect(within(region).queryByRole('region', { name: 'Checklist' })).toBeNull()
-    );
-    // The server gets the moved switch, and no dead one. (Another test's
-    // debounced save may land here too: only this config is titled Lab.)
+    expect(await within(region).findByRole('region', { name: 'Checklist' })).toBeInTheDocument();
+    // The server gets the config without the dead key, and no Checklist switch
+    // it didn't have. (Another test's debounced save may land here too: only
+    // this config is titled Lab.)
     const mine = () => server.saves.filter((c) => c.title === 'Lab');
     await waitFor(() => expect(mine().length).toBeGreaterThan(0), { timeout: 4000 });
     for (const saved of mine()) {
-      expect(saved.sections.todos).toEqual({ visible: false });
       expect(saved).not.toHaveProperty('showTodos');
+      expect(saved.sections?.todos).toBeUndefined();
     }
+    expect(within(region).getByRole('region', { name: 'Checklist' })).toBeInTheDocument();
   });
 
-  it('moves it beside the board bringing an old layout up to its version, losing neither', async () => {
-    stubServer({ config: { showTodos: false, gridLayout: { lg: [], md: [], sm: [] } } });
+  it('drops it beside the board bringing an old layout up to its version, keeping an explicit visible', async () => {
+    stubServer({
+      config: {
+        showTodos: false,
+        sections: { todos: { visible: true } },
+        gridLayout: { lg: [], md: [], sm: [] },
+      },
+    });
     await renderApp();
     await screen.findByRole('region', { name: 'Needs attention' });
     const stored = () => JSON.parse(localStorage.getItem('jaghelm-config'));
     await waitFor(() => expect(stored()).not.toHaveProperty('showTodos'));
     await waitFor(() => expect(stored().gridLayout.version).toBe(2));
-    expect(stored().sections.todos).toEqual({ visible: false });
+    expect(stored().sections.todos).toEqual({ visible: true });
   });
 });
