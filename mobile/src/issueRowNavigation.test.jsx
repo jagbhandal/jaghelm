@@ -180,3 +180,16 @@ describe('Overview issue rows open their detail screen (#279)', () => {
     expect(first).toHaveFocus();
   });
 });
+
+// The screens are the shared ones (src/phone/, #303); MobileApp gives them the
+// Android app's way to open a service (src/phone/platform.js, ./platform.js).
+describe('the shared screens open a service through the Android app (#303)', () => {
+  it('Open on a service\'s detail opens that service\'s address through open.js', async () => {
+    openTarget.mockClear();
+    const issues = await renderOverview();
+    fireEvent.click(issueRow(issues, 'nginx, Down, Service · vm-103'));
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(openTarget).toHaveBeenCalledTimes(1);
+    expect(openTarget).toHaveBeenCalledWith({ kind: 'service', uid: 'vm-103:nginx', url: 'http://h/b' });
+  });
+});

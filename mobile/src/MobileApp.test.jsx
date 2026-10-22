@@ -11,8 +11,8 @@ vi.mock('./data/useDashboard.js', () => ({ useDashboard }));
 // Stub the four root views so we assert shell behaviour.
 // Services stub exposes a 'go-detail' button that pushes serviceDetail.
 // No inline DetailView branch — the real dispatcher (SCREENS map) renders ServiceDetail.
-vi.mock('./views/Overview.jsx', () => ({ default: () => <div>OverviewView</div> }));
-vi.mock('./views/Services.jsx', () => ({
+vi.mock('@shared/phone/views/Overview.jsx', () => ({ default: () => <div>OverviewView</div> }));
+vi.mock('@shared/phone/views/Services.jsx', () => ({
   default: ({ nav }) => (
     <div>
       <div>ServicesView</div>
@@ -20,8 +20,8 @@ vi.mock('./views/Services.jsx', () => ({
     </div>
   ),
 }));
-vi.mock('./views/Infra.jsx', () => ({ default: () => <div>InfraView</div> }));
-vi.mock('./views/Alerts.jsx', () => ({
+vi.mock('@shared/phone/views/Infra.jsx', () => ({ default: () => <div>InfraView</div> }));
+vi.mock('@shared/phone/views/Alerts.jsx', () => ({
   default: ({ nav }) => (
     <div>
       <div>AlertsView</div>
@@ -30,9 +30,9 @@ vi.mock('./views/Alerts.jsx', () => ({
   ),
 }));
 // Mock the detail views so the dispatcher renders them without real data deps.
-vi.mock('./views/ServiceDetail.jsx', () => ({ default: ({ nav }) => <div>SERVICE_DETAIL<button onClick={nav.pop}>back</button></div> }));
-vi.mock('./views/NodeDetail.jsx', () => ({ default: ({ nav }) => <div>NODE_DETAIL<button onClick={nav.pop}>back</button></div> }));
-vi.mock('./views/IncidentDetail.jsx', () => ({ default: ({ nav }) => <div>INCIDENT_DETAIL<button onClick={nav.pop}>back</button></div> }));
+vi.mock('@shared/phone/views/ServiceDetail.jsx', () => ({ default: ({ nav }) => <div>SERVICE_DETAIL<button onClick={nav.pop}>back</button></div> }));
+vi.mock('@shared/phone/views/NodeDetail.jsx', () => ({ default: ({ nav }) => <div>NODE_DETAIL<button onClick={nav.pop}>back</button></div> }));
+vi.mock('@shared/phone/views/IncidentDetail.jsx', () => ({ default: ({ nav }) => <div>INCIDENT_DETAIL<button onClick={nav.pop}>back</button></div> }));
 // Phase 5: mock the push init + the settings screen so the existing shell tests
 // don't pull the real plugin/storage import chain, and so we can assert initPush.
 const { initPush } = vi.hoisted(() => ({

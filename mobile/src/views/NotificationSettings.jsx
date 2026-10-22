@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import BackHeader from '../components/BackHeader.jsx';
+import BackHeader from '@shared/phone/components/BackHeader.jsx';
 import { getPushStatus, getPushPrefs, setPushPrefs } from '../push/pushPrefsApi.js';
 import { disablePush, enablePush, pushWanted } from '../push/registerPush.js';
 import { getPref } from '../storage/prefsAdapter.js';

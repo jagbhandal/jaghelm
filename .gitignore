@@ -11,6 +11,9 @@ data/
 # mobile/src/data/ is source code (derivation modules), not a data directory — negate
 !mobile/src/data/
 !mobile/src/data/**
+# so is src/phone/data/ (the phone screens' board, which moved there from mobile/src/data/, #303)
+!src/phone/data/
+!src/phone/data/**
 
 # --- secrets (harness floor) — never commit credentials ---
 # (Phase 0 hardened: web + mobile secret classes. Negations below keep templates tracked.)

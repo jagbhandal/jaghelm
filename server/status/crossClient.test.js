@@ -20,13 +20,13 @@
  *
  * The app opens the issue a push is about: its route (routeFromData) is the
  * model's entity id, which Incident detail finds the issue by (#325,
- * mobile/src/nav/issueRoute.js issueFor). Android's screens are in the suite
+ * src/phone/nav/issueRoute.js issueFor). Android's screens are in the suite
  * too, mobile/src/crossClient.test.jsx (`npm --prefix mobile test`).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { issueFor } from '../../mobile/src/nav/issueRoute.js';
+import { issueFor } from '../../src/phone/nav/issueRoute.js';
 import { routeFromData } from '../../mobile/src/push/routeFromData.js';
 import { runPushCycle } from '../push/dispatch.js';
 import { alertStateKey } from '../push/differ.js';

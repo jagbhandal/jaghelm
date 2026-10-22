@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import BackHeader from './BackHeader.jsx';
+import BackHeader from '@shared/phone/components/BackHeader.jsx';
 
 describe('BackHeader', () => {
   it('renders a title and fires onBack', () => {

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '../testing/render.js';
 
 const { openTarget } = vi.hoisted(() => ({ openTarget: vi.fn() }));
 vi.mock('../open.js', () => ({ openTarget }));
 
-import IncidentDetail from './IncidentDetail.jsx';
+import IncidentDetail from '@shared/phone/views/IncidentDetail.jsx';
 import { STALE, UPS_ONLINE, boardOf, cronNode, cronRun, inputs, monitored, node } from '../testing/board.js';
 
 const DATA = boardOf(

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 vi.mock('@shared/hooks/useData.js', () => ({ getServiceIcon: () => null }));
-import NodeDetail from './NodeDetail.jsx';
-import NodeCard from '../components/NodeCard.jsx';
-import { nodeCardsOf } from '../data/board.js';
+import NodeDetail from '@shared/phone/views/NodeDetail.jsx';
+import NodeCard from '@shared/phone/components/NodeCard.jsx';
+import { nodeCardsOf } from '@shared/phone/data/board.js';
 import { STALE, UPS_ONLINE, boardOf, inputs, monitored, node } from '../testing/board.js';
 
 const vm101 = (metrics = {}) =>

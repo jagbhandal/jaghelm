@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '../testing/render.js';
 
 const { openTarget } = vi.hoisted(() => ({ openTarget: vi.fn() }));
 vi.mock('../open.js', () => ({ openTarget }));
 vi.mock('@shared/hooks/useData.js', () => ({ getServiceIcon: () => null }));
-import ServiceDetail from './ServiceDetail.jsx';
+import ServiceDetail from '@shared/phone/views/ServiceDetail.jsx';
 import { STALE, UPS_ONLINE, boardOf, inputs, missing, monitored, node } from '../testing/board.js';
 
 // One service, overridable (Kuma's status, unless `source` says it's a presence

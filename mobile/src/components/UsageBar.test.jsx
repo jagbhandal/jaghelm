@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import UsageBar from './UsageBar.jsx';
+import UsageBar from '@shared/phone/components/UsageBar.jsx';
 
 // The bar judges nothing (#325): its number is the model's print and its
 // colour the model's level for the reading.

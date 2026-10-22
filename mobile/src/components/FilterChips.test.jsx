@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import FilterChips from './FilterChips.jsx';
+import FilterChips from '@shared/phone/components/FilterChips.jsx';
 
 const CHIPS_NO_COUNT = [{ id: 'all', label: 'All' }, { id: 'down', label: 'Down' }];
 const CHIPS_WITH_COUNT = [
