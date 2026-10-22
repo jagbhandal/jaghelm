@@ -41,9 +41,9 @@
  * (lamp, heading, sentence, action) in one card, then `between`, then a card
  * with the rows, headed by "Showing … only" when filtered, so the page reads
  * and takes the focus in that order (header, strip, rows). With no rows and
- * no filter there is no second card. The quiet line has no rows to split:
- * `between` follows it either way. Unsplit, the panel is one card, as the
- * desktop draws it, and `between` follows it.
+ * nothing filtered there is no second card. The quiet line has no rows to
+ * split: `between` follows it either way. Unsplit, the panel is one card, as
+ * the desktop draws it, and `between` follows it.
  *
  * The `android` look, a stopgap until #326, is the Android app's
  * SystemStatusCard, unchanged (lib/status.js): the "System status" label,
@@ -197,8 +197,8 @@ function UiAttentionPanel({
       )}
     </div>
   );
-  // Split, the filter line heads the rows' own card.
-  const rows = (filter || issues.length > 0) && (
+  // Split, "Showing … only" heads the rows' own card.
+  const rows = (Boolean(filter) || issues.length > 0) && (
     <>
       {filter && (
         <div
@@ -217,7 +217,10 @@ function UiAttentionPanel({
       )}
       {issues.length > 0 && (
         <ul
-          className={cn('divide-y divide-border', (!split || filter) && 'border-t border-border')}
+          className={cn(
+            'divide-y divide-border',
+            (!split || Boolean(filter)) && 'border-t border-border'
+          )}
         >
           {issues.map((issue, i) => (
             <li key={issue.id ?? i}>
