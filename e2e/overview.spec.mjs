@@ -279,7 +279,10 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
         await openOverview(page, scenario);
         const tiles = strip(page).getByRole('button');
         await expect(tiles).toHaveCount(CONFIGURED[scenario].length);
-        await expect(tiles).toHaveText(CONFIGURED[scenario].map((s) => `${s.name}${s.detail}`));
+        // The model's value and sub-line (#541); the sub-line drawn from 672px.
+        await expect(tiles).toHaveText(
+          CONFIGURED[scenario].map((s) => `${s.name}${s.value}${s.sub}`)
+        );
         expect(await page.evaluate(() => window.scrollY)).toBe(0);
 
         const area = await clearArea(page);

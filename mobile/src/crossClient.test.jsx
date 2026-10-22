@@ -16,7 +16,7 @@
  *    the issues' counts ("Critical · 1 critical"), or the quiet line, "All
  *    systems normal", or an empty board's sentence alone; the sentence under it;
  *  - the strip: a cell per subsystem that has anything, its state, its worst
- *    entity's word and the model's counts;
+ *    entity's word, and the model's value over its sub-line (#541);
  *  - the issue list: a row per issue, in the model's order, its state, word,
  *    name, where (as the web's rows say it) and reason;
  *  - Infra's node cards: each node's state and word, its hosted services
@@ -243,8 +243,12 @@ function disagreements({ status, servicesBody }, { stale, cause }) {
     const said = worstOf(status, s).word;
     if (text(cell.querySelector('.status-word')) !== said.toUpperCase())
       say(subject, 'word', said.toUpperCase(), text(cell.querySelector('.status-word')));
-    if (text(cell.querySelector('.subsystem-cell__detail')) !== s.detail)
-      say(subject, 'counts', s.detail, text(cell.querySelector('.subsystem-cell__detail')));
+    // The model's value and sub-line (#541), as they are, fresh or stale: the
+    // status card says how old a stale status is, once, not each cell.
+    if (text(cell.querySelector('.subsystem-cell__value')) !== s.value)
+      say(subject, 'value', s.value, text(cell.querySelector('.subsystem-cell__value')));
+    const drawnSub = text(cell.querySelector('.subsystem-cell__sub'));
+    if (drawnSub !== (s.sub || null)) say(subject, 'sub', s.sub || 'none', drawnSub ?? 'none');
   });
 
   // The issue list, in the model's order.
@@ -336,6 +340,20 @@ beforeEach(() => {
   setPref.mockResolvedValue(undefined);
 });
 
+// The incident boards' tiles name their problem in the sub-line, as the
+// mock's do, never the OK word beside one (#541; summary.js tileOf).
+const PROBLEM_SUBS = {
+  incident: ['1 down', 'healthy', '100 % charge', 'OK', '1 failed'],
+  'every-state': [
+    '1 missing · 1 pending · 1 in maintenance',
+    '1 unreachable',
+    '64 % charge',
+    '1 overdue · 1 failed',
+    '1 overdue',
+    '1 failing · 1 offline',
+  ],
+};
+
 describe('cross-client, Android screens', () => {
   for (const name of STATUS_SCENARIOS) {
     it(`${name}: the phone says what the model says`, async () => {
@@ -349,6 +367,14 @@ describe('cross-client, Android screens', () => {
       const board = await phone(runScenario(name, { now: NOW }), 'down');
       // The status bar names the failed round; the card says why too.
       check(name, disagreements(board, { stale: true, cause: NO_SIGNAL.down }));
+    });
+  }
+
+  for (const [name, subs] of Object.entries(PROBLEM_SUBS)) {
+    it(`${name}: each cell's sub-line names its problem (#541)`, async () => {
+      await phone(runScenario(name, { now: NOW }));
+      const drawn = [...document.querySelectorAll('.subsystem-cell__sub')];
+      expect(drawn.map((el) => el.textContent)).toEqual(subs);
     });
   }
 

@@ -494,7 +494,7 @@ describe('the Overview', () => {
     expect(labels).toHaveLength(configured.length);
     configured.forEach((s, n) => {
       expect(labels[n].startsWith(`${s.name}, `)).toBe(true);
-      expect(labels[n].endsWith(`, ${s.detail}`)).toBe(true);
+      expect(labels[n].endsWith(`, ${s.value}`)).toBe(true);
     });
     expect(server.requests.filter((r) => r === '/api/status')).toHaveLength(1);
   });

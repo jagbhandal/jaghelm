@@ -118,21 +118,37 @@ describe('the subsystem strip, from the model', () => {
   }
 
   for (const name of ['healthy', 'incident', 'every-state', 'source-down']) {
-    it(`${name}: a cell per subsystem that has anything, in the model's order, with its state, word and detail`, () => {
+    it(`${name}: a cell per subsystem that has anything, in the model's order, with its state, word, value and sub`, () => {
       const status = at(name);
       const configured = status.subsystems.filter((s) => s.counts.total > 0);
       expect(configured.length).toBeGreaterThan(0);
+      // The model's own two lines (#541), as they are.
       expect(subsystemCells(status)).toEqual(
         configured.map((s) => ({
           key: s.id,
           label: s.name,
           state: s.state,
           word: modelWord(status, s),
-          value: s.detail,
+          value: s.value,
+          sub: s.sub || undefined,
         }))
       );
     });
   }
+
+  it('an older server, with no value or sub: the detail is the value, with no sub (#541)', () => {
+    const status = structuredClone(at('incident'));
+    for (const s of status.subsystems) {
+      delete s.value;
+      delete s.sub;
+    }
+    const cells = subsystemCells(status);
+    expect(cells.length).toBeGreaterThan(0);
+    for (const c of cells) {
+      expect(c.value).toBe(status.subsystems.find((s) => s.id === c.key).detail);
+      expect(c.sub).toBeUndefined();
+    }
+  });
 
   it('leaves out a subsystem with nothing in it, and has no cell on an empty board', () => {
     const healthy = at('healthy');

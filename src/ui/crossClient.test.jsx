@@ -12,7 +12,8 @@
  * card per node with a meter per reading (src/shell/infrastructureView.js
  * infrastructureNodes, InfrastructureSection). Then the screen is
  * read back and checked against the model: the headline's word and sentence
- * (or the quiet line's heading), each tile's state, word and counts, each row's state and word, and each
+ * (or the quiet line's heading), each tile's state, word, value and sub-line
+ * (#541, fresh and stale), each row's state and word, and each
  * meter's state, number and line. The push side, the same fixtures through
  * the real push cycle, is server/status/crossClient.test.js (`npm run
  * test:ci`); this file runs in `npm run test:client`.
@@ -216,18 +217,26 @@ function disagreements({ status, cycle }) {
       say(issue.id, 'issue reason', issue.reason, described(row, doc)[0]);
   });
 
-  // The subsystems: a tile for each that has anything, with its state, word and counts.
+  // The subsystems: a tile for each that has anything, with its state, word,
+  // and the model's value over its sub-line (#541), as they are.
   const tiles = [...container.querySelectorAll('[data-slot="subsystem-tile"]')];
   const shown = status.subsystems.filter((s) => s.counts.total > 0);
   if (tiles.length !== shown.length) say('subsystems', 'tiles', shown.length, tiles.length);
   shown.forEach((s, n) => {
     const tile = tiles[n];
     if (!tile) return;
-    if (tile.dataset.state !== s.state)
-      say(`subsystems/${s.id}`, 'state', s.state, tile.dataset.state);
-    const name = `${s.name}, ${worstOf(status, s).word}, ${s.detail}`;
+    const subject = `subsystems/${s.id}`;
+    if (tile.dataset.state !== s.state) say(subject, 'state', s.state, tile.dataset.state);
+    const name = `${s.name}, ${worstOf(status, s).word}, ${s.value}`;
     if (tile.getAttribute('aria-label') !== name)
-      say(`subsystems/${s.id}`, 'word and counts', name, tile.getAttribute('aria-label'));
+      say(subject, 'word and value', name, tile.getAttribute('aria-label'));
+    const value = tile.querySelector('[data-slot="subsystem-value"]')?.textContent;
+    if (value !== s.value) say(subject, 'value', s.value, value);
+    const sub = tile.querySelector('[data-slot="subsystem-sub"]')?.textContent ?? 'none';
+    if (sub !== (s.sub || 'none')) say(subject, 'sub', s.sub || 'none', sub);
+    const description = described(tile, doc)[0] ?? 'none';
+    if (description !== (s.sub || 'none'))
+      say(subject, 'description', s.sub || 'none', description);
   });
 
   // Each entity's state and word.
@@ -289,6 +298,20 @@ const describeFinding = (f) =>
  */
 const KNOWN = [];
 
+// The incident boards' tiles name their problem in the sub-line, as the
+// mock's do, never the OK word beside one (#541; summary.js tileOf).
+const PROBLEM_SUBS = {
+  incident: ['1 down', 'healthy', '100 % charge', 'OK', '1 failed'],
+  'every-state': [
+    '1 missing · 1 pending · 1 in maintenance',
+    '1 unreachable',
+    '64 % charge',
+    '1 overdue · 1 failed',
+    '1 overdue',
+    '1 failing · 1 offline',
+  ],
+};
+
 describe('cross-client, screen', () => {
   for (const name of STATUS_SCENARIOS) {
     it(`${name}: the screen says what the model says`, () => {
@@ -304,6 +327,39 @@ describe('cross-client, screen', () => {
           `known divergence "${k.name}" (${k.issue}) no longer happens in ${name}: delete it from KNOWN`
         ).toBe(true);
       }
+    });
+  }
+
+  for (const [name, subs] of Object.entries(PROBLEM_SUBS)) {
+    it(`${name}: each tile's sub-line names its problem (#541)`, () => {
+      const { status } = runScenario(name, { now: NOW });
+      const { container } = render(
+        <SubsystemStrip cells={subsystemCells(status)} onSelect={noop} />
+      );
+      const drawn = [...container.querySelectorAll('[data-slot="subsystem-sub"]')];
+      expect(drawn.map((el) => el.textContent)).toEqual(subs);
+      cleanup();
+    });
+  }
+
+  // Stale (#480): each tile no signal, the model's value and sub-line as they
+  // read fresh (#541); the header says how old they are, once, not each tile.
+  for (const name of STATUS_SCENARIOS) {
+    it(`${name}, stale: each tile keeps the model's value and sub-line, drawn as no signal`, () => {
+      const { status } = runScenario(name, { now: NOW });
+      const stale = { stale: true, lastKnown: 'last known 3 min ago' };
+      const { container } = render(
+        <SubsystemStrip cells={subsystemCells(status, stale)} onSelect={noop} />
+      );
+      const shown = status.subsystems.filter((s) => s.counts.total > 0);
+      const drawn = [...container.querySelectorAll('[data-slot="subsystem-tile"]')].map((t) => [
+        t.dataset.state,
+        t.querySelector('[data-slot="subsystem-value"]')?.textContent,
+        t.querySelector('[data-slot="subsystem-sub"]')?.textContent ?? '',
+        described(t, container.ownerDocument)[0] ?? '',
+      ]);
+      expect(drawn).toEqual(shown.map((s) => ['unknown', s.value, s.sub, s.sub]));
+      cleanup();
     });
   }
 
