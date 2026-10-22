@@ -63,10 +63,11 @@ const settle = (promise) => promise.then((value) => ({ value }), (err) => ({ err
  *   /api/services  the cards: names, icons, links, ping, uptime and each
  *                  node's readings, which the model values but doesn't carry.
  *                  It is the health gate: if it throws, `error` is set.
- *   /api/ups       the UPS's runtime and charge, for display only (board.js
- *                  upsReadingsOf): the model judges the UPS but carries its
- *                  charge only on battery, and never its runtime. A failed
- *                  read shows none.
+ *   /api/ups       the UPS's runtime, for display only (board.js
+ *                  upsReadingsOf): the model judges the UPS and carries its
+ *                  charge (#541), but never its runtime; from a server
+ *                  before #541, its charge on mains too. A failed read shows
+ *                  none.
  *
  * `/api/cron/status` is no longer read: the model says what the app drew from
  * it (the Jobs and Backups subsystems and their issues), so a round costs

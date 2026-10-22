@@ -11,7 +11,12 @@
  *    name; no text spilling out of its box; and every service's and node's
  *    name is whole and inside the window. A failure names the element, the
  *    width and the scenario. Then the same at every width on the incident
- *    with the model's longest subsystem details, six tiles of them.
+ *    with the model's longest subsystem sub-lines, six tiles of them.
+ *  - Each status fixture's strip at 1024, 1280, 1440 and 1460px, in each
+ *    typeface (#541): every tile's value and sub-line the model's, whole (no
+ *    word cut, nothing clipped or ending in an ellipsis), the value on one
+ *    line; and six tiles in one row from 816px of strip, never 5 + 1, with
+ *    room there for every value the model gives a tile.
  *  - A tablet (768 and 1023px) is the desktop Overview in one column, the
  *    strip wrapping.
  *  - The layout doesn't jump as it loads (#243): at 390 × 844 on the
@@ -33,6 +38,8 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import { demo, openApp } from './app.mjs';
+import { runScenario, STATUS_SCENARIOS } from '../server/testing/statusScenarios.js';
+import { TYPEFACES } from '../src/ui/typefaces.js';
 
 /** The widths of the sweep (spec §8): phones, a tablet, desktops, a 4K-wide window. */
 const SWEEP = [360, 390, 768, 1024, 1280, 1440, 1920, 2560];
@@ -214,23 +221,28 @@ for (const scenario of SCENARIOS) {
   }
 }
 
-// The model's longest subsystem details (detailOf, server/status/summary.js)
-// in all six tiles: the count, then "· 1 in maintenance" and "· 1 no signal",
-// on the incident, with the integrations it lacks. A word as long as
-// "maintenance" is wider than a tile when six share a row.
+// The model's longest subsystem sub-lines (tileOf, server/status/summary.js,
+// #541) in all six tiles: the word, then "· 1 in maintenance" and "· 1 no
+// signal", on the incident, with the integrations it lacks, and the UPS's
+// longest word as its value. A word as long as "maintenance" is most of a
+// tile's line when six share a row.
 const LONG_DETAILS = (() => {
   const status = structuredClone(demo('/api/status').body);
   for (const s of status.subsystems) {
     if (s.id === 'integrations') {
       s.counts = { total: 12, ok: 10, warn: 0, crit: 0, unknown: 1, maintenance: 1 };
-      s.detail = '10 / 12 answering';
+      Object.assign(s, { detail: '10 / 12 OK', value: '10 / 12', sub: 'OK' });
     }
-    if (s.id !== 'power') s.detail = `${s.detail} · 1 in maintenance · 1 no signal`;
+    if (s.id === 'power') Object.assign(s, { value: 'Low battery', sub: '9 % charge' });
+    else {
+      s.detail = `${s.detail} · 1 in maintenance · 1 no signal`;
+      s.sub = `${s.sub} · 1 in maintenance · 1 no signal`;
+    }
   }
   return status;
 })();
 
-test('the longest subsystem details, at every width: nothing clipped', async ({ page }) => {
+test('the longest subsystem sub-lines, at every width: nothing clipped', async ({ page }) => {
   const { nodes, services } = namesOf('incident');
   await page.setViewportSize({ width: SWEEP[0], height: heightAt(SWEEP[0]) });
   await openApp(page, '/', { scenario: 'incident', answers: { '/api/status': LONG_DETAILS } });
@@ -240,6 +252,232 @@ test('the longest subsystem details, at every width: nothing clipped', async ({ 
     await page.setViewportSize({ width, height: heightAt(width) });
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r))));
     found.push(...(await hidden(page, [...nodes, ...services])).map((f) => `${width}px: ${f}`));
+  }
+  expect(found, found.join('\n')).toEqual([]);
+});
+
+// Each status fixture's subsystem tiles at the desktop widths (#541), in each
+// typeface (src/ui/typefaces.js): the model's value and sub-line drawn as
+// they are, and whole. No word or number is cut in two (a word wider than its
+// line spills, which the check finds), nothing clips or ends in an ellipsis,
+// and the value keeps to one line, so "31 / 32" never breaks at its spaces.
+// 1460px is past the page's split into two columns (#544), where the strip is
+// narrower than at 1440. A strip too narrow for six in a row has them in two
+// rows of three, never 5 + 1.
+const FIT = [1024, 1280, 1440, 1460];
+
+/**
+ * Draws the page in `face` (its `data-typeface` on every root, a root drawn
+ * since included), its file loaded, and checks the strip's values use it.
+ */
+async function useTypeface(page, { id, family }) {
+  const loaded = await page.evaluate(
+    async ({ id, family }) => {
+      for (const root of document.querySelectorAll('.jh-ui'))
+        root.setAttribute('data-typeface', id);
+      await document.fonts.load(`700 16px "${family}"`);
+      await document.fonts.load(`400 12px "${family}"`);
+      await document.fonts.ready;
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r)));
+      // A tile's value, or the root's text on a board with no tiles.
+      const text =
+        document.querySelector('[data-slot="subsystem-value"]') ?? document.querySelector('.jh-ui');
+      return (
+        document.fonts.check(`700 16px "${family}"`) &&
+        getComputedStyle(text).fontFamily.startsWith(`"${family}"`)
+      );
+    },
+    { id, family }
+  );
+  expect(loaded, `${family} drawn`).toBe(true);
+}
+
+/**
+ * The low-battery board with integrations set up too (#541): six tiles share
+ * the row with the widest value the model gives, "Low battery", and its
+ * longest sub-line, "1 with a refused login · 1 in maintenance · 1 no
+ * signal".
+ */
+function lowBatterySix() {
+  const board = runScenario('low-battery', { now: Date.now() });
+  Object.assign(
+    board.status.subsystems.find((s) => s.id === 'integrations'),
+    {
+      state: 'warn',
+      counts: { total: 3, ok: 0, warn: 1, crit: 0, unknown: 1, maintenance: 1 },
+      detail: '0 / 3 OK · 1 in maintenance · 1 no signal',
+      value: '0 / 3',
+      sub: '1 with a refused login · 1 in maintenance · 1 no signal',
+    }
+  );
+  return board;
+}
+
+/** Opens the Overview on `board` (a fixture's status and cards), its strip drawn. */
+async function openBoard(page, { status, cycle }, width) {
+  await page.setViewportSize({ width, height: 900 });
+  await openApp(page, '/', {
+    scenario: 'incident',
+    answers: { '/api/status': status, '/api/services': cycle.caches.getCached('services') },
+  });
+  await expect(
+    page.locator('[data-slot="overview-status"]').getByRole('region').first()
+  ).toBeVisible();
+  const tiles = page.locator('[data-slot="subsystem-tile"]');
+  await expect(tiles).toHaveCount(status.subsystems.filter((s) => s.counts.total > 0).length);
+  return tiles;
+}
+
+const FIT_FIXTURES = [
+  ...STATUS_SCENARIOS.map((name) => [name, () => runScenario(name, { now: Date.now() })]),
+  ['low-battery, six tiles', lowBatterySix],
+];
+for (const [name, build] of FIT_FIXTURES) {
+  test(`${name}: each tile's value and sub-line whole at ${FIT.join(', ')}px, in each typeface (#541)`, async ({
+    page,
+  }) => {
+    const board = build();
+    const shown = board.status.subsystems.filter((s) => s.counts.total > 0);
+    const tiles = await openBoard(page, board, FIT[0]);
+    const found = [];
+    for (const face of TYPEFACES) {
+      for (const width of FIT) {
+        await page.setViewportSize({ width, height: 900 });
+        await useTypeface(page, face);
+        const drawn = await tiles.evaluateAll((all) =>
+          all.map((tile) => {
+            const read = (slot) => {
+              const el = tile.querySelector(`[data-slot="${slot}"]`);
+              if (!el) return null;
+              const cs = getComputedStyle(el);
+              const range = document.createRange();
+              range.selectNodeContents(el);
+              const lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+              // Each word's own boxes: one line each, inside the tile's content box.
+              const box = tile.getBoundingClientRect();
+              const right = box.right - parseFloat(getComputedStyle(tile).paddingRight) + 0.5;
+              const text = el.textContent;
+              const cut = [];
+              for (const m of text.matchAll(/\S+/g)) {
+                const r = document.createRange();
+                r.setStart(el.firstChild, m.index);
+                r.setEnd(el.firstChild, m.index + m[0].length);
+                const rects = [...r.getClientRects()];
+                const tops = new Set(rects.map((x) => Math.round(x.top)));
+                if (tops.size > 1 || rects.some((x) => x.right > right)) cut.push(m[0]);
+              }
+              return {
+                text,
+                lines,
+                cut,
+                shown: cs.display !== 'none',
+                wrap: `${cs.overflowWrap} ${cs.wordBreak}`,
+                clips: cs.overflowX !== 'visible' || cs.textOverflow === 'ellipsis',
+                spills: el.scrollWidth > el.clientWidth + 1,
+              };
+            };
+            return {
+              width: Math.round(tile.getBoundingClientRect().width),
+              top: Math.round(tile.getBoundingClientRect().top),
+              value: read('subsystem-value'),
+              sub: read('subsystem-sub'),
+            };
+          })
+        );
+        const tops = drawn.map((d) => d.top);
+        const perRow = [...new Set(tops)].map((top) => tops.filter((t) => t === top).length);
+        const at0 = `${face.label}, ${width}px`;
+        if (shown.length === 6 && !['6', '3,3'].includes(perRow.join(',')))
+          found.push(`${at0}: six tiles in rows of ${perRow.join(' + ')}`);
+        shown.forEach((s, i) => {
+          const d = drawn[i];
+          const at = `${at0}, ${s.id}`;
+          if (d.value?.text !== s.value)
+            found.push(`${at}: value "${d.value?.text}", the model's "${s.value}"`);
+          if (s.sub && d.sub?.text !== s.sub)
+            found.push(`${at}: sub "${d.sub?.text}", the model's "${s.sub}"`);
+          if (s.sub && !d.sub?.shown) found.push(`${at}: sub "${s.sub}" not shown`);
+          for (const [line, r] of [
+            ['value', d.value],
+            ['sub', d.sub],
+          ]) {
+            if (!r) continue;
+            if (r.wrap !== 'normal normal')
+              found.push(`${at}: the ${line} breaks words (${r.wrap})`);
+            if (r.clips) found.push(`${at}: the ${line} clips or ends in an ellipsis`);
+            if (r.spills) found.push(`${at}: the ${line} "${r.text}" spills out of its tile`);
+            if (r.cut.length)
+              found.push(`${at}: the ${line} cuts ${r.cut.map((w) => `"${w}"`).join(', ')}`);
+          }
+          if (d.value && d.value.lines > 1)
+            found.push(`${at}: the value "${s.value}" takes ${d.value.lines} lines`);
+        });
+        test.info().annotations.push({
+          type: at0,
+          description: `${shown.length} tiles in rows of ${perRow.join(' + ')}, ${drawn[0]?.width}px each`,
+        });
+      }
+    }
+    expect(found, found.join('\n')).toEqual([]);
+  });
+}
+
+// Where six tiles share a row (#541, subsystem-strip.jsx `columns`): from
+// 816px of the strip's own width. A row's tiles are one width, so six tiles
+// that carry every value the model gives a tile, one each (counts to "888 /
+// 888", the UPS's "Low battery", "On battery", "On mains" and "No signal"),
+// prove it for all of them: at each strip width from 672px (the wide tile) to
+// 1200px, in each typeface, the six sit in one row or in two of three, never
+// 5 + 1; in one row from 816px and not below; and there every value keeps to
+// one line inside its tile.
+const VOCABULARY = ['888 / 888', '12 / 12', 'Low battery', 'On battery', 'On mains', 'No signal'];
+const SIX_IN_A_ROW = 816;
+test('six tiles share a row from 816px of strip, with room for every value in each typeface (#541)', async ({
+  page,
+}) => {
+  const board = lowBatterySix();
+  board.status.subsystems.forEach((s, i) => Object.assign(s, { value: VOCABULARY[i] }));
+  await openBoard(page, board, 1280);
+  const found = [];
+  for (const face of TYPEFACES) {
+    await useTypeface(page, face);
+    const { problems, firstOneRow } = await page.evaluate(
+      ({ from, to }) => {
+        const strip = document.querySelector('[data-slot="subsystem-strip"]');
+        const wrapper = strip.parentElement;
+        const problems = [];
+        let firstOneRow = null;
+        for (let w = from; w <= to; w++) {
+          wrapper.style.width = `${w}px`;
+          const tiles = [...strip.querySelectorAll('[data-slot="subsystem-tile"]')];
+          const tops = tiles.map((t) => Math.round(t.getBoundingClientRect().top));
+          const perRow = [...new Set(tops)].map((top) => tops.filter((x) => x === top).length);
+          const rows = perRow.join(',');
+          if (rows !== '6' && rows !== '3,3')
+            problems.push(`${w}px: rows of ${perRow.join(' + ')}`);
+          if (rows !== '6') continue;
+          firstOneRow ??= w;
+          for (const tile of tiles) {
+            const value = tile.querySelector('[data-slot="subsystem-value"]');
+            const range = document.createRange();
+            range.selectNodeContents(value);
+            const rects = [...range.getClientRects()];
+            const right =
+              tile.getBoundingClientRect().right - parseFloat(getComputedStyle(tile).paddingRight);
+            if (new Set(rects.map((r) => Math.round(r.top))).size > 1)
+              problems.push(`${w}px: "${value.textContent}" takes two lines`);
+            else if (rects.some((r) => r.right > right + 0.5))
+              problems.push(`${w}px: "${value.textContent}" runs past its tile`);
+          }
+        }
+        wrapper.style.width = '';
+        return { problems, firstOneRow };
+      },
+      { from: 672, to: 1200 }
+    );
+    if (firstOneRow !== SIX_IN_A_ROW)
+      found.push(`${face.label}: one row from ${firstOneRow}px, not ${SIX_IN_A_ROW}px`);
+    found.push(...problems.map((p) => `${face.label}, ${p}`));
   }
   expect(found, found.join('\n')).toEqual([]);
 });

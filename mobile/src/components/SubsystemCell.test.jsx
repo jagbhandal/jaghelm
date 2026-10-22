@@ -8,7 +8,7 @@ const makeCell = (overrides = {}) => ({
   label: 'Services',
   severity: 'healthy',
   word: 'OK',
-  detail: '3 / 3',
+  value: '3 / 3',
   ...overrides,
 });
 
@@ -24,13 +24,23 @@ describe('SubsystemCell', () => {
       expect(screen.getByText('OK')).toBeInTheDocument();
     });
 
-    it('renders the mono detail line', () => {
-      render(<SubsystemCell cell={makeCell({ detail: '3 / 3' })} />);
-      expect(screen.getByText('3 / 3')).toBeInTheDocument();
+    it('renders the model\'s value over its sub-line (#541)', () => {
+      const { container } = render(<SubsystemCell cell={makeCell({ value: '3 / 3', sub: 'up · 1 in maintenance' })} />);
+      expect(container.querySelector('.subsystem-cell__value').textContent).toBe('3 / 3');
+      expect(container.querySelector('.subsystem-cell__sub').textContent).toBe('up · 1 in maintenance');
+      expect(container.querySelector('.subsystem-cell__value').nextElementSibling).toBe(
+        container.querySelector('.subsystem-cell__sub')
+      );
+    });
+
+    it('draws no sub-line when the model gives none', () => {
+      const { container } = render(<SubsystemCell cell={makeCell({ value: 'On mains', sub: undefined })} />);
+      expect(container.querySelector('.subsystem-cell__value').textContent).toBe('On mains');
+      expect(container.querySelector('.subsystem-cell__sub')).toBeNull();
     });
 
     it('renders the node label (Nodes cell)', () => {
-      render(<SubsystemCell cell={makeCell({ key: 'nodes', label: 'Nodes', word: 'OK', detail: '3 online' })} />);
+      render(<SubsystemCell cell={makeCell({ key: 'nodes', label: 'Nodes', word: 'OK', value: '3 online' })} />);
       expect(screen.getByText('Nodes')).toBeInTheDocument();
       expect(screen.getByText('3 online')).toBeInTheDocument();
     });
@@ -38,13 +48,13 @@ describe('SubsystemCell', () => {
 
   describe('unreachable / unknown cell — NO SIGNAL renders steel, NOT green', () => {
     it('renders the NO SIGNAL word for an unknown cell', () => {
-      render(<SubsystemCell cell={makeCell({ severity: 'unknown', word: 'NO SIGNAL', detail: '—' })} />);
+      render(<SubsystemCell cell={makeCell({ severity: 'unknown', word: 'NO SIGNAL', value: '—' })} />);
       expect(screen.getByText('NO SIGNAL')).toBeInTheDocument();
     });
 
     it('an unknown cell StatusWord has word--unknown class (NOT word--healthy)', () => {
       const { container } = render(
-        <SubsystemCell cell={makeCell({ key: 'nodes', severity: 'unknown', word: 'NO SIGNAL', detail: '—' })} />
+        <SubsystemCell cell={makeCell({ key: 'nodes', severity: 'unknown', word: 'NO SIGNAL', value: '—' })} />
       );
       const statusWord = container.querySelector('.status-word');
       expect(statusWord).not.toBeNull();
@@ -54,7 +64,7 @@ describe('SubsystemCell', () => {
 
     it('an unknown cell StatusWord has steel inline color (var(--steel))', () => {
       const { container } = render(
-        <SubsystemCell cell={makeCell({ key: 'ups', severity: 'unknown', word: 'NO SIGNAL', detail: '—' })} />
+        <SubsystemCell cell={makeCell({ key: 'ups', severity: 'unknown', word: 'NO SIGNAL', value: '—' })} />
       );
       const statusWord = container.querySelector('.status-word');
       expect(statusWord).not.toBeNull();
@@ -85,7 +95,7 @@ describe('SubsystemCell', () => {
 
     it('critical (services down) → slash shape (circle + line)', () => {
       const { container } = render(
-        <SubsystemCell cell={makeCell({ key: 'services', severity: 'critical', word: 'DOWN', detail: '1 / 3' })} />
+        <SubsystemCell cell={makeCell({ key: 'services', severity: 'critical', word: 'DOWN', value: '1 / 3' })} />
       );
       expect(container.querySelector('circle')).not.toBeNull();
       expect(container.querySelector('line')).not.toBeNull();
@@ -93,7 +103,7 @@ describe('SubsystemCell', () => {
 
     it('unknown → ring shape (hollow circle, fill=none)', () => {
       const { container } = render(
-        <SubsystemCell cell={makeCell({ key: 'nodes', severity: 'unknown', word: 'NO SIGNAL', detail: '—' })} />
+        <SubsystemCell cell={makeCell({ key: 'nodes', severity: 'unknown', word: 'NO SIGNAL', value: '—' })} />
       );
       const circle = container.querySelector('circle');
       expect(circle).not.toBeNull();
@@ -103,7 +113,7 @@ describe('SubsystemCell', () => {
 
     it('healthy → disc shape (filled circle, no line, no path)', () => {
       const { container } = render(
-        <SubsystemCell cell={makeCell({ key: 'services', severity: 'healthy', word: 'OK', detail: '3 / 3' })} />
+        <SubsystemCell cell={makeCell({ key: 'services', severity: 'healthy', word: 'OK', value: '3 / 3' })} />
       );
       const circle = container.querySelector('circle');
       expect(circle).not.toBeNull();
@@ -114,7 +124,7 @@ describe('SubsystemCell', () => {
 
     it('nodes + caution (hot) → disc shape (not bolt — bolt is ups-only)', () => {
       const { container } = render(
-        <SubsystemCell cell={makeCell({ key: 'nodes', severity: 'caution', word: 'DEGRADED', detail: '1 hot · 94%' })} />
+        <SubsystemCell cell={makeCell({ key: 'nodes', severity: 'caution', word: 'DEGRADED', value: '1 hot · 94%' })} />
       );
       // disc = filled circle, no line, no bolt path
       const circle = container.querySelector('circle');
@@ -126,7 +136,7 @@ describe('SubsystemCell', () => {
 
     it('cron + caution (failed) → disc shape (not bolt)', () => {
       const { container } = render(
-        <SubsystemCell cell={makeCell({ key: 'cron', severity: 'caution', word: 'FAILED', detail: '1 job' })} />
+        <SubsystemCell cell={makeCell({ key: 'cron', severity: 'caution', word: 'FAILED', value: '1 job' })} />
       );
       expect(container.querySelector('circle')).not.toBeNull();
       expect(container.querySelector('path')).toBeNull();

@@ -118,12 +118,13 @@ export function annunciatorOf({ status, freshness = FRESH }) {
 }
 
 /**
- * The UPS's readings the model doesn't carry, from /api/ups (`ups`), for
+ * The UPS's reading the model doesn't carry, from /api/ups (`ups`), for
  * display only: on battery (the model has the UPS crit or warn, as the bolt
- * goes by), the runtime left, the model's reason already giving the charge
- * ("On battery (47 % charge)"); on mains (ok), its charge, by the model's one
- * rule for a reading. Null with no UPS in the model, no answer from /api/ups,
- * or nothing to add.
+ * goes by), the runtime left. The model's sub-line already gives the charge,
+ * on battery and on mains ("47 % charge", #541). A server before #541 gives
+ * no sub-line, and its reason on mains no charge: on mains, the charge, by
+ * the model's one rule for a reading, as the app showed it then. Null with no
+ * UPS in the model, no answer from /api/ups, or nothing to add.
  */
 export function upsReadingsOf({ status, ups }) {
   const e = status?.entities?.find((x) => x.id === 'power/ups');
@@ -131,14 +132,19 @@ export function upsReadingsOf({ status, ups }) {
   if (e.state === 'crit' || e.state === 'warn') {
     return Number.isFinite(ups.runtime) ? `${Math.round(ups.runtime / 60)} min left` : null;
   }
-  if (e.state === 'ok' && Number.isFinite(ups.charge)) return `${shownReading(ups.charge)}% charge`;
+  const power = status.subsystems?.find((s) => s.id === 'power');
+  const hasSub = typeof power?.sub === 'string';
+  if (e.state === 'ok' && !hasSub && Number.isFinite(ups.charge)) {
+    return `${shownReading(ups.charge)}% charge`;
+  }
   return null;
 }
 
 /**
  * The subsystem strip's cells: the web's (statusView.js subsystemCells), one
- * per subsystem with anything; the Power cell also carries the UPS's readings
- * (upsReadingsOf), on a line of their own under the model's detail.
+ * per subsystem with anything, the model's value and sub-line; the Power cell
+ * also carries the UPS's runtime on battery, or from a server before #541 its
+ * charge on mains (upsReadingsOf), on a line of its own under them.
  */
 export function cellsOf({ status, freshness = FRESH, ups = null }) {
   const readings = upsReadingsOf({ status, ups });

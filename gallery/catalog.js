@@ -151,7 +151,7 @@ export const CATALOG = Object.freeze([
   s('status-badge', 'Status', 'StatusBadge: every state'),
   s('issue-row', 'Status', 'IssueRow: from 672px, as a link, a button and plain content'),
   s('issue-row-narrow', 'Status', 'IssueRow: below 672px, the phone row'),
-  s('subsystem-strip', 'Status', 'SubsystemStrip: six tiles from 672px'),
+  s('subsystem-strip', 'Status', 'SubsystemStrip: six tiles in a row from 816px'),
   s('subsystem-strip-narrow', 'Status', 'SubsystemStrip: six tiles in rows of three, and of two'),
   s('subsystem-strip-counts', 'Status', 'SubsystemStrip: four and five tiles, wide and narrow'),
   s('subsystem-strip-selectable', 'Status', 'SubsystemStrip: toggles, one selected', {

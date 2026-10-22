@@ -1,0 +1,337 @@
+/**
+ * #547: the display config saves only over the version a device read, as
+ * services.yaml does (#423), with the same mechanism (util/fileVersion.js).
+ *
+ * POST /api/display-config replaced display-config.json with whatever a
+ * device sent. A device open from before another's change posted its old
+ * copy, so a section hidden elsewhere came back. Now GET answers the file's
+ * version (an HMAC-SHA256 of its bytes with the per-install key) as a strong
+ * ETag, and the POST must carry it back in If-Match: none is a 428, an old one
+ * a 409 with the version now, and nothing is written either way. A missing
+ * file's version takes the first save. The GET's ETag is that version, so a
+ * poll's If-None-Match still gets a 304.
+ *
+ * These drive the real route against the real file.
+ */
+import test, { after } from 'node:test';
+import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
+import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import express from 'express';
+import request from 'supertest';
+
+const { displayConfigRoutes } = await import('./displayConfig.js');
+const { stopBackgroundRefresh } = await import('../refresh.js');
+
+after(() => stopBackgroundRefresh());
+
+const DIR = process.env.JAGHELM_DATA_DIR;
+const PATH = join(DIR, 'display-config.json');
+const KEY_PATH = join(DIR, 'config-version.key');
+
+const app = express();
+app.disable('etag'); // as index.js: no ETag but the routes' own
+app.use(express.json());
+app.use('/api/display-config', displayConfigRoutes);
+
+const read = (headers = {}) => request(app).get('/api/display-config').set(headers);
+const write = (body, version) => {
+  const r = request(app).post('/api/display-config');
+  if (version !== undefined) r.set('If-Match', version);
+  return r.send(body);
+};
+
+/** The file's version as the server makes it: an HMAC-SHA256 of its bytes, as an ETag. */
+const fileVersion = () =>
+  `"${createHmac('sha256', readFileSync(KEY_PATH)).update(readFileSync(PATH)).digest('base64url')}"`;
+const fileText = () => readFileSync(PATH, 'utf8');
+/** Put `config` on disk, as a hand edit or another device's save would. */
+const onDisk = (config) => writeFileSync(PATH, JSON.stringify(config, null, 2));
+
+const START = { refreshInterval: 30, theme: 'dark', overviewSections: { services: true } };
+
+test("GET answers the file's version as a strong ETag, and a write must send exactly that", async () => {
+  onDisk(START);
+  const r = await read();
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, START);
+  assert.equal(r.headers.etag, fileVersion());
+  assert.match(r.headers.etag, /^"[A-Za-z0-9_-]{43}"$/);
+
+  const saved = await write({ ...START, theme: 'light' }, r.headers.etag);
+  assert.equal(saved.status, 200, saved.text);
+  assert.equal(JSON.parse(fileText()).theme, 'light');
+  // The answer is the new version, the one the next read answers.
+  assert.equal(saved.headers.etag, fileVersion());
+  assert.notEqual(saved.headers.etag, r.headers.etag);
+  assert.equal((await read()).headers.etag, saved.headers.etag);
+});
+
+test("the version is the same key's HMAC as services.yaml's, so it survives a restart", async () => {
+  onDisk(START);
+  const key = readFileSync(KEY_PATH);
+  assert.equal(key.length, 32);
+  const want = `"${createHmac('sha256', key).update(fileText()).digest('base64url')}"`;
+  assert.equal((await read()).headers.etag, want);
+});
+
+test('a poll with the ETag it holds gets a 304, and a 200 with the new ETag once the file changes', async () => {
+  onDisk(START);
+  const first = await read();
+  const again = await read({ 'If-None-Match': first.headers.etag });
+  assert.equal(again.status, 304);
+  assert.equal(again.headers.etag, first.headers.etag);
+  assert.equal(again.text, '');
+  // A compressing proxy weakens the ETag on the way: still a 304.
+  assert.equal((await read({ 'If-None-Match': `W/${first.headers.etag}` })).status, 304);
+
+  onDisk({ ...START, theme: 'light' });
+  const changed = await read({ 'If-None-Match': first.headers.etag });
+  assert.equal(changed.status, 200);
+  assert.equal(changed.body.theme, 'light');
+  assert.equal(changed.headers.etag, fileVersion());
+});
+
+test('a write without If-Match is refused (428) and the file is unchanged', async () => {
+  onDisk(START);
+  const before = fileText();
+  const saved = await write({ ...START, theme: 'light' });
+  assert.equal(saved.status, 428, saved.text);
+  assert.match(saved.body.error, /If-Match/);
+  assert.equal(fileText(), before);
+});
+
+test('a write over an older version is refused (409) with the version now, and the file is unchanged', async () => {
+  onDisk(START);
+  const deviceA = await read();
+  const deviceB = await read();
+  const hidden = { ...START, overviewSections: { services: false } };
+  assert.equal((await write(hidden, deviceA.headers.etag)).status, 200);
+  const after = fileText();
+
+  const stale = await write({ ...START, theme: 'light' }, deviceB.headers.etag);
+  assert.equal(stale.status, 409, stale.text);
+  assert.equal(stale.body.stale, true);
+  assert.equal(stale.headers.etag, fileVersion(), 'the 409 names the version now');
+  assert.equal(fileText(), after);
+  assert.deepEqual(JSON.parse(fileText()).overviewSections, { services: false });
+});
+
+test('a version that is not one is refused (409): *, a made-up one, an empty one', async (t) => {
+  for (const version of ['*', '"made-up"', '""']) {
+    await t.test(version, async () => {
+      onDisk(START);
+      const before = fileText();
+      const saved = await write({ ...START, theme: 'light' }, version);
+      assert.equal(saved.status, 409, saved.text);
+      assert.equal(fileText(), before);
+    });
+  }
+});
+
+test('a hand edit after the read makes the write 409', async () => {
+  onDisk(START);
+  const r = await read();
+  onDisk({ ...START, refreshInterval: 60 });
+  const saved = await write({ ...START, theme: 'light' }, r.headers.etag);
+  assert.equal(saved.status, 409, saved.text);
+  assert.equal(JSON.parse(fileText()).refreshInterval, 60);
+});
+
+test("a missing file's version accepts the first write, and only while it is missing", async () => {
+  rmSync(PATH, { force: true });
+  const r = await read();
+  assert.equal(r.status, 200);
+  assert.equal(r.body, null);
+  assert.equal(r.headers.etag, '"absent"');
+
+  const first = await write(START, r.headers.etag);
+  assert.equal(first.status, 200, first.text);
+  assert.ok(existsSync(PATH));
+  assert.deepEqual(JSON.parse(fileText()), START);
+  assert.equal(first.headers.etag, fileVersion());
+
+  // Another device that read the missing file can't write over the new one.
+  const late = await write({ theme: 'light' }, r.headers.etag);
+  assert.equal(late.status, 409, late.text);
+  assert.deepEqual(JSON.parse(fileText()), START);
+});
+
+test('an invalid body is still a 400 before the version is looked at, and nothing is written', async () => {
+  onDisk(START);
+  const before = fileText();
+  const r = await write({ refreshInterval: 0 });
+  assert.equal(r.status, 400);
+  assert.equal(fileText(), before);
+});
+
+/**
+ * The logger's lines written while `fn` runs, and its result. Anything else
+ * on stdout or stderr (the test runner's own reports) passes through.
+ */
+async function logsOf(fn) {
+  const lines = [];
+  const originals = [process.stdout.write, process.stderr.write];
+  const tap = (orig) =>
+    function (chunk, ...rest) {
+      const text = String(chunk);
+      try {
+        if (JSON.parse(text)?.module) {
+          lines.push(text);
+          return true;
+        }
+      } catch {
+        // not one of ours
+      }
+      return orig.call(this, chunk, ...rest);
+    };
+  process.stdout.write = tap(originals[0]);
+  process.stderr.write = tap(originals[1]);
+  try {
+    return { result: await fn(), lines };
+  } finally {
+    [process.stdout.write, process.stderr.write] = originals;
+  }
+}
+
+/** Assert `r` (a read) has, and a save of it with the read's version heals the file. */
+async function savesBack(r) {
+  const saved = await write(r.body, r.headers.etag);
+  assert.equal(saved.status, 200, saved.text);
+  assert.deepEqual(JSON.parse(fileText()), r.body);
+}
+
+// The review's case (#547): one trailing comma typed by hand. The file used
+// to read as null, a stale device rebased its one switch onto that and wrote
+// a config without the rest.
+test("a file that doesn't parse is a 503 with its version, never an empty config; a whole copy over that version rewrites it", async () => {
+  const text = JSON.stringify(START, null, 2).replace(/\n}$/, ',\n}');
+  writeFileSync(PATH, text);
+  const r = await read();
+  assert.equal(r.status, 503);
+  assert.equal(r.body.code, 'config_unparseable');
+  assert.match(r.body.error, /^display-config\.json doesn't parse \(/);
+  assert.ok(!r.body.error.includes('dark'), 'the answer quotes the file');
+  assert.equal(r.headers.etag, fileVersion(), 'the 503 carries the file version');
+  // A poll holding an older ETag gets the 503 too, never a 304 over it.
+  assert.equal((await read({ 'If-None-Match': r.headers.etag })).status, 503);
+
+  const whole = { ...START, links: { Media: [{ name: 'Plex', url: 'https://plex.example/' }] } };
+  const saved = await write(whole, r.headers.etag);
+  assert.equal(saved.status, 200, saved.text);
+  assert.deepEqual(JSON.parse(fileText()), whole);
+});
+
+test("a file that isn't a JSON object is a 503 the same way", async () => {
+  for (const text of ['[1, 2]', 'null', '"text"']) {
+    writeFileSync(PATH, text);
+    const r = await read();
+    assert.equal(r.status, 503, text);
+    assert.equal(r.body.code, 'config_unparseable');
+    assert.equal(r.headers.etag, fileVersion());
+  }
+});
+
+test(
+  "a file that can't be read is a 503 with no version, and a save is refused the same way",
+  {
+    skip: process.getuid?.() === 0,
+  },
+  async () => {
+    onDisk(START);
+    const version = fileVersion();
+    chmodSync(PATH, 0o000);
+    try {
+      const r = await read();
+      assert.equal(r.status, 503);
+      assert.equal(r.body.code, 'config_unreadable');
+      assert.match(r.body.error, /can't be read \(permission denied\)/);
+      assert.equal(r.headers.etag, undefined);
+      const saved = await write({ ...START, theme: 'light' }, version);
+      assert.equal(saved.status, 503, saved.text);
+      assert.equal(saved.body.code, 'config_unreadable');
+    } finally {
+      chmodSync(PATH, 0o644);
+    }
+    assert.deepEqual(JSON.parse(fileText()), START);
+  }
+);
+
+test('a nested __proto__ is dropped from the read, and only it; a save of the read heals the file', async () => {
+  writeFileSync(
+    PATH,
+    '{"theme":"dark","sections":{"ups":{"visible":true,"__proto__":{"polluted":true}},"pipeline":{"visible":false}}}'
+  );
+  const { result: r, lines } = await logsOf(() => read());
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, {
+    theme: 'dark',
+    sections: { ups: { visible: true }, pipeline: { visible: false } },
+  });
+  const warned = lines.filter((l) => l.includes('display-config.json has values'));
+  assert.equal(warned.length, 1, lines.join(''));
+  assert.match(warned[0], /sections\.ups\.__proto__/);
+  assert.ok(!warned[0].includes('polluted'), 'the warning quotes the value');
+  await savesBack(r);
+});
+
+test('a javascript: link is dropped, the other links stay; a save of the read heals the file', async () => {
+  const EVIL = "javascript:fetch('/api/secrets')";
+  onDisk({
+    ...START,
+    links: {
+      Media: [
+        { name: 'Plex', url: 'https://plex.example/' },
+        { name: 'Evil', url: EVIL },
+        { name: 'Jellyfin', url: 'https://jellyfin.example/' },
+      ],
+      Infra: [{ name: 'Proxmox', url: 'https://pve.example/' }],
+    },
+    tabs: [{ id: 'bad', label: 'Bad', type: 'iframe', url: 'data:text/html,hi' }],
+  });
+  const { result: r, lines } = await logsOf(() => read());
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.links, {
+    Media: [
+      { name: 'Plex', url: 'https://plex.example/' },
+      { name: 'Jellyfin', url: 'https://jellyfin.example/' },
+    ],
+    Infra: [{ name: 'Proxmox', url: 'https://pve.example/' }],
+  });
+  assert.deepEqual(r.body.tabs, []);
+  assert.deepEqual(r.body.overviewSections, START.overviewSections);
+  const warned = lines.filter((l) => l.includes('display-config.json has values')).join('');
+  assert.match(warned, /links\.Media\[1\]/);
+  assert.match(warned, /tabs\[0\]/);
+  assert.ok(
+    !warned.includes('javascript') && !warned.includes('data:'),
+    'the warning quotes the value'
+  );
+  await savesBack(r);
+});
+
+test('one bad overviewSections entry is dropped, the map stays; one warning per version of the file', async () => {
+  const SECRETISH = 'hand-typed-value-77';
+  onDisk({
+    ...START,
+    overviewSections: { services: SECRETISH, rail: false, strip: true },
+    refreshInterval: 'often',
+  });
+  const { result: r, lines } = await logsOf(async () => {
+    const first = await read();
+    await read();
+    return first;
+  });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { theme: 'dark', overviewSections: { rail: false, strip: true } });
+  // The ETag is the version of the bytes on disk, bad values and all.
+  assert.equal(r.headers.etag, fileVersion());
+  const warned = lines.filter((l) => l.includes('display-config.json has values'));
+  assert.equal(warned.length, 1, `one warning for the two reads: ${lines.join('')}`);
+  assert.match(warned[0], /overviewSections\.services/);
+  assert.match(warned[0], /refreshInterval/);
+  assert.ok(!warned[0].includes(SECRETISH), 'the warning quotes the value');
+  assert.ok(!warned[0].includes('often'), 'the warning quotes the value');
+  await savesBack(r);
+});

@@ -6,6 +6,12 @@ vi.mock('@shared/api/client.js', () => ({ apiFetch, setAuthToken }));
 const { setApiBase } = vi.hoisted(() => ({ setApiBase: vi.fn() }));
 vi.mock('@shared/api/baseUrl.js', () => ({ setApiBase }));
 
+const { beforeSignIn, noRegistration } = vi.hoisted(() => ({
+  beforeSignIn: vi.fn(),
+  noRegistration: vi.fn(),
+}));
+vi.mock('./auth/pendingCleanup.js', () => ({ beforeSignIn, noRegistration }));
+
 import { login } from './login.js';
 
 const CANT_REACH =
@@ -19,9 +25,36 @@ beforeEach(() => {
   apiFetch.mockReset();
   setAuthToken.mockReset();
   setApiBase.mockReset();
+  beforeSignIn.mockReset().mockResolvedValue(undefined);
+  noRegistration.mockReset();
 });
 
 describe('login', () => {
+  it('tries a pending sign-out (#539) for this server before the credentials go out', async () => {
+    let finish;
+    beforeSignIn.mockReturnValue(new Promise((r) => (finish = r)));
+    apiFetch.mockResolvedValue(res({ ok: true, status: 200, token: 'abc' }));
+    const pending = login({ url: 'http://vm-101:3099', username: 'a', password: 'b' });
+    await Promise.resolve();
+    expect(beforeSignIn).toHaveBeenCalledWith('http://vm-101:3099/api');
+    expect(apiFetch).not.toHaveBeenCalled();
+    finish();
+    await expect(pending).resolves.toEqual({ ok: true, token: 'abc' });
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+    expect(noRegistration).not.toHaveBeenCalled(); // push registers next
+  });
+
+  it.each([
+    ['a 401', () => apiFetch.mockResolvedValue(res({ ok: false, status: 401 }))],
+    ['no answer', () => apiFetch.mockRejectedValue(new TypeError('Failed to fetch'))],
+    ['no token', () => apiFetch.mockResolvedValue(res({ ok: true, status: 200 }))],
+  ])('a sign-in that fails (%s) registers nothing, so the FCM token deletion may run again', async (_, answer) => {
+    answer();
+    const r = await login({ url: 'http://vm-101:3099', username: 'a', password: 'b' });
+    expect(r.ok).toBe(false);
+    expect(noRegistration).toHaveBeenCalledTimes(1);
+  });
+
   it('on 200 returns the token and sets base + auth token, POSTing creds to /auth/login', async () => {
     apiFetch.mockResolvedValue(res({ ok: true, status: 200, token: 'abc' }));
     const r = await login({ url: 'http://100.88.196.41:3099', username: 'admin', password: 'pw' });

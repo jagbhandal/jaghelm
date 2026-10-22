@@ -109,15 +109,21 @@ export const SIGN_OUT_TIMEOUT_MS = 5000;
  * the call, with the token and base of that moment, so both apps call it on the
  * user's sign-out and then clear the session locally without waiting for it. It
  * never rejects and gives up after SIGN_OUT_TIMEOUT_MS: a network error, a hang
- * or a 5xx can't keep anyone signed in. The answer is not read. It goes through
+ * or a 5xx can't keep anyone signed in. Only its status is read. It goes through
  * window.fetch, not apiFetch, so the token is the one passed and a 401 (a
  * server older than the route, with a dead token) is not an expired session.
  * The 401 self-heal doesn't call it: that session is already dead.
+ *
+ * It answers whether the server answered (below 500: revoked, or a token or
+ * route it doesn't know, so nothing is left to do) or there was no token. The
+ * Android app keeps a revoke that answered false and sends it again later, to
+ * `base`, the server that session belongs to (#539).
  */
-export async function revokeSession(token = authToken) {
-  if (!token) return;
+export async function revokeSession(token = authToken, { base = getApiBase() } = {}) {
+  if (!token) return true;
   const controller = new AbortController();
   let timer;
+  let reached = false;
   const deadline = new Promise((resolve) => {
     timer = setTimeout(() => {
       controller.abort();
@@ -126,17 +132,19 @@ export async function revokeSession(token = authToken) {
   });
   const request = (async () => {
     try {
-      await window.fetch(`${getApiBase()}/auth/logout`, {
+      const r = await window.fetch(`${base}/auth/logout`, {
         method: 'POST',
         headers: { 'x-auth-token': token },
         signal: controller.signal,
       });
+      reached = !!r && r.status < 500;
     } catch {
       // Offline, refused or aborted: the caller signs out locally all the same.
     }
   })();
   await Promise.race([request, deadline]);
   clearTimeout(timer);
+  return reached;
 }
 
 /**

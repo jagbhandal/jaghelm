@@ -109,11 +109,16 @@ test('thresholds: a display-config save takes effect, interval unchanged or not'
   replaceConfig({ refreshInterval: 30, pushThresholds: { cpu: 0.7 } });
   assert.equal(cpuLine(), 0.7);
 
-  const same = await request(app).post('/api/display-config').send({ refreshInterval: 30, pushThresholds: { cpu: 0.5 } });
+  // Over the version a read answered (If-Match, #547).
+  const save = async (body) => {
+    const read = await request(app).get('/api/display-config');
+    return request(app).post('/api/display-config').set('If-Match', read.headers.etag).send(body);
+  };
+  const same = await save({ refreshInterval: 30, pushThresholds: { cpu: 0.5 } });
   assert.equal(same.status, 200);
   assert.equal(cpuLine(), 0.5, 'saved with the same interval');
 
-  const changed = await request(app).post('/api/display-config').send({ refreshInterval: 60, pushThresholds: { cpu: 0.4 } });
+  const changed = await save({ refreshInterval: 60, pushThresholds: { cpu: 0.4 } });
   assert.equal(changed.status, 200);
   assert.equal(cpuLine(), 0.4, 'saved with a new interval (loop restart)');
 });

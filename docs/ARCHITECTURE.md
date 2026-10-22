@@ -280,7 +280,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/services` | token | discovered nodes + services (background-refreshed, ETag); `services.yaml` for Settings, without its credentials, and its save over the version read (`/config`, ETag and If-Match, see 6) |
 | `/api/status` | token | the status model (4.7), built once a background cycle (ETag, and its build time as Last-Modified; 503 before the first cycle) |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6) |
-| `/api/display-config` | token | the display config blob |
+| `/api/display-config` | token | the display config blob, and its save over the version read (ETag and If-Match, see 6) |
 | `/api/embed-check/:tabId` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs") |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
@@ -912,7 +912,11 @@ learns of another tab's sign-out from its 401. The Android app sends it on Log o
 Forget this device, not on its 401 path, and not on the connection screen's
 Change server, which shows only when the server can't be reached. Just before
 it, those two send `DELETE /api/push/register`, so the phone stops getting
-pushes, and delete the phone's FCM token (#531, see docs/mobile/DESIGN.md). A server
+pushes, and delete the phone's FCM token (#531, see docs/mobile/DESIGN.md). What
+the phone can't finish (offline, a hang) it keeps with the session it ended
+and sends again to that server at the next app start, connection or sign-in
+(#539): `revokeSession()` answers whether it reached the server,
+and takes the server's address for that retry. A server
 older than the route answers 404 (or 401), which changes nothing: the client
 signs out locally as before.
 
@@ -1068,7 +1072,7 @@ error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
 {
   overall: { state, sentence },     // "2 services down · UPS on battery"; state may be 'empty'
   issues: [entity, …],              // ranked, see below
-  subsystems: [{ id, name, state, counts: { total, ok, warn, crit, unknown, maintenance }, detail }],
+  subsystems: [{ id, name, state, counts: { total, ok, warn, crit, unknown, maintenance }, detail, value, sub }],
   entities: [{ id, kind, subsystem, name, node?, state, word, reason, metric?, conditions?, heldSince?, since }],
   sources: { prometheus: { state: 'ok' | 'failed', error?, since }, kuma, nut, gitea, config },
   thresholds: { cpu: { warn, cycles }, mem: { warn }, disk: { warn, crit },   // the lines it judged by
@@ -1116,7 +1120,8 @@ error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
   last seen, an integration's `_status.since`), else the first cycle that saw
   it. A node's `conditions` gives each reading its state (`disk`, `mem`,
   `cpu`, `temp`, `pool:<name>`), so a meter is coloured by the server's rule.
-  `metric` is the reading behind a node's or the UPS's state.
+  `metric` is the reading behind a node's state, and the UPS's charge, on
+  mains as on battery (#541).
 - **Severity** is spec §6.1's table (`rules.js`, one function per kind), its
   numbers in `thresholds.js`. Kuma down is crit; pending is a warning only
   once it has lasted `pending.cycles` (2) cycles in a row, and on its first
@@ -1273,7 +1278,22 @@ error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
 - **Subsystems**, in strip order: Services, Nodes, Power, Jobs, Backups,
   Integrations. Each is the worst of its entities, with counts by state and a
   detail ("31 / 32 up · 1 in maintenance", "On mains"). One with no entities
-  has `total: 0`, and a client shows no panel for it.
+  has `total: 0`, and a client shows no panel for it. Its tile's two lines
+  are the model's too (`tileOf`, #541), from the counts that build the
+  detail: a short `value` and the `sub` under it. A count's value is
+  "31 / 32". Its sub names what is wrong, each status word with its count,
+  worst first, in the sentence's words ("1 down", "1 overdue", "1 in
+  warning", "1 with a refused login"), or with nothing wrong the OK word
+  ("up"); then "N in maintenance" and "N no signal" ("1 down · 1 no signal",
+  "up · 1 in maintenance"). The OK word never sits beside a problem. The
+  UPS's value is its word ("On mains", "On battery") and its sub its charge
+  ("64 % charge"), else its reason when that says more ("No data: Prometheus
+  unreachable"), else empty; an empty subsystem is "None" with an empty sub.
+  `detail` keeps its words: the value, the OK word, then maintenance and no
+  signal ("11 / 12 up · 1 no signal"; the UPS on its own, its reason, "On
+  battery (64 % charge)"), for the header sentence, push and an Android app
+  older than #541; Power with several entities counts its no signal ones
+  there too. No client splits a string.
 - **The sentence**: with warnings or worse, each kind of problem with its count
   in issue order ("2 services down · Prometheus unreachable · 1 job failed"),
   then "N no signal"; with only unknowns, "31 up · 1 no signal"; healthy, the
@@ -1331,7 +1351,9 @@ shows comes from `mobile/src/data/board.js`, through the web's own helpers
 `src/shell/infrastructureView.js`): the status bar's lamp and sentence, the
 Overview's card (the board's word and the issues' counts, the quiet line, or
 an empty board's "Nothing monitored yet" alone), a strip cell per subsystem
-with anything, the ranked issues with where they are and their reasons, each
+with anything (the model's value over its sub-line, as the web's tile, #541;
+the Power cell adds the UPS's runtime on battery, and from a server older
+than #541, which gives no sub-line, its charge on mains), the ranked issues with where they are and their reasons, each
 service row's state and word, and each node card's state, word, hosted
 counts ("4 / 5 services up · 1 down", or "No services") and bars, each bar
 coloured by its condition and printed by `shownReading`, and a service's 24 h
@@ -1509,7 +1531,7 @@ them on its Node side and hand a page the JSON.
   anything, a row per entity, and the Overview's Infrastructure section, a
   meter per node reading coloured by its condition, drawn through the page's
   own `infrastructureNodes` and `InfrastructureSection`), and read back: the
-  headline's word (the model's word for the board's state) and sentence, each tile's state, word and counts, each row's
+  headline's word (the model's word for the board's state) and sentence, each tile's state, word, value and sub-line (#541; and each fixture's strip again stale, every tile no signal with the same value and sub-line), each row's
   state, word and reason, each meter's state and the number and line the
   model's reason gives. A meter reads its lines from the status it draws
   (`thresholds`, #451), and readings just below, on and just above each line,
@@ -1520,7 +1542,8 @@ them on its Node side and hand a page the JSON.
   screens through `MobileApp`, as its poll hands them over, and read back:
   the status bar's lamp (none on an empty board) and sentence, the Overview
   card's headline, coloured word and sentence (the web panel's words), each
-  strip cell's state, word and counts, each issue row's state, word, name,
+  strip cell's state, word, value and sub-line (#541; stale, the same as
+  fresh), each issue row's state, word, name,
   where and reason, and each node card's state, word, hosted counts and
   bars (level and number). Then every fixture again with the status stale
   (the server out of reach), and the incident past its TTL and with no
@@ -1663,8 +1686,10 @@ flowchart TD
 - **The subsystem strip and its filter** (#298, spec §8 item 2). Under the
   status, in the same `ShellSection`, `SubsystemStrip` has a tile per
   subsystem the model has anything in (`counts.total` above 0), in the
-  model's order: its state's lamp, its name, and the model's `detail` ("11 /
-  12 up") as the value (`subsystemCells`, `statusView.js`). The lamp is named
+  model's order: its state's lamp, its name, and the model's `value` over its
+  `sub` ("11 / 12" over "up", #541), as they are (`subsystemCells`,
+  `statusView.js`; from a server older than #541, the `detail` as the value
+  and no sub). The lamp is named
   by the model's word for the subsystem's worst entity ("Down", "Failed"),
   the first of its ranked issues in that state; the client judges nothing. A
   subsystem that isn't set up has no tile, and an empty board has no strip.
@@ -1694,9 +1719,9 @@ flowchart TD
   today's board at all (Integrations, whose numbers show on their services'
   rows). Nodes and Services, whose sections are above the board, get no note. Each note offers "Show the whole board". The rows' links follow: a
   panel the filter hides takes its anchor off the list of places drawn. With
-  a stale status, each tile keeps its count, as last known, and says so
-  under it ("Last known 3 min ago", from 672px; and to a screen reader, as
-  its description), its lamp the steel ring (#480).
+  a stale status, each tile keeps its value and sub-line, as last known, its
+  lamp the steel ring (#480); how old they are is said once, by the header
+  and the attention panel, never on a tile (#541).
 - **The Overview on a phone** (#484, spec §8 "Phone width"). Below 768px
   (`PHONE_WIDTH` in `@ui/app-shell`, `(width < 48rem)`: the shell's own
   `md`, where the bottom tabs replace the sidebar, one value for both) the top of the Overview is the Phone board's
@@ -1723,10 +1748,11 @@ flowchart TD
   tablet (768–1023px) is the desktop Overview in one column, which it is by
   flow (the status, the strip, Infrastructure, Services and today's board
   stack at every width without the rail), and its strip wraps by its own
-  container queries (six tiles to a row from 672px of strip, rows of three
-  under it), as the node cards fill their section's width. Sections grow
-  with their content and never clip it; a word wider than a strip tile breaks
-  rather than hide. On the first load the page fills in from the top (#243):
+  container queries (six tiles to a row from 816px of strip, where the
+  widest value, "Low battery", fits in every typeface, #541; two rows of
+  three under it), as the node cards fill their section's width. Sections
+  grow with their content and never clip it; a strip tile's value and
+  sub-line wrap only between words, never cutting one. On the first load the page fills in from the top (#243):
   `DashboardView` draws nothing until the header's poll has its first answer
   (`reach` past `loading`), while its data loads, so the status, a
   placeholder of unknown height until then, can't push down sections already
@@ -2411,8 +2437,9 @@ All state is files under the data dir (no DB):
     ("services.yaml can't be read (permission denied): fix it on the host;
     …"), before any version is compared, since it has none. Settings' read
     shows its reason in place of the tabs, as for `config_unparseable`; a
-    save refused with it says so in the failed-save toast, then reads again,
-    which shows the reason. Before, one indentation slip and an
+    save refused with it says so in the failed-save toast and shows the
+    reason at once, without reading again, as for `config_unparseable`
+    (#550). Before, one indentation slip and an
     integration added from the gallery rewrote the file to that one
     integration (the last good config at boot is `{}`). Fixed by hand, the
     next read or the watcher's reload loads it and saves work again. Settings
@@ -2475,7 +2502,8 @@ All state is files under the data dir (no DB):
   - **A save needs the version it read** (#423). A tab left open from before a
     change used to post its old copy, without what was added since, and the
     save deleted it. `services.yaml`'s version is an HMAC-SHA256 of its
-    bytes on disk (`config.js`), so it survives a restart and changes with
+    bytes on disk (`util/fileVersion.js`, which the display config's version
+    shares, #547), so it survives a restart and changes with
     any edit, by hand or by JagHelm, a credential's too (the masked read
     can't show that, so a version of the answer would miss it). The key is
     32 random bytes in `config-version.key` in the data dir (below): a plain
@@ -2583,14 +2611,68 @@ All state is files under the data dir (no DB):
   `src/shell/overviewSections.js`): `showTodos`, Widgets' old "Show
   checklist panel", which nothing drawn ever read, and `showDockerStats`.
   Nothing else changes; the server's copy loses them at the next save.
+  - **A save needs the version it read** (#547), by `services.yaml`'s
+    mechanism (`util/fileVersion.js`, #423): a device open from before
+    another's save used to post its whole old copy, so a section hidden on
+    one device came back when the other saved anything. The version is an
+    HMAC-SHA256 of `display-config.json`'s bytes with the same key; a missing
+    file's is `absent`, so the first save names it.
+    `GET /api/display-config` answers it as a strong ETag (a poll's
+    If-None-Match gets a 304; the demo sends none), and `POST` must send it back in
+    `If-Match`: none is a 428, another a 409 `{ error, stale: true }` with
+    the version now as its ETag; nothing is written either way. The read,
+    the check and the write are one synchronous step, and a save answers
+    with the version it wrote.
+  - **A file that is no config is never answered as one**, so no device lays
+    its changes over an empty copy and saves a config without the rest (the
+    links, the tabs, `backupJobs`). One that doesn't parse or isn't a JSON
+    object is a 503 `{ error, code: "config_unparseable" }` with its reason
+    and position (never its text) and the file's version as the ETag: a
+    device saves its whole config over that version, which rewrites the
+    file. One that can't be read is a 503 `config_unreadable` with no
+    version, and so is a save: fix it on the host.
+  - **The read leaves out each value no save would take** (a hand edit), at
+    the depth it is refused: a reserved key such as a nested `__proto__`, an
+    unsafe `url` (the link or tab that holds it goes, the others stay), or a
+    value the schema refuses (one `overviewSections` entry, not the map).
+    One warning per version of the file names each path, never the value. A
+    device saves back what it read, so the value would otherwise refuse
+    every save from Settings; the next save drops it.
+  - **A refused save is rebased, not dropped** (`useConfigPersistence`,
+    `src/utils/rebaseConfig.js`). Display saves are automatic (a switch
+    flipped saves 2 s later), so throwing the edit away would undo what the
+    user just did. Saves go out one at a time, each over the version the one
+    before it answered, and a config equal to the server's copy sends
+    nothing. On a 409 (or a 428, when the mount read failed and there is no
+    version) the device reads the server's copy and lays over it only the
+    leaves it changed since the copy it last read: plain objects recurse,
+    arrays and scalars are leaves, so two devices' switches in
+    `overviewSections` both stay, and a leaf both changed takes this
+    device's value. It shows that, keeps it in localStorage and saves it
+    once over the new version ("Merged with changes from another device").
+    Refused again, it takes the server's copy as it is ("Settings changed on
+    another device; reloaded"). It shows or lays changes over only a copy: an
+    object with its version (the read-only demo's needs none). With no file
+    or one that doesn't parse, it keeps its config and sends the whole of it
+    over that version; with one the server can't read, it keeps its config
+    and says why.
+  - **An edit whose save never landed is saved at the next load.**
+    localStorage keeps, beside the config (`jaghelm-config`), the copy it
+    descends from and its version (`jaghelm-config-base`), written together.
+    At the next load what differs from that copy is laid over the server's
+    copy and saved, as a refused save is. The unload flush (a keepalive fetch
+    with the version; sendBeacon can't send `If-Match`) is only a head
+    start. A tab open from before the version check came in sends none, and
+    its saves get 428 until it is reloaded.
 - **secrets** -- AES-256-GCM blob, keyed by integration storage key.
 - **config version key** -- `config-version.key`: 32 random bytes (mode 0600)
-  that `services.yaml`'s version is an HMAC with (#423, above). Made on first
+  that the versions of `services.yaml` (#423) and `display-config.json`
+  (#547) are HMACs with (`util/fileVersion.js`, above). Made on first
   start by a temp file linked into place, so two boots racing end up with one
   key. Never logged or answered. One that can't be read or isn't 32 bytes
   stops the boot (a key made up for one run would change every version at
-  the next restart). Losing it costs one refused Settings save: a new key is
-  made and every version changes once.
+  the next restart). Losing it costs one refused save per open screen: a new
+  key is made and every version changes once.
 - **Arcane state** -- `arcane-state.json` (baselined environments, agent down counters,
   seen activity ids, each environment's pending updates, runs waiting on their job run,
   last notified release),
@@ -2897,15 +2979,25 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   with no opener; a section switched off in Settings → Appearance stays off
   after a reload in a second browser context (another device), against a
   server that keeps the display config it is sent, and comes back when
-  switched on there; axe on the rail and the Launch page. Nothing hides (#302,
+  switched on there; a browser open from before that switch hides another
+  section without bringing it back (#547: its save is refused, rebased and
+  saved once more, both sections stay hidden on both); axe on the rail and
+  the Launch page. Nothing hides (#302,
   `e2e/reflow.spec.mjs`): the Overview at 360, 390, 768, 1024, 1280, 1440,
   1920 and 2560px, healthy and incident, and on the incident with the
-  model's longest subsystem details at each of them: the page no wider than
+  model's longest subsystem sub-lines at each of them: the page no wider than
   its window; no element clipping its content (overflowing on an axis it
   clips, `hidden` or `clip`) unless it ends in an ellipsis with the whole text
   in a title or an accessible name, and no text spilling out of its box;
   every service's and node's name whole and in the window; a failure names
-  the element and the width. Today's board is held only to its panels'
+  the element and the width. Every status fixture's strip, and a six-tile
+  one with "Low battery", at 1024, 1280, 1440 and 1460px (past the page's
+  split), in each of the three typefaces (#541): each tile's value and
+  sub-line the model's, whole (no word cut, `overflow-wrap: normal`, nothing
+  clipped or ending in an ellipsis), the value on one line, six tiles in one
+  row or two of three, never 5 + 1. And six tiles carrying every value the
+  model gives a tile, at each strip width from 672 to 1200px in each
+  typeface: in one row from 816px and not below, every value on one line. Today's board is held only to its panels'
   heights (#306 deletes it: its Pipeline's commit messages and its Checklist's
   add row don't fit at 360 and 390px). A tablet (768 and 1023px) is one
   column, the strip wrapping. The first load at 390 × 844 on the incident

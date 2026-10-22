@@ -609,7 +609,8 @@ export function judgeContainer({ card, backedBy = null, containersRead }) {
  * The UPS, from the /api/ups payload (spec §6.1): on battery or low battery →
  * crit; on mains → ok. nut_status 1 is online, 2 on battery, 3 low battery
  * (push reads it through this rule: push/snapshot.js normalizeUpsStatus); 0 is
- * NUT's own "unknown".
+ * NUT's own "unknown". Its charge, when read, is its `metric`, on mains as
+ * on battery (the strip's sub-line, summary.js tileOf, #541).
  *
  * - The UPS query failed (`ok: false`) → unknown, naming Prometheus.
  * - No nut_status reading while the UPS is set up: the NUT exporter has gone
@@ -627,7 +628,7 @@ export function judgeUps(ups) {
   const chargeText = charge === null ? '' : ` (${charge} % charge)`;
   switch (ups.status) {
     case 1:
-      return { state: 'ok', word: 'On mains', reason: 'On mains' };
+      return { state: 'ok', word: 'On mains', reason: 'On mains', metric };
     case 2:
       return { state: 'crit', word: 'On battery', reason: `On battery${chargeText}`, metric };
     case 3:

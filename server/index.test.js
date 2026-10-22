@@ -140,12 +140,22 @@ test('POST /api/display-config → 400 on out-of-range refreshInterval', async (
   assert.equal(r.status, 400);
 });
 
-test('POST /api/display-config → 200 on a valid config (data-dir isolated)', async () => {
+test('POST /api/display-config → 200 on a valid config over the version read (data-dir isolated)', async () => {
+  const read = await request(app).get('/api/display-config');
+  assert.match(read.headers.etag, /^"[^"]+"$/);
   const r = await request(app)
     .post('/api/display-config')
+    .set('If-Match', read.headers.etag)
     .send({ theme: 'github-dark', refreshInterval: 30 });
   assert.equal(r.status, 200);
   assert.equal(r.body.ok, true);
+});
+
+test('POST /api/display-config → 428 without the version read (#547)', async () => {
+  const r = await request(app)
+    .post('/api/display-config')
+    .send({ theme: 'github-dark', refreshInterval: 30 });
+  assert.equal(r.status, 428);
 });
 
 test('GET /metrics → 200 Prometheus exposition including http_requests_total', async () => {

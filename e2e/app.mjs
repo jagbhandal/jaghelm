@@ -22,12 +22,21 @@ export const THEMES = { dark: 'dark', light: 'light' };
 export const demo = (path, { method = 'GET', query = {}, scenario = 'incident' } = {}) =>
   demoResponse({ method, path, query, scenario });
 
+const REPLY = Symbol('reply');
+
+/**
+ * An answer with its own status and headers, for an `answers` function
+ * (openApp): `reply(409, { stale: true }, { ETag: '"v2"' })`.
+ */
+export const reply = (status, json, headers = {}) => ({ [REPLY]: { status, json, headers } });
+
 /**
  * Opens the app at `path`, answering every request here, as the demo in
  * `scenario` (incident by default), with `config` over the demo's display
  * config, and `answers` (a body by path, such as a board's /api/status and
- * /api/services, or a function of the request that returns one, for a
- * server that keeps what it is sent) in place of the demo's. Returns the
+ * /api/services, or a function of the request that returns one, or a
+ * `reply` with its status and headers, for a server that keeps what it is
+ * sent) in place of the demo's. Returns the
  * server's state: set
  * `down` to refuse /api/status, as a backend that can't be reached, or
  * `expired` to answer it 503, as the server does once its status is past the
@@ -61,19 +70,25 @@ export async function openApp(
     if (url.pathname === '/api/icons/cached') return route.fulfill({ status: 404, json: {} });
     if (Object.hasOwn(answers, url.pathname)) {
       const answer = answers[url.pathname];
-      return route.fulfill({
-        status: 200,
-        json: typeof answer === 'function' ? answer(request) : answer,
-      });
+      const out = typeof answer === 'function' ? answer(request) : answer;
+      if (out?.[REPLY]) return route.fulfill(out[REPLY]);
+      return route.fulfill({ status: 200, json: out });
     }
     const out = demo(url.pathname, {
       method: request.method(),
       query: Object.fromEntries(url.searchParams),
       scenario,
     });
-    const body =
-      url.pathname === '/api/display-config' ? { ...out.body, tabs: APPS, ...config } : out.body;
-    return route.fulfill({ status: out.status, json: body ?? {} });
+    if (url.pathname === '/api/display-config' && request.method() === 'GET') {
+      // With a version, as a server that isn't the demo answers it (#547): a
+      // session told it isn't the demo shows no copy without one.
+      return route.fulfill({
+        status: out.status,
+        json: { ...out.body, tabs: APPS, ...config },
+        headers: { ETag: '"e2e"' },
+      });
+    }
+    return route.fulfill({ status: out.status, json: out.body ?? {} });
   });
   if (theme != null)
     await page.addInitScript((id) => localStorage.setItem('jaghelm-theme', id), theme);

@@ -11,8 +11,10 @@ vi.mock('../push/pushPrefsApi.js', () => ({ getPushStatus, getPushPrefs, setPush
 const { getPref } = vi.hoisted(() => ({ getPref: vi.fn() }));
 vi.mock('../storage/prefsAdapter.js', () => ({ getPref, setPref: vi.fn() }));
 
-const { disablePush } = vi.hoisted(() => ({ disablePush: vi.fn() }));
-vi.mock('../push/registerPush.js', () => ({ disablePush }));
+const { disablePush, enablePush, pushWanted } = vi.hoisted(() => ({
+  disablePush: vi.fn(), enablePush: vi.fn(), pushWanted: vi.fn(),
+}));
+vi.mock('../push/registerPush.js', () => ({ disablePush, enablePush, pushWanted }));
 
 const { logout, forgetDevice } = vi.hoisted(() => ({ logout: vi.fn(), forgetDevice: vi.fn() }));
 vi.mock('../auth/authState.js', () => ({ logout, forgetDevice }));
@@ -32,6 +34,8 @@ beforeEach(() => {
   setPushPrefs.mockReset().mockResolvedValue(PREFS);
   getPref.mockReset().mockResolvedValue('fcmtok');
   disablePush.mockReset().mockResolvedValue(undefined);
+  enablePush.mockReset().mockResolvedValue({ enabled: true, permission: 'granted', token: 'fcmtok2' });
+  pushWanted.mockReset().mockResolvedValue(true);
   logout.mockReset();
   forgetDevice.mockReset();
 });
@@ -170,5 +174,41 @@ describe('NotificationSettings — turn off push (DELETE teardown)', () => {
       expect(screen.queryByRole('switch', { name: /enable push|push notifications/i })).toBeNull(),
     );
     expect(screen.getByText(/not registered|unavailable|turned off/i)).toBeInTheDocument();
+  });
+});
+
+describe('NotificationSettings — the push choice sticks (#539)', () => {
+  it('turned off on this device: says so, loads no prefs, offers Turn on', async () => {
+    pushWanted.mockResolvedValue(false);
+    render(<NotificationSettings nav={nav} data={{}} params={{}} />);
+    expect(await screen.findByText('Push is turned off on this device.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /turn on push on this device/i })).toBeInTheDocument();
+    expect(getPushPrefs).not.toHaveBeenCalled();
+    expect(screen.queryByRole('switch')).toBeNull();
+  });
+
+  it('Turn on registers push again, then loads the new token\'s prefs', async () => {
+    pushWanted.mockResolvedValueOnce(false);
+    getPref.mockResolvedValue('fcmtok2');
+    render(<NotificationSettings nav={nav} data={{}} params={{}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /turn on push on this device/i }));
+    await waitFor(() => expect(enablePush).toHaveBeenCalledWith({ nav }));
+    await waitFor(() => expect(getPushPrefs).toHaveBeenCalledWith('fcmtok2'));
+    expect(await screen.findByRole('switch', { name: 'Enable push notifications' })).toBeInTheDocument();
+  });
+
+  it('Turn on with no token (permission off in Android) says it is not registered', async () => {
+    pushWanted.mockResolvedValueOnce(false);
+    enablePush.mockResolvedValue({ enabled: false, permission: 'denied' });
+    getPref.mockResolvedValue(null);
+    render(<NotificationSettings nav={nav} data={{}} params={{}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /turn on push on this device/i }));
+    expect(await screen.findByText(/push not registered on this device/i)).toBeInTheDocument();
+  });
+
+  it('Turn off then shows the Turn on button', async () => {
+    render(<NotificationSettings nav={nav} data={{}} params={{}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /turn off push on this device/i }));
+    expect(await screen.findByRole('button', { name: /turn on push on this device/i })).toBeInTheDocument();
   });
 });

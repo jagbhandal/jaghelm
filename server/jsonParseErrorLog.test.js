@@ -97,15 +97,15 @@ test('secrets.json that does not parse: logged with its reason and position, not
   });
 });
 
-test('display-config.json that does not parse: logged with its reason, not its text, and answered as null', async () => {
+test('display-config.json that does not parse: logged with its reason, not its text, and answered as a 503 saying so (#547)', async () => {
   const { displayConfigRoutes } = await import('./routes/displayConfig.js');
   const app = express().use('/api/display-config', displayConfigRoutes);
   let r;
   const lines = await captureLogs(async () => {
     r = await request(app).get('/api/display-config');
   });
-  assert.equal(r.status, 200);
-  assert.equal(r.body, null);
+  assert.equal(r.status, 503);
+  assert.equal(r.body.code, 'config_unparseable');
   assert.ok(!r.text.includes(QUOTED));
   assertLogged(lines, 'display-config', 'Failed to read', UNEXPECTED);
 });

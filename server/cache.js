@@ -88,7 +88,7 @@ export function getCacheAgeMs(key) {
  * fetch that sets its own If-None-Match (useData.js does), and the server is the
  * origin, so answering 304 is the revalidation that header asks for.
  */
-function ifNoneMatchHits(header, etag) {
+export function ifNoneMatchHits(header, etag) {
   if (typeof header !== 'string') return false;
   if (header.trim() === '*') return true;
   for (const part of header.split(',')) {

@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import MobileApp from './MobileApp.jsx';
 import Login from './Login.jsx';
 import { secureStore } from '@shared/storage/index.js';
-import { revokeSession, setAuthExpiredHandler } from '@shared/api/client.js';
+import { getAuthToken, revokeSession, setAuthExpiredHandler } from '@shared/api/client.js';
+import { getApiBase } from '@shared/api/baseUrl.js';
 import { setAuthHandlers } from './auth/authState.js';
 import { clearSessionToken, forgetServer } from './auth/forgetServer.js';
+import { rememberCleanup } from './auth/pendingCleanup.js';
 import { cachedPushToken, unregisterPush } from './push/registerPush.js';
 import { BASE_URL_KEY } from './runtimeConfig.js';
 
@@ -43,12 +45,17 @@ export default function App({ initial }) {
     // token without waiting for either answer, so closing the app while the
     // server is slow can't leave it in the Keystore (neither call rejects, and
     // each gives up after 5 s). Only the cached push token is read first, from
-    // the phone's own storage.
+    // the phone's own storage. What doesn't finish (offline, a hang) is kept
+    // with the session it ended and retried later, to that server only (#539).
     const signOut = async (clearLocally) => {
-      const unregistered = unregisterPush(await cachedPushToken());
+      const serverUrl = getApiBase();
+      const sessionToken = getAuthToken();
+      const pushToken = await cachedPushToken();
+      const push = unregisterPush(pushToken);
       const revoked = revokeSession();
+      const remembered = rememberCleanup({ serverUrl, sessionToken, pushToken, push, revoked });
       await clearLocally();
-      await Promise.all([unregistered, revoked]);
+      await remembered;
     };
     setAuthHandlers({
       logout: () => signOut(clearSession),
