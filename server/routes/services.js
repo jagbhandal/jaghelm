@@ -26,6 +26,12 @@
  * copy over it. Nothing is written either way. A save answers with the new
  * version as its ETag, so the tab can save again without reading.
  *
+ * A stored credential goes only to the address it was entered for (#556): a
+ * write that keeps a credential's marker on an integration entry whose URL it
+ * moves to another origin is refused (400, naming the place), whether the
+ * credential is in the secret store or typed into services.yaml by hand. It
+ * is entered again in the integration's form, for the new address.
+ *
  * While services.yaml doesn't parse (or is empty, or not a mapping), the read
  * and the write are both a 503 `config_unparseable` saying so, with no
  * version: the last good config the board keeps is not this file's (#423).
@@ -40,6 +46,7 @@ import { Router } from 'express';
 
 import { readConfig, writeConfig } from '../config.js';
 import { getPresetFull, listPresets } from '../integrations/registry.js';
+import { entryOrigin } from '../integrations/lib/config.js';
 import { getMonitorNames } from '../monitors.js';
 import { refreshServices } from '../refresh.js';
 import { respondWarmCached } from '../cache.js';
@@ -47,7 +54,7 @@ import { apiError, configUnusable } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { etagOf, ifMatchHits, refuseStale, versionNamed } from '../util/fileVersion.js';
 import { validateConfig, servicesConfigSchema } from '../util/configSchema.js';
-import { maskCredentials, restoreCredentials } from '../util/configMask.js';
+import { isStoredMarker, maskCredentials, restoreCredentials } from '../util/configMask.js';
 
 const router = Router();
 
@@ -75,6 +82,53 @@ router.get(
     })
   )
 );
+
+const isMap = (/** @type {unknown} */ v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * The place of the first marker in `value` (the path from the config's root,
+ * starting at `at`), or null when it holds none.
+ * @param {unknown} value
+ * @param {Array<string|number>} at
+ * @returns {Array<string|number> | null}
+ */
+function firstMarker(value, at) {
+  if (isStoredMarker(value)) return at;
+  if (!value || typeof value !== 'object') return null;
+  for (const [k, v] of Object.entries(value)) {
+    const found = firstMarker(v, [...at, Array.isArray(value) ? Number(k) : k]);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * Why a write is refused for keeping a stored credential on an integration
+ * entry it moves to another origin (#556), or null: the first entry of
+ * `posted` (with its markers) that keeps a marker while its URL, resolved as
+ * a refresh resolves it, is on another origin in `restored` than in
+ * `current`. The message names the place, never a value or an origin.
+ * @param {any} posted
+ * @param {any} restored
+ * @param {any} current
+ */
+function movedCredentialRefusal(posted, restored, current) {
+  const entries = posted?.integrations;
+  if (!isMap(entries) || !isMap(current?.integrations)) return null;
+  for (const [key, entry] of Object.entries(entries)) {
+    const before = current.integrations[key];
+    if (!Object.hasOwn(current.integrations, key) || !isMap(before) || !isMap(entry)) continue;
+    const path = firstMarker(entry, ['integrations', key]);
+    if (!path) continue;
+    if (entryOrigin(key, restored.integrations[key]) === entryOrigin(key, before)) continue;
+    const name = [...path].reverse().find((p) => typeof p === 'string');
+    return (
+      `The stored credential at ${path.join('.')} was entered for the old address; ` +
+      `re-enter the ${name} for the new address`
+    );
+  }
+  return null;
+}
 
 /** A save over a version that is no longer the file's (#423). */
 const staleSave = (res, version) =>
@@ -113,6 +167,8 @@ router.post('/config', (req, res) => {
   // marker is never written and no credential moves to another place.
   const restored = restoreCredentials(v.data, current || {}, configMaskOptions());
   if (!restored.ok) return apiError(res, restored.status, restored.error);
+  const moved = movedCredentialRefusal(v.data, restored.config, current);
+  if (moved) return apiError(res, 400, moved);
 
   // A save that changes nothing writes nothing, so services.yaml stays
   // byte-for-byte as it was (every write re-serialises the whole file), as an

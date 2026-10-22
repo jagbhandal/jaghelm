@@ -31,7 +31,7 @@ const PREFIX = 'integration_';
 const SECRET_REF = /^\s*\$secret:\s*(\S+)\s*$/i;
 
 /** Every name a `$secret:` reference in `value`, at any depth, names. */
-function referencedNames(value, into) {
+export function referencedNames(value, into = new Set()) {
   if (typeof value === 'string') {
     const ref = SECRET_REF.exec(value);
     if (ref) into.add(ref[1]);

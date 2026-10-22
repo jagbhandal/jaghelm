@@ -2,6 +2,7 @@ import { safeFetch, isAuthRejection, readJson } from './http.js';
 import { extractValue, resolveEndpoint } from './extract.js';
 import { createLogger } from '../../util/logger.js';
 import { redactSecrets } from '../../util/redact.js';
+import { assertCredentialOrigin } from './origin.js';
 
 const log = createLogger('integrations');
 
@@ -103,6 +104,13 @@ export async function fetchWithSession(config, { cache = true } = {}) {
     { key: 'primary', session },
     ...(fallbackSession ? [{ key: fallbackKey, session: fallbackSession }] : []),
   ];
+  // A stored credential goes only where it was entered (#556): every login
+  // and the read after it, checked before any is sent. The read carries the
+  // token the login answers, which stands for the credential.
+  for (const { session: sess } of sessionConfigs) {
+    assertCredentialOrigin(config, `${baseUrl}${sess.loginEndpoint}`);
+  }
+  assertCredentialOrigin(config, `${baseUrl}${endpoint.path}`);
 
   // Logins the upstream refused with a 401 or 403 (#239). Only when every
   // method's login was refused is the failure a rejected login, which the

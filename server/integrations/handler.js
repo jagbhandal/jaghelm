@@ -7,7 +7,9 @@
  *
  * lib/ map: http.js (safeFetch), extract.js (JSON path DSL + URL templating),
  * format.js (formatValue+computeField), auth.js (buildAuthHeaders), session.js
- * (session token cache+login), config.js (cred resolution + config merging).
+ * (session token cache+login), config.js (cred resolution + config merging),
+ * origin.js (a stored credential goes only to the origin it was entered for,
+ * #556).
  */
 
 import { getPresetFull } from './registry.js';
@@ -19,6 +21,7 @@ import { buildAuthHeaders } from './lib/auth.js';
 import { fetchWithSession } from './lib/session.js';
 import { resolveIntegrationConfig } from './lib/config.js';
 import { storedUrlCredentialError } from './lib/urlCredential.js';
+import { assertCredentialOrigin } from './lib/origin.js';
 import { assertSafeUrl } from '../util/ssrf.js';
 import { redactError } from '../util/redact.js';
 import { createLogger } from '../util/logger.js';
@@ -122,6 +125,8 @@ export async function fetchIntegration(type, yamlConfig, resolved, { sessionCach
 
       const headers = buildAuthHeaders(config);
       const urlCarriesCredential = credentialInUrl || endpoint.credentialInUrl;
+      // A stored credential goes only where it was entered (#556).
+      assertCredentialOrigin(config, url);
       const res = await safeFetch(url, { headers }, skipTls, { credentialInUrl: urlCarriesCredential, shownUrl });
       if (!res.ok) {
         const err = new Error(`HTTP ${res.status} ${res.statusText || ''}`.trim());
@@ -142,6 +147,7 @@ export async function fetchIntegration(type, yamlConfig, resolved, { sessionCach
       const extraResults = await Promise.allSettled(
         extraEps.map(async (ep) => {
           const { path, shownPath, credentialInUrl } = resolveEndpoint(ep.endpoint, config);
+          assertCredentialOrigin(config, `${baseUrl}${path}`);
           const epRes = await safeFetch(`${baseUrl}${path}`, { headers }, skipTls,
             { credentialInUrl, shownUrl: `${baseUrl}${shownPath}` });
           if (!epRes.ok) {
@@ -211,14 +217,15 @@ export async function fetchIntegration(type, yamlConfig, resolved, { sessionCach
  * The connection test: fetch `yamlConfig` as the refresh loop fetches an
  * entry (resolveIntegrationConfig, then fetchIntegration), with `secrets`
  * standing in for the store where it has a name (a password or token typed
- * into the form, as the save would store it). Nothing is kept: no session
+ * into the form, as the save would store it, for the origins it would store
+ * it for, #556). Nothing is kept: no session
  * token is cached or reused, and no backoff state is touched. Answers
  * `{ ok: true }` or `{ ok: false, error }`, the error a refresh would show;
  * never the fields read.
  *
  * @param {string} type the type the refresh fetches as (integrationInput)
  * @param {object} yamlConfig the entry, with `_storageKey`
- * @param {{ secrets?: Map<string, string | null> }} [opts]
+ * @param {{ secrets?: Map<string, { value: string | null, origins: string[] } | null> }} [opts]
  */
 export async function testIntegration(type, yamlConfig, { secrets } = {}) {
   const preset = getPresetFull(type);

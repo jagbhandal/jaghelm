@@ -89,8 +89,9 @@ server/                     Express API (Node 26, ESM)
   config.js                 services.yaml: load, hot-reload watch (and its 30 s retry while
                             broken), copy-on-read, its version, and the one atomic writer,
                             over the version read (see 6)
-  secrets.js                AES-256-GCM secret store (per-install KDF salt), and the
-                            snapshot a failed integration save is undone to (see 4.4)
+  secrets.js                AES-256-GCM secret store (per-install KDF salt), the origins
+                            each secret may go to (#556), and the snapshot a failed
+                            integration save is undone to (see 4.4)
   cron-store.js             cron history (bounded)
   errors.js                 apiError + global JSON error handler
   version.js                single source of version (reads package.json)
@@ -800,9 +801,36 @@ Key properties:
   not JSON (text/html)", never a word of the body (`readJson` in
   `lib/http.js`, for every read and login). Presets have no `testEndpoint`
   any more. A custom integration with no endpoint (the form has no field
-  for one) is answered without a request. Since the test needs no save, a
-  URL changed in the form gets the stored credential at once, as a save's
-  next refresh would (an origin rule for both is #556).
+  for one) is answered without a request. A URL moved to another origin
+  with the stored credential left blank is refused before anything is sent,
+  as the save refuses it (#556, below).
+- **A stored credential goes only to the address it was entered for**
+  (#556). Each secret in `secrets.json` carries the origins it may go to
+  (`scheme://host:port`, the default port written out: `originOf` in
+  `lib/origin.js`). `resolveIntegrationConfig` puts on the config the
+  origins every credential it read from the store allows, intersected
+  (`_credentialOrigins`); a credential from `.env` or typed into
+  `services.yaml` by hand adds none, as both are trusted as access to the
+  host and its files. Every request such a config makes checks its own URL
+  first, after the endpoint is joined in (`assertCredentialOrigin`): the
+  data read and each extra endpoint (`handler.js`), and every session login
+  and the read after it, all before the first login (`lib/session.js`). One
+  on another origin is not sent, and the integration's error says to
+  re-enter the credential for this address, never the secret's name or an
+  origin; it is a failed fetch that backs off, not a refused login. A URL
+  that doesn't parse is left to the fetch, which never sends it. The
+  check runs at the request, so it holds whatever put the URL or the
+  `$secret:` reference there: the form, the whole-config save, a hand edit.
+  A redirect off the origin carries no credential (above), except the
+  same-host `http://` to `https://` upgrade. A password or token typed into
+  the form is stored for the origin of the entry's URL as a refresh
+  resolves it; the value the name already held, typed again, adds that
+  origin instead (`originsOnEntry` in `secrets.js`), so two entries sharing
+  one password keep working once it is entered for the second. The form and
+  the whole-config save refuse (400, naming the field) a masked credential
+  whose entry's URL moves to another origin (see 6). A secret stored through
+  `PUT /api/secrets/:key` goes to the origin of the `url` sent with it, or
+  nowhere. The origins never leave the store.
 - **Request bodies stay on their origin.** A `307` or `308` keeps the method
   and body, so a session login is re-sent, but only to the same origin or
   through the same-host upgrade; a request with a body redirected to another
@@ -910,6 +938,16 @@ Key properties:
   the user's. At boot one log line counts the unused integration secrets,
   never naming them, and nothing is deleted: a hand edit (an entry commented
   out, a typo, a rename) makes a secret look unused that is still wanted.
+  Each secret is stored with the origins it may be sent to, in clear beside
+  its encrypted value (`{ iv, data, tag, origins }`, #556, see 4.3); a copy
+  (a rename) keeps them. A secret stored before #556 has none and goes
+  nowhere until the boot binds it (`integrations/secretBinding.js`): once,
+  the first time `services.yaml` can be used, each such secret is bound to
+  the origin of every entry that uses it (its keyed name or a `$secret:`
+  reference; a disabled entry counts), and one no entry uses to none, in one
+  write and one info line with the counts. A bound secret is never bound
+  again, so a reference added later can't take it to a new address at the
+  next restart.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
   secrets/auth/config/cron and the icon cache never split across locations.
 
@@ -2534,7 +2572,11 @@ All state is files under the data dir (no DB):
     elements share), or an object with `$stored` that is not exactly the
     marker, is a 400, and nothing is written. So a marker is never written,
     and a credential can't move to another key or another array element. A
-    credential sent as a value replaces the stored one, as before. The answer
+    credential sent as a value replaces the stored one, as before. A marker
+    kept on an integration entry whose URL the save moves to another origin
+    is a 400 naming its place and saying to re-enter it for the new address
+    (#556), whether the credential is in the secret store or typed into
+    `services.yaml` by hand. The answer
     is `{ ok: true }` or an error naming the place, never a value. A save
     whose result equals the stored config writes nothing, so the file stays
     byte-for-byte as it was; a value JSON can't carry (a YAML date) reads back
@@ -2615,7 +2657,12 @@ All state is files under the data dir (no DB):
     an untouched reference written by hand round-trips; a typed password or
     token never is one. The connection test refuses the same. Before, a
     username `$secret:<another integration's secret>` with the URL pointed
-    elsewhere sent that secret there.
+    elsewhere sent that secret there. A typed password or token is stored
+    for the origin of the entry's URL (4.3, #556). A URL moved to another
+    origin (host, port or scheme, as a refresh resolves it) with a stored
+    password or token left blank, or a username that is a `$secret:`
+    reference, is a 400 `{ error, field }` saying to re-enter it for the new
+    address, before anything is stored or sent; the save and the test alike.
   - **`enabled` belongs to the toggle once an entry exists.** A save that
     creates an entry sets it, and so does one without an `editingKey` (the
     toggle of web apps before #402 went through the save). An edit
@@ -2715,7 +2762,8 @@ All state is files under the data dir (no DB):
     with the version; sendBeacon can't send `If-Match`) is only a head
     start. A tab open from before the version check came in sends none, and
     its saves get 428 until it is reloaded.
-- **secrets** -- AES-256-GCM blob, keyed by integration storage key.
+- **secrets** -- AES-256-GCM blob and the origins it may be sent to (#556),
+  keyed by name (`integration_<key>_<field>` for a Settings save).
 - **config version key** -- `config-version.key`: 32 random bytes (mode 0600)
   that the versions of `services.yaml` (#423) and `display-config.json`
   (#547) are HMACs with (`util/fileVersion.js`, above). Made on first

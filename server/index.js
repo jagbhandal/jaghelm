@@ -46,6 +46,7 @@ import { initDiscovery, discoverNodes } from './discovery.js';
 import { initMonitors } from './monitors.js';
 import { initRegistry } from './integrations/registry.js';
 import { reportUnusedIntegrationSecrets } from './integrations/unusedSecrets.js';
+import { bindSecretsAtBoot } from './integrations/secretBinding.js';
 import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
 import { DATA_DIR } from './util/dataDir.js';
@@ -324,6 +325,9 @@ async function startSubsystems() {
     // interrupted between its two writes): counted in the log, never deleted.
     reportUnusedIntegrationSecrets();
   }
+  // Secrets stored before #556 go only to the entries that use them now, or,
+  // while services.yaml can't be used, to those of its first good load.
+  bindSecretsAtBoot();
 
   startConfigWatcher();
   startBackgroundRefresh();
