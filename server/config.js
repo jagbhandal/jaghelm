@@ -4,7 +4,8 @@
  * Generates a default config from discovery results on first boot.
  *
  * services.yaml has a version (#423): an HMAC-SHA256 of its bytes on disk,
- * keyed per install, so it survives a restart and changes with any edit, by
+ * keyed per install (util/fileVersion.js, which display-config.json's version
+ * shares, #547), so it survives a restart and changes with any edit, by
  * hand or by JagHelm. readConfig() answers the config with the version of the
  * file it came from, and writeConfig() is the one writer: it writes only over
  * the version its caller read, checked against the file in the same
@@ -17,22 +18,27 @@
  * (startConfigWatcher), for a fix the file's own stat doesn't show.
  */
 
-import { createHmac, randomBytes } from 'node:crypto';
-import { readFileSync, statSync } from 'fs';
+import { statSync } from 'fs';
 import { join } from 'path';
 import yaml from 'js-yaml';
 
-import { atomicWriteFileSync, createExclusiveFileSync } from './util/atomicWrite.js';
+import { atomicWriteFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { CONFIG_UNPARSEABLE, CONFIG_UNREADABLE } from './errors.js';
+import {
+  readErrorCode,
+  readErrorWords,
+  readVersioned,
+  VERSION_ABSENT,
+  versionKey,
+  versionOf,
+} from './util/fileVersion.js';
 import { createLogger } from './util/logger.js';
 import { describeParseError, yamlParseError } from './util/parseError.js';
 
 const log = createLogger('config');
 
 const CONFIG_PATH = join(DATA_DIR, 'services.yaml');
-const VERSION_KEY_PATH = join(DATA_DIR, 'config-version.key');
-const VERSION_KEY_BYTES = 32;
 
 // In-memory config state
 let config = null;
@@ -52,65 +58,12 @@ let seenProblem = null;
 // While the last read couldn't read the file at all (#536): `{ code }`, its
 // error's code (null for none), else null. seenProblem says it then too.
 let seenReadError = null;
-// The key versions are made with, once read (versionKey).
-let versionKeyBytes = null;
-
-/** The version when there is no services.yaml. No HMAC is this word. */
-export const CONFIG_ABSENT = 'absent';
 
 /**
- * The key services.yaml's version is made with: 32 random bytes in
- * DATA_DIR/config-version.key, mode 0600, made on first use (#423). A plain
- * hash of the file, seen in a HAR file or a screenshot, would let anyone
- * rebuild a file JagHelm wrote from the masked read and test guesses at a weak
- * plaintext credential in it offline. Not DASH_SECRET: the installs without
- * one are the ones that still keep plaintext credentials in the file.
- *
- * Two boots racing to make it end up with one key (createExclusiveFileSync).
- * A key file that can't be read, or isn't 32 bytes, throws, at boot
- * (loadConfig) and on every read after: a key made up for this run would
- * change every version at the next restart. The error names the file, never
- * its content. Losing the file costs nothing but one refused Settings save:
- * the next boot makes a new key, so every version changes once.
+ * The version when there is no services.yaml (util/fileVersion.js, the one
+ * mechanism services.yaml and display-config.json share). No HMAC is this word.
  */
-function versionKey() {
-  if (versionKeyBytes) return versionKeyBytes;
-  let key = readVersionKey();
-  if (!key) {
-    createExclusiveFileSync(VERSION_KEY_PATH, randomBytes(VERSION_KEY_BYTES), { mode: 0o600 });
-    // Ours, or the one another boot made first.
-    key = readVersionKey();
-    if (!key) throw new Error(`${VERSION_KEY_PATH} vanished as it was made`);
-    log.info('Made a new key for the version of services.yaml (config-version.key)');
-  }
-  versionKeyBytes = key;
-  return key;
-}
-
-/** The key on disk, or null when there is no key file. */
-function readVersionKey() {
-  let bytes;
-  try {
-    bytes = readFileSync(VERSION_KEY_PATH);
-  } catch (err) {
-    if (err.code === 'ENOENT') return null;
-    throw new Error(
-      `Can't read ${VERSION_KEY_PATH} (${err.code}), the key for services.yaml's version: ` +
-        'fix its permissions, or remove it and JagHelm makes a new one'
-    );
-  }
-  if (bytes.length !== VERSION_KEY_BYTES) {
-    throw new Error(
-      `${VERSION_KEY_PATH} is not a ${VERSION_KEY_BYTES}-byte key: remove it and JagHelm makes a new one`
-    );
-  }
-  return bytes;
-}
-
-/** The version of services.yaml with these bytes: an HMAC-SHA256 of them, base64url. */
-function versionOf(bytes) {
-  return createHmac('sha256', versionKey()).update(bytes).digest('base64url');
-}
+export const CONFIG_ABSENT = VERSION_ABSENT;
 
 /**
  * services.yaml's bytes parsed: `{ config }` when they are a usable config (a
@@ -172,35 +125,7 @@ function boardProblemOf({ problem, parseError }) {
  * no version and `readError`, the error. Never throws for the file itself.
  * @returns {{ bytes: Buffer | null, version: string | null, readError?: any }}
  */
-function readDisk() {
-  let bytes;
-  try {
-    bytes = readFileSync(CONFIG_PATH);
-  } catch (err) {
-    if (err.code === 'ENOENT') return { bytes: null, version: CONFIG_ABSENT };
-    return { bytes: null, version: null, readError: err };
-  }
-  return { bytes, version: versionOf(bytes) };
-}
-
-/** A read error's code in plain words, for the board and Settings (#536). */
-const READ_ERROR_WORDS = new Map([
-  ['EACCES', 'permission denied'],
-  ['EPERM', 'operation not permitted'],
-  ['EISDIR', "it's a directory"],
-  ['EIO', 'I/O error'],
-  ['ELOOP', 'too many symlinks'],
-  ['ENOTDIR', "its folder isn't a directory"],
-  ['EMFILE', 'too many open files'],
-  ['ENFILE', 'too many open files'],
-  ['EBUSY', 'busy'],
-]);
-
-/** A read error's code ("EACCES"), or null when it has none that looks like one. */
-function readErrorCode(err) {
-  const code = err?.code;
-  return typeof code === 'string' && /^E[A-Z0-9]{1,20}$/.test(code) ? code : null;
-}
+const readDisk = () => readVersioned(CONFIG_PATH);
 
 /**
  * Why a file that can't be read is no usable config (#536), as parseConfig's
@@ -210,8 +135,7 @@ function readErrorCode(err) {
  */
 function unreadableBecause(err) {
   const code = readErrorCode(err);
-  const words = (code && READ_ERROR_WORDS.get(code)) || code || 'unknown error';
-  const problem = `services.yaml can't be read (${words})`;
+  const problem = `services.yaml can't be read (${readErrorWords(err)})`;
   return {
     code,
     problem,
@@ -450,9 +374,10 @@ function keepAfterFailedRead(msg, fields = {}) {
  * hashed, compared with `ifVersion`, and replaced, with no `await` in
  * between, so no other request can write after the check. A file that is no
  * longer at `ifVersion` (another save, or a hand edit) is left as it is:
- * `{ ok: false, conflict: true }`. A file that is no usable config (it doesn't
- * parse, or is empty or not a mapping) is never written over, whatever
- * version the caller passes: `{ ok: false, unusable }`, why, so a hand edit
+ * `{ ok: false, conflict: true, version }`, the version it is at. A file that
+ * is no usable config (it doesn't parse, or is empty or not a mapping) is
+ * never written over, whatever version the caller passes: `{ ok: false,
+ * unusable }`, why, so a hand edit
  * gone wrong is fixed by hand, not replaced by the last good config (or by
  * `{}` at boot) plus one change. Nor is a file that is there but can't be
  * read (#536): `{ ok: false, unusable }` too, before any version is compared,
@@ -474,7 +399,7 @@ let saveInProgress = false;
 /**
  * @param {any} newConfig
  * @param {string} ifVersion
- * @returns {{ ok: true, version: string } | { ok: false, conflict?: true, unusable?: string, code?: string }}
+ * @returns {{ ok: true, version: string } | { ok: false, conflict?: true, version?: string, unusable?: string, code?: string }}
  */
 export function writeConfig(newConfig, ifVersion) {
   if (saveInProgress) {
@@ -491,7 +416,7 @@ export function writeConfig(newConfig, ifVersion) {
     }
     if (disk.version !== ifVersion) {
       log.warn('services.yaml changed since it was read; not saving over it');
-      return { ok: false, conflict: true };
+      return { ok: false, conflict: true, version: disk.version };
     }
     // Parsed here, from the bytes about to be replaced, not taken from what
     // the caller read: no caller can skip it.

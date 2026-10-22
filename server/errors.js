@@ -23,10 +23,14 @@ export function apiError(res, status, publicMessage, err = null) {
   return res.status(status).json({ error: publicMessage });
 }
 
-/** The `code` of a refusal because services.yaml doesn't parse, or is empty or not a mapping (#423). */
+/**
+ * The `code` of a refusal because services.yaml doesn't parse, or is empty or
+ * not a mapping (#423); or display-config.json doesn't parse or isn't a JSON
+ * object (#547).
+ */
 export const CONFIG_UNPARSEABLE = 'config_unparseable';
 
-/** The `code` of a refusal because services.yaml is there but can't be read (#536). */
+/** The `code` of a refusal because services.yaml (#536) or display-config.json (#547) is there but can't be read. */
 export const CONFIG_UNREADABLE = 'config_unreadable';
 
 /**

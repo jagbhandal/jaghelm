@@ -40,11 +40,16 @@ after(() => {
   delete process.env.JAGHELM_CRON_SECRET;
 });
 
-/** Saves the display config as Settings (and Jag's curl) does: the whole object. */
+/**
+ * Saves the display config as Settings (and Jag's curl) does: the whole
+ * object, over the version a read answered (If-Match, #547).
+ */
 async function saveConfig(extra) {
+  const read = await request(app).get('/api/display-config').set('x-auth-token', token);
   const r = await request(app)
     .post('/api/display-config')
     .set('x-auth-token', token)
+    .set('If-Match', read.headers.etag)
     .send({ refreshInterval: 30, ...extra });
   assert.equal(r.status, 200, JSON.stringify(r.body));
 }
@@ -100,6 +105,8 @@ test('backups: a failed vzdump, marked as a backup, is crit in Backups, end to e
     state: 'crit',
     counts: { total: 2, ok: 1, warn: 0, crit: 1, unknown: 0, maintenance: 0 },
     detail: '1 / 2 OK',
+    value: '1 / 2',
+    sub: '1 failed',
   });
   assert.equal(subsystem(status, 'jobs').state, 'warn');
   assert.deepEqual(status.overall, { state: 'crit', sentence: '1 backup failed · 1 job failed' });

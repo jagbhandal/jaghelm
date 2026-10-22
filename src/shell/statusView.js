@@ -5,7 +5,7 @@
  * and what a stale status last said (#480).
  */
 import { EMPTY, EMPTY_SENTENCE, WORDS, toState } from '../ui/lib/status.js';
-import { drawnState, lastKnownCaption } from './statusFreshness.js';
+import { drawnState } from './statusFreshness.js';
 
 /** The noun before an issue's node, by the entity's kind (docs/ARCHITECTURE.md §4.7). */
 const KIND = Object.freeze({
@@ -99,12 +99,16 @@ function subsystemWord(status, subsystem) {
 /**
  * The model's subsystems as SubsystemStrip cells (#298, spec §8 item 2), in
  * the model's order: one per subsystem with anything in it (an unconfigured
- * one shows no panel, spec §8), its state, word and the model's `detail`
- * ("11 / 12 up") as the value. None on an empty board.
+ * one shows no panel, spec §8), its state, word, and the model's `value`
+ * ("11 / 12", "On battery") and `sub` ("up", "64 % charge") as they are
+ * (#541): nothing here splits the `detail`. From a server older than #541,
+ * with neither, the detail is the value and there is no sub. None on an
+ * empty board.
  *
  * With a stale status (`freshness`, statusFreshness.js, #480), each cell
- * keeps its word and counts, as last known, but is drawn as no signal, and
- * says so under its count ("Last known 3 min ago").
+ * keeps its word, value and sub-line, as last known, but is drawn as no
+ * signal. How old they are is said once, by the header and the attention
+ * panel (lastKnownLine), never on each tile (#541).
  */
 export function subsystemCells(status, freshness) {
   return (status?.subsystems ?? [])
@@ -114,8 +118,8 @@ export function subsystemCells(status, freshness) {
       label: s.name,
       state: drawnState(s.state, freshness),
       word: subsystemWord(status, s),
-      value: s.detail,
-      sub: freshness?.stale ? lastKnownCaption(freshness) : undefined,
+      value: typeof s.value === 'string' && s.value ? s.value : s.detail,
+      sub: typeof s.sub === 'string' && s.sub ? s.sub : undefined,
     }));
 }
 

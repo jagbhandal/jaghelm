@@ -10,6 +10,8 @@ import {
   REMEMBER_KEY,
   PUSH_TOKEN_KEY,
   PUSH_PERM_KEY,
+  PUSH_WANTED_KEY,
+  PENDING_CLEANUP_KEY,
 } from './runtimeConfig.js';
 
 describe('normalizeBaseUrl', () => {
@@ -76,14 +78,19 @@ describe('storage keys', () => {
   it('exposes the remember-me preference key', () => {
     expect(REMEMBER_KEY).toBe('jaghelm-remember');
   });
+  it('exposes the pending-cleanup Keystore key (#539), distinct from the token', () => {
+    expect(PENDING_CLEANUP_KEY).toBe('jaghelm-pending-cleanup');
+    expect(PENDING_CLEANUP_KEY).not.toBe(TOKEN_KEY);
+  });
 });
 
 describe('push Preferences keys', () => {
   it('exports stable, namespaced, distinct non-secret push keys', () => {
     expect(PUSH_TOKEN_KEY).toBe('jaghelm-push-token');
     expect(PUSH_PERM_KEY).toBe('jaghelm-push-perm');
-    const all = [PUSH_TOKEN_KEY, PUSH_PERM_KEY];
-    expect(new Set(all).size).toBe(2);
+    expect(PUSH_WANTED_KEY).toBe('jaghelm-push-wanted');
+    const all = [PUSH_TOKEN_KEY, PUSH_PERM_KEY, PUSH_WANTED_KEY];
+    expect(new Set(all).size).toBe(3);
     for (const k of all) expect(k.startsWith('jaghelm-')).toBe(true);
   });
 });

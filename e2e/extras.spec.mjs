@@ -10,7 +10,9 @@
  *    for the words in a new tab.
  *  - A section switched off in Settings → Appearance → Overview sections is
  *    gone, and stays gone after a reload in a second browser (another
- *    device): the switch is in the display config the server holds.
+ *    device): the switch is in the display config the server holds. A
+ *    browser open from before that switch saves its own without undoing it
+ *    (#547): its stale save is refused, rebased and saved again.
  *  - axe finds nothing on the rail with the weather, nor on the Launch page.
  *  - Screenshots of the rail and the Launch page with them, for the PR, in
  *    test-results/e2e/shots/.
@@ -18,7 +20,7 @@
 import { mkdirSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { APPS, THEMES, axeFindings, demo, openApp } from './app.mjs';
+import { APPS, THEMES, axeFindings, demo, openApp, reply } from './app.mjs';
 
 const AT = {
   narrow: { width: 1280, height: 900 },
@@ -134,8 +136,10 @@ test.describe('at 1280px', () => {
 
 /**
  * A browser of its own (another device) on `path`, with a server that keeps
- * the display config it is sent (`server.config`). The demo refuses writes,
- * so this server says it is not the demo.
+ * the display config it is sent (`server.config`), versioned as the route
+ * does (#547): a read answers `server.version` as its ETag, and a save is
+ * kept only over it (If-Match), else refused 409 (428 without one). The demo
+ * refuses writes, so this server says it is not the demo.
  */
 async function openDevice(browser, server, path) {
   const context = await browser.newContext({
@@ -146,9 +150,15 @@ async function openDevice(browser, server, path) {
   });
   const page = await context.newPage();
   const displayConfig = (request) => {
-    if (request.method() !== 'POST') return server.config;
+    server.version ??= 1;
+    const etag = () => `"v${server.version}"`;
+    if (request.method() !== 'POST') return reply(200, server.config, { ETag: etag() });
+    const ifMatch = request.headers()['if-match'];
+    if (!ifMatch) return reply(428, { error: 'No version' });
+    if (ifMatch !== etag()) return reply(409, { error: 'Stale', stale: true }, { ETag: etag() });
     server.config = request.postDataJSON();
-    return { ok: true };
+    server.version += 1;
+    return reply(200, { ok: true }, { ETag: etag() });
   };
   await openApp(page, path, {
     answers: { '/api/auth/check': NOT_DEMO, '/api/display-config': displayConfig },
@@ -191,6 +201,49 @@ test('a section switched off stays off after a reload on another device', async 
 
   await one.context.close();
   await two.context.close();
+});
+
+test('a device open from before another hid a section saves its own switch without bringing the section back (#547)', async ({
+  browser,
+}) => {
+  const server = { config: { ...demo('/api/display-config').body, tabs: APPS } };
+  const services = (page) => page.locator('[data-slot="overview-services"]');
+  const infrastructure = (page) => page.locator('[data-slot="overview-infrastructure"]');
+
+  // Both devices open Settings → Appearance on the same copy.
+  const a = await openDevice(browser, server, '/settings/appearance');
+  const b = await openDevice(browser, server, '/settings/appearance');
+  for (const { page } of [a, b]) {
+    await expect(page.getByRole('checkbox', { name: 'Services' })).toBeChecked();
+  }
+
+  // A hides Services.
+  await a.page.getByRole('checkbox', { name: 'Services' }).uncheck();
+  await expect.poll(() => server.config.overviewSections?.services).toBe(false);
+  const savedByA = server.version;
+
+  // B, still on the copy from before, hides Infrastructure: its save is
+  // refused (409), rebased onto A's and saved once more.
+  await b.page.getByRole('checkbox', { name: 'Infrastructure' }).uncheck();
+  await expect.poll(() => server.config.overviewSections?.infrastructure).toBe(false);
+  expect(server.config.overviewSections.services).toBe(false);
+  expect(server.version).toBe(savedByA + 1);
+  await expect(b.page.getByText('Merged with changes from another device')).toBeVisible();
+  // B shows A's switch too, without a reload.
+  await expect(b.page.getByRole('checkbox', { name: 'Services' })).not.toBeChecked();
+  await expect(b.page.getByRole('checkbox', { name: 'Infrastructure' })).not.toBeChecked();
+
+  // Both Overviews have neither section, A's after a reload.
+  await b.page.goto('/');
+  await a.page.goto('/');
+  for (const { page } of [a, b]) {
+    await expect(boardTitle(page, 'Network Edge')).toBeVisible();
+    await expect(services(page)).toHaveCount(0);
+    await expect(infrastructure(page)).toHaveCount(0);
+  }
+
+  await a.context.close();
+  await b.context.close();
 });
 
 test('screenshots of the rail and the Launch page with the weather, for the PR', async ({
