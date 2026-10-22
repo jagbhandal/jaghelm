@@ -70,7 +70,8 @@ const LIVE = {
  * ETag and saves a post only over that version (If-Match): none is a 428, an
  * old one a 409 `{ stale: true }`. `changeElsewhere` changes the stored config
  * as another tab or a hand edit would, which makes a new version.
- * `holdNextPost` keeps the next post unanswered until its release is called.
+ * `holdNextPost` keeps the next post unanswered until its release is called,
+ * and `holdNextRead` the next read, which answers as the config is then.
  */
 function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true } = {}) {
   const posts = [];
@@ -79,6 +80,7 @@ function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true }
   let reads = 0;
   let version = 1;
   let held = null;
+  let heldRead = null;
   // Why services.yaml can't be read now (it doesn't parse), and whether reads
   // fail for another reason.
   let broken = null;
@@ -123,6 +125,11 @@ function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true }
       }
       if (url === '/api/services/config') {
         reads += 1;
+        if (heldRead) {
+          const { promise } = heldRead;
+          heldRead = null;
+          await promise;
+        }
         if (broken) return unparseable();
         if (readsFail) {
           return Response.json({ error: 'Internal server error' }, { status: 500 });
@@ -148,6 +155,12 @@ function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true }
       let release;
       const promise = new Promise((resolve) => (release = resolve));
       held = { promise, release };
+      return release;
+    },
+    holdNextRead() {
+      let release;
+      const promise = new Promise((resolve) => (release = resolve));
+      heldRead = { promise, release };
       return release;
     },
     /** A hand edit that leaves services.yaml unparseable, for `why`. */
@@ -452,5 +465,129 @@ describe('Settings when services.yaml cannot be read (#423)', () => {
       display_name: 'Edge',
       visible: false,
     });
+  });
+});
+
+describe('Settings keeps one config version across its tabs (#501)', () => {
+  const nodeCard = async (title) =>
+    (await screen.findByText(title)).closest('div[style*="border-left"]');
+  const toggleNode = async (title) => {
+    const card = await nodeCard(title);
+    editAndFlush(() => fireEvent.click(within(card).getByRole('checkbox')));
+    await act(async () => {});
+  };
+  const openNodes = () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
+  };
+  const toServices = () => fireEvent.click(screen.getByRole('button', { name: /Services/ }));
+  /** On the Services tab, hide the NAS's container and let the save go out. */
+  const hideWatchtower = async () => {
+    fireEvent.click(await screen.findByText('NAS'));
+    editAndFlush(() => fireEvent.click(screen.getByRole('button', { name: 'Hide' })));
+    await act(async () => {});
+  };
+  /** Gateway hidden on the Nodes tab, then watchtower on the Services tab. */
+  const bothEdits = () => {
+    const want = onDiskWith('pi1', { visible: false });
+    want.nodes.nas.hide = ['watchtower'];
+    return want;
+  };
+  const STALE = 'Settings changed elsewhere; reloaded';
+
+  it('an edit, a switch to another tab before its save goes out, then an edit there: both are saved', async () => {
+    const server = stubServer();
+    openNodes();
+    const card = await nodeCard('Gateway');
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(within(card).getByRole('checkbox'));
+      toServices();
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    await hideWatchtower();
+    await waitFor(() => expect(server.merged).toHaveLength(2));
+    expect(server.sentVersions).toEqual(['"v1"', '"v2"']);
+    expect(server.merged.at(-1)).toEqual(bothEdits());
+    expect(screen.queryByText(STALE)).not.toBeInTheDocument();
+  });
+
+  it('the same with the first save still on its way during the switch', async () => {
+    const server = stubServer();
+    openNodes();
+    const release = server.holdNextPost();
+    await toggleNode('Gateway');
+    expect(server.posts).toHaveLength(1);
+    toServices();
+    await act(async () => {});
+    // The tab's read waits for the save, so it can't answer the version before it.
+    expect(server.reads()).toBe(1);
+    await act(async () => release());
+    await waitFor(() => expect(server.reads()).toBe(2));
+    await hideWatchtower();
+    await waitFor(() => expect(server.merged).toHaveLength(2));
+    expect(server.sentVersions).toEqual(['"v1"', '"v2"']);
+    expect(server.merged.at(-1)).toEqual(bothEdits());
+    expect(screen.queryByText(STALE)).not.toBeInTheDocument();
+  });
+
+  it("an edit made before the new tab's read answers stays on the screen, and is saved", async () => {
+    const server = stubServer();
+    openNodes();
+    const release = server.holdNextPost();
+    await toggleNode('Gateway');
+    toServices();
+    await hideWatchtower();
+    await act(async () => release());
+    await waitFor(() => expect(server.merged).toHaveLength(2));
+    expect(server.reads()).toBe(2);
+    expect(server.sentVersions).toEqual(['"v1"', '"v2"']);
+    expect(server.merged.at(-1)).toEqual(bothEdits());
+    // The read, older than the edit, didn't put the screen back.
+    expect(screen.getByRole('button', { name: 'Show' })).toBeInTheDocument();
+  });
+
+  it("a change elsewhere that such a read shows still refuses the edit's save (409) and reloads", async () => {
+    const server = stubServer();
+    openNodes();
+    await nodeCard('Gateway');
+    const release = server.holdNextRead();
+    toServices();
+    await waitFor(() => expect(server.reads()).toBe(2));
+    server.changeElsewhere((disk) => (disk.nodes.pi1.display_name = 'Edge'));
+    await hideWatchtower();
+    await act(async () => release());
+
+    expect(await screen.findByText(STALE)).toBeInTheDocument();
+    expect(server.sentVersions).toEqual(['"v1"']);
+    expect(server.merged).toEqual([]);
+    await waitFor(() => expect(server.reads()).toBe(3));
+    // The reload shows what is stored: the edit is gone.
+    expect(await screen.findByRole('button', { name: 'Hide' })).toBeInTheDocument();
+  });
+
+  it('the read after a refused save replaces the screen even when an edit was made meanwhile', async () => {
+    const server = stubServer();
+    openNodes();
+    await nodeCard('Gateway');
+    server.changeElsewhere((disk) => (disk.nodes.pi1.display_name = 'Edge'));
+    const release = server.holdNextRead();
+    await toggleNode('Gateway');
+    expect(await screen.findByText(STALE)).toBeInTheDocument();
+    await waitFor(() => expect(server.reads()).toBe(2));
+    // An edit on the refused screen while the reload is out.
+    await toggleNode('Gateway');
+    await act(async () => release());
+
+    expect(within(await nodeCard('Edge')).getByRole('checkbox')).toBeChecked();
+    expect(
+      await screen.findByText('Not saved: an earlier change on this screen was refused')
+    ).toBeInTheDocument();
+    expect(server.posts).toHaveLength(1);
+    expect(server.merged).toEqual([]);
   });
 });

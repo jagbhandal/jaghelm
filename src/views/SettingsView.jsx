@@ -97,14 +97,31 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
   // edited config that looks stored.
   const [serverError, setServerError] = useState(null);
   const serverSaveTimer = useRef(null);
+  // The debounced save waiting on the timer, if any.
+  const serverPending = useRef(null);
   // The stored config the screen's config descends from (#423): its version,
   // the read's ETag, which each save sends back as If-Match and a save's
-  // answer moves on. Each read starts a new one. A refused save marks its own
-  // dead, so the edits made on the screen it came from are never sent.
+  // answer moves on. It is the view's, not a tab's (#501): a tab switch reads
+  // the config again but never moves it back. A read that replaces the screen
+  // starts a new one. A refused save marks its own dead, so the edits made on
+  // the screen it came from are never sent.
   const serverBase = useRef({ version: null, dead: false });
-  // Saves go out one at a time, so each sends the version the one before it
-  // answered.
+  // Edits made so far, so a read can tell the screen has one it didn't see.
+  const serverEdits = useRef(0);
+  // Saves and reads go out one at a time, in order: each save sends the
+  // version the one before it answered, and a read answers after every save
+  // queued before it, never with a version one of them already replaced.
   const serverSaves = useRef(Promise.resolve());
+
+  // Send the debounced save now, if one is waiting.
+  const flushServerSave = useCallback(() => {
+    clearTimeout(serverSaveTimer.current);
+    serverSaveTimer.current = null;
+    const post = serverPending.current;
+    serverPending.current = null;
+    if (!post) return;
+    serverSaves.current = serverSaves.current.then(post).finally(() => setServerSaving(false));
+  }, []);
 
   // The stored config can't be shown, for `reason`: the screen says so in
   // place of the tabs, and no save goes out from the screen it replaces.
@@ -114,32 +131,45 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
     setServerError(reason);
   }, []);
 
-  // Fetch server config on mount and when switching to relevant tabs
+  // Read the stored config (and the live services and monitors) when Nodes
+  // or Services opens, after a refused save, and on Try again. It goes out
+  // behind every save, the pending one sent first, so it reads what they
+  // saved (#501). An edit made while it was out is newer than what it read:
+  // the screen and its base stay, and a change made elsewhere meanwhile
+  // refuses that edit's save (409) and reloads. A refused screen is replaced
+  // regardless.
   const fetchServerData = useCallback(() => {
-    Promise.all([
-      readServerConfig(),
-      apiFetch('/api/services').then((r) => (r.ok ? r.json() : null)),
-      apiFetch('/api/services/monitors').then((r) => (r.ok ? r.json() : null)),
-    ])
-      .then(([read, svc, mon]) => {
-        if (isReadOnlyServer() && localServerConfig) setServerConfig(localServerConfig);
-        else if (read.error) showServerError(read.error);
-        else {
-          serverBase.current = { version: read.version, dead: false };
-          setServerError(null);
-          setServerConfig(read.config);
-        }
-        if (svc) setLiveServices(svc);
-        if (Array.isArray(mon)) setMonitorNames(mon);
-      })
-      .catch(() => {});
-  }, [showServerError]);
+    flushServerSave();
+    const editsBefore = serverEdits.current;
+    const readAll = () =>
+      Promise.all([
+        readServerConfig(),
+        apiFetch('/api/services').then((r) => (r.ok ? r.json() : null)),
+        apiFetch('/api/services/monitors').then((r) => (r.ok ? r.json() : null)),
+      ])
+        .then(([read, svc, mon]) => {
+          if (isReadOnlyServer() && localServerConfig) setServerConfig(localServerConfig);
+          else if (read.error) showServerError(read.error);
+          else if (serverEdits.current === editsBefore || serverBase.current.dead) {
+            serverBase.current = { version: read.version, dead: false };
+            setServerError(null);
+            setServerConfig(read.config);
+          }
+          if (svc) setLiveServices(svc);
+          if (Array.isArray(mon)) setMonitorNames(mon);
+        })
+        .catch(() => {});
+    serverSaves.current = serverSaves.current.then(readAll);
+  }, [showServerError, flushServerSave]);
 
+  // A tab switch sends the pending save at once (#501), then Nodes and
+  // Services read the config again.
   useEffect(() => {
+    flushServerSave();
     if (activeSection === 'nodes' || activeSection === 'services') {
       fetchServerData();
     }
-  }, [activeSection, fetchServerData]);
+  }, [activeSection, fetchServerData, flushServerSave]);
 
   // Save server config with debounce. Each save sends the version its
   // config was read at (If-Match, #423). A save the server refuses or that
@@ -153,6 +183,7 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
   // help: the tab shows why until it is fixed and read again (Try again).
   const saveServerConfig = useCallback(
     (newConfig) => {
+      serverEdits.current += 1;
       setServerConfig(newConfig);
       if (isReadOnlyServer()) {
         localServerConfig = newConfig;
@@ -193,14 +224,11 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
           });
       };
       setServerSaving(true);
-      if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
-      serverSaveTimer.current = setTimeout(() => {
-        serverSaves.current = serverSaves.current
-          .then(post)
-          .finally(() => setServerSaving(false));
-      }, 1500);
+      clearTimeout(serverSaveTimer.current);
+      serverPending.current = post;
+      serverSaveTimer.current = setTimeout(flushServerSave, 1500);
     },
-    [toast, fetchServerData, showServerError]
+    [toast, fetchServerData, showServerError, flushServerSave]
   );
 
   return (

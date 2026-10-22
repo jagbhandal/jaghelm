@@ -2026,8 +2026,13 @@ All state is files under the data dir (no DB):
     and the edits made on the screen it replaces are dropped, not sent: one
     that would have gone out from it says "Not saved: an earlier change on
     this screen was refused". A read that fails shows why in place of the
-    tab, never the old or edited config. The integration form doesn't post
-    the config, and the Android app doesn't either.
+    tab, never the old or edited config. The version is the Settings view's,
+    not a tab's (#501): a tab switch sends the pending save at once, and
+    reads go out in the same queue as saves, so a read never answers a
+    version a save has already replaced. A read that answers after an edit
+    it didn't see leaves the screen and its version alone; a change made
+    elsewhere then refuses that edit's save (409). The integration form
+    doesn't post the config, and the Android app doesn't either.
   - **An integration's save in Settings merges** (`POST /api/integrations/save`,
     #402). The form's values go into the stored entry, and only what the form
     owns changes: the URL (required), the username and target (sent empty to
