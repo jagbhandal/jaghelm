@@ -149,6 +149,15 @@ const ROWS = [
     'OK',
     '1 / 2 OK',
   ],
+  [
+    // The detail, built from the tile, says the no signal count too (push, older APKs).
+    'two power entities, one no signal',
+    [one('power', 'ok'), one('power', 'unknown', 1)],
+    'power',
+    '1 / 2',
+    'OK · 1 no signal',
+    '1 / 2 OK · 1 no signal',
+  ],
 ];
 
 for (const [what, entities, id, value, sub, detail] of ROWS) {

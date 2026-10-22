@@ -13,7 +13,7 @@
  * infrastructureNodes, InfrastructureSection). Then the screen is
  * read back and checked against the model: the headline's word and sentence
  * (or the quiet line's heading), each tile's state, word, value and sub-line
- * (#541), each row's state and word, and each
+ * (#541, fresh and stale), each row's state and word, and each
  * meter's state, number and line. The push side, the same fixtures through
  * the real push cycle, is server/status/crossClient.test.js (`npm run
  * test:ci`); this file runs in `npm run test:client`.
@@ -313,6 +313,27 @@ describe('cross-client, screen', () => {
           `known divergence "${k.name}" (${k.issue}) no longer happens in ${name}: delete it from KNOWN`
         ).toBe(true);
       }
+    });
+  }
+
+  // Stale (#480): each tile no signal, the model's value and sub-line as they
+  // read fresh (#541); the header says how old they are, once, not each tile.
+  for (const name of STATUS_SCENARIOS) {
+    it(`${name}, stale: each tile keeps the model's value and sub-line, drawn as no signal`, () => {
+      const { status } = runScenario(name, { now: NOW });
+      const stale = { stale: true, lastKnown: 'last known 3 min ago' };
+      const { container } = render(
+        <SubsystemStrip cells={subsystemCells(status, stale)} onSelect={noop} />
+      );
+      const shown = status.subsystems.filter((s) => s.counts.total > 0);
+      const drawn = [...container.querySelectorAll('[data-slot="subsystem-tile"]')].map((t) => [
+        t.dataset.state,
+        t.querySelector('[data-slot="subsystem-value"]')?.textContent,
+        t.querySelector('[data-slot="subsystem-sub"]')?.textContent ?? '',
+        described(t, container.ownerDocument)[0] ?? '',
+      ]);
+      expect(drawn).toEqual(shown.map((s) => ['unknown', s.value, s.sub, s.sub]));
+      cleanup();
     });
   }
 

@@ -6,14 +6,14 @@ import { SubsystemStrip } from '@ui/subsystem-strip';
 const NO_RING = /(^|\s|:)outline-(none|hidden|0)(\s|$)/;
 
 // The strip's container widths: below 320px (`@xs`), to 672px (`@2xl`), to
-// 720px (`@min-[45rem]`, where six share a row, #541), and from there. jsdom
+// 816px (`@min-[51rem]`, where six share a row, #541), and from there. jsdom
 // lays nothing out, so `layout` reads the classes a browser applies at each:
 // the columns, and the columns the last tile spans.
 const WIDTHS = {
   'below 320px': ['', '@max-2xl:'],
   '320 to 671px': ['', '@xs:', '@max-2xl:'],
-  '672 to 719px': ['', '@xs:', '@2xl:'],
-  'from 720px': ['', '@xs:', '@2xl:', '@min-[45rem]:'],
+  '672 to 815px': ['', '@xs:', '@2xl:'],
+  'from 816px': ['', '@xs:', '@2xl:', '@min-[51rem]:'],
 };
 function layout(strip, width) {
   const classes = strip.className.split(/\s+/);
@@ -169,17 +169,18 @@ describe('SubsystemStrip', () => {
     );
   });
 
-  // Six share a row from 720px: narrower, "On battery" wouldn't fit its
-  // tile's value line (#541), so from 672px they sit in rows of three.
-  it('sits six in a row from 720px, three from 320px and two below', () => {
+  // Six share a row from 816px of strip: narrower, "Low battery" wouldn't
+  // fit its tile's value line in every typeface (#541; e2e/reflow.spec.mjs
+  // measures it), so from 672px they sit in rows of three, never 5 + 1.
+  it('sits six in a row from 816px, three from 320px and two below', () => {
     const { rerender } = render(<SubsystemStrip cells={CELLS} />);
     expect(screen.getByRole('region')).toHaveClass(
       'grid-cols-2',
       '@xs:grid-cols-3',
-      '@min-[45rem]:grid-cols-6'
+      '@min-[51rem]:grid-cols-6'
     );
-    expect(layout(screen.getByRole('region'), '672 to 719px')).toEqual({ columns: 3, lastSpan: 1 });
-    expect(layout(screen.getByRole('region'), 'from 720px')).toEqual({ columns: 6, lastSpan: 1 });
+    expect(layout(screen.getByRole('region'), '672 to 815px')).toEqual({ columns: 3, lastSpan: 1 });
+    expect(layout(screen.getByRole('region'), 'from 816px')).toEqual({ columns: 6, lastSpan: 1 });
     expect(screen.getByRole('region').parentElement).toHaveClass('@container');
     rerender(<SubsystemStrip cells={CELLS.slice(0, 4)} />);
     expect(screen.getByRole('region')).toHaveClass('grid-cols-2', '@2xl:grid-cols-4');
@@ -207,8 +208,8 @@ describe('SubsystemStrip', () => {
     const strip = screen.getByRole('region');
     expect(layout(strip, 'below 320px')).toEqual({ columns: 2, lastSpan: 2 });
     expect(layout(strip, '320 to 671px')).toEqual({ columns: 3, lastSpan: 2 });
-    expect(layout(strip, '672 to 719px')).toEqual({ columns: 5, lastSpan: 1 });
-    expect(layout(strip, 'from 720px')).toEqual({ columns: 5, lastSpan: 1 });
+    expect(layout(strip, '672 to 815px')).toEqual({ columns: 5, lastSpan: 1 });
+    expect(layout(strip, 'from 816px')).toEqual({ columns: 5, lastSpan: 1 });
   });
 
   it('is plain content without onSelect', () => {
@@ -252,7 +253,7 @@ describe('SubsystemStrip', () => {
         state: 'unknown',
         word: 'Down',
         value: '30 / 32',
-        sub: 'up · last known 3 min ago',
+        sub: 'up',
       },
     ];
     const { rerender } = render(<SubsystemStrip cells={cells} />);
@@ -261,6 +262,6 @@ describe('SubsystemStrip', () => {
     rerender(<SubsystemStrip cells={cells} onSelect={() => {}} />);
     expect(
       screen.getByRole('button', { name: 'Services, No signal, Down, 30 / 32' })
-    ).toHaveAccessibleDescription('up · last known 3 min ago');
+    ).toHaveAccessibleDescription('up');
   });
 });

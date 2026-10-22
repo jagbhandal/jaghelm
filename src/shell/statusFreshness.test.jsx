@@ -374,7 +374,7 @@ describe('one clock for every age on screen', () => {
 });
 
 describe('the strip, stale (subsystemCells with the freshness)', () => {
-  it('keeps the counts and words, draws every tile as no signal, marked last known', () => {
+  it('keeps the counts, words and sub-lines, draws every tile as no signal, with no age on any', () => {
     const fresh = subsystemCells(INCIDENT);
     const stale = subsystemCells(INCIDENT, {
       stale: true,
@@ -383,10 +383,9 @@ describe('the strip, stale (subsystemCells with the freshness)', () => {
     expect(stale.map((c) => c.state)).toEqual(fresh.map(() => 'unknown'));
     expect(stale.map((c) => c.value)).toEqual(fresh.map((c) => c.value));
     expect(stale.map((c) => c.word)).toEqual(fresh.map((c) => c.word));
-    // The model's sub-line, marked last known (#541); a tile with none says it alone.
-    expect(stale.map((c) => c.sub)).toEqual(
-      fresh.map((c) => (c.sub ? `${c.sub} · last known 3 min ago` : 'Last known 3 min ago'))
-    );
+    // The model's sub-line as it reads fresh (#541): the header and the
+    // attention panel say how old it is, once, not each tile.
+    expect(stale.map((c) => c.sub)).toEqual(fresh.map((c) => c.sub));
     expect(fresh.some((c) => c.sub)).toBe(true);
     expect(fresh.map((c) => c.sub)).toEqual(
       INCIDENT.subsystems.filter((s) => s.counts.total > 0).map((s) => s.sub || undefined)

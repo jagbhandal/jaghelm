@@ -14,13 +14,14 @@
  * panel's surface-1 (#289); a maintenance tile stays on the panel, its wrench
  * saying it (spec §6.1: maintenance is not an issue). From 672px (`@2xl` of
  * the strip's container) a tile is the mock's wide one, its value over its
- * `sub`; six share a row from 720px, and in rows of three below that
- * (`columns`, below). In rows of three from 320px and of two below that the
+ * `sub`; six share a row from 816px of strip, and sit in rows of three below
+ * that (`columns`, below). In rows of three from 320px and of two below that the
  * tiles are the Phone board's, and leave out `sub`. A strip holds one to six
  * tiles, and no row is left with an empty slot. The value and sub are the
  * model's own two lines (#541), drawn as they are: each wraps only between
  * words, so no word or number is ever cut in two (the reflow sweep holds
- * every fixture's whole, and its value on one line, at 1024, 1280 and 1440px).
+ * every fixture's whole, and its value on one line, at 1024, 1280, 1440 and
+ * 1460px, in each typeface).
  *
  * With `onSelect`, each tile is a toggle button (`aria-pressed`) that filters
  * by its subsystem, as the mock's do: a press calls `onSelect(key)`, or
@@ -28,7 +29,7 @@
  * It is named "label, word, value", as a row is, and described by `sub`. A
  * tile drawn as no signal with another word (a stale status's last known
  * "Down", #480) names its lamp "No signal" (lampName), and says it before the
- * word: "Services, No signal, Down, 30 / 32", described "up · last known 3 min ago".
+ * word: "Services, No signal, Down, 30 / 32", described "up".
  * Without `onSelect` the tiles are plain content.
  *
  * The `android` look, a stopgap until #326, is the Android app's grid of
@@ -56,20 +57,23 @@ const tint = {
   maintenance: '',
 };
 
-// Columns by how many tiles there are. An empty slot would show the frame's
-// `border-subtle`, so every row fills: six in rows of three, or of two; four
-// two by two; five as 3 + 2 or 2 + 2 + 1, the last tile spanning the rest of
-// its row below 672px. Six share a row only from 720px (45rem, #541): below
-// that a tile is too narrow for the UPS's "On battery" on one line (82px of
-// a 16px-bold Manrope value, in a tile padded 16px each side), so from 672px
-// they keep the wide tile, value and sub-line, in rows of three.
+// Columns by how many tiles there are, by the strip's own width (its
+// `@container`). An empty slot would show the frame's `border-subtle`, so
+// every row fills: six in rows of three, or of two, never 5 + 1; four two by
+// two; five as 3 + 2 or 2 + 2 + 1, the last tile spanning the rest of its row
+// below 672px. Six share a row only from 816px of strip (51rem, #541): there a
+// tile has 102px for its value, and the widest value the model gives, "Low
+// battery", is 100px in Montserrat at 16px bold (91 in Manrope, 94 in Plus
+// Jakarta Sans; a count to "888 / 888" 83). Narrower, they keep the wide tile,
+// value over sub-line, in rows of three. The reflow sweep proves it, in all
+// three typefaces (e2e/reflow.spec.mjs).
 const columns = {
   1: 'grid-cols-1',
   2: 'grid-cols-2',
   3: 'grid-cols-3',
   4: 'grid-cols-2 @2xl:grid-cols-4',
   5: 'grid-cols-2 @xs:grid-cols-3 @2xl:grid-cols-5 @max-2xl:[&>:last-child]:col-span-2',
-  6: 'grid-cols-2 @xs:grid-cols-3 @min-[45rem]:grid-cols-6',
+  6: 'grid-cols-2 @xs:grid-cols-3 @min-[51rem]:grid-cols-6',
 };
 
 /**

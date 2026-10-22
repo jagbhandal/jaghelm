@@ -5,7 +5,7 @@
  * and what a stale status last said (#480).
  */
 import { EMPTY, EMPTY_SENTENCE, WORDS, toState } from '../ui/lib/status.js';
-import { drawnState, lastKnownCaption } from './statusFreshness.js';
+import { drawnState } from './statusFreshness.js';
 
 /** The noun before an issue's node, by the entity's kind (docs/ARCHITECTURE.md §4.7). */
 const KIND = Object.freeze({
@@ -97,19 +97,6 @@ function subsystemWord(status, subsystem) {
 }
 
 /**
- * A cell's sub-line: the model's `sub` ("up · 1 in maintenance"), or none;
- * while stale (#480), marked last known ("up · last known 3 min ago"), or
- * that alone when the model gives none ("Last known 3 min ago").
- */
-function subOf(s, freshness) {
-  const sub = typeof s.sub === 'string' && s.sub ? s.sub : undefined;
-  if (!freshness?.stale) return sub;
-  return sub && freshness.lastKnown
-    ? `${sub} · ${freshness.lastKnown}`
-    : lastKnownCaption(freshness);
-}
-
-/**
  * The model's subsystems as SubsystemStrip cells (#298, spec §8 item 2), in
  * the model's order: one per subsystem with anything in it (an unconfigured
  * one shows no panel, spec §8), its state, word, and the model's `value`
@@ -119,8 +106,9 @@ function subOf(s, freshness) {
  * empty board.
  *
  * With a stale status (`freshness`, statusFreshness.js, #480), each cell
- * keeps its word and counts, as last known, but is drawn as no signal, and
- * says so under its count (subOf).
+ * keeps its word, value and sub-line, as last known, but is drawn as no
+ * signal. How old they are is said once, by the header and the attention
+ * panel (lastKnownLine), never on each tile (#541).
  */
 export function subsystemCells(status, freshness) {
   return (status?.subsystems ?? [])
@@ -131,7 +119,7 @@ export function subsystemCells(status, freshness) {
       state: drawnState(s.state, freshness),
       word: subsystemWord(status, s),
       value: typeof s.value === 'string' && s.value ? s.value : s.detail,
-      sub: subOf(s, freshness),
+      sub: typeof s.sub === 'string' && s.sub ? s.sub : undefined,
     }));
 }
 

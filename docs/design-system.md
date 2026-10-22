@@ -1077,10 +1077,12 @@ is in, not the window):
   tile's padding. The value and `sub` wrap only between words
   (`overflow-wrap: normal`): no word or number is ever cut in two or ends in
   an ellipsis, and every status fixture's value keeps to one line at 1024,
-  1280 and 1440px (`e2e/reflow.spec.mjs`). From 672px a tile is the wide one
-  above; six sit in a row from 720px, and from 672px in rows of three, since
-  a six-to-a-row tile narrower than that has no room for "On battery" on one
-  line (#541). Four and five sit in a row from 672px, three from 320px and
+  1280, 1440 and 1460px in each typeface (`e2e/reflow.spec.mjs`). From 672px
+  a tile is the wide one above; six sit in a row from 816px of strip, and
+  from 672px in two rows of three, never 5 + 1: narrower, a six-to-a-row
+  tile has no room for "Low battery" on one line in Montserrat (100px at
+  16px bold; 94 in Plus Jakarta Sans, 91 in Manrope), which the sweep
+  measures in all three (#541). Four and five sit in a row from 672px, three from 320px and
   two below that, where a tile is the Phone board's: a 14px value and no
   `sub`. A strip
   holds one to six tiles and never leaves an empty slot, which would show the
@@ -1088,9 +1090,9 @@ is in, not the window):
   or 2 + 2 + 1, the last tile spanning the rest of its row. With `onSelect` the
   tiles are toggles, `surface-2` under the pointer, the selected one inside a
   1.5px accent edge. With a stale status (#480) the shell gives every tile
-  `unknown`, its word and count kept, and its sub-line marked last known ("up
-  · last known 3 min ago", or "Last known 3 min ago" alone where the model
-  gives none): the steel tint and ring, never a level's colour. The Android
+  `unknown`, its word, value and sub-line kept as they read fresh (the header
+  and the attention panel say how old, once, #541): the steel tint and ring,
+  never a level's colour. The Android
   look's cell draws the same value over the same sub-line, in the app's
   type: the value 14px bold, the sub-line 11px mono.
 - **AttentionPanel.** With issues, or in any state but ok and maintenance

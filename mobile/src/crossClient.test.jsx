@@ -148,15 +148,6 @@ const SEVERITY_CLASS = /(?:^|\s)[\w-]+--(critical|caution|healthy|unknown|mainte
 const drawn = (el) => (el ? (SEVERITY_CLASS.exec(el.getAttribute('class') ?? '')?.[1] ?? null) : null);
 const text = (el) => el?.textContent ?? null;
 
-/**
- * A stale cell's sub-line (#480, #541): the model's, then " · last known
- * <age>"; with none, "Last known <age>" alone.
- */
-const STALE_SUB = (sub) => (sub ? `${sub} · last known <age>` : 'Last known <age>');
-const isStaleSub = (sub, drawn) =>
-  /(^| · )[Ll]ast known .+ ago$/.test(drawn ?? '') &&
-  (sub ? drawn.startsWith(`${sub} · last known `) : drawn.startsWith('Last known '));
-
 /** The worst entity of a subsystem, by the model's ranking: its word is the cell's. */
 function worstOf(status, subsystem) {
   const match = (e) => e.subsystem === subsystem.id && e.state === subsystem.state;
@@ -252,12 +243,12 @@ function disagreements({ status, servicesBody }, { stale, cause }) {
     const said = worstOf(status, s).word;
     if (text(cell.querySelector('.status-word')) !== said.toUpperCase())
       say(subject, 'word', said.toUpperCase(), text(cell.querySelector('.status-word')));
-    // The model's value and sub-line (#541), as they are; stale, the sub-line marked last known.
+    // The model's value and sub-line (#541), as they are, fresh or stale: the
+    // status card says how old a stale status is, once, not each cell.
     if (text(cell.querySelector('.subsystem-cell__value')) !== s.value)
       say(subject, 'value', s.value, text(cell.querySelector('.subsystem-cell__value')));
     const drawnSub = text(cell.querySelector('.subsystem-cell__sub'));
-    if (stale ? !isStaleSub(s.sub, drawnSub) : drawnSub !== (s.sub || null))
-      say(subject, 'sub', stale ? STALE_SUB(s.sub) : s.sub || 'none', drawnSub ?? 'none');
+    if (drawnSub !== (s.sub || null)) say(subject, 'sub', s.sub || 'none', drawnSub ?? 'none');
   });
 
   // The issue list, in the model's order.

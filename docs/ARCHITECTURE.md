@@ -1281,9 +1281,11 @@ error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
   the two joined by a space are the detail; the UPS's value is its word ("On
   mains", "On battery") and its sub its charge ("64 % charge"), else its
   reason when that says more ("No data: Prometheus unreachable"), else empty;
-  an empty subsystem is "None" with an empty sub. `detail` stays as it was,
-  for the header sentence, push and an Android app older than #541; no
-  client splits a string.
+  an empty subsystem is "None" with an empty sub. `detail` is built from
+  them, the two joined (the UPS on its own keeps its reason, "On battery (64
+  % charge)"), for the header sentence, push and an Android app older than
+  #541, so Power with several entities counts its no signal ones there too;
+  no client splits a string.
 - **The sentence**: with warnings or worse, each kind of problem with its count
   in issue order ("2 services down · Prometheus unreachable · 1 job failed"),
   then "N no signal"; with only unknowns, "31 up · 1 no signal"; healthy, the
@@ -1342,7 +1344,8 @@ shows comes from `mobile/src/data/board.js`, through the web's own helpers
 Overview's card (the board's word and the issues' counts, the quiet line, or
 an empty board's "Nothing monitored yet" alone), a strip cell per subsystem
 with anything (the model's value over its sub-line, as the web's tile, #541;
-the Power cell adds the UPS's runtime on battery), the ranked issues with where they are and their reasons, each
+the Power cell adds the UPS's runtime on battery, and from a server older
+than #541, which gives no sub-line, its charge on mains), the ranked issues with where they are and their reasons, each
 service row's state and word, and each node card's state, word, hosted
 counts ("4 / 5 services up · 1 down", or "No services") and bars, each bar
 coloured by its condition and printed by `shownReading`, and a service's 24 h
@@ -1520,7 +1523,7 @@ them on its Node side and hand a page the JSON.
   anything, a row per entity, and the Overview's Infrastructure section, a
   meter per node reading coloured by its condition, drawn through the page's
   own `infrastructureNodes` and `InfrastructureSection`), and read back: the
-  headline's word (the model's word for the board's state) and sentence, each tile's state, word, value and sub-line (#541), each row's
+  headline's word (the model's word for the board's state) and sentence, each tile's state, word, value and sub-line (#541; and each fixture's strip again stale, every tile no signal with the same value and sub-line), each row's
   state, word and reason, each meter's state and the number and line the
   model's reason gives. A meter reads its lines from the status it draws
   (`thresholds`, #451), and readings just below, on and just above each line,
@@ -1531,8 +1534,8 @@ them on its Node side and hand a page the JSON.
   screens through `MobileApp`, as its poll hands them over, and read back:
   the status bar's lamp (none on an empty board) and sentence, the Overview
   card's headline, coloured word and sentence (the web panel's words), each
-  strip cell's state, word, value and sub-line (#541; stale, the sub-line
-  marked last known), each issue row's state, word, name,
+  strip cell's state, word, value and sub-line (#541; stale, the same as
+  fresh), each issue row's state, word, name,
   where and reason, and each node card's state, word, hosted counts and
   bars (level and number). Then every fixture again with the status stale
   (the server out of reach), and the incident past its TTL and with no
@@ -1708,10 +1711,9 @@ flowchart TD
   today's board at all (Integrations, whose numbers show on their services'
   rows). Nodes and Services, whose sections are above the board, get no note. Each note offers "Show the whole board". The rows' links follow: a
   panel the filter hides takes its anchor off the list of places drawn. With
-  a stale status, each tile keeps its count, as last known, and says so on
-  its sub-line ("up · last known 3 min ago", or "Last known 3 min ago" where
-  the model gives no sub; from 672px, and to a screen reader as its
-  description), its lamp the steel ring (#480).
+  a stale status, each tile keeps its value and sub-line, as last known, its
+  lamp the steel ring (#480); how old they are is said once, by the header
+  and the attention panel, never on a tile (#541).
 - **The Overview on a phone** (#484, spec §8 "Phone width"). Below 768px
   (`PHONE_WIDTH` in `@ui/app-shell`, `(width < 48rem)`: the shell's own
   `md`, where the bottom tabs replace the sidebar, one value for both) the top of the Overview is the Phone board's
@@ -1738,10 +1740,11 @@ flowchart TD
   tablet (768–1023px) is the desktop Overview in one column, which it is by
   flow (the status, the strip, Infrastructure, Services and today's board
   stack at every width without the rail), and its strip wraps by its own
-  container queries (six tiles to a row from 672px of strip, rows of three
-  under it), as the node cards fill their section's width. Sections grow
-  with their content and never clip it; a word wider than a strip tile breaks
-  rather than hide. On the first load the page fills in from the top (#243):
+  container queries (six tiles to a row from 816px of strip, where the
+  widest value, "Low battery", fits in every typeface, #541; two rows of
+  three under it), as the node cards fill their section's width. Sections
+  grow with their content and never clip it; a strip tile's value and
+  sub-line wrap only between words, never cutting one. On the first load the page fills in from the top (#243):
   `DashboardView` draws nothing until the header's poll has its first answer
   (`reach` past `loading`), while its data loads, so the status, a
   placeholder of unknown height until then, can't push down sections already
@@ -2917,10 +2920,14 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   clips, `hidden` or `clip`) unless it ends in an ellipsis with the whole text
   in a title or an accessible name, and no text spilling out of its box;
   every service's and node's name whole and in the window; a failure names
-  the element and the width. Every status fixture's strip at 1024, 1280 and
-  1440px (#541): each tile's value and sub-line the model's, whole (no word
-  cut, `overflow-wrap: normal`, nothing clipped or ending in an ellipsis),
-  the value on one line. Today's board is held only to its panels'
+  the element and the width. Every status fixture's strip, and a six-tile
+  one with "Low battery", at 1024, 1280, 1440 and 1460px (past the page's
+  split), in each of the three typefaces (#541): each tile's value and
+  sub-line the model's, whole (no word cut, `overflow-wrap: normal`, nothing
+  clipped or ending in an ellipsis), the value on one line, six tiles in one
+  row or two of three, never 5 + 1. And six tiles carrying every value the
+  model gives a tile, at each strip width from 672 to 1200px in each
+  typeface: in one row from 816px and not below, every value on one line. Today's board is held only to its panels'
   heights (#306 deletes it: its Pipeline's commit messages and its Checklist's
   add row don't fit at 360 and 390px). A tablet (768 and 1023px) is one
   column, the strip wrapping. The first load at 390 × 844 on the incident

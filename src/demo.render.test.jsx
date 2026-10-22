@@ -1027,11 +1027,12 @@ describe('No signal: a stale status never looks current', () => {
       expect(rows[0]).toHaveTextContent('Jellyfin');
       for (const lamp of attention().querySelectorAll('[data-slot="status-lamp"]'))
         expect(lamp).toHaveAttribute('data-state', 'unknown');
-      // The strip: every tile no signal, its count kept, its sub-line marked last known.
+      // The strip: every tile no signal, its count and sub-line kept as they
+      // read fresh; the heading above says how old they are, no tile does.
       for (const t of within(strip()).getAllByRole('button')) {
         expect(t).toHaveAttribute('data-state', 'unknown');
         expect(t).toHaveTextContent(/\d+ \/ \d+|On mains|On battery|\d/);
-        expect(t).toHaveAccessibleDescription(/^(.+ · last known|Last known) 30 s ago$/);
+        expect(t).not.toHaveAccessibleDescription(/last known|ago/i);
       }
       // Infrastructure: the NAS keeps its word, reason and 94 %, all neutral.
       expect(
@@ -1111,11 +1112,12 @@ describe('No signal: a stale status never looks current', () => {
     await renderNasIncident();
     statusAnswer = 'down';
     await untilTheNextPoll();
+    // No tile says an age (#541): the header and the panel say it, once.
     const tiles = within(strip()).getAllByRole('button').length;
     expect(ages()).toEqual({
       header: '30 s ago',
       panel: '30 s ago',
-      tiles: Array(tiles).fill('30 s ago'),
+      tiles: Array(tiles).fill(null),
       section: '30 s ago',
       services: '30 s ago',
     });
@@ -1127,7 +1129,7 @@ describe('No signal: a stale status never looks current', () => {
       expect(ages()).toEqual({
         header: said,
         panel: said,
-        tiles: Array(tiles).fill(said),
+        tiles: Array(tiles).fill(null),
         section: said,
         services: said,
       });

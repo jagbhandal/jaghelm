@@ -65,7 +65,8 @@ const settle = (promise) => promise.then((value) => ({ value }), (err) => ({ err
  *                  It is the health gate: if it throws, `error` is set.
  *   /api/ups       the UPS's runtime, for display only (board.js
  *                  upsReadingsOf): the model judges the UPS and carries its
- *                  charge (#541), but never its runtime. A failed read shows
+ *                  charge (#541), but never its runtime; from a server
+ *                  before #541, its charge on mains too. A failed read shows
  *                  none.
  *
  * `/api/cron/status` is no longer read: the model says what the app drew from

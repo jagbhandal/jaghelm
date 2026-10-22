@@ -97,6 +97,23 @@ describe('Overview, on the status model (#325)', () => {
     expect(power().querySelector('.subsystem-cell__readings')).toBeNull();
   });
 
+  it('from a server before #541 (no value or sub-line), the Power cell still shows its charge on mains', () => {
+    // That server's model: no `value` or `sub` on a subsystem, no charge on a UPS on mains.
+    const data = makeData(0);
+    for (const s of data.status.subsystems) {
+      delete s.value;
+      delete s.sub;
+    }
+    delete data.status.entities.find((e) => e.id === 'power/ups').metric;
+    render(<Overview data={data} nav={{ push: vi.fn() }} />);
+    const power = [...document.querySelectorAll('.subsystem-cell')].find(
+      (c) => c.querySelector('.subsystem-cell__label').textContent === 'Power'
+    );
+    expect(power.querySelector('.subsystem-cell__value').textContent).toBe('On mains');
+    expect(power.querySelector('.subsystem-cell__sub')).toBeNull();
+    expect(power.querySelector('.subsystem-cell__readings').textContent).toBe('100% charge');
+  });
+
   it('stale (#480) → steel "No signal" card with why and what it last knew; cells and rows keep their words, drawn as no signal', () => {
     const stale = makeData(1, { error: new Error('fetch failed'), freshness: STALE });
     render(<Overview data={stale} nav={{ push: vi.fn() }} />);

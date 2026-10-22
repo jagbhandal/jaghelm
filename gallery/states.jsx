@@ -1546,17 +1546,12 @@ function AttentionPanelNarrowState() {
 }
 
 // #480: a stale status, as the shell draws it (src/shell/statusFreshness.js):
-// every state no signal, the words and counts kept, marked last known; a
-// tile's sub-line too (src/shell/statusView.js subsystemCells, #541).
+// every state no signal, the words, counts and sub-lines kept; the header
+// says how old they are, once, not each tile (statusView.js subsystemCells, #541).
 const stale = (items) => items.map((item) => ({ ...item, state: 'unknown' }));
-const staleCells = (cells) =>
-  stale(cells).map((c) => ({
-    ...c,
-    sub: c.sub ? `${c.sub} · last known 3 min ago` : 'Last known 3 min ago',
-  }));
 
 function SubsystemStripNoSignalState() {
-  return <SubsystemStrip cells={staleCells(CELLS)} />;
+  return <SubsystemStrip cells={stale(CELLS)} />;
 }
 
 function AttentionPanelNoSignalState() {
@@ -1648,7 +1643,7 @@ function AttentionPanelPhoneNoSignalState() {
         subline="Can't reach JagHelm"
         action={ALL_ALERTS}
         issues={stale(SIX_ISSUES)}
-        between={<SubsystemStrip cells={staleCells(CELLS)} onSelect={noop} />}
+        between={<SubsystemStrip cells={stale(CELLS)} onSelect={noop} />}
         split
       />
     </Stack>

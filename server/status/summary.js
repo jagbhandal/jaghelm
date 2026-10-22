@@ -62,22 +62,28 @@ function countsOf(members) {
   return counts;
 }
 
-/** "31 / 32 up · 1 in maintenance", or the UPS's own reason; "None" for an empty subsystem. */
+/**
+ * "31 / 32 up · 1 in maintenance": the tile's value and sub joined (tileOf),
+ * so the two never say different counts; the UPS on its own, its reason ("On
+ * battery (64 % charge)"); "None" for an empty subsystem. The header's
+ * sentence, push and an Android app before #541 read it.
+ */
 function detailOf(id, counts, members) {
   if (counts.total === 0) return 'None';
-  const parts = [];
-  if (id === 'power' && members.length === 1) parts.push(members[0].reason);
-  else parts.push(`${counts.ok} / ${counts.total} ${OK_WORD[id] ?? 'OK'}`);
-  if (counts.maintenance) parts.push(`${counts.maintenance} in maintenance`);
-  if (id !== 'power' && counts.unknown) parts.push(`${counts.unknown} no signal`);
-  return parts.join(' · ');
+  if (id === 'power' && members.length === 1) {
+    const parts = [members[0].reason];
+    if (counts.maintenance) parts.push(`${counts.maintenance} in maintenance`);
+    return parts.join(' · ');
+  }
+  const { value, sub } = tileOf(id, counts, members);
+  return `${value} ${sub}`;
 }
 
 /**
- * A subsystem's tile (#541), from the counts that build its detail: a short
- * `value`, the strip's big line, and the `sub` under it. A count's value is
- * "31 / 32" and its sub the rest of the detail ("up · 1 in maintenance"), so
- * the two joined by a space are the detail. The UPS's value is its word
+ * A subsystem's tile (#541), from its counts: a short `value`, the strip's
+ * big line, and the `sub` under it. A count's value is "31 / 32" and its sub
+ * the rest ("up · 1 in maintenance"); the two joined by a space are the
+ * detail (detailOf). The UPS's value is its word
  * ("On mains", "On battery") and its sub its charge ("64 % charge"), else
  * its reason when that says more than the word ("No data: Prometheus
  * unreachable"), else nothing. An empty subsystem is "None" with no sub.
