@@ -26,17 +26,24 @@
  * colour otherwise. `row-hover` shows over the tint under the pointer.
  *
  * A row that opens something is a button (`onOpen`) or a link (`href`), named
- * "name, word" and described by its detail, meta (unless only a dash) and
+ * "name, word" and described by its where, detail, meta (unless only a dash) and
  * trailing figure (an UptimeBar's summary); its lamp is then decorative. A row with nothing to
- * open is plain content, its lamp named by the word. A Sparkline inside a row
+ * open is plain content, its lamp named by the word. A lamp drawn as no signal
+ * beside another word (a stale status's last known "Up", #480) is named "No
+ * signal" (lampName), and so is the row. A Sparkline inside a row
  * that opens is `decorative`: a focusable chart inside a button is a control
  * inside a control.
+ *
+ * Two parts for a long list, the Overview's Services (#300): `muted` quiets a
+ * healthy row (its detail in `text-2`, so a failing one stands out; any other
+ * state keeps its colours), and `where` (a node's name) follows the name in
+ * 12px mono `text-3`, inside the name's column, giving way before the name.
  */
 import { useId } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { StatusLamp } from './status-lamp.jsx';
 import { cn } from './lib/utils.js';
-import { WORDS, spoken, toState } from './lib/status.js';
+import { WORDS, lampName, spoken, toState } from './lib/status.js';
 
 const DASH = /^\s*[—–-]\s*$/;
 
@@ -52,9 +59,11 @@ function EntityRow({
   state,
   word,
   name,
+  where,
   detail,
   meta,
   trailing,
+  muted = false,
   onOpen,
   href,
   className,
@@ -62,14 +71,26 @@ function EntityRow({
 }) {
   const id = useId();
   const s = toState(state);
-  const said = word || WORDS[s];
+  // A stale row keeps its last word ("Up"); its lamp is named by what it draws.
+  const said = lampName(s, word || WORDS[s]);
+  const quiet = muted && s === 'ok';
   const opens = Boolean(href || onOpen);
   const Tag = href ? 'a' : onOpen ? 'button' : 'div';
-  const has = { detail: detail != null, meta: meta != null, trailing: trailing != null };
+  const has = {
+    where: where != null && where !== '',
+    detail: detail != null,
+    meta: meta != null,
+    trailing: trailing != null,
+  };
   // A meta that is only a dash ("no latency") says nothing: it stays on screen
   // and out of the row's description.
   const saysMeta = has.meta && !(typeof meta === 'string' && DASH.test(meta));
-  const described = [has.detail && 'detail', saysMeta && 'meta', has.trailing && 'trailing']
+  const described = [
+    has.where && 'where',
+    has.detail && 'detail',
+    saysMeta && 'meta',
+    has.trailing && 'trailing',
+  ]
     .filter(Boolean)
     .map((k) => `${id}-${k}`);
   const action =
@@ -83,6 +104,7 @@ function EntityRow({
     <Tag
       data-slot="entity-row"
       data-state={s}
+      data-muted={quiet ? '' : undefined}
       aria-label={opens ? `${name}, ${spoken(said)}` : undefined}
       aria-describedby={opens && described.length ? described.join(' ') : undefined}
       className={cn(
@@ -107,19 +129,40 @@ function EntityRow({
           data-slot="entity-main"
           className="flex min-w-0 flex-auto flex-col @2xl:flex-row @2xl:items-center @2xl:gap-3.5"
         >
-          <span
-            data-slot="entity-name"
-            className="block truncate font-semibold text-text-1 @2xl:min-w-[calc(42.857%-6px)] @2xl:shrink"
-          >
-            {name}
-          </span>
+          {has.where ? (
+            <span
+              data-slot="entity-heading"
+              className="flex min-w-0 items-baseline gap-2 @2xl:min-w-[calc(42.857%-6px)] @2xl:shrink"
+            >
+              <span
+                data-slot="entity-name"
+                className="block min-w-0 truncate font-semibold text-text-1"
+              >
+                {name}
+              </span>
+              <span
+                data-slot="entity-where"
+                id={`${id}-where`}
+                className="block min-w-0 shrink-1000 truncate font-mono text-caption text-text-3"
+              >
+                {where}
+              </span>
+            </span>
+          ) : (
+            <span
+              data-slot="entity-name"
+              className="block truncate font-semibold text-text-1 @2xl:min-w-[calc(42.857%-6px)] @2xl:shrink"
+            >
+              {name}
+            </span>
+          )}
           {has.detail && (
             <span
               data-slot="entity-detail"
               id={`${id}-detail`}
               className={cn(
                 'block w-0 min-w-full truncate text-caption leading-5 @2xl:min-w-0 @2xl:flex-1 @2xl:text-body-sm @2xl:leading-5',
-                detailColour[s]
+                quiet ? 'text-text-2' : detailColour[s]
               )}
             >
               {detail}
