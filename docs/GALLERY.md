@@ -42,7 +42,9 @@ The page loads the app's stylesheets unchanged (`src/styles/legacy.css`, then
 `src/ui/tailwind.css`, as `src/main.jsx` does), so a component looks here as it
 will on a screen. The gallery lays itself out with inline styles that read the
 role tokens; the few classes it writes are ones `src/ui/` already uses
-(`npm test` checks).
+(`npm test` checks). It serves `public/` as the app does, so the header and
+the sign-in page draw JagHelm's logo from it (#530), and a variant is shot
+once its fonts and images have loaded.
 
 ## Files
 

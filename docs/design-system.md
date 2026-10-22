@@ -1414,8 +1414,8 @@ From the mock's Main and Phone boards:
   (the Overview's status and subsystem strip over today's board, #297,
   #298), which shows between them.
 - **AppHeader.** 48px on `bg`, a subtle bottom edge, 16px (24px from 768px) at
-  the sides. The brand: the mock's helm mark, the wheel in `on-accent` on a
-  28px `accent` square, or the instance's own logo; the name in 15px
+  the sides. The brand: JagHelm's shield (`public/logo.svg`, the favicon's
+  artwork, #530), 28px, or the instance's own logo; the name in 15px
   extra-bold, for screen readers only below 768px. The status: a 14px lamp,
   the word in `text-title-xs` in its state's `fg`, then the model's sentence
   in `text-2` (`text-1` under the pointer), cut short with an ellipsis rather
@@ -1502,6 +1502,9 @@ From the mock's Main and Phone boards:
   Infrastructure pages exist (#313); the mock has all five.
 - **Labels are 12px, not 11px** (the type floor), and the phone's count is the
   mock's solid; the sidebar's is the mock's tint.
+- **JagHelm's shield, not the mock's wheel** (#530): the mock drew a wheel on
+  an accent square as the brand mark; the header shows JagHelm's own logo, as
+  the favicon and the Android icon do.
 
 ## Overview sections
 
@@ -1652,13 +1655,18 @@ runs it in a browser.
 
 ### How the sign-in page looks
 
-One brand mark, the header's: the helm mark on a 40px `accent` square (or the
-instance's own logo), then the instance's name in `text-title` extra-bold, the
-page's h1. Under it, 24px down, a Panel titled "Sign in" holding a Field per
-control, Username and Password, 16px apart, and the primary button, "Sign
-in", the card's width. The column is at most 360px wide, centred in the
-window on `bg`, with a 16px gutter on a phone. No wordmark, gradient title
-or subtitle.
+JagHelm's logo, 156px tall, as before 3.0 (#530): the lockup, the shield over
+the JAGHELM wordmark and "Infrastructure Dashboard" (`public/logo-login.svg`),
+or the instance's own logo. It is the page's h1, the instance's name its text
+alternative, with no title or subtitle beside it. The lockup was drawn for
+dark; in the light theme the page shows `public/logo-login-light.svg`, the
+same artwork with only its text darker (JAG and the tagline indigo `#4f46e5`,
+HELM amber `#b45309`), which keeps 4.5:1 on `bg`, where the dark version's
+text falls to 1.8–2.8:1. Never change the shield or the wheel. Under the logo,
+24px down, a Panel titled "Sign in" holding a Field per control, Username and
+Password, 16px apart, and the primary button, "Sign in", the card's width. The
+column is at most 360px wide, centred in the window on `bg`, with a 16px
+gutter on a phone, and the page fits a 390 × 667 phone without scrolling.
 
 ### Accessibility of the sign-in page
 
@@ -1681,9 +1689,11 @@ or subtitle.
 
 ### Where the sign-in page differs from the mock
 
-- **The mock has no sign-in board.** The page follows its tokens, its
-  Settings fields (13px semibold labels over 34px inputs) and the header's
-  helm mark.
+- **The mock has no sign-in board.** The page follows its tokens and its
+  Settings fields (13px semibold labels over 34px inputs).
+- **JagHelm's own logo, not the mock's wheel** (#530). The mock drew a wheel on
+  an accent square as the brand mark; JagHelm keeps its shield in the header
+  and its lockup on the sign-in page, as the favicon and the Android icon do.
 
 ## Changing a token
 
@@ -1741,8 +1751,9 @@ Where the tokens differ from the mock, and why:
     the light theme already darkens every hover.
 - **Radii off the scale.** The mock draws four radii that aren't on it. They map
   onto the scale: 5px (kbd) to `rounded-sm` 4; 7px (28px icon chips) and 9px
-  (the helm mark) to `rounded-lg` 8; 10px (phone touch targets and inputs) to
-  `rounded-lg` 8, as every control.
+  (the mock's brand square, which JagHelm doesn't draw, #530) to `rounded-lg`
+  8; 10px (phone touch targets and inputs) to `rounded-lg` 8, as every
+  control.
 - **Tokens the mock didn't draw** are derived from it: `text-disabled`; `tint`
   for ok, maintenance and info (10 %); every status `border` (solid at 38 % dark,
   32 % light, as the accent's); every `on-solid`; `info`, which shares

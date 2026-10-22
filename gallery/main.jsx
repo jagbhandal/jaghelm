@@ -74,6 +74,9 @@ async function settle(variant) {
     return html.setAttribute(READY_ATTRIBUTE, 'timeout');
   }
   await document.fonts.ready;
+  // Images drawn (the header's and the sign-in page's logo, #530); a broken
+  // one shows as broken, and its screenshot says so.
+  await Promise.all([...document.images].map((img) => img.decode().catch(() => {})));
   await frame();
   await frame();
   html.setAttribute(READY_ATTRIBUTE, 'true');
