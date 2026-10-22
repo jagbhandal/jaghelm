@@ -77,12 +77,19 @@ describe('IssueRow', () => {
     const onOpen = vi.fn();
     render(<IssueRow issue={immich} href="#entity-immich" onOpen={onOpen} />);
     const row = screen.getByRole('link');
-    for (const modifier of ['ctrlKey', 'metaKey', 'shiftKey', 'altKey']) {
-      fireEvent.click(row, { [modifier]: true });
+    const modified = {
+      Ctrl: { ctrlKey: true },
+      Meta: { metaKey: true },
+      Shift: { shiftKey: true },
+      Alt: { altKey: true },
+      'the middle button': { button: 1 },
+    };
+    // fireEvent.click is false when a handler cancelled the click (#515).
+    for (const [name, init] of Object.entries(modified)) {
+      expect(fireEvent.click(row, init), `${name}: not cancelled`).toBe(true);
+      expect(onOpen, `${name}: not the page's`).not.toHaveBeenCalled();
     }
-    fireEvent.click(row, { button: 1 });
-    expect(onOpen).not.toHaveBeenCalled();
-    fireEvent.click(row);
+    expect(fireEvent.click(row), 'a plain click still follows the link').toBe(true);
     expect(onOpen).toHaveBeenCalledOnce();
     expect(onOpen).toHaveBeenCalledWith();
   });
