@@ -1,8 +1,9 @@
 /**
- * Auth routes — login, status check, password change.
+ * Auth routes — login, sign-out, status check, password change.
  *
  * Mounted at /api/auth from server/index.js:
  *   POST /api/auth/login
+ *   POST /api/auth/logout
  *   GET  /api/auth/check
  *   POST /api/auth/change-password
  */
@@ -11,7 +12,7 @@ import { Router } from 'express';
 
 import { authMiddleware } from './middleware.js';
 import { authEnabled, checkPassword, getAuthUser, safeBufEqual, setPassword } from './passwords.js';
-import { createSession, deleteAllSessionsExcept, getSession } from './sessions.js';
+import { createSession, deleteAllSessionsExcept, deleteSession, getSession } from './sessions.js';
 import {
   checkLoginRate,
   resetLoginRate,
@@ -59,6 +60,25 @@ router.post('/login', async (req, res) => {
   recordAuthFailure(); // metric
   await loginFailureDelay(); // throttle + dull the timing oracle
   return apiError(res, 401, 'Invalid credentials');
+});
+
+/**
+ * Sign out (#507): delete the presented token's session, and only that one.
+ * Sessions live in memory (ADR 0002), so the deletion is the revocation: the
+ * token gets a 401 on every protected route from now on. Idempotent and quiet:
+ * an unknown, expired or already revoked token, or none, gets the same 204, so
+ * a second sign-out or another tab never meets a 401 (which the clients read as
+ * an expired session), and the answer tells nothing about a token. Only a real
+ * sign-out logs, with the user and never the token.
+ */
+router.post('/logout', (req, res) => {
+  const token = req.headers['x-auth-token'];
+  const session = authEnabled() ? getSession(token) : null;
+  if (session) {
+    deleteSession(token);
+    log.info({ user: session.user }, 'signed out');
+  }
+  return res.status(204).end();
 });
 
 router.get('/check', (req, res) => {
