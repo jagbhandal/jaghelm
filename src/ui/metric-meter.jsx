@@ -26,6 +26,11 @@
  * server/status/readings.js (#451), never lines of its own. The Android app
  * keeps UsageBar until Phase 4.
  *
+ * A reading the server gave no current level (`state` 'unknown': the status
+ * it was judged by is stale, #495) is drawn as no signal: the fill in the
+ * steel no-signal colour and the value in text-2, said as "94%, no signal",
+ * never coloured by a line and never judged here.
+ *
  * A meter is a `meter` named by its label, its value and any threshold it
  * passed said in words ("92%, warning above 90%"). A meter never sits on
  * `surface-3`, and a chart beside it is a Sparkline (docs/design-system.md,
@@ -39,15 +44,17 @@ const fills = {
   ok: 'bg-meter',
   warn: 'bg-warn-solid',
   crit: 'bg-crit-solid',
+  unknown: 'bg-unknown-solid',
 };
 
 const words = {
   ok: 'text-text-1',
   warn: 'text-warn-fg',
   crit: 'text-crit-fg',
+  unknown: 'text-text-2',
 };
 
-const SAID = { warn: 'warning', crit: 'critical' };
+const SAID = { warn: 'warning', crit: 'critical', unknown: 'no signal' };
 
 const isReading = (v) => typeof v === 'number' && Number.isFinite(v);
 

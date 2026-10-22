@@ -1020,7 +1020,9 @@ is in, not the window):
   frame's `border-subtle`: four sit two by two when narrow, and five as 3 + 2
   or 2 + 2 + 1, the last tile spanning the rest of its row. With `onSelect` the
   tiles are toggles, `surface-2` under the pointer, the selected one inside a
-  1.5px accent edge.
+  1.5px accent edge. With a stale status (#480) the shell gives every tile
+  `unknown`, its word and count kept, and "Last known 3 min ago" as `sub`:
+  the steel tint and ring, never a level's colour.
 - **AttentionPanel.** With issues, or in any state but ok and maintenance
   (which never make an issue, spec §6.1), the mock's attention panel: a 14px
   lamp beside the heading, at `headline` (24/30): the word in its colour, then
@@ -1039,7 +1041,12 @@ is in, not the window):
   board (`empty`, nothing set up, #449) is the quiet line with no lamp: its
   heading is `word`, or else the sentence in `counts`, the model's "Nothing
   monitored yet", said once. It never says "All systems normal", since nobody
-  checked anything, nor "No signal", since nothing went silent.
+  checked anything, nor "No signal", since nothing went silent. With a stale
+  status (no signal, #480) the shell draws the panel `unknown`: the steel ring
+  and "No signal", the counts "last known 3 min ago: Critical · 2 critical"
+  (or "…: All systems normal"), why as the subline ("Can't reach JagHelm"),
+  and each issue `unknown`, its word, reason and age kept. Nothing from a
+  stale status is green, amber or red.
 
 ### Two looks
 
@@ -1082,6 +1089,13 @@ draws the Android lamp; nothing there uses it.
   A subsystem tile prints no word, so its lamp keeps the name. The wrench's
   inner viewport is hidden, so it is one image. A test checks that the five
   states draw five different shapes, each with a name.
+- **A lamp is named by what it draws.** Under a stale status (#480) a row, a
+  tile, a node card or a table row keeps its last known word ("Down",
+  "Healthy") beside the steel ring; the lamp is then named "No signal"
+  (`lampName`, `lib/status.js`), never by that word, and is not decorative,
+  and a row's or a tile's name says it before the word ("Services, No
+  signal, Down, 30 / 32 up"). A lamp beside the word "No signal" stays
+  decorative.
 - **Rows.** A row that opens something is a button (`onOpen`) or a link
   (`href`), named "title, word, where" and described by its reason and age; an
   abbreviated word is spelled out ("UNKN" is said as "unknown"). A row with
@@ -1137,7 +1151,7 @@ until Phase 4 (#326).
 
 | Component | Import | Props |
 | --- | --- | --- |
-| `MetricMeter` | `@ui/metric-meter` | `label`; `value` (a number, or null for no reading); `max` (100); `unit` (`%`); `warn`, `crit` (thresholds, in the reading's unit; for a node reading, `readingLines(status.thresholds, reading)`); `band` (the hysteresis, in the same unit: only sets how many decimals print); `state` (the server's, which wins over the thresholds); `valueText` (the printed value; by default the value rounded down, as the model writes it, and the unit) |
+| `MetricMeter` | `@ui/metric-meter` | `label`; `value` (a number, or null for no reading); `max` (100); `unit` (`%`); `warn`, `crit` (thresholds, in the reading's unit; for a node reading, `readingLines(status.thresholds, reading)`); `band` (the hysteresis, in the same unit: only sets how many decimals print); `state` (the server's, which wins over the thresholds; `unknown` with a value is a reading with no current level, drawn as no signal); `valueText` (the printed value; by default the value rounded down, as the model writes it, and the unit) |
 | `meterState` | `@ui/metric-meter` | `(value, { warn, crit })`: `ok`, `warn`, `crit`, or `unknown` without a reading; "at or above" is the status model's comparison, on its grid of hundredths (`atOrOver`) |
 | `Sparkline` | `@ui/sparkline` | `label` (its name; required unless `decorative`); `points` (numbers, or `{ time, value }`); `domain` (`[0, 100]`, or `auto`); `width`, `height` (96 × 24); `area`; `unit`, `formatValue`, `formatTime` (HH:MM); `decorative` |
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`) |
@@ -1172,7 +1186,10 @@ Chart colours board:
   (`shownReading`, #450): rounded down, so 94.6 by a 95 line prints "94%",
   never at a line it is under, and beside a line with a fraction (87.5) to
   that line's decimals ("87.6%"); under 0, "0%". No reading: an empty track and a dash in the
-  no-signal word colour. Ported from the Android app's UsageBar, whose fixed
+  no-signal word colour. A reading with no current level (`state` `unknown`:
+  the status it was judged by is stale, #495) is no signal too, with its
+  number: the fill `unknown-solid` (steel) and the value in `text-2`, never a
+  level's colour and never judged against its lines. Ported from the Android app's UsageBar, whose fixed
   75/90 steps become `warn` and `crit`. A node reading's lines are the ones
   `/api/status` serves, the model's (`readingLines(status.thresholds, reading)`
   in `server/status/readings.js`, #451): a screen keeps none of its own.
@@ -1256,8 +1273,8 @@ Chart colours board:
 
 - **MetricMeter** is a `meter` named by its label, with `aria-valuenow`, its
   min and max, and its value in words, with any threshold it passed: "92%,
-  warning above 90%". Without a reading it is no meter: its label and "No
-  data".
+  warning above 90%". With no current level, "94%, no signal". Without a
+  reading it is no meter: its label and "No data".
 - **Sparkline** is an image named by `label` and described by its latest,
   lowest and highest readings, so nothing lives only in the tooltip, which
   never opens on touch. Tab reaches it, and focus opens the tooltip at the
@@ -1328,7 +1345,7 @@ router, the config and the status poll ([ARCHITECTURE.md](ARCHITECTURE.md),
 | `ShellPage` | `@ui/app-shell` | `title` (the page's h1), `description`, `actions`; a page of the new UI inside the shell |
 | `ShellSection` | `@ui/app-shell` | its `children`: a part of a page in the new UI beside today's views (the Overview's status and strip, #297, #298) |
 | `ShellApps` | `@ui/app-shell` | `label` (names the open app's region), `bar` (the open app's AppBar); holds the embedded apps' frames |
-| `AppHeader` | `@ui/app-header` | `name`, `logoUrl`, `status` (`{ reach, state, word, sentence, href, current }`), `updated` (an element, `UpdatedAgo`), `onOpenPalette`, `shortcut`, `settingsHref`, `settingsCurrent`, `onLogout`, `onNavigate` |
+| `AppHeader` | `@ui/app-header` | `name`, `logoUrl`, `status` (`{ reach, state, word, sentence, href, current, lastKnown }`), `updated` (an element, `UpdatedAgo`), `onOpenPalette`, `shortcut`, `settingsHref`, `settingsCurrent`, `onLogout`, `onNavigate` |
 | `UpdatedAgo` | `@ui/app-header` | `at` (ms since the epoch) |
 | `SideNav` | `@ui/side-nav` | `groups` (`[{ id, label, items }]`), `collapsed`, `onCollapsedChange`, `onNavigate`, `label` |
 | `NavGroups` | `@ui/side-nav` | `groups`, `collapsed`, `onNavigate`: the list alone, as the phone's More sheet uses it |
@@ -1366,7 +1383,10 @@ From the mock's Main and Phone boards:
   `text-1`: no green word (rule 3). An empty board (nothing set up, #449) is
   the model's "Nothing monitored yet" in `text-1`, with no lamp: neither "All
   systems normal" nor "No signal". No signal is the steel ring and "No
-  signal" in `unknown-fg`, with why in `text-2`. Before the first answer a
+  signal" in `unknown-fg`, then, in `text-2`, what was last known when the
+  shell has a status (`lastKnown`: "last known 3 min ago: All systems
+  normal", #480), else why, by `reach` (`down`: "Can't reach JagHelm";
+  `waiting`; `expired`: "JagHelm's status is out of date"). Before the first answer a
   14px skeleton disc and a 160px bar stand in. "Updated 12 s ago" in
   `caption` `text-3`, from 640px. From 1024px the search button is the mock's:
   `surface-1` in a subtle edge, `text-3`, the shortcut in a mono `kbd`, 240px
@@ -1410,7 +1430,12 @@ From the mock's Main and Phone boards:
 - **Names.** A nav entry's name is its label, then its count and whether it is
   loaded ("Alerts, 4 issues", "Grafana, still loaded"); collapsed, the same
   name shows as a tooltip. The header's status is one link, "Critical: 1
-  service down · …", in a polite live region, so a change is announced. The
+  service down · …". Beside it, a polite live region (`sr-only`) announces a
+  change of state, never a tick of an age: the link's words while there is a
+  signal, else "No signal" and why ("No signal: Can't reach JagHelm"),
+  without the "last known 3 min ago" line, whose age moves each second
+  (#480). It is the same element from the placeholder ("Checking status") to
+  the first status, so that is announced as a change. The
   open page's entry and link are `aria-current="page"`. Reload is named
   "Reload <app>"; "Open in new tab" opens with `rel="noopener noreferrer"`,
   so the app gets no handle on JagHelm. More is a button with
@@ -1490,6 +1515,11 @@ From the mock's Main board, its Infrastructure section:
   the meter and the word never disagree.
 - **No old number as current.** A reading the model didn't judge this cycle
   is no reading: a dash, with no trend or uptime beside it.
+- **No stale level as current** (#495). With a stale status (no signal), the
+  shell gives every node and every reading `unknown`: the steel ring, the
+  word and reason in `unknown-fg`, each meter steel with its number from
+  `/api/services` in `text-2`, and the count "3 nodes · No signal · last
+  known 3 min ago". A meter never mixes a stale level with a fresh number.
 - **One reading, one number, one unit.** A meter prints what the model's
   reason prints: the number by `shownReading`, a temperature in °C.
 - **The user's colour is a swatch.** Never a card's edge, tint or a meter.
@@ -1498,7 +1528,8 @@ From the mock's Main board, its Infrastructure section:
 
 - The section is a region named by its heading; the toggle a radio group,
   "Node view"; each card an article named by the node's name, its lamp named
-  by the word when healthy (decorative beside the word otherwise), each meter
+  by the word when healthy (decorative beside the word otherwise; "No
+  signal" beside a stale status's last known word, #480), each meter
   a `meter` ("94%, warning above 90%"), its Sparkline an image named "CPU,
   last hour" that Tab reaches. The table's row header is the node's name; a
   coloured reading adds its state for screen readers (", warning").

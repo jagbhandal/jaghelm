@@ -492,6 +492,14 @@ const NODES_INCIDENT = [
   }),
 ];
 
+// #495: the incident's nodes with a stale status: each node and reading no
+// signal, the words, reasons and numbers kept.
+const NODES_NO_SIGNAL = NODES_INCIDENT.map((n) => ({
+  ...n,
+  state: 'unknown',
+  readings: n.readings.map((r) => ({ ...r, state: r.state == null ? null : 'unknown' })),
+}));
+
 // ---------------------------------------------------------------- controls
 
 const BUTTON_SIZES = ['md', 'sm'];
@@ -1416,6 +1424,27 @@ function AttentionPanelNarrowState() {
   );
 }
 
+// #480: a stale status, as the shell draws it (src/shell/statusFreshness.js):
+// every state no signal, the words and counts kept, marked last known.
+const LAST_KNOWN = 'Last known 3 min ago';
+const stale = (items) => items.map((item) => ({ ...item, state: 'unknown' }));
+
+function SubsystemStripNoSignalState() {
+  return <SubsystemStrip cells={stale(CELLS).map((c) => ({ ...c, sub: LAST_KNOWN }))} />;
+}
+
+function AttentionPanelNoSignalState() {
+  return (
+    <AttentionPanel
+      state="unknown"
+      counts="last known 3 min ago: Critical · 2 critical, 1 warning, 1 no signal"
+      subline="Can't reach JagHelm"
+      action={ALL_ALERTS}
+      issues={stale(ISSUES)}
+    />
+  );
+}
+
 // ---------------------------------------------------------------- data
 
 function MetricMeterState() {
@@ -1794,6 +1823,38 @@ function AppHeaderFirstRunState() {
   );
 }
 
+// #480: no signal, with the last status known (the shell's usual case) and
+// with none (no answer yet, or a 503 before the first check).
+function AppHeaderNoSignalState() {
+  return (
+    <Stack width={912}>
+      <AppHeader
+        status={{
+          reach: 'down',
+          state: 'unknown',
+          sentence: INCIDENT_SENTENCE,
+          lastKnown: 'last known 2 min ago: Critical · 2 critical, 1 warning, 1 no signal',
+        }}
+        updated={<UpdatedAgo at={ANSWERED - 168_000} />}
+        onOpenPalette={noop}
+        onLogout={noop}
+      />
+      <AppHeader
+        name="Homelab"
+        status={{
+          reach: 'waiting',
+          state: 'unknown',
+          sentence: 'All 32 services up · 6 nodes healthy',
+          lastKnown: 'last known 3 min ago: All systems normal',
+        }}
+        updated={<UpdatedAgo at={ANSWERED - 168_000} />}
+        onOpenPalette={noop}
+      />
+      <AppHeader status={{ reach: 'down' }} onOpenPalette={noop} onLogout={noop} />
+    </Stack>
+  );
+}
+
 const icon = (glyph) => createElement(glyph, { 'aria-hidden': 'true' });
 
 /** The sidebar's groups, as the shell builds them (src/shell/nav.js). */
@@ -1942,6 +2003,8 @@ export const RENDERS = Object.freeze({
   'attention-panel-maintenance': AttentionPanelMaintenanceState,
   'attention-panel-first-run': AttentionPanelFirstRunState,
   'attention-panel-narrow': AttentionPanelNarrowState,
+  'subsystem-strip-no-signal': SubsystemStripNoSignalState,
+  'attention-panel-no-signal': AttentionPanelNoSignalState,
 
   'metric-meter': MetricMeterState,
   sparkline: SparklineState,
@@ -1977,9 +2040,16 @@ export const RENDERS = Object.freeze({
       width={328}
     />
   ),
+  'infrastructure-no-signal': () => (
+    <InfrastructureState
+      nodes={NODES_NO_SIGNAL}
+      count="4 nodes · No signal · last known 3 min ago"
+    />
+  ),
 
   'app-header': AppHeaderState,
   'app-header-first-run': AppHeaderFirstRunState,
+  'app-header-no-signal': AppHeaderNoSignalState,
   'side-nav': () => <SideNavState />,
   'side-nav-collapsed': () => <SideNavState collapsed open="alerts" />,
   'side-nav-unload': () => <SideNavState open="arcane" />,

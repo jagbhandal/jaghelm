@@ -21,7 +21,10 @@
  *  - narrower, the phone's: the lamp, "title · word" over the reason, and the
  *    age, 56px tall at least.
  *
- * The lamp is decorative: the word beside it names the status.
+ * The lamp is decorative: the word beside it names the status. Drawn as no
+ * signal beside another word (a stale status's last known "Down", #480), it
+ * is named "No signal" (lampName), and the row's name says it before the
+ * word: "title, No signal, word, where".
  *
  * The `android` look, a stopgap until #326, is the Android app's row,
  * unchanged (lib/status.js): it reads `readout` (passed through verbatim, never
@@ -33,7 +36,7 @@ import { ChevronRight } from 'lucide-react';
 import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
-import { WORDS, spoken, toSeverity, toState } from './lib/status.js';
+import { WORDS, lampName, spoken, toSeverity, toState } from './lib/status.js';
 
 const word = {
   ok: 'text-ok-fg',
@@ -46,9 +49,12 @@ const word = {
 /** A click the page may act on: the main button, no modifier key. */
 const plain = (e) => e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey);
 
-/** The name of a row that opens something: "title, word, where". */
-function nameOf(title, said, where) {
-  return [title, spoken(said), where].filter(Boolean).join(', ');
+/**
+ * The name of a row that opens something: "title, word, where", with the
+ * lamp's name before the word when the word doesn't say it (`lamp`).
+ */
+function nameOf(title, said, where, lamp) {
+  return [title, lamp, spoken(said), where].filter(Boolean).join(', ');
 }
 
 function AndroidIssueRow({ incident, onOpen }) {
@@ -95,6 +101,8 @@ function UiIssueRow({ issue: it, onOpen, href, className, ...props }) {
   const id = useId();
   const s = toState(it.state ?? it.severity);
   const said = it.word || WORDS[s];
+  // The lamp's own name, where the word beside it doesn't say what it draws.
+  const lamp = lampName(s, said) === said ? null : lampName(s, said);
   const opens = Boolean(href || onOpen);
   const Tag = href ? 'a' : onOpen ? 'button' : 'div';
   const described = [it.reason && `${id}-reason`, it.age && `${id}-age`].filter(Boolean);
@@ -109,7 +117,7 @@ function UiIssueRow({ issue: it, onOpen, href, className, ...props }) {
     <Tag
       data-slot="issue-row"
       data-state={s}
-      aria-label={opens ? nameOf(it.title, said, it.where) : undefined}
+      aria-label={opens ? nameOf(it.title, said, it.where, lamp) : undefined}
       aria-describedby={opens && described.length ? described.join(' ') : undefined}
       className={cn(
         '@container block w-full text-left text-text-1',
@@ -120,7 +128,12 @@ function UiIssueRow({ issue: it, onOpen, href, className, ...props }) {
       {...props}
     >
       <span className="grid min-h-14 grid-cols-[12px_minmax(0,1fr)_auto] items-start gap-x-3 px-3.5 py-2.5 @2xl:min-h-12 @2xl:grid-cols-[18px_96px_minmax(140px,1.1fr)_minmax(200px,2fr)_44px_16px] @2xl:items-center @2xl:px-panel @2xl:py-2">
-        <StatusLamp state={s} decorative className="mt-1.25 @2xl:mt-0" />
+        <StatusLamp
+          state={s}
+          label={lamp ?? undefined}
+          decorative={!lamp}
+          className="mt-1.25 @2xl:mt-0"
+        />
         <span className="flex min-w-0 flex-col @2xl:contents">
           <span className="flex min-w-0 items-baseline gap-1 @2xl:contents">
             <span className="flex min-w-0 flex-col @2xl:col-start-3 @2xl:row-start-1">

@@ -19,6 +19,10 @@ import { demoResponse } from '../server/demo.js';
 
 let requests;
 let notFound; // the requests the demo answered 404, as it answers a path it doesn't know
+// How /api/status answers from now on: 'ok' (the demo's), 'down' (a network
+// error, as a server that can't be reached) or 'expired' (a 503, as the server
+// answers once its status is past the cache's TTL).
+let statusAnswer = 'ok';
 
 /**
  * Answer every request as the demo server would, in `scenario`, recording each;
@@ -34,6 +38,13 @@ function routeToDemo(scenario, edit = {}, { hold = [], fail = [] } = {}) {
       const url = new URL(String(input), 'http://demo.test');
       const method = (init.method || 'GET').toUpperCase();
       requests.push(`${method} ${url.pathname}`);
+      if (url.pathname === '/api/status' && statusAnswer === 'down')
+        throw new TypeError('Failed to fetch');
+      if (url.pathname === '/api/status' && statusAnswer === 'expired')
+        return new Response(JSON.stringify({ error: 'Status not yet available' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        });
       if (hold.includes(url.pathname)) return new Promise(() => {});
       if (fail.includes(url.pathname))
         return new Response(JSON.stringify({ error: 'unavailable' }), {
@@ -81,7 +92,7 @@ async function renderDemo(scenario, edit, { path = '/', ready = 'Network Edge', 
 
 // The header's status link (#296): the lamp's state, and what it says.
 const headerStatus = () =>
-  within(within(screen.getByRole('banner')).getByRole('status')).getByRole('link');
+  screen.getByRole('banner').querySelector('[data-slot="header-status"] a[href="/alerts"]');
 
 /** The demo's own /api/status in `scenario`: the model's status of its board (#437). */
 const demoStatus = (scenario) =>
@@ -97,6 +108,7 @@ const gridItem = (title) => legacy(title).closest('.helmgrid-item');
 
 beforeEach(() => {
   localStorage.clear();
+  statusAnswer = 'ok';
   vi.useFakeTimers();
   // jsdom has no layout: give the grid a desktop width so it renders its panels.
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1440);
@@ -109,7 +121,21 @@ afterEach(() => {
   // The app marked the server read-only and may have kept changes: start afresh.
   setReadOnlyServer(false);
   forgetLocalChanges();
+  delete document.hidden;
+  delete document.visibilityState;
 });
+
+/** Hide or show the browser tab, as the Page Visibility API says it. */
+function setHidden(hidden) {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    get: () => (hidden ? 'hidden' : 'visible'),
+  });
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+}
 
 describe('the demo, rendered', () => {
   it('shows populated nodes with their services, side by side at the top', async () => {
@@ -736,5 +762,225 @@ describe("the demo's Infrastructure section", () => {
     expect(within(section()).getAllByRole('article').length).toBeGreaterThan(0);
     await click(within(section()).getByRole('radio', { name: 'Table' }));
     expect(within(section()).getByRole('table', { name: 'Nodes' })).toBeInTheDocument();
+  });
+});
+
+// The one rule for a stale status (#480, #495): when the header's poll has no
+// current status (it can't reach the server, or the server's status is past
+// its TTL), nothing on screen is drawn in a level colour from the last one:
+// the header, the attention panel, the subsystem strip and the
+// Infrastructure section. Each keeps what it last knew and says how old it
+// is, by one clock; the next answer brings every colour back at once.
+describe('No signal: a stale status never looks current', () => {
+  // The header's status: its link, and the live region that announces it.
+  const header = () => screen.getByRole('banner').querySelector('[data-slot="header-status"]');
+  const area = () => document.querySelector('[data-slot="overview-status"]');
+  const attention = () => within(area()).getByRole('region', { name: 'Needs attention' });
+  const strip = () => within(area()).getByRole('region', { name: 'Subsystems' });
+  const section = () => screen.getByRole('region', { name: 'Infrastructure' });
+  const places = () => [header(), area(), section()];
+
+  // A class that paints a level's colour: ok's green, warn's amber, crit's red
+  // (text, fills, tints, gradients, edges, SVG paint), with any variant prefix.
+  const LEVEL =
+    /^(?:[\w-]+:)*(?:text|bg|from|via|to|fill|stroke|border|ring|inset-ring|outline|decoration)-(?:ok|warn|crit)-/;
+  /** Every element in `root` drawn in a level's colour, or marked with a level. */
+  function levels(root) {
+    return [root, ...root.querySelectorAll('*')].flatMap((el) => {
+      const painted = [...el.classList].filter((c) => LEVEL.test(c));
+      const state = ['ok', 'warn', 'crit'].includes(el.dataset.state)
+        ? [`data-state=${el.dataset.state}`]
+        : [];
+      const said = [...painted, ...state];
+      return said.length
+        ? [`${el.dataset.slot ?? el.tagName.toLowerCase()}: ${said.join(' ')}`]
+        : [];
+    });
+  }
+
+  /** How old each place says the status is: the header, the panel, every tile, the section. */
+  function ages() {
+    const age = (text) => /last known (.+?)(?::|$)/i.exec(text)?.[1] ?? null;
+    return {
+      header: age(
+        within(header()).getByRole('link').getAttribute('aria-label') ?? header().textContent
+      ),
+      panel: age(within(attention()).getByRole('heading', { level: 2 }).textContent),
+      tiles: within(strip())
+        .getAllByRole('button')
+        .map((t) => age(t.textContent)),
+      section: age(within(section()).getByText(/^\d+ nodes/).textContent),
+    };
+  }
+
+  async function renderNasIncident() {
+    const board = nasDiskIncident({ now: Date.now() });
+    await renderDemo('incident', {
+      '/api/status': () => board.status,
+      '/api/services': () => board.services,
+    });
+    return board;
+  }
+
+  const nas = () => within(section()).getByRole('article', { name: 'Storage' });
+  // renderDemo lets 3 s pass after the first answer, and the poll asks every
+  // 30 s: the next poll asks 27 s on, when the last answer is 30 s old.
+  const untilTheNextPoll = () => advance(27_000);
+
+  for (const [answer, cause] of [
+    ['down', "Can't reach JagHelm"],
+    ['expired', "JagHelm's status is out of date"],
+  ]) {
+    it(`${answer === 'down' ? 'the server unreachable' : 'the status past its TTL (503)'}: no level colour anywhere, each place saying how old`, async () => {
+      await renderNasIncident();
+      // Fresh: red, amber and green are where the model puts them, so the
+      // probe below can't pass by finding nothing.
+      const fresh = places().flatMap(levels).join('\n');
+      expect(fresh).toMatch(/crit/);
+      expect(fresh).toMatch(/warn/);
+      expect(nas()).toHaveAttribute('data-state', 'warn');
+
+      statusAnswer = answer;
+      await untilTheNextPoll();
+
+      for (const place of places()) expect(levels(place), place.dataset.slot).toEqual([]);
+      // The header: the steel ring, "No signal", what it last knew.
+      expect(within(header()).getByRole('link')).toHaveAccessibleName(
+        'No signal: last known 30 s ago: Critical · 2 critical, 1 warning'
+      );
+      // The panel: the same words, why under them, its rows kept, each a steel ring.
+      expect(attention()).toHaveAttribute('data-state', 'unknown');
+      expect(within(attention()).getByRole('heading', { level: 2 })).toHaveTextContent(
+        'No signal · last known 30 s ago: Critical · 2 critical, 1 warning'
+      );
+      expect(within(attention()).getByText(cause)).toBeInTheDocument();
+      expect(area().querySelector('[data-slot="banner"]')).toBeNull();
+      const rows = within(attention()).getAllByRole('listitem');
+      expect(rows.length).toBe(3);
+      expect(rows[0]).toHaveTextContent('Jellyfin');
+      for (const lamp of attention().querySelectorAll('[data-slot="status-lamp"]'))
+        expect(lamp).toHaveAttribute('data-state', 'unknown');
+      // The strip: every tile no signal, its count kept, marked last known.
+      for (const t of within(strip()).getAllByRole('button')) {
+        expect(t).toHaveAttribute('data-state', 'unknown');
+        expect(t).toHaveTextContent(/\d+ \/ \d+|On mains|On battery|\d/);
+        expect(t).toHaveAccessibleDescription('Last known 30 s ago');
+      }
+      // Infrastructure: the NAS keeps its word, reason and 94 %, all neutral.
+      expect(
+        within(section()).getByText('3 nodes · No signal · last known 30 s ago')
+      ).toBeInTheDocument();
+      expect(nas()).toHaveAttribute('data-state', 'unknown');
+      expect(within(nas()).getByText('Warning')).toHaveClass('text-unknown-fg');
+      expect(nas()).toHaveTextContent('Disk 94 % (warning above 90 %)');
+      const disk = nas().querySelector('[data-reading="disk"]');
+      expect(disk).toHaveAttribute('data-state', 'unknown');
+      expect(disk).toHaveAttribute('aria-valuetext', '94%, no signal');
+      expect(disk.querySelector('[data-slot="meter-fill"]')).toHaveClass('bg-unknown-solid');
+      for (const m of section().querySelectorAll('[data-slot="metric-meter"]'))
+        expect(m).toHaveAttribute('data-state', 'unknown');
+
+      // No lamp is named by a level word: each is named for what it draws, or
+      // is decorative beside the words "No signal".
+      for (const place of places())
+        for (const lamp of place.querySelectorAll('[data-slot="status-lamp"]')) {
+          if (lamp.getAttribute('aria-hidden') === 'true')
+            expect(lamp.parentElement).toHaveTextContent(/No signal/);
+          else expect(lamp).toHaveAccessibleName('No signal');
+        }
+      // A tile or a row says it before its last word.
+      for (const t of within(strip()).getAllByRole('button'))
+        expect(t).toHaveAccessibleName(/^[^,]+, No signal, /);
+      for (const row of rows)
+        expect(within(row).getByRole('link')).toHaveAccessibleName(/^[^,]+, No signal, /);
+    });
+  }
+
+  // #480 review: a hidden tab or a sleeping laptop asks nothing, so the poll's
+  // reach is still 'ok' when the tab is shown again, hours on.
+  it('a tab shown again hours later: no level colour in its first render, before any answer; the answer brings them back', async () => {
+    await renderNasIncident();
+    expect(places().flatMap(levels).join('\n')).toMatch(/crit/);
+    const alerts = () => screen.getAllByRole('link', { name: /^Alerts\b/ });
+    expect(alerts().some((a) => /issues?$/.test(a.getAttribute('aria-label') ?? ''))).toBe(true);
+    setHidden(true);
+    // Three hours, and no timer run, as a laptop asleep.
+    vi.setSystemTime(Date.now() + 3 * 3_600_000);
+    const asked = requests.filter((r) => r === 'GET /api/status').length;
+    setHidden(false);
+    // Asked at once, not yet answered: grey, saying how old.
+    expect(requests.filter((r) => r === 'GET /api/status').length).toBe(asked + 1);
+    for (const place of places()) expect(levels(place), place.dataset.slot).toEqual([]);
+    expect(within(header()).getByRole('link')).toHaveAccessibleName(
+      'No signal: last known 3 h ago: Critical · 2 critical, 1 warning'
+    );
+    expect(within(attention()).getByText("JagHelm's status is out of date")).toBeInTheDocument();
+    expect(nas()).toHaveAttribute('data-state', 'unknown');
+    // No Alerts badge, with an old count in an old colour, either.
+    for (const a of alerts()) expect(a).not.toHaveAccessibleName(/issue/);
+
+    // The answer: every colour back, together.
+    await advance(0);
+    expect(within(header()).getByRole('link')).toHaveAttribute('data-state', 'crit');
+    expect(attention()).toHaveAttribute('data-state', 'crit');
+    expect(nas()).toHaveAttribute('data-state', 'warn');
+    expect(screen.queryByText(/last known/i)).toBeNull();
+  });
+
+  it('the age keeps moving, and every place reads the same one', async () => {
+    await renderNasIncident();
+    statusAnswer = 'down';
+    await untilTheNextPoll();
+    const tiles = within(strip()).getAllByRole('button').length;
+    expect(ages()).toEqual({
+      header: '30 s ago',
+      panel: '30 s ago',
+      tiles: Array(tiles).fill('30 s ago'),
+      section: '30 s ago',
+    });
+    for (const [ms, said] of [
+      [17_000, '47 s ago'],
+      [4 * 60_000, '4 min ago'],
+    ]) {
+      await advance(ms);
+      expect(ages()).toEqual({
+        header: said,
+        panel: said,
+        tiles: Array(tiles).fill(said),
+        section: said,
+      });
+    }
+    // The header's own "Updated" says the same age.
+    expect(within(screen.getByRole('banner')).getByText('Updated 4 min ago')).toBeInTheDocument();
+    // Its live region said No signal once, and none of the ages since.
+    expect(within(header()).getByRole('status')).toHaveTextContent(
+      "No signal: Can't reach JagHelm"
+    );
+  });
+
+  it('back to fresh: every colour returns with the answer that brings it', async () => {
+    await renderNasIncident();
+    const fresh = () => ({
+      header: within(header()).getByRole('link').dataset.state,
+      panel: attention().dataset.state,
+      tiles: within(strip())
+        .getAllByRole('button')
+        .map((t) => t.dataset.state),
+      nas: nas().dataset.state,
+      disk: nas().querySelector('[data-reading="disk"]').dataset.state,
+    });
+    const before = fresh();
+    expect(before).toMatchObject({ header: 'crit', panel: 'crit', nas: 'warn', disk: 'warn' });
+
+    statusAnswer = 'down';
+    await untilTheNextPoll();
+    expect(places().flatMap(levels)).toEqual([]);
+
+    // One poll: the next answer brings every place back together.
+    statusAnswer = 'ok';
+    await advance(30_000);
+    expect(fresh()).toEqual(before);
+    expect(screen.queryByText(/last known/i)).toBeNull();
+    expect(within(section()).getByText('3 nodes · 1 warning')).toBeInTheDocument();
   });
 });

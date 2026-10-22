@@ -29,6 +29,7 @@ import { OverviewStatus } from './shell/OverviewStatus.jsx';
 import { clearOverviewFilter, useOverviewFilter } from './shell/overviewFilter.js';
 import { appsOf, navGroups } from './shell/nav.js';
 import { alertsBadge } from './shell/statusView.js';
+import { useStatusStale } from './shell/statusFreshness.js';
 
 // Settings (13-tab tree), the app frames and the Alerts page aren't needed for
 // the default Overview render — code-split them so they don't weigh down the
@@ -250,7 +251,9 @@ function AppMain({ authRequired, demo, onLogout }) {
     .filter((f) => !f.active)
     .map((f) => String(f.tab.id))
     .join('\n');
-  const badge = useMemo(() => alertsBadge(poll.status, poll.reach), [poll.status, poll.reach]);
+  // No badge while the status is stale (statusFreshness.js): its count and colour would be old.
+  const statusStale = useStatusStale(poll);
+  const badge = useMemo(() => alertsBadge(poll.status, statusStale), [poll.status, statusStale]);
   const groups = useMemo(
     () =>
       navGroups({
@@ -358,6 +361,7 @@ function AppMain({ authRequired, demo, onLogout }) {
               onClearFilter={clearOverviewFilter}
               status={poll.status}
               reach={poll.reach}
+              updated={poll.updated}
             />
           </div>
           <Suspense fallback={lazyFallback}>

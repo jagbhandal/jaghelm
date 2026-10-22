@@ -205,4 +205,18 @@ describe('SubsystemStrip', () => {
     await user.click(pressed);
     expect(onSelect).toHaveBeenLastCalledWith(null);
   });
+
+  // #480: a stale status keeps each tile's word and count, drawn as no signal.
+  it('no signal beside a last known word: the lamp is No signal, and the tile says it first', () => {
+    const cells = [
+      { key: 'services', label: 'Services', state: 'unknown', word: 'Down', value: '30 / 32 up' },
+    ];
+    const { rerender } = render(<SubsystemStrip cells={cells} />);
+    expect(screen.getByRole('img', { name: 'No signal' })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'Down' })).toBeNull();
+    rerender(<SubsystemStrip cells={cells} onSelect={() => {}} />);
+    expect(
+      screen.getByRole('button', { name: 'Services, No signal, Down, 30 / 32 up' })
+    ).toBeInTheDocument();
+  });
 });

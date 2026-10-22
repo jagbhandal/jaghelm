@@ -21,7 +21,12 @@ function respond(body, status = 200) {
   });
 }
 
-const GRAFANA = { id: 'grafana', label: 'Grafana', type: 'iframe', url: 'https://grafana.example/' };
+const GRAFANA = {
+  id: 'grafana',
+  label: 'Grafana',
+  type: 'iframe',
+  url: 'https://grafana.example/',
+};
 const KUMA = { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: 'https://kuma.example/' };
 
 function stubServer({ tabs = [GRAFANA, KUMA], status = INCIDENT, serverTabs } = {}) {
@@ -38,8 +43,7 @@ function stubServer({ tabs = [GRAFANA, KUMA], status = INCIDENT, serverTabs } = 
         if (server.statusPending) return new Promise(() => {});
         return respond(server.status);
       }
-      if (path === '/api/display-config')
-        return respond(serverTabs ? { tabs: serverTabs } : {});
+      if (path === '/api/display-config') return respond(serverTabs ? { tabs: serverTabs } : {});
       if (['/api/todos', '/api/gitea/activity', '/api/cron/status'].includes(path))
         return respond([]);
       return respond({});
@@ -79,16 +83,18 @@ describe('the header', () => {
     expect(window.location.pathname).toBe('/alerts');
   });
 
-  it('turns steel "No signal" when the backend stops answering', async () => {
+  // #480: the last status stays, as last known, never in its colour.
+  it('turns steel "No signal" when the backend stops answering, saying what it last knew', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       await renderApp();
       await within(banner()).findByRole('link', { name: /^Critical/ });
       server.statusDown = true;
       await act(() => vi.advanceTimersByTimeAsync(30_000));
-      expect(
-        within(banner()).getByRole('link', { name: "No signal: Can't reach JagHelm" })
-      ).toBeInTheDocument();
+      const link = within(banner()).getByRole('link', {
+        name: /^No signal: last known 30 s ago: Critical · 2 critical, 1 warning, 1 no signal$/,
+      });
+      expect(link).toHaveAttribute('data-state', 'unknown');
     } finally {
       vi.useRealTimers();
     }
@@ -138,18 +144,21 @@ describe('the sidebar', () => {
       'Apps',
       'Tools',
     ]);
-    expect(within(groups[0]).getAllByRole('link').map((l) => l.getAttribute('href'))).toEqual([
-      '/',
-      '/alerts',
-    ]);
-    expect(within(groups[1]).getAllByRole('link').map((l) => l.getAttribute('href'))).toEqual([
-      '/apps/grafana',
-      '/apps/kuma',
-      '/settings/tabs',
-    ]);
-    expect(within(groups[2]).getAllByRole('link').map((l) => l.getAttribute('href'))).toEqual([
-      '/settings',
-    ]);
+    expect(
+      within(groups[0])
+        .getAllByRole('link')
+        .map((l) => l.getAttribute('href'))
+    ).toEqual(['/', '/alerts']);
+    expect(
+      within(groups[1])
+        .getAllByRole('link')
+        .map((l) => l.getAttribute('href'))
+    ).toEqual(['/apps/grafana', '/apps/kuma', '/settings/tabs']);
+    expect(
+      within(groups[2])
+        .getAllByRole('link')
+        .map((l) => l.getAttribute('href'))
+    ).toEqual(['/settings']);
   });
 
   it('every entry navigates, and marks itself current', async () => {
@@ -165,7 +174,9 @@ describe('the sidebar', () => {
 
     fireEvent.click(entry('Settings'));
     await current('Settings');
-    expect(await screen.findByRole('navigation', { name: 'Settings sections' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('navigation', { name: 'Settings sections' })
+    ).toBeInTheDocument();
 
     fireEvent.click(entry('Add app'));
     expect(await screen.findByRole('heading', { name: /Tabs/ })).toBeInTheDocument();
@@ -287,7 +298,9 @@ describe("the phone's tabs", () => {
         name: 'Settings',
       })
     );
-    expect(await screen.findByRole('navigation', { name: 'Settings sections' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('navigation', { name: 'Settings sections' })
+    ).toBeInTheDocument();
   });
 });
 
@@ -479,31 +492,57 @@ describe('the Overview', () => {
     expect(within(overviewStatus()).queryByRole('region')).toBeNull();
   });
 
-  it('without a signal, says so and keeps what the server last said', async () => {
+  // #480: without a signal the panel keeps what the server last said, in
+  // steel, and says how long ago, as the header does.
+  it('without a signal, says so and keeps what the server last said, as last known', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       await renderApp();
       await screen.findByRole('region', { name: 'Needs attention' });
       server.statusDown = true;
       await act(() => vi.advanceTimersByTimeAsync(30_000));
-      const said = () => overviewStatus().querySelector('[data-slot="banner"]');
-      expect(said()).toHaveAttribute('data-tone', 'unknown');
-      expect(said()).toHaveTextContent(
-        /^No signal.*Can't reach JagHelmThis is what it said 30 s ago\.$/
-      );
-      // A blip doesn't blank the panel.
+      // A blip doesn't blank the panel: its rows stay, each a steel ring.
+      const panel = within(overviewStatus()).getByRole('region', { name: 'Needs attention' });
+      expect(panel).toHaveAttribute('data-state', 'unknown');
+      expect(panel).toHaveTextContent('Immich');
       expect(
-        within(overviewStatus()).getByRole('region', { name: 'Needs attention' })
-      ).toHaveTextContent('Immich');
+        panel.querySelectorAll('[data-slot="status-lamp"][data-state="unknown"]')
+      ).toHaveLength(panel.querySelectorAll('[data-slot="status-lamp"]').length);
+      const heading = within(panel).getByRole('heading', { level: 2 });
+      expect(heading).toHaveTextContent(
+        'No signal · last known 30 s ago: Critical · 2 critical, 1 warning, 1 no signal'
+      );
+      expect(within(panel).getByText("Can't reach JagHelm")).toBeInTheDocument();
+      // The panel says it all: no second "No signal" banner over it.
+      expect(overviewStatus().querySelector('[data-slot="banner"]')).toBeNull();
 
       // The polls keep failing, so nothing new arrives: the age keeps its own
-      // clock, as the header's "Updated" does.
+      // clock, and the header reads the same one.
       await act(() => vi.advanceTimersByTimeAsync(20 * 60_000));
-      expect(said()).toHaveTextContent(/This is what it said 20 min ago\.$/);
+      expect(heading).toHaveTextContent(/^No signal · last known 20 min ago: Critical/);
+      expect(within(banner()).getByRole('link', { name: /^No signal/ })).toHaveAccessibleName(
+        /^No signal: last known 20 min ago: Critical/
+      );
       expect(within(banner()).getByText('Updated 20 min ago')).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('with no status ever, a "No signal" banner says why, and no panel', async () => {
+    stubServer();
+    server.statusDown = true;
+    await renderApp();
+    const said = await waitFor(() => {
+      const el = overviewStatus().querySelector('[data-slot="banner"]');
+      expect(el).not.toBeNull();
+      return el;
+    });
+    expect(said).toHaveAttribute('data-tone', 'unknown');
+    expect(said).toHaveTextContent(/^No signal.*Can't reach JagHelm$/);
+    expect(
+      within(overviewStatus()).queryByRole('region', { name: /Needs attention|Status/ })
+    ).toBeNull();
   });
 
   it('is on the Overview alone', async () => {

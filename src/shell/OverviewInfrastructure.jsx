@@ -10,6 +10,12 @@
  * its anchor on the list of places (entityAnchors.js), so the attention
  * panel's row for a node leads to its card, or its row in the table.
  *
+ * With a stale status (no signal: a failed poll, or a status past its TTL),
+ * it follows the one rule (statusFreshness.js, #480, #495): every node and
+ * meter is drawn as no signal, never in a level from that status, beside the
+ * readings /api/services still gives; the count says "No signal · last known
+ * 3 min ago", by the same clock as the header and the attention panel.
+ *
  * While the first status or the first /api/services is on its way, three
  * placeholder cards; with no node in the model (or all hidden in Settings),
  * nothing. When /api/services stops answering, a Banner says the readings are
@@ -22,6 +28,7 @@ import { Button } from '@ui/button';
 import { ShellSection } from '@ui/app-shell';
 import { InfrastructureSection } from '@ui/infrastructure-section';
 import { usePlaces } from './entityAnchors.js';
+import { useStatusFreshness } from './statusFreshness.js';
 import {
   infrastructureCount,
   infrastructureNodes,
@@ -58,6 +65,7 @@ function staleBanner(health, onRetry) {
 export const OverviewInfrastructure = memo(function OverviewInfrastructure({
   status,
   reach,
+  updated,
   services,
   servicesLoaded,
   history,
@@ -67,9 +75,12 @@ export const OverviewInfrastructure = memo(function OverviewInfrastructure({
   margin = 16,
 }) {
   const [view, setView] = useInfrastructureView();
+  const freshness = useStatusFreshness({ status, reach, updated });
+  const stale = freshness.stale;
+  // The nodes change with the freshness's flag, not with each tick of its age.
   const nodes = useMemo(
-    () => infrastructureNodes({ status, services, history, sections }),
-    [status, services, history, sections]
+    () => infrastructureNodes({ status, services, history, sections, freshness: { stale } }),
+    [status, services, history, sections, stale]
   );
   const loading = status == null ? reach === 'loading' : !servicesLoaded;
   usePlaces(loading ? [] : nodes.map((n) => n.id));
@@ -81,7 +92,7 @@ export const OverviewInfrastructure = memo(function OverviewInfrastructure({
       <ShellSection>
         <InfrastructureSection
           nodes={nodes}
-          count={infrastructureCount(nodes)}
+          count={infrastructureCount(nodes, freshness)}
           view={view}
           onViewChange={setView}
           loading={loading}
