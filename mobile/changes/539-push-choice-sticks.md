@@ -6,5 +6,5 @@
 - A Log out, Forget this device or Turn off push while the phone is offline is
   now finished when the phone is back online: the app asks the server to end
   that session and forget the phone, and deletes the push token, the next time
-  it has a connection, before you sign in again. If the app isn't opened again,
-  this waits until it is.
+  it has a connection or you sign in. If the app isn't opened again, this
+  waits until it is.

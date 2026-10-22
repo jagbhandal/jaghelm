@@ -16,8 +16,9 @@
  *
  * The user's choice gates all of it (#539): after Turn off push on this device
  * (disablePush), initPush does nothing until Turn on (enablePush), restarts
- * included. Permission granted is not push wanted. A sign-out or Turn off push
- * that didn't finish (auth/pendingCleanup.js) is retried before registering.
+ * included. Permission granted is not push wanted. A registration replaces
+ * the push steps a sign-out or Turn off push left unfinished
+ * (auth/pendingCleanup.js), so none of them can undo it.
  */
 import { PushNotifications } from '@capacitor/push-notifications';
 import { App } from '@capacitor/app';
@@ -26,11 +27,14 @@ import { getApiBase } from '@shared/api/baseUrl.js';
 import { getPref, setPref } from '../storage/prefsAdapter.js';
 import { PUSH_PERM_KEY, PUSH_TOKEN_KEY, PUSH_WANTED_KEY } from '../runtimeConfig.js';
 import { registerToken, deleteToken } from './pushPrefsApi.js';
+import { pushWanted } from './pushChoice.js';
 import {
-  dropPushSteps,
+  expectRegistration,
+  isOnline,
+  noRegistration,
   outcomeOf,
   rememberCleanup,
-  runPendingCleanup,
+  supersedePush,
 } from '../auth/pendingCleanup.js';
 import { routeFromData } from './routeFromData.js';
 import { routeFromUrl } from './routeFromUrl.js';
@@ -70,12 +74,15 @@ export async function initPush({ nav }) {
   try {
     // Turned off on this device: no prompt, no listeners, no register (#539).
     if (!(await pushWanted())) return { enabled: false, reason: 'turned-off' };
+    // Push registers next: from here no retry deletes the FCM token (#539).
+    await expectRegistration();
 
     let perm = await PushNotifications.checkPermissions();
     if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') {
       perm = await PushNotifications.requestPermissions();
     }
     if (perm.receive !== 'granted') {
+      noRegistration();
       await setPref(PUSH_PERM_KEY, perm.receive);
       return { enabled: false, permission: perm.receive };
     }
@@ -90,10 +97,9 @@ export async function initPush({ nav }) {
       visibility: 1,
     });
 
-    // An earlier sign-out or Turn off push that didn't finish goes first, then
-    // its push steps give way to this registration (#539).
-    await runPendingCleanup();
-    await dropPushSteps(getApiBase());
+    // What an unfinished sign-out or Turn off push left for push here gives
+    // way to this registration, after a retry under way is over (#539).
+    await supersedePush(getApiBase());
 
     // A sign-in after a sign-out in the same run mounts MobileApp again: drop
     // what an earlier call added, so the listeners don't stack (#531).
@@ -164,13 +170,7 @@ async function onRegistration(token) {
 }
 
 /** The user's push choice on this phone: on unless Turn off push set it off (#539). */
-export async function pushWanted() {
-  try {
-    return (await getPref(PUSH_WANTED_KEY)) !== 'false';
-  } catch {
-    return true;
-  }
-}
+export { pushWanted };
 
 /**
  * Turn off push on this device: the choice goes off first, so no restart
@@ -238,7 +238,8 @@ export async function cachedPushToken() {
  * Answers { deleted, unregistered } for the pending cleanup: deleted is
  * outcomeOf the DELETE ('done' with no token to delete; 'failed' when it met a
  * network error, a 5xx or SIGN_OUT_TIMEOUT_MS), unregistered whether the
- * plugin's unregister() resolved. Never rejects. A build without push touches
+ * plugin's unregister() resolved with the phone online as it asked (it
+ * resolves before Firebase answers, so offline is not done). Never rejects. A build without push touches
  * nothing (the plugin would crash it, see pushConfig.js) and has nothing left.
  */
 export async function unregisterPush(token) {
@@ -264,8 +265,9 @@ export async function unregisterPush(token) {
   const steps = [
     () => removePushListeners(),
     async () => {
+      const online = await isOnline(); // before asking, not once the DELETE is over
       await PushNotifications.unregister();
-      unregistered = true;
+      unregistered = online;
     },
     () => setPref(PUSH_TOKEN_KEY, ''),
   ];

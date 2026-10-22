@@ -48,9 +48,11 @@ vi.mock('./pushConfig.js', () => ({ isPushConfigured }));
 // The pending cleanup (#539) has its own tests (auth/pendingCleanup.test.jsx);
 // here it is spies, with the real outcomeOf.
 const cleanup = vi.hoisted(() => ({
-  runPendingCleanup: vi.fn(),
-  dropPushSteps: vi.fn(),
+  expectRegistration: vi.fn(),
+  noRegistration: vi.fn(),
+  supersedePush: vi.fn(),
   rememberCleanup: vi.fn(),
+  isOnline: vi.fn(),
 }));
 vi.mock('../auth/pendingCleanup.js', async (importOriginal) => {
   const { outcomeOf } = await importOriginal();
@@ -82,8 +84,10 @@ beforeEach(() => {
   plugin.register.mockResolvedValue(undefined);
   plugin.createChannel.mockResolvedValue(undefined);
   isPushConfigured.mockReset().mockReturnValue(true);
-  cleanup.runPendingCleanup.mockReset().mockResolvedValue(undefined);
-  cleanup.dropPushSteps.mockReset().mockResolvedValue(undefined);
+  cleanup.expectRegistration.mockReset().mockResolvedValue(undefined);
+  cleanup.noRegistration.mockReset();
+  cleanup.supersedePush.mockReset().mockResolvedValue(undefined);
+  cleanup.isOnline.mockReset().mockResolvedValue(true);
   // Awaits the teardown it is given, as the real one does.
   cleanup.rememberCleanup.mockReset().mockImplementation(async ({ push }) => {
     await push;
@@ -141,6 +145,9 @@ describe('initPush permission gate', () => {
     expect(plugin.createChannel).not.toHaveBeenCalled();
     expect(plugin.register).not.toHaveBeenCalled();
     expect(setPref).toHaveBeenCalledWith('jaghelm-push-perm', 'denied');
+    // Nothing registers: a pending FCM token deletion may run again (#539).
+    expect(cleanup.noRegistration).toHaveBeenCalledTimes(1);
+    expect(cleanup.supersedePush).not.toHaveBeenCalled();
   });
 
   it('creates the jaghelm-incidents channel and adds 4 plugin listeners + appUrlOpen BEFORE register()', async () => {
@@ -348,12 +355,16 @@ describe('the push choice sticks (#539)', () => {
     });
   });
 
-  it('a pending sign-out is retried, and its push steps dropped, before anything registers', async () => {
-    plugin.checkPermissions.mockResolvedValue({ receive: 'granted' });
+  it('holds the FCM token deletion before the permission prompt, and supersedes the push steps before registering', async () => {
+    plugin.checkPermissions.mockResolvedValue({ receive: 'prompt' });
     setApiBase('http://vm-101:3099/api');
     const order = [];
-    cleanup.runPendingCleanup.mockImplementation(async () => order.push('retry'));
-    cleanup.dropPushSteps.mockImplementation(async (base) => order.push(`drop ${base}`));
+    cleanup.expectRegistration.mockImplementation(async () => order.push('hold'));
+    plugin.requestPermissions.mockImplementation(async () => {
+      order.push('prompt');
+      return { receive: 'granted' };
+    });
+    cleanup.supersedePush.mockImplementation(async (base) => order.push(`supersede ${base}`));
     plugin.addListener.mockImplementation(async (ev) => {
       order.push(`listen ${ev}`);
       return { remove: vi.fn() };
@@ -364,8 +375,14 @@ describe('the push choice sticks (#539)', () => {
     } finally {
       setApiBase('/api');
     }
-    expect(order.slice(0, 3)).toEqual(['retry', 'drop http://vm-101:3099/api', 'listen registration']);
+    expect(order.slice(0, 4)).toEqual([
+      'hold',
+      'prompt',
+      'supersede http://vm-101:3099/api',
+      'listen registration',
+    ]);
     expect(order.at(-1)).toBe('register');
+    expect(cleanup.noRegistration).not.toHaveBeenCalled();
   });
 });
 
@@ -447,6 +464,16 @@ describe('sign-out push teardown (#531)', () => {
   it('a cached-token write that fails never rejects', async () => {
     setPref.mockRejectedValue(new Error('preferences write failed'));
     await expect(unregisterPush('fcmtok')).resolves.toEqual({ deleted: 'done', unregistered: true });
+  });
+
+  it('counts the FCM token deletion done only when the phone was online as it asked', async () => {
+    cleanup.isOnline.mockImplementation(async () => {
+      seen.push('network?');
+      return false;
+    });
+    await expect(unregisterPush('fcmtok')).resolves.toEqual({ deleted: 'done', unregistered: false });
+    // Read before unregister(), not once the DELETE has answered or timed out.
+    expect(seen).toEqual(['DELETE fcmtok', 'removeAllListeners', 'network?', 'unregister', 'setPref jaghelm-push-token=']);
   });
 
   it('a DELETE the server never answers: tears down at once, settles after the sign-out bound', async () => {

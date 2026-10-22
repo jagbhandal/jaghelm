@@ -11,7 +11,7 @@ import { normalizeBaseUrl } from './runtimeConfig.js';
 import { assertSafeBackendUrl } from './netGuard.js';
 import { withTimeout } from './withTimeout.js';
 import { BOOT_TIMEOUT_MS } from './boot.js';
-import { runPendingCleanup } from './auth/pendingCleanup.js';
+import { beforeSignIn, noRegistration } from './auth/pendingCleanup.js';
 
 const CANT_REACH =
   "Can't reach JagHelm. If you're away from home, check that Tailscale is connected on this phone.";
@@ -31,10 +31,17 @@ export async function login({ url, username, password }) {
     return { ok: false, error: 'Enter a valid http(s) backend URL' };
   }
 
-  // A sign-out that didn't finish is finished (or tried) before a new session
-  // starts (#539).
-  await runPendingCleanup();
+  // A sign-out that didn't finish is tried first: the sign-in waits for it on
+  // this same server (at most 5 s), not on another one (#539).
+  await beforeSignIn(base);
+  const result = await signIn(base, username, password);
+  // Nothing registers after a failed sign-in, so a pending FCM token deletion
+  // may run again.
+  if (!result.ok) noRegistration();
+  return result;
+}
 
+async function signIn(base, username, password) {
   setApiBase(base);
 
   // One deadline (the startup check's) covers the request AND the body read, so

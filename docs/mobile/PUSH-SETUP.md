@@ -6,7 +6,7 @@ show up as different messages in the app, so the table below tells you which hal
 
 | App → Notifications screen says | Missing half | Fix |
 |---|---|---|
-| *"Push not registered on this device…"* | **Client** — the APK has no Firebase config baked in | [Part 1](#part-1--client-ship-the-apk-with-firebase-config) |
+| *"Push not registered on this device…"* | **Client** — the APK has no Firebase config baked in, **or** notifications for JagHelm are off in Android settings (the permission was denied) | [Part 1](#part-1--client-ship-the-apk-with-firebase-config); or allow notifications for JagHelm in Android settings and reopen the app |
 | *"Push notifications are unavailable — the server has no notification credentials configured."* | **Server** — prod has no FCM service-account | [Part 2](#part-2--server-wire-the-fcm-service-account-on-prod) |
 | *"Push is turned off on this device."* | Neither: you turned it off on this phone (*Turn off push on this device*) | Tap *Turn on push on this device* on the same screen |
 

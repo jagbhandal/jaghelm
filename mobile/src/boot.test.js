@@ -49,6 +49,21 @@ describe('bootMobile', () => {
     });
     await expect(bootMobile()).resolves.toEqual({ hasUrl: false, hasToken: false, baseUrl: '' });
     expect(startPendingCleanup).toHaveBeenCalledTimes(1);
+    expect(startPendingCleanup).toHaveBeenCalledWith({ resumed: false });
+  });
+
+  it.each([
+    ['a session that revalidates', () => apiFetch.mockResolvedValue(checkRes(true)), true],
+    ['a server that can\'t be reached (token kept)', () => apiFetch.mockRejectedValue(new Error('offline')), true],
+    ['a session the server ended', () => apiFetch.mockResolvedValue(checkRes(false)), false],
+  ])('tells the cleanup whether a session resumes (push registers next): %s', async (_, check, resumed) => {
+    getItem.mockResolvedValue('http://vm-101:3099/api');
+    getPref.mockResolvedValue('true');
+    getAuthToken.mockReturnValue('tok');
+    check();
+    await bootMobile();
+    expect(startPendingCleanup).toHaveBeenCalledTimes(1);
+    expect(startPendingCleanup).toHaveBeenCalledWith({ resumed });
   });
 
   it('wires the keystore adapter and reports not-configured when no base URL is stored', async () => {

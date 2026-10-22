@@ -914,8 +914,8 @@ Change server, which shows only when the server can't be reached. Just before
 it, those two send `DELETE /api/push/register`, so the phone stops getting
 pushes, and delete the phone's FCM token (#531, see docs/mobile/DESIGN.md). What
 the phone can't finish (offline, a hang) it keeps with the session it ended
-and sends again to that server at the next app start or connection, before
-any sign-in (#539): `revokeSession()` answers whether it reached the server,
+and sends again to that server at the next app start, connection or sign-in
+(#539): `revokeSession()` answers whether it reached the server,
 and takes the server's address for that retry. A server
 older than the route answers 404 (or 401), which changes nothing: the client
 signs out locally as before.

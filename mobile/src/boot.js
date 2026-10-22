@@ -2,11 +2,11 @@
  * Mobile boot sequence (must run before any data hook fires):
  *   setStorageAdapter(keystoreAdapter)  → swap secrets to the Keystore
  *   installNativeHttp()                 → default transport (native HTTP)
- *   startPendingCleanup()               → retry an unfinished sign-out (#539)
  *   read stored base                    → setApiBase() if configured
  *   honor keep-signed-in                → session-only logins resume no token
  *   seed + revalidate the token         → a 24h-expired / restart-killed token
  *                                         must not boot us straight into a 401
+ *   startPendingCleanup()               → retry an unfinished sign-out (#539)
  * The revalidation is bounded by BOOT_TIMEOUT_MS so a silently unreachable
  * server cannot hang boot.
  * Returns { hasUrl, hasToken, baseUrl, unreachable? } so the shell can route
@@ -32,10 +32,15 @@ export const BOOT_TIMEOUT_MS = 10000;
 export async function bootMobile() {
   setStorageAdapter(keystoreAdapter);
   installNativeHttp();
+  const result = await resume();
   // A sign-out or Turn off push that didn't finish: tried now and on every new
-  // connection (#539). Not awaited: a sign-in or a push registration waits for it.
-  startPendingCleanup();
+  // connection (#539), not awaited. A session that resumes registers push
+  // next, so the retry leaves the FCM token deletion to that registration.
+  startPendingCleanup({ resumed: result.hasToken });
+  return result;
+}
 
+async function resume() {
   const base = await secureStore.getItem(BASE_URL_KEY);
   if (!base) return { hasUrl: false, hasToken: false, baseUrl: '' };
   // Re-validate the stored URL: a poisoned/legacy value (e.g. cleartext http to a
