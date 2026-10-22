@@ -7,8 +7,8 @@
  * Which presets put a credential in the URL is not listed by hand: every preset's
  * connection test and poll run once against a stubbed fetch, and a path counts
  * if a credential value shows up in a URL it requested. Each path is checked on
- * its own, since a preset can put the credential in one and not the other (a
- * {token} in the endpoint, but not in testEndpoint). The session presets are the
+ * its own; since #427 the test makes the poll's requests, so the two agree.
+ * The session presets are the
  * ones with auth: 'session'. A preset added later is covered without editing
  * this file. (#204's header policy is tested in redirectAuthHeaders.test.js.)
  */
@@ -221,9 +221,10 @@ for (const p of sessionPresets) {
       const o = await twoOrigins(status);
       try {
         const tested = await testIntegration(p.type, { url: o.fromUrl, ...CREDS });
-        // The test reports a failed login as the refresh does (#427): "All
-        // session auth methods failed", or a preset's oauth2Instructions.
+        // The test reports a failed login as the refresh does (#427), with
+        // the last login's reason.
         assert.equal(tested.ok, false);
+        assert.match(tested.error, /refusing to re-send a request body to another origin/);
         assert.ok(o.state.from >= 1, 'the login was not sent');
         assert.equal(o.state.to, 0, 'the other origin received the login');
       } finally { o.close(); }

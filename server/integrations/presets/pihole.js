@@ -5,7 +5,6 @@ export default {
   auth: 'header',
   authHeader: 'X-FTL-SID',
   endpoint: '/api/stats/summary',
-  testEndpoint: '/api/auth',
   fields: [
     { key: 'queries', label: 'Queries', path: 'queries.total', format: 'number' },
     { key: 'blocked', label: 'Blocked', path: 'queries.blocked', format: 'number' },

@@ -5,7 +5,6 @@ export default {
   auth: 'query',
   queryParam: 'apikey',
   endpoint: '/api/v2?cmd=get_activity',
-  testEndpoint: '/api/v2?cmd=arnold',
   fields: [
     { key: 'streams', label: 'Streams', path: 'response.data.stream_count', format: 'number' },
     { key: 'transcode', label: 'Transcode', path: 'response.data.stream_count_transcode', format: 'number' },

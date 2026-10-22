@@ -46,13 +46,12 @@ test('nextcloud takes a token only — no username/password creds', () => {
   assert.ok(!nextcloud.envKeys.password, 'must not ask for a password');
 });
 
-test('nextcloud tests against the token-gated endpoint, not capabilities', () => {
+test('nextcloud polls the token-gated endpoint, not capabilities', () => {
   // /ocs/v2.php/cloud/capabilities does NOT honor NC-Token (needs a logged-in
-  // user), so testing there would reject a valid token. The connection test
-  // must hit the same serverinfo endpoint the poller uses.
-  assert.equal(nextcloud.testEndpoint, nextcloud.endpoint);
-  assert.ok(nextcloud.testEndpoint.includes('/apps/serverinfo/api/v1/info'));
-  assert.ok(!nextcloud.testEndpoint.includes('capabilities'));
+  // user), so a valid token would be rejected there. The connection test
+  // requests what the poll requests (#427).
+  assert.ok(nextcloud.endpoint.includes('/apps/serverinfo/api/v1/info'));
+  assert.ok(!nextcloud.endpoint.includes('capabilities'));
 });
 
 test('nextcloud fields resolve against a realistic serverinfo body', () => {

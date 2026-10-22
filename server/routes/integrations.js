@@ -56,6 +56,7 @@ import {
   keyedSecretName,
 } from '../integrations/lib/config.js';
 import { formUrlCredentialError } from '../integrations/lib/urlCredential.js';
+import { looksLikeSecretRef } from '../integrations/lib/extract.js';
 import {
   dropUnusedIntegrationSecrets,
   unusedIntegrationSecrets,
@@ -128,13 +129,17 @@ router.get(
 //     went back to the browser in the config;
 //   - username and target, when sent: an empty one is removed;
 //   - the preset's URL params, when sent (allow-listed): an empty one is removed;
-//   - password and token, only when typed (text only): blank keeps what is
-//     stored, a plaintext value or a `$secret:` under any name;
+//   - password and token, only when typed (text only, never a `$secret:`
+//     reference): blank keeps what is stored, a plaintext value or a
+//     `$secret:` under any name;
 //   - fields, when sent;
 //   - instance, which is part of the key: a changed one moves the entry, and
 //     its keyed secrets with it, to its new key; an unchanged one keeps the
 //     entry where it is, even under a key Settings would not derive (`my_npm`,
 //     `npm_Two`).
+// No value the form sends may name a stored secret: one that is a `$secret:`
+// reference is refused (400, naming the field) unless it is the value already
+// stored in that field of this entry (see mergeForm).
 // `enabled` is set by a save that creates the entry, or one without an
 // `editingKey` (an older web app's toggle sent those). An edit leaves it to the
 // toggle route, so a form left open can't undo a toggle made since. An edit
@@ -237,6 +242,11 @@ function formRefusal(body) {
       return { status: 400, error: 'password and token must be text' };
     }
   }
+  // A typed password or token is the credential itself, never a `$secret:`
+  // reference: the form never sends a stored one back (blank keeps it).
+  for (const [field, value] of [['password', password], ['token', token]]) {
+    if (looksLikeSecretRef(value)) return secretRefRefusal(field, field);
+  }
   const preset = getPreset(type);
   if (preset?.unsupported) {
     return { status: 400, error: `Integration unavailable: ${preset.unsupported}` };
@@ -244,6 +254,32 @@ function formRefusal(body) {
   const inUrl = formUrlCredentialError(cleanUrl, preset);
   if (inUrl) return { status: 400, error: inUrl, field: 'url' };
   return null;
+}
+
+/**
+ * The refusal of a form value that is a `$secret:` reference: it names the
+ * field, never the value.
+ */
+function secretRefRefusal(field, label) {
+  return {
+    status: 400,
+    error: `The ${label} can't be a stored-secret reference ($secret:…); type the value itself`,
+    field,
+  };
+}
+
+/** True for a value that is, or holds at any depth, a `$secret:` reference. */
+function holdsSecretRef(value) {
+  if (looksLikeSecretRef(value)) return true;
+  if (value && typeof value === 'object') return Object.values(value).some(holdsSecretRef);
+  return false;
+}
+
+/** A form field's name in a refusal: the preset's label for a URL param. */
+function fieldLabel(type, field) {
+  const param = (getPreset(type)?.urlParams || []).find((p) => p.key === field);
+  if (param) return param.label || field;
+  return { url: 'URL', target: 'target container' }[field] || field;
 }
 
 /** A refusal's body: its error, and the field it belongs beside when it has one. */
@@ -254,7 +290,8 @@ const refusalBody = ({ error, field }) => (field ? { error, field } : { error })
  * it and the connection test tests it (#427): the merge rules above, in one
  * place. Changes nothing: `config` and the secret store are only read.
  *
- * Returns `{ refused }` (a 409, as formRefusal's) or the merge:
+ * Returns `{ refused }` (a 409, or a 400 for a value that names a stored
+ * secret, as formRefusal's) or the merge:
  *   - storageKey, the key the entry is stored under; baseKey and base, the
  *     stored entry it merges into (null for a new one); moving, when the
  *     instance name moves it;
@@ -319,6 +356,26 @@ function mergeForm(config, body) {
     return {
       refused: { status: 409, error: takenKeyError(storageKey, holder, type), field: 'instance' },
     };
+  }
+
+  // The form can never name a stored secret. The resolver reads a `$secret:`
+  // reference in the username (and the password and token, refused above),
+  // so a username `$secret:<another integration's secret>` sent that secret
+  // to the form's URL, on a test at once and on a save at the next refresh.
+  // Every value the form puts into the entry is checked, not only those the
+  // resolver reads today: one that is or holds a reference is refused unless
+  // it is the value already stored in the same field of this entry, so an
+  // untouched field (a reference written by hand) still round-trips.
+  const formValues = { url };
+  for (const field of ['target', 'username']) {
+    if (Object.hasOwn(body, field)) formValues[field] = body[field];
+  }
+  Object.assign(formValues, allowedParams(type, body.params));
+  if (customFields) formValues.fields = customFields;
+  for (const [field, value] of Object.entries(formValues)) {
+    if (holdsSecretRef(value) && !isDeepStrictEqual(value, base?.[field])) {
+      return { refused: secretRefRefusal(field, fieldLabel(type, field)) };
+    }
   }
 
   const secretOps = [];

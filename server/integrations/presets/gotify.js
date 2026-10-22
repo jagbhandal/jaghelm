@@ -5,7 +5,6 @@ export default {
   auth: 'header',
   authHeader: 'X-Gotify-Key',
   endpoint: '/application',
-  testEndpoint: '/version',
   fields: [
     { key: 'apps', label: 'Apps', path: '_length', format: 'number' },
   ],

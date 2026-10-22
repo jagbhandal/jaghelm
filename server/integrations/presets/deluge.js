@@ -20,7 +20,6 @@ export default {
     tokenPath: null,
   },
   endpoint: '/json',
-  testEndpoint: '/json',
   fields: [
     { key: 'torrents', label: 'Torrents', path: 'result.stats.num_torrents', format: 'number' },
     { key: 'dl_speed', label: 'DL Speed', path: 'result.stats.download_rate', format: 'bytes' },

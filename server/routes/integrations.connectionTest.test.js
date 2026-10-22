@@ -330,6 +330,8 @@ test('a session login is made afresh for a test, and its token is not kept', asy
   // passed on the cached token.
   const wrong = await testForm({ ...form, password: 'npm-wrong' }); // pragma: allowlist secret
   assert.equal(wrong.body.ok, false);
+  // It says why: the last login's reason.
+  assert.equal(wrong.body.error, 'All session auth methods failed: Login returned HTTP 401');
   assert.deepEqual(logins, [accepted, 'npm-wrong']);
 
   // A right one is not kept: the refresh still reads on the token it cached.
@@ -370,4 +372,22 @@ test('a custom integration with no endpoint says so, and requests nothing', asyn
   assert.equal(result.body.ok, false);
   assert.match(result.body.error, /no endpoint to test.*services\.yaml/);
   assert.deepEqual(made, []);
+});
+
+test('a reply that is not JSON says so, and never quotes it, in the test and on the card', async () => {
+  fixtureFile();
+  const BODY = `<!DOCTYPE html><html>internal-page-${Math.random().toString(36).slice(2)}`;
+  upstreams['html.example.test'] = async () =>
+    new Response(BODY, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+  const form = { ...STATUSPAGE.saveUnchanged, url: 'http://html.example.test' };
+  const said = 'The reply is not JSON (text/html)';
+
+  const tested = await testForm(form);
+  assert.deepEqual(tested.body, { ok: false, error: said });
+
+  assert.equal((await save(form)).status, 200);
+  loadConfig();
+  const card = (await refresh()).statuspage._error;
+  assert.equal(card, said);
+  assert.ok(!JSON.stringify([tested.body, card]).includes('internal-page'));
 });

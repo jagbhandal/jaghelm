@@ -11,7 +11,6 @@ export default {
     tokenPrefix: 'Bearer ',
   },
   endpoint: '/api/nginx/proxy-hosts',
-  testEndpoint: '/api/tokens',
   fields: [],
   structuredTransform: (raw) => {
     const hosts = Array.isArray(raw) ? raw : [];

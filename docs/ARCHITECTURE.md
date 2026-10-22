@@ -757,9 +757,9 @@ Key properties:
   token again in Settings for a token, and to check the integration's entry
   in `services.yaml` for anything else, since a custom integration's form has
   no password or username. A session preset fills in its endpoint before it
-  logs in, so no login is sent for a read that can't be made. The connection
-  test resolves a typed token as its save would store it, so a `$secret:`
-  typed as a query-auth key is refused the same way, and sends nothing.
+  logs in, so no login is sent for a read that can't be made. A `$secret:`
+  typed as a password or token is refused by the save and the connection
+  test (400, see 6), so it never reaches a URL either.
 - **An integration's URL carries no credential** (#422). A user name or
   password before the host (`https://user:pass@host`) or a key in the query
   (`SECRET_PARAMS` in `util/redact.js`: `key`, `apikey`, `token` and the
@@ -795,9 +795,14 @@ Key properties:
   keeps no token, so a cached token can't pass a wrong password and an
   unsaved password's token can't serve the refresh. The answer is
   `{ ok: true }` or `{ ok: false, error }` with the error the refresh would
-  show, never the fields read. A preset's `testEndpoint` is no longer
-  requested. A custom integration with no endpoint (the form has no field
-  for one) is answered without a request.
+  show, never the fields read: a session login's error carries the last
+  login's reason (redacted), and a reply that is not JSON says "The reply is
+  not JSON (text/html)", never a word of the body (`readJson` in
+  `lib/http.js`, for every read and login). Presets have no `testEndpoint`
+  any more. A custom integration with no endpoint (the form has no field
+  for one) is answered without a request. Since the test needs no save, a
+  URL changed in the form gets the stored credential at once, as a save's
+  next refresh would (an origin rule for both is #556).
 - **Request bodies stay on their origin.** A `307` or `308` keeps the method
   and body, so a session login is re-sent, but only to the same origin or
   through the same-host upgrade; a request with a body redirected to another
@@ -2575,6 +2580,14 @@ All state is files under the data dir (no DB):
     `fields`, or anything written by hand), and an existing entry's `preset`
     is never changed. A save that changes nothing writes nothing, so the file
     stays byte-for-byte as it was; it still asks for a retry (4.3).
+    The form never names a stored secret: a value it sends that is, or
+    holds, a `$secret:` reference (the username, which the resolver reads,
+    and the URL, target, URL params and fields) is a 400 naming the field
+    unless it is the value already stored in that field of this entry, so
+    an untouched reference written by hand round-trips; a typed password or
+    token never is one. The connection test refuses the same. Before, a
+    username `$secret:<another integration's secret>` with the URL pointed
+    elsewhere sent that secret there.
   - **`enabled` belongs to the toggle once an entry exists.** A save that
     creates an entry sets it, and so does one without an `editingKey` (the
     toggle of web apps before #402 went through the save). An edit

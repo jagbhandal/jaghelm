@@ -4,7 +4,6 @@ export default {
   description: 'Lightweight Bitwarden-compatible password manager',
   auth: 'none',
   endpoint: '/alive',
-  testEndpoint: '/alive',
   fields: [],
   structuredTransform: (raw) => {
     const fields = {

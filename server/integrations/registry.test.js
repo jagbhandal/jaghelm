@@ -34,7 +34,6 @@ function makeValidPreset(overrides = {}) {
     auth: 'header',
     authHeader: 'X-Api-Key',
     endpoint: '/api/v1/queue',
-    testEndpoint: '/api/v1/status',
     fields: [
       { key: 'count', label: 'Count', path: 'total', format: 'number' },
     ],

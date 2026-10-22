@@ -12,7 +12,7 @@
 
 import { getPresetFull } from './registry.js';
 
-import { safeFetch, isAuthRejection } from './lib/http.js';
+import { safeFetch, isAuthRejection, readJson } from './lib/http.js';
 import { extractValue, resolveEndpoint, looksLikeSecretRef, UnresolvedSecretError } from './lib/extract.js';
 import { formatValue, computeField } from './lib/format.js';
 import { buildAuthHeaders } from './lib/auth.js';
@@ -128,7 +128,7 @@ export async function fetchIntegration(type, yamlConfig, resolved, { sessionCach
         if (isAuthRejection(res) && carriesCredentials(config, urlCarriesCredential)) err.authRejected = true;
         throw err;
       }
-      rawData = await res.json();
+      rawData = await readJson(res);
     }
 
     // extraEndpoints: array, or function(rawData) returning one so endpoints can
@@ -147,7 +147,7 @@ export async function fetchIntegration(type, yamlConfig, resolved, { sessionCach
           if (!epRes.ok) {
             throw new Error(`HTTP ${epRes.status} ${epRes.statusText || ''}`.trim());
           }
-          return { key: ep.key, data: await epRes.json() };
+          return { key: ep.key, data: await readJson(epRes) };
         })
       );
       // Only attach _extra when rawData is a mutable object. A primary endpoint

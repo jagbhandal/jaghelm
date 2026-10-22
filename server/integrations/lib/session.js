@@ -1,6 +1,7 @@
-import { safeFetch, isAuthRejection } from './http.js';
+import { safeFetch, isAuthRejection, readJson } from './http.js';
 import { extractValue, resolveEndpoint } from './extract.js';
 import { createLogger } from '../../util/logger.js';
+import { redactSecrets } from '../../util/redact.js';
 
 const log = createLogger('integrations');
 
@@ -108,6 +109,9 @@ export async function fetchWithSession(config, { cache = true } = {}) {
   // refresh loop does not repeat until the config changes; a data read refused
   // after a good login, or a login that failed another way, is retried.
   let rejectedLogins = 0;
+  // Why the last method failed, for the error (redacted): a test, and the
+  // card, say why the login failed, not only that it did.
+  let lastFailure = '';
 
   for (const { key, session: sess } of sessionConfigs) {
     const cacheKey = `${baseUrl}:${sess.loginEndpoint}`;
@@ -134,16 +138,18 @@ export async function fetchWithSession(config, { cache = true } = {}) {
     } catch (err) {
       if (err.authRejected) rejectedLogins += 1;
       log.warn({ key, error: err.message }, 'session auth failed');
+      lastFailure = redactSecrets(err.message || String(err));
       continue;
     }
   }
 
   // All auth methods failed
   const instructions = config.oauth2Instructions || '';
+  const reason = lastFailure ? `: ${lastFailure}` : '';
   const err = new Error(
     instructions
-      ? `Authentication failed. ${instructions}`
-      : 'All session auth methods failed'
+      ? `Authentication failed${reason}. ${instructions}`
+      : `All session auth methods failed${reason}`
   );
   if (rejectedLogins === sessionConfigs.length) err.authRejected = true;
   throw err;
@@ -165,13 +171,8 @@ async function doSessionLogin(config, session, baseUrl, skipTls) {
     throw err;
   }
 
-  let loginData;
-  try {
-    const text = await loginRes.text();
-    loginData = JSON.parse(text);
-  } catch (parseErr) {
-    throw new Error(`Login response is not valid JSON: ${parseErr.message}`);
-  }
+  // Not JSON: says so, never quoting the reply (readJson).
+  const loginData = await readJson(loginRes);
 
   const token = extractValue(loginData, session.tokenPath);
   if (!token) throw new Error('Login succeeded but no token in response');
@@ -202,5 +203,5 @@ async function fetchWithToken(tokenInfo, endpoint, config, baseUrl, skipTls) {
   const res = await safeFetch(`${baseUrl}${path}`, { headers }, skipTls,
     { credentialInUrl, shownUrl: `${baseUrl}${shownPath}` });
   if (!res.ok) throw new Error(`Data fetch returned HTTP ${res.status}`);
-  return res.json();
+  return readJson(res);
 }
