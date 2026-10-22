@@ -133,6 +133,12 @@ test('a JSON error with a position keeps its words, line and column', () => {
     line: 2,
     column: 28,
   });
+  // V8 says "after JSON" for text past the end of the value.
+  assert.deepEqual(jsonParseError(jsonError(`{"a": 1}\n${SECRET}`)), {
+    reason: 'Unexpected non-whitespace character',
+    line: 2,
+    column: 1,
+  });
   assert.deepEqual(jsonParseError(jsonError('')), {
     reason: 'Unexpected end of JSON input',
     line: null,

@@ -109,3 +109,20 @@ test('display-config.json that does not parse: logged with its reason, not its t
   assert.ok(!r.text.includes(QUOTED));
   assertLogged(lines, 'display-config', 'Failed to read', UNEXPECTED);
 });
+
+test('display-config.json that does not parse: the refresh loop logs its reason, not its text', async () => {
+  const { readDisplayConfig } = await import('./refresh.js');
+  // A new file, so the loop reads it again rather than its cached answer.
+  writeFileSync(join(DIR, 'display-config.json'), `{\n  "apiKey": ${SECRET}-other\n}\n`);
+  let read;
+  const lines = await captureLogs(() => {
+    read = readDisplayConfig();
+  });
+  assert.equal(read, null);
+  assertLogged(
+    lines,
+    'refresh',
+    'display-config.json is unreadable; using the default refresh interval and push thresholds',
+    UNEXPECTED
+  );
+});
