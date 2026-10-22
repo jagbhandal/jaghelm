@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import {
-  BUDGET,
+  BUDGETS,
   FACES,
   LEGACY_FACES,
   LOGO,
@@ -40,6 +40,7 @@ const ASSETS = [
   'manrope-latin-ext-wght-EEEEEEEE.woff2',
   'manrope-latin-wght-FFFFFFFF.woff2',
   'jetbrains-mono-latin-wght-GGGGGGGG.woff2',
+  'dm-sans-latin-wght-bold-ZZZZZZZZ.woff2',
   'dm-sans-latin-wght-HHHHHHHH.woff2',
   'dm-sans-latin-300-italic-IIIIIIII.woff2',
   'outfit-latin-wght-JJJJJJJJ.woff2',
@@ -77,7 +78,7 @@ test("index.html's pulls: scripts, module preloads, stylesheets and preloads, ea
   ]);
 });
 
-test('a source file is found among the built assets by its name, never a longer one', () => {
+test('a source file is found among the built assets by its whole name, never a longer one', () => {
   assert.equal(
     builtAsset(ASSETS, 'manrope-latin-wght.woff2'),
     '/assets/manrope-latin-wght-FFFFFFFF.woff2'
@@ -87,6 +88,12 @@ test('a source file is found among the built assets by its name, never a longer 
     '/assets/dm-sans-latin-wght-HHHHHHHH.woff2'
   );
   assert.throws(() => builtAsset(ASSETS, 'inter-latin-wght.woff2'), /not in the build/);
+  // A longer name that starts the same is another file.
+  assert.throws(
+    () => builtAsset(['dm-sans-latin-wght-bold-ZZZZZZZZ.woff2'], 'dm-sans-latin-wght.woff2'),
+    /not in the build/
+  );
+  assert.throws(() => builtAsset(['x-AAAAAAAA.js'], 'x.woff2'), /not in the build/);
 });
 
 test('text is counted gzipped, as the server sends it; fonts and images as they are', () => {
@@ -120,14 +127,17 @@ test("the first load: the page, its pulls, the first screen's faces and the logo
   for (const url of ['layer-', 'latin-ext', 'italic']) {
     assert.ok(!report.items.some((i) => i.url.includes(url)), url);
   }
-  assert.equal(
-    report.total,
-    report.items.reduce((sum, i) => sum + i.bytes, 0)
-  );
+  // Two totals: the fonts, and everything else.
+  const sum = (keep) => report.items.filter(keep).reduce((total, i) => total + i.bytes, 0);
+  assert.deepEqual(report.code, {
+    total: sum((i) => i.kind !== 'font'),
+    budget: BUDGETS.code,
+  });
+  assert.deepEqual(report.fonts, { total: 5000, budget: BUDGETS.fonts });
   assert.equal(report.items.find((i) => i.kind === 'font').bytes, 1000);
   assert.ok(report.items.find((i) => i.kind === 'script').bytes < 100, 'gzipped');
-  assert.equal(report.budget, BUDGET);
-  assert.equal(BUDGET, 200_000);
+  // Spec §4 (Jag, 2026-10-22): 200 KB for the code, 60 KB for the faces.
+  assert.deepEqual(BUDGETS, { code: 200_000, fonts: 60_000 });
 });
 
 test("the faces counted are the default sans's and the mono's latin files, and today's board's", () => {
@@ -142,7 +152,7 @@ test("the faces counted are the default sans's and the mono's latin files, and t
   assert.ok(existsSync(path.join(ROOT, 'public', LOGO.slice(1))));
 });
 
-test('the table: one line a file without its hash, a line a kind, the total against the budget', () => {
+test('the table: one line a file without its hash, a line a kind, each total against its budget', () => {
   const report = {
     items: [
       { kind: 'page', url: '/index.html', bytes: 1234 },
@@ -150,8 +160,8 @@ test('the table: one line a file without its hash, a line a kind, the total agai
       { kind: 'script', url: '/assets/vendor-react-B-b_BBBB.js', bytes: 59700 },
       { kind: 'font', url: '/assets/manrope-latin-wght-FFFFFFFF.woff2', bytes: 24836 },
     ],
-    total: 146770,
-    budget: 200_000,
+    code: { total: 121934, budget: 200_000 },
+    fonts: { total: 24836, budget: 60_000 },
   };
   assert.equal(
     formatReport(report),
@@ -166,12 +176,14 @@ test('the table: one line a file without its hash, a line a kind, the total agai
       '  pages                                      1.2 kB',
       '  scripts                                  120.7 kB',
       '  fonts                                     24.8 kB',
-      '  total                                    146.8 kB',
-      '  under the 200.0 kB budget by 53.2 kB',
+      '',
+      '  code: page, scripts, styles, images      121.9 kB  under its 200.0 kB budget by 78.1 kB',
+      '  fonts                                     24.8 kB  under its 60.0 kB budget by 35.2 kB',
     ].join('\n')
   );
+  // Over is said, not failed: the fonts are over until today's board goes (#306).
   assert.match(
-    formatReport({ ...report, total: 212345 }),
-    /\n {2}OVER the 200\.0 kB budget by 12\.3 kB$/
+    formatReport({ ...report, fonts: { total: 125500, budget: 60_000 } }),
+    /\n {2}fonts +125\.5 kB {2}OVER its 60\.0 kB budget by 65\.5 kB$/
   );
 });

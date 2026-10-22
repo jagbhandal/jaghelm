@@ -2118,22 +2118,29 @@ stack sits beside today's CSS and must not restyle it.
   `package.json` files and that list; `scripts/ui-stack.test.mjs` checks it.
 - **The floating layer loads on first use** (#444). The popups (Tooltip,
   Popover, Select, Dialog, Drawer, Confirm, the Sparkline's readout) are Base
-  UI and floating-ui, about 18 KB gzipped, and none draws the first screen.
-  Their Base UI parts live in `src/ui/floating/`, one chunk that
+  UI and floating-ui, and none draws the first screen. Their Base UI parts
+  live in `src/ui/floating/`, one chunk (about 45 KB gzipped) that
   `src/ui/lib/floating.jsx` loads once for all of them: on the page's first
   pointer or keyboard input, or at once when a popup is opened from code or a
   Select mounts. Until then each component draws its trigger itself (the
   caller's element, or the Select's trigger as Base UI draws it) with the
   closed popup's ARIA; the tooltips' shared timing (Base UI's provider) stays
-  in `UiRoot`. When the layer arrives, Base UI draws each trigger anew: focus
-  moves to the new one if the old had it, a trigger being pressed waits for
-  its click, and one activated meanwhile (a click, Enter or Space, a Select's
-  arrow) opens its popup through Base UI. Once loaded it answers at once, so
-  later popups never wait. The client tests and the gallery load it before
-  they draw. It is the one `import()` in `src/` outside `src/lazyViews.js`,
-  because the Android app shares `src/ui/` (`lazy-views.test.mjs`).
-  `scripts/first-load.mjs` builds and adds up the first screen's download
-  against spec §4's 200 KB, fonts and the logo included, and
+  in `UiRoot`. When the layer arrives, Base UI draws each trigger anew, but
+  not one that has focus or is being pressed: that one waits until focus
+  leaves it or its click is done, so focus never moves under a screen reader
+  (a tooltip focused before then shows on its next focus). One activated
+  meanwhile (a click, Enter or Space, a Select's arrow) opens its popup
+  through Base UI. Once loaded it answers at once, so later popups never
+  wait. The client tests and the gallery load it before they draw. It is the
+  one `import()` in `src/` outside `src/lazyViews.js`, because the Android
+  app shares `src/ui/` (`lazy-views.test.mjs`).
+- **First paint is four scripts** (#444): the entry, Rolldown's runtime,
+  `vendor-react`, and `shared`, every module first paint loads that a lazy
+  chunk (Settings, the floating layer) also needs (`vite.config.js`), rather
+  than a small chunk per set of chunks sharing them. `scripts/first-load.mjs`
+  builds and adds up the first screen's download against spec §4's two
+  budgets: 200 KB for the scripts, styles and page (the logo with them) and
+  60 KB for the faces, over until today's board goes (#306).
   `e2e/first-load.spec.mjs` checks it counts what a browser fetches; #306
   makes it a CI check.
 - **The Android app's status components are the shared ones** (#287): its
@@ -2805,9 +2812,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
 - **The first load in a browser** (#444, `e2e/first-load.spec.mjs`, with the
   shell's tests): on the incident fixture at 1440px the page fetches exactly
   what `scripts/first-load.mjs` counts, the app's data aside, and not the
-  floating layer, which the first pointer move brings; and a tooltip focused
-  by keyboard while the layer is held back opens once it arrives, on the
-  trigger that kept focus, beside it from the first frame it shows in.
+  floating layer, which the first pointer move brings; and a link focused by
+  keyboard while the layer is held back keeps focus, the same element, when
+  it arrives, and its tooltip opens on the next focus, beside it from the
+  first frame it shows in.
 - **Repo guards** (`node --test`, `scripts/*.test.mjs`): the deploy runner pin,
   the secret floor (`.gitignore`, tracked templates, the scanner catching a
   planted key) and its wiring in `check.yml`, the docs' preset and test

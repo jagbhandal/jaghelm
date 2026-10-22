@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * The first load (#444; spec §4: ≤ 200 KB transferred): what a browser fetches
- * to draw the first screen, as the server sends it, from a production build.
+ * The first load (#444): what a browser fetches to draw the first screen, as
+ * the server sends it, from a production build, against spec §4's two budgets
+ * (Jag, 2026-10-22): 200 KB for the scripts, styles and page (the logo
+ * counted with them), and 60 KB for the self-hosted faces.
  *
  *   node scripts/first-load.mjs              build into dist/, then measure it
  *   node scripts/first-load.mjs --dist DIR   measure a build already in DIR
@@ -18,7 +20,8 @@
  *
  * The functions are pure, for a test (scripts/first-load.test.mjs) and for the
  * CI check #306 makes of it: firstLoad(build) is the report, formatReport(report)
- * the table this prints. Until then it only reports, and exits 0.
+ * the table this prints. It only reports, and exits 0: the fonts are over
+ * their budget until today's board, and its two faces, go (#306).
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -27,8 +30,8 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { DEFAULT_TYPEFACE, MONO_TYPEFACE, TYPEFACES } from '../src/ui/typefaces.js';
 
-/** Spec §4's budget, in bytes. */
-export const BUDGET = 200_000;
+/** Spec §4's budgets, in bytes: the code (scripts, styles, the page, the logo), and the fonts. */
+export const BUDGETS = Object.freeze({ code: 200_000, fonts: 60_000 });
 
 /** The header's logo (src/ui/app-header.jsx), from public/. */
 export const LOGO = '/logo.svg';
@@ -80,11 +83,17 @@ export function htmlPulls(html) {
   return out;
 }
 
-/** `file`'s built copy among `assets` (the names in dist/assets), as a URL. Pure. */
+const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * `file`'s built copy among `assets` (the names in dist/assets), as a URL: the
+ * whole name with Vite's 8-character hash before the extension, never a longer
+ * name that starts the same. Pure.
+ */
 export function builtAsset(assets, file) {
   const dot = file.lastIndexOf('.');
-  const [stem, ext] = [file.slice(0, dot), file.slice(dot)];
-  const name = assets.find((a) => a.startsWith(`${stem}-`) && a.endsWith(ext));
+  const built = new RegExp(`^${escape(file.slice(0, dot))}-[\\w-]{8}${escape(file.slice(dot))}$`);
+  const name = assets.find((a) => built.test(a));
   if (!name) throw new Error(`${file} is not in the build's assets`);
   return `/assets/${name}`;
 }
@@ -95,8 +104,9 @@ export function transferSize(url, bytes) {
 }
 
 /**
- * The first load of a build: { items, total, budget }, `items` being
- * [{ kind, url, bytes }] in the table's order. `build` gives the build's
+ * The first load of a build: { items, code, fonts }, `items` being
+ * [{ kind, url, bytes }] in the table's order, `code` and `fonts` each
+ * { total, budget }: the fonts, and everything else. `build` gives the build's
  * index.html (`html`), the names in its assets folder (`assets`), and
  * `read(url)`, a file's bytes. Pure apart from `read`.
  */
@@ -113,17 +123,22 @@ export function firstLoad({ html, assets, read }) {
     items.push({ ...item, bytes: transferSize(item.url, read(item.url)) });
   }
   items.sort((a, b) => KINDS.indexOf(a.kind) - KINDS.indexOf(b.kind));
-  const total = items.reduce((sum, i) => sum + i.bytes, 0);
-  return { items, total, budget: BUDGET };
+  const sum = (keep) => items.filter(keep).reduce((total, i) => total + i.bytes, 0);
+  return {
+    items,
+    code: { total: sum((i) => i.kind !== 'font'), budget: BUDGETS.code },
+    fonts: { total: sum((i) => i.kind === 'font'), budget: BUDGETS.fonts },
+  };
 }
 
 const kB = (bytes) => (bytes / 1000).toFixed(1);
 
 /**
  * The report as a table, one line a file (its hash left out, so two builds
- * compare line by line), a line a kind, and the total against the budget. Pure.
+ * compare line by line), a line a kind, and the code's and the fonts' totals
+ * against their budgets. Pure.
  */
-export function formatReport({ items, total, budget }) {
+export function formatReport({ items, code, fonts }) {
   const name = (url) => url.replace(/-[\w-]{8}(\.\w+)$/, '$1');
   const width = Math.max(...items.map((i) => name(i.url).length));
   const line = (left, bytes) => `${left.padEnd(width + 9)}${kB(bytes).padStart(7)} kB`;
@@ -138,11 +153,15 @@ export function formatReport({ items, total, budget }) {
     const sum = items.filter((i) => i.kind === kind).reduce((s, i) => s + i.bytes, 0);
     if (sum) out.push(line(`  ${kind}s`, sum));
   }
-  out.push(line('  total', total));
-  const left = budget - total;
-  out.push(
-    `  ${left >= 0 ? 'under' : 'OVER'} the ${kB(budget)} kB budget by ${kB(Math.abs(left))} kB`
-  );
+  out.push('');
+  for (const [label, { total, budget }] of [
+    ['code: page, scripts, styles, images', code],
+    ['fonts', fonts],
+  ]) {
+    const left = budget - total;
+    const verdict = `${left >= 0 ? 'under' : 'OVER'} its ${kB(budget)} kB budget by ${kB(Math.abs(left))} kB`;
+    out.push(`${line(`  ${label}`, total)}  ${verdict}`);
+  }
   return out.join('\n');
 }
 
