@@ -1165,8 +1165,7 @@ error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
   board said "Nothing monitored yet". The web shows it as any source issue,
   with "Configuration" where a monitoring source says "Monitoring source"
   (`whereOf` in `src/shell/statusView.js`; the `config-broken` cross-client
-  fixture); the Android app's screens don't
-  read the model yet (#325), so there it is the push.
+  fixture), and so does the Android app since it reads the model (#325).
 - **A reading with no value** this cycle (#462: a sensor or exporter that
   didn't answer, `null` in `/api/services`) keeps the level the model held for
   it, and CPU's run of cycles over its line, as a failed read does, so 78 °C,
@@ -1305,6 +1304,32 @@ installed (spec §6.3; frozen by `server/routes/contract.test.js`): the new
 states (maintenance, pending, unknown because a source failed) appear only
 here.
 
+**Both clients draw it, and judge nothing.** The web reads it in `useStatus`
+(5, "Status in the header"). The Android app reads it since #325, in
+`useDashboard` (`mobile/src/data/useDashboard.js`): one round of the app's
+poll scheduler asks `/api/status`, `/api/services` (the cards' names,
+links and readings) and `/api/ups` (the UPS's runtime on battery and its
+charge on mains, which the model doesn't carry, shown on the Power cell and
+the UPS's issue, display only), each with its ETag: three requests, as
+before, and the app no longer reads `/api/cron/status`. A 404 from
+`/api/status` is a server older than 3.0.0, which the app says in words. It
+keeps `status`, `reach` and the answer's clock as `useStatus` does, and
+`MobileApp` feeds them to the web's rule for a stale status
+(`useStatusFreshness`, 5, "No signal: a stale status"). What each screen
+shows comes from `mobile/src/data/board.js`, through the web's own helpers
+(`headlineOf`, `subsystemCells`, `whereOf` and `lastKnownLine` in
+`src/shell/statusView.js`, `drawnState`, and `infrastructureNodes` in
+`src/shell/infrastructureView.js`): the status bar's lamp and sentence, the
+Overview's card (the board's word and the issues' counts, the quiet line, or
+an empty board's "Nothing monitored yet" alone), a strip cell per subsystem
+with anything, the ranked issues with where they are and their reasons, each
+service row's state and word, and each node card's state, word, hosted
+counts ("4 / 5 services up · 1 down", or "No services") and bars, each bar
+coloured by its condition and printed by `shownReading`, and a service's 24 h
+uptime ring in its state's colour. `derive.js` keeps display helpers only,
+and `mobile/src/data/noSeverity.test.js` fails on a line or a severity of the
+app's own anywhere in `mobile/src/`.
+
 **In demo mode** the demo guard answers `/api/status` (#437) with the model
 built from the payloads the demo serves (`demoStatus` in `demoFixtures.js`):
 `readStatusInputs` with the demo's board as the caches, the demo display
@@ -1421,7 +1446,13 @@ sees where that changed:
   entity's name (and node) and that reason: "Gitea on vm103 · Kuma: down",
   "pve · Disk 94 % (warning above 90 %)". The FCM `data` block the Android app
   reads is unchanged: `type`, `id`, `node`, `severity`, with each id namespace
-  as before (`server/push/androidPayload.test.js`).
+  as before (`server/push/androidPayload.test.js`). A tap opens the model's
+  issue for it (#325): the app maps the data to the entity's id
+  (`mobile/src/push/fcmIdToIncidentId.js`: `services/<id>`, `nodes/<node>`,
+  `power/ups`, `jobs/<id>`, `sources/<id>`), and Incident detail finds the
+  issue by it (`issueFor` in `mobile/src/nav/issueRoute.js`, which finds a
+  job the model files as a backup by its job id too); one that is no issue
+  any more shows the push's own fields.
 - A backup pages as the job did: `cron_failed`, `cron_overdue` and
   `cron_recovered`, with the same id and node, so an installed app routes it
   as before; its reason is the backup's ("Last backup failed: …"). One
@@ -1473,14 +1504,26 @@ them on its Node side and hand a page the JSON.
   (`thresholds`, #451), and readings just below, on and just above each line,
   with the default lines and with `pushThresholds` moving them, colour each
   meter as the model judged it.
+- **Android** (`mobile/src/crossClient.test.jsx`, `npm --prefix mobile test`,
+  #325): each fixture's status and cards are handed to the app's own
+  screens through `MobileApp`, as its poll hands them over, and read back:
+  the status bar's lamp (none on an empty board) and sentence, the Overview
+  card's headline, coloured word and sentence (the web panel's words), each
+  strip cell's state, word and counts, each issue row's state, word, name,
+  where and reason, and each node card's state, word, hosted counts and
+  bars (level and number). Then every fixture again with the status stale
+  (the server out of reach), and the incident past its TTL and with no
+  answer for too long: every lamp, cell, row, card and bar is no signal,
+  the words kept as last known, and the card says why and what it last
+  knew.
 
 A disagreement fails it unless a named exception (`KNOWN` in each file) covers
 it, where it says. An exception that stops happening fails too, so settling
 one is deleting its entry. There are none today: #478 settled the failed
-backup's push severity and #450 the meter's number. Android's legacy
-derivation (`mobile/src/data/derive.js`) is outside it; #325 and #326 delete
-it, and Android's screens join it in #325. The web's, `src/utils/thresholds.js`,
-went with the node cards' old readings (#299).
+backup's push severity and #450 the meter's number. Android's old
+derivation (`mobile/src/data/derive.js`'s severity table) went in #325; the
+web's, `src/utils/thresholds.js`, went with the node cards' old readings
+(#299).
 
 ## 5. Frontend architecture
 
@@ -2798,7 +2841,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through
-  the Android build's `@ui` alias.
+  the Android build's `@ui` alias. Its screen tests draw statuses the
+  server's own model builds (`mobile/src/testing/board.js`), never status
+  JSON written by hand, and the cross-client suite's Android side runs here
+  (4.7).
 - **The sign-in page in a browser** (#305, `e2e/login.spec.mjs`, with the
   shell's tests): the production build with a server that asks for a sign-in
   and takes one username and password, at 390 and 1440px, dark and light.

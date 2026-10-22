@@ -3,30 +3,69 @@ import { render, screen, fireEvent } from '@testing-library/react';
 vi.mock('@shared/hooks/useData.js', () => ({ getServiceIcon: () => null }));
 import NodeDetail from './NodeDetail.jsx';
 import NodeCard from '../components/NodeCard.jsx';
+import { nodeCardsOf } from '../data/board.js';
+import { STALE, UPS_ONLINE, boardOf, inputs, monitored, node } from '../testing/board.js';
 
-// Non-Pi VM node: no temperature → third bar = DISK
-const DATA = { servicesBody: { nodes: { 'vm-101': {
-  display_name: 'VM 101', subtitle: 'app', metrics: { cpu: '45', memPercent: '31', diskPercent: '55', diskUnit: 'GB', temp: null },
-  services: [
-    { uid: 'vm-101:adguard', display_name: 'AdGuard', icon: null, status: 'up', ping: 12, uptime24: 0.99, url: '' },
-    { uid: 'vm-101:gitea', display_name: 'Gitea', icon: null, status: 'down', ping: null, uptime24: 0.42, url: 'http://h/gitea' },
-  ],
-} } } };
+const vm101 = (metrics = {}) =>
+  boardOf(
+    inputs({
+      nodes: {
+        'vm-101': node(
+          { cpu: '45', memPercent: '31', diskPercent: '55', temp: null, ...metrics },
+          {
+            display_name: 'VM 101',
+            subtitle: 'app',
+            services: [
+              monitored('vm-101:adguard', 'up', { display_name: 'AdGuard', ping: 12 }),
+              monitored('vm-101:gitea', 'down', { display_name: 'Gitea', url: 'http://h/gitea' }),
+            ],
+          }
+        ),
+      },
+      ups: UPS_ONLINE,
+    })
+  );
+const DATA = vm101();
 
-// Pi node: reports temperature and disk → detail shows both bars
-const PI_DATA = { servicesBody: { nodes: { 'gateway-pi': {
-  display_name: 'Gateway Pi', subtitle: 'edge', metrics: { cpu: '8', memPercent: '40', temp: '52', diskPercent: '10' },
-  services: [
-    { uid: 'gateway-pi:ssh', display_name: 'SSH', icon: null, status: 'up', ping: 1, uptime24: 1, url: '' },
-  ],
-} } } };
+const pi = (metrics) =>
+  boardOf(
+    inputs({
+      nodes: {
+        'gateway-pi': node(
+          { cpu: '8', memPercent: '40', ...metrics },
+          { display_name: 'Gateway Pi', subtitle: 'edge', services: [monitored('gateway-pi:ssh', 'up', { display_name: 'SSH' })] }
+        ),
+      },
+      ups: UPS_ONLINE,
+    })
+  );
+const PI_DATA = pi({ temp: '52', diskPercent: '10' });
 
-describe('NodeDetail', () => {
-  it('shows the node metrics and its full service list, problems-first', () => {
-    render(<NodeDetail data={DATA} nav={{ pop: vi.fn(), push: vi.fn() }} params={{ nodeKey: 'vm-101' }} />);
+const at = (nodeKey) => ({ nav: { pop: vi.fn(), push: vi.fn() }, params: { nodeKey } });
+
+describe('NodeDetail (#325: the node as the model has it)', () => {
+  it('shows the node, the model\'s word and hosted counts, and its services, worst first', () => {
+    const { container } = render(<NodeDetail data={DATA} {...at('vm-101')} />);
     expect(screen.getByRole('heading', { name: 'VM 101' })).toBeInTheDocument();
+    expect(container.querySelector('.node-detail__head .status-word').textContent).toBe('HEALTHY');
+    expect(container.querySelector('.node-detail__count').textContent).toBe('1 / 2 services up · 1 down');
     const names = screen.getAllByText(/AdGuard|Gitea/).map((n) => n.textContent);
-    expect(names[0]).toBe('Gitea'); // down first
+    expect(names[0]).toBe('Gitea'); // the model's issue first
+  });
+
+  it('draws the down count red, and steel while the status is stale (#480)', () => {
+    const { container, unmount } = render(<NodeDetail data={DATA} {...at('vm-101')} />);
+    expect(container.querySelector('.node-detail__down-count')).toHaveStyle({ color: 'var(--red)' });
+    unmount();
+    const stale = render(<NodeDetail data={{ ...DATA, freshness: STALE }} {...at('vm-101')} />);
+    const down = stale.container.querySelector('.node-detail__down-count');
+    expect(down).toHaveTextContent('1 down');
+    expect(down).toHaveStyle({ color: 'var(--steel)' });
+  });
+
+  it('says the model\'s reason when the node isn\'t healthy', () => {
+    render(<NodeDetail data={vm101({ diskPercent: '92' })} {...at('vm-101')} />);
+    expect(screen.getByText('Disk 92 % (warning above 90 %)')).toBeInTheDocument();
   });
 
   it('tapping a service pushes its detail', () => {
@@ -43,14 +82,14 @@ describe('NodeDetail', () => {
     expect(pop).toHaveBeenCalled();
   });
 
-  it('renders DISK bar (not TEMP) for a non-Pi node with no temperature', () => {
-    render(<NodeDetail data={DATA} nav={{ pop: vi.fn(), push: vi.fn() }} params={{ nodeKey: 'vm-101' }} />);
+  it('renders DISK bar (not TEMP) for a node with no temperature', () => {
+    render(<NodeDetail data={DATA} {...at('vm-101')} />);
     expect(screen.getByText('DISK')).toBeInTheDocument();
     expect(screen.queryByText('TEMP')).toBeNull();
   });
 
   it('renders both TEMP and DISK bars for a Pi node reporting temperature and disk', () => {
-    render(<NodeDetail data={PI_DATA} nav={{ pop: vi.fn(), push: vi.fn() }} params={{ nodeKey: 'gateway-pi' }} />);
+    render(<NodeDetail data={PI_DATA} {...at('gateway-pi')} />);
     expect(screen.getByText('TEMP')).toBeInTheDocument();
     expect(screen.getByText('52°C')).toBeInTheDocument();
     expect(screen.getByText('DISK')).toBeInTheDocument();
@@ -58,31 +97,30 @@ describe('NodeDetail', () => {
   });
 
   it('at 94 % disk and 80 °C the detail screen shows both bars while the card shows DISK (#273)', () => {
-    const hot = { ...PI_DATA.servicesBody.nodes['gateway-pi'], metrics: { cpu: '8', memPercent: '40', temp: '80', diskPercent: '94' } };
-    const data = { servicesBody: { nodes: { 'gateway-pi': hot } } };
-    const detail = render(<NodeDetail data={data} nav={{ pop: vi.fn(), push: vi.fn() }} params={{ nodeKey: 'gateway-pi' }} />);
+    const hot = pi({ temp: '80', diskPercent: '94' });
+    const detail = render(<NodeDetail data={hot} {...at('gateway-pi')} />);
     expect(screen.getByText('TEMP')).toBeInTheDocument();
     expect(screen.getByText('80°C')).toBeInTheDocument();
     expect(screen.getByText('DISK')).toBeInTheDocument();
     expect(screen.getByText('94%')).toBeInTheDocument();
     detail.unmount();
 
-    render(<NodeCard nodeKey="gateway-pi" node={hot} onTap={() => {}} />);
+    const [card] = nodeCardsOf({ status: hot.status, servicesBody: hot.servicesBody });
+    render(<NodeCard node={card} onTap={() => {}} />);
     expect(screen.getByText('DISK')).toBeInTheDocument();
     expect(screen.getByText('94%')).toBeInTheDocument();
     expect(screen.queryByText('TEMP')).toBeNull();
   });
 
   it('keeps a DISK placeholder when the node reports neither temperature nor disk', () => {
-    const bare = { ...DATA.servicesBody.nodes['vm-101'], metrics: { cpu: '45', memPercent: '31', diskPercent: null, temp: null } };
-    const { container } = render(<NodeDetail data={{ servicesBody: { nodes: { 'vm-101': bare } } }} nav={{ pop: vi.fn(), push: vi.fn() }} params={{ nodeKey: 'vm-101' }} />);
+    const { container } = render(<NodeDetail data={vm101({ diskPercent: null })} {...at('vm-101')} />);
     expect(screen.getByText('DISK')).toBeInTheDocument();
     expect(screen.queryByText('TEMP')).toBeNull();
     expect(container.querySelectorAll('.usage-bar')).toHaveLength(3);
   });
 
-  it('renders "This node is no longer reported." for a missing node', () => {
-    render(<NodeDetail data={{ servicesBody: { nodes: {} } }} nav={{ pop: vi.fn(), push: vi.fn() }} params={{ nodeKey: 'gone' }} />);
+  it('renders "This node is no longer reported." for a node the model doesn\'t have', () => {
+    render(<NodeDetail data={DATA} {...at('gone')} />);
     expect(screen.getByText('This node is no longer reported.')).toBeInTheDocument();
   });
 });

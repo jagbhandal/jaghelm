@@ -42,6 +42,7 @@ const ANDROID_COLOURS = {
   caution: 'var(--amber)',
   healthy: 'var(--green)',
   unknown: 'var(--steel)',
+  maintenance: 'var(--jh-maintenance-fg)',
 };
 
 function AndroidStatusWord({ state, severity, word, ...props }) {

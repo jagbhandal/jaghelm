@@ -1,16 +1,21 @@
 import React from 'react';
-import { uptimePct, uptimeColor } from '../data/derive.js';
+import { uptimePct } from '../data/derive.js';
+import { colourOf } from '../data/board.js';
 
 /**
  * UptimeRing — inline-SVG radial arc gauge for a uptime24 scalar (0–1).
  *
  * Props:
  *   uptime24  number | null — 0–1 uptime fraction. null/undefined → render nothing.
+ *   state     the service's state as drawn (the model's; no signal while the
+ *             status is stale), which colours the arc and the percentage. The
+ *             ring judges nothing (#325): with no state it is one neutral tone,
+ *             never a ramp of its own over the number.
  *
  * Structure:
  *   - Background track ring (`.uptime-ring__track`)
- *   - Colored progress arc (`.uptime-ring__arc`), color via uptimeColor ramp
- *   - Centered percentage text (`.uptime-ring__pct`) in --mono, colored by ramp
+ *   - Progress arc (`.uptime-ring__arc`), in the state's colour
+ *   - Centered percentage text (`.uptime-ring__pct`) in --mono, in the same colour
  *   - "24H" label (`.uptime-ring__label`) as a SEPARATE SVG text element
  *
  * The "24H" label and the "%" value are intentionally separate SVG <text> nodes so
@@ -24,12 +29,14 @@ const CY = SIZE / 2;
 const R = 34;
 const STROKE_W = 7;
 const CIRCUMFERENCE = 2 * Math.PI * R;
+// The ring's colour with no state to draw.
+const NEUTRAL = 'var(--text-muted)';
 
-export default function UptimeRing({ uptime24 }) {
+export default function UptimeRing({ uptime24, state }) {
   if (uptime24 == null) return null;
 
   const pct = uptimePct(uptime24);      // e.g. "99.9"
-  const color = uptimeColor(uptime24);  // e.g. "var(--green)"
+  const color = state ? colourOf(state) : NEUTRAL;
   const fraction = Math.min(1, Math.max(0, uptime24));
   const dashFilled = (fraction * CIRCUMFERENCE).toFixed(2);
   const dashTotal = CIRCUMFERENCE.toFixed(2);

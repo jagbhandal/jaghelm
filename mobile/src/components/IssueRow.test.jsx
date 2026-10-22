@@ -140,21 +140,25 @@ describe('IssueRow', () => {
     });
   });
 
-  describe('cause NOT shown for non-critical rows', () => {
-    it('cause is NOT rendered for a caution (UPS) incident', () => {
+  describe('the reason shows on every row that has one (#325: the model\'s reason)', () => {
+    it('on a warning (UPS) row', () => {
       render(<IssueRow incident={upsIncident} />);
-      // The cause string exists on the incident but must not appear in the DOM
-      expect(screen.queryByText('On battery — 47% charge')).toBeNull();
+      expect(screen.getByText('On battery — 47% charge')).toBeInTheDocument();
     });
 
-    it('cause is NOT rendered for a caution (cron) incident', () => {
+    it('on a warning (cron) row', () => {
       render(<IssueRow incident={cronIncident} />);
-      expect(screen.queryByText('Exit code 1')).toBeNull();
+      expect(screen.getByText('Exit code 1')).toBeInTheDocument();
     });
 
-    it('cause is NOT rendered for an unknown incident', () => {
-      render(<IssueRow incident={unknownIncident} />);
-      expect(screen.queryByText('No signal')).toBeNull();
+    it('on a no-signal row', () => {
+      const { container } = render(<IssueRow incident={unknownIncident} />);
+      expect(container.querySelector('.issue-row__cause').textContent).toBe('No signal');
+    });
+
+    it('and none without one', () => {
+      const { container } = render(<IssueRow incident={{ ...cronIncident, cause: undefined }} />);
+      expect(container.querySelector('.issue-row__cause')).toBeNull();
     });
   });
 

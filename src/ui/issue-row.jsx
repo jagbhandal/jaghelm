@@ -26,10 +26,10 @@
  * is named "No signal" (lampName), and the row's name says it before the
  * word: "title, No signal, word, where".
  *
- * The `android` look, a stopgap until #326, is the Android app's row,
- * unchanged (lib/status.js): it reads `readout` (passed through verbatim, never
- * a made-up age) and shows `cause` only on a critical row; MobileApp.css
- * styles it.
+ * The `android` look, a stopgap until #326, is the Android app's row
+ * (lib/status.js): it reads `readout` (where the issue is, passed through
+ * verbatim, never a made-up age) and `cause` (the status model's reason, on
+ * every row that has one, #325); MobileApp.css styles it.
  */
 import { useId } from 'react';
 import { ChevronRight } from 'lucide-react';
@@ -59,7 +59,7 @@ function nameOf(title, said, where, lamp) {
 
 function AndroidIssueRow({ incident, onOpen }) {
   const severity = toSeverity(incident.state ?? incident.severity);
-  const showCause = severity === 'critical' && Boolean(incident.cause);
+  const showCause = Boolean(incident.cause);
   const className = `issue-row issue-row--${severity}`;
 
   const content = (
@@ -71,7 +71,7 @@ function AndroidIssueRow({ incident, onOpen }) {
         <span className="issue-row__readout">{incident.readout}</span>
       </div>
 
-      {/* Prose cause — only for critical/down rows */}
+      {/* The reason, in prose */}
       {showCause && <p className="issue-row__cause">{incident.cause}</p>}
     </>
   );

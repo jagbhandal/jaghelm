@@ -63,12 +63,24 @@ describe('SubsystemCell', () => {
   });
 
   describe('lamp shape rule', () => {
-    it('ups + caution → bolt shape (path, no circle)', () => {
-      const { container } = render(
-        <SubsystemCell cell={makeCell({ key: 'ups', severity: 'caution', word: 'ON BATTERY', detail: '47% · 8m' })} />
+    it('power on battery (the model\'s crit or warn) → bolt shape (path, no circle)', () => {
+      for (const state of ['crit', 'warn']) {
+        const { container, unmount } = render(
+          <SubsystemCell cell={makeCell({ key: 'power', state, word: 'On battery', value: 'On battery' })} />
+        );
+        expect(container.querySelector('path'), state).not.toBeNull();
+        expect(container.querySelector('circle'), state).toBeNull();
+        unmount();
+      }
+    });
+
+    it('power on mains keeps the disc', () => {
+      const { container, unmount } = render(
+        <SubsystemCell cell={makeCell({ key: 'power', state: 'ok', word: 'On mains', value: 'On mains' })} />
       );
-      expect(container.querySelector('path')).not.toBeNull();
-      expect(container.querySelector('circle')).toBeNull();
+      expect(container.querySelector('circle')).not.toBeNull();
+      expect(container.querySelector('path')).toBeNull();
+      unmount();
     });
 
     it('critical (services down) → slash shape (circle + line)', () => {

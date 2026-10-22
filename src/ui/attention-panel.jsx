@@ -50,9 +50,10 @@
  * the desktop draws it, and `between` follows it.
  *
  * The `android` look, a stopgap until #326, is the Android app's
- * SystemStatusCard, unchanged (lib/status.js): the "System status" label,
- * `headline` with `word` coloured where it appears in it, `subline` and the
- * `counts` footer.
+ * SystemStatusCard (lib/status.js): the "System status" label, `headline`
+ * with `word` coloured where it appears in it, `subline` and the `counts`
+ * footer, each left out when not given. An empty board is the plain card
+ * (`sys-status-card--empty`, no tint), never the no-signal or healthy one.
  */
 import { Button } from './button.jsx';
 import { IssueRow } from './issue-row.jsx';
@@ -69,7 +70,8 @@ const ANDROID_COLOURS = {
 };
 
 function AndroidSystemStatusCard({ state, severity: given, headline, word, subline, counts }) {
-  const severity = toSeverity(state ?? given);
+  // An empty board (#449) has no state to colour: the plain card, never steel or green.
+  const severity = (state ?? given) === EMPTY ? EMPTY : toSeverity(state ?? given);
   const color = ANDROID_COLOURS[severity] ?? 'var(--steel)';
   // The headline around the first case-insensitive `word` in it, which is
   // coloured; a headline without it renders as it is.
@@ -103,8 +105,8 @@ function AndroidSystemStatusCard({ state, severity: given, headline, word, subli
           headline
         )}
       </p>
-      <p className="sys-status-card__subline">{subline}</p>
-      <p className="sys-status-card__counts">{counts}</p>
+      {subline && <p className="sys-status-card__subline">{subline}</p>}
+      {counts && <p className="sys-status-card__counts">{counts}</p>}
     </div>
   );
 }
