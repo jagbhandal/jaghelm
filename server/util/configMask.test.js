@@ -117,7 +117,12 @@ test('restore refuses a marker with nothing stored in its place (409), naming on
   const r = restoreCredentials({ integrations: { a: { password: STORED }, b: { password: STORED } } }, stored);
   assert.equal(r.ok, false);
   assert.equal(r.status, 409);
-  assert.match(r.error, /integrations\.b\.password/);
+  // The route checks the version first (#423), so the file is as it was read:
+  // the marker was put where the read put none, not left behind by a change.
+  assert.equal(
+    r.error,
+    'No credential is stored at integrations.b.password for its marker to keep; send the credential itself, or leave it out'
+  );
   assert.ok(!r.error.includes('secret-pa'));
 });
 
