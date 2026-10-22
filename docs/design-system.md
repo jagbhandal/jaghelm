@@ -1031,7 +1031,9 @@ is in, not the window):
   gallery's axe check found (#289); over `surface-1` they keep the 4.5:1 the
   contrast check holds. Under the pointer a tile is `surface-2`, tinted or not.
   The label ends in an ellipsis when it doesn't fit, after using 4px of the
-  tile's padding. Six sit in a row from 672px, three from 320px and two below
+  tile's padding; the value and `sub` wrap, and a word wider than its tile
+  (the model's "1 in maintenance" with six to a row, from 1024px) breaks onto
+  the next line rather than run under the tile beside it (#302). Six sit in a row from 672px, three from 320px and two below
   that, where a tile is the Phone board's: a 14px value and no `sub`. A strip
   holds one to six tiles and never leaves an empty slot, which would show the
   frame's `border-subtle`: four sit two by two when narrow, and five as 3 + 2

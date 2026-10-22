@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import { prefs } from '../../storage/index.js';
 import GridItem from './GridItem.jsx';
 import {
   gridToPixel,
@@ -28,6 +29,19 @@ import {
  *   - Per-item rendering + content-height measurement lives in ./GridItem.jsx
  *   - This file owns the lifecycle: container measurement, breakpoint resolution,
  *     working/effective layout state, drag and resize interactions, and render.
+ *
+ * No frame is drawn before it knows its width (#243): the container is
+ * measured, and the layout for its breakpoint chosen, in layout effects, so
+ * the first frame the browser paints is at the real width, never the `lg`
+ * layout squeezed into a phone. At `sm`, one column, when the board can't be
+ * dragged or resized (a phone, a filtered board), the panels are in the
+ * page's flow at their own height, in the layout's order (`flowOrder`):
+ * nothing to measure, and nothing drawn at a saved height and then grown.
+ * Otherwise, while `reserve` is on (the board's data still coming in), a panel
+ * keeps the room it last took at that width (`HEIGHTS_PREF`, per browser), so
+ * a reload draws the board at its size rather than at the saved rows, then
+ * growing it; when it goes off each panel takes its own height, in one step.
+ * Only heights measured with `reserve` off are kept, never a placeholder's.
  */
 export default function HelmGrid({
   children,
@@ -45,12 +59,14 @@ export default function HelmGrid({
   onResizeStop,
   labels = {},
   className = '',
+  reserve = false,
 }) {
   const containerRef = useRef(null);
   const [width, setWidth] = useState(0);
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
+  // Before the first paint: the first frame drawn is at the real width.
+  useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const measure = () => {
@@ -83,6 +99,11 @@ export default function HelmGrid({
   const [contentHeights, setContentHeights] = useState({}); // itemId → pixels
   const contentHeightsRef = useRef({});
   const pendingHeightsRef = useRef(null); // batched updates
+  // The last height each panel measured, at its width then, in this browser's
+  // earlier visits: the room a panel keeps while `reserve` is on.
+  const [lastKnown] = useState(readLastHeights);
+  const reserveRef = useRef(reserve);
+  reserveRef.current = reserve;
 
   const handleContentHeight = useCallback((itemId, px) => {
     if (contentHeightsRef.current[itemId] === px) return; // No change
@@ -96,15 +117,17 @@ export default function HelmGrid({
         pendingHeightsRef.current = null;
         if (batch && Object.keys(batch).length > 0) {
           setContentHeights(prev => ({ ...prev, ...batch }));
+          if (!reserveRef.current) keepLastHeights(batch, effectiveRef.current, gridRef.current);
         }
       });
     }
     pendingHeightsRef.current[itemId] = px;
   }, []);
 
-  // Sync from props with column clamping and overlap resolution
+  // Sync from props with column clamping and overlap resolution, before the
+  // paint, so no frame shows another breakpoint's layout.
   const lastSyncedLayout = useRef(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const hasOwnLayout = !!layouts?.[breakpoint];
     const bpLayout = layouts?.[breakpoint] || layouts?.lg || [];
     const forceStack = breakpoint === 'sm' || (breakpoint === 'md' && !hasOwnLayout);
@@ -149,10 +172,13 @@ export default function HelmGrid({
     return map;
   }, [children]);
 
-  // Expand h to fit content where needed, then resolve overlaps.
+  // Expand h to fit content where needed, then resolve overlaps. While the
+  // board comes in, a panel is at least as tall as it last was at this width.
   const effectiveLayout = useMemo(() => {
     const expanded = workingLayout.map(item => {
-      const contentPx = contentHeights[item.i];
+      const measured = contentHeights[item.i];
+      const kept = reserve ? lastKnownHeight(lastKnown, item, cellWidth, margin) : undefined;
+      const contentPx = Math.max(measured ?? 0, kept ?? 0);
       if (!contentPx) return item;
       const contentRows = pxToRows(contentPx, rowHeight, margin);
       if (contentRows > item.h) {
@@ -162,11 +188,18 @@ export default function HelmGrid({
     });
     // Re-resolve overlaps after height expansion to prevent panels from overlapping
     return resolveOverlaps(expanded);
-  }, [workingLayout, contentHeights, rowHeight, margin]);
+  }, [workingLayout, contentHeights, reserve, lastKnown, cellWidth, rowHeight, margin]);
 
   // Effective layout ref for handlers
   const effectiveRef = useRef(effectiveLayout);
   effectiveRef.current = effectiveLayout;
+
+  // The data is in: keep the heights measured so far (the measures while it
+  // came in weren't kept), each panel's from now on as it measures.
+  useLayoutEffect(() => {
+    if (!reserve && Object.keys(contentHeightsRef.current).length)
+      keepLastHeights(contentHeightsRef.current, effectiveRef.current, gridRef.current);
+  }, [reserve]);
 
   // Content-aware minH for resize.
   const getContentMinH = useCallback((itemId) => {
@@ -433,13 +466,27 @@ export default function HelmGrid({
   const dragId = interaction?.type === 'drag' ? interaction.itemId : null;
   const resizeId = interaction?.type === 'resize' ? interaction.itemId : null;
 
+  // One column that can't be dragged or resized (a phone, a filtered board):
+  // the panels in the page's flow, each at its own height. The same items
+  // either way, so a change between the two keeps every panel mounted.
+  const flow = breakpoint === 'sm' && !draggable && !resizable;
+
   return (
     <div
       ref={containerRef}
-      className={`helmgrid ${className}`}
-      style={{ position: 'relative', height: containerHeight }}
+      className={`helmgrid${flow ? ' helmgrid-flow' : ''} ${className}`}
+      style={
+        flow
+          ? {
+              display: 'flex',
+              flexDirection: 'column',
+              gap: margin[1],
+              padding: `${margin[1]}px ${margin[0]}px`,
+            }
+          : { position: 'relative', height: containerHeight }
+      }
     >
-      {effectiveLayout.map((item) => {
+      {(flow ? flowOrder(workingLayout) : effectiveLayout).map((item) => {
         const child = childMap[item.i];
         if (!child) return null;
 
@@ -447,7 +494,9 @@ export default function HelmGrid({
         const isResizing = resizeId === item.i;
 
         let style;
-        if (isDragging && interaction.pixelPos) {
+        if (flow) {
+          style = undefined;
+        } else if (isDragging && interaction.pixelPos) {
           // Active drag — fresh style every frame (not cached)
           const pos = gridToPixel(item.x, item.y, item.w, item.h, cellWidth, rowHeight, margin);
           style = {
@@ -513,6 +562,7 @@ export default function HelmGrid({
             onDragStart={startDrag}
             onResizeStart={startResize}
             onContentHeight={handleContentHeight}
+            measuring={!flow}
             gridX={item.x}
             gridY={item.y}
             gridW={item.w}
@@ -547,4 +597,45 @@ export default function HelmGrid({
       </div>
     </div>
   );
+}
+
+/** The order of a one-column board, top to bottom: by row, then by column. */
+function flowOrder(layout) {
+  return [...layout].sort((a, b) => (a.y !== b.y ? a.y - b.y : a.x - b.x));
+}
+
+/**
+ * Where each panel's last measured height is kept, per browser: `{ [id]:
+ * [width, height] }` in pixels, the height its content took at that width.
+ */
+export const HEIGHTS_PREF = 'jaghelm-grid-heights';
+
+function readLastHeights() {
+  try {
+    const kept = JSON.parse(prefs.get(HEIGHTS_PREF, '{}'));
+    return kept && typeof kept === 'object' && !Array.isArray(kept) ? kept : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The height `item` last measured, when it is drawn at the same width now. */
+function lastKnownHeight(lastKnown, item, cellWidth, margin) {
+  const kept = lastKnown[item.i];
+  if (!Array.isArray(kept) || !(cellWidth > 0)) return undefined;
+  const width = Math.round(item.w * (cellWidth + margin[0]) - margin[0]);
+  return kept[0] === width && kept[1] > 0 ? kept[1] : undefined;
+}
+
+/** Keeps the heights just measured (`batch`, id → px), each with its panel's width. */
+function keepLastHeights(batch, layout, grid) {
+  if (!(grid.cellWidth > 0)) return;
+  const kept = readLastHeights();
+  for (const [id, px] of Object.entries(batch)) {
+    const item = layout.find((l) => l.i === id);
+    if (!item) continue;
+    const width = Math.round(item.w * (grid.cellWidth + grid.margin[0]) - grid.margin[0]);
+    kept[id] = [width, px];
+  }
+  prefs.set(HEIGHTS_PREF, JSON.stringify(kept));
 }

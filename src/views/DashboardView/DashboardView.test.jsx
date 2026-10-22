@@ -591,3 +591,38 @@ describe('DashboardView beside the utilities rail', () => {
       expect(ids(gridLayouts().lg)).not.toContain(key);
   });
 });
+
+describe('DashboardView before the first status (#243)', () => {
+  // The header's poll, in each of its states before and after its first answer.
+  const renderAt = (reach) =>
+    render(
+      <ConfigProvider config={freshConfig()} setConfig={vi.fn()}>
+        <DashboardView refreshKey={0} tick={0} active reach={reach} onOpenSettings={vi.fn()} />
+      </ConfigProvider>
+    );
+
+  it('draws nothing under the status until the poll has its first answer', () => {
+    useDashboardData.mockReturnValue(
+      boardData({ serviceData: { nodes: { pve1: node('Proxmox') } } })
+    );
+    const { container, rerender } = renderAt('loading');
+    // The board's own element stays, empty, so its width is known.
+    expect(container.querySelector('.dashboard-content')).toBeEmptyDOMElement();
+    expect(screen.queryByTestId('grid')).not.toBeInTheDocument();
+
+    for (const reach of ['ok', 'down', 'waiting']) {
+      rerender(
+        <ConfigProvider config={freshConfig()} setConfig={vi.fn()}>
+          <DashboardView refreshKey={0} tick={0} active reach={reach} onOpenSettings={vi.fn()} />
+        </ConfigProvider>
+      );
+      expect(screen.getByTestId('grid'), reach).toBeInTheDocument();
+    }
+  });
+
+  it('loads its data meanwhile', () => {
+    useDashboardData.mockReturnValue(boardData());
+    renderAt('loading');
+    expect(useDashboardData).toHaveBeenCalled();
+  });
+});

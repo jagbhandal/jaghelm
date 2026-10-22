@@ -1920,6 +1920,36 @@ function ServicesState({ groups, count, grouping = 'node', groupless = false, wi
   );
 }
 
+// The Overview as a tablet draws it (#302, spec §8): its sections in one
+// column, at the width the page gives them in a 768px and a 1024px window (the
+// sidebar and the gutters taken), 476 and 680px: the attention panel with the
+// strip under it, wrapping to its width, then Infrastructure and Services.
+function OverviewColumnState({ width }) {
+  return (
+    <Stack width={width} gap={24}>
+      <AttentionPanel
+        {...INCIDENT}
+        action={ALL_ALERTS}
+        issues={ISSUES}
+        between={<SubsystemStrip cells={CELLS} />}
+      />
+      <InfrastructureSection
+        nodes={NODES_INCIDENT}
+        count="4 nodes · 1 critical, 1 warning, 1 no signal"
+        view="cards"
+        onViewChange={noop}
+      />
+      <ServicesSection
+        groups={SERVICES_INCIDENT}
+        count="7 monitored · 1 down · 1 pending · 1 no signal · 1 in maintenance"
+        grouping="node"
+        groupings={GROUPINGS}
+        onGroupingChange={noop}
+      />
+    </Stack>
+  );
+}
+
 const SLOTS = ['Azure', 'Rose', 'Lime', 'Plum', 'Orange', 'Teal'];
 
 function Slots() {
@@ -2464,6 +2494,8 @@ export const RENDERS = Object.freeze({
       width={328}
     />
   ),
+  'overview-tablet': () => <OverviewColumnState width={476} />,
+  'overview-tablet-wide': () => <OverviewColumnState width={680} />,
 
   'app-header': AppHeaderState,
   'app-header-first-run': AppHeaderFirstRunState,

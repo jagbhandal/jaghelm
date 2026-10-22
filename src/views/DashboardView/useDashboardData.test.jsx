@@ -170,6 +170,45 @@ describe('useDashboardData — per-source health + retry', () => {
   });
 });
 
+describe('useDashboardData — settled (#302)', () => {
+  beforeEach(() => {
+    if (!AbortSignal.timeout) {
+      AbortSignal.timeout = () => new AbortController().signal;
+    }
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('is false until every source has answered or failed once, then stays true', async () => {
+    let failCron;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) =>
+        String(url).includes('/api/cron/')
+          ? new Promise((_, reject) => {
+              failCron = () => reject(new Error('Network down'));
+            })
+          : Promise.resolve(jsonResponse({}, {}))
+      )
+    );
+    const { result, rerender } = renderHook(({ tick }) => useDashboardData(0, { tick }), {
+      initialProps: { tick: 0 },
+    });
+    await waitFor(() => expect(result.current.servicesLoaded).toBe(true));
+    // Every other source has answered by now; cron hasn't.
+    await act(async () => new Promise((r) => setTimeout(r, 20)));
+    expect(result.current.settled).toBe(false);
+
+    // The slow source fails: it has answered, as a failure.
+    await act(async () => failCron());
+    expect(result.current.settled).toBe(true);
+    rerender({ tick: 1 });
+    expect(result.current.settled).toBe(true);
+  });
+});
+
 describe('useDashboardData — polling schedule', () => {
   const SOURCE_PATHS = [
     '/api/services',
