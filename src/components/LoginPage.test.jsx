@@ -6,7 +6,7 @@
  */
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import LoginPage from './LoginPage.jsx';
 
 const json = (status, body) =>
@@ -27,19 +27,12 @@ const username = () => screen.getByRole('textbox', { name: 'Username' });
 const password = () => screen.getByLabelText('Password');
 const signIn = () => screen.getByRole('button', { name: /^Sign(ing)? in/ });
 
-afterEach(() => {
-  localStorage.clear();
-});
-
 describe('LoginPage', () => {
   it('draws one brand mark and labelled fields on the shared components', () => {
-    render(
-      <LoginPage onLogin={() => {}} config={{ title: 'JAGHELM', subtitle: 'Old subtitle' }} />
-    );
+    render(<LoginPage onLogin={() => {}} />);
     expect(screen.getByRole('heading', { level: 1, name: 'JagHelm' })).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(document.querySelector('[data-slot="helm-mark"]')).toBeInTheDocument();
-    expect(screen.queryByText('Old subtitle')).toBeNull();
     expect(screen.getByRole('main')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Sign in' })).toBeInTheDocument();
     expect(username()).toHaveAttribute('autocomplete', 'username');
@@ -49,8 +42,12 @@ describe('LoginPage', () => {
     expect(username()).toHaveFocus();
   });
 
-  it('names the instance and shows its logo, as the header does', () => {
-    render(<LoginPage onLogin={() => {}} config={{ title: 'Homelab', logoUrl: '/my-logo.png' }} />);
+  it("draws App's name, logo and theme", () => {
+    render(<LoginPage onLogin={() => {}} theme="light" name="Homelab" logoUrl="/my-logo.png" />);
+    expect(document.querySelector('[data-slot="login-screen"]')).toHaveAttribute(
+      'data-theme',
+      'light'
+    );
     expect(screen.getByRole('heading', { level: 1, name: 'Homelab' })).toBeInTheDocument();
     expect(document.querySelector('img[src="/my-logo.png"]')).toBeInTheDocument();
     expect(document.querySelector('[data-slot="helm-mark"]')).toBeNull();
@@ -154,16 +151,25 @@ describe('LoginPage', () => {
     expect(password()).not.toHaveAttribute('aria-invalid');
   });
 
-  it.each([
-    ['github-light', 'light'],
-    ['catppuccin-latte', 'light'],
-    ['dracula', null],
-    [null, null],
-  ])('draws in the stored theme %s as the shell does: %s', (stored, attribute) => {
-    if (stored) localStorage.setItem('jaghelm-theme', stored);
+  it("a field's error goes as soon as that field is edited; focus stays where you type", async () => {
+    const user = userEvent.setup();
+    stubFetch(json(401, {}));
     render(<LoginPage onLogin={() => {}} />);
-    const root = document.querySelector('[data-slot="login-screen"]');
-    if (attribute) expect(root).toHaveAttribute('data-theme', attribute);
-    else expect(root).not.toHaveAttribute('data-theme');
+    await user.click(signIn());
+    expect(username()).toHaveAttribute('aria-invalid', 'true');
+    expect(password()).toHaveAttribute('aria-invalid', 'true');
+
+    await user.type(username(), 'a');
+    expect(username()).not.toHaveAttribute('aria-invalid');
+    expect(username()).not.toHaveAccessibleDescription();
+    expect(username()).toHaveFocus();
+    expect(password()).toHaveAccessibleDescription('Enter your password.');
+
+    await user.type(password(), 'wrong{Enter}');
+    await waitFor(() => expect(password()).toHaveAttribute('aria-invalid', 'true'));
+    await user.keyboard('x');
+    expect(password()).not.toHaveAttribute('aria-invalid');
+    expect(password()).not.toHaveAccessibleDescription();
+    expect(password()).toHaveValue('x');
   });
 });

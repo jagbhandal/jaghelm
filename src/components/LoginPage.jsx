@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react';
 import { LoginScreen } from '@ui/login-form';
 import { apiFetch } from '../api/client.js';
-import { THEMES } from './settings/themes.js';
 
 /**
  * The sign-in page (#305): LoginScreen (src/ui/login-form.jsx) wired to
  * POST /api/auth/login. The token goes to onLogin, which stores it (App.jsx).
+ * App gives it the shell's `theme` ('dark' or 'light'), and the instance's
+ * `name` and `logoUrl`, as the header shows them.
  *
  * A refused sign-in (401) is one error on the password field, whichever of
  * the two was wrong: the server says no more, so the page can't leak which
@@ -16,31 +17,11 @@ const REJECTED = 'Wrong username or password.';
 const NO_ANSWER = "JagHelm didn't answer. Check the connection and try again.";
 const NONE = Object.freeze({});
 
-/** The theme the page draws in: the stored theme's, as the shell picks it (App.jsx). */
-function loginTheme(stored) {
-  return THEMES.find((t) => t.id === stored)?.light ? 'light' : 'dark';
-}
-
-function storedTheme() {
-  try {
-    return localStorage.getItem('jaghelm-theme');
-  } catch {
-    return null;
-  }
-}
-
-/** The instance's name, as the header shows it: the stock 'JAGHELM' reads as the product's. */
-function instanceName(title) {
-  const t = typeof title === 'string' ? title.trim() : '';
-  return t && t !== 'JAGHELM' ? t : 'JagHelm';
-}
-
-export default function LoginPage({ onLogin, config }) {
+export default function LoginPage({ onLogin, theme, name, logoUrl }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState(NONE);
   const [busy, setBusy] = useState(false);
-  const [theme] = useState(() => loginTheme(storedTheme()));
   // Set before the first await, so a second submit in the same tick sends nothing.
   const sending = useRef(false);
 
@@ -81,8 +62,8 @@ export default function LoginPage({ onLogin, config }) {
   return (
     <LoginScreen
       theme={theme}
-      name={instanceName(config?.title)}
-      logoUrl={config?.logoUrl || undefined}
+      name={name}
+      logoUrl={logoUrl || undefined}
       username={username}
       password={password}
       onUsernameChange={setUsername}

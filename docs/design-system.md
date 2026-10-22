@@ -1573,7 +1573,8 @@ From the mock's Main board, its Infrastructure section:
 
 The sign-in page (spec §8 "Login", #305), in `src/ui/login-form.jsx`, built
 on the components above; `src/components/LoginPage.jsx` wires it to
-`POST /api/auth/login`. The [gallery](GALLERY.md) shows it blank, busy, with a
+`POST /api/auth/login`, and App gives it the shell's theme and the
+instance's name and logo. The [gallery](GALLERY.md) shows it blank, busy, with a
 wrong password and with the server not answering, and `e2e/login.spec.mjs`
 runs it in a browser.
 
@@ -1598,7 +1599,7 @@ or subtitle.
   for>`), and `autocomplete` is `username` and `current-password`, so a
   password manager fills both.
 - **Errors.** A field's error sits under it, in its `aria-describedby`, and
-  sets `aria-invalid`. A refused sign-in is one error on the password field,
+  sets `aria-invalid`, until that field is edited. A refused sign-in is one error on the password field,
   "Wrong username or password.": the server doesn't say which was wrong, so
   usernames can't be guessed from it. An empty field says so on that field,
   and nothing is sent. A failure no field caused (the server didn't answer,

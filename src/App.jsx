@@ -139,13 +139,19 @@ export default function App() {
   // Show login if auth required and not authenticated
   if (authRequired === null) return null; // Loading
   if (authRequired && !authed) {
+    const stored = readStoredConfig();
     return (
       <>
         <div className="bg-layer">
           <div className="bg-overlay" />
         </div>
         <div className="bg-mesh" />
-        <LoginPage onLogin={handleLogin} config={readStoredConfig()} />
+        <LoginPage
+          onLogin={handleLogin}
+          theme={uiTheme(localStorage.getItem('jaghelm-theme'))}
+          name={instanceName(stored.title)}
+          logoUrl={stored.logoUrl}
+        />
       </>
     );
   }
@@ -174,6 +180,11 @@ const PAGES = [
 function instanceName(title) {
   const t = typeof title === 'string' ? title.trim() : '';
   return t && t !== 'JAGHELM' ? t : 'JagHelm';
+}
+
+/** The new UI's theme for a stored theme: today's ten, until #304; a light one draws light. */
+function uiTheme(theme) {
+  return THEMES.find((t) => t.id === theme)?.light ? 'light' : 'dark';
 }
 
 function AppMain({ authRequired, demo, onLogout }) {
@@ -319,11 +330,7 @@ function AppMain({ authRequired, demo, onLogout }) {
     document.title = pageTitle ? `${pageTitle} — ${name}` : name;
   }, [pageTitle, name]);
 
-  // Today's ten themes, until #304: a light one draws the shell light.
-  const switches = useMemo(
-    () => ({ theme: THEMES.find((t) => t.id === theme)?.light ? 'light' : 'dark' }),
-    [theme]
-  );
+  const switches = useMemo(() => ({ theme: uiTheme(theme) }), [theme]);
 
   const lazyFallback = (
     <div

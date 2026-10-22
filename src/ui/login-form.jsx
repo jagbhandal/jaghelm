@@ -10,8 +10,9 @@
  *               `onUsernameChange(value)`, `onPasswordChange(value)`.
  *               `errors` is `{ username, password, form }`: a field's error
  *               sits under it, in its aria-describedby, and makes it
- *               aria-invalid; `form`, a failure no field caused (JagHelm
- *               didn't answer), is a crit Banner over the fields, an alert.
+ *               aria-invalid, until that field is edited; `form`, a
+ *               failure no field caused (JagHelm didn't answer), is a crit
+ *               Banner over the fields, an alert.
  *               Each new `errors` with a field error moves focus to the first
  *               invalid field and selects its text, so typing replaces it; the
  *               first render never takes focus (`autoFocus` puts it on
@@ -24,7 +25,7 @@
  *
  * It sends nothing itself: `onSubmit()` is the page's (src/components/LoginPage.jsx).
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Banner } from './banner.jsx';
 import { Button } from './button.jsx';
 import { Field } from './field.jsx';
@@ -35,6 +36,7 @@ import { UiRoot } from './root.jsx';
 import { cn } from './lib/utils.js';
 
 const NO_ERRORS = Object.freeze({});
+const NONE_EDITED = Object.freeze([]);
 /** The fields in screen order: focus goes to the first invalid one. */
 const ORDER = ['username', 'password'];
 
@@ -67,6 +69,18 @@ function LoginForm({
     }
   });
 
+  // The fields edited since `errors` came: their errors are gone (and with
+  // them aria-invalid), while `errors` itself, and so the focus, stay as given.
+  const [edited, setEdited] = useState({ errors, fields: NONE_EDITED });
+  const editedNow = edited.errors === errors ? edited.fields : NONE_EDITED;
+  const error = (field) => (editedNow.includes(field) ? undefined : errors[field]);
+  const change = (field, onChange) => (event) => {
+    if (errors[field] && !editedNow.includes(field)) {
+      setEdited({ errors, fields: [...editedNow, field] });
+    }
+    onChange?.(event.target.value);
+  };
+
   const submit = (event) => {
     event.preventDefault();
     if (!busy) onSubmit?.();
@@ -91,7 +105,7 @@ function LoginForm({
           {errors.form ? (
             <Banner role="alert" tone="crit" title="Couldn't sign in" cause={errors.form} />
           ) : null}
-          <Field label="Username" error={errors.username}>
+          <Field label="Username" error={error('username')}>
             <Input
               ref={inputs.username}
               name="username"
@@ -100,17 +114,17 @@ function LoginForm({
               spellCheck={false}
               autoFocus={autoFocus}
               value={username}
-              onChange={(e) => onUsernameChange?.(e.target.value)}
+              onChange={change('username', onUsernameChange)}
             />
           </Field>
-          <Field label="Password" error={errors.password}>
+          <Field label="Password" error={error('password')}>
             <Input
               ref={inputs.password}
               type="password"
               name="password"
               autoComplete="current-password"
               value={password}
-              onChange={(e) => onPasswordChange?.(e.target.value)}
+              onChange={change('password', onPasswordChange)}
             />
           </Field>
           <Button
