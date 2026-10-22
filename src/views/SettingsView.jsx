@@ -12,6 +12,8 @@ import TabsTab from '../components/settings/TabsTab';
 import SecurityTab from '../components/settings/SecurityTab';
 import BackupTab from '../components/settings/BackupTab';
 import IntegrationsTab from '../components/settings/IntegrationsTab';
+import ConfigReadError from '../components/settings/ConfigReadError';
+import { readServerConfig } from '../components/settings/readServerConfig.js';
 import DashboardView from './DashboardView';
 import { apiFetch, isReadOnlyServer } from '../api/client.js';
 import { useToast } from '../context/OverlayContext.jsx';
@@ -90,6 +92,10 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
   const [liveServices, setLiveServices] = useState(null);
   const [monitorNames, setMonitorNames] = useState([]);
   const [serverSaving, setServerSaving] = useState(false);
+  // Why the config couldn't be read (or a save found services.yaml doesn't
+  // parse): shown in place of the Nodes and Services tabs, never an old or
+  // edited config that looks stored.
+  const [serverError, setServerError] = useState(null);
   const serverSaveTimer = useRef(null);
   // The stored config the screen's config descends from (#423): its version,
   // the read's ETag, which each save sends back as If-Match and a save's
@@ -100,26 +106,34 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
   // answered.
   const serverSaves = useRef(Promise.resolve());
 
+  // The stored config can't be shown, for `reason`: the screen says so in
+  // place of the tabs, and no save goes out from the screen it replaces.
+  const showServerError = useCallback((reason) => {
+    serverBase.current.dead = true;
+    setServerConfig(null);
+    setServerError(reason);
+  }, []);
+
   // Fetch server config on mount and when switching to relevant tabs
   const fetchServerData = useCallback(() => {
     Promise.all([
-      apiFetch('/api/services/config').then((r) =>
-        r.ok ? r.json().then((cfg) => ({ cfg, version: r.headers.get('ETag') })) : null
-      ),
+      readServerConfig(),
       apiFetch('/api/services').then((r) => (r.ok ? r.json() : null)),
       apiFetch('/api/services/monitors').then((r) => (r.ok ? r.json() : null)),
     ])
       .then(([read, svc, mon]) => {
         if (isReadOnlyServer() && localServerConfig) setServerConfig(localServerConfig);
-        else if (read?.cfg) {
+        else if (read.error) showServerError(read.error);
+        else {
           serverBase.current = { version: read.version, dead: false };
-          setServerConfig(read.cfg);
+          setServerError(null);
+          setServerConfig(read.config);
         }
         if (svc) setLiveServices(svc);
         if (Array.isArray(mon)) setMonitorNames(mon);
       })
       .catch(() => {});
-  }, []);
+  }, [showServerError]);
 
   useEffect(() => {
     if (activeSection === 'nodes' || activeSection === 'services') {
@@ -130,11 +144,13 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
   // Save server config with debounce. Each save sends the version its
   // config was read at (If-Match, #423). A save the server refuses or that
   // fails is never silent, and the stored config is read again so the screen
-  // matches what is saved; the edits made on the old screen are dropped. A
-  // save over a version that is no longer the file's (another tab, an
-  // integration save or a hand edit changed it since) says so; any other
-  // refusal (a stale credential marker is a 409 too, #413) shows the
-  // server's reason.
+  // matches what is saved; the edits made on the old screen are dropped, and
+  // one that would have gone out from it says it wasn't saved. A save over a
+  // version that is no longer the file's (another tab, an integration save or
+  // a hand edit changed it since) says so; any other refusal (a stale
+  // credential marker is a 409 too, #413) shows the server's reason. While
+  // services.yaml doesn't parse (503 config_unparseable) reading again can't
+  // help: the tab shows why until it is fixed and read again (Try again).
   const saveServerConfig = useCallback(
     (newConfig) => {
       setServerConfig(newConfig);
@@ -144,7 +160,10 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
       }
       const base = serverBase.current;
       const post = () => {
-        if (base.dead) return undefined;
+        if (base.dead) {
+          toast('Not saved: an earlier change on this screen was refused', 'error');
+          return undefined;
+        }
         const headers = { 'Content-Type': 'application/json' };
         if (base.version) headers['If-Match'] = base.version;
         return apiFetch('/api/services/config', {
@@ -160,6 +179,7 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
             const data = await r.json().catch(() => ({}));
             const err = new Error(data?.error || `HTTP ${r.status}`);
             err.stale = r.status === 409 && data?.stale === true;
+            err.unparseable = data?.code === 'config_unparseable';
             throw err;
           })
           .catch((err) => {
@@ -168,7 +188,8 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
               err.stale ? 'Settings changed elsewhere; reloaded' : `Not saved: ${err.message}`,
               'error'
             );
-            fetchServerData();
+            if (err.unparseable) showServerError(err.message);
+            else fetchServerData();
           });
       };
       setServerSaving(true);
@@ -179,7 +200,7 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
           .finally(() => setServerSaving(false));
       }, 1500);
     },
-    [toast, fetchServerData]
+    [toast, fetchServerData, showServerError]
   );
 
   return (
@@ -303,7 +324,11 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
             {activeSection === 'typography' && <TypographyTab />}
             {activeSection === 'layout' && <LayoutTab />}
             {activeSection === 'sections' && <SectionsTab />}
+            {(activeSection === 'nodes' || activeSection === 'services') && serverError && (
+              <ConfigReadError message={serverError} onRetry={fetchServerData} />
+            )}
             {activeSection === 'nodes' &&
+              !serverError &&
               (serverConfig ? (
                 <NodesTab
                   serverConfig={serverConfig}
@@ -314,6 +339,7 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
                 <LoadingState />
               ))}
             {activeSection === 'services' &&
+              !serverError &&
               (serverConfig && liveServices ? (
                 <ServicesTab
                   serverConfig={serverConfig}

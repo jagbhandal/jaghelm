@@ -1837,6 +1837,22 @@ All state is files under the data dir (no DB):
     board starts empty and the file is left as it is: only a missing file
     runs first-boot discovery and writes a new one. `nodes: {}` written on
     purpose is a real config and empties the board.
+  - **Nothing writes over a file that doesn't parse** (#423). The config
+    kept for the board is not the file's, so `readConfig()` answers no config
+    for it, only why (`services.yaml doesn't parse (line N)`, `is empty` or
+    `isn't a mapping`, never a quote of the file, which can hold
+    credentials). `GET /api/services/config` and every writer (the config
+    save, the integration save, toggle and delete) answer that as a 503
+    `{ error, code: "config_unparseable" }` with no version, the integration
+    save before it stores a credential, and `writeConfig` parses the bytes it
+    would replace and refuses them itself, whatever version its caller
+    passes, so no writer can skip it. Before, one indentation slip and an
+    integration added from the gallery rewrote the file to that one
+    integration (the last good config at boot is `{}`). Fixed by hand, the
+    next read or the watcher's reload loads it and saves work again. Settings
+    shows the reason in place of the Nodes, Services and Integrations tabs,
+    with Try again, and a save refused for it in the failed-save toast,
+    without reading again.
   - **The config read never carries a credential** (#413).
     `GET /api/services/config` answers with each credential that is set as
     the marker `{ "$stored": true }`, never its value or its `$secret:`
@@ -1875,8 +1891,10 @@ All state is files under the data dir (no DB):
     place before the write: the same keys, and in an array the element with
     the same `name`, `id` or `key` (the first it has), never the one at the
     same position. A marker is accepted only where the read would put one now:
-    one in place of a credential that is no longer stored (removed, or its
-    entry or element renamed, since Settings read the config) is a 409. One
+    one in place of a credential where none is stored is a 409. The version
+    is checked first (#423), so the file is the one Settings read: the edit
+    put the marker where the read put none (a new entry, or one renamed or
+    copied with its marker). One
     anywhere else, in an array element with no name, id or key (or one two
     elements share), or an object with `$stored` that is not exactly the
     marker, is a 400, and nothing is written. So a marker is never written,
@@ -1890,10 +1908,15 @@ All state is files under the data dir (no DB):
     config again, so the screen matches what is saved.
   - **A save needs the version it read** (#423). A tab left open from before a
     change used to post its old copy, without what was added since, and the
-    save deleted it. `services.yaml`'s version is a SHA-256 of its bytes on
-    disk (`config.js`), so it survives a restart and changes with any edit,
-    by hand or by JagHelm, a credential's too (the masked read can't show
-    that, so a version of the answer would miss it).
+    save deleted it. `services.yaml`'s version is an HMAC-SHA256 of its
+    bytes on disk (`config.js`), so it survives a restart and changes with
+    any edit, by hand or by JagHelm, a credential's too (the masked read
+    can't show that, so a version of the answer would miss it). The key is
+    32 random bytes in `config-version.key` in the data dir (below): a plain
+    hash, kept in a HAR file or a screenshot, would let anyone rebuild a file
+    JagHelm wrote from the masked read and test guesses at a weak plaintext
+    credential in it offline. Not `DASH_SECRET`: the installs without one
+    are the ones that still keep plaintext credentials.
     `GET /api/services/config` answers it as a strong ETag, and
     `POST /api/services/config` must send it back in `If-Match`. None is a
     428, and one that is no longer the file's is a 409
@@ -1921,9 +1944,11 @@ All state is files under the data dir (no DB):
     each sends the version the last one answered. A 409 for the version shows
     "Settings changed elsewhere; reloaded"; any other refusal (a 428 too)
     shows the server's reason. Either way Settings reads the config again,
-    and the edits made on the screen it replaces are dropped, not sent. The
-    integration form doesn't post the config, and the Android app doesn't
-    either.
+    and the edits made on the screen it replaces are dropped, not sent: one
+    that would have gone out from it says "Not saved: an earlier change on
+    this screen was refused". A read that fails shows why in place of the
+    tab, never the old or edited config. The integration form doesn't post
+    the config, and the Android app doesn't either.
   - **An integration's save in Settings merges** (`POST /api/integrations/save`,
     #402). The form's values go into the stored entry, and only what the form
     owns changes: the URL (required), the username and target (sent empty to
@@ -1972,6 +1997,13 @@ All state is files under the data dir (no DB):
   sections (per-panel visibility/order/colour), nav/search/weather flags,
   links, tabs, fonts. Read copy-on-read; validated by Zod.
 - **secrets** -- AES-256-GCM blob, keyed by integration storage key.
+- **config version key** -- `config-version.key`: 32 random bytes (mode 0600)
+  that `services.yaml`'s version is an HMAC with (#423, above). Made on first
+  start by a temp file linked into place, so two boots racing end up with one
+  key. Never logged or answered. One that can't be read or isn't 32 bytes
+  stops the boot (a key made up for one run would change every version at
+  the next restart). Losing it costs one refused Settings save: a new key is
+  made and every version changes once.
 - **Arcane state** -- `arcane-state.json` (baselined environments, agent down counters,
   seen activity ids, each environment's pending updates, runs waiting on their job run,
   last notified release),
