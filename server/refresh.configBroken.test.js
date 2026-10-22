@@ -17,7 +17,7 @@
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
@@ -123,6 +123,30 @@ const pushed = (from) => sent.slice(from).map((m) => `${m.data.type} ${m.data.id
 const T0 = Date.UTC(2026, 9, 22, 12, 0, 0);
 const CYCLE = 30_000;
 
+// What JagHelm said while the tests ran: each cycle's status and snapshot file, each health body.
+const said = [];
+/** One status-and-push cycle at `at`, as the loop runs it. */
+async function cycle(at) {
+  await runStatusAndPush([], at);
+  said.push(
+    JSON.stringify(getCached('status')),
+    existsSync(snapshotFile) ? readFileSync(snapshotFile, 'utf8') : ''
+  );
+}
+/** GET /api/health. */
+async function health() {
+  const res = await request(app).get('/api/health');
+  said.push(res.text);
+  return res;
+}
+
+// Every 8-character piece of the secret: not one may show anywhere, whole or cut.
+const PIECES = Array.from({ length: SECRET.length - 7 }, (_, i) => SECRET.slice(i, i + 8));
+function assertQuotesNothing(texts) {
+  const all = texts.join('\n');
+  for (const piece of PIECES) assert.ok(!all.includes(piece), `"${piece}" of the secret escaped`);
+}
+
 test('boot on a broken services.yaml: the config source is down with its line, health says so, one page; fixed: one recovery; the file is quoted nowhere', async () => {
   writeFileSync(CONFIG_PATH, BROKEN);
   const logs = await captureLogs(async () => {
@@ -131,7 +155,7 @@ test('boot on a broken services.yaml: the config source is down with its line, h
 
     // The first cycle: the board says the config is broken, not "Nothing monitored yet".
     refreshedWithNoNodes();
-    await runStatusAndPush([], T0);
+    await cycle(T0);
     const status = getCached('status');
     assert.deepEqual(status.sources.config, {
       state: 'failed',
@@ -156,16 +180,15 @@ test('boot on a broken services.yaml: the config source is down with its line, h
     assert.deepEqual(pushed(0), [], 'one failed cycle sends nothing');
 
     // /api/health: the config's state and line beside the model's; `status` stays ok.
-    const res = await request(app).get('/api/health');
+    const res = await health();
     assert.equal(res.status, 200);
     assert.equal(res.body.status, 'ok', 'the deploy gate is not tripped');
     assert.deepEqual(res.body.config, { state: 'unparseable', line: 8 });
     assert.deepEqual(res.body.statusModel, { state: 'ok' });
-    assert.doesNotMatch(res.text, new RegExp(SECRET));
 
     // The second cycle pages once, the third sends nothing more.
-    await runStatusAndPush([], T0 + CYCLE);
-    await runStatusAndPush([], T0 + 2 * CYCLE);
+    await cycle(T0 + CYCLE);
+    await cycle(T0 + 2 * CYCLE);
     assert.deepEqual(pushed(0), ['source_down config']);
     assert.deepEqual(sent[0].data, { type: 'source_down', id: 'config', node: 'config', severity: 'warning' });
     assert.deepEqual(sent[0].notification, {
@@ -177,9 +200,9 @@ test('boot on a broken services.yaml: the config source is down with its line, h
     // Fixed by hand: the watcher's reload (loadConfig) loads it.
     writeFileSync(CONFIG_PATH, FIXED);
     loadConfig();
-    assert.deepEqual((await request(app).get('/api/health')).body.config, { state: 'ok' });
-    await runStatusAndPush([], T0 + 3 * CYCLE);
-    await runStatusAndPush([], T0 + 4 * CYCLE);
+    assert.deepEqual((await health()).body.config, { state: 'ok' });
+    await cycle(T0 + 3 * CYCLE);
+    await cycle(T0 + 4 * CYCLE);
     assert.deepEqual(pushed(1), ['source_recovered config'], 'one recovery, then nothing');
     assert.deepEqual(sent[1].notification, {
       title: 'JagHelm config fixed',
@@ -192,16 +215,49 @@ test('boot on a broken services.yaml: the config source is down with its line, h
     assert.equal(JSON.parse(readFileSync(snapshotFile, 'utf8')).sources.config, undefined);
   });
 
-  // Never the file's text: not in the model, the pushes, the snapshot or the log.
-  const everywhere = [
-    JSON.stringify(getCached('status')),
-    JSON.stringify(sent),
-    readFileSync(snapshotFile, 'utf8'),
-    ...logs,
-  ].join('\n');
+  // Never the file's text: not in a status, a push, a health body, the snapshot or the log.
   assert.ok(logs.length > 0, 'the logger was heard');
-  assert.doesNotMatch(everywhere, new RegExp(SECRET));
+  assertQuotesNothing([...said, JSON.stringify(sent), ...logs]);
 });
+
+test('the check finds any 8-character piece of the secret, not only the whole value', () => {
+  assert.throws(() => assertQuotesNothing([`password: *${SECRET.slice(2, 10)}…`]), /escaped/);
+  assert.doesNotThrow(() => assertQuotesNothing([`password: ${SECRET.slice(0, 7)}`]));
+});
+
+// js-yaml names an unquoted value that starts with * (an alias) or ! (a tag) in
+// its reason (#504): with a credential there, the reason itself quotes it.
+for (const [what, badLine] of [
+  ['an alias', `    password: *${SECRET}-alias`],
+  ['a tag', `    password: !${SECRET}-tag`],
+]) {
+  test(`a password read as ${what} on the bad line: no piece of it in a status, push, health body, the snapshot or the log`, async () => {
+    const before = sent.length;
+    const from = said.length;
+    const t = T0 + (what === 'a tag' ? 30 : 20) * CYCLE;
+    const logs = await captureLogs(async () => {
+      writeFileSync(CONFIG_PATH, withLine8(badLine));
+      loadConfig();
+      const { body } = await health();
+      assert.equal(body.status, 'ok');
+      assert.equal(body.config.state, 'unparseable');
+      assert.equal(typeof body.config.line, 'number');
+      refreshedWithNoNodes();
+      for (let i = 0; i < 3; i += 1) await cycle(t + i * CYCLE);
+      assert.equal(
+        getCached('status').overall.sentence,
+        `services.yaml doesn't parse (line ${body.config.line})`
+      );
+      writeFileSync(CONFIG_PATH, FIXED);
+      loadConfig();
+      await health();
+      await cycle(t + 3 * CYCLE);
+    });
+    assert.deepEqual(pushed(before), ['source_down config', 'source_recovered config']);
+    assert.ok(logs.some((l) => /doesn't parse/.test(l)), 'the parse failure was logged');
+    assertQuotesNothing([...said.slice(from), JSON.stringify(sent.slice(before)), ...logs]);
+  });
+}
 
 test('broken by a later edit (a reload, not a boot): health and the board say so, one page, one recovery', async () => {
   const before = sent.length;
@@ -212,13 +268,13 @@ test('broken by a later edit (a reload, not a boot): health and the board say so
   assert.equal(health.config.state, 'unparseable');
   assert.equal(typeof health.config.line, 'number');
   refreshedWithNoNodes();
-  await runStatusAndPush([], T0 + 10 * CYCLE);
-  await runStatusAndPush([], T0 + 11 * CYCLE);
-  await runStatusAndPush([], T0 + 12 * CYCLE);
+  await runStatusAndPush([], T0 + 40 * CYCLE);
+  await runStatusAndPush([], T0 + 41 * CYCLE);
+  await runStatusAndPush([], T0 + 42 * CYCLE);
   assert.deepEqual(pushed(before), ['source_down config']);
   assert.match(getCached('status').overall.sentence, /^services\.yaml doesn't parse \(line \d+\)$/);
   writeFileSync(CONFIG_PATH, FIXED);
   loadConfig();
-  await runStatusAndPush([], T0 + 13 * CYCLE);
+  await runStatusAndPush([], T0 + 43 * CYCLE);
   assert.deepEqual(pushed(before), ['source_down config', 'source_recovered config']);
 });

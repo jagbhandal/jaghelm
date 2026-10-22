@@ -1154,8 +1154,10 @@ error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
   on none at boot (5, #463), and an empty board would read as calm: its issue,
   `sources/config` ("JagHelm config", `warn`, "Failed"), has the reason, and
   the sentence says it, "services.yaml doesn't parse (line 4)", where an empty
-  board said "Nothing monitored yet". The web shows it as any source issue
-  (the `config-broken` cross-client fixture); the Android app's screens don't
+  board said "Nothing monitored yet". The web shows it as any source issue,
+  with "Configuration" where a monitoring source says "Monitoring source"
+  (`whereOf` in `src/shell/statusView.js`; the `config-broken` cross-client
+  fixture); the Android app's screens don't
   read the model yet (#325), so there it is the push.
 - **A reading with no value** this cycle (#462: a sensor or exporter that
   didn't answer, `null` in `/api/services`) keeps the level the model held for
