@@ -99,6 +99,8 @@ export default function DashboardView({
     return () => ro.disconnect();
   }, []);
 
+  const refreshIntervalMs = (config.refreshInterval || 30) * 1000;
+
   // Data — fetch loop encapsulated in the hook
   const {
     serviceData,
@@ -110,8 +112,9 @@ export default function DashboardView({
     servicesLoaded,
     settled,
     sources,
+    healthNow,
     retry,
-  } = useDashboardData(refreshKey, { tick, active });
+  } = useDashboardData(refreshKey, { tick, active, refreshIntervalMs });
 
   const removeCronJob = useCallback(
     async (node, job) => {
@@ -126,23 +129,21 @@ export default function DashboardView({
     [retry]
   );
 
-  // Banners are computed at render from `sources` + a live clock (no per-tick
-  // state), so an all-304 refresh stays render-free. `now` is bucketed to half
-  // the refresh interval so back-to-back renders in one bucket recompute
-  // IDENTICAL content and the node/group memos keep their identity; the bucket
+  // Banners are computed at render from `sources` + the hook's clock (no
+  // per-tick state), so an all-304 refresh stays render-free. `healthNow` steps
+  // every half refresh interval, so back-to-back renders in one step recompute
+  // IDENTICAL content and the node/group memos keep their identity; the step
   // is still far finer than the staleness threshold, so "updated Nm ago" flips
-  // promptly once it crosses.
-  const refreshIntervalMs = (config.refreshInterval || 30) * 1000;
-  const nowBucket = Math.floor(Date.now() / Math.max(refreshIntervalMs / 2, 1000));
+  // promptly once it crosses. It is the hook's, not a clock of this view's own:
+  // `sources` read the last answers on it (#545).
   const banners = useMemo(() => {
-    const now = nowBucket * Math.max(refreshIntervalMs / 2, 1000);
     const out = {};
     for (const key of Object.keys(sources)) {
       // Each source goes stale on its own poll period (slow sources poll less often).
-      out[key] = sourceBanner(sources[key], key, pollPeriodMs(key, refreshIntervalMs), now);
+      out[key] = sourceBanner(sources[key], key, pollPeriodMs(key, refreshIntervalMs), healthNow);
     }
     return out;
-  }, [sources, refreshIntervalMs, nowBucket]);
+  }, [sources, refreshIntervalMs, healthNow]);
 
   // Use useMemo for the `|| {}` / `|| []` fallbacks so a missing section/group
   // doesn't allocate a fresh empty object/array on every render — that would

@@ -25,7 +25,9 @@ import {
  * reference as the prior 200, so setState(sameRef) is bailed by Object.is and
  * an all-304 tick triggers zero re-renders. Per-source health preserves this:
  * `error` is state but setState fires only on a status FLIP, and `lastSuccessMs`
- * lives in a ref (no render) bumped on every success (200 or 304).
+ * lives in a ref (no render) bumped on every success (200 or 304). `sources`
+ * reads it on a clock of half the refresh interval (`refreshIntervalMs`), and
+ * `healthNow` is the time the banners judge staleness at, on the same clock.
  *
  * `retry()` (user-triggered, not per-tick) forces an immediate full re-fetch
  * that SKIPS ETags, so a recovered endpoint returns a fresh 200 body rather
@@ -51,7 +53,10 @@ export function pollPeriodMs(key, refreshIntervalMs) {
   return refreshIntervalMs * everyTicks;
 }
 
-export function useDashboardData(refreshKey, { tick, active = true } = {}) {
+export function useDashboardData(
+  refreshKey,
+  { tick, active = true, refreshIntervalMs = 30_000 } = {}
+) {
   const [serviceData, setServiceData] = useState({ nodes: {} });
   const [ups, setUps] = useState(null);
   const [commits, setCommits] = useState([]);
@@ -250,11 +255,17 @@ export function useDashboardData(refreshKey, { tick, active = true } = {}) {
     if (active) setResumedAtMs(Date.now());
   }
 
-  // Memoize on [sourceErrors, healthBucket] so `sources` keeps a STABLE identity
-  // across unrelated re-renders (e.g. a drag tick), rebuilding only on an error
-  // flip or staleness-clock tick — otherwise a fresh object every render defeats
-  // the downstream banner + panel memos. (No new render triggered; 304 contract holds.)
-  const healthBucket = Math.floor(Date.now() / 15000);
+  // The staleness clock steps every half refresh interval (at least 1 s).
+  // `sources` is rebuilt at most once a step (or on an error flip), so it keeps a
+  // STABLE identity across unrelated re-renders (e.g. a drag tick) and the
+  // downstream banner + panel memos hold; each rebuild reads the last answers
+  // then. `healthNow`, the step's start, is the `now` the banners are judged at:
+  // never later than that read, so a source that answers every poll never reads
+  // stale. A separate 15 s read let a source that answered 2 s ago read
+  // "updated 4s ago" at a 2 s interval (#545). (No new render triggered; 304
+  // contract holds.)
+  const healthStepMs = Math.max(refreshIntervalMs / 2, 1000);
+  const healthStep = Math.floor(Date.now() / healthStepMs);
   const sources = useMemo(
     () =>
       SOURCE_KEYS.reduce((acc, k) => {
@@ -265,8 +276,8 @@ export function useDashboardData(refreshKey, { tick, active = true } = {}) {
         };
         return acc;
       }, {}),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- healthBucket re-reads the live ref by design
-    [sourceErrors, healthBucket, resumedAtMs]
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- healthStep re-reads the live ref by design
+    [sourceErrors, healthStep, healthStepMs, resumedAtMs]
   );
 
   return {
@@ -279,6 +290,7 @@ export function useDashboardData(refreshKey, { tick, active = true } = {}) {
     servicesLoaded,
     settled,
     sources,
+    healthNow: healthStep * healthStepMs,
     retry,
   };
 }

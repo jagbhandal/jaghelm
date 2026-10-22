@@ -2033,7 +2033,10 @@ flowchart TD
   until the old board's sources go with it (#306 enforces spec §4's four). A
   panel shows its "updated ... ago" stale note after 2 missed polls of its own
   source (`pollPeriodMs` in `useDashboardData`): 1 minute for a live source and
-  3 minutes for a slow one at 30 s. The utilities (#301) poll on their own,
+  3 minutes for a slow one at 30 s. It is judged at the hook's `healthNow`,
+  which steps every half interval, on the same clock the hook reads each
+  source's last answer on, so a source that answers every poll never shows
+  one (#545). The utilities (#301) poll on their own,
   only while drawn and the browser tab shows: Pipeline `/api/gitea/activity`
   every third interval (90 s at 30 s), with the board's ETag, so the rail's
   read beside the board's is a 304; the Checklist reads `/api/todos` once when
