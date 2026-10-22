@@ -16,8 +16,11 @@ import {
   buildSnapshot,
   buildSources,
   buildUps,
+  cycleSnapshot,
   heldLevels,
   heldSinceOf,
+  modelFailedSnapshot,
+  nextSourceState,
   normalizeUpsStatus,
   serviceStateOf,
   upgradeSnapshot,
@@ -405,6 +408,57 @@ test("buildSources: failing on a source's first failed cycle, down from its seco
   assert.deepEqual(s, { kuma: 'down', nut: 'ok', prometheus: 'ok' });
   // Not listed this cycle (no services payload): kept. Gitea never pages.
   assert.deepEqual(buildSources(listed({ gitea: failed }), s), s);
+});
+
+test('nextSourceState: ok when it answers, failing on its first failed cycle, down from its second', () => {
+  assert.equal(nextSourceState(undefined, false), 'ok');
+  assert.equal(nextSourceState('down', false), 'ok');
+  assert.equal(nextSourceState(undefined, true), 'failing');
+  assert.equal(nextSourceState('ok', true), 'failing');
+  assert.equal(nextSourceState('failing', true), 'down');
+  assert.equal(nextSourceState('down', true), 'down');
+});
+
+test('buildSources: the status check (#440) is left out while the model builds, and ok for the cycle after it paged', () => {
+  const listed = { entities: [], sources: { prometheus: { state: 'ok' } } };
+  assert.deepEqual(buildSources(listed, { prometheus: 'ok' }), { prometheus: 'ok' });
+  assert.deepEqual(buildSources(listed, { prometheus: 'ok', status: 'failing' }), { prometheus: 'ok' });
+  assert.deepEqual(buildSources(listed, { prometheus: 'ok', status: 'down' }), { prometheus: 'ok', status: 'ok' });
+  assert.deepEqual(buildSources(listed, { prometheus: 'ok', status: 'ok' }), { prometheus: 'ok' });
+});
+
+test('modelFailedSnapshot: the previous snapshot as it is, but for the status check\'s run of failed cycles', () => {
+  const prev = {
+    services: { 'n1:web': 'down' },
+    monitorOf: { 'n1:web': '1' },
+    hosts: { n1: { reachable: true, levels: { cpu: 'ok', disk: 'warn' } } },
+    ups: { state: 'online' },
+    cron: { 'n1:backup': 'failure' },
+    sources: { prometheus: 'failing', kuma: 'ok', nut: 'ok' },
+  };
+  const frozen = structuredClone(prev);
+  const once = modelFailedSnapshot(prev);
+  assert.deepEqual(once, { ...frozen, sources: { kuma: 'ok', nut: 'ok', prometheus: 'failing', status: 'failing' } });
+  assert.deepEqual(Object.keys(once.sources), ['kuma', 'nut', 'prometheus', 'status'], 'sorted, as every map');
+  assert.deepEqual(modelFailedSnapshot(once).sources.status, 'down');
+  assert.deepEqual(modelFailedSnapshot(modelFailedSnapshot(once)).sources.status, 'down');
+  assert.deepEqual(prev, frozen, 'prev is not changed');
+  // No previous snapshot (a first run): nothing else is known.
+  assert.deepEqual(modelFailedSnapshot(null), {
+    services: {},
+    monitorOf: {},
+    hosts: {},
+    ups: { state: 'unknown' },
+    cron: {},
+    sources: { status: 'failing' },
+  });
+});
+
+test('cycleSnapshot: built from the model when it built, modelFailedSnapshot when it threw', () => {
+  const prev = { ...modelFailedSnapshot(null), sources: { status: 'down' } };
+  assert.deepEqual(cycleSnapshot(cachesOf({}), prev, null), modelFailedSnapshot(prev));
+  const built = cycleSnapshot(cachesOf({}), prev, { entities: [], sources: {} });
+  assert.equal(built.sources.status, 'ok');
 });
 
 // ── the whole snapshot, from caches through the real model ───────────────

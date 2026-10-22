@@ -49,6 +49,11 @@ It's a scrypt hash (not reversible), but rotate anyway:
   (or `@sha256:<digest>`) — see the deploy notes in `compose.yaml`.
 - `/api/health` returns 503 when the refresh loop is wedged (stale); the Docker
   HEALTHCHECK + deploy verify gate use it.
+- A phone push "JagHelm status check failing" means the status model throws on
+  some input, and no other alert is sent until it builds again. `/api/health`
+  then has `statusModel.state: "degraded"` with the error's class and since
+  when (still 200: the loop is alive); the server log's `status model failed`
+  line has the error itself.
 
 ## Prevention checklist
 

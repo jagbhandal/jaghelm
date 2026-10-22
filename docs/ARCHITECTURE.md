@@ -835,7 +835,17 @@ integration connection-test endpoint.
   rate, latency histograms, refresh-loop health.
 - **Two probes**: `/api/health` (liveness; reflects refresh-loop liveness -- 503
   when wedged) and `/api/readyz` (readiness; distinguishes "not ready yet" from
-  "down"), backing the Docker `HEALTHCHECK` and the deploy gate.
+  "down"), backing the Docker `HEALTHCHECK` and the deploy gate. `/api/health`
+  also has `statusModel` (#440): `{ state: 'starting' }` before the loop's
+  first cycle, `{ state: 'ok' }` while the status model builds, and
+  `{ state: 'degraded', error, since, failedCycles }` while it throws: the
+  error's class only ("TypeError", never its message, which can quote the
+  input), when this process saw the run begin (ISO) and how many cycles in a
+  row. It doesn't change `status` or the HTTP code: the loop is alive, a
+  restart can't mend the input, and the deploy gate's `"status":"ok"` would
+  roll a deploy back over it. It is the process's memory, so after a restart
+  it counts from that restart's first cycle (push keeps its own count in the
+  snapshot, 4.7).
 
 ### 4.7 Status model
 
@@ -867,10 +877,14 @@ any other.
 
 **The loop's status step never fails** (`runStatusAndPush` in `refresh.js`). If
 the model throws on an input it can't read, the error is logged once (again
-only when it changes, and one info line when the model builds again),
-`/api/status` keeps serving the last status, and push skips the cycle: nothing
-is diffed, sent or advanced, so the next cycle the model builds diffs against
-the last good snapshot and a change made meanwhile is still sent.
+only when it changes, and one info line when the model builds again, with how
+many cycles it failed), `/api/status` keeps serving the last status, and push
+diffs, sends and advances nothing the model judges, so the next cycle the
+model builds diffs against the last good snapshot and a change made meanwhile
+is still sent. The failure is a source of its own (#440): its second failed
+cycle in a row sends one "JagHelm status check failing" and the cycle it
+builds again one recovery (see "Push" below), and `/api/health` reports it in
+`statusModel` (4.6).
 
 **Inputs** (`readStatusInputs(caches)`, the same cache seam as the push
 snapshot): the cached `/api/services`, `/api/ups` and `/api/integrations`
@@ -1199,6 +1213,20 @@ sees where that changed:
   `failing` (its first failed cycle) or `down`. Its category is what it watches
   (`SOURCE_CATEGORY` in `push/dispatch.js`: Prometheus is Hosts, Kuma Services,
   NUT UPS), since the installed app has five category keys.
+- The status model itself is a source (#440). A cycle whose model threw has no
+  status, so push keeps its snapshot as it was (`modelFailedSnapshot` in
+  `push/snapshot.js`) but for the status check's own entry, `sources.status`,
+  which steps `failing` and `down` as a source does. Its second failed cycle in
+  a row sends one `source_down` with the id and node `status`: "JagHelm status
+  check failing", `critical`, since no other push is sent while it lasts. The
+  cycle it builds again sends one `source_recovered` ("JagHelm status check
+  recovered") and whatever changed meanwhile. Their words are fixed in
+  `push/differ.js`, never the model's. The entry is in the file, so a restart
+  mid-failure sends no second push, and one failed cycle on each side of a
+  restart is two in a row. It is in no category: no category switch turns it
+  off, only push off (and *Notify recoveries* for the recovery). While the
+  model builds, `sources` has no `status` entry, but for the cycle after it
+  paged, when it is `ok`.
 - Each event's `reason` is the model's reason for the entity, and its body the
   entity's name (and node) and that reason: "Gitea on vm103 · Kuma: down",
   "pve · Disk 94 % (warning above 90 %)". The FCM `data` block the Android app
