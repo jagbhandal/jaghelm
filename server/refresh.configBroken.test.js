@@ -206,7 +206,7 @@ test('boot on a broken services.yaml: the config source is down with its line, h
     assert.deepEqual(pushed(1), ['source_recovered config'], 'one recovery, then nothing');
     assert.deepEqual(sent[1].notification, {
       title: 'JagHelm config fixed',
-      body: 'services.yaml loads again',
+      body: 'services.yaml is no longer broken',
     });
     const back = getCached('status');
     assert.equal(back.sources.config, undefined, 'a good file lists no config source');

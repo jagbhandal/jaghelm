@@ -69,6 +69,8 @@ It's a scrypt hash (not reversible), but rotate anyway:
   "unreadable", code }`) is the same for a file JagHelm can't read: fix its
   owner or mode (the container runs as non-root), or replace a directory of
   that name with the file. It is read again every 30 s: no restart needed.
+  Deleting a broken file clears the warning; after a broken boot that leaves
+  an empty board, and a restart runs first-boot discovery.
 
 ## Prevention checklist
 

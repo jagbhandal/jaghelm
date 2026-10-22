@@ -1447,8 +1447,9 @@ sees where that changed:
   services.yaml doesn't parse (line 4)" (or "can't be read (permission
   denied)", #536), `warning`, and the cycle after the fix (the watcher's
   reload, its 30 s retry, or any read) or the file's removal one
-  `source_recovered`, "JagHelm config fixed", "services.yaml loads again". It is in no category: a file
-  that doesn't parse is every category's problem.
+  `source_recovered`, "JagHelm config fixed", "services.yaml is no longer
+  broken", words true of each of those. It is in no category: a file that
+  doesn't parse is every category's problem.
 - Each event's `reason` is the model's reason for the entity, and its body the
   entity's name (and node) and that reason: "Gitea on vm103 · Kuma: down",
   "pve · Disk 94 % (warning above 90 %)". The FCM `data` block the Android app
@@ -2332,7 +2333,9 @@ All state is files under the data dir (no DB):
 - **services.yaml** -- nodes, per-service overrides (display name, icon, and
   the Kuma monitor mapping `monitor` / `monitor_per_node`, see 4.2) and
   integration configs (each secret value stored separately, encrypted). Hot-reloaded on an
-  external edit; read copy-on-read; `POST /api/services/config` validated by Zod.
+  external edit (the 5 s watcher compares the file's mtime, ctime, size and
+  inode, so a chmod or chown shows too, #536); read copy-on-read;
+  `POST /api/services/config` validated by Zod.
   `writeConfig` re-serialises the whole file, so a write drops its comments and
   hand formatting.
   - **A read that yields no usable config is a failed read** (#463): an
@@ -2352,9 +2355,10 @@ All state is files under the data dir (no DB):
     empty board at boot and a 500 on a save.
   - **While the config is a failed source, a retry reads it again** (#536)
     every 30 s, beside the watcher's 5 s poll, and reloads it when what it
-    reads differs from the last read: a permission fix, or a file restored
-    with its old mtime, changes no mtime, so the poll alone never saw it. The
-    same failure again is quiet. One timer at most, started when the source
+    reads differs from the last read. The poll sees a chmod or chown of the
+    file itself (its ctime), at once, both ways; the retry is for a fix the
+    file's own stat doesn't show, such as its folder's permissions or a
+    network share's cached attributes. The same failure again is quiet. One timer at most, started when the source
     goes down (or the watcher starts with it down), stopped when it is up
     again and on shutdown (`stopConfigWatcher`). A broken or unreadable file
     deleted is reloaded at the next poll and is broken no more, with one
@@ -2375,8 +2379,10 @@ All state is files under the data dir (no DB):
     passes, so no writer can skip it. A file that can't be read (#536) is
     refused the same way, as a 503 `{ error, code: "config_unreadable" }`
     ("services.yaml can't be read (permission denied): fix it on the host;
-    …"), before any version is compared, since it has none; Settings shows
-    it as it shows `config_unparseable`. Before, one indentation slip and an
+    …"), before any version is compared, since it has none. Settings' read
+    shows its reason in place of the tabs, as for `config_unparseable`; a
+    save refused with it says so in the failed-save toast, then reads again,
+    which shows the reason. Before, one indentation slip and an
     integration added from the gallery rewrote the file to that one
     integration (the last good config at boot is `{}`). Fixed by hand, the
     next read or the watcher's reload loads it and saves work again. Settings

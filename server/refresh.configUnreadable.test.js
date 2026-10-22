@@ -129,11 +129,17 @@ test('unreadable at boot: the config source is down with the reason, health says
     body: `JagHelm config · ${UNREADABLE}`,
   });
 
-  // The permissions fixed: same file, same mtime. The retry reads it again.
+  // The watcher's first look (boot left it nothing to compare with) reads
+  // it again, still unreadable.
   t.mock.timers.enable({ apis: ['setInterval', 'setTimeout'] });
   startConfigWatcher();
+  t.mock.timers.tick(5_000);
+  t.mock.timers.tick(250);
+  assert.equal((await health()).config.state, 'unreadable');
+  // Fixed in a way the file's own stat doesn't show (its folder's
+  // permissions, say): the watcher sees nothing, the retry reads it again.
   blocked = null;
-  t.mock.timers.tick(29_999);
+  t.mock.timers.tick(30_000 - 5_250 - 1);
   assert.equal((await health()).config.state, 'unreadable', 'the watcher alone sees no change');
   t.mock.timers.tick(1);
   assert.deepEqual((await health()).config, { state: 'ok' });
@@ -143,6 +149,10 @@ test('unreadable at boot: the config source is down with the reason, health says
   await cycle();
   await cycle();
   assert.deepEqual(pushed(1), ['source_recovered config'], 'one recovery, then nothing');
+  assert.deepEqual(sent[1].notification, {
+    title: 'JagHelm config fixed',
+    body: 'services.yaml is no longer broken',
+  });
   const back = getCached('status');
   assert.equal(back.sources.config, undefined);
   assert.equal(back.overall.state, 'empty', 'the empty board is calm again (#449)');
@@ -172,6 +182,7 @@ for (const [what, breakIt, state] of [
     await cycle();
     await cycle();
     assert.deepEqual(pushed(before), ['source_down config', 'source_recovered config']);
+    assert.equal(sent.at(-1).notification.body, 'services.yaml is no longer broken', 'true of a deleted file too');
     assert.equal(getCached('status').overall.state, 'empty');
     // A missing file, as today: the version is absent and the next save writes one.
     assert.equal(readConfig().version, CONFIG_ABSENT);

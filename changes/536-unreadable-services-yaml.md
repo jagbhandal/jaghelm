@@ -9,3 +9,5 @@
 - A broken `services.yaml` that gets deleted no longer leaves the board
   saying it doesn't parse until a restart: the warning clears within a few
   seconds, and the next save in Settings writes a new file.
+- If the file was already broken when JagHelm started, deleting it leaves an
+  empty board; restart JagHelm and it discovers your nodes again.

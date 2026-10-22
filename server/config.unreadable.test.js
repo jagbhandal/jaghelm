@@ -6,17 +6,22 @@
  * calm board at boot, and a Settings save over it was a 500. Now the config
  * source is down with the reason ("services.yaml can't be read (permission
  * denied)"), `/api/health` says `unreadable`, and every writer refuses it as
- * `config_unreadable`. Fixing the permissions doesn't change the file's mtime,
- * so the watcher alone never saw the fix: while the source is down (unreadable
- * or unparseable) a retry re-reads the file every 30 s, one timer at most,
- * stopped once the source is up and on shutdown. A broken or unreadable file
- * deleted is broken no more: what a missing file means today.
+ * `config_unreadable`. A permission fix doesn't change the file's mtime, so
+ * the watcher, which looked at nothing else, never saw it: it now compares
+ * the file's ctime, size and inode too, so a chmod or chown of the file shows
+ * at its next look. A fix the file's own stat doesn't show (its folder's
+ * permissions, a network share's cached attributes) needs the retry: while the
+ * source is down (unreadable or unparseable) it re-reads the file every 30 s,
+ * one timer at most, stopped once the source is up and on shutdown. A broken
+ * or unreadable file deleted is broken no more: what a missing file means
+ * today.
  *
  * Its own file because the module's state is the point: the first test runs
- * against a fresh module, as at boot. Reads fail through a stand-in for
- * readFileSync (as a permission change does: the file and its mtime stay),
- * which also counts them; root reads a mode-000 file anyway, so the real
- * EACCES runs only as another user, and EISDIR always.
+ * against a fresh module, as at boot. Reads go through a stand-in for
+ * readFileSync, which counts them, can fail them (as a permission change
+ * does: the file and its stat stay) and can answer other bytes than the file
+ * holds (a network share's cached view); root reads a mode-000 file anyway,
+ * so the real EACCES runs only as another user, and EISDIR always.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -41,10 +46,11 @@ const CONFIG_PATH = join(process.env.JAGHELM_DATA_DIR, 'services.yaml');
 const GOOD = 'nodes:\n  pi1:\n    display_name: Gateway\nservices: {}\n';
 const BROKEN = 'nodes:\n  pi1:\n    display_name: Gateway\n   visible: true\n';
 
-// Every read of services.yaml goes through here: counted, and while `blocked`
-// names a code, one of a file that is there fails with it.
+// Every read of services.yaml goes through here: counted; while `blocked`
+// names a code, one of a file that is there fails with it; while `bytes` is
+// set, it answers those instead of the file's.
 const realRead = fs.readFileSync;
-const reads = { count: 0, blocked: null };
+const reads = { count: 0, blocked: null, bytes: null };
 fs.readFileSync = function readFileSync(path, ...rest) {
   if (path === CONFIG_PATH) {
     reads.count += 1;
@@ -53,9 +59,18 @@ fs.readFileSync = function readFileSync(path, ...rest) {
         code: reads.blocked,
       });
     }
+    if (reads.bytes !== null) return Buffer.from(reads.bytes);
   }
   return realRead(path, ...rest);
 };
+
+/** Wait out the clock's coarse tick, so the next change gets a new ctime. */
+function nextCtime() {
+  const until = Date.now() + 25;
+  while (Date.now() < until) {
+    // busy: the timers are fake in these tests
+  }
+}
 syncBuiltinESMExports();
 after(() => {
   stopConfigWatcher();
@@ -145,7 +160,7 @@ test('the retry: one re-read every 30 s however many reads failed; a permission 
   startConfigWatcher();
   readConfig();
 
-  // The watcher only stats the file, and its mtime hasn't changed.
+  // The watcher only stats the file, and its stat hasn't changed.
   let before = reads.count;
   t.mock.timers.tick(29_999);
   assert.equal(reads.count, before, 'no retry before 30 s');
@@ -155,7 +170,8 @@ test('the retry: one re-read every 30 s however many reads failed; a permission 
   assert.equal(reads.count, before + 2);
   assert.deepEqual(configHealth(), { state: 'unreadable', code: 'EACCES' });
 
-  // The permissions fixed: same file, same mtime. The watcher can't see it.
+  // Fixed in a way the file's stat doesn't show (its folder's permissions).
+  // The watcher can't see it.
   reads.blocked = null;
   t.mock.timers.tick(29_999);
   assert.equal(configHealth().state, 'unreadable');
@@ -191,23 +207,60 @@ test('the retry stops on shutdown', (t) => {
   assert.deepEqual(configHealth(), { state: 'ok' });
 });
 
-test("the retry mends a broken file fixed without a newer mtime (restored from a backup)", (t) => {
+test('the retry mends a broken file whose fix the stat does not show (a network share\'s cached view)', (t) => {
   t.mock.timers.enable({ apis: ['setInterval', 'setTimeout'] });
-  const old = new Date('2026-01-01T00:00:00Z');
   fs.writeFileSync(CONFIG_PATH, BROKEN);
-  fs.utimesSync(CONFIG_PATH, old, old);
   loadConfig();
   assert.equal(configHealth().state, 'unparseable');
   startConfigWatcher();
-  // The fix keeps the old mtime, so the watcher sees no change.
-  fs.writeFileSync(CONFIG_PATH, GOOD);
-  fs.utimesSync(CONFIG_PATH, old, old);
-  t.mock.timers.tick(29_999);
+  // The watcher's first look reads it again (its stat is new), still broken.
+  t.mock.timers.tick(5_000);
+  t.mock.timers.tick(250);
   assert.equal(configHealth().state, 'unparseable');
+  // Fixed where the file's stat, as this host sees it, stays the same.
+  reads.bytes = GOOD;
+  t.mock.timers.tick(30_000 - 5_250 - 1);
+  assert.equal(configHealth().state, 'unparseable', 'the watcher alone sees no change');
   t.mock.timers.tick(1);
   assert.deepEqual(configHealth(), { state: 'ok' });
   stopConfigWatcher();
+  reads.bytes = null;
+  fs.writeFileSync(CONFIG_PATH, GOOD);
+  loadConfig();
 });
+
+// A chmod or chown changes the file's ctime, not its mtime (#536 review): the
+// watcher's next look reads it, so the source goes down, and back up, at once.
+for (const [how, opts, block] of [
+  ['a real chmod 000', { skip: process.getuid?.() === 0 && 'root reads a mode-000 file' }, false],
+  ['a chmod whose read then fails (as root)', {}, true],
+]) {
+  test(`after a good load, ${how}: down at the watcher's next look, and up at the next after the fix`, opts, (t) => {
+    t.mock.timers.enable({ apis: ['setInterval', 'setTimeout'] });
+    t.after(() => stopConfigWatcher());
+    fs.writeFileSync(CONFIG_PATH, GOOD);
+    loadConfig();
+    startConfigWatcher();
+    nextCtime();
+    fs.chmodSync(CONFIG_PATH, block ? 0o600 : 0o000);
+    if (block) reads.blocked = 'EACCES';
+    try {
+      t.mock.timers.tick(5_000);
+      t.mock.timers.tick(250);
+      assert.deepEqual(configHealth(), { state: 'unreadable', code: 'EACCES' }, 'no route read it');
+      assert.equal(getConfig().nodes.pi1.display_name, 'Gateway', 'the last good config stays');
+    } finally {
+      nextCtime();
+      fs.chmodSync(CONFIG_PATH, 0o644);
+      reads.blocked = null;
+    }
+    // The next look, well before the 30 s retry.
+    t.mock.timers.tick(5_000);
+    t.mock.timers.tick(250);
+    assert.deepEqual(configHealth(), { state: 'ok' });
+    stopConfigWatcher();
+  });
+}
 
 for (const [what, breakIt] of [
   ["a file that doesn't parse", () => fs.writeFileSync(CONFIG_PATH, BROKEN)],

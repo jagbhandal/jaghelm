@@ -12,9 +12,9 @@
  *
  * A services.yaml that is there but can't be read (#536: EACCES, EISDIR,
  * EIO…) is a config failure like one that doesn't parse: the board says so,
- * nothing writes over it, and while either lasts a retry reads it again every
- * 30 s (startConfigWatcher), since a permission fix leaves the mtime the
- * watcher looks at as it was.
+ * nothing writes over it. The watcher sees a chmod or chown of the file (its
+ * ctime), and while either lasts a retry reads it again every 30 s
+ * (startConfigWatcher), for a fix the file's own stat doesn't show.
  */
 
 import { createHmac, randomBytes } from 'node:crypto';
@@ -36,7 +36,11 @@ const VERSION_KEY_BYTES = 32;
 
 // In-memory config state
 let config = null;
-let lastModified = 0;
+// services.yaml's stat as last seen (statKey): by a load, a save, or the
+// watcher's look. Null before the first.
+let lastSeen = null;
+/** What the watcher compares of a stat: mtime, ctime (a chmod or chown), size, inode. */
+const statKey = (st) => `${st.mtimeMs}:${st.ctimeMs}:${st.size}:${st.ino}`;
 let changeListeners = [];
 // The version of the bytes last read or written: the file `config` came from,
 // or one that didn't parse (kept so it isn't read again until it changes).
@@ -280,7 +284,7 @@ export function loadConfig() {
       return null;
     }
     if (!adopt(disk)) return getConfig();
-    lastModified = statSync(CONFIG_PATH).mtimeMs;
+    lastSeen = statKey(statSync(CONFIG_PATH));
     log.info(
       {
         nodes: Object.keys(config.nodes || {}).length,
@@ -457,7 +461,7 @@ function keepAfterFailedRead(msg, fields = {}) {
  * version }`, the version written.
  *
  * Synchronous on purpose, NOT an async queue: the whole pipeline (dump → atomic
- * write → statSync → assign lastModified) runs in one event-loop tick, so the 5s
+ * write → statSync → assign lastSeen) runs in one event-loop tick, so the 5s
  * watcher (a separate tick) can never observe a half-applied state and always
  * sees our own write as self-originated. An async queue would reopen that
  * watcher↔write race for no gain — the atomic rename already gives crash-safety.
@@ -516,7 +520,7 @@ export function writeConfig(newConfig, ifVersion) {
     seenUnusable = null;
     seenProblem = null;
     syncRetry();
-    lastModified = statSync(CONFIG_PATH).mtimeMs;
+    lastSeen = statKey(statSync(CONFIG_PATH));
     log.info('Saved services.yaml');
     return { ok: true, version: seenVersion };
   } catch (err) {
@@ -591,7 +595,10 @@ export function generateDefaultConfig(discoveredNodes) {
 
 /**
  * Watch for external file changes (5s poll).
- * If the file is modified outside the app, reload it.
+ * If the file changes outside the app, reload it: its mtime, ctime, size or
+ * inode differs from the last seen (statKey). The ctime is a chmod or chown
+ * (#536), which leaves the mtime as it was, so a file made unreadable after
+ * a good load goes down at the next look, and one made readable comes back.
  *
  * Reloads are debounced 250ms so a burst of writes (or an atomic write that
  * happens to land during a poll) doesn't read the file mid-mutation. With
@@ -601,11 +608,11 @@ export function generateDefaultConfig(discoveredNodes) {
  * While the config is a failed source (the file doesn't parse or can't be
  * read), two more things (#536). A file deleted is reloaded at the next poll,
  * so it is broken no more (forgetProblem). And a retry reads it again every
- * RETRY_MS, reloading it when what it reads differs from the last read: a
- * permission fix, or a file restored with its old mtime, changes no mtime, so
- * the poll alone would never see it. One retry timer at most, started when
- * the source goes down (or the watcher starts with it down), stopped when it
- * is up again and by stopConfigWatcher.
+ * RETRY_MS, reloading it when what it reads differs from the last read: a fix
+ * the file's own stat doesn't show (its folder's permissions, a network
+ * share's cached attributes) would never reach the poll. One retry timer at
+ * most, started when the source goes down (or the watcher starts with it
+ * down), stopped when it is up again and by stopConfigWatcher.
  */
 const WATCH_MS = 5000;
 const RETRY_MS = 30_000;
@@ -630,9 +637,9 @@ export function stopConfigWatcher() {
 
 function watchTick() {
   try {
-    let mtime;
+    let seen;
     try {
-      mtime = statSync(CONFIG_PATH).mtimeMs;
+      seen = statKey(statSync(CONFIG_PATH));
     } catch (err) {
       // Gone while broken: reload, so it is broken no more. Gone while good,
       // or a stat that fails another way: nothing, as before (the retry reads
@@ -640,11 +647,11 @@ function watchTick() {
       if (err.code === 'ENOENT' && seenProblem) reload('services.yaml was removed while broken');
       return;
     }
-    if (mtime > lastModified) {
+    if (seen !== lastSeen) {
       // Record the attempt up front so a persistently-corrupt services.yaml
-      // (which loadConfig leaves lastModified unchanged on) isn't re-parsed,
+      // (which loadConfig leaves lastSeen unchanged on) isn't re-parsed,
       // re-failed, and re-logged every single 5s tick.
-      lastModified = mtime;
+      lastSeen = seen;
       if (reloadDebounceTimer) clearTimeout(reloadDebounceTimer);
       reloadDebounceTimer = setTimeout(() => {
         reloadDebounceTimer = null;
