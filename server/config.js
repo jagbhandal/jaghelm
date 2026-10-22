@@ -207,7 +207,7 @@ let saveInProgress = false;
  */
 export function writeConfig(newConfig, ifVersion) {
   if (saveInProgress) {
-    log.error('saveConfig reentered while a save was in progress — refusing');
+    log.error('writeConfig reentered while a write was in progress — refusing');
     return { ok: false };
   }
   saveInProgress = true;

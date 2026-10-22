@@ -77,7 +77,7 @@ const etagOf = (/** @type {string} */ version) => `"${version}"`;
  * gzip) weakens its ETag on the way. `*` is no version: a save must say which
  * one it read.
  */
-export function ifMatchHits(/** @type {string} */ header, /** @type {string} */ version) {
+function ifMatchHits(/** @type {string} */ header, /** @type {string} */ version) {
   const want = etagOf(version);
   return header.split(',').some((part) => part.trim().replace(/^W\//, '') === want);
 }
