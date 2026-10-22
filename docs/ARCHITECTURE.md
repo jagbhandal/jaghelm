@@ -1277,15 +1277,19 @@ error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
   has `total: 0`, and a client shows no panel for it. Its tile's two lines
   are the model's too (`tileOf`, #541), from the counts that build the
   detail: a short `value` and the `sub` under it. A count's value is
-  "31 / 32" and its sub the rest of the detail ("up · 1 in maintenance"), so
-  the two joined by a space are the detail; the UPS's value is its word ("On
-  mains", "On battery") and its sub its charge ("64 % charge"), else its
-  reason when that says more ("No data: Prometheus unreachable"), else empty;
-  an empty subsystem is "None" with an empty sub. `detail` is built from
-  them, the two joined (the UPS on its own keeps its reason, "On battery (64
-  % charge)"), for the header sentence, push and an Android app older than
-  #541, so Power with several entities counts its no signal ones there too;
-  no client splits a string.
+  "31 / 32". Its sub names what is wrong, each status word with its count,
+  worst first, in the sentence's words ("1 down", "1 overdue", "1 in
+  warning", "1 with a refused login"), or with nothing wrong the OK word
+  ("up"); then "N in maintenance" and "N no signal" ("1 down · 1 no signal",
+  "up · 1 in maintenance"). The OK word never sits beside a problem. The
+  UPS's value is its word ("On mains", "On battery") and its sub its charge
+  ("64 % charge"), else its reason when that says more ("No data: Prometheus
+  unreachable"), else empty; an empty subsystem is "None" with an empty sub.
+  `detail` keeps its words: the value, the OK word, then maintenance and no
+  signal ("11 / 12 up · 1 no signal"; the UPS on its own, its reason, "On
+  battery (64 % charge)"), for the header sentence, push and an Android app
+  older than #541; Power with several entities counts its no signal ones
+  there too. No client splits a string.
 - **The sentence**: with warnings or worse, each kind of problem with its count
   in issue order ("2 services down · Prometheus unreachable · 1 job failed"),
   then "N no signal"; with only unknowns, "31 up · 1 no signal"; healthy, the

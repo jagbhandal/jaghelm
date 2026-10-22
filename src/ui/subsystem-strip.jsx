@@ -4,8 +4,9 @@
  *
  * `cells` is `[{ key, label, state, word, value, sub }]`: `word` names the
  * state ("Down", "On battery"; the lamp's name), `value` is the headline
- * ("30 / 32", "On battery") and `sub` the line under it ("up · 1 no signal",
- * "64 % charge"), the model's own (#541). Both apps build them with
+ * ("30 / 32", "On battery") and `sub` the line under it, naming what is
+ * wrong ("1 down · 1 no signal"), else the OK word ("up"), or the UPS's
+ * "64 % charge": the model's own (#541). Both apps build them with
  * src/shell/statusView.js subsystemCells, from the status model (#325).
  *
  * The `ui` look is the mock's joined annunciator strip: tiles 1px apart inside
@@ -29,7 +30,7 @@
  * It is named "label, word, value", as a row is, and described by `sub`. A
  * tile drawn as no signal with another word (a stale status's last known
  * "Down", #480) names its lamp "No signal" (lampName), and says it before the
- * word: "Services, No signal, Down, 30 / 32", described "up".
+ * word: "Services, No signal, Down, 30 / 32", described "2 down".
  * Without `onSelect` the tiles are plain content.
  *
  * The `android` look, a stopgap until #326, is the Android app's grid of

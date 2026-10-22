@@ -293,19 +293,21 @@ async function useTypeface(page, { id, family }) {
 }
 
 /**
- * The low-battery board with an integration set up too: six tiles share the
- * row with the widest value the model gives, "Low battery" (#541).
+ * The low-battery board with integrations set up too (#541): six tiles share
+ * the row with the widest value the model gives, "Low battery", and its
+ * longest sub-line, "1 with a refused login · 1 in maintenance · 1 no
+ * signal".
  */
 function lowBatterySix() {
   const board = runScenario('low-battery', { now: Date.now() });
   Object.assign(
     board.status.subsystems.find((s) => s.id === 'integrations'),
     {
-      state: 'ok',
-      counts: { total: 3, ok: 3, warn: 0, crit: 0, unknown: 0, maintenance: 0 },
-      detail: '3 / 3 OK',
-      value: '3 / 3',
-      sub: 'OK',
+      state: 'warn',
+      counts: { total: 3, ok: 0, warn: 1, crit: 0, unknown: 1, maintenance: 1 },
+      detail: '0 / 3 OK · 1 in maintenance · 1 no signal',
+      value: '0 / 3',
+      sub: '1 with a refused login · 1 in maintenance · 1 no signal',
     }
   );
   return board;

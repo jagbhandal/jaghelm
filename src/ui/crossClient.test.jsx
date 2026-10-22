@@ -298,6 +298,20 @@ const describeFinding = (f) =>
  */
 const KNOWN = [];
 
+// The incident boards' tiles name their problem in the sub-line, as the
+// mock's do, never the OK word beside one (#541; summary.js tileOf).
+const PROBLEM_SUBS = {
+  incident: ['1 down', 'healthy', '100 % charge', 'OK', '1 failed'],
+  'every-state': [
+    '1 missing · 1 pending · 1 in maintenance',
+    '1 unreachable',
+    '64 % charge',
+    '1 overdue · 1 failed',
+    '1 overdue',
+    '1 failing · 1 offline',
+  ],
+};
+
 describe('cross-client, screen', () => {
   for (const name of STATUS_SCENARIOS) {
     it(`${name}: the screen says what the model says`, () => {
@@ -313,6 +327,18 @@ describe('cross-client, screen', () => {
           `known divergence "${k.name}" (${k.issue}) no longer happens in ${name}: delete it from KNOWN`
         ).toBe(true);
       }
+    });
+  }
+
+  for (const [name, subs] of Object.entries(PROBLEM_SUBS)) {
+    it(`${name}: each tile's sub-line names its problem (#541)`, () => {
+      const { status } = runScenario(name, { now: NOW });
+      const { container } = render(
+        <SubsystemStrip cells={subsystemCells(status)} onSelect={noop} />
+      );
+      const drawn = [...container.querySelectorAll('[data-slot="subsystem-sub"]')];
+      expect(drawn.map((el) => el.textContent)).toEqual(subs);
+      cleanup();
     });
   }
 

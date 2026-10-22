@@ -37,7 +37,12 @@ const ups = (state, word, reason, metric) => ({
   ...(metric ? { metric } : {}),
 });
 const charge = (value) => ({ name: 'charge', value, unit: '%' });
-const one = (subsystem, state, i = 0) => ({ id: `${subsystem}/${i}`, subsystem, state });
+const one = (subsystem, state, i = 0, word = undefined) => ({
+  id: `${subsystem}/${i}`,
+  subsystem,
+  state,
+  ...(word ? { word } : {}),
+});
 
 // [what, the entities, the subsystem, its value, its sub, its detail]
 const ROWS = [
@@ -50,13 +55,70 @@ const ROWS = [
     'up',
     '2 / 2 up',
   ],
+  // A problem: the sub names it, worst first, in the words the sentence
+  // uses, and never says the OK word; the detail is as it was.
   [
     'a service down',
-    [one('services', 'ok'), one('services', 'crit', 1)],
+    [one('services', 'ok'), one('services', 'crit', 1, 'Down')],
     'services',
     '1 / 2',
-    'up',
+    '1 down',
     '1 / 2 up',
+  ],
+  [
+    'a container missing',
+    [one('services', 'ok'), one('services', 'warn', 1, 'Missing')],
+    'services',
+    '1 / 2',
+    '1 missing',
+    '1 / 2 up',
+  ],
+  [
+    'a job failed',
+    [one('jobs', 'ok'), one('jobs', 'warn', 1, 'Failed')],
+    'jobs',
+    '1 / 2',
+    '1 failed',
+    '1 / 2 OK',
+  ],
+  [
+    'a backup overdue',
+    [one('backups', 'warn', 0, 'Overdue')],
+    'backups',
+    '0 / 1',
+    '1 overdue',
+    '0 / 1 OK',
+  ],
+  [
+    'a node in warning',
+    [one('nodes', 'ok'), one('nodes', 'warn', 1, 'Warning')],
+    'nodes',
+    '1 / 2',
+    '1 in warning',
+    '1 / 2 healthy',
+  ],
+  [
+    'an integration refusing its login',
+    [one('integrations', 'warn', 0, 'Login refused')],
+    'integrations',
+    '0 / 1',
+    '1 with a refused login',
+    '0 / 1 OK',
+  ],
+  [
+    'a mix, worst first, then maintenance and no signal',
+    [
+      one('services', 'warn', 0, 'Missing'),
+      one('services', 'crit', 1, 'Down'),
+      one('services', 'crit', 2, 'Down'),
+      one('services', 'maintenance', 3),
+      one('services', 'unknown', 4),
+      one('services', 'ok', 5),
+    ],
+    'services',
+    '1 / 6',
+    '2 down · 1 missing · 1 in maintenance · 1 no signal',
+    '1 / 6 up · 1 in maintenance · 1 no signal',
   ],
   [
     'a service in maintenance',
@@ -85,14 +147,14 @@ const ROWS = [
   ['nodes healthy', [one('nodes', 'ok')], 'nodes', '1 / 1', 'healthy', '1 / 1 healthy'],
   [
     'a node in warning, one no signal',
-    [one('nodes', 'warn'), one('nodes', 'unknown', 1)],
+    [one('nodes', 'warn', 0, 'Warning'), one('nodes', 'unknown', 1)],
     'nodes',
     '0 / 2',
-    'healthy · 1 no signal',
+    '1 in warning · 1 no signal',
     '0 / 2 healthy · 1 no signal',
   ],
-  ['jobs', [one('jobs', 'ok'), one('jobs', 'warn', 1)], 'jobs', '1 / 2', 'OK', '1 / 2 OK'],
-  ['backups', [one('backups', 'crit')], 'backups', '0 / 1', 'OK', '0 / 1 OK'],
+  ['jobs', [one('jobs', 'ok'), one('jobs', 'ok', 1)], 'jobs', '2 / 2', 'OK', '2 / 2 OK'],
+  ['backups', [one('backups', 'ok')], 'backups', '1 / 1', 'OK', '1 / 1 OK'],
   [
     'integrations',
     [one('integrations', 'ok'), one('integrations', 'unknown', 1)],
@@ -143,10 +205,10 @@ const ROWS = [
   ],
   [
     'two power entities count as any other',
-    [one('power', 'ok'), one('power', 'crit', 1)],
+    [one('power', 'ok'), one('power', 'crit', 1, 'On battery')],
     'power',
     '1 / 2',
-    'OK',
+    '1 on battery',
     '1 / 2 OK',
   ],
   [
@@ -225,7 +287,24 @@ for (const name of STATUS_SCENARIOS) {
       else if (s.id === 'power' && s.counts.total === 1) {
         assert.equal(s.value, ups.word, `${at}: the UPS's word`);
         assert.equal(s.detail, ups.reason, `${at}: detail is the reason, as before`);
-      } else assert.equal(`${s.value} ${s.sub}`, s.detail, `${at}: the detail, split`);
+      } else {
+        const loud = status.entities.some(
+          (e) => e.subsystem === s.id && (e.state === 'crit' || e.state === 'warn')
+        );
+        const [okPart, ...quiet] = s.detail.split(' · ');
+        const okWord = okPart.slice(`${s.value} `.length);
+        const parts = s.sub.split(' · ');
+        if (!loud) assert.equal(`${s.value} ${s.sub}`, s.detail, `${at}: the detail, split`);
+        else {
+          assert.ok(!parts.includes(okWord), `${at}: no "${okWord}" beside a problem: "${s.sub}"`);
+          assert.match(parts[0], /^\d+ \S/, `${at}: the problem first: "${s.sub}"`);
+          assert.deepEqual(
+            parts.slice(-quiet.length || parts.length),
+            quiet.length ? quiet : [],
+            at
+          );
+        }
+      }
     }
   });
 }

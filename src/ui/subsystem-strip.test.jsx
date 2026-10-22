@@ -43,7 +43,7 @@ const CELLS = [
     state: 'crit',
     word: 'Down',
     value: '30 / 32',
-    sub: 'up · 1 no signal',
+    sub: '1 down · 1 no signal',
   },
   {
     key: 'nodes',
@@ -51,7 +51,7 @@ const CELLS = [
     state: 'warn',
     word: 'Warning',
     value: '5 / 6',
-    sub: 'healthy',
+    sub: '1 in warning',
   },
   {
     key: 'power',
@@ -74,7 +74,7 @@ const CELLS = [
     state: 'warn',
     word: 'Overdue',
     value: '2 / 3',
-    sub: 'OK',
+    sub: '1 overdue',
   },
   {
     key: 'integrations',
@@ -113,7 +113,7 @@ describe('SubsystemStrip', () => {
     );
     expect(within(tiles[0]).getByText('Services').className).not.toMatch(/overflow-visible/);
     expect(within(tiles[0]).getByText('30 / 32')).toHaveClass('@2xl:text-title-sm');
-    expect(within(tiles[0]).getByText('up · 1 no signal')).toHaveClass('hidden', '@2xl:block');
+    expect(within(tiles[0]).getByText('1 down · 1 no signal')).toHaveClass('hidden', '@2xl:block');
   });
 
   // #541: the model's value over its sub-line, as they are. Each wraps only
@@ -124,7 +124,7 @@ describe('SubsystemStrip', () => {
     const tile = screen.getAllByRole('region')[0].querySelector('[data-slot="subsystem-tile"]');
     const value = tile.querySelector('[data-slot="subsystem-value"]');
     const sub = tile.querySelector('[data-slot="subsystem-sub"]');
-    expect([value.textContent, sub.textContent]).toEqual(['30 / 32', 'up · 1 no signal']);
+    expect([value.textContent, sub.textContent]).toEqual(['30 / 32', '1 down · 1 no signal']);
     expect(value.nextElementSibling).toBe(sub);
     const CUTS =
       /(^|\s)(wrap-break-word|wrap-anywhere|break-all|break-words|truncate|text-ellipsis|overflow-hidden|line-clamp-\d+)(\s|$)/;
@@ -223,7 +223,7 @@ describe('SubsystemStrip', () => {
     const { rerender } = render(<SubsystemStrip cells={CELLS} onSelect={onSelect} />);
     // Named as a row is: "label, word, value", and described by the line under it.
     const services = screen.getByRole('button', { name: 'Services, Down, 30 / 32' });
-    expect(services).toHaveAccessibleDescription('up · 1 no signal');
+    expect(services).toHaveAccessibleDescription('1 down · 1 no signal');
     expect(screen.getByRole('button', { name: 'Jobs, OK, 14 / 14' })).toHaveAccessibleDescription(
       'OK'
     );
@@ -253,7 +253,7 @@ describe('SubsystemStrip', () => {
         state: 'unknown',
         word: 'Down',
         value: '30 / 32',
-        sub: 'up',
+        sub: '2 down',
       },
     ];
     const { rerender } = render(<SubsystemStrip cells={cells} />);
@@ -262,6 +262,6 @@ describe('SubsystemStrip', () => {
     rerender(<SubsystemStrip cells={cells} onSelect={() => {}} />);
     expect(
       screen.getByRole('button', { name: 'Services, No signal, Down, 30 / 32' })
-    ).toHaveAccessibleDescription('up');
+    ).toHaveAccessibleDescription('2 down');
   });
 });

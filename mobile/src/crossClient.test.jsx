@@ -340,6 +340,20 @@ beforeEach(() => {
   setPref.mockResolvedValue(undefined);
 });
 
+// The incident boards' tiles name their problem in the sub-line, as the
+// mock's do, never the OK word beside one (#541; summary.js tileOf).
+const PROBLEM_SUBS = {
+  incident: ['1 down', 'healthy', '100 % charge', 'OK', '1 failed'],
+  'every-state': [
+    '1 missing · 1 pending · 1 in maintenance',
+    '1 unreachable',
+    '64 % charge',
+    '1 overdue · 1 failed',
+    '1 overdue',
+    '1 failing · 1 offline',
+  ],
+};
+
 describe('cross-client, Android screens', () => {
   for (const name of STATUS_SCENARIOS) {
     it(`${name}: the phone says what the model says`, async () => {
@@ -353,6 +367,14 @@ describe('cross-client, Android screens', () => {
       const board = await phone(runScenario(name, { now: NOW }), 'down');
       // The status bar names the failed round; the card says why too.
       check(name, disagreements(board, { stale: true, cause: NO_SIGNAL.down }));
+    });
+  }
+
+  for (const [name, subs] of Object.entries(PROBLEM_SUBS)) {
+    it(`${name}: each cell's sub-line names its problem (#541)`, async () => {
+      await phone(runScenario(name, { now: NOW }));
+      const drawn = [...document.querySelectorAll('.subsystem-cell__sub')];
+      expect(drawn.map((el) => el.textContent)).toEqual(subs);
     });
   }
 

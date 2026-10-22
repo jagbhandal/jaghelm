@@ -62,11 +62,39 @@ function countsOf(members) {
   return counts;
 }
 
+// How a status word reads after a count ("1 node in warning", "1 in warning").
+const PHRASE = { Warning: 'in warning', 'Login refused': 'with a refused login' };
+const said = (word) => PHRASE[word] ?? word.toLowerCase();
+const LOUD_WORD = { crit: 'Critical', warn: 'Warning' };
+
+/** What a count's line says after its first part: "1 in maintenance", "1 no signal". */
+function quietParts(counts) {
+  const parts = [];
+  if (counts.maintenance) parts.push(`${counts.maintenance} in maintenance`);
+  if (counts.unknown) parts.push(`${counts.unknown} no signal`);
+  return parts;
+}
+
 /**
- * "31 / 32 up · 1 in maintenance": the tile's value and sub joined (tileOf),
- * so the two never say different counts; the UPS on its own, its reason ("On
- * battery (64 % charge)"); "None" for an empty subsystem. The header's
- * sentence, push and an Android app before #541 read it.
+ * A subsystem's problems, each word with its count, worst first (the issue
+ * ranking, rankIssues): "1 down", "2 overdue", "1 in warning", "1 with a
+ * refused login". None when no member is critical or in warning.
+ */
+function problemsOf(members) {
+  const counted = new Map();
+  for (const e of rankIssues(members.filter((m) => m.state === 'crit' || m.state === 'warn'))) {
+    const word = said(e.word || LOUD_WORD[e.state]);
+    counted.set(word, (counted.get(word) ?? 0) + 1);
+  }
+  return [...counted].map(([word, n]) => `${n} ${word}`);
+}
+
+/**
+ * "31 / 32 up · 1 in maintenance": the tile's value (tileOf) and the OK
+ * word, then what is in maintenance and has no signal, the counts the tile
+ * says; the UPS on its own, its reason ("On battery (64 % charge)"); "None"
+ * for an empty subsystem. The header's sentence, push and an Android app
+ * before #541 read it.
  */
 function detailOf(id, counts, members) {
   if (counts.total === 0) return 'None';
@@ -75,17 +103,19 @@ function detailOf(id, counts, members) {
     if (counts.maintenance) parts.push(`${counts.maintenance} in maintenance`);
     return parts.join(' · ');
   }
-  const { value, sub } = tileOf(id, counts, members);
-  return `${value} ${sub}`;
+  const { value } = tileOf(id, counts, members);
+  return [`${value} ${OK_WORD[id] ?? 'OK'}`, ...quietParts(counts)].join(' · ');
 }
 
 /**
  * A subsystem's tile (#541), from its counts: a short `value`, the strip's
- * big line, and the `sub` under it. A count's value is "31 / 32" and its sub
- * the rest ("up · 1 in maintenance"); the two joined by a space are the
- * detail (detailOf). The UPS's value is its word
- * ("On mains", "On battery") and its sub its charge ("64 % charge"), else
- * its reason when that says more than the word ("No data: Prometheus
+ * big line, and the `sub` under it. A count's value is "31 / 32". Its sub
+ * names what is wrong, worst first ("1 down", "1 overdue", problemsOf), or,
+ * with nothing wrong, the OK word ("up"); then what is in maintenance and
+ * has no signal ("1 down · 1 no signal", "up · 1 in maintenance"). The OK
+ * word never sits on a tile with a problem. The UPS's value is its word ("On
+ * mains", "On battery") and its sub its charge ("64 % charge"), else its
+ * reason when that says more than the word ("No data: Prometheus
  * unreachable"), else nothing. An empty subsystem is "None" with no sub.
  * Clients draw both as they are and split no string.
  */
@@ -97,10 +127,12 @@ function tileOf(id, counts, members) {
     if (ups.metric?.name === 'charge') return { value, sub: `${ups.metric.value} % charge` };
     return { value, sub: ups.reason && ups.reason !== value ? ups.reason : '' };
   }
-  const sub = [OK_WORD[id] ?? 'OK'];
-  if (counts.maintenance) sub.push(`${counts.maintenance} in maintenance`);
-  if (counts.unknown) sub.push(`${counts.unknown} no signal`);
-  return { value: `${counts.ok} / ${counts.total}`, sub: sub.join(' · ') };
+  const problems = problemsOf(members);
+  const first = problems.length ? problems : [OK_WORD[id] ?? 'OK'];
+  return {
+    value: `${counts.ok} / ${counts.total}`,
+    sub: [...first, ...quietParts(counts)].join(' · '),
+  };
 }
 
 /**
@@ -133,18 +165,16 @@ const NOUNS = {
   integration: ['integration', 'integrations'],
   agent: ['Arcane agent', 'Arcane agents'],
 };
-// How a status word reads after a count ("1 node in warning").
-const PHRASE = { Warning: 'in warning', 'Login refused': 'with a refused login' };
-
 const noun = (kind, n) => (NOUNS[kind] ?? ['item', 'items'])[n === 1 ? 0 : 1];
 
 function phrase(issue, n) {
   // services.yaml that is no usable config (#505) says why: "services.yaml doesn't parse (line 4)".
   if (issue.id === 'sources/config') return issue.reason;
   // A source that answers but fails for part of what it feeds (#476) is failing, not unreachable.
-  if (issue.kind === 'source') return `${issue.name} ${issue.word === 'Failing' ? 'failing' : 'unreachable'}`;
+  if (issue.kind === 'source')
+    return `${issue.name} ${issue.word === 'Failing' ? 'failing' : 'unreachable'}`;
   if (issue.kind === 'ups') return `UPS ${issue.word.toLowerCase()}`;
-  return `${n} ${noun(issue.kind, n)} ${PHRASE[issue.word] ?? issue.word.toLowerCase()}`;
+  return `${n} ${noun(issue.kind, n)} ${said(issue.word)}`;
 }
 
 /**

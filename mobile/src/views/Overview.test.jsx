@@ -43,7 +43,8 @@ describe('Overview, on the status model (#325)', () => {
     expect(svcCell.className).toMatch(/subsystem-cell--critical/);
     expect(within(svcCell).getByText('DOWN')).toBeInTheDocument();
     expect(within(svcCell).getByText('1 / 3')).toHaveClass('subsystem-cell__value');
-    expect(within(svcCell).getByText('up')).toHaveClass('subsystem-cell__sub');
+    // The sub-line names the problem, never "up" beside it (#541).
+    expect(within(svcCell).getByText('2 down')).toHaveClass('subsystem-cell__sub');
 
     // Every row says where it is and the model's reason.
     const row = screen.getByText('Svc 0').closest('.issue-row');

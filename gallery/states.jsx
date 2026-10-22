@@ -236,7 +236,7 @@ const CELLS = [
     state: 'crit',
     word: 'Down',
     value: '30 / 32',
-    sub: 'up · 1 no signal',
+    sub: '1 down · 1 no signal',
   },
   {
     key: 'nodes',
@@ -244,7 +244,7 @@ const CELLS = [
     state: 'warn',
     word: 'Warning',
     value: '5 / 6',
-    sub: 'healthy',
+    sub: '1 in warning',
   },
   {
     key: 'power',

@@ -1065,7 +1065,8 @@ is in, not the window):
   stays on `surface-1`, its wrench saying it (spec §6.1). A tile is a lamp and
   an overline label, over the value (`title-sm`, bold `text-1`) and `sub`
   (12px `text-3`), the model's own two lines (#541): a short value ("31 /
-  32", "On battery") over the line that says what it counts ("up · 1 in
+  32", "On battery") over the line that says what is wrong ("1 down · 1 no
+  signal", "1 overdue"), or with nothing wrong what it counts ("up · 1 in
   maintenance", "64 % charge"). The mock draws the value at 18/24; it maps
   to `title-sm` (16/22), as the type table above has it.
   The tint is laid over the tile's `surface-1` (a one-colour gradient over the
