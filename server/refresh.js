@@ -37,6 +37,7 @@ import { dedupe } from './util/dedupe.js';
 import { isJobContainer } from './util/helperContainers.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { createLogger } from './util/logger.js';
+import { jsonFileErrorFields } from './util/parseError.js';
 import { redactSecrets } from './util/redact.js';
 import { createSourceHealthLog } from './util/sourceHealthLog.js';
 import { recordRefreshCycle } from './metrics.js';
@@ -150,7 +151,8 @@ export function readDisplayConfig() {
     cachedDisplayConfig = JSON.parse(readFileSync(DISPLAY_CONFIG_PATH, 'utf8'));
   } catch (err) {
     // Once per bad file: it is parsed again only when it changes.
-    log.warn({ err }, 'display-config.json is unreadable; using the default refresh interval and push thresholds');
+    // A parse error as its reason and position: V8's message quotes the file (#504).
+    log.warn(jsonFileErrorFields(err), 'display-config.json is unreadable; using the default refresh interval and push thresholds');
   }
   return cachedDisplayConfig;
 }

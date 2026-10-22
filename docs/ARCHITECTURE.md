@@ -811,8 +811,8 @@ integration connection-test endpoint.
   as it is (no line logs one). So a parser's error is not logged or answered
   as it is (#504): js-yaml's message shows the lines around the bad one and
   V8's JSON error quotes the text near it, credentials and all. The reads of
-  services.yaml, secrets.json and auth.json and `GET /api/display-config` log
-  only the reason and the position (`util/parseError.js`), and a reason loses
+  services.yaml, secrets.json, auth.json and display-config.json log only the
+  reason and the position (`util/parseError.js`), and a reason loses
   any text of the file it quotes (an unquoted value read as a YAML alias or
   tag). A log call never throws: a circular reference is written as
   `"[Circular]"`, a BigInt as a string, and a line that still can't be

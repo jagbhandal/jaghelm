@@ -55,7 +55,7 @@ function scrubYamlReason(reason) {
 const oneBased = (/** @type {unknown} */ n) => (Number.isInteger(n) ? Number(n) + 1 : null);
 
 // V8's messages that name a position: fixed words, then where.
-const JSON_AT = /^(.+?) in JSON at position \d+(?: \(line (\d+) column (\d+)\))?$/;
+const JSON_AT = /^(.+?) (?:in|after) JSON at position \d+(?: \(line (\d+) column (\d+)\))?$/;
 
 /**
  * A JSON.parse error as its reason and position. V8 quotes the text around an
