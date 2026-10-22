@@ -29,6 +29,10 @@
  *             with Clear (`onClearFilter`); the heading and sentence stay
  *             the whole board's
  *   busyLabel what the placeholder says to a screen reader
+ *   between, split   an element after the panel's header (the Overview's
+ *             subsystem strip, #484), and whether the panel is drawn in two
+ *             parts around it (below 768px): AttentionPanel's; with no
+ *             status to show, it follows the banner or the placeholder
  */
 import { useSyncExternalStore } from 'react';
 import { AttentionPanel } from '@ui/attention-panel';
@@ -47,6 +51,8 @@ export function ShellAttention({
   filter = null,
   onClearFilter,
   busyLabel = 'Loading status',
+  between,
+  split = false,
 }) {
   // Re-render on each answer, so the ages move with the clock.
   const at = useSyncExternalStore(updated.subscribe, updated.get);
@@ -88,7 +94,7 @@ export function ShellAttention({
           <Skeleton style={{ height: 80 }} />
         </div>
       )}
-      {said && (
+      {said ? (
         <AttentionPanel
           titleAs={titleAs}
           state={said.state}
@@ -98,7 +104,11 @@ export function ShellAttention({
           issues={issues}
           filter={filterName}
           onClearFilter={filter ? onClearFilter : undefined}
+          between={between}
+          split={split}
         />
+      ) : (
+        between
       )}
     </>
   );

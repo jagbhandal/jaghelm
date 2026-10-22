@@ -5,13 +5,7 @@
  * hand-written copy that could drift. (The Playwright shell tests, e2e/, use
  * the demo's own /api/status, which the same model builds.)
  */
-import {
-  inputs,
-  monitored,
-  node,
-  once,
-  UPS_ONLINE,
-} from '../../server/testing/statusFixtures.js';
+import { inputs, monitored, node, once, UPS_ONLINE } from '../../server/testing/statusFixtures.js';
 import { scenarioStatus } from '../../server/testing/statusScenarios.js';
 import { demoHistory, demoStatusCycles } from '../../server/demoFixtures.js';
 import {
@@ -87,28 +81,43 @@ export const FIRST_RUN = scenarioStatus('first-run', { now: Date.parse('2026-10-
  * A demo board as a client gets it (#299): `/api/status`, `/api/services` and
  * `/api/history`, built as the demo builds them (demoFixtures.js), with the
  * storage node's metrics replaced by `storage` (strings, as discovery formats
- * them) and the lines from `pushThresholds` when given. The status goes
- * through the model, never written by hand, so it says what the model says.
+ * them), the services in `down` (by uid, "apps:gitea") down as Kuma reports a
+ * failed check (#484), and the lines from `pushThresholds` when given. The
+ * status goes through the model, never written by hand, so it says what the
+ * model says.
  *
  * @param {{ scenario?: 'incident' | 'healthy', storage?: Record<string, string>,
- *   pushThresholds?: object, now?: number }} [opts]
+ *   down?: string[], pushThresholds?: object, now?: number }} [opts]
  */
 export function demoBoard({
   scenario = 'incident',
   storage = {},
+  down = [],
   pushThresholds,
   now = Date.now(),
 } = {}) {
   const tracker = createStatusTracker();
   let status = null;
   let services = null;
+  const isDown = new Set(down);
   for (const cycle of demoStatusCycles({ scenario, now })) {
     const base = cycle.caches.getCached('services');
+    const nodes = Object.fromEntries(
+      Object.entries(base.nodes).map(([key, node]) => [
+        key,
+        {
+          ...node,
+          services: node.services.map((svc) =>
+            isDown.has(svc.uid) ? { ...svc, status: 'down', ping: null } : svc
+          ),
+        },
+      ])
+    );
     services = {
       ...base,
       nodes: {
-        ...base.nodes,
-        storage: { ...base.nodes.storage, metrics: { ...base.nodes.storage.metrics, ...storage } },
+        ...nodes,
+        storage: { ...nodes.storage, metrics: { ...nodes.storage.metrics, ...storage } },
       },
     };
     const caches = {
@@ -132,3 +141,16 @@ export function demoBoard({
  */
 export const nasDiskIncident = (opts = {}) =>
   demoBoard({ ...opts, scenario: 'incident', storage: { diskPercent: '94.6' } });
+
+/**
+ * A real incident's length (#484): the demo's incident (Jellyfin down, the
+ * nightly backup failed) with four more services down, so six issues, all
+ * critical, each a place on the board. Below 768px the strip must stay on
+ * screen above them.
+ */
+export const sixIssueIncident = (opts = {}) =>
+  demoBoard({
+    ...opts,
+    scenario: 'incident',
+    down: ['apps:gitea', 'apps:nextcloud', 'edge:adguard-home', 'storage:photoprism'],
+  });
