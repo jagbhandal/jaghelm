@@ -216,7 +216,8 @@ gallery/                    the component gallery (development and CI only, docs
                             catalog.js (every state), states.jsx (what each draws),
                             main.jsx (the page), gallery.spec.mjs (screenshots and axe),
                             baselines/ (the committed PNGs), container.mjs (the pinned
-                            Playwright image); built by vite.gallery.config.js, tested by
+                            Playwright image and the Chromium flags every browser test
+                            starts with); built by vite.gallery.config.js, tested by
                             playwright.config.mjs, never part of the production build
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
@@ -3079,10 +3080,14 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   and shell, built with `mobile/vite.config.mobile.js`), each screen
   reached by tapping from launch and shot at 390 × 844 against
   `mobile/visual/baselines/` with no tolerance: the Overview calm,
-  degraded, in an incident and with no signal (the server lost 3 min on);
-  Services, with one down and filtered to Down; Infra; Alerts; the
-  service, node and incident details; Notification settings; sign-in on
-  first run and again; and Can't reach JagHelm. The phone's plugins are
+  degraded, in an incident, with no signal (the server lost 3 min on) and
+  with nothing monitored; Services, with one down and filtered to Down;
+  Infra; Alerts; the service, node and incident details (a service's and
+  the UPS's); Notification settings, and with the server unable to push;
+  sign-in on first run and again; and Can't reach JagHelm. A screen taller
+  than the phone's is shot again scrolled to its end (the incident's and no
+  signal's Overview, Notification settings), and any other taller screen
+  fails its test until it has that end shot too. The phone's plugins are
   stubbed at the boundary (`mobile/visual/native.js`) and the server is
   answered in the test from boards the model builds; a test fails on an
   error logged or a request elsewhere. `npm run android-shots:update`

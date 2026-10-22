@@ -1,7 +1,14 @@
 // The boards the Android screenshots draw (#546, android.spec.mjs). Plain data:
 // homelab-looking placeholders, no secrets, real hosts or IPs. The server's
 // answers are built from them by the server's own status model (backendOf).
-import { NOW, cronNode, cronRun, inputs, once } from '../../server/testing/statusFixtures.js';
+import {
+  NOW,
+  NO_UPS,
+  cronNode,
+  cronRun,
+  inputs,
+  once,
+} from '../../server/testing/statusFixtures.js';
 
 const HOUR = 3_600_000;
 
@@ -79,6 +86,13 @@ export const downService = {
       },
     },
   },
+};
+
+// A first run (#449): nothing monitored, no UPS, no jobs.
+export const empty = {
+  services: { nodes: {} },
+  ups: NO_UPS,
+  cron: [],
 };
 
 /** When the server built every status here, and the clock the screens read. */

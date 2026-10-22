@@ -359,7 +359,7 @@ npm run android-shots:update       # rewrite the baselines that changed, add new
 git status mobile/visual/baselines
 ```
 
-A state is an entry in `STATES` in `mobile/visual/android.spec.mjs`. A baseline with no state fails the run: delete it. Both need Docker on a Linux x64 machine, as the gallery does.
+A state is an entry in `STATES` in `mobile/visual/android.spec.mjs`. Only the shell's content scrolls (`.mobile-content`; the page itself is the phone's height), so a shot holds what fits: a screen taller than that fails its test until `STATES` also has `end(<state>)`, the same state shot scrolled to its end, and an end shot with nothing below the fold fails too. A baseline with no state fails the run: delete it. Both need Docker on a Linux x64 machine, as the gallery does.
 
 ## Push Pipeline / FCM
 

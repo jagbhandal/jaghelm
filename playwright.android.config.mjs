@@ -7,7 +7,7 @@
  * The same runner as the gallery (playwright.config.mjs) and the shell's
  * browser tests: only inside the pinned Playwright container, in CI's gallery
  * job and locally (`npm run test:android-shots`), with the same Chromium
- * flags (and one more, below), a frozen clock, a fixed time zone and locale,
+ * flags (gallery/container.mjs), a frozen clock, a fixed time zone and locale,
  * reduced motion, no retries and a threshold of 0. What differs is the app:
  * the Android build (mobile/vite.config.mobile.js, through
  * mobile/visual/vite.config.visual.js), from mobile/'s own packages, on a
@@ -16,7 +16,7 @@
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { defineConfig } from '@playwright/test';
-import { GALLERY_IMAGE, IMAGE_ENV } from './gallery/container.mjs';
+import { CHROMIUM_ARGS, GALLERY_IMAGE, IMAGE_ENV } from './gallery/container.mjs';
 
 if (process.env[IMAGE_ENV] !== GALLERY_IMAGE || !existsSync('/ms-playwright')) {
   throw new Error(
@@ -84,18 +84,7 @@ export default defineConfig({
     // app's requests leave through native HTTP, which it doesn't govern. Here
     // they are fetches to the stubbed server's address, answered in the test.
     bypassCSP: true,
-    launchOptions: {
-      args: [
-        '--disable-skia-runtime-opts',
-        '--force-color-profile=srgb',
-        '--disable-lcd-text',
-        '--font-render-hinting=none',
-        // Every tile rastered whole, never patched over a part rastered
-        // earlier: otherwise a screen's first paint can stick, by how busy the
-        // machine is, with corners a level or two off (the Services chips').
-        '--disable-partial-raster',
-      ],
-    },
+    launchOptions: { args: [...CHROMIUM_ARGS] },
   },
   webServer: {
     cwd: 'mobile',

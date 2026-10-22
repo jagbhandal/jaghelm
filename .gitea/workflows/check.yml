@@ -174,10 +174,14 @@ jobs:
       # with mobile/'s own config and packages, each screen in each state #303
       # has to keep, at 390 x 844, against mobile/visual/baselines/ pixel for
       # pixel. An approved change commits the regenerated baselines
-      # (`npm run android-shots:update`, docs/mobile/DESIGN.md).
+      # (`npm run android-shots:update`, docs/mobile/DESIGN.md). They run
+      # even when the gallery or the shell's tests failed, so a red job
+      # still says whether the Android screens changed.
       - name: Install the Android app's dependencies (npm ci in mobile/)
+        if: ${{ !cancelled() }}
         run: npm ci --no-audit --no-fund
         working-directory: mobile
 
       - name: Android screens (screenshots against their baselines)
+        if: ${{ !cancelled() }}
         run: npx playwright test --config playwright.android.config.mjs
