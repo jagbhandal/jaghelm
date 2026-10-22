@@ -75,7 +75,7 @@ async function advance(ms) {
 
 // Requests made since the last call, emptying the log.
 const take = () => requests.splice(0);
-const signInButton = () => screen.queryByRole('button', { name: 'Sign In' });
+const signInButton = () => screen.queryByRole('button', { name: 'Sign in' });
 
 function setHidden(hidden) {
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
@@ -98,8 +98,10 @@ async function renderSignedIn() {
 }
 
 async function signIn(password) {
-  fireEvent.change(screen.getByPlaceholderText('Username'), { target: { value: 'admin' } });
-  fireEvent.change(screen.getByPlaceholderText('Password'), { target: { value: password } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Username' }), {
+    target: { value: 'admin' },
+  });
+  fireEvent.change(screen.getByLabelText('Password'), { target: { value: password } });
   fireEvent.click(signInButton());
   await advance(0);
 }
@@ -167,7 +169,7 @@ describe('an expired session in the web app (#492)', () => {
     expect(take()).toEqual([
       { path: '/api/auth/login', method: 'POST', token: undefined, status: 401 },
     ]);
-    expect(screen.getByText('Invalid credentials')).toBeInTheDocument();
+    expect(screen.getByText('Wrong username or password.')).toBeInTheDocument();
     await advance(3 * TICK_MS);
     expect(take()).toEqual([]);
 

@@ -147,13 +147,19 @@ export default function App() {
   // Show login if auth required and not authenticated
   if (authRequired === null) return null; // Loading
   if (authRequired && !authed) {
+    const stored = readStoredConfig();
     return (
       <>
         <div className="bg-layer">
           <div className="bg-overlay" />
         </div>
         <div className="bg-mesh" />
-        <LoginPage onLogin={handleLogin} config={readStoredConfig()} />
+        <LoginPage
+          onLogin={handleLogin}
+          theme={theme.shown}
+          name={instanceName(stored.title)}
+          logoUrl={stored.logoUrl}
+        />
       </>
     );
   }

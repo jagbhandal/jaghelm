@@ -115,11 +115,34 @@ function nodePanels(page) {
   );
 }
 
-/** The node panels drawn taller than their content by a grid row (52px) or more. */
-async function emptyNodePanels(page) {
+/**
+ * The node panels not as tall as their content: drawn shorter than it (the
+ * content cut off), or taller by a grid row (52px) or more (blank space).
+ */
+async function unfitNodePanels(page) {
   const panels = await nodePanels(page);
   expect(panels.map((p) => p.name).sort()).toEqual([...NODE_TITLES].sort());
-  return panels.filter((p) => p.height - p.content >= 52).map((p) => p.name);
+  return panels
+    .filter((p) => p.height < p.content || p.height - p.content >= 52)
+    .map((p) => `${p.name}: ${p.height}px for ${p.content}px of content`);
+}
+
+/**
+ * Every panel on the board drawn shorter than its content, which is cut off
+ * (#498: the Checklist, its items drawn after its first measure, at 390px).
+ */
+function cutOffPanels(page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('.helmgrid-item')].flatMap((el) => {
+      const height = el.getBoundingClientRect().height;
+      const kept = el.style.height;
+      el.style.height = 'auto';
+      const content = el.scrollHeight;
+      el.style.height = kept;
+      const name = el.querySelector('.section-title')?.textContent;
+      return height + 0.5 < content ? [`${name}: ${height}px for ${content}px of content`] : [];
+    })
+  );
 }
 
 // A layout saved before #299, with the reading tiles: each node panel 12 rows.
@@ -284,18 +307,19 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       });
     }
 
-    test('the node panels below are as tall as their content: the default layout', async ({
+    test('the node panels below are as tall as their content, and no panel is cut off: the default layout', async ({
       page,
     }) => {
       await openBoard(page, 'healthy', 'dark');
-      await expect.poll(() => emptyNodePanels(page)).toEqual([]);
+      await expect.poll(() => unfitNodePanels(page)).toEqual([]);
+      await expect.poll(() => cutOffPanels(page)).toEqual([]);
     });
 
     test('and a layout saved before #299, brought up once and saved with its version', async ({
       page,
     }) => {
       await openBoard(page, 'healthy', 'dark', { config: { gridLayout: OLD_LAYOUT } });
-      await expect.poll(() => emptyNodePanels(page)).toEqual([]);
+      await expect.poll(() => unfitNodePanels(page)).toEqual([]);
       const saved = await page.evaluate(
         () => JSON.parse(localStorage.getItem('jaghelm-config')).gridLayout
       );
