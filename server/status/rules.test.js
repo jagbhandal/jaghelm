@@ -121,6 +121,20 @@ const nodeRows = [
     'No data: not scraped by Prometheus yet',
   ],
   [
+    "unread, with discovery's verdict: its reason, while Prometheus fails for it (#476)",
+    node(
+      { cpu: null, memPercent: null, diskPercent: null, temp: null },
+      {
+        reachable: null,
+        failedReads: ['containers', 'cpu', 'disk', 'mem', 'reachable', 'temp', 'uptime'],
+      }
+    ),
+    { prometheusOk: false, unreadReason: 'No data: still not scraped by Prometheus' },
+    'unknown',
+    'No signal',
+    'No data: still not scraped by Prometheus',
+  ],
+  [
     'one reading failed',
     node({ temp: null }, { failedReads: ['temp'] }),
     { prometheusOk: false },

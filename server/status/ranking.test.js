@@ -255,6 +255,17 @@ test('a board with anything on it, or only a failed source, is not empty', () =>
   assert.deepEqual(oneNode.overall, { state: 'ok', sentence: '1 node healthy' });
 });
 
+test('#476: Prometheus answering but failing for a node is "Prometheus failing", never "unreachable"', () => {
+  const problem = "Prometheus hasn't scraped a:9100 (a) in 3 scrape intervals";
+  const s = once(inputs({ nodes: { a: node(), b: node() }, internal: { prometheusProblem: problem } }));
+  assert.deepEqual(s.overall, { state: 'warn', sentence: 'Prometheus failing' });
+  assert.deepEqual(
+    [s.issues[0].kind, s.issues[0].word, s.issues[0].reason],
+    ['source', 'Failing', problem]
+  );
+  assert.deepEqual([s.sources.prometheus.state, s.sources.prometheus.error], ['failed', problem]);
+});
+
 test('the empty board is named and worded as src/ui/lib/status.js has it, outside the five states', () => {
   assert.equal(EMPTY, UI_EMPTY);
   assert.ok(!UI_STATES.includes(UI_EMPTY));
