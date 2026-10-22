@@ -4,7 +4,6 @@ export default {
   description: 'Observability and data visualization platform',
   auth: 'bearer',
   endpoint: '/api/prometheus/grafana/api/v1/rules',
-  testEndpoint: '/api/health',
   fields: [],
   structuredTransform: (raw) => {
     const groups = raw?.data?.groups || [];

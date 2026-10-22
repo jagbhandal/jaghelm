@@ -6,7 +6,6 @@ export default {
   authHeader: 'Authorization',
   authPrefix: 'token ',
   endpoint: '/api/v1/repos/search?limit=50',
-  testEndpoint: '/api/v1/version',
   fields: [],
   structuredTransform: (raw) => {
     const repos = raw?.data || (Array.isArray(raw) ? raw : []);

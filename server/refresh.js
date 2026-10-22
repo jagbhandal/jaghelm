@@ -31,7 +31,11 @@ import { serviceRegistry } from './serviceRegistry.js';
 import { containerRegistry } from './containerRegistry.js';
 import { fetchIntegration } from './integrations/handler.js';
 import { createIntegrationBackoff } from './integrations/backoff.js';
-import { configFingerprint, resolveIntegrationConfig } from './integrations/lib/config.js';
+import {
+  configFingerprint,
+  integrationInput,
+  resolveIntegrationConfig,
+} from './integrations/lib/config.js';
 import { CACHE_TTL_MS, setCache } from './cache.js';
 import { safeFetch } from './httpClient.js';
 import { dedupe } from './util/dedupe.js';
@@ -1206,8 +1210,8 @@ async function _refreshIntegrations() {
 
     const due = [];
     for (const [key, cfg] of entries) {
-      const handlerType = cfg.preset || key;
-      const yamlConfig = { ...cfg, _storageKey: key };
+      // As the connection test builds it too (#427).
+      const { type: handlerType, yamlConfig } = integrationInput(key, cfg);
       // Left undefined when resolving throws: the fetch then resolves the config
       // itself and reports what is wrong with it.
       let resolved;

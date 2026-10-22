@@ -18,7 +18,6 @@ export default {
     tokenPath: null,
   },
   endpoint: '/api/v2/transfer/info',
-  testEndpoint: '/api/v2/app/version',
   fields: [
     { key: 'dl_speed', label: 'DL Speed', path: 'dl_info_speed', format: 'bytes' },
     { key: 'ul_speed', label: 'UL Speed', path: 'up_info_speed', format: 'bytes' },

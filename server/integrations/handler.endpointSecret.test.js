@@ -314,15 +314,23 @@ test('query auth with a $secret: token sends the resolved one', async () => {
 test('a connection test never puts a $secret: reference typed as the token in the URL', async () => {
   const ref = `$secret:typed_${hex()}`; // pragma: allowlist secret
   const name = ref.replace(/^\$secret:/, '');
+  // Typed into the form: the test resolves it as the save would store it
+  // (#427), under the entry's keyed name, so it resolves to the reference.
+  const key = `sabnzbd_${hex()}`;
+  const keyed = `integration_${key}_token`;
 
   // SABnzbd is a query-auth preset: its key goes in the URL.
   const { urls, result } = await requested(async () => ({
-    result: await testIntegration('sabnzbd', { url: up.url, token: ref }),
+    result: await testIntegration(
+      'sabnzbd',
+      { url: up.url, token: `$secret:${keyed}`, _storageKey: key },
+      { secrets: new Map([[keyed, ref]]) }
+    ),
   }));
 
   assert.deepEqual(urls, [], 'the test sent a request without the key');
   assert.equal(result.ok, false);
-  assert.match(result.error, /stored-secret reference.*type the token itself/);
+  assert.match(result.error, UNRESOLVED);
   assert.ok(!result.error.includes(name));
 });
 

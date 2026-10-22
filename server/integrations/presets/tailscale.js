@@ -4,7 +4,6 @@ export default {
   description: 'Zero-config mesh VPN',
   auth: 'bearer',
   endpoint: '/api/v2/tailnet/-/devices',
-  testEndpoint: '/api/v2/tailnet/-/devices?fields=default',
   fields: [],
   structuredTransform: (raw) => {
     const devices = raw?.devices || [];

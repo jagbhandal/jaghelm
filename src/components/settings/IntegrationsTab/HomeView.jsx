@@ -1,5 +1,6 @@
 import React from 'react';
 import { iconImageSrc } from '../../../utils/icon.jsx';
+import { isStoredMarker } from './constants.js';
 
 /**
  * HomeView — list of configured integrations + entry points for adding new ones.
@@ -85,7 +86,8 @@ export default function HomeView({
                     {displayName}
                   </div>
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {cfg.url}
+                    {/* A URL that carries a credential is read masked (#422). */}
+                    {isStoredMarker(cfg.url) ? 'URL not shown: it carries a credential' : cfg.url}
                     {cfg.target && <span style={{ marginLeft: 8, color: 'var(--accent)' }}>→ {cfg.target}</span>}
                   </div>
                 </div>

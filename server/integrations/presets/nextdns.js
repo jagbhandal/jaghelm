@@ -5,7 +5,6 @@ export default {
   auth: 'header',
   authHeader: 'X-Api-Key',
   endpoint: '/profiles/{profile_id}/analytics/status',
-  testEndpoint: '/profiles',
   fields: [
     { key: 'queries', label: 'Queries', path: 'allQueries', format: 'number' },
     { key: 'blocked', label: 'Blocked', path: 'blockedQueries', format: 'number' },

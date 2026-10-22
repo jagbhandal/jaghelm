@@ -288,16 +288,18 @@ export function hasSecret(name) {
  * Resolve a credential by checking .env first, then encrypted secrets.
  * envKey: e.g. 'PHOTOPRISM_URL'
  * secretKey: e.g. 'photoprism_url'
- * Returns the plaintext value or null.
+ * Returns the plaintext value or null. `read` reads the secret (getSecret by
+ * default; the connection test passes one that sees what its save would
+ * store, #427).
  */
-export function resolveCredential(envKey, secretKey) {
+export function resolveCredential(envKey, secretKey, read = getSecret) {
   // .env takes priority
   const envVal = process.env[envKey];
   if (envVal && envVal !== '' && envVal !== 'REPLACE_ME') {
     return envVal;
   }
   // Fall back to encrypted secret
-  return getSecret(secretKey);
+  return read(secretKey);
 }
 
 /**

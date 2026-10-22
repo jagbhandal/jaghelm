@@ -11,7 +11,6 @@ export default {
     tokenPrefix: 'Bearer ',
   },
   endpoint: '/api/endpoints',
-  testEndpoint: '/api/auth',
   fields: [
     { key: 'environments', label: 'Envs', path: '_length', format: 'number' },
   ],

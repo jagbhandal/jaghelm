@@ -2,7 +2,9 @@
  * What the web app's Integrations settings send for two stored entries (#402),
  * pinned on both sides so neither can drift: IntegrationsTab.test.jsx checks
  * that the form sends exactly these requests for these entries, and
- * routes/integrations.merge.test.js sends them to the real routes.
+ * routes/integrations.merge.test.js sends them to the real routes. The Test
+ * button sends what Save sends (#427), so routes/integrations.connectionTest
+ * .test.js sends the save bodies to the test route.
  *
  * Test-only: nothing at runtime imports this (.dockerignore leaves it out).
  */
@@ -139,5 +141,22 @@ export const ZEROS = Object.freeze({
     username: 0,
     params: { account_id: 0 },
     editingKey: 'cloudflare',
+  },
+});
+
+/**
+ * A URL that carries a credential (#422), here `http://admin:<password>@…`
+ * for AdGuard (basic auth): Save and Test are refused with `refused`, and the
+ * form shows its message beside the Base URL field. The message names where
+ * the credential goes, never the value.
+ */
+export const URL_CREDENTIAL = Object.freeze({
+  refused: {
+    status: 400,
+    body: {
+      error:
+        "The URL can't carry a user name or password. Remove it, and put the user name and password in the Username and Password fields.",
+      field: 'url',
+    },
   },
 });

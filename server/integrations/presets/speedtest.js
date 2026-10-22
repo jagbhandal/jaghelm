@@ -4,7 +4,6 @@ export default {
   description: 'Automated internet speed monitoring',
   auth: 'none',
   endpoint: '/api/speedtest/latest',
-  testEndpoint: '/api/speedtest/latest',
   fields: [
     { key: 'download', label: 'Download', path: 'data.download', format: 'decimal' },
     { key: 'upload', label: 'Upload', path: 'data.upload', format: 'decimal' },

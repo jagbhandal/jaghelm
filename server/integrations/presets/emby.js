@@ -5,7 +5,6 @@ export default {
   auth: 'query',
   queryParam: 'api_key',
   endpoint: '/emby/System/Info',
-  testEndpoint: '/emby/System/Ping',
   fields: [
     { key: 'version', label: 'Version', path: 'Version', format: 'string' },
     { key: 'local_address', label: 'Address', path: 'LocalAddress', format: 'string' },

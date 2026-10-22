@@ -52,7 +52,7 @@ const ALLOWED_KEYS = new Set([
   'auth', 'authHeader', 'authPrefix', 'queryParam',
   'session', 'authFallback', 'oauth2', 'oauth2Instructions',
   // Endpoints
-  'endpoint', 'testEndpoint', 'extraEndpoints',
+  'endpoint', 'extraEndpoints',
   // Transport
   'extraHeaders', 'tlsSkip',
   // Response shaping

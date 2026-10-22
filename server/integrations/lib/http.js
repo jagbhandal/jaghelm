@@ -106,3 +106,24 @@ export async function safeFetch(url, opts = {}, skipTls = false, { credentialInU
 export function isAuthRejection(res) {
   return (res.status === 401 || res.status === 403) && !leftOrigin(res);
 }
+
+// A media type as a Content-Type header names it (`text/html`), for an error.
+const MEDIA_TYPE = /^[\w.+-]{1,40}\/[\w.+-]{1,60}$/;
+
+/**
+ * The parsed JSON body of an upstream answer. One that is not JSON throws
+ * "The reply is not JSON", with its media type when the answer names one: never
+ * a word of the body, which the parser's own error quotes ("Unexpected token
+ * '<', "<!DOCTYPE "...") and which would reach the card, the connection test
+ * and the log.
+ * @param {Response} res
+ */
+export async function readJson(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    const type = String(res.headers?.get?.('content-type') || '').split(';')[0].trim();
+    throw new Error(`The reply is not JSON${MEDIA_TYPE.test(type) ? ` (${type})` : ''}`);
+  }
+}
