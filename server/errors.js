@@ -23,6 +23,20 @@ export function apiError(res, status, publicMessage, err = null) {
   return res.status(status).json({ error: publicMessage });
 }
 
+/** The `code` of a refusal because services.yaml is no usable config (#423). */
+export const CONFIG_UNPARSEABLE = 'config_unparseable';
+
+/**
+ * Answer that services.yaml can't be read or written until it is fixed by
+ * hand: 503 `{ error, code: 'config_unparseable' }`, `error` the reason
+ * config.js gives (it names the line, never the file's content). Not a 409:
+ * Settings reloads on a 409, and reading again can't help until the file is
+ * fixed.
+ */
+export function configUnparseable(res, reason) {
+  return res.status(503).json({ error: reason, code: CONFIG_UNPARSEABLE });
+}
+
 /**
  * Express 4-arg error-handler middleware. Async route rejections forwarded via
  * util/asyncHandler.js's next(err) land here and get the JSON error shape the

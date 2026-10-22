@@ -5,6 +5,7 @@ import { useIntegrationActions } from './useIntegrationActions.js';
 import HomeView from './HomeView.jsx';
 import GalleryView from './GalleryView.jsx';
 import ConfigView from './ConfigView.jsx';
+import ConfigReadError from '../ConfigReadError.jsx';
 
 /**
  * IntegrationsTab — Phase 3 Settings
@@ -27,7 +28,8 @@ export default function IntegrationsTab() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
 
-  const { presets, configured, allContainers, loading, refetch } = useIntegrationsData();
+  const { presets, configured, configError, allContainers, loading, refetch } =
+    useIntegrationsData();
   const form = useConfigForm();
 
   const goHome = () => {
@@ -76,6 +78,9 @@ export default function IntegrationsTab() {
       </div>
     );
   }
+
+  // Not an empty list: the configured set couldn't be read (#423).
+  if (configError) return <ConfigReadError message={configError} onRetry={refetch} />;
 
   if (view === 'home') {
     return (

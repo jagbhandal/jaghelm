@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, exist
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { atomicWriteFileSync } from './atomicWrite.js';
+import { atomicWriteFileSync, createExclusiveFileSync } from './atomicWrite.js';
 
 test('atomicWriteFileSync writes new file', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aw-'));
@@ -85,6 +85,32 @@ test('atomicWriteFileSync cleans up temp on rename collision with directory', ()
     assert.equal(leftovers.length, 0, `expected no .tmp. leftovers, got ${JSON.stringify(leftovers)}`);
     // Target is still the original directory, untouched.
     assert.ok(statSync(target).isDirectory());
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('createExclusiveFileSync creates a missing file with its mode, and leaves no temp file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aw-'));
+  try {
+    const target = join(dir, 'key');
+    assert.equal(createExclusiveFileSync(target, Buffer.from('first'), { mode: 0o600 }), true);
+    assert.equal(readFileSync(target, 'utf8'), 'first');
+    assert.equal(statSync(target).mode & 0o777, 0o600);
+    assert.deepEqual(readdirSync(dir), ['key']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('createExclusiveFileSync leaves a file that is already there as it is (another process made it)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aw-'));
+  try {
+    const target = join(dir, 'key');
+    writeFileSync(target, 'theirs');
+    assert.equal(createExclusiveFileSync(target, Buffer.from('mine'), { mode: 0o600 }), false);
+    assert.equal(readFileSync(target, 'utf8'), 'theirs');
+    assert.deepEqual(readdirSync(dir), ['key']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
