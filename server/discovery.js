@@ -17,7 +17,10 @@
  * Nor is a node Prometheus hasn't scraped yet, or scraped and stored nothing
  * for (#470): a node with `up` 0 or no `up` series is looked up in
  * Prometheus's target list (promTargets()), read only on a cycle that has such
- * a node, so the happy path asks nothing more.
+ * a node, so the happy path asks nothing more. Why its `up` is missing is
+ * decided in one place, status/upMissing.js, which bounds the wait for a first
+ * scrape (#476) and reads a list naming no node as Prometheus's problem
+ * (#477).
  */
 
 import { createLogger } from './util/logger.js';

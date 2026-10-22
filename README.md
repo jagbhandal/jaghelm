@@ -97,6 +97,8 @@ For a longer walkthrough — including standing up Prometheus and cAdvisor if yo
  
 - Docker + docker compose
 - Prometheus reachable on the network, with `node_exporter` on each node you want to monitor. JagHelm calls its query API (`/api/v1/query`), its health check (`/-/healthy`, for `/api/readyz`) and, when a node has no `up` series or its `up` is 0, its target list (`/api/v1/targets`); a proxy in front of Prometheus must allow all three
+  - **Direct scrape** (supported, recommended): Prometheus scrapes each node's `node_exporter` (and cAdvisor) with a `node` label on the target. JagHelm reads the target list to tell a node not scraped yet ("No signal") from one that's down ("Host unreachable"). A target still waiting for its first scrape after 3 of its scrape intervals shows as Prometheus failing, naming the target, with one "Monitoring source down" alert.
+  - **Federation or remote write** (Thanos, Mimir, VictoriaMetrics, a federating Prometheus; supported): the series need the same `node` label. These backends list no scrape target per node, so when a node's `up` series is missing JagHelm can't tell the host from the pipeline: that reads as Prometheus failing (one "Monitoring source down" alert), never as each host unreachable. A host whose `up` reads 0 still alerts as unreachable.
 - (Optional but recommended) `cAdvisor` for container-level CPU/RAM/network stats
 - (Optional) Uptime Kuma for service health
 - (Optional) NUT exporter if you want UPS panels
