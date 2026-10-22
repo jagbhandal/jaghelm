@@ -30,11 +30,16 @@
  * production. `decorative` hides it from assistive tech and the tab
  * order, for a sparkline inside something that opens (a node card, a row):
  * that one's name says what matters, and the pointer still gets the tooltip.
+ *
+ * The tooltip is Base UI's, in the floating layer (lib/floating.jsx;
+ * floating/sparkline-tip.jsx), which loads on the page's first input, so it
+ * is in before the pointer reaches a chart; one asked to open before then
+ * shows as soon as it arrives.
  */
 import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip';
 import { cn } from './lib/utils.js';
 import { useOverlayPortal } from './lib/portal.js';
+import { useFloatingLayer } from './lib/floating.jsx';
 import { hasText } from './lib/name.js';
 
 // The Charts board's insets for the area and its dot; the plain line keeps
@@ -155,6 +160,7 @@ function Sparkline({
   const [portalRoot, openChange] = useOverlayPortal(rootRef, open, (next) => {
     if (!next) setDismissed(true);
   });
+  const layer = useFloatingLayer(open);
 
   if (!decorative && !hasText(label)) {
     const message = 'Sparkline needs a `label`, or `decorative`: it has no name';
@@ -321,33 +327,24 @@ function Sparkline({
           </span>
         </>
       )}
-      <TooltipPrimitive.Root open={open} onOpenChange={openChange}>
-        <TooltipPrimitive.Portal {...portalRoot}>
-          <TooltipPrimitive.Positioner
-            anchor={anchor}
-            side="top"
-            sideOffset={8}
-            collisionPadding={8}
-            className="pointer-events-none z-dialog"
-          >
-            <TooltipPrimitive.Popup
-              data-slot="sparkline-tooltip"
-              aria-hidden="true"
-              className="flex items-baseline gap-2 rounded-md border border-border-strong bg-surface-2 px-2 py-1 text-caption whitespace-nowrap text-text-1 shadow-pop"
-            >
-              {tip &&
-                (tip.value == null ? (
-                  <span className="text-text-2">No data</span>
-                ) : (
-                  <>
-                    <span className="font-bold">{value(tip.value)}</span>
-                    {tip.time != null && <span className="text-text-2">{time(tip.time)}</span>}
-                  </>
-                ))}
-            </TooltipPrimitive.Popup>
-          </TooltipPrimitive.Positioner>
-        </TooltipPrimitive.Portal>
-      </TooltipPrimitive.Root>
+      {layer ? (
+        <layer.SparklineTip
+          open={open}
+          onOpenChange={openChange}
+          portalRoot={portalRoot}
+          anchor={anchor}
+        >
+          {tip &&
+            (tip.value == null ? (
+              <span className="text-text-2">No data</span>
+            ) : (
+              <>
+                <span className="font-bold">{value(tip.value)}</span>
+                {tip.time != null && <span className="text-text-2">{time(tip.time)}</span>}
+              </>
+            ))}
+        </layer.SparklineTip>
+      ) : null}
     </span>
   );
 }

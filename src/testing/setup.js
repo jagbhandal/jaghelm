@@ -26,6 +26,19 @@ vi.mock('../lazyViews.js', async (importOriginal) => {
 });
 beforeAll(() => lazyViewsLoaded);
 
+// The floating layer likewise (src/ui/lib/floating.jsx, #444): a test file
+// that imports a floating component (a tooltip, a dialog...) loads the layer
+// before its tests run, so each draws Base UI from its first render, as it
+// does in the app once the layer is in. The tests of the first, light render
+// make a layer of their own (src/ui/floating.cold.test.jsx).
+let floatingLoaded = null;
+vi.mock('../ui/lib/floating.jsx', async (importOriginal) => {
+  const floating = await importOriginal();
+  floatingLoaded = floating.floatingLayer.load();
+  return floating;
+});
+beforeAll(() => floatingLoaded);
+
 // Unmount React trees between tests so they don't leak into each other, and put
 // the URL back at the Overview: the URL is the page (src/router, #296).
 afterEach(() => {

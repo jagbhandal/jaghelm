@@ -927,7 +927,7 @@ test('every Base UI portal in src/ui/ is a .jh-ui root with the screen’s switc
     (f) => !/\.test\.[jt]sx?$/.test(f)
   );
   const portalling = files.filter((f) => /\.Portal\b/.test(read(f)));
-  // dialog.jsx holds the layer the Dialog, the Drawer and the Confirm share.
+  // floating/dialog.jsx holds the layer the Dialog, the Drawer and the Confirm share.
   assert.ok(portalling.length >= 5, `expected the overlays' portals, found ${portalling}`);
   assert.deepEqual(
     files.flatMap((f) => barePortals(read(f), f)),
@@ -1039,8 +1039,9 @@ test('motion is §5.3’s 150ms, and reduced motion cuts it, portals included', 
     ['duration-300', 'hover:delay-75', 'ease-in-out', 'animate-pulse', 'data-open:animate-in'],
     'the check bites'
   );
-  // dialog.jsx draws the Drawer's and the Confirm's layer too.
-  for (const name of ['dialog', 'popover', 'tooltip', 'toast']) {
+  // The popups are drawn in the floating layer (#444); floating/dialog.jsx
+  // draws the Drawer's and the Confirm's layer too.
+  for (const name of ['floating/dialog', 'floating/popover', 'floating/tooltip', 'toast']) {
     assert.ok(
       found.some((c) => c.file === `src/ui/${name}.jsx` && /^transition/.test(utilityOf(c.name))),
       `${name}.jsx: expected its 150ms transition`
