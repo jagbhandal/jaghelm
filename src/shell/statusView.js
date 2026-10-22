@@ -97,14 +97,30 @@ function subsystemWord(status, subsystem) {
 }
 
 /**
+ * A cell's sub-line: the model's `sub` ("up · 1 in maintenance"), or none;
+ * while stale (#480), marked last known ("up · last known 3 min ago"), or
+ * that alone when the model gives none ("Last known 3 min ago").
+ */
+function subOf(s, freshness) {
+  const sub = typeof s.sub === 'string' && s.sub ? s.sub : undefined;
+  if (!freshness?.stale) return sub;
+  return sub && freshness.lastKnown
+    ? `${sub} · ${freshness.lastKnown}`
+    : lastKnownCaption(freshness);
+}
+
+/**
  * The model's subsystems as SubsystemStrip cells (#298, spec §8 item 2), in
  * the model's order: one per subsystem with anything in it (an unconfigured
- * one shows no panel, spec §8), its state, word and the model's `detail`
- * ("11 / 12 up") as the value. None on an empty board.
+ * one shows no panel, spec §8), its state, word, and the model's `value`
+ * ("11 / 12", "On battery") and `sub` ("up", "64 % charge") as they are
+ * (#541): nothing here splits the `detail`. From a server older than #541,
+ * with neither, the detail is the value and there is no sub. None on an
+ * empty board.
  *
  * With a stale status (`freshness`, statusFreshness.js, #480), each cell
  * keeps its word and counts, as last known, but is drawn as no signal, and
- * says so under its count ("Last known 3 min ago").
+ * says so under its count (subOf).
  */
 export function subsystemCells(status, freshness) {
   return (status?.subsystems ?? [])
@@ -114,8 +130,8 @@ export function subsystemCells(status, freshness) {
       label: s.name,
       state: drawnState(s.state, freshness),
       word: subsystemWord(status, s),
-      value: s.detail,
-      sub: freshness?.stale ? lastKnownCaption(freshness) : undefined,
+      value: typeof s.value === 'string' && s.value ? s.value : s.detail,
+      sub: subOf(s, freshness),
     }));
 }
 

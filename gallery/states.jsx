@@ -218,22 +218,25 @@ const MAINTENANCE_ISSUE = {
   onOpen: noop,
 };
 
+// An incident strip, each tile's value and sub-line in the model's words
+// (server/status/summary.js tileOf, #541): a count over its word and what is
+// in maintenance or has no signal, the UPS's word over its charge.
 const CELLS = [
   {
     key: 'services',
     label: 'Services',
     state: 'crit',
     word: 'Down',
-    value: '30 / 32 up',
-    sub: '1 down · 1 no signal',
+    value: '30 / 32',
+    sub: 'up · 1 no signal',
   },
   {
     key: 'nodes',
     label: 'Nodes',
     state: 'warn',
     word: 'Warning',
-    value: '6 / 6 up',
-    sub: '1 disk warning',
+    value: '5 / 6',
+    sub: 'healthy',
   },
   {
     key: 'power',
@@ -241,30 +244,30 @@ const CELLS = [
     state: 'crit',
     word: 'On battery',
     value: 'On battery',
-    sub: '82 % · ~31 min left',
+    sub: '82 % charge',
   },
   {
     key: 'jobs',
     label: 'Jobs',
     state: 'ok',
-    value: '14 / 14 on time',
-    sub: 'next: npm-sync in 9 min',
+    value: '14 / 14',
+    sub: 'OK',
   },
   {
     key: 'backups',
     label: 'Backups',
     state: 'maintenance',
     word: 'Maintenance',
-    value: '1 in maintenance',
-    sub: 'vzdump OK 4 h ago',
+    value: '1 / 2',
+    sub: 'OK · 1 in maintenance',
   },
   {
     key: 'integrations',
     label: 'Integrations',
     state: 'unknown',
     word: 'No signal',
-    value: '11 / 12 answering',
-    sub: 'Gitea: no answer',
+    value: '11 / 12',
+    sub: 'OK · 1 no signal',
   },
 ];
 
@@ -1427,6 +1430,10 @@ function SubsystemStripState() {
 function SubsystemStripNarrowState() {
   return (
     <Stack>
+      <Caption>700px: rows of three, each tile its value over its sub-line</Caption>
+      <Stack width={700}>
+        <SubsystemStrip cells={CELLS} aria-label="Subsystems at 700px" />
+      </Stack>
       <Caption>480px: rows of three</Caption>
       <Stack width={480}>
         <SubsystemStrip cells={CELLS} aria-label="Subsystems at 480px" />
@@ -1531,12 +1538,17 @@ function AttentionPanelNarrowState() {
 }
 
 // #480: a stale status, as the shell draws it (src/shell/statusFreshness.js):
-// every state no signal, the words and counts kept, marked last known.
-const LAST_KNOWN = 'Last known 3 min ago';
+// every state no signal, the words and counts kept, marked last known; a
+// tile's sub-line too (src/shell/statusView.js subsystemCells, #541).
 const stale = (items) => items.map((item) => ({ ...item, state: 'unknown' }));
+const staleCells = (cells) =>
+  stale(cells).map((c) => ({
+    ...c,
+    sub: c.sub ? `${c.sub} · last known 3 min ago` : 'Last known 3 min ago',
+  }));
 
 function SubsystemStripNoSignalState() {
-  return <SubsystemStrip cells={stale(CELLS).map((c) => ({ ...c, sub: LAST_KNOWN }))} />;
+  return <SubsystemStrip cells={staleCells(CELLS)} />;
 }
 
 function AttentionPanelNoSignalState() {
@@ -1580,13 +1592,13 @@ const SIX_ISSUES = [
 ];
 
 const HEALTHY_CELLS = [
-  ['services', 'Services', '32 / 32 up'],
-  ['nodes', 'Nodes', '6 / 6 up'],
-  ['power', 'Power', 'On mains'],
-  ['jobs', 'Jobs', '14 / 14 on time'],
-  ['backups', 'Backups', '3 / 3 OK'],
-  ['integrations', 'Integrations', '12 / 12 answering'],
-].map(([key, label, value]) => ({ key, label, state: 'ok', value }));
+  ['services', 'Services', '32 / 32', 'up'],
+  ['nodes', 'Nodes', '6 / 6', 'healthy'],
+  ['power', 'Power', 'On mains', '100 % charge'],
+  ['jobs', 'Jobs', '14 / 14', 'OK'],
+  ['backups', 'Backups', '3 / 3', 'OK'],
+  ['integrations', 'Integrations', '12 / 12', 'OK'],
+].map(([key, label, value, sub]) => ({ key, label, state: 'ok', value, sub }));
 
 function AttentionPanelPhoneState() {
   return (
@@ -1628,12 +1640,7 @@ function AttentionPanelPhoneNoSignalState() {
         subline="Can't reach JagHelm"
         action={ALL_ALERTS}
         issues={stale(SIX_ISSUES)}
-        between={
-          <SubsystemStrip
-            cells={stale(CELLS).map((c) => ({ ...c, sub: LAST_KNOWN }))}
-            onSelect={noop}
-          />
-        }
+        between={<SubsystemStrip cells={staleCells(CELLS)} onSelect={noop} />}
         split
       />
     </Stack>

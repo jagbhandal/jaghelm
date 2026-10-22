@@ -42,7 +42,8 @@ describe('Overview, on the status model (#325)', () => {
     const svcCell = screen.getByText('Services').closest('.subsystem-cell');
     expect(svcCell.className).toMatch(/subsystem-cell--critical/);
     expect(within(svcCell).getByText('DOWN')).toBeInTheDocument();
-    expect(within(svcCell).getByText('1 / 3 up')).toBeInTheDocument();
+    expect(within(svcCell).getByText('1 / 3')).toHaveClass('subsystem-cell__value');
+    expect(within(svcCell).getByText('up')).toHaveClass('subsystem-cell__sub');
 
     // Every row says where it is and the model's reason.
     const row = screen.getByText('Svc 0').closest('.issue-row');
@@ -70,24 +71,28 @@ describe('Overview, on the status model (#325)', () => {
     expect(document.querySelector('.issue-row')).toBeNull();
   });
 
-  it('the Power cell keeps the model\'s detail, and adds the UPS readings the model doesn\'t carry', () => {
+  it('the Power cell draws the model\'s value and sub-line, and adds the runtime the model doesn\'t carry', () => {
     const power = () => [...document.querySelectorAll('.subsystem-cell')].find(
       (c) => c.querySelector('.subsystem-cell__label').textContent === 'Power'
     );
-    // On mains: the charge (the model says only "On mains").
+    const lines = () => [
+      power().querySelector('.subsystem-cell__value').textContent,
+      power().querySelector('.subsystem-cell__sub').textContent,
+    ];
+    // On mains: the model's charge is the sub-line (#541), so no readings line repeats it.
     const mains = render(<Overview data={makeData(0)} nav={{ push: vi.fn() }} />);
-    expect(power().querySelector('.subsystem-cell__detail').textContent).toBe('On mains');
-    expect(power().querySelector('.subsystem-cell__readings').textContent).toBe('100% charge');
+    expect(lines()).toEqual(['On mains', '100 % charge']);
+    expect(power().querySelector('.subsystem-cell__readings')).toBeNull();
     mains.unmount();
-    // On battery: the runtime left (the model's reason has the charge already).
+    // On battery: the runtime left (the model's sub-line has the charge already).
     const onBattery = boardOf(
       inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101' }) }, ups: { ...UPS_ONLINE, status: 2, charge: 47.6, runtime: 480 } })
     );
     const battery = render(<Overview data={onBattery} nav={{ push: vi.fn() }} />);
-    expect(power().querySelector('.subsystem-cell__detail').textContent).toBe('On battery (47 % charge)');
+    expect(lines()).toEqual(['On battery', '47 % charge']);
     expect(power().querySelector('.subsystem-cell__readings').textContent).toBe('8 min left');
     battery.unmount();
-    // /api/ups didn't answer: no readings line, the model's detail alone.
+    // /api/ups didn't answer: no readings line, the model's two lines alone.
     render(<Overview data={{ ...onBattery, ups: null }} nav={{ push: vi.fn() }} />);
     expect(power().querySelector('.subsystem-cell__readings')).toBeNull();
   });

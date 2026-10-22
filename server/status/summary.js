@@ -74,9 +74,34 @@ function detailOf(id, counts, members) {
 }
 
 /**
- * Each subsystem's worst-of state, counts by state and one-line detail. An
- * empty one (nothing of that kind is set up) is ok with a total of 0, and a
- * client shows no panel for it (spec §8: unconfigured sources render none).
+ * A subsystem's tile (#541), from the counts that build its detail: a short
+ * `value`, the strip's big line, and the `sub` under it. A count's value is
+ * "31 / 32" and its sub the rest of the detail ("up · 1 in maintenance"), so
+ * the two joined by a space are the detail. The UPS's value is its word
+ * ("On mains", "On battery") and its sub its charge ("64 % charge"), else
+ * its reason when that says more than the word ("No data: Prometheus
+ * unreachable"), else nothing. An empty subsystem is "None" with no sub.
+ * Clients draw both as they are and split no string.
+ */
+function tileOf(id, counts, members) {
+  if (counts.total === 0) return { value: 'None', sub: '' };
+  if (id === 'power' && members.length === 1) {
+    const [ups] = members;
+    const value = ups.word || ups.reason;
+    if (ups.metric?.name === 'charge') return { value, sub: `${ups.metric.value} % charge` };
+    return { value, sub: ups.reason && ups.reason !== value ? ups.reason : '' };
+  }
+  const sub = [OK_WORD[id] ?? 'OK'];
+  if (counts.maintenance) sub.push(`${counts.maintenance} in maintenance`);
+  if (counts.unknown) sub.push(`${counts.unknown} no signal`);
+  return { value: `${counts.ok} / ${counts.total}`, sub: sub.join(' · ') };
+}
+
+/**
+ * Each subsystem's worst-of state, counts by state, one-line detail and its
+ * tile's value and sub (tileOf). An empty one (nothing of that kind is set
+ * up) is ok with a total of 0, and a client shows no panel for it (spec §8:
+ * unconfigured sources render none).
  */
 export function subsystemsOf(entities) {
   return SUBSYSTEMS.map(({ id, name }) => {
@@ -88,6 +113,7 @@ export function subsystemsOf(entities) {
       state: worstOf(members.map((e) => e.state)),
       counts,
       detail: detailOf(id, counts, members),
+      ...tileOf(id, counts, members),
     };
   });
 }

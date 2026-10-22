@@ -12,7 +12,8 @@
  * card per node with a meter per reading (src/shell/infrastructureView.js
  * infrastructureNodes, InfrastructureSection). Then the screen is
  * read back and checked against the model: the headline's word and sentence
- * (or the quiet line's heading), each tile's state, word and counts, each row's state and word, and each
+ * (or the quiet line's heading), each tile's state, word, value and sub-line
+ * (#541), each row's state and word, and each
  * meter's state, number and line. The push side, the same fixtures through
  * the real push cycle, is server/status/crossClient.test.js (`npm run
  * test:ci`); this file runs in `npm run test:client`.
@@ -216,18 +217,26 @@ function disagreements({ status, cycle }) {
       say(issue.id, 'issue reason', issue.reason, described(row, doc)[0]);
   });
 
-  // The subsystems: a tile for each that has anything, with its state, word and counts.
+  // The subsystems: a tile for each that has anything, with its state, word,
+  // and the model's value over its sub-line (#541), as they are.
   const tiles = [...container.querySelectorAll('[data-slot="subsystem-tile"]')];
   const shown = status.subsystems.filter((s) => s.counts.total > 0);
   if (tiles.length !== shown.length) say('subsystems', 'tiles', shown.length, tiles.length);
   shown.forEach((s, n) => {
     const tile = tiles[n];
     if (!tile) return;
-    if (tile.dataset.state !== s.state)
-      say(`subsystems/${s.id}`, 'state', s.state, tile.dataset.state);
-    const name = `${s.name}, ${worstOf(status, s).word}, ${s.detail}`;
+    const subject = `subsystems/${s.id}`;
+    if (tile.dataset.state !== s.state) say(subject, 'state', s.state, tile.dataset.state);
+    const name = `${s.name}, ${worstOf(status, s).word}, ${s.value}`;
     if (tile.getAttribute('aria-label') !== name)
-      say(`subsystems/${s.id}`, 'word and counts', name, tile.getAttribute('aria-label'));
+      say(subject, 'word and value', name, tile.getAttribute('aria-label'));
+    const value = tile.querySelector('[data-slot="subsystem-value"]')?.textContent;
+    if (value !== s.value) say(subject, 'value', s.value, value);
+    const sub = tile.querySelector('[data-slot="subsystem-sub"]')?.textContent ?? 'none';
+    if (sub !== (s.sub || 'none')) say(subject, 'sub', s.sub || 'none', sub);
+    const description = described(tile, doc)[0] ?? 'none';
+    if (description !== (s.sub || 'none'))
+      say(subject, 'description', s.sub || 'none', description);
   });
 
   // Each entity's state and word.

@@ -406,7 +406,7 @@ describe("the demo's subsystem strip", () => {
   }
 
   for (const scenario of ['incident', 'healthy']) {
-    it(`${scenario}: a tile per subsystem the model has anything in, with its state, word and detail`, async () => {
+    it(`${scenario}: a tile per subsystem the model has anything in, with its state, word, value and sub-line`, async () => {
       await renderDemo(scenario);
       const status = demoStatus(scenario);
       const configured = status.subsystems.filter((s) => s.counts.total > 0);
@@ -416,12 +416,14 @@ describe("the demo's subsystem strip", () => {
 
       const tiles = within(strip()).getAllByRole('button');
       expect(tiles.map((t) => t.getAttribute('aria-label'))).toEqual(
-        configured.map((s) => `${s.name}, ${modelWord(status, s)}, ${s.detail}`)
+        configured.map((s) => `${s.name}, ${modelWord(status, s)}, ${s.value}`)
       );
       configured.forEach((s, n) => {
         expect(tiles[n]).toHaveAttribute('data-state', s.state);
         expect(tiles[n]).toHaveTextContent(s.name);
-        expect(tiles[n]).toHaveTextContent(s.detail);
+        // The model's value over its sub-line (#541).
+        expect(tiles[n].querySelector('[data-slot="subsystem-value"]')).toHaveTextContent(s.value);
+        if (s.sub) expect(tiles[n]).toHaveAccessibleDescription(s.sub);
         expect(tiles[n]).toHaveAttribute('aria-pressed', 'false');
       });
       expect(within(strip()).queryByRole('button', { name: /^Integrations/ })).toBeNull();
@@ -1025,11 +1027,11 @@ describe('No signal: a stale status never looks current', () => {
       expect(rows[0]).toHaveTextContent('Jellyfin');
       for (const lamp of attention().querySelectorAll('[data-slot="status-lamp"]'))
         expect(lamp).toHaveAttribute('data-state', 'unknown');
-      // The strip: every tile no signal, its count kept, marked last known.
+      // The strip: every tile no signal, its count kept, its sub-line marked last known.
       for (const t of within(strip()).getAllByRole('button')) {
         expect(t).toHaveAttribute('data-state', 'unknown');
         expect(t).toHaveTextContent(/\d+ \/ \d+|On mains|On battery|\d/);
-        expect(t).toHaveAccessibleDescription('Last known 30 s ago');
+        expect(t).toHaveAccessibleDescription(/^(.+ · last known|Last known) 30 s ago$/);
       }
       // Infrastructure: the NAS keeps its word, reason and 94 %, all neutral.
       expect(

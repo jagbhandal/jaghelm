@@ -5,13 +5,15 @@ import { SubsystemStrip } from '@ui/subsystem-strip';
 
 const NO_RING = /(^|\s|:)outline-(none|hidden|0)(\s|$)/;
 
-// The strip's container widths: below 320px (`@xs`), to 672px (`@2xl`), and
-// from there. jsdom lays nothing out, so `layout` reads the classes a browser
-// applies at each: the columns, and the columns the last tile spans.
+// The strip's container widths: below 320px (`@xs`), to 672px (`@2xl`), to
+// 720px (`@min-[45rem]`, where six share a row, #541), and from there. jsdom
+// lays nothing out, so `layout` reads the classes a browser applies at each:
+// the columns, and the columns the last tile spans.
 const WIDTHS = {
   'below 320px': ['', '@max-2xl:'],
   '320 to 671px': ['', '@xs:', '@max-2xl:'],
-  'from 672px': ['', '@xs:', '@2xl:'],
+  '672 to 719px': ['', '@xs:', '@2xl:'],
+  'from 720px': ['', '@xs:', '@2xl:', '@min-[45rem]:'],
 };
 function layout(strip, width) {
   const classes = strip.className.split(/\s+/);
@@ -32,23 +34,24 @@ function layout(strip, width) {
   };
 }
 
-// The mock's incident strip.
+// An incident strip, each tile's value and sub-line as the model gives them
+// (server/status/summary.js tileOf, #541).
 const CELLS = [
   {
     key: 'services',
     label: 'Services',
     state: 'crit',
     word: 'Down',
-    value: '30 / 32 up',
-    sub: '1 down · 1 no signal',
+    value: '30 / 32',
+    sub: 'up · 1 no signal',
   },
   {
     key: 'nodes',
     label: 'Nodes',
     state: 'warn',
     word: 'Warning',
-    value: '6 / 6 up',
-    sub: '1 disk warning',
+    value: '5 / 6',
+    sub: 'healthy',
   },
   {
     key: 'power',
@@ -56,29 +59,29 @@ const CELLS = [
     state: 'crit',
     word: 'On battery',
     value: 'On battery',
-    sub: '82 % · ~31 min left',
+    sub: '82 % charge',
   },
   {
     key: 'jobs',
     label: 'Jobs',
     state: 'ok',
-    value: '14 / 14 on time',
-    sub: 'next: npm-sync in 9 min',
+    value: '14 / 14',
+    sub: 'OK',
   },
   {
     key: 'backups',
     label: 'Backups',
     state: 'warn',
     word: 'Overdue',
-    value: '1 overdue',
-    sub: 'vzdump OK 4 h ago',
+    value: '2 / 3',
+    sub: 'OK',
   },
   {
     key: 'integrations',
     label: 'Integrations',
     state: 'unknown',
-    value: '9 connected',
-    sub: 'Arcane, Gitea, HA +6',
+    value: '11 / 12',
+    sub: 'OK · 1 no signal',
   },
 ];
 
@@ -109,15 +112,42 @@ describe('SubsystemStrip', () => {
       '-mr-1'
     );
     expect(within(tiles[0]).getByText('Services').className).not.toMatch(/overflow-visible/);
-    expect(within(tiles[0]).getByText('30 / 32 up')).toHaveClass('@2xl:text-title-sm');
-    expect(within(tiles[0]).getByText('1 down · 1 no signal')).toHaveClass('hidden', '@2xl:block');
+    expect(within(tiles[0]).getByText('30 / 32')).toHaveClass('@2xl:text-title-sm');
+    expect(within(tiles[0]).getByText('up · 1 no signal')).toHaveClass('hidden', '@2xl:block');
+  });
+
+  // #541: the model's value over its sub-line, as they are. Each wraps only
+  // between words (the reflow sweep checks them laid out): nothing that
+  // breaks a word, clips it or ends it in an ellipsis.
+  it("draws the model's value over its sub-line, neither one cut", () => {
+    render(<SubsystemStrip cells={CELLS} />);
+    const tile = screen.getAllByRole('region')[0].querySelector('[data-slot="subsystem-tile"]');
+    const value = tile.querySelector('[data-slot="subsystem-value"]');
+    const sub = tile.querySelector('[data-slot="subsystem-sub"]');
+    expect([value.textContent, sub.textContent]).toEqual(['30 / 32', 'up · 1 no signal']);
+    expect(value.nextElementSibling).toBe(sub);
+    const CUTS =
+      /(^|\s)(wrap-break-word|wrap-anywhere|break-all|break-words|truncate|text-ellipsis|overflow-hidden|line-clamp-\d+)(\s|$)/;
+    expect(value.className).not.toMatch(CUTS);
+    expect(sub.className).not.toMatch(CUTS);
+  });
+
+  it('draws no sub-line where the model gives none', () => {
+    render(<SubsystemStrip cells={[{ ...CELLS[2], sub: undefined }]} />);
+    expect(document.querySelector('[data-slot="subsystem-value"]')).toHaveTextContent('On battery');
+    expect(document.querySelector('[data-slot="subsystem-sub"]')).toBeNull();
   });
 
   it('tints a warning, critical or no-signal tile, and leaves ok and maintenance on the panel', () => {
     const { rerender } = render(<SubsystemStrip cells={CELLS} />);
     const tiles = () => screen.getByRole('region').querySelectorAll('[data-slot="subsystem-tile"]');
     expect(tiles()[5]).toHaveClass('bg-surface-1', 'from-unknown-tint', 'to-unknown-tint');
-    const maintenance = { ...CELLS[5], state: 'maintenance', value: '1 in maintenance' };
+    const maintenance = {
+      ...CELLS[5],
+      state: 'maintenance',
+      value: '11 / 12',
+      sub: 'OK · 1 in maintenance',
+    };
     rerender(<SubsystemStrip cells={[...CELLS.slice(0, 5), maintenance]} />);
     const [crit, warn, , ok, , maint] = tiles();
     // The tint is a layer over the tile's surface-1 (a gradient of one colour,
@@ -139,13 +169,17 @@ describe('SubsystemStrip', () => {
     );
   });
 
-  it('sits six in a row from 672px, three from 320px and two below', () => {
+  // Six share a row from 720px: narrower, "On battery" wouldn't fit its
+  // tile's value line (#541), so from 672px they sit in rows of three.
+  it('sits six in a row from 720px, three from 320px and two below', () => {
     const { rerender } = render(<SubsystemStrip cells={CELLS} />);
     expect(screen.getByRole('region')).toHaveClass(
       'grid-cols-2',
       '@xs:grid-cols-3',
-      '@2xl:grid-cols-6'
+      '@min-[45rem]:grid-cols-6'
     );
+    expect(layout(screen.getByRole('region'), '672 to 719px')).toEqual({ columns: 3, lastSpan: 1 });
+    expect(layout(screen.getByRole('region'), 'from 720px')).toEqual({ columns: 6, lastSpan: 1 });
     expect(screen.getByRole('region').parentElement).toHaveClass('@container');
     rerender(<SubsystemStrip cells={CELLS.slice(0, 4)} />);
     expect(screen.getByRole('region')).toHaveClass('grid-cols-2', '@2xl:grid-cols-4');
@@ -173,7 +207,8 @@ describe('SubsystemStrip', () => {
     const strip = screen.getByRole('region');
     expect(layout(strip, 'below 320px')).toEqual({ columns: 2, lastSpan: 2 });
     expect(layout(strip, '320 to 671px')).toEqual({ columns: 3, lastSpan: 2 });
-    expect(layout(strip, 'from 672px')).toEqual({ columns: 5, lastSpan: 1 });
+    expect(layout(strip, '672 to 719px')).toEqual({ columns: 5, lastSpan: 1 });
+    expect(layout(strip, 'from 720px')).toEqual({ columns: 5, lastSpan: 1 });
   });
 
   it('is plain content without onSelect', () => {
@@ -186,9 +221,11 @@ describe('SubsystemStrip', () => {
     const onSelect = vi.fn();
     const { rerender } = render(<SubsystemStrip cells={CELLS} onSelect={onSelect} />);
     // Named as a row is: "label, word, value", and described by the line under it.
-    const services = screen.getByRole('button', { name: 'Services, Down, 30 / 32 up' });
-    expect(services).toHaveAccessibleDescription('1 down · 1 no signal');
-    expect(screen.getByRole('button', { name: 'Jobs, OK, 14 / 14 on time' })).toBeInTheDocument();
+    const services = screen.getByRole('button', { name: 'Services, Down, 30 / 32' });
+    expect(services).toHaveAccessibleDescription('up · 1 no signal');
+    expect(screen.getByRole('button', { name: 'Jobs, OK, 14 / 14' })).toHaveAccessibleDescription(
+      'OK'
+    );
     expect(services).toHaveAttribute('aria-pressed', 'false');
     expect(services).toHaveClass('hover:bg-surface-2', '-outline-offset-2');
     // Under the pointer a tinted tile drops its tint layer, so it is surface-2
@@ -209,14 +246,21 @@ describe('SubsystemStrip', () => {
   // #480: a stale status keeps each tile's word and count, drawn as no signal.
   it('no signal beside a last known word: the lamp is No signal, and the tile says it first', () => {
     const cells = [
-      { key: 'services', label: 'Services', state: 'unknown', word: 'Down', value: '30 / 32 up' },
+      {
+        key: 'services',
+        label: 'Services',
+        state: 'unknown',
+        word: 'Down',
+        value: '30 / 32',
+        sub: 'up · last known 3 min ago',
+      },
     ];
     const { rerender } = render(<SubsystemStrip cells={cells} />);
     expect(screen.getByRole('img', { name: 'No signal' })).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'Down' })).toBeNull();
     rerender(<SubsystemStrip cells={cells} onSelect={() => {}} />);
     expect(
-      screen.getByRole('button', { name: 'Services, No signal, Down, 30 / 32 up' })
-    ).toBeInTheDocument();
+      screen.getByRole('button', { name: 'Services, No signal, Down, 30 / 32' })
+    ).toHaveAccessibleDescription('up · last known 3 min ago');
   });
 });

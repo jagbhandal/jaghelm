@@ -11,7 +11,10 @@
  *    name; no text spilling out of its box; and every service's and node's
  *    name is whole and inside the window. A failure names the element, the
  *    width and the scenario. Then the same at every width on the incident
- *    with the model's longest subsystem details, six tiles of them.
+ *    with the model's longest subsystem sub-lines, six tiles of them.
+ *  - Each status fixture's strip at 1024, 1280 and 1440px (#541): every
+ *    tile's value and sub-line the model's, whole (no word cut, nothing
+ *    clipped or ending in an ellipsis), the value on one line.
  *  - A tablet (768 and 1023px) is the desktop Overview in one column, the
  *    strip wrapping.
  *  - The layout doesn't jump as it loads (#243): at 390 × 844 on the
@@ -33,6 +36,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import { demo, openApp } from './app.mjs';
+import { runScenario, STATUS_SCENARIOS } from '../server/testing/statusScenarios.js';
 
 /** The widths of the sweep (spec §8): phones, a tablet, desktops, a 4K-wide window. */
 const SWEEP = [360, 390, 768, 1024, 1280, 1440, 1920, 2560];
@@ -214,23 +218,28 @@ for (const scenario of SCENARIOS) {
   }
 }
 
-// The model's longest subsystem details (detailOf, server/status/summary.js)
-// in all six tiles: the count, then "· 1 in maintenance" and "· 1 no signal",
-// on the incident, with the integrations it lacks. A word as long as
-// "maintenance" is wider than a tile when six share a row.
+// The model's longest subsystem sub-lines (tileOf, server/status/summary.js,
+// #541) in all six tiles: the word, then "· 1 in maintenance" and "· 1 no
+// signal", on the incident, with the integrations it lacks, and the UPS's
+// longest word as its value. A word as long as "maintenance" is most of a
+// tile's line when six share a row.
 const LONG_DETAILS = (() => {
   const status = structuredClone(demo('/api/status').body);
   for (const s of status.subsystems) {
     if (s.id === 'integrations') {
       s.counts = { total: 12, ok: 10, warn: 0, crit: 0, unknown: 1, maintenance: 1 };
-      s.detail = '10 / 12 answering';
+      Object.assign(s, { detail: '10 / 12 OK', value: '10 / 12', sub: 'OK' });
     }
-    if (s.id !== 'power') s.detail = `${s.detail} · 1 in maintenance · 1 no signal`;
+    if (s.id === 'power') Object.assign(s, { value: 'Low battery', sub: '9 % charge' });
+    else {
+      s.detail = `${s.detail} · 1 in maintenance · 1 no signal`;
+      s.sub = `${s.sub} · 1 in maintenance · 1 no signal`;
+    }
   }
   return status;
 })();
 
-test('the longest subsystem details, at every width: nothing clipped', async ({ page }) => {
+test('the longest subsystem sub-lines, at every width: nothing clipped', async ({ page }) => {
   const { nodes, services } = namesOf('incident');
   await page.setViewportSize({ width: SWEEP[0], height: heightAt(SWEEP[0]) });
   await openApp(page, '/', { scenario: 'incident', answers: { '/api/status': LONG_DETAILS } });
@@ -243,6 +252,109 @@ test('the longest subsystem details, at every width: nothing clipped', async ({ 
   }
   expect(found, found.join('\n')).toEqual([]);
 });
+
+// Each status fixture's subsystem tiles at the desktop widths (#541): the
+// model's value and sub-line drawn as they are, and whole. No word or number
+// is cut in two (a word wider than its line spills, which the check finds),
+// nothing clips or ends in an ellipsis, and the value keeps to one line, so
+// "31 / 32" never breaks at its spaces. A strip that can't fit them wraps to
+// rows of three, as on a tablet.
+const FIT = [1024, 1280, 1440];
+for (const name of STATUS_SCENARIOS) {
+  test(`${name}: each tile's value and sub-line whole at 1024, 1280 and 1440px (#541)`, async ({
+    page,
+  }) => {
+    const { status, cycle } = runScenario(name, { now: Date.now() });
+    const shown = status.subsystems.filter((s) => s.counts.total > 0);
+    await page.setViewportSize({ width: FIT[0], height: 900 });
+    await openApp(page, '/', {
+      scenario: 'incident',
+      answers: { '/api/status': status, '/api/services': cycle.caches.getCached('services') },
+    });
+    const tiles = page.locator('[data-slot="subsystem-tile"]');
+    await expect(
+      page.locator('[data-slot="overview-status"]').getByRole('region').first()
+    ).toBeVisible();
+    await expect(tiles).toHaveCount(shown.length);
+    const found = [];
+    for (const width of FIT) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        await new Promise((r) => requestAnimationFrame(() => setTimeout(r)));
+      });
+      const drawn = await tiles.evaluateAll((all) =>
+        all.map((tile) => {
+          const read = (slot) => {
+            const el = tile.querySelector(`[data-slot="${slot}"]`);
+            if (!el) return null;
+            const cs = getComputedStyle(el);
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+            // Each word's own boxes: one line each, inside the tile's content box.
+            const box = tile.getBoundingClientRect();
+            const right = box.right - parseFloat(getComputedStyle(tile).paddingRight) + 0.5;
+            const text = el.textContent;
+            const cut = [];
+            for (const m of text.matchAll(/\S+/g)) {
+              const r = document.createRange();
+              r.setStart(el.firstChild, m.index);
+              r.setEnd(el.firstChild, m.index + m[0].length);
+              const rects = [...r.getClientRects()];
+              const tops = new Set(rects.map((x) => Math.round(x.top)));
+              if (tops.size > 1 || rects.some((x) => x.right > right)) cut.push(m[0]);
+            }
+            return {
+              text,
+              lines,
+              cut,
+              shown: cs.display !== 'none',
+              wrap: `${cs.overflowWrap} ${cs.wordBreak}`,
+              clips: cs.overflowX !== 'visible' || cs.textOverflow === 'ellipsis',
+              spills: el.scrollWidth > el.clientWidth + 1,
+            };
+          };
+          return {
+            key: tile.dataset.state,
+            width: Math.round(tile.getBoundingClientRect().width),
+            top: Math.round(tile.getBoundingClientRect().top),
+            value: read('subsystem-value'),
+            sub: read('subsystem-sub'),
+          };
+        })
+      );
+      const rows = new Set(drawn.map((d) => d.top)).size;
+      shown.forEach((s, i) => {
+        const d = drawn[i];
+        const at = `${width}px, ${s.id}`;
+        if (d.value?.text !== s.value)
+          found.push(`${at}: value "${d.value?.text}", the model's "${s.value}"`);
+        if (s.sub && d.sub?.text !== s.sub)
+          found.push(`${at}: sub "${d.sub?.text}", the model's "${s.sub}"`);
+        if (s.sub && !d.sub?.shown) found.push(`${at}: sub "${s.sub}" not shown`);
+        for (const [line, r] of [
+          ['value', d.value],
+          ['sub', d.sub],
+        ]) {
+          if (!r) continue;
+          if (r.wrap !== 'normal normal') found.push(`${at}: the ${line} breaks words (${r.wrap})`);
+          if (r.clips) found.push(`${at}: the ${line} clips or ends in an ellipsis`);
+          if (r.spills) found.push(`${at}: the ${line} "${r.text}" spills out of its tile`);
+          if (r.cut.length)
+            found.push(`${at}: the ${line} cuts ${r.cut.map((w) => `"${w}"`).join(', ')}`);
+        }
+        if (d.value && d.value.lines > 1)
+          found.push(`${at}: the value "${s.value}" takes ${d.value.lines} lines`);
+      });
+      test.info().annotations.push({
+        type: `${width}px`,
+        description: `${shown.length} tiles in ${rows} row(s), ${drawn[0]?.width}px each`,
+      });
+    }
+    expect(found, found.join('\n')).toEqual([]);
+  });
+}
 
 // A tablet (768–1023px, spec §8): the desktop Overview in one column, the
 // subsystem strip wrapping to its width. 768 is PHONE_WIDTH's edge (the

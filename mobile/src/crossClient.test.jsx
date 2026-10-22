@@ -16,7 +16,7 @@
  *    the issues' counts ("Critical · 1 critical"), or the quiet line, "All
  *    systems normal", or an empty board's sentence alone; the sentence under it;
  *  - the strip: a cell per subsystem that has anything, its state, its worst
- *    entity's word and the model's counts;
+ *    entity's word, and the model's value over its sub-line (#541);
  *  - the issue list: a row per issue, in the model's order, its state, word,
  *    name, where (as the web's rows say it) and reason;
  *  - Infra's node cards: each node's state and word, its hosted services
@@ -148,6 +148,15 @@ const SEVERITY_CLASS = /(?:^|\s)[\w-]+--(critical|caution|healthy|unknown|mainte
 const drawn = (el) => (el ? (SEVERITY_CLASS.exec(el.getAttribute('class') ?? '')?.[1] ?? null) : null);
 const text = (el) => el?.textContent ?? null;
 
+/**
+ * A stale cell's sub-line (#480, #541): the model's, then " · last known
+ * <age>"; with none, "Last known <age>" alone.
+ */
+const STALE_SUB = (sub) => (sub ? `${sub} · last known <age>` : 'Last known <age>');
+const isStaleSub = (sub, drawn) =>
+  /(^| · )[Ll]ast known .+ ago$/.test(drawn ?? '') &&
+  (sub ? drawn.startsWith(`${sub} · last known `) : drawn.startsWith('Last known '));
+
 /** The worst entity of a subsystem, by the model's ranking: its word is the cell's. */
 function worstOf(status, subsystem) {
   const match = (e) => e.subsystem === subsystem.id && e.state === subsystem.state;
@@ -243,8 +252,12 @@ function disagreements({ status, servicesBody }, { stale, cause }) {
     const said = worstOf(status, s).word;
     if (text(cell.querySelector('.status-word')) !== said.toUpperCase())
       say(subject, 'word', said.toUpperCase(), text(cell.querySelector('.status-word')));
-    if (text(cell.querySelector('.subsystem-cell__detail')) !== s.detail)
-      say(subject, 'counts', s.detail, text(cell.querySelector('.subsystem-cell__detail')));
+    // The model's value and sub-line (#541), as they are; stale, the sub-line marked last known.
+    if (text(cell.querySelector('.subsystem-cell__value')) !== s.value)
+      say(subject, 'value', s.value, text(cell.querySelector('.subsystem-cell__value')));
+    const drawnSub = text(cell.querySelector('.subsystem-cell__sub'));
+    if (stale ? !isStaleSub(s.sub, drawnSub) : drawnSub !== (s.sub || null))
+      say(subject, 'sub', stale ? STALE_SUB(s.sub) : s.sub || 'none', drawnSub ?? 'none');
   });
 
   // The issue list, in the model's order.

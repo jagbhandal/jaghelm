@@ -383,7 +383,13 @@ describe('the strip, stale (subsystemCells with the freshness)', () => {
     expect(stale.map((c) => c.state)).toEqual(fresh.map(() => 'unknown'));
     expect(stale.map((c) => c.value)).toEqual(fresh.map((c) => c.value));
     expect(stale.map((c) => c.word)).toEqual(fresh.map((c) => c.word));
-    expect(stale.map((c) => c.sub)).toEqual(fresh.map(() => 'Last known 3 min ago'));
-    expect(fresh.map((c) => c.sub)).toEqual(fresh.map(() => undefined));
+    // The model's sub-line, marked last known (#541); a tile with none says it alone.
+    expect(stale.map((c) => c.sub)).toEqual(
+      fresh.map((c) => (c.sub ? `${c.sub} · last known 3 min ago` : 'Last known 3 min ago'))
+    );
+    expect(fresh.some((c) => c.sub)).toBe(true);
+    expect(fresh.map((c) => c.sub)).toEqual(
+      INCIDENT.subsystems.filter((s) => s.counts.total > 0).map((s) => s.sub || undefined)
+    );
   });
 });

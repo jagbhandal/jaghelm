@@ -2,16 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { SubsystemStrip } from '@ui/subsystem-strip';
 
-// New cell shape (Task 1 contract): { key, label, severity, word, detail }.
+// A cell: { key, label, severity, word, value, sub } (#541: the model's value and sub-line).
 const CELLS = [
-  { key: 'services', label: 'Services', severity: 'critical', word: 'DOWN', detail: '1 / 2' },
-  { key: 'nodes', label: 'Nodes', severity: 'healthy', word: 'OK', detail: '3 online' },
-  { key: 'ups', label: 'UPS', severity: 'unknown', word: 'NO SIGNAL', detail: '—' },
-  { key: 'cron', label: 'Cron', severity: 'healthy', word: 'OK', detail: '0 fail' },
+  { key: 'services', label: 'Services', severity: 'critical', word: 'DOWN', value: '1 / 2' },
+  { key: 'nodes', label: 'Nodes', severity: 'healthy', word: 'OK', value: '3 online' },
+  { key: 'ups', label: 'UPS', severity: 'unknown', word: 'NO SIGNAL', value: '—' },
+  { key: 'cron', label: 'Cron', severity: 'healthy', word: 'OK', value: '0 fail' },
 ];
 
 describe('SubsystemStrip', () => {
-  it('renders a 2×2 grid of SubsystemCells with the new severity/word/detail shape', () => {
+  it('renders a 2×2 grid of SubsystemCells with the severity/word/value shape', () => {
     render(<SubsystemStrip cells={CELLS} />);
     expect(screen.getAllByRole('listitem')).toHaveLength(4);
     expect(screen.getByText('Services')).toBeInTheDocument();

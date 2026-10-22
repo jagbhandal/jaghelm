@@ -833,6 +833,13 @@ for (const [name, ups, state, reason] of upsRows) {
   });
 }
 
+test('judgeUps: the charge is its metric on mains as on battery, none without a reading (#541)', () => {
+  const charge = (value) => ({ name: 'charge', value, unit: '%' });
+  assert.deepEqual(judgeUps({ status: 1, charge: 92.7, ok: true }).metric, charge(92));
+  assert.deepEqual(judgeUps({ status: 2, charge: 64.4, ok: true }).metric, charge(64));
+  assert.equal(judgeUps({ status: 1, charge: null, ok: true }).metric, undefined);
+});
+
 const HOUR = 3_600_000;
 const jobRows = [
   // name, run, backup, state, reason

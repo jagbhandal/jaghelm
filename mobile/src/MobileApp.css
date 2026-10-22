@@ -657,14 +657,23 @@
   letter-spacing: 0.06em;
 }
 
-/* Mono detail line */
-#mobile-root .subsystem-cell__detail {
+/* The model's value over its sub-line (#541), as the web's tile: the value
+   bold in the text colour, the sub-line small and muted under it. Each wraps
+   only between words. */
+#mobile-root .subsystem-cell__value {
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  font-weight: 700;
+  line-height: 18px;
+  color: var(--text);
+}
+#mobile-root .subsystem-cell__sub {
   font-family: var(--mono);
   font-size: var(--text-2xs);
   color: var(--label);
 }
 
-/* The Power cell's UPS readings, under the model's detail (display only). */
+/* The Power cell's UPS readings, under the model's sub-line (display only). */
 #mobile-root .subsystem-cell__readings {
   font-family: var(--mono);
   font-size: var(--text-2xs);
