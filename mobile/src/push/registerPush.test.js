@@ -282,6 +282,55 @@ describe('sign-out push teardown (#531)', () => {
   });
 });
 
+describe('listeners do not stack across sign-ins (#531)', () => {
+  // A plugin that keeps its listeners as the native one does: each handle
+  // removes its own, and removeAllListeners only reaches PushNotifications'.
+  let live;
+  beforeEach(() => {
+    live = [];
+    plugin.checkPermissions.mockResolvedValue({ receive: 'granted' });
+    const add = (where) => (event) => {
+      const entry = `${where}:${event}`;
+      live.push(entry);
+      return Promise.resolve({ remove: vi.fn(async () => live.splice(live.indexOf(entry), 1)) });
+    };
+    plugin.addListener.mockImplementation(add('push'));
+    appPlugin.addListener.mockImplementation(add('app'));
+    plugin.removeAllListeners.mockImplementation(async () => {
+      live = live.filter((e) => !e.startsWith('push:'));
+    });
+  });
+
+  const ONE_OF_EACH = [
+    'app:appUrlOpen',
+    'push:pushNotificationActionPerformed',
+    'push:pushNotificationReceived',
+    'push:registration',
+    'push:registrationError',
+  ];
+
+  it('two sign-ins leave one listener of each kind', async () => {
+    await initPush({ nav: { push: vi.fn() } });
+    await initPush({ nav: { push: vi.fn() } });
+    expect(live.slice().sort()).toEqual(ONE_OF_EACH);
+  });
+
+  it('sign-out removes every listener, appUrlOpen too, and the next sign-in adds one of each', async () => {
+    await initPush({ nav: { push: vi.fn() } });
+    await unregisterPush('fcmtok');
+    expect(live).toEqual([]);
+    await initPush({ nav: { push: vi.fn() } });
+    expect(live.slice().sort()).toEqual(ONE_OF_EACH);
+  });
+
+  it('a removeAllListeners that throws still removes appUrlOpen at sign-out', async () => {
+    await initPush({ nav: { push: vi.fn() } });
+    plugin.removeAllListeners.mockRejectedValue(new Error('native failure'));
+    await expect(unregisterPush('fcmtok')).resolves.toBeUndefined();
+    expect(live).not.toContain('app:appUrlOpen');
+  });
+});
+
 function captureAppHandlers() {
   const handlers = {};
   appPlugin.addListener.mockImplementation((event, cb) => {

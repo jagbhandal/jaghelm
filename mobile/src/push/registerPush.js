@@ -26,6 +26,21 @@ import { isPushConfigured } from './pushConfig.js';
 
 const CHANNEL_ID = 'jaghelm-incidents';
 
+// The appUrlOpen listener initPush added. PushNotifications.removeAllListeners()
+// doesn't reach @capacitor/app's listeners, so this one is removed by its handle.
+let appUrlOpenHandle = null;
+
+/** Remove every listener initPush added: the four plugin ones and appUrlOpen. */
+async function removePushListeners() {
+  const handle = appUrlOpenHandle;
+  appUrlOpenHandle = null;
+  try {
+    await PushNotifications.removeAllListeners();
+  } finally {
+    if (handle) await handle.remove();
+  }
+}
+
 export async function initPush({ nav }) {
   // HARD GATE: register() needs Firebase (google-services.json). Without it, it
   // throws an UNCAUGHT native exception on the CapacitorPlugins thread that
@@ -57,6 +72,10 @@ export async function initPush({ nav }) {
       visibility: 1,
     });
 
+    // A sign-in after a sign-out in the same run mounts MobileApp again: drop
+    // what an earlier call added, so the listeners don't stack (#531).
+    await removePushListeners();
+
     // Listeners BEFORE register() — 'registration' may fire immediately.
     await PushNotifications.addListener('registration', (token) => onRegistration(token));
     await PushNotifications.addListener('registrationError', (err) => {
@@ -72,7 +91,7 @@ export async function initPush({ nav }) {
 
     // Deep-link path B: the jaghelm://incident/<id> custom URL scheme (DESIGN line
     // 307 — the primary OSS-build deep-link path). Same nav, same reconciler.
-    await App.addListener('appUrlOpen', (event) => {
+    appUrlOpenHandle = await App.addListener('appUrlOpen', (event) => {
       routeFromUrl(event && event.url, nav);
     });
 
@@ -133,10 +152,10 @@ export async function cachedPushToken() {
  * call it before revoking the session: DELETE /push/register needs a live one.
  * The DELETE is sent within the call (apiFetch takes the session token as it
  * sends). Push is then torn down on the phone without waiting for the answer:
- * the listeners go, PushNotifications.unregister() deletes the FCM token, so
- * the phone shows no more pushes even if the DELETE is lost and the server's
- * next send to the old token fails and prunes it, and the cached token is
- * cleared. The next sign-in registers a new token (initPush). Never rejects;
+ * the listeners go (appUrlOpen too), PushNotifications.unregister() deletes
+ * the FCM token, so the phone shows no more pushes even if the DELETE is lost
+ * and the server's next send to the old token fails and prunes it, and the
+ * cached token is cleared. The next sign-in registers a new token (initPush). Never rejects;
  * stops waiting for the DELETE after SIGN_OUT_TIMEOUT_MS. A build without push
  * touches nothing (the plugin would crash it, see pushConfig.js).
  */
@@ -154,7 +173,7 @@ export async function unregisterPush(token) {
   }
   // Each step on its own, so one that fails doesn't skip the others.
   const steps = [
-    () => PushNotifications.removeAllListeners(),
+    () => removePushListeners(),
     () => PushNotifications.unregister(),
     () => setPref(PUSH_TOKEN_KEY, ''),
   ];
