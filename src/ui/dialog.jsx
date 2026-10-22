@@ -43,7 +43,8 @@ import { useFloatingLayer, useFloatingTrigger } from './lib/floating.jsx';
 
 function Dialog({ trigger, title, open, defaultOpen, ...props }) {
   requireName('Dialog', { title, open, props });
-  const triggerId = useId();
+  const ownId = useId();
+  const triggerId = trigger?.props?.id ?? ownId;
   const { layer, handoff, light } = useFloatingTrigger({ now: Boolean(open || defaultOpen) });
   if (layer) {
     return (

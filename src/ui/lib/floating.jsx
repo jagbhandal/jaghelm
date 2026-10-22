@@ -1,8 +1,8 @@
 /**
  * The floating layer (#444): the Tooltip, Popover, Select, Dialog, Drawer and
  * Confirm, and the Sparkline's readout, are Base UI popups positioned by
- * floating-ui, about 18 KB gzipped. None of it draws the first screen, so it
- * lives in one chunk of its own (src/ui/floating/),
+ * floating-ui. None of it draws the first screen, so it lives in one chunk of
+ * its own (src/ui/floating/, about 45 KB gzipped),
  * which this module loads once for all of them, on first use. Each
  * component's own module (tooltip.jsx...) keeps its API and draws its trigger
  * itself until then: the caller's element, focusable and named as before, with
@@ -17,12 +17,15 @@
  *
  * Once loaded it answers at once, so a component mounted later draws Base UI
  * from its first render, as before #444. The components mounted before then
- * hand over when it arrives: their trigger is drawn anew, and takes focus
- * back if it had it; a trigger the pointer is pressing hands over once the
- * click is done, so no click is lost; and one activated before the layer
- * arrived (a click, Enter or Space, a Select's arrow) opens its popup once it
- * has, through Base UI, as a click would (useFloatingTrigger); if the layer
- * fails to load, that open is dropped rather than made later.
+ * hand over when it arrives, Base UI drawing their trigger anew, except one
+ * that has focus or is being pressed: that one stays as it is until focus
+ * leaves it or the click is done, so focus never moves and a screen reader
+ * never hears it twice, and no click is lost (a tooltip focused before then
+ * shows on its next focus). One activated before the layer arrived (a click,
+ * Enter or Space, a Select's arrow) opens its popup once it has, through Base
+ * UI, as a click would, its new trigger taking focus first
+ * (useFloatingTrigger); if the layer fails to load, that open is dropped
+ * rather than made later.
  *
  * The client tests load the layer before a file's tests run
  * (src/testing/setup.js), as they do the lazy views (#490), and the gallery
@@ -37,7 +40,8 @@ const FIRST_INPUT = ['pointermove', 'pointerdown', 'keydown', 'touchstart'];
  * A loader for one layer: `load()` imports it once (again after a failure),
  * `get()` is the module once loaded (else null), `subscribe(fn)` calls `fn`
  * when it arrives, and `loadOnFirstInput(doc)` loads it on the first input
- * in `doc`. Pure apart from `importLayer`, so a test can make its own.
+ * in `doc`, and on the next one again if that load failed. Pure apart from
+ * `importLayer`, so a test can make its own.
  */
 export function createFloatingLayer(importLayer) {
   let layer = null;
@@ -64,29 +68,35 @@ export function createFloatingLayer(importLayer) {
     );
     return loading;
   };
+  const failed = (error) => console.error('The floating layer did not load', error);
   const loadQuietly = () => {
-    // A failure is logged once; the next use asks again.
-    load().catch((error) => console.error('The floating layer did not load', error));
+    // Logged; the next use asks again.
+    load().catch(failed);
+  };
+  const loadOnFirstInput = (doc) => {
+    if (layer || !doc || watched.has(doc)) return;
+    watched.add(doc);
+    const first = () => {
+      for (const type of FIRST_INPUT) doc.removeEventListener(type, first, true);
+      watched.delete(doc);
+      load().catch((error) => {
+        failed(error);
+        // The next input asks again.
+        loadOnFirstInput(doc);
+      });
+    };
+    for (const type of FIRST_INPUT) {
+      doc.addEventListener(type, first, { capture: true, passive: true });
+    }
   };
   return {
     load,
     loadQuietly,
+    loadOnFirstInput,
     get: () => layer,
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
-    },
-    loadOnFirstInput(doc) {
-      if (layer || !doc || watched.has(doc)) return;
-      watched.add(doc);
-      const first = () => {
-        for (const type of FIRST_INPUT) doc.removeEventListener(type, first, true);
-        watched.delete(doc);
-        loadQuietly();
-      };
-      for (const type of FIRST_INPUT) {
-        doc.addEventListener(type, first, { capture: true, passive: true });
-      }
     },
   };
 }
@@ -119,7 +129,7 @@ const chain = (first, second) => (event) => {
  * hand-over removes it: its cleanup runs before its element leaves the page,
  * and notes whether that element had focus, for the layer's trigger to take.
  */
-function LightTrigger({ element, extra, nodeRef, handoff, onPress, onActivate }) {
+function LightTrigger({ element, extra, nodeRef, handoff, onPress, onActivate, onHold }) {
   useLayoutEffect(() => {
     handoff.focus = false;
     const el = nodeRef.current;
@@ -147,6 +157,8 @@ function LightTrigger({ element, extra, nodeRef, handoff, onPress, onActivate })
       if (e.button === 0) onPress();
     }),
     onClick: chain(own.onClick, onActivate),
+    onFocus: chain(own.onFocus, () => onHold(true)),
+    onBlur: chain(own.onBlur, () => onHold(false)),
     onKeyDown: chain(own.onKeyDown, (e) => {
       // Space clicks a button when it comes up: held, as a pressed pointer is.
       if (e.key === ' ' && !e.repeat) onPress();
@@ -157,8 +169,8 @@ function LightTrigger({ element, extra, nodeRef, handoff, onPress, onActivate })
 
 /**
  * A floating component's trigger before and across the hand-over. Returns
- * `layer` (null while the light trigger draws: not loaded yet, or the pointer
- * is pressing the trigger), `handoff` for the layer's component (useHandoff in
+ * `layer` (null while the light trigger draws: not loaded yet, or the light
+ * trigger has focus or is being pressed), `handoff` for the layer's component (useHandoff in
  * src/ui/floating/handoff.js), and `light(element, props)`, the caller's
  * element as the light trigger: `props` over its own (the closed popup's
  * ARIA), its handlers kept. `opens(event)` says whether an event on it opens
@@ -176,6 +188,8 @@ export function useFloatingTrigger({
   const loaded = useFloatingLayer(now, from);
   const handoff = useRef({ focus: false, open: false }).current;
   const [pressed, setPressed] = useState(false);
+  // Focus on the light trigger: it stays until focus leaves or it is activated.
+  const [held, setHeld] = useState(false);
   const ownNode = useRef(null);
   const nodeRef = ref ?? ownNode;
 
@@ -203,7 +217,10 @@ export function useFloatingTrigger({
 
   const onActivate = (event) => {
     if (event.defaultPrevented || !opens(event)) return;
+    // A key that opens it (a Select's arrow) does nothing else, as with Base UI.
+    if (event.type === 'keydown') event.preventDefault();
     handoff.open = true;
+    setHeld(false);
     from.load().catch(() => {
       handoff.open = false;
     });
@@ -217,10 +234,11 @@ export function useFloatingTrigger({
       handoff={handoff}
       onPress={onPress}
       onActivate={onActivate}
+      onHold={setHeld}
     />
   );
 
-  return { layer: pressed ? null : loaded, handoff, light };
+  return { layer: pressed || held ? null : loaded, handoff, light };
 }
 
 /** What ends a press on a light trigger, and what ends it unless a click follows. */

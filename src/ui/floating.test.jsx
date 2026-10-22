@@ -81,7 +81,7 @@ describe('the floating layer', () => {
     expect(cold.imports).toBe(1);
   });
 
-  it('asks again on the next use after a failed load', async () => {
+  it('asks again on the next input after a failed load', async () => {
     const noisy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       let fail = true;
@@ -102,9 +102,10 @@ describe('the floating layer', () => {
       await waitFor(() => expect(noisy).toHaveBeenCalled());
       expect(cold.layer.get()).toBeNull();
       fail = false;
-      await act(() => cold.layer.load());
-      expect(cold.layer.get()).not.toBeNull();
+      await user.pointer({ coords: { x: 5, y: 5 } });
+      await waitFor(() => expect(cold.layer.get()).not.toBeNull());
       expect(cold.imports).toBe(2);
+      expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
     } finally {
       noisy.mockRestore();
     }
@@ -160,21 +161,30 @@ describe('the floating layer', () => {
 });
 
 describe('each floating component, used cold from the keyboard', () => {
-  it('Tooltip: focus taken before the layer opens it once in, focus kept, described all along', async () => {
+  it('Tooltip: a trigger focused before the layer keeps focus, untouched, and shows it on the next focus', async () => {
     const user = userEvent.setup();
     render(
-      <Tooltip content="Still loaded: opens where you left it">
-        <Button>Immich</Button>
-      </Tooltip>
+      <>
+        <Tooltip content="Still loaded: opens where you left it">
+          <Button>Immich</Button>
+        </Tooltip>
+        <Button>Grafana</Button>
+      </>
     );
     const light = screen.getByRole('button', { name: 'Immich' });
     expect(light).toHaveAccessibleDescription('Still loaded: opens where you left it');
     await user.tab();
     expect(light).toHaveFocus();
-    expect(popup('tooltip')).toBeNull();
     await cold.arrive();
+    // The same element, so focus never moved and nothing is announced again.
+    expect(screen.getByRole('button', { name: 'Immich' })).toBe(light);
+    expect(light).toHaveFocus();
+    expect(popup('tooltip')).toBeNull();
+    await user.tab();
+    await user.tab({ shift: true });
     await waitFor(() => expect(popup('tooltip')).toHaveTextContent('Still loaded'));
     const trigger = screen.getByRole('button', { name: 'Immich' });
+    expect(trigger).not.toBe(light);
     expect(trigger).toHaveFocus();
     expect(trigger).toHaveAccessibleDescription('Still loaded: opens where you left it');
     expect(popup('tooltip')).toHaveAttribute('aria-hidden', 'true');
@@ -205,6 +215,40 @@ describe('each floating component, used cold from the keyboard', () => {
     await waitFor(() => expect(popup('popover')).toBeNull());
     expect(trigger).toHaveFocus();
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('Popover: a focused trigger stays as it is when the layer comes, until it is activated', async () => {
+    const user = userEvent.setup();
+    render(
+      <Popover trigger={<Button>Group</Button>} title="Group by">
+        Node
+      </Popover>
+    );
+    const light = screen.getByRole('button', { name: 'Group' });
+    await user.tab();
+    await cold.arrive();
+    expect(screen.getByRole('button', { name: 'Group' })).toBe(light);
+    expect(light).toHaveFocus();
+    await user.keyboard('{Enter}');
+    const dialog = await screen.findByRole('dialog', { name: 'Group by' });
+    await waitFor(() => expect(dialog).toContainElement(document.activeElement));
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(popup('popover')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Group' })).toHaveFocus();
+  });
+
+  it("Dialog, Drawer, Confirm: the trigger keeps the caller's id, before the layer and after", async () => {
+    render(
+      <>
+        <Dialog trigger={<Button id="add-app">Add</Button>} title="Add an app" />
+        <Drawer trigger={<Button id="details">Details</Button>} title="Grafana" />
+        <Confirm trigger={<Button id="remove">Remove</Button>} title="Remove?" name="Pixel 8" />
+      </>
+    );
+    const ids = () => ['Add', 'Details', 'Remove'].map((name) => screen.getByRole('button', { name }).id);
+    expect(ids()).toEqual(['add-app', 'details', 'remove']);
+    await cold.arrive();
+    expect(ids()).toEqual(['add-app', 'details', 'remove']);
   });
 
   it('Dialog: Enter before the layer opens it once in, focus inside, and back on Escape', async () => {
@@ -293,7 +337,8 @@ describe('each floating component, used cold from the keyboard', () => {
     expect(light).toHaveAttribute('aria-expanded', 'false');
     await user.tab();
     expect(light).toHaveFocus();
-    await user.keyboard('{ArrowDown}');
+    // The arrow opens the list and nothing else: the page doesn't scroll.
+    expect(fireEvent.keyDown(light, { key: 'ArrowDown' })).toBe(false);
     await cold.arrive();
     await screen.findByRole('listbox');
     const trigger = screen.getByRole('combobox', { name: 'Typeface' });

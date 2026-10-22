@@ -914,11 +914,12 @@ the first load leaves them out. Until the layer is in, each component draws
 its trigger itself, as Base UI would: the caller's element with the closed
 popup's ARIA (`aria-haspopup`, `aria-expanded="false"`, a Tooltip's
 description), and the Select's own trigger, named and described by its Field.
-When it arrives, Base UI draws the trigger anew, and focus, a press and an
-activation carry over: focus moves to the new trigger, a pressed one waits for
-its click, and one clicked, or given Enter, Space or a Select's arrow, opens
-its popup through Base UI, focus going in as on any open. The API is the
-same either way.
+When it arrives, Base UI draws the trigger anew, except one that has focus
+or is being pressed: it waits until focus leaves it or the click is done, so
+focus never moves and a screen reader never hears it twice (a tooltip
+focused before then shows on its next focus). One clicked, or given Enter,
+Space or a Select's arrow, opens its popup through Base UI, focus going in as
+on any open. The API is the same either way.
 
 A new floating component joins it in four steps:
 

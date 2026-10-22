@@ -6,9 +6,10 @@
  *    no face of a retired theme comes back unnoticed;
  *  - the floating layer (src/ui/lib/floating.jsx) is not among it: it comes
  *    with the first input;
- *  - a tooltip focused by keyboard before the layer has come opens once it
- *    has, on the trigger that kept focus, placed by that trigger from the
- *    first frame it shows in (never drawn unplaced first).
+ *  - a trigger focused by keyboard before the layer has come keeps focus,
+ *    the same element, when it comes; its tooltip opens on the next focus,
+ *    placed by the trigger from the first frame it shows in (never drawn
+ *    unplaced first).
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -57,7 +58,7 @@ test('the first screen fetches what scripts/first-load.mjs counts, and the float
   await layer;
 });
 
-test('a tooltip focused before the layer comes opens once it has, placed from its first frame', async ({
+test('a trigger focused before the layer comes keeps focus; its tooltip shows on the next focus, placed from its first frame', async ({
   page,
 }) => {
   let arrive;
@@ -80,26 +81,40 @@ test('a tooltip focused before the layer comes opens once it has, placed from it
   }
   await expect(settings).toBeFocused();
   expect(asked).toBe(true);
-  await expect(page.locator('[data-slot="tooltip"]')).toHaveCount(0);
+  await settings.evaluate((el) => {
+    window.__focused = el;
+  });
+
+  // The layer comes: the focused link stays the same element, so focus never
+  // moves and a screen reader hears nothing again; no tooltip yet.
+  const loaded = page.waitForResponse(LAYER);
+  arrive();
+  await loaded;
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  );
+  expect(await page.evaluate(() => document.activeElement === window.__focused)).toBe(true);
+  const tip = page.locator('[data-slot="tooltip"]');
+  await expect(tip).toHaveCount(0);
 
   // Every frame from the one the tooltip first shows in: where it is.
   await page.evaluate(() => {
     window.__tipFrames = [];
     const tick = () => {
-      const tip = document.querySelector('[data-slot="tooltip"]');
-      if (tip) {
-        const r = tip.getBoundingClientRect();
+      const shown = document.querySelector('[data-slot="tooltip"]');
+      if (shown) {
+        const r = shown.getBoundingClientRect();
         window.__tipFrames.push({ top: r.top, bottom: r.bottom, left: r.left, right: r.right });
       }
       if (window.__tipFrames.length < 8) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   });
-  arrive();
-
-  const tip = page.locator('[data-slot="tooltip"]');
-  await expect(tip).toHaveText('Settings');
+  // Away and back: Base UI's trigger now, and its tooltip opens on focus.
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Shift+Tab');
   await expect(settings).toBeFocused();
+  await expect(tip).toHaveText('Settings');
   await expect.poll(() => page.evaluate(() => window.__tipFrames.length)).toBe(8);
   const at = await settings.boundingBox();
   const frames = await page.evaluate(() => window.__tipFrames);

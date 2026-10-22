@@ -31,7 +31,8 @@ import { lightDialogTrigger } from './dialog.jsx';
 
 function Drawer({ trigger, title, open, defaultOpen, ...props }) {
   requireName('Drawer', { title, open, props });
-  const triggerId = useId();
+  const ownId = useId();
+  const triggerId = trigger?.props?.id ?? ownId;
   const { layer, handoff, light } = useFloatingTrigger({ now: Boolean(open || defaultOpen) });
   if (layer) {
     return (

@@ -30,7 +30,7 @@ beforeAll(() => lazyViewsLoaded);
 // that imports a floating component (a tooltip, a dialog...) loads the layer
 // before its tests run, so each draws Base UI from its first render, as it
 // does in the app once the layer is in. The tests of the first, light render
-// make a layer of their own (src/ui/floating.cold.test.jsx).
+// make a layer of their own (src/ui/floating.test.jsx).
 let floatingLoaded = null;
 vi.mock('../ui/lib/floating.jsx', async (importOriginal) => {
   const floating = await importOriginal();
