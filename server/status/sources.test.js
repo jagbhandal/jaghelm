@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { CONTAINERS, NODE_ORDER, NOW, liveCycle } from '../push/fixtures/liveShape.js';
-import { assembleServices } from '../refresh.js';
+import { assembleServices, noNodesCacheEntry } from '../refresh.js';
 import { createStatusTracker, readStatusInputs } from './index.js';
 import { DEFAULT_THRESHOLDS } from './thresholds.js';
 
@@ -231,4 +231,68 @@ test('a source that recovers: its issue goes, its entities are judged again', ()
   assert.equal(after.overall.state, 'ok');
   assert.equal(after.sources.kuma.state, 'ok');
   assert.equal(after.sources.kuma.since, NOW + 60_000, 'since: when it recovered');
+});
+
+// ── The config as a source (#505) ────────────────────────────────────────
+
+/** Runs the tracker over [caches, configProblem] cycles, 30 s apart. */
+function runWithConfig(cycles, env = { KUMA_URL: 'http://kuma' }) {
+  const tracker = createStatusTracker();
+  return cycles.map(([c, configProblem], i) =>
+    tracker.update({
+      inputs: readStatusInputs(c, { env, configProblem }),
+      thresholds: DEFAULT_THRESHOLDS,
+      now: NOW + i * 30_000,
+    })
+  );
+}
+
+const BROKEN = "services.yaml doesn't parse (line 4)";
+
+test("#505: a services.yaml that doesn't parse is a failed source, its own issue, named in the sentence; the board under it is judged as before", () => {
+  const board = caches(liveCycle({ status: { Gitea: 'down' } }));
+  const [good, broken] = runWithConfig([
+    [board, null],
+    [board, BROKEN],
+  ]);
+  assert.deepEqual(broken.sources.config, { state: 'failed', error: BROKEN, since: NOW + 30_000 });
+  assert.deepEqual(sourceIssues(broken), ['sources/config']);
+  const issue = broken.issues.find((i) => i.id === 'sources/config');
+  assert.deepEqual(
+    [issue.kind, issue.subsystem, issue.name, issue.state, issue.word, issue.reason],
+    ['source', 'sources', 'JagHelm config', 'warn', 'Failed', BROKEN]
+  );
+  assert.equal(broken.overall.state, 'crit', 'the down service is still the worst');
+  assert.equal(broken.overall.sentence, `1 service down · ${BROKEN}`);
+  assert.deepEqual(broken.entities, good.entities, 'every entity judged as before');
+  assert.deepEqual(broken.subsystems, good.subsystems);
+});
+
+test('#505: a good services.yaml lists no config source, and its issue goes once the file is fixed', () => {
+  const board = caches(liveCycle());
+  const [s1, s2, s3] = runWithConfig([
+    [board, null],
+    [board, BROKEN],
+    [board, null],
+  ]);
+  assert.deepEqual(Object.keys(s1.sources).sort(), ['kuma', 'nut', 'prometheus']);
+  assert.equal(s2.overall.state, 'warn');
+  assert.equal(s2.overall.sentence, BROKEN);
+  assert.deepEqual(s3, s1, 'fixed: the board is as it was');
+});
+
+test('#505: at boot on a broken file (no nodes, so an empty board) the board is not "Nothing monitored yet" but says the file is broken', () => {
+  const { payload, internal } = noNodesCacheEntry({ prometheusOk: true });
+  const noNodes = {
+    getCached: (key) =>
+      ({ services: payload, ups: { ok: true, configured: false }, integrations: {} })[key] ?? null,
+    getCachedInternal: (key) => (key === 'services' ? internal : null),
+    getAllCronStatuses: () => [],
+  };
+  // No Kuma, no Gitea: nothing set up.
+  const [empty] = runWithConfig([[noNodes, null]], {});
+  assert.equal(empty.overall.state, 'empty');
+  const [broken] = runWithConfig([[noNodes, "services.yaml doesn't parse"]], {});
+  assert.deepEqual(broken.overall, { state: 'warn', sentence: "services.yaml doesn't parse" });
+  assert.deepEqual(broken.issues.map((i) => i.id), ['sources/config']);
 });

@@ -28,7 +28,8 @@
  *   sources:   "prometheus" | "kuma" | "nut" -> "ok" | "failing" | "down";
  *              and "status", the status model itself (#440), only while it
  *              throws ("failing", then "down") and "ok" on the cycle it builds
- *              again after it paged
+ *              again after it paged; and "config", services.yaml (#505), the
+ *              same way, while it is no usable config
  *
  * What the model can't call up or down holds the last known state, so it
  * never pages and loses no recovery: a service pending or in maintenance, an
@@ -48,7 +49,7 @@
  */
 import { proxmoxPools, sourcesOk } from '../status/model.js';
 import { judgeUps, levelOf, WORDS } from '../status/rules.js';
-import { serviceHistory, STATUS_CHECK } from './differ.js';
+import { CONFIG_SOURCE, serviceHistory, STATUS_CHECK } from './differ.js';
 
 // The monitoring sources whose failure pages (spec §6.1), in key order.
 const MONITORING_SOURCES = ['kuma', 'nut', 'prometheus'];
@@ -304,6 +305,12 @@ export function nextSourceState(before, failed) {
  * cycles is over. One that paged ("down") is "ok" for this cycle, which sends
  * its recovery; otherwise it is left out, so a board whose model builds has
  * only the monitoring sources here.
+ *
+ * services.yaml (#505, CONFIG_SOURCE): the model lists it only while the file
+ * is no usable config, and always knows, so not listed means it loads. While
+ * listed it steps like a monitoring source; then, like the status check, it
+ * is "ok" for the one cycle after it paged and left out otherwise, so a good
+ * file adds nothing here.
  */
 export function buildSources(status, prevSources = {}) {
   const held = isObject(prevSources) ? prevSources : {};
@@ -318,6 +325,10 @@ export function buildSources(status, prevSources = {}) {
     }
     entries.push([name, nextSourceState(before, s.state === 'failed')]);
   }
+  const config = listed[CONFIG_SOURCE];
+  if (isObject(config))
+    entries.push([CONFIG_SOURCE, nextSourceState(held[CONFIG_SOURCE], config.state === 'failed')]);
+  else if (held[CONFIG_SOURCE] === 'down') entries.push([CONFIG_SOURCE, 'ok']);
   if (held[STATUS_CHECK] === 'down') entries.push([STATUS_CHECK, 'ok']);
   return sortedObject(entries);
 }

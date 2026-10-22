@@ -58,6 +58,11 @@ It's a scrypt hash (not reversible), but rotate anyway:
   then has `statusModel.state: "degraded"` with the error's class and since
   when (still 200: the loop is alive); the server log's `status model failed`
   line has the error itself.
+- A phone push "JagHelm config broken" (or the board's "services.yaml doesn't
+  parse (line N)") means `services.yaml` doesn't load: JagHelm runs on the last
+  good config, or none after a restart, and saves nothing over the file.
+  `/api/health` has `config: { state: "unparseable", line }` (still 200). Fix
+  the line by hand; the next reload sends "JagHelm config fixed".
 
 ## Prevention checklist
 

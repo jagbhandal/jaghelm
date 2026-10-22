@@ -20,9 +20,16 @@ const KIND = Object.freeze({
   source: 'Monitoring source',
 });
 
-/** Where an issue is: its kind, then its node when it has one ("Service · vm103"). */
+// services.yaml as a source (#505) is JagHelm's own configuration, not a monitoring source.
+const PLACE = Object.freeze({ 'sources/config': 'Configuration' });
+
+/**
+ * Where an issue is: its kind, then its node when it has one ("Service ·
+ * vm103"); a source with a place of its own says that ("Configuration").
+ */
 export function whereOf(entity) {
-  return [KIND[entity?.kind], entity?.node].filter(Boolean).join(' · ') || undefined;
+  const kind = (entity?.id && PLACE[entity.id]) || KIND[entity?.kind];
+  return [kind, entity?.node].filter(Boolean).join(' · ') || undefined;
 }
 
 /** A short age, as an issue row shows it: "30 s", "4 m", "3 h", "2 d". */

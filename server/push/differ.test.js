@@ -782,6 +782,43 @@ test('the status check\'s words are its own: nothing comes from a model', () => 
   assert.equal(back.title, 'JagHelm status check recovered');
 });
 
+test("the config (#505): one source_down on its second broken cycle, with the model's reason; one recovery in its own words", () => {
+  const issue = {
+    id: 'sources/config',
+    kind: 'source',
+    subsystem: 'sources',
+    name: 'JagHelm config',
+    state: 'warn',
+    word: 'Failed',
+    reason: "services.yaml doesn't parse (line 4)",
+  };
+  const status = { entities: [], issues: [issue] };
+  assert.deepEqual(diffSnapshots(sources({}), sources({ config: 'failing' }), status), []);
+  const [down, ...more] = diffSnapshots(sources({ config: 'failing' }), sources({ config: 'down' }), status);
+  assert.deepEqual(more, []);
+  assert.deepEqual(
+    [down.type, down.id, down.node, down.severity, down.title, down.body, down.reason],
+    [
+      'source_down',
+      'config',
+      'config',
+      'warning',
+      'JagHelm config broken',
+      "JagHelm config · services.yaml doesn't parse (line 4)",
+      "services.yaml doesn't parse (line 4)",
+    ]
+  );
+  assert.deepEqual(diffSnapshots(sources({ config: 'down' }), sources({ config: 'down' }), status), []);
+  const [back] = diffSnapshots(sources({ config: 'down' }), sources({ config: 'ok' }), { entities: [], issues: [] });
+  assert.deepEqual(
+    [back.type, back.severity, back.title, back.body, back.reason],
+    ['source_recovered', 'info', 'JagHelm config fixed', 'services.yaml loads again', undefined]
+  );
+  // A blip, or the cycle after its recovery: it leaves the snapshot quietly.
+  assert.deepEqual(diffSnapshots(sources({ config: 'failing' }), sources({})), []);
+  assert.deepEqual(diffSnapshots(sources({ config: 'ok' }), sources({})), []);
+});
+
 // ── Determinism ──────────────────────────────────────────────────────────
 
 test('canonical sort: two insertion-order permutations produce byte-identical arrays', () => {

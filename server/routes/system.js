@@ -1,7 +1,7 @@
 /**
  * System routes: health probe and proxied weather data.
  *
- *   GET /api/health   → public — liveness, version, uptime and the status model's health
+ *   GET /api/health   → public — liveness, version, uptime, the status model's health and services.yaml's
  *   GET /api/weather  → auth   — proxies open-meteo with caching
  */
 
@@ -9,6 +9,7 @@ import { Router } from 'express';
 
 import { authMiddleware } from '../auth/middleware.js';
 import { getCached, setCache } from '../cache.js';
+import { configHealth } from '../config.js';
 import { apiError } from '../errors.js';
 import { safeFetch } from '../httpClient.js';
 import { asyncHandler } from '../util/asyncHandler.js';
@@ -23,7 +24,9 @@ router.get('/health', (req, res) => {
   // 'starting' (pre-first-cycle) still reports ok so a booting container isn't killed.
   // A status model that throws (#440) is in `statusModel` and leaves `status`
   // alone: the loop is alive, a restart can't mend the input, and the deploy
-  // gate's "status":"ok" would roll a deploy back over it.
+  // gate's "status":"ok" would roll a deploy back over it. So is a
+  // services.yaml that doesn't parse (#505), in `config`: its state and line,
+  // never its text.
   const refresh = getRefreshHealth();
   const healthy = refresh.state !== 'stale';
   res.status(healthy ? 200 : 503).json({
@@ -31,6 +34,7 @@ router.get('/health', (req, res) => {
     refresh: refresh.state,
     refreshAgeMs: refresh.ageMs,
     statusModel: getStatusModelHealth(),
+    config: configHealth(),
     uptime: process.uptime(),
     version: VERSION,
     revision: REVISION,

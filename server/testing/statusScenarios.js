@@ -25,6 +25,9 @@
  *   Arcane agent offline.
  * - `low-battery`: the healthy board with the UPS on low battery, which the
  *   model tells apart from on battery.
+ * - `config-broken`: JagHelm booted on a services.yaml that doesn't parse
+ *   (#505): it holds no config, so the refreshes leave the first-run board,
+ *   and the status model is told why (readStatusInputs' `configProblem`).
  *
  * Node only: it builds through the server's own code. The cross-client suite
  * runs on it (server/status/crossClient.test.js for push,
@@ -51,6 +54,7 @@ export const STATUS_SCENARIOS = Object.freeze([
   'thresholds',
   'every-state',
   'low-battery',
+  'config-broken',
 ]);
 
 /**
@@ -184,6 +188,15 @@ function firstRunCycle() {
     extra: { env: {}, backupJobs: [] },
     thresholds: DEFAULT_THRESHOLDS,
   };
+}
+
+/** The reason config.js gives the model for the file `config-broken` boots on (#505). */
+export const CONFIG_BROKEN = "services.yaml doesn't parse (line 12)";
+
+function configBrokenCycle() {
+  // JagHelm holds `{}` (config.js keepAfterFailedRead): no nodes, as at a first run.
+  const cycle = firstRunCycle();
+  return { ...cycle, extra: { ...cycle.extra, configProblem: CONFIG_BROKEN } };
 }
 
 const MINUTE = 60_000;
@@ -345,6 +358,9 @@ export function scenarioCycles(name, { now = Date.now() } = {}) {
       break;
     case 'low-battery':
       cycles = [lowBatteryCycle];
+      break;
+    case 'config-broken':
+      cycles = [configBrokenCycle];
       break;
     default:
       throw new Error(`No status scenario named ${name}`);
