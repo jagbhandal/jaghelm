@@ -5,10 +5,11 @@ import { LoginForm, LoginScreen } from '@ui/login-form';
 
 describe('LoginForm', () => {
   it('ties each error to its field, and never takes focus on its first render', () => {
-    render(<LoginForm username="admin" errors={{ password: 'Wrong username or password.' }} />);
+    const rejected = 'Wrong username or password.';
+    render(<LoginForm username="admin" errors={{ password: rejected }} />);
     const password = screen.getByLabelText('Password');
     expect(password).toHaveAttribute('aria-invalid', 'true');
-    expect(password).toHaveAccessibleDescription('Wrong username or password.');
+    expect(password).toHaveAccessibleDescription(rejected);
     expect(screen.getByRole('textbox', { name: 'Username' })).toHaveValue('admin');
     expect(document.body).toHaveFocus();
   });
