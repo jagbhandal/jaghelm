@@ -20,74 +20,34 @@
  * (a list of rows sharing one drawer). `title` names it, as the Dialog's does
  * (an `aria-label` without one). A DialogClose closes it from inside; a
  * Confirm opened from it stacks above it, on a lighter scrim of its own.
+ *
+ * Base UI's part loads with the floating layer, as the Dialog's does
+ * (dialog.jsx; floating/drawer.jsx).
  */
-import { useRef } from 'react';
-import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
-import { CloseButton, DialogLayer } from './dialog.jsx';
-import { hasText, requireName } from './lib/name.js';
-import { useOverlayPortal } from './lib/portal.js';
+import { useId } from 'react';
+import { requireName } from './lib/name.js';
+import { useFloatingTrigger } from './lib/floating.jsx';
+import { lightDialogTrigger } from './dialog.jsx';
 
-function Drawer({
-  trigger,
-  eyebrow,
-  title,
-  description,
-  closeLabel = 'Close',
-  open,
-  defaultOpen,
-  onOpenChange,
-  onOpenChangeComplete,
-  initialFocus,
-  finalFocus,
-  className,
-  children,
-  ...props
-}) {
+function Drawer({ trigger, title, open, defaultOpen, ...props }) {
   requireName('Drawer', { title, open, props });
-  const triggerRef = useRef(null);
-  const [portalRoot, openChange] = useOverlayPortal(triggerRef, open, onOpenChange);
-  return (
-    <DialogPrimitive.Root
-      open={open}
-      defaultOpen={defaultOpen}
-      onOpenChange={openChange}
-      onOpenChangeComplete={onOpenChangeComplete}
-    >
-      {trigger ? <DialogPrimitive.Trigger ref={triggerRef} render={trigger} /> : null}
-      <DialogLayer
-        portalRoot={portalRoot}
-        placement="right"
-        size="none"
-        data-slot="drawer"
-        initialFocus={initialFocus}
-        finalFocus={finalFocus}
-        className={className}
+  const ownId = useId();
+  const triggerId = trigger?.props?.id ?? ownId;
+  const { layer, handoff, light } = useFloatingTrigger({ now: Boolean(open || defaultOpen) });
+  if (layer) {
+    return (
+      <layer.DrawerLayer
+        trigger={trigger}
+        triggerId={triggerId}
+        title={title}
+        open={open}
+        defaultOpen={defaultOpen}
+        handoff={handoff}
         {...props}
-      >
-        <div className="flex items-start gap-3 border-b border-border px-5 pt-5 pb-4">
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            {eyebrow != null ? (
-              <span className="text-overline leading-5 text-text-3 uppercase">{eyebrow}</span>
-            ) : null}
-            {hasText(title) ? (
-              <DialogPrimitive.Title className="text-title text-text-1">
-                {title}
-              </DialogPrimitive.Title>
-            ) : null}
-            {description != null ? (
-              <DialogPrimitive.Description className="text-body-sm leading-5 text-text-3">
-                {description}
-              </DialogPrimitive.Description>
-            ) : null}
-          </div>
-          <CloseButton label={closeLabel} size="md" />
-        </div>
-        <div data-slot="drawer-body" className="flex flex-col gap-5 p-5">
-          {children}
-        </div>
-      </DialogLayer>
-    </DialogPrimitive.Root>
-  );
+      />
+    );
+  }
+  return trigger ? light(trigger, lightDialogTrigger(triggerId)) : null;
 }
 
 export { Drawer };

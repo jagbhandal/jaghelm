@@ -25,104 +25,41 @@
  * Opened from a Drawer or a Dialog, it stacks above it on a lighter scrim of
  * its own, and the overlay under it can't be clicked until it closes, so only
  * its buttons or Escape answer it (dialog.jsx).
+ *
+ * Base UI's part loads with the floating layer, as the Dialog's does
+ * (dialog.jsx; floating/confirm.jsx).
  */
-import { useRef } from 'react';
-import { AlertDialog as AlertDialogPrimitive } from '@base-ui/react/alert-dialog';
-import { Button } from './button.jsx';
-import { DialogLayer } from './dialog.jsx';
+import { useId } from 'react';
 import { requireName } from './lib/name.js';
-import { useOverlayPortal } from './lib/portal.js';
+import { useFloatingTrigger } from './lib/floating.jsx';
+import { lightDialogTrigger } from './dialog.jsx';
 
 const NO_NAME = 'Confirm needs a `name`: the display name of what it acts on, never a storage key';
 
-function Confirm({
-  trigger,
-  title,
-  name,
-  detail,
-  description,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
-  destructive = false,
-  value,
-  onConfirm,
-  onCancel,
-  open,
-  defaultOpen,
-  onOpenChange,
-  onOpenChangeComplete,
-}) {
+function Confirm({ trigger, title, name, open, defaultOpen, ...props }) {
   if (typeof name !== 'string' || !name.trim()) {
     if (import.meta.env.DEV) throw new Error(NO_NAME);
     console.error(NO_NAME);
   }
   requireName('Confirm', { title, open });
-  const triggerRef = useRef(null);
-  const cancelRef = useRef(null);
-  // Set by the confirm button once onConfirm has returned, before Base UI
-  // closes the dialog; any other way out (Cancel, Escape) is a cancel. An
-  // onConfirm that throws leaves it unset: the dialog stays open, and a
-  // Cancel after that still cancels.
-  const confirmed = useRef(false);
-  const [portalRoot, openChange] = useOverlayPortal(triggerRef, open, (next, details) => {
-    if (!next) {
-      if (!confirmed.current) onCancel?.();
-      confirmed.current = false;
-    }
-    onOpenChange?.(next, details);
-  });
-  return (
-    <AlertDialogPrimitive.Root
-      open={open}
-      defaultOpen={defaultOpen}
-      onOpenChange={openChange}
-      onOpenChangeComplete={onOpenChangeComplete}
-    >
-      {trigger ? <AlertDialogPrimitive.Trigger ref={triggerRef} render={trigger} /> : null}
-      <DialogLayer
-        portalRoot={portalRoot}
-        placement="center"
-        size="sm"
-        data-slot="confirm"
-        initialFocus={destructive ? cancelRef : true}
-      >
-        <AlertDialogPrimitive.Title className="text-title text-text-1">
-          {title}
-        </AlertDialogPrimitive.Title>
-        <AlertDialogPrimitive.Description
-          render={<div />}
-          className="flex flex-col gap-3 text-text-2"
-        >
-          <div
-            data-slot="confirm-subject"
-            className="flex min-w-0 flex-col rounded-lg bg-surface-2 px-3 py-2.5"
-          >
-            <p className="font-semibold break-words text-text-1">{name}</p>
-            {detail != null ? <p className="text-caption text-text-3">{detail}</p> : null}
-          </div>
-          {description != null ? <p>{description}</p> : null}
-        </AlertDialogPrimitive.Description>
-        <div data-slot="dialog-footer" className="flex flex-wrap items-center gap-2 pt-1">
-          <AlertDialogPrimitive.Close
-            render={<Button variant={destructive ? 'danger' : 'primary'} />}
-            onClick={() => {
-              onConfirm?.(value);
-              confirmed.current = true;
-            }}
-          >
-            {confirmLabel}
-          </AlertDialogPrimitive.Close>
-          <AlertDialogPrimitive.Close
-            ref={cancelRef}
-            data-slot="confirm-cancel"
-            render={<Button variant="ghost" />}
-          >
-            {cancelLabel}
-          </AlertDialogPrimitive.Close>
-        </div>
-      </DialogLayer>
-    </AlertDialogPrimitive.Root>
-  );
+  const ownId = useId();
+  const triggerId = trigger?.props?.id ?? ownId;
+  const { layer, handoff, light } = useFloatingTrigger({ now: Boolean(open || defaultOpen) });
+  if (layer) {
+    return (
+      <layer.ConfirmLayer
+        trigger={trigger}
+        triggerId={triggerId}
+        title={title}
+        name={name}
+        open={open}
+        defaultOpen={defaultOpen}
+        handoff={handoff}
+        {...props}
+      />
+    );
+  }
+  return trigger ? light(trigger, lightDialogTrigger(triggerId)) : null;
 }
 
 export { Confirm };
