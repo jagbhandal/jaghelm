@@ -46,28 +46,61 @@ function concrete(path) {
   return path.replace(/:\w+\??/g, 'x');
 }
 
+// Middleware that passes every request on, or only refuses more than
+// authMiddleware would (requireAuthEnabled: 403 while no password is set). A
+// layer not listed here, and not authMiddleware or an error handler, fails the
+// walk: say whether it gates requests before adding it.
+const PASS_THROUGH = new Set([
+  'query',
+  'expressInit',
+  'metricsMiddleware',
+  'accessLog',
+  'helmetMiddleware',
+  'corsMiddleware',
+  'compression',
+  'jsonParser',
+  'serveStatic',
+  'requireAuthEnabled',
+]);
+
+// The app's two fallbacks: the JSON 404 for an unknown /api path and the SPA's
+// index.html. Not endpoints; any other wildcard route fails the walk.
+const FALLBACKS = new Set(['/api/*', '*']);
+
 /**
  * Every route under `stack`, with its path relative to it and whether
- * authMiddleware guards it: in the route's own handlers, or as a middleware
- * layer ahead of it whose path matches, at any level. Wildcard routes (the
- * /api/* 404 and the SPA fallback) are the app's fallbacks, not endpoints.
+ * authMiddleware guards it: ahead of the route's handler, or as a middleware
+ * layer ahead of it whose path matches, at any level. Anything the walk can't
+ * place (another kind of layer, a route guarded by something else, a path it
+ * can't make concrete) fails it, so the list stays complete by construction.
  */
-function routesOf(stack) {
+function routesOf(stack, top = false) {
   const out = [];
   stack.forEach((layer, i) => {
     let found;
     if (layer.route) {
-      if (String(layer.route.path).includes('*')) return;
-      const guarded = layer.route.stack.some((l) => l.handle === authMiddleware);
-      found = Object.keys(layer.route.methods).map((method) => ({
-        method,
-        path: concrete(layer.route.path),
-        guarded,
-      }));
+      const { path, methods } = layer.route;
+      if (top && FALLBACKS.has(path)) return;
+      assert.ok(!String(path).includes('*'), `a wildcard route the walk can't list: ${path}`);
+      found = Object.keys(methods).map((method) => {
+        const handlers = layer.route.stack.filter((l) => !l.method || l.method === method);
+        const guards = handlers.slice(0, -1);
+        assert.ok(
+          guards.every((l) => l.handle === authMiddleware),
+          `${named(method, path)} runs ${guards.map((l) => l.name).join(', ')} before its handler: ` +
+            'a guard other than authMiddleware needs its own case here'
+        );
+        return { method, path: concrete(path), guarded: guards.length > 0 };
+      });
     } else if (layer.name === 'router') {
       const base = mountPath(layer);
       found = routesOf(layer.handle.stack).map((r) => ({ ...r, path: base + r.path }));
     } else {
+      const known =
+        layer.handle === authMiddleware ||
+        layer.handle.length === 4 || // an error handler: never sees a request without an error
+        PASS_THROUGH.has(layer.name);
+      assert.ok(known, `an unknown middleware layer "${layer.name}" (${layer.regexp}): list it`);
       return;
     }
     const gates = stack.slice(0, i).filter((l) => !l.route && l.handle === authMiddleware);
@@ -78,10 +111,10 @@ function routesOf(stack) {
   return out;
 }
 
-const AUTHENTICATED = routesOf(app._router.stack)
+const named = (method, path) => `${method.toUpperCase()} ${path}`;
+const AUTHENTICATED = routesOf(app._router.stack, true)
   .filter((r) => r.guarded)
   .map(({ method, path }) => [method, path]);
-const named = (method, path) => `${method.toUpperCase()} ${path}`;
 
 const signOut = (token) => {
   const r = request(app).post('/api/auth/logout');
@@ -206,8 +239,10 @@ test('a sign-out logs one info line with the user, and no line carries the token
     [{ method: 'POST', path: '/api/auth/logout', status: 204 }]
   );
   assert.equal(lines.length, 2, 'nothing else is logged');
-  for (const l of lines) {
-    assert.ok(!l.raw.includes(token.slice(0, 8)), `no part of the token in ${l.raw}`);
+  // Neither the token nor any 8 characters of it in a row.
+  for (let i = 0; i + 8 <= token.length; i++) {
+    const piece = token.slice(i, i + 8);
+    for (const l of lines) assert.ok(!l.raw.includes(piece), `"${piece}" of the token in ${l.raw}`);
   }
 });
 
