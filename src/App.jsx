@@ -30,13 +30,14 @@ import { clearOverviewFilter, useOverviewFilter } from './shell/overviewFilter.j
 import { appsOf, navGroups } from './shell/nav.js';
 import { alertsBadge } from './shell/statusView.js';
 import { useStatusStale } from './shell/statusFreshness.js';
+import { loadAlertsPage, loadAppFrames, loadSettingsView } from './lazyViews.js';
 
 // Settings (13-tab tree), the app frames and the Alerts page aren't needed for
 // the default Overview render — code-split them so they don't weigh down the
-// initial bundle.
-const AppFrames = lazy(() => import('./views/AppFrames'));
-const SettingsView = lazy(() => import('./views/SettingsView'));
-const AlertsPage = lazy(() => import('./shell/AlertsPage.jsx'));
+// initial bundle. Their loaders live in lazyViews.js.
+const AppFrames = lazy(loadAppFrames);
+const SettingsView = lazy(loadSettingsView);
+const AlertsPage = lazy(loadAlertsPage);
 import {
   apiFetch,
   setAuthToken as setApiAuthToken,

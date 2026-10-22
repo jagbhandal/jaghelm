@@ -13,13 +13,14 @@ import { Suspense, lazy, memo, useMemo, useState, useSyncExternalStore } from 'r
 import { AppHeader, UpdatedAgo } from '@ui/app-header';
 import { BottomTabs } from '@ui/bottom-tabs';
 import { SideNav } from '@ui/side-nav';
+import { loadMoreSheet } from '../lazyViews.js';
 import { followLink } from '../router/useRoute.js';
 import { prefs } from '../storage/index.js';
 import { phoneTabs } from './nav.js';
 import { drawnState, useStatusFreshness } from './statusFreshness.js';
 import { lastKnownLine } from './statusView.js';
 
-const MoreSheet = lazy(() => import('./MoreSheet.jsx'));
+const MoreSheet = lazy(loadMoreSheet);
 
 /** Where the sidebar's collapsed state is kept, per browser. */
 export const SIDEBAR_PREF = 'jaghelm-sidebar';
