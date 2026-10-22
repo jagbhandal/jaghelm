@@ -7,11 +7,13 @@ import { apiFetch } from '../../api/client.js';
  * (`config_unparseable`, naming the line); any other failure is prefixed.
  * Never an empty config in place of one that couldn't be read: that would
  * look like a config with nothing in it.
+ * `signal` ends a read the server doesn't answer.
+ * @param {{ signal?: AbortSignal }} [opts]
  * @returns {Promise<{ config: any, version: string | null } | { error: string }>}
  */
-export async function readServerConfig() {
+export async function readServerConfig({ signal } = {}) {
   try {
-    const r = await apiFetch('/api/services/config');
+    const r = await apiFetch('/api/services/config', { signal });
     const data = await r.json().catch(() => null);
     if (r.ok && data && typeof data === 'object') {
       return { config: data, version: r.headers.get('ETag') };
