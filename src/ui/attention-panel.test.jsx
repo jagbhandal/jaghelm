@@ -205,3 +205,219 @@ describe('AttentionPanel', () => {
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Critical');
   });
 });
+
+// #484: on a phone the Overview draws the panel in two parts around the
+// subsystem strip (the Phone board: status card, strip, issue list). One
+// panel, one region, its header and its rows; `between` sits between them.
+describe('AttentionPanel split around `between` (#484)', () => {
+  const LINKED = ISSUES.map((issue) => ({ ...issue, href: `#${issue.id}` }));
+  const STRIP = (
+    <section aria-label="Subsystems">
+      <button type="button">Services</button>
+      <button type="button">Nodes</button>
+    </section>
+  );
+  const ALERTS = <a href="#alerts">All alerts</a>;
+  // Where `a` is in the page against `b`: -1 before it, 1 after.
+  const order = (a, b) =>
+    a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+
+  it('draws the header, then `between`, then the rows, in one region, two frames', () => {
+    render(
+      <AttentionPanel
+        {...incident}
+        titleAs="h2"
+        action={ALERTS}
+        issues={LINKED}
+        between={STRIP}
+        split
+      />
+    );
+    const panel = screen.getByRole('region', { name: 'Needs attention' });
+    expect(panel).toHaveAttribute('data-layout', 'split');
+    const header = panel.querySelector('[data-slot="attention-panel-header"]');
+    const rows = panel.querySelector('[data-slot="attention-panel-rows"]');
+    const strip = within(panel).getByRole('region', { name: 'Subsystems' });
+    expect(order(header, strip)).toBe(-1);
+    expect(order(strip, rows)).toBe(-1);
+    // The heading, the sentence and the action are the header's; the rows, the rows'.
+    expect(within(header).getByRole('heading', { level: 2 })).toHaveTextContent(
+      'Critical · 2 critical, 2 warnings, 1 no signal'
+    );
+    expect(within(header).getByText(incident.subline)).toBeInTheDocument();
+    expect(within(header).getByRole('link', { name: 'All alerts' })).toBeInTheDocument();
+    expect(within(rows).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(header).queryByRole('list')).toBeNull();
+    // Two cards, as the desktop panel's frame; the region itself draws none.
+    for (const part of [header, rows]) {
+      expect(part).toHaveClass('rounded-xl', 'border', 'border-border', 'bg-surface-1');
+    }
+    expect(panel).not.toHaveClass('border');
+    expect(panel).not.toHaveClass('bg-surface-1');
+    // The list is the top of its card: no second edge under the card's own.
+    expect(within(rows).getByRole('list')).not.toHaveClass('border-t');
+    // One region named "Needs attention"; the rows have the Phone board's
+    // label, a heading a level under the panel's, so heading navigation
+    // finds them after the strip.
+    expect(screen.getAllByRole('region', { name: 'Needs attention' })).toHaveLength(1);
+    const label = within(panel).getByRole('heading', { level: 3 });
+    expect(label).toHaveTextContent('Needs attention · 3');
+    expect(label).toHaveClass('text-overline', 'text-text-3', 'uppercase');
+    expect(order(strip, label)).toBe(-1);
+    expect(order(label, rows)).toBe(-1);
+    expect(screen.getAllByRole('heading').map((h) => h.tagName)).toEqual(['H2', 'H3']);
+  });
+
+  it('labels the rows a level under the panel’s heading, counting what it lists', () => {
+    const { rerender } = render(<AttentionPanel {...incident} issues={ISSUES} split />);
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Needs attention · 3');
+    // Filtered to a subsystem with nothing, the label has no count: the note says so.
+    rerender(<AttentionPanel {...incident} issues={[]} filter="Jobs" split />);
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/^Needs attention$/);
+  });
+
+  it('takes the focus header, then `between`, then the rows', async () => {
+    const user = userEvent.setup();
+    render(
+      <AttentionPanel
+        {...incident}
+        titleAs="h2"
+        action={ALERTS}
+        issues={LINKED}
+        between={STRIP}
+        split
+      />
+    );
+    const expected = [
+      screen.getByRole('link', { name: 'All alerts' }),
+      screen.getByRole('button', { name: 'Services' }),
+      screen.getByRole('button', { name: 'Nodes' }),
+      screen.getByRole('link', { name: /^Immich, Down/ }),
+      screen.getByRole('link', { name: /^UPS, On battery/ }),
+      screen.getByRole('link', { name: /^Wiki\.js, No signal/ }),
+    ];
+    for (const el of expected) {
+      await user.tab();
+      expect(el).toHaveFocus();
+    }
+  });
+
+  it('unsplit, draws one frame as before, `between` after it, outside the region', () => {
+    render(
+      <AttentionPanel {...incident} titleAs="h2" action={ALERTS} issues={LINKED} between={STRIP} />
+    );
+    const panel = screen.getByRole('region', { name: 'Needs attention' });
+    expect(panel).not.toHaveAttribute('data-layout');
+    expect(panel).toHaveClass('overflow-hidden', 'rounded-xl', 'border', 'bg-surface-1');
+    expect(panel.querySelector('[data-slot="attention-panel-header"]')).toBeNull();
+    expect(panel.querySelector('[data-slot="attention-panel-rows"]')).toBeNull();
+    // The rows' label is the phone's alone: one heading, as before.
+    expect(screen.getAllByRole('heading')).toHaveLength(1);
+    const strip = screen.getByRole('region', { name: 'Subsystems' });
+    expect(panel.contains(strip)).toBe(false);
+    expect(panel.nextElementSibling).toBe(strip);
+    expect(within(panel).getByRole('list')).toHaveClass('border-t');
+  });
+
+  it('puts "Showing … only" and Clear at the top of the rows, under `between`', async () => {
+    const user = userEvent.setup();
+    const onClearFilter = vi.fn();
+    const { rerender } = render(
+      <AttentionPanel
+        {...incident}
+        issues={LINKED.slice(0, 1)}
+        filter="Services"
+        onClearFilter={onClearFilter}
+        between={STRIP}
+        split
+      />
+    );
+    const panel = screen.getByRole('region', { name: 'Needs attention' });
+    const header = panel.querySelector('[data-slot="attention-panel-header"]');
+    const rows = panel.querySelector('[data-slot="attention-panel-rows"]');
+    expect(within(header).queryByText('Showing Services only')).toBeNull();
+    const note = within(rows).getByText('Showing Services only');
+    expect(order(note, within(rows).getByRole('list'))).toBe(-1);
+    // Under the note, the list has its edge again.
+    expect(within(rows).getByRole('list')).toHaveClass('border-t');
+    await user.click(within(rows).getByRole('button', { name: 'Clear' }));
+    expect(onClearFilter).toHaveBeenCalledOnce();
+
+    // Filtered to a subsystem with nothing: the note says so, still under `between`.
+    rerender(
+      <AttentionPanel
+        {...incident}
+        issues={[]}
+        filter="Jobs"
+        onClearFilter={onClearFilter}
+        between={STRIP}
+        split
+      />
+    );
+    const after = screen
+      .getByRole('region', { name: 'Needs attention' })
+      .querySelector('[data-slot="attention-panel-rows"]');
+    expect(within(after).getByText('Showing Jobs only')).toBeInTheDocument();
+    expect(within(after).getByText('Nothing in Jobs needs attention')).toBeInTheDocument();
+    expect(order(screen.getByRole('region', { name: 'Subsystems' }), after)).toBe(-1);
+  });
+
+  it('has no rows card with nothing to list: the header, then `between`', () => {
+    // A stale status that last said all was well: no signal, no rows.
+    render(
+      <AttentionPanel
+        state="unknown"
+        counts="last known 3 min ago: All systems normal"
+        subline="Can't reach JagHelm"
+        between={STRIP}
+        split
+      />
+    );
+    const panel = screen.getByRole('region', { name: 'Needs attention' });
+    expect(panel.querySelector('[data-slot="attention-panel-rows"]')).toBeNull();
+    const header = panel.querySelector('[data-slot="attention-panel-header"]');
+    expect(header.nextElementSibling).toBe(screen.getByRole('region', { name: 'Subsystems' }));
+  });
+
+  it('keeps a stale status steel in both parts: the ring, "No signal", every row unknown', () => {
+    render(
+      <AttentionPanel
+        state="unknown"
+        counts="last known 3 min ago: Critical · 2 critical, 1 no signal"
+        subline="Can't reach JagHelm"
+        titleAs="h2"
+        issues={LINKED.map((issue) => ({ ...issue, state: 'unknown' }))}
+        between={STRIP}
+        split
+      />
+    );
+    const panel = screen.getByRole('region', { name: 'Needs attention' });
+    expect(panel).toHaveAttribute('data-state', 'unknown');
+    const header = panel.querySelector('[data-slot="attention-panel-header"]');
+    expect(within(header).getByRole('heading', { level: 2 })).toHaveTextContent(
+      'No signal · last known 3 min ago: Critical · 2 critical, 1 no signal'
+    );
+    const lamps = [...panel.querySelectorAll('[data-slot="status-lamp"]')];
+    expect(lamps).toHaveLength(1 + LINKED.length);
+    for (const lamp of lamps) expect(lamp).toHaveAttribute('data-state', 'unknown');
+    expect(panel.querySelector('.text-crit-fg, .text-warn-fg, .text-ok-fg')).toBeNull();
+  });
+
+  it('draws `between` under the quiet line, split or not', () => {
+    for (const split of [false, true]) {
+      const { unmount } = render(
+        <AttentionPanel
+          state="ok"
+          counts="All 12 services up · 3 nodes healthy"
+          between={STRIP}
+          split={split}
+        />
+      );
+      const line = screen.getByRole('region', { name: 'Status' });
+      const strip = screen.getByRole('region', { name: 'Subsystems' });
+      expect(line.nextElementSibling).toBe(strip);
+      expect(line.contains(strip)).toBe(false);
+      unmount();
+    }
+  });
+});

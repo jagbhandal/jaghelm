@@ -975,7 +975,7 @@ entity has, so it has no lamp or word of its own.
 | `StatusBadge` | `@ui/status-word` | `state`; `word` |
 | `IssueRow` | `@ui/issue-row` | `issue` (`{ state, word, title, where, reason, age }`); `onOpen` or `href`, or both: a link's `onOpen` runs on a plain click or Enter only, a modified or middle click being the browser's |
 | `SubsystemStrip` | `@ui/subsystem-strip` | `cells` (`[{ key, label, state, word, value, sub }]`); `selected`, `onSelect` |
-| `AttentionPanel` | `@ui/attention-panel` | `state`, `word`, `counts`, `subline`, `action`, `issues` (IssueRow's, each with an `id` and its `onOpen` or `href`), `filter` and `onClearFilter`, `meta`, `titleAs` (`h1` by default) |
+| `AttentionPanel` | `@ui/attention-panel` | `state`, `word`, `counts`, `subline`, `action`, `issues` (IssueRow's, each with an `id` and its `onOpen` or `href`), `filter` and `onClearFilter`, `meta`, `titleAs` (`h1` by default), `between` (an element after the header: the Overview's strip) and `split` (#484) |
 
 Each also takes `className`. A state's word, when none is given, is the
 mock's: OK, Warning, Critical, No signal, Maintenance. Which look a component
@@ -1046,7 +1046,18 @@ is in, not the window):
   and "No signal", the counts "last known 3 min ago: Critical · 2 critical"
   (or "…: All systems normal"), why as the subline ("Can't reach JagHelm"),
   and each issue `unknown`, its word, reason and age kept. Nothing from a
-  stale status is green, amber or red.
+  stale status is green, amber or red. `between` follows the panel (the
+  Overview's strip, 24px under it in its ShellSection). With `split` (the
+  Overview below 768px, #484, the Phone board's status card, strip, issue
+  list) the panel is two cards with `between` 24px from each: the header
+  (lamp, heading, subline, action) in one, the rows in the other, headed by
+  "Showing … only" and Clear when filtered, the list's top edge then the
+  card's own. Over the rows' card, 8px above it, the Phone board's label,
+  "Needs attention · 6", an overline in `text-3` (no count when the
+  subsystem shown has none). The region itself draws no frame. With no rows and no filter
+  there is no second card, and the quiet line, having no rows, keeps
+  `between` right under it either way. The split changes the frame only:
+  the same header, rows, colours and stale rule, plus that label.
 
 ### Two looks
 
@@ -1105,7 +1116,12 @@ draws the Android lamp; nothing there uses it.
   named as a row is, "label, word, value" ("Services, Down, 30 / 32 up"), and
   described by `sub`. The strip is a region named "Subsystems"; the panel is
   one named "Needs attention", or "Status" when quiet, and its heading is the
-  page's `h1` unless `titleAs` says otherwise.
+  page's `h1` unless `titleAs` says otherwise. Split (#484), it is still one
+  region, `between` inside it after the header, so the DOM order is the
+  order on screen: the focus goes header, `between`, rows. The rows' label
+  is a heading a level under the panel's (an h3 under the Overview's h2),
+  so heading navigation reaches them. Unsplit, `between` follows the region,
+  outside it.
 - **Focus.** Rows and tiles draw the base style's focus ring inset, clear of
   their neighbours.
 
@@ -1372,7 +1388,9 @@ From the mock's Main and Phone boards:
 - **AppShell.** The header runs the full width at the top, sticky (`z-header`).
   From 768px the sidebar sits under it, sticky, the window's height, scrolling
   on its own; below 768px the bottom tabs are fixed to the bottom edge, and the
-  page keeps 64px clear above them. Each piece of chrome is a `UiRoot`; the
+  page keeps 64px clear above them. That width is `PHONE_WIDTH` (`@ui/app-shell`,
+  `(width < 48rem)`, Tailwind's `md`), the one value for a part that changes
+  its markup there, such as the Overview's split (#484). Each piece of chrome is a `UiRoot`; the
   page, `<main>`, is not, so today's views inside it keep their look
   ([ARCHITECTURE.md](ARCHITECTURE.md), "UI stack"). A `ShellPage` is its own
   root: the page gutter (16, 24, 32px by width), at most 1024px wide, its

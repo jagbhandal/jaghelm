@@ -187,6 +187,21 @@ export const CATALOG = Object.freeze([
     'Status',
     'AttentionPanel: a stale status, no signal, what it last knew and its issues in steel'
   ),
+  s(
+    'attention-panel-phone',
+    'Status',
+    'AttentionPanel: below 768px, split around the strip, an incident with six issues'
+  ),
+  s(
+    'attention-panel-phone-quiet',
+    'Status',
+    'AttentionPanel: below 768px, the quiet line with the strip under it'
+  ),
+  s(
+    'attention-panel-phone-no-signal',
+    'Status',
+    'AttentionPanel: below 768px, split around the strip, a stale status in steel'
+  ),
 
   // Data components (#288) and chart colours (#386)
   s(

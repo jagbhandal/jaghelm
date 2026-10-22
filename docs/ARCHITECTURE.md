@@ -133,7 +133,8 @@ src/                        React 19 SPA (Vite 8)
   shell/                    the shell wired: ShellChrome.jsx (header, sidebar, phone tabs and
                             More sheet, fed from the route, the config and the status poll),
                             nav.js (the nav as data), AlertsPage.jsx, OverviewStatus.jsx (the
-                            Overview's top: its status and subsystem strip), ShellAttention.jsx
+                            Overview's top: its status and subsystem strip, split around the
+                            strip on a phone), ShellAttention.jsx
                             (the attention panel both draw), statusView.js (how the status
                             model's issues are counted and worded, and its subsystems made
                             the strip's cells), overviewFilter.js (the strip's filter, in the
@@ -198,8 +199,7 @@ gallery/                    the component gallery (development and CI only, docs
                             playwright.config.mjs, never part of the production build
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
-                            what they share in
-                            app.mjs; see 8): the
+                            phone-split.spec.mjs, what they share in app.mjs; see 8): the
                             production build served
                             by `vite preview`, every /api request answered in the test; run
                             by playwright.e2e.config.mjs in the gallery's container
@@ -796,6 +796,21 @@ scrypt password hashing (`auth/passwords.js`), in-memory sessions
 A reusable `util/rateLimiter.js` additionally throttles the abuse-prone
 integration connection-test endpoint.
 
+A session ends 24 h after sign-in or when the server restarts, and every
+protected request after that gets a 401. `apiFetch` (`src/api/client.js`)
+hands a 401 from any `/api` call outside `/api/auth/` to the shell's
+auth-expired handler, with the token the request was sent with (none counts
+too: a tab loaded while the server had no password). It does so once per
+token: other 401s wait while the handler runs, a rejected handler is logged
+and retried once on the next 401, and a late 401 for a token since replaced is
+ignored. A 401 from `/api/auth/` (a wrong password) is about the password sent.
+The web app (`App.jsx`) first reads the stored token: if another tab signed in
+since, it takes that session and carries on. Otherwise it signs out like the
+button, as the Android app does: the sign-in screen replaces the app, every
+poll stops, no header keeps the last status's colours, and signing in starts
+the polls again (#492). Before, an open web tab kept polling with the dead
+token, a 401 each time.
+
 ### 4.6 Observability
 
 - **Structured logging** (`util/logger.js`) with redaction -- no URL credentials
@@ -834,9 +849,15 @@ integration connection-test endpoint.
   a config change, and the first success after failures logs at info
   (`integrations/backoff.js`).
 - **Access log** (`accessLog.js`): one line per request with its full path and no
-  query string or fragment; 5xx at `error`, 4xx and requests of 300 ms or more at
-  `info`, the rest at `debug`. `/metrics`, `/api/health` and `/api/readyz` are not
-  logged unless they fail (5xx).
+  query string or fragment. `accessLevel()` picks the level (#492): 5xx at
+  `error`; at `info`, every 4xx (a 401 or 403 included, so a signed-out tab or an
+  unauthenticated poller still shows), every request of 300 ms or more
+  (`SLOW_REQUEST_MS`, the feed-latency SLO line), and every request with a method
+  other than GET, HEAD or OPTIONS (config saves, cron reports, sign-ins and failed
+  sign-ins); a fast successful read, such as a dashboard poll's 200 or 304, at
+  `debug`, so `LOG_LEVEL=debug` shows every request. There is no logout request
+  to log: signing out only drops the token in the client. `/metrics`,
+  `/api/health` and `/api/readyz` are not logged unless they fail (5xx).
 - **Prometheus metrics** at `/metrics` via `prom-client` (`metrics.js`): request
   rate, latency histograms, refresh-loop health.
 - **Two probes**: `/api/health` (liveness; reflects refresh-loop liveness -- 503
@@ -1454,6 +1475,25 @@ flowchart TD
   a stale status, each tile keeps its count, as last known, and says so
   under it ("Last known 3 min ago", from 672px; and to a screen reader, as
   its description), its lamp the steel ring (#480).
+- **The Overview on a phone** (#484, spec §8 "Phone width"). Below 768px
+  (`PHONE_WIDTH` in `@ui/app-shell`, `(width < 48rem)`: the shell's own
+  `md`, where the bottom tabs replace the sidebar, one value for both) the top of the Overview is the Phone board's
+  order: the status card, the strip, then the issue list. So a real
+  incident's rows (six at 360px) can't push the strip below the fold. The
+  strip is the attention panel's `between` and the panel draws it
+  (AttentionPanel `split`), so there is one panel and one region ("Needs
+  attention"), and the page reads and takes the focus header, tiles, rows,
+  as it looks. The split is the frame, plus one label: the header (lamp,
+  heading, sentence, "All alerts") in one card, the strip 24px under it,
+  then the Phone board's "Needs attention · 6" (an h3, so heading
+  navigation reaches the rows after the strip) over a card with the rows,
+  headed by "Showing Nodes only" and Clear when filtered (or "Nothing in
+  Nodes needs attention"); with no rows and no filter, no second card. Under No signal both parts follow the
+  rule for a stale status, as one panel does. The quiet line has no rows to
+  split, so the strip stays right under it. From 768px it is one panel with
+  the strip under it, as before. OverviewStatus reads the width with
+  matchMedia (`useSyncExternalStore`), so a resize across 768px moves the
+  strip; the Alerts page has no strip and never splits.
 - **The Infrastructure section** (#299, spec §8 item 3). At the top of
   today's board (`DashboardView` draws it, lined up with the board's cards by
   HelmGrid's margin), the nodes as cards or a table (`OverviewInfrastructure`
@@ -2321,7 +2361,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   its anchor and leaves the page where it was (Chromium in the container now
   and then drops a Ctrl-click's tab, so that test tries up to three times,
   checking the page acted on none). The subsystem strip (#298): on
-  screen under the status without scrolling, a tile per subsystem the model
+  screen under the status without scrolling (on a phone, under the panel's
+  header, #484), a tile per subsystem the model
   has anything in, nothing in a tile cut off and no sideways scroll (at 360px
   too); a tile, clicked or by Space and Enter (its focus ring showing),
   filters the rows and the board and back, Back and Forward follow the URL,
@@ -2355,9 +2396,20 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   (its status past the TTL); fresh, the colour probe finds the panel's red
   and the NAS's amber, then stale, no red, amber or green anywhere in the
   header, the Overview's status (panel and strip), the Infrastructure
-  section or the Services section, every lamp the steel ring; the header and the panel read the same
-  age as it moves on, and the next answer brings the colours back. All five
-  leave screenshots in `test-results/e2e/shots/`.
+  section or the Services section, every lamp the steel ring; the header and
+  the panel read the same age as it moves on, and the next answer brings the
+  colours back. The
+  Overview on a phone (#484, `e2e/phone-split.spec.mjs`), at 360 × 780 and
+  390 × 844 on the demo's incident with four more services down
+  (`sixIssueIncident`, `src/testing/statusFixtures.js`, through the model):
+  six issues, the strip fully on screen at scroll 0, under the panel's
+  header, the rows' heading and every issue row under it; the focus from "All alerts" through
+  each tile to each row, and back with Shift+Tab; axe, dark and light; under
+  No signal the split stays steel (the colour probe, every lamp the ring)
+  with the strip still between; at 800 (a tablet) and 1440px one panel,
+  its rows in it, the strip under it; and at 767 and 768px the split flips
+  with the bottom tabs, at the same pixel. All six leave screenshots in
+  `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through
   the Android build's `@ui` alias.

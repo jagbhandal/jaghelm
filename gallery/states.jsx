@@ -1549,6 +1549,95 @@ function AttentionPanelNoSignalState() {
   );
 }
 
+// #484: below 768px the Overview draws the panel in two parts with the strip
+// between them, as the Phone board orders it (status card, strip, issue
+// list), at a phone's 390px; a quiet board keeps the strip under its line.
+const SIX_ISSUES = [
+  ...ISSUES.slice(0, 3),
+  {
+    id: 'b2',
+    state: 'warn',
+    word: 'Overdue',
+    title: 'NAS → B2 backup',
+    where: 'Backup · jagnas',
+    reason: 'Last success 27 h ago',
+    age: '3 h',
+    onOpen: noop,
+  },
+  {
+    id: 'nas',
+    state: 'warn',
+    word: 'Warning',
+    title: 'JagNAS disk',
+    where: 'Node · jagnas',
+    reason: '92 % (warning above 90 %)',
+    age: '3 h',
+    onOpen: noop,
+  },
+  ISSUES[3],
+];
+
+const HEALTHY_CELLS = [
+  ['services', 'Services', '32 / 32 up'],
+  ['nodes', 'Nodes', '6 / 6 up'],
+  ['power', 'Power', 'On mains'],
+  ['jobs', 'Jobs', '14 / 14 on time'],
+  ['backups', 'Backups', '3 / 3 OK'],
+  ['integrations', 'Integrations', '12 / 12 answering'],
+].map(([key, label, value]) => ({ key, label, state: 'ok', value }));
+
+function AttentionPanelPhoneState() {
+  return (
+    <Stack width={390}>
+      <AttentionPanel
+        state="crit"
+        counts="2 critical, 3 warnings, 1 no signal"
+        subline={INCIDENT.subline}
+        action={ALL_ALERTS}
+        issues={SIX_ISSUES}
+        between={<SubsystemStrip cells={CELLS} onSelect={noop} />}
+        split
+      />
+    </Stack>
+  );
+}
+
+// The quiet line has no rows to split: the strip follows it, 24px down, as
+// the Overview's ShellSection stacks them.
+function AttentionPanelPhoneQuietState() {
+  return (
+    <Stack width={390} gap={24}>
+      <AttentionPanel
+        state="ok"
+        counts="All 32 services up · 6 nodes healthy"
+        between={<SubsystemStrip cells={HEALTHY_CELLS} onSelect={noop} />}
+        split
+      />
+    </Stack>
+  );
+}
+
+function AttentionPanelPhoneNoSignalState() {
+  return (
+    <Stack width={390}>
+      <AttentionPanel
+        state="unknown"
+        counts="last known 3 min ago: Critical · 2 critical, 3 warnings, 1 no signal"
+        subline="Can't reach JagHelm"
+        action={ALL_ALERTS}
+        issues={stale(SIX_ISSUES)}
+        between={
+          <SubsystemStrip
+            cells={stale(CELLS).map((c) => ({ ...c, sub: LAST_KNOWN }))}
+            onSelect={noop}
+          />
+        }
+        split
+      />
+    </Stack>
+  );
+}
+
 // ---------------------------------------------------------------- data
 
 function MetricMeterState() {
@@ -2132,6 +2221,9 @@ export const RENDERS = Object.freeze({
   'attention-panel-narrow': AttentionPanelNarrowState,
   'subsystem-strip-no-signal': SubsystemStripNoSignalState,
   'attention-panel-no-signal': AttentionPanelNoSignalState,
+  'attention-panel-phone': AttentionPanelPhoneState,
+  'attention-panel-phone-quiet': AttentionPanelPhoneQuietState,
+  'attention-panel-phone-no-signal': AttentionPanelPhoneNoSignalState,
 
   'metric-meter': MetricMeterState,
   sparkline: SparklineState,
