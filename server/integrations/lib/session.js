@@ -1,6 +1,7 @@
-import { safeFetch, isAuthRejection } from './http.js';
+import { safeFetch, isAuthRejection, readJson } from './http.js';
 import { extractValue, resolveEndpoint } from './extract.js';
 import { createLogger } from '../../util/logger.js';
+import { redactSecrets } from '../../util/redact.js';
 
 const log = createLogger('integrations');
 
@@ -27,7 +28,7 @@ function fillCreds(value, username, password) {
  * Build the login request body from a session config + resolved credentials.
  * For form-urlencoded logins, fills the {username}/{password} placeholders in
  * the raw template string (URL-encoding each); otherwise structurally fills the
- * JSON body object and serializes it. Shared by doSessionLogin + testSessionAuth.
+ * JSON body object and serializes it.
  */
 function buildLoginBody(session, config) {
   const contentType = session.loginContentType || 'application/json';
@@ -79,8 +80,12 @@ export const __test = { sessionTokenCache, cacheGet, cacheSet, SESSION_CACHE_MAX
  *
  * Tries primary session config first, then any fallback (e.g. for services
  * that support multiple auth modes like Proxmox API token vs PVE cookie).
+ *
+ * `cache: false` (the connection test, #427) logs in afresh and keeps no
+ * token: a cached token would pass a test of a password that is wrong, and a
+ * token from an unsaved password would serve the refresh.
  */
-export async function fetchWithSession(config) {
+export async function fetchWithSession(config, { cache = true } = {}) {
   const session = config.session;
   if (!session) throw new Error('Session config missing');
 
@@ -104,10 +109,13 @@ export async function fetchWithSession(config) {
   // refresh loop does not repeat until the config changes; a data read refused
   // after a good login, or a login that failed another way, is retried.
   let rejectedLogins = 0;
+  // Why the last method failed, for the error (redacted): a test, and the
+  // card, say why the login failed, not only that it did.
+  let lastFailure = '';
 
   for (const { key, session: sess } of sessionConfigs) {
     const cacheKey = `${baseUrl}:${sess.loginEndpoint}`;
-    const cached = cacheGet(cacheKey);
+    const cached = cache ? cacheGet(cacheKey) : undefined;
 
     // Try cached token first
     if (cached && Date.now() < cached.expires) {
@@ -124,22 +132,24 @@ export async function fetchWithSession(config) {
     // Authenticate and cache the token
     try {
       const tokenInfo = await doSessionLogin(config, sess, baseUrl, skipTls);
-      cacheSet(cacheKey, tokenInfo);
+      if (cache) cacheSet(cacheKey, tokenInfo);
       const data = await fetchWithToken(tokenInfo, endpoint, config, baseUrl, skipTls);
       return data;
     } catch (err) {
       if (err.authRejected) rejectedLogins += 1;
       log.warn({ key, error: err.message }, 'session auth failed');
+      lastFailure = redactSecrets(err.message || String(err));
       continue;
     }
   }
 
   // All auth methods failed
   const instructions = config.oauth2Instructions || '';
+  const reason = lastFailure ? `: ${lastFailure}` : '';
   const err = new Error(
     instructions
-      ? `Authentication failed. ${instructions}`
-      : 'All session auth methods failed'
+      ? `Authentication failed${reason}. ${instructions}`
+      : `All session auth methods failed${reason}`
   );
   if (rejectedLogins === sessionConfigs.length) err.authRejected = true;
   throw err;
@@ -161,13 +171,8 @@ async function doSessionLogin(config, session, baseUrl, skipTls) {
     throw err;
   }
 
-  let loginData;
-  try {
-    const text = await loginRes.text();
-    loginData = JSON.parse(text);
-  } catch (parseErr) {
-    throw new Error(`Login response is not valid JSON: ${parseErr.message}`);
-  }
+  // Not JSON: says so, never quoting the reply (readJson).
+  const loginData = await readJson(loginRes);
 
   const token = extractValue(loginData, session.tokenPath);
   if (!token) throw new Error('Login succeeded but no token in response');
@@ -198,31 +203,5 @@ async function fetchWithToken(tokenInfo, endpoint, config, baseUrl, skipTls) {
   const res = await safeFetch(`${baseUrl}${path}`, { headers }, skipTls,
     { credentialInUrl, shownUrl: `${baseUrl}${shownPath}` });
   if (!res.ok) throw new Error(`Data fetch returned HTTP ${res.status}`);
-  return res.json();
-}
-
-/**
- * Test a single session auth attempt.
- *
- * Used by testIntegration() — returns { ok, status?, error? } instead of
- * throwing, so the caller can try fallback auth methods sequentially.
- */
-export async function testSessionAuth(config, session, baseUrl, skipTls) {
-  try {
-    const { body, contentType } = buildLoginBody(session, config);
-
-    const res = await safeFetch(`${baseUrl}${session.loginEndpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': contentType },
-      body,
-    }, skipTls);
-
-    if (!res.ok) return { ok: false, error: `Login failed: HTTP ${res.status}` };
-    const data = await res.json();
-    const token = extractValue(data, session.tokenPath);
-    if (!token) return { ok: false, error: 'Login succeeded but no token in response' };
-    return { ok: true, status: res.status };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
+  return readJson(res);
 }

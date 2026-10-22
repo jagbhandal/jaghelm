@@ -4,7 +4,6 @@ export default {
   description: 'Open-source home automation platform',
   auth: 'bearer',
   endpoint: '/api/states',
-  testEndpoint: '/api/',
   fields: [
     { key: 'entities', label: 'Entities', path: '_length', format: 'number' },
   ],

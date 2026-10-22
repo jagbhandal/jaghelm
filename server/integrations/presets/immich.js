@@ -5,7 +5,6 @@ export default {
   auth: 'header',
   authHeader: 'X-Api-Key',
   endpoint: '/api/server/statistics',
-  testEndpoint: '/api/server/ping',
   fields: [
     { key: 'photos', label: 'Photos', path: 'photos', format: 'number' },
     { key: 'videos', label: 'Videos', path: 'videos', format: 'number' },

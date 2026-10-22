@@ -49,3 +49,11 @@ export const AUTH_FIELDS = {
   session: ['username', 'password'],
   oauth2: ['username', 'password'],
 };
+
+/**
+ * True for the marker the config read sends for a stored credential,
+ * { "$stored": true } (#413): for an integration's URL, one that carries a
+ * credential (#422), which the form never shows.
+ */
+export const isStoredMarker = (v) =>
+  !!v && typeof v === 'object' && Object.keys(v).length === 1 && v.$stored === true;

@@ -12,12 +12,13 @@
 
 import { getPresetFull } from './registry.js';
 
-import { safeFetch, isAuthRejection } from './lib/http.js';
+import { safeFetch, isAuthRejection, readJson } from './lib/http.js';
 import { extractValue, resolveEndpoint, looksLikeSecretRef, UnresolvedSecretError } from './lib/extract.js';
 import { formatValue, computeField } from './lib/format.js';
 import { buildAuthHeaders } from './lib/auth.js';
-import { fetchWithSession, testSessionAuth } from './lib/session.js';
+import { fetchWithSession } from './lib/session.js';
 import { resolveIntegrationConfig } from './lib/config.js';
+import { storedUrlCredentialError } from './lib/urlCredential.js';
 import { assertSafeUrl } from '../util/ssrf.js';
 import { redactError } from '../util/redact.js';
 import { createLogger } from '../util/logger.js';
@@ -93,12 +94,19 @@ export { assertSafeUrl };
  *   integration once a cycle for its backoff fingerprint and hands that over, so
  *   its credentials are not read from the secrets store twice. Omitted, it is
  *   resolved here.
+ * @param {{ sessionCache?: boolean }} [opts] sessionCache: false for the
+ *   connection test (#427), which logs a session preset in afresh and keeps
+ *   no token (lib/session.js).
  */
-export async function fetchIntegration(type, yamlConfig, resolved) {
+export async function fetchIntegration(type, yamlConfig, resolved, { sessionCache = true } = {}) {
   const config = resolved === undefined ? resolveIntegrationConfig(type, yamlConfig) : resolved;
   if (!config || !config.url || !config.endpoint) {
     return { error: 'Integration not configured', fields: {} };
   }
+  // A URL that carries a credential is never requested (#422): it never
+  // worked, and the error says where the credential goes instead.
+  const urlCredential = storedUrlCredentialError(config.url, getPresetFull(type));
+  if (urlCredential) return { error: urlCredential, fields: {} };
 
   try {
     let rawData;
@@ -106,7 +114,7 @@ export async function fetchIntegration(type, yamlConfig, resolved) {
     const skipTls = !!config.tlsSkip;
 
     if (config.auth === 'session') {
-      rawData = await fetchWithSession(config);
+      rawData = await fetchWithSession(config, { cache: sessionCache });
     } else {
       const endpoint = resolveEndpoint(config.endpoint, config);
       const { url, shownUrl, credentialInUrl } =
@@ -120,7 +128,7 @@ export async function fetchIntegration(type, yamlConfig, resolved) {
         if (isAuthRejection(res) && carriesCredentials(config, urlCarriesCredential)) err.authRejected = true;
         throw err;
       }
-      rawData = await res.json();
+      rawData = await readJson(res);
     }
 
     // extraEndpoints: array, or function(rawData) returning one so endpoints can
@@ -139,7 +147,7 @@ export async function fetchIntegration(type, yamlConfig, resolved) {
           if (!epRes.ok) {
             throw new Error(`HTTP ${epRes.status} ${epRes.statusText || ''}`.trim());
           }
-          return { key: ep.key, data: await epRes.json() };
+          return { key: ep.key, data: await readJson(epRes) };
         })
       );
       // Only attach _extra when rawData is a mutable object. A primary endpoint
@@ -198,73 +206,40 @@ export async function fetchIntegration(type, yamlConfig, resolved) {
   }
 }
 
-// ── Test connection: lightweight check that URL + creds work ──
-export async function testIntegration(type, testConfig) {
+// ── Test connection (#427) ──
+/**
+ * The connection test: fetch `yamlConfig` as the refresh loop fetches an
+ * entry (resolveIntegrationConfig, then fetchIntegration), with `secrets`
+ * standing in for the store where it has a name (a password or token typed
+ * into the form, as the save would store it). Nothing is kept: no session
+ * token is cached or reused, and no backoff state is touched. Answers
+ * `{ ok: true }` or `{ ok: false, error }`, the error a refresh would show;
+ * never the fields read.
+ *
+ * @param {string} type the type the refresh fetches as (integrationInput)
+ * @param {object} yamlConfig the entry, with `_storageKey`
+ * @param {{ secrets?: Map<string, string | null> }} [opts]
+ */
+export async function testIntegration(type, yamlConfig, { secrets } = {}) {
   const preset = getPresetFull(type);
-
   if (preset?.unsupported) {
     return { ok: false, error: `Integration unavailable: ${preset.unsupported}` };
   }
 
-  // Merge preset with test config
-  const config = preset ? { ...preset, ...testConfig } : testConfig;
-  if (!config || !config.url) {
-    return { ok: false, error: 'URL is required' };
-  }
-
-  // Resolve creds from the testConfig directly (not from secrets — these are fresh from the form)
-  config._username = testConfig.username;
-  config._password = testConfig.password;
-  config._token = testConfig.token;
-
-  const baseUrl = config.url.replace(/\/+$/, '');
-  const testEndpoint = config.testEndpoint || config.endpoint;
-  const skipTls = !!config.tlsSkip;
-
+  let resolved;
   try {
-    if (config.auth === 'session') {
-      // Try primary session auth
-      const session = config.session;
-      if (!session) return { ok: false, error: 'Session config missing in preset' };
-
-      const primaryResult = await testSessionAuth(config, session, baseUrl, skipTls);
-      if (primaryResult.ok) return primaryResult;
-
-      // If primary failed and there's a fallback, try it
-      const fallbackKey = config.authFallback;
-      const fallbackSession = fallbackKey && config[fallbackKey];
-      if (fallbackSession) {
-        const fallbackResult = await testSessionAuth(config, fallbackSession, baseUrl, skipTls);
-        if (fallbackResult.ok) return fallbackResult;
-      }
-
-      // Both failed — return error with instructions if available
-      const instructions = config.oauth2Instructions || '';
-      return {
-        ok: false,
-        error: instructions
-          ? `Login failed — 2FA may be enabled.`
-          : primaryResult.error,
-        instructions: instructions || undefined,
-      };
-
-    } else {
-      // Non-session auth (basic, bearer, header, query)
-      const { url, shownUrl, credentialInUrl } = applyQueryAuth(`${baseUrl}${testEndpoint}`, config);
-      const headers = buildAuthHeaders(config);
-      const res = await safeFetch(url, { headers }, skipTls, { credentialInUrl, shownUrl });
-      if (!res.ok) return { ok: false, error: `HTTP ${res.status}: ${res.statusText}` };
-      return { ok: true, status: res.status };
-    }
+    resolved = resolveIntegrationConfig(type, yamlConfig, { secrets });
   } catch (err) {
-    // A token typed into the form that looks like a `$secret:` reference: the
-    // test sends what was typed and resolves nothing, so say that (#425).
-    if (err instanceof UnresolvedSecretError) {
-      return {
-        ok: false,
-        error: 'The token looks like a stored-secret reference, and the connection test sends the token as typed; type the token itself',
-      };
-    }
     return { ok: false, error: redactError(err) };
   }
+  if (!resolved?.url) return { ok: false, error: 'URL is required' };
+  if (!resolved.endpoint) {
+    return {
+      ok: false,
+      error: "There is no endpoint to test: a custom integration's endpoint is set in its entry in services.yaml",
+    };
+  }
+
+  const result = await fetchIntegration(type, yamlConfig, resolved, { sessionCache: false });
+  return result.error ? { ok: false, error: result.error } : { ok: true };
 }

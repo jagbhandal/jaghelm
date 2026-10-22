@@ -19,7 +19,6 @@ export default {
   },
   oauth2Instructions: 'If you have 2FA enabled, session login will fail. PhotoPrism 2FA support requires oauth2 client credentials, which is not yet implemented in JagHelm. Disable 2FA on the JagHelm-facing account, or use a dedicated read-only PhotoPrism user without 2FA.',
   endpoint: '/api/v1/config',
-  testEndpoint: '/api/v1/config',
   fields: [
     { key: 'photos', label: 'Photos', path: 'count.photos', format: 'number' },
     { key: 'videos', label: 'Videos', path: 'count.videos', format: 'number' },

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { redactSecrets, redactError } from './redact.js';
+import { redactSecrets, redactError, urlCredential } from './redact.js';
 
 test('redacts known secret query params', () => {
   assert.ok(!redactSecrets('failed: https://h/api?apikey=SEKRET123').includes('SEKRET123'));
@@ -106,4 +106,43 @@ test('a password holding a colon is redacted from the first colon on (#409)', ()
 test('a secret param after an & is redacted in text with no ? or @ (#409)', () => {
   const out = redactSecrets('retry with &token=hunter2 next'); // pragma: allowlist secret
   assert.ok(!out.includes('hunter2'), out);
+});
+
+test('?key= is a secret query parameter too (#422)', () => {
+  assert.ok(!redactSecrets('to /api/stats?key=SEKRET123 failed').includes('SEKRET123'));
+  assert.ok(!redactSecrets('to /api/stats?a=1&key=SEKRET123 failed').includes('SEKRET123'));
+  // Only the whole name: monkey= is not key=.
+  assert.equal(redactSecrets('/api?monkey=1'), '/api?monkey=1');
+});
+
+test('urlCredential names the credential a URL carries, never its value (#422)', () => {
+  for (const url of [
+    'https://admin:hunter2@host:3000', // pragma: allowlist secret
+    'https://t0k3n@host/api',
+    'http://jag:hun#ter@host/api', // a raw # in the password: the parser refuses it
+  ]) {
+    assert.deepEqual(urlCredential(url), { userinfo: true }, url);
+  }
+  for (const [url, param] of [
+    ['http://host/?apikey=k', 'apikey'],
+    ['http://host/api?a=1&token=t', 'token'],
+    ['http://host?key=k', 'key'],
+    ['http://host/x?api_key=k', 'api_key'],
+    ['http://host/x?X-Plex-Token=t', 'X-Plex-Token'],
+  ]) {
+    assert.deepEqual(urlCredential(url), { param }, url);
+  }
+  for (const url of [
+    'http://host:3000',
+    'host:3000',
+    'http://host/u@x',
+    'http://host/?limit=10&sort=name',
+    'http://host?key=',
+    'http://host?monkey=1',
+    '',
+    undefined,
+    42,
+  ]) {
+    assert.equal(urlCredential(url), null, String(url));
+  }
 });

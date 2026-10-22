@@ -119,6 +119,7 @@ export default function IntegrationsTab() {
         form={form}
         allContainers={allContainers}
         testStatus={testStatus}
+        setTestStatus={setTestStatus}
         saveStatus={saveStatus}
         setSaveStatus={setSaveStatus}
         handleTest={handleTest}

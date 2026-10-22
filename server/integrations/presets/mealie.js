@@ -4,7 +4,6 @@ export default {
   description: 'Self-hosted recipe manager and meal planner',
   auth: 'bearer',
   endpoint: '/api/recipes?page=1&perPage=1',
-  testEndpoint: '/api/app/about',
   fields: [
     { key: 'recipes', label: 'Recipes', path: 'total', format: 'number' },
   ],

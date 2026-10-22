@@ -5,7 +5,6 @@ export default {
   auth: 'header',
   authHeader: 'X-Emby-Token',
   endpoint: '/System/Info',
-  testEndpoint: '/System/Ping',
   fields: [
     { key: 'version', label: 'Version', path: 'Version', format: 'string' },
     { key: 'has_update', label: 'Update', path: 'HasUpdateAvailable', format: 'string' },
