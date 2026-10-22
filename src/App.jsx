@@ -117,12 +117,19 @@ export default function App() {
     setAuthed(false);
   }, []);
 
-  // The Log out button (#507): the server revokes the session, so a copy of the
-  // token stops working too, then this tab forgets it whatever the server did.
-  // revokeSession never rejects and gives up after 5 s.
+  // The Log out button (#507) signs the browser out: the server revokes this
+  // tab's session, and the stored one if another tab signed in since (that tab
+  // signs out on its next 401), so a copy of either token stops working too.
+  // Each request is sent before the tab forgets the token, which it does at
+  // once: closing the tab while the server is slow can't leave the token
+  // stored. revokeSession never rejects and gives up after 5 s.
   const handleLogout = useCallback(async () => {
-    await revokeSession(getAuthToken());
+    const mine = getAuthToken();
+    const revoked = [revokeSession(mine)];
+    const stored = await secureStore.getItem('jaghelm-token');
+    if (stored && stored !== mine) revoked.push(revokeSession(stored));
     clearSession();
+    await Promise.all(revoked);
   }, [clearSession]);
 
   // An expired session (#492). apiFetch passes the token the 401 came with. If

@@ -884,12 +884,15 @@ the revocation; there is no deny list (ADR 0002). It answers 204 for any
 token, unknown, expired, already revoked or none, so a second sign-out or
 another tab never meets a 401 and the answer says nothing about a token. A
 real sign-out logs `signed out` at info with the user, never the token. Both
-apps send it through `revokeSession()` (`src/api/client.js`), then clear the
-session locally whatever the server did: the call never rejects and gives up
-after 5 s (`SIGN_OUT_TIMEOUT_MS`), so a network error, a hang or a 5xx can't
-keep anyone signed in. The web app's Log out button sends it; the 401 path
-above doesn't (that session is already dead), nor does a tab that learns of
-another tab's sign-out from its 401. The Android app sends it on Log out and
+apps send it through `revokeSession()` (`src/api/client.js`) and clear the
+session locally at once, without waiting for the answer, so a network error, a
+hang or a 5xx can't keep anyone signed in, and closing the tab or the app
+meanwhile leaves no token stored. The call never rejects and gives up after
+5 s (`SIGN_OUT_TIMEOUT_MS`). The web app's Log out button sends it for the
+tab's token, and for the stored one too when another tab signed in since, so
+it signs the browser out (that tab follows on its next 401). The 401 path
+above doesn't send it (that session is already dead), nor does a tab that
+learns of another tab's sign-out from its 401. The Android app sends it on Log out and
 Forget this device, not on its 401 path, and not on the connection screen's
 Change server, which shows only when the server can't be reached. A server
 older than the route answers 404 (or 401), which changes nothing: the client

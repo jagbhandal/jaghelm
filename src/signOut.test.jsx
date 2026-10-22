@@ -4,11 +4,11 @@ import App from './App.jsx';
 import { setAuthToken, SIGN_OUT_TIMEOUT_MS } from './api/client.js';
 import { HEALTHY } from './testing/statusFixtures.js';
 
-// Signing out of the web app (#507). The Log out button asks the server to
-// revoke the session (POST /api/auth/logout), then clears it in the tab
-// whatever the server did: an error, a 5xx or no answer within 5 s never keeps
-// anyone signed in. A 401 (the session already dead, #492) clears it without
-// asking. The stub is a server with auth on: a request whose x-auth-token is a
+// Signing out of the web app (#507). The Log out button sends the server the
+// request to revoke the session (POST /api/auth/logout) and clears it in the
+// tab at once, without waiting for the answer: an error, a 5xx or no answer
+// never keeps anyone signed in, and closing the tab meanwhile leaves no token
+// stored. A 401 (the session already dead, #492) clears it without asking. The stub is a server with auth on: a request whose x-auth-token is a
 // live session gets data, any other gets 401; sign-out deletes the session and
 // answers 204, unless `signOutAnswer` says otherwise.
 
@@ -72,7 +72,7 @@ async function advance(ms) {
 
 const take = () => requests.splice(0);
 const signOuts = () => requests.filter((r) => r.path === '/api/auth/logout');
-const signInButton = () => screen.queryByRole('button', { name: 'Sign In' });
+const signInButton = () => screen.queryByRole('button', { name: 'Sign in' });
 
 // A tab signed in before: its token is in storage, the session still live.
 async function renderSignedIn() {
@@ -123,6 +123,18 @@ describe('signing out of the web app (#507)', () => {
     await expectSignedOut();
   });
 
+  it('another tab signed in since this one loaded: Log out revokes both sessions', async () => {
+    await renderSignedIn();
+    // Tab B signed in after this tab loaded: storage holds its token, this tab
+    // still sends its own.
+    sessions.add('b-tok');
+    localStorage.setItem('jaghelm-token', 'b-tok');
+    await clickLogOut();
+    expect(signOuts().map((r) => r.token)).toEqual(['old-tok', 'b-tok']);
+    expect(sessions.size).toBe(0);
+    await expectSignedOut();
+  });
+
   it.each([
     ['a network error', 'error'],
     ['a 500', 500],
@@ -134,14 +146,14 @@ describe('signing out of the web app (#507)', () => {
     await expectSignedOut();
   });
 
-  it('a sign-out the server never answers signs out after 5 s', async () => {
+  it('a sign-out the server never answers still signs out at once, before the call settles', async () => {
     await renderSignedIn();
     signOutAnswer = 'hang';
     await clickLogOut();
     expect(signOuts()).toHaveLength(1);
-    await advance(SIGN_OUT_TIMEOUT_MS - 1);
-    expect(signInButton()).toBeNull();
-    await advance(1);
+    expect(localStorage.getItem('jaghelm-token')).toBeNull();
+    expect(signInButton()).toBeInTheDocument();
+    await advance(SIGN_OUT_TIMEOUT_MS);
     await expectSignedOut();
   });
 

@@ -161,13 +161,40 @@ describe('signing out revokes the session on the server (#507)', () => {
     expect(setAuthToken).toHaveBeenCalledWith('');
   };
 
-  it('logout asks the server to revoke the session before the phone forgets it', async () => {
+  // A server that answers the sign-out only when the test says so.
+  function gatedServer() {
+    let release;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url, opts) => {
+        order.push(`${opts.method} ${url} x-auth-token=${opts.headers['x-auth-token']}`);
+        return new Promise((resolve) => {
+          release = () => {
+            order.push('answered');
+            resolve(new Response(null, { status: 204 }));
+          };
+        });
+      })
+    );
+    return { release: () => release() };
+  }
+
+  it('logout sends the revoke request, then forgets the token without waiting for the answer', async () => {
+    const server = gatedServer();
     render(<App initial={{ hasUrl: true, hasToken: true }} />);
+    let done = false;
+    let pending;
     await act(async () => {
-      await logout();
+      pending = logout().then(() => (done = true));
     });
     await signedOut();
     expect(order).toEqual([SIGN_OUT, 'remove jaghelm-token']);
+    expect(done).toBe(false);
+    await act(async () => {
+      server.release();
+      await pending;
+    });
+    expect(order).toEqual([SIGN_OUT, 'remove jaghelm-token', 'answered']);
   });
 
   it.each([
@@ -183,7 +210,7 @@ describe('signing out revokes the session on the server (#507)', () => {
     await signedOut();
   });
 
-  it('logout signs out after 5 s when the server never answers', async () => {
+  it('logout forgets the token at once when the server never answers, and settles after 5 s', async () => {
     vi.useFakeTimers();
     try {
       vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
@@ -191,28 +218,35 @@ describe('signing out revokes the session on the server (#507)', () => {
       let done = false;
       await act(async () => {
         logout().then(() => (done = true));
-        await vi.advanceTimersByTimeAsync(actualClient.SIGN_OUT_TIMEOUT_MS - 1);
+        await vi.advanceTimersByTimeAsync(0);
       });
-      expect(done).toBe(false);
-      expect(screen.getByText('THE_APP')).toBeInTheDocument();
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(1);
-      });
-      expect(done).toBe(true);
+      expect(fetch).toHaveBeenCalledTimes(1);
       expect(screen.getByText('LOGIN askUrl=false')).toBeInTheDocument();
       expect(removeItem).toHaveBeenCalledWith('jaghelm-token');
+      expect(done).toBe(false);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(actualClient.SIGN_OUT_TIMEOUT_MS);
+      });
+      expect(done).toBe(true);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('Forget this device revokes the session before forgetting the server', async () => {
+  it('Forget this device sends the revoke request, then forgets the server without waiting', async () => {
+    const server = gatedServer();
     render(<App initial={{ hasUrl: true, hasToken: true }} />);
+    let pending;
     await act(async () => {
-      await forgetDevice();
+      pending = forgetDevice();
     });
     expect(await screen.findByText('LOGIN askUrl=true')).toBeInTheDocument();
     expect(order).toEqual([SIGN_OUT, 'remove jaghelm-token', 'remove jaghelm-base-url']);
+    await act(async () => {
+      server.release();
+      await pending;
+    });
+    expect(order.at(-1)).toBe('answered');
   });
 
   it('Forget this device still forgets when the request fails', async () => {

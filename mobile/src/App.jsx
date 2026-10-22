@@ -25,7 +25,7 @@ export default function App({ initial }) {
 
   useEffect(() => {
     // Kill the session token and drop to re-auth — reached from a server-driven
-    // 401 and, once the server has revoked it, from a user-initiated logout.
+    // 401 and from a user-initiated logout, right after its revoke request.
     // The storage steps and their order live in auth/forgetServer.js, shared
     // with the connection screen's Change server.
     const clearSession = async () => {
@@ -34,18 +34,22 @@ export default function App({ initial }) {
     };
 
     setAuthExpiredHandler(clearSession);
-    // The server revokes the session, so a copy of the token stops working too;
-    // then the phone forgets it whatever the server did (revokeSession never
-    // rejects and gives up after 5 s).
+    // The server revokes the session, so a copy of the token stops working too.
+    // revokeSession sends its request at once, with the token apiFetch holds;
+    // the phone then forgets the token without waiting for the answer, so
+    // closing the app while the server is slow can't leave it in the Keystore
+    // (revokeSession never rejects and gives up after 5 s).
     setAuthHandlers({
       logout: async () => {
-        await revokeSession();
+        const revoked = revokeSession();
         await clearSession();
+        await revoked;
       },
       forgetDevice: async () => {
-        await revokeSession();
+        const revoked = revokeSession();
         await forgetServer({ onTokenCleared: () => setHasToken(false) });
         setHasUrl(false);
+        await revoked;
       },
     });
 

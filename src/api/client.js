@@ -105,10 +105,11 @@ export const SIGN_OUT_TIMEOUT_MS = 5000;
 
 /**
  * Revoke a session on the server: POST /api/auth/logout with `token` (default:
- * the in-memory one; nothing is sent without one). Both apps call it on the
- * user's sign-out, then clear the session locally whatever happened, so it never
- * rejects and gives up after SIGN_OUT_TIMEOUT_MS: a network error, a hang or a
- * 5xx can't keep anyone signed in. The answer is not read. It goes through
+ * the in-memory one; nothing is sent without one). The request goes out within
+ * the call, with the token and base of that moment, so both apps call it on the
+ * user's sign-out and then clear the session locally without waiting for it. It
+ * never rejects and gives up after SIGN_OUT_TIMEOUT_MS: a network error, a hang
+ * or a 5xx can't keep anyone signed in. The answer is not read. It goes through
  * window.fetch, not apiFetch, so the token is the one passed and a 401 (a
  * server older than the route, with a dead token) is not an expired session.
  * The 401 self-heal doesn't call it: that session is already dead.
