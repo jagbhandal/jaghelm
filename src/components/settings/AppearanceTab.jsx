@@ -5,6 +5,7 @@ import Field from './Field';
 import InlineError from './InlineError';
 import { Card, Toggle } from './primitives.jsx';
 import { THEMES } from '../../shell/theme.js';
+import { OVERVIEW_SECTIONS, sectionShown } from '../../shell/overviewSections.js';
 
 // Each theme's swatch, as the mock's Settings → Appearance draws it: the
 // background of dark, of light, and the two halved for system.
@@ -19,7 +20,9 @@ const PREVIEW = {
 /**
  * Settings → Appearance. The theme is dark, light or system (#304); there is
  * one accent, violet, so no accent picker until #321 offers Violet, Fuchsia
- * and Cyan.
+ * and Cyan. Overview sections (#307): a show/hide switch per section, in the
+ * display config, so the server holds it for every device; the attention
+ * panel's is on and locked (overviewSections.js).
  */
 export default function AppearanceTab({ theme, setTheme }) {
   const { config, update } = useConfig();
@@ -83,6 +86,23 @@ export default function AppearanceTab({ theme, setTheme }) {
             </button>
           ))}
         </div>
+      </Card>
+
+      <Card title="Overview sections">
+        <p className="settings-desc">
+          Show or hide each section of the Overview, on every device. Reordering comes with Edit
+          layout; until then the order is fixed.
+        </p>
+        {OVERVIEW_SECTIONS.map((section) => (
+          <Toggle
+            key={section.id}
+            label={section.label}
+            description={section.description}
+            checked={sectionShown(config, section.id)}
+            disabled={section.locked}
+            onChange={(on) => update(`overviewSections.${section.id}`, on)}
+          />
+        ))}
       </Card>
 
       <Card title="Background">

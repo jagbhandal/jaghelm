@@ -25,6 +25,7 @@ import { sourceBanner } from './sourceHealth';
 import { boardSections, emptyBoardReason, filterLayouts } from './boardFilter';
 import { OverviewInfrastructure } from '../../shell/OverviewInfrastructure.jsx';
 import { OverviewServices } from '../../shell/OverviewServices.jsx';
+import { sectionShown } from '../../shell/overviewSections.js';
 import { RAIL_WIDTH, ShellSection } from '@ui/app-shell';
 import { useMediaQuery } from '../../shell/useMediaQuery.js';
 import { Panel } from '@ui/panel';
@@ -70,6 +71,10 @@ const NO_GROUPS = [];
  * card is dragged between panels any more (a custom group's services are
  * chosen in Settings → Sections). It is the Services subsystem's, so the
  * Services filter keeps it alone, and any other hides it.
+ *
+ * Either section can be switched off (Settings → Appearance → Overview
+ * sections, #307, overviewSections.js); with Infrastructure off, the node
+ * panels carry the nodes' anchors again.
  */
 export default function DashboardView({
   refreshKey,
@@ -274,9 +279,12 @@ export default function DashboardView({
   // come from the `integrations` source, so they carry its banner.
   const servicesB = banners.services;
   // The Infrastructure section shows unfiltered and under the Nodes filter;
-  // the Services section unfiltered and under the Services filter.
-  const infraShown = filter == null || filter.id === 'nodes';
-  const servicesShown = filter == null || filter.id === 'services';
+  // the Services section unfiltered and under the Services filter; either
+  // never once switched off (Settings → Appearance → Overview sections, #307).
+  const infraShown =
+    sectionShown(config, 'infrastructure') && (filter == null || filter.id === 'nodes');
+  const servicesShown =
+    sectionShown(config, 'services') && (filter == null || filter.id === 'services');
   const nodeBanner = banners.integrations;
   // The Services section's numbers: the latency from `services`, the headline
   // metrics from `integrations`; the first of them with anything to say.

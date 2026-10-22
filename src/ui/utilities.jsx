@@ -22,12 +22,40 @@
  *                loading: placeholder lines, and nothing to add to yet, so an
  *                add can't save over a list that never came.
  *
+ *   WeatherClock the weather and the clock (#307, the mock's "Weather and
+ *                time" card): the reading's icon, "48°F · Overcast" over its
+ *                place, and at the row's end the time over the day, both in
+ *                the browser's locale. Either can be left out; with neither,
+ *                nothing. The weather is `{ temperature, condition, code,
+ *                place }`, or `{ loading }` (a placeholder) or `{ failed }`
+ *                ("No weather reading") before a reading came.
+ *   WebSearch    a search box for the web (#307): the words, trimmed, go to
+ *                `onSearch`, and the field empties; empty words do nothing.
+ *
  * UtilitiesRail is the rail's column, the panels 16px apart; LaunchLayout the
- * Launch page's: Quick Launch across the top, Pipeline and the Checklist under
- * it, side by side from 672px of its own width.
+ * Launch page's: weather and the clock, then the web search, across the top
+ * (side by side when there is room), Quick Launch under them, and Pipeline and
+ * the Checklist under it, side by side from 672px of its own width.
  */
 import { useId, useState } from 'react';
-import { GitBranch, ListChecks, Plus, Rocket, X } from 'lucide-react';
+import {
+  Cloud,
+  CloudDrizzle,
+  CloudFog,
+  CloudLightning,
+  CloudRain,
+  CloudSnow,
+  CloudSun,
+  GitBranch,
+  ListChecks,
+  Plus,
+  Rocket,
+  Search,
+  Snowflake,
+  Sun,
+  Thermometer,
+  X,
+} from 'lucide-react';
 import { Panel } from './panel.jsx';
 import { EmptyState } from './empty-state.jsx';
 import { Input } from './input.jsx';
@@ -242,6 +270,127 @@ function Checklist({ todos, onAdd, onToggle, onRemove, banner = null, className,
   );
 }
 
+// A WMO weather code's icon (open-meteo's `weather_code`): clear, partly
+// cloudy, overcast, fog, drizzle, rain, snow, thunder; any other, a thermometer.
+function weatherIcon(code) {
+  if (code === 0) return Sun;
+  if (code === 1 || code === 2) return CloudSun;
+  if (code === 3) return Cloud;
+  if (code === 45 || code === 48) return CloudFog;
+  if (code >= 51 && code <= 57) return CloudDrizzle;
+  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return CloudRain;
+  if (code === 75 || code === 86) return Snowflake;
+  if ((code >= 71 && code <= 77) || code === 85) return CloudSnow;
+  if (code >= 95 && code <= 99) return CloudLightning;
+  return Thermometer;
+}
+
+const CLOCK_TIME = { hour: '2-digit', minute: '2-digit' };
+const CLOCK_DAY = { weekday: 'short', day: 'numeric', month: 'short' };
+
+function WeatherPart({ weather }) {
+  const reading = weather.temperature != null;
+  const Icon = reading ? weatherIcon(weather.code) : Thermometer;
+  return (
+    <div data-slot="weather" className="flex min-w-0 flex-1 items-center gap-3">
+      {weather.loading ? (
+        <div className="flex flex-1 flex-col gap-1.5">
+          <span className="sr-only">Loading the weather</span>
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-3 w-16" />
+        </div>
+      ) : (
+        <>
+          <Icon aria-hidden="true" className="size-5 shrink-0 stroke-[1.75] text-text-2" />
+          <span className="flex min-w-0 flex-col">
+            <span className="text-body font-bold text-text-1">
+              {reading
+                ? `${weather.temperature}${weather.condition ? ` · ${weather.condition}` : ''}`
+                : 'No weather reading'}
+            </span>
+            {weather.place ? (
+              <span className="truncate text-caption text-text-3">{weather.place}</span>
+            ) : null}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ClockPart({ now }) {
+  const at = new Date(now);
+  return (
+    <span data-slot="clock" className="ml-auto flex shrink-0 flex-col items-end">
+      <time dateTime={at.toISOString()} className="text-title-sm text-text-1 tabular-nums">
+        {at.toLocaleTimeString(undefined, CLOCK_TIME)}
+      </time>
+      <span className="text-caption text-text-3">
+        {at.toLocaleDateString(undefined, CLOCK_DAY)}
+      </span>
+    </span>
+  );
+}
+
+function WeatherClock({ weather = null, now = null, className, ...props }) {
+  if (weather == null && now == null) return null;
+  const name = weather && now != null ? 'Weather and time' : weather ? 'Weather' : 'Time';
+  return (
+    <Panel
+      data-slot="weather-clock"
+      aria-label={name}
+      aria-busy={weather?.loading ? true : undefined}
+      className={cn('px-4 py-3.5', className)}
+      {...props}
+    >
+      <div className="flex items-center gap-3">
+        {weather ? <WeatherPart weather={weather} /> : null}
+        {now != null ? <ClockPart now={now} /> : null}
+      </div>
+    </Panel>
+  );
+}
+
+function WebSearch({ engine, onSearch, className, ...props }) {
+  const [words, setWords] = useState('');
+  const search = (event) => {
+    event.preventDefault();
+    const query = words.trim();
+    if (!query) return;
+    onSearch(query);
+    setWords('');
+  };
+  return (
+    <form
+      role="search"
+      aria-label="Web search"
+      data-slot="web-search"
+      onSubmit={search}
+      className={cn('flex min-w-0 items-center gap-2', className)}
+      {...props}
+    >
+      <div className="relative min-w-0 flex-1">
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 stroke-[1.75] text-text-3"
+        />
+        <Input
+          type="search"
+          enterKeyHint="search"
+          aria-label={`Search the web with ${engine}`}
+          placeholder={`Search ${engine}`}
+          value={words}
+          onChange={(e) => setWords(e.target.value)}
+          className="pl-8"
+        />
+      </div>
+      <Button type="submit" variant="secondary">
+        Search
+      </Button>
+    </form>
+  );
+}
+
 function UtilitiesRail({ className, children, ...props }) {
   return (
     <section
@@ -255,10 +404,26 @@ function UtilitiesRail({ className, children, ...props }) {
   );
 }
 
-function LaunchLayout({ quickLaunch = null, pipeline = null, checklist = null, className }) {
+function LaunchLayout({
+  extras = null,
+  search = null,
+  quickLaunch = null,
+  pipeline = null,
+  checklist = null,
+  className,
+}) {
   return (
     <div data-slot="launch-layout" className={cn('@container', className)}>
       <div className="grid grid-cols-1 items-start gap-6 @2xl:grid-cols-2">
+        {extras || search ? (
+          <div
+            data-slot="launch-top"
+            className="flex min-w-0 flex-wrap items-center gap-4 @2xl:col-span-2"
+          >
+            {extras ? <div className="min-w-0 flex-[1_1_16rem]">{extras}</div> : null}
+            {search ? <div className="min-w-0 flex-[2_1_20rem]">{search}</div> : null}
+          </div>
+        ) : null}
         {quickLaunch ? <div className="min-w-0 @2xl:col-span-2">{quickLaunch}</div> : null}
         {pipeline}
         {checklist}
@@ -267,4 +432,4 @@ function LaunchLayout({ quickLaunch = null, pipeline = null, checklist = null, c
   );
 }
 
-export { QuickLaunch, Pipeline, Checklist, UtilitiesRail, LaunchLayout };
+export { QuickLaunch, Pipeline, Checklist, WeatherClock, WebSearch, UtilitiesRail, LaunchLayout };

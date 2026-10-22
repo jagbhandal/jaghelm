@@ -31,6 +31,7 @@ import { appsOf, navGroups } from './shell/nav.js';
 import { alertsBadge } from './shell/statusView.js';
 import { useStatusStale } from './shell/statusFreshness.js';
 import { OverviewLayout } from './shell/Utilities.jsx';
+import { dropDeadKeys, sectionShown } from './shell/overviewSections.js';
 import { loadAlertsPage, loadAppFrames, loadLaunchPage, loadSettingsView } from './lazyViews.js';
 
 // Settings (13-tab tree), the app frames and the Alerts and Launch pages aren't
@@ -236,6 +237,15 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
     onLoaded: () => setConfigLoaded(true),
   });
 
+  // The keys an older JagHelm saved that nothing reads (#307: Widgets' dead
+  // "Show checklist panel"), dropped whichever way the config came: this
+  // browser's copy, the server's, or a Backup import. The next save sends the
+  // config without them. An updater, so a change another effect queued in the
+  // same commit (the board's layout brought up to its version) isn't lost.
+  useEffect(() => {
+    if (dropDeadKeys(config) !== config) setConfig(dropDeadKeys);
+  }, [config]);
+
   // Apply config to the document as CSS custom properties
   // (accent/opacity/font family/font sizes/blur).
   useThemeVars(config);
@@ -389,6 +399,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
                   reach={poll.reach}
                   updated={poll.updated}
                   filter={filter?.id ?? null}
+                  showStrip={sectionShown(config, 'strip')}
                 />
               )}
               <DashboardView

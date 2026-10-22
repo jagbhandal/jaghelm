@@ -26,7 +26,9 @@ export const demo = (path, { method = 'GET', query = {}, scenario = 'incident' }
  * Opens the app at `path`, answering every request here, as the demo in
  * `scenario` (incident by default), with `config` over the demo's display
  * config, and `answers` (a body by path, such as a board's /api/status and
- * /api/services) in place of the demo's. Returns the server's state: set
+ * /api/services, or a function of the request that returns one, for a
+ * server that keeps what it is sent) in place of the demo's. Returns the
+ * server's state: set
  * `down` to refuse /api/status, as a backend that can't be reached, or
  * `expired` to answer it 503, as the server does once its status is past the
  * cache's TTL (#480). `theme` is the theme the browser has saved ('dark',
@@ -57,8 +59,13 @@ export async function openApp(
     if (url.pathname === '/api/status' && server.expired)
       return route.fulfill({ status: 503, json: { error: 'Status not yet available' } });
     if (url.pathname === '/api/icons/cached') return route.fulfill({ status: 404, json: {} });
-    if (Object.hasOwn(answers, url.pathname))
-      return route.fulfill({ status: 200, json: answers[url.pathname] });
+    if (Object.hasOwn(answers, url.pathname)) {
+      const answer = answers[url.pathname];
+      return route.fulfill({
+        status: 200,
+        json: typeof answer === 'function' ? answer(request) : answer,
+      });
+    }
     const out = demo(url.pathname, {
       method: request.method(),
       query: Object.fromEntries(url.searchParams),

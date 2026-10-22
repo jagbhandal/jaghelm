@@ -526,7 +526,6 @@ export function demoDisplayConfig() {
     showSearch: true,
     showWeather: false,
     showDots: true,
-    showTodos: true,
     showCronJobs: true,
     refreshInterval: 30,
     backupJobs: ['storage:nightly-backup'],
