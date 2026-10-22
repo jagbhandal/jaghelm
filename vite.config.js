@@ -3,6 +3,37 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 
+// A package's index, which re-exports its parts: `@base-ui/react/tooltip`
+// re-exports the popup's parts beside the provider the first screen uses.
+const BARREL = /\/node_modules\/.*\/index(\.parts)?\.[cm]?js$/;
+
+/**
+ * Whether `id` is reached from the entry by static imports: loaded on first
+ * paint. Not through a package's index: one part used from it doesn't load
+ * the others, which the bundler leaves out, so this may say no to a module
+ * first paint loads (default chunking places it), never yes to one it doesn't.
+ */
+function firstPaint(id, getModuleInfo, seen = new Set()) {
+  if (seen.has(id)) return false;
+  seen.add(id);
+  const info = getModuleInfo(id);
+  if (!info) return false;
+  if (info.isEntry) return true;
+  return info.importers.some((i) => !BARREL.test(i) && firstPaint(i, getModuleInfo, seen));
+}
+
+/** Whether a lazy chunk needs `id`: it is dynamically imported, or statically by such a module. */
+function lazyToo(id, getModuleInfo, seen = new Set()) {
+  if (seen.has(id)) return false;
+  seen.add(id);
+  const info = getModuleInfo(id);
+  if (!info) return false;
+  return (
+    info.dynamicImporters.length > 0 ||
+    info.importers.some((i) => lazyToo(i, getModuleInfo, seen))
+  );
+}
+
 export default defineConfig({
   // Tailwind CSS v4 compiles src/ui/tailwind.css, the new UI stack's stylesheet
   // (docs/ARCHITECTURE.md, "UI stack").
@@ -28,7 +59,7 @@ export default defineConfig({
       output: {
         // Split heavy vendors into their own cacheable chunks so an app change
         // doesn't bust the (rarely-changing) library bundles.
-        manualChunks(id) {
+        manualChunks(id, { getModuleInfo }) {
           if (id.includes('node_modules')) {
             // Only split the EAGER vendors (loaded on first paint) into stable,
             // cacheable chunks. React + dnd-kit are used by the dashboard itself.
@@ -41,10 +72,17 @@ export default defineConfig({
             )
               return 'vendor-react';
             if (id.includes('@dnd-kit')) return 'vendor-dnd';
-            // Everything else (e.g. react-colorful, used only by the lazy Settings
-            // tabs) is left to default chunking so it lands in the async chunk
-            // that imports it — and isn't modulepreloaded on first paint.
           }
+          // The first screen's modules a lazy chunk needs too (src/ui/ and its
+          // Base UI parts, mostly, which the floating layer and Settings also
+          // import) in one chunk, not one per set of chunks that share them: a
+          // dozen requests on first paint, some of a few hundred bytes, became
+          // one (#444). Only modules first paint loads anyway, so no byte
+          // moves into it; the rest (react-colorful, used only by the lazy
+          // Settings tabs, say) is left to default chunking, so it lands in the
+          // async chunk that imports it and isn't modulepreloaded on first paint.
+          if (firstPaint(id, getModuleInfo) && lazyToo(id, getModuleInfo)) return 'shared';
+          return null;
         },
       },
     },
