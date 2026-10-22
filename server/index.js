@@ -46,6 +46,7 @@ import { initDiscovery, discoverNodes } from './discovery.js';
 import { initMonitors } from './monitors.js';
 import { initRegistry } from './integrations/registry.js';
 import { reportUnusedIntegrationSecrets } from './integrations/unusedSecrets.js';
+import { bindSecretsAtBoot } from './integrations/secretBinding.js';
 import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
 import { DATA_DIR } from './util/dataDir.js';
@@ -313,6 +314,10 @@ async function startSubsystems() {
 
   // Load services.yaml or auto-generate one from discovery on first boot
   let config = loadConfig();
+  // Secrets stored before #556 go only to the entries that use them, bound
+  // now; while services.yaml is missing or broken, at its first good load
+  // from disk (never to the default one discovery writes next).
+  bindSecretsAtBoot();
   if (!config) {
     log.info('first boot — running node discovery');
     const nodeLabels = await discoverNodes();
@@ -324,7 +329,6 @@ async function startSubsystems() {
     // interrupted between its two writes): counted in the log, never deleted.
     reportUnusedIntegrationSecrets();
   }
-
   startConfigWatcher();
   startBackgroundRefresh();
   startArcane();

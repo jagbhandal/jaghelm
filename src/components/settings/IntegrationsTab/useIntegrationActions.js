@@ -58,7 +58,8 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
 
   // ── Test connection ──
   // The answer is { ok: true } or { ok: false, error, field? }: `field`
-  // names the form field a refusal belongs beside ('url', 'instance').
+  // names the form field a refusal belongs beside ('url', 'instance',
+  // 'password', 'token').
   const handleTest = async () => {
     setTestStatus('testing');
     try {
@@ -106,7 +107,8 @@ export function useIntegrationActions({ selectedPreset, editingType, form, refet
       } else {
         // `field` names the form field the error belongs to: 'instance' when
         // the key it would take is another integration's (#414), 'url' when
-        // the URL carries a credential (#422).
+        // the URL carries a credential (#422), 'password' or 'token' when it
+        // is to be typed again for a new address (#556).
         setSaveStatus({ error: data.error || 'Save failed', field: data.field });
       }
     } catch (err) {

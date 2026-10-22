@@ -474,6 +474,9 @@ test('a changed URL, username, target or URL param replaces the stored one and k
     url: 'adguard2.example.test:3000',
     username: 'root',
     target: 'pi2:adguard',
+    // A new address takes the password typed again (#556); it is stored
+    // under the name the entry already names.
+    password: 'pw-for-adguard2', // pragma: allowlist secret
   });
   assert.equal(r.status, 200);
   assert.deepEqual(stored().adguard_primary, {

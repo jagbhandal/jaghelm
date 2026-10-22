@@ -68,6 +68,19 @@ test('.gitignore does not ignore the secret templates (negations win)', () => {
   }
 });
 
+// A changelog fragment is named after its card, whatever words that takes: a
+// secret-class glob (`*credential*`) must never swallow one, or it stays on
+// the author's disk and never reaches the PR (#556).
+test('.gitignore never ignores a changelog fragment, whatever its name', () => {
+  for (const f of [
+    'changes/556-credential-stays.md',
+    'changes/1-secret-token-password-service-account.md',
+    'mobile/changes/2-credential.md',
+  ]) {
+    assert.equal(git('check-ignore', '-q', '--no-index', f).status, 1, `fragment ${f} IS ignored`);
+  }
+});
+
 test('secret templates exist, are tracked, and the scanner passes the FCM template', () => {
   for (const f of TEMPLATES) {
     assert.ok(existsSync(path.join(ROOT, f)), `${f} missing on disk`);
