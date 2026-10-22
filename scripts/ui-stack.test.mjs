@@ -324,7 +324,7 @@ test('each app loads its legacy stylesheets first, then the new UI stack', () =>
 });
 
 test('no other module imports a stylesheet, which would be unlayered and outrank both', () => {
-  const allowed = new Set([...ENTRIES, 'mobile/visual/mount.jsx']);
+  const allowed = new Set(ENTRIES);
   const modules = [...walk('src', ['.js', '.jsx']), ...walk('mobile/src', ['.js', '.jsx'])];
   for (const f of modules) {
     if (allowed.has(f)) continue;

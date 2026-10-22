@@ -138,7 +138,11 @@ changed PNGs show side by side.
 
 The same container runs the app shell's browser tests, `npm run test:e2e`
 (`e2e/`, `playwright.e2e.config.mjs`; [ARCHITECTURE.md](ARCHITECTURE.md) §8),
-in CI's `gallery` job after the gallery's own.
+in CI's `gallery` job after the gallery's own, and then the Android app's
+screens against their baselines, `npm run test:android-shots`
+(`mobile/visual/`, `playwright.android.config.mjs`;
+[mobile/DESIGN.md](mobile/DESIGN.md#android-screenshots)). A Playwright
+upgrade regenerates those baselines too (`npm run android-shots:update`).
 
 `npm run gallery:test` runs the checks locally, as CI does (`CI=1 npm run
 gallery:test` also stops it writing a missing baseline). Arguments after `--`

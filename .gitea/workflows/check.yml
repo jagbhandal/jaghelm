@@ -13,7 +13,8 @@ name: check
 #
 # Two jobs, side by side: `check` (the suite above) and `gallery` (the component
 # gallery's screenshots and axe, #289, then the app shell's browser tests, #296,
-# both in the pinned Playwright container).
+# then the Android app's screens against their baselines, #546, all in the
+# pinned Playwright container).
 on:
   pull_request:
     branches:
@@ -168,3 +169,15 @@ jobs:
       # status, every nav entry, Back/Forward/reload, no sideways scroll, axe.
       - name: App shell (navigation, header and axe)
         run: npx playwright test --config playwright.e2e.config.mjs
+
+      # The Android app's screens (#546, mobile/visual/): the APK's page, built
+      # with mobile/'s own config and packages, each screen in each state #303
+      # has to keep, at 390 x 844, against mobile/visual/baselines/ pixel for
+      # pixel. An approved change commits the regenerated baselines
+      # (`npm run android-shots:update`, docs/mobile/DESIGN.md).
+      - name: Install the Android app's dependencies (npm ci in mobile/)
+        run: npm ci --no-audit --no-fund
+        working-directory: mobile
+
+      - name: Android screens (screenshots against their baselines)
+        run: npx playwright test --config playwright.android.config.mjs
