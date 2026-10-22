@@ -34,7 +34,13 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Subsystem initializers + persistent state
-import { loadConfig, saveConfig, generateDefaultConfig, startConfigWatcher } from './config.js';
+import {
+  loadConfig,
+  saveConfig,
+  generateDefaultConfig,
+  startConfigWatcher,
+  stopConfigWatcher,
+} from './config.js';
 import { initSecrets } from './secrets.js';
 import { initDiscovery, discoverNodes } from './discovery.js';
 import { initMonitors } from './monitors.js';
@@ -363,7 +369,8 @@ async function boot() {
   });
 
   // Graceful shutdown: stop accepting connections, cancel the background refresh timer so it can't
-  // fire mid-drain, let in-flight requests finish, then exit.
+  // fire mid-drain (and services.yaml's watcher and retry, #536), let in-flight requests finish,
+  // then exit.
   let shuttingDown = false;
   function shutdown(signal) {
     if (shuttingDown) return;
@@ -371,6 +378,7 @@ async function boot() {
     log.info({ signal }, 'shutting down');
     if (!demo) {
       stopBackgroundRefresh();
+      stopConfigWatcher();
       stopArcane();
     }
     const forceExit = setTimeout(() => {
