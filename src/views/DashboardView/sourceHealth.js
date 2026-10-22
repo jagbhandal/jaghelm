@@ -47,6 +47,13 @@ export function formatAgo(ms) {
 }
 
 /**
+ * A healthy source's banner: one frozen object, so a board whose sources stay
+ * healthy hands its panels the same banner every step, and their memos hold
+ * (a new one each step re-rendered every node panel on every tick, #252).
+ */
+export const HEALTHY = Object.freeze({ message: null, staleNote: null });
+
+/**
  * Resolve the degraded/stale presentation for one source, computed AT RENDER
  * from the live `now` clock — no stored per-tick state. Returns:
  *   { message: string|null, staleNote: string|null }
@@ -62,13 +69,14 @@ export function formatAgo(ms) {
  *   lines), or stale without an error
  *   (last fetch 304'd fine but the upstream stopped changing long ago — unusual,
  *   but the note is harmless), or erroring while still recently-fresh.
+ * - A healthy source (neither) gets HEALTHY, the same object every time.
  * - Silence counts from the last success, or from `watchedSinceMs` (when polling
  *   resumed after a pause) if that is later: time spent paused isn't silence.
  *   A source that is still failing keeps counting from its last success, so its
  *   age note doesn't vanish on every return. The note gives the real age.
  */
 export function sourceBanner(source, key, pollPeriodMs, now = Date.now()) {
-  if (!source) return { message: null, staleNote: null };
+  if (!source) return HEALTHY;
 
   const message = source.error ? SOURCE_MESSAGES[key] || source.error : null;
 
@@ -80,5 +88,5 @@ export function sourceBanner(source, key, pollPeriodMs, now = Date.now()) {
     staleNote = `updated ${formatAgo(now - last)}`;
   }
 
-  return { message, staleNote };
+  return message || staleNote ? { message, staleNote } : HEALTHY;
 }
