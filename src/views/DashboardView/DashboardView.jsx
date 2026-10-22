@@ -1,18 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 
 import HelmGrid from '../../components/HelmGrid';
-import NodeCard from '../../components/NodeCard';
 import TodoCard from '../../components/TodoCard';
-import DroppablePanel from '../../components/DroppablePanel';
-import ServiceDragOverlay from '../../components/ServiceDragOverlay';
 import ErrorBoundary from '../../components/ErrorBoundary';
 import DegradedBanner from '../../components/DegradedBanner';
 import { UPSCard, GiteaActivity, QuickLaunch, CronJobs } from '../../components/Widgets';
-import { cachedIconUrl, deleteCronJob } from '../../hooks/useData';
+import { deleteCronJob } from '../../hooks/useData';
 
 import NodePanel from './NodePanel';
-import { toServiceCard } from './serviceCard';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import {
   LAYOUT_VERSION,
@@ -29,6 +24,7 @@ import { useConfiguredPanels, SOURCE_PANEL_KEYS } from './configuredPanels';
 import { sourceBanner } from './sourceHealth';
 import { boardSections, emptyBoardReason, filterLayouts } from './boardFilter';
 import { OverviewInfrastructure } from '../../shell/OverviewInfrastructure.jsx';
+import { OverviewServices } from '../../shell/OverviewServices.jsx';
 import { ShellSection } from '@ui/app-shell';
 import { Panel } from '@ui/panel';
 import { EmptyState } from '@ui/empty-state';
@@ -37,18 +33,20 @@ import { Skeleton } from '@ui/skeleton';
 
 // What the Pipeline panel lists when /api/gitea/activity answered no list.
 const NO_COMMITS = [];
+const NO_GROUPS = [];
 
 /**
- * DashboardView — the main grid of node panels, dedicated section panels
- * (UPS, Gitea, todos, cron, quick launch), and user-defined custom groups.
+ * DashboardView — the main grid of node panels (their Proxmox lists) and
+ * dedicated section panels (UPS, Gitea, todos, cron, quick launch), under the
+ * Overview's Infrastructure and Services sections.
  *
  * Composition:
  *   - useDashboardData      → state + ETag-aware periodic refresh
- *   - useAppDataMatching    → integration data → container mapping
+ *   - useAppDataMatching    → integration data → container mapping (the
+ *                             Services section's headline metrics)
  *   - useEffectiveLayouts   → reconcile saved layout with discovered panels
- *   - NodePanel             → renders one node card (with Proxmox children)
+ *   - NodePanel             → renders one node's panel (its Proxmox lists)
  *   - HelmGrid              → drag/resize-aware responsive grid
- *   - DndContext            → service-card drag between panels
  *
  * `filter`, the subsystem the Overview's strip is filtered to (`{ id, name,
  * detail }`, the model's, #298), keeps only that subsystem's panels
@@ -62,8 +60,15 @@ const NO_COMMITS = [];
  * the header's poll (`status`, `reach`, `updated`) and this board's
  * readings. It is the Nodes subsystem's, so a filter to another subsystem
  * hides it; while it is drawn, each node's anchor is its card there, and the
- * node panels below, which keep the node's service cards and Proxmox lists,
- * carry none.
+ * node panels below, which keep the node's Proxmox lists, carry none.
+ *
+ * Under it, the Services section (#300): every service in one list, grouped
+ * by node or by custom group, from the same poll and this board's readings
+ * and integrations. It replaces the service cards: the node panels draw none,
+ * the custom groups are its grouping rather than panels of their own, and no
+ * card is dragged between panels any more (a custom group's services are
+ * chosen in Settings → Sections). It is the Services subsystem's, so the
+ * Services filter keeps it alone, and any other hides it.
  */
 export default function DashboardView({
   refreshKey,
@@ -137,7 +142,7 @@ export default function DashboardView({
   // invalidate downstream memos (nodeElements, customGroupElements) every tick
   // and defeat the 304-stable-identity contract from useDashboardData.
   const sc = useMemo(() => config.sections || {}, [config.sections]);
-  const customGroups = useMemo(() => config.customGroups || [], [config.customGroups]);
+  const customGroups = useMemo(() => config.customGroups || NO_GROUPS, [config.customGroups]);
 
   // UPS and Pipeline show only when the server says their source is set up
   // (#272); the rule is in configuredPanels.js. true, false or null (not known).
@@ -174,57 +179,6 @@ export default function DashboardView({
 
   // Tier 3 app data per container (preset metrics: queries, blocked, etc.)
   const appDataByContainer = useAppDataMatching(integrationData, serviceData);
-
-  // ── Drag-and-drop service cards between panels ──
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
-  const [activeDrag, setActiveDrag] = useState(null);
-
-  const handleDragStart = useCallback((event) => {
-    if (event.active?.data?.current?.service) {
-      setActiveDrag(event.active.data.current.service);
-    }
-  }, []);
-
-  const handleDragCancel = useCallback(() => setActiveDrag(null), []);
-
-  const handleDragEnd = useCallback(
-    (event) => {
-      setActiveDrag(null);
-      const { active, over } = event;
-      if (!active || !over) return;
-
-      const uid = active.data?.current?.uid;
-      const sourcePanel = active.data?.current?.sourcePanel;
-      const targetPanelId = over.data?.current?.panelId;
-      if (!uid || !targetPanelId || sourcePanel === targetPanelId) return;
-
-      const customGroups = config.customGroups || [];
-
-      // Drop into a custom group panel — assign the container to that group, removing it from any other.
-      if (targetPanelId.startsWith('group-')) {
-        const targetGroupId = targetPanelId.replace('group-', '');
-        const updatedGroups = customGroups.map((g) => {
-          const filtered = (g.containers || []).filter((c) => c !== uid);
-          if (g.id === targetGroupId) {
-            return { ...g, containers: [...filtered, uid] };
-          }
-          return { ...g, containers: filtered };
-        });
-        setConfig((p) => ({ ...p, customGroups: updatedGroups }));
-        return;
-      }
-
-      // Drop back onto a node panel — release from any custom group it was in.
-      if (targetPanelId.startsWith('node-')) {
-        const updatedGroups = customGroups.map((g) => ({
-          ...g,
-          containers: (g.containers || []).filter((c) => c !== uid),
-        }));
-        setConfig((p) => ({ ...p, customGroups: updatedGroups }));
-      }
-    },
-    [config, setConfig]
-  );
 
   // ── Layout state ──
   const cols = useMemo(() => {
@@ -273,18 +227,37 @@ export default function DashboardView({
     () => STATIC_PANEL_KEYS.filter((k) => !shownPanelsKey.split(' ').includes(k)),
     [shownPanelsKey]
   );
-  const droppedSourcePanels = useMemo(
-    () => SOURCE_PANEL_KEYS.filter((k) => configured[k] === false),
-    [configured]
+  // Panels the board no longer draws leave the layout: a source-fed one the
+  // server says is not set up, and a custom group's (#300: the Services
+  // section groups by them instead), so a saved layout holds no slot for one.
+  const savedGroupKeys = useMemo(
+    () =>
+      [
+        ...new Set(
+          Object.values(savedLayouts ?? {})
+            .filter(Array.isArray)
+            .flat()
+            .map((i) => i?.i)
+            .filter((k) => typeof k === 'string' && k.startsWith('group-'))
+        ),
+      ].join('\n'),
+    [savedLayouts]
+  );
+  const droppedPanels = useMemo(
+    () => [
+      ...SOURCE_PANEL_KEYS.filter((k) => configured[k] === false),
+      ...(savedGroupKeys ? savedGroupKeys.split('\n') : []),
+    ],
+    [configured, savedGroupKeys]
   );
 
   const effectiveLayouts = useEffectiveLayouts(
     layouts,
     serviceData,
-    customGroups,
+    NO_GROUPS,
     config.gridColumns,
     hiddenPanels,
-    droppedSourcePanels
+    droppedPanels
   );
 
   const handleLayoutChange = useCallback(
@@ -292,38 +265,18 @@ export default function DashboardView({
     [setConfig]
   );
 
-  // Containers claimed by a custom group are hidden from their original node panel.
-  const claimedContainers = useMemo(() => {
-    const set = new Set();
-    for (const group of customGroups) {
-      for (const c of group.containers || []) set.add(c);
-    }
-    return set;
-  }, [customGroups]);
-
-  // Flat lookup of all discovered services, keyed by node:container UID.
-  // Custom groups reference services from this map.
-  const allServicesFlat = useMemo(() => {
-    const map = {};
-    for (const [nodeKey, node] of Object.entries(serviceData.nodes || {})) {
-      for (const s of node.services || []) {
-        const card = toServiceCard(nodeKey, s, appDataByContainer);
-        map[card.uid] = card;
-      }
-    }
-    return map;
-  }, [serviceData, appDataByContainer]);
-
-  // Node panels — one per discovered node. Node metrics + service status come
-  // from the `services` source; their Tier-3 tiles come from `integrations`.
-  // Prefer the live-metrics banner whenever services has anything to say
-  // (error OR staleness); fall back to the integrations banner only when
-  // services is fully healthy, so "app metrics missing" is still surfaced
-  // without ever stacking two banners on one card.
+  // Node panels — one per discovered node, holding its Proxmox lists, which
+  // come from the `integrations` source, so they carry its banner.
   const servicesB = banners.services;
-  // The Infrastructure section shows unfiltered and under the Nodes filter.
+  // The Infrastructure section shows unfiltered and under the Nodes filter;
+  // the Services section unfiltered and under the Services filter.
   const infraShown = filter == null || filter.id === 'nodes';
-  const nodeBanner = servicesB?.message || servicesB?.staleNote ? servicesB : banners.integrations;
+  const servicesShown = filter == null || filter.id === 'services';
+  const nodeBanner = banners.integrations;
+  // The Services section's numbers: the latency from `services`, the headline
+  // metrics from `integrations`; the first of them with anything to say.
+  const servicesHealth =
+    servicesB?.message || servicesB?.staleNote ? servicesB : banners.integrations;
   const nodeElements = useMemo(
     () =>
       Object.entries(serviceData.nodes || {})
@@ -338,10 +291,7 @@ export default function DashboardView({
                 nodeKey={nodeKey}
                 node={node}
                 sectionCfg={sc[nodeKey] || {}}
-                appDataByContainer={appDataByContainer}
-                claimedContainers={claimedContainers}
                 integrationData={integrationData}
-                isMobile={isMobile}
                 anchored={!infraShown}
                 banner={
                   nodeBanner?.message || nodeBanner?.staleNote ? (
@@ -357,94 +307,12 @@ export default function DashboardView({
           </div>
         ))
         .filter(Boolean),
-    [
-      serviceData,
-      sc,
-      appDataByContainer,
-      claimedContainers,
-      integrationData,
-      isMobile,
-      infraShown,
-      nodeBanner,
-      retry,
-    ]
+    [serviceData, sc, integrationData, infraShown, nodeBanner, retry]
   );
 
-  // Custom group panels — user-defined groupings of containers. Their service
-  // cards come from the `services` source, so they carry the same banner.
-  const groupBanner = banners.services;
-  const customGroupElements = useMemo(
-    () =>
-      customGroups
-        .map((group) => {
-          const groupCfg = sc[`group-${group.id}`] || {};
-          if (groupCfg.visible === false) return null;
-          const gridKey = `group-${group.id}`;
-          const borderColor = group.borderColor || 'var(--accent)';
-          const services = (group.containers || []).map((c) => allServicesFlat[c]).filter(Boolean);
-
-          return (
-            <div key={gridKey}>
-              <ErrorBoundary
-                inline
-                itemId={gridKey}
-                label={`Group "${group.title || group.id}" failed to render`}
-              >
-                <DroppablePanel panelId={gridKey} disabled={isMobile}>
-                  <NodeCard
-                    sectionKey={`group-${group.id}`}
-                    borderColor={borderColor}
-                    services={services}
-                    nodeData={{
-                      display_name: group.title,
-                      icon:
-                        group.icon ||
-                        cachedIconUrl(
-                          'https://cdn.jsdelivr.net/gh/marella/material-design-icons@latest/svg/folder_special/outline.svg'
-                        ),
-                      subtitle: `${services.length} services`,
-                    }}
-                    panelId={gridKey}
-                    dragDisabled={isMobile}
-                    banner={
-                      groupBanner?.message || groupBanner?.staleNote ? (
-                        <DegradedBanner
-                          message={groupBanner.message}
-                          staleNote={groupBanner.staleNote}
-                          onRetry={retry}
-                        />
-                      ) : null
-                    }
-                  />
-                </DroppablePanel>
-              </ErrorBoundary>
-            </div>
-          );
-        })
-        .filter(Boolean),
-    [customGroups, allServicesFlat, sc, isMobile, groupBanner, retry]
-  );
-
-  // The Overview's filter (#298): the panels it keeps. A node's card counts as
-  // a services panel only when it draws a service card of its own (one not
-  // moved into a group), or while it is still loading.
-  const { loadedNodes, nodesWithServices } = useMemo(() => {
-    const loaded = new Set();
-    const withServices = new Set();
-    for (const [nodeKey, node] of Object.entries(serviceData.nodes || {})) {
-      loaded.add(`node-${nodeKey}`);
-      const own = (node.services || []).some(
-        (s) => !claimedContainers.has(`${nodeKey}:${s.container}`)
-      );
-      if (own) withServices.add(`node-${nodeKey}`);
-    }
-    return { loadedNodes: loaded, nodesWithServices: withServices };
-  }, [serviceData, claimedContainers]);
+  // The Overview's filter (#298): the panels it keeps.
   const filterId = filter?.id ?? null;
-  const keep = useMemo(
-    () => boardSections(filterId, { loadedNodes, nodesWithServices }),
-    [filterId, loadedNodes, nodesWithServices]
-  );
+  const keep = useMemo(() => boardSections(filterId), [filterId]);
   const kept = (key) => !keep || keep(key);
 
   // Human-readable panel names for the grid's keyboard move/resize handle — the
@@ -461,11 +329,8 @@ export default function DashboardView({
     for (const [nodeKey, node] of Object.entries(serviceData.nodes || {})) {
       map[`node-${nodeKey}`] = node?.display_name || nodeKey;
     }
-    for (const group of customGroups) {
-      map[`group-${group.id}`] = group.title || group.id;
-    }
     return map;
-  }, [sc, serviceData, customGroups]);
+  }, [sc, serviceData]);
 
   // ── Auto-scroll while dragging panels near viewport edges ──
   const scrollRAF = useRef(null);
@@ -556,10 +421,9 @@ export default function DashboardView({
   // The grid's children and layout, kept to the filter's panels.
   const gridNodes = keep ? nodeElements.filter((el) => keep(el.key)) : nodeElements;
   const gridPlaceholders = keep ? nodePlaceholders.filter((el) => keep(el.key)) : nodePlaceholders;
-  const gridGroups = keep ? customGroupElements.filter((el) => keep(el.key)) : customGroupElements;
   const keptKey = keep
     ? [
-        ...[...gridNodes, ...gridPlaceholders, ...gridGroups].map((el) => el.key),
+        ...[...gridNodes, ...gridPlaceholders].map((el) => el.key),
         ...STATIC_PANEL_KEYS.filter((k) => shown[k] && keep(k)),
       ].join('\n')
     : null;
@@ -571,6 +435,8 @@ export default function DashboardView({
     [effectiveLayouts, keptKey]
   );
   const fixed = isMobile || keep !== null;
+  // A filter whose subsystem is drawn by a section above the board.
+  const sectionAbove = filterId === 'nodes' || filterId === 'services';
 
   return (
     <div className="dashboard-content" ref={mobileRef}>
@@ -591,6 +457,21 @@ export default function DashboardView({
           margin={isMobile ? 12 : 16}
         />
       )}
+      {servicesShown && (
+        <OverviewServices
+          status={status}
+          reach={reach}
+          updated={updated}
+          services={serviceData}
+          servicesLoaded={servicesLoaded}
+          appData={appDataByContainer}
+          customGroups={customGroups}
+          sections={sc}
+          health={servicesHealth}
+          onRetry={retry}
+          margin={isMobile ? 12 : 16}
+        />
+      )}
       {isFirstLoading ? (
         <div
           role="status"
@@ -606,106 +487,97 @@ export default function DashboardView({
         </div>
       ) : isEmpty ? (
         <DashboardEmptyState onOpenSettings={onOpenSettings} />
-      ) : keptKey === '' && filterId !== 'nodes' ? (
-        <BoardFilterEmpty
-          filter={filter}
-          reason={emptyBoardReason(filter.id, {
-            upsHidden: sc.ups?.visible === false,
-            // `ups` is the last answer's body; a failure is the source's error.
-            upsAnswered: ups != null || sources.ups?.error != null,
-            cronShown,
-            servicesLoaded,
-          })}
-          onClear={onClearFilter}
-          margin={isMobile ? 12 : 16}
-        />
+      ) : keptKey === '' ? (
+        // Nodes and Services have their section above: no note for them.
+        sectionAbove ? null : (
+          <BoardFilterEmpty
+            filter={filter}
+            reason={emptyBoardReason(filter.id, {
+              upsHidden: sc.ups?.visible === false,
+              // `ups` is the last answer's body; a failure is the source's error.
+              upsAnswered: ups != null || sources.ups?.error != null,
+              cronShown,
+              servicesLoaded,
+            })}
+            onClear={onClearFilter}
+            margin={isMobile ? 12 : 16}
+          />
+        )
       ) : (
-        <DndContext
-          sensors={sensors}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
+        <HelmGrid
+          className="layout"
+          layouts={gridLayouts}
+          breakpoints={{ lg: 1200, md: 768, sm: 480 }}
+          cols={cols}
+          rowHeight={36}
+          margin={isMobile ? [12, 12] : [16, 16]}
+          draggable={!fixed}
+          dragHandle=".section-header"
+          resizable={!fixed}
+          onLayoutChange={handleLayoutChange}
+          onDrag={handlePanelDrag}
+          onDragStop={handlePanelDragStop}
+          onResizeStop={handlePanelResizeStop}
+          labels={gridLabels}
         >
-          <HelmGrid
-            className="layout"
-            layouts={gridLayouts}
-            breakpoints={{ lg: 1200, md: 768, sm: 480 }}
-            cols={cols}
-            rowHeight={36}
-            margin={isMobile ? [12, 12] : [16, 16]}
-            draggable={!fixed}
-            dragHandle=".section-header"
-            resizable={!fixed}
-            onLayoutChange={handleLayoutChange}
-            onDrag={handlePanelDrag}
-            onDragStop={handlePanelDragStop}
-            onResizeStop={handlePanelResizeStop}
-            labels={gridLabels}
-          >
-            {gridNodes}
-            {gridPlaceholders}
-            {gridGroups}
+          {gridNodes}
+          {gridPlaceholders}
 
-            {upsShown && kept('ups') && (
-              <div key="ups">
-                <ErrorBoundary inline itemId="ups" label="UPS panel failed to render">
-                  <UPSCard
-                    upsData={ups}
-                    borderColor={sc.ups?.borderColor}
-                    banner={bannerEl(banners.ups)}
-                  />
-                </ErrorBoundary>
-              </div>
-            )}
-            {pipelineShown && kept('pipeline') && (
-              <div key="pipeline">
-                <ErrorBoundary inline itemId="pipeline" label="Pipeline panel failed to render">
-                  <GiteaActivity
-                    commits={Array.isArray(commits) ? commits : NO_COMMITS}
-                    banner={bannerEl(banners.commits)}
-                  />
-                </ErrorBoundary>
-              </div>
-            )}
-            {shown.todos && kept('todos') && (
-              <div key="todos">
-                <ErrorBoundary inline itemId="todos" label="Todos panel failed to render">
-                  <TodoCard
-                    borderColor={sc.todos?.borderColor}
-                    config={config}
-                    setConfig={setConfig}
-                  />
-                </ErrorBoundary>
-              </div>
-            )}
-            {cronShown && kept('cron-jobs') && (
-              <div key="cron-jobs">
-                <ErrorBoundary inline itemId="cron-jobs" label="Cron Jobs panel failed to render">
-                  <CronJobs
-                    nodes={cronJobs}
-                    banner={bannerEl(banners.cron)}
-                    onRemove={removeCronJob}
-                  />
-                </ErrorBoundary>
-              </div>
-            )}
-            {shown.quicklaunch && kept('quicklaunch') && (
-              <div key="quicklaunch">
-                <ErrorBoundary
-                  inline
-                  itemId="quicklaunch"
-                  label="Quick Launch panel failed to render"
-                >
-                  <QuickLaunch borderColor={sc.quicklaunch?.borderColor} />
-                </ErrorBoundary>
-              </div>
-            )}
-          </HelmGrid>
-
-          <DragOverlay dropAnimation={null}>
-            {activeDrag ? <ServiceDragOverlay service={activeDrag} /> : null}
-          </DragOverlay>
-        </DndContext>
+          {upsShown && kept('ups') && (
+            <div key="ups">
+              <ErrorBoundary inline itemId="ups" label="UPS panel failed to render">
+                <UPSCard
+                  upsData={ups}
+                  borderColor={sc.ups?.borderColor}
+                  banner={bannerEl(banners.ups)}
+                />
+              </ErrorBoundary>
+            </div>
+          )}
+          {pipelineShown && kept('pipeline') && (
+            <div key="pipeline">
+              <ErrorBoundary inline itemId="pipeline" label="Pipeline panel failed to render">
+                <GiteaActivity
+                  commits={Array.isArray(commits) ? commits : NO_COMMITS}
+                  banner={bannerEl(banners.commits)}
+                />
+              </ErrorBoundary>
+            </div>
+          )}
+          {shown.todos && kept('todos') && (
+            <div key="todos">
+              <ErrorBoundary inline itemId="todos" label="Todos panel failed to render">
+                <TodoCard
+                  borderColor={sc.todos?.borderColor}
+                  config={config}
+                  setConfig={setConfig}
+                />
+              </ErrorBoundary>
+            </div>
+          )}
+          {cronShown && kept('cron-jobs') && (
+            <div key="cron-jobs">
+              <ErrorBoundary inline itemId="cron-jobs" label="Cron Jobs panel failed to render">
+                <CronJobs
+                  nodes={cronJobs}
+                  banner={bannerEl(banners.cron)}
+                  onRemove={removeCronJob}
+                />
+              </ErrorBoundary>
+            </div>
+          )}
+          {shown.quicklaunch && kept('quicklaunch') && (
+            <div key="quicklaunch">
+              <ErrorBoundary
+                inline
+                itemId="quicklaunch"
+                label="Quick Launch panel failed to render"
+              >
+                <QuickLaunch borderColor={sc.quicklaunch?.borderColor} />
+              </ErrorBoundary>
+            </div>
+          )}
+        </HelmGrid>
       )}
     </div>
   );

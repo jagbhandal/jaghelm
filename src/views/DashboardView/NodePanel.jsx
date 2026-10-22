@@ -1,9 +1,7 @@
 import React from 'react';
 import NodeCard from '../../components/NodeCard';
 import { usePlace } from '../../shell/entityAnchors.js';
-import DroppablePanel from '../../components/DroppablePanel';
 import { ProxmoxVMList, ProxmoxStoragePools, ProxmoxBackupStatus } from './ProxmoxPanels';
-import { toServiceCard } from './serviceCard';
 
 /**
  * Resolves which discovered node a proxmox integration entry belongs to.
@@ -46,14 +44,10 @@ export function proxmoxChildrenForNode(integrationData, nodeKey) {
 }
 
 /**
- * Renders a single discovered node as a draggable, droppable panel: its
- * service cards and its Proxmox lists. Its readings (CPU, memory, disk,
- * temperature, the hour of CPU) are the Overview's Infrastructure section's
- * (#299), so the panel draws none.
- *
- * Hides containers that have been "claimed" by a custom group so they don't
- * appear in two places. Augments each container with its app-data (Tier 3
- * integration metrics) when available.
+ * Renders a single discovered node as a panel of the board: its Proxmox lists.
+ * Its readings (CPU, memory, disk, temperature, the hour of CPU) are the
+ * Overview's Infrastructure section's (#299), and its services the Services
+ * section's (#300), so the panel draws neither.
  *
  * `anchored`: whether the panel is the node's place on the board, which the
  * Overview's issue row for the node leads to (#297). The Infrastructure
@@ -64,10 +58,7 @@ export default function NodePanel({
   nodeKey,
   node,
   sectionCfg,
-  appDataByContainer,
-  claimedContainers,
   integrationData,
-  isMobile,
   banner,
   anchored = true,
 }) {
@@ -76,12 +67,6 @@ export default function NodePanel({
 
   const gridKey = `node-${nodeKey}`;
   const borderColor = node.border_color || sectionCfg.borderColor || 'var(--accent)';
-
-  const serviceRank = (c) => (c.status === 'down' ? 0 : c.status === 'unknown' ? 1 : 2);
-  const services = (node.services || [])
-    .filter((s) => !claimedContainers.has(`${nodeKey}:${s.container}`))
-    .map((s) => toServiceCard(nodeKey, s, appDataByContainer))
-    .sort((a, b) => serviceRank(a) - serviceRank(b) || (a.name || '').localeCompare(b.name || ''));
 
   // Proxmox-specific child panels — render whenever a proxmox integration
   // targets THIS node (by its own _target), not just a node literally named "pve".
@@ -92,21 +77,11 @@ export default function NodePanel({
 
   return (
     <div key={gridKey} id={anchor}>
-      <DroppablePanel panelId={gridKey} disabled={isMobile}>
-        <NodeCard
-          sectionKey={nodeKey}
-          borderColor={borderColor}
-          services={services}
-          nodeData={node}
-          panelId={gridKey}
-          dragDisabled={isMobile}
-          banner={banner}
-        >
-          <ProxmoxVMList vms={proxmoxVms} borderColor={borderColor} />
-          <ProxmoxStoragePools pools={proxmoxStorage} borderColor={borderColor} />
-          <ProxmoxBackupStatus backup={proxmoxBackup} />
-        </NodeCard>
-      </DroppablePanel>
+      <NodeCard sectionKey={nodeKey} borderColor={borderColor} nodeData={node} banner={banner}>
+        <ProxmoxVMList vms={proxmoxVms} borderColor={borderColor} />
+        <ProxmoxStoragePools pools={proxmoxStorage} borderColor={borderColor} />
+        <ProxmoxBackupStatus backup={proxmoxBackup} />
+      </NodeCard>
     </div>
   );
 }

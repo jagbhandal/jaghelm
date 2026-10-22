@@ -1,21 +1,17 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { DndContext } from '@dnd-kit/core';
 import NodeCard from './NodeCard';
 import { ConfigProvider } from '../context/ConfigContext.jsx';
 
 // NodeCard renders a node's display name (preferring nodeData.display_name over
-// the section title) plus its services. Services render through
-// DraggableServiceCard, which uses dnd-kit's useDraggable — so we wrap in a
-// DndContext to mirror the real DashboardView tree. NodeCard now reads its
-// config from ConfigContext (not props), so we wrap in a ConfigProvider too.
-// These tests lock in that a node's name and its services reach the screen from
-// config + node data, which must survive config moving into a context.
+// the section title) and what it is given (the node's Proxmox lists). It reads
+// its config from ConfigContext (not props), so we wrap in a ConfigProvider.
+// Its services are the Overview's Services section's (#300).
 
-const renderInDnd = (ui, config = baseConfig()) =>
+const renderCard = (ui, config = baseConfig()) =>
   render(
     <ConfigProvider config={config} setConfig={vi.fn()}>
-      <DndContext>{ui}</DndContext>
+      {ui}
     </ConfigProvider>
   );
 
@@ -30,62 +26,45 @@ const baseConfig = (overrides = {}) => ({
 
 describe('NodeCard', () => {
   it('renders the node display_name from nodeData', () => {
-    renderInDnd(
-      <NodeCard
-        sectionKey="production"
-        nodeData={{ display_name: 'Production Node' }}
-        services={[]}
-      />
-    );
+    renderCard(<NodeCard sectionKey="production" nodeData={{ display_name: 'Production Node' }} />);
     expect(screen.getByText('Production Node')).toBeInTheDocument();
   });
 
   it('falls back to the section title, then the sectionKey, when no nodeData name', () => {
-    const { rerender } = renderInDnd(
-      <NodeCard sectionKey="prod" services={[]} />,
+    const { rerender } = renderCard(
+      <NodeCard sectionKey="prod" />,
       baseConfig({ sections: { prod: { title: 'Prod Box' } } })
     );
     expect(screen.getByText('Prod Box')).toBeInTheDocument();
 
     rerender(
       <ConfigProvider config={baseConfig()} setConfig={vi.fn()}>
-        <DndContext>
-          <NodeCard sectionKey="raw-key" services={[]} />
-        </DndContext>
+        <NodeCard sectionKey="raw-key" />
       </ConfigProvider>
     );
     expect(screen.getByText('raw-key')).toBeInTheDocument();
   });
 
   it('renders the subtitle when present', () => {
-    renderInDnd(
+    renderCard(
       <NodeCard
         sectionKey="production"
         nodeData={{ display_name: 'Production', subtitle: '8 cores · 32GB' }}
-        services={[]}
       />
     );
     expect(screen.getByText('8 cores · 32GB')).toBeInTheDocument();
   });
 
-  it('renders each service belonging to the node', () => {
-    renderInDnd(
-      <NodeCard
-        sectionKey="production"
-        nodeData={{ display_name: 'Production' }}
-        services={[
-          { uid: 'a', container: 'grafana', name: 'Grafana', status: 'up' },
-          { uid: 'b', container: 'gitea', name: 'Gitea', status: 'down' },
-        ]}
-      />
+  it('draws no service: they are the Services section’s (#300)', () => {
+    const { container } = renderCard(
+      <NodeCard sectionKey="production" nodeData={{ display_name: 'Production' }} />
     );
-    expect(screen.getByText('Grafana')).toBeInTheDocument();
-    expect(screen.getByText('Gitea')).toBeInTheDocument();
+    expect(container.querySelector('.glass-card').textContent).toBe('Production');
   });
 
   it('draws no readings: they are the Infrastructure section’s (#299)', () => {
-    const { container } = renderInDnd(
-      <NodeCard sectionKey="production" nodeData={{ display_name: 'Production' }} services={[]} />
+    const { container } = renderCard(
+      <NodeCard sectionKey="production" nodeData={{ display_name: 'Production' }} />
     );
     expect(container.querySelector('.node-metrics')).toBeNull();
     expect(container.querySelector('.glass-card')).toHaveClass('node-card');
@@ -93,8 +72,8 @@ describe('NodeCard', () => {
   });
 
   it('renders children passed through', () => {
-    renderInDnd(
-      <NodeCard sectionKey="production" nodeData={{ display_name: 'Production' }} services={[]}>
+    renderCard(
+      <NodeCard sectionKey="production" nodeData={{ display_name: 'Production' }}>
         <div>child-content</div>
       </NodeCard>
     );
