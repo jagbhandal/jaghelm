@@ -20,6 +20,9 @@ instance**.
 - Drastically simpler: no DB to run, migrate, back up, or secure; no ORM.
 - A restart clears the cache (re-warmed by the background refresh loop within one
   cycle) and invalidates sessions (re-login) — acceptable for one user.
+- Signing out deletes that one session from the map (`POST /api/auth/logout`,
+  #507); deletion is the revocation, so no deny list is kept. A design that
+  persists sessions (#250) must delete the stored session on sign-out too.
 - **Horizontal scaling is out of scope**: two instances would not share sessions,
   cache, or the rate-limiter's global counter, and both would write the same
   files. The bounded in-memory maps (cache, limiter) have FIFO/size caps so a

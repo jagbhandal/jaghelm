@@ -876,6 +876,28 @@ poll stops, no header keeps the last status's colours, and signing in starts
 the polls again (#492). Before, an open web tab kept polling with the dead
 token, a 401 each time.
 
+Signing out ends the session on the server too (#507). `POST /api/auth/logout`
+deletes the presented token's session from the in-memory store, and only that
+one: the token gets a 401 on every protected route from then on, and the
+user's other sessions (another browser, the phone) keep working. Deletion is
+the revocation; there is no deny list (ADR 0002). It answers 204 for any
+token, unknown, expired, already revoked or none, so a second sign-out or
+another tab never meets a 401 and the answer says nothing about a token. A
+real sign-out logs `signed out` at info with the user, never the token. Both
+apps send it through `revokeSession()` (`src/api/client.js`) and clear the
+session locally at once, without waiting for the answer, so a network error, a
+hang or a 5xx can't keep anyone signed in, and closing the tab or the app
+meanwhile leaves no token stored. The call never rejects and gives up after
+5 s (`SIGN_OUT_TIMEOUT_MS`). The web app's Log out button sends it for the
+tab's token, and for the stored one too when another tab signed in since, so
+it signs the browser out (that tab follows on its next 401). The 401 path
+above doesn't send it (that session is already dead), nor does a tab that
+learns of another tab's sign-out from its 401. The Android app sends it on Log out and
+Forget this device, not on its 401 path, and not on the connection screen's
+Change server, which shows only when the server can't be reached. A server
+older than the route answers 404 (or 401), which changes nothing: the client
+signs out locally as before.
+
 ### 4.6 Observability
 
 - **Structured logging** (`util/logger.js`) with redaction -- no URL credentials
@@ -927,8 +949,9 @@ token, a 401 each time.
   (`SLOW_REQUEST_MS`, the feed-latency SLO line), and every request with a method
   other than GET, HEAD or OPTIONS (config saves, cron reports, sign-ins and failed
   sign-ins); a fast successful read, such as a dashboard poll's 200 or 304, at
-  `debug`, so `LOG_LEVEL=debug` shows every request. There is no logout request
-  to log: signing out only drops the token in the client. `/metrics`,
+  `debug`, so `LOG_LEVEL=debug` shows every request. A sign-out is a POST, so
+  its line is at info too, and a real one adds `signed out` with the user
+  (4.5); one with a dead token or none logs only its request line. `/metrics`,
   `/api/health` and `/api/readyz` are not logged unless they fail (5xx).
 - **Prometheus metrics** at `/metrics` via `prom-client` (`metrics.js`): request
   rate, latency histograms, refresh-loop health.

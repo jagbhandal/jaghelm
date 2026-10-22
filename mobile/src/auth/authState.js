@@ -12,12 +12,12 @@ export function setAuthHandlers(next) {
   handlers = { ...handlers, ...next };
 }
 
-/** Clear the session token and drop to the re-auth screen (keeps the URL). */
+/** Revoke the session on the server, clear the token and drop to re-auth (keeps the URL). */
 export function logout() {
   return handlers.logout();
 }
 
-/** Wipe token + URL + remember and drop to first-run. */
+/** Revoke the session on the server, wipe token + URL + remember and drop to first-run. */
 export function forgetDevice() {
   return handlers.forgetDevice();
 }

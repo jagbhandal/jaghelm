@@ -44,6 +44,8 @@ import {
   initAuthToken,
   setReadOnlyServer,
   setAuthExpiredHandler,
+  getAuthToken,
+  revokeSession,
 } from './api/client.js';
 import { secureStore } from './storage/index.js';
 
@@ -106,26 +108,43 @@ export default function App() {
     setAuthed(true);
   };
 
-  const handleLogout = useCallback(() => {
+  // Forget the session in this tab. An expired session (below) ends here: the
+  // server already dropped it, so there's nothing to revoke.
+  const clearSession = useCallback(() => {
     secureStore.removeItem('jaghelm-token'); // web: localStorage; mobile: Keystore
     setApiAuthToken(''); // Clear apiFetch's in-memory token
     setAuthToken('');
     setAuthed(false);
   }, []);
 
+  // The Log out button (#507) signs the browser out: the server revokes this
+  // tab's session, and the stored one if another tab signed in since (that tab
+  // signs out on its next 401), so a copy of either token stops working too.
+  // Each request is sent before the tab forgets the token, which it does at
+  // once: closing the tab while the server is slow can't leave the token
+  // stored. revokeSession never rejects and gives up after 5 s.
+  const handleLogout = useCallback(async () => {
+    const mine = getAuthToken();
+    const revoked = [revokeSession(mine)];
+    const stored = await secureStore.getItem('jaghelm-token');
+    if (stored && stored !== mine) revoked.push(revokeSession(stored));
+    clearSession();
+    await Promise.all(revoked);
+  }, [clearSession]);
+
   // An expired session (#492). apiFetch passes the token the 401 came with. If
   // storage holds another, a tab signed in since: take its session and carry
-  // on. Otherwise sign out like the button: the sign-in screen replaces AppMain
-  // and every poll stops with it. A 401 means the server wants a password now,
-  // even if it had none when this tab loaded.
+  // on. Otherwise sign out like the button, without asking the server: the
+  // sign-in screen replaces AppMain and every poll stops with it. A 401 means
+  // the server wants a password now, even if it had none when this tab loaded.
   const handleExpired = useCallback(
     async (sent) => {
       const stored = await secureStore.getItem('jaghelm-token');
       if (stored && stored !== sent) return setApiAuthToken(stored);
-      handleLogout();
+      clearSession();
       setAuthRequired(true);
     },
-    [handleLogout]
+    [clearSession]
   );
   useEffect(() => {
     setAuthExpiredHandler(handleExpired);
