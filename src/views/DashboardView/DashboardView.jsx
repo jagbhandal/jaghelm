@@ -103,6 +103,7 @@ export default function DashboardView({
     integrationData,
     history,
     servicesLoaded,
+    settled,
     sources,
     retry,
   } = useDashboardData(refreshKey, { tick, active });
@@ -442,6 +443,12 @@ export default function DashboardView({
   // A filter whose subsystem is drawn by a section above the board.
   const sectionAbove = filterId === 'nodes' || filterId === 'services';
 
+  // Until the header's poll has its first answer, nothing under the status
+  // (#243): the status is a placeholder until then, of a height it can't know,
+  // and the sections and panels drawn under it would all move when it came.
+  // The data loads meanwhile, and the element stays, so its width is known.
+  if (reach === 'loading') return <div className="dashboard-content" ref={mobileRef} />;
+
   return (
     <div className="dashboard-content" ref={mobileRef}>
       <div className="sr-only" role="status" aria-live="polite">
@@ -515,6 +522,9 @@ export default function DashboardView({
           cols={cols}
           rowHeight={36}
           margin={isMobile ? [12, 12] : [16, 16]}
+          // Until every source has answered once, each panel keeps the height
+          // it last had: its content is still coming in (#302).
+          reserve={!(settled && servicesLoaded)}
           draggable={!fixed}
           dragHandle=".section-header"
           resizable={!fixed}

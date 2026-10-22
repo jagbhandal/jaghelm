@@ -217,7 +217,8 @@ gallery/                    the component gallery (development and CI only, docs
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
                             phone-split.spec.mjs, login.spec.mjs, utilities.spec.mjs,
-                            first-load.spec.mjs, what they share in app.mjs; see 8): the
+                            reflow.spec.mjs, first-load.spec.mjs, what they share in app.mjs;
+                            see 8): the
                             production build served
                             by `vite preview`, every /api request answered in the test; run
                             by playwright.e2e.config.mjs in the gallery's container
@@ -229,14 +230,16 @@ scripts/                    inject-sw-precache.mjs, check-assets.mjs, changelog-
                             ui-preflight.mjs (writes src/ui/preflight.css),
                             ui-contrast.mjs (the design tokens' contrast check, and the
                             chart colours' gates), gallery.mjs (runs the gallery's tests in
-                            their container)
+                            their container), deploy/deploy.sh (the production deploy both
+                            Gitea deploy workflows run, one command per step)
 changes/                    CHANGELOG fragments, one per PR (mobile/changes/ for Android);
                             the release PR folds them into the CHANGELOG (RELEASING.md)
 .github/workflows/          build-push.yml (test -> build -> sign -> GHCR), release.yml (tag ->
                             promote by digest -> GitHub Release), build-apk.yml (signed APK)
-.gitea/workflows/           check.yml (PR gate), deploy.yml (stage image + compose.yaml -> recreate ->
-                            health-gate -> rollback)
-docs/adr/                   architecture decision records (0001-0005)
+.gitea/workflows/           check.yml (PR gate), deploy.yml (on a push to main: stage image +
+                            compose.yaml -> recreate -> health-gate -> rollback),
+                            reconcile.yml (every 5 min: the same deploy for main's head)
+docs/adr/                   architecture decision records (0001-0007)
 ```
 
 ## 4. Backend architecture
@@ -903,7 +906,9 @@ it signs the browser out (that tab follows on its next 401). The 401 path
 above doesn't send it (that session is already dead), nor does a tab that
 learns of another tab's sign-out from its 401. The Android app sends it on Log out and
 Forget this device, not on its 401 path, and not on the connection screen's
-Change server, which shows only when the server can't be reached. A server
+Change server, which shows only when the server can't be reached. Just before
+it, those two send `DELETE /api/push/register`, so the phone stops getting
+pushes, and delete the phone's FCM token (#531, see docs/mobile/DESIGN.md). A server
 older than the route answers 404 (or 401), which changes nothing: the client
 signs out locally as before.
 
@@ -1657,6 +1662,21 @@ flowchart TD
   the strip under it, as before. OverviewStatus reads the width with
   matchMedia (`useMediaQuery`, on `useSyncExternalStore`), so a resize across 768px moves the
   strip; the Alerts page has no strip and never splits.
+- **The Overview at every width** (#302, spec §3 goal 3, §8). Nothing hides
+  from 360 to 2560px: no sideways scroll, nothing clipped, every name whole
+  (`e2e/reflow.spec.mjs`). The widths come from the shell's two media
+  queries, `PHONE_WIDTH` (768px) and `RAIL_WIDTH` (1440px), and no third: a
+  tablet (768–1023px) is the desktop Overview in one column, which it is by
+  flow (the status, the strip, Infrastructure, Services and today's board
+  stack at every width without the rail), and its strip wraps by its own
+  container queries (six tiles to a row from 672px of strip, rows of three
+  under it), as the node cards fill their section's width. Sections grow
+  with their content and never clip it; a word wider than a strip tile breaks
+  rather than hide. On the first load the page fills in from the top (#243):
+  `DashboardView` draws nothing until the header's poll has its first answer
+  (`reach` past `loading`), while its data loads, so the status, a
+  placeholder of unknown height until then, can't push down sections already
+  drawn under it (CLS 0.50 at 390px before, 0.0001 after).
 - **The Infrastructure section** (#299, spec §8 item 3). At the top of
   today's board (`DashboardView` draws it, lined up with the board's cards by
   HelmGrid's margin), the nodes as cards or a table (`OverviewInfrastructure`
@@ -1843,7 +1863,22 @@ flowchart TD
   `gridMath.js` (snap, overlap-resolve, content-fit, and `compactUp` for the
   board filtered to a subsystem, #298), per-item measurement +
   rendering in `GridItem.jsx`, and lifecycle (breakpoints, drag/resize, commit)
-  in `HelmGrid.jsx`. Panels auto-grow to fit content: `GridItem` re-measures
+  in `HelmGrid.jsx`. It measures its width and picks its breakpoint's layout
+  in layout effects, so the first frame painted is at the real width (#243).
+  At `sm` (narrower than 768px of board) on a board that can't be dragged or
+  resized (a phone, which `DashboardView` fixes, or a filtered board) the
+  panels are in the page's flow, one column in the layout's order, each at
+  its own height: nothing to measure, nothing drawn at a saved height then
+  grown. A one-column board that can be dragged (a desktop window up to about
+  1080px, or 1440px and up beside the rail) stays the stacked grid it was,
+  and crossing between the two keeps every panel mounted (the same
+  `GridItem`s, `measuring` off in the flow). Otherwise, until every source
+  of the board has answered or failed once (`settled`, `useDashboardData`,
+  passed as `reserve`), each panel keeps the height it last measured at its
+  width (`jaghelm-grid-heights`, per browser), however long that takes, so a
+  reload doesn't draw the board at its saved rows and then grow it; then each
+  takes its own height in one step. Only heights measured once the data is in
+  are kept, never a placeholder's. Panels auto-grow to fit content: `GridItem` re-measures
   a panel's natural height (the item at `height: auto`) after any change to
   its content or width, at most once a frame. The panel's own box is stretched
   to its grid height, so it doesn't change when only the content does (the
@@ -2487,14 +2522,14 @@ flowchart LR
   GH --> GHCR["GHCR"]
   TAG["vX.Y.Z tag pushed on Gitea"] --> REL["GitHub Actions: release.yml<br/>add :X.Y.Z to the :sha-short digest<br/>+ GitHub Release"]
   REL --> GHCR
-  GH -.->|"event-driven dispatch (opt-in, ADR 0005)"| DEP
-  PR -->|"push trigger (fallback)"| DEP["Gitea deploy.yml (self-hosted)"]
-  subgraph DEP2["deploy.yml"]
-    KEY["pin vm-103 host key<br/>(VM103_HOST_KEY)"] --> WAIT["wait for :sha-short<br/>(never appears: fail, vm-103 untouched)"]
+  PR -->|"push trigger (fast path)"| DEP["Gitea deploy.yml (self-hosted)"]
+  CRON["every 5 min"] --> REC["Gitea reconcile.yml (self-hosted)<br/>vm-103's revision vs main's head"]
+  subgraph DEP2["scripts/deploy/deploy.sh, run by both"]
+    KEY["pin vm-103 host key<br/>(VM103_HOST_KEY)"] --> WAIT["deploy.yml: wait for :sha-short<br/>(superseded or late: green, vm-103 untouched)<br/>reconcile.yml: deploy main's head if behind<br/>(no image 30 min after the commit: fail)"]
     WAIT --> STAGE["stage: pull :sha-short<br/>+ deliver and verify compose.yaml"]
     STAGE --> SWITCH["retag :latest + recreate"]
     SWITCH --> GATE["health gate<br/>(Docker health + /api/health<br/>+ revision = this commit)"]
-    GATE -->|"fail"| RB["auto-rollback to prev image<br/>+ prev compose.yaml"]
+    GATE -->|"fail"| RB["auto-rollback to prev image<br/>+ prev compose.yaml;<br/>hold the commit from the reconcile"]
     GATE -->|"pass"| LIVE["live on prod"]
   end
 ```
@@ -2522,14 +2557,28 @@ flowchart LR
   release job attaches it to a GitHub Release with notes from
   `mobile/CHANGELOG.md`. A manual run is a
   test build and creates no release.
-- **Deploy** ([deploy.yml](../.gitea/workflows/deploy.yml)) runs on vm-103's
-  self-hosted Gitea runner, labelled `vm103` (no other workflow may use that
-  label), and reaches the host over SSH that verifies a
+- **Deploy** runs on vm-103's self-hosted Gitea runner, labelled `vm103` (no
+  workflows but these two may use that label), as two workflows that run one
+  implementation, [scripts/deploy/deploy.sh](../scripts/deploy/deploy.sh),
+  read at the run's commit from the Gitea API (the runner has no checkout).
+  **Deploy JagHelm** ([deploy.yml](../.gitea/workflows/deploy.yml)) is the
+  fast path: on a push to `main` it waits up to 6 minutes for that commit's
+  `:sha-<short>` image. If main moves past the commit meanwhile, or the image
+  is not there in time, it ends green and changes nothing. **Reconcile
+  production** ([reconcile.yml](../.gitea/workflows/reconcile.yml)) runs every
+  5 minutes: it reads `/api/health`'s `revision` over HTTP and main's head from
+  Gitea, stops after one line when they match, deploys main's head when it is
+  behind and the image exists, and **fails when main's head still has no image
+  30 minutes after its commit** (a failed or missing build). A commit whose
+  deploy failed on vm-103, or that was rolled back by hand, is named in
+  `deploy-failed` in the stack directory, and scheduled runs don't retry it; a
+  run started by hand does. It runs only on `main`. Both share a concurrency
+  group, so they never race
+  ([ADR 0007](adr/0007-reconcile-deploy.md)). The deploy reaches the host over
+  SSH that verifies a
   **pinned host key** (the `VM103_HOST_KEY` repository variable; without it the
-  deploy fails before any SSH). It waits up to 6 minutes for this commit's
-  `:sha-<short>` image; if it never appears, the deploy **fails without
-  touching vm-103** (there is no fallback to `:latest`). It pulls and **pins
-  this commit's `:sha-<short>`** image and **delivers this commit's
+  deploy fails before any SSH). There is no fallback to `:latest`. It pulls and
+  **pins the commit's `:sha-<short>`** image and **delivers the commit's
   `compose.yaml`** to the
   stack directory: written as `compose.yaml.new`, checked by sha256 on the host,
   the old copy kept as `compose.yaml.prev`, renamed into place and validated with
@@ -2541,7 +2590,7 @@ flowchart LR
   failure after the host was changed rolls back the previous image **and** the
   previous `compose.yaml` together, unless a later deploy has replaced it
   since. A run whose commit is no longer main's head changes nothing and ends
-  green as superseded. What a red deploy means, how to recover and the manual
+  green as superseded. What green and red mean, how to recover and the manual
   rollback: [RELEASING.md](RELEASING.md#production-deploys). The deploy owns `compose.yaml` on the host:
   host-specific additions (a secrets mount, host networking) go in
   `compose.override.yaml`, which Compose merges and the deploy never touches.
@@ -2556,10 +2605,7 @@ flowchart LR
   |------|------|-----|
   | Variable | `VM103_HOST_KEY` | Required. vm-103's host key as one known_hosts line (`<address> ssh-ed25519 AAAA…`), from `ssh-keyscan -t ed25519 <address>` with the fingerprint checked on vm-103. Update it after a rebuild. |
   | Variable | `COSIGN_VERIFY` | Optional. `true` verifies the image signature before deploying. |
-  | Job token | `GITEA_TOKEN` (automatic) | Reads `compose.yaml` at the deployed commit from the Gitea API; the job limits it to `contents: read`. Nothing to set. |
-- **Event-driven trigger** ([ADR 0005](adr/0005-event-driven-deploy.md)): the
-  build dispatches the deploy when the image is ready, replacing a GHCR poll. It
-  is opt-in and fallback-preserving -- the push trigger remains until verified.
+  | Job token | `GITEA_TOKEN` (automatic) | Reads `deploy.sh`, main's head and `compose.yaml` at the deployed commit from the Gitea API; the jobs limit it to `contents: read`. Nothing to set. |
 
 ## 8. Testing
 
@@ -2722,7 +2768,26 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   and deletes over plain HTTP (no `crypto.randomUUID` in the page), each
   change reaching the server, which a reload shows, on the Launch page and in
   the rail; axe, dark and light, on the whole Launch page and on the
-  Overview's shell, status and rail. All seven leave screenshots in
+  Overview's shell, status and rail. Nothing hides (#302,
+  `e2e/reflow.spec.mjs`): the Overview at 360, 390, 768, 1024, 1280, 1440,
+  1920 and 2560px, healthy and incident, and on the incident with the
+  model's longest subsystem details at each of them: the page no wider than
+  its window; no element clipping its content (overflowing on an axis it
+  clips, `hidden` or `clip`) unless it ends in an ellipsis with the whole text
+  in a title or an accessible name, and no text spilling out of its box;
+  every service's and node's name whole and in the window; a failure names
+  the element and the width. Today's board is held only to its panels'
+  heights (#306 deletes it: its Pipeline's commit messages and its Checklist's
+  add row don't fit at 360 and 390px). A tablet (768 and 1023px) is one
+  column, the strip wrapping. The first load at 390 × 844 on the incident
+  shifts its layout by 0.1 or less (CLS, by a `layout-shift`
+  PerformanceObserver, shifts after input left out; it was 0.50, the status
+  arriving over sections already drawn, #243); on a phone (360 and 390px)
+  every frame the board paints, from its first, has it in the page's flow
+  and every panel as tall as its content; at 1600px a tick that changes
+  nothing measures no panel, and with a source 4 s slow a panel keeps the
+  height it had last time until that source answers, then takes its own
+  once. All eight leave screenshots in
   `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through
@@ -2787,8 +2852,9 @@ change; `doc-counts.test.mjs` fails on one.
 | [0002](adr/0002-in-memory-single-instance.md) | Single-instance, in-memory state (no DB) |
 | [0003](adr/0003-scoped-tls-bypass.md) | Per-request, opt-in TLS-verify bypass for self-signed infra |
 | [0004](adr/0004-config-copy-on-read.md) | Config is copy-on-read + synchronous atomic writes |
-| [0005](adr/0005-event-driven-deploy.md) | Event-driven build->deploy trigger (opt-in, fallback-preserving) |
+| [0005](adr/0005-event-driven-deploy.md) | Event-driven build->deploy trigger (superseded by 0007, never enabled) |
 | [0006](adr/0006-one-severity-table.md) | One severity table, judged on the server; push reads the same thresholds |
+| [0007](adr/0007-reconcile-deploy.md) | Production converges on main's head: a scheduled reconcile on Gitea's own runner |
 
 ## 10. Known tradeoffs
 

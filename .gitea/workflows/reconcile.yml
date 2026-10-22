@@ -1,0 +1,125 @@
+name: Reconcile production
+
+# Production converges on main's head (#534, docs/adr/0007-reconcile-deploy.md).
+# Every 5 minutes this compares the revision vm-103 serves on /api/health with
+# main's head on Gitea:
+#   • the same: logs one line and stops. No SSH, no pull, a few seconds;
+#   • behind, and main's head has its :sha-<short> image: deploys main's head,
+#     with the same steps as Deploy JagHelm (deploy.yml);
+#   • behind, no image yet: logs one line and waits for the next run;
+#   • behind, still no image 30 minutes after the commit (IMAGE_STALE_SECONDS):
+#     fails, naming the GitHub build to check;
+#   • main's head already failed a deploy, or was rolled back by hand
+#     (deploy-failed on vm-103 names it): warns and leaves it, so a bad commit
+#     is tried once, not every 5 minutes, and a hand rollback stays until a new
+#     commit merges. A run started by hand (Run workflow) retries it.
+#   • /api/health doesn't answer, over HTTP or SSH: warns and changes nothing
+#     (Uptime Kuma pages when JagHelm is down).
+#
+# The push deploy (deploy.yml) stays the fast path; this ships what it could
+# not: an image that landed after its wait, or a deploy that never ran.
+#
+# Configuration: the same as deploy.yml (VM103_HOST_KEY, COSIGN_VERIFY, the job
+# token). Act_runner caveat: no expression interpolation inside run bodies.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+# Shared with deploy.yml: a reconcile never races a push deploy.
+concurrency:
+  group: deploy-jaghelm-production
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    # Only main's own deploy.sh: a hand run on another branch does nothing.
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, vm103]
+    # The job token only reads this repo.
+    permissions:
+      contents: read
+    env:
+      VM103_SSH: jagbhandal@192.168.68.11
+      STACK_DIR: /opt/stacks/jaghelm
+      # Read from the runner over HTTP, so a run with nothing to do needs no SSH.
+      HEALTH_URL: http://192.168.68.11:3099/api/health
+      # Main's head without an image this long after its commit is a failed or
+      # missing build (mirror lag plus the build is normally ~5 to 12 minutes).
+      IMAGE_STALE_SECONDS: 1800
+    steps:
+      - name: Fetch the deploy script
+        env:
+          JOB_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # The runner has no checkout. The token reaches curl as a config line
+          # on stdin, never on argv.
+          DEPLOY_SH="$(mktemp)"
+          URL="${SERVER_URL%/}/api/v1/repos/${REPOSITORY}/raw/scripts/deploy/deploy.sh?ref=${GITHUB_SHA}"
+          if ! printf 'header = "Authorization: token %s"\n' "${JOB_TOKEN}" \
+            | curl -fsS --max-time 30 -K - -o "${DEPLOY_SH}" "${URL}" || [ ! -s "${DEPLOY_SH}" ]; then
+            rm -f "${DEPLOY_SH}"
+            echo "::error::could not read scripts/deploy/deploy.sh at ${GITHUB_SHA} from Gitea; nothing changed on vm-103. Re-run this workflow."
+            exit 1
+          fi
+          echo "    scripts/deploy/deploy.sh at ${GITHUB_SHA}: sha256=$(sha256sum "${DEPLOY_SH}" | cut -d' ' -f1)"
+          echo "DEPLOY_SH=${DEPLOY_SH}" >> "$GITHUB_ENV"
+
+      # Every later SSH verifies vm-103's host key against VM103_HOST_KEY
+      # (StrictHostKeyChecking=yes, no global known_hosts) (#211).
+      - name: Pin vm-103's SSH host key (fail closed)
+        env:
+          VM103_HOST_KEY: ${{ vars.VM103_HOST_KEY }}
+        run: bash "${DEPLOY_SH:?}" pin
+
+      # Exports DEPLOY_SHA (main's head) only when it should be deployed; every
+      # later step does nothing without it.
+      - name: Compare vm-103 with main's head
+        env:
+          JOB_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: bash "${DEPLOY_SH:?}" decide
+
+      - name: Verify image signature (cosign, opt-in)
+        if: ${{ vars.COSIGN_VERIFY == 'true' }}
+        run: bash "${DEPLOY_SH:?}" signature
+
+      - name: Stage this commit on vm-103 (image + compose.yaml)
+        env:
+          JOB_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: bash "${DEPLOY_SH:?}" stage
+
+      - name: Switch vm-103 to this commit (retag + recreate)
+        run: bash "${DEPLOY_SH:?}" switch
+
+      - name: Verify deployment (health gate)
+        run: bash "${DEPLOY_SH:?}" verify
+
+      - name: Roll back on failure
+        if: failure()
+        run: |
+          # Without the deploy script (its fetch failed) nothing ran.
+          [ -z "${DEPLOY_SH:-}" ] || bash "${DEPLOY_SH}" rollback
+
+      - name: Hold a failed commit back from the reconcile
+        if: failure()
+        run: |
+          # Without the deploy script (its fetch failed) nothing ran.
+          [ -z "${DEPLOY_SH:-}" ] || bash "${DEPLOY_SH}" hold
+
+      - name: Prune old JagHelm images
+        continue-on-error: true
+        run: bash "${DEPLOY_SH:?}" prune
+
+      - name: Remove the pinned known_hosts file and the deploy script
+        if: always()
+        run: |
+          [ -z "${VM103_KNOWN_HOSTS:-}" ] || rm -f "${VM103_KNOWN_HOSTS}"
+          [ -z "${DEPLOY_SH:-}" ] || rm -f "${DEPLOY_SH}"

@@ -1,6 +1,11 @@
 # ADR 0005 — Event-driven build→deploy trigger (the build dispatches the deploy)
 
-**Status:** accepted (opt-in; fallback-preserving)
+**Status:** superseded by [ADR 0007](0007-reconcile-deploy.md) (2026-10-22,
+#534). The dispatch was never enabled; its step in `build-push.yml` and the
+`workflow_dispatch` trigger on `deploy.yml` are removed. A scheduled reconcile
+on Gitea's own runner ships what the push deploy can't, with no Gitea token
+stored on GitHub and nothing exposed to the internet. Kept as the record of
+why.
 
 ## Context
 

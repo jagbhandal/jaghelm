@@ -12,11 +12,13 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
 
 // ── vm103 runner label ──────────────────────────────────────────────────────
-// Every job in deploy.yml SSHes to vm-103, so each must carry the vm103 runner label
-// and never land on a runner that is fenced from the LAN (#210). The reverse also
-// holds: no other workflow may claim vm103, so the deploy host only runs deploys.
+// Every job in the deploy workflows (deploy.yml, and reconcile.yml since #534) SSHes
+// to vm-103, so each must carry the vm103 runner label and never land on a runner
+// that is fenced from the LAN (#210). The reverse also holds: no other workflow may
+// claim vm103, so the deploy host only runs deploys.
 const DEPLOY_LABEL = 'vm103';
-const DEPLOY_WORKFLOW = '.gitea/workflows/deploy.yml';
+const DEPLOY_WORKFLOWS = ['.gitea/workflows/deploy.yml', '.gitea/workflows/reconcile.yml'];
+const DEPLOY_WORKFLOW = DEPLOY_WORKFLOWS[0];
 const WORKFLOW_DIRS = ['.gitea/workflows', '.github/workflows'];
 
 // For the stray check: the label as a whole token, so it is also found inside an
@@ -54,10 +56,10 @@ function unpinnedDeployJobs(source) {
   return jobs.filter((j) => !j.labels.includes(DEPLOY_LABEL)).map((j) => `${j.id}: runs-on=${JSON.stringify(j.runsOn)}`);
 }
 
-/** Jobs outside the deploy workflow that claim vm103, as `file: job`. */
+/** Jobs outside the deploy workflows that claim vm103, as `file: job`. */
 function strayPinnedJobs(files) {
   return files
-    .filter(({ file }) => file !== DEPLOY_WORKFLOW)
+    .filter(({ file }) => !DEPLOY_WORKFLOWS.includes(file))
     .flatMap(({ file, source }) =>
       jobsOf(source).flatMap((j) => {
         // the label can also arrive through the matrix: runs-on: ${{ matrix.runner }}
@@ -115,17 +117,19 @@ test('vm103 checker: a label supplied through the matrix is a stray pin', () => 
     ['.github/workflows/m.yml: job "t" runs-on="${{ matrix.r }}" matrix={"r":["ubuntu-latest","vm103"]}']);
 });
 
-test(`every job in ${DEPLOY_WORKFLOW} is pinned to the ${DEPLOY_LABEL} runner`, () => {
-  const unpinned = unpinnedDeployJobs(read(DEPLOY_WORKFLOW));
-  assert.equal(unpinned.length, 0, `${DEPLOY_WORKFLOW}: job(s) not pinned to ${DEPLOY_LABEL}:\n  ${unpinned.join('\n  ')}`);
-});
+for (const wf of DEPLOY_WORKFLOWS) {
+  test(`every job in ${wf} is pinned to the ${DEPLOY_LABEL} runner`, () => {
+    const unpinned = unpinnedDeployJobs(read(wf));
+    assert.equal(unpinned.length, 0, `${wf}: job(s) not pinned to ${DEPLOY_LABEL}:\n  ${unpinned.join('\n  ')}`);
+  });
+}
 
-test(`no workflow other than ${DEPLOY_WORKFLOW} uses the ${DEPLOY_LABEL} runner`, () => {
+test(`no workflow other than the deploy workflows uses the ${DEPLOY_LABEL} runner`, () => {
   const files = repoWorkflows();
-  assert.ok(files.some(({ file }) => file === DEPLOY_WORKFLOW), `${DEPLOY_WORKFLOW} not found`);
+  for (const wf of DEPLOY_WORKFLOWS) assert.ok(files.some(({ file }) => file === wf), `${wf} not found`);
   const stray = strayPinnedJobs(files);
   assert.equal(stray.length, 0,
-    `${DEPLOY_LABEL} is reserved for ${DEPLOY_WORKFLOW}, but it is also used by:\n  ${stray.join('\n  ')}`);
+    `${DEPLOY_LABEL} is reserved for ${DEPLOY_WORKFLOWS.join(' and ')}, but it is also used by:\n  ${stray.join('\n  ')}`);
 });
 
 // ── check.yml wires the secret floor ────────────────────────────────────────

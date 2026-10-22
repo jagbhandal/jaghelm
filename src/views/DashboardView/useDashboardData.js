@@ -96,21 +96,41 @@ export function useDashboardData(refreshKey, { tick, active = true } = {}) {
     }, {})
   );
 
-  const recordSuccess = useCallback((source) => {
-    lastSuccessRef.current[source] = Date.now();
-    if (errorRef.current[source] !== null) {
-      errorRef.current = { ...errorRef.current, [source]: null };
-      setSourceErrors(errorRef.current);
-    }
+  // Whether every source has answered, or failed, at least once since the
+  // board mounted: until then its content is still coming in, and HelmGrid
+  // keeps each panel at the height it last had (#302). Once true, it stays.
+  const [settled, setSettled] = useState(false);
+  const answeredRef = useRef(new Set());
+  const markAnswered = useCallback((source) => {
+    const answered = answeredRef.current;
+    if (answered.has(source)) return;
+    answered.add(source);
+    if (answered.size === SOURCE_KEYS.length) setSettled(true);
   }, []);
 
-  const recordError = useCallback((source, message) => {
-    const msg = message || 'Fetch failed';
-    if (errorRef.current[source] !== msg) {
-      errorRef.current = { ...errorRef.current, [source]: msg };
-      setSourceErrors(errorRef.current);
-    }
-  }, []);
+  const recordSuccess = useCallback(
+    (source) => {
+      markAnswered(source);
+      lastSuccessRef.current[source] = Date.now();
+      if (errorRef.current[source] !== null) {
+        errorRef.current = { ...errorRef.current, [source]: null };
+        setSourceErrors(errorRef.current);
+      }
+    },
+    [markAnswered]
+  );
+
+  const recordError = useCallback(
+    (source, message) => {
+      markAnswered(source);
+      const msg = message || 'Fetch failed';
+      if (errorRef.current[source] !== msg) {
+        errorRef.current = { ...errorRef.current, [source]: msg };
+        setSourceErrors(errorRef.current);
+      }
+    },
+    [markAnswered]
+  );
 
   const fetchServices = useCallback(
     async (skipEtag) => {
@@ -257,6 +277,7 @@ export function useDashboardData(refreshKey, { tick, active = true } = {}) {
     integrationData,
     history,
     servicesLoaded,
+    settled,
     sources,
     retry,
   };
