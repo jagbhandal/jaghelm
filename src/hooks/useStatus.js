@@ -16,13 +16,25 @@
  *   updated  when the last answer came (ms since the epoch), as a store
  *            (`get`, `subscribe`): each answer moves it, a 304 too, without
  *            re-rendering the caller, so only what shows it (UpdatedAgo)
- *            re-renders.
+ *            re-renders. Its `staleAfter` is how old that answer may get
+ *            before the status it brought is stale (staleAfterMs, #480): a
+ *            hidden tab or a sleeping laptop asks nothing, while `reach`
+ *            stays 'ok'.
  *
  * @param {{ intervalMs: number, enabled?: boolean }} options
  */
-import { useEffect, useRef, useState } from 'react';
-import { getStatus, NOT_MODIFIED_NO_BODY } from './useData.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { getStatus, NOT_MODIFIED_NO_BODY, REQUEST_TIMEOUT_MS } from './useData.js';
 import { usePageVisible } from './usePageVisible.js';
+
+/**
+ * How old the last answer may get before the status it brought is stale
+ * (#480): two polls missed, and the next one's request run to its timeout.
+ * 72 s at the default 30 s interval.
+ */
+export function staleAfterMs(intervalMs) {
+  return 2 * intervalMs + REQUEST_TIMEOUT_MS;
+}
 
 /** Whether `body` is the status model's shape: what the header reads, at least. */
 function isStatus(body) {
@@ -55,7 +67,16 @@ function createStore(initial) {
 export function useStatus({ intervalMs, enabled = true }) {
   const [status, setStatus] = useState(null);
   const [reach, setReach] = useState('loading');
-  const [updated] = useState(() => createStore(null));
+  const [answered] = useState(() => createStore(null));
+  // The store the caller reads: the same one until the interval changes.
+  const updated = useMemo(
+    () => ({
+      get: answered.get,
+      subscribe: answered.subscribe,
+      staleAfter: staleAfterMs(intervalMs),
+    }),
+    [answered, intervalMs]
+  );
   // What the caller last rendered, so an unchanged answer sets no state at all:
   // even an equal setState can run the caller once more.
   const shown = useRef({ status: null, reach: 'loading' });
@@ -89,12 +110,12 @@ export function useStatus({ intervalMs, enabled = true }) {
         const body = await getStatus();
         if (body === NOT_MODIFIED_NO_BODY) {
           // Unchanged, and nothing held to show: the next answer brings it.
-          updated.set(Date.now());
+          answered.set(Date.now());
           return;
         }
         if (isStatus(body)) show({ status: body, reach: 'ok' });
         else show({ status: null, reach: 'waiting' });
-        updated.set(Date.now());
+        answered.set(Date.now());
       } catch (err) {
         const reachNow = /HTTP 503/.test(String(err?.message)) ? 'waiting' : 'down';
         show({ status: shown.current.status, reach: reachNow });
@@ -105,7 +126,7 @@ export function useStatus({ intervalMs, enabled = true }) {
     if (starting) poll();
     const id = setInterval(poll, intervalMs);
     return () => clearInterval(id);
-  }, [on, intervalMs, updated]);
+  }, [on, intervalMs, answered]);
 
   return { status, reach, updated };
 }

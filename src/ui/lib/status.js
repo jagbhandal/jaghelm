@@ -45,6 +45,17 @@ export const EMPTY = 'empty';
 /** What an empty board says when the caller gives no sentence: the model's. */
 export const EMPTY_SENTENCE = 'Nothing monitored yet';
 
+/**
+ * Why there is no signal: the server can't be reached; it has no status yet
+ * (a 503 before its first check); or the status it had is past its TTL (a 503
+ * after one, #480).
+ */
+export const NO_SIGNAL = Object.freeze({
+  down: "Can't reach JagHelm",
+  waiting: 'Waiting for the first check',
+  expired: "JagHelm's status is out of date",
+});
+
 /** The word a state reads as when the caller gives none (the mock's Tokens board). */
 export const WORDS = Object.freeze({
   ok: 'OK',
@@ -87,4 +98,19 @@ const SPOKEN = { UNKN: 'unknown' };
 /** `word` as a screen reader should say it. */
 export function spoken(word) {
   return SPOKEN[word] ?? word;
+}
+
+/**
+ * What a lamp is named: what it draws. A lamp drawn as no signal is "No
+ * signal" beside any word but one for no signal ("No signal", or "UNKN" as
+ * the Android app says it): under a stale status (#480) the word is what was
+ * last known ("Healthy", "Down"), and the lamp is what is known now. Any
+ * other lamp is its word, or its state's. Where the word beside a lamp says
+ * the same, the lamp is decorative; where it doesn't, the lamp is named, and
+ * a row's or a tile's name says it before the word.
+ */
+export function lampName(state, word) {
+  const s = toState(state);
+  const noSignal = !word || word === WORDS.unknown || spoken(word) === 'unknown';
+  return s === 'unknown' && !noSignal ? WORDS.unknown : word || WORDS[s];
 }

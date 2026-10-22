@@ -1,7 +1,8 @@
 import { StrictMode } from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useStatus } from './useStatus.js';
+import { staleAfterMs, useStatus } from './useStatus.js';
+import { REQUEST_TIMEOUT_MS } from './useData.js';
 
 // The header's status poll (#296): /api/status once a refresh interval, with
 // the last ETag, so a steady board costs a 304 and re-renders nothing; paused
@@ -81,6 +82,23 @@ describe('useStatus', () => {
     expect(result.current.reach).toBe('loading');
     expect(result.current.status).toBeNull();
     expect(result.current.updated.get()).toBeNull();
+  });
+
+  // #480 review: a hidden tab or a sleeping laptop asks nothing and leaves
+  // `reach` at 'ok', so the store says how old its answer may get.
+  it('says how old its answer may get: two intervals and the request timeout, the same store across answers', async () => {
+    const { result, rerender } = renderHook((props) => useStatus(props), {
+      initialProps: { intervalMs: INTERVAL },
+    });
+    expect(staleAfterMs(30_000)).toBe(2 * 30_000 + REQUEST_TIMEOUT_MS);
+    expect(REQUEST_TIMEOUT_MS).toBe(12_000);
+    const store = result.current.updated;
+    expect(store.staleAfter).toBe(staleAfterMs(INTERVAL));
+    await advance(INTERVAL);
+    expect(result.current.updated).toBe(store);
+    rerender({ intervalMs: 120_000 });
+    expect(result.current.updated.staleAfter).toBe(252_000);
+    expect(result.current.updated.get()).toBe(store.get());
   });
 
   it('asks with the last ETag; a 304 keeps the same status object', async () => {

@@ -110,4 +110,18 @@ describe('IssueRow', () => {
     expect(screen.getByRole('button', { name: 'Wiki.js, unknown' })).toBeInTheDocument();
     expect(screen.getByText('UNKN')).toBeInTheDocument();
   });
+
+  // #480: a stale status keeps its rows' words, drawn as no signal.
+  it('no signal beside a last known word: the lamp is named No signal, and so is the row first', () => {
+    const stale = { ...immich, state: 'unknown' };
+    const { rerender } = render(<IssueRow issue={stale} />);
+    expect(screen.getByRole('img', { name: 'No signal' })).toBeInTheDocument();
+    expect(screen.getByText('Down')).toBeInTheDocument();
+    rerender(<IssueRow issue={stale} onOpen={() => {}} />);
+    expect(
+      screen.getByRole('button', {
+        name: 'Immich, No signal, Down, Service · Production (vm-103)',
+      })
+    ).toBeInTheDocument();
+  });
 });

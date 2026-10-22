@@ -20,7 +20,10 @@
  * With `onSelect`, each tile is a toggle button (`aria-pressed`) that filters
  * by its subsystem, as the mock's do: a press calls `onSelect(key)`, or
  * `onSelect(null)` on the tile already `selected`, which shows an accent edge.
- * It is named "label, word, value", as a row is, and described by `sub`.
+ * It is named "label, word, value", as a row is, and described by `sub`. A
+ * tile drawn as no signal with another word (a stale status's last known
+ * "Down", #480) names its lamp "No signal" (lampName), and says it before the
+ * word: "Services, No signal, Down, 30 / 32 up".
  * Without `onSelect` the tiles are plain content.
  *
  * The `android` look, a stopgap until #326, is the Android app's 2×2 grid of
@@ -31,7 +34,7 @@ import { useId } from 'react';
 import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
-import { WORDS, spoken, toSeverity, toState } from './lib/status.js';
+import { WORDS, lampName, spoken, toSeverity, toState } from './lib/status.js';
 
 // A tint is a layer over the tile's surface-1: a gradient of one colour, which
 // paints over the background colour and under the selected tile's inset ring.
@@ -95,13 +98,16 @@ function Tile({ cell, selected, onSelect }) {
   const id = useId();
   const s = toState(cell.state ?? cell.severity);
   const said = cell.word || WORDS[s];
+  const named = lampName(s, said);
   const pressed = selected === cell.key;
   const Tag = onSelect ? 'button' : 'div';
   const action = onSelect
     ? {
         type: 'button',
         'aria-pressed': pressed,
-        'aria-label': [cell.label, spoken(said), cell.value].filter(Boolean).join(', '),
+        'aria-label': [cell.label, named !== said && named, spoken(said), cell.value]
+          .filter(Boolean)
+          .join(', '),
         'aria-describedby': cell.sub ? `${id}-sub` : undefined,
         onClick: () => onSelect(pressed ? null : cell.key),
       }
@@ -121,7 +127,7 @@ function Tile({ cell, selected, onSelect }) {
       {...action}
     >
       <span className="flex min-w-0 items-center gap-1.5 @2xl:gap-2">
-        <StatusLamp state={s} label={said} />
+        <StatusLamp state={s} label={named} />
         {/* Truncated with an ellipsis, after using 4px of the tile's padding: the
             mock's labels run a hair past their box, "Integrations" at 820px. */}
         <span className="-mr-1 truncate text-overline text-text-3 uppercase">{cell.label}</span>

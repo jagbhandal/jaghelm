@@ -136,4 +136,21 @@ describe('NodeCard', () => {
     expect(card).toHaveAttribute('id', 'entity-nodes/apps');
     expect(card).toHaveAttribute('data-node', 'nodes/apps');
   });
+
+  // #480: a stale status's card keeps its last word, drawn as no signal; its
+  // lamp is named by what it draws, never by that word.
+  it('no signal beside a last known word: the lamp is named No signal, the word stays', () => {
+    const { container } = render(<NodeCard name="vm" state="unknown" word="Healthy" />);
+    const state = container.querySelector('[data-slot="node-state"]');
+    expect(within(state).getByRole('img', { name: 'No signal' })).toBeInTheDocument();
+    expect(within(state).queryByRole('img', { name: 'Healthy' })).toBeNull();
+    expect(within(state).getByText('Healthy')).toHaveClass('text-unknown-fg');
+  });
+
+  it("the model's own no signal: the word says it, so the lamp is decorative", () => {
+    const { container } = render(<NodeCard name="vm" state="unknown" word="No signal" />);
+    const state = container.querySelector('[data-slot="node-state"]');
+    expect(state.querySelector('[data-slot="status-lamp"]')).toHaveAttribute('aria-hidden', 'true');
+    expect(state).toHaveTextContent('No signal');
+  });
 });

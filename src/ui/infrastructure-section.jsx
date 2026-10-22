@@ -15,7 +15,9 @@
  *    disk, temperature, services, state. A reading prints as its meter does
  *    (`shown`), in its state's word colour only at or over its line, with the
  *    state said to screen readers; no reading is a dash. The state is the
- *    lamp and the model's word, the word in text-1 when healthy. It needs
+ *    lamp and the model's word, the word in text-1 when healthy; a lamp
+ *    drawn as no signal beside another word (a stale status's last known
+ *    word, #480) is named "No signal" (lampName). It needs
  *    720px: in a section narrower than that (a phone, a tablet), the table
  *    would hide its readings and the state off to the side, so the section
  *    draws the cards instead and offers no toggle; the choice of the table
@@ -37,7 +39,7 @@ import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { Table } from './table.jsx';
 import { cn } from './lib/utils.js';
-import { WORDS, toState } from './lib/status.js';
+import { WORDS, lampName, toState } from './lib/status.js';
 
 /** The table's least width: narrower, the section draws cards. */
 const TABLE_WIDTH = 720;
@@ -124,10 +126,11 @@ const COLUMNS = [
     cell: (node) => {
       const s = toState(node.state);
       const word = node.word || WORDS[s];
+      const named = lampName(s, word);
       // Healthy stays quiet: its lamp, and the word in the row's own colour.
       return (
         <span className="inline-flex items-center gap-2">
-          <StatusLamp state={s} decorative />
+          <StatusLamp state={s} label={named} decorative={named === word} />
           {s === 'ok' ? (
             <span className="font-semibold">{word}</span>
           ) : (

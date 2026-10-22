@@ -16,6 +16,11 @@
  *  - the hosted services' up and down counts are the model's service and
  *    container entities on that node.
  *
+ * With a stale status (`freshness`, statusFreshness.js, #480, #495), nothing
+ * is drawn in a level colour from it: each node and each meter is drawn as no
+ * signal, a meter keeping the number /api/services gives it, and the node its
+ * word and reason, as last known; the section's count says how old they are.
+ *
  * The temperature is in the model's °C, as its reason says it, so the meter
  * and the reason print one number in one unit. Settings' unit (`tempUnit`,
  * the weather's) doesn't reach it: one unit for both is #494.
@@ -27,6 +32,7 @@ import { useCallback, useState } from 'react';
 import { readingLines, shownReading } from '../../server/status/readings.js';
 import { prefs } from '../storage/index.js';
 import { entityAnchor } from './entityAnchors.js';
+import { drawnState } from './statusFreshness.js';
 import { countsText } from './statusView.js';
 
 /** The readings a node card shows, in the mock's order, and where /api/services has each. */
@@ -47,7 +53,7 @@ const num = (v) => {
 };
 
 /** One reading's meter: `{ key, label, value, unit, max, state, warn, crit, band, shown }`. */
-function readingOf({ key, label, field }, entity, metrics, thresholds) {
+function readingOf({ key, label, field }, entity, metrics, thresholds, freshness) {
   const level = entity.conditions?.[key];
   const value = JUDGED.has(level) ? num(metrics?.[field]) : null;
   const lines = readingLines(thresholds, key);
@@ -60,7 +66,7 @@ function readingOf({ key, label, field }, entity, metrics, thresholds) {
     value,
     unit,
     max,
-    state: level ?? null,
+    state: level == null ? null : drawnState(level, freshness),
     ...lines,
     shown: value == null ? null : `${shownReading(value, lines)}${unit}`,
   };
@@ -88,11 +94,18 @@ function servicesOf(status, nodeKey) {
  * Each node the model has, in services.yaml's order (as /api/services lists
  * them), then any it has that /api/services has yet to list; a node hidden in
  * Settings (`sections[key].visible === false`) is left out, as on the board.
+ * With a stale status (`freshness.stale`), each is drawn as no signal.
  *
  * @param {{ status: any, services?: any, history?: Record<string, number[]>,
- *   sections?: Record<string, any> }} board
+ *   sections?: Record<string, any>, freshness?: { stale: boolean } }} board
  */
-export function infrastructureNodes({ status, services = null, history = null, sections = {} }) {
+export function infrastructureNodes({
+  status,
+  services = null,
+  history = null,
+  sections = {},
+  freshness = null,
+}) {
   const entities = (status?.entities ?? []).filter((e) => e.kind === 'node');
   if (entities.length === 0) return [];
   const listed = Object.keys(services?.nodes ?? {});
@@ -110,7 +123,7 @@ export function infrastructureNodes({ status, services = null, history = null, s
       const counts = servicesOf(status, e.node);
       const metrics = node?.metrics ?? null;
       const readings = READINGS.filter((r) => hasReading(r, e, metrics)).map((r) =>
-        readingOf(r, e, metrics, status.thresholds)
+        readingOf(r, e, metrics, status.thresholds, freshness)
       );
       // Whether the model read the node this cycle; the last hour of CPU, only
       // while the CPU reading is current.
@@ -133,7 +146,7 @@ export function infrastructureNodes({ status, services = null, history = null, s
         host: e.node,
         subtitle: node?.subtitle || null,
         colour: node?.border_color || sections?.[e.node]?.borderColor || null,
-        state: e.state,
+        state: drawnState(e.state, freshness),
         word: e.word,
         reason: e.state === 'ok' ? null : e.reason,
         readings,
@@ -145,10 +158,15 @@ export function infrastructureNodes({ status, services = null, history = null, s
     });
 }
 
-/** The section's count: "3 nodes", "3 nodes · 1 critical, 1 warning". */
-export function infrastructureCount(nodes) {
+/**
+ * The section's count: "3 nodes", "3 nodes · 1 critical, 1 warning"; with a
+ * stale status, how old it is instead: "3 nodes · No signal · last known 3
+ * min ago".
+ */
+export function infrastructureCount(nodes, freshness = null) {
   const n = nodes.length;
-  return [`${n} ${n === 1 ? 'node' : 'nodes'}`, countsText(nodes)].filter(Boolean).join(' · ');
+  const said = freshness?.stale ? freshness.note : countsText(nodes);
+  return [`${n} ${n === 1 ? 'node' : 'nodes'}`, said].filter(Boolean).join(' · ');
 }
 
 /** The hosted services in words: "4 / 5 services up · 1 down", or "No services". */

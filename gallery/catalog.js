@@ -177,6 +177,16 @@ export const CATALOG = Object.freeze([
     'AttentionPanel: the quiet line on a first run, nothing monitored yet'
   ),
   s('attention-panel-narrow', 'Status', 'AttentionPanel: an incident below 672px'),
+  s(
+    'subsystem-strip-no-signal',
+    'Status',
+    'SubsystemStrip: a stale status, every tile no signal, its count last known'
+  ),
+  s(
+    'attention-panel-no-signal',
+    'Status',
+    'AttentionPanel: a stale status, no signal, what it last knew and its issues in steel'
+  ),
 
   // Data components (#288) and chart colours (#386)
   s(
@@ -229,6 +239,11 @@ export const CATALOG = Object.freeze([
     'Overview',
     "InfrastructureSection: a phone's width, a card a row, no toggle (the table needs 720px)"
   ),
+  s(
+    'infrastructure-no-signal',
+    'Overview',
+    'InfrastructureSection: the incident with a stale status, every node and meter no signal'
+  ),
 
   // Shell (#296)
   s(
@@ -238,6 +253,11 @@ export const CATALOG = Object.freeze([
     { accent: true }
   ),
   s('app-header-first-run', 'Shell', 'AppHeader: a first run, nothing monitored yet'),
+  s(
+    'app-header-no-signal',
+    'Shell',
+    'AppHeader: no signal, with what was last known, and with nothing known'
+  ),
   s('side-nav', 'Shell', 'SideNav: an open app, loaded apps, the Alerts count, Add app', {
     accent: true,
   }),
