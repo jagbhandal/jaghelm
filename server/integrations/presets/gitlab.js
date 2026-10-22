@@ -12,7 +12,6 @@ export default {
   // x-total response header, which the JSON-body extractor can't read).
   // Show the GitLab version instead — true and useful — rather than a wrong count.
   endpoint: '/api/v4/version',
-  testEndpoint: '/api/v4/version',
   fields: [
     { key: 'version', label: 'Version', path: 'version', format: 'string' },
   ],

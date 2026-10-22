@@ -6,7 +6,6 @@ export default {
   authHeader: 'X-Plex-Token',
   extraHeaders: { Accept: 'application/json' },
   endpoint: '/status/sessions',
-  testEndpoint: '/identity',
   fields: [
     { key: 'streams', label: 'Streams', path: 'MediaContainer.size', format: 'number' },
   ],

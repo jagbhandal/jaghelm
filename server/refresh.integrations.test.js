@@ -349,7 +349,7 @@ test('a session login refused twice (403) waits too; a save in Settings retries 
   assert.equal(r.result.npm._status.state, 'auth_failed');
   assert.equal(
     r.result.npm._error,
-    `All session auth methods failed (${PARKED_HINT})`,
+    `All session auth methods failed: Login returned HTTP 403 (${PARKED_HINT})`,
     'the hint says to save it in Settings'
   );
   assert.equal(r.result.npm._preset, 'npm');

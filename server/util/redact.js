@@ -12,9 +12,33 @@
 
 // Sensitive query-param values, redacted in place (keeps the param name as a hint).
 // The config read (configMask.js) uses it too, to tell an endpoint that carries
-// a credential. Global: copy it without the g flag before calling .test().
+// a credential, and urlCredential below. Global: copy it without the g flag
+// before calling .test().
 export const SECRET_PARAMS =
-  /([?&](?:api[_-]?key|token|password|passwd|pass|secret|auth|access[_-]?token|x-plex-token|sig)=)[^&\s'"]+/gi;
+  /([?&](?:(?:api[_-]?)?key|token|password|passwd|pass|secret|auth|access[_-]?token|x-plex-token|sig)=)[^&\s'"]+/gi;
+
+const SECRET_PARAM = new RegExp(SECRET_PARAMS.source, 'i');
+
+/**
+ * The credential a URL carries, or null: `{ userinfo: true }` for a user name
+ * or password before the host (`https://user:pass@host`, `https://TOKEN@host`),
+ * else `{ param }` for the first query parameter SECRET_PARAMS names
+ * (`?apikey=…` gives `apikey`). A URL the parser refuses counts as userinfo
+ * when an @ follows its `://`, as redactSecrets reads it. Never the value.
+ * @param {unknown} url
+ * @returns {{ userinfo: true } | { param: string } | null}
+ */
+export function urlCredential(url) {
+  if (typeof url !== 'string') return null;
+  const parsed = URL.canParse(url) ? new URL(url) : null;
+  const sep = url.indexOf('://');
+  const userinfo = parsed
+    ? parsed.username !== '' || parsed.password !== ''
+    : sep !== -1 && url.indexOf('@', sep) !== -1;
+  if (userinfo) return { userinfo: true };
+  const match = SECRET_PARAM.exec(url);
+  return match ? { param: match[1].slice(1, -1) } : null;
+}
 
 /**
  * Redact secrets from a string.

@@ -13,9 +13,11 @@ import { FieldRow as FieldGroup } from '../Field';
  *   editingType     — storage key when editing existing (null = new); drives "Edit" header + Delete button
  *   form            — useConfigForm() return value
  *   allContainers   — flat array of containers for the target dropdown
- *   testStatus      — null | 'testing' | { ok, status?, error?, instructions? }
- *   saveStatus      — null | 'saving' | 'saved' | { error, field? } (field: 'instance' shows it beside that field)
- *   setSaveStatus   — (status) => void; editing Instance Name clears an error shown beside it
+ *   testStatus      — null | 'testing' | { ok, error?, field? }
+ *   setTestStatus   — (status) => void; editing the field a refusal is shown beside clears it
+ *   saveStatus      — null | 'saving' | 'saved' | { error, field? } (field: 'instance' or 'url'
+ *                     shows it beside that field, #414, #422)
+ *   setSaveStatus   — (status) => void; editing the field an error is shown beside clears it
  *   handleTest      — () => Promise<void>
  *   handleSave      — () => Promise<void>
  *   handleDelete    — (storageKey) => Promise<boolean> (true only on confirmed success)
@@ -28,6 +30,7 @@ export default function ConfigView({
   form,
   allContainers,
   testStatus,
+  setTestStatus,
   saveStatus,
   setSaveStatus,
   handleTest,
@@ -42,17 +45,39 @@ export default function ConfigView({
   const presetName = selectedPreset?.name || 'Custom Integration';
   const isEditing = !!editingType;
   const saveError = saveStatus && typeof saveStatus === 'object' ? saveStatus.error : null;
-  // A key taken by another integration is the instance name's to fix (#414),
-  // so it shows beside that field when the form has one.
-  const instanceError = isPreset && saveStatus?.field === 'instance' ? saveError : null;
+  const testError =
+    testStatus && typeof testStatus === 'object' && !testStatus.ok ? testStatus.error : null;
+  // A refusal of a Save or a Test shows beside the field it names, when the
+  // form has it: a key taken by another integration is the instance name's
+  // to fix (#414), and a credential in the URL the URL's (#422).
+  const besideField = (status) =>
+    status?.field === 'url' || (status?.field === 'instance' && isPreset);
+  const errorBeside = (field) =>
+    (saveError && saveStatus.field === field && besideField(saveStatus) ? saveError : null) ||
+    (testError && testStatus.field === field && besideField(testStatus) ? testError : null);
+  const instanceError = errorBeside('instance');
+  const urlRefusal = errorBeside('url');
+  // A stored URL that carries a credential is never shown (#422).
+  const urlError =
+    urlRefusal ||
+    (form.urlStored && !form.url
+      ? 'The stored URL carries a password or key, so it is not shown. Enter the URL without it, and the credential in its own field.'
+      : null);
+  /** Editing a field clears the refusal shown beside it: it was about the old value. */
+  const clearRefusal = (field) => {
+    if (saveStatus?.field === field) setSaveStatus?.(null);
+    if (testStatus?.field === field) setTestStatus?.(null);
+  };
   // Focus the field on each such refusal: Save is at the bottom of a form that
   // may be scrolled, and focusing the field brings its message into view. A
   // layout effect, so the field has focus in the same commit that shows the
   // message, before anything can observe the message without it.
   const instanceRef = useRef(null);
+  const urlRef = useRef(null);
   useLayoutEffect(() => {
     if (instanceError) instanceRef.current?.focus();
-  }, [saveStatus, instanceError]);
+    else if (urlRefusal) urlRef.current?.focus();
+  }, [saveStatus, testStatus, instanceError, urlRefusal]);
 
   return (
     <div>
@@ -90,11 +115,15 @@ export default function ConfigView({
       {/* Form */}
       <div className="settings-stack">
         {/* URL */}
-        <FieldGroup label="Base URL" hint="Protocol is auto-added if missing (e.g. adguard.local:3000 → http://adguard.local:3000)">
+        <FieldGroup label="Base URL" hint="Protocol is auto-added if missing (e.g. adguard.local:3000 → http://adguard.local:3000)" error={urlError}>
           <input
+            ref={urlRef}
             className="settings-input mono"
             value={form.url}
-            onChange={e => form.setUrl(e.target.value)}
+            onChange={e => {
+              form.setUrl(e.target.value);
+              clearRefusal('url');
+            }}
             placeholder={isPreset ? `e.g. http://your-server:port` : 'https://service.example.com'}
           />
         </FieldGroup>
@@ -109,7 +138,7 @@ export default function ConfigView({
               onChange={e => {
                 form.setInstance(e.target.value);
                 // The message was about the name it no longer holds.
-                if (instanceError) setSaveStatus?.(null);
+                clearRefusal('instance');
               }}
               placeholder="e.g. primary"
             />
@@ -269,8 +298,8 @@ export default function ConfigView({
           )}
         </div>
 
-        {/* Test result */}
-        {testStatus && testStatus !== 'testing' && (
+        {/* Test result (a refusal of a field shows beside it instead) */}
+        {testStatus && testStatus !== 'testing' && !besideField(testStatus) && (
           <div style={{
             padding: '10px 14px', borderRadius: 10,
             background: testStatus.ok ? 'var(--green-bg)' : 'var(--red-bg)',
@@ -279,23 +308,14 @@ export default function ConfigView({
             color: testStatus.ok ? 'var(--green)' : 'var(--red)',
           }}>
             {testStatus.ok
-              ? `✓ Connection successful (HTTP ${testStatus.status})`
+              ? '✓ Connection successful'
               : `✕ Connection failed: ${testStatus.error}`
             }
-            {testStatus.instructions && (
-              <pre style={{
-                marginTop: 10, padding: '10px 12px', borderRadius: 8,
-                background: 'var(--bg-card-inner)', border: '1px solid var(--border-color)',
-                color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.6,
-                whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                fontFamily: 'var(--font-mono)',
-              }}>{testStatus.instructions}</pre>
-            )}
           </div>
         )}
 
         {/* Save error */}
-        {saveError && !instanceError && (
+        {saveError && !besideField(saveStatus) && (
           <div role="alert" style={{
             padding: '10px 14px', borderRadius: 10,
             background: 'var(--red-bg)', border: '1px solid var(--red-border)',

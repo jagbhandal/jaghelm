@@ -6,7 +6,6 @@ export default {
   authHeader: 'Authorization',
   authPrefix: 'PVEAPIToken=',
   endpoint: '/api2/json/cluster/resources?type=vm',
-  testEndpoint: '/api2/json/version',
   tlsSkip: true,
   fields: [],
 

@@ -16,10 +16,9 @@ export default {
   authHeader: 'NC-Token',
   extraHeaders: { 'OCS-APIREQUEST': 'true' },
   endpoint: '/ocs/v2.php/apps/serverinfo/api/v1/info?format=json',
-  // Test against the same token-gated endpoint we actually poll. The old
-  // testEndpoint (`/ocs/v2.php/cloud/capabilities`) does NOT honor NC-Token —
-  // it needs a logged-in user — so a valid token would fail the connection test.
-  testEndpoint: '/ocs/v2.php/apps/serverinfo/api/v1/info?format=json',
+  // The token-gated serverinfo endpoint, which the connection test requests
+  // too (#427): `/ocs/v2.php/cloud/capabilities` does NOT honor NC-Token (it
+  // needs a logged-in user), so a valid token would fail there.
   fields: [
     { key: 'files', label: 'Files', path: 'ocs.data.nextcloud.storage.num_files', format: 'number' },
     { key: 'users', label: 'Users', path: 'ocs.data.nextcloud.storage.num_users', format: 'number' },

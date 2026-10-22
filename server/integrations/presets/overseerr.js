@@ -5,7 +5,6 @@ export default {
   auth: 'header',
   authHeader: 'X-Api-Key',
   endpoint: '/api/v1/request/count',
-  testEndpoint: '/api/v1/status',
   fields: [
     { key: 'pending', label: 'Pending', path: 'pending', format: 'number' },
     { key: 'approved', label: 'Approved', path: 'approved', format: 'number' },

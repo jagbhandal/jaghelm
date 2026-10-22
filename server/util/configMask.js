@@ -32,20 +32,25 @@
  * legacy `custom_integrations` map):
  *   - `key` (elsewhere it names a field or an extra endpoint);
  *   - every key the entry's endpoints, or its preset's, fill in through a
- *     `{name}` placeholder (lib/extract.js resolveEndpoint), whatever its name.
+ *     `{name}` placeholder (lib/extract.js resolveEndpoint), whatever its name;
+ *   - its `url` when it carries a credential (urlCredential in redact.js: a
+ *     user name or password before the host, or a key in its query), whole
+ *     (#422). The form shows such a URL empty and says to enter it without
+ *     the credential; a save refuses one that carries one.
  * Never masked: the key of a map (an integration's, node's, service's or
- * monitor_per_node's own name), and what the integration form shows and saves
- * back on an entry (url, username, target, instance, enabled, preset and every
- * preset's URL parameters), unless it is a password or token: a marker in one
- * of those would be posted back through the form and written. `authHeader`
- * names a header and is no credential: its value is the `token`.
+ * monitor_per_node's own name), and what else the integration form shows and
+ * saves back on an entry (a url with no credential, username, target,
+ * instance, enabled, preset and every preset's URL parameters), unless it is
+ * a password or token: a marker in one of those would be posted back through
+ * the form and written. `authHeader` names a header and is no credential: its
+ * value is the `token`.
  *
  * A credential that is not set (null or '') is left as it is, so the marker
  * always means a value is stored. Pure (no I/O, no logging), so the web
  * client's tests use it too.
  */
 
-import { SECRET_PARAMS } from './redact.js';
+import { SECRET_PARAMS, urlCredential } from './redact.js';
 
 /** The marker for a stored credential. */
 export const STORED_MARKER = Object.freeze({ $stored: true });
@@ -194,6 +199,7 @@ function credentialPlace(frame, key) {
  * @param {unknown} value
  */
 function isMasked(frame, key, value) {
+  if (frame.kind === 'entry' && key === 'url') return urlCredential(value) !== null;
   const place = credentialPlace(frame, key);
   if (!place || !isSet(value)) return false;
   return place === 'always' || endpointCarriesCredential(value);

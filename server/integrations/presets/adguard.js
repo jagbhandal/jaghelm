@@ -4,7 +4,6 @@ export default {
   description: 'Network-wide ad and tracker blocking',
   auth: 'basic',
   endpoint: '/control/stats',
-  testEndpoint: '/control/status',
   fields: [
     { key: 'queries', label: 'Queries', path: 'num_dns_queries', format: 'number' },
     { key: 'blocked', label: 'Blocked', path: 'num_blocked_filtering', format: 'number' },

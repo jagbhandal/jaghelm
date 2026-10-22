@@ -12,7 +12,6 @@ export default {
   // POST support and 409-retry handling for the CSRF token if Transmission is wanted.
   auth: 'basic',
   endpoint: '/transmission/rpc',
-  testEndpoint: '/transmission/rpc',
   fields: [
     { key: 'active', label: 'Active', path: 'arguments.activeTorrentCount', format: 'number' },
     { key: 'paused', label: 'Paused', path: 'arguments.pausedTorrentCount', format: 'number' },
