@@ -201,6 +201,9 @@ src/                        React 19 SPA (Vite 8)
                              lib/ago.js ("12 s ago", and the one clock every age on
                              screen ticks on), lib/utils.js (cn, taught the theme),
                              lib/portal.js (portal roots and the switches they copy),
+                             lib/floating.jsx (the floating layer's loader and the
+                             triggers drawn until it is in), floating/ (the popups'
+                             Base UI parts, one chunk loaded on first use; see 5.1),
                              lib/field-context.js (how a Field labels its control),
                              lib/tone.jsx (a tone's icon), lib/name.js (an overlay's
                              required name)
@@ -213,8 +216,8 @@ gallery/                    the component gallery (development and CI only, docs
                             playwright.config.mjs, never part of the production build
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
-                            phone-split.spec.mjs, login.spec.mjs, utilities.spec.mjs, what
-                            they share in app.mjs; see 8): the
+                            phone-split.spec.mjs, login.spec.mjs, utilities.spec.mjs,
+                            first-load.spec.mjs, what they share in app.mjs; see 8): the
                             production build served
                             by `vite preview`, every /api request answered in the test; run
                             by playwright.e2e.config.mjs in the gallery's container
@@ -2055,11 +2058,13 @@ stack sits beside today's CSS and must not restyle it.
   shadcn/ui is set up in `components.json`: JSX (no
   TypeScript), the Base UI primitives (style `base-nova`), and the `@ui` alias for
   `src/ui/` (`tsconfig.json` `paths`, so `npx shadcn add <name>` writes
-  `src/ui/<name>.jsx`). Components import `cn` from `src/ui/lib/utils.js`: the
-  `cn` package, as the shadcn registry generates it, taught the theme's type
-  steps, named spacing, shadows, layers and motion, which it would otherwise
-  misread. A generated component's `import { cn } from 'cn'` is switched to it,
-  and a test fails on any other `cn` in `src/ui/`. Icons come from
+  `src/ui/<name>.jsx`). Components import `cn` from `src/ui/lib/utils.js`:
+  clsx's join and tailwind-merge's merge, taught the theme's type steps, named
+  spacing, shadows, layers and motion, which it would otherwise misread (the
+  `cn` package until #444; tailwind-merge with the same lists merges every pair
+  of `src/ui/`'s classes the same, in half the bytes). A generated component's
+  `import { cn } from 'cn'` is switched to it, and a test fails on any other
+  `cn` in `src/ui/`. Icons come from
   `lucide-react` by name (`import { Check } from 'lucide-react'`), so a bundle
   carries only the icons it uses. The components so far are the controls
   (#285), the containers (#286), the data components (#288), the status
@@ -2076,6 +2081,26 @@ stack sits beside today's CSS and must not restyle it.
   code uses the Android app's own copies: the APK build installs `mobile/` only,
   and a second React breaks hooks. A package added to `src/ui/` goes in both
   `package.json` files and that list; `scripts/ui-stack.test.mjs` checks it.
+- **The floating layer loads on first use** (#444). The popups (Tooltip,
+  Popover, Select, Dialog, Drawer, Confirm, the Sparkline's readout) are Base
+  UI and floating-ui, about 18 KB gzipped, and none draws the first screen.
+  Their Base UI parts live in `src/ui/floating/`, one chunk that
+  `src/ui/lib/floating.jsx` loads once for all of them: on the page's first
+  pointer or keyboard input, or at once when a popup is opened from code or a
+  Select mounts. Until then each component draws its trigger itself (the
+  caller's element, or the Select's trigger as Base UI draws it) with the
+  closed popup's ARIA; the tooltips' shared timing (Base UI's provider) stays
+  in `UiRoot`. When the layer arrives, Base UI draws each trigger anew: focus
+  moves to the new one if the old had it, a trigger being pressed waits for
+  its click, and one activated meanwhile (a click, Enter or Space, a Select's
+  arrow) opens its popup through Base UI. Once loaded it answers at once, so
+  later popups never wait. The client tests and the gallery load it before
+  they draw. It is the one `import()` in `src/` outside `src/lazyViews.js`,
+  because the Android app shares `src/ui/` (`lazy-views.test.mjs`).
+  `scripts/first-load.mjs` builds and adds up the first screen's download
+  against spec §4's 200 KB, fonts and the logo included, and
+  `e2e/first-load.spec.mjs` checks it counts what a browser fetches; #306
+  makes it a CI check.
 - **The Android app's status components are the shared ones** (#287): its
   StatusLamp, StatusWord, IssueRow, SubsystemStrip and SystemStatusCard moved
   from `mobile/src/components/` into `src/ui/` (SystemStatusCard became
@@ -2086,7 +2111,7 @@ stack sits beside today's CSS and must not restyle it.
   `__ANDROID_LOOK__` define picks the look per build: true in the Android
   build, false in the web's (`src/ui/lib/status.js`). Each component reads it
   directly, so the bundler sees a literal and each bundle leaves the other
-  look out: the APK carries neither `cn`, Lucide nor the web look's code, bar
+  look out: the APK carries neither tailwind-merge, Lucide nor the web look's code, bar
   the lamp marks its own lamp borrows
   ([design-system.md](design-system.md#two-looks)).
 - **Cascade layers.** The order is `legacy, properties, theme, base, components,
@@ -2194,7 +2219,9 @@ stack sits beside today's CSS and must not restyle it.
   and a latin-ext file with Google's `unicode-range`, so the latin-ext file
   downloads only for text that needs it, such as "Łódź" (#394); today's faces
   are latin only. A browser downloads a face only when text renders in it, and
-  nothing is preloaded. `scripts/fonts.test.mjs` checks that every `@font-face`
+  nothing is preloaded. Today's board still draws DM Sans and Outfit on the
+  Overview, below the new sections, so the first load fetches them until the
+  last legacy panel goes (`scripts/first-load.mjs` counts them). `scripts/fonts.test.mjs` checks that every `@font-face`
   matches its file and licence and each file its pinned sha256, that nothing
   names Google Fonts or loads a font or stylesheet from elsewhere, that "Łódź"
   draws in each new face from its latin-ext file while latin text never needs
@@ -2591,7 +2618,11 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   (`src/lazyViews.js`) before its tests run, and from then on each renders
   at once, without suspending (`src/testing/setup.js`). So a test that opens
   Settings, Alerts, an app or the More sheet never races its first import,
-  or React's held-back reveal of it, on a busy machine (#490).
+  or React's held-back reveal of it, on a busy machine (#490). A file that
+  imports a floating component loads the floating layer the same way, so each
+  draws Base UI from its first render; `src/ui/floating.test.jsx` gives each a
+  layer of its own that loads only when the test lets it, and opens every one
+  from the keyboard before it has (#444).
 - **Cross-client status suite** (both of the above): seven named status fixtures
   (`server/testing/statusScenarios.js`) through the real push cycle
   (`server/status/crossClient.test.js`, in `test:ci`) and through the `src/ui`
@@ -2706,6 +2737,12 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   JagHelm's logo loads, the lockup for the theme (#530), and on a 390 × 667
   phone the page fits without scrolling, blank and with an error.
   Screenshots of each go to `test-results/e2e/shots/`.
+- **The first load in a browser** (#444, `e2e/first-load.spec.mjs`, with the
+  shell's tests): on the incident fixture at 1440px the page fetches exactly
+  what `scripts/first-load.mjs` counts, the app's data aside, and not the
+  floating layer, which the first pointer move brings; and a tooltip focused
+  by keyboard while the layer is held back opens once it arrives, on the
+  trigger that kept focus, beside it from the first frame it shows in.
 - **Repo guards** (`node --test`, `scripts/*.test.mjs`): the deploy runner pin,
   the secret floor (`.gitignore`, tracked templates, the scanner catching a
   planted key) and its wiring in `check.yml`, the docs' preset and test
@@ -2715,7 +2752,9 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   (`ui-tokens.test.mjs`, `ui-contrast.test.mjs`) and the chart colours
   (`chart-palette.test.mjs`), and the fonts and type scale
   (`fonts.test.mjs`), and every lazy view's loader in `src/lazyViews.js`,
-  the list the client tests load up front (`lazy-views.test.mjs`). Write new
+  the list the client tests load up front, and the floating layer's one
+  loader (`lazy-views.test.mjs`), and the first load's arithmetic
+  (`first-load.test.mjs`). Write new
   repo checks this way, not as shell scripts: `npm test` only collects
   `*.test.{js,mjs,cjs}`.
 
