@@ -12,6 +12,13 @@
  * carry no times and its lines change only with the config, so a steady board
  * keeps one ETag from cycle to cycle and a poll gets a 304. Before the first cycle, or once the loop has not built one
  * for the cache's TTL, it answers 503: there is no status to judge from.
+ *
+ * When the loop built the status it serves goes out as Last-Modified, on the
+ * 200 and the 304 (#499), so a client can say how old a status is however
+ * long ago its own last answer came. Being a header, it leaves the ETag one per
+ * value. It is CORS-safelisted, so a cross-origin page reads it unexposed.
+ * `Cache-Control: no-cache`: a Last-Modified alone would let a browser reuse
+ * the answer unasked for a tenth of its age; a status is always asked again.
  */
 import { Router } from 'express';
 
@@ -23,7 +30,8 @@ const router = Router();
 router.get('/', (req, res) => {
   const status = getCached('status');
   if (!status) return apiError(res, 503, 'Status not yet available');
-  return jsonWithEtag(res, req, 'status', status);
+  res.set('Cache-Control', 'no-cache');
+  return jsonWithEtag(res, req, 'status', status, { lastModified: true });
 });
 
 export { router as statusRoutes };

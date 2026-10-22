@@ -106,14 +106,24 @@ function ifNoneMatchHits(header, etag) {
  * `cacheKey`, the entry's body and ETag are used (computed and kept on the
  * entry, if this is the first time it is served); any other value is
  * serialized for this response only.
+ *
+ * With `lastModified` (/api/status, #499), the cached value goes out with its
+ * entry's time as Last-Modified, on the 200 and the 304 alike: when setCache
+ * stored it, which for the status is when the loop built it. Each cycle
+ * stores its status again, so the time moves on every cycle while an equal
+ * status keeps its ETag: the time is a header, never in the body. An HTTP date
+ * counts whole seconds, so it is up to a second early, which an age shown in
+ * seconds or minutes can bear. A value that isn't the cached one has no entry
+ * time to vouch for it, and gets none.
  */
-export function jsonWithEtag(res, req, cacheKey, data) {
+export function jsonWithEtag(res, req, cacheKey, data, { lastModified = false } = {}) {
   let entry = cache.get(cacheKey);
   if (!entry || entry.data !== data) entry = { data }; // not the cached value: this response only
   if (!entry.body) serialize(entry);
   const { body, etag } = entry;
 
   res.set('ETag', etag);
+  if (lastModified && entry.ts != null) res.set('Last-Modified', new Date(entry.ts).toUTCString());
   if (ifNoneMatchHits(req.headers['if-none-match'], etag)) {
     return res.status(304).end();
   }
