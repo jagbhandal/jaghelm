@@ -42,6 +42,7 @@ import {
   setAuthToken as setApiAuthToken,
   initAuthToken,
   setReadOnlyServer,
+  setAuthExpiredHandler,
 } from './api/client.js';
 import { secureStore } from './storage/index.js';
 
@@ -109,12 +110,19 @@ export default function App() {
     setAuthed(true);
   };
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     secureStore.removeItem('jaghelm-token'); // web: localStorage; mobile: Keystore
     setApiAuthToken(''); // Clear apiFetch's in-memory token
     setAuthToken('');
     setAuthed(false);
-  };
+  }, []);
+
+  // An expired session signs out like the button (#492): the sign-in screen
+  // replaces AppMain, and every poll stops with it until the next sign-in.
+  useEffect(() => {
+    setAuthExpiredHandler(handleLogout);
+    return () => setAuthExpiredHandler(null);
+  }, [handleLogout]);
 
   // Show login if auth required and not authenticated
   if (authRequired === null) return null; // Loading

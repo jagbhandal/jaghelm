@@ -18,12 +18,13 @@ import { secureStore } from '../storage/index.js';
 // token source is swappable (web localStorage default; mobile Keystore later).
 let authToken = '';
 
-// Optional hook fired when a protected /api call returns 401 (token expired or
-// revoked — JagHelm sessions are 24h and die on server restart). Null by default,
-// so the web path is byte-for-byte unchanged; the mobile shell registers a
-// handler that clears the token and routes back to the login screen. Must be
-// idempotent: several in-flight requests can each 401 in the same window.
+// Hook fired when a protected /api call returns 401 (token expired or revoked:
+// JagHelm sessions are 24h and die on server restart). Both shells register
+// one that clears the token and shows the sign-in screen (web: App.jsx, #492;
+// mobile: mobile/src/App.jsx). It fires once per token: the first 401 marks the
+// token reported, so the other polls in flight with it don't fire it again.
 let onAuthExpired = null;
+let expiryReported = false;
 
 /** Register (or clear, with null) the 401 auth-expired handler. */
 export function setAuthExpiredHandler(fn) {
@@ -38,6 +39,7 @@ export function setAuthExpiredHandler(fn) {
  */
 export async function initAuthToken() {
   authToken = (await secureStore.getItem('jaghelm-token')) || '';
+  expiryReported = false;
 }
 
 /**
@@ -47,6 +49,7 @@ export async function initAuthToken() {
  */
 export function setAuthToken(token) {
   authToken = token || '';
+  expiryReported = false;
 }
 
 /** Return the current in-memory auth token ('' if none). */
@@ -87,15 +90,27 @@ export function apiFetch(url, opts) {
     !url.includes('/auth/login') &&
     authToken
   ) {
+    const sent = authToken;
     return window
       .fetch(url, {
         ...(opts || {}),
-        headers: { ...(opts && opts.headers), 'x-auth-token': authToken },
+        headers: { ...(opts && opts.headers), 'x-auth-token': sent },
       })
       .then((r) => {
-        // Self-heal on an expired/revoked session: notify the shell, but never
-        // let a throwing handler break the caller's fetch result.
-        if (r && r.status === 401 && onAuthExpired) {
+        // Self-heal on an expired/revoked session: notify the shell once per
+        // token, and never let a throwing handler break the caller's fetch
+        // result. A late 401 for a token since replaced (a new sign-in) is
+        // ignored. A 401 from /auth/ is about the password sent (a wrong
+        // current password on change-password), not the session.
+        if (
+          r &&
+          r.status === 401 &&
+          onAuthExpired &&
+          sent === authToken &&
+          !expiryReported &&
+          !url.slice(base.length).startsWith('/auth/')
+        ) {
+          expiryReported = true;
           try {
             onAuthExpired();
           } catch {
