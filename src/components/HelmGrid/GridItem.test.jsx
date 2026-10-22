@@ -132,9 +132,10 @@ describe('GridItem content height', () => {
     );
     return {
       watched: () => observers.flatMap((o) => [...o.watched]),
-      // The browser reports `el`'s box resized.
-      resize: (el) => {
-        for (const o of observers) if (o.watched.has(el)) o.cb([{ target: el }], o);
+      // The browser reports `el`'s box resized, to `height` px tall.
+      resize: (el, height) => {
+        const entry = { target: el, borderBoxSize: [{ blockSize: height }] };
+        for (const o of observers) if (o.watched.has(el)) o.cb([entry], o);
       },
     };
   };
@@ -189,8 +190,9 @@ describe('GridItem content height', () => {
     expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 400);
 
     // Made wider, the panel's content takes less height: measured again.
+    ro.resize(screen.getByTestId('content'), 380);
     natural.px = 250;
-    ro.resize(screen.getByTestId('panel'));
+    ro.resize(screen.getByTestId('content'), 230);
     expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 250);
   });
 
@@ -210,8 +212,9 @@ describe('GridItem content height', () => {
     // the content is, while the panel, stretched to its grid height, keeps its
     // box. Only the content's box changes; the panel must be measured again,
     // or it stays a row too tall.
+    ro.resize(screen.getByTestId('content'), 911);
     natural.px = 917;
-    ro.resize(screen.getByTestId('content'));
+    ro.resize(screen.getByTestId('content'), 901);
     expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 917);
   });
 
@@ -260,7 +263,7 @@ describe('GridItem content height', () => {
     expect(ro.watched()).not.toContain(gone);
 
     natural.px = 440;
-    ro.resize(added);
+    ro.resize(added, 20);
     expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 440);
   });
 
@@ -284,6 +287,45 @@ describe('GridItem content height', () => {
     );
     await settle();
     expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 480);
+  });
+
+  it('a bar animating its width changes no height: no measure each frame (#498)', async () => {
+    const ro = stubObserver();
+    stubLayout(400);
+    const onContentHeight = vi.fn();
+    render(
+      <GridItem {...baseProps({ onContentHeight })}>
+        <Panel />
+      </GridItem>
+    );
+    await settle();
+    const bar = screen.getByTestId('line-Gitea');
+    ro.resize(bar, 6); // its first size, as the observer reports on watching it
+    const measured = onContentHeight.mock.calls.length;
+
+    // A meter's fill grows over 1 s: a resize every frame, its height the same.
+    for (let frame = 0; frame < 10; frame++) ro.resize(bar, 6);
+    expect(onContentHeight).toHaveBeenCalledTimes(measured);
+  });
+
+  it('a text change that makes the panel taller is measured, through its box', async () => {
+    const ro = stubObserver();
+    const natural = stubLayout(400);
+    const onContentHeight = vi.fn();
+    render(
+      <GridItem {...baseProps({ onContentHeight })}>
+        <Panel />
+      </GridItem>
+    );
+    await settle();
+    const line = screen.getByTestId('line-Gitea');
+    ro.resize(line, 20);
+
+    // Longer text wraps to two lines: the line's box grows, and so the panel.
+    natural.px = 420;
+    line.textContent = 'Gitea, with a much longer name that wraps to two lines';
+    ro.resize(line, 40);
+    expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 420);
   });
 
   it("doesn't measure again on its own measuring, or on the layout moving it", async () => {

@@ -1549,8 +1549,10 @@ flowchart TD
   its content or width, at most once a frame. The panel's own box is stretched
   to its grid height, so it doesn't change when only the content does (the
   web fonts arriving late left a panel a row too tall, #498): a
-  ResizeObserver watches every element in the panel, a MutationObserver its
-  DOM, and a measure skipped during a resize runs when it ends. Pointer
+  ResizeObserver watches every element in the panel and measures when one
+  changes height (not on a width-only animation, such as a meter's fill), a
+  MutationObserver keeps that set current as elements come and go, and a
+  measure skipped during a resize runs when it ends. Pointer
   **and keyboard** (arrow move / Shift+arrow resize, with a live region)
   reposition them.
 - **Panels and first run.** The board has a panel per discovered node and custom

@@ -15,8 +15,9 @@ const ARROW_DELTAS = {
 /**
  * GridItem — wraps a single grid cell. Two responsibilities:
  *   1. Measure natural content height and report it up via onContentHeight
- *      whenever the content or the width changes (ResizeObserver on every
- *      element in the panel, MutationObserver on its DOM). Skips measurement
+ *      whenever the content or the width changes its height (ResizeObserver
+ *      on every element in the panel, MutationObserver for the elements
+ *      added and removed). Skips measurement
  *      during an active resize (the user is controlling height directly, and
  *      measuring mid-resize creates expensive reflow cascades), and measures
  *      when it ends.
@@ -58,12 +59,14 @@ const GridItem = React.memo(function GridItem({
   // grid height (flex: 1), so when only its content gets shorter or taller the
   // box stays the same and a ResizeObserver on it is silent. The web fonts
   // swapping in after the last measure left a node panel a row too tall for
-  // good (#498). So the observer watches every element in the panel: their
-  // boxes change with the content (text rewrapped in a new font, an image
-  // loaded, new data drawn), and the panel's with its width. A
-  // MutationObserver re-measures on any change to the panel's DOM (a line
-  // removed from a stretched card resizes no box) and keeps the watched
-  // elements current. A measure skipped during a resize runs when it ends.
+  // good (#498). So the observer watches every element in the panel, and
+  // measures when one of them changes height: their boxes change with the
+  // content (text rewrapped in a new font, an image loaded, new data drawn,
+  // the width). A box that changes only its width (a meter's fill animating)
+  // changes no height, so it isn't measured. A MutationObserver keeps the
+  // watched elements current and measures when one is added or removed (a
+  // line removed from a stretched card resizes no box). A measure skipped
+  // during a resize runs when it ends.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -89,7 +92,19 @@ const GridItem = React.memo(function GridItem({
     };
     scheduleRef.current = schedule;
 
-    const ro = new ResizeObserver(schedule);
+    // Each watched element's last height (its first is a change).
+    const heights = new WeakMap();
+    const ro = new ResizeObserver((entries) => {
+      let changed = false;
+      for (const { target, borderBoxSize, contentRect } of entries) {
+        const height = borderBoxSize?.[0]?.blockSize ?? contentRect.height;
+        if (heights.get(target) !== height) {
+          heights.set(target, height);
+          changed = true;
+        }
+      }
+      if (changed) schedule();
+    });
     const watch = (node) => {
       if (node.nodeType !== Node.ELEMENT_NODE || node.matches(HANDLES)) return;
       ro.observe(node);
@@ -105,23 +120,16 @@ const GridItem = React.memo(function GridItem({
     // measure (#248).
     for (const child of el.children) watch(child);
 
+    // Elements only: a text or attribute change that changes a height
+    // reaches the ResizeObserver through that element's box.
     const mo = new MutationObserver((records) => {
-      let changed = false;
       for (const record of records) {
-        const target =
-          record.target.nodeType === Node.ELEMENT_NODE
-            ? record.target
-            : record.target.parentElement;
-        // The item's own style (the layout, and the measure's height: auto)
-        // and its handles' labels are not its content.
-        if (target === el ? record.type === 'attributes' : target?.closest(HANDLES)) continue;
         for (const node of record.removedNodes) unwatch(node);
         for (const node of record.addedNodes) watch(node);
-        changed = true;
       }
-      if (changed) schedule();
+      schedule();
     });
-    mo.observe(el, { subtree: true, childList: true, characterData: true, attributes: true });
+    mo.observe(el, { subtree: true, childList: true });
 
     schedule(); // the first measure, after paint
 
