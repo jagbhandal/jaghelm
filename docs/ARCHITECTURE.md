@@ -808,6 +808,21 @@ scrypt password hashing (`auth/passwords.js`), in-memory sessions
 A reusable `util/rateLimiter.js` additionally throttles the abuse-prone
 integration connection-test endpoint.
 
+A session ends 24 h after sign-in or when the server restarts, and every
+protected request after that gets a 401. `apiFetch` (`src/api/client.js`)
+hands a 401 from any `/api` call outside `/api/auth/` to the shell's
+auth-expired handler, with the token the request was sent with (none counts
+too: a tab loaded while the server had no password). It does so once per
+token: other 401s wait while the handler runs, a rejected handler is logged
+and retried once on the next 401, and a late 401 for a token since replaced is
+ignored. A 401 from `/api/auth/` (a wrong password) is about the password sent.
+The web app (`App.jsx`) first reads the stored token: if another tab signed in
+since, it takes that session and carries on. Otherwise it signs out like the
+button, as the Android app does: the sign-in screen replaces the app, every
+poll stops, no header keeps the last status's colours, and signing in starts
+the polls again (#492). Before, an open web tab kept polling with the dead
+token, a 401 each time.
+
 ### 4.6 Observability
 
 - **Structured logging** (`util/logger.js`) with redaction -- no URL credentials
@@ -846,9 +861,15 @@ integration connection-test endpoint.
   a config change, and the first success after failures logs at info
   (`integrations/backoff.js`).
 - **Access log** (`accessLog.js`): one line per request with its full path and no
-  query string or fragment; 5xx at `error`, 4xx and requests of 300 ms or more at
-  `info`, the rest at `debug`. `/metrics`, `/api/health` and `/api/readyz` are not
-  logged unless they fail (5xx).
+  query string or fragment. `accessLevel()` picks the level (#492): 5xx at
+  `error`; at `info`, every 4xx (a 401 or 403 included, so a signed-out tab or an
+  unauthenticated poller still shows), every request of 300 ms or more
+  (`SLOW_REQUEST_MS`, the feed-latency SLO line), and every request with a method
+  other than GET, HEAD or OPTIONS (config saves, cron reports, sign-ins and failed
+  sign-ins); a fast successful read, such as a dashboard poll's 200 or 304, at
+  `debug`, so `LOG_LEVEL=debug` shows every request. There is no logout request
+  to log: signing out only drops the token in the client. `/metrics`,
+  `/api/health` and `/api/readyz` are not logged unless they fail (5xx).
 - **Prometheus metrics** at `/metrics` via `prom-client` (`metrics.js`): request
   rate, latency histograms, refresh-loop health.
 - **Two probes**: `/api/health` (liveness; reflects refresh-loop liveness -- 503

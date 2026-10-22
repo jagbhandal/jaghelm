@@ -18,12 +18,17 @@ import { secureStore } from '../storage/index.js';
 // token source is swappable (web localStorage default; mobile Keystore later).
 let authToken = '';
 
-// Optional hook fired when a protected /api call returns 401 (token expired or
-// revoked — JagHelm sessions are 24h and die on server restart). Null by default,
-// so the web path is byte-for-byte unchanged; the mobile shell registers a
-// handler that clears the token and routes back to the login screen. Must be
-// idempotent: several in-flight requests can each 401 in the same window.
+// Hook called when an /api call outside /api/auth/ returns 401: the session
+// expired or was revoked (JagHelm sessions are 24h and die on server restart),
+// or a tab sent no token to a server that now has a password. Both shells
+// register one (web: App.jsx, #492; mobile: mobile/src/App.jsx). It gets the
+// token the request was sent with ('' for none) and may return a promise.
+// Once per token: while it runs, other 401s don't call it again; once it
+// resolves, the token is done. A rejection is logged, and the next 401 retries
+// it once.
 let onAuthExpired = null;
+// The report state of the current token; setAuthToken starts a new one.
+let expiry = { running: false, done: false, failures: 0 };
 
 /** Register (or clear, with null) the 401 auth-expired handler. */
 export function setAuthExpiredHandler(fn) {
@@ -38,6 +43,7 @@ export function setAuthExpiredHandler(fn) {
  */
 export async function initAuthToken() {
   authToken = (await secureStore.getItem('jaghelm-token')) || '';
+  expiry = { running: false, done: false, failures: 0 };
 }
 
 /**
@@ -47,6 +53,7 @@ export async function initAuthToken() {
  */
 export function setAuthToken(token) {
   authToken = token || '';
+  expiry = { running: false, done: false, failures: 0 };
 }
 
 /** Return the current in-memory auth token ('' if none). */
@@ -69,41 +76,57 @@ export function isReadOnlyServer() {
   return readOnlyServer;
 }
 
+/** Tell the shell a request sent with `sent` got a 401: see onAuthExpired. */
+function reportExpired(sent) {
+  const state = expiry;
+  if (!onAuthExpired || sent !== authToken || state.running || state.done) return;
+  if (state.failures > 1) return; // the first attempt and its one retry failed
+  state.running = true;
+  const settle = (failed, err) => {
+    state.running = false;
+    if (!failed) state.done = true;
+    else {
+      state.failures += 1;
+      console.warn('[auth] the expired-session handler failed:', err);
+    }
+  };
+  try {
+    Promise.resolve(onAuthExpired(sent)).then(
+      () => settle(false),
+      (err) => settle(true, err)
+    );
+  } catch (err) {
+    settle(true, err);
+  }
+}
+
 /**
- * fetch wrapper that injects the auth header for protected /api calls. If `url`
- * starts with the configured API base (getApiBase()), is not the login route,
- * and a token is set, `x-auth-token` is merged into a *new* options object (the
- * caller's opts/headers are never mutated); otherwise the call passes through
- * unchanged. Web base is '/api' (same-origin, byte-for-byte unchanged). Mobile
- * base is an absolute Tailscale URL so absolute calls also get the header.
+ * fetch wrapper for /api calls. If `url` starts with the configured API base
+ * (getApiBase()), is not the login route, and a token is set, `x-auth-token` is
+ * merged into a *new* options object (the caller's opts/headers are never
+ * mutated). A 401 from an /api call outside /api/auth/ goes to the auth-expired
+ * hook, whether or not it carried a token; a 401 from /api/auth/ is about the
+ * password sent (a wrong password at sign-in, or a wrong current password on
+ * change-password), not the session. Anything else passes through unchanged.
+ * Web base is '/api' (same-origin). Mobile base is an absolute Tailscale URL
+ * so absolute calls also get the header.
  */
 export function apiFetch(url, opts) {
   // Base-aware: matches '/api' on web OR 'http://host/api' on mobile, so the
   // protected-route guard injects x-auth-token regardless of transport origin.
   const base = getApiBase();
-  if (
-    typeof url === 'string' &&
-    url.startsWith(base) &&
-    !url.includes('/auth/login') &&
-    authToken
-  ) {
-    return window
-      .fetch(url, {
-        ...(opts || {}),
-        headers: { ...(opts && opts.headers), 'x-auth-token': authToken },
-      })
-      .then((r) => {
-        // Self-heal on an expired/revoked session: notify the shell, but never
-        // let a throwing handler break the caller's fetch result.
-        if (r && r.status === 401 && onAuthExpired) {
-          try {
-            onAuthExpired();
-          } catch {
-            /* handler errors are non-fatal to the request */
-          }
-        }
-        return r;
-      });
-  }
-  return window.fetch(url, opts);
+  if (typeof url !== 'string' || !url.startsWith(base)) return window.fetch(url, opts);
+  const sent = authToken;
+  const request =
+    sent && !url.includes('/auth/login')
+      ? window.fetch(url, {
+          ...(opts || {}),
+          headers: { ...(opts && opts.headers), 'x-auth-token': sent },
+        })
+      : window.fetch(url, opts);
+  if (url.slice(base.length).startsWith('/auth/')) return request;
+  return request.then((r) => {
+    if (r && r.status === 401) reportExpired(sent);
+    return r;
+  });
 }
