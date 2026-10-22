@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import GridItem from './GridItem.jsx';
 
@@ -107,7 +107,8 @@ describe('GridItem content height', () => {
     vi.restoreAllMocks();
   });
 
-  // A ResizeObserver that records what it watches and can be fired by hand.
+  // A ResizeObserver that records what it watches, as the browser's does, and
+  // reports a resize only to the observers watching that element.
   const stubObserver = () => {
     const observers = [];
     vi.stubGlobal(
@@ -115,45 +116,196 @@ describe('GridItem content height', () => {
       class {
         constructor(cb) {
           this.cb = cb;
-          this.watched = [];
+          this.watched = new Set();
           observers.push(this);
         }
         observe(el) {
-          this.watched.push(el);
+          this.watched.add(el);
         }
-        unobserve() {}
-        disconnect() {}
+        unobserve(el) {
+          this.watched.delete(el);
+        }
+        disconnect() {
+          this.watched.clear();
+        }
       }
     );
-    return observers;
+    return {
+      watched: () => observers.flatMap((o) => [...o.watched]),
+      // The browser reports `el`'s box resized.
+      resize: (el) => {
+        for (const o of observers) if (o.watched.has(el)) o.cb([{ target: el }], o);
+      },
+    };
   };
 
-  it('watches the panel, not the keyboard handle, and re-measures when the panel resizes (#248)', () => {
-    const observers = stubObserver();
-    // requestAnimationFrame runs the measure at once.
+  // requestAnimationFrame runs the measure at once; the content's natural
+  // height (the item at height: auto) is `natural.px`.
+  const stubLayout = (px) => {
     vi.stubGlobal('requestAnimationFrame', (fn) => {
       fn();
       return 1;
     });
     vi.stubGlobal('cancelAnimationFrame', () => {});
-    let natural = 400;
-    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => natural);
+    const natural = { px };
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => natural.px);
+    return natural;
+  };
+
+  // A panel as the board draws one: a box stretched to the item's grid height
+  // (flex: 1), and the content in it.
+  const Panel = ({ lines = ['Gitea', 'Grafana'] }) => (
+    <div data-testid="panel" className="section-header">
+      <div data-testid="content">
+        {lines.map((line) => (
+          <p key={line} data-testid={`line-${line}`}>
+            {line}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+
+  // MutationObserver callbacks run as microtasks.
+  const settle = () => act(async () => {});
+
+  it('watches the panel and everything in it, never the handles, and re-measures when the panel resizes (#248)', async () => {
+    const ro = stubObserver();
+    const natural = stubLayout(400);
     const onContentHeight = vi.fn();
-    render(
+    const { container } = render(
       <GridItem {...baseProps({ onContentHeight })}>
-        <div data-testid="panel" className="section-header">
-          Panel A
-        </div>
+        <Panel />
       </GridItem>
     );
+    await settle();
 
-    const watched = observers.flatMap((o) => o.watched);
-    expect(watched).toEqual([screen.getByTestId('panel')]);
+    const watched = ro.watched();
+    for (const id of ['panel', 'content', 'line-Gitea', 'line-Grafana'])
+      expect(watched).toContain(screen.getByTestId(id));
+    expect(watched).not.toContain(handle());
+    for (const el of container.querySelectorAll('.helmgrid-resize-handle'))
+      expect(watched).not.toContain(el);
     expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 400);
 
     // Made wider, the panel's content takes less height: measured again.
-    natural = 250;
-    observers[0].cb([]);
+    natural.px = 250;
+    ro.resize(screen.getByTestId('panel'));
     expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 250);
+  });
+
+  it("re-measures when the content's own height changes inside the stretched panel: a web font swapping in (#498)", async () => {
+    const ro = stubObserver();
+    const natural = stubLayout(927);
+    const onContentHeight = vi.fn();
+    render(
+      <GridItem {...baseProps({ onContentHeight })}>
+        <Panel />
+      </GridItem>
+    );
+    await settle();
+    expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 927);
+
+    // The board's web fonts arrive after that measure: the text is shorter, so
+    // the content is, while the panel, stretched to its grid height, keeps its
+    // box. Only the content's box changes; the panel must be measured again,
+    // or it stays a row too tall.
+    natural.px = 917;
+    ro.resize(screen.getByTestId('content'));
+    expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 917);
+  });
+
+  it('re-measures when the content changes with no box resizing: a line removed from the stretched panel', async () => {
+    stubObserver();
+    const natural = stubLayout(400);
+    const onContentHeight = vi.fn();
+    const { rerender } = render(
+      <GridItem {...baseProps({ onContentHeight })}>
+        <Panel />
+      </GridItem>
+    );
+    await settle();
+    expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 400);
+
+    natural.px = 360;
+    rerender(
+      <GridItem {...baseProps({ onContentHeight })}>
+        <Panel lines={['Gitea']} />
+      </GridItem>
+    );
+    await settle();
+    expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 360);
+  });
+
+  it('watches content drawn after the first measure, and stops watching what is gone', async () => {
+    const ro = stubObserver();
+    const natural = stubLayout(400);
+    const onContentHeight = vi.fn();
+    const { rerender } = render(
+      <GridItem {...baseProps({ onContentHeight })}>
+        <Panel />
+      </GridItem>
+    );
+    await settle();
+    const gone = screen.getByTestId('line-Grafana');
+
+    rerender(
+      <GridItem {...baseProps({ onContentHeight })}>
+        <Panel lines={['Gitea', 'Jellyfin']} />
+      </GridItem>
+    );
+    await settle();
+    const added = screen.getByTestId('line-Jellyfin');
+    expect(ro.watched()).toContain(added);
+    expect(ro.watched()).not.toContain(gone);
+
+    natural.px = 440;
+    ro.resize(added);
+    expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 440);
+  });
+
+  it('a measure skipped while the panel is resized runs when the resize ends', async () => {
+    stubObserver();
+    const natural = stubLayout(400);
+    const onContentHeight = vi.fn();
+    const { rerender } = render(
+      <GridItem {...baseProps({ onContentHeight, isResizing: true })}>
+        <Panel />
+      </GridItem>
+    );
+    await settle();
+    expect(onContentHeight).not.toHaveBeenCalled();
+
+    natural.px = 480;
+    rerender(
+      <GridItem {...baseProps({ onContentHeight, isResizing: false })}>
+        <Panel />
+      </GridItem>
+    );
+    await settle();
+    expect(onContentHeight).toHaveBeenLastCalledWith('panel-a', 480);
+  });
+
+  it("doesn't measure again on its own measuring, or on the layout moving it", async () => {
+    stubObserver();
+    stubLayout(400);
+    const onContentHeight = vi.fn();
+    const { rerender } = render(
+      <GridItem {...baseProps({ onContentHeight })}>
+        <Panel />
+      </GridItem>
+    );
+    await settle();
+    expect(onContentHeight).toHaveBeenCalledTimes(1);
+
+    // The grid moves the item (its style and its handle's label change): its
+    // content is the same, so nothing is measured.
+    rerender(
+      <GridItem {...baseProps({ onContentHeight, style: { left: 40 }, gridX: 5 })}>
+        <Panel />
+      </GridItem>
+    );
+    await settle();
+    expect(onContentHeight).toHaveBeenCalledTimes(1);
   });
 });

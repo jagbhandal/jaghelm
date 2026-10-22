@@ -115,11 +115,16 @@ function nodePanels(page) {
   );
 }
 
-/** The node panels drawn taller than their content by a grid row (52px) or more. */
-async function emptyNodePanels(page) {
+/**
+ * The node panels not as tall as their content: drawn shorter than it (the
+ * content cut off), or taller by a grid row (52px) or more (blank space).
+ */
+async function unfitNodePanels(page) {
   const panels = await nodePanels(page);
   expect(panels.map((p) => p.name).sort()).toEqual([...NODE_TITLES].sort());
-  return panels.filter((p) => p.height - p.content >= 52).map((p) => p.name);
+  return panels
+    .filter((p) => p.height < p.content || p.height - p.content >= 52)
+    .map((p) => `${p.name}: ${p.height}px for ${p.content}px of content`);
 }
 
 // A layout saved before #299, with the reading tiles: each node panel 12 rows.
@@ -288,14 +293,50 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       page,
     }) => {
       await openBoard(page, 'healthy', 'dark');
-      await expect.poll(() => emptyNodePanels(page)).toEqual([]);
+      await expect.poll(() => unfitNodePanels(page)).toEqual([]);
     });
+
+    // At 1440 the board's text wraps the same in the fallback fonts, so the
+    // fonts arriving late changes no panel's height there: on a phone it does.
+    if (size !== 'desktop') {
+      test('and when the web fonts arrive after the panels were fitted (#498)', async ({
+        page,
+      }) => {
+        // The fonts held until the board is drawn and every node panel fitted to
+        // its content in the fallback fonts, as on a slow device; then let in.
+        // Their text wraps differently, so the content's height changes while
+        // each panel's box, stretched to its grid height, stays: each panel
+        // fits its content again.
+        let release;
+        const held = new Promise((resolve) => (release = resolve));
+        await page.route('**/*.woff2', async (route) => {
+          await held;
+          await route.continue();
+        });
+        const opened = openBoard(page, 'healthy', 'dark');
+        for (const title of NODE_TITLES)
+          await expect(
+            page.locator('.helmgrid-item .section-title', { hasText: new RegExp(`^${title}$`) })
+          ).toBeVisible();
+        await expect.poll(() => unfitNodePanels(page)).toEqual([]);
+        const contents = async () => (await nodePanels(page)).map((p) => p.content);
+        const before = await contents();
+        expect(await page.evaluate(() => document.fonts.status)).toBe('loading');
+        release();
+        await opened;
+        await page.evaluate(() => document.fonts.ready);
+        expect(await page.evaluate(() => document.fonts.status)).toBe('loaded');
+        // The fonts changed the content's height (so the test tests something).
+        expect(await contents()).not.toEqual(before);
+        await expect.poll(() => unfitNodePanels(page)).toEqual([]);
+      });
+    }
 
     test('and a layout saved before #299, brought up once and saved with its version', async ({
       page,
     }) => {
       await openBoard(page, 'healthy', 'dark', { config: { gridLayout: OLD_LAYOUT } });
-      await expect.poll(() => emptyNodePanels(page)).toEqual([]);
+      await expect.poll(() => unfitNodePanels(page)).toEqual([]);
       const saved = await page.evaluate(
         () => JSON.parse(localStorage.getItem('jaghelm-config')).gridLayout
       );
