@@ -301,7 +301,7 @@ test('readConfig of a file that does not parse answers no config, but why, with 
   assert.equal(config, null);
   assert.equal(
     unusable,
-    "services.yaml doesn't parse (line 2): fix it by hand; JagHelm won't save over it"
+    "services.yaml doesn't parse (unexpected end of the stream within a flow collection at line 2, column 1): fix it by hand; JagHelm won't save over it"
   );
   assert.equal(version, diskVersion());
   // The board keeps it (#463).

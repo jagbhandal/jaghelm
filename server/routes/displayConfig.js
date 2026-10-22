@@ -19,6 +19,7 @@ import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { validateConfig, displayConfigSchema } from '../util/configSchema.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import { createLogger } from '../util/logger.js';
+import { jsonFileErrorFields } from '../util/parseError.js';
 
 const log = createLogger('display-config');
 
@@ -36,7 +37,8 @@ router.get('/', (req, res) => {
     }
     res.json(null);
   } catch (err) {
-    log.error({ err }, 'Failed to read');
+    // A parse error as its reason and position: V8's message quotes the file (#504).
+    log.error(jsonFileErrorFields(err), 'Failed to read');
     res.json(null);
   }
 });

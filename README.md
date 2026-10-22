@@ -261,7 +261,7 @@ Real-time CPU, RAM, disk, temperature, and uptime per node, pulled from Promethe
  
 ### Per-container resource stats
  
-CPU, memory, network RX/TX for every Docker container via cAdvisor. Service cards show running/down state, ping latency, and 24-hour uptime alongside the resource numbers.
+CPU, memory, network RX/TX for every Docker container via cAdvisor. The Overview's Services section lists every service in one line each, grouped by node or by your own groups: its state (from Uptime Kuma, or the container), its ping latency and one number from its app integration. The per-container numbers are left off the Overview, for a service's detail view.
  
 ### 35+ integration presets + a custom builder
  

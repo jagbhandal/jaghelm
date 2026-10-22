@@ -4,15 +4,14 @@
  * panels a filter leaves out aren't drawn, and the ones it keeps rise into the
  * space left (filterLayouts), at the top of the board.
  *
- *   services      the panels that draw service cards: a node's card with any
- *                 service of its own (not moved into a group), a node still
- *                 loading (its placeholder: it may have some), and the custom
- *                 groups
- *   nodes         the node cards
+ *   services      nothing: the Services section above the board is theirs
+ *                 (#300), and no panel draws a service any more
+ *   nodes         the node cards (their Proxmox lists), and a saved node's
+ *                 placeholder while it loads
  *   power         the UPS panel
  *   jobs, backups Scheduled Jobs, where the board lists backups as jobs
  *   integrations  nothing: the board has no section of its own for them (an
- *                 integration's numbers show on its service's card)
+ *                 integration's numbers show on its service's row)
  *
  * A subsystem the board doesn't know keeps nothing. Pipeline, Checklist and
  * Quick Launch belong to no subsystem, so every filter leaves them out.
@@ -20,25 +19,17 @@
 import { compactUp } from '../../components/HelmGrid/gridMath.js';
 
 const isNode = (key) => key.startsWith('node-');
-const isGroup = (key) => key.startsWith('group-');
 
 /**
- * Which panels (by grid key: `node-<key>`, `group-<id>`, `ups`, `cron-jobs`,
- * …) the board keeps for `subsystem`, as a predicate; null without a filter.
- * `loadedNodes` holds the grid keys of the nodes `/api/services` has drawn
- * (any other node key is a saved node's placeholder, still loading), and
- * `nodesWithServices` those of them that draw a service card of their own.
+ * Which panels (by grid key: `node-<key>`, `ups`, `cron-jobs`, …) the board
+ * keeps for `subsystem`, as a predicate; null without a filter.
  *
  * @param {string | null} subsystem
- * @param {{ loadedNodes: Set<string>, nodesWithServices: Set<string> }} board
  * @returns {((key: string) => boolean) | null}
  */
-export function boardSections(subsystem, { loadedNodes, nodesWithServices }) {
+export function boardSections(subsystem) {
   if (!subsystem) return null;
   switch (subsystem) {
-    case 'services':
-      return (key) =>
-        isGroup(key) || (isNode(key) && (!loadedNodes.has(key) || nodesWithServices.has(key)));
     case 'nodes':
       return isNode;
     case 'power':
