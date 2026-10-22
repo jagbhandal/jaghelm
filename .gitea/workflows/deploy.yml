@@ -45,7 +45,8 @@ name: Deploy JagHelm
 # are the host's and never touched. compose.accept-drops, created by hand,
 # lets ONE deploy drop host networking or a mount the running container has;
 # the deploy removes it once that deploy is healthy. deploy-failed names a
-# commit whose deploy failed; a healthy deploy removes it.
+# commit whose deploy failed, or that was rolled back by hand; the reconcile
+# skips it, and a healthy deploy removes it.
 #
 # Act_runner caveat: no expression interpolation inside run bodies, comments
 # included. Values come in through env: and are used as $VAR.

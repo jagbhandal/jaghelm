@@ -328,6 +328,10 @@ test('every step after the fetch runs one command of deploy.sh', () => {
   }
 });
 
+test("the reconcile runs only on main, so a hand run on a branch can't run that branch's deploy.sh", () => {
+  assert.equal(RJOB.if, "github.ref == 'refs/heads/main'");
+});
+
 test('the reconcile reads /api/health over HTTP and calls 30 minutes without an image a failed build', () => {
   assert.equal(RJOB.env.HEALTH_URL, `http://${JOB.env.VM103_SSH.split('@')[1]}:3099/api/health`);
   assert.equal(RJOB.env.IMAGE_STALE_SECONDS, 1800);
@@ -569,7 +573,19 @@ test('stage: a failed pull of this commit image fails before vm-103 changes', (t
   assert.ok(!existsSync(sb.stackFile('compose.yaml.new')), 'nothing delivered');
   assert.ok(!existsSync(sb.stackFile('compose.yaml.prev')), 'refused before the backup');
   assert.ok(!dockerCalls(sb).some((c) => /^(tag|compose)/.test(c)), dockerCalls(sb).join('\n'));
+  assert.equal(githubEnv(sb).DEPLOY_STARTED, undefined, 'a failed pull holds nothing back');
   assert.equal(githubEnv(sb).ROLLBACK_ARMED, undefined);
+});
+
+test('job: a failed pull (a GHCR blip) is red but not held back: the next reconcile run retries it', (t) => {
+  const sb = stagedSandbox(t);
+  const job = runJob(sb, { FAKE_PULL_RC: '1' });
+  assert.equal(job.failed, true, job.log);
+  assert.match(job.log, /nothing to hold back/);
+  assert.ok(!existsSync(sb.stackFile('deploy-failed')));
+  const next = reconcile(sb, { FAKE_PULL_RC: '0' });
+  assert.equal(next.failed, false, next.log);
+  assert.match(next.log, /deploying abcdef0[\s\S]*Deploy verified healthy/);
 });
 
 test('stage: arming the rollback is the last thing it does', () => {
@@ -1150,11 +1166,13 @@ test('reconcile: /api/health not answering over HTTP is read over SSH, with a wa
   assert.match(sb.read('ssh.log'), /localhost:3099\/api\/health/);
 });
 
-test('reconcile: /api/health answering nowhere: red, nothing changed', (t) => {
+test('reconcile: /api/health answering nowhere: green with a warning, no redeploy', (t) => {
   const sb = stagedSandbox(t);
   const job = reconcile(sb, { FAKE_HTTP_HEALTH: 'down', FAKE_SSH_HEALTH: 'down' });
-  assert.equal(job.failed, true, job.log);
-  assert.match(job.log, /::error::could not read \/api\/health on vm-103 .*JagHelm is not answering/);
+  assert.equal(job.failed, false, job.log);
+  assert.match(job.log, /::warning::could not read \/api\/health on vm-103 .*JagHelm is not answering/);
+  assert.doesNotMatch(job.log, /::error::/);
+  assert.equal(githubEnv(sb).DEPLOY_SHA, undefined);
   assert.deepEqual(noDeployCalls(sb), []);
   assert.deepEqual(dockerCalls(sb), [], 'not even the registry');
   assert.equal(LIVE(sb), OLD_COMPOSE);
@@ -1167,4 +1185,57 @@ test("reconcile: main's head unreadable: red, nothing changed", (t) => {
   assert.match(job.log, /::error::could not read main's head from Gitea; nothing changed/);
   assert.equal(sb.read('ssh.log'), '');
   assert.deepEqual(dockerCalls(sb), []);
+});
+
+// The manual rollback in docs/RELEASING.md, run as written against the fakes:
+// it names the commit it leaves in deploy-failed (a short sha), so the
+// reconcile leaves the hand rollback alone until a new commit merges.
+const RELEASING = readFileSync(path.join(ROOT, 'docs/RELEASING.md'), 'utf8');
+function manualRollback() {
+  const section = RELEASING.split('**Manual rollback to a known commit.**')[1];
+  assert.ok(section, 'RELEASING.md has the manual rollback');
+  const m = section.match(/```bash\n([\s\S]*?)\n```/);
+  assert.ok(m, 'the manual rollback has a bash block');
+  return m[1];
+}
+
+test('manual rollback (RELEASING.md): marks the commit it leaves before it switches', () => {
+  const cmd = manualRollback();
+  assert.match(cmd, /echo <bad> > deploy-failed && docker pull/);
+});
+
+test('reconcile: a head rolled back by hand stays rolled back until a new commit merges', (t) => {
+  const sb = stagedSandbox(t);
+  const cmd = manualRollback()
+    .replaceAll('/opt/stacks/jaghelm', sb.stack)
+    .replaceAll('<bad>', SHA.slice(0, 7))
+    .replaceAll('<short>', OLD);
+  const r = spawnSync('bash', ['-e', '-c', cmd], { encoding: 'utf8', env: sb.env });
+  assert.equal(r.status, 0, out(r));
+  assert.ok(verbs(sb).includes(`tag ghcr.io/jagbhandal/jaghelm:sha-${OLD} ${LATEST}`), verbs(sb).join('\n'));
+
+  // vm-103 now serves OLD; main's head is still SHA, with its image.
+  const calls = dockerCalls(sb).length;
+  const job = reconcile(sb);
+  assert.equal(job.failed, false, job.log);
+  assert.match(job.log, /::warning::main's head abcdef0 failed its deploy on vm-103 .*deploy-failed/);
+  assert.deepEqual(
+    dockerCalls(sb).slice(calls).map((c) => c.split('|')[0]),
+    ['manifest inspect ghcr.io/jagbhandal/jaghelm:sha-abcdef0'],
+    'nothing pulled or recreated'
+  );
+
+  // A new commit merges: the mark names the old head, so the new one deploys.
+  const NEW = '1234567'.padEnd(40, '0');
+  const merged = reconcile(sb, { FAKE_MAIN_HEAD: NEW, FAKE_REVISION: NEW.slice(0, 7) });
+  assert.equal(merged.failed, false, merged.log);
+  assert.match(merged.log, /deploying 1234567[\s\S]*Deploy verified healthy/);
+  assert.ok(!existsSync(sb.stackFile('deploy-failed')), 'its healthy deploy removes the mark');
+});
+
+test('reconcile: a mark shorter than 7 characters names no commit', (t) => {
+  const sb = stagedSandbox(t);
+  writeFileSync(sb.stackFile('deploy-failed'), 'abc\n');
+  const job = reconcile(sb);
+  assert.match(job.log, /deploying abcdef0/);
 });

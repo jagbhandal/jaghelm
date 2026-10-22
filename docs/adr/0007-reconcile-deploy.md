@@ -44,7 +44,11 @@ API:
 - behind, and main's head has its image: deploy main's head;
 - behind, no image: wait quietly, then **fail 30 minutes after the commit**,
   naming the GitHub build to check (it failed, or never ran);
-- `/api/health` not answering: fail, change nothing.
+- `/api/health` not answering: warn, change nothing (Uptime Kuma pages when
+  JagHelm is down).
+
+It runs only on `main` (`if: github.ref == 'refs/heads/main'`), so a hand run
+on another branch can't execute that branch's `deploy.sh`.
 
 It deploys with the same steps as the push deploy: both workflows run
 `scripts/deploy/deploy.sh`, one command per step (pin, stage, switch, health
@@ -59,11 +63,11 @@ out it ends green, "Image not built yet; the reconcile ships it when it is".
 Neither touches vm-103. Red now means a real failure: a build missing for 30
 minutes, or a stage, switch or health gate failure (rolled back as before).
 
-A deploy that failed after reaching vm-103 writes its commit to
-`deploy-failed` in the stack directory. Scheduled runs don't retry that
-commit, so a bad build is tried once instead of being recreated and rolled
-back every 5 minutes. A healthy deploy removes the file; a run started by hand
-retries the commit.
+A deploy that failed after its image was pulled writes its commit to
+`deploy-failed` in the stack directory (a failed pull doesn't, so a GHCR blip
+is retried). Scheduled runs don't retry that commit, so a bad build is tried
+once instead of being recreated and rolled back every 5 minutes. A healthy
+deploy removes the file; a run started by hand retries the commit.
 
 ADR 0005's dispatch step is removed from `build-push.yml`, with its
 `workflow_dispatch` trigger on `deploy.yml`: it was never enabled, and a
@@ -79,9 +83,9 @@ manual deploy is now a manual run of the reconcile.
   kept out. Each takes a few seconds on vm-103's runner.
 - A newer run waiting in the concurrency group replaces an older waiting one,
   which Gitea then shows as cancelled (grey, not red).
-- Production follows `main`. A manual rollback to another commit lasts until
-  the next scheduled run, unless the reconcile is disabled first (Actions →
-  Reconcile production → Disable workflow); re-enable it to return to `main`.
-  A revert merged on `main` is the lasting rollback.
+- Production follows `main`. The manual rollback (RELEASING.md) names the
+  commit it leaves in `deploy-failed`, so it lasts until a new commit merges;
+  without that the next scheduled run undoes it. A revert merged on `main` is
+  the lasting rollback.
 - The commit time is the one Gitea reports for main's head; for the merge
   commits this repo uses, that is the merge.

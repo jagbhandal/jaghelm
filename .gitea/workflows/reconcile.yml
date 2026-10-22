@@ -9,15 +9,15 @@ name: Reconcile production
 #   • behind, no image yet: logs one line and waits for the next run;
 #   • behind, still no image 30 minutes after the commit (IMAGE_STALE_SECONDS):
 #     fails, naming the GitHub build to check;
-#   • main's head already failed a deploy (deploy-failed on vm-103): warns and
-#     leaves it, so a bad commit is tried once, not every 5 minutes. A run
-#     started by hand (Run workflow) retries it.
-# It fails too when /api/health doesn't answer, over HTTP or SSH.
+#   • main's head already failed a deploy, or was rolled back by hand
+#     (deploy-failed on vm-103 names it): warns and leaves it, so a bad commit
+#     is tried once, not every 5 minutes, and a hand rollback stays until a new
+#     commit merges. A run started by hand (Run workflow) retries it.
+#   • /api/health doesn't answer, over HTTP or SSH: warns and changes nothing
+#     (Uptime Kuma pages when JagHelm is down).
 #
 # The push deploy (deploy.yml) stays the fast path; this ships what it could
-# not: an image that landed after its wait, or a deploy that never ran. To keep
-# vm-103 on something other than main's head (a manual rollback), disable this
-# workflow first (Actions > Reconcile production > Disable workflow).
+# not: an image that landed after its wait, or a deploy that never ran.
 #
 # Configuration: the same as deploy.yml (VM103_HOST_KEY, COSIGN_VERIFY, the job
 # token). Act_runner caveat: no expression interpolation inside run bodies.
@@ -34,6 +34,8 @@ concurrency:
 
 jobs:
   reconcile:
+    # Only main's own deploy.sh: a hand run on another branch does nothing.
+    if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, vm103]
     # The job token only reads this repo.
     permissions:

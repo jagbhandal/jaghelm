@@ -171,7 +171,7 @@ cmd_wait() {
 #   held         behind, but main's head already failed a deploy
 #   wait         behind, no image yet (under STALE_AFTER seconds)
 #   stale        behind, still no image STALE_AFTER seconds after the commit
-#   unreachable  /api/health didn't answer
+#   unreachable  /api/health didn't answer (a warning: Kuma pages on that)
 reconcile_decision() {
   local head=$1 live=$2 image=$3 age=$4 held=$5 stale_after=$6
   if [ -z "${live}" ]; then
@@ -204,15 +204,19 @@ read_live() {
   return 0
 }
 
-# Sets HELD to yes when vm-103's deploy-failed names this commit and this is a
-# scheduled run; a run started by hand (workflow_dispatch) retries it.
+# Sets HELD to yes when vm-103's deploy-failed names this commit (its full sha,
+# or a prefix of 7 or more characters, as the manual rollback writes it) and
+# this is a scheduled run; a run started by hand (workflow_dispatch) retries it.
 read_held() {
   local named
   HELD=no
   [ "${GITHUB_EVENT_NAME:-}" != workflow_dispatch ] || return 0
   named="$($SSH_CMD "cat '${STACK_DIR}/deploy-failed' 2>/dev/null || true")" \
     || fail "could not reach vm-103 over SSH to read ${STACK_DIR}/deploy-failed; nothing changed."
-  if [ "$(printf '%s\n' "${named}" | head -n 1 | cut -d' ' -f1)" = "$1" ]; then HELD=yes; fi
+  named="$(printf '%s\n' "${named}" | head -n 1 | cut -d' ' -f1)"
+  if [ "${#named}" -ge 7 ]; then
+    case "$1" in "${named}"*) HELD=yes ;; esac
+  fi
 }
 
 cmd_decide() {
@@ -250,7 +254,8 @@ cmd_decide() {
     stale)
       fail "main's head ${short} has no image $((age / 60)) min after its commit: its build failed or never ran. Check GitHub's \"Build and Push Docker Image\" run for it (${BUILDS}/${head}/checks; no checks there means the mirror never pushed it), then re-run or fix the build: the next run deploys it once ${REPO}:sha-${short} exists. vm-103 still runs ${LIVE}; nothing changed." ;;
     unreachable)
-      fail "could not read /api/health on vm-103 (${HEALTH_URL}, nor over SSH): JagHelm is not answering. Nothing changed; the next run tries again." ;;
+      # Uptime Kuma pages when JagHelm is down; redeploying blind could mask why.
+      echo "::warning::could not read /api/health on vm-103 (${HEALTH_URL}, nor over SSH): JagHelm is not answering, so the reconcile can't tell what runs and leaves it alone. Nothing changed; the next run looks again." ;;
   esac
 }
 
@@ -282,8 +287,9 @@ cmd_signature() {
 #
 # First, before anything reaches vm-103: if main's head is no longer this
 # commit, stop green as superseded (#356); going on would put an older build
-# over a newer one. DEPLOY_STARTED, set just before the first SSH, tells the
-# hold step this deploy reached vm-103.
+# over a newer one. DEPLOY_STARTED, set once the image is pulled, tells the
+# hold step this deploy got as far as vm-103's config and container: a pull
+# that fails (a GHCR blip) holds nothing back, and the next run retries it.
 #
 # Two refusals, both before the container is touched:
 #   • the commit's image cannot be pulled (#356: no fallback to :latest);
@@ -316,7 +322,6 @@ cmd_stage() {
   compose_sha256="$(sha256sum "${CF}" | cut -d' ' -f1)"
   echo "    repo compose.yaml sha256=${compose_sha256} (commit ${DEPLOY_SHA})"
 
-  echo "DEPLOY_STARTED=1" >> "$GITHUB_ENV"
   # Record the image currently running so we can roll back to it if the new
   # one fails its health gate. Empty string if nothing is running yet. Must be
   # the image ID ({{.Image}}), not the name ({{.Config.Image}}): the name is
@@ -331,6 +336,7 @@ cmd_stage() {
   if ! $SSH_CMD "docker pull '${REPO}:${tag}'"; then
     fail "vm-103 could not pull ${REPO}:${tag}; nothing changed (the running container and compose.yaml are untouched). Re-run this deploy; if the pull keeps failing, check GHCR from vm-103."
   fi
+  echo "DEPLOY_STARTED=1" >> "$GITHUB_ENV"
 
   echo ">>> Delivering compose.yaml to ${STACK_DIR}"
   $SSH_CMD "cat > '${STACK_DIR}/compose.yaml.new'" < "${CF}"
@@ -570,14 +576,15 @@ ROLLBACK
 }
 
 # ── hold (on failure) ────────────────────────────────────────────────────────
-# A deploy that failed once it reached vm-103 (a pull, compose.yaml refused,
-# the switch, the health gate) writes its commit to deploy-failed in the stack
+# A deploy that failed after its image was pulled (compose.yaml refused, the
+# switch, the health gate) writes its commit to deploy-failed in the stack
 # dir. Scheduled reconcile runs don't retry that commit, so a bad build is
 # tried once, not every 5 minutes with a restart each time. A healthy deploy
-# removes the file; a reconcile run started by hand retries the commit.
+# removes the file; a reconcile run started by hand retries the commit. The
+# manual rollback in docs/RELEASING.md writes the file too, by hand.
 cmd_hold() {
   if [ "${DEPLOY_STARTED:-}" != 1 ]; then
-    echo ">>> The deploy failed before it reached vm-103; nothing to hold back."
+    echo ">>> The deploy failed before its image was on vm-103; nothing to hold back."
     exit 0
   fi
   if $SSH_CMD "printf '%s %s\n' '${DEPLOY_SHA}' '$(date -u +%Y-%m-%dT%H:%M:%SZ)' > '${STACK_DIR}/deploy-failed'"; then

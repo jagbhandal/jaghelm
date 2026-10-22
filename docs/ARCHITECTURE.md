@@ -2510,9 +2510,10 @@ flowchart LR
   Gitea, stops after one line when they match, deploys main's head when it is
   behind and the image exists, and **fails when main's head still has no image
   30 minutes after its commit** (a failed or missing build). A commit whose
-  deploy failed on vm-103 is named in `deploy-failed` in the stack directory,
-  and scheduled runs don't retry it; a run started by hand does. Both share a
-  concurrency group, so they never race
+  deploy failed on vm-103, or that was rolled back by hand, is named in
+  `deploy-failed` in the stack directory, and scheduled runs don't retry it; a
+  run started by hand does. It runs only on `main`. Both share a concurrency
+  group, so they never race
   ([ADR 0007](adr/0007-reconcile-deploy.md)). The deploy reaches the host over
   SSH that verifies a
   **pinned host key** (the `VM103_HOST_KEY` repository variable; without it the

@@ -58,10 +58,14 @@ What a run means:
 - **Green, "nothing to do"** or **"has no image yet"** (reconcile): vm-103
   already runs `main`'s head, or its build is still under way.
 - **Green with a warning, "failed its deploy on vm-103"** (reconcile): `main`'s
-  head failed a deploy, named in `/opt/stacks/jaghelm/deploy-failed`, so
-  scheduled runs leave it alone instead of retrying every 5 minutes. Merge a
-  fix, or once the cause is fixed, **Run workflow** on Reconcile production (a
-  run by hand retries it). A healthy deploy removes the file.
+  head failed a deploy or was rolled back by hand, and is named in
+  `/opt/stacks/jaghelm/deploy-failed`, so scheduled runs leave it alone instead
+  of retrying every 5 minutes. Merge a fix, or once the cause is fixed, **Run
+  workflow** on Reconcile production (a run by hand retries it). A healthy
+  deploy removes the file.
+- **Green with a warning, "could not read /api/health"** (reconcile): JagHelm
+  on vm-103 doesn't answer, over HTTP or SSH. The reconcile can't tell what
+  runs, so it changes nothing; Uptime Kuma pages when JagHelm is down.
 - **Grey, cancelled**: a newer run in the same queue replaced it; that one
   ships `main`.
 - **Red, "has no image … after its commit"** (reconcile): 30 minutes after the
@@ -72,35 +76,35 @@ What a run means:
   exists. Every run goes red until then.
 - **Red at the stage step** (the pull, or `compose.yaml` refused) changed
   nothing on vm-103: a failed pull happens before anything is delivered, and a
-  refused `compose.yaml` is put back before the container is touched.
+  refused `compose.yaml` is put back before the container is touched. The next
+  reconcile run retries a failed pull; a refused `compose.yaml` holds the
+  commit back, as below.
 - **Red at the switch or the health gate** (including a `revision` that is not
   this commit) means vm-103 was rolled back to the image and `compose.yaml` it
   had before, unless a later deploy has replaced it since; then the rollback
   leaves it alone. The step's `::error::` line says why. Either way, the commit
   is held back from the reconcile (above): fix the cause, then re-run the
   deploy, or merge a fix.
-- **Red, "could not read /api/health"** (reconcile): JagHelm on vm-103 does not
-  answer, over HTTP or SSH. The reconcile changes nothing while it can't see
-  what runs; every run goes red until JagHelm answers.
 - **Red, "could not read" deploy.sh or `main`'s head**: Gitea's API did not
   answer; nothing changed. Re-run it (the reconcile tries again by itself).
 
 **Manual rollback to a known commit.** Never automatic. The lasting way is a
-revert merged on `main`, which deploys like any merge. To run another commit
-by hand meanwhile, first disable the reconcile (Actions → **Reconcile
-production** → **Disable workflow**), or its next run deploys `main`'s head
-over yours. Then on vm-103, with `<short>` the first seven characters of a
-commit whose image you trust:
+revert merged on `main`, which deploys like any merge. To run an earlier
+commit by hand meanwhile, on vm-103, with `<bad>` the first seven characters of
+the commit you are leaving (`main`'s head, the `revision` `/api/health` reports
+now) and `<short>` those of a commit whose image you trust:
 
 ```bash
-cd /opt/stacks/jaghelm && docker pull ghcr.io/jagbhandal/jaghelm:sha-<short> && docker tag ghcr.io/jagbhandal/jaghelm:sha-<short> ghcr.io/jagbhandal/jaghelm:latest && docker compose up -d --force-recreate
+cd /opt/stacks/jaghelm && echo <bad> > deploy-failed && docker pull ghcr.io/jagbhandal/jaghelm:sha-<short> && docker tag ghcr.io/jagbhandal/jaghelm:sha-<short> ghcr.io/jagbhandal/jaghelm:latest && docker compose up -d --force-recreate
 ```
 
-It keeps the host's current `compose.yaml`; when rolling back across a
+`deploy-failed` holds `<bad>` back from the reconcile: its scheduled runs warn
+and leave vm-103 alone until a new commit merges, whose healthy deploy removes
+the file. Without it the reconcile deploys `<bad>` again within 5 minutes. The
+command keeps the host's current `compose.yaml`; when rolling back across a
 `compose.yaml` change, first copy that commit's `compose.yaml` into
 `/opt/stacks/jaghelm` too. `/api/health` then reports `<short>` as `revision`,
-until the next merge deploys over it. Enable the reconcile again to return to
-`main`'s head.
+until the next merge deploys over it.
 
 ## Changelog entries during development
 
