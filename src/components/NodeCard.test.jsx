@@ -19,7 +19,6 @@ const baseConfig = (overrides = {}) => ({
   sections: {},
   statusStyle: 'badge',
   cardLayout: 'row',
-  showDockerStats: false,
   showAppData: false,
   ...overrides,
 });

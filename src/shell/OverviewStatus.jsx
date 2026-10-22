@@ -25,6 +25,11 @@
  * with matchMedia on the shell's own PHONE_WIDTH (@ui/app-shell), and a
  * resize across it moves the strip.
  *
+ * The strip can be switched off (Settings → Appearance → Overview sections,
+ * #307: `strip` false); the panel can't. Without the strip a phone draws the
+ * panel as one card, with nothing to split around, and a filter in the URL
+ * still narrows the page, the panel saying so with Clear.
+ *
  * It is the new UI over today's board, which later cards rebuild (#298–#300):
  * a root of its own (ShellSection) inside a wrapper that lines it up with the
  * board's cards (`.overview-status`, global.css). Memoised on the poll, so the
@@ -62,12 +67,13 @@ export const OverviewStatus = memo(function OverviewStatus({
   reach,
   updated,
   filter = null,
+  showStrip = true,
 }) {
   const linkOf = useRowLink();
   const phone = useMediaQuery(PHONE_WIDTH);
   const freshness = useStatusFreshness({ status, reach, updated });
   const cells = useMemo(() => subsystemCells(status, freshness), [status, freshness]);
-  const strip = cells.length > 0 && (
+  const strip = showStrip && cells.length > 0 && (
     <SubsystemStrip cells={cells} selected={filter} onSelect={filterOverview} />
   );
   return (
@@ -82,7 +88,7 @@ export const OverviewStatus = memo(function OverviewStatus({
           filter={filter}
           onClearFilter={clearOverviewFilter}
           between={strip}
-          split={phone}
+          split={phone && Boolean(strip)}
         />
       </ShellSection>
     </div>

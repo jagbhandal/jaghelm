@@ -67,7 +67,15 @@ import { SideNav, appMonogram } from '@ui/side-nav';
 import { BottomTabs } from '@ui/bottom-tabs';
 import { AppBar } from '@ui/app-bar';
 import { LoginForm } from '@ui/login-form';
-import { Checklist, LaunchLayout, Pipeline, QuickLaunch, UtilitiesRail } from '@ui/utilities';
+import {
+  Checklist,
+  LaunchLayout,
+  Pipeline,
+  QuickLaunch,
+  UtilitiesRail,
+  WeatherClock,
+  WebSearch,
+} from '@ui/utilities';
 
 // ---------------------------------------------------------------- layout
 
@@ -2078,10 +2086,14 @@ const RailChecklist = ({ todos = TODOS, banner }) => (
   <Checklist todos={todos} banner={banner} onAdd={noop} onToggle={noop} onRemove={noop} />
 );
 
+// The weather as the rail draws it (#307): Toronto, in Celsius.
+const WEATHER = { temperature: '9°C', condition: 'Overcast', code: 3, place: 'Toronto' };
+
 function UtilitiesRailState() {
   return (
     <Stack width={300}>
       <UtilitiesRail>
+        <WeatherClock weather={WEATHER} now={GALLERY_NOW} />
         <QuickLaunch groups={LINK_GROUPS} hint={HINT} />
         <Pipeline items={PIPELINE_ROWS} now={GALLERY_NOW} />
         <RailChecklist />
@@ -2094,6 +2106,8 @@ function LaunchPageState() {
   return (
     <Stack width={880}>
       <LaunchLayout
+        extras={<WeatherClock weather={WEATHER} now={GALLERY_NOW} />}
+        search={<WebSearch engine="DuckDuckGo" onSearch={noop} />}
         quickLaunch={<QuickLaunch groups={LINK_GROUPS_WIDE} hint={HINT} />}
         pipeline={<Pipeline items={PIPELINE_ROWS} now={GALLERY_NOW} />}
         checklist={<RailChecklist />}
@@ -2124,6 +2138,22 @@ function UtilitiesEmptyState() {
         <Pipeline items={[]} now={GALLERY_NOW} />
         <RailChecklist todos={[]} />
       </Stack>
+    </Grid>
+  );
+}
+
+// Each card is a landmark, named by what it holds, so the two weather-only
+// ones are told apart here (axe's landmark-unique); the app draws one.
+function UtilitiesWeatherState() {
+  return (
+    <Grid columns="repeat(2, 300px)">
+      <WeatherClock now={GALLERY_NOW} />
+      <WeatherClock
+        weather={{ temperature: '88°F', condition: 'Thunderstorm', code: 95, place: 'Grove City' }}
+        now={GALLERY_NOW}
+      />
+      <WeatherClock weather={{ loading: true, place: 'Toronto' }} />
+      <WeatherClock weather={{ failed: true, place: 'Toronto' }} aria-label="Weather, no reading" />
     </Grid>
   );
 }
@@ -2515,4 +2545,5 @@ export const RENDERS = Object.freeze({
   'launch-page': LaunchPageState,
   'utilities-empty': UtilitiesEmptyState,
   'utilities-failing': UtilitiesFailingState,
+  'utilities-weather': UtilitiesWeatherState,
 });

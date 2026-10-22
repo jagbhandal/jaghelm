@@ -86,8 +86,9 @@ server/                     Express API (Node 26, ESM)
   icon-cache.js             public /api/icons/cached: icon-repository icons on disk, size-capped
                             with LRU eviction (see 6)
   icon-sources.js           the icon repositories it may fetch from; the web client imports it too
-  config.js                 services.yaml: load, hot-reload watch, copy-on-read, its version,
-                            and the one atomic writer, over the version read (see 6)
+  config.js                 services.yaml: load, hot-reload watch (and its 30 s retry while
+                            broken), copy-on-read, its version, and the one atomic writer,
+                            over the version read (see 6)
   secrets.js                AES-256-GCM secret store (per-install KDF salt), and the
                             snapshot a failed integration save is undone to (see 4.4)
   cron-store.js             cron history (bounded)
@@ -150,8 +151,10 @@ src/                        React 19 SPA (Vite 8)
                             Services section, its rows from the model, #300),
                             Utilities.jsx, utilities.js and LaunchPage.jsx (Quick Launch,
                             Pipeline and the Checklist: the Overview's rail from 1440px
-                            and the Launch page, #301), useMediaQuery.js (a width the
-                            markup changes at),
+                            and the Launch page, #301), extras.js (weather, the clock
+                            and the web search, #307), overviewSections.js (the
+                            Overview's show/hide switches, #307), useMediaQuery.js (a
+                            width the markup changes at),
                             statusFreshness.js (the one rule for a stale status: whether
                             the poll's status is current, and how each place draws one
                             that isn't), theme.js (dark, light or system, and the old
@@ -195,7 +198,8 @@ src/                        React 19 SPA (Vite 8)
                              bottom-tabs, app-bar), the Overview's sections (#299:
                              node-card, infrastructure-section; #300: services-section),
                              the utilities (#301: utilities, Quick Launch, Pipeline,
-                             the Checklist, the rail and the Launch page's layout),
+                             the Checklist, the rail and the Launch page's layout;
+                             #307: WeatherClock, WebSearch),
                              lib/status.js (the five states, their words,
                              the two looks, and why there is no signal),
                              lib/ago.js ("12 s ago", and the one clock every age on
@@ -217,8 +221,8 @@ gallery/                    the component gallery (development and CI only, docs
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
                             phone-split.spec.mjs, login.spec.mjs, utilities.spec.mjs,
-                            reflow.spec.mjs, first-load.spec.mjs, what they share in app.mjs;
-                            see 8): the
+                            reflow.spec.mjs, first-load.spec.mjs, extras.spec.mjs, what
+                            they share in app.mjs; see 8): the
                             production build served
                             by `vite preview`, every /api request answered in the test; run
                             by playwright.e2e.config.mjs in the gallery's container
@@ -985,12 +989,14 @@ signs out locally as before.
   restart can't mend the input, and the deploy gate's `"status":"ok"` would
   roll a deploy back over it. It is the process's memory, so after a restart
   it counts from that restart's first cycle (push keeps its own count in the
-  snapshot, 4.7). Beside it, `config` (#505): `{ state: 'ok' }`, or
+  snapshot, 4.7). Beside it, `config` (#505): `{ state: 'ok' }`,
   `{ state: 'unparseable', line }` while `services.yaml` is no usable config
   (`line` null for an empty file, one that isn't a mapping, or an error with
-  no position), as of the file's last read (`configHealth` in `config.js`).
-  Never its text, and it doesn't change `status` either: a restart can't fix
-  the file.
+  no position), or `{ state: 'unreadable', code }` while it is there but
+  can't be read (#536: `code` the read error's, `EACCES`, `EISDIR`, `EIO`…,
+  or null), as of the file's last read (`configHealth` in `config.js`).
+  Never its text or its path, and it doesn't change `status` either: a
+  restart can't fix the file.
 
 ### 4.7 Status model
 
@@ -1055,8 +1061,10 @@ error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
 - **`configProblem`** (#505): why `services.yaml` is no usable config, from
   its last read (`configProblem` in `config.js`): "services.yaml doesn't parse
   (line 4)", "services.yaml doesn't parse" with no position, "services.yaml is
-  empty" or "services.yaml isn't a mapping"; `null` while it loads. Fixed
-  words and a line, never the file's text (#504).
+  empty", "services.yaml isn't a mapping", or "services.yaml can't be read
+  (permission denied)" for one that is there but can't be read (#536, the
+  read error's code in plain words, or the code); `null` while it loads.
+  Fixed words and a line, never the file's text (#504) or its path.
 
 **The status:**
 
@@ -1161,7 +1169,8 @@ error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
   `sources` but is no issue: nothing on the board depends on it. Kuma is
   listed once `KUMA_URL` is set or a service is on the board.
 - **`services.yaml` is a source too** (#505), `config`, listed only while the
-  file is no usable config (`configProblem`), as `failed` with that reason, so
+  file is no usable config or can't be read (#536) (`configProblem`), as
+  `failed` with that reason, so
   a good file changes nothing. JagHelm then runs on the last good config, or
   on none at boot (5, #463), and an empty board would read as calm: its issue,
   `sources/config` ("JagHelm config", `warn`, "Failed"), has the reason, and
@@ -1442,10 +1451,12 @@ sees where that changed:
   and kept as the status check's is otherwise: `ok` for the cycle after it
   paged, else no entry. So its second cycle sends one `source_down` with the
   id and node `config`, "JagHelm config broken", body "JagHelm config ·
-  services.yaml doesn't parse (line 4)", `warning`, and the cycle after the
-  fix (the watcher's reload, or any read) one `source_recovered`, "JagHelm
-  config fixed", "services.yaml loads again". It is in no category: a file
-  that doesn't parse is every category's problem.
+  services.yaml doesn't parse (line 4)" (or "can't be read (permission
+  denied)", #536), `warning`, and the cycle after the fix (the watcher's
+  reload, its 30 s retry, or any read) or the file's removal one
+  `source_recovered`, "JagHelm config fixed", "services.yaml is no longer
+  broken", words true of each of those. It is in no category: a file that
+  doesn't parse is every category's problem.
 - Each event's `reason` is the model's reason for the entity, and its body the
   entity's name (and node) and that reason: "Gitea on vm103 · Kuma: down",
   "pve · Disk 94 % (warning above 90 %)". The FCM `data` block the Android app
@@ -1544,8 +1555,8 @@ flowchart TD
   SH --> OL["/ : OverviewLayout<br/>(the utilities rail from 1440px)"]
   OL --> OS["OverviewStatus<br/>(the poll's status: ShellAttention,<br/>SubsystemStrip, the ?subsystem= filter)"]
   OL --> DV["DashboardView"]
-  OL --> UR["UtilitiesRail: Quick Launch,<br/>Pipeline, Checklist (utilities.js)"]
-  SH --> LP["/launch : LaunchPage<br/>(the same three panels)"]
+  OL --> UR["UtilitiesRail: weather and the clock,<br/>Quick Launch, Pipeline, Checklist<br/>(utilities.js, extras.js)"]
+  SH --> LP["/launch : LaunchPage<br/>(the same panels and the web search)"]
   DV --> OI["OverviewInfrastructure<br/>(the poll's status + the board's readings:<br/>InfrastructureSection, cards or table)"]
   DV --> OSV["OverviewServices<br/>(the poll's status + the board's latency and<br/>app metrics: ServicesSection, by node or group)"]
   SH --> AP["/alerts : AlertsPage<br/>(ShellAttention)"]
@@ -1851,6 +1862,29 @@ flowchart TD
   when the last view goes (a sign-out). From 1440px today's board leaves its
   own Quick Launch, Pipeline and Checklist panels out (`DashboardView`, the
   same `RAIL_WIDTH`), so each shows once; #306 removes them.
+- **Today's extras and the Overview's sections** (#307, spec §8 "Today's
+  extras keep a home"). The weather, the clock and the web search, which the
+  old header drew, are back (`src/shell/extras.js`, wired in `Utilities.jsx`):
+  weather and the clock are one card (`WeatherClock`) at the top of the
+  rail from 1440px and at the top of the Launch page at every width; the web
+  search (`WebSearch`) is on the Launch page beside them. They read
+  Settings → Widgets as before: the weather shows when it is on and a place
+  is set (`showWeather`, `weatherLat`, `weatherLon`, the city, `tempUnit`
+  over `/api/weather`'s Fahrenheit), the clock until `showClock` is false
+  (the old header always drew it), the search until `showSearch` is false;
+  the search sends the words to `searchEngine`'s results page in a new tab,
+  with no opener. A card shows only what is configured, and nothing with
+  neither; the rail is drawn when it has any panel. Settings → Appearance →
+  Overview sections has a show/hide switch for the subsystem strip,
+  Infrastructure, Services and the whole rail (`overviewSections` in the
+  display config, `sectionShown`), which the server holds, so a section
+  hidden on one device is hidden on the next load on another. The attention
+  panel's switch is on and locked: it shows only when something is wrong,
+  so it is never hidden, whatever the config says. With Infrastructure off
+  the node panels carry the nodes' anchors again; with the strip off a phone
+  draws the attention panel as one card. The Launch page keeps every
+  utility whatever the rail's switch says. Reordering waits for Edit layout
+  (Phase 5).
 - **No signal: a stale status** (#480, #495). The poll's status is stale
   when `reach` isn't `ok` once the first answer is in: a failed poll
   (`down`), or a 503 (`waiting`), which the server answers once its status
@@ -2007,8 +2041,9 @@ flowchart TD
   only while drawn and the browser tab shows: Pipeline `/api/gitea/activity`
   every third interval (90 s at 30 s), with the board's ETag, so the rail's
   read beside the board's is a 304; the Checklist reads `/api/todos` once when
-  it is drawn. Nothing fetches the weather while it has no
-  place on screen (#307 brings it back, in the Overview's side panel). The
+  it is drawn; the weather (#307) `/api/weather` when it is drawn (unless
+  the page read it in the last 10 minutes), then every 10 minutes, a failed
+  read again a minute later, and nothing while it is configured off. The
   Settings preview loads once when shown and refreshes only on its button.
 - **App tabs.** An `iframe` tab in the config is an app, opened at `/apps/<id>`.
   Its frame mounts on the first visit and stays mounted while another page is
@@ -2329,7 +2364,9 @@ All state is files under the data dir (no DB):
 - **services.yaml** -- nodes, per-service overrides (display name, icon, and
   the Kuma monitor mapping `monitor` / `monitor_per_node`, see 4.2) and
   integration configs (each secret value stored separately, encrypted). Hot-reloaded on an
-  external edit; read copy-on-read; `POST /api/services/config` validated by Zod.
+  external edit (the 5 s watcher compares the file's mtime, ctime, size and
+  inode, so a chmod or chown shows too, #536); read copy-on-read;
+  `POST /api/services/config` validated by Zod.
   `writeConfig` re-serialises the whole file, so a write drops its comments and
   hand formatting.
   - **A read that yields no usable config is a failed read** (#463): an
@@ -2341,6 +2378,25 @@ All state is files under the data dir (no DB):
     purpose is a real config and empties the board. Either way the board,
     a push and `/api/health` say the file is broken (#505, 4.6, 4.7): the
     config is a failed source until the file loads.
+  - **A file that is there but can't be read is a failed read too** (#536):
+    EACCES, EISDIR, EIO or any error but ENOENT. The config source is down
+    with "services.yaml can't be read (permission denied)", `/api/health` has
+    `unreadable`, the board keeps the last good config (empty at boot, no
+    discovery), and every writer refuses it (below). Before, it gave the calm
+    empty board at boot and a 500 on a save.
+  - **While the config is a failed source, a retry reads it again** (#536)
+    every 30 s, beside the watcher's 5 s poll, and reloads it when what it
+    reads differs from the last read. The poll sees a chmod or chown of the
+    file itself (its ctime), at once, both ways; the retry is for a fix the
+    file's own stat doesn't show, such as its folder's permissions or a
+    network share's cached attributes. The same failure again is quiet. One timer at most, started when the source
+    goes down (or the watcher starts with it down), stopped when it is up
+    again and on shutdown (`stopConfigWatcher`). A broken or unreadable file
+    deleted is reloaded at the next poll and is broken no more, with one
+    recovery push: a missing file then means what it means while JagHelm
+    runs, the config in memory stays (empty after a broken boot), a read
+    answers it as `CONFIG_ABSENT` and the next save writes a new file.
+    First-boot discovery runs only at boot, as when a good file is deleted.
   - **Nothing writes over a file that doesn't parse** (#423). The config
     kept for the board is not the file's, so `readConfig()` answers no config
     for it, only why (`services.yaml doesn't parse (<reason> at line N,
@@ -2351,7 +2407,13 @@ All state is files under the data dir (no DB):
     `{ error, code: "config_unparseable" }` with no version, the integration
     save before it stores a credential, and `writeConfig` parses the bytes it
     would replace and refuses them itself, whatever version its caller
-    passes, so no writer can skip it. Before, one indentation slip and an
+    passes, so no writer can skip it. A file that can't be read (#536) is
+    refused the same way, as a 503 `{ error, code: "config_unreadable" }`
+    ("services.yaml can't be read (permission denied): fix it on the host;
+    …"), before any version is compared, since it has none. Settings' read
+    shows its reason in place of the tabs, as for `config_unparseable`; a
+    save refused with it says so in the failed-save toast, then reads again,
+    which shows the reason. Before, one indentation slip and an
     integration added from the gallery rewrote the file to that one
     integration (the last good config at boot is `{}`). Fixed by hand, the
     next read or the watcher's reload loads it and saves work again. Settings
@@ -2514,8 +2576,14 @@ All state is files under the data dir (no DB):
     under that key starts with no credential. A save whose write fails
     stores nothing (4.4).
 - **display config** -- title, theme, layout (`{lg,md,sm}` grid item arrays),
-  sections (per-panel visibility/order/colour), nav/search/weather flags,
-  links, tabs, fonts. Read copy-on-read; validated by Zod.
+  sections (per-panel visibility/order/colour), `overviewSections` (the
+  Overview's show/hide switches, #307), search/weather/clock flags
+  (`showSearch`, `showWeather`, `showClock`), links, tabs, fonts. Read
+  copy-on-read; validated by Zod (`overviewSections` only takes on or off).
+  The client drops two keys nothing reads (`dropDeadKeys`,
+  `src/shell/overviewSections.js`): `showTodos`, Widgets' old "Show
+  checklist panel", which nothing drawn ever read, and `showDockerStats`.
+  Nothing else changes; the server's copy loses them at the next save.
 - **secrets** -- AES-256-GCM blob, keyed by integration storage key.
 - **config version key** -- `config-version.key`: 32 random bytes (mode 0600)
   that `services.yaml`'s version is an HMAC with (#423, above). Made on first
@@ -2822,7 +2890,15 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   and deletes over plain HTTP (no `crypto.randomUUID` in the page), each
   change reaching the server, which a reload shows, on the Launch page and in
   the rail; axe, dark and light, on the whole Launch page and on the
-  Overview's shell, status and rail. Nothing hides (#302,
+  Overview's shell, status and rail. Today's extras (#307,
+  `e2e/extras.spec.mjs`): at 1440px weather and the clock at the top of the
+  rail when configured, and none (no `/api/weather` read) when not; at 1280
+  no rail, and the Launch page has them beside the web search, over Quick
+  Launch; the search opens the configured engine's results in a new tab
+  with no opener; a section switched off in Settings → Appearance stays off
+  after a reload in a second browser context (another device), against a
+  server that keeps the display config it is sent, and comes back when
+  switched on there; axe on the rail and the Launch page. Nothing hides (#302,
   `e2e/reflow.spec.mjs`): the Overview at 360, 390, 768, 1024, 1280, 1440,
   1920 and 2560px, healthy and incident, and on the incident with the
   model's longest subsystem details at each of them: the page no wider than

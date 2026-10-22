@@ -1,17 +1,23 @@
 /**
  * The utilities, wired (#301, spec §8 item 5): Quick Launch, Pipeline and the
  * Checklist, each one component (src/ui/utilities.jsx) fed from utilities.js,
- * drawn in two places:
+ * and today's extras (#307): weather and the clock (WeatherClock), and the web
+ * search, fed from extras.js. Drawn in two places:
  *
  *   OverviewLayout  the Overview, with its utilities rail beside its sections
- *                   from 1440px (`RAIL_WIDTH`, @ui/app-shell). Narrower, the
+ *                   from 1440px (`RAIL_WIDTH`, @ui/app-shell): weather and
+ *                   the clock at its top, then the three. Narrower, the
  *                   rail isn't rendered at all (not hidden by CSS), so nothing
  *                   is drawn twice or polled off screen. The rail keeps the
  *                   board's switches (Settings → Sections: a panel switched
  *                   off stays off) and draws a panel only when its source is
- *                   set up: no links, no Quick Launch; no Gitea, no Pipeline.
- *   LaunchPage      /launch (LaunchPage.jsx): all three at every width, the
- *                   one place a phone or a narrow window finds them.
+ *                   set up: no links, no Quick Launch; no Gitea, no Pipeline;
+ *                   no place, no weather. Settings → Appearance → Overview
+ *                   sections can switch the whole rail off (`rail`,
+ *                   overviewSections.js).
+ *   LaunchPage      /launch (LaunchPage.jsx): weather and the clock, the web
+ *                   search, and the three, at every width: the one place a
+ *                   phone or a narrow window finds them.
  *
  * The Overview's sections keep their place in the tree whether the rail shows
  * or not (the wrapper only changes its class), so crossing 1440px never
@@ -23,7 +29,14 @@ import { Banner } from '@ui/banner';
 import { Button, buttonVariants } from '@ui/button';
 import { EmptyState } from '@ui/empty-state';
 import { RAIL_WIDTH, ShellSection } from '@ui/app-shell';
-import { Checklist, Pipeline, QuickLaunch, UtilitiesRail } from '@ui/utilities';
+import {
+  Checklist,
+  Pipeline,
+  QuickLaunch,
+  UtilitiesRail,
+  WeatherClock,
+  WebSearch,
+} from '@ui/utilities';
 import { cn } from '@ui/lib/utils';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { followLink } from '../router/useRoute.js';
@@ -31,6 +44,15 @@ import { pathTo } from '../router/routes.js';
 import { shortcutLabel } from './shortcut.js';
 import { useMediaQuery } from './useMediaQuery.js';
 import { useLinkGroups, usePipeline, useTodos } from './utilities.js';
+import {
+  clockShown,
+  extrasShown,
+  searchEngine,
+  useClock,
+  useWeather,
+  webSearchUrl,
+} from './extras.js';
+import { sectionShown } from './overviewSections.js';
 
 const LINKS_SETTINGS = pathTo('settings', { section: 'links' });
 const ADD_LINKS = cn(buttonVariants({ variant: 'secondary', size: 'sm' }));
@@ -95,10 +117,35 @@ export function ChecklistPanel() {
   );
 }
 
+/**
+ * Weather and the clock (#307), each as Settings → Widgets says: the weather
+ * read while it is drawn (useWeather), the clock on the minute.
+ */
+export function WeatherClockPanel() {
+  const { config } = useConfig();
+  const clock = clockShown(config);
+  const weather = useWeather();
+  const now = useClock(clock);
+  return <WeatherClock weather={weather} now={clock ? now : null} />;
+}
+
+/**
+ * The web search (#307): the words go to Settings → Widgets' engine, in a new
+ * tab, as the old header's box sent them, with no opener.
+ */
+export function WebSearchPanel() {
+  const { config } = useConfig();
+  const engine = searchEngine(config);
+  const search = (words) =>
+    window.open(webSearchUrl(engine, words), '_blank', 'noopener,noreferrer');
+  return <WebSearch engine={engine.name} onSearch={search} />;
+}
+
 /** Which panels the rail draws: the board's switches, and a source set up. */
-function railPanels(sections, groups, pipeline) {
-  const on = (key) => sections?.[key]?.visible !== false;
+function railPanels(config, groups, pipeline) {
+  const on = (key) => config?.sections?.[key]?.visible !== false;
   return {
+    extras: extrasShown(config),
     quickLaunch: on('quicklaunch') && groups.length > 0,
     pipeline: on('pipeline') && pipeline.configured === true,
     checklist: on('todos'),
@@ -107,18 +154,20 @@ function railPanels(sections, groups, pipeline) {
 
 /**
  * The Overview's frame: its sections (`children`), and from 1440px, while the
- * Overview is open (`open`), the utilities rail beside them.
+ * Overview is open (`open`) and its rail isn't switched off (Settings →
+ * Appearance → Overview sections), the utilities rail beside them.
  */
 export function OverviewLayout({ open, children }) {
   const wide = useMediaQuery(RAIL_WIDTH);
   const { config } = useConfig();
   const { groups, target } = useLinkGroups();
-  const shown = open && wide;
+  const shown = open && wide && sectionShown(config, 'rail');
   const pipeline = usePipeline({
     active: shown && config?.sections?.pipeline?.visible !== false,
   });
-  const panels = railPanels(config?.sections, groups, pipeline);
-  const rail = shown && (panels.quickLaunch || panels.pipeline || panels.checklist);
+  const panels = railPanels(config, groups, pipeline);
+  const rail =
+    shown && (panels.extras || panels.quickLaunch || panels.pipeline || panels.checklist);
   return (
     <div data-slot="overview-layout" className={rail ? 'overview-split' : undefined}>
       <div className="overview-main">{children}</div>
@@ -126,6 +175,7 @@ export function OverviewLayout({ open, children }) {
         <div className="overview-rail">
           <ShellSection>
             <UtilitiesRail>
+              {panels.extras ? <WeatherClockPanel /> : null}
               {panels.quickLaunch ? <QuickLaunchPanel groups={groups} target={target} /> : null}
               {panels.pipeline ? <PipelinePanel pipeline={pipeline} /> : null}
               {panels.checklist ? <ChecklistPanel /> : null}

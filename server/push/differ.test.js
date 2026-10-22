@@ -812,7 +812,8 @@ test("the config (#505): one source_down on its second broken cycle, with the mo
   const [back] = diffSnapshots(sources({ config: 'down' }), sources({ config: 'ok' }), { entities: [], issues: [] });
   assert.deepEqual(
     [back.type, back.severity, back.title, back.body, back.reason],
-    ['source_recovered', 'info', 'JagHelm config fixed', 'services.yaml loads again', undefined]
+    // True for a fix by hand, a permission fix and a deletion (#536).
+    ['source_recovered', 'info', 'JagHelm config fixed', 'services.yaml is no longer broken', undefined]
   );
   // A blip, or the cycle after its recovery: it leaves the snapshot quietly.
   assert.deepEqual(diffSnapshots(sources({ config: 'failing' }), sources({})), []);
