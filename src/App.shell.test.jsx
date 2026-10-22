@@ -398,7 +398,10 @@ describe('the Overview', () => {
       'A',
       'A',
     ]);
-    expect(within(rows[0]).getByRole('link')).toHaveAttribute('href', '#entity-nodes/vm103');
+    expect(within(rows[0]).getByRole('link')).toHaveAttribute(
+      'href',
+      '#entity-services/vm103:immich'
+    );
     expect(within(rows[3]).getByRole('link')).toHaveAttribute('href', '#entity-nodes/pi');
     // All alerts, as the mock has it, in accent-text, opens the Alerts page.
     const all = within(panel).getByRole('link', { name: 'All alerts' });
