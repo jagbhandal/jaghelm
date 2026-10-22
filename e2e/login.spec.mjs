@@ -8,7 +8,9 @@
  *    password's error on its field, and with JagHelm not answering;
  *  - a wrong password, sent with Enter, is the error on the password field,
  *    with focus on it; the right one opens the shell with the token stored;
- *  - nothing scrolls sideways.
+ *  - nothing scrolls sideways;
+ *  - JagHelm's logo loads, the lockup for the theme (#530), and on a 390 ×
+ *    667 phone the page fits without scrolling, blank and with an error.
  *
  * Screenshots of the page, dark and light, blank and with the error, for the
  * PR, in test-results/e2e/shots/.
@@ -99,6 +101,33 @@ for (const theme of Object.keys(THEMES)) {
       await noSidewaysScroll(page);
     });
   }
+}
+
+const LOCKUP = { dark: '/logo-login.svg', light: '/logo-login-light.svg' };
+
+for (const theme of Object.keys(THEMES)) {
+  test(`the logo loads, and the page fits a 390 x 667 phone, ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 667 });
+    await openSignedOut(page, { theme });
+    const logo = page.getByRole('heading', { level: 1, name: 'JagHelm' }).locator('img');
+    await expect(logo).toHaveAttribute('src', LOCKUP[theme]);
+    await expect
+      .poll(() => logo.evaluate((img) => img.complete && img.naturalWidth), 'the lockup loaded')
+      .toBeGreaterThan(0);
+    await expect(logo).toHaveJSProperty('height', 156);
+    const fits = () =>
+      page.evaluate(() => {
+        const doc = document.documentElement;
+        return doc.scrollHeight <= doc.clientHeight;
+      });
+    expect(await fits(), 'blank: the page scrolls').toBe(true);
+
+    await username(page).fill(USER);
+    await password(page).fill('wrong');
+    await password(page).press('Enter');
+    await expect(password(page)).toHaveAttribute('aria-invalid', 'true');
+    expect(await fits(), 'with the error: the page scrolls').toBe(true);
+  });
 }
 
 test('a wrong password: the error on its field, focus there; the right one signs in', async ({

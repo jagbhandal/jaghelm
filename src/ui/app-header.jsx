@@ -2,9 +2,10 @@
  * AppHeader (spec §5.4, §7; #296, #275): the annunciator header, 48px tall and
  * the full width of the window, above every page. Left to right:
  *
- *   brand      the logo and the instance name, a link to the Overview: the
- *              mock's helm mark on the accent, or `logoUrl` when one is set.
- *              Below 768px the name is for screen readers only.
+ *   brand      the logo and the instance name, a link to the Overview:
+ *              JagHelm's shield (public/logo.svg, the favicon's artwork, #530),
+ *              or `logoUrl` when one is set, 28px square. Below 768px the name
+ *              is for screen readers only.
  *   status     the overall state from the status model: its lamp, its word
  *              and the model's sentence, which carries the counts ("2 services
  *              down · 1 no signal"), the whole of it a link to Alerts. Healthy
@@ -61,32 +62,8 @@ import { EMPTY, EMPTY_SENTENCE, NO_SIGNAL, WORDS, toState } from './lib/status.j
  */
 const QUIET = new Set(['ok', 'maintenance', EMPTY]);
 
-/** The mock's helm mark: the wheel, in on-accent, on an accent square. */
-function HelmMark({ className }) {
-  return (
-    <span
-      aria-hidden="true"
-      data-slot="helm-mark"
-      className={cn(
-        'inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent text-on-accent shadow-control',
-        className
-      )}
-    >
-      <svg
-        viewBox="0 0 24 24"
-        className="size-4.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.8}
-        strokeLinecap="round"
-      >
-        <circle cx="12" cy="12" r="6.2" />
-        <path d="M12 1.8v6.4M12 15.8v6.4M1.8 12h6.4M15.8 12h6.4M4.8 4.8l4.5 4.5M14.7 14.7l4.5 4.5M19.2 4.8l-4.5 4.5M9.3 14.7l-4.5 4.5" />
-        <circle cx="12" cy="12" r="1.6" fill="currentColor" />
-      </svg>
-    </span>
-  );
-}
+/** JagHelm's own mark, the shield (#530): the header's logo unless `logoUrl` is set. */
+const SHIELD = '/logo.svg';
 
 /**
  * "Updated 12 s ago", for the time `at` (ms since the epoch; nothing before
@@ -229,11 +206,13 @@ function AppHeader({
         onClick={link(homeHref)}
         className="flex shrink-0 items-center gap-2.5 rounded-md"
       >
-        {logoUrl ? (
-          <img src={logoUrl} alt="" className="size-7 shrink-0 rounded-lg object-contain" />
-        ) : (
-          <HelmMark />
-        )}
+        <img
+          src={logoUrl || SHIELD}
+          alt=""
+          width={28}
+          height={28}
+          className={cn('size-7 shrink-0 object-contain', logoUrl && 'rounded-lg')}
+        />
         <span className="max-w-48 truncate text-title-xs font-extrabold max-md:sr-only">
           {name}
         </span>
@@ -293,4 +272,4 @@ function AppHeader({
   );
 }
 
-export { AppHeader, HelmMark, UpdatedAgo, NO_SIGNAL, agoText, useAgo };
+export { AppHeader, UpdatedAgo, NO_SIGNAL, agoText, useAgo };

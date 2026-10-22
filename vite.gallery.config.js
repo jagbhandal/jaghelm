@@ -14,8 +14,9 @@ export const GALLERY_OUT_DIR = 'dist-gallery';
 export default mergeConfig(
   app,
   defineConfig({
-    // None of public/ (the service worker, icons, manifest): the page uses none.
-    publicDir: false,
+    // public/ as the app serves it: the header and the sign-in page draw
+    // JagHelm's logo from it (/logo.svg, /logo-login.svg, #530). The page never
+    // registers the service worker or reads the manifest.
     build: {
       outDir: GALLERY_OUT_DIR,
       emptyOutDir: true,

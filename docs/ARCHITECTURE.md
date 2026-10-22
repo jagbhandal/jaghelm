@@ -2671,6 +2671,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   the sign-in failing to reach the server, and nothing scrolls sideways; a
   wrong password sent with Enter puts the error on the password field and
   focus there, and the right one opens the shell with the token stored.
+  JagHelm's logo loads, the lockup for the theme (#530), and on a 390 × 667
+  phone the page fits without scrolling, blank and with an error.
   Screenshots of each go to `test-results/e2e/shots/`.
 - **Repo guards** (`node --test`, `scripts/*.test.mjs`): the deploy runner pin,
   the secret floor (`.gitignore`, tracked templates, the scanner catching a

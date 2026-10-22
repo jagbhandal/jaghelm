@@ -1,10 +1,13 @@
 /*
- * The sign-in screen (spec §8 "Login", #305), on the shared components: one
- * brand mark, the header's (the helm mark on the accent, or the instance's own
- * logo, then its name, as the page's h1), over a Panel titled "Sign in" that
- * holds the form. No wordmark, gradient title or subtitle.
+ * The sign-in screen (spec §8 "Login", #305), on the shared components:
+ * JagHelm's logo over a Panel titled "Sign in" that holds the form (#530). The
+ * logo is the lockup, the shield over the JAGHELM wordmark and "Infrastructure
+ * Dashboard" (public/logo-login.svg, drawn for dark; public/logo-login-light.svg
+ * in the light theme, the same artwork with only its text darker), or the
+ * instance's own logo when `logoUrl` is set, 156px tall. It is the page's h1,
+ * the instance's name its text alternative. No title or subtitle beside it.
  *
- *  LoginForm    the brand and the card: a labelled Field per control
+ *  LoginForm    the logo and the card: a labelled Field per control
  *               (Username, Password), and the primary "Sign in" button, the
  *               width of the card. Controlled: `username`, `password`,
  *               `onUsernameChange(value)`, `onPasswordChange(value)`.
@@ -25,15 +28,19 @@
  *
  * It sends nothing itself: `onSubmit()` is the page's (src/components/LoginPage.jsx).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { Banner } from './banner.jsx';
 import { Button } from './button.jsx';
 import { Field } from './field.jsx';
-import { HelmMark } from './app-header.jsx';
 import { Input } from './input.jsx';
 import { Panel } from './panel.jsx';
 import { UiRoot } from './root.jsx';
+import { RootSwitchesContext, SWITCHES } from './lib/portal.js';
 import { cn } from './lib/utils.js';
+
+/** The lockup, by theme: its viewBox is 300 × 270, drawn here 156px tall. */
+const LOCKUP = { dark: '/logo-login.svg', light: '/logo-login-light.svg' };
+const LOCKUP_SIZE = { width: 173, height: 156 };
 
 const NO_ERRORS = Object.freeze({});
 const NONE_EDITED = Object.freeze([]);
@@ -54,6 +61,7 @@ function LoginForm({
   className,
   ...props
 }) {
+  const light = useContext(RootSwitchesContext)?.[SWITCHES.theme.attribute] === 'light';
   const inputs = { username: useRef(null), password: useRef(null) };
   // The errors last focused for; the first render's are taken as seen, so
   // mounting with an error (the gallery) never takes the page's focus.
@@ -92,14 +100,18 @@ function LoginForm({
       className={cn('flex w-full max-w-90 flex-col gap-6', className)}
       {...props}
     >
-      <div className="flex items-center justify-center gap-3">
+      <h1 className="flex justify-center">
         {logoUrl ? (
-          <img src={logoUrl} alt="" className="size-10 shrink-0 rounded-xl object-contain" />
+          <img src={logoUrl} alt={name} className="h-39 w-auto max-w-full object-contain" />
         ) : (
-          <HelmMark className="size-10 rounded-xl [&_svg]:size-6" />
+          <img
+            src={light ? LOCKUP.light : LOCKUP.dark}
+            alt={name}
+            {...LOCKUP_SIZE}
+            className="h-39 w-auto"
+          />
         )}
-        <h1 className="text-title font-extrabold text-text-1">{name}</h1>
-      </div>
+      </h1>
       <Panel title="Sign in">
         <form noValidate onSubmit={submit} className="flex flex-col gap-4">
           {errors.form ? (

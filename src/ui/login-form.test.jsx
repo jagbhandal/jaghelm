@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { LoginForm, LoginScreen } from '@ui/login-form';
+import { UiRoot } from '@ui/root';
 
 describe('LoginForm', () => {
   it('ties each error to its field, and never takes focus on its first render', () => {
@@ -41,6 +42,27 @@ describe('LoginForm', () => {
     expect(root).toHaveClass('jh-ui');
     expect(root).toHaveAttribute('data-theme', 'light');
     expect(screen.getByRole('main')).toContainElement(screen.getByRole('heading', { level: 1 }));
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Homelab');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('Homelab');
+  });
+
+  it("the lockup follows the theme of the root it is drawn in, as the gallery's are", () => {
+    const lockup = () => screen.getByRole('heading', { level: 1 }).querySelector('img');
+    const { rerender } = render(<LoginForm />);
+    expect(lockup()).toHaveAttribute('src', '/logo-login.svg');
+    rerender(
+      <UiRoot theme="dark">
+        <LoginForm />
+      </UiRoot>
+    );
+    expect(lockup()).toHaveAttribute('src', '/logo-login.svg');
+    rerender(
+      <UiRoot theme="light">
+        <LoginForm />
+      </UiRoot>
+    );
+    expect(lockup()).toHaveAttribute('src', '/logo-login-light.svg');
+    // Its size is fixed, so nothing moves when it loads.
+    expect(lockup()).toHaveAttribute('width');
+    expect(lockup()).toHaveAttribute('height');
   });
 });

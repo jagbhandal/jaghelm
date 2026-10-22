@@ -1,8 +1,8 @@
 /*
- * The sign-in page (#305): the shared components, labelled fields, the error
- * tied to its field with focus on it, Enter to submit, one sign-in at a time,
- * and the same request and answer handling as before (POST /api/auth/login,
- * the token handed to onLogin, which stores it).
+ * The sign-in page (#305): JagHelm's logo (#530), the shared components,
+ * labelled fields, the error tied to its field with focus on it, Enter to
+ * submit, one sign-in at a time, and the same request and answer handling as
+ * before (POST /api/auth/login, the token handed to onLogin, which stores it).
  */
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -28,11 +28,15 @@ const password = () => screen.getByLabelText('Password');
 const signIn = () => screen.getByRole('button', { name: /^Sign(ing)? in/ });
 
 describe('LoginPage', () => {
-  it('draws one brand mark and labelled fields on the shared components', () => {
+  it("draws JagHelm's logo and labelled fields on the shared components", () => {
     render(<LoginPage onLogin={() => {}} />);
-    expect(screen.getByRole('heading', { level: 1, name: 'JagHelm' })).toBeInTheDocument();
+    // The lockup (shield, wordmark, tagline) is the page's h1, with no title
+    // or subtitle beside it (#530).
+    const heading = screen.getByRole('heading', { level: 1, name: 'JagHelm' });
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(document.querySelector('[data-slot="helm-mark"]')).toBeInTheDocument();
+    expect(heading.querySelector('img')).toHaveAttribute('src', '/logo-login.svg');
+    expect(heading).toHaveTextContent(/^$/);
+    expect(document.querySelectorAll('img')).toHaveLength(1);
     expect(screen.getByRole('main')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Sign in' })).toBeInTheDocument();
     expect(username()).toHaveAttribute('autocomplete', 'username');
@@ -42,15 +46,29 @@ describe('LoginPage', () => {
     expect(username()).toHaveFocus();
   });
 
-  it("draws App's name, logo and theme", () => {
-    render(<LoginPage onLogin={() => {}} theme="light" name="Homelab" logoUrl="/my-logo.png" />);
+  it("in the light theme, the lockup's light version: only its text is darker", () => {
+    render(<LoginPage onLogin={() => {}} theme="light" />);
     expect(document.querySelector('[data-slot="login-screen"]')).toHaveAttribute(
       'data-theme',
       'light'
     );
-    expect(screen.getByRole('heading', { level: 1, name: 'Homelab' })).toBeInTheDocument();
-    expect(document.querySelector('img[src="/my-logo.png"]')).toBeInTheDocument();
-    expect(document.querySelector('[data-slot="helm-mark"]')).toBeNull();
+    const heading = screen.getByRole('heading', { level: 1, name: 'JagHelm' });
+    expect(heading.querySelector('img')).toHaveAttribute('src', '/logo-login-light.svg');
+  });
+
+  it("draws App's name, logo and theme: a custom logo replaces the lockup", () => {
+    for (const theme of ['dark', 'light']) {
+      const { unmount } = render(
+        <LoginPage onLogin={() => {}} theme={theme} name="Homelab" logoUrl="/my-logo.png" />
+      );
+      const heading = screen.getByRole('heading', { level: 1, name: 'Homelab' });
+      const logos = document.querySelectorAll('img');
+      expect(logos).toHaveLength(1);
+      expect(heading).toContainElement(logos[0]);
+      expect(logos[0]).toHaveAttribute('src', '/my-logo.png');
+      expect(logos[0]).toHaveAttribute('alt', 'Homelab');
+      unmount();
+    }
   });
 
   it('a wrong password: the error is tied to the password field, and focus lands there', async () => {
