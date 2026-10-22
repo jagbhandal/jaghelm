@@ -86,7 +86,8 @@ server/                     Express API (Node 26, ESM)
   icon-cache.js             public /api/icons/cached: icon-repository icons on disk, size-capped
                             with LRU eviction (see 6)
   icon-sources.js           the icon repositories it may fetch from; the web client imports it too
-  config.js                 services.yaml: load, hot-reload watch, copy-on-read + atomic save
+  config.js                 services.yaml: load, hot-reload watch, copy-on-read, its version,
+                            and the one atomic writer, over the version read (see 6)
   secrets.js                AES-256-GCM secret store (per-install KDF salt)
   cron-store.js             cron history (bounded)
   errors.js                 apiError + global JSON error handler
@@ -242,7 +243,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/auth` | public | login, logout, auth-status |
 | `/api/health`, `/api/readyz` | public | liveness / readiness probes |
 | `/metrics` | public | Prometheus exposition |
-| `/api/services` | token | discovered nodes + services (background-refreshed, ETag); `services.yaml` for Settings, without its credentials (`/config`, see 6) |
+| `/api/services` | token | discovered nodes + services (background-refreshed, ETag); `services.yaml` for Settings, without its credentials, and its save over the version read (`/config`, ETag and If-Match, see 6) |
 | `/api/status` | token | the status model (4.7), built once a background cycle (ETag; 503 before the first cycle) |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6) |
 | `/api/display-config` | token | the display config blob |
@@ -767,7 +768,9 @@ Key properties:
 
 - **Display config** (`config.js`) is **copy-on-read** (`getConfig()` returns a
   `structuredClone`) and saved via a synchronous **atomic** write
-  (temp -> fsync -> rename), so a route can't mutate shared state and a crash
+  (temp -> fsync -> rename), only over the version of `services.yaml` its
+  caller read (`writeConfig`, #423, see 6), so a route can't mutate shared
+  state, a stale Settings tab can't save over a newer file, and a crash
   can't truncate the file ([ADR 0001](adr/0001-atomic-file-writes.md),
   [ADR 0004](adr/0004-config-copy-on-read.md)). It is validated against a Zod
   schema (`util/configSchema.js`) on read, so a malformed file fails loudly.
@@ -1825,7 +1828,7 @@ All state is files under the data dir (no DB):
   the Kuma monitor mapping `monitor` / `monitor_per_node`, see 4.2) and
   integration configs (each secret value stored separately, encrypted). Hot-reloaded on an
   external edit; read copy-on-read; `POST /api/services/config` validated by Zod.
-  `saveConfig` re-serialises the whole file, so a write drops its comments and
+  `writeConfig` re-serialises the whole file, so a write drops its comments and
   hand formatting.
   - **A read that yields no usable config is a failed read** (#463): an
     unparseable file, or one that is empty, comments only or not a mapping
@@ -1885,6 +1888,42 @@ All state is files under the data dir (no DB):
     as text, so such a file is still rewritten. Settings shows a refused or
     failed save in a toast with the server's reason and reads the stored
     config again, so the screen matches what is saved.
+  - **A save needs the version it read** (#423). A tab left open from before a
+    change used to post its old copy, without what was added since, and the
+    save deleted it. `services.yaml`'s version is a SHA-256 of its bytes on
+    disk (`config.js`), so it survives a restart and changes with any edit,
+    by hand or by JagHelm, a credential's too (the masked read can't show
+    that, so a version of the answer would miss it).
+    `GET /api/services/config` answers it as a strong ETag, and
+    `POST /api/services/config` must send it back in `If-Match`. None is a
+    428, and one that is no longer the file's is a 409
+    `{ error, stale: true }`; nothing is written either way. A `W/` prefix is
+    ignored (a compressing proxy weakens the ETag on the way); `*` is no
+    version. A save answers with the new version as its ETag (one that
+    changes nothing, the same), so the tab saves again without reading. The
+    read loads a hand edit the 5 s watcher hasn't yet, so the config it
+    answers always matches its version. `secrets.json` is not part of it: a
+    config save never writes it, and a marker becomes the `$secret:`
+    reference stored in its place, which names whatever is stored under it
+    now; adding, moving or removing a reference changes `services.yaml`.
+  - **One writer.** Every write of `services.yaml` (this route, and the
+    integration save, toggle and delete below) reads it with `readConfig()`
+    and writes it with `writeConfig(config, ifVersion)` in the same
+    synchronous handler. `writeConfig` reads and hashes the file, compares it
+    with the version its caller read and replaces it, with no `await` in
+    between, so no other request can write after the check, and a write from
+    outside the process (a hand edit in that instant) leaves it a conflict:
+    the integration routes answer that with a 409 to try again. `saveConfig`
+    writes through it over whatever is there, for first boot (before the
+    server listens) and tests.
+  - **Settings sends the version.** The Nodes and Services tabs send each
+    save with the version their config was read at, one save at a time, so
+    each sends the version the last one answered. A 409 for the version shows
+    "Settings changed elsewhere; reloaded"; any other refusal (a 428 too)
+    shows the server's reason. Either way Settings reads the config again,
+    and the edits made on the screen it replaces are dropped, not sent. The
+    integration form doesn't post the config, and the Android app doesn't
+    either.
   - **An integration's save in Settings merges** (`POST /api/integrations/save`,
     #402). The form's values go into the stored entry, and only what the form
     owns changes: the URL (required), the username and target (sent empty to
