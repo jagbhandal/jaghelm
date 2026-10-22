@@ -200,14 +200,6 @@ const PROBES = [
     },
     'plainhook',
   ],
-  [
-    'an entry moved to another host, naming its own secret instead of the marker',
-    (c) => {
-      c.integrations.statuspage.url = 'http://collector.example.test';
-      c.integrations.statuspage.token = '$secret:statuspage_key'; // pragma: allowlist secret
-    },
-    'statuspage',
-  ],
 ];
 
 for (const [what, edit, key] of PROBES) {
@@ -245,14 +237,124 @@ test('whole-config save: a masked credential whose entry moved to another origin
   ]) {
     fixture();
     const file = bytes(CONFIG_PATH);
-    const res = await wholeConfigSave((c) => {
-      assert.deepEqual(c.integrations[key][field], { $stored: true });
-      c.integrations[key].url = url;
-    });
-    assert.equal(res.status, 400, `${key}: ${JSON.stringify(res.body)}`);
-    assert.ok(res.body.error.includes(`integrations.${key}.${field}`), res.body.error);
-    assert.match(res.body.error, new RegExp(`re-enter the ${field} for the new address`));
-    assert.ok(bytes(CONFIG_PATH).equals(file), 'services.yaml changed');
+    for (const explicit of [false, true]) {
+      const res = await wholeConfigSave((c) => {
+        assert.deepEqual(c.integrations[key][field], { $stored: true });
+        c.integrations[key].url = url;
+        // The stored value named again instead of its marker is the same credential.
+        if (explicit) c.integrations[key][field] = yaml.load(readFileSync(CONFIG_PATH, 'utf8')).integrations[key][field];
+      });
+      assert.equal(res.status, 400, `${key}: ${JSON.stringify(res.body)}`);
+      assert.ok(res.body.error.includes(`integrations.${key}.${field}`), res.body.error);
+      assert.match(res.body.error, new RegExp(`re-enter the ${field} for the new address`));
+      assert.ok(bytes(CONFIG_PATH).equals(file), 'services.yaml changed');
+    }
+  }
+});
+
+// ── Every request stays on the origin of its own URL (the review's probes) ──
+
+upstreams['status.example.test.collector.example.test'] = async () => json({ summary: { up: 9 } });
+upstreams['npm.example.test.collector.example.test'] = async () => json([]);
+const OFF_ORIGIN = /leads away from its URL/;
+
+test('probe A: an endpoint changed to lead onto another host is not requested, so a hand-typed token stays', async () => {
+  fixture();
+  const saved = await wholeConfigSave((c) => {
+    c.integrations.plainhook.endpoint = '.collector.example.test/api/summary';
+  });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const from = requests.length;
+  const result = await refresh();
+  assert.ok(!hostsSince(from).some((h) => h.includes('collector')), JSON.stringify(hostsSince(from)));
+  assert.match(result.plainhook._error, OFF_ORIGIN);
+  assert.equal(result.plainhook._status.state, 'backing_off');
+  // The others are unchanged.
+  assert.equal(result.statuspage._error, undefined);
+});
+
+const HDR = [
+  'integrations:',
+  '  hdr:',
+  '    url: http://status.example.test',
+  '    endpoint: /api/summary',
+  '    auth: none',
+  '    extraHeaders: { X-Secret-Key: by-hand-header-cred }', // pragma: allowlist secret
+  '    fields:',
+  '      - { key: up, label: Up, path: summary.up }',
+  '',
+].join('\n');
+
+test('probe B: a hand-typed header credential is not moved to a new origin by the form or the whole-config save', async () => {
+  for (const path of ['test', 'save']) {
+    handWritten(HDR);
+    const file = bytes(CONFIG_PATH);
+    const from = requests.length;
+    const res = await post(path, { type: 'hdr', url: 'http://collector.example.test', target: '', username: '', editingKey: 'hdr' });
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+    assert.match(res.body.error, /extraHeaders\.X-Secret-Key/);
+    assert.ok(!res.body.error.includes('by-hand-header-cred'));
+    assert.equal(res.body.field, undefined, 'no form field holds it');
+    assert.deepEqual(requests.slice(from), []);
+    assert.ok(bytes(CONFIG_PATH).equals(file));
+  }
+  const res = await wholeConfigSave((c) => {
+    c.integrations.hdr.url = 'http://collector.example.test';
+  });
+  assert.equal(res.status, 400, JSON.stringify(res.body));
+  assert.match(res.body.error, /integrations\.hdr\.extraHeaders\.X-Secret-Key/);
+  assert.match(res.body.error, /re-enter the X-Secret-Key for the new address/);
+});
+
+test('probe C: an entry on the same URL with an endpoint onto another host sends nothing, and no session token', async () => {
+  setSecret('integration_npm_password', NPM_PASSWORD, { origins: [NPM] });
+  handWritten(['integrations:', '  npm:', '    preset: npm', '    url: http://npm.example.test', '    username: admin', ''].join('\n'));
+  await refresh(); // logs in at npm, caches the token
+  const saved = await wholeConfigSave((c) => {
+    c.integrations.x = { preset: 'npm', url: 'http://npm.example.test', endpoint: '.collector.example.test/x' };
+  });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const from = requests.length;
+  const result = await refresh();
+  assert.ok(!hostsSince(from).some((h) => h.includes('collector')), JSON.stringify(hostsSince(from)));
+  assert.match(result.x._error, OFF_ORIGIN);
+  assert.ok(requests.slice(from).every((r) => r.host === 'npm.example.test'));
+});
+
+test("a session token is kept per entry: another entry on the same URL never reads with npm's", async () => {
+  const npmUp = upstreams['npm.example.test'];
+  upstreams['npm.example.test'] = async (u, init) => {
+    if (init.method !== 'POST') return json([]);
+    const { secret } = JSON.parse(init.body);
+    return secret === NPM_PASSWORD ? json({ token: 'tok-of-npm' }) : json({ error: 'no' }, 401);
+  };
+  try {
+    setSecret('integration_npm_password', NPM_PASSWORD, { origins: [NPM] });
+    handWritten(['integrations:', '  npm:', '    preset: npm', '    url: http://npm.example.test', '    username: admin', ''].join('\n'));
+    await refresh(); // npm logs in and caches its token
+    handWritten(
+      [
+        'integrations:',
+        '  npm:',
+        '    preset: npm',
+        '    url: http://npm.example.test',
+        '    username: admin',
+        // No credential of its own, its own read.
+        '  y:',
+        '    preset: npm',
+        '    url: http://npm.example.test',
+        '    endpoint: /api/y-data',
+        '',
+      ].join('\n')
+    );
+    const from = requests.length;
+    const result = await refresh();
+    const yReads = requests.slice(from).filter((r) => r.url.includes('/api/y-data'));
+    assert.deepEqual(yReads, [], 'y read with a token it never got');
+    assert.ok(result.y._error);
+    assert.equal(result.npm._error, undefined);
+  } finally {
+    upstreams['npm.example.test'] = npmUp;
   }
 });
 
@@ -474,8 +576,9 @@ test('a session login to another origin is refused: nothing is sent, and it is n
     const from = requests.length;
     const result = await refresh();
     assert.deepEqual(requests.slice(from), [], 'a request went out');
-    for (const key of ['npm', 'sess']) {
-      assert.match(result[key]._error, REENTER);
+    // npm's password was entered for its old address; sess's login leaves its URL's origin.
+    for (const [key, said] of [['npm', REENTER], ['sess', /leads away from its URL/]]) {
+      assert.match(result[key]._error, said);
       assert.equal(result[key]._status.state, 'backing_off');
     }
   }
