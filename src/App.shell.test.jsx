@@ -30,12 +30,22 @@ const GRAFANA = {
 };
 const KUMA = { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: 'https://kuma.example/' };
 
-function stubServer({ tabs = [GRAFANA, KUMA], status = INCIDENT, serverTabs, config = {} } = {}) {
-  server = { requests: [], status, statusDown: false, statusPending: false };
+// `serverConfig` is the display config the server holds (none by default);
+// each config the app saves to it lands in `server.saves`. `answers` are
+// bodies by path, such as /api/weather's.
+function stubServer({
+  tabs = [GRAFANA, KUMA],
+  status = INCIDENT,
+  serverTabs,
+  config = {},
+  serverConfig,
+  answers = {},
+} = {}) {
+  server = { requests: [], saves: [], status, statusDown: false, statusPending: false };
   localStorage.setItem('jaghelm-config', JSON.stringify({ tabs, ...config }));
   vi.stubGlobal(
     'fetch',
-    vi.fn((url) => {
+    vi.fn((url, init) => {
       const path = String(url).split('?')[0];
       server.requests.push(path);
       if (path === '/api/auth/check') return respond({ authRequired: true, authenticated: true });
@@ -44,7 +54,13 @@ function stubServer({ tabs = [GRAFANA, KUMA], status = INCIDENT, serverTabs, con
         if (server.statusPending) return new Promise(() => {});
         return respond(server.status);
       }
-      if (path === '/api/display-config') return respond(serverTabs ? { tabs: serverTabs } : {});
+      if (path === '/api/display-config' && init?.method === 'POST') {
+        server.saves.push(JSON.parse(init.body));
+        return respond({ ok: true });
+      }
+      if (path === '/api/display-config')
+        return respond(serverConfig ?? (serverTabs ? { tabs: serverTabs } : {}));
+      if (Object.hasOwn(answers, path)) return respond(answers[path]);
       if (['/api/todos', '/api/gitea/activity', '/api/cron/status'].includes(path))
         return respond([]);
       return respond({});
@@ -689,7 +705,14 @@ describe('the utilities', () => {
     expect(await within(region).findByRole('region', { name: 'Pipeline' })).toBeInTheDocument();
     cleanup();
 
-    stubServer({ config: { ...LINKS, sections: { quicklaunch: off, todos: off, pipeline: off } } });
+    // The clock (#307) is on until switched off, so it goes too.
+    stubServer({
+      config: {
+        ...LINKS,
+        showClock: false,
+        sections: { quicklaunch: off, todos: off, pipeline: off },
+      },
+    });
     await renderApp();
     await screen.findByRole('region', { name: 'Needs attention' });
     expect(rail()).toBeNull();
@@ -725,5 +748,180 @@ describe('the utilities', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     await current('Launch');
     expect(window.location.pathname).toBe('/launch');
+  });
+});
+
+// #307: today's extras keep a home (weather and the clock in the rail and on
+// the Launch page, the web search on the Launch page), and a show/hide switch
+// per Overview section, in the display config the server holds.
+describe("today's extras and the Overview's sections", () => {
+  const TORONTO = {
+    showWeather: true,
+    weatherLat: '43.65',
+    weatherLon: '-79.38',
+    weatherCity: 'Toronto',
+    tempUnit: 'C',
+  };
+  const WEATHER = { current: { temperature_2m: 48.2, weather_code: 3 } };
+  const LINKS = { links: { personal: [{ name: 'Nextcloud', url: 'https://cloud.example/' }] } };
+  const rail = () => screen.queryByRole('region', { name: 'Utilities' });
+  const slot = (name) => document.querySelector(`[data-slot="${name}"]`);
+
+  function wide(on) {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+      matches: on && query === RAIL_WIDTH,
+      media: query,
+      onchange: null,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      dispatchEvent: () => false,
+    }));
+  }
+
+  it('from 1440px, the rail has the weather and the clock at its top, when configured', async () => {
+    wide(true);
+    stubServer({ config: { ...LINKS, ...TORONTO }, answers: { '/api/weather': WEATHER } });
+    await renderApp();
+    const region = await screen.findByRole('region', { name: 'Utilities' });
+    const panel = within(region).getByRole('region', { name: 'Weather and time' });
+    expect(region.firstElementChild).toBe(panel);
+    await within(panel).findByText('9°C · Overcast');
+    expect(within(panel).getByText('Toronto')).toBeInTheDocument();
+    expect(panel.querySelector('time')).toHaveAttribute('dateTime');
+    expect(server.requests).toContain('/api/weather');
+  });
+
+  it('without them configured, neither, and no weather is asked for', async () => {
+    wide(true);
+    stubServer({ config: { ...LINKS, ...TORONTO, showWeather: false, showClock: false } });
+    await renderApp();
+    const region = await screen.findByRole('region', { name: 'Utilities' });
+    await within(region).findByRole('region', { name: 'Checklist' });
+    expect(slot('weather-clock')).toBeNull();
+    expect(server.requests).not.toContain('/api/weather');
+  });
+
+  it('the clock on its own when no place is set, on until switched off', async () => {
+    wide(true);
+    stubServer({ config: LINKS });
+    await renderApp();
+    const region = await screen.findByRole('region', { name: 'Utilities' });
+    const panel = within(region).getByRole('region', { name: 'Time' });
+    expect(panel.querySelector('[data-slot="weather"]')).toBeNull();
+    expect(panel.querySelector('time')).not.toBeNull();
+    expect(server.requests).not.toContain('/api/weather');
+  });
+
+  it('narrower, the Launch page has them at its top, then the web search', async () => {
+    wide(false);
+    stubServer({ config: { ...LINKS, ...TORONTO }, answers: { '/api/weather': WEATHER } });
+    await renderApp('/launch');
+    await screen.findByRole('heading', { level: 1, name: 'Launch' });
+    const main = screen.getByRole('main');
+    const panel = within(main).getByRole('region', { name: 'Weather and time' });
+    await within(panel).findByText('9°C · Overcast');
+    const order = [...main.querySelectorAll('[data-slot]')]
+      .map((el) => el.dataset.slot)
+      .filter((s) => ['weather-clock', 'web-search', 'quick-launch'].includes(s));
+    expect(order).toEqual(['weather-clock', 'web-search', 'quick-launch']);
+    expect(rail()).toBeNull();
+  });
+
+  it('the web search opens the configured engine’s results in a new tab, without an opener', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    stubServer({ config: { searchEngine: 'duckduckgo' } });
+    await renderApp('/launch');
+    const search = await screen.findByRole('search', { name: 'Web search' });
+    const field = within(search).getByRole('searchbox', {
+      name: 'Search the web with DuckDuckGo',
+    });
+    fireEvent.change(field, { target: { value: ' zfs scrub ' } });
+    fireEvent.click(within(search).getByRole('button', { name: 'Search' }));
+    expect(open).toHaveBeenCalledExactlyOnceWith(
+      'https://duckduckgo.com/?q=zfs%20scrub',
+      '_blank',
+      'noopener,noreferrer'
+    );
+    expect(field).toHaveValue('');
+  });
+
+  it('no web search when Settings → Widgets switches it off', async () => {
+    stubServer({ config: { showSearch: false } });
+    await renderApp('/launch');
+    await screen.findByRole('region', { name: 'Quick Launch' });
+    expect(screen.queryByRole('search')).toBeNull();
+  });
+
+  it('a section switched off is gone: the strip, Infrastructure, Services, the rail', async () => {
+    wide(true);
+    stubServer({ config: LINKS });
+    await renderApp();
+    await screen.findByRole('region', { name: 'Subsystems' });
+    await waitFor(() => expect(slot('overview-infrastructure')).not.toBeNull());
+    await waitFor(() => expect(slot('overview-services')).not.toBeNull());
+    expect(rail()).not.toBeNull();
+    cleanup();
+
+    stubServer({
+      config: {
+        ...LINKS,
+        overviewSections: { strip: false, infrastructure: false, services: false, rail: false },
+      },
+    });
+    await renderApp();
+    await screen.findByRole('region', { name: 'Needs attention' });
+    // Today's board is drawn under the status, so the sections would be by now.
+    await waitFor(() => expect(document.querySelector('.dashboard-content')).not.toBeNull());
+    expect(screen.queryByRole('region', { name: 'Subsystems' })).toBeNull();
+    expect(slot('overview-infrastructure')).toBeNull();
+    expect(slot('overview-services')).toBeNull();
+    expect(rail()).toBeNull();
+    // The Launch page keeps the rail's panels.
+    fireEvent.click(within(sidebar()).getByRole('link', { name: 'Launch' }));
+    expect(await screen.findByRole('region', { name: 'Quick Launch' })).toBeInTheDocument();
+  });
+
+  it('the attention panel can’t be hidden, whatever the config says', async () => {
+    stubServer({ config: { overviewSections: { attention: false, strip: false } } });
+    await renderApp();
+    expect(await screen.findByRole('region', { name: 'Needs attention' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Subsystems' })).toBeNull();
+  });
+
+  it('the switches come from the server’s config, so another device’s choice applies here', async () => {
+    stubServer({ serverConfig: { overviewSections: { strip: false } } });
+    await renderApp();
+    await screen.findByRole('region', { name: 'Needs attention' });
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Subsystems' })).toBeNull());
+  });
+
+  it('a saved "hide the checklist" (the old Widgets switch) moves to the Checklist’s own switch', async () => {
+    wide(true);
+    stubServer({ config: LINKS, serverConfig: { ...LINKS, title: 'Lab', showTodos: false } });
+    await renderApp();
+    const region = await screen.findByRole('region', { name: 'Utilities' });
+    await waitFor(() =>
+      expect(within(region).queryByRole('region', { name: 'Checklist' })).toBeNull()
+    );
+    // The server gets the moved switch, and no dead one. (Another test's
+    // debounced save may land here too: only this config is titled Lab.)
+    const mine = () => server.saves.filter((c) => c.title === 'Lab');
+    await waitFor(() => expect(mine().length).toBeGreaterThan(0), { timeout: 4000 });
+    for (const saved of mine()) {
+      expect(saved.sections.todos).toEqual({ visible: false });
+      expect(saved).not.toHaveProperty('showTodos');
+    }
+  });
+
+  it('moves it beside the board bringing an old layout up to its version, losing neither', async () => {
+    stubServer({ config: { showTodos: false, gridLayout: { lg: [], md: [], sm: [] } } });
+    await renderApp();
+    await screen.findByRole('region', { name: 'Needs attention' });
+    const stored = () => JSON.parse(localStorage.getItem('jaghelm-config'));
+    await waitFor(() => expect(stored()).not.toHaveProperty('showTodos'));
+    await waitFor(() => expect(stored().gridLayout.version).toBe(2));
+    expect(stored().sections.todos).toEqual({ visible: false });
   });
 });

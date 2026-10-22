@@ -30,6 +30,27 @@ describe('Toggle', () => {
     await user.click(box);
     expect(onChange).toHaveBeenCalledWith(true);
   });
+
+  // #307: Settings → Appearance → Overview sections, each switch with a line
+  // under it, the attention panel's on and locked.
+  it('takes a description, said as the box’s description, not its name', () => {
+    render(
+      <Toggle label="Services" description="Every service in one list" checked onChange={vi.fn()} />
+    );
+    const box = screen.getByRole('checkbox', { name: 'Services' });
+    expect(box).toHaveAccessibleDescription('Every service in one list');
+  });
+
+  it('can be locked: disabled, and a click changes nothing', async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(<Toggle label="Needs attention" checked disabled onChange={onChange} />);
+    const box = screen.getByRole('checkbox', { name: 'Needs attention' });
+    expect(box).toBeDisabled();
+    expect(box).toBeChecked();
+    await user.click(box);
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
 
 describe('ChoiceGroup', () => {

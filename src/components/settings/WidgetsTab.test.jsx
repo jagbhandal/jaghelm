@@ -77,3 +77,35 @@ describe('WidgetsTab coordinate drafts re-sync on external config change', () =>
     expect(latInput).toHaveValue('45.0');
   });
 });
+
+// #307: the weather, the clock and the web search are back (the Overview's rail
+// and the Launch page), so their switches say where; the dead "Show checklist
+// panel" switch is gone (the Checklist's own is in Settings → Sections, and a
+// saved "hidden" moved there, overviewSections.js).
+describe('WidgetsTab switches (#307)', () => {
+  it('says where each extra shows, and has the clock’s, on by default', () => {
+    render(<Harness initialConfig={baseConfig()} />);
+    expect(
+      screen.getByRole('checkbox', { name: 'Show the web search on the Launch page' })
+    ).toBeChecked();
+    expect(
+      screen.getByRole('checkbox', { name: 'Show the weather on the Overview and the Launch page' })
+    ).toBeChecked();
+    expect(
+      screen.getByRole('checkbox', { name: 'Show the clock on the Overview and the Launch page' })
+    ).toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: /checklist/i })).toBeNull();
+    // The scheduled jobs' switch works (the board reads it), so it stays.
+    expect(
+      screen.getByRole('checkbox', { name: 'Show scheduled jobs panel on dashboard' })
+    ).toBeChecked();
+  });
+
+  it('switches the clock off and on', () => {
+    render(<Harness initialConfig={baseConfig({ showClock: false })} />);
+    const clock = screen.getByRole('checkbox', { name: /^Show the clock/ });
+    expect(clock).not.toBeChecked();
+    fireEvent.click(clock);
+    expect(clock).toBeChecked();
+  });
+});

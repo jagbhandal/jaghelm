@@ -1702,23 +1702,27 @@ gutter on a phone, and the page fits a 390 × 667 phone without scrolling.
 
 ## Utilities
 
-Quick Launch, Pipeline and the Checklist (spec §8 item 5, #301), one file in
-`src/ui/` (`utilities.jsx`), built on Panel, EmptyState, Input, Button,
-IconButton, Checkbox, Skeleton and the sidebar's AppChip. Each is one
-component, drawn the same in the Overview's rail (from 1440px, `RAIL_WIDTH`
-in `@ui/app-shell`) and on the Launch page; `src/shell/` feeds both
+Quick Launch, Pipeline and the Checklist (spec §8 item 5, #301), and the
+weather-and-clock card and the web search (#307), one file in `src/ui/`
+(`utilities.jsx`), built on Panel, EmptyState, Input, Button, IconButton,
+Checkbox, Skeleton and the sidebar's AppChip. Each is one component, drawn
+the same in the Overview's rail (from 1440px, `RAIL_WIDTH` in
+`@ui/app-shell`) and on the Launch page; `src/shell/` feeds both
 ([ARCHITECTURE.md](ARCHITECTURE.md), "Utilities: the rail and the Launch
-page"). The [gallery](GALLERY.md) shows them in the rail, on the Launch page,
-empty and failing (group Utilities), and `e2e/utilities.spec.mjs` runs them
-in a browser.
+page", "Today's extras and the Overview's sections"). The
+[gallery](GALLERY.md) shows them in the rail, on the Launch page, empty,
+failing, and the weather card's states (group Utilities), and
+`e2e/utilities.spec.mjs` and `e2e/extras.spec.mjs` run them in a browser.
 
 | Component | Import | Props |
 | --- | --- | --- |
 | `QuickLaunch` | `@ui/utilities` | `groups` (each `{ key, title, links }`, each link `{ id, name, href, monogram }`), `target` (`_blank`), `hint` ("in Ctrl K too"), `empty` (shown with no group) |
 | `Pipeline` | `@ui/utilities` | `items` (each `{ id, title, repo, sha, at }`, `at` in ms or null), `banner` (over the rows), `now` |
 | `Checklist` | `@ui/utilities` | `todos` (each `{ id, text, done, dueLabel, overdue }`; null while loading), `onAdd({ text, due })`, `onToggle(id)`, `onRemove(id)`, `banner` |
+| `WeatherClock` | `@ui/utilities` | `weather` (`{ temperature, condition, code, place }`, `{ loading, place }` or `{ failed, place }`; null, none), `now` (ms; null, no clock) |
+| `WebSearch` | `@ui/utilities` | `engine` (its name, "Google"), `onSearch(words)` |
 | `UtilitiesRail` | `@ui/utilities` | the panels, as `children` |
-| `LaunchLayout` | `@ui/utilities` | `quickLaunch`, `pipeline`, `checklist` (elements; none, left out) |
+| `LaunchLayout` | `@ui/utilities` | `extras`, `search`, `quickLaunch`, `pipeline`, `checklist` (elements; none, left out) |
 
 `shortAgo(ms)` (`@ui/utilities`) says an age as Pipeline does: "now", "12 m",
 "3 h", "4 d".
@@ -1750,11 +1754,26 @@ From the mock's Main board, its right-hand column:
   it has passed, "Oct 18 · overdue" semibold in `warn-fg`; Delete, a ghost sm
   IconButton (`X`). With none, "Nothing on the list". While loading, three
   placeholder lines and no form.
+- **WeatherClock.** The mock's "Weather and time" card: a Panel with 14 by
+  16px of padding, one row. The condition's Lucide icon (20px, `text-2`;
+  `Sun`, `CloudSun`, `Cloud`, `CloudFog`, `CloudDrizzle`, `CloudRain`,
+  `CloudSnow`, `Snowflake`, `CloudLightning` by WMO code, else
+  `Thermometer`), then "9°C · Overcast" in 14px bold over the city in 12px
+  `text-3`; at the row's end the time (16px bold, tabular figures) over the
+  day ("Tue 20 Oct", 12px `text-3`), both in the browser's locale. Either
+  half alone takes the row; with neither, nothing. Before the first reading,
+  two placeholder lines; without one, "No weather reading" by a thermometer.
+- **WebSearch.** A row: the shared Input (a search field, a 16px `Search`
+  icon inside its start in `text-3`, "Search Google") and a secondary
+  Search button.
 - **UtilitiesRail.** The panels in a column, 16px apart. The Overview gives
   it the mock's widths (`flex: 1 1 300px`, 280 to 340px), 24px from its
-  sections.
-- **LaunchLayout.** Quick Launch across the top, Pipeline and the Checklist
-  under it, side by side from 672px of its own width, 24px apart.
+  sections. WeatherClock is its first panel.
+- **LaunchLayout.** WeatherClock and WebSearch across the top, side by side
+  when the row has room (16rem and 20rem at least, the search taking twice
+  the share), else one over the other; Quick Launch under them, then
+  Pipeline and the Checklist, side by side from 672px of its own width, 24px
+  apart.
 
 ### Accessibility of the utilities
 
@@ -1769,6 +1788,13 @@ From the mock's Main board, its right-hand column:
   alone.
 - A failed read is a Banner (tone unknown) naming its cause: Pipeline's over
   the last rows ("Gitea didn't answer JagHelm"), the Checklist's with Retry.
+- WeatherClock is a region named by what it holds: "Weather and time",
+  "Weather" or "Time". The icon is hidden; the words say the condition. The
+  time is a `time` with its instant. While loading it is busy, with "Loading
+  the weather" for screen readers.
+- WebSearch is a search landmark named "Web search"; its field is named
+  "Search the web with Google" (the placeholder says "Search Google"), and
+  its button is a real submit, so Enter searches.
 
 ### Where the utilities differ from the mock
 
@@ -1787,7 +1813,13 @@ From the mock's Main board, its right-hand column:
 - **The Checklist adds, dates and deletes.** The mock's checklist only ticks;
   today's panel adds a task with an optional due day and deletes one, so
   this one does too.
-- **No weather and clock card.** It joins the rail with #307.
+- **The weather and clock card is the rail's first panel,** where the mock
+  has it last: chosen for #307, so the time and weather sit
+  at the top, where the old header had them. It says no day's high (the
+  mock's "high 12°"): `/api/weather` carries the current reading only, and
+  #307 adds no weather data.
+- **A web search on the Launch page.** The mock has none (its Launch page
+  isn't drawn); the old header's search box moves there (spec §8).
 
 ## Changing a token
 
