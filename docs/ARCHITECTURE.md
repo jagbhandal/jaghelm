@@ -366,6 +366,10 @@ says and stamps it with the verdict (`whyNoUp`), the status model words the
 node from the same row (4.7), and push pages from the model, so the three
 can't disagree:
 
+In the last column, "failing" means the Prometheus source fails with the
+node's `problem` as its error while it still answers (`ok` stays true): only
+that node is held, nothing else Prometheus feeds (#476).
+
 | Verdict | When | The node | Prometheus |
 |---|---|---|---|
 | `scraped-and-down` | `up` 0, every target of the node scraped and down, or none of its own, or the list unread | unreachable, pages `host_unreachable` | answering |
@@ -380,13 +384,19 @@ can't disagree:
 - A target waits for its first scrape (`health` "unknown", or no last scrape)
   for 3 of its own scrape intervals (`scrapeInterval` in the list; 1 m, the
   Prometheus default, when it gives none). Its wait counts from its last scrape
-  when the list gives one, else from the first cycle that saw it waiting, kept
-  in `data/prometheus-target-waits.json` (`targetWaits.js`) so a restart goes
-  on counting instead of sending a false recovery and a second page. A gap of
-  more than 5 minutes (or the target's own wait, when longer) between two
-  sightings starts it again: JagHelm was off, and a Prometheus restarted with
-  it has new targets. A cycle with no node to check forgets every wait. The
-  homelab scrapes every 30 s, so a target never scraped is a problem 90 s
+  when the list gives one, else from the first list that showed it waiting,
+  kept per target in `data/prometheus-target-waits.json` (`targetWaits.js`):
+  every waiting target of the nodes read is recorded whenever the list is
+  read, and a wait is kept through cycles that read no list (its node reading
+  `up` 1 from a healthy sibling target) and across a restart, so it neither
+  restarts nor sends a false recovery and a second page. A list that no longer
+  shows the target waiting forgets it. Before a wait old enough to make the
+  target overdue counts, Prometheus is asked when it started
+  (`GET /api/v1/status/runtimeinfo`, the later of `startTime` and
+  `lastConfigTime`): started after the wait began, its targets may be new, and
+  the wait starts again. When it can't say (a proxy, another backend), a gap
+  of more than 5 minutes (or the target's own wait) since the last sighting
+  starts it again. The homelab scrapes every 30 s, so a target never scraped is a problem 90 s
   after the first cycle that saw it, and pages once on the cycle after (a
   source's 2 failed cycles): "Prometheus hasn't scraped vm103:9100 (vm103) in
   3 scrape intervals".
@@ -400,9 +410,9 @@ can't disagree:
 - `stored-nothing`: a first scrape that ended between the `up` query and the
   targets read looks the same, so `up` is asked again for those nodes. A node
   with its `up` series by then is `answered-since`; for one still without,
-  Prometheus counts as failed, "Prometheus scraped <nodes> but stored no up
+  Prometheus is failing for it, "Prometheus scraped <nodes> but stored no up
   series", as when a full disk fails its writes. Should that query fail, the
-  node is unread with its error.
+  node is unread with its error, as for any failed query.
 - `up` 0 while a target of the node is not scraped yet, or has answered since:
   on a reboot Prometheus can scrape cAdvisor before it listens while
   node-exporter is still unscraped, which makes the node's `up` 0. A host
@@ -412,7 +422,9 @@ can't disagree:
 A cycle in which every node has `up` 1 (or no `up` series but metrics) reads
 no targets, so a Prometheus proxy that allows only queries costs nothing until
 a node reads 0 or loses its `up` series. Prometheus counts as failed for the
-cycle when any node query fails or a node's verdict says so. While a query
+cycle when any node query fails (`ok` false: everything it feeds is held), and
+fails while answering when a node's verdict says so (only that node is held).
+While a query
 fails, or a node waits inside its first-scrape wait (`not-scraped-yet`,
 `answered-since`: it passes within a scrape or so), no presence breadcrumbs are
 drawn, since a container missing from the list may still be running. A node
@@ -1029,8 +1041,12 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   data: still not scraped by Prometheus" once it has waited too long (#476);
   "No data: no up series, and no target in Prometheus" where the list names no
   node (#477); "No data: Prometheus stored no up series"; "No data:
-  Prometheus's target list unreadable". The last four are Prometheus failing,
-  whose source issue says why (naming the targets, or the nodes).
+  Prometheus's target list unreadable". For the last four Prometheus fails
+  while it answers: its source is `failed`, with the problem as its error
+  (naming the targets, or the nodes), and its issue's word is "Failing", so
+  the sentence says "Prometheus failing", not "unreachable". Only those nodes
+  and what they ran are held; a node or service removed elsewhere goes as
+  usual (#476).
   What the failed source fed last cycle and no longer reports (the container
   list, the nodes, the UPS while Prometheus fails) is kept, as unknown, until
   it answers. Prometheus counts as failed when the services refresh says so or
