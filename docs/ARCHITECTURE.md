@@ -88,7 +88,8 @@ server/                     Express API (Node 26, ESM)
   icon-sources.js           the icon repositories it may fetch from; the web client imports it too
   config.js                 services.yaml: load, hot-reload watch, copy-on-read, its version,
                             and the one atomic writer, over the version read (see 6)
-  secrets.js                AES-256-GCM secret store (per-install KDF salt)
+  secrets.js                AES-256-GCM secret store (per-install KDF salt), and the
+                            snapshot a failed integration save is undone to (see 4.4)
   cron-store.js             cron history (bounded)
   errors.js                 apiError + global JSON error handler
   version.js                single source of version (reads package.json)
@@ -115,7 +116,8 @@ server/                     Express API (Node 26, ESM)
                             lines as the screens draw them, which the web imports too
   util/                     logger, ssrf, redact, rateLimiter, atomicWrite,
                             configSchema (zod), configMask (the config read's
-                            credential markers, see 6), dataDir, asyncHandler, dedupe
+                            credential markers, see 6), dataDir, asyncHandler, dedupe,
+                            parseError (a parse error's reason and position, see 4.6)
   testing/                  test-only helpers: a mock Prometheus that evaluates JagHelm's
                             PromQL over homelab-shaped series, the pre-#234 node reader, the
                             status model's input builders (statusFixtures.js), the
@@ -127,6 +129,9 @@ server/                     Express API (Node 26, ESM)
 src/                        React 19 SPA (Vite 8)
   main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + the shell and its
                             pages, by route (see 5, "Shell and routing")
+  lazyViews.js              the loaders of the views loaded on first use (Settings, the app
+                            frames, Alerts, the More sheet), every React.lazy() takes one;
+                            the client tests load them all up front (see 8)
   router/                   routes.js (the route table: paths, params, the routes hidden until
                             their page exists), useRoute.js (the History API router, and a
                             query parameter, useSearchParam)
@@ -141,9 +146,12 @@ src/                        React 19 SPA (Vite 8)
                             URL), entityAnchors.js (where an Overview issue row leads),
                             OverviewInfrastructure.jsx and infrastructureView.js (the
                             Overview's Infrastructure section, its nodes from the model),
+                            OverviewServices.jsx and servicesView.js (the Overview's
+                            Services section, its rows from the model, #300),
                             statusFreshness.js (the one rule for a stale status: whether
                             the poll's status is current, and how each place draws one
-                            that isn't)
+                            that isn't), theme.js (dark, light or system, and the old
+                            themes' migration; see 5, "Design system")
   api/client.js             apiFetch -- explicit auth-injecting fetch wrapper
   context/                  ConfigContext (config + update via setIn), OverlayContext (toast/confirm)
   hooks/useData.js          fetchJson (304-aware), weather, search engines
@@ -154,12 +162,13 @@ src/                        React 19 SPA (Vite 8)
   utils/setIn.js            immutable structural-sharing deep-set
   components/HelmGrid/       custom grid engine (gridMath, GridItem, HelmGrid)
   components/settings/       shared primitives + 13 settings tabs (+ IntegrationsTab module)
-  components/                NodeCard, ServiceCard, Widgets, CommandPalette, overlays, etc.
+  components/                NodeCard, Widgets, CommandPalette, overlays, etc.
   views/DashboardView/       grid + panels + useDashboardData (304-stable) + per-source health
   views/SettingsView.jsx     13-tab settings shell + collapsible live preview
   views/AppFrames.jsx,       app tabs as they look today: the host keeping visited frames, and
   views/IframeView.jsx       one frame with its loading, slow and blocked notices
-  styles/global.css          today's themes (10) + their tokens + component styles
+  styles/global.css          today's two themes (dark, light) on the new tokens' values +
+                             component styles
   styles/fonts.css           today's fonts, self-hosted: the files Google Fonts served (see 5.1)
   styles/legacy.css          imports global.css and fonts.css into the `legacy` cascade layer
   fonts/                     every woff2 the web app ships (latin subsets; latin-ext too for the
@@ -180,7 +189,7 @@ src/                        React 19 SPA (Vite 8)
                              the sign-in screen (#305: login-form),
                              the shell (#296: app-shell, app-header, side-nav,
                              bottom-tabs, app-bar), the Overview's sections (#299:
-                             node-card, infrastructure-section),
+                             node-card, infrastructure-section; #300: services-section),
                              lib/status.js (the five states, their words,
                              the two looks, and why there is no signal),
                              lib/ago.js ("12 s ago", and the one clock every age on
@@ -197,7 +206,7 @@ gallery/                    the component gallery (development and CI only, docs
                             Playwright image); built by vite.gallery.config.js, tested by
                             playwright.config.mjs, never part of the production build
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
-                            infrastructure.spec.mjs, no-signal.spec.mjs,
+                            infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
                             phone-split.spec.mjs, login.spec.mjs, what they share in
                             app.mjs; see 8): the
                             production build served
@@ -253,7 +262,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/health`, `/api/readyz` | public | liveness / readiness probes |
 | `/metrics` | public | Prometheus exposition |
 | `/api/services` | token | discovered nodes + services (background-refreshed, ETag); `services.yaml` for Settings, without its credentials, and its save over the version read (`/config`, ETag and If-Match, see 6) |
-| `/api/status` | token | the status model (4.7), built once a background cycle (ETag; 503 before the first cycle) |
+| `/api/status` | token | the status model (4.7), built once a background cycle (ETag, and its build time as Last-Modified; 503 before the first cycle) |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6) |
 | `/api/display-config` | token | the display config blob |
 | `/api/embed-check/:tabId` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs") |
@@ -362,37 +371,78 @@ and no CPU, memory or disk reading, discovery reads Prometheus's target list
 (`GET /api/v1/targets?state=active`, `promTargets`), once for the cycle,
 through the same client as the queries; a node's targets are those with its
 `node` label. Prometheus writes an `up` sample on every scrape, 0 included, so
-a target with no `up` series is never the host's fault:
+a target with no `up` series is never the host's fault. Why a node's `up` is
+missing is decided in one place, `whyUpMissing` in `status/upMissing.js`
+(#476, #477): discovery marks the node as its verdict's row of `UP_MISSING`
+says and stamps it with the verdict (`whyNoUp`), the status model words the
+node from the same row (4.7), and push pages from the model, so the three
+can't disagree:
 
-- No `up` series and no target: left as it is, so with no metric either the
-  model judges it unreachable and push pages `host_unreachable` once.
-- No `up` series, and no target of the node scraped yet (`health` "unknown",
-  or no last scrape): unread, every part in `failedReads`, while Prometheus
-  counts as answering.
-- No `up` series, and a target of the node scraped: Prometheus scraped it and
-  stored nothing, as when a full disk fails its writes. `up` is asked again
-  for those nodes, since a first scrape that ended between the `up` query and
-  the targets read looks the same. A node with its `up` series by then is
-  unread for the cycle; for one still without, Prometheus counts as failed,
-  "Prometheus scraped <nodes> but stored no up series", and the node is
-  unread. That is one `source_down`, not a `host_unreachable` per node.
-- `up` 0 while a target of the node is not scraped yet, or has answered a
-  scrape since the query: unread for the cycle, while Prometheus counts as
-  answering. On a reboot Prometheus can scrape cAdvisor before it listens
-  while node-exporter is still unscraped, which makes the node's `up` 0. A
-  host really down has every target scraped and down within one scrape
-  interval, so this delays its page by at most that.
+In the last column, "failing" means the Prometheus source fails with the
+node's `problem` as its error while it still answers (`ok` stays true): only
+that node is held, nothing else Prometheus feeds (#476).
 
-If the targets read fails, a node with no `up` series is unread and
-Prometheus counts as failed, with the targets read's error; a node with `up` 0
-keeps it, as Prometheus's own answer. A cycle in which every node has `up` 1
-(or no `up` series but metrics) reads no targets, so a Prometheus proxy that
-allows only queries costs nothing until a node reads 0 or loses its `up`
-series. Prometheus counts as failed for the cycle when any node query fails,
-the targets read fails, or it stored no `up` series for a node it scraped.
-While Prometheus fails, or a node is unread because it hasn't been scraped, no
-presence breadcrumbs are drawn, since a container
-missing from the list may still be running. The status model makes what a failed source feeds unknown (4.7), and
+| Verdict | When | The node | Prometheus |
+|---|---|---|---|
+| `scraped-and-down` | `up` 0, every target of the node scraped and down, or none of its own, or the list unread | unreachable, pages `host_unreachable` | answering |
+| `no-target` | no `up` series, no target of its own, while the list names other nodes | unreachable, pages `host_unreachable` | answering |
+| `no-targets-at-all` | no `up` series, and the list names none of the nodes (#477) | unread | failing |
+| `not-scraped-yet` | a target of the node waiting for its first scrape, inside its wait | unread | answering |
+| `not-scraped-too-long` | a target waiting past its wait (#476) | unread | failing, naming the targets |
+| `answered-since` | `up` 0 and a target answered a scrape since the query | unread | answering |
+| `stored-nothing` | no `up` series though a target of the node was scraped | unread | failing |
+| `targets-unread` | no `up` series, and the targets read failed | unread | failing, with its error |
+
+- A target waits for its first scrape (`health` "unknown", or no last scrape)
+  for 3 of its own scrape intervals (`scrapeInterval` in the list; 1 m, the
+  Prometheus default, when it gives none). Its wait counts from its last scrape
+  when the list gives one, else from the first list that showed it waiting,
+  kept per target in `data/prometheus-target-waits.json` (`targetWaits.js`):
+  every waiting target of the nodes read is recorded whenever the list is
+  read, and a wait is kept through cycles that read no list (its node reading
+  `up` 1 from a healthy sibling target) and across a restart, so it neither
+  restarts nor sends a false recovery and a second page. A list that no longer
+  shows the target waiting forgets it. Before a wait old enough to make the
+  target overdue counts, Prometheus is asked when it started
+  (`GET /api/v1/status/runtimeinfo`, the later of `startTime` and
+  `lastConfigTime`): started after the wait began, its targets may be new, and
+  the wait starts again. When it can't say (a proxy, another backend), a gap
+  of more than 5 minutes (or the target's own wait) since the last sighting
+  starts it again. The homelab scrapes every 30 s, so a target never scraped is a problem 90 s
+  after the first cycle that saw it, and pages once on the cycle after (a
+  source's 2 failed cycles): "Prometheus hasn't scraped vm103:9100 (vm103) in
+  3 scrape intervals".
+- A target list that names none of the nodes JagHelm reads (empty, or only a
+  federation or remote-write backend's own targets) can't tell a host from a
+  series that never arrived, so a node with no `up` series there is
+  Prometheus failing, "Prometheus lists no target for any node, and has no up
+  series for <nodes>": one `source_down`, never a `host_unreachable` per node.
+  `up` 0 still pages the host. A list that names some of the nodes is read per
+  node: a node it doesn't name is `no-target`.
+- `stored-nothing`: a first scrape that ended between the `up` query and the
+  targets read looks the same, so `up` is asked again for those nodes. A node
+  with its `up` series by then is `answered-since`; for one still without,
+  Prometheus is failing for it, "Prometheus scraped <nodes> but stored no up
+  series", as when a full disk fails its writes. Should that query fail, the
+  node is unread with its error, as for any failed query.
+- `up` 0 while a target of the node is not scraped yet, or has answered since:
+  on a reboot Prometheus can scrape cAdvisor before it listens while
+  node-exporter is still unscraped, which makes the node's `up` 0. A host
+  really down has every target scraped and down within one scrape interval,
+  so this delays its page by at most that.
+
+A cycle in which every node has `up` 1 (or no `up` series but metrics) reads
+no targets, so a Prometheus proxy that allows only queries costs nothing until
+a node reads 0 or loses its `up` series. Prometheus counts as failed for the
+cycle when any node query fails (`ok` false: everything it feeds is held), and
+fails while answering when a node's verdict says so (only that node is held).
+While a query
+fails, or a node waits inside its first-scrape wait (`not-scraped-yet`,
+`answered-since`: it passes within a scrape or so), no presence breadcrumbs are
+drawn, since a container missing from the list may still be running. A node
+unread for a verdict that lasts (Prometheus failing for it) holds back only its
+own breadcrumbs, so a stuck target on one node doesn't hide a container gone
+from another (#476). The status model makes what a failed source feeds unknown (4.7), and
 only that: for a host, only the readings whose queries failed. Push holds an
 unknown at its last known state, so a metric query that keeps failing holds
 that reading's level on every host (and, for a host with no `up` series, its
@@ -785,7 +835,22 @@ Key properties:
   schema (`util/configSchema.js`) on read, so a malformed file fails loudly.
 - **Secrets** (`secrets.js`) are AES-256-GCM encrypted with a **per-install
   random KDF salt** (`data/.secrets-salt`, legacy-static-salt fallback). All
-  credential stores write `0600`.
+  credential stores write `0600`. A change `secrets.json` can't take throws
+  and leaves the store as it was, so a secret is never held only in memory.
+  An integration's secrets (the `integration_*` names a Settings save
+  writes) live and die with its entry in `services.yaml`, which is the
+  record (#415, #502). A save stores what it needs before writing the file;
+  when that write fails or is refused, or a secret can't be written, the
+  store goes back to its snapshot from before the save (`snapshotSecrets` /
+  `restoreSecrets`), so `secrets.json` ends byte-for-byte as it was. A save
+  that creates an entry first clears what an older delete left under its
+  key. A delete, or a rename's old names, drops the secrets no remaining
+  entry uses once the file is written. A secret is in use while an entry's
+  key makes it that entry's keyed secret, or a `$secret:` reference anywhere
+  in the config names it (`integrations/unusedSecrets.js`); other names are
+  the user's. At boot one log line counts the unused integration secrets,
+  never naming them, and nothing is deleted: a hand edit (an entry commented
+  out, a typo, a rename) makes a secret look unused that is still wanted.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
   secrets/auth/config/cron and the icon cache never split across locations.
 
@@ -825,9 +890,15 @@ token, a 401 each time.
   refuses a `PROMETHEUS_URL` or `KUMA_URL` with `user:pass@` and names the full
   URL in its error, which every failing cycle logs (#409). Redaction is by
   text, not by field name: a header map or an `apiKey` field would be written
-  as it is (no line logs one). A log call never throws: a circular reference is
-  written as `"[Circular]"`, a BigInt as a string, and a line that still can't
-  be written keeps its module and message with a `logError` saying why. The
+  as it is (no line logs one). So a parser's error is not logged or answered
+  as it is (#504): js-yaml's message shows the lines around the bad one and
+  V8's JSON error quotes the text near it, credentials and all. The reads of
+  services.yaml, secrets.json, auth.json and display-config.json log only the
+  reason and the position (`util/parseError.js`), and a reason loses
+  any text of the file it quotes (an unquoted value read as a YAML alias or
+  tag). A log call never throws: a circular reference is written as
+  `"[Circular]"`, a BigInt as a string, and a line that still can't be
+  written keeps its module and message with a `logError` saying why. The
   running server writes to stdout/stderr only through the logger.
   `LOG_LEVEL` (`debug|info|warn|error|silent`, default `info`) filters it.
   Success lines every refresh cycle would repeat are debug, while a refresh
@@ -839,8 +910,9 @@ token, a 401 each time.
   monitor went to. A `services.yaml` mapping to a monitor Kuma does not have
   (or a paused one), a `monitor_per_node` key that is no node, and a mapping of
   the wrong type each warn once per boot. Prometheus failing (any node query of the cycle,
-  the targets read a node with no `up` series needed, or no `up` series stored
-  for a node it scraped) and Kuma failing (no
+  or a node whose missing `up` is Prometheus's problem: the targets read
+  failed, no `up` series stored for a node it scraped, a target waiting too
+  long for its first scrape, no target for any node; 4.2) and Kuma failing (no
   monitors loaded: unreachable, non-2xx, or a status page with none) each warn
   once, with the error, and their recovery logs once at info with how long it
   was down; the failed cycles in between log at debug
@@ -1015,11 +1087,20 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   naming it, never crit. A node
   whose `up` read failed is unknown; one whose metric read failed has that
   condition unknown, so it is unknown unless a reading that was read is worse.
-  A node Prometheus has a target for but hasn't scraped yet (4.2, #470), or
-  whose `up` is 0 while one of its targets hasn't been scraped, is unknown
-  while Prometheus answers, with the reason "No data: not scraped by
-  Prometheus yet", and so are the containers it ran, kept from last cycle. A
-  node Prometheus scraped and stored no `up` series for is Prometheus failing.
+  A node discovery left unread for its missing `up` (4.2, #470) is unknown
+  with the reason of its verdict's row (`UP_MISSING` in `status/upMissing.js`,
+  kept beside the payload as `whyNoUp`), and so are the containers it ran,
+  kept from last cycle: "No data: not scraped by Prometheus yet" while a
+  target waits for its first scrape (or, with `up` 0, answered since); "No
+  data: still not scraped by Prometheus" once it has waited too long (#476);
+  "No data: no up series, and no target in Prometheus" where the list names no
+  node (#477); "No data: Prometheus stored no up series"; "No data:
+  Prometheus's target list unreadable". For the last four Prometheus fails
+  while it answers: its source is `failed`, with the problem as its error
+  (naming the targets, or the nodes), and its issue's word is "Failing", so
+  the sentence says "Prometheus failing", not "unreachable". Only those nodes
+  and what they ran are held; a node or service removed elsewhere goes as
+  usual (#476).
   What the failed source fed last cycle and no longer reports (the container
   list, the nodes, the UPS while Prometheus fails) is kept, as unknown, until
   it answers. Prometheus counts as failed when the services refresh says so or
@@ -1148,7 +1229,19 @@ cache's ETag (4.2: computed once per value). Reasons hold no times and the
 lines change only with the config, so a steady board serves the same bytes
 every cycle and a poll with the last ETag gets a 304 (`server/routes/status.test.js`). The status stays fresh for two refresh intervals (at least the cache's 2
 minutes), so a long interval leaves no gap between cycles. Before the first
-cycle, or once the loop has built none for that long, it answers 503. It sits beside `/api/services`, `/api/ups` and
+cycle, or once the loop has built none for that long, it answers 503. The
+200 and the 304 both say when the status served was built, as `Last-Modified`
+(#499): the cache entry's time, set as the loop stores each cycle's status
+(`jsonWithEtag`'s `lastModified`, `cache.js`). It moves every cycle while an
+equal status keeps its ETag, since it is a header, never in the body, and the
+ETag stays the only validator: an `If-Modified-Since` alone never gets a 304.
+An HTTP date counts whole seconds, so it reads up to a second early. A client
+counts the status's age from it, however long ago its own last answer came,
+as the response's `Date` less it, by the server's clock (5, "No signal: a
+stale status"; CORS exposes `Date` beside `ETag`); a 503 sends none.
+`Cache-Control: no-cache`, so a
+browser never reuses an answer unasked on the strength of that date (a
+Last-Modified alone allows a heuristic tenth of its age). It sits beside `/api/services`, `/api/ups` and
 `/api/cron/status`, which keep their shape and meaning for Android apps already
 installed (spec §6.3; frozen by `server/routes/contract.test.js`): the new
 states (maintenance, pending, unknown because a source failed) appear only
@@ -1233,7 +1326,10 @@ sees where that changed:
   (#232's `upSeriesSeen`) lived in the process's memory, and a restart lost
   it. A Prometheus that scrapes and stores nothing (a full disk) is a failed
   source: one `source_down` after two cycles and one `source_recovered`, no
-  host push.
+  host push. So is a target that waits for its first scrape past 3 of its
+  scrape intervals (#476; its wait is in the data dir, so a restart sends no
+  false recovery and no second page), and a backend whose target list names
+  no node losing its `up` series (#477, federation or remote write).
 - A monitoring source (Prometheus, Kuma, NUT) the model lists as failed for two
   cycles in a row (about a minute) sends one `source_down`, and one
   `source_recovered` when it answers. The snapshot keeps each source as `ok`,
@@ -1334,13 +1430,14 @@ flowchart TD
   SH --> OS["/ : OverviewStatus<br/>(the poll's status: ShellAttention,<br/>SubsystemStrip, the ?subsystem= filter)"]
   SH --> DV["/ : DashboardView"]
   DV --> OI["OverviewInfrastructure<br/>(the poll's status + the board's readings:<br/>InfrastructureSection, cards or table)"]
+  DV --> OSV["OverviewServices<br/>(the poll's status + the board's latency and<br/>app metrics: ServicesSection, by node or group)"]
   SH --> AP["/alerts : AlertsPage<br/>(ShellAttention)"]
   SH --> SV["/settings/:section? : SettingsView (13 tabs)"]
   SH --> AF["/apps/:id : AppFrames<br/>(useAppFrames)"]
   AF --> IV["IframeView per app<br/>(useEmbedStatus)"]
   DV --> HG["HelmGrid engine"]
   HG --> GI["GridItem (+ keyboard handle)"]
-  DV --> NP["NodePanel / NodeCard / ServiceCard / Widgets"]
+  DV --> NP["NodePanel / NodeCard / Widgets"]
   DV --> UDD["useDashboardData<br/>(304-stable, per-source health)"]
   SV --> PRIM["settings primitives<br/>Card/Toggle/ChoiceGroup/EmptyState"]
   SV --> ITAB["IntegrationsTab module"]
@@ -1356,8 +1453,8 @@ flowchart TD
   `.jh-ui` root; the page area, `<main>`, is not one, so today's views inside it
   keep their look, and a page of the new UI (Alerts) brings its own root
   (`ShellPage`), as does a part of a page beside today's views (the Overview's
-  status, `ShellSection`). The chrome is dark, or light under one of today's light
-  themes, until #304 gives the new UI its own theme switch. The URL is the page: `src/router` is a small router on the
+  status, `ShellSection`). The chrome draws the theme shown (#304, "Design
+  system" below). The URL is the page: `src/router` is a small router on the
   History API (no dependency) over one route table (`routes.js`): `/`
   Overview, `/alerts`, `/apps/:id`, `/settings/:section?`, and `/launch`,
   `/services` and `/infrastructure`, which are in the table but hidden until
@@ -1370,7 +1467,7 @@ flowchart TD
   Forward and a reload all land where the URL says. Each page names the
   browser tab ("Alerts — JagHelm"). The command palette (⌘K or Ctrl K, or the
   header's search button) lists the pages in the nav, "Open <app>" for each
-  app, the themes and the links.
+  app, the three themes and the links.
 - **Status in the header** (#296, #275). `useStatus` polls `/api/status`
   (4.7) once a refresh interval with the last ETag, so a steady board costs a
   304, and asks nothing while the browser tab is hidden; on return it asks at
@@ -1390,7 +1487,8 @@ flowchart TD
   lamp the steel ring. With nothing known, it says why: "Can't reach
   JagHelm", or, for a 503 before the first cycle (or an answer with no
   status), "Waiting for the first check". "Updated 12 s ago" is its own
-  component (`UpdatedAgo`, fed from `useStatus`'s `updated` store): its tick
+  component (`UpdatedAgo`, fed from `useStatus`'s `updated` store, by the
+  status's build time when the server sends one, #499): its tick
   each second and each poll's answer re-render it alone, never the header,
   which ticks only while it shows a stale status's age. The
   sidebar's Alerts entry carries the issue count, in the worst issue's colour,
@@ -1417,10 +1515,9 @@ flowchart TD
   doesn't re-render it. Each row is a link to an in-page anchor on today's board
   until entities have URLs (#309, `entityAnchors.js`): a place on the board
   carries the anchor of the entity it draws, by the model's id. A service or
-  container leads to its card (`DraggableServiceCard`), else its node's card
-  (a pending monitor has no card); a node to its card in the Infrastructure
-  section (#299; its `NodePanel` under the Services filter, which hides the
-  section); the UPS
+  container leads to its row in the Services section (#300), else its node's
+  card (while a filter hides the section); a node to its card in the
+  Infrastructure section (#299); the UPS
   to its panel (`UPSCard`); a job to its row in Scheduled Jobs (`CronJobs`),
   and a backup to its job's row, since the board lists backups as jobs. An
   integration, an Arcane agent and a monitoring source have no place on the
@@ -1428,8 +1525,8 @@ flowchart TD
   the board's own say: each place puts its anchor on a list while it is
   mounted (`usePlace`, `usePlaces`) and the rows read that list
   (`useRowLink`), so they follow every rule that hides one (a section
-  switched off, no UPS, Scheduled Jobs off, a collapsed card, a service moved
-  into a group) without restating any; a row whose places are all off the
+  switched off, no UPS, Scheduled Jobs off, a section a filter hides, a node
+  hidden in Settings) without restating any; a row whose places are all off the
   board is plain content too (#279). A click or Enter focuses the place
   (`tabindex="-1"` unless it has one) and scrolls its top into view, clear of
   the sticky header (`scroll-padding-top` on the page, `global.css`); a click
@@ -1457,9 +1554,8 @@ flowchart TD
   that subsystem's alone and it says "Showing Nodes only" with Clear (the
   quiet line says it too); its heading and sentence stay the whole board's.
   Today's board keeps that subsystem's panels (`boardFilter.js`): Services
-  the node cards with a service of their own (not all moved into a group),
-  the nodes still loading and the custom groups, Nodes the Infrastructure
-  section (#299) and the node cards, Power
+  the Services section (#300) and no panel, Nodes the Infrastructure
+  section (#299) and the node panels, Power
   the UPS panel, Jobs and Backups Scheduled Jobs; Pipeline, Checklist and
   Quick Launch belong to none. The panels kept rise into the space left
   (`compactUp`, `gridMath.js`), and can't be dragged or resized while
@@ -1471,7 +1567,7 @@ flowchart TD
   switched off"); a source that answered with nothing to draw ("No UPS
   reading on the board", with the model's detail for it); or no panel on
   today's board at all (Integrations, whose numbers show on their services'
-  cards). Each note offers "Show the whole board". The rows' links follow: a
+  rows). Nodes and Services, whose sections are above the board, get no note. Each note offers "Show the whole board". The rows' links follow: a
   panel the filter hides takes its anchor off the list of places drawn. With
   a stale status, each tile keeps its count, as last known, and says so
   under it ("Last known 3 min ago", from 672px; and to a screen reader, as
@@ -1536,11 +1632,56 @@ flowchart TD
   node and meter is no signal (the steel ring; a meter's fill steel and its
   number, still `/api/services`', in text-2, said "94%, no signal"), the
   words and reasons kept, and the count says "3 nodes · No signal · last
-  known 3 min ago". Today's node panels below keep the node's service cards and
-  Proxmox lists until #300 rebuilds them; their readings, and with them the
+  known 3 min ago". Today's node panels below keep only the node's Proxmox
+  lists (its services are the Services section's, #300); their readings, and
+  with them the
   web's old 70 % / 90 % colours (`src/utils/thresholds.js`, the card halo and
   the old Sparkline) and the used / total GB, are gone. A node panel starts at
   its minimum height and grows to its content ("Panels and first run").
+- **The Services section** (#300, spec §8 item 4). Under the
+  Infrastructure section (`DashboardView` draws it, lined up the same way),
+  every service in one list (`OverviewServices` in `src/shell`, drawing
+  `ServicesSection` and its `EntityRow`s from `src/ui`). It replaces the
+  board's service cards: the node panels draw none, the custom groups are its
+  grouping rather than panels of their own (a saved layout's `group-` slots
+  are dropped), and no card is dragged between panels any more, so a custom
+  group's services are chosen in Settings → Sections. It reads the header's
+  poll for the model, and the board's own `/api/services` (the latency, Kuma's
+  last response time) and `/api/integrations` (one headline metric, matched
+  by `useAppDataMatching` and keyed by the service's uid, so a container of
+  one name on two nodes is two services with their own numbers), so it adds
+  no request, and
+  judges nothing (`servicesView.js`): a row per entity of the Services
+  subsystem (a Kuma monitor, or a container with none), a node hidden in
+  Settings left out; its lamp, word and reason the entity's. Only while the
+  model says a service is up does its row print the latency and the headline
+  metric ("24,499 photos": an integration's first field, an amount before its
+  label); otherwise the model's reason ("Kuma: down") in its state's colour,
+  and a dash for the latency, so an old number never sits beside a failure.
+  Healthy rows are muted (the detail in text-2); a critical row is tinted.
+  Grouped by node (services.yaml's order, the node's key beside its name, "7
+  / 8 up") or, once Settings has a custom group, by custom group (until then
+  Group is disabled, with a link to Settings → Sections; Settings'
+  order, a container named by uid or by name, the rest under "Not in a
+  group", each row with its node beside the name); within a group the worst
+  first, then by name. services.yaml has no tags, so there is no grouping by
+  tag. The choice is kept per browser (`prefs`,
+  `jaghelm-services-grouping`), by node by default. The heading counts what
+  it lists, the mock's "12 monitored · 1 down · 1 no signal" (each failing
+  kind by the model's word), "· all up" when nothing fails. The name is never
+  cut short before anything else (`EntityRow`); narrower than 672px the row is
+  the Phone board's, the name over "metric · latency". Settings → Layout has
+  no service-card options any more. Each row puts its anchor on
+  the list of places, so a service's issue row leads to its row. It shows
+  unfiltered and under the Services filter, which keeps it alone; another
+  filter hides it. Before the first status or `/api/services` answer,
+  placeholder rows; with no service in the model, nothing; when
+  `/api/services` or `/api/integrations` stops answering, a Banner over the
+  last numbers says so, with Retry. With a stale status, every row is no
+  signal (the steel ring named "No signal", the detail in steel), its words
+  and numbers kept, and the count says "12 monitored · No signal · last known
+  3 min ago". Kuma's heartbeat strip isn't drawn: the server keeps no
+  per-monitor history yet (#312).
 - **No signal: a stale status** (#480, #495). The poll's status is stale
   when `reach` isn't `ok` once the first answer is in: a failed poll
   (`down`), or a 503 (`waiting`), which the server answers once its status
@@ -1557,15 +1698,28 @@ flowchart TD
   status, and one hook decides what a page does with it,
   `useStatusFreshness` (`src/shell/statusFreshness.js`): the header
   (`ShellHeader`), the attention panel (`ShellAttention`, on the Overview and
-  the Alerts page), the subsystem strip (`OverviewStatus`) and the
-  Infrastructure section (`OverviewInfrastructure`) each call it, and none
-  reads `reach` for itself. Stale, every state drawn from the status is no
+  the Alerts page), the subsystem strip (`OverviewStatus`), the
+  Infrastructure section (`OverviewInfrastructure`) and the Services section
+  (`OverviewServices`) each call it, and none reads `reach` for itself. Stale, every state drawn from the status is no
   signal (`drawnState`): the steel ring and word, never green, amber or red.
   Its words, counts, reasons and readings stay, as what was last known, and
   each place says how old it is ("No signal · last known 3 min ago"; the
   header and the panel the same sentence, `lastKnownLine` in
   `statusView.js`), with why: "Can't reach JagHelm", or "JagHelm's status is
-  out of date" for a 503 after a status or an answer too old. Every age on
+  out of date" for a 503 after a status or an answer too old. The age counts
+  from when the server built the status, not from the poll's last answer
+  (#499): `useStatus` keeps the build time beside the answer's time, as
+  `updated.builtAt()`: the answer's time less the server's own age for the
+  status, its `Date` less its `Last-Modified` (on a 200 or a 304,
+  `builtAtOf`), so a server clock ahead of or behind the browser's can't
+  skew it. Without a `Date` it takes the `Last-Modified` as it is, no later
+  than the answer. The header's "Updated 12 s ago" reads the same time
+  (`statusBuiltAt`), so it and "last known" never disagree. After a 503 past the server's TTL the status is older
+  than the last answer, and says so. From a server that sends no
+  Last-Modified (an older one, or the demo), the age counts from the answer.
+  Two times, two rules: stale goes by the answer's time (is the poll getting
+  answers?), the age by the build time (how old is what is shown?), both in
+  `statusFreshness.js`. Every age on
   screen ticks on one clock (`useAgo`, `src/ui/lib/ago.js`), so the header
   and the panel never read a second apart; it ticks at once as the tab is
   shown again, and the hook runs no clock while the status is fresh. The
@@ -1574,9 +1728,9 @@ flowchart TD
   named "No signal", not by that word (`lampName`, `src/ui/lib/status.js`),
   and a tile's or a row's name says it before the word.
   The answer that brings a status back restores every colour in its render.
-  Today's board below the Infrastructure section draws `/api/services`, not
-  the status model, so it keeps its own colours and its own stale notes
-  until #300 rebuilds it.
+  The panels left on today's board below the Services section (the UPS
+  panel, Scheduled Jobs) draw their own sources, not the status model, so
+  they keep their own colours and their own stale notes.
 - **State.** `ConfigContext` exposes `config`, the stable `setConfig`, and a
   memoised `update(path, value)` built on `setIn` (immutable structural-sharing
   deep-set) -- so leaf cards memoise and don't re-render on unrelated edits.
@@ -1590,8 +1744,9 @@ flowchart TD
   in `HelmGrid.jsx`. Panels auto-grow to fit content (`GridItem` re-measures a
   panel whenever it resizes); pointer **and keyboard**
   (arrow move / Shift+arrow resize, with a live region) reposition them.
-- **Panels and first run.** The board has a panel per discovered node and custom
-  group, plus the Checklist, Scheduled Jobs and Quick Launch panels. Without a
+- **Panels and first run.** The board has a panel per discovered node (its
+  Proxmox lists), plus the Checklist, Scheduled Jobs and Quick Launch panels;
+  the custom groups are the Services section's grouping, not panels (#300). Without a
   saved layout the board is laid out by `defaultLayouts(nodes)` (`layouts.js`)
   from the nodes `/api/services` has and the panels on show. The nodes come
   first, in their order, at most three to a row (two at the md breakpoint,
@@ -1605,7 +1760,7 @@ flowchart TD
   Quick Launch. When one of a pair isn't shown, the two left over share a row,
   the tall one 2/3 (on a fresh install, Scheduled Jobs beside the Checklist); a
   panel left alone takes the whole row. A node panel starts at its minimum
-  height (3 rows), as it holds only its service cards and Proxmox lists, and
+  height (3 rows), as it holds only its Proxmox lists, and
   HelmGrid grows it to them: a taller start would stay empty, since HelmGrid
   grows a panel but never shrinks one. It is regenerated as nodes
   and panels come and go, until the first drag or resize saves a layout; a
@@ -1715,9 +1870,25 @@ flowchart TD
     host; the demo has no saved app tab, so it answers that it has none), or
     before the URL is saved, the frame
     shows whatever the browser puts in it.
-- **Design system.** 10 themes (`themes.js` + `[data-theme]` token blocks),
-  generic `--space-*` / `--text-*` scales plus semantic `--fs-*` card tokens,
-  and a global `:focus-visible` ring + reduced-motion handling.
+- **Design system.** Two themes, dark and light, plus system, which follows
+  the device (#304, spec §2): `src/shell/theme.js`'s `useTheme`, held by `App`
+  so the login screen has it too. It puts the theme shown on `<html>` as
+  `data-theme`, where `global.css` reads it (`:root` dark, `:root[data-theme=
+  "light"]` light, both on the token values: graphite, violet the one accent),
+  and the shell gives it to its `.jh-ui` roots. The header's toggle switches
+  dark and light; Settings → Appearance and the command palette offer all
+  three. The choice is kept per browser (`prefs`, `jaghelm-theme`). **Settings
+  migration:** a saved value is read through `migrateTheme` once: each of the
+  ten old themes becomes dark or light by what it drew (One Dark Pro, Dracula,
+  Night Owl, GitHub Dark, Catppuccin Mocha and Material Ocean dark; GitHub
+  Light, Catppuccin Latte, Solarized Light and Atom One Light light), and the
+  new value is saved back; a value it doesn't know becomes system; nothing
+  saved is dark. A display config's `theme` (seeding a browser with none
+  saved) goes through the same mapping. The accent is violet: the config's
+  old free `accentColor` is no longer read (`useThemeVars` sets no accent),
+  and Fuchsia and Cyan come with #321. Also generic `--space-*` / `--text-*`
+  scales plus semantic `--fs-*` card tokens, and a global `:focus-visible`
+  ring + reduced-motion handling.
 - **PWA.** `public/sw.js` precaches the app shell **and** the hashed first-paint
   bundles (the precache list, the build's full `dist/assets` list + version are
   injected at build by `scripts/inject-sw-precache.mjs`); immutable `/assets/`
@@ -1941,7 +2112,8 @@ All state is files under the data dir (no DB):
     purpose is a real config and empties the board.
   - **Nothing writes over a file that doesn't parse** (#423). The config
     kept for the board is not the file's, so `readConfig()` answers no config
-    for it, only why (`services.yaml doesn't parse (line N)`, `is empty` or
+    for it, only why (`services.yaml doesn't parse (<reason> at line N,
+    column C)`, `is empty` or
     `isn't a mapping`, never a quote of the file, which can hold
     credentials). `GET /api/services/config` and every writer (the config
     save, the integration save, toggle and delete) answer that as a 503
@@ -2049,8 +2221,18 @@ All state is files under the data dir (no DB):
     and the edits made on the screen it replaces are dropped, not sent: one
     that would have gone out from it says "Not saved: an earlier change on
     this screen was refused". A read that fails shows why in place of the
-    tab, never the old or edited config. The integration form doesn't post
-    the config, and the Android app doesn't either.
+    tab, never the old or edited config. The version and the save queue
+    are the app's, not a tab's or a Settings view's (#501): switching tabs
+    or leaving Settings sends the pending save at once, and reads go out in
+    the same queue as saves, so a read never answers a version a save has
+    already replaced. A read that answers after an edit it didn't see
+    leaves the screen and its version alone; a change made elsewhere then
+    refuses that edit's save (409). A save or read with no answer in 15 s
+    fails (`AbortSignal.timeout`), so a hung one can't hold up the queue; a
+    timed-out save may have landed, so the config is read again before the
+    next save. While a save is waiting or on its way, closing the browser
+    tab asks first (`beforeunload`). The integration form doesn't post the
+    config, and the Android app doesn't either.
   - **An integration's save in Settings merges** (`POST /api/integrations/save`,
     #402). The form's values go into the stored entry, and only what the form
     owns changes: the URL (required), the username and target (sent empty to
@@ -2078,7 +2260,8 @@ All state is files under the data dir (no DB):
     key's name, replacing anything left there; one the old key doesn't have is
     removed under the new key too, since a preset resolves those names ahead
     of the entry's `$secret:` reference. A reference to an old name is pointed
-    at the new one, and the old names are removed once the move is written.
+    at the new one, and the old names are removed once the move is written,
+    unless another entry still uses one (4.4).
   - **A taken key is refused** (#414). A save never lands on a key another
     integration holds: a rename onto one, or a new integration from the form
     (which sends `create: true`) under one, is refused with a 409
@@ -2095,6 +2278,10 @@ All state is files under the data dir (no DB):
     `{ "enabled": true|false }` and nothing else) sets `enabled` alone, writes
     nothing when the entry is already in that state, and asks for a retry when
     it enables.
+  - **Delete** (`DELETE /api/integrations/:key`, the entry found by its own
+    key) removes the entry and then its secrets (4.4), so a new integration
+    under that key starts with no credential. A save whose write fails
+    stores nothing (4.4).
 - **display config** -- title, theme, layout (`{lg,md,sm}` grid item arrays),
   sections (per-panel visibility/order/colour), nav/search/weather flags,
   links, tabs, fonts. Read copy-on-read; validated by Zod.
@@ -2161,9 +2348,10 @@ flowchart LR
   GH -.->|"event-driven dispatch (opt-in, ADR 0005)"| DEP
   PR -->|"push trigger (fallback)"| DEP["Gitea deploy.yml (self-hosted)"]
   subgraph DEP2["deploy.yml"]
-    KEY["pin vm-103 host key<br/>(VM103_HOST_KEY)"] --> STAGE["stage: pull :sha-short<br/>+ deliver and verify compose.yaml"]
+    KEY["pin vm-103 host key<br/>(VM103_HOST_KEY)"] --> WAIT["wait for :sha-short<br/>(never appears: fail, vm-103 untouched)"]
+    WAIT --> STAGE["stage: pull :sha-short<br/>+ deliver and verify compose.yaml"]
     STAGE --> SWITCH["retag :latest + recreate"]
-    SWITCH --> GATE["health gate<br/>(Docker health + /api/health)"]
+    SWITCH --> GATE["health gate<br/>(Docker health + /api/health<br/>+ revision = this commit)"]
     GATE -->|"fail"| RB["auto-rollback to prev image<br/>+ prev compose.yaml"]
     GATE -->|"pass"| LIVE["live on prod"]
   end
@@ -2196,23 +2384,30 @@ flowchart LR
   self-hosted Gitea runner, labelled `vm103` (no other workflow may use that
   label), and reaches the host over SSH that verifies a
   **pinned host key** (the `VM103_HOST_KEY` repository variable; without it the
-  deploy fails before any SSH). It pulls and **pins this commit's
-  `:sha-<short>`** image and **delivers this commit's `compose.yaml`** to the
+  deploy fails before any SSH). It waits up to 6 minutes for this commit's
+  `:sha-<short>` image; if it never appears, the deploy **fails without
+  touching vm-103** (there is no fallback to `:latest`). It pulls and **pins
+  this commit's `:sha-<short>`** image and **delivers this commit's
+  `compose.yaml`** to the
   stack directory: written as `compose.yaml.new`, checked by sha256 on the host,
   the old copy kept as `compose.yaml.prev`, renamed into place and validated with
   `docker compose config` before the container is recreated, so compose changes
   reach production with the release. The log records the repo and host hashes
-  and a diff of the host copy. It then recreates behind a **health gate**; any
+  and a diff of the host copy. It then recreates behind a **health gate**, which
+  also requires `/api/health`'s `revision` to be this commit, so a green deploy
+  means the commit is live; any
   failure after the host was changed rolls back the previous image **and** the
-  previous `compose.yaml` together. The deploy owns `compose.yaml` on the host:
+  previous `compose.yaml` together, unless a later deploy has replaced it
+  since. A run whose commit is no longer main's head changes nothing and ends
+  green as superseded. What a red deploy means, how to recover and the manual
+  rollback: [RELEASING.md](RELEASING.md#production-deploys). The deploy owns `compose.yaml` on the host:
   host-specific additions (a secrets mount, host networking) go in
   `compose.override.yaml`, which Compose merges and the deploy never touches.
   Before the container is touched, the deploy refuses a merged config that
   drops host networking or a mount the running container has (such a drop can
   deploy "healthy" while push quietly stops), unless a hand-made
   `compose.accept-drops` file in the stack directory accepts it for one deploy;
-  and it refuses a `compose.yaml` change when the commit's own image was not
-  available.
+  and it fails if vm-103 cannot pull the commit's image.
   Configuration (Gitea repository settings, Actions):
 
   | Kind | Name | Use |
@@ -2260,20 +2455,28 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   for a stale status (`src/shell/statusFreshness.test.jsx`: the hook, its
   words, its one clock, and the age boundary, to the ms and after a tab
   shown hours later; `src/demo.render.test.jsx`, "No signal": no level
-  colour in the header, the panel, the strip or the Infrastructure section,
+  colour in the header, the panel, the strip, the Infrastructure section or
+  the Services section,
   no lamp named by a level word, one age everywhere, a tab shown hours
   later grey before its answer, and every colour back with the next
   answer), the status
   poll's request budget (`src/App.polling.test.jsx`), the loaded-app cap
   (`src/hooks/useAppFrames.test.jsx`), the Infrastructure section's nodes
   against the model's fixtures (`src/shell/infrastructureView.test.jsx`) and
-  on the demo (`src/demo.render.test.jsx`), a saved layout's version step,
+  on the demo (`src/demo.render.test.jsx`), the Services section's rows,
+  groups and count against the model's fixtures
+  (`src/shell/servicesView.test.jsx`) and on the demo, a saved layout's version step,
   run once (`layouts.test.jsx`, `DashboardView.test.jsx`), and the `src/ui/`
   components. The
   status fixtures (`src/testing/statusFixtures.js`) are built by the server's
   own model, never written by hand: the demo's boards as a client gets them
   (`demoBoard`), with a node's readings or the lines moved, among them the
   incident with the NAS at 94.6 % disk (`nasDiskIncident`).
+  A test file that imports the app loads every lazily loaded view
+  (`src/lazyViews.js`) before its tests run, and from then on each renders
+  at once, without suspending (`src/testing/setup.js`). So a test that opens
+  Settings, Alerts, an app or the More sheet never races its first import,
+  or React's held-back reveal of it, on a busy machine (#490).
 - **Cross-client status suite** (both of the above): seven named status fixtures
   (`server/testing/statusScenarios.js`) through the real push cycle
   (`server/status/crossClient.test.js`, in `test:ci`) and through the `src/ui`
@@ -2309,10 +2512,11 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   its 10px lamps, the line's and the strip's (every colour each element
   draws, read in OKLCH); and an
   issue row, clicked or by Enter, brings its entity's place on the board into
-  view, clear of the header, and focuses it, while a Ctrl-click opens a tab at
-  its anchor and leaves the page where it was (Chromium in the container now
-  and then drops a Ctrl-click's tab, so that test tries up to three times,
-  checking the page acted on none). The subsystem strip (#298): on
+  view, clear of the header, and focuses it; it is a link to its place's
+  anchor, and a click dispatched with Ctrl, Meta, Shift, Alt or the middle
+  button is neither cancelled nor moves focus or the scroll, while a plain one
+  through the same dispatch does (#515: no real new tab, which tested
+  Chromium, not JagHelm). The subsystem strip (#298): on
   screen under the status without scrolling (on a phone, under the panel's
   header, #484), a tile per subsystem the model
   has anything in, nothing in a tile cut off and no sideways scroll (at 360px
@@ -2334,14 +2538,23 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   cards, with the NAS's warning and its "94%" on screen and nothing to scroll
   sideways. Each node panel below is as tall as its content (within a grid
   row), on the default layout and on a layout saved before #299, which is
-  saved again with its version. No signal (#480, #495,
+  saved again with its version. The Services section (#300,
+  `e2e/services.spec.mjs`), dark and light: every service's name in full and
+  its column at least 120px at 1024 and 1440px, by node and by custom group,
+  beside app metrics long enough to squeeze it (the metric ends in an
+  ellipsis instead); a list at 390 and 360px with nothing cut off; healthy,
+  no red, amber or green in it but its small ok lamps, every row muted; the
+  incident's red on Jellyfin's row alone; the grouping kept across a reload;
+  the strip's Services tile brings the section alone into view, and a
+  service's issue row focuses its row; axe on the section. No signal (#480, #495,
   `e2e/no-signal.spec.mjs`), at 1440 and 390px, dark and light: on the NAS
   incident, `/api/status` refused (the server unreachable) or answered 503
   (its status past the TTL); fresh, the colour probe finds the panel's red
   and the NAS's amber, then stale, no red, amber or green anywhere in the
-  header, the Overview's status (panel and strip) or the Infrastructure
-  section, every lamp the steel ring; the header and the panel read the same
-  age as it moves on, and the next answer brings the colours back. The
+  header, the Overview's status (panel and strip), the Infrastructure
+  section or the Services section, every lamp the steel ring; the header and
+  the panel read the same age as it moves on, and the next answer brings the
+  colours back. The
   Overview on a phone (#484, `e2e/phone-split.spec.mjs`), at 360 × 780 and
   390 × 844 on the demo's incident with four more services down
   (`sixIssueIncident`, `src/testing/statusFixtures.js`, through the model):
@@ -2351,7 +2564,7 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   No signal the split stays steel (the colour probe, every lamp the ring)
   with the strip still between; at 800 (a tablet) and 1440px one panel,
   its rows in it, the strip under it; and at 767 and 768px the split flips
-  with the bottom tabs, at the same pixel. All five leave screenshots in
+  with the bottom tabs, at the same pixel. All six leave screenshots in
   `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through
@@ -2372,8 +2585,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   `ui-preflight.test.mjs`), and the design tokens' shape and contrast
   (`ui-tokens.test.mjs`, `ui-contrast.test.mjs`) and the chart colours
   (`chart-palette.test.mjs`), and the fonts and type scale
-  (`fonts.test.mjs`). Write new repo checks this way, not as shell
-  scripts: `npm test` only collects `*.test.{js,mjs,cjs}`.
+  (`fonts.test.mjs`), and every lazy view's loader in `src/lazyViews.js`,
+  the list the client tests load up front (`lazy-views.test.mjs`). Write new
+  repo checks this way, not as shell scripts: `npm test` only collects
+  `*.test.{js,mjs,cjs}`.
 
 `npm test` preloads `scripts/test-data-dir.mjs`, which gives every test process
 its own temp `JAGHELM_DATA_DIR`, so the suite never reads or writes the

@@ -6,13 +6,14 @@ import { entityAnchor } from './shell/entityAnchors.js';
 import { setReadOnlyServer } from './api/client.js';
 import { forgetLocalChanges } from './hooks/useData.js';
 import { VIEW_PREF } from './shell/infrastructureView.js';
+import { GROUPING_PREF } from './shell/servicesView.js';
 import { nasDiskIncident } from './testing/statusFixtures.js';
 // The demo server's own answers: the same function its /api guard answers with.
 import { demoResponse } from '../server/demo.js';
 
 // The demo render test (#248): the whole web app, every /api request answered
-// by the demo server's guard, must show a populated board (nodes, services,
-// Quick Launch, the UPS and Pipeline panels), a status that is not green while
+// by the demo server's guard, must show a populated board (nodes, the Services
+// section, Quick Launch, the UPS and Pipeline panels), a status that is not green while
 // a service is down, and save nothing (no write request, no "couldn't save"
 // toast) on load. What a visitor changes is kept in the browser for the visit,
 // with no error and no request.
@@ -105,6 +106,10 @@ const legacy = (title) => {
 };
 const panel = (title) => legacy(title).closest('.glass-card');
 const gridItem = (title) => legacy(title).closest('.helmgrid-item');
+// The Services section (#300), a group's list in it, and every row it draws.
+const servicesSection = () => screen.getByRole('region', { name: 'Services' });
+const serviceGroup = (title) => within(servicesSection()).getByRole('list', { name: title });
+const serviceRowEls = () => [...servicesSection().querySelectorAll('[data-slot="entity-row"]')];
 
 beforeEach(() => {
   localStorage.clear();
@@ -138,15 +143,18 @@ function setHidden(hidden) {
 }
 
 describe('the demo, rendered', () => {
-  it('shows populated nodes with their services, side by side at the top', async () => {
+  it('shows populated nodes, their services in the Services section, their panels side by side at the top', async () => {
     await renderDemo('incident');
 
     for (const name of ['Network Edge', 'App Server', 'Storage']) {
       expect(legacy(name)).toBeInTheDocument();
     }
-    expect(within(panel('App Server')).getByText('Nextcloud')).toBeInTheDocument();
-    expect(within(panel('Network Edge')).getByText('Adguard Home')).toBeInTheDocument();
-    expect(within(panel('Storage')).getByText('Syncthing')).toBeInTheDocument();
+    // The services are the Services section's (#300), each under its node.
+    expect(within(serviceGroup('App Server')).getByText('Nextcloud')).toBeInTheDocument();
+    expect(within(serviceGroup('Network Edge')).getByText('Adguard Home')).toBeInTheDocument();
+    expect(within(serviceGroup('Storage')).getByText('Syncthing')).toBeInTheDocument();
+    // The node panels draw none.
+    expect(within(panel('App Server')).queryByText('Nextcloud')).toBeNull();
     expect(screen.queryByText('Connect your first node')).not.toBeInTheDocument();
     expect(screen.queryByText(/Loading /)).not.toBeInTheDocument();
 
@@ -190,10 +198,12 @@ describe('the demo, rendered', () => {
       `Critical: ${demoStatus('incident').overall.sentence}`
     );
     expect(headerStatus()).toHaveAttribute('data-state', 'crit');
-    // One service card is down (its status badge reads "down"): Jellyfin's.
-    expect(screen.getAllByText('down')).toHaveLength(1);
-    const card = within(panel('App Server')).getByText('down').parentElement.parentElement;
-    expect(within(card).getByText('Jellyfin')).toBeInTheDocument();
+    // One service is down, as the model says: Jellyfin's row, red, its lamp "Down".
+    const notUp = serviceRowEls().filter((r) => r.dataset.state !== 'ok');
+    expect(notUp).toHaveLength(1);
+    expect(notUp[0]).toHaveAttribute('data-state', 'crit');
+    expect(within(notUp[0]).getByText('Jellyfin')).toBeInTheDocument();
+    expect(within(notUp[0]).getByRole('img', { name: 'Down' })).toBeInTheDocument();
   });
 
   it('is green in the healthy scenario', async () => {
@@ -204,8 +214,10 @@ describe('the demo, rendered', () => {
       `All systems normal: ${demoStatus('healthy').overall.sentence}`
     );
     expect(headerStatus()).toHaveAttribute('data-state', 'ok');
-    expect(screen.queryAllByText('down')).toEqual([]);
-    expect(screen.getAllByText('running').length).toBeGreaterThan(10);
+    const rows = serviceRowEls();
+    expect(rows.length).toBeGreaterThan(10);
+    for (const row of rows) expect(row).toHaveAttribute('data-state', 'ok');
+    expect(within(servicesSection()).getByText(`${rows.length} monitored · all up`)).toBeTruthy();
   });
 
   it('saves nothing on load: no write request and no save toast', async () => {
@@ -273,9 +285,11 @@ describe("the demo's Overview status", () => {
     await renderDemo('incident');
 
     expect(within(place('services/apps:jellyfin')).getByText('Jellyfin')).toBeInTheDocument();
-    expect(panel('App Server')).toContainElement(place('services/apps:jellyfin'));
+    // A service's place is its row in the Services section (#300).
+    expect(place('services/apps:jellyfin')).toHaveAttribute('data-slot', 'entity-row');
+    expect(serviceGroup('App Server')).toContainElement(place('services/apps:jellyfin'));
     // A node's place is its card in the Infrastructure section (#299); its
-    // panel below, with its service cards, carries no anchor.
+    // panel below, with its Proxmox lists, carries no anchor.
     expect(place('nodes/apps')).toHaveAttribute('data-slot', 'node-card');
     expect(place('nodes/apps')).toHaveAccessibleName('App Server');
     expect(document.querySelectorAll(`[id="${entityAnchor('nodes/apps')}"]`)).toHaveLength(1);
@@ -448,16 +462,18 @@ describe("the demo's subsystem strip", () => {
     expect(drawn(OTHERS)).toEqual(OTHERS);
   });
 
-  it('Services: its rows, and the panels with service cards; one filter at a time; Clear', async () => {
+  it('Services: its rows, and the Services section alone; one filter at a time; Clear', async () => {
     await renderDemo('incident');
     await click(tile('Services'));
     expect(rows().map((r) => r.textContent)).toEqual([expect.stringContaining('Jellyfin')]);
-    // Its card is drawn, so its row still leads there.
+    // Its row in the Services section is drawn, so its issue row leads there.
     expect(within(rows()[0]).getByRole('link')).toHaveAttribute(
       'href',
       `#${entityAnchor('services/apps:jellyfin')}`
     );
-    expect(drawn(NODES)).toEqual(NODES);
+    expect(servicesSection()).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Infrastructure' })).toBeNull();
+    expect(drawn(NODES)).toEqual([]);
     expect(drawn(OTHERS)).toEqual([]);
 
     // Another tile moves the filter there.
@@ -467,6 +483,7 @@ describe("the demo's subsystem strip", () => {
     expect(rows().map((r) => r.textContent)).toEqual([expect.stringContaining('nightly-backup')]);
     expect(drawn(NODES)).toEqual([]);
     expect(drawn(OTHERS)).toEqual(['Scheduled Jobs']);
+    expect(screen.queryByRole('region', { name: 'Services' })).toBeNull();
 
     await click(within(attention()).getByRole('button', { name: 'Clear' }));
     expect(window.location.search).toBe('');
@@ -581,7 +598,7 @@ describe("the demo's subsystem strip", () => {
     ).toBeInTheDocument();
   });
 
-  it('Services with a saved layout while /api/services is out: its nodes loading, no note', async () => {
+  it('Services with a saved layout while /api/services is out: the section loading, no panel, no note', async () => {
     const lg = ['edge', 'apps', 'storage'].map((n, k) => ({
       i: `node-${n}`,
       x: k * 8,
@@ -594,31 +611,37 @@ describe("the demo's subsystem strip", () => {
       { '/api/display-config': (config) => ({ ...config, gridLayout: { lg } }) },
       { path: '/?subsystem=services', ready: 'Showing Services only', hold: ['/api/services'] }
     );
-    expect(screen.getByText('Loading edge…')).toBeInTheDocument();
-    expect(screen.getByText('Loading storage…')).toBeInTheDocument();
+    expect(servicesSection()).toHaveAttribute('aria-busy', 'true');
+    expect(within(servicesSection()).getByText('The services are loading')).toBeTruthy();
+    expect(screen.queryByText('Loading edge…')).toBeNull();
     expect(note()).toBeNull();
   });
 
-  // A node whose services all moved into a custom group draws no service card
-  // of its own: Services leaves its card out and keeps the group; Nodes keeps
-  // every node card and leaves the group out.
-  it('a node whose services all moved into a group: Services keeps the group, not the node', async () => {
+  // The custom groups are the Services section's grouping (#300), not panels:
+  // the board draws none, under any filter, from a saved layout too.
+  it('a custom group is no panel of its own, filtered or not, even in a saved layout', async () => {
     const group = {
       id: 'edge-apps',
       title: 'Edge apps',
       containers: ['edge:adguard-home', 'edge:nginx-proxy-manager', 'edge:wireguard'],
     };
-    await renderDemo(
-      'incident',
-      { '/api/display-config': (config) => ({ ...config, customGroups: [group] }) },
-      { ready: 'Edge apps' }
-    );
+    const lg = [
+      { i: 'group-edge-apps', x: 0, y: 0, w: 8, h: 8 },
+      { i: 'node-edge', x: 8, y: 0, w: 8, h: 8 },
+    ];
+    await renderDemo('incident', {
+      '/api/display-config': (config) => ({
+        ...config,
+        customGroups: [group],
+        gridLayout: { lg },
+      }),
+    });
+    expect(drawn(['Edge apps', ...NODES])).toEqual(NODES);
+    expect(screen.queryAllByRole('button', { name: /^Reposition (Edge apps|group-)/ })).toEqual([]);
     await click(tile('Services'));
-    expect(drawn(['Edge apps', ...NODES])).toEqual(['Edge apps', 'App Server', 'Storage']);
+    expect(drawn(['Edge apps', ...NODES])).toEqual([]);
     await click(tile('Nodes'));
     expect(drawn(['Edge apps', ...NODES])).toEqual(NODES);
-    await click(tile('Nodes'));
-    expect(drawn(['Edge apps', ...NODES])).toEqual(['Edge apps', ...NODES]);
   });
 
   // A drag or resize saves the layout it sees, so a filtered board can't be
@@ -714,11 +737,12 @@ describe("the demo's Infrastructure section", () => {
     expect(place('nodes/apps')).toBe(card('App Server'));
     expect(panel('App Server')).toBeInTheDocument();
 
-    // Services: the section is the Nodes subsystem's, so it goes; a service's
-    // row can still lead to its node's panel, which carries the anchor again.
+    // Services: the section is the Nodes subsystem's, so it goes, and so do
+    // the node panels; each service's row is in the Services section (#300).
     await click(tile('Services'));
     expect(screen.queryByRole('region', { name: 'Infrastructure' })).toBeNull();
-    expect(place('nodes/apps')).toContainElement(panel('App Server'));
+    expect(place('nodes/apps')).toBeNull();
+    expect(place('services/apps:jellyfin')).toHaveAttribute('data-slot', 'entity-row');
 
     await click(tile('Backups'));
     expect(screen.queryByRole('region', { name: 'Infrastructure' })).toBeNull();
@@ -771,6 +795,146 @@ describe("the demo's Infrastructure section", () => {
 // the header, the attention panel, the subsystem strip and the
 // Infrastructure section. Each keeps what it last knew and says how old it
 // is, by one clock; the next answer brings every colour back at once.
+// The Services section (#300, spec §8 item 4): under Infrastructure, every
+// service the model has, one list grouped by node or by custom group; each
+// row's state, word and reason the model's, its latency /api/services'.
+describe("the demo's Services section", () => {
+  const strip = () => screen.getByRole('region', { name: 'Subsystems' });
+  const tile = (name) => within(strip()).getByRole('button', { name: new RegExp(`^${name},`) });
+  const place = (entityId) => document.getElementById(entityAnchor(entityId));
+  const click = async (el) => {
+    await act(async () => {
+      fireEvent.click(el);
+    });
+  };
+  const grouping = () =>
+    within(servicesSection()).getByRole('radiogroup', { name: 'Group services by' });
+  const groupTitles = () =>
+    within(servicesSection())
+      .getAllByRole('heading', { level: 3 })
+      .map((h) => h.textContent);
+  const MEDIA = { id: 'media', title: 'Media', containers: ['apps:jellyfin', 'photoprism'] };
+
+  for (const scenario of ['incident', 'healthy']) {
+    it(`${scenario}: a row per service the model has, in its state, grouped by node, under Infrastructure`, async () => {
+      await renderDemo(scenario);
+      const status = demoStatus(scenario);
+      const entities = status.entities.filter((e) => e.subsystem === 'services');
+      const services = demoResponse({ method: 'GET', path: '/api/services', query: {}, scenario });
+      const rows = serviceRowEls();
+      expect(rows.map((r) => r.dataset.entity).sort()).toEqual(entities.map((e) => e.id).sort());
+      for (const row of rows) {
+        const e = entities.find((x) => x.id === row.dataset.entity);
+        expect(row, e.id).toHaveAttribute('data-state', e.state);
+        expect(row.id).toBe(entityAnchor(e.id));
+        expect(within(row).getByRole('img', { name: e.word })).toBeInTheDocument();
+        // Healthy rows are muted; a failing one is not.
+        if (e.state === 'ok') expect(row).toHaveAttribute('data-muted', '');
+        else expect(row).not.toHaveAttribute('data-muted');
+      }
+      // A group per node, in services.yaml's order.
+      expect(groupTitles()).toEqual(Object.values(services.body.nodes).map((n) => n.display_name));
+      // Below the Infrastructure section, above the board.
+      const infra = screen.getByRole('region', { name: 'Infrastructure' });
+      expect(
+        infra.compareDocumentPosition(servicesSection()) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+      expect(
+        servicesSection().compareDocumentPosition(legacy('UPS Power')) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+      const down = entities.filter((e) => e.state === 'crit').length;
+      expect(within(servicesSection()).getByText(/^\d+ monitored/)).toHaveTextContent(
+        `${rows.length} monitored · ${down ? `${down} down` : 'all up'}`
+      );
+    });
+  }
+
+  it("the incident: Jellyfin's issue row brings its row into view, and focuses it", async () => {
+    await renderDemo('incident');
+    const row = place('services/apps:jellyfin');
+    expect(row).toHaveAttribute('data-state', 'crit');
+    // The worst first in its group.
+    expect(within(serviceGroup('App Server')).getAllByRole('listitem')[0]).toContainElement(row);
+    const link = within(screen.getByRole('region', { name: 'Needs attention' })).getByRole('link', {
+      name: /^Jellyfin, Down/,
+    });
+    expect(link).toHaveAttribute('href', `#${entityAnchor('services/apps:jellyfin')}`);
+    const scroll = vi.spyOn(row, 'scrollIntoView');
+    await click(link);
+    expect(document.activeElement).toBe(row);
+    expect(scroll).toHaveBeenCalledWith({ block: 'start' });
+  });
+
+  it('without a custom group: Group is offered but disabled, with a link to where groups are set', async () => {
+    await renderDemo('incident');
+    expect(within(grouping()).getByRole('radio', { name: 'Node' })).toBeChecked();
+    expect(within(grouping()).getByRole('radio', { name: 'Group' })).toBeDisabled();
+    const link = within(servicesSection()).getByRole('link', { name: /Settings → Sections/ });
+    expect(link).toHaveAttribute('href', '/settings/sections');
+    await click(link);
+    expect(window.location.pathname).toBe('/settings/sections');
+  });
+
+  it('by custom group: the choice kept in this browser, the node beside each name', async () => {
+    const edit = {
+      '/api/display-config': (config) => ({ ...config, customGroups: [MEDIA] }),
+    };
+    await renderDemo('incident', edit);
+    expect(within(grouping()).getByRole('radio', { name: 'Node' })).toBeChecked();
+    await click(within(grouping()).getByRole('radio', { name: 'Group' }));
+    expect(localStorage.getItem(GROUPING_PREF)).toBe('group');
+    expect(servicesSection()).toHaveAttribute('data-grouping', 'group');
+    expect(groupTitles()).toEqual(['Media', 'Not in a group']);
+    const media = within(serviceGroup('Media')).getAllByRole('listitem');
+    expect(media.map((li) => li.querySelector('[data-slot="entity-name"]').textContent)).toEqual([
+      'Jellyfin',
+      'Photoprism',
+    ]);
+    expect(media[0].querySelector('[data-slot="entity-where"]')).toHaveTextContent('App Server');
+    // Its row is still its place.
+    expect(place('services/apps:jellyfin')).toBe(
+      media[0].querySelector('[data-slot="entity-row"]')
+    );
+  });
+
+  it('opens grouped as this browser kept', async () => {
+    localStorage.setItem(GROUPING_PREF, 'group');
+    await renderDemo('incident', {
+      '/api/display-config': (config) => ({ ...config, customGroups: [MEDIA] }),
+    });
+    expect(within(grouping()).getByRole('radio', { name: 'Group' })).toBeChecked();
+    expect(groupTitles()[0]).toBe('Media');
+  });
+
+  it('kept by node with no custom group, whatever this browser kept', async () => {
+    localStorage.setItem(GROUPING_PREF, 'group');
+    await renderDemo('incident');
+    expect(servicesSection()).toHaveAttribute('data-grouping', 'node');
+    expect(groupTitles()).toContain('App Server');
+  });
+
+  it('Nodes hides it; Services keeps it alone', async () => {
+    await renderDemo('incident');
+    await click(tile('Nodes'));
+    expect(screen.queryByRole('region', { name: 'Services' })).toBeNull();
+    await click(tile('Services'));
+    expect(servicesSection()).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Infrastructure' })).toBeNull();
+  });
+
+  it('with no service in the model: no section', async () => {
+    const empty = (status) => ({
+      ...status,
+      entities: status.entities.filter((e) => e.subsystem !== 'services'),
+      issues: status.issues.filter((e) => e.subsystem !== 'services'),
+    });
+    await renderDemo('healthy', { '/api/status': empty });
+    expect(screen.getByRole('region', { name: 'Infrastructure' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Services' })).toBeNull();
+  });
+});
+
 describe('No signal: a stale status never looks current', () => {
   // The header's status: its link, and the live region that announces it.
   const header = () => screen.getByRole('banner').querySelector('[data-slot="header-status"]');
@@ -778,7 +942,7 @@ describe('No signal: a stale status never looks current', () => {
   const attention = () => within(area()).getByRole('region', { name: 'Needs attention' });
   const strip = () => within(area()).getByRole('region', { name: 'Subsystems' });
   const section = () => screen.getByRole('region', { name: 'Infrastructure' });
-  const places = () => [header(), area(), section()];
+  const places = () => [header(), area(), section(), servicesSection()];
 
   // A class that paints a level's colour: ok's green, warn's amber, crit's red
   // (text, fills, tints, gradients, edges, SVG paint), with any variant prefix.
@@ -810,6 +974,7 @@ describe('No signal: a stale status never looks current', () => {
         .getAllByRole('button')
         .map((t) => age(t.textContent)),
       section: age(within(section()).getByText(/^\d+ nodes/).textContent),
+      services: age(within(servicesSection()).getByText(/^\d+ monitored/).textContent),
     };
   }
 
@@ -879,6 +1044,19 @@ describe('No signal: a stale status never looks current', () => {
       expect(disk.querySelector('[data-slot="meter-fill"]')).toHaveClass('bg-unknown-solid');
       for (const m of section().querySelectorAll('[data-slot="metric-meter"]'))
         expect(m).toHaveAttribute('data-state', 'unknown');
+      // Services (#300): every row no signal, Jellyfin's last known reason kept.
+      const services = serviceRowEls();
+      expect(services.length).toBeGreaterThan(10);
+      for (const row of services) expect(row).toHaveAttribute('data-state', 'unknown');
+      expect(
+        within(servicesSection()).getByText(
+          `${services.length} monitored · No signal · last known 30 s ago`
+        )
+      ).toBeInTheDocument();
+      const jellyfin = services.find((r) => r.dataset.entity === 'services/apps:jellyfin');
+      expect(
+        within(jellyfin).getByText('Kuma: down').closest('[data-slot="entity-detail"]')
+      ).toHaveClass('text-unknown-fg');
 
       // No lamp is named by a level word: each is named for what it draws, or
       // is decorative beside the words "No signal".
@@ -937,6 +1115,7 @@ describe('No signal: a stale status never looks current', () => {
       panel: '30 s ago',
       tiles: Array(tiles).fill('30 s ago'),
       section: '30 s ago',
+      services: '30 s ago',
     });
     for (const [ms, said] of [
       [17_000, '47 s ago'],
@@ -948,6 +1127,7 @@ describe('No signal: a stale status never looks current', () => {
         panel: said,
         tiles: Array(tiles).fill(said),
         section: said,
+        services: said,
       });
     }
     // The header's own "Updated" says the same age.

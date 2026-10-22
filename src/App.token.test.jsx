@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { secureStore } from './storage/index.js';
 import { getAuthToken, setAuthToken } from './api/client.js';
+// Imported with the file, not inside the test: the app's first import took
+// most of the test's 5 s on a busy machine (#490). Nothing reads the token at
+// import; App reads it at boot (initAuthToken), after the test stores it.
+import App from './App.jsx';
 
 beforeEach(() => {
   if (typeof localStorage !== 'undefined') localStorage.clear();
@@ -34,7 +38,6 @@ describe('App — token persistence through secureStore + awaited boot', () => {
   it('WEB: a token stored before boot is restored into apiFetch (initAuthToken awaited)', async () => {
     await secureStore.setItem('jaghelm-token', 'boot-tok');
     stubAuthCheck();
-    const App = (await import('./App.jsx')).default;
     render(<App />);
     await waitFor(() => expect(getAuthToken()).toBe('boot-tok'));
   });

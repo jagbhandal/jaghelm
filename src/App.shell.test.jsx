@@ -398,7 +398,10 @@ describe('the Overview', () => {
       'A',
       'A',
     ]);
-    expect(within(rows[0]).getByRole('link')).toHaveAttribute('href', '#entity-nodes/vm103');
+    expect(within(rows[0]).getByRole('link')).toHaveAttribute(
+      'href',
+      '#entity-services/vm103:immich'
+    );
     expect(within(rows[3]).getByRole('link')).toHaveAttribute('href', '#entity-nodes/pi');
     // All alerts, as the mock has it, in accent-text, opens the Alerts page.
     const all = within(panel).getByRole('link', { name: 'All alerts' });
@@ -517,8 +520,12 @@ describe('the Overview', () => {
       expect(overviewStatus().querySelector('[data-slot="banner"]')).toBeNull();
 
       // The polls keep failing, so nothing new arrives: the age keeps its own
-      // clock, and the header reads the same one.
-      await act(() => vi.advanceTimersByTimeAsync(20 * 60_000));
+      // clock, and the header reads the same one. The clock jumps 19.5 min
+      // without running the timers on the way (stepping them drew each of
+      // its 1,200 seconds, past 5 s on a busy machine, #490), then one more
+      // poll period runs, its poll failing too.
+      vi.setSystemTime(Date.now() + 19.5 * 60_000);
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
       expect(heading).toHaveTextContent(/^No signal · last known 20 min ago: Critical/);
       expect(within(banner()).getByRole('link', { name: /^No signal/ })).toHaveAccessibleName(
         /^No signal: last known 20 min ago: Critical/

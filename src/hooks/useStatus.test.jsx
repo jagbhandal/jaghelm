@@ -20,11 +20,12 @@ const STATUS = {
 let requests;
 let answer; // (headers) => Response-like
 
-function respond(body, { status = 200, etag = '"v1"' } = {}) {
+function respond(body, { status = 200, etag = '"v1"', modified = null, date = null } = {}) {
+  const headers = { etag, 'last-modified': modified, date };
   return {
     ok: status >= 200 && status < 300,
     status,
-    headers: { get: (h) => (h.toLowerCase() === 'etag' ? etag : null) },
+    headers: { get: (h) => headers[h.toLowerCase()] ?? null },
     json: () => Promise.resolve(body),
   };
 }
@@ -176,5 +177,57 @@ describe('useStatus', () => {
     rerender({ intervalMs: 10_000 });
     await advance(10_000);
     expect(requests).toHaveLength(2);
+  });
+
+  // #499: how old the status is counts from when the server built it, which
+  // its Last-Modified says, on a 200 and a 304 alike; not from the answer.
+  it('keeps when the status was built (Last-Modified) beside the answer, from a 200 and a 304', async () => {
+    const t0 = new Date('2026-10-22T09:00:00Z').getTime();
+    vi.setSystemTime(t0);
+    const built = t0 - 25_000;
+    // The first answer a 200, the next a 304 (the status built again, the same).
+    answer = () =>
+      requests.length === 1
+        ? respond(STATUS, { modified: new Date(built).toUTCString() })
+        : respond(null, { status: 304, modified: new Date(built + 30_000).toUTCString() });
+    const { result } = await mount();
+    expect(result.current.updated.get()).toBe(t0);
+    expect(result.current.updated.builtAt()).toBe(built);
+    await advance(INTERVAL);
+    expect(result.current.updated.get()).toBe(t0 + INTERVAL);
+    expect(result.current.updated.builtAt()).toBe(built + 30_000);
+    // A 503 (past the server's TTL) brings no new one: the last stays.
+    answer = () => respond({ error: 'Status not yet available' }, { status: 503 });
+    await advance(INTERVAL);
+    expect(result.current.reach).toBe('waiting');
+    expect(result.current.updated.builtAt()).toBe(built + 30_000);
+  });
+
+  it('without a Last-Modified (an older server), knows no build time', async () => {
+    const { result } = await mount();
+    expect(result.current.updated.get()).not.toBeNull();
+    expect(result.current.updated.builtAt()).toBeNull();
+  });
+
+  // The age is the server's own difference, its Date less its Last-Modified,
+  // taken back from the answer's time: neither clock's skew enters it.
+  it.each([
+    ['ahead of', 90_000],
+    ['behind', -90_000],
+  ])('a server clock %s this one: the build time by its own Date', async (_, skew) => {
+    const t0 = new Date('2026-10-22T09:00:00Z').getTime();
+    vi.setSystemTime(t0);
+    const http = (ms) => new Date(ms).toUTCString();
+    answer = () => respond(STATUS, { modified: http(t0 + skew - 25_000), date: http(t0 + skew) });
+    const { result } = await mount();
+    expect(result.current.updated.builtAt()).toBe(t0 - 25_000);
+  });
+
+  it('a build time after the answer, and no Date to correct it: the answer time', async () => {
+    const t0 = new Date('2026-10-22T09:00:00Z').getTime();
+    vi.setSystemTime(t0);
+    answer = () => respond(STATUS, { modified: new Date(t0 + 90_000).toUTCString() });
+    const { result } = await mount();
+    expect(result.current.updated.builtAt()).toBe(t0);
   });
 });

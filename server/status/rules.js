@@ -224,9 +224,11 @@ const CELSIUS = {
  * - No data: Prometheus failed to read whether it is up (`failedReads` names
  *   `reachable`, or, for a node with no `up` series, a metric read failed), or
  *   the node is missing from a failed cycle → unknown, never crit. With
- *   `reachable` unread while Prometheus answered, Prometheus has a target for
- *   the node that it has not scraped yet (no `up` series, or `up` 0 from the
- *   targets it has: #470, discovery.js), and the reason says so.
+ *   `reachable` unread because of discovery's verdict on its missing `up`
+ *   (`unreadReason`, status/upMissing.js: not scraped yet, still not scraped,
+ *   no target, stored nothing), the reason is that verdict's (#470, #476,
+ *   #477); with no verdict, while Prometheus answered, it is "not scraped
+ *   yet".
  * - Unreachable: `up` is 0, or it has no `up` series and no metric, while
  *   Prometheus answered → crit (push pages it as host_unreachable).
  * - Each reading that was read: its level (levelOf). A reading whose query
@@ -262,14 +264,16 @@ const CELSIUS = {
  * not ok, worst first.
  *
  * @param {object|null} node  the /api/services node, or null when it is missing this cycle
- * @param {{ prometheusOk: boolean, pools?: Array<{ name: string, percent: unknown, totalGB?: unknown }>, poolsRead?: boolean, memo?: any, now?: number, thresholds: import('./thresholds.js').Thresholds }} ctx
+ * @param {{ prometheusOk: boolean, unreadReason?: string|null, pools?: Array<{ name: string, percent: unknown, totalGB?: unknown }>, poolsRead?: boolean, memo?: any, now?: number, thresholds: import('./thresholds.js').Thresholds }} ctx
+ *   unreadReason: the reason of discovery's verdict on the node's `up`, when
+ *   it left the node unread (model.js, from UP_MISSING);
  *   pools: the storage pools the node's Proxmox reads listed this cycle;
  *   poolsRead: whether those reads are the whole list (model.js proxmoxPools);
  *   now: the cycle's clock, which times a hold (required once one is held)
  */
 export function judgeNode(
   node,
-  { prometheusOk, pools = [], poolsRead = true, memo = null, now, thresholds }
+  { prometheusOk, unreadReason = null, pools = [], poolsRead = true, memo = null, now, thresholds }
 ) {
   const prevLevels = memo?.levels ?? {};
   const prevStreak = memo?.streak ?? {};
@@ -289,6 +293,7 @@ export function judgeNode(
       : ALL_NODE_READS;
   const m = node.metrics || {};
   const byPresence = typeof node.reachable !== 'boolean';
+  if (failed.includes('reachable') && unreadReason) return { ...noData, reason: unreadReason };
   if (failed.includes('reachable') && prometheusOk) return { ...noData, reason: NOT_SCRAPED };
   if (
     failed.includes('reachable') ||

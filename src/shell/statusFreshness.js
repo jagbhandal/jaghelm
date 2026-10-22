@@ -21,6 +21,14 @@
  *  - back to fresh, everything takes the model's colours again in the render
  *    that brings the answer.
  *
+ * Two times, two rules (#499). Whether the status is stale goes by when the
+ * last answer came (`updated.get()`, against `staleAfter`): it asks whether
+ * the poll is getting answers. How old it says the status is goes by when the
+ * server built it (`updated.builtAt()`, the answer's Last-Modified): a status
+ * is that old whatever the poll did, and after a 503 (past the server's TTL)
+ * it is older than the poll's last answer. From a server that doesn't say, the
+ * age counts from the answer, as before.
+ *
  * useStatusFreshness() is the one place that decides it: ShellHeader,
  * ShellAttention (the Alerts page and the Overview's panel), OverviewStatus
  * (the strip) and OverviewInfrastructure each call it, and draw what it says
@@ -125,6 +133,15 @@ const nothing = () => null;
 const never = () => false;
 
 /**
+ * When the status in `updated` was built, for its age (#499): the server's
+ * build time, or, from a server that doesn't send one, when the answer came.
+ * The header's "Updated 12 s ago" reads it too, so it says the same age.
+ */
+export function statusBuiltAt(updated) {
+  return updated.builtAt?.() ?? updated.get();
+}
+
+/**
  * Whether the poll's status is stale, by the rule above: `reach`, or the age
  * of the last answer in `updated`. It re-renders only when that changes.
  */
@@ -158,11 +175,13 @@ export function lastKnownCaption(freshness) {
 
 /**
  * The poll's freshness, from useStatus's `status`, `reach` and `updated` (the
- * last answer's time, as a store, with its `staleAfter`):
+ * last answer's time, as a store, with its `staleAfter` and `builtAt`):
  *
  *   stale      the rule above
- *   ageText    how long ago the last answer came ("3 min ago"), counting on
- *              each second while stale; null while fresh, or with none
+ *   ageText    how old the status is ("3 min ago"): since the server built
+ *              it, or since the last answer from a server that doesn't say;
+ *              counting on each second while stale; null while fresh, or
+ *              with none
  *   lastKnown  "last known 3 min ago", while stale with a status to show
  *   note       "No signal · last known 3 min ago" (or "No signal"), while stale
  *   cause      why: "Can't reach JagHelm", "JagHelm's status is out of date"
@@ -178,8 +197,11 @@ export function lastKnownCaption(freshness) {
 export function useStatusFreshness({ status, reach, updated }) {
   const stale = useStatusStale({ reach, updated });
   const source = stale ? updated : null;
-  const at = useSyncExternalStore(source?.subscribe ?? idle, source?.get ?? nothing);
-  const ageText = useAgo(stale && status ? at : null);
+  const built = useSyncExternalStore(
+    source?.subscribe ?? idle,
+    source ? () => statusBuiltAt(source) : nothing
+  );
+  const ageText = useAgo(stale && status ? built : null);
   return useMemo(() => {
     if (!stale) return FRESH;
     const lastKnown = status && ageText ? `last known ${ageText}` : null;

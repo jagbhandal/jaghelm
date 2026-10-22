@@ -19,6 +19,7 @@ import yaml from 'js-yaml';
 import { atomicWriteFileSync, createExclusiveFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { createLogger } from './util/logger.js';
+import { describeParseError, yamlParseError } from './util/parseError.js';
 
 const log = createLogger('config');
 
@@ -97,31 +98,41 @@ function versionOf(bytes) {
 
 /**
  * services.yaml's bytes parsed: `{ config }` when they are a usable config (a
- * mapping), else `{ unusable, err }`, where `unusable` says why in words for
- * Settings. It names the line of a YAML error but never quotes the file: the
- * parser's own message shows the lines around it, credentials and all.
+ * mapping), else `{ problem, unusable, parseError? }`: `problem` says why for
+ * the log, `unusable` says it for Settings, and a YAML error is `parseError`,
+ * its reason and position (#504). None of them quotes the file: js-yaml's own
+ * error shows the lines around the bad one, credentials and all, and its
+ * reason names an unquoted value read as an alias or a tag, so the error
+ * itself is never kept, logged or answered.
  */
 function parseConfig(bytes) {
   let parsed;
   try {
     parsed = yaml.load(bytes.toString('utf8'));
   } catch (err) {
-    const line = err?.mark?.line;
-    const where = Number.isInteger(line) ? ` (line ${line + 1})` : '';
-    return { unusable: refusal(`services.yaml doesn't parse${where}`), err };
+    const parseError = yamlParseError(err);
+    return unusableBecause(
+      `services.yaml doesn't parse (${describeParseError(parseError)})`,
+      parseError
+    );
   }
   // yaml.load answers undefined for an empty or comments-only document.
-  if (parsed === null || parsed === undefined) {
-    return { unusable: refusal('services.yaml is empty') };
-  }
+  if (parsed === null || parsed === undefined) return unusableBecause('services.yaml is empty');
   if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { unusable: refusal("services.yaml isn't a mapping") };
+    return unusableBecause("services.yaml isn't a mapping");
   }
   return { config: parsed };
 }
 
-const refusal = (/** @type {string} */ problem) =>
-  `${problem}: fix it by hand; JagHelm won't save over it`;
+/**
+ * @param {string} problem
+ * @param {import('./util/parseError.js').ParseError} [parseError]
+ */
+const unusableBecause = (problem, parseError) => ({
+  problem,
+  parseError,
+  unusable: `${problem}: fix it by hand; JagHelm won't save over it`,
+});
 
 /** services.yaml's bytes and version now, or no bytes and CONFIG_ABSENT. */
 function readDisk() {
@@ -201,7 +212,9 @@ export function loadConfig() {
     // honor the same copy-on-read contract — no caller ever holds the canonical ref.
     return getConfig();
   } catch (err) {
-    return keepAfterFailedRead('Failed to load services.yaml', err);
+    // Not a parse error (parseConfig catches those): reading or stat-ing the
+    // file, an error that names its path, never its content.
+    return keepAfterFailedRead('Failed to load services.yaml', { err });
   }
 }
 
@@ -216,8 +229,7 @@ function adopt(disk) {
   const parsed = parseConfig(disk.bytes);
   seenUnusable = parsed.unusable ?? null;
   if (parsed.unusable) {
-    if (parsed.err) keepAfterFailedRead('Failed to load services.yaml', parsed.err);
-    else keepAfterFailedRead('services.yaml is empty or not a mapping');
+    keepAfterFailedRead(parsed.problem, parsed.parseError && { parseError: parsed.parseError });
     return false;
   }
   config = parsed.config;
@@ -234,7 +246,8 @@ function adopt(disk) {
  * version is CONFIG_ABSENT.
  *
  * A file that is no usable config answers no config, and `unusable`, why
- * ("services.yaml doesn't parse (line 4): …"): the board keeps the last good
+ * ("services.yaml doesn't parse (bad indentation of a mapping entry at line 4,
+ * column 4): …", never a quote of the file): the board keeps the last good
  * config (#463), but that config is not this file's, so it never goes out
  * with this file's version, and no writer may write over the file
  * (writeConfig refuses) until it is fixed by hand.
@@ -255,14 +268,14 @@ export function readConfig() {
 /**
  * A read that produced no usable config (#463): keep the previous one, or
  * start from an empty one when there is none, without touching the file.
- * `yaml.load` returns undefined for an empty or comments-only document.
+ * `fields` go on the log line: never a YAML error itself (#504).
  */
-function keepAfterFailedRead(msg, err) {
+function keepAfterFailedRead(msg, fields = {}) {
   if (config) {
-    log.warn({ err }, `${msg}; keeping the previous config until the file changes again`);
+    log.warn(fields, `${msg}; keeping the previous config until the file changes again`);
   } else {
     config = {};
-    log.error({ err }, `${msg}; starting with an empty board and not overwriting the file`);
+    log.error(fields, `${msg}; starting with an empty board and not overwriting the file`);
   }
   return getConfig();
 }

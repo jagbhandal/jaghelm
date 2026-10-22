@@ -154,7 +154,7 @@ export const GiteaActivity = React.memo(function GiteaActivity({ commits, banner
       <div className="section-header grab-handle">
         <div
           className="section-icon"
-          style={{ background: 'var(--accent-glow)', border: '1px solid rgba(99,102,241,0.2)' }}
+          style={{ background: 'var(--accent-glow)', border: '1px solid var(--border-glow)' }}
         >
           {renderIcon(sec.icon || 'gitea')}
         </div>

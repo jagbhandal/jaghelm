@@ -40,6 +40,7 @@ import {
   judgeUps,
 } from './rules.js';
 import { SUBSYSTEMS, summarize } from './summary.js';
+import { UP_MISSING } from './upMissing.js';
 
 // The monitoring sources whose failure is an issue (spec §6.1), and their names.
 const MONITORING_SOURCES = ['prometheus', 'kuma', 'nut'];
@@ -168,6 +169,16 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   const built = new Map(); // id -> { entity, memo }
   const add = (base, verdict) => built.set(base.id, settle(base, verdict, prev[base.id], now));
 
+  // Why a node discovery left unread has no data: its verdict's reason
+  // (status/upMissing.js, #476), or null.
+  const whyNoUp = objectOr(internal.whyNoUp);
+  const unreadReason = (nodeKey) => {
+    const why = whyNoUp[nodeKey];
+    return typeof why === 'string' && Object.hasOwn(UP_MISSING, why) && UP_MISSING[why].unread
+      ? UP_MISSING[why].reason
+      : null;
+  };
+
   // Whether a node's container list was read this cycle.
   const containersRead = (nodeKey) => {
     if (!services) return false;
@@ -250,6 +261,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
       },
       judgeNode(node, {
         prometheusOk: ok.prometheus,
+        unreadReason: unreadReason(nodeKey),
         pools: read.pools,
         poolsRead: read.read,
         memo: prev[id]?.memo,
@@ -321,7 +333,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   // ── Kept from last cycle: what a failed source fed and no longer reports ──
   for (const [id, before] of Object.entries(prev)) {
     if (built.has(id) || !isObject(before)) continue;
-    const reason = carriedReason(before, { ok, containersRead, services, integrations });
+    const reason = carriedReason(before, { ok, containersRead, unreadReason, services, integrations });
     if (!reason) continue;
     const base = { id, kind: before.kind, subsystem: before.subsystem, name: before.name };
     if (before.node) base.node = before.node;
@@ -339,12 +351,19 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   const found = {};
   // Prometheus: set up when the services payload carries its flag (nodes are
   // configured). The UPS is read through it too.
+  // Answering, it can still fail for a node (its verdict on a missing `up`,
+  // #476): failed, naming why, while only that node is held.
   if (isObject(services?.sources) || prevSources.prometheus) {
     const failed = !ok.prometheus || !ok.ups;
+    const problem = typeof internal.prometheusProblem === 'string' ? internal.prometheusProblem : null;
     const error = !ok.prometheus
       ? sourceErrors.prometheus || (services ? null : 'No data from the refresh')
       : 'The UPS query failed';
-    found.prometheus = failed ? { state: 'failed', error } : { state: 'ok' };
+    found.prometheus = failed
+      ? { state: 'failed', error }
+      : problem
+        ? { state: 'failed', error: problem, answering: true }
+        : { state: 'ok' };
   }
   if (kumaConfigured || has((e) => e.kind === 'service')) {
     found.kuma = ok.kuma
@@ -387,7 +406,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
       subsystem: 'sources',
       name: SOURCE_NAMES[name],
       state: 'warn',
-      word: 'Failed',
+      word: found[name].answering ? 'Failing' : 'Failed',
       reason: sources[name].error || 'No answer this cycle',
       since: sources[name].since,
     })
@@ -432,15 +451,18 @@ function isEmptyBoard({ entities, sources, services, integrations }) {
  * Why an entity the model had last cycle, and doesn't see now, is kept as
  * unknown: the source that fed it failed. null when nothing failed (it is
  * gone: a container removed, a job deleted), so it is dropped. A container
- * list unread while Prometheus answered is a node it has not scraped yet
- * (#470).
+ * list unread on a node discovery left unread has the node's reason
+ * (#476); otherwise, while Prometheus answered, it is a node it has not
+ * scraped yet (#470).
  */
-function carriedReason(before, { ok, containersRead, services, integrations }) {
+function carriedReason(before, { ok, containersRead, unreadReason, services, integrations }) {
   switch (before.subsystem) {
     case 'services':
       if (before.kind === 'service' && !ok.kuma) return 'No data: Kuma unreachable';
       if (containersRead(before.node)) return null;
-      return ok.prometheus ? NOT_SCRAPED : 'No data: Prometheus unreachable';
+      return (
+        unreadReason(before.node) ?? (ok.prometheus ? NOT_SCRAPED : 'No data: Prometheus unreachable')
+      );
     case 'nodes':
       return services && ok.prometheus ? null : 'No data: Prometheus unreachable';
     case 'integrations':

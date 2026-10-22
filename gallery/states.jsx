@@ -61,6 +61,7 @@ import { EntityRow } from '@ui/entity-row';
 import { FactList } from '@ui/fact-list';
 import { Table } from '@ui/table';
 import { InfrastructureSection } from '@ui/infrastructure-section';
+import { ServicesSection } from '@ui/services-section';
 import { AppHeader, UpdatedAgo } from '@ui/app-header';
 import { SideNav, appMonogram } from '@ui/side-nav';
 import { BottomTabs } from '@ui/bottom-tabs';
@@ -500,6 +501,109 @@ const NODES_NO_SIGNAL = NODES_INCIDENT.map((n) => ({
   state: 'unknown',
   readings: n.readings.map((r) => ({ ...r, state: r.state == null ? null : 'unknown' })),
 }));
+
+// The Services section's groups (#300), as servicesView.js gives them.
+const svc = (node, name, state, word, detail, meta, extra = {}) => ({
+  id: `services/${node}:${name.toLowerCase().replace(/\W+/g, '-')}`,
+  anchor: `entity-services/${node}:${name.toLowerCase().replace(/\W+/g, '-')}`,
+  name,
+  where: null,
+  state,
+  word,
+  detail,
+  meta,
+  muted: state === 'ok',
+  ...extra,
+});
+const SERVICES_HEALTHY = [
+  {
+    key: 'node:edge',
+    title: 'Network Edge',
+    host: 'edge',
+    count: '3 / 3 up',
+    rows: [
+      svc('edge', 'AdGuard Home', 'ok', 'Up', '41,203 queries', '12 ms'),
+      svc('edge', 'Nginx Proxy Manager', 'ok', 'Up', '31 proxy hosts', '18 ms'),
+      svc('edge', 'WireGuard', 'ok', 'Running', null, '—'),
+    ],
+  },
+  {
+    key: 'node:apps',
+    title: 'App Server',
+    host: 'apps',
+    count: '4 / 4 up',
+    rows: [
+      svc('apps', 'Gitea', 'ok', 'Up', null, '41 ms'),
+      svc('apps', 'Jellyfin', 'ok', 'Up', 'Version 10.9.1', '64 ms'),
+      svc('apps', 'Nextcloud', 'ok', 'Up', '18,204 files', '142 ms'),
+      svc('apps', 'Vaultwarden', 'ok', 'Up', null, '22 ms'),
+    ],
+  },
+];
+const SERVICES_INCIDENT = [
+  {
+    key: 'node:apps',
+    title: 'App Server',
+    host: 'apps',
+    count: '2 / 5 up',
+    rows: [
+      svc('apps', 'Jellyfin', 'crit', 'Down', 'Kuma: down', '—'),
+      svc('apps', 'Paperless', 'warn', 'Pending', 'Kuma: pending (retrying its check)', '—'),
+      svc('apps', 'Wiki.js', 'unknown', 'No signal', 'Kuma: no status', '—'),
+      svc('apps', 'Gitea', 'ok', 'Up', null, '41 ms'),
+      svc('apps', 'Nextcloud', 'ok', 'Up', '18,204 files', '142 ms'),
+    ],
+  },
+  {
+    key: 'node:storage',
+    title: 'Storage',
+    host: 'storage',
+    count: '1 / 2 up',
+    rows: [
+      svc('storage', 'Backrest', 'maintenance', 'Maintenance', 'Kuma: in maintenance', '—'),
+      svc('storage', 'Syncthing', 'ok', 'Up', null, '27 ms'),
+    ],
+  },
+];
+const SERVICES_GROUPED = [
+  {
+    key: 'group:media',
+    title: 'Media',
+    host: null,
+    count: '1 / 2 up',
+    rows: [
+      svc('apps', 'Jellyfin', 'crit', 'Down', 'Kuma: down', '—', { where: 'App Server' }),
+      svc('storage', 'PhotoPrism', 'ok', 'Up', '24,499 photos', '118 ms', { where: 'Storage' }),
+    ],
+  },
+  {
+    key: 'group:none',
+    title: 'Not in a group',
+    host: null,
+    count: '2 / 2 up',
+    rows: [
+      svc('edge', 'AdGuard Home', 'ok', 'Up', '41,203 queries', '12 ms', { where: 'Network Edge' }),
+      svc(
+        'apps',
+        'Paperless-ngx document archive and OCR pipeline',
+        'ok',
+        'Up',
+        '9,812 documents',
+        '96 ms',
+        { where: 'App Server' }
+      ),
+    ],
+  },
+];
+// #480: the incident with a stale status, every row no signal, its words kept.
+const SERVICES_NO_SIGNAL = SERVICES_INCIDENT.map((g) => ({
+  ...g,
+  rows: g.rows.map((r) => ({ ...r, state: 'unknown' })),
+}));
+const GROUPINGS = [
+  { value: 'node', label: 'Node' },
+  { value: 'group', label: 'Group' },
+];
 
 // ---------------------------------------------------------------- controls
 
@@ -1792,6 +1896,29 @@ function InfrastructureState({ nodes, count, view = 'cards', width = 900 }) {
   );
 }
 
+// No custom group yet: Group disabled, and where to add one (#300).
+const NO_GROUPS = [GROUPINGS[0], { ...GROUPINGS[1], disabled: true }];
+const NO_GROUPS_HINT = (
+  <>
+    No custom groups yet: <a href="/settings/sections">add one in Settings → Sections</a>
+  </>
+);
+
+function ServicesState({ groups, count, grouping = 'node', groupless = false, width = 900 }) {
+  return (
+    <Stack width={width}>
+      <ServicesSection
+        groups={groups}
+        count={count}
+        grouping={grouping}
+        groupings={groupless ? NO_GROUPS : GROUPINGS}
+        groupingHint={groupless ? NO_GROUPS_HINT : undefined}
+        onGroupingChange={noop}
+      />
+    </Stack>
+  );
+}
+
 const SLOTS = ['Azure', 'Rose', 'Lime', 'Plum', 'Orange', 'Teal'];
 
 function Slots() {
@@ -1881,6 +2008,7 @@ function AppHeaderState() {
         status={{ state: 'crit', sentence: INCIDENT_SENTENCE }}
         updated={<UpdatedAgo at={ANSWERED} />}
         onOpenPalette={noop}
+        onThemeChange={noop}
         onLogout={noop}
       />
       <AppHeader
@@ -1888,15 +2016,22 @@ function AppHeaderState() {
         status={{ state: 'ok', sentence: 'All 32 services up · 6 nodes healthy' }}
         updated={<UpdatedAgo at={ANSWERED} />}
         onOpenPalette={noop}
+        onThemeChange={noop}
         settingsCurrent
       />
       <AppHeader
         status={{ reach: 'down', state: 'crit', sentence: INCIDENT_SENTENCE }}
         updated={<UpdatedAgo at={ANSWERED - 168_000} />}
         onOpenPalette={noop}
+        onThemeChange={noop}
         onLogout={noop}
       />
-      <AppHeader status={{ reach: 'loading' }} onOpenPalette={noop} onLogout={noop} />
+      <AppHeader
+        status={{ reach: 'loading' }}
+        onOpenPalette={noop}
+        onThemeChange={noop}
+        onLogout={noop}
+      />
     </Stack>
   );
 }
@@ -1908,6 +2043,7 @@ function AppHeaderFirstRunState() {
         status={{ state: 'empty', sentence: 'Nothing monitored yet' }}
         updated={<UpdatedAgo at={ANSWERED} />}
         onOpenPalette={noop}
+        onThemeChange={noop}
       />
     </Stack>
   );
@@ -1927,6 +2063,7 @@ function AppHeaderNoSignalState() {
         }}
         updated={<UpdatedAgo at={ANSWERED - 168_000} />}
         onOpenPalette={noop}
+        onThemeChange={noop}
         onLogout={noop}
       />
       <AppHeader
@@ -1939,8 +2076,14 @@ function AppHeaderNoSignalState() {
         }}
         updated={<UpdatedAgo at={ANSWERED - 168_000} />}
         onOpenPalette={noop}
+        onThemeChange={noop}
       />
-      <AppHeader status={{ reach: 'down' }} onOpenPalette={noop} onLogout={noop} />
+      <AppHeader
+        status={{ reach: 'down' }}
+        onOpenPalette={noop}
+        onThemeChange={noop}
+        onLogout={noop}
+      />
     </Stack>
   );
 }
@@ -2157,6 +2300,31 @@ export const RENDERS = Object.freeze({
     <InfrastructureState
       nodes={NODES_NO_SIGNAL}
       count="4 nodes · No signal · last known 3 min ago"
+    />
+  ),
+  services: () => (
+    <ServicesState groups={SERVICES_HEALTHY} count="7 monitored · all up" groupless />
+  ),
+  'services-incident': () => (
+    <ServicesState
+      groups={SERVICES_INCIDENT}
+      count="7 monitored · 1 down · 1 pending · 1 no signal · 1 in maintenance"
+    />
+  ),
+  'services-grouped': () => (
+    <ServicesState groups={SERVICES_GROUPED} count="4 monitored · 1 down" grouping="group" />
+  ),
+  'services-no-signal': () => (
+    <ServicesState
+      groups={SERVICES_NO_SIGNAL}
+      count="7 monitored · No signal · last known 3 min ago"
+    />
+  ),
+  'services-narrow': () => (
+    <ServicesState
+      groups={SERVICES_INCIDENT.slice(0, 1)}
+      count="5 monitored · 1 down · 1 pending · 1 no signal"
+      width={328}
     />
   ),
 

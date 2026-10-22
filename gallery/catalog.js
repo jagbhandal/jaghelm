@@ -259,6 +259,31 @@ export const CATALOG = Object.freeze([
     'Overview',
     'InfrastructureSection: the incident with a stale status, every node and meter no signal'
   ),
+  // The Services section (#300)
+  s('services', 'Overview', 'ServicesSection: by node, healthy and muted, no custom group yet', {
+    accent: true,
+  }),
+  s(
+    'services-incident',
+    'Overview',
+    'ServicesSection: a service down, one pending, one with no signal, one in maintenance',
+    { accent: true }
+  ),
+  s(
+    'services-grouped',
+    'Overview',
+    'ServicesSection: by custom group, the node beside each name, a long name'
+  ),
+  s(
+    'services-no-signal',
+    'Overview',
+    'ServicesSection: the incident with a stale status, every row no signal'
+  ),
+  s(
+    'services-narrow',
+    'Overview',
+    'ServicesSection: a phone\'s width, the name over "metric · latency"'
+  ),
 
   // Shell (#296)
   s(

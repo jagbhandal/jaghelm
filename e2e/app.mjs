@@ -15,8 +15,8 @@ export const WIDTHS = {
   phone: { width: 390, height: 844 },
   desktop: { width: 1440, height: 900 },
 };
-// Today's themes, until #304: the shell draws a light one light.
-export const THEMES = { dark: 'dark', light: 'github-light' };
+// The themes (#304): what each test's browser has saved.
+export const THEMES = { dark: 'dark', light: 'light' };
 
 /** The demo's answer to `path` in `scenario`, as its server sends it. */
 export const demo = (path, { method = 'GET', query = {}, scenario = 'incident' } = {}) =>
@@ -29,7 +29,8 @@ export const demo = (path, { method = 'GET', query = {}, scenario = 'incident' }
  * /api/services) in place of the demo's. Returns the server's state: set
  * `down` to refuse /api/status, as a backend that can't be reached, or
  * `expired` to answer it 503, as the server does once its status is past the
- * cache's TTL (#480).
+ * cache's TTL (#480). `theme` is the theme the browser has saved ('dark',
+ * 'light' or 'system'; null, none).
  */
 export async function openApp(
   page,
@@ -67,7 +68,8 @@ export async function openApp(
       url.pathname === '/api/display-config' ? { ...out.body, tabs: APPS, ...config } : out.body;
     return route.fulfill({ status: out.status, json: body ?? {} });
   });
-  await page.addInitScript((id) => localStorage.setItem('jaghelm-theme', id), THEMES[theme]);
+  if (theme != null)
+    await page.addInitScript((id) => localStorage.setItem('jaghelm-theme', id), theme);
   await page.goto(path);
   await expect(page.getByRole('banner')).toBeVisible();
   return server;

@@ -1,23 +1,31 @@
-import React, { useState, useRef } from 'react';
+import React, { useId, useState, useRef } from 'react';
 import { uploadFile } from '../../hooks/useData';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import Field from './Field';
 import InlineError from './InlineError';
 import { Card, Toggle } from './primitives.jsx';
-import ColorPickerPopover from './ColorPickerPopover.jsx';
-import { THEMES } from './themes.js';
+import { THEMES } from '../../shell/theme.js';
 
-// Re-export so existing importers of THEMES from this module keep working.
-export { THEMES };
+// Each theme's swatch, as the mock's Settings → Appearance draws it: the
+// background of dark, of light, and the two halved for system.
+const DARK_BG = 'oklch(0.155 0.006 286)';
+const LIGHT_BG = 'oklch(0.982 0.003 286)';
+const PREVIEW = {
+  dark: DARK_BG,
+  light: LIGHT_BG,
+  system: `linear-gradient(90deg, ${DARK_BG} 50%, ${LIGHT_BG} 50%)`,
+};
 
+/**
+ * Settings → Appearance. The theme is dark, light or system (#304); there is
+ * one accent, violet, so no accent picker until #321 offers Violet, Fuchsia
+ * and Cyan.
+ */
 export default function AppearanceTab({ theme, setTheme }) {
   const { config, update } = useConfig();
-  const [colorPicking, setColorPicking] = useState(false);
-  // Seed color for the popover when the accent swatch is opened; the popover
-  // owns the live draft and reports the committed value back on Apply.
-  const [colorSeed, setColorSeed] = useState(config.accentColor || '#6366f1');
   const [uploadError, setUploadError] = useState('');
   const bgRef = useRef();
+  const id = useId();
 
   const handleBgUpload = async (file) => {
     setUploadError('');
@@ -33,77 +41,48 @@ export default function AppearanceTab({ theme, setTheme }) {
     <div className="settings-section">
       <InlineError message={uploadError} onDismiss={() => setUploadError('')} />
       <Card title="Theme">
-        <p className="settings-desc">Inspired by the most popular VS Code themes.</p>
-        <div className="settings-grid-3">
+        <p className="settings-desc">Dark, light, or the device's own setting.</p>
+        <div className="settings-grid-3" role="radiogroup" aria-label="Theme">
           {THEMES.map((t) => (
             <button
               key={t.id}
+              type="button"
+              role="radio"
+              aria-checked={theme === t.id}
+              aria-labelledby={`${id}-${t.id}`}
+              aria-describedby={`${id}-${t.id}-desc`}
               onClick={() => setTheme(t.id)}
               className={`settings-theme-btn ${theme === t.id ? 'active' : ''}`}
-              style={{ padding: '14px 10px' }}
+              style={{
+                padding: 12,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                textAlign: 'left',
+              }}
             >
-              <div
+              <span
+                aria-hidden="true"
                 style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 10,
-                  background: t.preview,
-                  border: `2px solid ${theme === t.id ? t.accent : t.light ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.08)'}`,
-                  marginBottom: 8,
-                  position: 'relative',
-                  overflow: 'hidden',
+                  display: 'block',
+                  height: 52,
+                  borderRadius: 8,
+                  border: '1px solid var(--border-color)',
+                  background: PREVIEW[t.id],
                 }}
+              />
+              <span id={`${id}-${t.id}`} style={{ fontWeight: 600 }}>
+                {t.label}
+              </span>
+              <span
+                id={`${id}-${t.id}-desc`}
+                style={{ fontSize: 12, color: 'var(--text-secondary)' }}
               >
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    height: 3,
-                    background: t.accent,
-                  }}
-                />
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 600 }}>{t.name}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{t.desc}</div>
+                {t.description}
+              </span>
             </button>
           ))}
         </div>
-      </Card>
-
-      <Card title="Accent Color">
-        {colorPicking ? (
-          <div>
-            <ColorPickerPopover
-              value={colorSeed}
-              onApply={(color) => {
-                update('accentColor', color);
-                setColorPicking(false);
-              }}
-              onCancel={() => setColorPicking(false)}
-            />
-          </div>
-        ) : (
-          <div className="settings-row" style={{ gap: 12 }}>
-            <div
-              className="settings-color-swatch-lg"
-              style={{ background: config.accentColor || '#6366f1' }}
-              onClick={() => {
-                setColorSeed(config.accentColor || '#6366f1');
-                setColorPicking(true);
-              }}
-            />
-            <div>
-              <span className="text-mono" style={{ fontSize: 14, color: 'var(--text-primary)' }}>
-                {config.accentColor || '#6366f1'}
-              </span>
-              <div className="muted-text" style={{ fontSize: 12, marginTop: 2 }}>
-                Click swatch to change
-              </div>
-            </div>
-          </div>
-        )}
       </Card>
 
       <Card title="Background">

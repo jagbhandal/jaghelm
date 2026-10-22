@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import IconPicker from '../IconPicker';
 import { FieldRow } from './Field';
 import { SettingsIcon } from './primitives.jsx';
-import ColorPickerPopover from './ColorPickerPopover.jsx';
+import ColorPickerPopover, { DEFAULT_COLOR } from './ColorPickerPopover.jsx';
 
 /**
  * NodesTab — Phase 2 Settings
@@ -69,7 +69,7 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
       {colorPicking && (
         <div style={{ marginBottom: 20, padding: 16, background: 'var(--bg-card-inner)', borderRadius: 14, border: '1px solid var(--border-color)' }}>
           <ColorPickerPopover
-            value={nodes[colorPicking]?.border_color || '#6366f1'}
+            value={nodes[colorPicking]?.border_color || DEFAULT_COLOR}
             onApply={applyColor}
             onCancel={() => setColorPicking(null)}
           />
@@ -81,7 +81,7 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
           marginBottom: 12, padding: '16px 18px',
           background: 'var(--bg-card-inner)', borderRadius: 14,
           border: `1px solid ${editNode === key ? 'var(--accent)' : 'var(--border-color)'}`,
-          borderLeft: `3px solid ${node.border_color || '#6366f1'}`,
+          borderLeft: `3px solid ${node.border_color || DEFAULT_COLOR}`,
           transition: 'border-color 0.2s',
         }}>
           {/* Node header */}
@@ -105,7 +105,7 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
             </div>
             <div
               className="settings-color-swatch"
-              style={{ width: 26, height: 26, borderRadius: 6, background: node.border_color || '#6366f1' }}
+              style={{ width: 26, height: 26, borderRadius: 6, background: node.border_color || DEFAULT_COLOR }}
               onClick={() => setColorPicking(key)}
               title="Border color"
             />

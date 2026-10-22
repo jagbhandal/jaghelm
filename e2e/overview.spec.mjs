@@ -15,8 +15,9 @@
  *    the rows and the board to its subsystem and back, in the URL, so Back
  *    and Forward follow it; a filter whose panel is switched off says so.
  *  - An issue row, clicked or by Enter, brings its entity's place on today's
- *    board into view, clear of the header, and focuses it; a Ctrl-click opens
- *    a new tab and leaves this one where it was.
+ *    board into view, clear of the header, and focuses it. It is a link to
+ *    that place's anchor, and a click with a modifier key or the middle
+ *    button is the browser's: the page neither cancels it nor moves (#515).
  *  - Screenshots of both scenarios, and the incident filtered to Services,
  *    at both sizes, dark and light, for the PR, in test-results/e2e/shots/.
  */
@@ -51,32 +52,62 @@ async function openOverview(page, scenario, theme = 'dark') {
 }
 
 /**
- * Ctrl-clicks `row` until the browser opens a tab whose URL matches `url`, and
- * returns it (null after three tries). A new tab starts on about:blank, so its
- * URL is read once its navigation has started (not loaded: its requests
- * aren't answered here). Chromium in the test container now and then drops a
- * Ctrl-click's tab: the click reaches the link, unhandled and with Ctrl down,
- * and nothing opens (the same on main, about 1 in 7 runs); or the tab never
- * leaves about:blank. Either way the page itself acts on nothing, which the
- * test checks after.
+ * Dispatches a `click` at `row` for each entry of `clicks` (name -> its
+ * MouseEvent fields: a modifier key, another button, or none) and returns,
+ * by name, what the page did with it: whether it cancelled it (`prevented`),
+ * what it called on the way to a place (`moves`: focus, scrollIntoView,
+ * scrollTo), and whether focus or the scroll changed. A listener on the
+ * window, the last to see the click, records `prevented` and only then
+ * cancels the browser's own action (follow the link, a new tab or window):
+ * that is Chromium's, not JagHelm's, so the run never depends on a tab
+ * opening (#515). The browser fires no `click` for a real middle click (an
+ * `auxclick`), but the row's handler checks the button all the same.
  */
-async function ctrlClickOpens(page, row, url) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const opened = page
-      .context()
-      .waitForEvent('page', { timeout: 5_000 })
-      .catch(() => null);
-    await row.click({ modifiers: ['ControlOrMeta'] });
-    const tab = await opened;
-    if (!tab) continue;
-    const there = await tab.waitForURL(url, { waitUntil: 'commit', timeout: 5_000 }).then(
-      () => true,
-      () => false
-    );
-    if (there) return tab;
-    await tab.close();
-  }
-  return null;
+function clicksOn(row, clicks) {
+  return row.evaluate((el, clicks) => {
+    const spied = [
+      [HTMLElement.prototype, 'focus'],
+      [Element.prototype, 'scrollIntoView'],
+      [Element.prototype, 'scrollTo'],
+      [window, 'scrollTo'],
+    ];
+    const out = {};
+    for (const [name, init] of Object.entries(clicks)) {
+      const moves = [];
+      const real = spied.map(([on, method]) => on[method]);
+      spied.forEach(([on, method], i) => {
+        on[method] = function (...args) {
+          moves.push(method);
+          return real[i].apply(this, args);
+        };
+      });
+      let prevented = null;
+      const last = (e) => {
+        prevented = e.defaultPrevented;
+        e.preventDefault();
+      };
+      window.addEventListener('click', last);
+      const focus = document.activeElement;
+      const y = window.scrollY;
+      try {
+        el.dispatchEvent(
+          new MouseEvent('click', { bubbles: true, cancelable: true, view: window, ...init })
+        );
+      } finally {
+        window.removeEventListener('click', last);
+        spied.forEach(([on, method], i) => {
+          on[method] = real[i];
+        });
+      }
+      out[name] = {
+        prevented,
+        moves,
+        focused: document.activeElement !== focus,
+        scrolled: window.scrollY !== y,
+      };
+    }
+    return out;
+  }, clicks);
 }
 
 /**
@@ -209,19 +240,36 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
       expect((await card.boundingBox()).y, 'clear of the header').toBeGreaterThanOrEqual(area.top);
     });
 
-    test('a Ctrl-click on a row is the browser’s: a new tab, and this one stays put', async ({
+    test('a modified or middle click on a row is the browser’s: a link, and the page stays put', async ({
       page,
     }) => {
       await openOverview(page, 'incident');
       const job = place(page, 'entity-jobs/storage:nightly-backup');
       const row = statusArea(page).getByRole('link', { name: /^nightly-backup, Failed/ });
-      const tab = await ctrlClickOpens(page, row, /#entity-jobs\/storage:nightly-backup$/);
-      expect(tab, 'a new tab at the row’s anchor').not.toBeNull();
-      expect(new URL(tab.url()).hash).toBe('#entity-jobs/storage:nightly-backup');
-      await tab.close();
-      expect(await page.evaluate(() => window.scrollY)).toBe(0);
-      await expect(job).not.toBeFocused();
-      expect(new URL(page.url()).hash).toBe('');
+      // What a new tab or window opens: the row's own address.
+      await expect(row).toHaveAttribute('href', '#entity-jobs/storage:nightly-backup');
+
+      const modified = {
+        Ctrl: { ctrlKey: true },
+        Meta: { metaKey: true },
+        Shift: { shiftKey: true },
+        Alt: { altKey: true },
+        'the middle button': { button: 1 },
+      };
+      // The plain click last, the control: the same dispatch reaches the
+      // row's handler, which moves to the place.
+      const did = await clicksOn(row, { ...modified, plain: {} });
+      for (const name of Object.keys(modified)) {
+        expect(did[name], `${name}: left to the browser`).toEqual({
+          prevented: false,
+          moves: [],
+          focused: false,
+          scrolled: false,
+        });
+      }
+      expect(did.plain.prevented, 'a plain click still follows the link').toBe(false);
+      expect(did.plain.moves).toEqual(expect.arrayContaining(['focus', 'scrollIntoView']));
+      await expect(job).toBeFocused();
     });
 
     for (const scenario of ['incident', 'healthy']) {

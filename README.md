@@ -96,7 +96,9 @@ For a longer walkthrough — including standing up Prometheus and cAdvisor if yo
 ### Requirements
  
 - Docker + docker compose
-- Prometheus reachable on the network, with `node_exporter` on each node you want to monitor. JagHelm calls its query API (`/api/v1/query`), its health check (`/-/healthy`, for `/api/readyz`) and, when a node has no `up` series or its `up` is 0, its target list (`/api/v1/targets`); a proxy in front of Prometheus must allow all three
+- Prometheus reachable on the network, with `node_exporter` on each node you want to monitor. JagHelm calls its query API (`/api/v1/query`), its health check (`/-/healthy`, for `/api/readyz`) and, when a node has no `up` series or its `up` is 0, its target list (`/api/v1/targets`); a proxy in front of Prometheus must allow all three. It also asks when Prometheus started (`/api/v1/status/runtimeinfo`) before a target that never got its first scrape counts as stuck; that one is optional
+  - **Direct scrape** (supported, recommended): Prometheus, or VictoriaMetrics/vmagent scraping with `promscrape`, scrapes each node's `node_exporter` (and cAdvisor) with a `node` label on the target, and lists those targets. JagHelm reads the target list to tell a node not scraped yet ("No signal") from one that's down ("Host unreachable"). A target still waiting for its first scrape after 3 of its scrape intervals shows as Prometheus failing, naming the target, with one "Monitoring source down" alert.
+  - **Federation or remote write** (Thanos, Mimir, a federating Prometheus, or VictoriaMetrics fed only by remote write; supported): the series need the same `node` label. These backends list no scrape target per node, so when a node's `up` series is missing JagHelm can't tell the host from the pipeline: that reads as Prometheus failing (one "Monitoring source down" alert), never as each host unreachable. A host whose `up` reads 0 still alerts as unreachable.
 - (Optional but recommended) `cAdvisor` for container-level CPU/RAM/network stats
 - (Optional) Uptime Kuma for service health
 - (Optional) NUT exporter if you want UPS panels
@@ -259,7 +261,7 @@ Real-time CPU, RAM, disk, temperature, and uptime per node, pulled from Promethe
  
 ### Per-container resource stats
  
-CPU, memory, network RX/TX for every Docker container via cAdvisor. Service cards show running/down state, ping latency, and 24-hour uptime alongside the resource numbers.
+CPU, memory, network RX/TX for every Docker container via cAdvisor. The Overview's Services section lists every service in one line each, grouped by node or by your own groups: its state (from Uptime Kuma, or the container), its ping latency and one number from its app integration. The per-container numbers are left off the Overview, for a service's detail view.
  
 ### 35+ integration presets + a custom builder
  
@@ -281,7 +283,7 @@ Custom drag-resize grid built for this app. Panels auto-grow to fit content, sna
  
 ### Themes and typography
  
-Ten themes (six dark, four light) inspired by common editor schemes — One Dark Pro, Dracula, GitHub Dark, Catppuccin, Solarized, etc. Five font family presets and eight independent size sliders so you can tune readability for whatever screen JagHelm lives on.
+Dark and light themes, or System to follow your device as it switches, with one violet accent; the header's sun and moon button flips between dark and light. Five font family presets and eight independent size sliders so you can tune readability for whatever screen JagHelm lives on.
  
 ### PWA installable
  

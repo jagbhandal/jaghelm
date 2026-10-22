@@ -39,6 +39,7 @@ import { initSecrets } from './secrets.js';
 import { initDiscovery, discoverNodes } from './discovery.js';
 import { initMonitors } from './monitors.js';
 import { initRegistry } from './integrations/registry.js';
+import { reportUnusedIntegrationSecrets } from './integrations/unusedSecrets.js';
 import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
 import { DATA_DIR } from './util/dataDir.js';
@@ -206,8 +207,10 @@ const corsOrigins = corsOriginEnv
 // useData.js's If-None-Match 304 caching). Additive + inert: with CORS_ORIGIN
 // unset (origin:false), no Access-Control-* headers are emitted, so the desktop
 // same-origin response is byte-for-byte unchanged. (Native HTTP — the mobile
-// default — bypasses CORS entirely and needs none of this.)
-app.use(cors({ origin: corsOrigins, exposedHeaders: ['ETag'] }));
+// default — bypasses CORS entirely and needs none of this.) Date too (#499):
+// the status's age is the server's Date less its Last-Modified, by the
+// server's own clock.
+app.use(cors({ origin: corsOrigins, exposedHeaders: ['ETag', 'Date'] }));
 
 // gzip responses. The big win is /api/history — it changes every cycle (so it
 // rarely 304s) and is the largest repeatedly-fetched JSON; numeric JSON gzips ~80-90%.
@@ -310,6 +313,10 @@ async function startSubsystems() {
     log.info({ nodes: nodeLabels }, 'discovered nodes');
     config = generateDefaultConfig(nodeLabels);
     saveConfig(config);
+  } else {
+    // Integration secrets no entry uses (a delete before #415, or a save
+    // interrupted between its two writes): counted in the log, never deleted.
+    reportUnusedIntegrationSecrets();
   }
 
   startConfigWatcher();

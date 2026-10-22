@@ -12,7 +12,7 @@ import crypto from 'node:crypto';
 import express from 'express';
 import request from 'supertest';
 
-import { getCached, setCache, respondWarmCached } from './cache.js';
+import { getCached, jsonWithEtag, setCache, respondWarmCached } from './cache.js';
 
 afterEach(() => mock.restoreAll());
 
@@ -259,4 +259,52 @@ test('an entry lives 120 s by default, or the TTL it was written with', () => {
   } finally {
     Date.now = realNow;
   }
+});
+
+// #499: the status's build time rides beside its ETag, as Last-Modified, for
+// the routes that ask. It is a header, so the ETag stays one per value.
+test('with lastModified, a cached value is sent with its entry time as Last-Modified, on the 200 and the 304', async () => {
+  const key = freshKey();
+  const app = express();
+  app.disable('etag');
+  app.get('/x', (req, res) => jsonWithEtag(res, req, key, getCached(key), { lastModified: true }));
+  const realNow = Date.now;
+  // An HTTP date counts whole seconds: the entry's 750 ms are dropped.
+  const t0 = Math.floor(realNow() / 1000) * 1000 - 10_000;
+  try {
+    Date.now = () => t0 + 750;
+    setCache(key, sample(9));
+  } finally {
+    Date.now = realNow;
+  }
+  const first = await request(app).get('/x');
+  assert.equal(first.status, 200);
+  assert.equal(first.headers['last-modified'], new Date(t0).toUTCString());
+
+  // The same value stored again later (the next cycle): a later time, the same ETag.
+  try {
+    Date.now = () => t0 + 5_000;
+    setCache(key, sample(9));
+  } finally {
+    Date.now = realNow;
+  }
+  const cond = await request(app).get('/x').set('If-None-Match', first.headers.etag);
+  assert.equal(cond.status, 304);
+  assert.equal(cond.headers.etag, first.headers.etag);
+  assert.equal(Date.parse(cond.headers['last-modified']), t0 + 5_000);
+});
+
+test('without lastModified (every other route), no Last-Modified; nor for a value not the cached one', async () => {
+  const key = freshKey();
+  setCache(key, sample(10));
+  const plain = await request(appFor(key)).get('/x');
+  assert.equal(plain.status, 200);
+  assert.equal(plain.headers['last-modified'], undefined);
+
+  const app = express();
+  app.disable('etag');
+  app.get('/x', (req, res) => jsonWithEtag(res, req, key, sample(10), { lastModified: true }));
+  const other = await request(app).get('/x');
+  assert.equal(other.status, 200);
+  assert.equal(other.headers['last-modified'], undefined, 'no entry time to vouch for it');
 });
