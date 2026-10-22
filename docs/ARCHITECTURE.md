@@ -249,7 +249,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/health`, `/api/readyz` | public | liveness / readiness probes |
 | `/metrics` | public | Prometheus exposition |
 | `/api/services` | token | discovered nodes + services (background-refreshed, ETag); `services.yaml` for Settings, without its credentials (`/config`, see 6) |
-| `/api/status` | token | the status model (4.7), built once a background cycle (ETag; 503 before the first cycle) |
+| `/api/status` | token | the status model (4.7), built once a background cycle (ETag, and its build time as Last-Modified; 503 before the first cycle) |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6) |
 | `/api/display-config` | token | the display config blob |
 | `/api/embed-check/:tabId` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs") |
@@ -1121,7 +1121,16 @@ cache's ETag (4.2: computed once per value). Reasons hold no times and the
 lines change only with the config, so a steady board serves the same bytes
 every cycle and a poll with the last ETag gets a 304 (`server/routes/status.test.js`). The status stays fresh for two refresh intervals (at least the cache's 2
 minutes), so a long interval leaves no gap between cycles. Before the first
-cycle, or once the loop has built none for that long, it answers 503. It sits beside `/api/services`, `/api/ups` and
+cycle, or once the loop has built none for that long, it answers 503. The
+200 and the 304 both say when the status served was built, as `Last-Modified`
+(#499): the cache entry's time, set as the loop stores each cycle's status
+(`jsonWithEtag`'s `lastModified`, `cache.js`). It moves every cycle while an
+equal status keeps its ETag, since it is a header, never in the body. An HTTP
+date counts whole seconds, so it reads up to a second early. A client counts
+the status's age from it, however long ago its own last answer came (5, "No
+signal: a stale status"); a 503 sends none. `Cache-Control: no-cache`, so a
+browser never reuses an answer unasked on the strength of that date (a
+Last-Modified alone allows a heuristic tenth of its age). It sits beside `/api/services`, `/api/ups` and
 `/api/cron/status`, which keep their shape and meaning for Android apps already
 installed (spec §6.3; frozen by `server/routes/contract.test.js`): the new
 states (maintenance, pending, unknown because a source failed) appear only
@@ -1519,7 +1528,17 @@ flowchart TD
   each place says how old it is ("No signal · last known 3 min ago"; the
   header and the panel the same sentence, `lastKnownLine` in
   `statusView.js`), with why: "Can't reach JagHelm", or "JagHelm's status is
-  out of date" for a 503 after a status or an answer too old. Every age on
+  out of date" for a 503 after a status or an answer too old. The age counts
+  from when the server built the status, not from the poll's last answer
+  (#499): `useStatus` keeps `/api/status`'s `Last-Modified` (on a 200 or a
+  304) beside the answer's time, as `updated.builtAt()`, no later than the
+  answer came, so a server clock ahead of the browser's can't make an age
+  that hasn't begun. After a 503 past the server's TTL the status is older
+  than the last answer, and says so. From a server that sends no
+  Last-Modified (an older one, or the demo), the age counts from the answer.
+  Two times, two rules: stale goes by the answer's time (is the poll getting
+  answers?), the age by the build time (how old is what is shown?), both in
+  `statusFreshness.js`. Every age on
   screen ticks on one clock (`useAgo`, `src/ui/lib/ago.js`), so the header
   and the panel never read a second apart; it ticks at once as the tab is
   shown again, and the hook runs no clock while the status is fresh. The

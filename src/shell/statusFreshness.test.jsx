@@ -309,8 +309,11 @@ describe('the age counts from when the status was built (#499)', () => {
   });
 
   it('stale by age still goes by the answer: the boundary is the answer plus staleAfter, whatever the build time', () => {
-    const updated = builtStore(NOW, NOW - 50_000);
+    // An answer just in, carrying a status built longer ago than staleAfter
+    // (a long refresh interval): the poll is getting answers, so it is fresh.
+    const updated = builtStore(NOW, NOW - 100_000);
     const { result } = renderFreshness({ status: HEALTHY, reach: 'ok', updated });
+    expect(result.current.stale).toBe(false);
     act(() => {
       vi.advanceTimersByTime(STALE_AFTER - 1);
     });
@@ -318,7 +321,7 @@ describe('the age counts from when the status was built (#499)', () => {
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    // 72 s since the answer, 122 s since the build.
+    // 72 s since the answer, 172 s since the build.
     expect(result.current).toMatchObject({ stale: true, lastKnown: 'last known 2 min ago' });
   });
 
