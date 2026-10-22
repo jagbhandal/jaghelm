@@ -17,16 +17,22 @@
  * field's label, which the Field renders as a <div> (a <label> would open the
  * list when clicked; lib/field-context.js), and Base UI focuses the trigger
  * from it.
+ *
+ * Base UI's part loads with the floating layer (lib/floating.jsx;
+ * floating/select.jsx), which a Select asks for as it mounts: its trigger is
+ * the control. Until it is in, the trigger is drawn here as Base UI draws it
+ * (the chosen label or the placeholder, the Field's label and help text in
+ * its name and description), and a click or an arrow key on it opens the
+ * list as soon as the layer is in.
  */
-import { useCallback, useRef } from 'react';
-import { Select as SelectPrimitive } from '@base-ui/react/select';
-import { Check, ChevronDown } from 'lucide-react';
+import { useContext } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { cn } from './lib/utils.js';
-import { usePortalRoot } from './lib/portal.js';
-import { useNoLabelElement } from './lib/field-context.js';
+import { FieldContext, useNoLabelElement } from './lib/field-context.js';
+import { useFloatingTrigger } from './lib/floating.jsx';
 
 /** Select.Root's props (Base UI 1.x); `onOpenChange` is handled apart. */
-const ROOT_PROPS = new Set([
+export const ROOT_PROPS = new Set([
   'value',
   'defaultValue',
   'onValueChange',
@@ -50,84 +56,85 @@ const ROOT_PROPS = new Set([
   'isItemEqualToValue',
 ]);
 
-// An object value stringifies like every other, so it is keyed by position.
-const itemKey = (item, index) =>
-  item.value !== null && typeof item.value === 'object' ? `#${index}` : String(item.value);
+/**
+ * `props` split between Select.Root and the trigger. Only the props given: an
+ * explicit undefined would hide what a Field sets on the trigger (its label,
+ * its description).
+ */
+export function splitProps(props) {
+  const root = {};
+  const trigger = {};
+  for (const [key, value] of Object.entries(props)) {
+    if (value !== undefined) (ROOT_PROPS.has(key) ? root : trigger)[key] = value;
+  }
+  return [root, trigger];
+}
+
+/** The trigger's, its value's and its icon's classes, drawn alike by both. */
+export const TRIGGER_CLASS =
+  'inline-flex h-control w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-background pr-2 pl-2.5 text-left text-body-sm text-text-1 transition-colors focus-visible:outline-offset-1 data-disabled:cursor-not-allowed data-disabled:opacity-55 aria-invalid:border-crit-border';
+export const VALUE_CLASS = 'min-w-0 truncate data-placeholder:text-text-3';
+export const ICON_CLASS = 'flex shrink-0 text-text-2';
+
+/** The chevron in the trigger. */
+export const chevron = <ChevronDown className="size-4" strokeWidth={1.75} />;
+
+/** The arrow keys open the list, as a click (Enter, Space) does. */
+const opensList = (event) =>
+  event.type === 'click' ||
+  (event.type === 'keydown' && (event.key === 'ArrowDown' || event.key === 'ArrowUp'));
 
 function Select({ items = [], placeholder, className, onOpenChange, ref, ...props }) {
   useNoLabelElement();
-  const triggerRef = useRef(null);
-  const setTriggerRef = useCallback(
-    (node) => {
-      triggerRef.current = node;
-      if (typeof ref === 'function') ref(node);
-      else if (ref) ref.current = node;
-    },
-    [ref]
-  );
-  const [portalRoot, syncPortalRoot] = usePortalRoot(triggerRef);
-  const openChange = (open, details) => {
-    if (open) syncPortalRoot();
-    onOpenChange?.(open, details);
-  };
-  // Only the props given: an explicit undefined would hide what a Field sets
-  // on the trigger (its label, its description).
-  const rootProps = {};
-  const triggerProps = {};
-  for (const [key, value] of Object.entries(props)) {
-    if (value !== undefined) (ROOT_PROPS.has(key) ? rootProps : triggerProps)[key] = value;
+  const field = useContext(FieldContext);
+  const { layer, handoff, light } = useFloatingTrigger({ now: true, opens: opensList });
+  if (layer) {
+    return (
+      <layer.SelectLayer
+        items={items}
+        placeholder={placeholder}
+        className={className}
+        onOpenChange={onOpenChange}
+        triggerRef={ref}
+        handoff={handoff}
+        {...props}
+      />
+    );
   }
-  return (
-    <SelectPrimitive.Root items={items} onOpenChange={openChange} {...rootProps}>
-      <SelectPrimitive.Trigger
-        {...triggerProps}
-        ref={setTriggerRef}
-        data-slot="select"
-        className={cn(
-          'inline-flex h-control w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-background pr-2 pl-2.5 text-left text-body-sm text-text-1 transition-colors focus-visible:outline-offset-1 data-disabled:cursor-not-allowed data-disabled:opacity-55 aria-invalid:border-crit-border',
-          className
-        )}
-      >
-        <SelectPrimitive.Value
-          placeholder={placeholder}
-          className="min-w-0 truncate data-placeholder:text-text-3"
-        />
-        <SelectPrimitive.Icon className="flex shrink-0 text-text-2">
-          <ChevronDown className="size-4" strokeWidth={1.75} />
-        </SelectPrimitive.Icon>
-      </SelectPrimitive.Trigger>
-      <SelectPrimitive.Portal {...portalRoot}>
-        <SelectPrimitive.Positioner
-          alignItemWithTrigger={false}
-          sideOffset={4}
-          className="z-dialog"
-        >
-          <SelectPrimitive.Popup
-            data-slot="select-popup"
-            className="max-h-[var(--available-height)] min-w-[var(--anchor-width)] overflow-y-auto rounded-lg border border-border-strong bg-surface-2 p-1.5 text-body-sm text-text-1 shadow-pop transition-opacity data-ending-style:opacity-0 data-starting-style:opacity-0"
-          >
-            <SelectPrimitive.List>
-              {items.map((item, index) => (
-                <SelectPrimitive.Item
-                  key={itemKey(item, index)}
-                  value={item.value}
-                  disabled={item.disabled}
-                  className="flex h-control-sm cursor-pointer items-center justify-between gap-3 rounded-lg px-2.5 -outline-offset-2 select-none data-disabled:cursor-not-allowed data-disabled:opacity-55 data-highlighted:bg-row-hover"
-                >
-                  <SelectPrimitive.ItemText className="min-w-0 truncate">
-                    {item.label}
-                  </SelectPrimitive.ItemText>
-                  <SelectPrimitive.ItemIndicator className="flex shrink-0">
-                    <Check className="size-4 text-accent-text" strokeWidth={2} />
-                  </SelectPrimitive.ItemIndicator>
-                </SelectPrimitive.Item>
-              ))}
-            </SelectPrimitive.List>
-          </SelectPrimitive.Popup>
-        </SelectPrimitive.Positioner>
-      </SelectPrimitive.Portal>
-    </SelectPrimitive.Root>
+  const [root, trigger] = splitProps(props);
+  const value = 'value' in root ? root.value : root.defaultValue;
+  const same = root.isItemEqualToValue ?? Object.is;
+  const chosen = value == null ? undefined : items.find((item) => same(item.value, value));
+  const empty = chosen === undefined ? '' : undefined;
+  const disabled = root.disabled ?? field?.disabled;
+  const named = trigger['aria-label'] != null || trigger['aria-labelledby'] != null;
+  const element = (
+    <button
+      type="button"
+      role="combobox"
+      aria-expanded={false}
+      aria-haspopup="listbox"
+      aria-labelledby={named ? undefined : field?.labelId}
+      aria-describedby={field?.describedBy}
+      aria-invalid={field?.invalid || undefined}
+      disabled={disabled || undefined}
+      data-disabled={disabled ? '' : undefined}
+      data-placeholder={empty}
+      id={root.id}
+      {...trigger}
+      ref={ref}
+      data-slot="select"
+      className={cn(TRIGGER_CLASS, className)}
+    >
+      <span data-placeholder={empty} className={VALUE_CLASS}>
+        {chosen === undefined ? placeholder : chosen.label}
+      </span>
+      <span aria-hidden="true" className={ICON_CLASS}>
+        {chevron}
+      </span>
+    </button>
   );
+  return light(element);
 }
 
 export { Select };

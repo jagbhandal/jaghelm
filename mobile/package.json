@@ -20,10 +20,11 @@
     "@capacitor/push-notifications": "^8.1.1",
     "capacitor-secure-storage-plugin": "^0.13.0",
     "class-variance-authority": "^0.7.1",
-    "cn": "^0.4.0",
+    "clsx": "^2.1.1",
     "lucide-react": "^1.52.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.4.1",

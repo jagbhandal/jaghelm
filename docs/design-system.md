@@ -722,8 +722,10 @@ does. Nothing is set per component.
 
 ### Class names
 
-`cn` ([`src/ui/lib/utils.js`](../src/ui/lib/utils.js)) is the `cn` package
-taught this theme: the type steps (`TYPE_STEPS`), the named spacing
+`cn` ([`src/ui/lib/utils.js`](../src/ui/lib/utils.js)) is clsx's join and
+tailwind-merge's merge, taught this theme (the `cn` package's engine until
+#444, which merged every pair of these classes the same in twice the bytes):
+the type steps (`TYPE_STEPS`), the named spacing
 (`SPACING`), the shadows (`SHADOWS`), the layers (`Z_INDEX`) and the motion's
 duration and easing (`DURATIONS`, `EASES`). Stock, it read `text-body-sm` as a
 colour, so a colour class beside it dropped the size; it never let a caller's
@@ -732,8 +734,8 @@ stylesheet's order to pick one. A caller's `className` wins over a component's
 own classes. A new name in `tailwind.css`'s `@theme` block goes into those
 lists too; `scripts/ui-stack.test.mjs` fails until it does.
 
-Import `cn` from there, never from the `cn` package, `tailwind-merge` or
-`clsx`: a test fails on any other in `src/ui/`. `npx shadcn add` writes
+Import `cn` from there, never from `tailwind-merge`, `clsx` or the `cn`
+package: a test fails on any other in `src/ui/`. `npx shadcn add` writes
 `import { cn } from 'cn'`; switch it to `./lib/utils.js`.
 
 Keep class strings in `className`, `cn()`, `cva()` or a lookup object read by
@@ -899,6 +901,43 @@ is neutral and shows none.
 - **The Drawer is a Dialog at the edge.** Base UI's Drawer adds swipe
   gestures and snap points, which the mock doesn't have; Base UI's advice for
   a drawer without them is a positioned Dialog.
+
+### The floating layer
+
+The overlays' Base UI parts (Tooltip, Popover, Select, Dialog, Drawer,
+Confirm, and the Sparkline's readout) are one chunk,
+[`src/ui/floating/`](../src/ui/floating/layer.js), which
+[`lib/floating.jsx`](../src/ui/lib/floating.jsx) loads once for all of them,
+on the page's first pointer or keyboard input, or at once when one is opened
+from code or a Select mounts (#444). The first screen draws none of them, so
+the first load leaves them out. Until the layer is in, each component draws
+its trigger itself, as Base UI would: the caller's element with the closed
+popup's ARIA (`aria-haspopup`, `aria-expanded="false"`, a Tooltip's
+description), and the Select's own trigger, named and described by its Field.
+When it arrives, Base UI draws the trigger anew, except one that has focus
+or is being pressed: it waits until focus leaves it or the click is done, so
+focus never moves and a screen reader never hears it twice (a tooltip
+focused before then shows on its next focus). One clicked, or given Enter,
+Space or a Select's arrow, opens its popup through Base UI, focus going in as
+on any open. The API is the same either way.
+
+A new floating component joins it in four steps:
+
+1. Its Base UI part goes in `src/ui/floating/<name>.jsx`. It takes the
+   trigger's id and `handoff`, gives its Root a handle
+   (`createHandle()`), and calls `useHandoff(handoff, triggerRef, open)`
+   (`floating/handoff.js`), `open` opening it through Base UI as its trigger
+   would (`handle.open(triggerId)`).
+2. `floating/layer.js` exports it.
+3. `src/ui/<name>.jsx` keeps the component's API and documents it. It calls
+   `useFloatingTrigger({ now })` (`now` true when `open` or `defaultOpen` asks
+   for it) and renders the layer's part once `layer` is in, else
+   `light(trigger, ariaOfTheClosedPopup)`; a popup with no trigger of its own
+   calls `useFloatingLayer(open)` and renders nothing until then. It never
+   imports from `floating/`, which would put the layer in the first load
+   (`scripts/lazy-views.test.mjs` fails).
+4. `src/ui/floating.test.jsx` opens it from the keyboard before the layer is
+   in, and checks focus and its ARIA once it is.
 
 ### Accessibility
 

@@ -14,7 +14,12 @@
  */
 import { createContext, useContext, useLayoutEffect } from 'react';
 
-/** Set by a Field around its control; null outside one. */
+/**
+ * Set by a Field around its control; null outside one. It also holds the ids
+ * Base UI names and describes the control with (`labelId`, `describedBy`)
+ * and the field's `invalid` and `disabled`, for a control drawn before its
+ * Base UI part is in (select.jsx).
+ */
 export const FieldContext = createContext(null);
 
 /** True inside a Field. */

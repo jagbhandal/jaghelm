@@ -21,12 +21,15 @@
  * selectors, and the markup of a list it sits in.
  *
  * `children` is the trigger, one element that takes a ref and its props.
+ *
+ * Base UI's part loads with the floating layer, on first use
+ * (lib/floating.js; floating/tooltip.jsx): until then the trigger is drawn
+ * here, described as above, and focus taken on it before the layer arrives
+ * opens the tooltip once it has.
  */
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip';
-import { cn } from './lib/utils.js';
-import { usePortalRoot } from './lib/portal.js';
+import { useFloatingTrigger } from './lib/floating.jsx';
 
 /** The one hidden element in `doc` that holds the tooltips' descriptions. */
 function descriptions(doc) {
@@ -62,7 +65,7 @@ function Tooltip({
   children,
 }) {
   const triggerRef = useRef(null);
-  const [portalRoot, syncPortalRoot] = usePortalRoot(triggerRef);
+  const { layer, handoff, light } = useFloatingTrigger({ opens: never, ref: triggerRef });
   const descriptionId = useId();
   const [holder, setHolder] = useState(null);
   useLayoutEffect(() => {
@@ -78,41 +81,31 @@ function Tooltip({
     ? [own['aria-describedby'], descriptionId].filter(Boolean).join(' ')
     : own['aria-describedby'];
   return (
-    <TooltipPrimitive.Root
-      onOpenChange={(open) => {
-        if (open) syncPortalRoot();
-      }}
-    >
-      <TooltipPrimitive.Trigger
-        ref={triggerRef}
-        render={children}
-        delay={delay}
-        closeDelay={closeDelay}
-        aria-describedby={describedBy}
-      />
-      {describes ? createPortal(<span id={descriptionId}>{content}</span>, holder) : null}
-      <TooltipPrimitive.Portal {...portalRoot}>
-        <TooltipPrimitive.Positioner
+    <>
+      {layer ? (
+        <layer.TooltipLayer
+          content={content}
           side={side}
           align={align}
           sideOffset={sideOffset}
-          collisionPadding={8}
-          className="z-dialog"
+          delay={delay}
+          closeDelay={closeDelay}
+          className={className}
+          describedBy={describedBy}
+          triggerRef={triggerRef}
+          handoff={handoff}
         >
-          <TooltipPrimitive.Popup
-            data-slot="tooltip"
-            aria-hidden="true"
-            className={cn(
-              'max-w-[min(280px,calc(100vw-1rem))] rounded-md border border-border-strong bg-surface-2 px-2 py-1 text-caption text-text-1 shadow-pop transition-opacity data-ending-style:opacity-0 data-instant:transition-none data-starting-style:opacity-0',
-              className
-            )}
-          >
-            {content}
-          </TooltipPrimitive.Popup>
-        </TooltipPrimitive.Positioner>
-      </TooltipPrimitive.Portal>
-    </TooltipPrimitive.Root>
+          {children}
+        </layer.TooltipLayer>
+      ) : (
+        light(children, { 'aria-describedby': describedBy })
+      )}
+      {describes ? createPortal(<span id={descriptionId}>{content}</span>, holder) : null}
+    </>
   );
 }
+
+/** A tooltip opens on focus or under the pointer, never on a click. */
+const never = () => false;
 
 export { Tooltip };
