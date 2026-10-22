@@ -23,6 +23,8 @@ const ARROW_DELTAS = {
  *      when it ends.
  *   2. Render the cell with optional drag handle + SE/SW resize handles + a
  *      keyboard move/resize handle.
+ * In the page's flow (`measuring` false: HelmGrid's one fixed column, #243)
+ * the cell is its content's own height, and nothing is measured.
  */
 const GridItem = React.memo(function GridItem({
   itemId,
@@ -36,6 +38,7 @@ const GridItem = React.memo(function GridItem({
   onDragStart,
   onResizeStart,
   onContentHeight,
+  measuring = true,
   gridX,
   gridY,
   gridW,
@@ -69,7 +72,7 @@ const GridItem = React.memo(function GridItem({
   // during a resize runs when it ends.
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || !measuring) return; // in the page's flow: its own height, nothing to measure
 
     let rafId = null;
     let pending = false;
@@ -139,7 +142,7 @@ const GridItem = React.memo(function GridItem({
       mo.disconnect();
       scheduleRef.current = null;
     };
-  }, [itemId]);
+  }, [itemId, measuring]);
 
   // The resize ended: measure, as the ones during it were skipped.
   const wasResizingRef = useRef(isResizing);

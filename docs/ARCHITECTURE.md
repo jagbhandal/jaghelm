@@ -213,8 +213,8 @@ gallery/                    the component gallery (development and CI only, docs
                             playwright.config.mjs, never part of the production build
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
-                            phone-split.spec.mjs, login.spec.mjs, utilities.spec.mjs, what
-                            they share in app.mjs; see 8): the
+                            phone-split.spec.mjs, login.spec.mjs, utilities.spec.mjs,
+                            reflow.spec.mjs, what they share in app.mjs; see 8): the
                             production build served
                             by `vite preview`, every /api request answered in the test; run
                             by playwright.e2e.config.mjs in the gallery's container
@@ -1624,6 +1624,21 @@ flowchart TD
   the strip under it, as before. OverviewStatus reads the width with
   matchMedia (`useMediaQuery`, on `useSyncExternalStore`), so a resize across 768px moves the
   strip; the Alerts page has no strip and never splits.
+- **The Overview at every width** (#302, spec §3 goal 3, §8). Nothing hides
+  from 360 to 2560px: no sideways scroll, nothing clipped, every name whole
+  (`e2e/reflow.spec.mjs`). The widths come from the shell's two media
+  queries, `PHONE_WIDTH` (768px) and `RAIL_WIDTH` (1440px), and no third: a
+  tablet (768–1023px) is the desktop Overview in one column, which it is by
+  flow (the status, the strip, Infrastructure, Services and today's board
+  stack at every width without the rail), and its strip wraps by its own
+  container queries (six tiles to a row from 672px of strip, rows of three
+  under it), as the node cards fill their section's width. Sections grow
+  with their content and never clip it; a word wider than a strip tile breaks
+  rather than hide. On the first load the page fills in from the top (#243):
+  `DashboardView` draws nothing until the header's poll has its first answer
+  (`reach` past `loading`), while its data loads, so the status, a
+  placeholder of unknown height until then, can't push down sections already
+  drawn under it (CLS 0.50 at 390px before, 0.0002 after).
 - **The Infrastructure section** (#299, spec §8 item 3). At the top of
   today's board (`DashboardView` draws it, lined up with the board's cards by
   HelmGrid's margin), the nodes as cards or a table (`OverviewInfrastructure`
@@ -1810,7 +1825,19 @@ flowchart TD
   `gridMath.js` (snap, overlap-resolve, content-fit, and `compactUp` for the
   board filtered to a subsystem, #298), per-item measurement +
   rendering in `GridItem.jsx`, and lifecycle (breakpoints, drag/resize, commit)
-  in `HelmGrid.jsx`. Panels auto-grow to fit content: `GridItem` re-measures
+  in `HelmGrid.jsx`. It measures its width and picks its breakpoint's layout
+  in layout effects, so the first frame painted is at the real width (#243).
+  At `sm` (narrower than 768px of board) on a board that can't be dragged or
+  resized (a phone, which `DashboardView` fixes, or a filtered board) the
+  panels are in the page's flow, one column in the layout's order, each at
+  its own height: nothing to measure, nothing drawn at a saved height then
+  grown. A one-column board that can be dragged (a desktop window up to about
+  1080px, or 1440px and up beside the rail) stays the stacked grid it was,
+  and crossing between the two keeps every panel mounted (the same
+  `GridItem`s, `measuring` off in the flow). Otherwise each panel keeps the height it last measured
+  at its width (`jaghelm-grid-heights`, per browser) for its first 3 s
+  (`RESERVE_MS`) or until its content fills it, so a reload doesn't draw the
+  board at its saved rows and then grow it. Panels auto-grow to fit content: `GridItem` re-measures
   a panel's natural height (the item at `height: auto`) after any change to
   its content or width, at most once a frame. The panel's own box is stretched
   to its grid height, so it doesn't change when only the content does (the
@@ -2659,7 +2686,24 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   and deletes over plain HTTP (no `crypto.randomUUID` in the page), each
   change reaching the server, which a reload shows, on the Launch page and in
   the rail; axe, dark and light, on the whole Launch page and on the
-  Overview's shell, status and rail. All seven leave screenshots in
+  Overview's shell, status and rail. Nothing hides (#302,
+  `e2e/reflow.spec.mjs`): the Overview at 360, 390, 768, 1024, 1280, 1440,
+  1920 and 2560px, healthy and incident, and on the incident with the
+  model's longest subsystem details at each of them: the page no wider than
+  its window; no element clipping its content (overflowing on an axis it
+  clips, `hidden` or `clip`) unless it ends in an ellipsis with the whole text
+  in a title or an accessible name, and no text spilling out of its box;
+  every service's and node's name whole and in the window; a failure names
+  the element and the width. Today's board is held only to its panels'
+  heights (#306 deletes it: its Pipeline's commit messages and its Checklist's
+  add row don't fit at 360 and 390px). A tablet (768 and 1023px) is one
+  column, the strip wrapping. The first load at 390 × 844 on the incident
+  shifts its layout by 0.1 or less (CLS, by a `layout-shift`
+  PerformanceObserver, shifts after input left out; it was 0.50, the status
+  arriving over sections already drawn, #243); on a phone (360 and 390px)
+  every frame the board paints, from its first, has it in the page's flow
+  and every panel as tall as its content; and at 1600px a tick
+  that changes nothing measures no panel. All eight leave screenshots in
   `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through

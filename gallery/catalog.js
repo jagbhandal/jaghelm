@@ -284,6 +284,17 @@ export const CATALOG = Object.freeze([
     'Overview',
     'ServicesSection: a phone\'s width, the name over "metric · latency"'
   ),
+  // The Overview as a tablet draws it (#302, spec §8)
+  s(
+    'overview-tablet',
+    'Overview',
+    "The Overview in a 768px window: one column, the strip in rows of three, a card a row, the phone's rows"
+  ),
+  s(
+    'overview-tablet-wide',
+    'Overview',
+    'The Overview in a 1024px window: one column, the strip in one row, two cards a row'
+  ),
 
   // Shell (#296)
   s(

@@ -15,7 +15,9 @@
  * from 672px (`@2xl` of the strip's container), in rows of three from 320px
  * and of two below that, as the Phone board's; the narrow tiles leave out
  * `sub`. A strip holds one to six tiles, and no row is left with an empty
- * slot (`columns`, below).
+ * slot (`columns`, below). A word wider than its tile breaks onto the next
+ * line rather than hide its end (#302): the model's "1 in maintenance" in
+ * six tiles to a row, from 1024px.
  *
  * With `onSelect`, each tile is a toggle button (`aria-pressed`) that filters
  * by its subsystem, as the mock's do: a press calls `onSelect(key)`, or
@@ -132,9 +134,14 @@ function Tile({ cell, selected, onSelect }) {
             mock's labels run a hair past their box, "Integrations" at 820px. */}
         <span className="-mr-1 truncate text-overline text-text-3 uppercase">{cell.label}</span>
       </span>
-      <span className="text-body font-bold @2xl:text-title-sm">{cell.value}</span>
+      {/* A word wider than the tile ("maintenance" in six tiles to a row,
+          #302) breaks rather than run under the next tile. */}
+      <span className="text-body font-bold wrap-break-word @2xl:text-title-sm">{cell.value}</span>
       {cell.sub && (
-        <span id={`${id}-sub`} className="hidden text-caption text-text-3 @2xl:block">
+        <span
+          id={`${id}-sub`}
+          className="hidden text-caption wrap-break-word text-text-3 @2xl:block"
+        >
           {cell.sub}
         </span>
       )}
