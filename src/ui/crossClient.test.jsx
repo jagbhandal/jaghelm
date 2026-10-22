@@ -3,7 +3,7 @@
  * same input can never give one answer on the screen and another in a push.
  *
  * Each fixture (server/testing/statusScenarios.js: healthy, incident,
- * source-down, first-run, thresholds, every-state, low-battery) is built as
+ * source-down, first-run, thresholds, every-state, low-battery, config-broken) is built as
  * the live loop builds /api/status, and its status is drawn with the src/ui status components, the
  * way a screen draws the model (Board, below): the attention panel from the
  * overall state, sentence and issues; a subsystem tile per subsystem that has

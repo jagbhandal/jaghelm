@@ -8,7 +8,7 @@ import {
   subsystemFilter,
   whereOf,
 } from './statusView.js';
-import { scenarioStatus } from '../../server/testing/statusScenarios.js';
+import { CONFIG_BROKEN, scenarioStatus } from '../../server/testing/statusScenarios.js';
 
 const NOW = 1_782_345_600_000;
 
@@ -19,6 +19,24 @@ describe('statusView', () => {
     expect(whereOf({ kind: 'ups' })).toBe('Power');
     expect(whereOf({ kind: 'source' })).toBe('Monitoring source');
     expect(whereOf({ kind: 'mystery' })).toBeUndefined();
+  });
+
+  it("puts a broken services.yaml under Configuration, not a monitoring source (#505)", () => {
+    expect(whereOf({ id: 'sources/config', kind: 'source' })).toBe('Configuration');
+    expect(whereOf({ id: 'sources/prometheus', kind: 'source' })).toBe('Monitoring source');
+    // The model's own issue for it, through the row the Alerts page and the attention panel draw.
+    const status = scenarioStatus('config-broken', { now: NOW });
+    expect(issueRows(status, NOW)).toEqual([
+      {
+        id: 'sources/config',
+        state: 'warn',
+        word: 'Failed',
+        title: 'JagHelm config',
+        where: 'Configuration',
+        reason: CONFIG_BROKEN,
+        age: '0 s',
+      },
+    ]);
   });
 
   it('ages an issue from its since', () => {

@@ -3,7 +3,7 @@
  * same input can never give one answer on the screen and another in a push.
  *
  * Each fixture (testing/statusScenarios.js: healthy, incident, source-down,
- * first-run, thresholds, every-state, low-battery) is built as the live loop
+ * first-run, thresholds, every-state, low-battery, config-broken) is built as the live loop
  * builds /api/status. Its status then goes through the real push cycle
  * (snapshot, differ, dispatch, the FCM message the phone receives), from two
  * starting points: an empty snapshot (the first-run board's: every issue is
@@ -326,6 +326,7 @@ const SENT = {
     ],
   },
   'low-battery': { empty: ['ups_on_battery ups'], healthy: ['ups_on_battery ups'] },
+  'config-broken': { empty: ['source_down config'], healthy: ['source_down config'] },
   thresholds: {
     empty: [
       'host_threshold apps:cpu',
@@ -402,6 +403,7 @@ test('cross-client fixtures: each headline, as the model says it', () => {
       'crit: 1 node unreachable · UPS on battery · 1 container missing · 1 service pending · ' +
       '1 job overdue · 1 job failed · 1 backup overdue · 1 integration failing · 1 Arcane agent offline',
     'low-battery': 'crit: UPS low battery',
+    'config-broken': "warn: services.yaml doesn't parse (line 12)",
   });
 });
 

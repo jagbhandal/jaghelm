@@ -42,9 +42,17 @@ import {
 import { SUBSYSTEMS, summarize } from './summary.js';
 import { UP_MISSING } from './upMissing.js';
 
-// The monitoring sources whose failure is an issue (spec §6.1), and their names.
-const MONITORING_SOURCES = ['prometheus', 'kuma', 'nut'];
-const SOURCE_NAMES = { prometheus: 'Prometheus', kuma: 'Kuma', nut: 'NUT', gitea: 'Gitea' };
+// The sources whose failure is an issue (spec §6.1), and their names: the
+// monitoring sources, and services.yaml (#505), listed only while it is no
+// usable config.
+const MONITORING_SOURCES = ['prometheus', 'kuma', 'nut', 'config'];
+const SOURCE_NAMES = {
+  prometheus: 'Prometheus',
+  kuma: 'Kuma',
+  nut: 'NUT',
+  gitea: 'Gitea',
+  config: 'JagHelm config',
+};
 const SUBSYSTEM_ORDER = Object.fromEntries(SUBSYSTEMS.map((s, i) => [s.id, i]));
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -160,6 +168,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
     kumaConfigured = false,
     giteaConfigured = false,
     cycleErrors = [],
+    configProblem = null,
   } = inputs ?? {};
 
   // Which upstreams answered (#232).
@@ -390,6 +399,13 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
     found.gitea = arrayOr(cycleErrors).includes('gitea')
       ? { state: 'failed', error: 'The Gitea refresh failed' }
       : { state: 'ok' };
+  }
+  // services.yaml (#505): failed while it is no usable config, and not
+  // listed otherwise, so a good file changes nothing. JagHelm then runs on the
+  // last good config, or none at boot, so the board alone can't say the
+  // file is broken: an empty board would read as calm.
+  if (typeof configProblem === 'string' && configProblem) {
+    found.config = { state: 'failed', error: configProblem };
   }
   const sources = {};
   for (const [name, s] of Object.entries(found)) {

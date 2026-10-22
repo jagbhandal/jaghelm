@@ -975,7 +975,12 @@ signs out locally as before.
   restart can't mend the input, and the deploy gate's `"status":"ok"` would
   roll a deploy back over it. It is the process's memory, so after a restart
   it counts from that restart's first cycle (push keeps its own count in the
-  snapshot, 4.7).
+  snapshot, 4.7). Beside it, `config` (#505): `{ state: 'ok' }`, or
+  `{ state: 'unparseable', line }` while `services.yaml` is no usable config
+  (`line` null for an empty file, one that isn't a mapping, or an error with
+  no position), as of the file's last read (`configHealth` in `config.js`).
+  Never its text, and it doesn't change `status` either: a restart can't fix
+  the file.
 
 ### 4.7 Status model
 
@@ -1020,8 +1025,8 @@ builds again one recovery (see "Push" below), and `/api/health` reports it in
 snapshot): the cached `/api/services`, `/api/ups` and `/api/integrations`
 payloads, what the services refresh keeps beside its payload (4.2), the cron
 store's statuses, whether `KUMA_URL` and `GITEA_URL` are set, and the cycle's
-error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
-(#291), with no read of their own:
+error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
+(#291, #505), with no read of their own:
 
 - **`backupJobs`**, which cron jobs are backups: `display-config.json`'s
   `backupJobs`, a list of `"node:job"` keys (`"pve:proxmox-backup"` for the
@@ -1037,6 +1042,11 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   (4.2, `arcane/agents.js`): `null` when Arcane isn't set up and before its
   first list, so no agents rather than unknown ones; every agent `unknown`
   while the list fails.
+- **`configProblem`** (#505): why `services.yaml` is no usable config, from
+  its last read (`configProblem` in `config.js`): "services.yaml doesn't parse
+  (line 4)", "services.yaml doesn't parse" with no position, "services.yaml is
+  empty" or "services.yaml isn't a mapping"; `null` while it loads. Fixed
+  words and a line, never the file's text (#504).
 
 **The status:**
 
@@ -1046,7 +1056,7 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   issues: [entity, …],              // ranked, see below
   subsystems: [{ id, name, state, counts: { total, ok, warn, crit, unknown, maintenance }, detail }],
   entities: [{ id, kind, subsystem, name, node?, state, word, reason, metric?, conditions?, heldSince?, since }],
-  sources: { prometheus: { state: 'ok' | 'failed', error?, since }, kuma, nut, gitea },
+  sources: { prometheus: { state: 'ok' | 'failed', error?, since }, kuma, nut, gitea, config },
   thresholds: { cpu: { warn, cycles }, mem: { warn }, disk: { warn, crit },   // the lines it judged by
                 temp: { warn, crit }, hysteresis: { fraction, celsius }, pending: { cycles } },
 }
@@ -1140,6 +1150,17 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   `warn` issue, `sources/<name>`, ranked first in its level. Gitea is listed in
   `sources` but is no issue: nothing on the board depends on it. Kuma is
   listed once `KUMA_URL` is set or a service is on the board.
+- **`services.yaml` is a source too** (#505), `config`, listed only while the
+  file is no usable config (`configProblem`), as `failed` with that reason, so
+  a good file changes nothing. JagHelm then runs on the last good config, or
+  on none at boot (5, #463), and an empty board would read as calm: its issue,
+  `sources/config` ("JagHelm config", `warn`, "Failed"), has the reason, and
+  the sentence says it, "services.yaml doesn't parse (line 4)", where an empty
+  board said "Nothing monitored yet". The web shows it as any source issue,
+  with "Configuration" where a monitoring source says "Monitoring source"
+  (`whereOf` in `src/shell/statusView.js`; the `config-broken` cross-client
+  fixture); the Android app's screens don't
+  read the model yet (#325), so there it is the push.
 - **A reading with no value** this cycle (#462: a sensor or exporter that
   didn't answer, `null` in `/api/services`) keeps the level the model held for
   it, and CPU's run of cycles over its line, as a failed read does, so 78 °C,
@@ -1381,6 +1402,15 @@ sees where that changed:
   off, only push off (and *Notify recoveries* for the recovery). While the
   model builds, `sources` has no `status` entry, but for the cycle after it
   paged, when it is `ok`.
+- `services.yaml` is a source too (#505), `sources.config`, stepping
+  `failing` and `down` while the model lists it (the file is no usable config)
+  and kept as the status check's is otherwise: `ok` for the cycle after it
+  paged, else no entry. So its second cycle sends one `source_down` with the
+  id and node `config`, "JagHelm config broken", body "JagHelm config ·
+  services.yaml doesn't parse (line 4)", `warning`, and the cycle after the
+  fix (the watcher's reload, or any read) one `source_recovered`, "JagHelm
+  config fixed", "services.yaml loads again". It is in no category: a file
+  that doesn't parse is every category's problem.
 - Each event's `reason` is the model's reason for the entity, and its body the
   entity's name (and node) and that reason: "Gitea on vm103 · Kuma: down",
   "pve · Disk 94 % (warning above 90 %)". The FCM `data` block the Android app
@@ -2194,7 +2224,9 @@ All state is files under the data dir (no DB):
     file changes again, with one warning. At boot, with nothing to keep, the
     board starts empty and the file is left as it is: only a missing file
     runs first-boot discovery and writes a new one. `nodes: {}` written on
-    purpose is a real config and empties the board.
+    purpose is a real config and empties the board. Either way the board,
+    a push and `/api/health` say the file is broken (#505, 4.6, 4.7): the
+    config is a failed source until the file loads.
   - **Nothing writes over a file that doesn't parse** (#423). The config
     kept for the board is not the file's, so `readConfig()` answers no config
     for it, only why (`services.yaml doesn't parse (<reason> at line N,

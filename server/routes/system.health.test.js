@@ -25,3 +25,11 @@ test("GET /api/health reports the status model's health beside the loop's, start
   assert.equal(res.body.status, 'ok');
   assert.deepEqual(res.body.statusModel, { state: 'starting' });
 });
+
+test('GET /api/health says the config is ok when services.yaml is usable (#505)', async () => {
+  const app = express();
+  app.use('/api', systemRouter);
+  const res = await request(app).get('/api/health');
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.config, { state: 'ok' });
+});

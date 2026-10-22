@@ -48,8 +48,12 @@ test('readStatusInputs: the cached payloads, what is kept beside the services on
     kumaConfigured: true,
     giteaConfigured: false,
     cycleErrors: ['gitea'],
+    configProblem: null,
   });
   assert.deepEqual(read.sort(), ['integrations', 'services', 'ups']);
+  // Why services.yaml is no usable config (#505) is passed through as it is.
+  const broken = "services.yaml doesn't parse (line 4)";
+  assert.equal(readStatusInputs(caches, { configProblem: broken, env: {} }).configProblem, broken);
 });
 
 test('tracker: current() is null before the first update, then the last status; memory carries across updates', () => {

@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from 'fs';
 
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { createLogger } from '../util/logger.js';
-import { alertStateKey, diffSnapshots, RECOVERY_TYPES, STATUS_CHECK } from './differ.js';
+import { alertStateKey, CONFIG_SOURCE, diffSnapshots, RECOVERY_TYPES, STATUS_CHECK } from './differ.js';
 
 const defaultLog = createLogger('push-dispatch');
 
@@ -47,12 +47,14 @@ const SOURCE_TYPES = new Set(['source_down', 'source_recovered']);
  * Map an event (its type, and for a source event its id) to its preference
  * category. null for the status check's events (#440): while the status model
  * fails no category pages, so its push belongs to all of them, and no
- * category switch turns it off.
+ * category switch turns it off. null for services.yaml's too (#505): a file
+ * that doesn't parse is every category's problem (nothing changed in it
+ * reaches the board), so no category switch turns it off either.
  */
 export function categoryOf(type, id) {
   if (Object.hasOwn(TYPE_CATEGORY, type)) return TYPE_CATEGORY[type];
   if (SOURCE_TYPES.has(type)) {
-    if (id === STATUS_CHECK) return null;
+    if (id === STATUS_CHECK || id === CONFIG_SOURCE) return null;
     return Object.hasOwn(SOURCE_CATEGORY, id) ? SOURCE_CATEGORY[id] : 'host';
   }
   return type.split('_')[0];
