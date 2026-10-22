@@ -69,7 +69,7 @@ const SIZE_CONTROLS = [
   {
     key: 'serviceName',
     label: 'Service Names',
-    desc: 'Container names on service cards',
+    desc: 'VM names in a node panel’s Proxmox lists',
     min: 11,
     max: 18,
     default: 13,
@@ -77,7 +77,7 @@ const SIZE_CONTROLS = [
   {
     key: 'serviceStatValue',
     label: 'Service Stat Values',
-    desc: '1.4%, 1235 MB on service cards',
+    desc: 'VM figures in a node panel’s Proxmox lists',
     min: 11,
     max: 18,
     default: 13,
@@ -85,7 +85,7 @@ const SIZE_CONTROLS = [
   {
     key: 'serviceStatLabel',
     label: 'Service Stat Labels',
-    desc: 'CPU, MEM, RX, TX on service cards',
+    desc: 'Headings in a node panel’s Proxmox lists',
     min: 8,
     max: 14,
     default: 10,

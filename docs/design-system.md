@@ -1172,7 +1172,7 @@ until Phase 4 (#326).
 | `Sparkline` | `@ui/sparkline` | `label` (its name; required unless `decorative`); `points` (numbers, or `{ time, value }`); `domain` (`[0, 100]`, or `auto`); `width`, `height` (96 × 24); `area`; `unit`, `formatValue`, `formatTime` (HH:MM); `decorative` |
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`) |
 | `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
-| `EntityRow` | `@ui/entity-row` | `state`, `word`, `name`, `detail`, `meta`, `trailing`; `onOpen` or `href` |
+| `EntityRow` | `@ui/entity-row` | `state`, `word`, `name`, `where` (a node's name, after the name), `detail`, `meta`, `trailing`, `muted` (quiets a healthy row); `onOpen` or `href` |
 | `FactList` | `@ui/fact-list` | `facts` (`[{ key, label, value }]`) |
 | `Table` | `@ui/table` | `caption` (or `aria-label`, or `aria-labelledby`), `columns` (`[{ key, header, numeric, cell, className }]`), `rows`, `rowKey` (`id`), `onRowOpen`, `empty`, `minWidth` |
 
@@ -1233,13 +1233,19 @@ Chart colours board:
   (40px, 32 compact) and padded by `p-panel`, with the name keeping at least
   the mock's name column (3/7 of the name and detail) so details line up down
   a list. Narrower, the Phone board's row: the lamp in a 12px column, the name
-  over the detail (12px) and the trailing figure, 12px taller than `h-row`; a
+  over the detail and the meta on one 12px line ("24,499 assets · 138 ms":
+  the detail gives way, the meta is never cut, and a meta alone, not a dash,
+  has the line to itself), and the trailing figure, 12px taller than `h-row`; a
   heartbeat strip there shows its newest 12 beats, as the Phone board's, so
   the detail keeps its room. Both keep the mock's 20px
   lines. The detail is `text-1` when healthy and the state's word colour
   otherwise; a critical row is tinted `crit-tint` from 672px, as the Overview
   board's (the Phone board's list leaves it plain). `row-hover` under the
-  pointer, over the tint.
+  pointer, over the tint. `muted` (#300, the Overview's Services list) quiets
+  a healthy row: its detail in `text-2`, so a failing row stands out; any
+  other state keeps its colours. `where` (#300) follows the name in its
+  column, in 12px mono `text-3`, and gives way (an ellipsis) before the name
+  does.
 - **FactList.** The detail drawer's facts: a label column in `text-3` and a
   value column, semibold in `text-1`, 10px between rows and 12px between the
   columns. From 384px of its own container it is the Overview drawer's (a
@@ -1306,10 +1312,12 @@ Chart colours board:
   The name is hidden text inside it, so an EntityRow holding it is described
   by it.
 - **EntityRow** is a button (`onOpen`) or a link (`href`) named "name, word"
-  and described by its detail, meta (not a dash alone) and trailing figure,
-  with a decorative
+  and described by its where, detail, meta (not a dash alone) and trailing
+  figure, with a decorative
   lamp; with nothing to open it is plain content and its lamp is named by the
-  word. The focus ring is drawn inset.
+  word. A lamp drawn as no signal beside another word (a stale status's last
+  known "Up", #480) is named "No signal" (`lampName`), and so is the row. The
+  focus ring is drawn inset.
 - **FactList** is a description list: each label a term, its value the
   definition.
 - **Table** is a `<table>` named by its `caption` (hidden: the panel's heading
@@ -1481,15 +1489,17 @@ From the mock's Main and Phone boards:
 
 The Overview's sections in the new UI, one file each in `src/ui/`, built on
 the components above; `src/shell/` feeds them the status model
-([ARCHITECTURE.md](ARCHITECTURE.md), "The Infrastructure section"). The
-[gallery](GALLERY.md) shows each in its states (group Overview), and
-`e2e/infrastructure.spec.mjs` runs the section in a browser.
+([ARCHITECTURE.md](ARCHITECTURE.md), "The Infrastructure section", "The
+Services section"). The [gallery](GALLERY.md) shows each in its states (group
+Overview), and `e2e/infrastructure.spec.mjs` and `e2e/services.spec.mjs` run
+them in a browser.
 
 | Component | Import | Props |
 | --- | --- | --- |
 | `InfrastructureSection` | `@ui/infrastructure-section` | `nodes` (each `{ id, anchor, name, host, subtitle, colour, state, word, reason, readings, services, uptime, trend }`), `count` ("3 nodes · 1 warning"), `view` (`cards` or `table`), `onViewChange` (none, no toggle), `loading`, `banner`, `title` (`Infrastructure`) |
 | `NodeCard` | `@ui/node-card` | `name`, `host`, `subtitle`, `colour` (the user's, a swatch), `state`, `word`, `reason`, `readings` (MetricMeter's props each, with `key`), `services` and `uptime` (the footer's lines), `trend` (`{ points, label, formatValue }`) |
 | `NodeSwatch` | `@ui/node-card` | `colour` |
+| `ServicesSection` | `@ui/services-section` | `groups` (each `{ key, title, host, count, rows }`, each row `{ id, anchor, name, where, state, word, detail, meta, muted }`), `count` ("12 monitored · 1 down"), `grouping` (`node` or `group`), `groupings` (the control's options, `disabled` on one with nothing yet), `onGroupingChange` (none, no control), `groupingHint` (a caption under the control), `loading`, `banner`, `title` (`Services`) |
 
 A reading in `nodes` also carries `shown`, its value as the table prints it
 (by the model's rule, as the meter does), or null for no reading.
@@ -1522,6 +1532,22 @@ From the mock's Main board, its Infrastructure section:
   the trend, a 96 × 24 Sparkline.
 - **NodeSwatch.** 10 × 10, 2px round, the user's colour for the node, hidden
   from assistive tech: the node's only colour of its own (spec §5.2).
+- **ServicesSection** (#300). The heading row is Infrastructure's: the icon
+  (Lucide `Activity`, the mock's) in a 32px accent chip, the title, the count
+  in 13px `text-3`, and at the end the grouping, a SegmentedControl named
+  "Group services by" (Node, Group). Group is disabled until Settings has a
+  custom group, and a caption under the control (`groupingHint`, 12px
+  `text-3`, its link `accent-text`) says where to add one, describing the
+  control. Then one panel: `surface-1` in a subtle edge, 12px round, the groups
+  in it. A group's heading is the mock's: on `surface-2` above a subtle rule,
+  10px over 8px of padding, its title an overline in `text-2`, the node's key
+  in 12px mono `text-3` beside it (when it differs from the title), its count
+  ("7 / 8 up") in 12px `text-3` at the end. Its rows are EntityRows, a subtle
+  rule between them: lamp, name, `where` (the node, when the group isn't
+  one), the detail (the headline metric, or the model's reason) and the
+  latency as the meta; healthy rows `muted`, a critical one tinted. Narrower
+  than 672px, the rows are the Phone board's. While loading, four placeholder
+  rows and no count.
 
 ### Rules for the Overview sections
 
@@ -1541,6 +1567,15 @@ From the mock's Main board, its Infrastructure section:
 - **One reading, one number, one unit.** A meter prints what the model's
   reason prints: the number by `shownReading`, a temperature in °C.
 - **The user's colour is a swatch.** Never a card's edge, tint or a meter.
+- **Healthy rows are quiet** (#300). A Services row the model says is up is
+  muted, its detail `text-2`; only a failing row takes a status colour, and
+  only a critical one the tint. A row prints its latency and app metric only
+  while up: a failing one says the model's reason and a dash, never an old
+  number.
+- **No stale level in a row.** With a stale status every Services row is no
+  signal, its lamp named "No signal", its words and numbers kept as last
+  known, and the count says how old ("12 monitored · No signal · last known
+  3 min ago").
 
 ### Accessibility of the Overview sections
 
@@ -1553,6 +1588,11 @@ From the mock's Main board, its Infrastructure section:
   coloured reading adds its state for screen readers (", warning").
 - A page links to a node by the card's `id` (or its name's in the table); the
   card takes focus when a link lands on it.
+- The Services section is a region named by its heading; the grouping a
+  radio group, "Group services by"; each group a list named by its heading
+  (an `h3`); each row plain content (it opens nothing yet, #310), its lamp
+  named by the word, or "No signal" under a stale status. A page links to a
+  service by its row's `id`, and the row takes focus when a link lands on it.
 
 ### Where the Overview sections differ from the mock
 
@@ -1567,6 +1607,16 @@ From the mock's Main board, its Infrastructure section:
   only; below 720px of section the cards stand in and the toggle goes.
 - **The table's Services column** is the mock's Workload (the hosted
   services' counts), and its Role is services.yaml's `subtitle` for the node.
+- **Services: no heartbeat strip, no chevron, no filter box, no "Show all".**
+  The server keeps no per-monitor history yet (#312), the rows open nothing
+  until the drawer (#310), and the Services page with its search is #313's.
+- **Services: healthy rows are muted**, their detail `text-2` where the
+  mock's is `text-1` (spec §8: "Healthy rows are muted").
+- **Services: a segmented control** (Node, Group) where the mock has a
+  "Group: Node" menu button, as the Infrastructure toggle; there is no
+  grouping by tag, since services.yaml has no tags.
+- **Services on a phone keep their groups**, from the same components; the
+  Phone board's list is flat.
 
 ## Changing a token
 

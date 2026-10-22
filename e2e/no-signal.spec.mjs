@@ -9,9 +9,9 @@
  *  - fresh, the colour probe (statusHues, app.mjs) finds the red and the
  *    amber where the model puts them, so it can't pass by finding nothing;
  *  - stale, no red, amber or green anywhere in the header, the Overview's
- *    status (the attention panel and the subsystem strip) or the
- *    Infrastructure section: every colour each element draws, read in OKLCH,
- *    and every lamp the steel ring (no signal);
+ *    status (the attention panel and the subsystem strip), the
+ *    Infrastructure section or the Services section (#300): every colour each
+ *    element draws, read in OKLCH, and every lamp the steel ring (no signal);
  *  - the header and the panel say the same age, and it moves on;
  *  - the next answer brings the colours back.
  *
@@ -29,6 +29,7 @@ const headerLink = (page) => header(page).locator('[data-slot="header-status"] a
 const statusArea = (page) => page.locator('[data-slot="overview-status"]');
 const panel = (page) => statusArea(page).getByRole('region', { name: 'Needs attention' });
 const section = (page) => page.locator('[data-slot="infrastructure-section"]');
+const services = (page) => page.locator('[data-slot="services-section"]');
 // A node's swatch is the user's own colour (#299), never a status.
 const SWATCH = '[data-slot="node-swatch"]';
 
@@ -39,6 +40,7 @@ async function probe(page) {
     ['header', header(page)],
     ['status', statusArea(page)],
     ['infrastructure', section(page), SWATCH],
+    ['services', services(page)],
   ]) {
     out[name] = await statusHues(area, { skip });
   }
@@ -78,6 +80,7 @@ for (const [size, viewport] of Object.entries(WIDTHS)) {
           expect(fresh.infrastructure.found).toContainEqual(
             expect.objectContaining({ hue: 'amber' })
           );
+          expect(fresh.services.found).toContainEqual(expect.objectContaining({ hue: 'red' }));
 
           server[answer] = true;
           await page.clock.runFor(30_000);
@@ -87,6 +90,7 @@ for (const [size, viewport] of Object.entries(WIDTHS)) {
             'data-state',
             'unknown'
           );
+          await expect(services(page)).toContainText('No signal · last known');
 
           const stale = await probe(page);
           for (const [place, { found, unread, lamps }] of Object.entries(stale)) {
@@ -131,6 +135,10 @@ for (const [size, viewport] of Object.entries(WIDTHS)) {
             await section(page).screenshot({
               path: `${dir}/no-signal-infrastructure-${size}-${theme}.png`,
             });
+            await services(page).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+            await services(page).screenshot({
+              path: `${dir}/no-signal-services-${size}-${theme}.png`,
+            });
             await tabs.evaluate((el) => el.remove());
             await page.evaluate(() => window.scrollTo(0, 0));
           }
@@ -148,6 +156,7 @@ for (const [size, viewport] of Object.entries(WIDTHS)) {
           expect(back.infrastructure.found).toContainEqual(
             expect.objectContaining({ hue: 'amber' })
           );
+          expect(back.services.found).toContainEqual(expect.objectContaining({ hue: 'red' }));
           await expect(page.getByText(/last known/)).toHaveCount(0);
         });
       }

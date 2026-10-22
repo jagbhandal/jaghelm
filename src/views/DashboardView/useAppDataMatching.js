@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 
 /**
- * Maps integration data (from /api/integrations) onto discovered containers.
+ * Maps integration data (from /api/integrations) onto discovered services, for
+ * the Overview's Services section (#300).
  *
  * Two matching modes:
  *   1. Target-scoped — when the integration config has a `_target` field
@@ -10,7 +11,9 @@ import { useMemo } from 'react';
  *      matched against container names by keyword. Exact name match wins;
  *      partial/substring match is the fallback.
  *
- * Returns: { [containerName]: { ...displayFields } }
+ * Returns: { [uid]: { ...displayFields } }, keyed by the service's uid
+ * ("node:container"), so a container of one name on two nodes (AdGuard on
+ * both gateways) is two services, each with its own numbers or none.
  * Internal `_target`, `_instance`, `_vms`, etc. fields are stripped.
  */
 
@@ -38,7 +41,7 @@ function flattenContainers(serviceData) {
   const all = [];
   for (const [nodeKey, node] of Object.entries(serviceData.nodes || {})) {
     for (const s of node.services || []) {
-      all.push({ ...s, _nodeKey: nodeKey });
+      all.push({ ...s, _nodeKey: nodeKey, _uid: s.uid || `${nodeKey}:${s.container}` });
     }
   }
   return all;
@@ -53,11 +56,7 @@ function stripInternalFields(fields) {
 }
 
 function findByTarget(allContainers, targetUid) {
-  for (const svc of allContainers) {
-    const uid = svc.uid || `${svc._nodeKey}:${svc.container}`;
-    if (uid === targetUid) return svc;
-  }
-  return null;
+  return allContainers.find((svc) => svc._uid === targetUid) ?? null;
 }
 
 function findByKeywords(allContainers, keywords, alreadyMatched) {
@@ -69,7 +68,7 @@ function findByKeywords(allContainers, keywords, alreadyMatched) {
   let claimedFallback = null;
 
   const consider = (svc) => {
-    if (!alreadyMatched[svc.container]) return svc; // unclaimed — take it now
+    if (!alreadyMatched[svc._uid]) return svc; // unclaimed — take it now
     if (!claimedFallback) claimedFallback = svc; // remember first claimed match
     return null;
   };
@@ -108,14 +107,14 @@ const PRECEDENCE = { target: 2, fuzzy: 1 };
 export function useAppDataMatching(integrationData, serviceData) {
   return useMemo(() => {
     const map = {};
-    // Per-container claim record so collisions resolve deterministically instead
-    // of last-write-wins. { [container]: { tier, intKey } }
+    // Per-service claim record so collisions resolve deterministically instead
+    // of last-write-wins. { [uid]: { tier, intKey } }
     const claims = {};
     const allContainers = flattenContainers(serviceData);
 
     // Record a claim, honoring precedence. Returns true if `appEntry` was written.
-    const claim = (container, tier, intKey, appEntry) => {
-      const prior = claims[container];
+    const claim = (uid, tier, intKey, appEntry) => {
+      const prior = claims[uid];
       if (prior) {
         // Two integrations want the same container. Keep the higher-precedence
         // one; on a tie keep the earlier (already-recorded) one. Either way warn
@@ -125,7 +124,7 @@ export function useAppDataMatching(integrationData, serviceData) {
           const kept = incomingWins ? intKey : prior.intKey;
           const dropped = incomingWins ? prior.intKey : intKey;
           console.warn(
-            `[useAppDataMatching] container "${container}" matched by multiple ` +
+            `[useAppDataMatching] container "${uid}" matched by multiple ` +
               `integrations ("${prior.intKey}" and "${intKey}"); keeping "${kept}" ` +
               `(${incomingWins ? tier : prior.tier}), dropping "${dropped}". ` +
               `Set a Target Container to disambiguate.`
@@ -133,8 +132,8 @@ export function useAppDataMatching(integrationData, serviceData) {
         }
         if (!incomingWins) return false;
       }
-      claims[container] = { tier, intKey };
-      map[container] = appEntry;
+      claims[uid] = { tier, intKey };
+      map[uid] = appEntry;
       return true;
     };
 
@@ -150,7 +149,7 @@ export function useAppDataMatching(integrationData, serviceData) {
       // Mode 1: target-scoped
       if (fields._target) {
         const svc = findByTarget(allContainers, fields._target);
-        if (svc) claim(svc.container, 'target', intKey, appEntry);
+        if (svc) claim(svc._uid, 'target', intKey, appEntry);
         continue;
       }
 
@@ -160,7 +159,7 @@ export function useAppDataMatching(integrationData, serviceData) {
       const keywords = INTEGRATION_KEYWORDS[baseType] || [baseType];
 
       const match = findByKeywords(allContainers, keywords, map);
-      if (match) claim(match.container, 'fuzzy', intKey, appEntry);
+      if (match) claim(match._uid, 'fuzzy', intKey, appEntry);
     }
 
     return map;

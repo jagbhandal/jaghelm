@@ -205,6 +205,92 @@ describe('EntityRow', () => {
     }
   });
 
+  // #480: under a stale status a row keeps the word it last had ("Up"), and
+  // its lamp is what is known now.
+  it('names a lamp drawn as no signal "No signal", never by the last known word (#300)', () => {
+    const { unmount } = render(
+      <EntityRow state="unknown" word="Up" name="Immich" detail="3 users" />
+    );
+    expect(screen.getByRole('img', { name: 'No signal' })).toHaveAttribute('data-state', 'unknown');
+    unmount();
+    render(<EntityRow state="unknown" word="Down" name="Immich" onOpen={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Immich, No signal' })).toBeInTheDocument();
+  });
+
+  it('muted (#300): a healthy row says its detail in text-2; any other state keeps its colour', () => {
+    const { container, rerender } = render(<EntityRow {...NPM} muted />);
+    const row = () => container.firstChild;
+    expect(row()).toHaveAttribute('data-muted', '');
+    expect(part(row(), 'detail')).toHaveClass('text-text-2');
+    expect(part(row(), 'detail')).not.toHaveClass('text-text-1');
+    expect(part(row(), 'name')).toHaveClass('font-semibold', 'text-text-1');
+    rerender(<EntityRow {...IMMICH} muted />);
+    expect(row()).not.toHaveAttribute('data-muted');
+    expect(part(row(), 'detail')).toHaveClass('text-crit-fg');
+    expect(part(row(), 'grid')).toHaveClass('@2xl:bg-crit-tint');
+    rerender(<EntityRow {...NPM} />);
+    expect(row()).not.toHaveAttribute('data-muted');
+    expect(part(row(), 'detail')).toHaveClass('text-text-1');
+  });
+
+  it('where (#300): the node after the name, in mono text-3, giving way before the name', () => {
+    const { container } = render(<EntityRow {...NPM} where="Network Edge" onOpen={() => {}} />);
+    const row = container.firstChild;
+    const heading = part(row, 'heading');
+    expect(heading).toHaveClass('flex', 'min-w-0', '@2xl:min-w-[calc(42.857%-6px)]', '@2xl:shrink');
+    expect(part(row, 'name')).toHaveTextContent('Nginx Proxy Manager');
+    expect(part(row, 'name')).toHaveClass('truncate', 'font-semibold', 'min-w-0');
+    const where = part(row, 'where');
+    expect(where).toHaveTextContent('Network Edge');
+    expect(where).toHaveClass(
+      'font-mono',
+      'text-caption',
+      'text-text-3',
+      'truncate',
+      'shrink-1000'
+    );
+    expect(heading).toContainElement(where);
+    // Said too, when the row opens: its name says only the name and word.
+    expect(
+      screen.getByRole('button', { name: 'Nginx Proxy Manager, Up' })
+    ).toHaveAccessibleDescription('Network Edge 31 proxy hosts 14 ms');
+  });
+
+  it('without where, the name is the column itself, as before', () => {
+    const { container } = render(<EntityRow {...NPM} />);
+    expect(part(container.firstChild, 'heading')).toBeNull();
+    expect(part(container.firstChild, 'name')).toHaveClass('@2xl:min-w-[calc(42.857%-6px)]');
+  });
+
+  // #300 review: the Phone board's row says "metric · latency" under the name.
+  it('narrow: the meta follows the detail on its line ("31 proxy hosts · 14 ms"), never said twice', () => {
+    const { container } = render(<EntityRow {...NPM} onOpen={() => {}} />);
+    const detail = part(container.firstChild, 'detail');
+    expect(detail).toHaveClass('flex', '@2xl:block', 'truncate');
+    expect(detail).toHaveTextContent('31 proxy hosts · 14 ms');
+    const copy = detail.querySelector('[data-slot="entity-detail-meta"]');
+    expect(copy).toHaveAttribute('aria-hidden', 'true');
+    expect(copy).toHaveClass('shrink-0', '@2xl:hidden');
+    expect(detail.querySelector('[data-slot="entity-detail-text"]')).toHaveClass(
+      'min-w-0',
+      'truncate'
+    );
+    // Described once: the meta's own element says it.
+    expect(screen.getByRole('button')).toHaveAccessibleDescription('31 proxy hosts 14 ms');
+  });
+
+  it('narrow: a meta with no detail has the line to itself; a dash, none', () => {
+    const { container, rerender } = render(<EntityRow {...NPM} detail={undefined} />);
+    const line = () => part(container.firstChild, 'detail');
+    expect(line()).toHaveTextContent(/^14 ms$/);
+    expect(line()).toHaveClass('@2xl:hidden');
+    rerender(<EntityRow {...IMMICH} />);
+    expect(line()).toHaveTextContent(/^Kuma: HTTP 502 for 4 min$/);
+    expect(line().querySelector('[data-slot="entity-detail-meta"]')).toBeNull();
+    rerender(<EntityRow {...IMMICH} detail={undefined} />);
+    expect(line()).toBeNull();
+  });
+
   it('passes className and other props to the row', () => {
     render(<EntityRow {...NPM} className="border-b" data-testid="npm" />);
     expect(screen.getByTestId('npm')).toHaveClass('border-b', '@container');
