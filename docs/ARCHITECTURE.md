@@ -790,6 +790,18 @@ scrypt password hashing (`auth/passwords.js`), in-memory sessions
 A reusable `util/rateLimiter.js` additionally throttles the abuse-prone
 integration connection-test endpoint.
 
+A session ends 24 h after sign-in or when the server restarts, and every
+protected request after that gets a 401. `apiFetch` (`src/api/client.js`)
+reports the first 401 for a token to the shell's auth-expired handler, once
+per token: the polls in flight with the same token don't report it again,
+and a late 401 for a token since replaced by a new sign-in is ignored. A 401
+from `/api/auth/` (a wrong password at sign-in, or a wrong current password
+when changing it) is about the password sent and reports nothing. The web app
+(`App.jsx`) and the Android app both sign out on it: the sign-in screen
+replaces the app, so every poll stops and no header keeps the last status's
+colours, and signing in starts the polls again (#492). Before, an open web tab
+kept polling with the dead token, a 401 each time.
+
 ### 4.6 Observability
 
 - **Structured logging** (`util/logger.js`) with redaction -- no URL credentials

@@ -7,3 +7,10 @@
   logged as before. A successful read that answered quickly, such as the
   dashboard's own refresh every 30 seconds, is logged only with
   `LOG_LEVEL=debug`, which still shows every request.
+
+### Fixed
+- A signed-out tab stops polling and asks you to sign in. When a session ends
+  (24 hours after signing in, or when the server restarts), an open dashboard
+  kept asking the server for data every 30 seconds and was refused each time,
+  for as long as the tab stayed open. It now shows the sign-in screen once and
+  asks nothing more until you sign in again, which brings the dashboard back.
