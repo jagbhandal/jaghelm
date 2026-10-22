@@ -1510,8 +1510,10 @@ flowchart TD
   are dropped), and no card is dragged between panels any more, so a custom
   group's services are chosen in Settings → Sections. It reads the header's
   poll for the model, and the board's own `/api/services` (the latency, Kuma's
-  last response time) and `/api/integrations` (one headline metric, through
-  `useAppDataMatching`, as the cards had it), so it adds no request, and
+  last response time) and `/api/integrations` (one headline metric, matched
+  by `useAppDataMatching` and keyed by the service's uid, so a container of
+  one name on two nodes is two services with their own numbers), so it adds
+  no request, and
   judges nothing (`servicesView.js`): a row per entity of the Services
   subsystem (a Kuma monitor, or a container with none), a node hidden in
   Settings left out; its lamp, word and reason the entity's. Only while the
@@ -1521,7 +1523,8 @@ flowchart TD
   and a dash for the latency, so an old number never sits beside a failure.
   Healthy rows are muted (the detail in text-2); a critical row is tinted.
   Grouped by node (services.yaml's order, the node's key beside its name, "7
-  / 8 up") or, once Settings has a custom group, by custom group (Settings'
+  / 8 up") or, once Settings has a custom group, by custom group (until then
+  Group is disabled, with a link to Settings → Sections; Settings'
   order, a container named by uid or by name, the rest under "Not in a
   group", each row with its node beside the name); within a group the worst
   first, then by name. services.yaml has no tags, so there is no grouping by
@@ -1530,7 +1533,8 @@ flowchart TD
   it lists, the mock's "12 monitored · 1 down · 1 no signal" (each failing
   kind by the model's word), "· all up" when nothing fails. The name is never
   cut short before anything else (`EntityRow`); narrower than 672px the row is
-  the Phone board's, the name over the detail. Each row puts its anchor on
+  the Phone board's, the name over "metric · latency". Settings → Layout has
+  no service-card options any more. Each row puts its anchor on
   the list of places, so a service's issue row leads to its row. It shows
   unfiltered and under the Services filter, which keeps it alone; another
   filter hides it. Before the first status or `/api/services` answer,

@@ -15,8 +15,8 @@
  * in one. From 672px of its own width the name and the detail
  * share a line, the name keeping at least the mock's name column (3/7 of the
  * line) so details line up down a list. Narrower, it is the Phone board's
- * row: the name on its own line over the detail, and the trailing figure; no
- * meta, no chevron.
+ * row: the name on its own line over the detail and the meta ("24,499 assets
+ * · 138 ms", the meta never cut short), and the trailing figure; no chevron.
  *
  * Its height follows the density, `h-row` (40px, 32 compact) from 672px and
  * 12px more on a phone (the mock's 52px), padded by the panel's padding, with
@@ -156,16 +156,33 @@ function EntityRow({
               {name}
             </span>
           )}
-          {has.detail && (
+          {(has.detail || saysMeta) && (
             <span
               data-slot="entity-detail"
-              id={`${id}-detail`}
+              id={has.detail ? `${id}-detail` : undefined}
               className={cn(
-                'block w-0 min-w-full truncate text-caption leading-5 @2xl:min-w-0 @2xl:flex-1 @2xl:text-body-sm @2xl:leading-5',
+                'flex w-0 min-w-full truncate text-caption leading-5 @2xl:block @2xl:min-w-0 @2xl:flex-1 @2xl:text-body-sm @2xl:leading-5',
+                !has.detail && '@2xl:hidden',
                 quiet ? 'text-text-2' : detailColour[s]
               )}
             >
-              {detail}
+              {has.detail && (
+                <span data-slot="entity-detail-text" className="min-w-0 truncate">
+                  {detail}
+                </span>
+              )}
+              {/* The Phone board's line, "metric · latency": the meta's own
+                  element (hidden here) is what a screen reader hears. */}
+              {saysMeta && (
+                <span
+                  data-slot="entity-detail-meta"
+                  aria-hidden="true"
+                  className="shrink-0 whitespace-pre @2xl:hidden"
+                >
+                  {has.detail ? ' · ' : ''}
+                  {meta}
+                </span>
+              )}
             </span>
           )}
         </span>

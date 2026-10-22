@@ -245,7 +245,7 @@ export const CATALOG = Object.freeze([
     'InfrastructureSection: the incident with a stale status, every node and meter no signal'
   ),
   // The Services section (#300)
-  s('services', 'Overview', 'ServicesSection: by node, every service healthy and muted', {
+  s('services', 'Overview', 'ServicesSection: by node, healthy and muted, no custom group yet', {
     accent: true,
   }),
   s(
@@ -264,7 +264,11 @@ export const CATALOG = Object.freeze([
     'Overview',
     'ServicesSection: the incident with a stale status, every row no signal'
   ),
-  s('services-narrow', 'Overview', "ServicesSection: a phone's width, the name over the detail"),
+  s(
+    'services-narrow',
+    'Overview',
+    'ServicesSection: a phone\'s width, the name over "metric · latency"'
+  ),
 
   // Shell (#296)
   s(

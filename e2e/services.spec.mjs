@@ -43,6 +43,19 @@ const INTEGRATIONS = {
   adguard: { _preset: 'adguard', Status: `Filtering ${LONG}` },
   nextcloud: { _preset: 'nextcloud', Storage: `1.2 TB ${LONG}` },
 };
+// The integrations as a homelab's would answer, for the screenshots and the
+// phone's "metric · latency" line.
+const APPS = {
+  adguard: { _preset: 'adguard', Queries: '41,203', Blocked: '7,412' },
+  npm: { _preset: 'npm', 'Proxy Hosts': '31' },
+  nextcloud: { _preset: 'nextcloud', Files: '18,204', Users: '6' },
+  jellyfin: { _preset: 'jellyfin', Version: '10.9.1' },
+  grafana: { _preset: 'grafana', Dashboards: '9' },
+  gitea: { _preset: 'gitea', Repos: '7' },
+  vaultwarden: { _preset: 'vaultwarden', Users: '3' },
+  photoprism: { _preset: 'photoprism', Photos: '24,499' },
+  paperless: { _preset: 'paperless', Documents: '9,812' },
+};
 
 /** The demo's service names, longest first: its longest is the one to measure. */
 const NAMES = demo('/api/status')
@@ -150,6 +163,26 @@ for (const size of ['phone', 'narrow']) {
       for (const n of await names(page)) expect(n.cut, `${n.text}: cut short`).toBe(false);
       expect(await clipping(page)).toEqual([]);
     });
+
+    test('the Phone board\'s line: "metric · latency" under the name, the latency never cut', async ({
+      page,
+    }) => {
+      await openBoard(page, 'healthy', 'dark', {
+        answers: { '/api/integrations': { ...APPS, npm: INTEGRATIONS.npm } },
+      });
+      const line = (id) => rowOf(page, id).locator('[data-slot="entity-detail"]');
+      await expect(line('services/apps:nextcloud')).toHaveText('18,204 files · 142 ms');
+      await expect(line('services/edge:wireguard')).toHaveText('9 ms');
+      // A long metric gives way; its latency stays whole, inside the row.
+      const latency = line('services/edge:nginx-proxy-manager').locator(
+        '[data-slot="entity-detail-meta"]'
+      );
+      await expect(latency).toHaveText(' · 18 ms');
+      const box = await latency.boundingBox();
+      const row = await rowOf(page, 'services/edge:nginx-proxy-manager').boundingBox();
+      expect(box.x + box.width).toBeLessThanOrEqual(row.x + row.width);
+      expect(await latency.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    });
   });
 }
 
@@ -255,15 +288,18 @@ test.describe('screenshots for the PR', () => {
       for (const scenario of ['incident', 'healthy']) {
         test(`${scenario}, ${size}, ${theme}`, async ({ page }) => {
           await page.setViewportSize(viewport);
-          await openBoard(page, scenario, theme);
+          await openBoard(page, scenario, theme, { answers: { '/api/integrations': APPS } });
+          await expect(rowOf(page, 'services/apps:nextcloud')).toContainText('18,204 files');
           const dir = join(test.info().project.outputDir, 'shots');
           mkdirSync(dir, { recursive: true });
-          await page.addStyleTag({
-            content: '[data-slot="bottom-tabs"] { visibility: hidden !important; }',
-          });
           await page.mouse.move(0, 0);
-          await section(page).screenshot({
+          // The whole page, cut to the section: no sticky chrome drawn over it.
+          await page.evaluate(() => window.scrollTo(0, 0));
+          const box = await section(page).boundingBox();
+          await page.screenshot({
             path: `${dir}/services-${scenario}-${size}-${theme}.png`,
+            fullPage: true,
+            clip: box,
           });
         });
       }

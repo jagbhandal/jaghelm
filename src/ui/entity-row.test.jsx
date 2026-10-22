@@ -262,6 +262,35 @@ describe('EntityRow', () => {
     expect(part(container.firstChild, 'name')).toHaveClass('@2xl:min-w-[calc(42.857%-6px)]');
   });
 
+  // #300 review: the Phone board's row says "metric · latency" under the name.
+  it('narrow: the meta follows the detail on its line ("31 proxy hosts · 14 ms"), never said twice', () => {
+    const { container } = render(<EntityRow {...NPM} onOpen={() => {}} />);
+    const detail = part(container.firstChild, 'detail');
+    expect(detail).toHaveClass('flex', '@2xl:block', 'truncate');
+    expect(detail).toHaveTextContent('31 proxy hosts · 14 ms');
+    const copy = detail.querySelector('[data-slot="entity-detail-meta"]');
+    expect(copy).toHaveAttribute('aria-hidden', 'true');
+    expect(copy).toHaveClass('shrink-0', '@2xl:hidden');
+    expect(detail.querySelector('[data-slot="entity-detail-text"]')).toHaveClass(
+      'min-w-0',
+      'truncate'
+    );
+    // Described once: the meta's own element says it.
+    expect(screen.getByRole('button')).toHaveAccessibleDescription('31 proxy hosts 14 ms');
+  });
+
+  it('narrow: a meta with no detail has the line to itself; a dash, none', () => {
+    const { container, rerender } = render(<EntityRow {...NPM} detail={undefined} />);
+    const line = () => part(container.firstChild, 'detail');
+    expect(line()).toHaveTextContent(/^14 ms$/);
+    expect(line()).toHaveClass('@2xl:hidden');
+    rerender(<EntityRow {...IMMICH} />);
+    expect(line()).toHaveTextContent(/^Kuma: HTTP 502 for 4 min$/);
+    expect(line().querySelector('[data-slot="entity-detail-meta"]')).toBeNull();
+    rerender(<EntityRow {...IMMICH} detail={undefined} />);
+    expect(line()).toBeNull();
+  });
+
   it('passes className and other props to the row', () => {
     render(<EntityRow {...NPM} className="border-b" data-testid="npm" />);
     expect(screen.getByTestId('npm')).toHaveClass('border-b', '@container');

@@ -110,7 +110,9 @@ describe('ServicesSection', () => {
     }
     expect(levelClasses(container)).toEqual([]);
     // What was last known stays, as words.
-    expect(screen.getByText('Kuma: down')).toHaveClass('text-unknown-fg');
+    expect(screen.getByText('Kuma: down').closest('[data-slot="entity-detail"]')).toHaveClass(
+      'text-unknown-fg'
+    );
     expect(screen.getByText('3 monitored · No signal · last known 3 min ago')).toBeInTheDocument();
   });
 

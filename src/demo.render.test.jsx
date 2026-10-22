@@ -1054,7 +1054,9 @@ describe('No signal: a stale status never looks current', () => {
         )
       ).toBeInTheDocument();
       const jellyfin = services.find((r) => r.dataset.entity === 'services/apps:jellyfin');
-      expect(within(jellyfin).getByText('Kuma: down')).toHaveClass('text-unknown-fg');
+      expect(
+        within(jellyfin).getByText('Kuma: down').closest('[data-slot="entity-detail"]')
+      ).toHaveClass('text-unknown-fg');
 
       // No lamp is named by a level word: each is named for what it draws, or
       // is decorative beside the words "No signal".

@@ -1217,7 +1217,9 @@ Chart colours board:
   (40px, 32 compact) and padded by `p-panel`, with the name keeping at least
   the mock's name column (3/7 of the name and detail) so details line up down
   a list. Narrower, the Phone board's row: the lamp in a 12px column, the name
-  over the detail (12px) and the trailing figure, 12px taller than `h-row`; a
+  over the detail and the meta on one 12px line ("24,499 assets · 138 ms":
+  the detail gives way, the meta is never cut, and a meta alone, not a dash,
+  has the line to itself), and the trailing figure, 12px taller than `h-row`; a
   heartbeat strip there shows its newest 12 beats, as the Phone board's, so
   the detail keeps its room. Both keep the mock's 20px
   lines. The detail is `text-1` when healthy and the state's word colour
@@ -1479,7 +1481,7 @@ them in a browser.
 | `InfrastructureSection` | `@ui/infrastructure-section` | `nodes` (each `{ id, anchor, name, host, subtitle, colour, state, word, reason, readings, services, uptime, trend }`), `count` ("3 nodes · 1 warning"), `view` (`cards` or `table`), `onViewChange` (none, no toggle), `loading`, `banner`, `title` (`Infrastructure`) |
 | `NodeCard` | `@ui/node-card` | `name`, `host`, `subtitle`, `colour` (the user's, a swatch), `state`, `word`, `reason`, `readings` (MetricMeter's props each, with `key`), `services` and `uptime` (the footer's lines), `trend` (`{ points, label, formatValue }`) |
 | `NodeSwatch` | `@ui/node-card` | `colour` |
-| `ServicesSection` | `@ui/services-section` | `groups` (each `{ key, title, host, count, rows }`, each row `{ id, anchor, name, where, state, word, detail, meta, muted }`), `count` ("12 monitored · 1 down"), `grouping` (`node` or `group`), `groupings` (the control's options; one or none, no control), `onGroupingChange`, `loading`, `banner`, `title` (`Services`) |
+| `ServicesSection` | `@ui/services-section` | `groups` (each `{ key, title, host, count, rows }`, each row `{ id, anchor, name, where, state, word, detail, meta, muted }`), `count` ("12 monitored · 1 down"), `grouping` (`node` or `group`), `groupings` (the control's options, `disabled` on one with nothing yet), `onGroupingChange` (none, no control), `groupingHint` (a caption under the control), `loading`, `banner`, `title` (`Services`) |
 
 A reading in `nodes` also carries `shown`, its value as the table prints it
 (by the model's rule, as the meter does), or null for no reading.
@@ -1515,8 +1517,10 @@ From the mock's Main board, its Infrastructure section:
 - **ServicesSection** (#300). The heading row is Infrastructure's: the icon
   (Lucide `Activity`, the mock's) in a 32px accent chip, the title, the count
   in 13px `text-3`, and at the end the grouping, a SegmentedControl named
-  "Group services by" (Node, Group), only when there is more than one way to
-  group. Then one panel: `surface-1` in a subtle edge, 12px round, the groups
+  "Group services by" (Node, Group). Group is disabled until Settings has a
+  custom group, and a caption under the control (`groupingHint`, 12px
+  `text-3`, its link `accent-text`) says where to add one, describing the
+  control. Then one panel: `surface-1` in a subtle edge, 12px round, the groups
   in it. A group's heading is the mock's: on `surface-2` above a subtle rule,
   10px over 8px of padding, its title an overline in `text-2`, the node's key
   in 12px mono `text-3` beside it (when it differs from the title), its count
@@ -1594,8 +1598,7 @@ From the mock's Main board, its Infrastructure section:
   "Group: Node" menu button, as the Infrastructure toggle; there is no
   grouping by tag, since services.yaml has no tags.
 - **Services on a phone keep their groups**, from the same components; the
-  Phone board's list is flat, and its rows print the latency in the detail,
-  where EntityRow's phone row has no meta.
+  Phone board's list is flat.
 
 ## Changing a token
 

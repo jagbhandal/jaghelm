@@ -3,9 +3,10 @@
   one list, grouped by node, one line each with its status, its name, its
   ping latency and one number from its app integration. A service that is
   down or not answering says why instead, in its status colour; healthy ones
-  stay quiet. With a custom group set up in Settings → Sections, a Node /
-  Group switch groups the list by your groups, the node beside each name; this
-  browser remembers the choice. An issue for a service in the panel above
+  stay quiet. A Node / Group switch groups the list by the custom groups of
+  Settings → Sections, the node beside each name; until there is one, Group
+  is greyed out with a link there. This browser remembers the choice. On a
+  phone each row reads its number and latency under the name. An issue for a service in the panel above
   leads to its row, and the Services filter shows the section alone. When
   JagHelm loses its signal, every row turns grey and the section says how old
   its numbers are.
@@ -16,4 +17,5 @@
   groups are a way to group that list instead of panels of their own. Service
   cards can no longer be dragged between panels; choose a group's services in
   Settings → Sections. Per-container CPU, memory and network numbers are no
-  longer on the Overview.
+  longer on the Overview, and Settings → Layout no longer has the service
+  cards' options.

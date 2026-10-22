@@ -1806,14 +1806,23 @@ function InfrastructureState({ nodes, count, view = 'cards', width = 900 }) {
   );
 }
 
-function ServicesState({ groups, count, grouping = 'node', width = 900 }) {
+// No custom group yet: Group disabled, and where to add one (#300).
+const NO_GROUPS = [GROUPINGS[0], { ...GROUPINGS[1], disabled: true }];
+const NO_GROUPS_HINT = (
+  <>
+    No custom groups yet: <a href="/settings/sections">add one in Settings → Sections</a>
+  </>
+);
+
+function ServicesState({ groups, count, grouping = 'node', groupless = false, width = 900 }) {
   return (
     <Stack width={width}>
       <ServicesSection
         groups={groups}
         count={count}
         grouping={grouping}
-        groupings={GROUPINGS}
+        groupings={groupless ? NO_GROUPS : GROUPINGS}
+        groupingHint={groupless ? NO_GROUPS_HINT : undefined}
         onGroupingChange={noop}
       />
     </Stack>
@@ -2164,7 +2173,9 @@ export const RENDERS = Object.freeze({
       count="4 nodes · No signal · last known 3 min ago"
     />
   ),
-  services: () => <ServicesState groups={SERVICES_HEALTHY} count="7 monitored · all up" />,
+  services: () => (
+    <ServicesState groups={SERVICES_HEALTHY} count="7 monitored · all up" groupless />
+  ),
   'services-incident': () => (
     <ServicesState
       groups={SERVICES_INCIDENT}
