@@ -365,8 +365,10 @@ function valueAt(root, path) {
  * replaced by a copy of the value `stored` has in the same place; in an
  * array, the same place is the element with the same name, id or key. A
  * marker is accepted only where reading `stored` now would put one. Anywhere
- * else it is refused: 409 where a credential goes but none is stored (it was
- * removed or renamed since the config was read), and 400 for any other place,
+ * else it is refused: 409 where a credential goes but none is stored (the
+ * edit put it where the read put none: a new entry, or one renamed or copied
+ * with its marker; the route has checked the file is the version read, #423),
+ * and 400 for any other place,
  * an array element with no name, id or key (or one two elements share), or an
  * object with `$stored` that is not exactly the marker. The error names the
  * place, never a value. `posted` is not changed.
@@ -408,7 +410,7 @@ export function restoreCredentials(posted, stored, opts = {}) {
     } else if (credentialPlace(frame, key)) {
       refused.push({
         status: 409,
-        error: `No credential is stored at ${path}; services.yaml changed since it was read, so read it again and retry`,
+        error: `No credential is stored at ${path} for its marker to keep; send the credential itself, or leave it out`,
       });
     } else {
       refused.push({
