@@ -280,7 +280,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/api/services` | token | discovered nodes + services (background-refreshed, ETag); `services.yaml` for Settings, without its credentials, and its save over the version read (`/config`, ETag and If-Match, see 6) |
 | `/api/status` | token | the status model (4.7), built once a background cycle (ETag, and its build time as Last-Modified; 503 before the first cycle) |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6) |
-| `/api/display-config` | token | the display config blob |
+| `/api/display-config` | token | the display config blob, and its save over the version read (ETag and If-Match, see 6) |
 | `/api/embed-check/:tabId` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs") |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
 | `/api/cron`, `/api/todos`, `/api/upload`, `/api/icons` | token | widgets + asset upload |
@@ -2408,8 +2408,9 @@ All state is files under the data dir (no DB):
     ("services.yaml can't be read (permission denied): fix it on the host;
     …"), before any version is compared, since it has none. Settings' read
     shows its reason in place of the tabs, as for `config_unparseable`; a
-    save refused with it says so in the failed-save toast, then reads again,
-    which shows the reason. Before, one indentation slip and an
+    save refused with it says so in the failed-save toast and shows the
+    reason at once, without reading again, as for `config_unparseable`
+    (#550). Before, one indentation slip and an
     integration added from the gallery rewrote the file to that one
     integration (the last good config at boot is `{}`). Fixed by hand, the
     next read or the watcher's reload loads it and saves work again. Settings
@@ -2472,7 +2473,8 @@ All state is files under the data dir (no DB):
   - **A save needs the version it read** (#423). A tab left open from before a
     change used to post its old copy, without what was added since, and the
     save deleted it. `services.yaml`'s version is an HMAC-SHA256 of its
-    bytes on disk (`config.js`), so it survives a restart and changes with
+    bytes on disk (`util/fileVersion.js`, which the display config's version
+    shares, #547), so it survives a restart and changes with
     any edit, by hand or by JagHelm, a credential's too (the masked read
     can't show that, so a version of the answer would miss it). The key is
     32 random bytes in `config-version.key` in the data dir (below): a plain
@@ -2580,14 +2582,47 @@ All state is files under the data dir (no DB):
   `src/shell/overviewSections.js`): `showTodos`, Widgets' old "Show
   checklist panel", which nothing drawn ever read, and `showDockerStats`.
   Nothing else changes; the server's copy loses them at the next save.
+  - **A save needs the version it read** (#547), by `services.yaml`'s
+    mechanism (`util/fileVersion.js`, #423): a device open from before
+    another's save used to post its whole old copy, so a section hidden on
+    one device came back when the other saved anything. The version is an
+    HMAC-SHA256 of `display-config.json`'s bytes with the same key; a missing
+    file's is `absent`, so the first save names it.
+    `GET /api/display-config` answers it as a strong ETag (a poll's
+    If-None-Match gets a 304; the demo sends none), and `POST` must send it back in
+    `If-Match`: none is a 428, another a 409 `{ error, stale: true }` with
+    the version now as its ETag; nothing is written either way. The read,
+    the check and the write are one synchronous step, and a save answers
+    with the version it wrote. A file that can't be read is a 503.
+  - **The read leaves out a value no save would take** (a hand edit that
+    breaks the schema, such as an `overviewSections` switch that isn't true
+    or false), with one warning per version of the file naming the key,
+    never the value: a device saves back what it read, so the value would
+    otherwise refuse every save from Settings. The next save drops it.
+  - **A refused save is rebased, not dropped** (`useConfigPersistence`,
+    `src/utils/rebaseConfig.js`). Display saves are automatic (a switch
+    flipped saves 2 s later), so throwing the edit away would undo what the
+    user just did. Saves go out one at a time, each over the version the one
+    before it answered, and a config equal to the server's copy sends
+    nothing. On a 409 (or a 428, when the mount read failed and there is no
+    version) the device reads the server's copy and lays over it only the
+    leaves it changed since the copy it last read: plain objects recurse,
+    arrays and scalars are leaves, so two devices' switches in
+    `overviewSections` both stay, and a leaf both changed takes this
+    device's value. It shows that, keeps it in localStorage and saves it
+    once over the new version ("Merged with changes from another device").
+    Refused again, it takes the server's copy as it is ("Settings changed on
+    another device; reloaded"). The unload flush is a keepalive fetch with
+    the version (sendBeacon can't send `If-Match`).
 - **secrets** -- AES-256-GCM blob, keyed by integration storage key.
 - **config version key** -- `config-version.key`: 32 random bytes (mode 0600)
-  that `services.yaml`'s version is an HMAC with (#423, above). Made on first
+  that the versions of `services.yaml` (#423) and `display-config.json`
+  (#547) are HMACs with (`util/fileVersion.js`, above). Made on first
   start by a temp file linked into place, so two boots racing end up with one
   key. Never logged or answered. One that can't be read or isn't 32 bytes
   stops the boot (a key made up for one run would change every version at
-  the next restart). Losing it costs one refused Settings save: a new key is
-  made and every version changes once.
+  the next restart). Losing it costs one refused save per open screen: a new
+  key is made and every version changes once.
 - **Arcane state** -- `arcane-state.json` (baselined environments, agent down counters,
   seen activity ids, each environment's pending updates, runs waiting on their job run,
   last notified release),
@@ -2894,7 +2929,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   with no opener; a section switched off in Settings → Appearance stays off
   after a reload in a second browser context (another device), against a
   server that keeps the display config it is sent, and comes back when
-  switched on there; axe on the rail and the Launch page. Nothing hides (#302,
+  switched on there; a browser open from before that switch hides another
+  section without bringing it back (#547: its save is refused, rebased and
+  saved once more, both sections stay hidden on both); axe on the rail and
+  the Launch page. Nothing hides (#302,
   `e2e/reflow.spec.mjs`): the Overview at 360, 390, 768, 1024, 1280, 1440,
   1920 and 2560px, healthy and incident, and on the incident with the
   model's longest subsystem details at each of them: the page no wider than

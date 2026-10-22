@@ -243,8 +243,9 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
   // version that is no longer the file's (another tab, an integration save or
   // a hand edit changed it since) says so; any other refusal (a stale
   // credential marker is a 409 too, #413) shows the server's reason. While
-  // services.yaml doesn't parse (503 config_unparseable) reading again can't
-  // help: the tab shows why until it is fixed and read again (Try again). A
+  // services.yaml doesn't parse (503 config_unparseable) or can't be read
+  // (503 config_unreadable, #550) reading again can't help: the tab shows why
+  // at once, until it is fixed and read again (Try again). A
   // save with no answer in SERVER_TIMEOUT_MS fails the same way (#501): it
   // may have landed, so the config is read again before anything is sent.
   const saveServerConfig = useCallback(
@@ -277,7 +278,9 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
             const data = await r.json().catch(() => ({}));
             const err = new Error(data?.error || `HTTP ${r.status}`);
             err.stale = r.status === 409 && data?.stale === true;
-            err.unparseable = data?.code === 'config_unparseable';
+            // Reading again can't help with either: the file must be fixed first.
+            err.unusable =
+              data?.code === 'config_unparseable' || data?.code === 'config_unreadable';
             throw err;
           })
           .catch((err) => {
@@ -290,7 +293,7 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
               err.stale ? 'Settings changed elsewhere; reloaded' : `Not saved: ${why}`,
               'error'
             );
-            if (err.unparseable) serverSaves.view?.showError(err.message);
+            if (err.unusable) serverSaves.view?.showError(err.message);
             else serverSaves.view?.reload();
           });
       };

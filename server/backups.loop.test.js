@@ -40,11 +40,16 @@ after(() => {
   delete process.env.JAGHELM_CRON_SECRET;
 });
 
-/** Saves the display config as Settings (and Jag's curl) does: the whole object. */
+/**
+ * Saves the display config as Settings (and Jag's curl) does: the whole
+ * object, over the version a read answered (If-Match, #547).
+ */
 async function saveConfig(extra) {
+  const read = await request(app).get('/api/display-config').set('x-auth-token', token);
   const r = await request(app)
     .post('/api/display-config')
     .set('x-auth-token', token)
+    .set('If-Match', read.headers.etag)
     .send({ refreshInterval: 30, ...extra });
   assert.equal(r.status, 200, JSON.stringify(r.body));
 }
