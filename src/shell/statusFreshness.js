@@ -174,7 +174,7 @@ export function lastKnownCaption(freshness) {
 
 /**
  * The poll's freshness, from useStatus's `status`, `reach` and `updated` (the
- * last answer's time, as a store, with its `staleAfter`):
+ * last answer's time, as a store, with its `staleAfter` and `builtAt`):
  *
  *   stale      the rule above
  *   ageText    how old the status is ("3 min ago"): since the server built

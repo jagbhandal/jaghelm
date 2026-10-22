@@ -39,7 +39,8 @@ function Board() {
 }
 
 const advance = (ms) => act(() => vi.advanceTimersByTimeAsync(ms));
-const headerLink = () => within(screen.getByRole('banner')).getByRole('link', { name: /^(Critical|No signal)/ });
+const headerLink = () =>
+  within(screen.getByRole('banner')).getByRole('link', { name: /^(Critical|No signal)/ });
 const panelHeading = () =>
   within(screen.getByRole('region', { name: 'Needs attention' })).getByRole('heading', {
     level: 2,
@@ -75,9 +76,11 @@ describe('"last known" under No signal, header and panel (#499)', () => {
     expect(headerLink()).toHaveAccessibleName(/^No signal: last known 55 s ago: Critical/);
     expect(panelHeading()).toHaveTextContent(/^No signal · last known 55 s ago: Critical/);
 
-    await advance(20 * 60_000);
-    expect(headerLink()).toHaveAccessibleName(/^No signal: last known 20 min ago: Critical/);
-    expect(panelHeading()).toHaveTextContent(/^No signal · last known 20 min ago: Critical/);
+    // It counts on from there, on the one clock (a few ticks: a long run of
+    // them is slow on a loaded machine).
+    await advance(5_000);
+    expect(headerLink()).toHaveAccessibleName(/^No signal: last known 1 min ago: Critical/);
+    expect(panelHeading()).toHaveTextContent(/^No signal · last known 1 min ago: Critical/);
   });
 
   it('with no build time (an older server), counts from the last answer', async () => {

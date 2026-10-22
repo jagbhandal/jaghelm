@@ -224,7 +224,11 @@ test('/api/status: says when the status was built (Last-Modified) on the 200 and
   const first = await getStatus();
   assert.equal(first.status, 200);
   assert.equal(first.headers['last-modified'], new Date(built).toUTCString());
-  assert.equal(first.headers['cache-control'], 'no-cache', 'never reused unasked on the strength of that date');
+  assert.equal(
+    first.headers['cache-control'],
+    'no-cache',
+    'never reused unasked on the strength of that date'
+  );
 
   // The next cycle builds the same status 10 s later: the same ETag, a later build time.
   cycleAt(built + 10_000);
