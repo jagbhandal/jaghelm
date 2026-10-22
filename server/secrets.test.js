@@ -99,27 +99,56 @@ test('restoring a store that had no secrets.json removes the one written since',
   secrets.initSecrets();
 });
 
-test('a change whose own write failed (a full disk) is undone without writing secrets.json', () => {
+/** Run `fn` with every write of secrets.json failing as a full disk does; count them. */
+function withFullDisk(fn) {
   const path = join(dir, 'secrets.json');
-  const before = readFileSync(path, 'utf8');
   const rename = fs.renameSync;
-  let writes = 0;
+  const attempts = { writes: 0 };
   fs.renameSync = (from, to) => {
     if (to !== path) return rename(from, to);
-    writes++;
+    attempts.writes++;
     throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
   };
   syncBuiltinESMExports();
   try {
-    const snapshot = secrets.snapshotSecrets();
-    secrets.setSecret('api_key', 'replaced');
-    assert.equal(writes, 1);
-    secrets.restoreSecrets(snapshot);
-    assert.equal(writes, 1, 'nothing to write back');
+    fn(attempts);
   } finally {
     fs.renameSync = rename;
     syncBuiltinESMExports();
   }
+}
+
+test('a change secrets.json cannot take throws, and the store in memory stays as it was', () => {
+  const path = join(dir, 'secrets.json');
+  secrets.setSecret('kept', 'k');
+  const before = { file: readFileSync(path, 'utf8'), names: secrets.listSecretKeys() };
+  withFullDisk(() => {
+    assert.throws(() => secrets.setSecret('api_key', 'replaced'), { code: 'ENOSPC' });
+    assert.throws(() => secrets.setSecret('added', 'new'), { code: 'ENOSPC' });
+    assert.throws(() => secrets.copySecret('api_key', 'copied'), { code: 'ENOSPC' });
+    assert.throws(() => secrets.deleteSecret('kept'), { code: 'ENOSPC' });
+    assert.throws(() => secrets.deleteSecrets(['kept', 'mykey']), { code: 'ENOSPC' });
+  });
+  assert.equal(secrets.getSecret('api_key'), 'super-sensitive');
+  assert.equal(secrets.getSecret('kept'), 'k');
+  assert.equal(secrets.getSecret('mykey'), 'from-store');
+  assert.equal(secrets.hasSecret('added'), false);
+  assert.equal(secrets.hasSecret('copied'), false);
+  assert.deepEqual(secrets.listSecretKeys(), before.names, 'in the same order');
+  assert.equal(readFileSync(path, 'utf8'), before.file);
+  secrets.deleteSecret('kept');
+});
+
+test('a change whose own write failed (a full disk) is undone without writing secrets.json', () => {
+  const path = join(dir, 'secrets.json');
+  const before = readFileSync(path, 'utf8');
+  withFullDisk((attempts) => {
+    const snapshot = secrets.snapshotSecrets();
+    assert.throws(() => secrets.setSecret('api_key', 'replaced'));
+    assert.equal(attempts.writes, 1);
+    secrets.restoreSecrets(snapshot);
+    assert.equal(attempts.writes, 1, 'nothing to write back');
+  });
   assert.equal(readFileSync(path, 'utf8'), before);
   assert.equal(secrets.getSecret('api_key'), 'super-sensitive');
 });

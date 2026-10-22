@@ -273,3 +273,101 @@ test('a save refused because services.yaml does not parse stores nothing either'
     assert.deepEqual(listSecretKeys(), before.names);
   }
 });
+
+// ── Review fixes ──
+
+/** twoNpms, then `npm` removed by a delete before #415: its secrets stayed. */
+function npmLeftovers() {
+  twoNpms();
+  handEdit(yaml.dump({ integrations: { npm_two: NPM_TWO } }));
+  assert.equal(hasSecret('integration_npm_password'), true);
+}
+
+const ADD_NPM = {
+  type: 'npm',
+  url: 'http://new-npm.example.test',
+  enabled: true,
+  target: '',
+  username: 'admin',
+  create: true,
+};
+
+test('a new integration under a key an older delete left secrets under starts with no credential, and keeps the others', async () => {
+  npmLeftovers();
+  const r = await save(ADD_NPM);
+  assert.deepEqual(r.body, { ok: true, type: 'npm' });
+  const npm = resolved('npm');
+  assert.equal(npm._password ?? null, null, 'the leftover password is not picked up');
+  assert.equal(npm.url, 'http://new-npm.example.test', 'nor the leftover URL');
+  assert.deepEqual(
+    listSecretKeys().filter((name) => name.startsWith('integration_npm_')),
+    ['integration_npm_two_password']
+  );
+  assert.equal(resolved('npm_two')._password, 'pw-two');
+  assert.equal(getSecret('my_own_token'), 'mine');
+
+  // With a password typed, that one is used.
+  npmLeftovers();
+  await save({ ...ADD_NPM, password: 'pw-new' }); // pragma: allowlist secret
+  assert.equal(resolved('npm')._password, 'pw-new');
+  assert.equal(resolved('npm').url, 'http://new-npm.example.test');
+});
+
+test('a new integration over leftovers whose write fails keeps secrets.json byte-for-byte, leftovers included', async () => {
+  npmLeftovers();
+  const before = snapshot();
+  const r = await withRenameOnto(CONFIG_PATH, diskFull, () => save(ADD_NPM));
+  assert.equal(r.status, 500);
+  assert.deepEqual(snapshot(), before);
+  assert.equal(getSecret('integration_npm_password'), 'pw-npm');
+});
+
+test('a rename keeps a secret another entry still uses', async () => {
+  // Written by hand: a backup NPM that uses the first one's password.
+  twoNpms({
+    npm_backup: { ...NPM_TWO, instance: 'backup', password: '$secret:integration_npm_password' }, // pragma: allowlist secret
+  });
+  const r = await save({
+    type: 'npm',
+    instance: 'moved',
+    url: NPM_URL,
+    target: '',
+    username: 'admin',
+    editingKey: 'npm',
+  });
+  assert.deepEqual(r.body, { ok: true, type: 'npm_moved' });
+  assert.equal(resolved('npm_moved')._password, 'pw-npm');
+  assert.equal(resolved('npm_backup')._password, 'pw-npm', 'the backup keeps its password');
+  assert.equal(hasSecret('integration_npm_password'), true);
+  assert.equal(hasSecret('integration_npm_url'), false, 'what nothing else uses still goes');
+});
+
+for (const [what, body] of Object.entries(SAVES)) {
+  test(`${what}: a secrets.json write that fails refuses the save, and nothing changes`, async () => {
+    twoNpms();
+    const before = snapshot();
+    const r = await withRenameOnto(SECRETS_PATH, diskFull, () => save(body));
+    assert.equal(r.status, 500);
+    assertStoreAsBefore(before);
+  });
+}
+
+test('a delete whose secrets.json write fails still deletes the entry, and its secrets stay stored', async () => {
+  twoNpms();
+  const secretsBefore = secretsText();
+  const r = await withRenameOnto(SECRETS_PATH, diskFull, () => remove('npm'));
+  assert.equal(r.status, 200);
+  assert.deepEqual(stored(), { npm_two: NPM_TWO });
+  assert.equal(secretsText(), secretsBefore);
+  assert.equal(getSecret('integration_npm_password'), 'pw-npm');
+});
+
+test('a delete finds the entry by its own key only: constructor and __proto__ are not configured', async () => {
+  twoNpms();
+  const before = snapshot();
+  for (const key of ['constructor', '__proto__', 'toString']) {
+    const r = await remove(key);
+    assert.equal(r.status, 404, key);
+  }
+  assert.deepEqual(snapshot(), before, 'services.yaml and secrets.json untouched');
+});

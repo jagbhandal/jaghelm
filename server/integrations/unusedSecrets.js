@@ -12,9 +12,12 @@
  *
  * services.yaml is the record: a save stores the secrets it needs before it
  * writes the file and puts the store back if the write fails, and a delete
- * drops what it frees after the file is written (routes/integrations.js). A
- * crash between the two can only leave secrets nothing uses, which the sweep
- * at boot drops.
+ * or a rename drops what it frees after the file is written
+ * (routes/integrations.js). A new integration clears what an older delete
+ * left under its key. A crash between the two writes can only leave secrets
+ * nothing uses; the check at boot counts those and deletes none, since a hand
+ * edit (an entry commented out, a typo, a rename) makes a secret look unused
+ * that is still wanted.
  */
 
 import { CONFIG_ABSENT, readConfig } from '../config.js';
@@ -66,33 +69,45 @@ export function unusedIntegrationSecrets(config, names, key) {
 }
 
 /**
- * Drop the integration secrets `config` doesn't use (with `key`, only that
- * key's), once `config` is written. Returns how many were dropped.
+ * Once `config` is written: drop the integration secrets among `names` it
+ * doesn't use (with `key`, only that key's). Never throws: when secrets.json
+ * can't be written they stay stored, and that is logged (how many, never
+ * which). Returns how many were dropped.
  * @param {any} config
+ * @param {string[]} names
  * @param {string} [key]
  */
-export function dropUnusedIntegrationSecrets(config, key) {
-  return deleteSecrets(unusedIntegrationSecrets(config, listSecretKeys(), key));
+export function dropUnusedIntegrationSecrets(config, names, key) {
+  const unused = unusedIntegrationSecrets(config, names, key);
+  try {
+    return deleteSecrets(unused);
+  } catch (err) {
+    log.warn({ err, kept: unused.length }, 'Could not delete integration secrets no entry uses; kept');
+    return 0;
+  }
 }
 
 /**
- * At boot: drop the integration secrets services.yaml doesn't use, and say
- * how many (never which). Nothing is dropped while there is no services.yaml,
- * or it can't be read or doesn't parse, since its entries are unknown then.
- * Never throws. Returns how many were dropped, or null when it didn't look.
+ * At boot: say how many integration secrets services.yaml doesn't use, in
+ * one line, never which, and delete none: they may still be wanted after a
+ * hand edit (an entry commented out, a typo, a rename). Nothing is counted
+ * while there is no services.yaml, or it can't be read or doesn't parse.
+ * Never throws. Returns how many, or null when it didn't look.
  * @returns {number | null}
  */
-export function sweepUnusedIntegrationSecrets() {
+export function reportUnusedIntegrationSecrets() {
   let read;
   try {
     read = readConfig();
   } catch (err) {
-    log.warn({ err }, 'Could not read services.yaml; kept every integration secret');
+    log.warn({ err }, 'Could not read services.yaml to count unused integration secrets');
     return null;
   }
   const { config, version, unusable } = read;
   if (unusable || version === CONFIG_ABSENT || !config) return null;
-  const dropped = dropUnusedIntegrationSecrets(config);
-  if (dropped) log.info({ dropped }, 'Dropped integration secrets no entry in services.yaml uses');
-  return dropped;
+  const unused = unusedIntegrationSecrets(config, listSecretKeys()).length;
+  if (unused) {
+    log.info({ unused }, 'Integration secrets no entry in services.yaml uses (kept)');
+  }
+  return unused;
 }

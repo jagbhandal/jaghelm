@@ -1,14 +1,16 @@
 /**
  * #415, #502: which integration secrets services.yaml still uses, and the
- * sweep at boot that drops the rest.
+ * check at boot that counts the rest and deletes none.
  *
  * An integration's secrets are the `integration_*` names JagHelm writes. One
  * is in use while an entry's key makes it that entry's keyed secret
  * (integration_<key>_url|username|password|token, which a preset resolves
  * ahead of the entry's own reference) or a `$secret:` reference anywhere in
- * the config names it. A save interrupted between storing its secrets and
- * writing services.yaml, or a delete before #415, left some unused; the sweep
- * drops those once at boot. Every other name is the user's and never touched.
+ * the config names it. A delete before #415, or a save interrupted between
+ * storing its secrets and writing services.yaml, left some unused. The check
+ * at boot only counts them: a hand edit (an entry commented out, a typo, a
+ * rename) makes a secret look unused that is still wanted, so nothing is
+ * deleted on what services.yaml says at boot. Every other name is the user's.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,7 +22,8 @@ import yaml from 'js-yaml';
 process.env.DASH_SECRET = 'test-secret-at-least-16-chars-long'; // pragma: allowlist secret
 
 const { initSecrets, setSecret, deleteSecret, listSecretKeys } = await import('../secrets.js');
-const { unusedIntegrationSecrets, sweepUnusedIntegrationSecrets } =
+const { generateDefaultConfig } = await import('../config.js');
+const { unusedIntegrationSecrets, reportUnusedIntegrationSecrets } =
   await import('./unusedSecrets.js');
 
 initSecrets();
@@ -102,43 +105,67 @@ function store() {
   setSecret('my_own_token', 'mine');
 }
 
-test('the sweep at boot drops the unused integration secrets, and logs how many once, never which', () => {
+/** secrets.json and the names in the store, in order. */
+const storeNow = () => ({ file: secretsText(), names: listSecretKeys() });
+
+test('the check at boot counts the unused integration secrets and deletes none: one line, how many, never which', () => {
   writeFileSync(CONFIG_PATH, yaml.dump(CONFIG));
   store();
+  const before = storeNow();
 
-  const { result, lines } = logged(sweepUnusedIntegrationSecrets);
+  const { result, lines } = logged(reportUnusedIntegrationSecrets);
   assert.equal(result, 2);
-  assert.deepEqual(listSecretKeys(), [
-    'integration_npm_password',
-    'integration_hand_named',
-    'my_own_token',
-  ]);
-  assert.ok(!secretsText().includes('integration_gone_password'), 'gone from secrets.json too');
-  const swept = lines.filter((line) => JSON.parse(line).module === 'secrets');
-  assert.equal(swept.length, 1, lines.join(''));
-  assert.equal(JSON.parse(swept[0]).dropped, 2);
+  assert.deepEqual(storeNow(), before, 'nothing deleted, secrets.json byte-for-byte');
+  const counted = lines.filter((line) => JSON.parse(line).module === 'secrets');
+  assert.equal(counted.length, 1, lines.join(''));
+  assert.equal(JSON.parse(counted[0]).unused, 2);
   for (const line of lines) assert.doesNotMatch(line, /gone|three|pw-/);
 
-  // Nothing left to drop: nothing is written or logged.
-  const before = secretsText();
-  const again = logged(sweepUnusedIntegrationSecrets);
-  assert.equal(again.result, 0);
-  assert.deepEqual(again.lines, []);
-  assert.equal(secretsText(), before);
+  // None unused: nothing is logged.
+  deleteSecret('integration_gone_password');
+  deleteSecret('integration_npm_three_token');
+  const none = logged(reportUnusedIntegrationSecrets);
+  assert.equal(none.result, 0);
+  assert.deepEqual(none.lines, []);
 });
 
-test('the sweep drops nothing while services.yaml does not parse, is not there or cannot be read', () => {
-  store();
-  const before = secretsText();
+// A hand edit can make a secret look unused that is still wanted. Before the
+// check was count-only, each of these deleted credentials at the next start.
+const HAND_EDITS = {
+  'every entry commented out': `# integrations:\n#   npm:\n#     preset: npm\n${yaml.dump({ services: {} })}`,
+  'one entry commented out': yaml
+    .dump({ integrations: { statuspage: CONFIG.integrations.statuspage } })
+    .concat('#  npm:\n#    preset: npm\n'),
+  'a typo in `integrations:`': yaml.dump({ integration: CONFIG.integrations }),
+  'the config a missing services.yaml is replaced by at first boot': yaml.dump(
+    generateDefaultConfig(['pi1'])
+  ),
+  'an entry renamed by hand (its keyed URL now names the old key)': yaml.dump({
+    integrations: { npm_renamed: CONFIG.integrations.npm, statuspage: CONFIG.integrations.statuspage },
+  }),
+};
 
-  // One indentation slip: its entries can't be read, so none can be trusted gone.
+for (const [what, text] of Object.entries(HAND_EDITS)) {
+  test(`${what}: the check at boot deletes nothing`, () => {
+    store();
+    setSecret('integration_npm_url', 'http://keyed-npm.example.test');
+    writeFileSync(CONFIG_PATH, text);
+    const before = storeNow();
+    const counted = reportUnusedIntegrationSecrets();
+    assert.ok(counted > 0, 'some look unused');
+    assert.deepEqual(storeNow(), before);
+  });
+}
+
+test('the check looks at nothing while services.yaml does not parse, is not there or cannot be read', () => {
+  store();
+  const before = storeNow();
+
   writeFileSync(CONFIG_PATH, 'integrations:\n  npm:\n   url: http://npm.example.test\n    preset: npm\n');
-  assert.equal(sweepUnusedIntegrationSecrets(), null);
-  assert.equal(secretsText(), before);
+  assert.equal(reportUnusedIntegrationSecrets(), null);
 
   rmSync(CONFIG_PATH);
-  assert.equal(sweepUnusedIntegrationSecrets(), null);
-  assert.equal(secretsText(), before);
+  assert.equal(reportUnusedIntegrationSecrets(), null);
 
   // One that can't be read (its permissions) doesn't stop the boot either.
   writeFileSync(CONFIG_PATH, yaml.dump(CONFIG));
@@ -151,10 +178,10 @@ test('the sweep drops nothing while services.yaml does not parse, is not there o
   };
   syncBuiltinESMExports();
   try {
-    assert.equal(sweepUnusedIntegrationSecrets(), null);
+    assert.equal(reportUnusedIntegrationSecrets(), null);
   } finally {
     fs.readFileSync = read;
     syncBuiltinESMExports();
   }
-  assert.equal(secretsText(), before);
+  assert.deepEqual(storeNow(), before);
 });

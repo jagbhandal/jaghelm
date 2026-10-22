@@ -25,9 +25,10 @@
  * services.yaml is the record of which secrets an integration has (#502,
  * #415): a save stores what it needs before the file is written, and puts the
  * secret store back as it was if the write fails, so secrets.json ends
- * byte-for-byte as before; a delete drops what it frees once the file is
- * written. A crash between the two leaves only secrets no entry uses, which
- * the sweep at boot drops (integrations/unusedSecrets.js).
+ * byte-for-byte as before; a secret secrets.json can't take refuses the save.
+ * A delete or a rename drops what it frees, and no other entry uses, once the
+ * file is written. A crash between the two leaves only secrets no entry uses,
+ * which the boot log counts (integrations/unusedSecrets.js).
  */
 
 import { isDeepStrictEqual } from 'node:util';
@@ -38,7 +39,9 @@ import { readConfig, writeConfig } from '../config.js';
 import {
   copySecret,
   deleteSecret,
+  deleteSecrets,
   hasSecret,
+  listSecretKeys,
   restoreSecrets,
   setSecret,
   snapshotSecrets,
@@ -46,7 +49,10 @@ import {
 import { getPreset, listPresets } from '../integrations/registry.js';
 import { testIntegration } from '../integrations/handler.js';
 import { KEYED_SECRET_FIELDS, keyedSecretName } from '../integrations/lib/config.js';
-import { dropUnusedIntegrationSecrets } from '../integrations/unusedSecrets.js';
+import {
+  dropUnusedIntegrationSecrets,
+  unusedIntegrationSecrets,
+} from '../integrations/unusedSecrets.js';
 import { refreshIntegrations, retryIntegrationNow } from '../refresh.js';
 import { respondWarmCached } from '../cache.js';
 import { apiError, configUnparseable } from '../errors.js';
@@ -162,7 +168,10 @@ router.post(
 // (every write re-serialises the whole file); it still asks for a retry.
 // A save whose services.yaml write fails, is refused or throws stores nothing
 // (#502): the secret store goes back to what it held before the save, and
-// secrets.json byte-for-byte with it.
+// secrets.json byte-for-byte with it. One whose secret secrets.json can't
+// take is refused (500) the same way. A save that creates an entry first
+// clears what an older delete left under its key (#415), so it starts with
+// no credential but the one typed.
 
 /**
  * Write `config` over `version`, the one this handler read. A refusal is
@@ -311,6 +320,10 @@ router.post('/save', (req, res) => {
     // From here on, anything short of `committed` puts this back (finally).
     before = snapshotSecrets();
 
+    // A new entry starts with no credential (#415): what a delete before
+    // #415 left under its key, and no other entry uses, goes first.
+    if (!base) deleteSecrets(unusedIntegrationSecrets(config, listSecretKeys(), storageKey));
+
     // setSecret returns false when the secrets manager is uninitialized (no
     // DASH_SECRET). Writing entry.password="$secret:…" anyway would persist a
     // config pointing at a credential that was never stored — the integration
@@ -370,9 +383,10 @@ router.post('/save', (req, res) => {
       integrations[storageKey] = entry;
       if (!written(res, config, read.version)) return;
     }
-    // Written, or nothing to write: what this save stored stays.
+    // Written, or nothing to write: what this save stored stays. The old
+    // names go unless another entry uses them (a `$secret:` written by hand).
     committed = true;
-    for (const name of leftBehind) deleteSecret(name);
+    dropUnusedIntegrationSecrets(config, leftBehind);
     // A save is the way to say "try again": the next refresh attempts it even
     // when its login was refused and nothing in it changed (#239).
     retryIntegrationNow(storageKey);
@@ -429,20 +443,21 @@ router.patch('/:key', (req, res) => {
 // entry uses is dropped, so a new integration under the same key starts with
 // no credential. A secret another entry names (`$secret:`), or another
 // entry's keyed one (`integration_npm_two_*` when `npm` is deleted), stays.
-// A write that fails drops nothing.
+// A write that fails drops nothing. The entry is found by its own key, so
+// `constructor` or `__proto__` is not configured.
 
 router.delete('/:type', (req, res) => {
   const { type } = req.params;
   const { config: read, version, unusable } = readConfig();
   if (unusable) return configUnparseable(res, unusable);
   const config = read || {};
-  if (!config.integrations?.[type]) {
+  if (!storedEntry(config.integrations || {}, type)) {
     return apiError(res, 404, `Integration '${type}' not configured`);
   }
 
   delete config.integrations[type];
   if (!written(res, config, version)) return;
-  dropUnusedIntegrationSecrets(config, type);
+  dropUnusedIntegrationSecrets(config, listSecretKeys(), type);
   res.json({ ok: true });
 });
 
