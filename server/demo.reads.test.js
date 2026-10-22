@@ -51,6 +51,7 @@ const CLIENT_PATHS = {
   '/api/weather': 'read',
   '/api/auth/change-password': 'write',
   '/api/auth/login': 'write',
+  '/api/auth/logout': 'write', // sign-out (#507); the demo has no sign-in to end
   '/api/cron/jobs/:param/:param': 'write',
   '/api/integrations/:param': 'write',
   '/api/integrations/save': 'write',

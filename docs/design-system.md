@@ -32,9 +32,10 @@ the sign-off amendments in §15).
   under [Components](#components), [Containers](#containers),
   [Status components](#status-components) and
   [Data components](#data-components), with their variants, sizes and keyboard
-  use; the shell (#296), the Overview's sections (#299) and the sign-in page
-  (#305) are built on them ([Shell](#shell), [Overview sections](#overview-sections),
-  [Sign-in](#sign-in)). The Android app's screens use the status
+  use; the shell (#296), the Overview's sections (#299), the sign-in page
+  (#305) and the utilities (#301) are built on them ([Shell](#shell),
+  [Overview sections](#overview-sections), [Sign-in](#sign-in),
+  [Utilities](#utilities)). The Android app's screens use the status
   components, in its own look.
 - **Gallery:** every state of every component above, in both themes and both
   densities and, where colour follows the accent, all three accents, on one
@@ -637,7 +638,9 @@ From the mock's Settings and Overview boards:
 - **Input** and the **Select** trigger: the mock's `.field`, `bg-background` in
   a `border-border-strong` edge, 13px `text-1`, placeholder `text-3`, 10px
   padding. Their focus ring sits 1px out, as the mock's does. An invalid one's
-  edge is `border-crit-border`.
+  edge is `border-crit-border`. A date Input (#301) is the same field: empty,
+  its day, month and year are `text-3`, as a placeholder; the browser's
+  calendar button is dimmed to 55%, full under the pointer.
 - **The Select's list** is a popover: `surface-2` in a `border-strong` edge
   with `shadow-pop`, 6px around 8px-radius options (`h-control-sm`, 10px
   padding), the highlighted one tinted `row-hover` as the command palette's
@@ -1381,7 +1384,7 @@ router, the config and the status poll ([ARCHITECTURE.md](ARCHITECTURE.md),
 | --- | --- | --- |
 | `AppShell` | `@ui/app-shell` | `switches` (the roots' theme, accent, density, typeface), `header`, `sidebar`, `tabs`, and the page as `children` |
 | `ShellPage` | `@ui/app-shell` | `title` (the page's h1), `description`, `actions`; a page of the new UI inside the shell |
-| `ShellSection` | `@ui/app-shell` | its `children`: a part of a page in the new UI beside today's views (the Overview's status and strip, #297, #298) |
+| `ShellSection` | `@ui/app-shell` | its `children`: a part of a page in the new UI beside today's views (the Overview's status and strip, #297, #298; the utilities rail, #301) |
 | `ShellApps` | `@ui/app-shell` | `label` (names the open app's region), `bar` (the open app's AppBar); holds the embedded apps' frames |
 | `AppHeader` | `@ui/app-header` | `name`, `logoUrl`, `status` (`{ reach, state, word, sentence, href, current, lastKnown }`), `updated` (an element, `UpdatedAgo`), `onOpenPalette`, `shortcut`, `onThemeChange` (the toggle, given `'light'` or `'dark'`), `settingsHref`, `settingsCurrent`, `onLogout`, `onNavigate` |
 | `UpdatedAgo` | `@ui/app-header` | `at` (ms since the epoch) |
@@ -1414,8 +1417,8 @@ From the mock's Main and Phone boards:
   (the Overview's status and subsystem strip over today's board, #297,
   #298), which shows between them.
 - **AppHeader.** 48px on `bg`, a subtle bottom edge, 16px (24px from 768px) at
-  the sides. The brand: the mock's helm mark, the wheel in `on-accent` on a
-  28px `accent` square, or the instance's own logo; the name in 15px
+  the sides. The brand: JagHelm's shield (`public/logo.svg`, the favicon's
+  artwork, #530), 28px, or the instance's own logo; the name in 15px
   extra-bold, for screen readers only below 768px. The status: a 14px lamp,
   the word in `text-title-xs` in its state's `fg`, then the model's sentence
   in `text-2` (`text-1` under the pointer), cut short with an ellipsis rather
@@ -1502,6 +1505,9 @@ From the mock's Main and Phone boards:
   Infrastructure pages exist (#313); the mock has all five.
 - **Labels are 12px, not 11px** (the type floor), and the phone's count is the
   mock's solid; the sidebar's is the mock's tint.
+- **JagHelm's shield, not the mock's wheel** (#530): the mock drew a wheel on
+  an accent square as the brand mark; the header shows JagHelm's own logo, as
+  the favicon and the Android icon do.
 
 ## Overview sections
 
@@ -1652,13 +1658,18 @@ runs it in a browser.
 
 ### How the sign-in page looks
 
-One brand mark, the header's: the helm mark on a 40px `accent` square (or the
-instance's own logo), then the instance's name in `text-title` extra-bold, the
-page's h1. Under it, 24px down, a Panel titled "Sign in" holding a Field per
-control, Username and Password, 16px apart, and the primary button, "Sign
-in", the card's width. The column is at most 360px wide, centred in the
-window on `bg`, with a 16px gutter on a phone. No wordmark, gradient title
-or subtitle.
+JagHelm's logo, 156px tall, as before 3.0 (#530): the lockup, the shield over
+the JAGHELM wordmark and "Infrastructure Dashboard" (`public/logo-login.svg`),
+or the instance's own logo. It is the page's h1, the instance's name its text
+alternative, with no title or subtitle beside it. The lockup was drawn for
+dark; in the light theme the page shows `public/logo-login-light.svg`, the
+same artwork with only its text darker (JAG and the tagline indigo `#4f46e5`,
+HELM amber `#b45309`), which keeps 4.5:1 on `bg`, where the dark version's
+text falls to 1.8–2.8:1. Never change the shield or the wheel. Under the logo,
+24px down, a Panel titled "Sign in" holding a Field per control, Username and
+Password, 16px apart, and the primary button, "Sign in", the card's width. The
+column is at most 360px wide, centred in the window on `bg`, with a 16px
+gutter on a phone, and the page fits a 390 × 667 phone without scrolling.
 
 ### Accessibility of the sign-in page
 
@@ -1681,9 +1692,100 @@ or subtitle.
 
 ### Where the sign-in page differs from the mock
 
-- **The mock has no sign-in board.** The page follows its tokens, its
-  Settings fields (13px semibold labels over 34px inputs) and the header's
-  helm mark.
+- **The mock has no sign-in board.** The page follows its tokens and its
+  Settings fields (13px semibold labels over 34px inputs).
+- **JagHelm's own logo, not the mock's wheel** (#530). The mock drew a wheel on
+  an accent square as the brand mark; JagHelm keeps its shield in the header
+  and its lockup on the sign-in page, as the favicon and the Android icon do.
+
+## Utilities
+
+Quick Launch, Pipeline and the Checklist (spec §8 item 5, #301), one file in
+`src/ui/` (`utilities.jsx`), built on Panel, EmptyState, Input, Button,
+IconButton, Checkbox, Skeleton and the sidebar's AppChip. Each is one
+component, drawn the same in the Overview's rail (from 1440px, `RAIL_WIDTH`
+in `@ui/app-shell`) and on the Launch page; `src/shell/` feeds both
+([ARCHITECTURE.md](ARCHITECTURE.md), "Utilities: the rail and the Launch
+page"). The [gallery](GALLERY.md) shows them in the rail, on the Launch page,
+empty and failing (group Utilities), and `e2e/utilities.spec.mjs` runs them
+in a browser.
+
+| Component | Import | Props |
+| --- | --- | --- |
+| `QuickLaunch` | `@ui/utilities` | `groups` (each `{ key, title, links }`, each link `{ id, name, href, monogram }`), `target` (`_blank`), `hint` ("in Ctrl K too"), `empty` (shown with no group) |
+| `Pipeline` | `@ui/utilities` | `items` (each `{ id, title, repo, sha, at }`, `at` in ms or null), `banner` (over the rows), `now` |
+| `Checklist` | `@ui/utilities` | `todos` (each `{ id, text, done, dueLabel, overdue }`; null while loading), `onAdd({ text, due })`, `onToggle(id)`, `onRemove(id)`, `banner` |
+| `UtilitiesRail` | `@ui/utilities` | the panels, as `children` |
+| `LaunchLayout` | `@ui/utilities` | `quickLaunch`, `pipeline`, `checklist` (elements; none, left out) |
+
+`shortAgo(ms)` (`@ui/utilities`) says an age as Pipeline does: "now", "12 m",
+"3 h", "4 d".
+
+### How the utilities look
+
+From the mock's Main board, its right-hand column:
+
+- **The panels.** Each is a Panel: its icon in the 28px accent chip (Lucide
+  `Rocket`, `GitBranch`, `ListChecks`), its title, and at the end of the
+  header Quick Launch's hint (12px mono `text-3`) or the Checklist's count
+  ("2 open", 12px `text-3`).
+- **QuickLaunch.** Each group an overline (`text-3`) over its links, 6px
+  apart; the links in columns at least 7.5rem wide (two in the rail), 10rem
+  once the group has 32rem of its own. A link is 13px medium `text-1` in a
+  subtle edge, 8px round, 6 by 8px of padding: the app's monogram in the
+  sidebar's 20px chip, then the name, cut with an ellipsis (the full name in
+  its tooltip and its accessible name). `row-hover` under the pointer.
+- **Pipeline.** A row per commit, 10px apart: the message in 13px semibold
+  `text-1` (two lines at most) over "repo · sha" in 12px `text-3`, the SHA in
+  mono, and the age at the end in 12px `text-3`. With none, "No recent
+  commits" (EmptyState sm).
+- **Checklist.** A row to add a task: the task (an Input, "Add a task"),
+  its due day (a date Input, 9rem) and Add (secondary, `Plus`), in one row
+  from 24rem of the form's own width (the Launch page); narrower (the rail, a
+  phone), the task across the top and the day beside Add under it. Each
+  task a row: its Checkbox inside a label with its words, 13px `text-1`; a
+  done one struck through in `text-3`; its due day in 12px `text-3`, or once
+  it has passed, "Oct 18 · overdue" semibold in `warn-fg`; Delete, a ghost sm
+  IconButton (`X`). With none, "Nothing on the list". While loading, three
+  placeholder lines and no form.
+- **UtilitiesRail.** The panels in a column, 16px apart. The Overview gives
+  it the mock's widths (`flex: 1 1 300px`, 280 to 340px), 24px from its
+  sections.
+- **LaunchLayout.** Quick Launch across the top, Pipeline and the Checklist
+  under it, side by side from 672px of its own width, 24px apart.
+
+### Accessibility of the utilities
+
+- Each panel is a region named by its title (an `h2`); the rail a region
+  named "Utilities". A group of links is a list named by its overline (an
+  `h3`); each link is named by the app's name, its chip hidden from
+  assistive tech, and opens in the target Settings gives it, with no opener.
+- A commit's age is a `time` with its instant, read as "12 m ago".
+- Each task's box is named by its words (an enclosing label); Delete is
+  named "Delete “Patch the NAS”". The task and due fields are named "New
+  task" and "Due day (optional)". Overdue is said in words, never by colour
+  alone.
+- A failed read is a Banner (tone unknown) naming its cause: Pipeline's over
+  the last rows ("Gitea didn't answer JagHelm"), the Checklist's with Retry.
+
+### Where the utilities differ from the mock
+
+- **A region, not an `<aside>`.** The page is the shell's `<main>`, and a
+  complementary landmark inside it is nested in another (axe's
+  `landmark-complementary-is-top-level`).
+- **Pipeline has no lamp, no word and no branch.** `/api/gitea/activity`
+  carries commits on each repo's main branch (message, SHA, date, author),
+  not CI runs, merges or deploys, so a row is the commit's message over
+  "repo · sha", where the mock's is a lamp, "JagHelm · CI passed" and
+  "branch · sha".
+- **The monogram chip is the sidebar's** (20px, 12px extrabold), where the
+  mock's Quick Launch chip is 22px with 10px letters: 12px is the type
+  floor. The hint is 12px for the same reason (the mock's is 11px), and says
+  the platform's shortcut ("Ctrl K" off a Mac).
+- **The Checklist adds, dates and deletes.** The mock's checklist only ticks;
+  today's panel adds a task with an optional due day and deletes one, so
+  this one does too.
+- **No weather and clock card.** It joins the rail with #307.
 
 ## Changing a token
 
@@ -1741,8 +1843,9 @@ Where the tokens differ from the mock, and why:
     the light theme already darkens every hover.
 - **Radii off the scale.** The mock draws four radii that aren't on it. They map
   onto the scale: 5px (kbd) to `rounded-sm` 4; 7px (28px icon chips) and 9px
-  (the helm mark) to `rounded-lg` 8; 10px (phone touch targets and inputs) to
-  `rounded-lg` 8, as every control.
+  (the mock's brand square, which JagHelm doesn't draw, #530) to `rounded-lg`
+  8; 10px (phone touch targets and inputs) to `rounded-lg` 8, as every
+  control.
 - **Tokens the mock didn't draw** are derived from it: `text-disabled`; `tint`
   for ok, maintenance and info (10 %); every status `border` (solid at 38 % dark,
   32 % light, as the accent's); every `on-solid`; `info`, which shares

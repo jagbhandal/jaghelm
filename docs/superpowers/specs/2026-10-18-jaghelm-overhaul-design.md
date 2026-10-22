@@ -302,7 +302,7 @@ Jag reviewed the clickable mock (private: https://claude.ai/artifact/Dv7EGVXZLe4
 | Manrope is the typeface; Plus Jakarta Sans and Montserrat are options; one text-size setting | Chosen in the mock (Montserrat is Arcane's face, offered but not the default) | §5.3 | #244, #284, #321 |
 | Violet also tints section icon chips and below-threshold meters | As the mock shows; status hues stay reserved for status | §5.2 | #283, #321 |
 | Accents: Violet (default), Fuchsia, Cyan; Blue, Indigo and Graphite dropped because they read as status colours (Jag, 2026-10-19) | The mock offered five. Blue sat on maintenance's blue, Indigo nearly did in light, and Graphite's meter was the "no signal" grey. Cyan (hue 215) is new. An accent's colours stay at least ΔE OK 0.05 from every status colour in both themes, and a test enforces it | §5.2, §7 | #283, #321 |
-| Dark neutrals are graphite tinted toward hue 286 | JagHelm's own identity next to Arcane's pure greys; with flat 12px panels, the shaped lamps and the helm mark, it keeps JagHelm from reading as an Arcane clone | §5.2 | #283 |
+| Dark neutrals are graphite tinted toward hue 286 | JagHelm's own identity next to Arcane's pure greys; with flat 12px panels, the shaped lamps and JagHelm's own shield (not the mock's wheel mark, #530), it keeps JagHelm from reading as an Arcane clone | §5.2 | #283 |
 | Removed from Settings: the welcome message, background image and dot grid, the nine per-element font sizes, per-section titles, icons and colours | Proposed in the settings map; accepted with the sign-off; any can come back | §7 | #317, #321 |
 
 The open calls were taken as the mock shows them; Jag can revisit any of them as the phases land.

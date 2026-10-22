@@ -27,15 +27,26 @@ describe('AppHeader', () => {
     expect(banner()).toHaveClass('h-12');
     const home = within(banner()).getByRole('link', { name: 'Homelab' });
     expect(home).toHaveAttribute('href', '/');
-    expect(home.querySelector('[data-slot="helm-mark"]')).toBeInTheDocument();
   });
 
-  it('shows a custom logo instead of the helm mark', () => {
+  it("shows JagHelm's shield, public/logo.svg, by default (#530)", () => {
+    render(<AppHeader name="Homelab" status={{ state: 'ok' }} />);
+    const home = within(banner()).getByRole('link', { name: 'Homelab' });
+    const logos = home.querySelectorAll('img');
+    expect(logos).toHaveLength(1);
+    expect(logos[0]).toHaveAttribute('src', '/logo.svg');
+    // The name beside it names the link; the shield adds nothing to it.
+    expect(logos[0]).toHaveAttribute('alt', '');
+    expect(logos[0]).toHaveClass('size-7');
+  });
+
+  it("shows a custom logo instead of JagHelm's shield", () => {
     render(<AppHeader name="Homelab" logoUrl="/uploads/logo.png" status={{ state: 'ok' }} />);
     const home = within(banner()).getByRole('link', { name: 'Homelab' });
-    expect(home.querySelector('img')).toHaveAttribute('src', '/uploads/logo.png');
-    expect(home.querySelector('img')).toHaveAttribute('alt', '');
-    expect(home.querySelector('[data-slot="helm-mark"]')).toBeNull();
+    const logos = home.querySelectorAll('img');
+    expect(logos).toHaveLength(1);
+    expect(logos[0]).toHaveAttribute('src', '/uploads/logo.png');
+    expect(logos[0]).toHaveAttribute('alt', '');
   });
 
   it('opens the palette from the search button, saying the shortcut', async () => {

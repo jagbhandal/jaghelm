@@ -42,6 +42,14 @@ const ShellSwitches = createContext({});
  */
 const PHONE_WIDTH = '(width < 48rem)';
 
+/**
+ * The width from which the Overview has its utilities rail (#301, spec §8
+ * item 5) beside its sections, as a media query: 90rem, 1440px. Narrower, the
+ * rail isn't drawn at all, and Quick Launch, Pipeline and the Checklist are on
+ * the Launch page only. e2e/utilities.spec.mjs checks it at 1440 and 1280px.
+ */
+const RAIL_WIDTH = '(width >= 90rem)';
+
 function AppShell({ switches = {}, header, sidebar, tabs, className, children, ...props }) {
   return (
     <ShellSwitches.Provider value={switches}>
@@ -140,4 +148,4 @@ function ShellApps({ label, bar, className, children, ...props }) {
   );
 }
 
-export { AppShell, ShellPage, ShellSection, ShellApps, PHONE_WIDTH };
+export { AppShell, ShellPage, ShellSection, ShellApps, PHONE_WIDTH, RAIL_WIDTH };

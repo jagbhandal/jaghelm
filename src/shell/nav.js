@@ -2,18 +2,18 @@
  * The shell's navigation, as data (#296): the sidebar's groups and the phone's
  * tabs, from the open route, the embedded apps and the status. Only routes
  * whose page exists are listed (routes.js: Services and Infrastructure join in
- * Phase 2, #313; Launch with #301).
+ * Phase 2, #313).
  *
  *   Monitor  Overview, Alerts (with the issue count)
  *   Apps     one entry per embedded app (Settings → Tabs), its dot while it is
  *            loaded and not open, Unload on it; then "Add app", to Settings'
  *            Tabs section, until Settings → Apps & links (#362)
- *   Tools    Settings (Launch later)
+ *   Tools    Launch (Quick Launch, Pipeline, the Checklist, #301), Settings
  *
  * Phones get Overview, Alerts and More; More holds Apps and Tools.
  */
 import { createElement as h } from 'react';
-import { Bell, Ellipsis, LayoutDashboard, Plus, SlidersHorizontal } from 'lucide-react';
+import { Bell, Ellipsis, LayoutDashboard, Plus, Rocket, SlidersHorizontal } from 'lucide-react';
 import { appMonogram } from '@ui/side-nav';
 import { pathTo } from '../router/routes.js';
 
@@ -82,6 +82,13 @@ export function navGroups({ routeId, appId = null, apps, loaded, onUnload, badge
       id: 'tools',
       label: 'Tools',
       items: [
+        {
+          id: 'launch',
+          label: 'Launch',
+          href: pathTo('launch'),
+          icon: icon(Rocket),
+          current: routeId === 'launch',
+        },
         {
           id: 'settings',
           label: 'Settings',
