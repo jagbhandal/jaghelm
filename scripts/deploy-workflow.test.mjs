@@ -2,10 +2,13 @@
 //   #211  every SSH to vm-103 verifies a host key pinned from the VM103_HOST_KEY
 //         repository variable, and the deploy fails closed without it;
 //   #207  the deploy delivers this commit's compose.yaml to vm-103, verifies it
-//         there, and a rollback restores the image AND the compose.yaml together.
+//         there, and a rollback restores the image AND the compose.yaml together;
+//   #356  a deploy whose image never arrives fails and changes nothing (no
+//         fallback to :latest), and a green deploy means this commit is live.
 // The step scripts are taken from the workflow itself and run against stubs (ssh
-// runs the remote command locally; docker and curl are fakes), so these tests
-// exercise the real deploy code, not a copy of it.
+// runs the remote command locally; docker, curl and sleep are fakes), so these
+// tests exercise the real deploy code, not a copy of it. runJob runs the whole
+// job, step by step, with the workflow's own if: conditions.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -44,6 +47,7 @@ function step(re) {
 }
 
 const PIN = () => step(/host key/i);
+const WAIT = () => step(/^Wait for /);
 const STAGE = () => step(/^Stage /);
 const SWITCH = () => step(/^Switch /);
 const VERIFY = () => step(/^Verify deployment/);
@@ -75,6 +79,10 @@ const FAKE_DOCKER = `#!/bin/sh
 c=$(sha256sum compose.yaml 2>/dev/null | cut -d' ' -f1)
 echo "$*|\${c:-none}" >> "$FAKE_DOCKER_LOG"
 case "$*" in
+  "manifest inspect "*)
+    # The registry: misses FAKE_MANIFEST_MISSES polls, then has the image.
+    n=$(cat "$FAKE_MANIFEST_COUNT" 2>/dev/null || echo 0); echo $((n + 1)) > "$FAKE_MANIFEST_COUNT"
+    [ "$n" -ge "\${FAKE_MANIFEST_MISSES:-0}" ] || exit 1 ;;
   "inspect --format {{.Image}} jaghelm") [ -n "\${FAKE_PREV_IMAGE:-}" ] || exit 1; echo "$FAKE_PREV_IMAGE" ;;
   "pull "*) exit "\${FAKE_PULL_RC:-0}" ;;
   "compose config -q") exit "\${FAKE_CONFIG_RC:-0}" ;;
@@ -87,10 +95,13 @@ case "$*" in
 esac
 exit 0
 `;
-// curl: answers the health endpoint; otherwise records argv and the -K config
-// read from stdin, then "downloads" FAKE_COMPOSE_SRC to the -o path.
+// curl: answers the health endpoint (revision FAKE_REVISION, else this commit's);
+// otherwise records argv and the -K config read from stdin, then "downloads"
+// FAKE_COMPOSE_SRC to the -o path.
 const FAKE_CURL = `#!/bin/sh
-case "$*" in *"/api/health"*) echo '{"status":"ok"}'; exit 0 ;; esac
+case "$*" in *"/api/health"*)
+  printf '{"status":"ok","version":"3.0.0","revision":"%s"}\\n' "\${FAKE_REVISION-${SHA.slice(0, 7)}}"; exit 0 ;;
+esac
 echo "$*" > "$FAKE_CURL_ARGV"
 cat > "$FAKE_CURL_CONFIG"
 [ "\${FAKE_CURL_RC:-0}" = 0 ] || exit "$FAKE_CURL_RC"
@@ -98,10 +109,17 @@ out=; prev=
 for a in "$@"; do [ "$prev" = -o ] && out=$a; prev=$a; done
 cp "$FAKE_COMPOSE_SRC" "$out"
 `;
-// ssh: runs the remote command locally (stdin passes through).
+// ssh: runs the remote command locally (stdin passes through). ssh-local takes
+// the command alone; ssh is what the pin step's SSH_CMD calls, options and all,
+// and runs its last argument.
 const FAKE_SSH = `#!/bin/sh
 echo "$1" >> "$FAKE_SSH_LOG"
 exec bash -c "$1"
+`;
+const FAKE_SSH_PINNED = `#!/bin/sh
+for a; do last=$a; done
+echo "$last" >> "$FAKE_SSH_LOG"
+exec bash -c "$last"
 `;
 
 function sandbox() {
@@ -114,6 +132,8 @@ function sandbox() {
     ['docker', FAKE_DOCKER],
     ['curl', FAKE_CURL],
     ['ssh-local', FAKE_SSH],
+    ['ssh', FAKE_SSH_PINNED],
+    ['sleep', '#!/bin/sh\nexit 0\n'],
   ]) {
     writeFileSync(path.join(bin, name), body);
     chmodSync(path.join(bin, name), 0o755);
@@ -140,6 +160,9 @@ function sandbox() {
       FAKE_CURL_ARGV: f('curl.argv'),
       FAKE_CURL_CONFIG: f('curl.config'),
       FAKE_COMPOSE_SRC: f('compose.src'),
+      FAKE_MANIFEST_COUNT: f('manifest.count'),
+      // The job sets 360; with sleep stubbed out, 0 makes a miss time out at once.
+      IMAGE_WAIT_SECONDS: '0',
     },
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
@@ -178,6 +201,29 @@ function runRemote(sb, script, args, env = {}) {
 
 const out = (r) => `${r.stdout}${r.stderr}`;
 const dockerCalls = (sb) => sb.read('docker.log').split('\n').filter(Boolean);
+
+// Runs the whole job as act_runner would: steps in order, a failure skips the
+// rest except failure() and always() steps, continue-on-error never fails the
+// job, and any other if: (an unset repository variable) is false.
+function runJob(sb, env = {}) {
+  let failed = false;
+  const ran = [];
+  let log = '';
+  for (const s of STEPS) {
+    const cond = String(s.if ?? '');
+    const runs = cond.includes('always()')
+      ? true
+      : cond.includes('failure()')
+        ? failed
+        : cond === '' && !failed;
+    if (!runs) continue;
+    const r = runStep(sb, s, { VM103_HOST_KEY: KEY_LINE, ...stageEnv(), ...env });
+    ran.push(s.name);
+    log += out(r);
+    if (r.status !== 0 && !s['continue-on-error']) failed = true;
+  }
+  return { failed, ran, log };
+}
 
 // ── #211: host key pinning ───────────────────────────────────────────────────
 
@@ -316,7 +362,6 @@ test('stage: fetches compose.yaml at the commit, delivers it, records both hashe
 
   const env = githubEnv(sb);
   assert.equal(env.PREV_IMAGE, 'sha256:previous');
-  assert.equal(env.IMAGE_PULLED, '1');
   assert.equal(env.COMPOSE_SHA256, sha256(REPO_COMPOSE));
   assert.equal(env.ROLLBACK_ARMED, '1');
 });
@@ -358,13 +403,15 @@ test('stage: a failed install leaves the rollback unarmed and the host copy unch
   assert.equal(githubEnv(sb).ROLLBACK_ARMED, undefined);
 });
 
-test('stage: refuses a compose.yaml change when this commit image was not pulled', (t) => {
+test('stage: a failed pull of this commit image fails before vm-103 changes', (t) => {
   const sb = stagedSandbox(t);
   const r = runStep(sb, STAGE(), stageEnv({ FAKE_PULL_RC: '1' }));
   assert.notEqual(r.status, 0);
-  assert.match(out(r), /::error::this commit's image was not pulled/);
+  assert.match(out(r), /::error::.*ghcr\.io\/jagbhandal\/jaghelm:sha-abcdef0.*nothing changed/);
   assert.equal(readFileSync(sb.stackFile('compose.yaml'), 'utf8'), OLD_COMPOSE);
+  assert.ok(!existsSync(sb.stackFile('compose.yaml.new')), 'nothing delivered');
   assert.ok(!existsSync(sb.stackFile('compose.yaml.prev')), 'refused before the backup');
+  assert.ok(!dockerCalls(sb).some((c) => /^(tag|compose)/.test(c)), dockerCalls(sb).join('\n'));
   assert.equal(githubEnv(sb).ROLLBACK_ARMED, undefined);
 });
 
@@ -374,9 +421,9 @@ test('stage: arming the rollback is the last thing it does', () => {
 });
 
 // The remote install script, run directly for its failure paths.
-function install(sb, want, env = {}, imagePulled = '1') {
+function install(sb, want, env = {}) {
   writeFileSync(sb.stackFile('compose.yaml.new'), REPO_COMPOSE);
-  return runRemote(sb, heredoc(STAGE().run, 'INSTALL_COMPOSE'), [sb.stack, want, imagePulled], env);
+  return runRemote(sb, heredoc(STAGE().run, 'INSTALL_COMPOSE'), [sb.stack, want], env);
 }
 
 // What `docker compose config --format json` reports for the jaghelm service.
@@ -440,12 +487,6 @@ test('install: an unchanged compose.yaml prints no diff; a host override is repo
   assert.doesNotMatch(out(r), /^[-+]{3} /m);
   assert.match(out(r), new RegExp(`compose.override.yaml.*sha256=${sha256(override)}`));
   assert.equal(readFileSync(sb.stackFile('compose.override.yaml'), 'utf8'), override);
-});
-
-test('install: an unchanged compose.yaml is fine when this commit image was not pulled', (t) => {
-  const sb = stagedSandbox(t, { oldCompose: REPO_COMPOSE });
-  const r = install(sb, sha256(REPO_COMPOSE), {}, '0');
-  assert.equal(r.status, 0, out(r));
 });
 
 // ── drop guard: never silently lose host networking or a mount ───────────────
@@ -551,17 +592,6 @@ test('switch: retags :latest to this commit and recreates with the delivered com
   assert.ok(tag >= 0 && up > tag, calls.join('\n'));
 });
 
-test('switch: falls back to compose pull when the commit image was not pulled', (t) => {
-  const { sb, switched } = stagedAndSwitched(t, { FAKE_PULL_RC: '1' }, REPO_COMPOSE);
-  assert.equal(switched.status, 0, out(switched));
-  const calls = dockerCalls(sb);
-  assert.ok(
-    calls.some((c) => c.startsWith('compose pull|')),
-    calls.join('\n')
-  );
-  assert.ok(!calls.some((c) => c.startsWith('tag ')));
-});
-
 test('switch: refuses to recreate when the host compose.yaml no longer matches the commit', (t) => {
   const sb = stagedSandbox(t);
   assert.equal(runStep(sb, STAGE(), stageEnv()).status, 0);
@@ -610,3 +640,83 @@ test('rollback: without a previous image it fails loudly and changes nothing', (
   assert.match(out(r), /Manual intervention required/);
   assert.equal(sb.read('ssh.log'), '');
 });
+
+// ── #356: no fallback to :latest; green means this commit is live ────────────
+
+const LIVE = (sb) => readFileSync(sb.stackFile('compose.yaml'), 'utf8');
+const verbs = (sb) => dockerCalls(sb).map((c) => c.split('|')[0]);
+
+test('job: a missing image fails the deploy, names the build to re-run, and leaves vm-103 alone', (t) => {
+  const sb = stagedSandbox(t);
+  const job = runJob(sb, { FAKE_MANIFEST_MISSES: '999' });
+  assert.equal(job.failed, true, job.log);
+  const errors = job.log.split('\n').filter((l) => l.startsWith('::error::'));
+  assert.equal(errors.length, 1, job.log);
+  assert.match(errors[0], /ghcr\.io\/jagbhandal\/jaghelm:sha-abcdef0/);
+  assert.match(errors[0], /"Build and Push Docker Image"/);
+  assert.match(errors[0], new RegExp(`github\\.com/jagbhandal/jaghelm/commit/${SHA}`));
+  assert.match(errors[0], /re-run this deploy/);
+  assert.doesNotMatch(job.log, /falling back|verified healthy/);
+  // Nothing reached vm-103: no SSH, no pull, no compose call, no restart.
+  assert.equal(sb.read('ssh.log'), '');
+  assert.deepEqual(verbs(sb).filter((v) => !v.startsWith('manifest inspect ')), []);
+  assert.equal(LIVE(sb), OLD_COMPOSE);
+  assert.ok(job.ran.includes(ROLLBACK().name), 'the rollback step runs and finds nothing to do');
+  assert.match(job.log, /nothing to roll back/);
+});
+
+test('job: a healthy container on another revision fails the deploy and rolls back', (t) => {
+  const sb = stagedSandbox(t);
+  const job = runJob(sb, { FAKE_REVISION: '6565d7c' });
+  assert.equal(job.failed, true, job.log);
+  assert.match(job.log, /::error::.*revision 6565d7c.*abcdef0/);
+  assert.doesNotMatch(job.log, /verified healthy/);
+  assert.ok(job.ran.includes(ROLLBACK().name));
+  assert.equal(LIVE(sb), OLD_COMPOSE, 'compose.yaml rolled back');
+  assert.deepEqual(verbs(sb).slice(-2), [`tag sha256:previous ${LATEST}`, 'compose up -d --force-recreate']);
+});
+
+test('job: the happy path deploys this commit image and proves it is live', (t) => {
+  const sb = stagedSandbox(t);
+  const job = runJob(sb);
+  assert.equal(job.failed, false, job.log);
+  assert.match(job.log, /Deploy verified healthy \(commit abcdef0[0-9a-f]*, revision abcdef0 live/);
+  assert.ok(!job.ran.includes(ROLLBACK().name));
+  assert.equal(LIVE(sb), REPO_COMPOSE);
+  const v = verbs(sb);
+  const tag = v.indexOf(`tag ghcr.io/jagbhandal/jaghelm:sha-abcdef0 ${LATEST}`);
+  assert.ok(tag >= 0 && v.indexOf('compose up -d --force-recreate') > tag, v.join('\n'));
+  assert.ok(!v.some((c) => c.startsWith('compose pull')), 'never pulls :latest');
+});
+
+test('wait: keeps polling until the image appears within the wait', (t) => {
+  const sb = stagedSandbox(t);
+  const r = runStep(sb, WAIT(), { FAKE_MANIFEST_MISSES: '2', IMAGE_WAIT_SECONDS: '360' });
+  assert.equal(r.status, 0, out(r));
+  assert.equal(sb.read('manifest.count').trim(), '3');
+  assert.doesNotMatch(out(r), /::error::/);
+});
+
+test('the image wait is one named variable, six minutes', () => {
+  assert.equal(JOB.env.IMAGE_WAIT_SECONDS, 360);
+  assert.match(WAIT().run, /\$\{IMAGE_WAIT_SECONDS:\?/);
+});
+
+test('no step falls back to :latest: no compose pull, no "image not pulled" path', () => {
+  assert.doesNotMatch(WF_TEXT, /compose pull/);
+  assert.doesNotMatch(WF_TEXT, /IMAGE_PULLED|image_pulled/);
+});
+
+for (const [label, revision] of [
+  ['another commit', '6565d7c'],
+  ['unknown (no JAGHELM_REVISION in the image)', 'unknown'],
+  ['empty', ''],
+]) {
+  test(`health gate: fails when /api/health reports revision ${label}`, (t) => {
+    const sb = stagedSandbox(t);
+    const r = runStep(sb, VERIFY(), { FAKE_REVISION: revision });
+    assert.notEqual(r.status, 0, out(r));
+    assert.match(out(r), /::error::.*not this commit \(abcdef0\)/);
+    assert.doesNotMatch(out(r), /verified healthy/);
+  });
+}
