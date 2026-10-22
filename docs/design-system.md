@@ -1124,11 +1124,18 @@ removes it): each status component draws one of two looks.
 
 - `ui`: the above. The web's.
 - `android`: the Android app's own components as they were in
-  `mobile/src/components/`: mono upper-case words, glass cards, the 2×2 strip
-  and its lamp shapes (`disc`, `slash`, `ring` and the UPS's `bolt`, passed as
-  `shape`). It writes the class names `MobileApp.css` styles in the `legacy`
-  layer, and its colours are the app's own, so the app's screens look as they
-  did (#287 compared them pixel for pixel).
+  `mobile/src/components/`: mono upper-case words, glass cards, the strip of
+  cells two to a row and its lamp shapes (`disc`, `slash`, `ring` and the
+  UPS's `bolt`, passed as `shape`). It writes the class names `MobileApp.css`
+  styles in the `legacy` layer, and its colours are the app's own, so the
+  app's screens look as they did (#287 compared them pixel for pixel). Since
+  #325 the app hands it the status model's states and words, as the web
+  does: its status card leaves out a line it isn't given and draws an empty
+  board as the plain card (`sys-status-card--empty`), an issue row shows the
+  model's reason on every row, and the Power cell keeps the bolt on battery
+  and adds the UPS's readings (`readings`) on a line under the model's
+  detail. Maintenance has its own colour, `--jh-maintenance-fg`, restated on
+  `#mobile-root` (which isn't `.jh-ui`).
 
 The build picks the look with its `__ANDROID_LOOK__` define: true in
 `mobile/vite.config.mobile.js`, false in `vite.config.js`, and so in each app's

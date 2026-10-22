@@ -20,8 +20,8 @@ describe('RefreshStatus annunciator', () => {
   it('healthy → green lamp + "All systems operational" + an indigo countdown', () => {
     const { container } = render(
       <RefreshStatus
-        severity="healthy"
-        summary="All systems operational"
+        state="ok"
+        summary="All 12 services up · 3 nodes healthy"
         lastUpdated={Date.now()}
         intervalMs={30000}
         error={null}
@@ -29,7 +29,7 @@ describe('RefreshStatus annunciator', () => {
         onRefresh={vi.fn()}
       />,
     );
-    expect(summary(container)).toBe('All systems operational');
+    expect(summary(container)).toBe('All 12 services up · 3 nodes healthy');
     expect(lamp(container).classList.contains('lamp--healthy')).toBe(true);
 
     // The "next Xs" countdown is chrome (accent-light), NOT a status color.
@@ -41,7 +41,7 @@ describe('RefreshStatus annunciator', () => {
   it('down → red lamp + the worst-of sentence', () => {
     const { container } = render(
       <RefreshStatus
-        severity="critical"
+        state="crit"
         summary="2 services down"
         lastUpdated={Date.now()}
         intervalMs={30000}
@@ -57,7 +57,7 @@ describe('RefreshStatus annunciator', () => {
   it('error/unreachable → STEEL lamp (NOT red, NOT green) + "Can\'t reach JagHelm" + "Retrying…"', () => {
     const { container } = render(
       <RefreshStatus
-        severity="unknown"
+        state="unknown"
         summary="No signal"
         lastUpdated={Date.now()}
         intervalMs={30000}
@@ -78,11 +78,43 @@ describe('RefreshStatus annunciator', () => {
     expect(container.querySelector('.mobile-statusbar__progress--frozen')).not.toBeNull();
   });
 
+  it('an empty board (#449) → no lamp, the model\'s "Nothing monitored yet": neither healthy nor no signal', () => {
+    const { container } = render(
+      <RefreshStatus
+        state="empty"
+        summary="Nothing monitored yet"
+        lastUpdated={Date.now()}
+        intervalMs={30000}
+        error={null}
+        loading={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+    expect(summary(container)).toBe('Nothing monitored yet');
+    expect(lamp(container)).toBeNull();
+  });
+
+  it('stale (#480) → steel lamp + why, though the server answered', () => {
+    const { container } = render(
+      <RefreshStatus
+        state="unknown"
+        summary="JagHelm's status is out of date"
+        lastUpdated={Date.now()}
+        intervalMs={30000}
+        error={null}
+        loading={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+    expect(summary(container)).toBe("JagHelm's status is out of date");
+    expect(lamp(container).classList.contains('lamp--unknown')).toBe(true);
+  });
+
   it('loading (no data yet) → steel lamp + "Connecting…" + no countdown', () => {
     const { container } = render(
       <RefreshStatus
-        severity="unknown"
-        summary=""
+        state={null}
+        summary={null}
         lastUpdated={null}
         intervalMs={30000}
         error={null}
@@ -105,8 +137,8 @@ describe('RefreshStatus heartbeat', () => {
   });
 
   const props = (foreground) => ({
-    severity: 'healthy',
-    summary: 'All systems operational',
+    state: 'ok',
+    summary: 'All 12 services up · 3 nodes healthy',
     lastUpdated: Date.now(),
     intervalMs: 30000,
     error: null,

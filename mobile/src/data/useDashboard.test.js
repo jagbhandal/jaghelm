@@ -1,19 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-const { getServices, getUPSStatus, getCronStatus, getDisplayConfig, NOT_MODIFIED_NO_BODY } = vi.hoisted(() => ({
+// Every read useData.js offers, so a test can count each request a round sends.
+const reads = vi.hoisted(() => ({
   getServices: vi.fn(),
+  getStatus: vi.fn(),
   getUPSStatus: vi.fn(),
   getCronStatus: vi.fn(),
+  getMetricHistory: vi.fn(),
+  getGiteaActivity: vi.fn(),
+  getAllIntegrations: vi.fn(),
   getDisplayConfig: vi.fn(),
-  NOT_MODIFIED_NO_BODY: Object.freeze({ __jaghelm304NoBody: true }),
 }));
+const { getServices, getStatus, getUPSStatus, getDisplayConfig } = reads;
+const NOT_MODIFIED_NO_BODY = vi.hoisted(() => Object.freeze({ __jaghelm304NoBody: true }));
 vi.mock('@shared/hooks/useData.js', () => ({
-  getServices,
-  getUPSStatus,
-  getCronStatus,
-  getDisplayConfig,
+  ...reads,
   NOT_MODIFIED_NO_BODY,
+  REQUEST_TIMEOUT_MS: 12_000,
 }));
 
 // @capacitor/app: capture the appStateChange listener so a test can send the app
@@ -29,8 +33,10 @@ import { useDashboard } from './useDashboard.js';
 
 const INTERVAL = 30000;
 const SERVICES = { nodes: { 'vm-101': { display_name: 'VM 101', metrics: {}, services: [] } } };
-const UPS = { status: 1 };
-const CRON = [];
+const STATUS = { overall: { state: 'ok', sentence: '1 node healthy' }, issues: [], subsystems: [], entities: [] };
+const UPS = { status: 1, charge: 100, runtime: 2700, load: 12, ok: true, configured: true, model: 'UPS' };
+// getStatus's answer: the body, and the server's Last-Modified and Date.
+const answer = (body, { builtAt = null, sentAt = null } = {}) => ({ body, builtAt, sentAt });
 
 // Let resolved fetches land and React commit, without moving the clock.
 const flush = () => act(async () => {
@@ -49,8 +55,8 @@ beforeEach(() => {
   vi.clearAllMocks(); // call counts are asserted; start each test from zero
   vi.useFakeTimers();
   getServices.mockResolvedValue(SERVICES);
+  getStatus.mockResolvedValue(answer(STATUS));
   getUPSStatus.mockResolvedValue(UPS);
-  getCronStatus.mockResolvedValue(CRON);
   // Real /api/display-config shape: top-level integer refreshInterval (seconds).
   getDisplayConfig.mockResolvedValue({ refreshInterval: 30 });
   appState.listener = null;
@@ -74,13 +80,15 @@ async function mount() {
 }
 
 describe('useDashboard: load and shape', () => {
-  it('loads all three sources and exposes the bodies', async () => {
+  it('loads the cards and the status model, and exposes both', async () => {
     const { result, unmount } = renderHook(() => useDashboard());
     expect(result.current.loading).toBe(true);
+    expect(result.current.reach).toBe('loading');
     await flush();
     expect(result.current.loading).toBe(false);
     expect(result.current.servicesBody.nodes['vm-101'].display_name).toBe('VM 101');
-    expect(result.current.ups.status).toBe(1);
+    expect(result.current.status).toBe(STATUS);
+    expect(result.current.reach).toBe('ok');
     expect(result.current.error).toBeNull();
     unmount();
   });
@@ -104,8 +112,127 @@ describe('useDashboard: load and shape', () => {
     const { unmount } = await mount();
     expect(getServices).toHaveBeenCalledTimes(1);
     expect(getServices).toHaveBeenCalledWith(true);
+    expect(getStatus).toHaveBeenCalledWith(true);
+    unmount();
+  });
+});
+
+describe('useDashboard: the request budget (#237, #238, #325)', () => {
+  const requests = () =>
+    Object.entries(reads)
+      .filter(([name]) => name !== 'getDisplayConfig')
+      .flatMap(([name, fn]) => Array(fn.mock.calls.length).fill(name))
+      .sort();
+
+  // The cards, the status, and the UPS's readings the model doesn't carry:
+  // three, as it was before #325, and no /cron/status.
+  const ROUND = ['getServices', 'getStatus', 'getUPSStatus'];
+
+  it('a round is three requests, the cards, the status and the UPS: no more than it was, and no /cron/status', async () => {
+    const { unmount } = await mount();
+    expect(requests()).toEqual(ROUND);
+    vi.clearAllMocks();
+    await advance(INTERVAL);
+    expect(requests()).toEqual(ROUND);
+    vi.clearAllMocks();
+    await advance(INTERVAL);
+    expect(requests()).toEqual(ROUND);
+    unmount();
+  });
+});
+
+describe('useDashboard: the status model, read as the web reads it (#325)', () => {
+  it('keeps the last status, with reach down, when the status read fails', async () => {
+    const { result, unmount } = await mount();
+    getStatus.mockRejectedValue(new Error('fetch failed'));
+    await advance(INTERVAL);
+    expect(result.current.status).toBe(STATUS);
+    expect(result.current.reach).toBe('down');
+    unmount();
+  });
+
+  it('a 503 is waiting: no status yet, or one past its TTL', async () => {
+    getStatus.mockRejectedValue(new Error('HTTP 503'));
+    const { result, unmount } = await mount();
+    expect(result.current.status).toBeNull();
+    expect(result.current.reach).toBe('waiting');
+    unmount();
+  });
+
+  it('a 404 is a server older than the status model: its own reach, not down (#325)', async () => {
+    getStatus.mockRejectedValue(new Error('HTTP 404'));
+    const { result, unmount } = await mount();
+    expect(result.current.status).toBeNull();
+    expect(result.current.reach).toBe('old');
+    // The cards still load from such a server.
+    expect(result.current.error).toBeNull();
+    unmount();
+  });
+
+  it('a body with no status in it is waiting, with nothing to show', async () => {
+    getStatus.mockResolvedValue(answer({ hello: 'world' }));
+    const { result, unmount } = await mount();
+    expect(result.current.status).toBeNull();
+    expect(result.current.reach).toBe('waiting');
+    unmount();
+  });
+
+  it('a 304 keeps the same status object, and moves the answer clock', async () => {
+    const { result, unmount } = await mount();
+    const first = result.current.updated.get();
+    getStatus.mockResolvedValue(answer(STATUS)); // useData hands back the held body on a 304
+    await advance(INTERVAL);
+    expect(result.current.status).toBe(STATUS);
+    expect(result.current.updated.get()).toBe(first + INTERVAL);
+    unmount();
+  });
+
+  it('the answer clock: when it came, when the server built it (#499), and how old it may get (#480)', async () => {
+    const sentAt = Date.now() + 5_000; // a server clock 5 s ahead
+    getStatus.mockResolvedValue(answer(STATUS, { builtAt: sentAt - 20_000, sentAt }));
+    const { result, unmount } = await mount();
+    expect(result.current.updated.get()).toBe(Date.now());
+    expect(result.current.updated.builtAt()).toBe(Date.now() - 20_000);
+    expect(result.current.updated.staleAfter).toBe(2 * INTERVAL + 12_000);
+    unmount();
+  });
+
+  it('a failed status read leaves the answer clock where it was', async () => {
+    const { result, unmount } = await mount();
+    const first = result.current.updated.get();
+    getStatus.mockRejectedValue(new Error('fetch failed'));
+    await advance(INTERVAL);
+    expect(result.current.updated.get()).toBe(first);
+    unmount();
+  });
+});
+
+describe('useDashboard: the UPS readings (display only, #325)', () => {
+  it('exposes /api/ups as it came, for the readings the model doesn\'t carry', async () => {
+    const { result, unmount } = await mount();
+    expect(result.current.ups).toBe(UPS);
     expect(getUPSStatus).toHaveBeenCalledWith(true);
-    expect(getCronStatus).toHaveBeenCalledWith(true);
+    unmount();
+  });
+
+  it('a failed UPS read shows no readings, and fails nothing else', async () => {
+    const { result, unmount } = await mount();
+    getUPSStatus.mockRejectedValue(new Error('HTTP 502'));
+    await advance(INTERVAL);
+    expect(result.current.ups).toBeNull();
+    expect(result.current.error).toBeNull();
+    expect(result.current.reach).toBe('ok');
+    unmount();
+  });
+
+  it('a 304 keeps the same UPS object', async () => {
+    const { result, unmount } = await mount();
+    const first = result.current.ups;
+    await advance(INTERVAL); // the mock hands back the same reference, as a 304 does
+    expect(result.current.ups).toBe(first);
+    getUPSStatus.mockResolvedValue(NOT_MODIFIED_NO_BODY);
+    await advance(INTERVAL);
+    expect(result.current.ups).toBe(first);
     unmount();
   });
 });
@@ -160,16 +287,13 @@ describe('useDashboard: conditional polls (ETag / 304)', () => {
     await advance(INTERVAL);
     expect(getServices).toHaveBeenCalledTimes(2);
     expect(getServices).toHaveBeenLastCalledWith(false);
-    expect(getUPSStatus).toHaveBeenLastCalledWith(false);
-    // /cron/status has no ETag; a scheduled poll is a plain GET the server's
-    // max-age may answer from cache.
-    expect(getCronStatus).toHaveBeenLastCalledWith(false);
+    expect(getStatus).toHaveBeenLastCalledWith(false);
     unmount();
   });
 
   it('a 304 poll keeps the same data and costs one render (the clock), not a data change', async () => {
     const { result, renders, unmount } = await mount();
-    const before = { s: result.current.servicesBody, u: result.current.ups, c: result.current.cron };
+    const before = { s: result.current.servicesBody, st: result.current.status };
     const stampedAt = result.current.lastUpdated;
     const rendersBefore = renders();
 
@@ -177,8 +301,7 @@ describe('useDashboard: conditional polls (ETag / 304)', () => {
 
     expect(getServices).toHaveBeenCalledTimes(2);
     expect(result.current.servicesBody).toBe(before.s);
-    expect(result.current.ups).toBe(before.u);
-    expect(result.current.cron).toBe(before.c);
+    expect(result.current.status).toBe(before.st);
     expect(result.current.error).toBeNull();
     // The server confirmed the data is current, so the clock moves.
     expect(result.current.lastUpdated).toBe(stampedAt + INTERVAL);
@@ -190,12 +313,11 @@ describe('useDashboard: conditional polls (ETag / 304)', () => {
     const { result, unmount } = await mount();
     const body = result.current.servicesBody;
     getServices.mockResolvedValue(NOT_MODIFIED_NO_BODY);
-    getUPSStatus.mockResolvedValue(NOT_MODIFIED_NO_BODY);
-    getCronStatus.mockResolvedValue(NOT_MODIFIED_NO_BODY);
+    getStatus.mockResolvedValue(answer(NOT_MODIFIED_NO_BODY));
     await advance(INTERVAL);
     expect(result.current.servicesBody).toBe(body);
-    expect(result.current.ups).toBe(UPS);
-    expect(result.current.cron).toBe(CRON);
+    expect(result.current.status).toBe(STATUS);
+    expect(result.current.reach).toBe('ok');
     expect(result.current.error).toBeNull();
     expect(result.current.lastUpdated).toBe(Date.now());
     unmount();
@@ -221,14 +343,13 @@ describe('useDashboard: conditional polls (ETag / 304)', () => {
     unmount();
   });
 
-  it('a failed side source keeps its last value', async () => {
+  it('a failed status read keeps the cards current: only the status goes stale', async () => {
     const { result, unmount } = await mount();
-    getUPSStatus.mockRejectedValue(new Error('HTTP 500'));
-    getCronStatus.mockRejectedValue(new Error('HTTP 500'));
+    getStatus.mockRejectedValue(new Error('HTTP 500'));
     await advance(INTERVAL);
-    expect(result.current.ups).toBe(UPS);
-    expect(result.current.cron).toBe(CRON);
     expect(result.current.error).toBeNull();
+    expect(result.current.lastUpdated).toBe(Date.now());
+    expect(result.current.reach).toBe('down');
     unmount();
   });
 
@@ -239,8 +360,7 @@ describe('useDashboard: conditional polls (ETag / 304)', () => {
     });
     expect(getServices).toHaveBeenCalledTimes(2);
     expect(getServices).toHaveBeenLastCalledWith(true);
-    expect(getUPSStatus).toHaveBeenLastCalledWith(true);
-    expect(getCronStatus).toHaveBeenLastCalledWith(true);
+    expect(getStatus).toHaveBeenLastCalledWith(true);
     unmount();
   });
 });
@@ -261,17 +381,16 @@ describe('useDashboard: background and foreground (appStateChange)', () => {
     unmount();
   });
 
-  it('refreshes at once on return, conditionally, with cron fetched past the cache', async () => {
+  it('refreshes at once on return, conditionally (an ETag is never answered from a cache)', async () => {
     const { result, unmount } = await mount();
     await setAppActive(false);
     await advance(5 * 60 * 1000);
     await setAppActive(true);
     expect(getServices).toHaveBeenCalledTimes(2);
     expect(getServices).toHaveBeenLastCalledWith(false);
-    expect(getUPSStatus).toHaveBeenLastCalledWith(false);
-    // cron's max-age=60 copy could be minutes old after a trip to the background.
-    expect(getCronStatus).toHaveBeenLastCalledWith(true);
+    expect(getStatus).toHaveBeenLastCalledWith(false);
     expect(result.current.lastUpdated).toBe(Date.now());
+    expect(result.current.updated.get()).toBe(Date.now());
     unmount();
   });
 

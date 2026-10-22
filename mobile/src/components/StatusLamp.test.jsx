@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { StatusLamp } from '@ui/status-lamp';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+// MobileApp.css as text (it isn't imported in tests: scripts/ui-stack.test.mjs).
+const CSS = readFileSync(resolve(HERE, '..', 'MobileApp.css'), 'utf8');
 
 describe('StatusLamp', () => {
   describe('shapes', () => {
@@ -55,6 +62,15 @@ describe('StatusLamp', () => {
       const { container } = render(<StatusLamp shape="disc" severity={severity} />);
       const svg = container.querySelector('svg');
       expect(svg).toHaveClass(cls);
+    });
+
+    it('the model\'s maintenance is lamp--maintenance, coloured on --jh-maintenance-fg, never uncoloured', () => {
+      const { container } = render(<StatusLamp state="maintenance" label="Maintenance" />);
+      expect(container.querySelector('svg')).toHaveClass('lamp--maintenance');
+      expect(CSS).toMatch(/\.lamp--maintenance\s*\{\s*color:\s*var\(--jh-maintenance-fg\);/);
+      expect(CSS).toMatch(/\.word--maintenance\s*\{\s*color:\s*var\(--jh-maintenance-fg\);/);
+      // #mobile-root isn't .jh-ui, so the role must be set where the app draws.
+      expect(CSS).toMatch(/#mobile-root,\s*\.mobile-shell\s*\{[^}]*--jh-maintenance-fg:\s*oklch\(/);
     });
   });
 

@@ -26,10 +26,11 @@
  * in the fixtures it names. An exception that no longer happens fails too, so
  * deleting it is the whole change once it is settled.
  *
- * Not covered: the Android app's legacy derivation, mobile/src/data/derive.js
- * (deleted by #325 and #326); the web's, src/utils/thresholds.js, went with
- * the node cards' old readings (#299). Android's screens join this suite in
- * #325, when they render the model.
+ * Android's screens, which draw the model since #325, have their side in
+ * mobile/src/crossClient.test.jsx (`npm --prefix mobile test`): the same
+ * fixtures through the app's own screens, in the same words. The web's old
+ * derivation, src/utils/thresholds.js, went with the node cards' old
+ * readings (#299).
  */
 import { describe, it, expect } from 'vitest';
 import { cleanup, render } from '@testing-library/react';

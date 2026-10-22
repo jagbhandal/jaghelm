@@ -1,35 +1,37 @@
 /**
- * Pure reconciler from the FCM `data.id` namespace (server) to the mobile
- * `deriveIncidents` id namespace (derive.js). The two are incompatible by
- * construction, so passing `data.id` straight to IncidentDetail's
- * `incidents.find(i => i.id === params.id)` would NEVER match — even a LIVE
- * incident. This maps them:
- *   - service_* -> `service:${fcmId}`  (FCM id NODE:SERVICEID === svc.uid;
- *                                       derive.js builds `service:${svc.uid}`)
- *   - cron_*    -> `cron:${fcmId}`     (FCM id NODE:JOBID; derive builds
- *                                       `cron:${node}:${job}`)
- *   - ups_*     -> 'ups:apcups'        (derive.js hard-codes this literal id)
- *   - host_*    -> null                (derive.js emits NO host incident; the
- *                                       caller renders host events from the
- *                                       fallback push params instead)
+ * Pure reconciler from a push's FCM `data` (server) to the status model's
+ * entity id (docs/ARCHITECTURE.md §4.7), which Incident detail looks the issue
+ * up by (nav/issueRoute.js issueFor, #325). The FCM `data` block is unchanged
+ * for installed apps (`type`, `id`, `node`, `severity`, server/push/fcm.js),
+ * so the two namespaces differ and this maps them:
+ *   - service_* -> `services/${fcmId}`  (FCM id NODE:SERVICEID is the card's uid)
+ *   - host_*    -> `nodes/${node}`      (FCM id NODE, or NODE:READING)
+ *   - ups_*     -> 'power/ups'          (the model's one UPS)
+ *   - cron_*    -> `jobs/${fcmId}`      (FCM id NODE:JOB; issueFor finds a job
+ *                                        the model files as a backup too)
+ *   - source_*  -> `sources/${fcmId}`   (prometheus, kuma, nut, config)
+ * Anything else (an Arcane push, an unknown type) is null: Incident detail
+ * then renders from the push's own fields.
  *
- * @param {string} type   one of the 11 differ event types
+ * @param {string} type   the push's event type
  * @param {string} fcmId  the FCM `data.id`
- * @returns {string|null} the derived incident id, or null when no derived
- *   incident can exist (host events) / on malformed input
+ * @param {string} [node] the FCM `data.node`
+ * @returns {string|null} the entity id, or null
  */
-export function fcmIdToIncidentId(type, fcmId) {
+export function fcmIdToIncidentId(type, fcmId, node) {
   if (typeof type !== 'string' || typeof fcmId !== 'string' || fcmId === '') return null;
-  const family = type.split('_')[0]; // service|host|ups|cron (matches server categoryOf)
+  const family = type.split('_')[0]; // service|host|ups|cron|source (matches server categoryOf)
   switch (family) {
     case 'service':
-      return `service:${fcmId}`;
-    case 'cron':
-      return `cron:${fcmId}`;
-    case 'ups':
-      return 'ups:apcups'; // derive.js line 140: the UPS incident id is a fixed literal
+      return `services/${fcmId}`;
     case 'host':
-      return null; // no derived host incident — render from fallback params
+      return `nodes/${typeof node === 'string' && node !== '' ? node : fcmId.split(':')[0]}`;
+    case 'ups':
+      return 'power/ups';
+    case 'cron':
+      return `jobs/${fcmId}`;
+    case 'source':
+      return `sources/${fcmId}`;
     default:
       return null;
   }

@@ -1,35 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import { StatusLamp } from '@ui/status-lamp';
+import { EMPTY, toSeverity } from '@ui/lib/status.js';
 import { formatClock } from '../data/derive.js';
 
 /**
- * Pinned worst-of annunciator strip (spec §7.1). Persists across all four tabs.
+ * Pinned annunciator strip (spec §7.1). Persists across all four tabs.
  *
- *  - Left:  StatusLamp (color = overall `severity`) + the mono status sentence
- *           ("2 services down" / "All systems operational").
+ *  - Left:  StatusLamp (the status model's overall `state`) + its sentence
+ *           ("1 service down · 1 backup failed" / "All 12 services up · 3
+ *           nodes healthy"), as the web header says it.
  *  - Right: `HH:MM · next Xs` — clock in `--muted`, the "next Xs" countdown in
  *           `--accent-light` (chrome, NOT a status color).
  *  - Bottom: indigo (`--accent`) progress line filling over exactly one
  *           `intervalMs`; `key={lastUpdated}` restarts it; reduced-motion → static.
  *
- * States (severity carries meaning; chrome carries cadence):
+ * States (the model's state carries meaning; chrome carries cadence):
  *  - error/unreachable → STEEL lamp + "Can't reach JagHelm" + "Retrying…" + a
  *    frozen steel progress line. Unreachable is UNKNOWN, never red, never green
- *    (spec §13 decision #2 / Bug #4). MobileApp already forces `severity` to
- *    'unknown' here, but the copy is owned by this component.
+ *    (spec §13 decision #2 / Bug #4). The copy is owned by this component.
  *  - loading (no data yet) → steel lamp + "Connecting…", no countdown.
- *  - live → `severity` lamp + `summary` sentence + clock + indigo countdown.
+ *  - stale (MobileApp passes no signal, `unknown`, and why as `summary`: the
+ *    status is past its TTL or too old, #480) → steel lamp + why.
+ *  - an empty board (`empty`, #449) → no lamp, the model's "Nothing monitored
+ *    yet": neither healthy nor no signal.
+ *  - live → `state` lamp + `summary` sentence + clock + indigo countdown.
  *
- * `severity`/`summary` are computed by MobileApp from the dashboard data (with
- * `unreachable = data.error != null` threaded into `overallSeverity`). Tap = refresh.
- * `foreground=false` (the app is in the background) pauses the 1 s heartbeat.
+ * `state`/`summary` come from MobileApp (data/board.js annunciatorOf). Tap =
+ * refresh. `foreground=false` (the app is in the background) pauses the 1 s
+ * heartbeat.
  */
 
-// Overall severity → colorblind-safe lamp shape (mirrors SubsystemCell's mapping).
-const SEV_SHAPE = { critical: 'slash', caution: 'disc', healthy: 'disc', unknown: 'ring' };
-
 export default function RefreshStatus({
-  severity,
+  state,
   summary,
   lastUpdated,
   intervalMs,
@@ -58,29 +60,26 @@ export default function RefreshStatus({
   const remainingS = elapsed == null ? null : Math.max(0, Math.ceil((intervalMs - elapsed) / 1000));
 
   // Resolve the annunciator state. Precedence: unreachable > cold-start > live.
-  let lampSeverity;
-  let lampShape;
+  let lampState;
   let sentence;
   let mod;
   let countdown = false;
   let frozen = false;
 
   if (unreachable) {
-    lampSeverity = 'unknown';
-    lampShape = 'ring';
+    lampState = 'unknown';
     sentence = "Can't reach JagHelm";
     mod = 'error';
     frozen = true;
-  } else if (lastUpdated == null) {
-    lampSeverity = 'unknown';
-    lampShape = 'ring';
+  } else if (lastUpdated == null || !state) {
+    lampState = 'unknown';
     sentence = 'Connecting…';
     mod = 'loading';
   } else {
-    lampSeverity = severity || 'unknown';
-    lampShape = SEV_SHAPE[lampSeverity] || 'disc';
+    // An empty board has no state to show, so no lamp.
+    lampState = state === EMPTY ? null : state;
     sentence = summary || '';
-    mod = lampSeverity;
+    mod = lampState ? toSeverity(lampState) : EMPTY;
     countdown = true;
   }
 
@@ -92,7 +91,7 @@ export default function RefreshStatus({
       aria-label={unreachable ? "Can't reach JagHelm. Tap to retry." : `${sentence}. Tap to refresh now.`}
     >
       <span className="mobile-statusbar__left">
-        <StatusLamp shape={lampShape} severity={lampSeverity} label={sentence} size={10} />
+        {lampState && <StatusLamp state={lampState} label={sentence} size={10} />}
         <span className="mobile-statusbar__summary">{sentence}</span>
       </span>
 

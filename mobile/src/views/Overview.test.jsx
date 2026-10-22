@@ -1,105 +1,151 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 
-vi.mock('@shared/hooks/useData.js', () => ({ getServiceIcon: () => null }));
-
 import Overview from './Overview.jsx';
+import { STALE, UPS_ONLINE, boardOf, inputs, monitored, node } from '../testing/board.js';
 
-// Build a services snapshot with `downCount` down services + one healthy service.
+// A node with `downCount` services down (Kuma) and one up.
 function makeData(downCount, extra = {}) {
   const services = [];
   for (let i = 0; i < downCount; i++) {
-    services.push({ uid: `vm-101:s${i}`, container: `s${i}`, display_name: `Svc ${i}`, icon: null, status: 'down', ping: null, uptime24: 0.4, url: `http://h/s${i}` });
+    services.push(monitored(`vm-101:s${i}`, 'down', { display_name: `Svc ${i}`, url: `http://h/s${i}` }));
   }
-  services.push({ uid: 'vm-101:ok', container: 'ok', display_name: 'Ok', icon: null, status: 'up', ping: 5, uptime24: 0.999, url: '' });
-  return {
-    servicesBody: { nodes: { 'vm-101': { display_name: 'VM 101', subtitle: 'app', metrics: { cpu: '45.3', memPercent: '31.2' }, services } } },
-    ups: { status: 1, charge: 100 }, cron: [], loading: false, error: null, ...extra,
-  };
+  services.push(monitored('vm-101:ok', 'up', { display_name: 'Ok' }));
+  return boardOf(
+    inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101', services }) }, ups: UPS_ONLINE }),
+    extra
+  );
 }
 
-describe('Overview', () => {
-  it('renders hero + 2×2 cells + Active issues (no per-node bar list — Bug #10)', () => {
+describe('Overview, on the status model (#325)', () => {
+  it('renders the status card, a cell per subsystem with anything, and the issues (no per-node bars — Bug #10)', () => {
     render(<Overview data={makeData(1)} nav={{ push: vi.fn() }} />);
-    // Hero
     expect(document.querySelector('.sys-status-card')).not.toBeNull();
-    // Cells
-    expect(screen.getByText('Services')).toBeInTheDocument();
-    expect(document.querySelectorAll('.subsystem-cell').length).toBe(4);
-    // Active issue (down service) — assert via the row name (the hero subline
-    // also names the single down service, so scope to the issue row).
+    // Services, Nodes and Power have something; Jobs, Backups and Integrations don't.
+    expect([...document.querySelectorAll('.subsystem-cell__label')].map((l) => l.textContent)).toEqual([
+      'Services',
+      'Nodes',
+      'Power',
+    ]);
     expect(document.querySelector('.issue-row__name').textContent).toBe('Svc 0');
-    // Bug #10: the old per-node CPU/MEM bar list is GONE.
-    expect(document.querySelector('.node-row')).toBeNull();
-    expect(document.querySelector('.node-row__bars')).toBeNull();
-    expect(document.querySelector('.overview-nodes')).toBeNull();
     expect(document.querySelector('.usage-bar')).toBeNull();
   });
 
-  it('down → red hero (color-spanned word) + Services cell DOWN + down IssueRow with cause', () => {
+  it('down → red card with the model\'s word and counts, the sentence, Services DOWN, a row with its reason', () => {
     render(<Overview data={makeData(2)} nav={{ push: vi.fn() }} />);
-    const headline = document.querySelector('.sys-status-card__headline');
-    expect(headline.textContent).toBe('Two services down');
+    expect(document.querySelector('.sys-status-card__headline').textContent).toBe('Critical · 2 critical');
     const word = document.querySelector('.sys-status-card__word');
-    expect(word).not.toBeNull();
-    expect(word.textContent).toBe('down');
+    expect(word.textContent).toBe('Critical');
     expect(word.className).toMatch(/sys-status-card__word--critical/);
+    expect(document.querySelector('.sys-status-card__subline').textContent).toBe('2 services down');
 
-    // Services cell shows the red DOWN word.
     const svcCell = screen.getByText('Services').closest('.subsystem-cell');
+    expect(svcCell.className).toMatch(/subsystem-cell--critical/);
     expect(within(svcCell).getByText('DOWN')).toBeInTheDocument();
+    expect(within(svcCell).getByText('1 / 3 up')).toBeInTheDocument();
 
-    // Down IssueRow shows the cause (only critical rows show a cause line).
+    // Every row says where it is and the model's reason.
     const row = screen.getByText('Svc 0').closest('.issue-row');
     expect(row.className).toMatch(/issue-row--critical/);
-    expect(within(row).getByText('Service is down')).toBeInTheDocument();
+    expect(within(row).getByText('Service · vm-101')).toBeInTheDocument();
+    expect(within(row).getByText('Kuma: down')).toBeInTheDocument();
   });
 
   it('tapping a down issue row pushes that service\'s detail screen (#279)', () => {
     const push = vi.fn();
     render(<Overview data={makeData(2)} nav={{ push }} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Svc 1, DOWN, VM 101' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Svc 1, Down, Service · vm-101' }));
     expect(push).toHaveBeenCalledOnce();
     expect(push).toHaveBeenCalledWith('serviceDetail', { uid: 'vm-101:s1' });
   });
 
-  it('healthy → green hero + the 🌙 clear state, no issue rows', () => {
+  it('healthy → "All systems normal" and the model\'s sentence, the 🌙 clear state, no issue rows', () => {
     render(<Overview data={makeData(0)} nav={{ push: vi.fn() }} />);
-    expect(document.querySelector('.sys-status-card__headline').textContent).toBe("Everything's healthy");
+    expect(document.querySelector('.sys-status-card__headline').textContent).toBe('All systems normal');
+    expect(document.querySelector('.sys-status-card__word')).toBeNull();
+    expect(document.querySelector('.sys-status-card__subline').textContent).toBe(
+      '1 service up · 1 node healthy'
+    );
     expect(screen.getByText(/Nothing on fire/)).toBeInTheDocument();
     expect(document.querySelector('.issue-row')).toBeNull();
   });
 
-  it('unreachable (error set) → steel "No signal" hero + cells NO SIGNAL even with stale data (Bug #4)', () => {
-    // Stale non-null servicesBody is still in hand, but a live error forces NO SIGNAL.
-    const errorData = makeData(0, { error: new Error('fetch failed') });
-    render(<Overview data={errorData} nav={{ push: vi.fn() }} />);
-
-    expect(document.querySelector('.sys-status-card__headline').textContent).toBe('No signal');
-    expect(document.querySelector('.sys-status-card').className).toMatch(/sys-status-card--unknown/);
-
-    // Every cell reads NO SIGNAL (steel), NOT green — the Bug #4 regression guard.
-    const svcCell = screen.getByText('Services').closest('.subsystem-cell');
-    expect(within(svcCell).getByText('NO SIGNAL')).toBeInTheDocument();
-    expect(svcCell.className).not.toMatch(/subsystem-cell--healthy/);
-    expect(document.querySelectorAll('.subsystem-cell--unknown').length).toBe(4);
-
-    // Reused error banner; no issue rows while unreachable.
-    expect(screen.getByRole('alert').textContent).toMatch(/Couldn't reach JagHelm/);
-    expect(document.querySelector('.issue-row')).toBeNull();
+  it('the Power cell keeps the model\'s detail, and adds the UPS readings the model doesn\'t carry', () => {
+    const power = () => [...document.querySelectorAll('.subsystem-cell')].find(
+      (c) => c.querySelector('.subsystem-cell__label').textContent === 'Power'
+    );
+    // On mains: the charge (the model says only "On mains").
+    const mains = render(<Overview data={makeData(0)} nav={{ push: vi.fn() }} />);
+    expect(power().querySelector('.subsystem-cell__detail').textContent).toBe('On mains');
+    expect(power().querySelector('.subsystem-cell__readings').textContent).toBe('100% charge');
+    mains.unmount();
+    // On battery: the runtime left (the model's reason has the charge already).
+    const onBattery = boardOf(
+      inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101' }) }, ups: { ...UPS_ONLINE, status: 2, charge: 47.6, runtime: 480 } })
+    );
+    const battery = render(<Overview data={onBattery} nav={{ push: vi.fn() }} />);
+    expect(power().querySelector('.subsystem-cell__detail').textContent).toBe('On battery (47 % charge)');
+    expect(power().querySelector('.subsystem-cell__readings').textContent).toBe('8 min left');
+    battery.unmount();
+    // /api/ups didn't answer: no readings line, the model's detail alone.
+    render(<Overview data={{ ...onBattery, ups: null }} nav={{ push: vi.fn() }} />);
+    expect(power().querySelector('.subsystem-cell__readings')).toBeNull();
   });
 
-  it('error with no prior data → steel hero + error banner', () => {
-    const noData = { servicesBody: null, ups: null, cron: null, loading: false, error: new Error('fail') };
+  it('stale (#480) → steel "No signal" card with why and what it last knew; cells and rows keep their words, drawn as no signal', () => {
+    const stale = makeData(1, { error: new Error('fetch failed'), freshness: STALE });
+    render(<Overview data={stale} nav={{ push: vi.fn() }} />);
+
+    expect(document.querySelector('.sys-status-card').className).toMatch(/sys-status-card--unknown/);
+    expect(document.querySelector('.sys-status-card__headline').textContent).toBe('No signal');
+    expect(document.querySelector('.sys-status-card__subline').textContent).toBe("Can't reach JagHelm");
+    expect(document.querySelector('.sys-status-card__counts').textContent).toBe(
+      'last known 3 min ago: Critical · 1 critical'
+    );
+
+    // Never green, amber or red: every cell and row is steel, its last known word kept.
+    const svcCell = screen.getByText('Services').closest('.subsystem-cell');
+    expect(within(svcCell).getByText('DOWN')).toBeInTheDocument();
+    expect(document.querySelectorAll('.subsystem-cell--unknown')).toHaveLength(3);
+    expect(document.querySelector('.issue-row').className).toMatch(/issue-row--unknown/);
+    expect(document.querySelector('[class*="--critical"], [class*="--healthy"], [class*="--caution"]')).toBeNull();
+
+    expect(screen.getByRole('alert').textContent).toMatch(/Couldn't reach JagHelm/);
+    expect(screen.queryByText(/Nothing on fire/)).toBeNull();
+  });
+
+  it('no status at all, out of reach → steel card with why, the error banner', () => {
+    const noData = { status: null, servicesBody: null, loading: false, error: new Error('fail'), freshness: STALE };
     render(<Overview data={noData} nav={{ push: vi.fn() }} />);
     expect(document.querySelector('.sys-status-card__headline').textContent).toBe('No signal');
+    expect(document.querySelector('.sys-status-card__subline').textContent).toBe("Can't reach JagHelm");
+    expect(document.querySelectorAll('.subsystem-cell')).toHaveLength(0);
     expect(screen.getByRole('alert').textContent).toBe("Couldn't reach JagHelm");
   });
 
-  it('loading with no data → Loading… and no clear state', () => {
-    const loadingData = { servicesBody: null, ups: null, cron: null, loading: true, error: null };
+  it('loading with no data → Connecting… and Loading…, no clear state', () => {
+    const loadingData = { status: null, servicesBody: null, loading: true, error: null };
     render(<Overview data={loadingData} nav={{ push: vi.fn() }} />);
+    expect(document.querySelector('.sys-status-card__subline').textContent).toBe('Connecting…');
     expect(screen.getByText(/Loading/i)).toBeInTheDocument();
     expect(screen.queryByText(/Nothing on fire/)).toBeNull();
+  });
+
+  it('an empty board (#449) → the quiet first-run line, never no signal or healthy, and no cells', () => {
+    const empty = boardOf(
+      inputs({
+        nodes: {},
+        services: { nodes: {}, overallHealth: 'unknown', sources: { prometheus: { ok: true } } },
+        ups: { status: null, charge: null, runtime: null, load: null, ok: true, configured: false, model: null },
+      })
+    );
+    expect(empty.status.overall.state).toBe('empty');
+    render(<Overview data={empty} nav={{ push: vi.fn() }} />);
+    const card = document.querySelector('.sys-status-card');
+    expect(card.className).toMatch(/sys-status-card--empty/);
+    expect(card.querySelector('.sys-status-card__headline').textContent).toBe('Nothing monitored yet');
+    expect(card.querySelector('.sys-status-card__word')).toBeNull();
+    expect(document.querySelectorAll('.subsystem-cell')).toHaveLength(0);
+    expect(screen.queryByText(/Nothing on fire|No active issues/)).toBeNull();
   });
 });

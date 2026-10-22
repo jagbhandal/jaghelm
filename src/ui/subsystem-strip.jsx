@@ -4,8 +4,8 @@
  *
  * `cells` is `[{ key, label, state, word, value, sub }]`: `word` names the
  * state ("Down", "On battery"; the lamp's name), `value` is the headline count
- * ("30 / 32 up") and `sub` the line under it. The Android app's cells
- * (`deriveSubsystems()`: `severity` and `detail`) are read too.
+ * ("30 / 32 up") and `sub` the line under it. Both apps build them with
+ * src/shell/statusView.js subsystemCells, from the status model (#325).
  *
  * The `ui` look is the mock's joined annunciator strip: tiles 1px apart inside
  * one 12px-round frame, each a lamp and an overline label over the value.
@@ -28,9 +28,9 @@
  * word: "Services, No signal, Down, 30 / 32 up".
  * Without `onSelect` the tiles are plain content.
  *
- * The `android` look, a stopgap until #326, is the Android app's 2×2 grid of
- * cells, unchanged (lib/status.js), with its lamp rule (SubsystemCell, below,
- * which only the Android look draws).
+ * The `android` look, a stopgap until #326, is the Android app's grid of
+ * cells, two to a row (lib/status.js), with its lamp rule (SubsystemCell,
+ * below, which only the Android look draws).
  */
 import { useId } from 'react';
 import { StatusLamp } from './status-lamp.jsx';
@@ -66,14 +66,15 @@ const columns = {
 };
 
 /**
- * SubsystemCell — one cell of the Android app's 2×2 strip. Its lamp:
- *   UPS on battery (caution) → bolt; critical → slash; unknown → ring;
- *   anything else (healthy, or a hot node or failed cron) → disc.
+ * SubsystemCell — one cell of the Android app's strip. Its lamp:
+ *   Power on battery (the model's crit or warn) → bolt; critical → slash;
+ *   unknown → ring; maintenance → wrench; anything else → disc.
  */
 function cellLampShape(key, severity) {
-  if (key === 'ups' && severity === 'caution') return 'bolt';
+  if (key === 'power' && (severity === 'critical' || severity === 'caution')) return 'bolt';
   if (severity === 'critical') return 'slash';
   if (severity === 'unknown') return 'ring';
+  if (severity === 'maintenance') return 'wrench';
   return 'disc';
 }
 
@@ -92,6 +93,8 @@ function SubsystemCell({ cell }) {
       </div>
       <StatusWord word={cell.word} severity={severity} />
       <span className="subsystem-cell__detail">{cell.detail ?? cell.value}</span>
+      {/* The Power cell's UPS readings the model doesn't carry (mobile board.js). */}
+      {cell.readings && <span className="subsystem-cell__readings">{cell.readings}</span>}
     </div>
   );
 }

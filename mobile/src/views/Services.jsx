@@ -2,15 +2,22 @@ import React, { useState, useMemo } from 'react';
 import FilterChips from '../components/FilterChips.jsx';
 import SearchBar from '../components/SearchBar.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
-import { flattenServices, sortProblemsFirst } from '../data/derive.js';
+import { FRESH, serviceRowsOf } from '../data/board.js';
 
+/**
+ * Services: every service card, worst first by the status model's ranking,
+ * each with the model's lamp and word (#325). Down counts the services the
+ * model calls down (crit).
+ */
 export default function Services({ data, nav }) {
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
+  const { status, servicesBody } = data;
+  const freshness = data.freshness ?? FRESH;
 
   const flat = useMemo(
-    () => sortProblemsFirst(flattenServices(data.servicesBody)),
-    [data.servicesBody],
+    () => serviceRowsOf({ status, servicesBody, freshness }),
+    [status, servicesBody, freshness],
   );
 
   const nodeKeys = useMemo(
@@ -21,7 +28,7 @@ export default function Services({ data, nav }) {
   // Per-chip counts (Bug #11): All / Down / per-node.
   const chips = useMemo(() => [
     { id: 'all',  label: 'All',  count: flat.length },
-    { id: 'down', label: 'Down', count: flat.filter((s) => s.status === 'down').length },
+    { id: 'down', label: 'Down', count: flat.filter((s) => s.modelState === 'crit').length },
     ...nodeKeys.map((k) => ({
       id:    k,
       label: flat.find((s) => s.nodeKey === k)?.nodeName || k,
@@ -30,7 +37,7 @@ export default function Services({ data, nav }) {
   ], [flat, nodeKeys]);
 
   const visible = flat.filter((s) => {
-    if (filter === 'down' && s.status !== 'down') return false;
+    if (filter === 'down' && s.modelState !== 'crit') return false;
     if (filter !== 'all' && filter !== 'down' && s.nodeKey !== filter) return false;
     if (query && !(s.display_name || '').toLowerCase().includes(query.toLowerCase())) return false;
     return true;

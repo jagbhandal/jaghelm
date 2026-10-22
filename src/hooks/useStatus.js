@@ -54,8 +54,11 @@ export function builtAtOf({ builtAt, sentAt }, at) {
   return Math.min(builtAt, at);
 }
 
-/** Whether `body` is the status model's shape: what the header reads, at least. */
-function isStatus(body) {
+/**
+ * Whether `body` is the status model's shape: what the header reads, at
+ * least. The Android app reads /api/status by the same test (#325).
+ */
+export function isStatus(body) {
   return (
     body != null &&
     typeof body === 'object' &&

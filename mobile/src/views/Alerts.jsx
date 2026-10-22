@@ -1,15 +1,24 @@
 import React, { useMemo } from 'react';
-import { deriveIncidents, activeIncidentIds } from '../data/derive.js';
+import { EMPTY, WORDS } from '@ui/lib/status.js';
 import { groupByDay, formatDayLabel, dateToDayKey } from '../data/groupByDay.js';
 import StatusBanner from '../components/StatusBanner.jsx';
+import { FRESH, issueRowsOf } from '../data/board.js';
+import { lastKnownCaption } from '@shared/shell/statusFreshness.js';
 
 /**
- * Alerts: active (live-derived) incidents are pinned at top in alarm-red,
- * shown as compact rows that include the cause (Bug #8).
+ * Alerts: the status model's issues (#325), worst first, are pinned at top in
+ * alarm-red as the active incidents, shown as compact rows: the name, where it
+ * is ("Service · vm103") and the model's reason (Bug #8).
  *
- * History de-dup (Bug #3): history renders ONLY incidents whose id is NOT in
- * activeIncidentIds(). Since all currently-derived incidents ARE active, the
- * history section is empty by design → shows "No earlier alerts this session."
+ * While the status is stale (#480), as on the web's Alerts page, the rows stay
+ * as last known, but none is active: each is drawn steel (no signal), under a
+ * "Last known 3 min ago" heading, and the page says "No signal · <why>" above
+ * them ("JagHelm's status is out of date"; a fetch error's own banner says it
+ * when the cards can't be read either). Bug #4: stale data never reads as live.
+ *
+ * History de-dup (Bug #3): history renders ONLY incidents whose id is NOT
+ * active. Every issue the model has now IS active, so the history section is
+ * empty by design → shows "No earlier alerts this session."
  *
  * Day-grouping stays wired for the future persisted-history feed (Phase 5+).
  * When that feed lands, pass real persisted incidents (filtered to non-active)
@@ -19,16 +28,14 @@ import StatusBanner from '../components/StatusBanner.jsx';
  * READ-ONLY: the only action is nav.push.
  */
 export default function Alerts({ data, nav }) {
-  const { loading, error, servicesBody } = data;
-  const { ups, cron } = data;
+  const { loading, error, servicesBody, status } = data;
+  const freshness = data.freshness ?? FRESH;
+  const stale = freshness.stale;
 
-  const incidents = useMemo(
-    () => deriveIncidents({ services: servicesBody, ups, cron }),
-    [servicesBody, ups, cron],
-  );
+  const incidents = useMemo(() => issueRowsOf({ status, freshness }), [status, freshness]);
 
   // The set of active incident ids — history filters these OUT (de-dup, Bug #3).
-  const activeIds = useMemo(() => activeIncidentIds(incidents), [incidents]);
+  const activeIds = useMemo(() => new Set(incidents.map((i) => i.id)), [incidents]);
 
   // History: only incidents NOT in the active set.
   // In snapshot-only mode all derived incidents are active → historyIncidents is always [].
@@ -66,28 +73,44 @@ export default function Alerts({ data, nav }) {
 
       <StatusBanner loading={loading} error={error} hasData={!!servicesBody} />
 
-      {!loading && !error && incidents.length === 0 && (
-        <p className="alerts-clear">All clear — nothing is on fire.</p>
+      {/* Quiet: all clear. An empty board (#449) has nothing checked, so it
+          says the model's "Nothing monitored yet" instead, never all clear. */}
+      {!loading && !error && !stale && status && incidents.length === 0 && (
+        <p className="alerts-clear">
+          {status.overall.state === EMPTY
+            ? status.overall.sentence
+            : 'All clear — nothing is on fire.'}
+        </p>
       )}
 
-      {/* When unreachable (error set) we do NOT present stale incidents as currently
-          "Active" — the error banner stands alone, consistent with Overview/Bug #4
-          (a mid-session outage must never render stale data as live). */}
-      {!error && incidents.length > 0 && (
+      {/* Stale (#480): no signal, and why. With a fetch error the banner
+          above already says it. */}
+      {stale && !error && (
+        <p className="alerts-stale">{`${WORDS.unknown} · ${freshness.cause}`}</p>
+      )}
+
+      {/* Fresh, the issues are "Active", in red. Stale, the same rows as last
+          known, steel and never "Active" (Bug #4: a mid-session outage must
+          never render stale data as live). */}
+      {incidents.length > 0 && (
         <>
-          <h2 className="alerts-section alerts-section--active">Active</h2>
+          {stale ? (
+            <h2 className="alerts-section">{lastKnownCaption(freshness) ?? 'Last known'}</h2>
+          ) : (
+            <h2 className="alerts-section alerts-section--active">Active</h2>
+          )}
           {incidents.map((inc) => (
             <button
               key={inc.id}
               type="button"
-              className="alert-row alert-row--active"
+              data-state={inc.state}
+              className={stale ? 'alert-row alert-row--stale' : 'alert-row alert-row--active'}
               onClick={() => nav.push('incident', { id: inc.id })}
-              aria-label={`${inc.title} on ${inc.node} (active)`}
+              aria-label={`${inc.title}, ${inc.readout} (${stale ? 'last known' : 'active'})`}
             >
               <span className="alert-row__title">{inc.title}</span>
-              <span className="alert-row__node">{inc.node}</span>
-              {/* Cause shown unconditionally on active rows (Bug #8); derive cause is
-                  never falsy. Matches the history rows + IncidentCard. */}
+              <span className="alert-row__node">{inc.readout}</span>
+              {/* The model's reason, on every row (Bug #8). */}
               <span className="alert-row__cause">{inc.cause}</span>
             </button>
           ))}
@@ -108,10 +131,10 @@ export default function Alerts({ data, nav }) {
                     type="button"
                     className="alert-row"
                     onClick={() => nav.push('incident', { id: inc.id })}
-                    aria-label={`${inc.title} on ${inc.node}: ${inc.cause}`}
+                    aria-label={`${inc.title}, ${inc.readout}: ${inc.cause}`}
                   >
                     <span className="alert-row__title">{inc.title}</span>
-                    <span className="alert-row__node">{inc.node}</span>
+                    <span className="alert-row__node">{inc.readout}</span>
                     <span className="alert-row__cause">{inc.cause}</span>
                   </button>
                 ))}

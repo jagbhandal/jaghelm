@@ -4,19 +4,26 @@ import UsageBar from '../components/UsageBar.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
-import { nodeSeverity, nodeUpDown, sortProblemsFirst, parseMetricPct, severityToShape, nodeSeverityWord } from '../data/derive.js';
+import { FRESH, colourOf, nodeCardsOf, serviceRowsOf } from '../data/board.js';
 
 /**
- * NodeDetail — status header (resource lamp + word + up/down count) + metric
- * bars + worst-first service list. Bars: CPU, MEM, TEMP when the node reports a
- * temperature, and DISK when it reports disk (or reports no temperature, so the
- * screen always has a third bar). Unlike the card, which has room for three
- * bars and swaps TEMP for DISK at DISK_HOT (thirdMetric), the detail screen
- * shows both, so the temperature behind an amber lamp is never hidden (#273).
- * Missing node → "This node is no longer reported."
+ * NodeDetail — the node as the status model has it (#325): its lamp and word,
+ * its hosted services counted by the model (the down count red, steel while
+ * the status is stale), its reason when it isn't healthy,
+ * the metric bars (CPU, MEM, TEMP when the node has a temperature, DISK), each
+ * coloured by the model's level for it, and its services, worst first. The
+ * card has room for three bars and swaps TEMP for DISK when the disk is over
+ * a line (data/board.js); this screen shows all four, so the temperature
+ * behind an amber lamp is never hidden (#273).
+ * A node the model doesn't have → "This node is no longer reported."
  */
 export default function NodeDetail({ data, nav, params }) {
-  const node = data.servicesBody?.nodes?.[params.nodeKey];
+  const freshness = data.freshness ?? FRESH;
+  const node = data.status
+    ? nodeCardsOf({ status: data.status, servicesBody: data.servicesBody, freshness }).find(
+        (n) => n.key === params.nodeKey
+      )
+    : null;
   if (!node) {
     return (
       <section className="mobile-view" aria-label="Node detail">
@@ -25,31 +32,38 @@ export default function NodeDetail({ data, nav, params }) {
       </section>
     );
   }
-  const sev = nodeSeverity(node);
-  const shape = severityToShape(sev);
-  const sevWord = nodeSeverityWord(sev);
-  const { up, down } = nodeUpDown(node);
-  const m = node.metrics || {};
-  const tempPct = parseMetricPct(m.temp);
-  const diskPct = parseMetricPct(m.diskPercent);
-  const services = sortProblemsFirst((node.services || []).map((s) => ({ ...s, nodeKey: params.nodeKey, nodeName: node.display_name || params.nodeKey })));
+  const { total, up, down } = node.serviceCounts;
+  const services = serviceRowsOf({
+    status: data.status,
+    servicesBody: data.servicesBody,
+    freshness,
+    nodeKey: params.nodeKey,
+  });
   return (
     <section className="mobile-view" aria-label="Node detail">
-      <BackHeader title={node.display_name} onBack={nav.pop} />
+      <BackHeader title={node.name} onBack={nav.pop} />
       <div className="node-detail__head">
-        <StatusLamp shape={shape} severity={sev} label={sevWord} size={18} />
-        <StatusWord word={sevWord} severity={sev} />
+        <StatusLamp state={node.state} label={node.word} size={18} />
+        <StatusWord word={node.word} state={node.state} />
         <span className="node-detail__count">
-          {up} up{down > 0 && ' / '}{down > 0 && (
-            <span className="node-detail__down-count" style={{ color: 'var(--red)' }}>{down} down</span>
+          {total === 0 ? (
+            node.services
+          ) : (
+            <>
+              {up} / {total} {total === 1 ? 'service' : 'services'} up
+              {down > 0 && ' · '}
+              {down > 0 && (
+                <span className="node-detail__down-count" style={{ color: colourOf(node.downState) }}>{down} down</span>
+              )}
+            </>
           )}
         </span>
       </div>
+      {node.reason && <p className="detail-cause">{node.reason}</p>}
       <div className="node-detail__bars">
-        <UsageBar label="CPU" value={m.cpu} unit="%" percent={parseMetricPct(m.cpu)} />
-        <UsageBar label="MEM" value={m.memPercent} unit="%" percent={parseMetricPct(m.memPercent)} />
-        {tempPct != null && <UsageBar label="TEMP" value={m.temp} unit="°C" percent={tempPct} />}
-        {(diskPct != null || tempPct == null) && <UsageBar label="DISK" value={m.diskPercent} unit="%" percent={diskPct} />}
+        {node.detailBars.map((bar) => (
+          <UsageBar key={bar.key} label={bar.label} shown={bar.shown} percent={bar.percent} state={bar.state} />
+        ))}
       </div>
       <div className="svc-list">
         {services.map((s) => (

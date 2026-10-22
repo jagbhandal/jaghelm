@@ -8,8 +8,9 @@ import ServiceRow from './ServiceRow.jsx';
 
 beforeEach(() => getServiceIcon.mockReset());
 
-const SVC = { uid: 'vm-101:gitea', display_name: 'Gitea', icon: null, status: 'down', ping: null, uptime24: 0.42, url: 'http://h/gitea', nodeName: 'VM 101' };
-const SVC_UP = { uid: 'vm-101:adguard', display_name: 'AdGuard', icon: null, status: 'up', ping: 12, nodeName: 'VM 101', monitored: true, source: 'container' };
+// As data/board.js serviceRowsOf hands them over: the card, and the model's state and word.
+const SVC = { uid: 'vm-101:gitea', display_name: 'Gitea', icon: null, status: 'down', ping: null, uptime24: 0.42, url: 'http://h/gitea', nodeName: 'VM 101', state: 'crit', word: 'Down' };
+const SVC_UP = { uid: 'vm-101:adguard', display_name: 'AdGuard', icon: null, status: 'up', ping: 12, nodeName: 'VM 101', monitored: true, source: 'container', state: 'ok', word: 'Up' };
 
 describe('ServiceRow', () => {
   it('renders an absolute base-aware icon URL, node tag, name, status', () => {
@@ -57,6 +58,14 @@ describe('ServiceRow', () => {
     const wordEl = container.querySelector('.status-word');
     expect(wordEl).not.toBeNull();
     expect(wordEl.textContent).toBe('UP');
+  });
+
+  it('a stale status draws the lamp and word as no signal, the word kept (#480)', () => {
+    getServiceIcon.mockReturnValue(null);
+    const { container } = render(<ServiceRow service={{ ...SVC, state: 'unknown' }} onTap={() => {}} />);
+    expect(container.querySelector('.status-word').textContent).toBe('DOWN');
+    expect(container.querySelector('.status-word').style.color).toBe('var(--steel)');
+    expect(container.querySelector('.status-lamp').getAttribute('class')).toMatch(/lamp--unknown/);
   });
 
   it('down row: StatusWord has critical (red) color', () => {

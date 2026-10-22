@@ -1,43 +1,49 @@
 import React from 'react';
 import UsageBar from './UsageBar.jsx';
 import { StatusLamp } from '@ui/status-lamp';
-import { nodeSeverity, nodeUpDown, parseMetricPct, thirdMetric, severityToShape, nodeSeverityWord } from '../data/derive.js';
+import { colourOf } from '../data/board.js';
 
 /**
- * Compact node card. Header: node name (Outfit) + subtitle (mono) + resource
- * StatusLamp. Up/down count (down count red when > 0). CPU + MEM + third bar
- * via thirdMetric (TEMP when the node reports temperature, else DISK; DISK wins
- * once disk >= DISK_HOT, #273). The detail screen shows both. Tap → onTap(nodeKey).
- *
- * The lamp reflects RESOURCE-ONLY severity (cpu ≥ 90 or temp ≥ 75 → amber;
- * cool resources → green; no metrics → steel). A node hosting a down service
- * shows a red down-count but its lamp stays resource-colored — never red.
+ * Compact node card, drawn from the status model (#325; data/board.js
+ * nodeCardsOf). Header: node name (Outfit) + subtitle (mono) + the node's
+ * StatusLamp, its state and word the model's (named by the word: "Healthy",
+ * "Warning", "Unreachable", "No signal"). Then its hosted services as the
+ * model counts them, "4 / 5 services up · 1 down" with the down count red
+ * (steel while the status is stale: `downState`), or
+ * "No services" for a node that hosts none (a Proxmox host), never "0 up".
+ * Then CPU + MEM + a third bar (TEMP, or DISK when the node has no
+ * temperature or the model has its disk over a line, #273), each coloured by
+ * the model's level for it. The detail screen shows all four. Tap →
+ * onTap(nodeKey).
  */
-export default function NodeCard({ nodeKey, node, onTap }) {
-  const sev = nodeSeverity(node);
-  const shape = severityToShape(sev);
-  const sevWord = nodeSeverityWord(sev);
-  const { up, down } = nodeUpDown(node);
-  const m = node.metrics || {};
-  const third = thirdMetric(m);
+export default function NodeCard({ node, onTap }) {
+  const { total, up, down } = node.serviceCounts;
   return (
-    <button type="button" className="node-card" onClick={() => onTap(nodeKey)} aria-label={`${node.display_name} detail`}>
+    <button type="button" className="node-card" onClick={() => onTap(node.key)} aria-label={`${node.name} detail`}>
       <div className="node-card__head">
-        <span className="node-card__name">{node.display_name}</span>
+        <span className="node-card__name">{node.name}</span>
         {node.subtitle ? <span className="node-card__type">{node.subtitle}</span> : null}
         <span className="node-card__lamp">
-          <StatusLamp shape={shape} severity={sev} label={sevWord} size={14} />
+          <StatusLamp state={node.state} label={node.word} size={14} />
         </span>
       </div>
       <div className="node-card__count">
-        {up} up{down > 0 && ' / '}{down > 0 && (
-          <span className="node-card__down-count" style={{ color: 'var(--red)' }}>{down} down</span>
+        {total === 0 ? (
+          node.services
+        ) : (
+          <>
+            {up} / {total} {total === 1 ? 'service' : 'services'} up
+            {down > 0 && ' · '}
+            {down > 0 && (
+              <span className="node-card__down-count" style={{ color: colourOf(node.downState) }}>{down} down</span>
+            )}
+          </>
         )}
       </div>
       <div className="node-card__bars">
-        <UsageBar label="CPU" value={m.cpu} unit="%" percent={parseMetricPct(m.cpu)} />
-        <UsageBar label="MEM" value={m.memPercent} unit="%" percent={parseMetricPct(m.memPercent)} />
-        <UsageBar label={third.label} value={third.value} unit={third.unit} percent={third.percent} />
+        {node.bars.map((bar) => (
+          <UsageBar key={bar.key} label={bar.label} shown={bar.shown} percent={bar.percent} state={bar.state} />
+        ))}
       </div>
     </button>
   );

@@ -47,7 +47,9 @@ against spec §6.1's 90/95, and to let Android drop its `DISK_HOT` literal.
   moves in Phase 1, Android in Phase 1 and Phase 4), delete:
   - `src/utils/thresholds.js` (`USAGE_WARN`, `USAGE_CRITICAL` and their helpers);
   - in `mobile/src/data/derive.js`, `DISK_HOT` and its comment, `CPU_HOT`,
-    `TEMP_HOT` and `nodeSeverity`.
+    `TEMP_HOT` and `nodeSeverity` (done in #325, with the rest of the app's
+    severity: its bars take the model's `conditions` and its cards the
+    model's states).
 - Push took the model's timing with #292: it alerts on CPU after 2 cycles over
   the line, as the model warns, and its hysteresis is the model's held level
   (#361 fixed by construction), so a reading that drifts down through the
