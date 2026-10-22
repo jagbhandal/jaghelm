@@ -29,41 +29,79 @@ the ones that were deployed from that commit.
 
 ## Production deploys
 
-Every merge to `main` also runs **Deploy JagHelm** (`.gitea/workflows/deploy.yml`)
-on Gitea, which puts that commit's `:sha-<short>` image on vm-103. It never
-deploys `:latest` instead.
+Production converges on `main`'s head ([ADR 0007](adr/0007-reconcile-deploy.md)).
+Two Gitea workflows put a commit's `:sha-<short>` image on vm-103, with the
+same steps (`scripts/deploy/deploy.sh`), one at a time. Neither ever deploys
+`:latest` instead.
 
-- **Green** means `/api/health` on vm-103 reports the merged commit's short SHA
-  as `revision`: the commit is live.
-- **Red at "Wait for the freshly-built image"** means the commit's image did not
-  appear within 6 minutes (`IMAGE_WAIT_SECONDS`), usually because GitHub's
-  **Build and Push Docker Image** run for that commit failed. Nothing on vm-103
-  changed: the previous release is still serving. To recover:
-  1. Open the build from the link in the error line, then re-run it, or fix the
-     build and merge the fix (the fix's own deploy then ships both).
-  2. Once the build has pushed `:sha-<short>`, re-run the failed deploy on
-     Gitea, but only if no later commit has merged since: otherwise the later
-     commit's deploy ships this one (re-run that one if it is red too).
-- **Red at the stage step** (the pull, or `compose.yaml` refused) also changed
+- **Deploy JagHelm** (`.gitea/workflows/deploy.yml`) runs on every merge to
+  `main`: the fast path. It waits up to 6 minutes (`IMAGE_WAIT_SECONDS`) for
+  the commit's image, then deploys it.
+- **Reconcile production** (`.gitea/workflows/reconcile.yml`) runs every 5
+  minutes. When vm-103's `/api/health` reports `main`'s head as `revision`, it
+  logs one line and stops. Otherwise it deploys `main`'s head once its image
+  exists.
+
+So a merge is live about 6 minutes after it, when its image is built in time;
+otherwise within 5 minutes of the image landing.
+
+What a run means:
+
+- **Green, "Deploy verified healthy"**: `/api/health` reports that commit as
+  `revision`. It is live.
+- **Green, "Superseded by `<sha>`"**: `main` had moved on, so the run changed
+  nothing; the later commit's deploy, or the reconcile, ships it. Re-running an
+  old deploy is safe: it never puts an older build over a newer one.
+- **Green, "Image not built yet; the reconcile ships it when it is"**: the
+  image was not there within 6 minutes (mirror lag, a slow build). Nothing
+  changed; the reconcile deploys it when the image lands.
+- **Green, "nothing to do"** or **"has no image yet"** (reconcile): vm-103
+  already runs `main`'s head, or its build is still under way.
+- **Green with a warning, "failed its deploy on vm-103"** (reconcile): `main`'s
+  head failed a deploy or was rolled back by hand, and is named in
+  `/opt/stacks/jaghelm/deploy-failed`, so scheduled runs leave it alone instead
+  of retrying every 5 minutes. Merge a fix, or once the cause is fixed, **Run
+  workflow** on Reconcile production (a run by hand retries it). A healthy
+  deploy removes the file.
+- **Green with a warning, "could not read /api/health"** (reconcile): JagHelm
+  on vm-103 doesn't answer, over HTTP or SSH. The reconcile can't tell what
+  runs, so it changes nothing; Uptime Kuma pages when JagHelm is down.
+- **Grey, cancelled**: a newer run in the same queue replaced it; that one
+  ships `main`.
+- **Red, "has no image … after its commit"** (reconcile): 30 minutes after the
+  commit, its image still does not exist. Its GitHub **Build and Push Docker
+  Image** run failed, or never ran because the mirror did not push the commit.
+  Nothing on vm-103 changed. Open the build from the link in the error line,
+  re-run it or merge a fix; the next reconcile run deploys it once the image
+  exists. Every run goes red until then.
+- **Red at the stage step** (the pull, or `compose.yaml` refused) changed
   nothing on vm-103: a failed pull happens before anything is delivered, and a
-  refused `compose.yaml` is put back before the container is touched.
+  refused `compose.yaml` is put back before the container is touched. The next
+  reconcile run retries a failed pull; a refused `compose.yaml` holds the
+  commit back, as below.
 - **Red at the switch or the health gate** (including a `revision` that is not
   this commit) means vm-103 was rolled back to the image and `compose.yaml` it
   had before, unless a later deploy has replaced it since; then the rollback
-  leaves it alone. The step's `::error::` line says why.
-- **Green with `Superseded by <sha>`** means main had already moved on when the
-  run checked, so it changed nothing; the later commit's deploy ships this one.
-  Re-running an old deploy is therefore safe: it never puts an older build over
-  a newer one.
+  leaves it alone. The step's `::error::` line says why. Either way, the commit
+  is held back from the reconcile (above): fix the cause, then re-run the
+  deploy, or merge a fix.
+- **Red, "could not read" deploy.sh or `main`'s head**: Gitea's API did not
+  answer; nothing changed. Re-run it (the reconcile tries again by itself).
 
-**Manual rollback to a known commit.** Never automatic. On vm-103, with
-`<short>` the first seven characters of a commit whose image you trust:
+**Manual rollback to a known commit.** Never automatic. The lasting way is a
+revert merged on `main`, which deploys like any merge. To run an earlier
+commit by hand meanwhile, on vm-103, with `<bad>` the first seven characters of
+the commit you are leaving (`main`'s head, the `revision` `/api/health` reports
+now) and `<short>` those of a commit whose image you trust:
 
 ```bash
-cd /opt/stacks/jaghelm && docker pull ghcr.io/jagbhandal/jaghelm:sha-<short> && docker tag ghcr.io/jagbhandal/jaghelm:sha-<short> ghcr.io/jagbhandal/jaghelm:latest && docker compose up -d --force-recreate
+cd /opt/stacks/jaghelm && echo <bad> > deploy-failed && docker pull ghcr.io/jagbhandal/jaghelm:sha-<short> && docker tag ghcr.io/jagbhandal/jaghelm:sha-<short> ghcr.io/jagbhandal/jaghelm:latest && docker compose up -d --force-recreate
 ```
 
-It keeps the host's current `compose.yaml`; when rolling back across a
+`deploy-failed` holds `<bad>` back from the reconcile: its scheduled runs warn
+and leave vm-103 alone until a new commit merges, whose healthy deploy removes
+the file. Without it the reconcile deploys `<bad>` again within 5 minutes. The
+command keeps the host's current `compose.yaml`; when rolling back across a
 `compose.yaml` change, first copy that commit's `compose.yaml` into
 `/opt/stacks/jaghelm` too. `/api/health` then reports `<short>` as `revision`,
 until the next merge deploys over it.

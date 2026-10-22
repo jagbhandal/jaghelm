@@ -226,14 +226,16 @@ scripts/                    inject-sw-precache.mjs, check-assets.mjs, changelog-
                             ui-preflight.mjs (writes src/ui/preflight.css),
                             ui-contrast.mjs (the design tokens' contrast check, and the
                             chart colours' gates), gallery.mjs (runs the gallery's tests in
-                            their container)
+                            their container), deploy/deploy.sh (the production deploy both
+                            Gitea deploy workflows run, one command per step)
 changes/                    CHANGELOG fragments, one per PR (mobile/changes/ for Android);
                             the release PR folds them into the CHANGELOG (RELEASING.md)
 .github/workflows/          build-push.yml (test -> build -> sign -> GHCR), release.yml (tag ->
                             promote by digest -> GitHub Release), build-apk.yml (signed APK)
-.gitea/workflows/           check.yml (PR gate), deploy.yml (stage image + compose.yaml -> recreate ->
-                            health-gate -> rollback)
-docs/adr/                   architecture decision records (0001-0005)
+.gitea/workflows/           check.yml (PR gate), deploy.yml (on a push to main: stage image +
+                            compose.yaml -> recreate -> health-gate -> rollback),
+                            reconcile.yml (every 5 min: the same deploy for main's head)
+docs/adr/                   architecture decision records (0001-0007)
 ```
 
 ## 4. Backend architecture
@@ -2492,14 +2494,14 @@ flowchart LR
   GH --> GHCR["GHCR"]
   TAG["vX.Y.Z tag pushed on Gitea"] --> REL["GitHub Actions: release.yml<br/>add :X.Y.Z to the :sha-short digest<br/>+ GitHub Release"]
   REL --> GHCR
-  GH -.->|"event-driven dispatch (opt-in, ADR 0005)"| DEP
-  PR -->|"push trigger (fallback)"| DEP["Gitea deploy.yml (self-hosted)"]
-  subgraph DEP2["deploy.yml"]
-    KEY["pin vm-103 host key<br/>(VM103_HOST_KEY)"] --> WAIT["wait for :sha-short<br/>(never appears: fail, vm-103 untouched)"]
+  PR -->|"push trigger (fast path)"| DEP["Gitea deploy.yml (self-hosted)"]
+  CRON["every 5 min"] --> REC["Gitea reconcile.yml (self-hosted)<br/>vm-103's revision vs main's head"]
+  subgraph DEP2["scripts/deploy/deploy.sh, run by both"]
+    KEY["pin vm-103 host key<br/>(VM103_HOST_KEY)"] --> WAIT["deploy.yml: wait for :sha-short<br/>(superseded or late: green, vm-103 untouched)<br/>reconcile.yml: deploy main's head if behind<br/>(no image 30 min after the commit: fail)"]
     WAIT --> STAGE["stage: pull :sha-short<br/>+ deliver and verify compose.yaml"]
     STAGE --> SWITCH["retag :latest + recreate"]
     SWITCH --> GATE["health gate<br/>(Docker health + /api/health<br/>+ revision = this commit)"]
-    GATE -->|"fail"| RB["auto-rollback to prev image<br/>+ prev compose.yaml"]
+    GATE -->|"fail"| RB["auto-rollback to prev image<br/>+ prev compose.yaml;<br/>hold the commit from the reconcile"]
     GATE -->|"pass"| LIVE["live on prod"]
   end
 ```
@@ -2527,14 +2529,28 @@ flowchart LR
   release job attaches it to a GitHub Release with notes from
   `mobile/CHANGELOG.md`. A manual run is a
   test build and creates no release.
-- **Deploy** ([deploy.yml](../.gitea/workflows/deploy.yml)) runs on vm-103's
-  self-hosted Gitea runner, labelled `vm103` (no other workflow may use that
-  label), and reaches the host over SSH that verifies a
+- **Deploy** runs on vm-103's self-hosted Gitea runner, labelled `vm103` (no
+  workflows but these two may use that label), as two workflows that run one
+  implementation, [scripts/deploy/deploy.sh](../scripts/deploy/deploy.sh),
+  read at the run's commit from the Gitea API (the runner has no checkout).
+  **Deploy JagHelm** ([deploy.yml](../.gitea/workflows/deploy.yml)) is the
+  fast path: on a push to `main` it waits up to 6 minutes for that commit's
+  `:sha-<short>` image. If main moves past the commit meanwhile, or the image
+  is not there in time, it ends green and changes nothing. **Reconcile
+  production** ([reconcile.yml](../.gitea/workflows/reconcile.yml)) runs every
+  5 minutes: it reads `/api/health`'s `revision` over HTTP and main's head from
+  Gitea, stops after one line when they match, deploys main's head when it is
+  behind and the image exists, and **fails when main's head still has no image
+  30 minutes after its commit** (a failed or missing build). A commit whose
+  deploy failed on vm-103, or that was rolled back by hand, is named in
+  `deploy-failed` in the stack directory, and scheduled runs don't retry it; a
+  run started by hand does. It runs only on `main`. Both share a concurrency
+  group, so they never race
+  ([ADR 0007](adr/0007-reconcile-deploy.md)). The deploy reaches the host over
+  SSH that verifies a
   **pinned host key** (the `VM103_HOST_KEY` repository variable; without it the
-  deploy fails before any SSH). It waits up to 6 minutes for this commit's
-  `:sha-<short>` image; if it never appears, the deploy **fails without
-  touching vm-103** (there is no fallback to `:latest`). It pulls and **pins
-  this commit's `:sha-<short>`** image and **delivers this commit's
+  deploy fails before any SSH). There is no fallback to `:latest`. It pulls and
+  **pins the commit's `:sha-<short>`** image and **delivers the commit's
   `compose.yaml`** to the
   stack directory: written as `compose.yaml.new`, checked by sha256 on the host,
   the old copy kept as `compose.yaml.prev`, renamed into place and validated with
@@ -2546,7 +2562,7 @@ flowchart LR
   failure after the host was changed rolls back the previous image **and** the
   previous `compose.yaml` together, unless a later deploy has replaced it
   since. A run whose commit is no longer main's head changes nothing and ends
-  green as superseded. What a red deploy means, how to recover and the manual
+  green as superseded. What green and red mean, how to recover and the manual
   rollback: [RELEASING.md](RELEASING.md#production-deploys). The deploy owns `compose.yaml` on the host:
   host-specific additions (a secrets mount, host networking) go in
   `compose.override.yaml`, which Compose merges and the deploy never touches.
@@ -2561,10 +2577,7 @@ flowchart LR
   |------|------|-----|
   | Variable | `VM103_HOST_KEY` | Required. vm-103's host key as one known_hosts line (`<address> ssh-ed25519 AAAA…`), from `ssh-keyscan -t ed25519 <address>` with the fingerprint checked on vm-103. Update it after a rebuild. |
   | Variable | `COSIGN_VERIFY` | Optional. `true` verifies the image signature before deploying. |
-  | Job token | `GITEA_TOKEN` (automatic) | Reads `compose.yaml` at the deployed commit from the Gitea API; the job limits it to `contents: read`. Nothing to set. |
-- **Event-driven trigger** ([ADR 0005](adr/0005-event-driven-deploy.md)): the
-  build dispatches the deploy when the image is ready, replacing a GHCR poll. It
-  is opt-in and fallback-preserving -- the push trigger remains until verified.
+  | Job token | `GITEA_TOKEN` (automatic) | Reads `deploy.sh`, main's head and `compose.yaml` at the deployed commit from the Gitea API; the jobs limit it to `contents: read`. Nothing to set. |
 
 ## 8. Testing
 
@@ -2799,8 +2812,9 @@ change; `doc-counts.test.mjs` fails on one.
 | [0002](adr/0002-in-memory-single-instance.md) | Single-instance, in-memory state (no DB) |
 | [0003](adr/0003-scoped-tls-bypass.md) | Per-request, opt-in TLS-verify bypass for self-signed infra |
 | [0004](adr/0004-config-copy-on-read.md) | Config is copy-on-read + synchronous atomic writes |
-| [0005](adr/0005-event-driven-deploy.md) | Event-driven build->deploy trigger (opt-in, fallback-preserving) |
+| [0005](adr/0005-event-driven-deploy.md) | Event-driven build->deploy trigger (superseded by 0007, never enabled) |
 | [0006](adr/0006-one-severity-table.md) | One severity table, judged on the server; push reads the same thresholds |
+| [0007](adr/0007-reconcile-deploy.md) | Production converges on main's head: a scheduled reconcile on Gitea's own runner |
 
 ## 10. Known tradeoffs
 
