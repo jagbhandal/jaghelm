@@ -248,9 +248,6 @@ test('an endpoint that carries a key in its query or a password is masked whole'
   for (const e of ['/api/stats?apikey={token}', '/api/v1/summary', '/api?limit=10&sort=name']) {
     assert.equal(maskedField({ url: 'http://x', endpoint: e }, 'endpoint'), e, e);
   }
-  // The URL is not masked: the form shows it and saves it back (a key in it
-  // is left to a follow-up).
-  assert.equal(maskedField({ url: 'http://x/?apikey=k' }, 'url'), 'http://x/?apikey=k');
 });
 
 test('a key an endpoint fills in through a {placeholder} is masked, whatever its name', () => {
@@ -367,4 +364,32 @@ test('in an array, a marker goes back to the element with the same name, id or k
   assert.equal(restoreCredentials(twice, stored).status, 400);
   const storedTwice = { custom_integrations: [stored.custom_integrations[1], stored.custom_integrations[1]] };
   assert.equal(restoreCredentials(shifted, storedTwice).status, 400);
+});
+
+test("an integration's URL that carries a credential is masked whole, and kept by a save of the read (#422)", () => {
+  for (const url of [
+    'http://admin:pw@x:3000', // pragma: allowlist secret
+    'http://t0k3n@x/api',
+    'http://x/?apikey=k', // pragma: allowlist secret
+    'http://x/api?a=1&token=t', // pragma: allowlist secret
+    'http://x?key=k', // pragma: allowlist secret
+  ]) {
+    const cfg = { integrations: { x: { url, username: 'u' } }, custom_integrations: { old: { url } } };
+    const masked = maskCredentials(cfg);
+    assert.deepEqual(masked.integrations.x.url, STORED, url);
+    assert.deepEqual(masked.custom_integrations.old.url, STORED, url);
+    assert.equal(masked.integrations.x.username, 'u');
+    const back = restoreCredentials(masked, cfg);
+    assert.ok(back.ok, url);
+    assert.deepEqual(back.ok && back.config, cfg, url);
+  }
+  // One with none is sent as it is, as the form shows and saves it.
+  for (const url of ['http://x', 'https://x:8443/api?limit=10', 'http://x/a@b', 'http://x?key=']) {
+    assert.equal(maskedField({ url }, 'url'), url, url);
+  }
+  // A marker for a URL with no credential stored is refused, as any marker
+  // where the read puts none.
+  const refused = restoreCredentials({ integrations: { x: { url: STORED } } }, { integrations: { x: { url: 'http://x' } } });
+  assert.equal(refused.ok, false);
+  assert.equal(!refused.ok && refused.status, 400);
 });
