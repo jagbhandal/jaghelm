@@ -63,4 +63,23 @@ describe('Input', () => {
     render(<Input aria-label="URL" className="font-mono" />);
     expect(screen.getByRole('textbox', { name: 'URL' })).toHaveClass('font-mono', 'text-body-sm');
   });
+
+  it('a date field, empty, shows its format as a placeholder, and dims the calendar button (#301)', () => {
+    const { rerender } = render(
+      <Input type="date" aria-label="Due day" value="" onChange={() => {}} />
+    );
+    const field = screen.getByLabelText('Due day');
+    expect(field).toHaveAttribute('data-empty');
+    expect(field).toHaveClass(
+      'data-empty:text-text-3',
+      '[&::-webkit-calendar-picker-indicator]:opacity-55',
+      'hover:[&::-webkit-calendar-picker-indicator]:opacity-100'
+    );
+    rerender(<Input type="date" aria-label="Due day" value="2026-10-21" onChange={() => {}} />);
+    expect(field).not.toHaveAttribute('data-empty');
+    // A text field has none of it.
+    rerender(<Input aria-label="Due day" value="" onChange={() => {}} />);
+    expect(field).not.toHaveAttribute('data-empty');
+    expect(field.className).not.toMatch(/calendar-picker/);
+  });
 });

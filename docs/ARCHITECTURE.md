@@ -148,6 +148,10 @@ src/                        React 19 SPA (Vite 8)
                             Overview's Infrastructure section, its nodes from the model),
                             OverviewServices.jsx and servicesView.js (the Overview's
                             Services section, its rows from the model, #300),
+                            Utilities.jsx, utilities.js and LaunchPage.jsx (Quick Launch,
+                            Pipeline and the Checklist: the Overview's rail from 1440px
+                            and the Launch page, #301), useMediaQuery.js (a width the
+                            markup changes at),
                             statusFreshness.js (the one rule for a stale status: whether
                             the poll's status is current, and how each place draws one
                             that isn't), theme.js (dark, light or system, and the old
@@ -190,6 +194,8 @@ src/                        React 19 SPA (Vite 8)
                              the shell (#296: app-shell, app-header, side-nav,
                              bottom-tabs, app-bar), the Overview's sections (#299:
                              node-card, infrastructure-section; #300: services-section),
+                             the utilities (#301: utilities, Quick Launch, Pipeline,
+                             the Checklist, the rail and the Launch page's layout),
                              lib/status.js (the five states, their words,
                              the two looks, and why there is no signal),
                              lib/ago.js ("12 s ago", and the one clock every age on
@@ -207,8 +213,8 @@ gallery/                    the component gallery (development and CI only, docs
                             playwright.config.mjs, never part of the production build
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
-                            phone-split.spec.mjs, login.spec.mjs, what they share in
-                            app.mjs; see 8): the
+                            phone-split.spec.mjs, login.spec.mjs, utilities.spec.mjs, what
+                            they share in app.mjs; see 8): the
                             production build served
                             by `vite preview`, every /api request answered in the test; run
                             by playwright.e2e.config.mjs in the gallery's container
@@ -1450,8 +1456,11 @@ flowchart TD
   SH --> HD["AppHeader<br/>(useStatus: /api/status)"]
   SH --> SN["SideNav (≥ 768px) /<br/>BottomTabs + More sheet (< 768px)"]
   APP --> CPAL["CommandPalette<br/>(pages, apps, themes, links)"]
-  SH --> OS["/ : OverviewStatus<br/>(the poll's status: ShellAttention,<br/>SubsystemStrip, the ?subsystem= filter)"]
-  SH --> DV["/ : DashboardView"]
+  SH --> OL["/ : OverviewLayout<br/>(the utilities rail from 1440px)"]
+  OL --> OS["OverviewStatus<br/>(the poll's status: ShellAttention,<br/>SubsystemStrip, the ?subsystem= filter)"]
+  OL --> DV["DashboardView"]
+  OL --> UR["UtilitiesRail: Quick Launch,<br/>Pipeline, Checklist (utilities.js)"]
+  SH --> LP["/launch : LaunchPage<br/>(the same three panels)"]
   DV --> OI["OverviewInfrastructure<br/>(the poll's status + the board's readings:<br/>InfrastructureSection, cards or table)"]
   DV --> OSV["OverviewServices<br/>(the poll's status + the board's latency and<br/>app metrics: ServicesSection, by node or group)"]
   SH --> AP["/alerts : AlertsPage<br/>(ShellAttention)"]
@@ -1469,8 +1478,9 @@ flowchart TD
 - **Shell and routing** (#296). Every page lives in `AppShell`
   (`src/ui/app-shell.jsx`): the 48px header across the top, the grouped
   sidebar from 768px (Monitor: Overview and Alerts; Apps: one entry per
-  embedded app, then "Add app"; Tools: Settings), and below 768px the bottom
-  tabs (Overview, Alerts, More, whose sheet holds the apps and Settings). The
+  embedded app, then "Add app"; Tools: Launch and Settings), and below 768px
+  the bottom tabs (Overview, Alerts, More, whose sheet holds the apps, Launch
+  and Settings). The
   sidebar folds to icons; the choice is kept per browser (`prefs` in
   `src/storage`, which works without storage). Each piece of chrome is its own
   `.jh-ui` root; the page area, `<main>`, is not one, so today's views inside it
@@ -1479,9 +1489,9 @@ flowchart TD
   status, `ShellSection`). The chrome draws the theme shown (#304, "Design
   system" below). The URL is the page: `src/router` is a small router on the
   History API (no dependency) over one route table (`routes.js`): `/`
-  Overview, `/alerts`, `/apps/:id`, `/settings/:section?`, and `/launch`,
-  `/services` and `/infrastructure`, which are in the table but hidden until
-  their pages exist (#301, #313): a hidden route, or a path no route matches,
+  Overview, `/alerts`, `/launch` (#301), `/apps/:id`, `/settings/:section?`,
+  and `/services` and `/infrastructure`, which are in the table but hidden
+  until their pages exist (#313): a hidden route, or a path no route matches,
   shows the Overview and replaces the URL with `/`. An `:id` the config has no
   app for does too, once the server's config has loaded (it may only be missing
   from this browser's copy). A plain click on a nav link navigates in the page
@@ -1612,7 +1622,7 @@ flowchart TD
   rule for a stale status, as one panel does. The quiet line has no rows to
   split, so the strip stays right under it. From 768px it is one panel with
   the strip under it, as before. OverviewStatus reads the width with
-  matchMedia (`useSyncExternalStore`), so a resize across 768px moves the
+  matchMedia (`useMediaQuery`, on `useSyncExternalStore`), so a resize across 768px moves the
   strip; the Alerts page has no strip and never splits.
 - **The Infrastructure section** (#299, spec §8 item 3). At the top of
   today's board (`DashboardView` draws it, lined up with the board's cards by
@@ -1705,6 +1715,42 @@ flowchart TD
   and numbers kept, and the count says "12 monitored · No signal · last known
   3 min ago". Kuma's heartbeat strip isn't drawn: the server keeps no
   per-monitor history yet (#312).
+- **Utilities: the rail and the Launch page** (#301, spec §8 item 5). Quick
+  Launch, Pipeline and the Checklist are one component each in `src/ui`
+  (`utilities.jsx`), fed by `src/shell/utilities.js` and wired in
+  `src/shell/Utilities.jsx`, and drawn in two places. The Launch page
+  (`/launch`, `LaunchPage.jsx`, its own chunk) holds all three at every width:
+  Quick Launch across the top, Pipeline and the Checklist side by side from
+  672px of page. From 1440px (`RAIL_WIDTH` in `@ui/app-shell`, `(width >=
+  90rem)`, beside `PHONE_WIDTH`) the Overview's frame (`OverviewLayout`)
+  draws the same panels in a rail beside its sections, the mock's widths
+  (`flex: 1 1 300px`, 280 to 340px). Narrower, the rail is not rendered at
+  all, so nothing is drawn twice or polled off screen; the sections keep their
+  place in the tree either way (only the wrapper's class changes), so crossing
+  1440px never remounts today's board. While the rail shows, the page's 5%
+  gutter moves out to the split (`.overview-split`, `global.css`) so the
+  board's cards and the rail line up 24px apart. The rail keeps Settings →
+  Sections' switches for the three panels; the Launch page draws everything
+  set up, whatever they say. No new server data: Quick Launch is the config's
+  `links`, every group with a link in the config's order (today's board drew
+  only the first three), a link opening in Settings → Layout's target, one the
+  browser can't open (`safeUrl`) left out; Pipeline is `/api/gitea/activity`,
+  the newest six commits across the repos (message, repo, short SHA, age), no
+  panel when Gitea isn't set up (`giteaConfigured`, `configuredPanels.js`),
+  and a Banner over the last rows when the read fails; the Checklist is
+  `/api/todos` (`useTodos`): each add, tick and delete saves the whole list
+  (the endpoint replaces it), a new task's id is `uuidV4` (plain HTTP too,
+  #236), a failed save is a toast and a re-read, and nothing can be added
+  until the first read lands, so a failed read can't be saved over. The list
+  is one for the whole page (`todoStore` in `utilities.js`, read through
+  `useSyncExternalStore`): the rail, the Launch page and today's board's
+  card (`TodoCard`, which stays mounted out of sight on every other page)
+  all show and save it, so none saves a stale copy over another's change.
+  Each view reads on mount; a read is dropped when the tab changed the list
+  since it went out, or a save was still out then; the list is forgotten
+  when the last view goes (a sign-out). From 1440px today's board leaves its
+  own Quick Launch, Pipeline and Checklist panels out (`DashboardView`, the
+  same `RAIL_WIDTH`), so each shows once; #306 removes them.
 - **No signal: a stale status** (#480, #495). The poll's status is stale
   when `reach` isn't `ok` once the first answer is in: a failed poll
   (`down`), or a 503 (`waiting`), which the server answers once its status
@@ -1776,7 +1822,9 @@ flowchart TD
   **and keyboard** (arrow move / Shift+arrow resize, with a live region)
   reposition them.
 - **Panels and first run.** The board has a panel per discovered node (its
-  Proxmox lists), plus the Checklist, Scheduled Jobs and Quick Launch panels;
+  Proxmox lists), plus the Checklist, Scheduled Jobs and Quick Launch panels
+  (the Checklist, Quick Launch and Pipeline only below 1440px, where the
+  Overview has no utilities rail, #301);
   the custom groups are the Services section's grouping, not panels (#300). Without a
   saved layout the board is laid out by `defaultLayouts(nodes)` (`layouts.js`)
   from the nodes `/api/services` has and the panels on show. The nodes come
@@ -1840,7 +1888,11 @@ flowchart TD
   until the old board's sources go with it (#306 enforces spec §4's four). A
   panel shows its "updated ... ago" stale note after 2 missed polls of its own
   source (`pollPeriodMs` in `useDashboardData`): 1 minute for a live source and
-  3 minutes for a slow one at 30 s. Nothing fetches the weather while it has no
+  3 minutes for a slow one at 30 s. The utilities (#301) poll on their own,
+  only while drawn and the browser tab shows: Pipeline `/api/gitea/activity`
+  every third interval (90 s at 30 s), with the board's ETag, so the rail's
+  read beside the board's is a 304; the Checklist reads `/api/todos` once when
+  it is drawn. Nothing fetches the weather while it has no
   place on screen (#307 brings it back, in the Overview's side panel). The
   Settings preview loads once when shown and refreshes only on its button.
 - **App tabs.** An `iframe` tab in the config is an app, opened at `/apps/<id>`.
@@ -2596,7 +2648,18 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   No signal the split stays steel (the colour probe, every lamp the ring)
   with the strip still between; at 800 (a tablet) and 1440px one panel,
   its rows in it, the strip under it; and at 767 and 768px the split flips
-  with the bottom tabs, at the same pixel. All six leave screenshots in
+  with the bottom tabs, at the same pixel. The utilities (#301,
+  `e2e/utilities.spec.mjs`), on the demo's links, commits and to-dos: at
+  1440px the Overview's rail beside its sections, level with the attention
+  panel and 280 to 340px wide, today's board's own three left out, and none
+  at 1280 (the board has them there), where the Launch page (from
+  the sidebar) has all three panels and every link group; narrowing across
+  1440 drops the rail and keeps today's board's elements (no remount); no
+  sideways scroll at 390, 1280, 1440 and 2560px; the Checklist adds, ticks
+  and deletes over plain HTTP (no `crypto.randomUUID` in the page), each
+  change reaching the server, which a reload shows, on the Launch page and in
+  the rail; axe, dark and light, on the whole Launch page and on the
+  Overview's shell, status and rail. All seven leave screenshots in
   `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through

@@ -4,7 +4,8 @@ import TodoCard from './TodoCard.jsx';
 import { OverlayProvider } from '../context/OverlayContext.jsx';
 import { getTodos, saveTodos } from '../hooks/useData';
 
-vi.mock('../hooks/useData', () => ({
+vi.mock('../hooks/useData', async (importOriginal) => ({
+  ...(await importOriginal()),
   getTodos: vi.fn(),
   saveTodos: vi.fn(),
 }));
@@ -54,7 +55,8 @@ describe('TodoCard on a plain-HTTP origin (no crypto.randomUUID)', () => {
   it('adds a todo with a UUID v4 id', async () => {
     expect(globalThis.crypto.randomUUID).toBeUndefined();
     renderCard();
-    await waitFor(() => expect(getTodos).toHaveBeenCalled());
+    // The list has come: adding before it lands adds nothing (useTodos).
+    await screen.findByText('No tasks yet');
 
     addTodo('Renew the cert');
 
@@ -68,7 +70,8 @@ describe('TodoCard on a plain-HTTP origin (no crypto.randomUUID)', () => {
 
   it('gives each added todo its own id', async () => {
     renderCard();
-    await waitFor(() => expect(getTodos).toHaveBeenCalled());
+    // The list has come: adding before it lands adds nothing (useTodos).
+    await screen.findByText('No tasks yet');
 
     addTodo('one');
     addTodo('two');
@@ -82,7 +85,7 @@ describe('TodoCard on a plain-HTTP origin (no crypto.randomUUID)', () => {
 describe('TodoCard when a save fails', () => {
   it('says so and shows what the server holds instead of the unsaved change', async () => {
     renderCard();
-    await waitFor(() => expect(getTodos).toHaveBeenCalledTimes(1));
+    await screen.findByText('No tasks yet');
     saveTodos.mockRejectedValue(new Error('HTTP 500'));
 
     addTodo('Never saved');

@@ -6,6 +6,7 @@ import DashboardView from './DashboardView';
 import { useDashboardData } from './useDashboardData';
 import { defaultConfig } from '../../defaultConfig.js';
 import { LAYOUT_VERSION } from './layouts';
+import { RAIL_WIDTH } from '@ui/app-shell';
 
 // What the board renders on a fresh install and on an existing one (#272).
 //
@@ -323,7 +324,9 @@ describe('DashboardView without a saved layout (#248)', () => {
     renderBoard(
       freshConfig(),
       boardData({
-        serviceData: { nodes: { edge: node('Edge'), apps: node('Apps'), storage: node('Storage') } },
+        serviceData: {
+          nodes: { edge: node('Edge'), apps: node('Apps'), storage: node('Storage') },
+        },
         ups: NO_UPS,
         commits: NO_GITEA,
         sources: sourcesWith({ commits: answered() }),
@@ -546,5 +549,45 @@ describe('a layout saved before #299', () => {
     const saved = seen.at(-1).gridLayout;
     expect(saved.version).toBe(LAYOUT_VERSION);
     expect(byId(saved.lg)['node-apps'].h).toBe(12);
+  });
+});
+
+// From 1440px the Overview's rail draws Quick Launch, Pipeline and the
+// Checklist (#301), so the board leaves its own out: one of each on screen.
+describe('DashboardView beside the utilities rail', () => {
+  function wide(on) {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+      matches: on && query === RAIL_WIDTH,
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+  }
+  const commits = [{ repo: 'homelab', commits: [{ sha: 'abc1234', message: 'fix', date: '' }] }];
+  const config = () =>
+    freshConfig({ links: { personal: [{ name: 'Nextcloud', url: 'https://cloud.example/' }] } });
+  const data = () => boardData({ serviceData: { nodes: { pve1: node('Proxmox') } }, commits });
+
+  it('narrower than 1440px, the board has all three', () => {
+    wide(false);
+    renderBoard(config(), data());
+    expect(screen.getByText('Pipeline Activity')).toBeInTheDocument();
+    expect(screen.getByText('Checklist panel')).toBeInTheDocument();
+    expect(screen.getByText('Quick Launch')).toBeInTheDocument();
+    expect(ids(gridLayouts().lg)).toEqual(
+      expect.arrayContaining(['pipeline', 'todos', 'quicklaunch'])
+    );
+  });
+
+  it('from 1440px, the board draws none of them, and holds no slot for them', () => {
+    wide(true);
+    renderBoard(config(), data());
+    expect(screen.queryByText('Pipeline Activity')).not.toBeInTheDocument();
+    expect(screen.queryByText('Checklist panel')).not.toBeInTheDocument();
+    expect(screen.queryByText('Quick Launch')).not.toBeInTheDocument();
+    // The others stay.
+    expect(screen.getByText('Scheduled Jobs')).toBeInTheDocument();
+    for (const key of ['pipeline', 'todos', 'quicklaunch'])
+      expect(ids(gridLayouts().lg)).not.toContain(key);
   });
 });

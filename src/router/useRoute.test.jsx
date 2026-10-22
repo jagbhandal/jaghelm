@@ -65,7 +65,7 @@ describe('useRoute', () => {
   });
 
   it('replaces a path with no page by the Overview', () => {
-    window.history.replaceState(null, '', '/launch');
+    window.history.replaceState(null, '', '/services');
     const before = window.history.length;
     render(<Where />);
     expect(where()).toBe('overview');

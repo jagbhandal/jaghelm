@@ -317,6 +317,24 @@ export const CATALOG = Object.freeze([
   s('login-busy', 'Sign-in', 'LoginForm: signing in, the button busy'),
   s('login-error', 'Sign-in', 'LoginForm: a wrong password, the error on its field'),
   s('login-no-answer', 'Sign-in', "LoginForm: JagHelm didn't answer, the form's alert"),
+
+  // The utilities (#301)
+  s(
+    'utilities-rail',
+    'Utilities',
+    "The Overview's rail at 1440px: Quick Launch, Pipeline and the Checklist, one task overdue"
+  ),
+  s(
+    'launch-page',
+    'Utilities',
+    'The Launch page: Quick Launch across the top, Pipeline and the Checklist under it'
+  ),
+  s(
+    'utilities-empty',
+    'Utilities',
+    'Empty: no links yet (the Launch page), no recent commits, nothing on the list'
+  ),
+  s('utilities-failing', 'Utilities', "Failing: Gitea isn't answering, the checklist didn't load"),
 ]);
 
 /**

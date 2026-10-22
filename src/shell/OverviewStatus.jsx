@@ -31,7 +31,7 @@
  * board's tick doesn't re-render it; each answer re-renders only its ages, and
  * a place coming onto the board or leaving it, only its links.
  */
-import { memo, useMemo, useSyncExternalStore } from 'react';
+import { memo, useMemo } from 'react';
 import { PHONE_WIDTH, ShellSection } from '@ui/app-shell';
 import { buttonVariants } from '@ui/button';
 import { SubsystemStrip } from '@ui/subsystem-strip';
@@ -43,30 +43,13 @@ import { useRowLink } from './entityAnchors.js';
 import { clearOverviewFilter, filterOverview } from './overviewFilter.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import { subsystemCells } from './statusView.js';
+import { useMediaQuery } from './useMediaQuery.js';
 
 const ALERTS = pathTo('alerts');
 // The panel's action, the mock's "All alerts →": a link drawn as an accent
 // ghost button. Through cn, as Button does, so the accent text wins over the
 // ghost's text-2.
 const LINK = cn(buttonVariants({ variant: 'ghost', size: 'sm', tone: 'accent' }));
-
-const phoneQuery = () =>
-  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-    ? window.matchMedia(PHONE_WIDTH)
-    : null;
-
-function subscribePhone(onChange) {
-  const query = phoneQuery();
-  query?.addEventListener('change', onChange);
-  return () => query?.removeEventListener('change', onChange);
-}
-
-const isPhone = () => phoneQuery()?.matches ?? false;
-
-/** Whether the window is a phone's width, following it across 768px. */
-function usePhoneWidth() {
-  return useSyncExternalStore(subscribePhone, isPhone, () => false);
-}
 
 const allAlerts = (
   <a href={ALERTS} className={LINK} onClick={(e) => followLink(e, ALERTS)}>
@@ -81,7 +64,7 @@ export const OverviewStatus = memo(function OverviewStatus({
   filter = null,
 }) {
   const linkOf = useRowLink();
-  const phone = usePhoneWidth();
+  const phone = useMediaQuery(PHONE_WIDTH);
   const freshness = useStatusFreshness({ status, reach, updated });
   const cells = useMemo(() => subsystemCells(status, freshness), [status, freshness]);
   const strip = cells.length > 0 && (

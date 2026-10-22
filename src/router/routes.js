@@ -9,7 +9,6 @@
  * a visit to it lands on the Overview, as a path no route matches does. No
  * placeholder pages.
  *
- *   launch          the Launch tab, #301
  *   services        the Services page, #313
  *   infrastructure  the Infrastructure page, #313
  */
@@ -23,7 +22,7 @@ export const ROUTES = Object.freeze(
     { id: 'alerts', path: '/alerts', title: 'Alerts' },
     { id: 'app', path: '/apps/:id' },
     { id: 'settings', path: '/settings/:section?', title: 'Settings' },
-    { id: 'launch', path: '/launch', title: 'Launch', hidden: true },
+    { id: 'launch', path: '/launch', title: 'Launch' },
     { id: 'services', path: '/services', title: 'Services', hidden: true },
     { id: 'infrastructure', path: '/infrastructure', title: 'Infrastructure', hidden: true },
   ].map((r) => Object.freeze(r))

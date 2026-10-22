@@ -17,6 +17,7 @@ import { loadMoreSheet } from '../lazyViews.js';
 import { followLink } from '../router/useRoute.js';
 import { prefs } from '../storage/index.js';
 import { phoneTabs } from './nav.js';
+import { shortcutLabel } from './shortcut.js';
 import { drawnState, statusBuiltAt, useStatusFreshness } from './statusFreshness.js';
 import { lastKnownLine } from './statusView.js';
 
@@ -24,12 +25,6 @@ const MoreSheet = lazy(loadMoreSheet);
 
 /** Where the sidebar's collapsed state is kept, per browser. */
 export const SIDEBAR_PREF = 'jaghelm-sidebar';
-
-/** "⌘K" on Apple platforms, "Ctrl K" elsewhere. */
-function shortcutLabel() {
-  const platform = globalThis.navigator?.userAgentData?.platform ?? globalThis.navigator?.platform;
-  return /mac|iphone|ipad/i.test(platform ?? '') ? '⌘K' : 'Ctrl K';
-}
 
 /**
  * "Updated 12 s ago", from the poll's store: the one part of the header an
