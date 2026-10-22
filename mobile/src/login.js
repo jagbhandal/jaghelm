@@ -11,6 +11,7 @@ import { normalizeBaseUrl } from './runtimeConfig.js';
 import { assertSafeBackendUrl } from './netGuard.js';
 import { withTimeout } from './withTimeout.js';
 import { BOOT_TIMEOUT_MS } from './boot.js';
+import { runPendingCleanup } from './auth/pendingCleanup.js';
 
 const CANT_REACH =
   "Can't reach JagHelm. If you're away from home, check that Tailscale is connected on this phone.";
@@ -29,6 +30,10 @@ export async function login({ url, username, password }) {
     }
     return { ok: false, error: 'Enter a valid http(s) backend URL' };
   }
+
+  // A sign-out that didn't finish is finished (or tried) before a new session
+  // starts (#539).
+  await runPendingCleanup();
 
   setApiBase(base);
 

@@ -26,6 +26,9 @@ vi.mock('@shared/api/client.js', () => ({ initAuthToken, setAuthToken, getAuthTo
 const { setApiBase } = vi.hoisted(() => ({ setApiBase: vi.fn() }));
 vi.mock('@shared/api/baseUrl.js', () => ({ setApiBase }));
 
+const { startPendingCleanup } = vi.hoisted(() => ({ startPendingCleanup: vi.fn() }));
+vi.mock('./auth/pendingCleanup.js', () => ({ startPendingCleanup }));
+
 import { bootMobile, BOOT_TIMEOUT_MS } from './boot.js';
 
 const checkRes = (authenticated, ok = true) => ({ ok, json: async () => ({ authenticated, authRequired: true }) });
@@ -37,6 +40,17 @@ beforeEach(() => {
 });
 
 describe('bootMobile', () => {
+  it('starts the pending cleanup (#539) after the Keystore and native HTTP, without waiting for it', async () => {
+    getItem.mockResolvedValue(null);
+    startPendingCleanup.mockImplementation(() => {
+      expect(setStorageAdapter).toHaveBeenCalled();
+      expect(installNativeHttp).toHaveBeenCalled();
+      return new Promise(() => {}); // a retry that never ends doesn't hold boot
+    });
+    await expect(bootMobile()).resolves.toEqual({ hasUrl: false, hasToken: false, baseUrl: '' });
+    expect(startPendingCleanup).toHaveBeenCalledTimes(1);
+  });
+
   it('wires the keystore adapter and reports not-configured when no base URL is stored', async () => {
     getItem.mockResolvedValue(null);
     const r = await bootMobile();

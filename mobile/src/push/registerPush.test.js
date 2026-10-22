@@ -45,8 +45,29 @@ vi.mock('./routeFromUrl.js', () => ({ routeFromUrl }));
 const { isPushConfigured } = vi.hoisted(() => ({ isPushConfigured: vi.fn(() => true) }));
 vi.mock('./pushConfig.js', () => ({ isPushConfigured }));
 
-import { initPush, disablePush, unregisterPush, cachedPushToken } from './registerPush.js';
-import { SIGN_OUT_TIMEOUT_MS } from '@shared/api/client.js';
+// The pending cleanup (#539) has its own tests (auth/pendingCleanup.test.jsx);
+// here it is spies, with the real outcomeOf.
+const cleanup = vi.hoisted(() => ({
+  runPendingCleanup: vi.fn(),
+  dropPushSteps: vi.fn(),
+  rememberCleanup: vi.fn(),
+}));
+vi.mock('../auth/pendingCleanup.js', async (importOriginal) => {
+  const { outcomeOf } = await importOriginal();
+  return { ...cleanup, outcomeOf };
+});
+
+import {
+  initPush,
+  disablePush,
+  enablePush,
+  pushWanted,
+  unregisterPush,
+  cachedPushToken,
+  ENABLE_WAIT_MS,
+} from './registerPush.js';
+import { SIGN_OUT_TIMEOUT_MS, setAuthToken } from '@shared/api/client.js';
+import { setApiBase } from '@shared/api/baseUrl.js';
 
 beforeEach(() => {
   for (const f of Object.values(plugin)) f.mockReset();
@@ -61,7 +82,23 @@ beforeEach(() => {
   plugin.register.mockResolvedValue(undefined);
   plugin.createChannel.mockResolvedValue(undefined);
   isPushConfigured.mockReset().mockReturnValue(true);
+  cleanup.runPendingCleanup.mockReset().mockResolvedValue(undefined);
+  cleanup.dropPushSteps.mockReset().mockResolvedValue(undefined);
+  // Awaits the teardown it is given, as the real one does.
+  cleanup.rememberCleanup.mockReset().mockImplementation(async ({ push }) => {
+    await push;
+  });
 });
+
+// The phone's Preferences, kept across a "restart" (a fresh module instance).
+function prefsStore(initial = {}) {
+  const store = new Map(Object.entries(initial));
+  getPref.mockImplementation(async (k) => (store.has(k) ? store.get(k) : null));
+  setPref.mockImplementation(async (k, v) => {
+    store.set(k, String(v));
+  });
+  return store;
+}
 
 describe('initPush build-config gate', () => {
   it('when push is NOT configured (no google-services.json build), returns disabled and never touches the plugin', async () => {
@@ -181,17 +218,154 @@ describe('registration handler + listeners (captured)', () => {
 });
 
 describe('disablePush teardown', () => {
-  it('removes listeners, DELETEs the token, and clears the local token (no Keystore removeItem)', async () => {
+  it('stores the choice first, removes listeners, DELETEs the token, deletes the FCM token, clears the local one', async () => {
+    const seen = [];
+    setPref.mockImplementation(async (k, v) => seen.push(`setPref ${k}=${v}`));
+    deleteToken.mockImplementation(async (t) => seen.push(`DELETE ${t}`));
+    plugin.removeAllListeners.mockImplementation(async () => seen.push('removeAllListeners'));
+    plugin.unregister.mockImplementation(async () => seen.push('unregister'));
     await disablePush('fcmtok');
-    expect(plugin.removeAllListeners).toHaveBeenCalledTimes(1);
-    expect(deleteToken).toHaveBeenCalledWith('fcmtok');
-    expect(setPref).toHaveBeenCalledWith('jaghelm-push-token', '');
+    expect(seen).toEqual([
+      'setPref jaghelm-push-wanted=false',
+      'DELETE fcmtok',
+      'removeAllListeners',
+      'unregister',
+      'setPref jaghelm-push-token=',
+    ]);
+  });
+
+  it('hands what it started to the pending cleanup: this session, this server, no revoke', async () => {
+    setApiBase('http://vm-101:3099/api');
+    setAuthToken('live-tok');
+    try {
+      await disablePush('fcmtok');
+      expect(cleanup.rememberCleanup).toHaveBeenCalledTimes(1);
+      const [arg] = cleanup.rememberCleanup.mock.calls[0];
+      expect(arg).toEqual({
+        serverUrl: 'http://vm-101:3099/api',
+        sessionToken: 'live-tok',
+        pushToken: 'fcmtok',
+        push: expect.any(Promise),
+      });
+      await expect(arg.push).resolves.toEqual({ deleted: 'done', unregistered: true });
+    } finally {
+      setApiBase('/api');
+      setAuthToken('');
+    }
   });
 
   it('still clears local state when the backend DELETE fails (does not throw)', async () => {
     deleteToken.mockRejectedValueOnce(new Error('500'));
     await expect(disablePush('fcmtok')).resolves.toBeUndefined();
     expect(setPref).toHaveBeenCalledWith('jaghelm-push-token', '');
+  });
+
+  it('in a build without push stores the choice and touches nothing else', async () => {
+    isPushConfigured.mockReturnValue(false);
+    await disablePush('fcmtok');
+    expect(setPref).toHaveBeenCalledWith('jaghelm-push-wanted', 'false');
+    expect(deleteToken).not.toHaveBeenCalled();
+    expect(plugin.unregister).not.toHaveBeenCalled();
+    expect(cleanup.rememberCleanup).not.toHaveBeenCalled();
+  });
+});
+
+describe('the push choice sticks (#539)', () => {
+  it('Turn off push, restart: still off, and no registration is sent', async () => {
+    const store = prefsStore({ 'jaghelm-push-token': 'fcmtok' });
+    plugin.checkPermissions.mockResolvedValue({ receive: 'granted' });
+    await disablePush('fcmtok');
+    expect(store.get('jaghelm-push-wanted')).toBe('false');
+
+    vi.resetModules(); // the app starts again: a fresh module, the same Preferences
+    const restarted = await import('./registerPush.js');
+    const r = await restarted.initPush({ nav: { push: vi.fn() } });
+    expect(r).toEqual({ enabled: false, reason: 'turned-off' });
+    expect(plugin.checkPermissions).not.toHaveBeenCalled(); // no prompt either
+    expect(plugin.addListener).not.toHaveBeenCalled();
+    expect(plugin.register).not.toHaveBeenCalled();
+    expect(registerToken).not.toHaveBeenCalled();
+  });
+
+  it('permission granted is not push wanted: off never registers, whatever Android allows', async () => {
+    prefsStore({ 'jaghelm-push-wanted': 'false' });
+    plugin.checkPermissions.mockResolvedValue({ receive: 'granted' });
+    await initPush({ nav: { push: vi.fn() } });
+    expect(plugin.register).not.toHaveBeenCalled();
+  });
+
+  it('on by default: no stored choice registers as before', async () => {
+    prefsStore();
+    await expect(pushWanted()).resolves.toBe(true);
+    plugin.checkPermissions.mockResolvedValue({ receive: 'granted' });
+    await initPush({ nav: { push: vi.fn() } });
+    expect(plugin.register).toHaveBeenCalledTimes(1);
+  });
+
+  it('Turn off push sends the DELETE and deletes the FCM token; Turn on registers a new token', async () => {
+    const store = prefsStore({ 'jaghelm-push-token': 'fcmtok' });
+    plugin.checkPermissions.mockResolvedValue({ receive: 'granted' });
+    const handlers = captureHandlers();
+    await disablePush('fcmtok');
+    expect(deleteToken).toHaveBeenCalledWith('fcmtok');
+    expect(plugin.unregister).toHaveBeenCalledTimes(1);
+    expect(store.get('jaghelm-push-token')).toBe('');
+
+    // register() brings the fresh token, as the plugin does.
+    plugin.register.mockImplementation(async () => {
+      handlers.registration({ value: 'fcmtok-new' });
+    });
+    const r = await enablePush({ nav: { push: vi.fn() } });
+    expect(store.get('jaghelm-push-wanted')).toBe('true');
+    expect(plugin.register).toHaveBeenCalledTimes(1);
+    expect(registerToken).toHaveBeenCalledWith('fcmtok-new');
+    expect(store.get('jaghelm-push-token')).toBe('fcmtok-new');
+    expect(r).toEqual({ enabled: true, permission: 'granted', token: 'fcmtok-new' });
+  });
+
+  it('Turn on answers no token when none comes within ENABLE_WAIT_MS', async () => {
+    vi.useFakeTimers();
+    try {
+      prefsStore({ 'jaghelm-push-wanted': 'false' });
+      plugin.checkPermissions.mockResolvedValue({ receive: 'granted' });
+      let done;
+      enablePush({ nav: { push: vi.fn() } }).then((r) => (done = r));
+      await vi.advanceTimersByTimeAsync(ENABLE_WAIT_MS - 1);
+      expect(done).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(done).toEqual({ enabled: true, permission: 'granted', token: '' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Turn on with the permission off in Android answers why, without waiting', async () => {
+    prefsStore({ 'jaghelm-push-wanted': 'false' });
+    plugin.checkPermissions.mockResolvedValue({ receive: 'denied' });
+    await expect(enablePush({ nav: { push: vi.fn() } })).resolves.toEqual({
+      enabled: false,
+      permission: 'denied',
+    });
+  });
+
+  it('a pending sign-out is retried, and its push steps dropped, before anything registers', async () => {
+    plugin.checkPermissions.mockResolvedValue({ receive: 'granted' });
+    setApiBase('http://vm-101:3099/api');
+    const order = [];
+    cleanup.runPendingCleanup.mockImplementation(async () => order.push('retry'));
+    cleanup.dropPushSteps.mockImplementation(async (base) => order.push(`drop ${base}`));
+    plugin.addListener.mockImplementation(async (ev) => {
+      order.push(`listen ${ev}`);
+      return { remove: vi.fn() };
+    });
+    plugin.register.mockImplementation(async () => order.push('register'));
+    try {
+      await initPush({ nav: { push: vi.fn() } });
+    } finally {
+      setApiBase('/api');
+    }
+    expect(order.slice(0, 3)).toEqual(['retry', 'drop http://vm-101:3099/api', 'listen registration']);
+    expect(order.at(-1)).toBe('register');
   });
 });
 
@@ -225,7 +399,7 @@ describe('sign-out push teardown (#531)', () => {
   it('sends the DELETE within the call, then removes the listeners, deletes the FCM token and clears the cached one', async () => {
     const pending = unregisterPush('fcmtok');
     expect(seen[0]).toBe('DELETE fcmtok'); // sent before the call first yields
-    await expect(pending).resolves.toBeUndefined();
+    await expect(pending).resolves.toEqual({ deleted: 'done', unregistered: true });
     expect(seen).toEqual([
       'DELETE fcmtok',
       'removeAllListeners',
@@ -242,27 +416,37 @@ describe('sign-out push teardown (#531)', () => {
 
   it('touches nothing in a build without push (the plugin would crash the app)', async () => {
     isPushConfigured.mockReturnValue(false);
-    await unregisterPush('fcmtok');
+    await expect(unregisterPush('fcmtok')).resolves.toEqual({ deleted: 'done', unregistered: true });
     expect(seen).toEqual([]);
   });
 
+  it.each([
+    ['a 401 (the session is already gone)', Object.assign(new Error('401'), { status: 401 }), 'gone'],
+    ['a 404 (it never will)', Object.assign(new Error('404'), { status: 404 }), 'done'],
+    ['a 502', Object.assign(new Error('502'), { status: 502 }), 'failed'],
+    ['a network error', new TypeError('Failed to fetch'), 'failed'],
+  ])('says what the DELETE met: %s', async (_what, err, deleted) => {
+    deleteToken.mockRejectedValue(err);
+    await expect(unregisterPush('fcmtok')).resolves.toEqual({ deleted, unregistered: true });
+  });
+
   it('a failed DELETE still tears push down and never rejects', async () => {
-    deleteToken.mockRejectedValue(new Error('push API HTTP 500'));
-    await expect(unregisterPush('fcmtok')).resolves.toBeUndefined();
+    deleteToken.mockRejectedValue(Object.assign(new Error('push API HTTP 500'), { status: 500 }));
+    await expect(unregisterPush('fcmtok')).resolves.toEqual({ deleted: 'failed', unregistered: true });
     expect(seen).toEqual(['removeAllListeners', 'unregister', 'setPref jaghelm-push-token=']);
   });
 
   it('a teardown step that throws skips none of the others and never rejects', async () => {
     plugin.removeAllListeners.mockRejectedValue(new Error('native failure'));
     plugin.unregister.mockRejectedValue(new Error('native failure'));
-    await expect(unregisterPush('fcmtok')).resolves.toBeUndefined();
+    await expect(unregisterPush('fcmtok')).resolves.toEqual({ deleted: 'done', unregistered: false });
     expect(plugin.unregister).toHaveBeenCalledTimes(1);
     expect(seen).toEqual(['DELETE fcmtok', 'setPref jaghelm-push-token=']);
   });
 
   it('a cached-token write that fails never rejects', async () => {
     setPref.mockRejectedValue(new Error('preferences write failed'));
-    await expect(unregisterPush('fcmtok')).resolves.toBeUndefined();
+    await expect(unregisterPush('fcmtok')).resolves.toEqual({ deleted: 'done', unregistered: true });
   });
 
   it('a DELETE the server never answers: tears down at once, settles after the sign-out bound', async () => {
@@ -270,12 +454,12 @@ describe('sign-out push teardown (#531)', () => {
     try {
       deleteToken.mockImplementation(() => new Promise(() => {}));
       let done = false;
-      unregisterPush('fcmtok').then(() => (done = true));
+      unregisterPush('fcmtok').then((r) => (done = r));
       await vi.advanceTimersByTimeAsync(0);
       expect(seen).toEqual(['removeAllListeners', 'unregister', 'setPref jaghelm-push-token=']);
       expect(done).toBe(false);
       await vi.advanceTimersByTimeAsync(SIGN_OUT_TIMEOUT_MS);
-      expect(done).toBe(true);
+      expect(done).toEqual({ deleted: 'failed', unregistered: true });
     } finally {
       vi.useRealTimers();
     }
@@ -326,7 +510,7 @@ describe('listeners do not stack across sign-ins (#531)', () => {
   it('a removeAllListeners that throws still removes appUrlOpen at sign-out', async () => {
     await initPush({ nav: { push: vi.fn() } });
     plugin.removeAllListeners.mockRejectedValue(new Error('native failure'));
-    await expect(unregisterPush('fcmtok')).resolves.toBeUndefined();
+    await expect(unregisterPush('fcmtok')).resolves.toBeDefined();
     expect(live).not.toContain('app:appUrlOpen');
   });
 });

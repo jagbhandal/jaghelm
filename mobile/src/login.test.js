@@ -6,6 +6,9 @@ vi.mock('@shared/api/client.js', () => ({ apiFetch, setAuthToken }));
 const { setApiBase } = vi.hoisted(() => ({ setApiBase: vi.fn() }));
 vi.mock('@shared/api/baseUrl.js', () => ({ setApiBase }));
 
+const { runPendingCleanup } = vi.hoisted(() => ({ runPendingCleanup: vi.fn() }));
+vi.mock('./auth/pendingCleanup.js', () => ({ runPendingCleanup }));
+
 import { login } from './login.js';
 
 const CANT_REACH =
@@ -19,9 +22,23 @@ beforeEach(() => {
   apiFetch.mockReset();
   setAuthToken.mockReset();
   setApiBase.mockReset();
+  runPendingCleanup.mockReset().mockResolvedValue(undefined);
 });
 
 describe('login', () => {
+  it('finishes a pending sign-out (#539) before the credentials go out', async () => {
+    let finish;
+    runPendingCleanup.mockReturnValue(new Promise((r) => (finish = r)));
+    apiFetch.mockResolvedValue(res({ ok: true, status: 200, token: 'abc' }));
+    const pending = login({ url: 'http://vm-101:3099', username: 'a', password: 'b' });
+    await Promise.resolve();
+    expect(runPendingCleanup).toHaveBeenCalledTimes(1);
+    expect(apiFetch).not.toHaveBeenCalled();
+    finish();
+    await expect(pending).resolves.toEqual({ ok: true, token: 'abc' });
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('on 200 returns the token and sets base + auth token, POSTing creds to /auth/login', async () => {
     apiFetch.mockResolvedValue(res({ ok: true, status: 200, token: 'abc' }));
     const r = await login({ url: 'http://100.88.196.41:3099', username: 'admin', password: 'pw' });

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import BackHeader from '../components/BackHeader.jsx';
 import { getPushStatus, getPushPrefs, setPushPrefs } from '../push/pushPrefsApi.js';
-import { disablePush } from '../push/registerPush.js';
+import { disablePush, enablePush, pushWanted } from '../push/registerPush.js';
 import { getPref } from '../storage/prefsAdapter.js';
 import { PUSH_TOKEN_KEY } from '../runtimeConfig.js';
 import { logout, forgetDevice } from '../auth/authState.js';
@@ -28,11 +28,15 @@ export default function NotificationSettings({ nav }) {
   const [state, setState] = useState({ status: 'loading' }); // loading|unavailable|ready
   const [prefs, setPrefs] = useState(null);
   const [token, setToken] = useState(null);
+  const [loads, setLoads] = useState(0); // Turn on reloads the screen
+  const [turningOn, setTurningOn] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        // The user's choice first: off is "turned off", not "not registered" (#539).
+        if (!(await pushWanted())) { if (!cancelled) setState({ status: 'unavailable', reason: 'turned-off' }); return; }
         const tok = await getPref(PUSH_TOKEN_KEY);
         if (!tok) { if (!cancelled) setState({ status: 'unavailable', reason: 'not-registered' }); return; }
         const { enabled } = await getPushStatus();
@@ -47,17 +51,29 @@ export default function NotificationSettings({ nav }) {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [loads]);
 
   // The SOLE in-app DELETE trigger (locked decision 9): hard-unregister this
   // device. Distinct from the master toggle's SOFT PUT enabled:false (token
-  // KEPT). After the backend DELETE + local clear resolve, the FCM token is
-  // gone, so the screen drops to the unavailable / "turned off" state.
+  // KEPT). The choice is stored, the DELETE sent and the FCM token deleted
+  // (#539); the screen drops to "turned off" once that is done or kept for later.
   const onTurnOff = async () => {
     await disablePush(token);
     setPrefs(null);
     setToken(null);
     setState({ status: 'unavailable', reason: 'turned-off' });
+  };
+
+  // Turn on: the choice goes on and push registers a fresh token, then the
+  // screen loads again (with the new token, or says why there is none).
+  const onTurnOn = async () => {
+    setTurningOn(true);
+    try {
+      await enablePush({ nav });
+    } finally {
+      setTurningOn(false);
+      setLoads((n) => n + 1);
+    }
   };
 
   return (
@@ -66,13 +82,20 @@ export default function NotificationSettings({ nav }) {
 
       {state.status === 'loading' && <p className="mobile-view__todo">Loading…</p>}
 
-      {state.status === 'unavailable' && (
+      {state.status === 'unavailable' && state.reason === 'turned-off' && (
+        <div className="notif-controls">
+          <p className="notif-unavailable">Push is turned off on this device.</p>
+          <button type="button" className="notif-turnoff notif-turnon" onClick={onTurnOn} disabled={turningOn}>
+            {turningOn ? 'Turning on…' : 'Turn on push on this device'}
+          </button>
+        </div>
+      )}
+
+      {state.status === 'unavailable' && state.reason !== 'turned-off' && (
         <p className="notif-unavailable">
-          {state.reason === 'turned-off'
-            ? 'Push is turned off on this device. Re-enable notifications in system settings, then reopen the app.'
-            : state.reason === 'not-registered'
-              ? 'Push not registered on this device. Enable notifications in system settings, then reopen the app.'
-              : 'Push notifications are unavailable — the server has no notification credentials configured.'}
+          {state.reason === 'not-registered'
+            ? 'Push not registered on this device. Enable notifications in system settings, then reopen the app.'
+            : 'Push notifications are unavailable — the server has no notification credentials configured.'}
         </p>
       )}
 
