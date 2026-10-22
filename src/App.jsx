@@ -117,12 +117,24 @@ export default function App() {
     setAuthed(false);
   }, []);
 
-  // An expired session signs out like the button (#492): the sign-in screen
-  // replaces AppMain, and every poll stops with it until the next sign-in.
+  // An expired session (#492). apiFetch passes the token the 401 came with. If
+  // storage holds another, a tab signed in since: take its session and carry
+  // on. Otherwise sign out like the button: the sign-in screen replaces AppMain
+  // and every poll stops with it. A 401 means the server wants a password now,
+  // even if it had none when this tab loaded.
+  const handleExpired = useCallback(
+    async (sent) => {
+      const stored = await secureStore.getItem('jaghelm-token');
+      if (stored && stored !== sent) return setApiAuthToken(stored);
+      handleLogout();
+      setAuthRequired(true);
+    },
+    [handleLogout]
+  );
   useEffect(() => {
-    setAuthExpiredHandler(handleLogout);
+    setAuthExpiredHandler(handleExpired);
     return () => setAuthExpiredHandler(null);
-  }, [handleLogout]);
+  }, [handleExpired]);
 
   // Show login if auth required and not authenticated
   if (authRequired === null) return null; // Loading

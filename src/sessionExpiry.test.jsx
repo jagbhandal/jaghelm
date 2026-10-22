@@ -16,6 +16,7 @@ const TICK_MS = 30_000;
 
 let requests; // { path, method, token, status } per request
 let sessions; // the live session tokens
+let authOn; // false: the server has no password, so every request is served
 
 function answer(status, body) {
   return Promise.resolve({
@@ -28,6 +29,11 @@ function answer(status, body) {
 }
 
 function serve(path, method, token, body) {
+  if (!authOn) {
+    if (path === '/api/auth/check') return [200, { authRequired: false, authenticated: true }];
+    if (path === '/api/status') return [200, HEALTHY];
+    return [200, path === '/api/services' ? { nodes: {}, overallHealth: 'up' } : {}];
+  }
   const live = sessions.has(token);
   if (path === '/api/auth/check') return [200, { authRequired: true, authenticated: live }];
   if (path === '/api/auth/login') {
@@ -46,6 +52,7 @@ function serve(path, method, token, body) {
 function stubServer() {
   requests = [];
   sessions = new Set(['old-tok']);
+  authOn = true;
   vi.stubGlobal(
     'fetch',
     vi.fn((url, opts = {}) => {
@@ -179,6 +186,51 @@ describe('an expired session in the web app (#492)', () => {
   });
 });
 
+describe('an expired session, the review cases (#492)', () => {
+  it('another tab signed in meanwhile: this tab takes its session from storage and keeps polling', async () => {
+    await renderSignedIn(); // tab A
+    // The server restarts; tab B signs in, which writes the storage both tabs share.
+    sessions.delete('old-tok');
+    sessions.add('b-tok');
+    localStorage.setItem('jaghelm-token', 'b-tok');
+    take();
+
+    await advance(TICK_MS);
+    expect(take().some((r) => r.status === 401 && r.token === 'old-tok')).toBe(true);
+    expect(localStorage.getItem('jaghelm-token')).toBe('b-tok');
+    expect(signInButton()).toBeNull();
+
+    await advance(TICK_MS);
+    const next = take();
+    expect(next.length).toBeGreaterThan(0);
+    expect(next.every((r) => r.status === 200 && r.token === 'b-tok')).toBe(true);
+  });
+
+  it('a tab loaded with auth off asks to sign in once a password is set and the server restarts', async () => {
+    authOn = false;
+    render(<App />);
+    await vi.waitFor(() => expect(requests.map((r) => r.path)).toContain('/api/services'));
+    await advance(1000);
+    expect(take().every((r) => r.status === 200 && r.token === undefined)).toBe(true);
+
+    authOn = true;
+    await advance(TICK_MS);
+    const round = take();
+    expect(round.length).toBeGreaterThan(0);
+    expect(round.every((r) => r.status === 401 && r.token === undefined)).toBe(true);
+    expect(signInButton()).toBeInTheDocument();
+    await advance(5 * TICK_MS);
+    expect(take()).toEqual([]);
+
+    await signIn('right');
+    await vi.waitFor(() => expect(requests.map((r) => r.path)).toContain('/api/services'));
+    await advance(1000);
+    take();
+    await advance(TICK_MS);
+    expect(take().every((r) => r.status === 200 && r.token === 'new-tok')).toBe(true);
+  });
+});
+
 describe('apiFetch reports an expired session once per token (#492)', () => {
   let calls;
   beforeEach(() => {
@@ -211,6 +263,44 @@ describe('apiFetch reports an expired session once per token (#492)', () => {
     setAuthToken('tok-2');
     await apiFetch('/api/ups');
     expect(calls).toBe(2);
+  });
+
+  it('a handler that rejects is logged, not left unhandled, and retried once on the next 401', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const flush = async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    };
+    let attempts = 0;
+    setAuthExpiredHandler(async () => {
+      attempts += 1;
+      throw new Error('keystore busy');
+    });
+    sessions.clear();
+    setAuthToken('tok');
+    // Two 401s while the first report is still running: one call.
+    await Promise.all([apiFetch('/api/services'), apiFetch('/api/status')]);
+    await flush();
+    expect(attempts).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    await apiFetch('/api/services');
+    await flush();
+    expect(attempts).toBe(2);
+    await apiFetch('/api/services');
+    await flush();
+    expect(attempts).toBe(2);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('the handler gets the token the request was sent with, and a tokenless 401 counts', async () => {
+    const seen = [];
+    setAuthExpiredHandler((sent) => seen.push(sent));
+    sessions.clear();
+    setAuthToken('tok');
+    await apiFetch('/api/services');
+    setAuthToken('');
+    await apiFetch('/api/services');
+    await apiFetch('/api/auth/check');
+    expect(seen).toEqual(['tok', '']);
   });
 
   it('a late 401 for a token since replaced (a new sign-in) is ignored', async () => {
