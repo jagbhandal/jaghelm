@@ -103,6 +103,7 @@ export default function DashboardView({
     integrationData,
     history,
     servicesLoaded,
+    settled,
     sources,
     retry,
   } = useDashboardData(refreshKey, { tick, active });
@@ -521,6 +522,9 @@ export default function DashboardView({
           cols={cols}
           rowHeight={36}
           margin={isMobile ? [12, 12] : [16, 16]}
+          // Until every source has answered once, each panel keeps the height
+          // it last had: its content is still coming in (#302).
+          reserve={!(settled && servicesLoaded)}
           draggable={!fixed}
           dragHandle=".section-header"
           resizable={!fixed}

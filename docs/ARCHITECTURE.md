@@ -1668,7 +1668,7 @@ flowchart TD
   `DashboardView` draws nothing until the header's poll has its first answer
   (`reach` past `loading`), while its data loads, so the status, a
   placeholder of unknown height until then, can't push down sections already
-  drawn under it (CLS 0.50 at 390px before, 0.0002 after).
+  drawn under it (CLS 0.50 at 390px before, 0.0001 after).
 - **The Infrastructure section** (#299, spec §8 item 3). At the top of
   today's board (`DashboardView` draws it, lined up with the board's cards by
   HelmGrid's margin), the nodes as cards or a table (`OverviewInfrastructure`
@@ -1864,10 +1864,13 @@ flowchart TD
   grown. A one-column board that can be dragged (a desktop window up to about
   1080px, or 1440px and up beside the rail) stays the stacked grid it was,
   and crossing between the two keeps every panel mounted (the same
-  `GridItem`s, `measuring` off in the flow). Otherwise each panel keeps the height it last measured
-  at its width (`jaghelm-grid-heights`, per browser) for its first 3 s
-  (`RESERVE_MS`) or until its content fills it, so a reload doesn't draw the
-  board at its saved rows and then grow it. Panels auto-grow to fit content: `GridItem` re-measures
+  `GridItem`s, `measuring` off in the flow). Otherwise, until every source
+  of the board has answered or failed once (`settled`, `useDashboardData`,
+  passed as `reserve`), each panel keeps the height it last measured at its
+  width (`jaghelm-grid-heights`, per browser), however long that takes, so a
+  reload doesn't draw the board at its saved rows and then grow it; then each
+  takes its own height in one step. Only heights measured once the data is in
+  are kept, never a placeholder's. Panels auto-grow to fit content: `GridItem` re-measures
   a panel's natural height (the item at `height: auto`) after any change to
   its content or width, at most once a frame. The panel's own box is stretched
   to its grid height, so it doesn't change when only the content does (the
@@ -2734,8 +2737,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   PerformanceObserver, shifts after input left out; it was 0.50, the status
   arriving over sections already drawn, #243); on a phone (360 and 390px)
   every frame the board paints, from its first, has it in the page's flow
-  and every panel as tall as its content; and at 1600px a tick
-  that changes nothing measures no panel. All eight leave screenshots in
+  and every panel as tall as its content; at 1600px a tick that changes
+  nothing measures no panel, and with a source 4 s slow a panel keeps the
+  height it had last time until that source answers, then takes its own
+  once. All eight leave screenshots in
   `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through

@@ -21,7 +21,8 @@
  *    today's board paints, from its first, has it in the page's flow, every
  *    panel inside it and as tall as its content: none drawn at a saved
  *    height and then grown. At 1600px a tick that changes nothing measures
- *    no panel.
+ *    no panel, and a panel keeps its last height until the slowest source
+ *    has answered, then takes its own once.
  *
  * Full-page screenshots of the sweep, for the PR, in test-results/e2e/shots/.
  *
@@ -438,4 +439,63 @@ test("at 1600px a tick that changes nothing measures none of today's panels (#24
   await page.waitForRequest('**/api/services');
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => window.__measures)).toBe(settled);
+});
+
+// While the board's data comes in, each panel keeps the height it had last
+// time (HelmGrid's `reserve`, #302): however long a source takes, no panel
+// shrinks before every source has answered, and then it takes its own height
+// in one step.
+test('at 1600px a panel keeps its last height until every source has answered, then takes its own once', async ({
+  page,
+}) => {
+  const HEIGHTS = 'jaghelm-grid-heights'; // HEIGHTS_PREF, HelmGrid.jsx
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await openApp(page, '/', { scenario: 'incident' });
+  await expect(page.locator('.helmgrid .section-title', { hasText: 'Network Edge' })).toBeVisible();
+  // The heights this visit kept; the Network Edge panel's made 200px taller,
+  // as if it had held more last time.
+  await expect
+    .poll(() => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? '{}'), HEIGHTS))
+    .toHaveProperty('node-edge');
+  await page.evaluate((k) => {
+    const kept = JSON.parse(localStorage.getItem(k));
+    kept['node-edge'][1] += 200;
+    localStorage.setItem(k, JSON.stringify(kept));
+  }, HEIGHTS);
+
+  // The panel's height in every frame from the reload on, on the page's clock.
+  await page.addInitScript(() => {
+    window.__heights = [];
+    const sample = () => {
+      const el = [...document.querySelectorAll('.helmgrid-item')].find(
+        (e) => e.querySelector('.section-title')?.textContent === 'Network Edge'
+      );
+      if (el)
+        window.__heights.push({
+          at: performance.timeOrigin + performance.now(),
+          h: Math.round(el.getBoundingClientRect().height),
+        });
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  // Scheduled Jobs answers after 4 s, the last source to.
+  let answeredAt = null;
+  await page.route('**/api/cron/status', async (route) => {
+    await new Promise((r) => setTimeout(r, 4000));
+    answeredAt = Date.now();
+    await route.fallback();
+  });
+  await page.reload();
+  await page.waitForResponse('**/api/cron/status', { timeout: 15_000 });
+  await page.waitForTimeout(500);
+
+  const frames = await page.evaluate(() => window.__heights);
+  const steps = frames.filter((f, i) => i === 0 || f.h !== frames[i - 1].h);
+  expect(steps.length, `heights: ${steps.map((s) => s.h).join(' → ')}`).toBe(2);
+  const [kept, own] = steps;
+  expect(kept.h).toBeGreaterThan(own.h);
+  expect(own.at, 'took its own height only once the last source answered').toBeGreaterThanOrEqual(
+    answeredAt
+  );
 });

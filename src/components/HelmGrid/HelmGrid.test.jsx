@@ -1,10 +1,11 @@
 import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import HelmGrid, { HEIGHTS_PREF, RESERVE_MS } from './HelmGrid.jsx';
+import HelmGrid, { HEIGHTS_PREF } from './HelmGrid.jsx';
 import { calcCellWidth } from './gridMath.js';
 
 // HelmGrid's layout from the first frame (#243): one column in the page's
-// flow, and, wider, each panel starting at the height it last measured.
+// flow, and, wider, each panel at the height it last measured while the
+// board's data comes in (`reserve`).
 
 const MARGIN = [16, 16];
 const ROW = 36;
@@ -15,8 +16,15 @@ const LAYOUTS = {
   lg: [item('right', 12, 0, 12, 3), item('left', 0, 0, 12, 3), item('under', 0, 3, 24, 4)],
 };
 
-const Board = ({ fixed = false }) => (
-  <HelmGrid layouts={LAYOUTS} rowHeight={ROW} margin={MARGIN} draggable={!fixed} resizable={!fixed}>
+const Board = ({ fixed = false, reserve = false }) => (
+  <HelmGrid
+    layouts={LAYOUTS}
+    rowHeight={ROW}
+    margin={MARGIN}
+    draggable={!fixed}
+    resizable={!fixed}
+    reserve={reserve}
+  >
     {['left', 'right', 'under'].map((id) => (
       <div key={id}>
         <div className="glass-card">
@@ -125,10 +133,10 @@ describe('HelmGrid wider: the height a panel last measured', () => {
   };
   const box = (container, id) => items(container).find((el) => title(el) === id).style;
 
-  it('starts a panel at the height it last measured at that width, before it measures', () => {
+  it('while the data comes in, a panel starts at the height it last measured at that width', () => {
     atWidth(1440);
     localStorage.setItem(HEIGHTS_PREF, JSON.stringify({ left: [widthAt1440(12), 500] }));
-    const { container } = render(<Board />);
+    const { container } = render(<Board reserve />);
     expect(box(container, 'left').height).toBe(`${rowsPx(500)}px`);
     // The panel under it starts under that height, not under the 3 saved rows.
     expect(parseFloat(box(container, 'under').top)).toBeGreaterThanOrEqual(rowsPx(500) + 16);
@@ -139,7 +147,7 @@ describe('HelmGrid wider: the height a panel last measured', () => {
   it('a height kept at another width is not used', () => {
     atWidth(1440);
     localStorage.setItem(HEIGHTS_PREF, JSON.stringify({ left: [widthAt1440(12) + 40, 500] }));
-    const { container } = render(<Board />);
+    const { container } = render(<Board reserve />);
     expect(box(container, 'left').height).toBe(`${3 * (ROW + 16) - 16}px`);
   });
 
@@ -155,27 +163,43 @@ describe('HelmGrid wider: the height a panel last measured', () => {
     });
   });
 
-  it('keeps the room while the content comes in, then takes its own height', async () => {
-    vi.useFakeTimers();
+  it('keeps the room until the data is in, then takes its own height in one step', async () => {
+    atWidth(1440);
+    const stored = JSON.stringify({ left: [widthAt1440(12), 500] });
+    localStorage.setItem(HEIGHTS_PREF, stored);
+    // Its content, so far, is a placeholder 200px tall.
+    measuring({ left: 200, right: 120, under: 300 });
+    const { container, rerender } = render(<Board reserve />);
+    await act(async () => {});
+    // However long the data takes: no time limit.
+    await act(async () => new Promise((r) => setTimeout(r, 50)));
+    expect(box(container, 'left').height).toBe(`${rowsPx(500)}px`);
+    // A placeholder's height is never kept.
+    expect(localStorage.getItem(HEIGHTS_PREF)).toBe(stored);
+
+    rerender(<Board />);
+    await act(async () => {});
+    expect(box(container, 'left').height).toBe(`${rowsPx(200)}px`);
+    // The data in, the heights measured are kept.
+    expect(JSON.parse(localStorage.getItem(HEIGHTS_PREF))).toEqual({
+      left: [widthAt1440(12), 200],
+      right: [widthAt1440(12), 120],
+      under: [widthAt1440(24), 300],
+    });
+  });
+
+  it('with the data in, a kept height is not used', () => {
     atWidth(1440);
     localStorage.setItem(HEIGHTS_PREF, JSON.stringify({ left: [widthAt1440(12), 500] }));
-    // Its content, so far, is a placeholder 200px tall.
-    measuring({ left: 200 });
     const { container } = render(<Board />);
-    await act(async () => {});
-    expect(box(container, 'left').height).toBe(`${rowsPx(500)}px`);
-
-    await act(async () => {
-      vi.advanceTimersByTime(RESERVE_MS);
-    });
-    expect(box(container, 'left').height).toBe(`${rowsPx(200)}px`);
+    expect(box(container, 'left').height).toBe(`${3 * (ROW + 16) - 16}px`);
   });
 
   it('a panel whose content fills the room it kept grows with it', async () => {
     atWidth(1440);
     localStorage.setItem(HEIGHTS_PREF, JSON.stringify({ left: [widthAt1440(12), 500] }));
     measuring({ left: 640 });
-    const { container } = render(<Board />);
+    const { container } = render(<Board reserve />);
     await act(async () => {});
     expect(box(container, 'left').height).toBe(`${rowsPx(640)}px`);
   });
@@ -183,7 +207,7 @@ describe('HelmGrid wider: the height a panel last measured', () => {
   it('a stored value that is not a list of heights is ignored', () => {
     atWidth(1440);
     localStorage.setItem(HEIGHTS_PREF, '[1, 2]');
-    const { container } = render(<Board />);
+    const { container } = render(<Board reserve />);
     expect(box(container, 'left').height).toBe(`${3 * (ROW + 16) - 16}px`);
   });
 });

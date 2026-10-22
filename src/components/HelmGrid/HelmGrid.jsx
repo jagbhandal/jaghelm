@@ -37,10 +37,11 @@ import {
  * dragged or resized (a phone, a filtered board), the panels are in the
  * page's flow at their own height, in the layout's order (`flowOrder`):
  * nothing to measure, and nothing drawn at a saved height and then grown.
- * Otherwise a panel keeps the room it last took at that width (`HEIGHTS_PREF`,
- * per browser) while its content comes in, until the content fills it or
- * `RESERVE_MS` have passed, so a reload draws the board at its size rather
- * than at the saved rows, then growing it.
+ * Otherwise, while `reserve` is on (the board's data still coming in), a panel
+ * keeps the room it last took at that width (`HEIGHTS_PREF`, per browser), so
+ * a reload draws the board at its size rather than at the saved rows, then
+ * growing it; when it goes off each panel takes its own height, in one step.
+ * Only heights measured with `reserve` off are kept, never a placeholder's.
  */
 export default function HelmGrid({
   children,
@@ -58,6 +59,7 @@ export default function HelmGrid({
   onResizeStop,
   labels = {},
   className = '',
+  reserve = false,
 }) {
   const containerRef = useRef(null);
   const [width, setWidth] = useState(0);
@@ -98,14 +100,10 @@ export default function HelmGrid({
   const contentHeightsRef = useRef({});
   const pendingHeightsRef = useRef(null); // batched updates
   // The last height each panel measured, at its width then, in this browser's
-  // earlier visits: the room a panel keeps while its content comes in, until
-  // its content fills it or RESERVE_MS have passed.
+  // earlier visits: the room a panel keeps while `reserve` is on.
   const [lastKnown] = useState(readLastHeights);
-  const [reserving, setReserving] = useState(true);
-  useLayoutEffect(() => {
-    const timer = setTimeout(() => setReserving(false), RESERVE_MS);
-    return () => clearTimeout(timer);
-  }, []);
+  const reserveRef = useRef(reserve);
+  reserveRef.current = reserve;
 
   const handleContentHeight = useCallback((itemId, px) => {
     if (contentHeightsRef.current[itemId] === px) return; // No change
@@ -119,7 +117,7 @@ export default function HelmGrid({
         pendingHeightsRef.current = null;
         if (batch && Object.keys(batch).length > 0) {
           setContentHeights(prev => ({ ...prev, ...batch }));
-          keepLastHeights(batch, effectiveRef.current, gridRef.current);
+          if (!reserveRef.current) keepLastHeights(batch, effectiveRef.current, gridRef.current);
         }
       });
     }
@@ -179,7 +177,7 @@ export default function HelmGrid({
   const effectiveLayout = useMemo(() => {
     const expanded = workingLayout.map(item => {
       const measured = contentHeights[item.i];
-      const kept = reserving ? lastKnownHeight(lastKnown, item, cellWidth, margin) : undefined;
+      const kept = reserve ? lastKnownHeight(lastKnown, item, cellWidth, margin) : undefined;
       const contentPx = Math.max(measured ?? 0, kept ?? 0);
       if (!contentPx) return item;
       const contentRows = pxToRows(contentPx, rowHeight, margin);
@@ -190,11 +188,18 @@ export default function HelmGrid({
     });
     // Re-resolve overlaps after height expansion to prevent panels from overlapping
     return resolveOverlaps(expanded);
-  }, [workingLayout, contentHeights, reserving, lastKnown, cellWidth, rowHeight, margin]);
+  }, [workingLayout, contentHeights, reserve, lastKnown, cellWidth, rowHeight, margin]);
 
   // Effective layout ref for handlers
   const effectiveRef = useRef(effectiveLayout);
   effectiveRef.current = effectiveLayout;
+
+  // The data is in: keep the heights measured so far (the measures while it
+  // came in weren't kept), each panel's from now on as it measures.
+  useLayoutEffect(() => {
+    if (!reserve && Object.keys(contentHeightsRef.current).length)
+      keepLastHeights(contentHeightsRef.current, effectiveRef.current, gridRef.current);
+  }, [reserve]);
 
   // Content-aware minH for resize.
   const getContentMinH = useCallback((itemId) => {
@@ -604,9 +609,6 @@ function flowOrder(layout) {
  * [width, height] }` in pixels, the height its content took at that width.
  */
 export const HEIGHTS_PREF = 'jaghelm-grid-heights';
-
-/** How long, from the grid's first frame, a panel keeps the room it last took. */
-export const RESERVE_MS = 3000;
 
 function readLastHeights() {
   try {
