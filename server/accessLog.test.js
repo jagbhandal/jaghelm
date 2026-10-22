@@ -237,7 +237,8 @@ test('accessLevel: the level each kind of request logs at (#492)', () => {
   const wrong = [];
   for (const [method, originalUrl, statusCode, ms, want, why] of LEVELS) {
     const got = accessLevel({ method, originalUrl }, { statusCode }, ms);
-    if (got !== want) wrong.push(`${method} ${originalUrl} ${statusCode} ${ms}ms (${why}): ${got}, want ${want}`);
+    if (got !== want)
+      wrong.push(`${method} ${originalUrl} ${statusCode} ${ms}ms (${why}): ${got}, want ${want}`);
   }
   assert.deepEqual(wrong, []);
   const poll = { method: 'GET', originalUrl: '/api/services' };
