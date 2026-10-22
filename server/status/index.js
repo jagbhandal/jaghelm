@@ -29,16 +29,24 @@ export const liveCaches = {
  * once a cycle: push reads the jobs from the model, not the file.
  *
  * @param {object} [caches]  getCached, getCachedInternal, getAllCronStatuses
- * @param {{ cycleErrors?: string[], backupJobs?: string[], arcaneAgents?: Array<{ env: string, state: string }> | null, env?: Record<string, string | undefined> }} [extra]
+ * @param {{ cycleErrors?: string[], backupJobs?: string[], arcaneAgents?: Array<{ env: string, state: string }> | null, configProblem?: string | null, env?: Record<string, string | undefined> }} [extra]
  *   cycleErrors: runCycleRefreshes' error set (it says whether Gitea failed);
  *   backupJobs: the "node:job" keys display-config.json marks as backups
  *   (status/backupJobs.js); arcaneAgents: the Arcane poller's agents
- *   (arcane/agents.js; null: Arcane not set up or not polled yet); env: where
- *   KUMA_URL and GITEA_URL are read from. The loop passes all of them
+ *   (arcane/agents.js; null: Arcane not set up or not polled yet);
+ *   configProblem: why services.yaml is no usable config ("services.yaml
+ *   doesn't parse (line 4)", config.js configProblem, #505), or null; env:
+ *   where KUMA_URL and GITEA_URL are read from. The loop passes all of them
  *   (refresh.js updateStatus, #291).
  */
 export function readStatusInputs(caches = liveCaches, extra = {}) {
-  const { cycleErrors = [], backupJobs = [], arcaneAgents = null, env = process.env } = extra;
+  const {
+    cycleErrors = [],
+    backupJobs = [],
+    arcaneAgents = null,
+    configProblem = null,
+    env = process.env,
+  } = extra;
   return {
     services: caches.getCached('services'),
     servicesInternal: caches.getCachedInternal?.('services') ?? null,
@@ -50,6 +58,7 @@ export function readStatusInputs(caches = liveCaches, extra = {}) {
     kumaConfigured: Boolean(env.KUMA_URL),
     giteaConfigured: Boolean(env.GITEA_URL),
     cycleErrors,
+    configProblem,
   };
 }
 

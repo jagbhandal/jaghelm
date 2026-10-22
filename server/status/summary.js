@@ -107,6 +107,8 @@ const PHRASE = { Warning: 'in warning', 'Login refused': 'with a refused login' 
 const noun = (kind, n) => (NOUNS[kind] ?? ['item', 'items'])[n === 1 ? 0 : 1];
 
 function phrase(issue, n) {
+  // services.yaml that is no usable config (#505) says why: "services.yaml doesn't parse (line 4)".
+  if (issue.id === 'sources/config') return issue.reason;
   // A source that answers but fails for part of what it feeds (#476) is failing, not unreachable.
   if (issue.kind === 'source') return `${issue.name} ${issue.word === 'Failing' ? 'failing' : 'unreachable'}`;
   if (issue.kind === 'ups') return `UPS ${issue.word.toLowerCase()}`;
@@ -120,7 +122,8 @@ function phrase(issue, n) {
  * - With warnings or worse: each kind of problem with its count, in issue
  *   order ("2 services down · UPS on battery"), a failed source by name
  *   ("Prometheus unreachable", or "Prometheus failing" when it answers but
- *   fails for a node), then "N no signal".
+ *   fails for a node; a broken services.yaml by its reason, "services.yaml
+ *   doesn't parse (line 4)", #505), then "N no signal".
  * - Otherwise, with entities in no signal: the quiet line breaks
  *   ("31 up · 1 no signal").
  * - Otherwise the quiet line ("All 32 services up · 6 nodes healthy").
