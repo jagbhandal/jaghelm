@@ -53,6 +53,19 @@ test('the status check\'s push (#440) is in no category: no category switch turn
   assert.equal(shouldDeliver({ type: 'source_down', id: 'status' }, noRecoveries), true);
 });
 
+test("the config's push (#505) is in no category: a broken services.yaml is everything's problem; push off and the recoveries switch still turn it off", () => {
+  assert.equal(categoryOf('source_down', 'config'), null);
+  assert.equal(categoryOf('source_recovered', 'config'), null);
+  const allOff = {
+    ...DEFAULT_PREFS,
+    categories: { service: false, host: false, ups: false, cron: false, watchtower: false },
+  };
+  assert.equal(shouldDeliver({ type: 'source_down', id: 'config' }, allOff), true);
+  assert.equal(shouldDeliver({ type: 'source_down', id: 'config' }, { ...DEFAULT_PREFS, enabled: false }), false);
+  const noRecoveries = { ...DEFAULT_PREFS, notifyRecoveries: false };
+  assert.equal(shouldDeliver({ type: 'source_recovered', id: 'config' }, noRecoveries), false);
+});
+
 test('DEFAULT_PREFS is all-on', () => {
   assert.deepEqual(DEFAULT_PREFS, {
     categories: { service: true, host: true, ups: true, cron: true, watchtower: true },

@@ -14,7 +14,7 @@
 import { readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
-import { getConfig } from './config.js';
+import { configProblem, getConfig } from './config.js';
 import { getNodesData, promQuery } from './discovery.js';
 import { UP_MISSING } from './status/upMissing.js';
 import { recordSamples } from './history.js';
@@ -182,7 +182,9 @@ export function getThresholds() {
  * /api/status and returns it. `cycleErrors` is runCycleRefreshes' error set.
  * The display config gives the thresholds and which jobs are backups
  * (`backupJobs`, #291); the Arcane poller's last read gives the agents
- * (arcane/agents.js), with no Arcane request of the model's own.
+ * (arcane/agents.js), with no Arcane request of the model's own; config.js
+ * says whether services.yaml is no usable config, and why (#505), from its
+ * last read, with no read of the model's own.
  *
  * It never throws. If the model throws (an input it can't read), it logs the
  * error once until the error changes or the model builds again, keeps the
@@ -202,6 +204,7 @@ export function updateStatus(cycleErrors = [], now = Date.now()) {
         cycleErrors,
         backupJobs: backupJobsOf(displayConfig),
         arcaneAgents: getArcaneAgents(),
+        configProblem: configProblem()?.reason ?? null,
       }),
       thresholds: thresholdsOf(displayConfig),
       now,
