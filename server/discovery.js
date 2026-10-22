@@ -24,6 +24,17 @@ import { createLogger } from './util/logger.js';
 import { safeFetch } from './httpClient.js';
 import { positiveNum } from './util/env.js';
 import { NOT_HELPER, NOT_JOB, isHelperSeries, isJobContainer } from './util/helperContainers.js';
+import {
+  UP_MISSING,
+  WAIT_INTERVALS,
+  WHY,
+  listedWaitSince,
+  notScrapedYet,
+  targetName,
+  waitLimitMs,
+  whyUpMissing,
+} from './status/upMissing.js';
+import { WAIT_GAP_MS, createTargetWaits, targetKey } from './targetWaits.js';
 
 const log = createLogger('discovery');
 
@@ -41,9 +52,18 @@ const MiB = 1048576;
 const GiB = 1073741824;
 
 let promUrl = null;
+// When each target waiting for its first scrape began waiting (#476), kept in
+// the data dir; read from it again by initDiscovery().
+let targetWaits = null;
 
-export function initDiscovery(prometheusUrl) {
+/**
+ * Point discovery at the Prometheus at `prometheusUrl`. `targetWaits` replaces
+ * the store of target waits (targetWaits.js); by default it is read from the
+ * data dir, so calling this again is a restart's view of it.
+ */
+export function initDiscovery(prometheusUrl, { targetWaits: waits } = {}) {
   promUrl = prometheusUrl;
+  targetWaits = waits ?? createTargetWaits();
   // Another Prometheus may list other filesystems, and warn about other things.
   rootFs.clear();
   loggedWarnings.clear();
@@ -478,23 +498,30 @@ export const NODE_QUERIES = 13;
  * Prometheus's own state, not what this process saw (#470). When the `up`
  * query answered and a node has `up` 0, or no `up` series and no CPU, memory
  * or disk reading, Prometheus's target list is read, once for the call
- * (promTargets()); a node's targets are those with its `node` label.
- * Prometheus writes an `up` sample on every scrape, 0 included, so:
- * - No `up` series, no target: left as it is (the model pages it unreachable).
- * - No `up` series, every target not scraped yet: unread (every part in
- *   `failedReads`), `ok` unchanged, as Prometheus failed at nothing.
- * - No `up` series, a target scraped: Prometheus stored nothing for it (a full
- *   disk failing its writes). `up` is asked again for those nodes, as a scrape
- *   that ended between the `up` query and the targets read looks the same: a
- *   node with an `up` series by then is unread for the call, `ok` unchanged;
- *   one still with none is unread with `ok` false and an `error` naming them.
- * - `up` 0 while a target of the node is not scraped yet, or answered its scrape
- *   since (a reboot: cAdvisor scraped before it listens, node-exporter not yet):
- *   unread, `ok` unchanged. With every target scraped and down, as it is.
- * When the targets read fails, each node with no `up` series is unread, with
- * `ok` false and the targets read's `error`; a node with `up` 0 keeps it, as
- * Prometheus's own answer. A node with `up` 1 is never touched, and a call
- * where every node has `up` 1, or no `up` series but metrics, reads no targets.
+ * (promTargets()), and the node gets its verdict from whyUpMissing()
+ * (status/upMissing.js) as `whyNoUp`, marked as its row of UP_MISSING says:
+ * - Left as it is (the model pages it unreachable): `up` 0 with every target
+ *   of the node scraped and down, or none of its own, or the list unread
+ *   (Prometheus's own answer); no `up` series and no target of its own while
+ *   the list names other nodes.
+ * - Unread (every part in `failedReads`), `ok` unchanged: a target of the node
+ *   waiting for its first scrape for less than WAIT_INTERVALS of its scrape
+ *   intervals, or (`up` 0) one that answered a scrape since the query.
+ * - Unread with `ok` false and an `error`, as Prometheus is failing:
+ *   - a target waiting longer than that (#476), the error naming every such
+ *     target. Its wait is counted from its last scrape when the list gives one,
+ *     else from the first cycle that saw it waiting (targetWaits.js, kept in
+ *     the data dir across a restart);
+ *   - no `up` series, and the list names none of the nodes asked for (#477:
+ *     a federation or remote-write backend has no target per node);
+ *   - no `up` series though a target of the node was scraped: Prometheus
+ *     stored nothing (a full disk failing its writes). `up` is asked again for
+ *     those nodes, as a scrape that ended between the `up` query and the
+ *     targets read looks the same: a node with an `up` series by then is
+ *     unread for the call (answered since), `ok` unchanged;
+ *   - no `up` series, and the targets read failed, with its error.
+ * A node with `up` 1 is never touched, and a call where every node has `up` 1,
+ * or no `up` series but metrics, reads no targets (and forgets every wait).
  */
 export async function getNodesData(nodeLabels) {
   const labels = [...new Set(nodeLabels)];
@@ -571,46 +598,77 @@ function hasUsage(metrics) {
   return ['cpu', 'memPercent', 'diskPercent'].some((f) => Number.isFinite(parseFloat(metrics?.[f])));
 }
 
-/** Whether Prometheus has yet to scrape `t`: health "unknown", or no last scrape. */
-function notScrapedYet(t) {
-  return t?.health === 'unknown' || !(Date.parse(t?.lastScrape) > 0);
-}
-
 /**
  * getNodesData's nodes that `up` alone would leave unreachable, checked
- * against Prometheus's target list (#470; see getNodesData). Updates `out` in
- * place.
+ * against Prometheus's target list (#470, #476, #477; see getNodesData).
+ * Updates `out` in place. With no Prometheus URL there is nothing to ask.
  */
 async function checkTargets(out) {
-  const noUp = [...out].filter(([, d]) => d.reachable === null && !hasUsage(d.metrics));
-  const down = [...out].filter(([, d]) => d.reachable === false);
-  if (noUp.length === 0 && down.length === 0) return;
-  let targets;
+  if (!promUrl) return;
+  const waits = targetWaits ?? (targetWaits = createTargetWaits());
+  const checked = [...out].filter(
+    ([, d]) => d.reachable === false || (d.reachable === null && !hasUsage(d.metrics))
+  );
+  if (checked.length === 0) {
+    waits.retain(new Set());
+    waits.save();
+    return;
+  }
+  let targets = null;
+  let readError = null;
   try {
     targets = await promTargets();
   } catch (err) {
-    for (const [label, d] of noUp) unread(out, label, d, err.message);
+    readError = err.message;
     log.debug({ err: err.message }, 'Prometheus targets read failed');
-    return;
   }
-  const targetsOf = (label) => targets.filter((t) => t?.labels?.node === label);
-  for (const [label, d] of down) {
-    if (targetsOf(label).some((t) => notScrapedYet(t) || t.health === 'up')) unread(out, label, d);
+  const now = Date.now();
+  const asked = new Set(out.keys());
+  const namesNodes = (targets ?? []).some((t) => asked.has(t?.labels?.node));
+  const targetsOf = (label) => (targets === null ? null : targets.filter((t) => t?.labels?.node === label));
+
+  // When each waiting target of a checked node began waiting: its last scrape
+  // when the list gives one, else the first cycle that saw it waiting.
+  const since = new Map();
+  for (const [label] of checked) {
+    for (const t of targetsOf(label) ?? []) {
+      if (!notScrapedYet(t)) continue;
+      const key = targetKey(t);
+      since.set(key, listedWaitSince(t) ?? waits.sighted(key, now, Math.max(WAIT_GAP_MS, waitLimitMs(t))));
+    }
   }
-  const scraped = [];
-  for (const [label, d] of noUp) {
-    const mine = targetsOf(label);
-    if (mine.length === 0) continue;
-    if (mine.every(notScrapedYet)) unread(out, label, d);
-    else scraped.push([label, d]);
+  if (targets !== null) waits.retain(new Set(since.keys()));
+  waits.save();
+
+  const verdicts = checked.map(([label, d]) => {
+    const { why, overdue } = whyUpMissing({
+      up: d.reachable === false ? false : null,
+      targets: targetsOf(label),
+      namesNodes,
+      now,
+      sinceOf: (t) => since.get(targetKey(t)) ?? null,
+    });
+    return { label, d, why, overdue };
+  });
+  const overdue = verdicts.flatMap((v) => v.overdue);
+  const unlisted = verdicts.filter((v) => v.why === WHY.NO_TARGETS_AT_ALL).map((v) => v.label);
+  const errors = {
+    [WHY.TARGETS_UNREAD]: readError,
+    [WHY.NOT_SCRAPED_TOO_LONG]: `Prometheus hasn't scraped ${overdue.map(targetName).join(', ')} in ${WAIT_INTERVALS} scrape intervals`,
+    [WHY.NO_TARGETS_AT_ALL]: `Prometheus lists no target for any node, and has no up series for ${unlisted.join(', ')}`,
+  };
+  const stored = [];
+  for (const { label, d, why } of verdicts) {
+    if (why === WHY.STORED_NOTHING) stored.push([label, d]);
+    else mark(out, label, d, why, errors[why]);
   }
-  if (scraped.length > 0) await checkStored(out, scraped);
+  if (stored.length > 0) await checkStored(out, stored);
 }
 
 /**
  * Nodes with no `up` series and a target Prometheus has scraped (checkTargets),
- * asked for `up` again: those still with none are unread with `ok` false, as
- * Prometheus stored nothing for them; the others are unread for this call.
+ * asked for `up` again: those still with none stored nothing (`ok` false); the
+ * others answered since. Should the query fail, each is unread with its error.
  */
 async function checkStored(out, nodes) {
   const labels = nodes.map(([label]) => label);
@@ -623,16 +681,31 @@ async function checkStored(out, nodes) {
   }
   const missing = labels.filter((label) => !byNode.has(label));
   const error = `Prometheus scraped ${missing.join(', ')} but stored no up series`;
-  for (const [label, d] of nodes) unread(out, label, d, missing.includes(label) ? error : null);
+  for (const [label, d] of nodes) {
+    mark(out, label, d, missing.includes(label) ? WHY.STORED_NOTHING : WHY.ANSWERED_SINCE, error);
+  }
+}
+
+/**
+ * Give node `label` (its result `d`) its verdict `why`, as `whyNoUp`, and mark
+ * it as UP_MISSING's row says: unread, and failed with `error` when Prometheus
+ * is failing.
+ */
+function mark(out, label, d, why, error = null) {
+  const { unread: isUnread, failing } = UP_MISSING[why];
+  if (!isUnread) out.set(label, { ...d, whyNoUp: why });
+  else unread(out, label, d, failing ? error : null, why);
 }
 
 /**
  * Mark node `label` (its result `d`) unread: every part in `failedReads`. With
  * an `error`, Prometheus failed it: `ok` false, and the first error kept.
+ * `why` is its verdict, when it has one.
  */
-function unread(out, label, d, error = null) {
+function unread(out, label, d, error = null, why = undefined) {
   const failure = error ? { ok: false, error: d.error ?? error } : {};
-  out.set(label, { ...d, ...failure, failedReads: [...NODE_READS] });
+  const verdict = why ? { whyNoUp: why } : {};
+  out.set(label, { ...d, ...failure, failedReads: [...NODE_READS], ...verdict });
 }
 
 function formatUptime(s) {

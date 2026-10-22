@@ -40,9 +40,14 @@ function promResponse(url) {
   const q = decodeURIComponent(url);
   const result = promResult;
 
-  // The target list (#470), read for a node with no up series: none of its own.
+  // The target list (#470), read for a node whose up is 0: none of its own.
   if (new URL(String(url)).pathname === '/api/v1/targets') {
     return { ...result([]), json: async () => ({ status: 'success', data: { activeTargets: [], droppedTargets: [] } }) };
+  }
+  // The node's up, 0: Prometheus's own answer stands, whatever the target list
+  // says (#470, #477).
+  if (q.includes('max by (node) (up{')) {
+    return result([{ metric: {}, value: [0, '0'] }]);
   }
 
   // Container CPU at exactly 0% — the headline case.
@@ -192,12 +197,21 @@ test('getNodesData, one node: a failing query makes the result ok:false with its
   }
 });
 
-test('getNodesData, one node: every query answering, even with no series, is ok:true', async () => {
-  // Prometheus has no target for the node either (#470).
-  globalThis.fetch = async (url) =>
-    new URL(String(url)).pathname === '/api/v1/targets' ? promResponse(url) : promResult([]);
+test('getNodesData: every query answering, even with no series, is ok:true', async () => {
+  // Prometheus has no target for vm-test either, and one for vm-test-2, which
+  // has its up series: the list names a node asked for (#470, #477).
+  globalThis.fetch = async (url) => {
+    if (new URL(String(url)).pathname === '/api/v1/targets') {
+      const labels = { instance: 'vm-test-2:9100', job: 'node', node: 'vm-test-2' };
+      const activeTargets = [{ labels, health: 'up', lastScrape: '2026-10-20T10:00:00Z' }];
+      return answer(200, { status: 'success', data: { activeTargets, droppedTargets: [] } });
+    }
+    return decodeURIComponent(url).includes('max by (node) (up{')
+      ? promResult([{ metric: { node: 'vm-test-2' }, value: [0, '1'] }])
+      : promResult([]);
+  };
   try {
-    const data = await nodeData('vm-test');
+    const data = (await getNodesData(['vm-test', 'vm-test-2'])).get('vm-test');
     assert.equal(data.ok, true);
     assert.equal(data.error, null);
     assert.deepEqual(data.failedReads, []);
@@ -315,11 +329,12 @@ test('#470: a node with no up series whose target Prometheus has not scraped yet
 });
 
 test('#470: a node with no up series and no target of its own is as before: nothing unread, reachability null', async () => {
-  // Other nodes' targets, one not scraped yet: only the node's own count.
+  // Other nodes' targets, one not scraped yet: only the node's own count. The
+  // list names a node asked for (`other`), so Prometheus scrapes them (#477).
   const prom = coldProm(() => targetsAnswer([target('other', 'unknown'), target('vm-test-2', 'up')]));
   globalThis.fetch = prom.fetch;
   try {
-    const data = await nodeData('vm-test');
+    const data = (await getNodesData(['vm-test', 'other'])).get('vm-test');
     assert.equal(data.ok, true);
     assert.deepEqual(data.failedReads, []);
     assert.equal(data.reachable, null);
