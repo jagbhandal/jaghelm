@@ -86,8 +86,9 @@ server/                     Express API (Node 26, ESM)
   icon-cache.js             public /api/icons/cached: icon-repository icons on disk, size-capped
                             with LRU eviction (see 6)
   icon-sources.js           the icon repositories it may fetch from; the web client imports it too
-  config.js                 services.yaml: load, hot-reload watch, copy-on-read, its version,
-                            and the one atomic writer, over the version read (see 6)
+  config.js                 services.yaml: load, hot-reload watch (and its 30 s retry while
+                            broken), copy-on-read, its version, and the one atomic writer,
+                            over the version read (see 6)
   secrets.js                AES-256-GCM secret store (per-install KDF salt), and the
                             snapshot a failed integration save is undone to (see 4.4)
   cron-store.js             cron history (bounded)
@@ -981,12 +982,14 @@ signs out locally as before.
   restart can't mend the input, and the deploy gate's `"status":"ok"` would
   roll a deploy back over it. It is the process's memory, so after a restart
   it counts from that restart's first cycle (push keeps its own count in the
-  snapshot, 4.7). Beside it, `config` (#505): `{ state: 'ok' }`, or
+  snapshot, 4.7). Beside it, `config` (#505): `{ state: 'ok' }`,
   `{ state: 'unparseable', line }` while `services.yaml` is no usable config
   (`line` null for an empty file, one that isn't a mapping, or an error with
-  no position), as of the file's last read (`configHealth` in `config.js`).
-  Never its text, and it doesn't change `status` either: a restart can't fix
-  the file.
+  no position), or `{ state: 'unreadable', code }` while it is there but
+  can't be read (#536: `code` the read error's, `EACCES`, `EISDIR`, `EIO`…,
+  or null), as of the file's last read (`configHealth` in `config.js`).
+  Never its text or its path, and it doesn't change `status` either: a
+  restart can't fix the file.
 
 ### 4.7 Status model
 
@@ -1051,8 +1054,10 @@ error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
 - **`configProblem`** (#505): why `services.yaml` is no usable config, from
   its last read (`configProblem` in `config.js`): "services.yaml doesn't parse
   (line 4)", "services.yaml doesn't parse" with no position, "services.yaml is
-  empty" or "services.yaml isn't a mapping"; `null` while it loads. Fixed
-  words and a line, never the file's text (#504).
+  empty", "services.yaml isn't a mapping", or "services.yaml can't be read
+  (permission denied)" for one that is there but can't be read (#536, the
+  read error's code in plain words, or the code); `null` while it loads.
+  Fixed words and a line, never the file's text (#504) or its path.
 
 **The status:**
 
@@ -1157,7 +1162,8 @@ error set (`runCycleRefreshes`, for Gitea). Three more come from elsewhere
   `sources` but is no issue: nothing on the board depends on it. Kuma is
   listed once `KUMA_URL` is set or a service is on the board.
 - **`services.yaml` is a source too** (#505), `config`, listed only while the
-  file is no usable config (`configProblem`), as `failed` with that reason, so
+  file is no usable config or can't be read (#536) (`configProblem`), as
+  `failed` with that reason, so
   a good file changes nothing. JagHelm then runs on the last good config, or
   on none at boot (5, #463), and an empty board would read as calm: its issue,
   `sources/config` ("JagHelm config", `warn`, "Failed"), has the reason, and
@@ -1413,9 +1419,10 @@ sees where that changed:
   and kept as the status check's is otherwise: `ok` for the cycle after it
   paged, else no entry. So its second cycle sends one `source_down` with the
   id and node `config`, "JagHelm config broken", body "JagHelm config ·
-  services.yaml doesn't parse (line 4)", `warning`, and the cycle after the
-  fix (the watcher's reload, or any read) one `source_recovered`, "JagHelm
-  config fixed", "services.yaml loads again". It is in no category: a file
+  services.yaml doesn't parse (line 4)" (or "can't be read (permission
+  denied)", #536), `warning`, and the cycle after the fix (the watcher's
+  reload, its 30 s retry, or any read) or the file's removal one
+  `source_recovered`, "JagHelm config fixed", "services.yaml loads again". It is in no category: a file
   that doesn't parse is every category's problem.
 - Each event's `reason` is the model's reason for the entity, and its body the
   entity's name (and node) and that reason: "Gitea on vm103 · Kuma: down",
@@ -2294,6 +2301,24 @@ All state is files under the data dir (no DB):
     purpose is a real config and empties the board. Either way the board,
     a push and `/api/health` say the file is broken (#505, 4.6, 4.7): the
     config is a failed source until the file loads.
+  - **A file that is there but can't be read is a failed read too** (#536):
+    EACCES, EISDIR, EIO or any error but ENOENT. The config source is down
+    with "services.yaml can't be read (permission denied)", `/api/health` has
+    `unreadable`, the board keeps the last good config (empty at boot, no
+    discovery), and every writer refuses it (below). Before, it gave the calm
+    empty board at boot and a 500 on a save.
+  - **While the config is a failed source, a retry reads it again** (#536)
+    every 30 s, beside the watcher's 5 s poll, and reloads it when what it
+    reads differs from the last read: a permission fix, or a file restored
+    with its old mtime, changes no mtime, so the poll alone never saw it. The
+    same failure again is quiet. One timer at most, started when the source
+    goes down (or the watcher starts with it down), stopped when it is up
+    again and on shutdown (`stopConfigWatcher`). A broken or unreadable file
+    deleted is reloaded at the next poll and is broken no more, with one
+    recovery push: a missing file then means what it means while JagHelm
+    runs, the config in memory stays (empty after a broken boot), a read
+    answers it as `CONFIG_ABSENT` and the next save writes a new file.
+    First-boot discovery runs only at boot, as when a good file is deleted.
   - **Nothing writes over a file that doesn't parse** (#423). The config
     kept for the board is not the file's, so `readConfig()` answers no config
     for it, only why (`services.yaml doesn't parse (<reason> at line N,
@@ -2304,7 +2329,11 @@ All state is files under the data dir (no DB):
     `{ error, code: "config_unparseable" }` with no version, the integration
     save before it stores a credential, and `writeConfig` parses the bytes it
     would replace and refuses them itself, whatever version its caller
-    passes, so no writer can skip it. Before, one indentation slip and an
+    passes, so no writer can skip it. A file that can't be read (#536) is
+    refused the same way, as a 503 `{ error, code: "config_unreadable" }`
+    ("services.yaml can't be read (permission denied): fix it on the host;
+    …"), before any version is compared, since it has none; Settings shows
+    it as it shows `config_unparseable`. Before, one indentation slip and an
     integration added from the gallery rewrote the file to that one
     integration (the last good config at boot is `{}`). Fixed by hand, the
     next read or the watcher's reload loads it and saves work again. Settings

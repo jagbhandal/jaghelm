@@ -9,15 +9,22 @@
  * file it came from, and writeConfig() is the one writer: it writes only over
  * the version its caller read, checked against the file in the same
  * synchronous step, and never over a file that doesn't parse.
+ *
+ * A services.yaml that is there but can't be read (#536: EACCES, EISDIR,
+ * EIO…) is a config failure like one that doesn't parse: the board says so,
+ * nothing writes over it, and while either lasts a retry reads it again every
+ * 30 s (startConfigWatcher), since a permission fix leaves the mtime the
+ * watcher looks at as it was.
  */
 
 import { createHmac, randomBytes } from 'node:crypto';
-import { readFileSync, existsSync, statSync } from 'fs';
+import { readFileSync, statSync } from 'fs';
 import { join } from 'path';
 import yaml from 'js-yaml';
 
 import { atomicWriteFileSync, createExclusiveFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
+import { CONFIG_UNPARSEABLE, CONFIG_UNREADABLE } from './errors.js';
 import { createLogger } from './util/logger.js';
 import { describeParseError, yamlParseError } from './util/parseError.js';
 
@@ -38,6 +45,9 @@ let seenVersion = null;
 let seenUnusable = null;
 // The same for the board and /api/health (#505): `{ line, reason }`, or null.
 let seenProblem = null;
+// While the last read couldn't read the file at all (#536): `{ code }`, its
+// error's code (null for none), else null. seenProblem says it then too.
+let seenReadError = null;
 // The key versions are made with, once read (versionKey).
 let versionKeyBytes = null;
 
@@ -152,15 +162,57 @@ function boardProblemOf({ problem, parseError }) {
     : { line, reason: `services.yaml doesn't parse (line ${line})` };
 }
 
-/** services.yaml's bytes and version now, or no bytes and CONFIG_ABSENT. */
+/**
+ * services.yaml's bytes and version now; no bytes and CONFIG_ABSENT when there
+ * is no file; or, for a file that is there but can't be read (#536), no bytes,
+ * no version and `readError`, the error. Never throws for the file itself.
+ * @returns {{ bytes: Buffer | null, version: string | null, readError?: any }}
+ */
 function readDisk() {
+  let bytes;
   try {
-    const bytes = readFileSync(CONFIG_PATH);
-    return { bytes, version: versionOf(bytes) };
+    bytes = readFileSync(CONFIG_PATH);
   } catch (err) {
     if (err.code === 'ENOENT') return { bytes: null, version: CONFIG_ABSENT };
-    throw err;
+    return { bytes: null, version: null, readError: err };
   }
+  return { bytes, version: versionOf(bytes) };
+}
+
+/** A read error's code in plain words, for the board and Settings (#536). */
+const READ_ERROR_WORDS = new Map([
+  ['EACCES', 'permission denied'],
+  ['EPERM', 'operation not permitted'],
+  ['EISDIR', "it's a directory"],
+  ['EIO', 'I/O error'],
+  ['ELOOP', 'too many symlinks'],
+  ['ENOTDIR', "its folder isn't a directory"],
+  ['EMFILE', 'too many open files'],
+  ['ENFILE', 'too many open files'],
+  ['EBUSY', 'busy'],
+]);
+
+/** A read error's code ("EACCES"), or null when it has none that looks like one. */
+function readErrorCode(err) {
+  const code = err?.code;
+  return typeof code === 'string' && /^E[A-Z0-9]{1,20}$/.test(code) ? code : null;
+}
+
+/**
+ * Why a file that can't be read is no usable config (#536), as parseConfig's
+ * answer says it for one that doesn't parse: "services.yaml can't be read
+ * (permission denied)", its code in plain words, or the code itself. The file
+ * by its name only, never its path.
+ */
+function unreadableBecause(err) {
+  const code = readErrorCode(err);
+  const words = (code && READ_ERROR_WORDS.get(code)) || code || 'unknown error';
+  const problem = `services.yaml can't be read (${words})`;
+  return {
+    code,
+    problem,
+    unusable: `${problem}: fix it on the host; JagHelm won't save over a file it can't read`,
+  };
 }
 
 // ── Default config (generated on first boot) ──
@@ -213,7 +265,17 @@ export function loadConfig() {
   versionKey();
   try {
     const disk = readDisk();
+    if (disk.readError) {
+      // A file that is there: no first boot, and never overwritten (#536).
+      markUnreadable(disk.readError);
+      return getConfig();
+    }
     if (!disk.bytes) {
+      // Deleted while broken (the watcher): broken no more.
+      if (seenProblem) {
+        forgetProblem();
+        return null;
+      }
       log.info('No services.yaml found — first boot, will auto-discover');
       return null;
     }
@@ -230,8 +292,9 @@ export function loadConfig() {
     // honor the same copy-on-read contract — no caller ever holds the canonical ref.
     return getConfig();
   } catch (err) {
-    // Not a parse error (parseConfig catches those): reading or stat-ing the
-    // file, an error that names its path, never its content.
+    // Not a parse error (parseConfig catches those) nor a read's (readDisk
+    // answers those): stat-ing the file, an error that names its path, never
+    // its content.
     return keepAfterFailedRead('Failed to load services.yaml', { err });
   }
 }
@@ -244,9 +307,11 @@ export function loadConfig() {
  */
 function adopt(disk) {
   seenVersion = disk.version;
+  seenReadError = null;
   const parsed = parseConfig(disk.bytes);
   seenUnusable = parsed.unusable ?? null;
   seenProblem = parsed.unusable ? boardProblemOf(parsed) : null;
+  syncRetry();
   if (parsed.unusable) {
     keepAfterFailedRead(parsed.problem, parsed.parseError && { parseError: parsed.parseError });
     return false;
@@ -254,6 +319,42 @@ function adopt(disk) {
   config = parsed.config;
   warnUnreadKeys(config);
   return true;
+}
+
+/**
+ * services.yaml is there but can't be read (#536): no usable config, as one
+ * that doesn't parse. The config source is down with why, every writer
+ * refuses (`config_unreadable`), and the previous config stays, or the board
+ * starts empty at boot (#463). There is no version to keep, so the next read
+ * that works adopts what it reads. Logged once, not on every read that fails
+ * the same way.
+ */
+function markUnreadable(err) {
+  const { code, problem, unusable } = unreadableBecause(err);
+  const again = seenReadError !== null && seenReadError.code === code;
+  seenVersion = null;
+  seenReadError = { code };
+  seenUnusable = unusable;
+  seenProblem = { line: null, reason: problem };
+  syncRetry();
+  // The error names the file's path and its code, never its content.
+  if (!again) keepAfterFailedRead(problem, { err });
+}
+
+/**
+ * services.yaml is gone while it was broken or unreadable (#536): a file
+ * that isn't there is broken no more, and means what a missing file means
+ * while JagHelm runs: the config in memory stays, a read answers it as
+ * CONFIG_ABSENT, and the next save writes a new file. Discovery runs only at
+ * boot, as when a good file is deleted.
+ */
+function forgetProblem() {
+  seenVersion = CONFIG_ABSENT;
+  seenReadError = null;
+  seenUnusable = null;
+  seenProblem = null;
+  syncRetry();
+  log.info('services.yaml was removed, so it is no longer broken; the next save writes a new one');
 }
 
 /**
@@ -269,27 +370,39 @@ function adopt(disk) {
  * column 4): …", never a quote of the file): the board keeps the last good
  * config (#463), but that config is not this file's, so it never goes out
  * with this file's version, and no writer may write over the file
- * (writeConfig refuses) until it is fixed by hand.
+ * (writeConfig refuses) until it is fixed by hand. `code` is the refusal's
+ * (errors.js): `config_unparseable`, or `config_unreadable` for a file that
+ * is there but can't be read (#536), which has no version (null).
  *
  * Every writer reads through here and writes with writeConfig, in one
  * synchronous step (no `await` in between).
- * @returns {{ config: any, version: string, unusable?: string }}
+ * @returns {{ config: any, version: string | null, unusable?: string, code?: string }}
  */
 export function readConfig() {
   const disk = readDisk();
-  if (disk.bytes && disk.version !== seenVersion) adopt(disk);
-  if (disk.bytes && seenUnusable) {
-    return { config: null, version: disk.version, unusable: seenUnusable };
+  if (disk.readError) {
+    markUnreadable(disk.readError);
+    return { config: null, version: null, unusable: seenUnusable, code: CONFIG_UNREADABLE };
+  }
+  if (!disk.bytes) {
+    if (seenProblem) forgetProblem();
+    return { config: getConfig(), version: CONFIG_ABSENT };
+  }
+  if (disk.version !== seenVersion) adopt(disk);
+  if (seenUnusable) {
+    return { config: null, version: disk.version, unusable: seenUnusable, code: CONFIG_UNPARSEABLE };
   }
   return { config: getConfig(), version: disk.version };
 }
 
 /**
  * Why services.yaml is no usable config, as of its last read (boot, the
- * watcher's reload, a route's readConfig, a save), for the status model
- * (#505): `{ line, reason }` (boardProblemOf), or null while it is a usable
- * config or there is none. The board says it as a failed source, so a broken
- * file at boot is not an empty, calm board. Never a word of the file (#504).
+ * watcher's reload or retry, a route's readConfig, a save), for the status
+ * model (#505): `{ line, reason }` (boardProblemOf; for a file that can't be
+ * read, line null and "services.yaml can't be read (permission denied)",
+ * #536), or null while it is a usable config or there is none. The board
+ * says it as a failed source, so a broken file at boot is not an empty, calm
+ * board. Never a word of the file (#504), nor its path.
  * @returns {{ line: number | null, reason: string } | null}
  */
 export function configProblem() {
@@ -300,9 +413,12 @@ export function configProblem() {
  * services.yaml's state for /api/health (#505): `{ state: 'ok' }`, or
  * `{ state: 'unparseable', line }` (line null when there is none) while it is
  * no usable config: the same files every writer refuses with
- * `config_unparseable` (#423). It never changes the probe's `status`.
+ * `config_unparseable` (#423); or `{ state: 'unreadable', code }` while it is
+ * there but can't be read (#536), `code` the read error's ("EACCES"), or
+ * null. It never changes the probe's `status`.
  */
 export function configHealth() {
+  if (seenReadError) return { state: 'unreadable', code: seenReadError.code };
   return seenProblem ? { state: 'unparseable', line: seenProblem.line } : { state: 'ok' };
 }
 
@@ -334,8 +450,11 @@ function keepAfterFailedRead(msg, fields = {}) {
  * parse, or is empty or not a mapping) is never written over, whatever
  * version the caller passes: `{ ok: false, unusable }`, why, so a hand edit
  * gone wrong is fixed by hand, not replaced by the last good config (or by
- * `{}` at boot) plus one change. A write that fails, or a reentrant one, is
- * `{ ok: false }`. Otherwise `{ ok: true, version }`, the version written.
+ * `{}` at boot) plus one change. Nor is a file that is there but can't be
+ * read (#536): `{ ok: false, unusable }` too, before any version is compared,
+ * since it has none. Each refusal has its `code` (readConfig). A write that
+ * fails, or a reentrant one, is `{ ok: false }`. Otherwise `{ ok: true,
+ * version }`, the version written.
  *
  * Synchronous on purpose, NOT an async queue: the whole pipeline (dump → atomic
  * write → statSync → assign lastModified) runs in one event-loop tick, so the 5s
@@ -351,7 +470,7 @@ let saveInProgress = false;
 /**
  * @param {any} newConfig
  * @param {string} ifVersion
- * @returns {{ ok: true, version: string } | { ok: false, conflict?: true, unusable?: string }}
+ * @returns {{ ok: true, version: string } | { ok: false, conflict?: true, unusable?: string, code?: string }}
  */
 export function writeConfig(newConfig, ifVersion) {
   if (saveInProgress) {
@@ -361,6 +480,11 @@ export function writeConfig(newConfig, ifVersion) {
   saveInProgress = true;
   try {
     const disk = readDisk();
+    if (disk.readError) {
+      markUnreadable(disk.readError);
+      log.warn("services.yaml can't be read; not saving over it");
+      return { ok: false, unusable: seenUnusable, code: CONFIG_UNREADABLE };
+    }
     if (disk.version !== ifVersion) {
       log.warn('services.yaml changed since it was read; not saving over it');
       return { ok: false, conflict: true };
@@ -370,7 +494,7 @@ export function writeConfig(newConfig, ifVersion) {
     const unusable = disk.bytes && parseConfig(disk.bytes).unusable;
     if (unusable) {
       log.warn('services.yaml is no usable config; not saving over it until it is fixed by hand');
-      return { ok: false, unusable };
+      return { ok: false, unusable, code: CONFIG_UNPARSEABLE };
     }
     const yamlStr = yaml.dump(newConfig, {
       indent: 2,
@@ -388,8 +512,10 @@ export function writeConfig(newConfig, ifVersion) {
     // must not be able to reach into our canonical in-memory state.
     config = structuredClone(newConfig);
     seenVersion = versionOf(Buffer.from(text, 'utf8'));
+    seenReadError = null;
     seenUnusable = null;
     seenProblem = null;
+    syncRetry();
     lastModified = statSync(CONFIG_PATH).mtimeMs;
     log.info('Saved services.yaml');
     return { ok: true, version: seenVersion };
@@ -471,33 +597,106 @@ export function generateDefaultConfig(discoveredNodes) {
  * happens to land during a poll) doesn't read the file mid-mutation. With
  * atomic writes (temp → rename) this is mostly defence in depth, but it also
  * coalesces rapid edits from an external YAML editor.
+ *
+ * While the config is a failed source (the file doesn't parse or can't be
+ * read), two more things (#536). A file deleted is reloaded at the next poll,
+ * so it is broken no more (forgetProblem). And a retry reads it again every
+ * RETRY_MS, reloading it when what it reads differs from the last read: a
+ * permission fix, or a file restored with its old mtime, changes no mtime, so
+ * the poll alone would never see it. One retry timer at most, started when
+ * the source goes down (or the watcher starts with it down), stopped when it
+ * is up again and by stopConfigWatcher.
  */
+const WATCH_MS = 5000;
+const RETRY_MS = 30_000;
+let watchTimer = null;
 let reloadDebounceTimer = null;
+let retryTimer = null;
 
 export function startConfigWatcher() {
-  setInterval(() => {
+  if (watchTimer) return;
+  watchTimer = setInterval(watchTick, WATCH_MS);
+  syncRetry();
+}
+
+/** Stop the watcher, a reload it has pending, and the retry: for shutdown. */
+export function stopConfigWatcher() {
+  if (watchTimer) clearInterval(watchTimer);
+  watchTimer = null;
+  if (reloadDebounceTimer) clearTimeout(reloadDebounceTimer);
+  reloadDebounceTimer = null;
+  syncRetry();
+}
+
+function watchTick() {
+  try {
+    let mtime;
     try {
-      if (!existsSync(CONFIG_PATH)) return;
-      const mtime = statSync(CONFIG_PATH).mtimeMs;
-      if (mtime > lastModified) {
-        // Record the attempt up front so a persistently-corrupt services.yaml
-        // (which loadConfig leaves lastModified unchanged on) isn't re-parsed,
-        // re-failed, and re-logged every single 5s tick.
-        lastModified = mtime;
-        if (reloadDebounceTimer) clearTimeout(reloadDebounceTimer);
-        reloadDebounceTimer = setTimeout(() => {
-          reloadDebounceTimer = null;
-          log.info('External change detected, reloading services.yaml');
-          loadConfig();
-          // Hand listeners an isolated copy, consistent with getConfig() — a
-          // listener must not be able to mutate shared in-memory state.
-          changeListeners.forEach((fn) => fn(getConfig()));
-        }, 250);
-      }
+      mtime = statSync(CONFIG_PATH).mtimeMs;
     } catch (err) {
-      log.warn({ err }, 'Watcher error');
+      // Gone while broken: reload, so it is broken no more. Gone while good,
+      // or a stat that fails another way: nothing, as before (the retry reads
+      // a file that is down).
+      if (err.code === 'ENOENT' && seenProblem) reload('services.yaml was removed while broken');
+      return;
     }
-  }, 5000);
+    if (mtime > lastModified) {
+      // Record the attempt up front so a persistently-corrupt services.yaml
+      // (which loadConfig leaves lastModified unchanged on) isn't re-parsed,
+      // re-failed, and re-logged every single 5s tick.
+      lastModified = mtime;
+      if (reloadDebounceTimer) clearTimeout(reloadDebounceTimer);
+      reloadDebounceTimer = setTimeout(() => {
+        reloadDebounceTimer = null;
+        reload('External change detected');
+      }, 250);
+    }
+  } catch (err) {
+    log.warn({ err }, 'Watcher error');
+  }
+}
+
+/** Load services.yaml again and tell the listeners, saying why. */
+function reload(why) {
+  log.info(`${why}, reloading services.yaml`);
+  loadConfig();
+  // Hand listeners an isolated copy, consistent with getConfig() — a
+  // listener must not be able to mutate shared in-memory state.
+  changeListeners.forEach((fn) => fn(getConfig()));
+}
+
+/**
+ * Start the retry while the config is a failed source and the watcher runs,
+ * stop it otherwise. Called on every change of either, so there is never more
+ * than one. Unref'd: it never keeps the process alive on its own.
+ */
+function syncRetry() {
+  const wanted = watchTimer !== null && seenProblem !== null;
+  if (wanted && !retryTimer) {
+    retryTimer = setInterval(retryRead, RETRY_MS);
+    retryTimer.unref?.();
+  } else if (!wanted && retryTimer) {
+    clearInterval(retryTimer);
+    retryTimer = null;
+  }
+}
+
+/**
+ * The retry: read services.yaml, and reload it when that differs from the
+ * last read (readable now, another error, other bytes, or gone). The same
+ * failure again is quiet: no reload, no log line every 30 s.
+ */
+function retryRead() {
+  try {
+    if (!seenProblem) return syncRetry();
+    const disk = readDisk();
+    const same = disk.readError
+      ? seenReadError !== null && seenReadError.code === readErrorCode(disk.readError)
+      : disk.bytes !== null && disk.version === seenVersion;
+    if (!same) reload('services.yaml changed while broken (the retry)');
+  } catch (err) {
+    log.warn({ err }, 'Config retry error');
+  }
 }
 
 /**
