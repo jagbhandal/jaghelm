@@ -177,8 +177,8 @@ export default function DashboardView({
     [retry]
   );
 
-  // Tier 3 app data per container (preset metrics: queries, blocked, etc.)
-  const appDataByContainer = useAppDataMatching(integrationData, serviceData);
+  // Tier 3 app data per service, by uid (preset metrics: queries, blocked, etc.)
+  const appDataByService = useAppDataMatching(integrationData, serviceData);
 
   // ── Layout state ──
   const cols = useMemo(() => {
@@ -464,7 +464,7 @@ export default function DashboardView({
           updated={updated}
           services={serviceData}
           servicesLoaded={servicesLoaded}
-          appData={appDataByContainer}
+          appData={appDataByService}
           customGroups={customGroups}
           sections={sc}
           health={servicesHealth}

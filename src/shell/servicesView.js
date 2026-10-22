@@ -81,6 +81,8 @@ function cardsOf(services) {
  * when up, else a dash. A service on a node hidden in Settings
  * (`sections[key].visible === false`) is left out, as the node is.
  *
+ * `appData` is each service's integration fields, by uid (useAppDataMatching).
+ *
  * @param {{ status: any, services?: any, appData?: Record<string, any>,
  *   sections?: Record<string, any>, freshness?: { stale: boolean } }} board
  */
@@ -111,7 +113,7 @@ export function serviceRows({
         level: e.state,
         state: drawnState(e.state, freshness),
         word: e.word,
-        detail: up ? headlineMetric(appData?.[container]) : e.reason || null,
+        detail: up ? headlineMetric(appData?.[uid]) : e.reason || null,
         meta: (up && latencyOf(card)) || '—',
         muted: up,
       };

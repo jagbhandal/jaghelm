@@ -134,8 +134,8 @@ describe('the Services rows, from the model', () => {
   it('an integration on a service: its headline metric, only while the model says it is up', () => {
     const { status, services } = demoBoard({ scenario: 'incident', now: NOW });
     const appData = {
-      nextcloud: { Files: '18,204', Users: '6' },
-      jellyfin: { Version: '10.9.1' },
+      'apps:nextcloud': { Files: '18,204', Users: '6' },
+      'apps:jellyfin': { Version: '10.9.1' },
     };
     const rows = serviceRows({ status, services, appData });
     const by = (name) => rows.find((r) => r.name === name);
@@ -144,6 +144,46 @@ describe('the Services rows, from the model', () => {
       status.entities.find((e) => e.id === by('Jellyfin').id).reason
     );
   });
+});
+
+// #300 review: a container of one name on two nodes (AdGuard on both
+// gateways) is two services, each with its own numbers.
+it("the metric is the service's own, by uid: a same-named container on another node shows its own, or none", () => {
+  const { status, services } = demoBoard({ scenario: 'healthy', now: NOW });
+  const copy = (node) => node.services.find((c) => c.container === 'adguard-home');
+  const twin = { ...copy(services.nodes.edge), uid: 'storage:adguard-home' };
+  const both = {
+    ...services,
+    nodes: {
+      ...services.nodes,
+      storage: { ...services.nodes.storage, services: [...services.nodes.storage.services, twin] },
+    },
+  };
+  const entity = status.entities.find((e) => e.id === 'services/edge:adguard-home');
+  const withTwin = {
+    ...status,
+    entities: [
+      ...status.entities,
+      { ...entity, id: 'services/storage:adguard-home', node: 'storage' },
+    ],
+  };
+  const row = (rows, id) => rows.find((r) => r.id === id);
+  const one = serviceRows({
+    status: withTwin,
+    services: both,
+    appData: { 'edge:adguard-home': { Queries: '41k' } },
+  });
+  expect(row(one, 'services/edge:adguard-home').detail).toBe('41k queries');
+  expect(row(one, 'services/storage:adguard-home').detail).toBeNull();
+  const two = serviceRows({
+    status: withTwin,
+    services: both,
+    appData: {
+      'edge:adguard-home': { Queries: '41k' },
+      'storage:adguard-home': { Queries: '12k' },
+    },
+  });
+  expect(row(two, 'services/storage:adguard-home').detail).toBe('12k queries');
 });
 
 describe('headlineMetric', () => {
