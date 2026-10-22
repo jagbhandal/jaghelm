@@ -150,7 +150,8 @@ src/                        React 19 SPA (Vite 8)
                             Services section, its rows from the model, #300),
                             statusFreshness.js (the one rule for a stale status: whether
                             the poll's status is current, and how each place draws one
-                            that isn't)
+                            that isn't), theme.js (dark, light or system, and the old
+                            themes' migration; see 5, "Design system")
   api/client.js             apiFetch -- explicit auth-injecting fetch wrapper
   context/                  ConfigContext (config + update via setIn), OverlayContext (toast/confirm)
   hooks/useData.js          fetchJson (304-aware), weather, search engines
@@ -166,7 +167,8 @@ src/                        React 19 SPA (Vite 8)
   views/SettingsView.jsx     13-tab settings shell + collapsible live preview
   views/AppFrames.jsx,       app tabs as they look today: the host keeping visited frames, and
   views/IframeView.jsx       one frame with its loading, slow and blocked notices
-  styles/global.css          today's themes (10) + their tokens + component styles
+  styles/global.css          today's two themes (dark, light) on the new tokens' values +
+                             component styles
   styles/fonts.css           today's fonts, self-hosted: the files Google Fonts served (see 5.1)
   styles/legacy.css          imports global.css and fonts.css into the `legacy` cascade layer
   fonts/                     every woff2 the web app ships (latin subsets; latin-ext too for the
@@ -1449,8 +1451,8 @@ flowchart TD
   `.jh-ui` root; the page area, `<main>`, is not one, so today's views inside it
   keep their look, and a page of the new UI (Alerts) brings its own root
   (`ShellPage`), as does a part of a page beside today's views (the Overview's
-  status, `ShellSection`). The chrome is dark, or light under one of today's light
-  themes, until #304 gives the new UI its own theme switch. The URL is the page: `src/router` is a small router on the
+  status, `ShellSection`). The chrome draws the theme shown (#304, "Design
+  system" below). The URL is the page: `src/router` is a small router on the
   History API (no dependency) over one route table (`routes.js`): `/`
   Overview, `/alerts`, `/apps/:id`, `/settings/:section?`, and `/launch`,
   `/services` and `/infrastructure`, which are in the table but hidden until
@@ -1463,7 +1465,7 @@ flowchart TD
   Forward and a reload all land where the URL says. Each page names the
   browser tab ("Alerts — JagHelm"). The command palette (⌘K or Ctrl K, or the
   header's search button) lists the pages in the nav, "Open <app>" for each
-  app, the themes and the links.
+  app, the three themes and the links.
 - **Status in the header** (#296, #275). `useStatus` polls `/api/status`
   (4.7) once a refresh interval with the last ETag, so a steady board costs a
   304, and asks nothing while the browser tab is hidden; on return it asks at
@@ -1866,9 +1868,25 @@ flowchart TD
     host; the demo has no saved app tab, so it answers that it has none), or
     before the URL is saved, the frame
     shows whatever the browser puts in it.
-- **Design system.** 10 themes (`themes.js` + `[data-theme]` token blocks),
-  generic `--space-*` / `--text-*` scales plus semantic `--fs-*` card tokens,
-  and a global `:focus-visible` ring + reduced-motion handling.
+- **Design system.** Two themes, dark and light, plus system, which follows
+  the device (#304, spec §2): `src/shell/theme.js`'s `useTheme`, held by `App`
+  so the login screen has it too. It puts the theme shown on `<html>` as
+  `data-theme`, where `global.css` reads it (`:root` dark, `:root[data-theme=
+  "light"]` light, both on the token values: graphite, violet the one accent),
+  and the shell gives it to its `.jh-ui` roots. The header's toggle switches
+  dark and light; Settings → Appearance and the command palette offer all
+  three. The choice is kept per browser (`prefs`, `jaghelm-theme`). **Settings
+  migration:** a saved value is read through `migrateTheme` once: each of the
+  ten old themes becomes dark or light by what it drew (One Dark Pro, Dracula,
+  Night Owl, GitHub Dark, Catppuccin Mocha and Material Ocean dark; GitHub
+  Light, Catppuccin Latte, Solarized Light and Atom One Light light), and the
+  new value is saved back; a value it doesn't know becomes system; nothing
+  saved is dark. A display config's `theme` (seeding a browser with none
+  saved) goes through the same mapping. The accent is violet: the config's
+  old free `accentColor` is no longer read (`useThemeVars` sets no accent),
+  and Fuchsia and Cyan come with #321. Also generic `--space-*` / `--text-*`
+  scales plus semantic `--fs-*` card tokens, and a global `:focus-visible`
+  ring + reduced-motion handling.
 - **PWA.** `public/sw.js` precaches the app shell **and** the hashed first-paint
   bundles (the precache list, the build's full `dist/assets` list + version are
   injected at build by `scripts/inject-sw-precache.mjs`); immutable `/assets/`

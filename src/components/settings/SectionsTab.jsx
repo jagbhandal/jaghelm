@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import IconPicker from '../IconPicker';
 import Field from './Field';
 import { EmptyState, SettingsIcon } from './primitives.jsx';
-import ColorPickerPopover from './ColorPickerPopover.jsx';
+import ColorPickerPopover, { DEFAULT_COLOR } from './ColorPickerPopover.jsx';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { useConfirm } from '../../context/OverlayContext.jsx';
 import { apiFetch } from '../../api/client.js';
@@ -32,7 +32,7 @@ export default function SectionsTab() {
   const [colorTarget, setColorTarget] = useState(null);
   // Seed color for the popover when a swatch is opened; the popover owns the
   // live draft from there and reports the committed value back on Apply.
-  const [colorSeed, setColorSeed] = useState('#6366f1');
+  const [colorSeed, setColorSeed] = useState(DEFAULT_COLOR);
 
   // Custom groups state
   const customGroups = config.customGroups || [];
@@ -61,7 +61,7 @@ export default function SectionsTab() {
 
   const openColor = (path, currentColor) => {
     setColorTarget(path);
-    setColorSeed(currentColor || '#6366f1');
+    setColorSeed(currentColor || DEFAULT_COLOR);
   };
 
   const applyColor = (color) => {
@@ -78,7 +78,7 @@ export default function SectionsTab() {
       id,
       title: 'New Group',
       icon: '📂',
-      borderColor: '#6366f1',
+      borderColor: DEFAULT_COLOR,
       containers: [],
     };
     update('customGroups', [...customGroups, newGroup]);
@@ -148,7 +148,7 @@ export default function SectionsTab() {
           <div
             key={key}
             className="settings-card"
-            style={{ borderLeft: `3px solid ${s.borderColor || '#6366f1'}` }}
+            style={{ borderLeft: `3px solid ${s.borderColor || DEFAULT_COLOR}` }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
               <input
@@ -170,7 +170,7 @@ export default function SectionsTab() {
                     width: 26,
                     height: 26,
                     borderRadius: 6,
-                    background: s.borderColor || '#6366f1',
+                    background: s.borderColor || DEFAULT_COLOR,
                     cursor: 'pointer',
                     border: '1px solid rgba(255,255,255,0.1)',
                   }}
@@ -268,7 +268,7 @@ export default function SectionsTab() {
               key={group.id}
               className="settings-card"
               style={{
-                borderLeft: `3px solid ${group.borderColor || '#6366f1'}`,
+                borderLeft: `3px solid ${group.borderColor || DEFAULT_COLOR}`,
                 marginBottom: 12,
               }}
             >
@@ -338,7 +338,7 @@ export default function SectionsTab() {
                             width: 36,
                             height: 36,
                             borderRadius: 8,
-                            background: group.borderColor || '#6366f1',
+                            background: group.borderColor || DEFAULT_COLOR,
                             cursor: 'pointer',
                             border: '1px solid rgba(255,255,255,0.1)',
                           }}

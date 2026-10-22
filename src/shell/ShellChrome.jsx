@@ -49,6 +49,7 @@ export const ShellHeader = memo(function ShellHeader({
   updated,
   routeId,
   onOpenPalette,
+  onThemeChange,
   onLogout,
 }) {
   const updatedEl = useMemo(() => <ShellUpdated store={updated} />, [updated]);
@@ -74,6 +75,7 @@ export const ShellHeader = memo(function ShellHeader({
       onOpenPalette={onOpenPalette}
       shortcut={shortcut}
       settingsCurrent={routeId === 'settings'}
+      onThemeChange={onThemeChange}
       onLogout={onLogout}
       onNavigate={followLink}
     />

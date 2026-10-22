@@ -24,7 +24,7 @@ const NODES = [
     name: 'App Server',
     host: 'apps',
     subtitle: 'Proxmox VM',
-    colour: '#6366f1',
+    colour: '#8b5cf6',
     state: 'ok',
     word: 'Healthy',
     reason: null,
