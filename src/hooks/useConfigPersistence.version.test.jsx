@@ -21,6 +21,12 @@ function stubServer(config) {
     hold: null,
     beforeAnswer: null,
     failReads: 0,
+    // Why the file doesn't parse, or can't be read, when it doesn't or can't.
+    broken: null,
+    unreadable: null,
+    // Reads that never answer: the tab closes while one is out.
+    hangReads: false,
+    noVersion: false,
   };
   vi.stubGlobal(
     'fetch',
@@ -32,12 +38,32 @@ function stubServer(config) {
           server.failReads -= 1;
           throw new TypeError('Failed to fetch');
         }
-        return Response.json(server.config, { headers: { ETag: `"v${server.version}"` } });
+        if (server.hangReads) return new Promise(() => {});
+        if (server.unreadable) {
+          return Response.json(
+            { error: server.unreadable, code: 'config_unreadable' },
+            { status: 503 }
+          );
+        }
+        const headers = server.noVersion ? {} : { ETag: `"v${server.version}"` };
+        if (server.broken) {
+          return Response.json(
+            { error: server.broken, code: 'config_unparseable' },
+            { status: 503, headers }
+          );
+        }
+        return Response.json(server.config, { headers });
       }
       const ifMatch = new Headers(init.headers).get('If-Match');
       server.posts.push({ body: JSON.parse(init.body), ifMatch, keepalive: init.keepalive });
       if (server.hold) await server.hold;
       server.beforeAnswer?.(server.posts.length);
+      if (server.unreadable) {
+        return Response.json(
+          { error: server.unreadable, code: 'config_unreadable' },
+          { status: 503 }
+        );
+      }
       if (!ifMatch) return Response.json({ error: 'no version' }, { status: 428 });
       if (ifMatch !== `"v${server.version}"`) {
         return Response.json(
@@ -46,10 +72,18 @@ function stubServer(config) {
         );
       }
       server.config = JSON.parse(init.body);
+      server.broken = null;
       server.version += 1;
       return Response.json({ ok: true }, { headers: { ETag: `"v${server.version}"` } });
     })
   );
+}
+
+/** A hand edit that leaves the file unparseable (a trailing comma): a new version, no copy. */
+function breakFile() {
+  server.broken =
+    "display-config.json doesn't parse (Expected double-quoted property name at line 6, column 1); the next save rewrites it";
+  server.version += 1;
 }
 
 /** Another device saves `change` of the server's copy. */
@@ -227,5 +261,142 @@ describe('the display config saves over the version it read (#547)', () => {
     // Sent once: the debounce has nothing left to send.
     await advance(3000);
     expect(server.posts).toHaveLength(1);
+  });
+});
+
+describe('a file that is no config never shrinks one (#547)', () => {
+  // A config with what a stale device must never lose.
+  const FULL = Object.freeze({
+    ...SERVER,
+    links: { Media: [{ name: 'Plex', url: 'https://plex.example/' }] },
+    tabs: [{ id: 'grafana', label: 'Grafana', type: 'iframe', url: 'https://grafana.example/' }],
+    backupJobs: ['nas:restic'],
+  });
+
+  it("the review's case: the file breaks by hand, a stale device flips one switch, and the file gets its whole config back", async () => {
+    stubServer(structuredClone(FULL));
+    const { result, toast } = await mount();
+    breakFile();
+
+    await edit(result, (c) => (c.overviewSections.services = false));
+
+    const want = {
+      ...structuredClone(FULL),
+      overviewSections: { ...FULL.overviewSections, services: false },
+    };
+    // Refused (409), then the broken file's version, with every key.
+    expect(server.posts.map((p) => p.ifMatch)).toEqual(['"v1"', '"v2"']);
+    expect(server.posts[1].body).toEqual(want);
+    expect(server.config).toEqual(want);
+    expect(result.current.config).toEqual(want);
+    expect(shadow()).toEqual(want);
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("a file that doesn't parse at load: the device keeps its config, and its next edit sends the whole of it over the file's version", async () => {
+    stubServer(null);
+    breakFile();
+    localStorage.setItem('jaghelm-config', JSON.stringify(FULL));
+    const { result } = await mount(structuredClone(FULL));
+    expect(result.current.config).toEqual(FULL);
+    expect(shadow()).toEqual(FULL);
+    expect(result.current.saved).toBeNull();
+
+    await edit(result, (c) => (c.title = 'Lab'));
+    expect(server.posts.map((p) => p.ifMatch)).toEqual(['"v2"']);
+    expect(server.config).toEqual({ ...FULL, title: 'Lab' });
+  });
+
+  it("no file at a refused save: the whole config goes over the missing file's version", async () => {
+    stubServer(structuredClone(FULL));
+    const { result } = await mount();
+    // Removed by hand: the read answers null, with its version.
+    server.config = null;
+    server.version += 1;
+
+    await edit(result, (c) => (c.title = 'Lab'));
+    expect(server.config).toEqual({ ...FULL, title: 'Lab' });
+    expect(result.current.config).toEqual({ ...FULL, title: 'Lab' });
+  });
+
+  it('a copy without a version is never shown', async () => {
+    server.noVersion = true;
+    const { result } = await mount({ title: 'Local' });
+    expect(result.current.config).toEqual({ title: 'Local' });
+    expect(shadow()).toEqual({ title: 'Local' });
+    expect(result.current.saved).toBeNull();
+  });
+
+  it("a file the server can't read: the device keeps its config and says why, at load and at a save", async () => {
+    const WHY =
+      "display-config.json can't be read (permission denied): fix it on the host; JagHelm won't save over a file it can't read";
+    server.unreadable = WHY;
+    const { result, toast } = await mount({ title: 'Local', links: { Media: [] } });
+    expect(toast).toHaveBeenCalledWith(`Couldn't read the display settings: ${WHY}`, 'error');
+    expect(result.current.config).toEqual({ title: 'Local', links: { Media: [] } });
+
+    await edit(result, (c) => (c.title = 'Lab'));
+    expect(server.posts).toHaveLength(1);
+    expect(toast).toHaveBeenCalledWith(`Not saved: ${WHY}`, 'error');
+    expect(result.current.config).toEqual({ title: 'Lab', links: { Media: [] } });
+    expect(shadow()).toEqual({ title: 'Lab', links: { Media: [] } });
+  });
+});
+
+describe('an edit whose save never landed is saved at the next load (#547)', () => {
+  /** The browser opened again: the config it kept, as App starts with it. */
+  const reopen = () => mount(JSON.parse(localStorage.getItem('jaghelm-config')));
+
+  it("the tab closed before the save went out: the edit is saved, and another device's change is kept", async () => {
+    const first = await mount();
+    act(() =>
+      first.result.current.setConfig((c) => ({
+        ...c,
+        overviewSections: { ...c.overviewSections, infrastructure: false },
+      }))
+    );
+    // The tab closes: its timers go with it, unsent.
+    vi.clearAllTimers();
+    first.unmount();
+    expect(server.posts).toEqual([]);
+    elsewhere((c) => (c.overviewSections.services = false));
+
+    const { result } = await reopen();
+    await advance(2100);
+
+    const want = {
+      ...SERVER,
+      overviewSections: { strip: true, services: false, infrastructure: false },
+    };
+    expect(server.posts.map((p) => p.ifMatch)).toEqual(['"v2"']);
+    expect(server.config).toEqual(want);
+    expect(result.current.config).toEqual(want);
+  });
+
+  it('the flush was refused (409) as the tab closed: the same', async () => {
+    const first = await mount();
+    elsewhere((c) => (c.overviewSections.services = false));
+    act(() => first.result.current.setConfig((c) => ({ ...c, title: 'Lab' })));
+    // The refused flush's read never comes back: the tab is gone.
+    server.hangReads = true;
+    await act(async () => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+    expect(server.posts.map((p) => p.ifMatch)).toEqual(['"v1"']);
+    vi.clearAllTimers();
+    first.unmount();
+    server.hangReads = false;
+
+    const { result } = await reopen();
+    await advance(2100);
+
+    const want = {
+      ...SERVER,
+      title: 'Lab',
+      overviewSections: { ...SERVER.overviewSections, services: false },
+    };
+    expect(server.posts.map((p) => p.ifMatch)).toEqual(['"v1"', '"v2"']);
+    expect(server.config).toEqual(want);
+    expect(result.current.config).toEqual(want);
   });
 });

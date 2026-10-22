@@ -111,6 +111,40 @@ export function readVersioned(path) {
   return { bytes, version: versionOf(bytes) };
 }
 
+/** A read error's code in plain words, for the board and Settings (#536). */
+const READ_ERROR_WORDS = new Map([
+  ['EACCES', 'permission denied'],
+  ['EPERM', 'operation not permitted'],
+  ['EISDIR', "it's a directory"],
+  ['EIO', 'I/O error'],
+  ['ELOOP', 'too many symlinks'],
+  ['ENOTDIR', "its folder isn't a directory"],
+  ['EMFILE', 'too many open files'],
+  ['ENFILE', 'too many open files'],
+  ['EBUSY', 'busy'],
+]);
+
+/**
+ * A read error's code ("EACCES"), or null when it has none that looks like one.
+ * @param {any} err
+ * @returns {string | null}
+ */
+export function readErrorCode(err) {
+  const code = err?.code;
+  return typeof code === 'string' && /^E[A-Z0-9]{1,20}$/.test(code) ? code : null;
+}
+
+/**
+ * A read error (readVersioned's `readError`) in plain words: "permission
+ * denied", else its code, else "unknown error". Never its message, which
+ * names the path.
+ * @param {any} err
+ */
+export function readErrorWords(err) {
+  const code = readErrorCode(err);
+  return (code && READ_ERROR_WORDS.get(code)) || code || 'unknown error';
+}
+
 /** A version as an ETag: strong, quoted. */
 export const etagOf = (/** @type {string} */ version) => `"${version}"`;
 

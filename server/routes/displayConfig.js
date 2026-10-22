@@ -1,9 +1,9 @@
 /**
  * Display configuration — UI settings persisted server-side.
  *
- *   GET  /api/display-config → current config object (or null), with its
- *                              version as the ETag; a 304 for an
- *                              If-None-Match that names it
+ *   GET  /api/display-config → current config object (or null when there is
+ *                              no file), with its version as the ETag; a 304
+ *                              for an If-None-Match that names it
  *   POST /api/display-config → replace config, only over the version in
  *                              If-Match; restarts the background refresh loop
  *                              if the interval changed
@@ -20,11 +20,22 @@
  * now; nothing is written either way. The check and the write are one
  * synchronous step. A save answers with the version it wrote.
  *
- * The read leaves out a stored value the save would refuse (a hand edit that
- * breaks the schema), warning once per version of the file with the key,
- * never the value: a device saves back what it read, so the value would
- * otherwise refuse every save from Settings. The next save writes the file
- * without it.
+ * A file that is no config is never answered as one, so no device lays its
+ * own changes over an empty copy and saves a config without the rest:
+ *  - one that doesn't parse, or isn't a JSON object, is a 503
+ *    `config_unparseable` saying why (its reason and position, never its
+ *    text, #504), with the file's version as the ETag: a device saves its
+ *    whole copy over that version, which rewrites the file;
+ *  - one that can't be read is a 503 `config_unreadable` with no version, and
+ *    a save is refused the same way: fix it on the host.
+ *
+ * The read leaves out each stored value a save would refuse (a hand edit),
+ * at the depth it is refused: a reserved key (`__proto__`) or an unsafe link
+ * `url` (scanConfig: the link that holds it goes, the other links stay), or
+ * a value the schema refuses (one `overviewSections` entry, not the map). It
+ * warns once per version of the file with each path, never the value. A
+ * device saves back what it read, so the value would otherwise refuse every
+ * save from Settings; the next save writes the file without it.
  */
 
 import { Router } from 'express';
@@ -32,20 +43,21 @@ import { join } from 'path';
 
 import { ifNoneMatchHits } from '../cache.js';
 import { restartBackgroundRefresh, invalidateDisplayConfigCache } from '../refresh.js';
-import { apiError } from '../errors.js';
+import { apiError, CONFIG_UNPARSEABLE, CONFIG_UNREADABLE, configUnusable } from '../errors.js';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
-import { validateConfig, displayConfigSchema } from '../util/configSchema.js';
+import { displayConfigSchema, findViolations, validateConfig } from '../util/configSchema.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import {
   etagOf,
   ifMatchHits,
+  readErrorWords,
   readVersioned,
   refuseStale,
   versionNamed,
   versionOf,
 } from '../util/fileVersion.js';
 import { createLogger } from '../util/logger.js';
-import { jsonFileErrorFields } from '../util/parseError.js';
+import { describeParseError, jsonFileErrorFields, jsonParseError } from '../util/parseError.js';
 
 const log = createLogger('display-config');
 
@@ -53,17 +65,82 @@ const log = createLogger('display-config');
 // so tests stay isolated and a containerized deploy can relocate state.
 const DISPLAY_CONFIG_PATH = join(DATA_DIR, 'display-config.json');
 
-// The settings the schema checks, each with its own rule.
-const FIELDS = displayConfigSchema.shape;
 // The version of the file whose refused values were last warned about.
 let warnedVersion = null;
 
+// Rounds of dropping and checking again: dropping a value can't make a new
+// refusal, so one more round than the deepest nesting is never needed.
+const HEAL_ROUNDS = 8;
+
 const router = Router();
 
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/** A path as the warning names it: `links.Media[1]`, `overviewSections.rail`. */
+const pathText = (path) =>
+  path.map((k, i) => (typeof k === 'number' ? `[${k}]` : i ? `.${k}` : k)).join('');
+
+// What drop() leaves in an array in place of an element, filtered out after.
+const DROPPED = Symbol('dropped');
+
+/** Drop the value at `path` from `root`; false when there is nothing there. */
+function drop(root, path) {
+  let parent = root;
+  for (const key of path.slice(0, -1)) {
+    parent = parent?.[key];
+    if (parent === null || typeof parent !== 'object' || parent === DROPPED) return false;
+  }
+  const key = path.at(-1);
+  if (!Object.hasOwn(parent, key) || parent[key] === DROPPED) return false;
+  if (Array.isArray(parent)) parent[key] = DROPPED;
+  else delete parent[key];
+  return true;
+}
+
+/** `value` without the array elements drop() left. */
+function withoutDropped(value) {
+  if (Array.isArray(value)) return value.filter((v) => v !== DROPPED).map(withoutDropped);
+  if (!isObject(value)) return value;
+  for (const key of Object.keys(value)) value[key] = withoutDropped(value[key]);
+  return value;
+}
+
 /**
- * The stored config as a device reads it: the file's JSON (null when it
- * doesn't parse, logged with its reason and position, never its text, #504),
- * without any setting whose value the schema refuses.
+ * `data` (freshly parsed, so changed in place) without each value a save
+ * would refuse, at its depth, and the paths dropped. An unsafe `url` drops
+ * the object that holds it (the link, the tab); a reserved key drops itself;
+ * a schema refusal drops the value it names.
+ */
+function healed(data) {
+  const dropped = [];
+  for (let round = 0; round < HEAL_ROUNDS; round++) {
+    const paths = findViolations(data).map((v) =>
+      v.kind === 'url' && v.path.length > 1 ? v.path.slice(0, -1) : v.path
+    );
+    if (paths.length === 0) {
+      const parsed = displayConfigSchema.safeParse(data);
+      if (parsed.success) break;
+      for (const issue of parsed.error.issues) {
+        if (issue.path.length > 0) paths.push(/** @type {(string|number)[]} */ (issue.path));
+      }
+    }
+    let any = false;
+    for (const path of paths) {
+      if (drop(data, path)) {
+        dropped.push(path);
+        any = true;
+      }
+    }
+    data = withoutDropped(data);
+    if (!any) break;
+  }
+  return { config: data, dropped };
+}
+
+/**
+ * The file's bytes as a config: `{ config }`, an object, without what a save
+ * would refuse (healed); or `{ unusable }`, why it is none, for a file that
+ * doesn't parse or isn't a JSON object.
  */
 function storedConfig(bytes, version) {
   let data;
@@ -71,25 +148,30 @@ function storedConfig(bytes, version) {
     data = JSON.parse(bytes.toString('utf8'));
   } catch (err) {
     log.error(jsonFileErrorFields(err), 'Failed to read');
-    return null;
+    const why = describeParseError(jsonParseError(err));
+    return { unusable: `display-config.json doesn't parse (${why}); the next save rewrites it` };
   }
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
-  const refused = Object.keys(FIELDS).filter(
-    (key) => Object.hasOwn(data, key) && !FIELDS[key].safeParse(data[key]).success
-  );
-  if (refused.length === 0) return data;
-  if (warnedVersion !== version) {
+  if (!isObject(data)) {
+    log.error('Failed to read: display-config.json is not a JSON object');
+    return { unusable: "display-config.json isn't a JSON object; the next save rewrites it" };
+  }
+  const { config, dropped } = healed(data);
+  if (dropped.length > 0 && warnedVersion !== version) {
     warnedVersion = version;
+    const paths = dropped.map(pathText);
     log.warn(
-      { keys: refused },
-      `display-config.json has settings no save would take (${refused.join(', ')}); ` +
+      { paths },
+      `display-config.json has values no save would take (${paths.join(', ')}); ` +
         'left out of what devices read, so the next save drops them'
     );
   }
-  const out = { ...data };
-  for (const key of refused) delete out[key];
-  return out;
+  return { config };
 }
+
+/** Why a file that is there can't be read (#536): its error in plain words, never its path. */
+const unreadable = (err) =>
+  `display-config.json can't be read (${readErrorWords(err)}): fix it on the host; ` +
+  "JagHelm won't save over a file it can't read";
 
 /** Whether `interval` differs from the stored one (bytes null: no file). */
 function intervalChangedFrom(bytes, interval) {
@@ -106,12 +188,19 @@ router.get('/', (req, res) => {
     const disk = readVersioned(DISPLAY_CONFIG_PATH);
     if (disk.readError) {
       log.error({ err: disk.readError }, 'Failed to read');
-      return res.json(null);
+      return configUnusable(res, unreadable(disk.readError), CONFIG_UNREADABLE);
     }
     const etag = etagOf(disk.version);
     res.set('ETag', etag);
+    if (!disk.bytes) {
+      if (ifNoneMatchHits(req.get('If-None-Match'), etag)) return res.status(304).end();
+      return res.json(null);
+    }
+    const stored = storedConfig(disk.bytes, disk.version);
+    // With its version, so a device can save its whole copy over it.
+    if (stored.unusable) return configUnusable(res, stored.unusable, CONFIG_UNPARSEABLE);
     if (ifNoneMatchHits(req.get('If-None-Match'), etag)) return res.status(304).end();
-    res.json(disk.bytes ? storedConfig(disk.bytes, disk.version) : null);
+    res.json(stored.config);
   } catch (err) {
     apiError(res, 500, 'Failed to read display config', err);
   }
@@ -132,12 +221,8 @@ router.post('/', (req, res) => {
 
     const disk = readVersioned(DISPLAY_CONFIG_PATH);
     if (disk.readError) {
-      return apiError(
-        res,
-        503,
-        "display-config.json can't be read; fix it on the host",
-        disk.readError
-      );
+      log.warn({ err: disk.readError }, "display-config.json can't be read; not saving over it");
+      return configUnusable(res, unreadable(disk.readError), CONFIG_UNREADABLE);
     }
     if (!ifMatchHits(ifMatch, disk.version)) {
       return refuseStale(

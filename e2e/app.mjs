@@ -79,9 +79,16 @@ export async function openApp(
       query: Object.fromEntries(url.searchParams),
       scenario,
     });
-    const body =
-      url.pathname === '/api/display-config' ? { ...out.body, tabs: APPS, ...config } : out.body;
-    return route.fulfill({ status: out.status, json: body ?? {} });
+    if (url.pathname === '/api/display-config' && request.method() === 'GET') {
+      // With a version, as a server that isn't the demo answers it (#547): a
+      // session told it isn't the demo shows no copy without one.
+      return route.fulfill({
+        status: out.status,
+        json: { ...out.body, tabs: APPS, ...config },
+        headers: { ETag: '"e2e"' },
+      });
+    }
+    return route.fulfill({ status: out.status, json: out.body ?? {} });
   });
   if (theme != null)
     await page.addInitScript((id) => localStorage.setItem('jaghelm-theme', id), theme);

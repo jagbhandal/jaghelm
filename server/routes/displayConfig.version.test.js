@@ -16,7 +16,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import express from 'express';
 import request from 'supertest';
@@ -166,36 +166,172 @@ test('an invalid body is still a 400 before the version is looked at, and nothin
   assert.equal(fileText(), before);
 });
 
-test('a stored value Settings could never save back is dropped from the read, with one warning naming the key, and the next save heals the file', async (t) => {
-  const SECRETISH = 'hand-typed-value-77';
-  onDisk({ ...START, overviewSections: { services: SECRETISH }, refreshInterval: 'often' });
-  const warned = [];
-  for (const stream of [process.stdout, process.stderr]) {
-    t.mock.method(stream, 'write', (chunk) => {
-      warned.push(String(chunk));
-      return true;
-    });
+/**
+ * The logger's lines written while `fn` runs, and its result. Anything else
+ * on stdout or stderr (the test runner's own reports) passes through.
+ */
+async function logsOf(fn) {
+  const lines = [];
+  const originals = [process.stdout.write, process.stderr.write];
+  const tap = (orig) =>
+    function (chunk, ...rest) {
+      const text = String(chunk);
+      try {
+        if (JSON.parse(text)?.module) {
+          lines.push(text);
+          return true;
+        }
+      } catch {
+        // not one of ours
+      }
+      return orig.call(this, chunk, ...rest);
+    };
+  process.stdout.write = tap(originals[0]);
+  process.stderr.write = tap(originals[1]);
+  try {
+    return { result: await fn(), lines };
+  } finally {
+    [process.stdout.write, process.stderr.write] = originals;
   }
-  const r = await read();
-  await read();
-  t.mock.restoreAll();
+}
 
+/** Assert `r` (a read) has, and a save of it with the read's version heals the file. */
+async function savesBack(r) {
+  const saved = await write(r.body, r.headers.etag);
+  assert.equal(saved.status, 200, saved.text);
+  assert.deepEqual(JSON.parse(fileText()), r.body);
+}
+
+// The review's case (#547): one trailing comma typed by hand. The file used
+// to read as null, a stale device rebased its one switch onto that and wrote
+// a config without the rest.
+test("a file that doesn't parse is a 503 with its version, never an empty config; a whole copy over that version rewrites it", async () => {
+  const text = JSON.stringify(START, null, 2).replace(/\n}$/, ',\n}');
+  writeFileSync(PATH, text);
+  const r = await read();
+  assert.equal(r.status, 503);
+  assert.equal(r.body.code, 'config_unparseable');
+  assert.match(r.body.error, /^display-config\.json doesn't parse \(/);
+  assert.ok(!r.body.error.includes('dark'), 'the answer quotes the file');
+  assert.equal(r.headers.etag, fileVersion(), 'the 503 carries the file version');
+  // A poll holding an older ETag gets the 503 too, never a 304 over it.
+  assert.equal((await read({ 'If-None-Match': r.headers.etag })).status, 503);
+
+  const whole = { ...START, links: { Media: [{ name: 'Plex', url: 'https://plex.example/' }] } };
+  const saved = await write(whole, r.headers.etag);
+  assert.equal(saved.status, 200, saved.text);
+  assert.deepEqual(JSON.parse(fileText()), whole);
+});
+
+test("a file that isn't a JSON object is a 503 the same way", async () => {
+  for (const text of ['[1, 2]', 'null', '"text"']) {
+    writeFileSync(PATH, text);
+    const r = await read();
+    assert.equal(r.status, 503, text);
+    assert.equal(r.body.code, 'config_unparseable');
+    assert.equal(r.headers.etag, fileVersion());
+  }
+});
+
+test(
+  "a file that can't be read is a 503 with no version, and a save is refused the same way",
+  {
+    skip: process.getuid?.() === 0,
+  },
+  async () => {
+    onDisk(START);
+    const version = fileVersion();
+    chmodSync(PATH, 0o000);
+    try {
+      const r = await read();
+      assert.equal(r.status, 503);
+      assert.equal(r.body.code, 'config_unreadable');
+      assert.match(r.body.error, /can't be read \(permission denied\)/);
+      assert.equal(r.headers.etag, undefined);
+      const saved = await write({ ...START, theme: 'light' }, version);
+      assert.equal(saved.status, 503, saved.text);
+      assert.equal(saved.body.code, 'config_unreadable');
+    } finally {
+      chmodSync(PATH, 0o644);
+    }
+    assert.deepEqual(JSON.parse(fileText()), START);
+  }
+);
+
+test('a nested __proto__ is dropped from the read, and only it; a save of the read heals the file', async () => {
+  writeFileSync(
+    PATH,
+    '{"theme":"dark","sections":{"ups":{"visible":true,"__proto__":{"polluted":true}},"pipeline":{"visible":false}}}'
+  );
+  const { result: r, lines } = await logsOf(() => read());
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body, { theme: 'dark' });
+  assert.deepEqual(r.body, {
+    theme: 'dark',
+    sections: { ups: { visible: true }, pipeline: { visible: false } },
+  });
+  const warned = lines.filter((l) => l.includes('display-config.json has values'));
+  assert.equal(warned.length, 1, lines.join(''));
+  assert.match(warned[0], /sections\.ups\.__proto__/);
+  assert.ok(!warned[0].includes('polluted'), 'the warning quotes the value');
+  await savesBack(r);
+});
+
+test('a javascript: link is dropped, the other links stay; a save of the read heals the file', async () => {
+  const EVIL = "javascript:fetch('/api/secrets')";
+  onDisk({
+    ...START,
+    links: {
+      Media: [
+        { name: 'Plex', url: 'https://plex.example/' },
+        { name: 'Evil', url: EVIL },
+        { name: 'Jellyfin', url: 'https://jellyfin.example/' },
+      ],
+      Infra: [{ name: 'Proxmox', url: 'https://pve.example/' }],
+    },
+    tabs: [{ id: 'bad', label: 'Bad', type: 'iframe', url: 'data:text/html,hi' }],
+  });
+  const { result: r, lines } = await logsOf(() => read());
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.links, {
+    Media: [
+      { name: 'Plex', url: 'https://plex.example/' },
+      { name: 'Jellyfin', url: 'https://jellyfin.example/' },
+    ],
+    Infra: [{ name: 'Proxmox', url: 'https://pve.example/' }],
+  });
+  assert.deepEqual(r.body.tabs, []);
+  assert.deepEqual(r.body.overviewSections, START.overviewSections);
+  const warned = lines.filter((l) => l.includes('display-config.json has values')).join('');
+  assert.match(warned, /links\.Media\[1\]/);
+  assert.match(warned, /tabs\[0\]/);
+  assert.ok(
+    !warned.includes('javascript') && !warned.includes('data:'),
+    'the warning quotes the value'
+  );
+  await savesBack(r);
+});
+
+test('one bad overviewSections entry is dropped, the map stays; one warning per version of the file', async () => {
+  const SECRETISH = 'hand-typed-value-77';
+  onDisk({
+    ...START,
+    overviewSections: { services: SECRETISH, rail: false, strip: true },
+    refreshInterval: 'often',
+  });
+  const { result: r, lines } = await logsOf(async () => {
+    const first = await read();
+    await read();
+    return first;
+  });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { theme: 'dark', overviewSections: { rail: false, strip: true } });
   // The ETag is the version of the bytes on disk, bad values and all.
   assert.equal(r.headers.etag, fileVersion());
-  const lines = warned.filter((l) => l.includes('display-config.json'));
-  assert.equal(lines.length, 1, `one warning for the two reads: ${warned.join('')}`);
-  assert.match(lines[0], /overviewSections/);
-  assert.match(lines[0], /refreshInterval/);
-  assert.ok(!lines[0].includes(SECRETISH), 'the warning quotes the value');
-  assert.ok(!lines[0].includes('often'), 'the warning quotes the value');
-
-  // What the device sends back is the read, with its own change: accepted.
-  const saved = await write({ ...r.body, overviewSections: { services: false } }, r.headers.etag);
-  assert.equal(saved.status, 200, saved.text);
-  assert.deepEqual(JSON.parse(fileText()), {
-    theme: 'dark',
-    overviewSections: { services: false },
-  });
+  const warned = lines.filter((l) => l.includes('display-config.json has values'));
+  assert.equal(warned.length, 1, `one warning for the two reads: ${lines.join('')}`);
+  assert.match(warned[0], /overviewSections\.services/);
+  assert.match(warned[0], /refreshInterval/);
+  assert.ok(!warned[0].includes(SECRETISH), 'the warning quotes the value');
+  assert.ok(!warned[0].includes('often'), 'the warning quotes the value');
+  await savesBack(r);
 });

@@ -25,7 +25,14 @@ import yaml from 'js-yaml';
 import { atomicWriteFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { CONFIG_UNPARSEABLE, CONFIG_UNREADABLE } from './errors.js';
-import { readVersioned, VERSION_ABSENT, versionKey, versionOf } from './util/fileVersion.js';
+import {
+  readErrorCode,
+  readErrorWords,
+  readVersioned,
+  VERSION_ABSENT,
+  versionKey,
+  versionOf,
+} from './util/fileVersion.js';
 import { createLogger } from './util/logger.js';
 import { describeParseError, yamlParseError } from './util/parseError.js';
 
@@ -120,25 +127,6 @@ function boardProblemOf({ problem, parseError }) {
  */
 const readDisk = () => readVersioned(CONFIG_PATH);
 
-/** A read error's code in plain words, for the board and Settings (#536). */
-const READ_ERROR_WORDS = new Map([
-  ['EACCES', 'permission denied'],
-  ['EPERM', 'operation not permitted'],
-  ['EISDIR', "it's a directory"],
-  ['EIO', 'I/O error'],
-  ['ELOOP', 'too many symlinks'],
-  ['ENOTDIR', "its folder isn't a directory"],
-  ['EMFILE', 'too many open files'],
-  ['ENFILE', 'too many open files'],
-  ['EBUSY', 'busy'],
-]);
-
-/** A read error's code ("EACCES"), or null when it has none that looks like one. */
-function readErrorCode(err) {
-  const code = err?.code;
-  return typeof code === 'string' && /^E[A-Z0-9]{1,20}$/.test(code) ? code : null;
-}
-
 /**
  * Why a file that can't be read is no usable config (#536), as parseConfig's
  * answer says it for one that doesn't parse: "services.yaml can't be read
@@ -147,8 +135,7 @@ function readErrorCode(err) {
  */
 function unreadableBecause(err) {
   const code = readErrorCode(err);
-  const words = (code && READ_ERROR_WORDS.get(code)) || code || 'unknown error';
-  const problem = `services.yaml can't be read (${words})`;
+  const problem = `services.yaml can't be read (${readErrorWords(err)})`;
   return {
     code,
     problem,

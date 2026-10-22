@@ -2593,12 +2593,22 @@ All state is files under the data dir (no DB):
     `If-Match`: none is a 428, another a 409 `{ error, stale: true }` with
     the version now as its ETag; nothing is written either way. The read,
     the check and the write are one synchronous step, and a save answers
-    with the version it wrote. A file that can't be read is a 503.
-  - **The read leaves out a value no save would take** (a hand edit that
-    breaks the schema, such as an `overviewSections` switch that isn't true
-    or false), with one warning per version of the file naming the key,
-    never the value: a device saves back what it read, so the value would
-    otherwise refuse every save from Settings. The next save drops it.
+    with the version it wrote.
+  - **A file that is no config is never answered as one**, so no device lays
+    its changes over an empty copy and saves a config without the rest (the
+    links, the tabs, `backupJobs`). One that doesn't parse or isn't a JSON
+    object is a 503 `{ error, code: "config_unparseable" }` with its reason
+    and position (never its text) and the file's version as the ETag: a
+    device saves its whole config over that version, which rewrites the
+    file. One that can't be read is a 503 `config_unreadable` with no
+    version, and so is a save: fix it on the host.
+  - **The read leaves out each value no save would take** (a hand edit), at
+    the depth it is refused: a reserved key such as a nested `__proto__`, an
+    unsafe `url` (the link or tab that holds it goes, the others stay), or a
+    value the schema refuses (one `overviewSections` entry, not the map).
+    One warning per version of the file names each path, never the value. A
+    device saves back what it read, so the value would otherwise refuse
+    every save from Settings; the next save drops it.
   - **A refused save is rebased, not dropped** (`useConfigPersistence`,
     `src/utils/rebaseConfig.js`). Display saves are automatic (a switch
     flipped saves 2 s later), so throwing the edit away would undo what the
@@ -2612,8 +2622,19 @@ All state is files under the data dir (no DB):
     device's value. It shows that, keeps it in localStorage and saves it
     once over the new version ("Merged with changes from another device").
     Refused again, it takes the server's copy as it is ("Settings changed on
-    another device; reloaded"). The unload flush is a keepalive fetch with
-    the version (sendBeacon can't send `If-Match`).
+    another device; reloaded"). It shows or lays changes over only a copy: an
+    object with its version (the read-only demo's needs none). With no file
+    or one that doesn't parse, it keeps its config and sends the whole of it
+    over that version; with one the server can't read, it keeps its config
+    and says why.
+  - **An edit whose save never landed is saved at the next load.**
+    localStorage keeps, beside the config (`jaghelm-config`), the copy it
+    descends from and its version (`jaghelm-config-base`), written together.
+    At the next load what differs from that copy is laid over the server's
+    copy and saved, as a refused save is. The unload flush (a keepalive fetch
+    with the version; sendBeacon can't send `If-Match`) is only a head
+    start. A tab open from before the version check came in sends none, and
+    its saves get 428 until it is reloaded.
 - **secrets** -- AES-256-GCM blob, keyed by integration storage key.
 - **config version key** -- `config-version.key`: 32 random bytes (mode 0600)
   that the versions of `services.yaml` (#423) and `display-config.json`
