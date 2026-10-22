@@ -328,6 +328,17 @@ describe('IntegrationsTab when services.yaml cannot be read (#423)', () => {
     expect(screen.queryByText(BROKEN)).not.toBeInTheDocument();
   });
 
+  it("one that can't be read says why, unprefixed, as one that doesn't parse (#536)", async () => {
+    const UNREADABLE =
+      "services.yaml can't be read (permission denied): fix it on the host; JagHelm won't save over a file it can't read";
+    stubServer({
+      configReply: () => ({ status: 503, body: { error: UNREADABLE, code: 'config_unreadable' } }),
+    });
+    renderTab();
+    expect(await screen.findByText(UNREADABLE)).toBeInTheDocument();
+    expect(screen.queryByText('No integrations configured yet')).not.toBeInTheDocument();
+  });
+
   it('a config read that fails another way says so too, not an empty list', async () => {
     stubServer({ configReply: () => ({ status: 500, body: { error: 'Internal server error' } }) });
     renderTab();
