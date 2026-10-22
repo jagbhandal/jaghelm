@@ -10,7 +10,7 @@
  *    per subsystem tile): every colour each element draws (text, fill,
  *    edges, outline, shadows, SVG paint), read in OKLCH.
  *  - The subsystem strip (#298): on screen under the status without
- *    scrolling, a tile per subsystem the model has anything in, nothing in it
+ *    scrolling (on a phone, under the panel's header, #484), a tile per subsystem the model has anything in, nothing in it
  *    cut off, at 360px too. A tile, clicked or by Space and Enter, filters
  *    the rows and the board to its subsystem and back, in the URL, so Back
  *    and Forward follow it; a filter whose panel is switched off says so.
@@ -235,9 +235,15 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
         expect(await page.evaluate(() => window.scrollY)).toBe(0);
 
         const area = await clearArea(page);
-        const top = await statusArea(page)
-          .getByRole('region', { name: scenario === 'incident' ? 'Needs attention' : 'Status' })
-          .boundingBox();
+        const status = statusArea(page).getByRole('region', {
+          name: scenario === 'incident' ? 'Needs attention' : 'Status',
+        });
+        // On a phone the strip sits between the panel's header and its rows
+        // (#484, e2e/phone-split.spec.mjs): under the header.
+        const split = name === 'phone' && scenario === 'incident';
+        const top = await (
+          split ? status.locator('[data-slot="attention-panel-header"]') : status
+        ).boundingBox();
         const box = await strip(page).boundingBox();
         expect(box.y, 'under the status').toBeGreaterThanOrEqual(top.y + top.height);
         expect(box.y + box.height, 'above the fold').toBeLessThanOrEqual(area.bottom);
