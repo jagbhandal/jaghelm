@@ -94,8 +94,7 @@ describe('the Services rows, from the model', () => {
     const count = servicesCount(rows);
     expect(count).toMatch(new RegExp(`^${rows.length} monitored · `));
     for (const r of notUp) {
-      const said =
-        r.level === 'maintenance' ? 'in maintenance' : String(r.word).toLowerCase();
+      const said = r.level === 'maintenance' ? 'in maintenance' : String(r.word).toLowerCase();
       expect(count, r.word).toContain(said);
     }
     expect(count).not.toContain('all up');
@@ -187,7 +186,7 @@ it("the metric is the service's own, by uid: a same-named container on another n
 });
 
 describe('headlineMetric', () => {
-  it("is the first field, an amount before its label, anything else after", () => {
+  it('is the first field, an amount before its label, anything else after', () => {
     expect(headlineMetric({ Photos: '24,499', Videos: '1,203' })).toBe('24,499 photos');
     expect(headlineMetric({ Queries: '41k' })).toBe('41k queries');
     expect(headlineMetric({ Version: '10.9.1' })).toBe('Version 10.9.1');
@@ -195,7 +194,7 @@ describe('headlineMetric', () => {
   });
 
   it('skips the internal fields and empty values; none without a field', () => {
-    expect(headlineMetric({ _doctor: { error: 'x' }, Streams: '' , Users: '3' })).toBe('3 users');
+    expect(headlineMetric({ _doctor: { error: 'x' }, Streams: '', Users: '3' })).toBe('3 users');
     expect(headlineMetric({ _doctor: { error: 'HTTP 401' } })).toBeNull();
     expect(headlineMetric(null)).toBeNull();
     expect(headlineMetric({})).toBeNull();
@@ -224,7 +223,7 @@ describe('the Services groups', () => {
     expect(apps.rows[0].name).toBe('Jellyfin');
   });
 
-  it("by node: a node /api/services has yet to list comes after the listed ones, its key the title", () => {
+  it('by node: a node /api/services has yet to list comes after the listed ones, its key the title', () => {
     const { status, services } = demoBoard({ scenario: 'healthy', now: NOW });
     const rows = serviceRows({ status, services });
     const { edge: _edge, ...rest } = services.nodes;
@@ -264,12 +263,16 @@ describe('the Services groups', () => {
     );
   });
 
-  it('offers grouping by group only when there is a custom group; never by tag', () => {
-    expect(groupingsFor([]).map((g) => g.value)).toEqual(['node']);
-    expect(groupingsFor(undefined).map((g) => g.value)).toEqual(['node']);
-    expect(groupingsFor([{ id: 'a', containers: [] }]).map((g) => g.label)).toEqual([
-      'Node',
-      'Group',
+  it('offers Node and Group always, Group disabled without a custom group; never by tag', () => {
+    for (const none of [[], undefined]) {
+      expect(groupingsFor(none)).toEqual([
+        { value: 'node', label: 'Node', disabled: false },
+        { value: 'group', label: 'Group', disabled: true },
+      ]);
+    }
+    expect(groupingsFor([{ id: 'a', containers: [] }])).toEqual([
+      { value: 'node', label: 'Node', disabled: false },
+      { value: 'group', label: 'Group', disabled: false },
     ]);
   });
 });

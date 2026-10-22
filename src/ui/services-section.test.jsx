@@ -152,16 +152,32 @@ describe('ServicesSection', () => {
     expect(onGroupingChange).toHaveBeenCalledWith('group');
   });
 
-  it('no control with only one way to group, or nothing to change it', () => {
-    const { rerender } = render(
+  it('a way to group that has nothing yet is disabled, and the hint says where to set it up', () => {
+    render(
       <ServicesSection
         groups={GROUPS}
-        groupings={GROUPINGS.slice(0, 1)}
+        grouping="node"
+        groupings={[GROUPINGS[0], { ...GROUPINGS[1], disabled: true }]}
         onGroupingChange={vi.fn()}
+        groupingHint={
+          <>
+            No groups yet: <a href="/settings/sections">add one in Settings → Sections</a>
+          </>
+        }
       />
     );
-    expect(screen.queryByRole('radiogroup')).toBeNull();
-    rerender(<ServicesSection groups={GROUPS} groupings={GROUPINGS} />);
+    const control = screen.getByRole('radiogroup', { name: 'Group services by' });
+    expect(within(control).getByRole('radio', { name: 'Group' })).toBeDisabled();
+    expect(within(control).getByRole('radio', { name: 'Node' })).toBeChecked();
+    expect(control).toHaveAccessibleDescription('No groups yet: add one in Settings → Sections');
+    expect(screen.getByRole('link', { name: 'add one in Settings → Sections' })).toHaveAttribute(
+      'href',
+      '/settings/sections'
+    );
+  });
+
+  it('no control with nothing to change it', () => {
+    render(<ServicesSection groups={GROUPS} groupings={GROUPINGS} />);
     expect(screen.queryByRole('radiogroup')).toBeNull();
   });
 

@@ -4,8 +4,9 @@
  * `Activity`, the mock's) in a 32px accent chip, "Services" (16px bold), the
  * count in 13px text-3 ("12 monitored · 1 down"), under the heading when they
  * don't fit side by side, and at its end the grouping, a SegmentedControl
- * named "Group services by" (By node, By group), when there is more than one
- * way to group. Under it an optional `banner` (a Banner saying the readings
+ * named "Group services by" (Node, Group), when it can be changed. A way with nothing in it yet is a disabled segment, and
+ * `groupingHint` (a caption under the control, which describes it) says where
+ * to set it up. Under it an optional `banner` (a Banner saying the readings
  * are old), then one panel: `surface-1` in a subtle edge, 12px round, holding
  * the groups. Each group's heading is the mock's: on `surface-2` above a
  * subtle rule, its title as an overline in text-2, the node's key in 12px mono
@@ -93,6 +94,7 @@ function ServicesSection({
   grouping = 'node',
   groupings = [],
   onGroupingChange,
+  groupingHint,
   loading = false,
   banner,
   title = 'Services',
@@ -122,14 +124,25 @@ function ServicesSection({
           </h2>
           {count && !loading && <span className="text-body-sm text-text-3">{count}</span>}
         </div>
-        {onGroupingChange && groupings.length > 1 && (
-          <SegmentedControl
-            aria-label="Group services by"
-            options={groupings}
-            value={grouping}
-            onValueChange={(value) => onGroupingChange(value)}
-            className="ml-auto"
-          />
+        {onGroupingChange && groupings.length > 0 && (
+          <div className="ml-auto flex flex-col items-end gap-1">
+            <SegmentedControl
+              aria-label="Group services by"
+              aria-describedby={groupingHint ? `${id}-hint` : undefined}
+              options={groupings}
+              value={grouping}
+              onValueChange={(value) => onGroupingChange(value)}
+            />
+            {groupingHint && (
+              <p
+                id={`${id}-hint`}
+                data-slot="services-grouping-hint"
+                className="text-right text-caption text-text-3 [&_a]:font-semibold [&_a]:text-accent-text [&_a]:hover:underline"
+              >
+                {groupingHint}
+              </p>
+            )}
+          </div>
         )}
       </div>
       {banner}

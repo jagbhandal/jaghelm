@@ -8,7 +8,7 @@
  *
  * The grouping is a choice kept per browser (useServicesGrouping), by node by
  * default; with storage blocked it lasts the visit. Grouping by custom group
- * is offered once Settings has one. Each row it draws puts its anchor on the
+ * is disabled until Settings has one, with a link there. Each row it draws puts its anchor on the
  * list of places (entityAnchors.js), so the attention panel's row for a
  * service leads to its row here.
  *
@@ -30,6 +30,8 @@ import { Banner } from '@ui/banner';
 import { Button } from '@ui/button';
 import { ShellSection } from '@ui/app-shell';
 import { ServicesSection } from '@ui/services-section';
+import { followLink } from '../router/useRoute.js';
+import { pathTo } from '../router/routes.js';
 import { usePlaces } from './entityAnchors.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import {
@@ -69,6 +71,17 @@ function staleBanner(health, onRetry) {
 
 const NO_GROUPS = [];
 
+// Where custom groups are made: the hint beside a disabled Group.
+const SECTIONS = pathTo('settings', { section: 'sections' });
+const noGroupsHint = (
+  <>
+    No custom groups yet:{' '}
+    <a href={SECTIONS} onClick={(e) => followLink(e, SECTIONS)}>
+      add one in Settings → Sections
+    </a>
+  </>
+);
+
 export const OverviewServices = memo(function OverviewServices({
   status,
   reach,
@@ -91,7 +104,7 @@ export const OverviewServices = memo(function OverviewServices({
     [status, services, appData, sections, stale]
   );
   const groupings = useMemo(() => groupingsFor(customGroups), [customGroups]);
-  const grouping = groupings.some((g) => g.value === chosen) ? chosen : 'node';
+  const grouping = groupings.some((g) => g.value === chosen && !g.disabled) ? chosen : 'node';
   const groups = useMemo(
     () => serviceGroups(rows, { by: grouping, services, customGroups }),
     [rows, grouping, services, customGroups]
@@ -111,6 +124,7 @@ export const OverviewServices = memo(function OverviewServices({
           grouping={grouping}
           groupings={groupings}
           onGroupingChange={setGrouping}
+          groupingHint={groupings.some((g) => g.disabled) ? noGroupsHint : undefined}
           loading={loading}
           banner={loading ? null : banner}
         />

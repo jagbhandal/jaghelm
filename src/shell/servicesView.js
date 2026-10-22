@@ -126,10 +126,13 @@ export const GROUPINGS = Object.freeze([
   Object.freeze({ value: 'group', label: 'Group' }),
 ]);
 
-/** The groupings there is something for: by node always, by group with a custom group. */
+/**
+ * The control's options: by node, and by group, which is disabled until
+ * Settings has a custom group (the section then says where to add one).
+ */
 export function groupingsFor(customGroups) {
   const any = Array.isArray(customGroups) && customGroups.length > 0;
-  return GROUPINGS.filter((g) => g.value === 'node' || any);
+  return GROUPINGS.map((g) => ({ ...g, disabled: g.value === 'group' && !any }));
 }
 
 const byRank = (a, b) =>

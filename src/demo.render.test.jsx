@@ -866,9 +866,14 @@ describe("the demo's Services section", () => {
     expect(scroll).toHaveBeenCalledWith({ block: 'start' });
   });
 
-  it('no grouping control without a custom group: by node is all there is', async () => {
+  it('without a custom group: Group is offered but disabled, with a link to where groups are set', async () => {
     await renderDemo('incident');
-    expect(within(servicesSection()).queryByRole('radiogroup')).toBeNull();
+    expect(within(grouping()).getByRole('radio', { name: 'Node' })).toBeChecked();
+    expect(within(grouping()).getByRole('radio', { name: 'Group' })).toBeDisabled();
+    const link = within(servicesSection()).getByRole('link', { name: /Settings → Sections/ });
+    expect(link).toHaveAttribute('href', '/settings/sections');
+    await click(link);
+    expect(window.location.pathname).toBe('/settings/sections');
   });
 
   it('by custom group: the choice kept in this browser, the node beside each name', async () => {
