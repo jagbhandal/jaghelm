@@ -587,3 +587,214 @@ test('#470: no targets read when the up query failed: every node is unread alrea
     globalThis.fetch = realFetch;
   }
 });
+
+// ── #476: a first scrape that never comes; #477: no target per node ──────
+// A target still waiting for its first scrape 3 of its scrape intervals after
+// the first cycle that saw it is Prometheus failing, naming it, not silence.
+// The count is kept in the data dir (targetWaits.js), so a restart goes on
+// with it. A target list that names none of the nodes (a federation or
+// remote-write backend) makes a missing `up` series Prometheus's problem,
+// never a host's.
+
+const { mkdtempSync, rmSync } = await import('node:fs');
+const { tmpdir } = await import('node:os');
+const { join } = await import('node:path');
+const { createTargetWaits } = await import('./targetWaits.js');
+
+const PROM_URL = 'http://localhost:9998';
+const T = 1_782_345_600_000;
+const realNow = Date.now;
+
+/** A fresh waits file, discovery pointed at it; `restart()` reads it back as a new process would. */
+function waitsFile() {
+  const dir = mkdtempSync(join(tmpdir(), 'jaghelm-discovery-waits-'));
+  const path = join(dir, 'waits.json');
+  const start = () => initDiscovery(PROM_URL, { targetWaits: createTargetWaits({ path }) });
+  start();
+  return {
+    restart: start,
+    done() {
+      Date.now = realNow;
+      globalThis.fetch = realFetch;
+      initDiscovery(PROM_URL);
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+/** One getNodesData call at T + `ms`. */
+async function at(ms, nodes) {
+  Date.now = () => T + ms;
+  return getNodesData(nodes);
+}
+
+// vm-test's node-exporter, never scraped, every 30 s: its limit is 90 s.
+const stuck = { ...target('vm-test', 'unknown'), scrapeInterval: '30s' };
+const TOO_LONG = "Prometheus hasn't scraped vm-test:9100 (vm-test) in 3 scrape intervals";
+
+test('#476: a target still waiting for its first scrape 3 of its intervals after the first cycle that saw it: Prometheus failing, naming it; the node unread', async () => {
+  const f = waitsFile();
+  // vm-test-2 is scraped and has its up series: never touched.
+  const prom = promWithUp([{ 'vm-test-2': 1 }], () => targetsAnswer([stuck, target('vm-test-2', 'up')]));
+  globalThis.fetch = prom.fetch;
+  try {
+    for (const ms of [0, 30_000, 60_000, 89_999]) {
+      const d = (await at(ms, ['vm-test', 'vm-test-2'])).get('vm-test');
+      assert.deepEqual([d.ok, d.error, d.whyNoUp], [true, null, 'not-scraped-yet'], `${ms} ms: not scraped yet`);
+      assert.deepEqual(d.failedReads, [...NODE_READS]);
+    }
+    const data = await at(90_000, ['vm-test', 'vm-test-2']);
+    const d = data.get('vm-test');
+    assert.deepEqual([d.ok, d.error, d.whyNoUp], [false, TOO_LONG, 'not-scraped-too-long'], '3 intervals on');
+    assert.deepEqual(d.failedReads, [...NODE_READS], 'still unread: whether it is up, nobody knows');
+    assert.equal(d.reachable, null);
+    const other = data.get('vm-test-2');
+    assert.deepEqual([other.ok, other.error, other.failedReads, other.reachable], [true, null, [], true]);
+  } finally {
+    f.done();
+  }
+});
+
+test('#476: the count goes on across a restart (it is in the data dir), and starts again after a long gap', async () => {
+  const f = waitsFile();
+  const prom = coldProm(() => targetsAnswer([stuck]));
+  globalThis.fetch = prom.fetch;
+  try {
+    await at(0, ['vm-test']);
+    await at(30_000, ['vm-test']);
+    f.restart(); // a new process, reading the file
+    const d = (await at(90_000, ['vm-test'])).get('vm-test');
+    assert.deepEqual([d.ok, d.whyNoUp], [false, 'not-scraped-too-long'], 'counted from the first cycle before the restart');
+
+    // JagHelm off for longer than the gap: Prometheus may have restarted with
+    // it, so the target may be new; its wait starts again.
+    f.restart();
+    const back = (await at(90_000 + 6 * 60_000, ['vm-test'])).get('vm-test');
+    assert.deepEqual([back.ok, back.whyNoUp], [true, 'not-scraped-yet']);
+  } finally {
+    f.done();
+  }
+});
+
+test('#476: a target the list gives a last scrape for, unknown again, counts from that scrape', async () => {
+  const f = waitsFile();
+  const reset = { ...stuck, lastScrape: new Date(T - 100_000).toISOString() };
+  const prom = coldProm(() => targetsAnswer([reset]));
+  globalThis.fetch = prom.fetch;
+  try {
+    const d = (await at(0, ['vm-test'])).get('vm-test');
+    assert.deepEqual([d.ok, d.error, d.whyNoUp], [false, TOO_LONG, 'not-scraped-too-long'], 'its first sighting is already past the limit');
+  } finally {
+    f.done();
+  }
+});
+
+test('#476: up 0 while a target waits past its limit is Prometheus failing too; inside it, unread with nothing failed', async () => {
+  const f = waitsFile();
+  const prom = promWithUp([{ 'vm-test': 0 }], () => targetsAnswer([cadvisor('vm-test', 'down'), stuck]));
+  globalThis.fetch = prom.fetch;
+  try {
+    let d = (await at(0, ['vm-test'])).get('vm-test');
+    assert.deepEqual([d.ok, d.whyNoUp, d.reachable], [true, 'not-scraped-yet', false]);
+    d = (await at(120_000, ['vm-test'])).get('vm-test');
+    assert.deepEqual([d.ok, d.error, d.whyNoUp], [false, TOO_LONG, 'not-scraped-too-long']);
+    assert.deepEqual(d.failedReads, [...NODE_READS]);
+  } finally {
+    f.done();
+  }
+});
+
+test('#476: a wait is forgotten once no node needs a check, kept while the targets read fails', async () => {
+  const f = waitsFile();
+  let mode = 'stuck';
+  const prom = promWithUp(
+    [() => (mode === 'up' ? promResult([{ metric: {}, value: [0, '1'] }]) : promResult([]))],
+    () => (mode === 'blocked' ? answer(403, { error: 'forbidden' }) : targetsAnswer([stuck]))
+  );
+  globalThis.fetch = prom.fetch;
+  try {
+    await at(0, ['vm-test']);
+    mode = 'blocked';
+    let d = (await at(60_000, ['vm-test'])).get('vm-test');
+    assert.equal(d.whyNoUp, 'targets-unread');
+    mode = 'stuck';
+    d = (await at(90_000, ['vm-test'])).get('vm-test');
+    assert.equal(d.whyNoUp, 'not-scraped-too-long', 'the failed read kept the wait');
+
+    mode = 'up'; // scraped: every node has its up series, no targets read
+    d = (await at(120_000, ['vm-test'])).get('vm-test');
+    assert.deepEqual([d.ok, d.reachable, d.whyNoUp], [true, true, undefined]);
+    mode = 'stuck'; // waiting again (Prometheus restarted): a new wait
+    d = (await at(150_000, ['vm-test'])).get('vm-test');
+    assert.deepEqual([d.ok, d.whyNoUp], [true, 'not-scraped-yet']);
+  } finally {
+    f.done();
+  }
+});
+
+test('#477: no up series and an empty target list: Prometheus failing, naming the nodes; no node unreachable', async () => {
+  const f = waitsFile();
+  const prom = coldProm(() => targetsAnswer([]));
+  globalThis.fetch = prom.fetch;
+  try {
+    const data = await at(0, ['vm-test', 'vm-test-2']);
+    for (const node of ['vm-test', 'vm-test-2']) {
+      const d = data.get(node);
+      assert.equal(d.ok, false, node);
+      assert.equal(d.error, 'Prometheus lists no target for any node, and has no up series for vm-test, vm-test-2', node);
+      assert.equal(d.whyNoUp, 'no-targets-at-all', node);
+      assert.deepEqual(d.failedReads, [...NODE_READS], `${node}: unread, so the model calls it no signal, not unreachable`);
+    }
+  } finally {
+    f.done();
+  }
+});
+
+test('#477: a target list that names none of the nodes (a federation or remote-write backend) reads the same', async () => {
+  const f = waitsFile();
+  // A federating Prometheus: its only targets are the other Prometheus and itself.
+  const federate = { ...target('vm-test', 'up'), labels: { instance: 'leaf:9090', job: 'federate' } };
+  const self = { ...target('vm-test', 'up'), labels: { instance: 'localhost:9090', job: 'prometheus', node: 'elsewhere' } };
+  // vm-test-2 has its up series (federated); vm-test has lost it.
+  const prom = promWithUp([{ 'vm-test-2': 1 }], () => targetsAnswer([federate, self]));
+  globalThis.fetch = prom.fetch;
+  try {
+    const data = await at(0, ['vm-test', 'vm-test-2']);
+    const d = data.get('vm-test');
+    assert.deepEqual([d.ok, d.whyNoUp], [false, 'no-targets-at-all']);
+    assert.equal(d.error, 'Prometheus lists no target for any node, and has no up series for vm-test');
+    assert.deepEqual(d.failedReads, [...NODE_READS]);
+    assert.deepEqual([data.get('vm-test-2').ok, data.get('vm-test-2').reachable], [true, true]);
+  } finally {
+    f.done();
+  }
+});
+
+test('#477: a target list that names some of the nodes: each node read as before', async () => {
+  const f = waitsFile();
+  // vm-test has no target (gone from Prometheus); vm-test-2's is not scraped yet.
+  const prom = coldProm(() => targetsAnswer([target('vm-test-2', 'unknown')]));
+  globalThis.fetch = prom.fetch;
+  try {
+    const data = await at(0, ['vm-test', 'vm-test-2']);
+    const gone = data.get('vm-test');
+    assert.deepEqual([gone.ok, gone.failedReads, gone.reachable, gone.whyNoUp], [true, [], null, 'no-target'], 'unreachable, as before');
+    const waiting = data.get('vm-test-2');
+    assert.deepEqual([waiting.ok, waiting.whyNoUp], [true, 'not-scraped-yet']);
+    assert.deepEqual(waiting.failedReads, [...NODE_READS]);
+  } finally {
+    f.done();
+  }
+});
+
+test('#477: up 0 with an empty target list stands, as Prometheus\'s own answer', async () => {
+  const f = waitsFile();
+  const prom = promWithUp([{ 'vm-test': 0 }], () => targetsAnswer([]));
+  globalThis.fetch = prom.fetch;
+  try {
+    const d = (await at(0, ['vm-test'])).get('vm-test');
+    assert.deepEqual([d.ok, d.reachable, d.failedReads, d.whyNoUp], [true, false, [], 'scraped-and-down']);
+  } finally {
+    f.done();
+  }
+});
