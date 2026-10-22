@@ -312,6 +312,12 @@ export const CATALOG = Object.freeze([
   }),
   s('app-bar', 'Shell', 'AppBar: over an open app, with Reload and Open in new tab'),
 
+  // Sign-in (#305)
+  s('login', 'Sign-in', 'LoginForm: the brand, the labelled fields and Sign in'),
+  s('login-busy', 'Sign-in', 'LoginForm: signing in, the button busy'),
+  s('login-error', 'Sign-in', 'LoginForm: a wrong password, the error on its field'),
+  s('login-no-answer', 'Sign-in', "LoginForm: JagHelm didn't answer, the form's alert"),
+
   // The utilities (#301)
   s(
     'utilities-rail',

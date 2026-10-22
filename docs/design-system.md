@@ -32,9 +32,10 @@ the sign-off amendments in §15).
   under [Components](#components), [Containers](#containers),
   [Status components](#status-components) and
   [Data components](#data-components), with their variants, sizes and keyboard
-  use; the shell (#296), the Overview's sections (#299) and the utilities
-  (#301) are built on them ([Shell](#shell), [Overview sections](#overview-sections),
-  [Utilities](#utilities)). No web screen uses them yet; the Android app's screens use the status
+  use; the shell (#296), the Overview's sections (#299), the sign-in page
+  (#305) and the utilities (#301) are built on them ([Shell](#shell),
+  [Overview sections](#overview-sections), [Sign-in](#sign-in),
+  [Utilities](#utilities)). The Android app's screens use the status
   components, in its own look.
 - **Gallery:** every state of every component above, in both themes and both
   densities and, where colour follows the accent, all three accents, on one
@@ -1635,6 +1636,55 @@ From the mock's Main board, its Infrastructure section:
   grouping by tag, since services.yaml has no tags.
 - **Services on a phone keep their groups**, from the same components; the
   Phone board's list is flat.
+
+## Sign-in
+
+The sign-in page (spec §8 "Login", #305), in `src/ui/login-form.jsx`, built
+on the components above; `src/components/LoginPage.jsx` wires it to
+`POST /api/auth/login`, and App gives it the shell's theme and the
+instance's name and logo. The [gallery](GALLERY.md) shows it blank, busy, with a
+wrong password and with the server not answering, and `e2e/login.spec.mjs`
+runs it in a browser.
+
+| Component | Import | Props |
+| --- | --- | --- |
+| `LoginForm` | `@ui/login-form` | `name`, `logoUrl`, `username`, `password`, `onUsernameChange`, `onPasswordChange`, `errors` (`{ username, password, form }`), `busy`, `onSubmit`, `autoFocus` |
+| `LoginScreen` | `@ui/login-form` | `theme`, and LoginForm's props: the page, a `UiRoot` filling the window |
+
+### How the sign-in page looks
+
+One brand mark, the header's: the helm mark on a 40px `accent` square (or the
+instance's own logo), then the instance's name in `text-title` extra-bold, the
+page's h1. Under it, 24px down, a Panel titled "Sign in" holding a Field per
+control, Username and Password, 16px apart, and the primary button, "Sign
+in", the card's width. The column is at most 360px wide, centred in the
+window on `bg`, with a 16px gutter on a phone. No wordmark, gradient title
+or subtitle.
+
+### Accessibility of the sign-in page
+
+- **Labels.** Each field is a Field: its label names the input (`<label
+  for>`), and `autocomplete` is `username` and `current-password`, so a
+  password manager fills both.
+- **Errors.** A field's error sits under it, in its `aria-describedby`, and
+  sets `aria-invalid`, until that field is edited. A refused sign-in is one error on the password field,
+  "Wrong username or password.": the server doesn't say which was wrong, so
+  usernames can't be guessed from it. An empty field says so on that field,
+  and nothing is sent. A failure no field caused (the server didn't answer,
+  or refused for another reason, such as too many attempts) is a crit Banner
+  over the fields, `role="alert"`.
+- **Focus.** Each new error moves focus to the first invalid field and
+  selects its text, so typing replaces it; the page opens with focus on
+  Username. Enter in either field submits.
+- **Busy.** While a sign-in is out the button says "Signing in…" and is
+  disabled but keeps its focus (`aria-disabled`), and a second submit sends
+  nothing.
+
+### Where the sign-in page differs from the mock
+
+- **The mock has no sign-in board.** The page follows its tokens, its
+  Settings fields (13px semibold labels over 34px inputs) and the header's
+  helm mark.
 
 ## Utilities
 
