@@ -2453,10 +2453,11 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   its 10px lamps, the line's and the strip's (every colour each element
   draws, read in OKLCH); and an
   issue row, clicked or by Enter, brings its entity's place on the board into
-  view, clear of the header, and focuses it, while a Ctrl-click opens a tab at
-  its anchor and leaves the page where it was (Chromium in the container now
-  and then drops a Ctrl-click's tab, so that test tries up to three times,
-  checking the page acted on none). The subsystem strip (#298): on
+  view, clear of the header, and focuses it; it is a link to its place's
+  anchor, and a click dispatched with Ctrl, Meta, Shift, Alt or the middle
+  button is neither cancelled nor moves focus or the scroll, while a plain one
+  through the same dispatch does (#515: no real new tab, which tested
+  Chromium, not JagHelm). The subsystem strip (#298): on
   screen under the status without scrolling (on a phone, under the panel's
   header, #484), a tile per subsystem the model
   has anything in, nothing in a tile cut off and no sideways scroll (at 360px
