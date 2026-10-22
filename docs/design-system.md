@@ -113,8 +113,21 @@ Roots can nest, in any theme: each carries its own tokens, so a light root
 inside a dark one is light. The `dark:` variant applies inside any root
 without `data-theme="light"`, so it can't tell such a root from its dark
 parent; `src/ui/` doesn't use it, and `scripts/ui-stack.test.mjs` fails if a
-class does. "System" (follow the device) is Settings' job: it sets
-`data-theme` from `prefers-color-scheme`.
+class does. "System" (follow the device) is the app's job, not a switch's: it
+sets `data-theme` from `prefers-color-scheme` (below).
+
+**Themes** (#304, spec §2). JagHelm has two, dark and light, and a third
+choice, system, which shows whichever the device asks for and changes with it,
+live. One accent, violet; Fuchsia and Cyan come with Settings → Appearance's
+picker (#321). [`src/shell/theme.js`](../src/shell/theme.js) holds the choice
+(`useTheme`) and gives the shell's roots the theme shown; today's stylesheet
+draws its views in the same two (`src/styles/global.css`, on these tokens'
+values), so the page and the chrome match. The header's toggle switches dark
+and light; Settings → Appearance and the command palette offer all three. The
+ten themes before #304 are gone: a browser that saved one opens in dark or
+light by what it drew ([ARCHITECTURE.md](ARCHITECTURE.md), "Design system").
+`scripts/themes.test.mjs` fails if a third theme block or `#6366f1`, the old
+indigo, comes back.
 
 A screen's root is a `UiRoot` ([`src/ui/root.jsx`](../src/ui/root.jsx),
 #286): `<UiRoot theme="light" density="compact">` renders the `.jh-ui`
@@ -1361,7 +1374,7 @@ router, the config and the status poll ([ARCHITECTURE.md](ARCHITECTURE.md),
 | `ShellPage` | `@ui/app-shell` | `title` (the page's h1), `description`, `actions`; a page of the new UI inside the shell |
 | `ShellSection` | `@ui/app-shell` | its `children`: a part of a page in the new UI beside today's views (the Overview's status and strip, #297, #298) |
 | `ShellApps` | `@ui/app-shell` | `label` (names the open app's region), `bar` (the open app's AppBar); holds the embedded apps' frames |
-| `AppHeader` | `@ui/app-header` | `name`, `logoUrl`, `status` (`{ reach, state, word, sentence, href, current, lastKnown }`), `updated` (an element, `UpdatedAgo`), `onOpenPalette`, `shortcut`, `settingsHref`, `settingsCurrent`, `onLogout`, `onNavigate` |
+| `AppHeader` | `@ui/app-header` | `name`, `logoUrl`, `status` (`{ reach, state, word, sentence, href, current, lastKnown }`), `updated` (an element, `UpdatedAgo`), `onOpenPalette`, `shortcut`, `onThemeChange` (the toggle, given `'light'` or `'dark'`), `settingsHref`, `settingsCurrent`, `onLogout`, `onNavigate` |
 | `UpdatedAgo` | `@ui/app-header` | `at` (ms since the epoch) |
 | `SideNav` | `@ui/side-nav` | `groups` (`[{ id, label, items }]`), `collapsed`, `onCollapsedChange`, `onNavigate`, `label` |
 | `NavGroups` | `@ui/side-nav` | `groups`, `collapsed`, `onNavigate`: the list alone, as the phone's More sheet uses it |
@@ -1408,9 +1421,12 @@ From the mock's Main and Phone boards:
   14px skeleton disc and a 160px bar stand in. "Updated 12 s ago" in
   `caption` `text-3`, from 640px. From 1024px the search button is the mock's:
   `surface-1` in a subtle edge, `text-3`, the shortcut in a mono `kbd`, 240px
-  (280px from 1280px); narrower, a ghost IconButton. Settings and Log out are
-  ghost IconButtons; Settings, when open, takes `accent-tint` and
-  `accent-text`, as a selected nav entry does.
+  (280px from 1280px); narrower, a ghost IconButton. Then the mock's theme
+  toggle (#304), a ghost IconButton at every width: a sun, "Switch to light
+  theme", in dark, a moon, "Switch to dark theme", in light, read from the
+  root it is drawn in. Settings and Log out are ghost IconButtons; Settings,
+  when open, takes `accent-tint` and `accent-text`, as a selected nav entry
+  does.
 - **SideNav.** `bg-sidebar` with a subtle right edge, 232px, 16px by 12px of
   padding, 20px between groups. Each group's label is the mock's overline
   (`text-overline`, upper case, `text-3`). An entry is 36px (`minor`: 32px and
@@ -1454,7 +1470,8 @@ From the mock's Main and Phone boards:
   without the "last known 3 min ago" line, whose age moves each second
   (#480). It is the same element from the placeholder ("Checking status") to
   the first status, so that is announced as a change. The
-  open page's entry and link are `aria-current="page"`. Reload is named
+  open page's entry and link are `aria-current="page"`. The theme toggle is
+  named by what it does ("Switch to light theme"). Reload is named
   "Reload <app>"; "Open in new tab" opens with `rel="noopener noreferrer"`,
   so the app gets no handle on JagHelm. More is a button with
   `aria-haspopup="dialog"` and `aria-expanded`; its sheet is a Drawer named
@@ -1467,9 +1484,9 @@ From the mock's Main and Phone boards:
 - **The header runs the full width**, above the sidebar, with the logo and the
   instance name in it (spec §7); the mock puts the brand at the top of the
   sidebar and the header beside it. It is 48px, the mock's is 56px.
-- **No theme toggle in the header**: the theme is Settings → Appearance's
-  (#304 brings dark, light and system); the header has the settings link and
-  Log out instead, as spec §7 lists.
+- **The theme toggle sits between the search and Settings**, as the mock's
+  sits beside the search (the mock has no Settings link in the header). It
+  switches dark and light; system is Settings → Appearance's (#304).
 - **No account card at the sidebar's foot**, and no Launch entry yet (#301);
   Settings is in the Tools group rather than pinned to the bottom.
 - **Phone tabs: Overview, Alerts and More**, until the Services and

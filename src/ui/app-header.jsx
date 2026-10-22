@@ -31,13 +31,19 @@
  *              640px.
  *   search     opens the command palette; from 1024px the mock's wide button
  *              with the shortcut, narrower an icon, leaving the sentence room.
+ *   theme      with `onThemeChange`, the mock's toggle (#304): a sun in dark,
+ *              "Switch to light theme", a moon in light, "Switch to dark
+ *              theme". It reads the theme of the UiRoot it is drawn in and
+ *              calls `onThemeChange('light')` or `('dark')`; system is
+ *              Settings → Appearance's.
  *   settings   a link to Settings.
  *   logout     Log out, when the server asks for a sign-in.
  *
  * `onNavigate(event, href)` handles a link's click (the router's followLink),
  * so a modified click still opens a new browser tab.
  */
-import { LogOut, Search, SlidersHorizontal } from 'lucide-react';
+import { useContext } from 'react';
+import { LogOut, Moon, Search, SlidersHorizontal, Sun } from 'lucide-react';
 import { buttonVariants } from './button.jsx';
 import { IconButton } from './icon-button.jsx';
 import { Skeleton } from './skeleton.jsx';
@@ -46,6 +52,7 @@ import { StatusWord } from './status-word.jsx';
 import { Tooltip } from './tooltip.jsx';
 import { cn } from './lib/utils.js';
 import { agoText, useAgo } from './lib/ago.js';
+import { RootSwitchesContext, SWITCHES } from './lib/portal.js';
 import { EMPTY, EMPTY_SENTENCE, NO_SIGNAL, WORDS, toState } from './lib/status.js';
 
 /**
@@ -171,6 +178,26 @@ function HeaderStatus({ status = {}, onNavigate }) {
   );
 }
 
+/**
+ * The theme toggle: to light from dark, to dark from light, by the theme of
+ * the UiRoot it is drawn in (none: dark, the default).
+ */
+function ThemeToggle({ onThemeChange }) {
+  const light = useContext(RootSwitchesContext)?.[SWITCHES.theme.attribute] === 'light';
+  const label = light ? 'Switch to dark theme' : 'Switch to light theme';
+  return (
+    <Tooltip content={label}>
+      <IconButton
+        label={label}
+        onClick={() => onThemeChange(light ? 'dark' : 'light')}
+        className="shrink-0"
+      >
+        {light ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}
+      </IconButton>
+    </Tooltip>
+  );
+}
+
 function AppHeader({
   name = 'JagHelm',
   logoUrl,
@@ -181,6 +208,7 @@ function AppHeader({
   shortcut = '⌘K',
   settingsHref = '/settings',
   settingsCurrent = false,
+  onThemeChange,
   onLogout,
   onNavigate,
   className,
@@ -238,6 +266,7 @@ function AppHeader({
           </Tooltip>
         </>
       )}
+      {onThemeChange && <ThemeToggle onThemeChange={onThemeChange} />}
       <Tooltip content="Settings">
         <a
           href={settingsHref}

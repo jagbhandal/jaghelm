@@ -1880,6 +1880,7 @@ function AppHeaderState() {
         status={{ state: 'crit', sentence: INCIDENT_SENTENCE }}
         updated={<UpdatedAgo at={ANSWERED} />}
         onOpenPalette={noop}
+        onThemeChange={noop}
         onLogout={noop}
       />
       <AppHeader
@@ -1887,15 +1888,22 @@ function AppHeaderState() {
         status={{ state: 'ok', sentence: 'All 32 services up · 6 nodes healthy' }}
         updated={<UpdatedAgo at={ANSWERED} />}
         onOpenPalette={noop}
+        onThemeChange={noop}
         settingsCurrent
       />
       <AppHeader
         status={{ reach: 'down', state: 'crit', sentence: INCIDENT_SENTENCE }}
         updated={<UpdatedAgo at={ANSWERED - 168_000} />}
         onOpenPalette={noop}
+        onThemeChange={noop}
         onLogout={noop}
       />
-      <AppHeader status={{ reach: 'loading' }} onOpenPalette={noop} onLogout={noop} />
+      <AppHeader
+        status={{ reach: 'loading' }}
+        onOpenPalette={noop}
+        onThemeChange={noop}
+        onLogout={noop}
+      />
     </Stack>
   );
 }
@@ -1907,6 +1915,7 @@ function AppHeaderFirstRunState() {
         status={{ state: 'empty', sentence: 'Nothing monitored yet' }}
         updated={<UpdatedAgo at={ANSWERED} />}
         onOpenPalette={noop}
+        onThemeChange={noop}
       />
     </Stack>
   );
@@ -1926,6 +1935,7 @@ function AppHeaderNoSignalState() {
         }}
         updated={<UpdatedAgo at={ANSWERED - 168_000} />}
         onOpenPalette={noop}
+        onThemeChange={noop}
         onLogout={noop}
       />
       <AppHeader
@@ -1938,8 +1948,14 @@ function AppHeaderNoSignalState() {
         }}
         updated={<UpdatedAgo at={ANSWERED - 168_000} />}
         onOpenPalette={noop}
+        onThemeChange={noop}
       />
-      <AppHeader status={{ reach: 'down' }} onOpenPalette={noop} onLogout={noop} />
+      <AppHeader
+        status={{ reach: 'down' }}
+        onOpenPalette={noop}
+        onThemeChange={noop}
+        onLogout={noop}
+      />
     </Stack>
   );
 }

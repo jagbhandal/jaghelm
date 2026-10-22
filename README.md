@@ -281,7 +281,7 @@ Custom drag-resize grid built for this app. Panels auto-grow to fit content, sna
  
 ### Themes and typography
  
-Ten themes (six dark, four light) inspired by common editor schemes — One Dark Pro, Dracula, GitHub Dark, Catppuccin, Solarized, etc. Five font family presets and eight independent size sliders so you can tune readability for whatever screen JagHelm lives on.
+Dark and light themes, or System to follow your device as it switches, with one violet accent; the header's sun and moon button flips between dark and light. Five font family presets and eight independent size sliders so you can tune readability for whatever screen JagHelm lives on.
  
 ### PWA installable
  

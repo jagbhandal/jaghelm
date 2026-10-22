@@ -90,7 +90,7 @@ export default class ErrorBoundary extends React.Component {
             onClick={() => window.location.reload()}
             style={{
               padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer',
-              background: '#6366f1', color: '#fff', fontSize: 14, fontWeight: 500,
+              background: '#7f22fe', color: '#fff', fontSize: 14, fontWeight: 500,
             }}
           >
             Reload Dashboard

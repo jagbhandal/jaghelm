@@ -39,7 +39,7 @@ export default function DroppablePanel({ panelId, children, disabled }) {
         <div style={{
           position: 'absolute',
           inset: 0,
-          background: 'rgba(99, 102, 241, 0.06)',
+          background: 'oklch(0.541 0.281 293.009 / 0.06)',
           borderRadius: 'var(--card-radius)',
           pointerEvents: 'none',
           zIndex: 10,

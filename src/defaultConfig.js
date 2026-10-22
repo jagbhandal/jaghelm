@@ -12,7 +12,6 @@ export function defaultConfig() {
     bgOpacity: 0.3,
     overlayOpacity: 0.75,
     showDots: true,
-    accentColor: '#6366f1',
     refreshInterval: 30,
     searchEngine: 'google',
     showSearch: true,

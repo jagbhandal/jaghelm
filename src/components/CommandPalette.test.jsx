@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import CommandPalette from './CommandPalette';
 import { ConfigProvider } from '../context/ConfigContext.jsx';
-import { THEMES } from './settings/themes.js';
+import { THEMES } from '../shell/theme.js';
 
 const renderPalette = (props = {}, config = {}) => {
   const handlers = {
@@ -53,7 +53,18 @@ describe('CommandPalette', () => {
     expect(within(list).getByText('Alerts')).toBeInTheDocument();
     expect(within(list).getByText('Settings')).toBeInTheDocument();
     expect(within(list).getByText('Open Media')).toBeInTheDocument();
-    expect(within(list).getByText(THEMES[0].name)).toBeInTheDocument();
+    for (const t of THEMES) expect(within(list).getByText(t.label)).toBeInTheDocument();
+  });
+
+  it('offers the three themes, Dark, Light and System, marking the current one', () => {
+    renderPalette({ theme: 'system' });
+    const list = screen.getByRole('listbox');
+    const themes = THEMES.map((t) => within(list).getByText(t.label).closest('[role="option"]'));
+    expect(themes.map((o) => o.textContent)).toEqual([
+      'ThemeDark',
+      'ThemeLight',
+      'ThemeSystemcurrent',
+    ]);
   });
 
   it('a page command opens its route', async () => {
@@ -97,7 +108,7 @@ describe('CommandPalette', () => {
     const user = userEvent.setup();
     const target = THEMES[2];
     const h = renderPalette();
-    await user.click(screen.getByText(target.name));
+    await user.click(screen.getByText(target.label));
     expect(h.setTheme).toHaveBeenCalledWith(target.id);
     expect(h.onClose).toHaveBeenCalled();
   });

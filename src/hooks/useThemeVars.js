@@ -4,8 +4,11 @@
  *
  * Extracted verbatim from AppMain so the god-component just composes hooks.
  * Two effects, in the same relative order:
- *   1. accent colour + bg/overlay opacity + font family + font sizes
+ *   1. bg/overlay opacity + font family + font sizes
  *   2. card blur override
+ *
+ * No accent: there is one, violet, which the theme sets (src/styles/global.css,
+ * src/ui/tokens.css; #304). A config's old `accentColor` is not read.
  *
  * Every preset's webfonts are self-hosted (src/styles/fonts.css, #244), so
  * picking a preset only points the --font-* variables at its families: the
@@ -51,13 +54,6 @@ export const FONT_FAMILIES = {
 export function useThemeVars(config) {
   useEffect(() => {
     const root = document.documentElement;
-    const hex = config.accentColor || '#6366f1';
-    root.style.setProperty('--accent', hex);
-    const r = parseInt(hex.slice(1, 3), 16),
-      g = parseInt(hex.slice(3, 5), 16),
-      b = parseInt(hex.slice(5, 7), 16);
-    root.style.setProperty('--accent-glow', `rgba(${r},${g},${b},0.12)`);
-    root.style.setProperty('--accent-light', hex);
     root.style.setProperty('--bg-opacity', String(config.bgOpacity ?? 0.3));
     root.style.setProperty('--overlay-opacity', String(config.overlayOpacity ?? 0.75));
 
@@ -81,13 +77,7 @@ export function useThemeVars(config) {
       root.style.setProperty('--fs-service-stat-value', `${fs.serviceStatValue}px`);
     if (fs.serviceStatLabel)
       root.style.setProperty('--fs-service-stat-label', `${fs.serviceStatLabel}px`);
-  }, [
-    config.accentColor,
-    config.bgOpacity,
-    config.overlayOpacity,
-    config.fontFamily,
-    config.fontSizes,
-  ]);
+  }, [config.bgOpacity, config.overlayOpacity, config.fontFamily, config.fontSizes]);
 
   // Card blur override
   useEffect(() => {

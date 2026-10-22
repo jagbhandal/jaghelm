@@ -10,7 +10,7 @@ import React, {
 import LoginPage from './components/LoginPage';
 import CommandPalette from './components/CommandPalette';
 import DashboardView from './views/DashboardView';
-import { THEMES } from './components/settings/themes.js';
+import { useTheme } from './shell/theme.js';
 import { ConfigProvider } from './context/ConfigContext.jsx';
 import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
 import { useThemeVars } from './hooks/useThemeVars.js';
@@ -57,14 +57,9 @@ export default function App() {
   // The server is the read-only public demo (#248): it says so in the auth check.
   const [demo, setDemo] = useState(false);
 
-  // Apply the persisted theme to the document before login resolves, so the
-  // login screen renders in the user's chosen theme (matching prior behaviour
-  // where App's theme effect ran regardless of auth state). AppMain owns the
-  // live theme afterwards.
-  useEffect(() => {
-    const stored = localStorage.getItem('jaghelm-theme');
-    if (stored) document.documentElement.setAttribute('data-theme', stored);
-  }, []);
+  // The theme (dark, light or system, src/shell/theme.js) is App's, so the
+  // login screen draws in it too; AppMain shows and changes it.
+  const theme = useTheme();
 
   // Check auth on mount.
   //
@@ -134,7 +129,7 @@ export default function App() {
   // settings (and the save effects in AppMain) can useToast()/useConfirm().
   return (
     <OverlayProvider>
-      <AppMain authRequired={authRequired} demo={demo} onLogout={handleLogout} />
+      <AppMain authRequired={authRequired} demo={demo} onLogout={handleLogout} theme={theme} />
     </OverlayProvider>
   );
 }
@@ -156,12 +151,11 @@ function instanceName(title) {
   return t && t !== 'JAGHELM' ? t : 'JagHelm';
 }
 
-function AppMain({ authRequired, demo, onLogout }) {
+function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme } }) {
   const toast = useToast();
   // The URL is the page (src/router, #296): a deep link, Back and Forward, a
   // reload and a chunk reload after a deploy all land where it says.
   const { route, params } = useRoute();
-  const [theme, setTheme] = useState(() => localStorage.getItem('jaghelm-theme') || 'dark');
   const [tick, setTick] = useState(0);
   // Start with localStorage for instant render; the server fetch overrides it.
   // `migrate` upgrades the legacy `jagnet-config` key to the current one.
@@ -170,11 +164,6 @@ function AppMain({ authRequired, demo, onLogout }) {
   // the browser's copy lacks may still be on its way.
   const [configLoaded, setConfigLoaded] = useState(false);
   const intervalRef = useRef(null);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('jaghelm-theme', theme);
-  }, [theme]);
 
   // ⌘K / Ctrl+K toggles the command palette from anywhere.
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -299,11 +288,8 @@ function AppMain({ authRequired, demo, onLogout }) {
     document.title = pageTitle ? `${pageTitle} — ${name}` : name;
   }, [pageTitle, name]);
 
-  // Today's ten themes, until #304: a light one draws the shell light.
-  const switches = useMemo(
-    () => ({ theme: THEMES.find((t) => t.id === theme)?.light ? 'light' : 'dark' }),
-    [theme]
-  );
+  // The new UI's roots draw the theme shown: system's is the device's.
+  const switches = useMemo(() => ({ theme: shown }), [shown]);
 
   const lazyFallback = (
     <div
@@ -336,6 +322,7 @@ function AppMain({ authRequired, demo, onLogout }) {
               updated={poll.updated}
               routeId={route.id}
               onOpenPalette={openPalette}
+              onThemeChange={setTheme}
               onLogout={logout}
             />
           }
