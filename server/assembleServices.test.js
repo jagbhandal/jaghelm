@@ -418,6 +418,26 @@ test('assemble: with presence unknown (a Prometheus query failed) no breadcrumb 
   assert.equal(run(args).breadcrumbCount, 1, 'presence known (the default): drawn as before');
 });
 
+test('assemble: #476: a node unread for a reason that lasts holds back its own breadcrumbs only; its verdict is kept for the status model', () => {
+  const missing = [
+    { container: 'postgres', lastSeenNode: 'vm103', lastSeenAt: 1000, ageMs: 120_000 },
+    { container: 'adguard', lastSeenNode: 'pi', lastSeenAt: 1000, ageMs: 120_000 },
+  ];
+  const unread = ['containers', 'cpu', 'disk', 'mem', 'reachable', 'temp', 'uptime'];
+  const r = run({
+    nodeResults: [
+      ['vm103', nodeCfg, { ...nodeData([]), failedReads: unread, whyNoUp: 'not-scraped-too-long' }],
+      ['pi', nodeCfg, { ...nodeData([]), reachable: true }],
+    ],
+    monitors: {},
+    containerRegistry: fakeRegistry(missing),
+  });
+  assert.deepEqual(r.nodes.vm103.services, [], 'what vm103 ran may still run there');
+  assert.deepEqual(r.nodes.pi.services.map((s) => `${s.uid} ${s.source}`), ['pi:adguard presence']);
+  assert.equal(r.breadcrumbCount, 1);
+  assert.deepEqual(r.whyNoUp, { vm103: 'not-scraped-too-long' });
+});
+
 test('assemble: each node carries reachable from discovery, null when it has none', () => {
   const { nodes } = run({
     nodeResults: [
