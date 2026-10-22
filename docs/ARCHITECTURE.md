@@ -828,9 +828,15 @@ integration connection-test endpoint.
   a config change, and the first success after failures logs at info
   (`integrations/backoff.js`).
 - **Access log** (`accessLog.js`): one line per request with its full path and no
-  query string or fragment; 5xx at `error`, 4xx and requests of 300 ms or more at
-  `info`, the rest at `debug`. `/metrics`, `/api/health` and `/api/readyz` are not
-  logged unless they fail (5xx).
+  query string or fragment. `accessLevel()` picks the level (#492): 5xx at
+  `error`; at `info`, every 4xx (a 401 or 403 included, so a signed-out tab or an
+  unauthenticated poller still shows), every request of 300 ms or more
+  (`SLOW_REQUEST_MS`, the feed-latency SLO line), and every request with a method
+  other than GET, HEAD or OPTIONS (config saves, cron reports, sign-ins and failed
+  sign-ins); a fast successful read, such as a dashboard poll's 200 or 304, at
+  `debug`, so `LOG_LEVEL=debug` shows every request. There is no logout request
+  to log: signing out only drops the token in the client. `/metrics`,
+  `/api/health` and `/api/readyz` are not logged unless they fail (5xx).
 - **Prometheus metrics** at `/metrics` via `prom-client` (`metrics.js`): request
   rate, latency histograms, refresh-loop health.
 - **Two probes**: `/api/health` (liveness; reflects refresh-loop liveness -- 503
