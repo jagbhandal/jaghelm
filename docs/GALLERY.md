@@ -44,7 +44,9 @@ will on a screen. The gallery lays itself out with inline styles that read the
 role tokens; the few classes it writes are ones `src/ui/` already uses
 (`npm test` checks). It serves `public/` as the app does, so the header and
 the sign-in page draw JagHelm's logo from it (#530), and a variant is shot
-once its fonts and images have loaded.
+once its fonts and images have loaded. It loads the floating layer before it
+draws (`src/ui/lib/floating.jsx`, #444), so a popup draws as the app's do once
+the layer is in, never as its trigger waiting for it.
 
 ## Files
 

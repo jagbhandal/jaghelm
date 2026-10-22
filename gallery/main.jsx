@@ -20,6 +20,7 @@ import '@ui/tailwind.css';
 import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { UiRoot } from '@ui/root';
+import { floatingLayer } from '@ui/lib/floating.jsx';
 import {
   ACCENTS,
   CATALOG,
@@ -251,4 +252,10 @@ for (const id of Object.keys(RENDERS)) {
 let page = <IndexPage params={params} />;
 if (only) page = variant ? <StatePage variant={variant} /> : <Missing id={only} />;
 
-createRoot(document.getElementById('root')).render(<StrictMode>{page}</StrictMode>);
+// The floating layer first (src/ui/lib/floating.jsx, #444), so every popup
+// draws from its first render, as the app's do once the layer is in: a state
+// is shot as it looks, never as its trigger waiting for the layer.
+floatingLayer
+  .load()
+  .catch((error) => console.error('gallery: the floating layer did not load', error))
+  .then(() => createRoot(document.getElementById('root')).render(<StrictMode>{page}</StrictMode>));
