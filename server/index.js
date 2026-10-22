@@ -39,6 +39,7 @@ import { initSecrets } from './secrets.js';
 import { initDiscovery, discoverNodes } from './discovery.js';
 import { initMonitors } from './monitors.js';
 import { initRegistry } from './integrations/registry.js';
+import { reportUnusedIntegrationSecrets } from './integrations/unusedSecrets.js';
 import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
 import { DATA_DIR } from './util/dataDir.js';
@@ -312,6 +313,10 @@ async function startSubsystems() {
     log.info({ nodes: nodeLabels }, 'discovered nodes');
     config = generateDefaultConfig(nodeLabels);
     saveConfig(config);
+  } else {
+    // Integration secrets no entry uses (a delete before #415, or a save
+    // interrupted between its two writes): counted in the log, never deleted.
+    reportUnusedIntegrationSecrets();
   }
 
   startConfigWatcher();

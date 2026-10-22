@@ -88,7 +88,8 @@ server/                     Express API (Node 26, ESM)
   icon-sources.js           the icon repositories it may fetch from; the web client imports it too
   config.js                 services.yaml: load, hot-reload watch, copy-on-read, its version,
                             and the one atomic writer, over the version read (see 6)
-  secrets.js                AES-256-GCM secret store (per-install KDF salt)
+  secrets.js                AES-256-GCM secret store (per-install KDF salt), and the
+                            snapshot a failed integration save is undone to (see 4.4)
   cron-store.js             cron history (bounded)
   errors.js                 apiError + global JSON error handler
   version.js                single source of version (reads package.json)
@@ -830,7 +831,22 @@ Key properties:
   schema (`util/configSchema.js`) on read, so a malformed file fails loudly.
 - **Secrets** (`secrets.js`) are AES-256-GCM encrypted with a **per-install
   random KDF salt** (`data/.secrets-salt`, legacy-static-salt fallback). All
-  credential stores write `0600`.
+  credential stores write `0600`. A change `secrets.json` can't take throws
+  and leaves the store as it was, so a secret is never held only in memory.
+  An integration's secrets (the `integration_*` names a Settings save
+  writes) live and die with its entry in `services.yaml`, which is the
+  record (#415, #502). A save stores what it needs before writing the file;
+  when that write fails or is refused, or a secret can't be written, the
+  store goes back to its snapshot from before the save (`snapshotSecrets` /
+  `restoreSecrets`), so `secrets.json` ends byte-for-byte as it was. A save
+  that creates an entry first clears what an older delete left under its
+  key. A delete, or a rename's old names, drops the secrets no remaining
+  entry uses once the file is written. A secret is in use while an entry's
+  key makes it that entry's keyed secret, or a `$secret:` reference anywhere
+  in the config names it (`integrations/unusedSecrets.js`); other names are
+  the user's. At boot one log line counts the unused integration secrets,
+  never naming them, and nothing is deleted: a hand edit (an entry commented
+  out, a typo, a rename) makes a secret look unused that is still wanted.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
   secrets/auth/config/cron and the icon cache never split across locations.
 
@@ -2224,7 +2240,8 @@ All state is files under the data dir (no DB):
     key's name, replacing anything left there; one the old key doesn't have is
     removed under the new key too, since a preset resolves those names ahead
     of the entry's `$secret:` reference. A reference to an old name is pointed
-    at the new one, and the old names are removed once the move is written.
+    at the new one, and the old names are removed once the move is written,
+    unless another entry still uses one (4.4).
   - **A taken key is refused** (#414). A save never lands on a key another
     integration holds: a rename onto one, or a new integration from the form
     (which sends `create: true`) under one, is refused with a 409
@@ -2241,6 +2258,10 @@ All state is files under the data dir (no DB):
     `{ "enabled": true|false }` and nothing else) sets `enabled` alone, writes
     nothing when the entry is already in that state, and asks for a retry when
     it enables.
+  - **Delete** (`DELETE /api/integrations/:key`, the entry found by its own
+    key) removes the entry and then its secrets (4.4), so a new integration
+    under that key starts with no credential. A save whose write fails
+    stores nothing (4.4).
 - **display config** -- title, theme, layout (`{lg,md,sm}` grid item arrays),
   sections (per-panel visibility/order/colour), nav/search/weather flags,
   links, tabs, fonts. Read copy-on-read; validated by Zod.
