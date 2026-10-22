@@ -1,13 +1,15 @@
 import React from 'react';
 import UsageBar from './UsageBar.jsx';
 import { StatusLamp } from '@ui/status-lamp';
+import { colourOf } from '../data/board.js';
 
 /**
  * Compact node card, drawn from the status model (#325; data/board.js
  * nodeCardsOf). Header: node name (Outfit) + subtitle (mono) + the node's
  * StatusLamp, its state and word the model's (named by the word: "Healthy",
  * "Warning", "Unreachable", "No signal"). Then its hosted services as the
- * model counts them, "4 / 5 services up · 1 down" with the down count red, or
+ * model counts them, "4 / 5 services up · 1 down" with the down count red
+ * (steel while the status is stale: `downState`), or
  * "No services" for a node that hosts none (a Proxmox host), never "0 up".
  * Then CPU + MEM + a third bar (TEMP, or DISK when the node has no
  * temperature or the model has its disk over a line, #273), each coloured by
@@ -33,7 +35,7 @@ export default function NodeCard({ node, onTap }) {
             {up} / {total} {total === 1 ? 'service' : 'services'} up
             {down > 0 && ' · '}
             {down > 0 && (
-              <span className="node-card__down-count" style={{ color: 'var(--red)' }}>{down} down</span>
+              <span className="node-card__down-count" style={{ color: colourOf(node.downState) }}>{down} down</span>
             )}
           </>
         )}

@@ -93,6 +93,8 @@ function SubsystemCell({ cell }) {
       </div>
       <StatusWord word={cell.word} severity={severity} />
       <span className="subsystem-cell__detail">{cell.detail ?? cell.value}</span>
+      {/* The Power cell's UPS readings the model doesn't carry (mobile board.js). */}
+      {cell.readings && <span className="subsystem-cell__readings">{cell.readings}</span>}
     </div>
   );
 }

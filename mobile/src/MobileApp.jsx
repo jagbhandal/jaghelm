@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { App } from '@capacitor/app';
 import { TABS } from './TABS.js';
 import { LAST_TAB_KEY } from './runtimeConfig.js';
 import { getPref, setPref } from './storage/prefsAdapter.js';
 import { useNavStack } from './nav/useNavStack.js';
 import { useDashboard } from './data/useDashboard.js';
-import { annunciatorOf } from './data/board.js';
+import { annunciatorOf, withServerCause } from './data/board.js';
 import { useStatusFreshness } from '@shared/shell/statusFreshness.js';
 import Overview from './views/Overview.jsx';
 import Services from './views/Services.jsx';
@@ -32,12 +32,14 @@ export default function MobileApp() {
   const dashboard = useDashboard();
   // Whether the status is current, by the web's one rule (#480): the poll's
   // reach, or no answer for longer than two polls and the request timeout.
-  // Every screen draws a stale status's states as no signal.
-  const freshness = useStatusFreshness({
+  // Every screen draws a stale status's states as no signal. A server older
+  // than the status model (a 404) says so, not "Can't reach JagHelm".
+  const seen = useStatusFreshness({
     status: dashboard.status,
     reach: dashboard.reach,
     updated: dashboard.updated,
   });
+  const freshness = useMemo(() => withServerCause(seen, dashboard.reach), [seen, dashboard.reach]);
   const data = { ...dashboard, freshness };
   // Keep a live ref so the single back listener always sees current nav/active.
   const navRef = useRef(nav); navRef.current = nav;

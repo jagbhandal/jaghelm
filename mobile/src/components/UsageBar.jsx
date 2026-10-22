@@ -1,19 +1,12 @@
 import React from 'react';
-
-// The model's level for a reading → the fill's colour token. The bar judges
-// nothing (#325): its colour is the reading's condition in /api/status.
-const FILL = {
-  ok: 'var(--green)',
-  warn: 'var(--amber)',
-  crit: 'var(--red)',
-  unknown: 'var(--steel)',
-};
+import { colourOf } from '../data/board.js';
 
 /**
  * A labeled usage bar (CPU/MEM/DISK/TEMP). `percent` (0–100) drives the fill,
  * `shown` is the number as the model prints it ("94%", "86°C"), and `state`
  * is the model's level for the reading (its node's `conditions`; no signal
- * while the status is stale), which colours the fill. With no value (the
+ * while the status is stale), which colours the fill (colourOf): the bar
+ * judges nothing (#325). With no value (the
  * model didn't read it this cycle) the bar hides and shows a steel em-dash.
  * Track uses --border.
  */
@@ -35,7 +28,7 @@ export default function UsageBar({ label, shown, percent, state }) {
         <div className="usage-bar__track">
           <div
             className="usage-bar__fill"
-            style={{ width: `${pct}%`, background: FILL[state] ?? FILL.unknown }}
+            style={{ width: `${pct}%`, background: colourOf(state) }}
           />
         </div>
       )}

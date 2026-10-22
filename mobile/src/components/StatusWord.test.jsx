@@ -42,6 +42,12 @@ describe('StatusWord', () => {
       const span = container.firstChild;
       expect(span).toHaveStyle({ color: expectedColor });
     });
+
+    it('the model\'s maintenance is its own colour, not steel', () => {
+      const { container } = render(<StatusWord word="Maintenance" state="maintenance" />);
+      expect(container.firstChild).toHaveClass('word--maintenance');
+      expect(container.firstChild).toHaveStyle({ color: 'var(--jh-maintenance-fg)' });
+    });
   });
 
   describe('typography', () => {

@@ -38,6 +38,11 @@
   --muted: #848b98;
   --steel: #848b98;
 
+  /* Maintenance: tokens.css's --jh-maintenance-fg in the dark theme
+     (blue-740). The --jh- roles live on .jh-ui, which #mobile-root isn't, so
+     the one the Android look uses is restated here. */
+  --jh-maintenance-fg: oklch(0.74 0.14 254);
+
   /* --- Text --- */
   --text: #e6e9ef;
   --label: #9aa3b5;
@@ -241,13 +246,11 @@
 .node-card__type { font-family: var(--mono); font-size: var(--text-2xs); color: var(--label); }
 .node-card__lamp { display: flex; align-items: center; margin-left: auto; }
 .node-card__count { font-family: var(--mono); font-size: var(--text-xs); color: var(--label); }
-.node-card__down-count { color: var(--red); }
 .node-card__bars, .node-detail__bars { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }
 .node-detail__bars { margin-bottom: var(--space-4); }
 /* NodeDetail status header: lamp + word + count */
 .node-detail__head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
 .node-detail__count { font-family: var(--mono); font-size: var(--text-xs); color: var(--label); margin-left: auto; }
-.node-detail__down-count { color: var(--red); }
 .mobile-view__empty { color: var(--muted); font-size: var(--text-base); }
 
 /* --- Phase 3: Alerts + incident detail --- */
@@ -261,9 +264,13 @@
 .alerts-section--active { color: var(--red); }
 .alert-row { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: var(--space-3) var(--space-4); background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: var(--card-radius-sm); margin-bottom: var(--space-2); min-height: 44px; }
 .alert-row--active { background: var(--red-bg); border-color: var(--red-border); }
+/* A stale status's rows (#480): last known, no signal, never active red. */
+.alert-row--stale { border-color: var(--steel); }
+.alerts-stale { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--steel); margin: var(--space-2) 0; }
 .alert-row__title { font-family: var(--font-display); font-size: var(--text-base); color: var(--text-primary); }
 .alert-row__node, .alert-row__cause { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
 .detail-cause { color: var(--text-secondary); font-size: var(--text-sm); }
+.detail-readings { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-muted); }
 .detail-section { font-family: var(--font-display); font-size: var(--text-base); color: var(--text-secondary); margin: var(--space-4) 0 var(--space-2); }
 .timeline { list-style: none; padding: 0; margin: 0 0 var(--space-4); }
 .timeline__item { display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) 0; border-left: 2px solid var(--border-color); padding-left: var(--space-3); min-height: 44px; }
@@ -459,6 +466,7 @@
 #mobile-root .lamp--caution  { color: var(--amber); }
 #mobile-root .lamp--healthy  { color: var(--green); }
 #mobile-root .lamp--unknown  { color: var(--steel); }
+#mobile-root .lamp--maintenance { color: var(--jh-maintenance-fg); }
 
 /* StatusWord: mono weight-500 UPPERCASE label, colored by severity. */
 #mobile-root .status-word {
@@ -474,6 +482,7 @@
 #mobile-root .word--caution  { color: var(--amber); }
 #mobile-root .word--healthy  { color: var(--green); }
 #mobile-root .word--unknown  { color: var(--steel); }
+#mobile-root .word--maintenance { color: var(--jh-maintenance-fg); }
 
 /* =========================================================================
    UptimeRing — inline-SVG radial arc gauge for the uptime24 scalar.
@@ -653,6 +662,13 @@
   font-family: var(--mono);
   font-size: var(--text-2xs);
   color: var(--label);
+}
+
+/* The Power cell's UPS readings, under the model's detail (display only). */
+#mobile-root .subsystem-cell__readings {
+  font-family: var(--mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
 }
 
 /* =========================================================================

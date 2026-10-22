@@ -10,15 +10,6 @@
 /** Format a uptime24 scalar (0–1) as "NN.N"; returns null when u is null/undefined. */
 export function uptimePct(u) { return u != null ? (u * 100).toFixed(1) : null; }
 
-/**
- * CSS color token for a uptime24 scalar, the UptimeRing's arc. The model
- * doesn't judge a service's 24 h uptime, so this is the ring's own ramp, not a
- * status: it never colours a lamp, a word or a row.
- */
-export function uptimeColor(u) {
-  return u == null ? 'var(--text-muted)' : u > 0.99 ? 'var(--green)' : u > 0.95 ? 'var(--amber)' : 'var(--red)';
-}
-
 /** Flatten { nodes:{key:{services}} } → flat Service[] tagged with nodeKey/nodeName. */
 export function flattenServices(servicesBody) {
   const nodes = servicesBody && servicesBody.nodes;

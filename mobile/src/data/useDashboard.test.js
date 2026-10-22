@@ -12,7 +12,7 @@ const reads = vi.hoisted(() => ({
   getAllIntegrations: vi.fn(),
   getDisplayConfig: vi.fn(),
 }));
-const { getServices, getStatus, getDisplayConfig } = reads;
+const { getServices, getStatus, getUPSStatus, getDisplayConfig } = reads;
 const NOT_MODIFIED_NO_BODY = vi.hoisted(() => Object.freeze({ __jaghelm304NoBody: true }));
 vi.mock('@shared/hooks/useData.js', () => ({
   ...reads,
@@ -34,6 +34,7 @@ import { useDashboard } from './useDashboard.js';
 const INTERVAL = 30000;
 const SERVICES = { nodes: { 'vm-101': { display_name: 'VM 101', metrics: {}, services: [] } } };
 const STATUS = { overall: { state: 'ok', sentence: '1 node healthy' }, issues: [], subsystems: [], entities: [] };
+const UPS = { status: 1, charge: 100, runtime: 2700, load: 12, ok: true, configured: true, model: 'UPS' };
 // getStatus's answer: the body, and the server's Last-Modified and Date.
 const answer = (body, { builtAt = null, sentAt = null } = {}) => ({ body, builtAt, sentAt });
 
@@ -55,6 +56,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   getServices.mockResolvedValue(SERVICES);
   getStatus.mockResolvedValue(answer(STATUS));
+  getUPSStatus.mockResolvedValue(UPS);
   // Real /api/display-config shape: top-level integer refreshInterval (seconds).
   getDisplayConfig.mockResolvedValue({ refreshInterval: 30 });
   appState.listener = null;
@@ -122,15 +124,19 @@ describe('useDashboard: the request budget (#237, #238, #325)', () => {
       .flatMap(([name, fn]) => Array(fn.mock.calls.length).fill(name))
       .sort();
 
-  it('a round is two requests, the cards and the status: fewer than the three it was, and no /ups or /cron/status', async () => {
+  // The cards, the status, and the UPS's readings the model doesn't carry:
+  // three, as it was before #325, and no /cron/status.
+  const ROUND = ['getServices', 'getStatus', 'getUPSStatus'];
+
+  it('a round is three requests, the cards, the status and the UPS: no more than it was, and no /cron/status', async () => {
     const { unmount } = await mount();
-    expect(requests()).toEqual(['getServices', 'getStatus']);
+    expect(requests()).toEqual(ROUND);
     vi.clearAllMocks();
     await advance(INTERVAL);
-    expect(requests()).toEqual(['getServices', 'getStatus']);
+    expect(requests()).toEqual(ROUND);
     vi.clearAllMocks();
     await advance(INTERVAL);
-    expect(requests()).toEqual(['getServices', 'getStatus']);
+    expect(requests()).toEqual(ROUND);
     unmount();
   });
 });
@@ -150,6 +156,16 @@ describe('useDashboard: the status model, read as the web reads it (#325)', () =
     const { result, unmount } = await mount();
     expect(result.current.status).toBeNull();
     expect(result.current.reach).toBe('waiting');
+    unmount();
+  });
+
+  it('a 404 is a server older than the status model: its own reach, not down (#325)', async () => {
+    getStatus.mockRejectedValue(new Error('HTTP 404'));
+    const { result, unmount } = await mount();
+    expect(result.current.status).toBeNull();
+    expect(result.current.reach).toBe('old');
+    // The cards still load from such a server.
+    expect(result.current.error).toBeNull();
     unmount();
   });
 
@@ -187,6 +203,36 @@ describe('useDashboard: the status model, read as the web reads it (#325)', () =
     getStatus.mockRejectedValue(new Error('fetch failed'));
     await advance(INTERVAL);
     expect(result.current.updated.get()).toBe(first);
+    unmount();
+  });
+});
+
+describe('useDashboard: the UPS readings (display only, #325)', () => {
+  it('exposes /api/ups as it came, for the readings the model doesn\'t carry', async () => {
+    const { result, unmount } = await mount();
+    expect(result.current.ups).toBe(UPS);
+    expect(getUPSStatus).toHaveBeenCalledWith(true);
+    unmount();
+  });
+
+  it('a failed UPS read shows no readings, and fails nothing else', async () => {
+    const { result, unmount } = await mount();
+    getUPSStatus.mockRejectedValue(new Error('HTTP 502'));
+    await advance(INTERVAL);
+    expect(result.current.ups).toBeNull();
+    expect(result.current.error).toBeNull();
+    expect(result.current.reach).toBe('ok');
+    unmount();
+  });
+
+  it('a 304 keeps the same UPS object', async () => {
+    const { result, unmount } = await mount();
+    const first = result.current.ups;
+    await advance(INTERVAL); // the mock hands back the same reference, as a 304 does
+    expect(result.current.ups).toBe(first);
+    getUPSStatus.mockResolvedValue(NOT_MODIFIED_NO_BODY);
+    await advance(INTERVAL);
+    expect(result.current.ups).toBe(first);
     unmount();
   });
 });

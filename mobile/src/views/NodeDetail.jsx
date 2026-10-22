@@ -4,11 +4,12 @@ import UsageBar from '../components/UsageBar.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
-import { FRESH, nodeCardsOf, serviceRowsOf } from '../data/board.js';
+import { FRESH, colourOf, nodeCardsOf, serviceRowsOf } from '../data/board.js';
 
 /**
  * NodeDetail — the node as the status model has it (#325): its lamp and word,
- * its hosted services counted by the model, its reason when it isn't healthy,
+ * its hosted services counted by the model (the down count red, steel while
+ * the status is stale), its reason when it isn't healthy,
  * the metric bars (CPU, MEM, TEMP when the node has a temperature, DISK), each
  * coloured by the model's level for it, and its services, worst first. The
  * card has room for three bars and swaps TEMP for DISK when the disk is over
@@ -52,7 +53,7 @@ export default function NodeDetail({ data, nav, params }) {
               {up} / {total} {total === 1 ? 'service' : 'services'} up
               {down > 0 && ' · '}
               {down > 0 && (
-                <span className="node-detail__down-count" style={{ color: 'var(--red)' }}>{down} down</span>
+                <span className="node-detail__down-count" style={{ color: colourOf(node.downState) }}>{down} down</span>
               )}
             </>
           )}

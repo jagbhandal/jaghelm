@@ -30,13 +30,14 @@ export const STALE = Object.freeze({
 
 /**
  * A screen's `data` for one model cycle's inputs: /api/status (as JSON, as a
- * client gets it) and the /api/services cards the inputs carry, fresh, with
- * `extra` laid over it.
+ * client gets it) and the /api/services cards and /api/ups readings the inputs
+ * carry, fresh, with `extra` laid over it.
  */
 export function boardOf(cycleInputs, extra = {}) {
   return {
     status: JSON.parse(JSON.stringify(once(cycleInputs))),
     servicesBody: JSON.parse(JSON.stringify(cycleInputs.services)),
+    ups: JSON.parse(JSON.stringify(cycleInputs.ups ?? null)),
     reach: 'ok',
     freshness: { stale: false },
     loading: false,

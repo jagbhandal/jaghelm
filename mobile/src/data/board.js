@@ -22,6 +22,7 @@ import {
 } from '@shared/shell/statusView.js';
 import { drawnState } from '@shared/shell/statusFreshness.js';
 import { infrastructureNodes } from '@shared/shell/infrastructureView.js';
+import { shownReading } from '../../../server/status/readings.js';
 import { flattenServices } from './derive.js';
 
 /** A fresh status: nothing to say (statusFreshness.js's own, for a screen given none). */
@@ -32,6 +33,40 @@ const QUIET = new Set(['ok', 'maintenance']);
 
 /** What the status bar says before the first answer. */
 export const CONNECTING = 'Connecting…';
+
+/**
+ * Each state's colour on the Android look (MobileApp.css's palette): what a
+ * ring, a count or a fill is drawn in for the model's state, no signal for
+ * any value it doesn't know.
+ */
+const COLOUR = Object.freeze({
+  ok: 'var(--green)',
+  warn: 'var(--amber)',
+  crit: 'var(--red)',
+  unknown: 'var(--steel)',
+  maintenance: 'var(--jh-maintenance-fg)',
+});
+
+/** The colour token for a state the model (or a stale status) gives. */
+export function colourOf(state) {
+  return Object.hasOwn(COLOUR, state) ? COLOUR[state] : COLOUR.unknown;
+}
+
+/**
+ * What the phone says of a server with no /api/status (a 404, useDashboard's
+ * reach 'old'): one from before the status model, which the web, always
+ * served by its own server, never meets.
+ */
+export const OLD_SERVER = 'This JagHelm server is older than 3.0.0: update it';
+
+/**
+ * The web's freshness (statusFreshness.js), with the one cause the phone has
+ * of its own: the web's rule reads reach 'old' as "Can't reach JagHelm",
+ * which would say so for as long as the server isn't updated.
+ */
+export function withServerCause(freshness, reach) {
+  return reach === 'old' && freshness.stale ? { ...freshness, cause: OLD_SERVER } : freshness;
+}
 
 /**
  * The Overview's status card (the Android look of AttentionPanel), as the
@@ -82,9 +117,34 @@ export function annunciatorOf({ status, freshness = FRESH }) {
   return { state: status.overall.state, sentence: status.overall.sentence };
 }
 
-/** The subsystem strip's cells: the web's (statusView.js subsystemCells), one per subsystem with anything. */
-export function cellsOf({ status, freshness = FRESH }) {
-  return subsystemCells(status, freshness);
+/**
+ * The UPS's readings the model doesn't carry, from /api/ups (`ups`), for
+ * display only: on battery (the model has the UPS crit or warn, as the bolt
+ * goes by), the runtime left, the model's reason already giving the charge
+ * ("On battery (47 % charge)"); on mains (ok), its charge, by the model's one
+ * rule for a reading. Null with no UPS in the model, no answer from /api/ups,
+ * or nothing to add.
+ */
+export function upsReadingsOf({ status, ups }) {
+  const e = status?.entities?.find((x) => x.id === 'power/ups');
+  if (!e || !ups || ups.ok === false) return null;
+  if (e.state === 'crit' || e.state === 'warn') {
+    return Number.isFinite(ups.runtime) ? `${Math.round(ups.runtime / 60)} min left` : null;
+  }
+  if (e.state === 'ok' && Number.isFinite(ups.charge)) return `${shownReading(ups.charge)}% charge`;
+  return null;
+}
+
+/**
+ * The subsystem strip's cells: the web's (statusView.js subsystemCells), one
+ * per subsystem with anything; the Power cell also carries the UPS's readings
+ * (upsReadingsOf), on a line of their own under the model's detail.
+ */
+export function cellsOf({ status, freshness = FRESH, ups = null }) {
+  const readings = upsReadingsOf({ status, ups });
+  return subsystemCells(status, freshness).map((cell) =>
+    cell.key === 'power' && readings ? { ...cell, readings } : cell
+  );
 }
 
 /** Where a model entity opens on the phone (nav/issueRoute.js reads it). */
@@ -181,7 +241,8 @@ const barOf = (r) => ({
  * temperature or the model has its disk over a line, so a filling disk is
  * never hidden behind the temperature, #273) and the detail screen's four.
  * `services` is the web card's line: "4 / 5 services up · 1 down", or "No
- * services" for a node with none, never "0 up".
+ * services" for a node with none, never "0 up"; `downState` is how its down
+ * count is drawn: the model's crit, no signal while stale.
  */
 export function nodeCardsOf({ status, servicesBody, freshness = FRESH }) {
   return infrastructureNodes({ status, services: servicesBody, freshness }).map((n) => {
@@ -191,6 +252,7 @@ export function nodeCardsOf({ status, servicesBody, freshness = FRESH }) {
     const third = byKey.temp && !diskOver ? byKey.temp : byKey.disk;
     return {
       ...n,
+      downState: drawnState('crit', freshness),
       bars: [byKey.cpu, byKey.mem, third].filter(Boolean).map(barOf),
       detailBars: [byKey.cpu, byKey.mem, byKey.temp, byKey.disk].filter(Boolean).map(barOf),
     };

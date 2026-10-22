@@ -1,15 +1,20 @@
 import React, { useMemo } from 'react';
-import { EMPTY } from '@ui/lib/status.js';
+import { EMPTY, WORDS } from '@ui/lib/status.js';
 import { groupByDay, formatDayLabel, dateToDayKey } from '../data/groupByDay.js';
 import StatusBanner from '../components/StatusBanner.jsx';
 import { FRESH, issueRowsOf } from '../data/board.js';
+import { lastKnownCaption } from '@shared/shell/statusFreshness.js';
 
 /**
  * Alerts: the status model's issues (#325), worst first, are pinned at top in
  * alarm-red as the active incidents, shown as compact rows: the name, where it
- * is ("Service · vm103") and the model's reason (Bug #8). While the status is
- * stale (#480) they are not shown as active: the Overview keeps them, drawn as
- * no signal.
+ * is ("Service · vm103") and the model's reason (Bug #8).
+ *
+ * While the status is stale (#480), as on the web's Alerts page, the rows stay
+ * as last known, but none is active: each is drawn steel (no signal), under a
+ * "Last known 3 min ago" heading, and the page says "No signal · <why>" above
+ * them ("JagHelm's status is out of date"; a fetch error's own banner says it
+ * when the cards can't be read either). Bug #4: stale data never reads as live.
  *
  * History de-dup (Bug #3): history renders ONLY incidents whose id is NOT
  * active. Every issue the model has now IS active, so the history section is
@@ -78,23 +83,34 @@ export default function Alerts({ data, nav }) {
         </p>
       )}
 
-      {/* While the status is stale (error, or past its TTL, #480) we do NOT
-          present its incidents as currently "Active" (Bug #4: a mid-session
-          outage must never render stale data as live). */}
-      {!error && !stale && incidents.length > 0 && (
+      {/* Stale (#480): no signal, and why. With a fetch error the banner
+          above already says it. */}
+      {stale && !error && (
+        <p className="alerts-stale">{`${WORDS.unknown} · ${freshness.cause}`}</p>
+      )}
+
+      {/* Fresh, the issues are "Active", in red. Stale, the same rows as last
+          known, steel and never "Active" (Bug #4: a mid-session outage must
+          never render stale data as live). */}
+      {incidents.length > 0 && (
         <>
-          <h2 className="alerts-section alerts-section--active">Active</h2>
+          {stale ? (
+            <h2 className="alerts-section">{lastKnownCaption(freshness) ?? 'Last known'}</h2>
+          ) : (
+            <h2 className="alerts-section alerts-section--active">Active</h2>
+          )}
           {incidents.map((inc) => (
             <button
               key={inc.id}
               type="button"
-              className="alert-row alert-row--active"
+              data-state={inc.state}
+              className={stale ? 'alert-row alert-row--stale' : 'alert-row alert-row--active'}
               onClick={() => nav.push('incident', { id: inc.id })}
-              aria-label={`${inc.title}, ${inc.readout} (active)`}
+              aria-label={`${inc.title}, ${inc.readout} (${stale ? 'last known' : 'active'})`}
             >
               <span className="alert-row__title">{inc.title}</span>
               <span className="alert-row__node">{inc.readout}</span>
-              {/* The model's reason, on every active row (Bug #8). */}
+              {/* The model's reason, on every row (Bug #8). */}
               <span className="alert-row__cause">{inc.cause}</span>
             </button>
           ))}

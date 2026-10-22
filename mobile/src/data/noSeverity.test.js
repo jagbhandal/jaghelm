@@ -4,8 +4,11 @@
  * through data/board.js. This fails if a severity of the app's own comes back
  * anywhere in mobile/src/ (tests aside):
  *
- *  - a reading compared with a line of its own (`>= 90`, `< 75`): the lines
- *    are the model's, served with each status (`thresholds`);
+ *  - a reading compared with a line of its own, either way round: a round
+ *    whole number from 50 (`>= 90`, `75 < t`, `> 98`), a fraction from 0.7 (`> 0.95`,
+ *    `u >= .99`), or any number against a percentage, a usage, an uptime or
+ *    a charge (`pct > 40`, `cpu * 100 >= 3`). The lines are the model's,
+ *    served with each status (`thresholds`);
  *  - the derivation #325 deleted, by name (overallSeverity, nodeSeverity,
  *    deriveIncidents, CPU_HOT, …);
  *  - the Android look's old severities as values ('healthy', 'caution'): the
@@ -31,10 +34,27 @@ function sources(dir = SRC) {
   });
 }
 
+// A comparison: <, <=, > or >=, never => or a JSX tag.
+const CMP = String.raw`(?:<=?|>=?)`;
+// A line of the app's own: a round whole 50 to 95, or 96 to 99, or a
+// fraction from 0.7. (Not any whole number: `b >= 64` is an address range.)
+const LINE = String.raw`(?:(?:[5-9][05]|9[6-9])(?![\d.])|0?\.[7-9]\d*(?!\d))`;
+// A reading that is a share of something.
+const SHARE = String.raw`\b\w*(?:pct|percent|usage|uptime|charge|cpu|mem|disk|temp|load)\w*`;
+
 const RULES = [
   {
     what: 'a reading compared with a line of the app’s own',
-    pattern: /(?:>=?|<=?)\s*(?:70|75|80|85|90|95)(?![\d.])/,
+    pattern: new RegExp(
+      `(?<![=!<>])${CMP}\\s*${LINE}|(?<![\\w.])${LINE}\\s*${CMP}(?![=>])`
+    ),
+  },
+  {
+    what: 'a percentage, usage, uptime or charge compared with a number',
+    pattern: new RegExp(
+      `${SHARE}\\s*(?:\\*\\s*100\\s*)?\\)?\\s*${CMP}\\s*[\\d.]|[\\d.]\\s*${CMP}\\s*\\(?${SHARE}`,
+      'i'
+    ),
   },
   {
     what: 'the deleted derivation',
@@ -65,12 +85,54 @@ describe('no severity of the app’s own (#325)', () => {
     });
   }
 
+  const [line, share, deleted, oldWord] = RULES.map((r) => r.pattern);
+
   it('the rules catch what they are for', () => {
-    expect(RULES[0].pattern.test('pct >= 90 ? red : amber')).toBe(true);
-    expect(RULES[0].pattern.test('temp > 75')).toBe(true);
-    expect(RULES[0].pattern.test('u > 0.95')).toBe(false);
-    expect(RULES[0].pattern.test('width < 900')).toBe(false);
-    expect(RULES[1].pattern.test('const sev = nodeSeverity(node);')).toBe(true);
-    expect(RULES[2].pattern.test("severity: 'caution'")).toBe(true);
+    // A line of the app's own, whole or a fraction, either way round.
+    for (const code of [
+      'pct >= 90 ? red : amber',
+      'temp > 75',
+      'x<=55',
+      'pct > 98',
+      'u > 0.95',
+      'u > 0.99 ? green : amber',
+      'u >= .9',
+      'value < 0.7',
+      '0.95 < u',
+      '90 <= pct',
+    ]) {
+      expect(line.test(code), code).toBe(true);
+    }
+    // A share compared with any number.
+    for (const code of [
+      'pct > 40',
+      'percent >= 5',
+      'uptime24 < 1',
+      'node.memPercent >= 12',
+      'cpu * 100 > 3',
+      '(usage) <= 0.5',
+      'ups.charge < 20',
+      '40 < pct',
+    ]) {
+      expect(share.test(code), code).toBe(true);
+    }
+    // Not a severity: sizes, counts, arrows, tags and plain arithmetic.
+    for (const code of [
+      'width < 900',
+      'if (a === 100 && b >= 64 && b <= 127) return true;',
+      'px >= 14',
+      'down > 0',
+      'total === 0',
+      'fraction > 0',
+      '(r) => 90',
+      '<span>{down} down</span>',
+      'Math.round(ups.runtime / 60)',
+      'Math.min(percent, 100)',
+      'const step = 10 ** (2 - decimals);',
+    ]) {
+      expect(line.test(code) || share.test(code), code).toBe(false);
+    }
+    expect(deleted.test('const sev = nodeSeverity(node);')).toBe(true);
+    expect(oldWord.test("severity: 'caution'")).toBe(true);
   });
 });

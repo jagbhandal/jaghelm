@@ -48,8 +48,9 @@ export default function ServiceDetail({ data, nav, params }) {
         )}
       </div>
 
-      {/* uptime24 radial gauge — UptimeRing omits itself when uptime24 == null. */}
-      <UptimeRing uptime24={svc.uptime24} />
+      {/* uptime24 radial gauge, in the service's drawn state — UptimeRing
+          omits itself when uptime24 == null. */}
+      <UptimeRing uptime24={svc.uptime24} state={svc.state} />
 
       {/* "Last seen" — REAL timestamps only: a presence breadcrumb that carries a
           real lastSeenAt. No lastSeenAt → omit the line. ping is never an age. */}

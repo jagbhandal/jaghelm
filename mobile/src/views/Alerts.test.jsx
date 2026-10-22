@@ -87,10 +87,41 @@ describe('Alerts', () => {
     expect(screen.queryByText(/All clear/i)).toBeNull();
   });
 
-  it('a stale status (#480) lists nothing as active and says nothing is clear', () => {
-    render(<Alerts data={{ ...DATA, freshness: STALE }} nav={{ push: vi.fn() }} />);
-    expect(screen.queryByRole('button', { name: /active/i })).toBeNull();
+  // A status past its TTL (a 503 after one), or no answer for over 72 s: no
+  // fetch error, only a stale status. As on the web after #480.
+  const OUT_OF_DATE = { ...STALE, cause: "JagHelm's status is out of date", reach: 'expired' };
+
+  it('a stale status (#480) keeps its rows as last known, steel, under "No signal · why"', () => {
+    const push = vi.fn();
+    const { container } = render(<Alerts data={{ ...DATA, freshness: OUT_OF_DATE }} nav={{ push }} />);
+    expect(screen.getByText("No signal · JagHelm's status is out of date")).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Last known 3 min ago' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Active' })).toBeNull();
+    // The row stays, with its words and reason, but drawn no signal, never active red.
+    const row = screen.getByRole('button', { name: 'Gitea, Service · vm-101 (last known)' });
+    expect(row.dataset.state).toBe('unknown');
+    expect(row.className).toMatch(/alert-row--stale/);
+    expect(container.querySelector('.alert-row--active')).toBeNull();
+    expect(row.querySelector('.alert-row__cause').textContent).toBe('Kuma: down');
+    expect(screen.queryByRole('button', { name: /\(active\)/ })).toBeNull();
     expect(screen.queryByText(/All clear/i)).toBeNull();
+    // It still opens the issue.
+    fireEvent.click(row);
+    expect(push).toHaveBeenCalledWith('incident', { id: 'services/vm-101:gitea' });
+  });
+
+  it('a stale status with no issues says no signal and why, never all clear', () => {
+    const calm = boardOf(inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101' }) }, ups: UPS_ONLINE }));
+    render(<Alerts data={{ ...calm, freshness: OUT_OF_DATE }} nav={{ push: vi.fn() }} />);
+    expect(screen.getByText("No signal · JagHelm's status is out of date")).toBeInTheDocument();
+    expect(screen.queryByText(/All clear/i)).toBeNull();
+  });
+
+  it('a fresh status draws its issues as active, red', () => {
+    const { container } = render(<Alerts data={DATA} nav={{ push: vi.fn() }} />);
+    expect(container.querySelector('.alert-row--active')).not.toBeNull();
+    expect(container.querySelector('.alert-row--stale')).toBeNull();
+    expect(container.querySelector('.alerts-stale')).toBeNull();
   });
 
   it('shows error banner and NOT all-clear when backend unreachable (has prior data)', () => {
@@ -99,6 +130,10 @@ describe('Alerts', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.getByRole('alert').textContent).toMatch(/Couldn't reach JagHelm/);
     expect(screen.queryByText(/All clear/i)).toBeNull();
+    // The banner says "showing last known data", so the rows are there, steel;
+    // the banner already says why, so no second note.
+    expect(screen.getByRole('button', { name: /Gitea.*\(last known\)/ })).toBeInTheDocument();
+    expect(document.querySelector('.alerts-stale')).toBeNull();
   });
 
   it('shows error banner without "showing last known data" when no prior data', () => {

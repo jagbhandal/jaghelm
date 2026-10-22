@@ -4,7 +4,7 @@ import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import UptimeRing from '../components/UptimeRing.jsx';
 import { flattenServices, formatClock } from '../data/derive.js';
-import { FRESH, issueRowsOf } from '../data/board.js';
+import { FRESH, issueRowsOf, upsReadingsOf } from '../data/board.js';
 import { issueFor } from '../nav/issueRoute.js';
 import { openTarget } from '../open.js';
 
@@ -51,6 +51,8 @@ export default function IncidentDetail({ data, nav, params }) {
     incident?.target.kind === 'service'
       ? flattenServices(data.servicesBody).find((s) => s.uid === incident.target.uid)
       : null;
+  // The UPS's readings the model doesn't carry ("8 min left"), for its issue.
+  const readings = incident?.kind === 'ups' ? upsReadingsOf({ status: data.status, ups: data.ups }) : null;
 
   if (!incident) {
     // No live derived incident. If the deep-link carried push-event params, render
@@ -107,8 +109,9 @@ export default function IncidentDetail({ data, nav, params }) {
       </div>
 
       <p className="detail-cause">{incident.cause}</p>
+      {readings && <p className="detail-readings">{readings}</p>}
 
-      <UptimeRing uptime24={card?.uptime24 ?? null} />
+      <UptimeRing uptime24={card?.uptime24 ?? null} state={incident.state} />
 
       <p className="detail-status">Active — {incident.readout}</p>
 

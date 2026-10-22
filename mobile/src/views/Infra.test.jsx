@@ -91,13 +91,20 @@ describe('Infra, on the status model (#325)', () => {
         ups: UPS_ONLINE,
       })
     );
-    render(<Infra data={vm} nav={{ push: vi.fn() }} />);
+    const { unmount } = render(<Infra data={vm} nav={{ push: vi.fn() }} />);
     const count = cardOf('vm').querySelector('.node-card__count');
     expect(count.textContent).toBe('2 / 4 services up · 1 down');
     expect(count.querySelector('.node-card__down-count')).toHaveTextContent('1 down');
     expect(count.querySelector('.node-card__down-count')).toHaveStyle({ color: 'var(--red)' });
     // The node's own lamp is its own: its readings are fine, so healthy, never red for a down service.
     expect(cardOf('vm').querySelector('.node-card__lamp .status-lamp').getAttribute('class')).toMatch(/lamp--healthy/);
+    unmount();
+
+    // Stale, the count stays as last known, and its red goes steel (#480).
+    render(<Infra data={{ ...vm, freshness: STALE }} nav={{ push: vi.fn() }} />);
+    const said = cardOf('vm').querySelector('.node-card__down-count');
+    expect(said).toHaveTextContent('1 down');
+    expect(said).toHaveStyle({ color: 'var(--steel)' });
   });
 
   it('a stale status draws every card and bar as no signal, keeping the numbers last known (#480)', () => {

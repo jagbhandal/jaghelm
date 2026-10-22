@@ -13,17 +13,18 @@ import { issueRoute } from '../nav/issueRoute.js';
  * The Overview, drawn from the status model (#325; data/board.js): the status
  * card (the board's state, its counts and the model's sentence, or the quiet
  * line, or an empty board's "Nothing monitored yet"), the strip (a cell per
- * subsystem that has anything) and the model's issues, worst first.
+ * subsystem that has anything, the Power cell with the UPS's readings) and the
+ * model's issues, worst first.
  *
  * A stale status (#480) keeps its strip and issues as last known, each drawn
  * as no signal, and the card says "No signal", why and what it last knew.
  */
 export default function Overview({ data, nav }) {
-  const { status, servicesBody, loading, error } = data;
+  const { status, servicesBody, ups, loading, error } = data;
   const freshness = data.freshness ?? FRESH;
 
   const hero = useMemo(() => heroOf({ status, freshness }), [status, freshness]);
-  const cells = useMemo(() => cellsOf({ status, freshness }), [status, freshness]);
+  const cells = useMemo(() => cellsOf({ status, freshness, ups }), [status, freshness, ups]);
   const incidents = useMemo(() => issueRowsOf({ status, freshness }), [status, freshness]);
 
   // What to say with no issue to list, while the status is current.

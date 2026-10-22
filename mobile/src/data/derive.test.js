@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as derive from './derive.js';
-import { flattenServices, formatClock, uptimeColor, uptimePct } from './derive.js';
+import { flattenServices, formatClock, uptimePct } from './derive.js';
 
 // derive.js holds display helpers only (#325): every state the app shows is
 // the status model's. noSeverity.test.js guards the rest of mobile/src/.
@@ -9,7 +9,6 @@ describe('derive.js: display helpers only', () => {
     expect(Object.keys(derive).sort()).toEqual([
       'flattenServices',
       'formatClock',
-      'uptimeColor',
       'uptimePct',
     ]);
   });
@@ -45,16 +44,10 @@ describe('flattenServices', () => {
   });
 });
 
-describe('uptimePct / uptimeColor (the uptime ring, not a status)', () => {
+describe('uptimePct', () => {
   it('formats a 0–1 scalar as a one-decimal percent; null stays null', () => {
     expect(uptimePct(0.9994)).toBe('99.9');
     expect(uptimePct(null)).toBeNull();
-  });
-  it('colours the ring by its own ramp; no reading is muted', () => {
-    expect(uptimeColor(0.999)).toBe('var(--green)');
-    expect(uptimeColor(0.97)).toBe('var(--amber)');
-    expect(uptimeColor(0.5)).toBe('var(--red)');
-    expect(uptimeColor(null)).toBe('var(--text-muted)');
   });
 });
 

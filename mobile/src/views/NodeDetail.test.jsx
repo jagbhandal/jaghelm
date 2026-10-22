@@ -4,7 +4,7 @@ vi.mock('@shared/hooks/useData.js', () => ({ getServiceIcon: () => null }));
 import NodeDetail from './NodeDetail.jsx';
 import NodeCard from '../components/NodeCard.jsx';
 import { nodeCardsOf } from '../data/board.js';
-import { UPS_ONLINE, boardOf, inputs, monitored, node } from '../testing/board.js';
+import { STALE, UPS_ONLINE, boardOf, inputs, monitored, node } from '../testing/board.js';
 
 const vm101 = (metrics = {}) =>
   boardOf(
@@ -51,6 +51,16 @@ describe('NodeDetail (#325: the node as the model has it)', () => {
     expect(container.querySelector('.node-detail__count').textContent).toBe('1 / 2 services up · 1 down');
     const names = screen.getAllByText(/AdGuard|Gitea/).map((n) => n.textContent);
     expect(names[0]).toBe('Gitea'); // the model's issue first
+  });
+
+  it('draws the down count red, and steel while the status is stale (#480)', () => {
+    const { container, unmount } = render(<NodeDetail data={DATA} {...at('vm-101')} />);
+    expect(container.querySelector('.node-detail__down-count')).toHaveStyle({ color: 'var(--red)' });
+    unmount();
+    const stale = render(<NodeDetail data={{ ...DATA, freshness: STALE }} {...at('vm-101')} />);
+    const down = stale.container.querySelector('.node-detail__down-count');
+    expect(down).toHaveTextContent('1 down');
+    expect(down).toHaveStyle({ color: 'var(--steel)' });
   });
 
   it('says the model\'s reason when the node isn\'t healthy', () => {

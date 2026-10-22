@@ -1307,9 +1307,12 @@ here.
 **Both clients draw it, and judge nothing.** The web reads it in `useStatus`
 (5, "Status in the header"). The Android app reads it since #325, in
 `useDashboard` (`mobile/src/data/useDashboard.js`): one round of the app's
-poll scheduler asks `/api/status` and `/api/services` (the cards' names,
-links and readings), each with its ETag, so a round is two requests where it
-was three, and the app no longer reads `/api/ups` or `/api/cron/status`. It
+poll scheduler asks `/api/status`, `/api/services` (the cards' names,
+links and readings) and `/api/ups` (the UPS's runtime on battery and its
+charge on mains, which the model doesn't carry, shown on the Power cell and
+the UPS's issue, display only), each with its ETag: three requests, as
+before, and the app no longer reads `/api/cron/status`. A 404 from
+`/api/status` is a server older than 3.0.0, which the app says in words. It
 keeps `status`, `reach` and the answer's clock as `useStatus` does, and
 `MobileApp` feeds them to the web's rule for a stale status
 (`useStatusFreshness`, 5, "No signal: a stale status"). What each screen
@@ -1322,9 +1325,10 @@ an empty board's "Nothing monitored yet" alone), a strip cell per subsystem
 with anything, the ranked issues with where they are and their reasons, each
 service row's state and word, and each node card's state, word, hosted
 counts ("4 / 5 services up · 1 down", or "No services") and bars, each bar
-coloured by its condition and printed by `shownReading`. `derive.js` keeps
-display helpers only, and `mobile/src/data/noSeverity.test.js` fails on a
-line or a severity of the app's own anywhere in `mobile/src/`.
+coloured by its condition and printed by `shownReading`, and a service's 24 h
+uptime ring in its state's colour. `derive.js` keeps display helpers only,
+and `mobile/src/data/noSeverity.test.js` fails on a line or a severity of the
+app's own anywhere in `mobile/src/`.
 
 **In demo mode** the demo guard answers `/api/status` (#437) with the model
 built from the payloads the demo serves (`demoStatus` in `demoFixtures.js`):

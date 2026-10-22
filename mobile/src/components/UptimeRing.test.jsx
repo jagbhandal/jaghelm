@@ -27,40 +27,30 @@ describe('UptimeRing', () => {
     });
   });
 
-  describe('color ramp via uptimeColor', () => {
-    it('progress arc is green for high uptime (0.999 > 0.99 threshold)', () => {
-      const { container } = render(<UptimeRing uptime24={0.999} />);
-      const arc = container.querySelector('.uptime-ring__arc');
-      expect(arc).not.toBeNull();
-      expect(arc.getAttribute('stroke')).toBe('var(--green)');
+  describe('colour: the service\'s drawn state, never a ramp of the ring\'s own (#325)', () => {
+    it('draws the arc and the percentage in the state\'s colour, whatever the number', () => {
+      const { container } = render(<UptimeRing uptime24={0.42} state="ok" />);
+      expect(container.querySelector('.uptime-ring__arc').getAttribute('stroke')).toBe('var(--green)');
+      expect(container.querySelector('.uptime-ring__pct').style.fill).toBe('var(--green)');
     });
 
-    it('progress arc is amber for mid uptime (0.97, between 0.95 and 0.99)', () => {
-      const { container } = render(<UptimeRing uptime24={0.97} />);
-      const arc = container.querySelector('.uptime-ring__arc');
-      expect(arc).not.toBeNull();
-      expect(arc.getAttribute('stroke')).toBe('var(--amber)');
+    it('a service the model has down is red, even at 99.9 %', () => {
+      const { container } = render(<UptimeRing uptime24={0.999} state="crit" />);
+      expect(container.querySelector('.uptime-ring__arc').getAttribute('stroke')).toBe('var(--red)');
     });
 
-    it('progress arc is red for low uptime (0.42 ≤ 0.95 threshold)', () => {
-      const { container } = render(<UptimeRing uptime24={0.42} />);
-      const arc = container.querySelector('.uptime-ring__arc');
-      expect(arc).not.toBeNull();
-      expect(arc.getAttribute('stroke')).toBe('var(--red)');
+    it('a stale status draws the ring steel (no signal)', () => {
+      const { container } = render(<UptimeRing uptime24={0.999} state="unknown" />);
+      expect(container.querySelector('.uptime-ring__arc').getAttribute('stroke')).toBe('var(--steel)');
+      expect(container.querySelector('.uptime-ring__pct').style.fill).toBe('var(--steel)');
     });
 
-    it('percentage text fill color matches the uptimeColor ramp (green for 0.999)', () => {
-      const { container } = render(<UptimeRing uptime24={0.999} />);
-      const pctText = container.querySelector('.uptime-ring__pct');
-      expect(pctText).not.toBeNull();
-      expect(pctText.style.fill).toBe('var(--green)');
-    });
-
-    it('percentage text fill color matches the uptimeColor ramp (red for 0.42)', () => {
-      const { container } = render(<UptimeRing uptime24={0.42} />);
-      const pctText = container.querySelector('.uptime-ring__pct');
-      expect(pctText).not.toBeNull();
-      expect(pctText.style.fill).toBe('var(--red)');
+    it('with no state, one neutral tone at any number', () => {
+      for (const u of [0.999, 0.97, 0.42]) {
+        const { container, unmount } = render(<UptimeRing uptime24={u} />);
+        expect(container.querySelector('.uptime-ring__arc').getAttribute('stroke')).toBe('var(--text-muted)');
+        unmount();
+      }
     });
   });
 

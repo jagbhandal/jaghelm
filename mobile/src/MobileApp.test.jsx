@@ -164,6 +164,14 @@ describe('MobileApp — the annunciator on the status model (#325)', () => {
     expect(screen.getByTestId('refresh-status').textContent).toBe("unknown::JagHelm's status is out of date");
   });
 
+  it('a server older than the status model (a 404) says so, in plain words, not "Can\'t reach JagHelm" (#325)', async () => {
+    useDashboard.mockReturnValue({ ...dashboardOf(oneService('up')), status: null, reach: 'old' });
+    await act(async () => { render(<MobileApp />); });
+    expect(screen.getByTestId('refresh-status').textContent).toBe(
+      'unknown::This JagHelm server is older than 3.0.0: update it'
+    );
+  });
+
   it('hands the status bar the foreground flag, so its countdown pauses in the background', async () => {
     useDashboard.mockReturnValue(dashboardOf(oneService('up'), { foreground: false }));
     await act(async () => { render(<MobileApp />); });

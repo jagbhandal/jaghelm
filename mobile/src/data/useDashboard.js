@@ -3,6 +3,7 @@ import { App } from '@capacitor/app';
 import {
   getServices,
   getStatus,
+  getUPSStatus,
   getDisplayConfig,
   NOT_MODIFIED_NO_BODY,
 } from '@shared/hooks/useData.js';
@@ -41,8 +42,8 @@ function createStore(initial) {
 const settle = (promise) => promise.then((value) => ({ value }), (err) => ({ err }));
 
 /**
- * The single live-data source for the mobile screens (#325): two reads a
- * round, the status model and the node and service cards.
+ * The single live-data source for the mobile screens (#325): three reads a
+ * round, the status model, the node and service cards, and the UPS's readings.
  *
  *   /api/status    the server's judgement of everything (docs/ARCHITECTURE.md
  *                  §4.7): the overall state and sentence, the subsystems, the
@@ -52,7 +53,9 @@ const settle = (promise) => promise.then((value) => ({ value }), (err) => ({ err
  *                  `status` is the last one the server sent, kept while it
  *                  can't be reached; `reach` is 'loading' before the first
  *                  answer, 'ok', 'waiting' (a 503 before the server's first
- *                  check or past its TTL, or a body with no status) or 'down';
+ *                  check or past its TTL, or a body with no status), 'old' (a
+ *                  404: a server from before the status model, 3.0.0, which
+ *                  board.js withServerCause says in words) or 'down';
  *                  `updated` is when the last answer came, as a store, with
  *                  `staleAfter` and `builtAt` (#480, #499). MobileApp feeds the
  *                  three to the web's own rule for a stale status
@@ -60,10 +63,14 @@ const settle = (promise) => promise.then((value) => ({ value }), (err) => ({ err
  *   /api/services  the cards: names, icons, links, ping, uptime and each
  *                  node's readings, which the model values but doesn't carry.
  *                  It is the health gate: if it throws, `error` is set.
+ *   /api/ups       the UPS's runtime and charge, for display only (board.js
+ *                  upsReadingsOf): the model judges the UPS but carries its
+ *                  charge only on battery, and never its runtime. A failed
+ *                  read shows none.
  *
- * `/api/ups` and `/api/cron/status` are no longer read: the model says what
- * the app drew from them (the Power, Jobs and Backups subsystems and their
- * issues), so a round costs two requests, not three.
+ * `/api/cron/status` is no longer read: the model says what the app drew from
+ * it (the Jobs and Backups subsystems and their issues), so a round costs
+ * three requests, as before #325, and the app judges neither the UPS nor a job.
  *
  * One poll scheduler (pollScheduler.js) drives every fetch round, by reason:
  *   'force'  — the first load and a tap on the status bar: full bodies
@@ -86,6 +93,7 @@ const settle = (promise) => promise.then((value) => ({ value }), (err) => ({ err
 export function useDashboard() {
   const [servicesBody, setServicesBody] = useState(null);
   const [status, setStatus] = useState(null);
+  const [ups, setUps] = useState(null);
   const [reach, setReach] = useState('loading');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -123,7 +131,8 @@ export function useDashboard() {
     // One /api/status answer, read as useStatus.js reads it.
     const applyStatus = ({ value: answer, err }) => {
       if (err) {
-        const why = /HTTP 503/.test(String(err?.message)) ? 'waiting' : 'down';
+        const message = String(err?.message);
+        const why = /HTTP 404/.test(message) ? 'old' : /HTTP 503/.test(message) ? 'waiting' : 'down';
         show({ status: shown.current.status, reach: why });
         return;
       }
@@ -139,9 +148,15 @@ export function useDashboard() {
 
     const round = async (reason) => {
       const force = reason === 'force';
-      const [s, st] = await Promise.all([settle(getServices(force)), settle(getStatus(force))]);
+      const [s, st, u] = await Promise.all([
+        settle(getServices(force)),
+        settle(getStatus(force)),
+        settle(getUPSStatus(force)),
+      ]);
       if (!live) return;
       applyStatus(st);
+      if (u.err) setUps(null);
+      else if (hasBody(u.value)) setUps(u.value);
       if (s.err) setError(s.err);
       else {
         if (hasBody(s.value)) setServicesBody(s.value);
@@ -188,6 +203,7 @@ export function useDashboard() {
   return {
     servicesBody,
     status,
+    ups,
     reach,
     updated,
     loading,

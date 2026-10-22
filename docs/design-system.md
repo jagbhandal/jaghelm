@@ -1132,7 +1132,10 @@ removes it): each status component draws one of two looks.
   #325 the app hands it the status model's states and words, as the web
   does: its status card leaves out a line it isn't given and draws an empty
   board as the plain card (`sys-status-card--empty`), an issue row shows the
-  model's reason on every row, and the Power cell keeps the bolt on battery.
+  model's reason on every row, and the Power cell keeps the bolt on battery
+  and adds the UPS's readings (`readings`) on a line under the model's
+  detail. Maintenance has its own colour, `--jh-maintenance-fg`, restated on
+  `#mobile-root` (which isn't `.jh-ui`).
 
 The build picks the look with its `__ANDROID_LOOK__` define: true in
 `mobile/vite.config.mobile.js`, false in `vite.config.js`, and so in each app's
