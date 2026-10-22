@@ -427,6 +427,24 @@ test('buildSources: the status check (#440) is left out while the model builds, 
   assert.deepEqual(buildSources(listed, { prometheus: 'ok', status: 'ok' }), { prometheus: 'ok' });
 });
 
+test("buildSources: the config (#505) steps failing and down while the model lists it, and is left out while it doesn't, but for the cycle after it paged", () => {
+  const ok = { prometheus: { state: 'ok' } };
+  const broken = { ...ok, config: { state: 'failed', error: "services.yaml doesn't parse (line 4)" } };
+  const at = (sources, prev) => buildSources({ entities: [], sources }, prev);
+  let s = at(broken, { prometheus: 'ok' });
+  assert.deepEqual(s, { config: 'failing', prometheus: 'ok' });
+  s = at(broken, s);
+  assert.deepEqual(s, { config: 'down', prometheus: 'ok' });
+  assert.deepEqual(at(broken, s), s, 'while broken: down');
+  // Fixed: the model lists no config source, so `ok` once (its recovery), then nothing.
+  s = at(ok, s);
+  assert.deepEqual(s, { config: 'ok', prometheus: 'ok' });
+  assert.deepEqual(at(ok, s), { prometheus: 'ok' });
+  // Fixed after one failed cycle: it leaves quietly. A good file never has an entry.
+  assert.deepEqual(at(ok, { config: 'failing', prometheus: 'ok' }), { prometheus: 'ok' });
+  assert.deepEqual(at(ok, { prometheus: 'ok' }), { prometheus: 'ok' });
+});
+
 test('modelFailedSnapshot: the previous snapshot as it is, but for the status check\'s run of failed cycles', () => {
   const prev = {
     services: { 'n1:web': 'down' },

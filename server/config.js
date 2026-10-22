@@ -36,6 +36,8 @@ let changeListeners = [];
 let seenVersion = null;
 // Why the file at seenVersion is no usable config (unusableReason), or null.
 let seenUnusable = null;
+// The same for the board and /api/health (#505): `{ line, reason }`, or null.
+let seenProblem = null;
 // The key versions are made with, once read (versionKey).
 let versionKeyBytes = null;
 
@@ -134,6 +136,22 @@ const unusableBecause = (problem, parseError) => ({
   unusable: `${problem}: fix it by hand; JagHelm won't save over it`,
 });
 
+/**
+ * An unusable file's problem as the board says it (#505): the line a parse
+ * error is on, or null (an empty file, one that isn't a mapping, a parse
+ * error with no position), and the reason, in a few fixed words and that
+ * line: "services.yaml doesn't parse (line 4)". Nothing of the file.
+ * @param {{ problem: string, parseError?: import('./util/parseError.js').ParseError }} parsed
+ * @returns {{ line: number | null, reason: string }}
+ */
+function boardProblemOf({ problem, parseError }) {
+  if (!parseError) return { line: null, reason: problem };
+  const { line } = parseError;
+  return line === null
+    ? { line, reason: "services.yaml doesn't parse" }
+    : { line, reason: `services.yaml doesn't parse (line ${line})` };
+}
+
 /** services.yaml's bytes and version now, or no bytes and CONFIG_ABSENT. */
 function readDisk() {
   try {
@@ -228,6 +246,7 @@ function adopt(disk) {
   seenVersion = disk.version;
   const parsed = parseConfig(disk.bytes);
   seenUnusable = parsed.unusable ?? null;
+  seenProblem = parsed.unusable ? boardProblemOf(parsed) : null;
   if (parsed.unusable) {
     keepAfterFailedRead(parsed.problem, parsed.parseError && { parseError: parsed.parseError });
     return false;
@@ -263,6 +282,28 @@ export function readConfig() {
     return { config: null, version: disk.version, unusable: seenUnusable };
   }
   return { config: getConfig(), version: disk.version };
+}
+
+/**
+ * Why services.yaml is no usable config, as of its last read (boot, the
+ * watcher's reload, a route's readConfig, a save), for the status model
+ * (#505): `{ line, reason }` (boardProblemOf), or null while it is a usable
+ * config or there is none. The board says it as a failed source, so a broken
+ * file at boot is not an empty, calm board. Never a word of the file (#504).
+ * @returns {{ line: number | null, reason: string } | null}
+ */
+export function configProblem() {
+  return seenProblem ? { ...seenProblem } : null;
+}
+
+/**
+ * services.yaml's state for /api/health (#505): `{ state: 'ok' }`, or
+ * `{ state: 'unparseable', line }` (line null when there is none) while it is
+ * no usable config: the same files every writer refuses with
+ * `config_unparseable` (#423). It never changes the probe's `status`.
+ */
+export function configHealth() {
+  return seenProblem ? { state: 'unparseable', line: seenProblem.line } : { state: 'ok' };
 }
 
 /**
@@ -348,6 +389,7 @@ export function writeConfig(newConfig, ifVersion) {
     config = structuredClone(newConfig);
     seenVersion = versionOf(Buffer.from(text, 'utf8'));
     seenUnusable = null;
+    seenProblem = null;
     lastModified = statSync(CONFIG_PATH).mtimeMs;
     log.info('Saved services.yaml');
     return { ok: true, version: seenVersion };

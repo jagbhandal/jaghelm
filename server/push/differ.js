@@ -503,7 +503,7 @@ function diffUps(prev, next, words, events) {
 
 // ── Monitoring sources ───────────────────────────────────────────────────
 
-const SOURCE_NAMES = { prometheus: 'Prometheus', kuma: 'Kuma', nut: 'NUT' };
+const SOURCE_NAMES = { prometheus: 'Prometheus', kuma: 'Kuma', nut: 'NUT', config: 'JagHelm config' };
 
 /**
  * The status model itself, as a source (#440): its key in the snapshot's
@@ -527,11 +527,23 @@ const STATUS_CHECK_TEXT = {
 };
 
 /**
+ * services.yaml as a source (#505): its key in the snapshot's `sources`, and
+ * the id and node of its source events. Its down push has the model's name and
+ * reason ("JagHelm config · services.yaml doesn't parse (line 4)") under a
+ * title of its own; its recovery's words are fixed (the model lists no config
+ * source once the file loads).
+ */
+export const CONFIG_SOURCE = 'config';
+const CONFIG_TITLE = { source_down: 'JagHelm config broken', source_recovered: 'JagHelm config fixed' };
+const CONFIG_RECOVERED = 'services.yaml loads again';
+
+/**
  * A monitoring source that is down (failed for two cycles in a row,
  * push/snapshot.js buildSources) is one source_down, whatever it fed (spec §6):
  * the entities it feeds are unknown in the model, which never pages. Its
  * recovery is one source_recovered. One failed cycle on its own sends nothing.
- * The status check (STATUS_CHECK) is diffed the same way, with its own words.
+ * The status check (STATUS_CHECK) and services.yaml (CONFIG_SOURCE) are
+ * diffed the same way, with their own words.
  */
 function diffSources(prev, next, words, events) {
   for (const name of Object.keys(next)) {
@@ -559,12 +571,18 @@ function diffSources(prev, next, words, events) {
     const issue = words.entity(`sources/${name}`);
     const label = issue?.name ?? SOURCE_NAMES[name] ?? name;
     const reason = down ? issue?.reason : undefined;
+    const config = name === CONFIG_SOURCE;
+    const backBody = config ? CONFIG_RECOVERED : `${label} is answering again`;
     events.push({
       type,
       id: name,
       node: name,
-      title: down ? 'Monitoring source down' : 'Monitoring source recovered',
-      body: down ? line(label, reason) : `${label} is answering again`,
+      title: config
+        ? CONFIG_TITLE[type]
+        : down
+          ? 'Monitoring source down'
+          : 'Monitoring source recovered',
+      body: down ? line(label, reason) : backBody,
       severity: down ? SEVERITY.source_down : SEVERITY.source_recovered,
       reason,
       prev: before,
