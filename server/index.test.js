@@ -80,6 +80,9 @@ test('GET /api/integrations/:type → JSON 404 (removed, #254); the list stays',
   assert.equal(all.status, 200);
 });
 
+/** The version a Settings read answers now, which a save must send (#423). */
+const configVersion = async () => (await request(app).get('/api/services/config')).headers.etag;
+
 test('POST /api/services/config → 400 on a non-object body', async () => {
   const r = await request(app)
     .post('/api/services/config')
@@ -98,6 +101,7 @@ test('POST /api/services/config → 400 on a wrong-typed structural field', asyn
 test('POST /api/services/config → 200 on a valid config', async () => {
   const r = await request(app)
     .post('/api/services/config')
+    .set('If-Match', await configVersion())
     .send({ nodes: { vm103: { name: 'VM 103' } }, services: {} });
   assert.equal(r.status, 200);
   assert.equal(r.body.ok, true);
@@ -108,6 +112,7 @@ test('POST /api/services/config → 200 on a services.yaml generated before #265
   // demand an array, so every Settings → Nodes/Services save of one got a 400.
   const r = await request(app)
     .post('/api/services/config')
+    .set('If-Match', await configVersion())
     .send({
       nodes: { pi1: { display_name: 'Gateway Primary' } },
       services: {},
