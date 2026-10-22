@@ -85,12 +85,12 @@ function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true }
   let heldRead = null;
   let hang = false;
   const requests = [];
-  // Why services.yaml can't be read now (it doesn't parse), and whether reads
-  // fail for another reason.
+  // Why services.yaml can't be used now (it doesn't parse, or can't be read:
+  // brokenCode says which), and whether reads fail for another reason.
   let broken = null;
+  let brokenCode = 'config_unparseable';
   let readsFail = false;
-  const unparseable = () =>
-    Response.json({ error: broken, code: 'config_unparseable' }, { status: 503 });
+  const unparseable = () => Response.json({ error: broken, code: brokenCode }, { status: 503 });
   const tag = () => `"v${version}"`;
   const answer = (body) => {
     if (body.ifMatch == null) {
@@ -180,9 +180,13 @@ function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true }
       heldRead = { promise, release };
       return release;
     },
-    /** A hand edit that leaves services.yaml unparseable, for `why`. */
-    breakFile(why) {
+    /**
+     * A hand edit that leaves services.yaml unparseable, for `why`; with
+     * `code` 'config_unreadable', a file the server can't read (#536).
+     */
+    breakFile(why, code = 'config_unparseable') {
       broken = why;
+      brokenCode = code;
       version += 1;
     },
     /** The file fixed by hand. */
@@ -483,6 +487,33 @@ describe('Settings when services.yaml cannot be read (#423)', () => {
       display_name: 'Edge',
       visible: false,
     });
+  });
+});
+
+describe("Settings when services.yaml can't be read (#536, #550)", () => {
+  const UNREADABLE =
+    "services.yaml can't be read (permission denied): fix it on the host; JagHelm won't save over a file it can't read";
+  const nodeCard = async (title) =>
+    (await screen.findByText(title)).closest('div[style*="border-left"]');
+
+  it('a save refused with config_unreadable shows the reason at once, without reading again, as config_unparseable does', async () => {
+    const server = stubServer();
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
+    const card = await nodeCard('Gateway');
+    server.breakFile(UNREADABLE, 'config_unreadable');
+    editAndFlush(() => fireEvent.click(within(card).getByRole('checkbox')));
+    await act(async () => {});
+
+    expect(await screen.findByText(`Not saved: ${UNREADABLE}`)).toBeInTheDocument();
+    expect(screen.queryByText('Settings changed elsewhere; reloaded')).not.toBeInTheDocument();
+    // The tab says why in place of the edited config, from the save's answer.
+    expect(await screen.findByText(UNREADABLE)).toBeInTheDocument();
+    expect(screen.queryByText('Gateway')).not.toBeInTheDocument();
+    // No reload: still the one read and the one post.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(server.reads()).toBe(1);
+    expect(server.posts).toHaveLength(1);
   });
 });
 

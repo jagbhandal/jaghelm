@@ -76,34 +76,52 @@ function isUnsafeUrl(v) {
 }
 
 /**
- * DFS the parsed config rejecting reserved keys + unsafe `url` schemes at any
- * depth. A stored `javascript:` link URL would execute in the SPA origin when
- * clicked (the render-boundary guard in src/utils/safeUrl.js is the load-bearing
- * defense for the watcher-loaded YAML path, but rejecting here blocks the API +
- * BackupTab-import write paths). Size is already capped, so the walk is bounded.
+ * @typedef {{ path: (string | number)[], kind: 'reserved' | 'url', message: string }} Violation
+ */
+
+/**
+ * DFS the parsed config for reserved keys + unsafe `url` schemes at any
+ * depth, each with its path (the reserved key's, or the `url`'s). A stored
+ * `javascript:` link URL would execute in the SPA origin when clicked (the
+ * render-boundary guard in src/utils/safeUrl.js is the load-bearing defense
+ * for the watcher-loaded YAML path, but rejecting here blocks the API +
+ * BackupTab-import write paths). Size is already capped, so the walk is
+ * bounded. The display config's read drops what it finds (#547), so a bad
+ * hand edit can't refuse every save.
  * @param {unknown} value
- * @param {number} [depth]
+ * @param {(string | number)[]} [path]
+ * @returns {Violation[]}
+ */
+export function findViolations(value, path = []) {
+  if (path.length > 50 || value === null || typeof value !== 'object') return [];
+  if (Array.isArray(value)) return value.flatMap((item, i) => findViolations(item, [...path, i]));
+  const obj = /** @type {Record<string, unknown>} */ (value);
+  /** @type {Violation[]} */
+  const found = [];
+  for (const k of Object.keys(obj)) {
+    if (RESERVED_KEYS.includes(k)) {
+      found.push({ path: [...path, k], kind: 'reserved', message: `Reserved key not allowed: ${k}` });
+      continue;
+    }
+    if (k === 'url' && isUnsafeUrl(obj[k])) {
+      found.push({
+        path: [...path, k],
+        kind: 'url',
+        message: "Unsafe URL scheme in 'url' (only http/https/mailto allowed)",
+      });
+    }
+    found.push(...findViolations(obj[k], [...path, k]));
+  }
+  return found;
+}
+
+/**
+ * The first reserved key or unsafe `url` scheme in the config (findViolations).
+ * @param {unknown} value
  * @returns {string|null} an error message, or null if clean
  */
-function scanConfig(value, depth = 0) {
-  if (depth > 50 || value === null || typeof value !== 'object') return null;
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const e = scanConfig(item, depth + 1);
-      if (e) return e;
-    }
-    return null;
-  }
-  const obj = /** @type {Record<string, unknown>} */ (value);
-  for (const k of Object.keys(obj)) {
-    if (RESERVED_KEYS.includes(k)) return `Reserved key not allowed: ${k}`;
-    if (k === 'url' && isUnsafeUrl(obj[k])) {
-      return "Unsafe URL scheme in 'url' (only http/https/mailto allowed)";
-    }
-    const e = scanConfig(obj[k], depth + 1);
-    if (e) return e;
-  }
-  return null;
+function scanConfig(value) {
+  return findViolations(value)[0]?.message ?? null;
 }
 
 /**

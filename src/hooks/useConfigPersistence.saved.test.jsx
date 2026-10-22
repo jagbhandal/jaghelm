@@ -18,7 +18,8 @@ beforeEach(() => {
     'fetch',
     vi.fn(async (url, init = {}) => {
       if ((init.method || 'GET').toUpperCase() === 'GET') {
-        return new Response(JSON.stringify(server), { status: 200 });
+        // With its version (#547): a copy without one is never shown.
+        return new Response(JSON.stringify(server), { status: 200, headers: { ETag: '"v1"' } });
       }
       if (!accept) return new Response('{"error":"nope"}', { status: 500 });
       server = JSON.parse(init.body);

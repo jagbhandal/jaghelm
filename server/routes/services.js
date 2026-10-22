@@ -19,12 +19,12 @@
  * an unchanged credential round-trips as its marker.
  *
  * The write needs the version the tab read (#423). The read answers
- * services.yaml's version (a keyed HMAC of the file, config.js) as a strong
- * ETag, and the write must send it back in If-Match: none is a 428, and one
- * that is no longer the file's is a 409, so a tab left open from before a
- * change can't post its old copy over it. Nothing is written either way. A
- * save answers with the new version as its ETag, so the tab can save again
- * without reading.
+ * services.yaml's version (a keyed HMAC of the file, util/fileVersion.js, the
+ * mechanism the display config shares, #547) as a strong ETag, and the write
+ * must send it back in If-Match: none is a 428, and one that is no longer the
+ * file's is a 409, so a tab left open from before a change can't post its old
+ * copy over it. Nothing is written either way. A save answers with the new
+ * version as its ETag, so the tab can save again without reading.
  *
  * While services.yaml doesn't parse (or is empty, or not a mapping), the read
  * and the write are both a 503 `config_unparseable` saying so, with no
@@ -45,6 +45,7 @@ import { refreshServices } from '../refresh.js';
 import { respondWarmCached } from '../cache.js';
 import { apiError, configUnusable } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
+import { etagOf, ifMatchHits, refuseStale, versionNamed } from '../util/fileVersion.js';
 import { validateConfig, servicesConfigSchema } from '../util/configSchema.js';
 import { maskCredentials, restoreCredentials } from '../util/configMask.js';
 
@@ -75,27 +76,13 @@ router.get(
   )
 );
 
-/** A version as an ETag: strong, quoted. */
-const etagOf = (/** @type {string} */ version) => `"${version}"`;
-
-/**
- * Whether an If-Match header names `version`: one of its entity-tags is it.
- * A `W/` prefix is ignored, since a proxy that compresses the read (nginx's
- * gzip) weakens its ETag on the way. `*` is no version: a save must say which
- * one it read.
- */
-function ifMatchHits(/** @type {string} */ header, /** @type {string} */ version) {
-  const want = etagOf(version);
-  return header.split(',').some((part) => part.trim().replace(/^W\//, '') === want);
-}
-
 /** A save over a version that is no longer the file's (#423). */
-function staleSave(res) {
-  return res.status(409).json({
-    error: 'services.yaml changed since Settings read it; reload Settings and try again',
-    stale: true,
-  });
-}
+const staleSave = (res, version) =>
+  refuseStale(
+    res,
+    'services.yaml changed since Settings read it; reload Settings and try again',
+    version
+  );
 
 router.get('/config', (req, res) => {
   const { config, version, unusable, code } = readConfig();
@@ -111,13 +98,15 @@ router.post('/config', (req, res) => {
   const v = validateConfig(servicesConfigSchema, req.body);
   if (!v.ok) return apiError(res, v.status, v.error);
 
-  const ifMatch = req.get('If-Match');
-  if (!ifMatch) {
-    return apiError(res, 428, 'The save named no config version (If-Match); reload Settings');
-  }
+  const ifMatch = versionNamed(
+    req,
+    res,
+    'The save named no config version (If-Match); reload Settings'
+  );
+  if (ifMatch == null) return;
   const { config: current, version, unusable, code } = readConfig();
   if (unusable) return configUnusable(res, unusable, code);
-  if (!ifMatchHits(ifMatch, version)) return staleSave(res);
+  if (!ifMatchHits(ifMatch, version)) return staleSave(res, version);
 
   // Each marker becomes the credential stored in its place. One where nothing
   // is stored, or in place of anything but a credential, is refused, so a
@@ -134,7 +123,7 @@ router.post('/config', (req, res) => {
   }
 
   const saved = writeConfig(restored.config, version);
-  if (!saved.ok && saved.conflict) return staleSave(res);
+  if (!saved.ok && saved.conflict) return staleSave(res, saved.version);
   if (!saved.ok && saved.unusable) return configUnusable(res, saved.unusable, saved.code);
   // A write failure (or a reentrant save) is a 500, not a misleading
   // HTTP 200 { ok: false }.

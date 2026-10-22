@@ -12,11 +12,11 @@ import { RAIL_WIDTH } from '@ui/app-shell';
 
 let server;
 
-function respond(body, status = 200) {
+function respond(body, status = 200, headers = {}) {
   return Promise.resolve({
     ok: status >= 200 && status < 300,
     status,
-    headers: { get: () => null },
+    headers: { get: (name) => headers[name] ?? null },
     json: () => Promise.resolve(body),
     text: () => Promise.resolve(JSON.stringify(body)),
   });
@@ -58,8 +58,11 @@ function stubServer({
         server.saves.push(JSON.parse(init.body));
         return respond({ ok: true });
       }
+      // With its version (#547): a copy without one is never shown.
       if (path === '/api/display-config')
-        return respond(serverConfig ?? (serverTabs ? { tabs: serverTabs } : {}));
+        return respond(serverConfig ?? (serverTabs ? { tabs: serverTabs } : {}), 200, {
+          ETag: '"v1"',
+        });
       if (Object.hasOwn(answers, path)) return respond(answers[path]);
       if (['/api/todos', '/api/gitea/activity', '/api/cron/status'].includes(path))
         return respond([]);

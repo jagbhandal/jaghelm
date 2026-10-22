@@ -15,11 +15,11 @@ let saved; // the server's display config
 let checks; // embed-check requests, by tab id
 let posts;
 
-function respond(body, status = 200) {
+function respond(body, status = 200, headers = {}) {
   return Promise.resolve({
     ok: status >= 200 && status < 300,
     status,
-    headers: { get: () => null },
+    headers: { get: (name) => headers[name] ?? null },
     json: () => Promise.resolve(body),
     text: () => Promise.resolve(JSON.stringify(body)),
   });
@@ -44,7 +44,8 @@ beforeEach(() => {
           saved = JSON.parse(opts.body);
           return respond({ ok: true });
         }
-        return respond(saved);
+        // With its version (#547): a copy without one is never shown.
+        return respond(saved, 200, { ETag: '"v1"' });
       }
       const m = /^\/api\/embed-check\/(.+)$/.exec(path);
       if (m) {
