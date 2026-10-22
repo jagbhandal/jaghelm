@@ -1739,9 +1739,17 @@ flowchart TD
   `gridMath.js` (snap, overlap-resolve, content-fit, and `compactUp` for the
   board filtered to a subsystem, #298), per-item measurement +
   rendering in `GridItem.jsx`, and lifecycle (breakpoints, drag/resize, commit)
-  in `HelmGrid.jsx`. Panels auto-grow to fit content (`GridItem` re-measures a
-  panel whenever it resizes); pointer **and keyboard**
-  (arrow move / Shift+arrow resize, with a live region) reposition them.
+  in `HelmGrid.jsx`. Panels auto-grow to fit content: `GridItem` re-measures
+  a panel's natural height (the item at `height: auto`) after any change to
+  its content or width, at most once a frame. The panel's own box is stretched
+  to its grid height, so it doesn't change when only the content does (the
+  web fonts arriving late left a panel a row too tall, #498): a
+  ResizeObserver watches every element in the panel and measures when one
+  changes height (not on a width-only animation, such as a meter's fill), a
+  MutationObserver keeps that set current as elements come and go, and a
+  measure skipped during a resize runs when it ends. Pointer
+  **and keyboard** (arrow move / Shift+arrow resize, with a live region)
+  reposition them.
 - **Panels and first run.** The board has a panel per discovered node (its
   Proxmox lists), plus the Checklist, Scheduled Jobs and Quick Launch panels;
   the custom groups are the Services section's grouping, not panels (#300). Without a
@@ -2534,9 +2542,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   into view and focuses it; the Nodes filter keeps the section and Services
   hides it. At 390 and 360px with the table chosen, the section draws the
   cards, with the NAS's warning and its "94%" on screen and nothing to scroll
-  sideways. Each node panel below is as tall as its content (within a grid
-  row), on the default layout and on a layout saved before #299, which is
-  saved again with its version. The Services section (#300,
+  sideways. Each node panel below is as tall as its content (not shorter, and
+  within a grid row), on the default layout and on a layout saved before
+  #299, which is saved again with its version; and no panel on the board
+  is shorter than its content (#498). The Services section (#300,
   `e2e/services.spec.mjs`), dark and light: every service's name in full and
   its column at least 120px at 1024 and 1440px, by node and by custom group,
   beside app metrics long enough to squeeze it (the metric ends in an
