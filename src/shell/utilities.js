@@ -10,9 +10,10 @@
  *   pipelineRows  the newest commits across the repos, newest first
  *   usePipeline   /api/gitea/activity, polled while on screen, and whether
  *                 a Gitea is set up (configuredPanels.js's rule)
- *   useTodos      /api/todos: add, tick and delete, each saving the list
+ *   useTodos      /api/todos: one list for every view (todoStore); add, tick
+ *                 and delete, each saving the list
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { appMonogram } from '@ui/side-nav';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { useToast } from '../context/OverlayContext.jsx';
@@ -163,73 +164,115 @@ function shownTodo(todo, now) {
 }
 
 /**
- * /api/todos, read once on mount (and on `retry`), and the three changes,
- * each saving the whole list (the endpoint replaces it). `todos` is null
- * until the first read lands, so nothing is added to a list that never came
- * (a save would replace the server's with it); `failed` says the read
- * failed. A save that fails says so in a toast and reads the list again, to
- * show what the server holds rather than the change that didn't save (#236).
- * A new to-do's id is uuidV4's, which works on a plain-HTTP origin too.
+ * The to-dos: one list for the whole page, held here, outside React. Every
+ * view (the old board's card, which stays mounted out of sight on every other
+ * page, the rail, the Launch page) reads it through useSyncExternalStore and
+ * saves it from here, so none can save a stale copy over another's change:
+ * the endpoint replaces the whole list on each save (#301's review).
+ *
+ * `todos` is null until a read lands. Each view reads on mount (another
+ * device may have changed it); a read's answer is dropped when this tab
+ * changed the list since the read went out, or a save was still out then,
+ * as the server may not have had it yet. A save that fails reads again, to
+ * show what the server holds. When the last view goes (a sign-out), the list
+ * is forgotten.
+ */
+const todoStore = (() => {
+  const EMPTY = { todos: null, failed: false };
+  let state = EMPTY;
+  let changes = 0;
+  let saving = 0;
+  const listeners = new Set();
+  const set = (next) => {
+    state = next;
+    for (const listener of [...listeners]) listener();
+  };
+  const store = {
+    get: () => state,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0) {
+          state = EMPTY;
+          changes += 1;
+        }
+      };
+    },
+    async read() {
+      const at = changes;
+      const clean = saving === 0;
+      try {
+        const list = await getTodos();
+        if (clean && at === changes) set({ todos: Array.isArray(list) ? list : [], failed: false });
+      } catch {
+        if (clean && at === changes) set({ ...state, failed: true });
+      }
+    },
+    change(edit, onFailedSave) {
+      if (state.todos == null) return;
+      const next = edit(state.todos);
+      changes += 1;
+      saving += 1;
+      set({ todos: next, failed: false });
+      saveTodos(next).then(
+        () => {
+          saving -= 1;
+        },
+        () => {
+          saving -= 1;
+          onFailedSave();
+          store.read();
+        }
+      );
+    },
+  };
+  return store;
+})();
+
+/**
+ * The to-do list (todoStore) and its three changes, each saving the whole
+ * list. `todos` is null until the first read lands, so nothing is added to a
+ * list that never came (a save would replace the server's with it); `failed`
+ * says the read failed, `retry` reads again. A save that fails says so in a
+ * toast, from the view that made the change (#236). A new to-do's id is
+ * uuidV4's, which works on a plain-HTTP origin too.
  */
 export function useTodos() {
   const toast = useToast();
-  const [todos, setTodos] = useState(null);
-  const [failed, setFailed] = useState(false);
-  const current = useRef(todos);
-  current.current = todos;
-  const alive = useRef(true);
+  const { todos, failed } = useSyncExternalStore(todoStore.subscribe, todoStore.get);
   useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
+    todoStore.read();
   }, []);
-
-  const load = useCallback(async () => {
-    try {
-      const list = await getTodos();
-      if (!alive.current) return;
-      setTodos(Array.isArray(list) ? list : []);
-      setFailed(false);
-    } catch {
-      if (alive.current) setFailed(true);
-    }
-  }, []);
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const save = useCallback(
-    (change) => {
-      if (current.current == null) return;
-      const next = change(current.current);
-      current.current = next;
-      setTodos(next);
-      saveTodos(next).catch(() => {
-        toast("Couldn't save the checklist", 'error');
-        load();
-      });
-    },
-    [toast, load]
-  );
+  const failedSave = useCallback(() => toast("Couldn't save the checklist", 'error'), [toast]);
   const add = useCallback(
     ({ text, due = null }) =>
-      save((list) => [
-        ...list,
-        { id: uuidV4(), text, done: false, due, created: new Date().toISOString() },
-      ]),
-    [save]
+      todoStore.change(
+        (list) => [
+          ...list,
+          { id: uuidV4(), text, done: false, due, created: new Date().toISOString() },
+        ],
+        failedSave
+      ),
+    [failedSave]
   );
   const toggle = useCallback(
-    (id) => save((list) => list.map((t) => (t.id === id ? { ...t, done: !t.done } : t))),
-    [save]
+    (id) =>
+      todoStore.change(
+        (list) => list.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),
+        failedSave
+      ),
+    [failedSave]
   );
-  const remove = useCallback((id) => save((list) => list.filter((t) => t.id !== id)), [save]);
+  const remove = useCallback(
+    (id) => todoStore.change((list) => list.filter((t) => t.id !== id), failedSave),
+    [failedSave]
+  );
 
   const shown = useMemo(() => {
     if (todos == null) return null;
     const now = new Date();
     return todos.filter((t) => t && t.id != null).map((t) => shownTodo(t, now));
   }, [todos]);
-  return { todos: shown, failed, retry: load, add, toggle, remove };
+  return { todos: shown, failed, retry: todoStore.read, add, toggle, remove };
 }

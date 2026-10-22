@@ -1715,12 +1715,19 @@ flowchart TD
   the newest six commits across the repos (message, repo, short SHA, age), no
   panel when Gitea isn't set up (`giteaConfigured`, `configuredPanels.js`),
   and a Banner over the last rows when the read fails; the Checklist is
-  `/api/todos` (`useTodos`): each add, tick and delete saves the whole list, a
-  new task's id is `uuidV4` (plain HTTP too, #236), a failed save is a toast
-  and a re-read, and nothing can be added until the first read lands, so a
-  failed read can't be saved over. Until #306 removes today's board, its own
-  Quick Launch, Pipeline and Checklist panels stay on it, so from 1440px they
-  show twice, each with its own copy of the to-dos.
+  `/api/todos` (`useTodos`): each add, tick and delete saves the whole list
+  (the endpoint replaces it), a new task's id is `uuidV4` (plain HTTP too,
+  #236), a failed save is a toast and a re-read, and nothing can be added
+  until the first read lands, so a failed read can't be saved over. The list
+  is one for the whole page (`todoStore` in `utilities.js`, read through
+  `useSyncExternalStore`): the rail, the Launch page and today's board's
+  card (`TodoCard`, which stays mounted out of sight on every other page)
+  all show and save it, so none saves a stale copy over another's change.
+  Each view reads on mount; a read is dropped when the tab changed the list
+  since it went out, or a save was still out then; the list is forgotten
+  when the last view goes (a sign-out). From 1440px today's board leaves its
+  own Quick Launch, Pipeline and Checklist panels out (`DashboardView`, the
+  same `RAIL_WIDTH`), so each shows once; #306 removes them.
 - **No signal: a stale status** (#480, #495). The poll's status is stale
   when `reach` isn't `ok` once the first answer is in: a failed poll
   (`down`), or a 503 (`waiting`), which the server answers once its status
@@ -1792,7 +1799,9 @@ flowchart TD
   **and keyboard** (arrow move / Shift+arrow resize, with a live region)
   reposition them.
 - **Panels and first run.** The board has a panel per discovered node (its
-  Proxmox lists), plus the Checklist, Scheduled Jobs and Quick Launch panels;
+  Proxmox lists), plus the Checklist, Scheduled Jobs and Quick Launch panels
+  (the Checklist, Quick Launch and Pipeline only below 1440px, where the
+  Overview has no utilities rail, #301);
   the custom groups are the Services section's grouping, not panels (#300). Without a
   saved layout the board is laid out by `defaultLayouts(nodes)` (`layouts.js`)
   from the nodes `/api/services` has and the panels on show. The nodes come
@@ -2619,7 +2628,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   with the bottom tabs, at the same pixel. The utilities (#301,
   `e2e/utilities.spec.mjs`), on the demo's links, commits and to-dos: at
   1440px the Overview's rail beside its sections, level with the attention
-  panel and 280 to 340px wide, and none at 1280, where the Launch page (from
+  panel and 280 to 340px wide, today's board's own three left out, and none
+  at 1280 (the board has them there), where the Launch page (from
   the sidebar) has all three panels and every link group; narrowing across
   1440 drops the rail and keeps today's board's elements (no remount); no
   sideways scroll at 390, 1280, 1440 and 2560px; the Checklist adds, ticks

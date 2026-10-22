@@ -25,7 +25,8 @@ import { sourceBanner } from './sourceHealth';
 import { boardSections, emptyBoardReason, filterLayouts } from './boardFilter';
 import { OverviewInfrastructure } from '../../shell/OverviewInfrastructure.jsx';
 import { OverviewServices } from '../../shell/OverviewServices.jsx';
-import { ShellSection } from '@ui/app-shell';
+import { RAIL_WIDTH, ShellSection } from '@ui/app-shell';
+import { useMediaQuery } from '../../shell/useMediaQuery.js';
 import { Panel } from '@ui/panel';
 import { EmptyState } from '@ui/empty-state';
 import { Button } from '@ui/button';
@@ -150,6 +151,9 @@ export default function DashboardView({
   const upsShown = configured.ups === true && sc.ups?.visible !== false;
   const pipelineShown = configured.pipeline === true && sc.pipeline?.visible !== false;
   const cronShown = config.showCronJobs !== false;
+  // From 1440px the Overview's utilities rail draws Quick Launch, Pipeline and
+  // the Checklist (#301): the board leaves its own out, so they show once.
+  const railed = useMediaQuery(RAIL_WIDTH);
 
   // One page-level announcement for all DISTINCT active source errors, so a
   // global outage (e.g. Prometheus down) is announced once — not once per panel
@@ -192,10 +196,10 @@ export default function DashboardView({
   // that has it.
   const shown = {
     ups: upsShown,
-    pipeline: pipelineShown,
+    pipeline: pipelineShown && !railed,
     'cron-jobs': cronShown,
-    todos: sc.todos?.visible !== false,
-    quicklaunch: sc.quicklaunch?.visible !== false,
+    todos: sc.todos?.visible !== false && !railed,
+    quicklaunch: sc.quicklaunch?.visible !== false && !railed,
   };
   // Joined into strings, so the memos below change only when the set does.
   const shownPanelsKey = STATIC_PANEL_KEYS.filter((k) => shown[k]).join(' ');
@@ -534,7 +538,7 @@ export default function DashboardView({
               </ErrorBoundary>
             </div>
           )}
-          {pipelineShown && kept('pipeline') && (
+          {shown.pipeline && kept('pipeline') && (
             <div key="pipeline">
               <ErrorBoundary inline itemId="pipeline" label="Pipeline panel failed to render">
                 <GiteaActivity

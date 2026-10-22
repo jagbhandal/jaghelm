@@ -191,6 +191,24 @@ describe('Checklist', () => {
     expect(h.onAdd).toHaveBeenLastCalledWith({ text: 'Patch the NAS', due: null });
   });
 
+  it('lays the add row out by its own width: one row from 24rem, else the task over the day and Add', () => {
+    render(<Checklist todos={[]} {...handlers()} />);
+    const form = screen.getByRole('textbox', { name: 'New task' }).closest('form');
+    expect(form).toHaveClass('@container');
+    const grid = form.firstElementChild;
+    expect(grid).toHaveClass(
+      'grid-cols-[minmax(0,1fr)_auto]',
+      '@sm:grid-cols-[minmax(0,1fr)_9rem_auto]'
+    );
+    expect(screen.getByRole('textbox', { name: 'New task' })).toHaveClass(
+      'col-span-2',
+      '@sm:col-span-1'
+    );
+    // The day is the shared field, a date Input: empty, in text-3.
+    expect(screen.getByLabelText('Due day (optional)')).toHaveAttribute('data-slot', 'input');
+    expect(screen.getByLabelText('Due day (optional)')).toHaveAttribute('data-empty');
+  });
+
   it('ticks and deletes by id', async () => {
     const user = userEvent.setup();
     const h = handlers();

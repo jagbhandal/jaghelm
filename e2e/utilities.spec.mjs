@@ -4,8 +4,8 @@
  * to-dos).
  *
  *  - At 1440px the Overview has its rail beside its sections, the mock's
- *    widths; at 1280 there is no rail at all, and the Launch page has all
- *    three. Crossing 1440 keeps today's board where it is (no remount).
+ *    widths, and today's board leaves its own three out; at 1280 there is no
+ *    rail at all, the board has them, and the Launch page has all three. Crossing 1440 keeps today's board where it is (no remount).
  *  - No sideways scroll on the Overview or the Launch page at 1280, 1440 and
  *    2560, nor on the Launch page at 390.
  *  - The Checklist adds, ticks and deletes over plain HTTP (#236): the page
@@ -68,6 +68,9 @@ test.describe('at 1440px', () => {
     await expect(rail(page)).toBeVisible();
     expect(await panelNames(rail(page))).toEqual(PANELS);
     await expect(rail(page).getByRole('link', { name: 'Nextcloud' })).toBeVisible();
+    // The rail has them, so today's board leaves its own out: one of each.
+    for (const title of ['Quick Launch', 'Pipeline Activity', 'Checklist'])
+      await expect(boardTitle(page, title)).toHaveCount(0);
     // Beside the sections: right of the status, its top level with the panel's.
     const status = await page.locator('[data-slot="overview-status"]').boundingBox();
     const box = await page.locator('.overview-rail').boundingBox();
@@ -114,6 +117,8 @@ test.describe('at 1280px', () => {
     await expect(page.getByRole('region', { name: 'Needs attention' })).toBeVisible();
     await expect(rail(page)).toHaveCount(0);
     await expect(page.locator('[data-slot="utilities-rail"]')).toHaveCount(0);
+    // Today's board keeps its own, below the rail's width.
+    await expect(boardTitle(page, 'Checklist')).toBeVisible();
     await noSideScroll(page);
   });
 

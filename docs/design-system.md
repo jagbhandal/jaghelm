@@ -638,7 +638,9 @@ From the mock's Settings and Overview boards:
 - **Input** and the **Select** trigger: the mock's `.field`, `bg-background` in
   a `border-border-strong` edge, 13px `text-1`, placeholder `text-3`, 10px
   padding. Their focus ring sits 1px out, as the mock's does. An invalid one's
-  edge is `border-crit-border`.
+  edge is `border-crit-border`. A date Input (#301) is the same field: empty,
+  its day, month and year are `text-3`, as a placeholder; the browser's
+  calendar button is dimmed to 55%, full under the pointer.
 - **The Select's list** is a popover: `surface-2` in a `border-strong` edge
   with `shadow-pop`, 6px around 8px-radius options (`h-control-sm`, 10px
   padding), the highlighted one tinted `row-hover` as the command palette's
@@ -1727,8 +1729,10 @@ From the mock's Main board, its right-hand column:
   `text-1` (two lines at most) over "repo · sha" in 12px `text-3`, the SHA in
   mono, and the age at the end in 12px `text-3`. With none, "No recent
   commits" (EmptyState sm).
-- **Checklist.** A form, wrapping as the room allows: the task (an Input,
-  "Add a task"), its due day (a date Input) and Add (secondary, `Plus`). Each
+- **Checklist.** A row to add a task: the task (an Input, "Add a task"),
+  its due day (a date Input, 9rem) and Add (secondary, `Plus`), in one row
+  from 24rem of the form's own width (the Launch page); narrower (the rail, a
+  phone), the task across the top and the day beside Add under it. Each
   task a row: its Checkbox inside a label with its words, 13px `text-1`; a
   done one struck through in `text-3`; its due day in 12px `text-3`, or once
   it has passed, "Oct 18 · overdue" semibold in `warn-fg`; Delete, a ghost sm

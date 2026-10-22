@@ -14,7 +14,9 @@
  *   Pipeline     the newest commits, each its message over "repo · sha" and
  *                its age ("12 m"); `banner` over them when the source is
  *                failing; "No recent commits" when there are none.
- *   Checklist    the to-dos: a field to add one (a due day is optional), and
+ *   Checklist    the to-dos: a row to add one (a due day is optional; one
+ *                row from 24rem of its own, else the task over the day and
+ *                Add, as in the rail), and
  *                each one's box, words, due day ("overdue" in warn's word
  *                colour once it has passed) and Delete. `todos` null is still
  *                loading: placeholder lines, and nothing to add to yet, so an
@@ -204,25 +206,26 @@ function Checklist({ todos, onAdd, onToggle, onRemove, banner = null, className,
         )
       ) : (
         <>
-          <form onSubmit={add} className="flex flex-wrap gap-2">
-            <Input
-              aria-label="New task"
-              placeholder="Add a task"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              className="w-auto flex-[1_1_10rem]"
-            />
-            <Input
-              type="date"
-              aria-label="Due day (optional)"
-              value={due}
-              onChange={(e) => setDue(e.target.value)}
-              className="w-auto flex-[1_1_8rem]"
-            />
-            <Button type="submit" variant="secondary">
-              <Plus />
-              Add
-            </Button>
+          <form onSubmit={add} className="@container">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 @sm:grid-cols-[minmax(0,1fr)_9rem_auto]">
+              <Input
+                aria-label="New task"
+                placeholder="Add a task"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                className="col-span-2 @sm:col-span-1"
+              />
+              <Input
+                type="date"
+                aria-label="Due day (optional)"
+                value={due}
+                onChange={(e) => setDue(e.target.value)}
+              />
+              <Button type="submit" variant="secondary">
+                <Plus />
+                Add
+              </Button>
+            </div>
           </form>
           {todos.length > 0 ? (
             <ul aria-label="Tasks" className="flex flex-col gap-0.5">

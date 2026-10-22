@@ -6,6 +6,8 @@
   commits across your Gitea repos; the Checklist adds, ticks and deletes tasks,
   with an optional due day.
 - On a window 1440px wide or more, the Overview shows the same three panels in
-  a column beside its sections. A panel switched off in Settings → Sections
-  stays off there, and Quick Launch and Pipeline appear only once you have
-  links or a Gitea.
+  a column beside its sections, in place of the board's own. A panel switched
+  off in Settings → Sections stays off there, and Quick Launch and Pipeline
+  appear only once you have links or a Gitea.
+- Every Checklist shows the same list, so a task added on one page is never
+  lost to a tick on another.

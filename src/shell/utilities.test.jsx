@@ -1,10 +1,20 @@
-import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getGiteaActivity, getTodos, saveTodos } from '../hooks/useData.js';
 import { ConfigProvider } from '../context/ConfigContext.jsx';
 import { OverlayProvider } from '../context/OverlayContext.jsx';
 import { PIPELINE_ROWS, linkGroups, pipelineRows, usePipeline, useTodos } from './utilities.js';
 import { ChecklistPanel } from './Utilities.jsx';
+import TodoCard from '../components/TodoCard.jsx';
 
 vi.mock('../hooks/useData.js', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -166,6 +176,28 @@ describe('usePipeline', () => {
     expect(result.current.rows).toHaveLength(1);
   });
 
+  it('asks nothing while the browser tab is hidden, and asks at once when it shows again', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let hidden = true;
+    vi.spyOn(Document.prototype, 'hidden', 'get').mockImplementation(() => hidden);
+    const show = (on) =>
+      act(() => {
+        hidden = !on;
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+    renderHook(() => usePipeline(), { wrapper });
+    await act(() => vi.advanceTimersByTimeAsync(3 * 90_000));
+    expect(getGiteaActivity).not.toHaveBeenCalled();
+
+    show(true);
+    await waitFor(() => expect(getGiteaActivity).toHaveBeenCalledTimes(1));
+    show(false);
+    await act(() => vi.advanceTimersByTimeAsync(3 * 90_000));
+    expect(getGiteaActivity).toHaveBeenCalledTimes(1);
+    show(true);
+    await waitFor(() => expect(getGiteaActivity).toHaveBeenCalledTimes(2));
+  });
+
   it('asks nothing while not active', async () => {
     renderHook(() => usePipeline({ active: false }), { wrapper });
     await act(async () => {});
@@ -275,5 +307,69 @@ describe('ChecklistPanel', () => {
     render(<ChecklistPanel />, { wrapper });
     expect(await screen.findByText("Couldn't load the checklist")).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+});
+
+// The old board stays mounted, out of sight, on every other page, and the
+// endpoint replaces the whole list on each save: two views each holding their
+// own copy would save over each other's changes (#301's review). Every view
+// reads and saves the one list.
+describe('one list for every view', () => {
+  function serveTodos(list) {
+    const server = { list };
+    getTodos.mockImplementation(async () => server.list);
+    saveTodos.mockImplementation(async (next) => {
+      server.list = next;
+    });
+    return server;
+  }
+
+  it('a to-do added on the Launch page survives a tick in the old board’s card', async () => {
+    const user = userEvent.setup();
+    const server = serveTodos([{ id: 'a', text: 'Patch the NAS', done: false, due: null }]);
+    render(
+      <>
+        <TodoCard config={{ sections: {} }} />
+        <ChecklistPanel />
+      </>,
+      { wrapper }
+    );
+    const card = () => document.querySelector('.todo-list');
+    const panel = () => screen.getByRole('region', { name: 'Checklist' });
+    const cardBox = (text) =>
+      within(card()).getByText(text).closest('.todo-item').querySelector('input');
+    await within(panel()).findByRole('checkbox', { name: 'Patch the NAS' });
+    await waitFor(() => expect(within(card()).getByText('Patch the NAS')).toBeInTheDocument());
+
+    // Tick in the old card, add on the Launch page, tick in the old card again.
+    fireEvent.click(cardBox('Patch the NAS'));
+    await waitFor(() => expect(server.list[0].done).toBe(true));
+    await user.type(within(panel()).getByRole('textbox', { name: 'New task' }), 'Renew the cert');
+    await user.click(within(panel()).getByRole('button', { name: 'Add' }));
+    await waitFor(() => expect(server.list).toHaveLength(2));
+    fireEvent.click(cardBox('Patch the NAS'));
+
+    await waitFor(() => expect(server.list[0].done).toBe(false));
+    expect(server.list.map((t) => t.text)).toEqual(['Patch the NAS', 'Renew the cert']);
+    // Both views show the one list.
+    expect(within(card()).getByText('Renew the cert')).toBeInTheDocument();
+    expect(within(panel()).getByRole('checkbox', { name: 'Patch the NAS' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    );
+  });
+
+  it('a read that lands after a change doesn’t put the old list back', async () => {
+    let answer;
+    getTodos.mockReturnValueOnce(Promise.resolve([{ id: 'a', text: 'One', done: false }]));
+    const first = renderHook(() => useTodos(), { wrapper });
+    await waitFor(() => expect(first.result.current.todos).toHaveLength(1));
+    // A second view mounts and reads; before that read lands, the first adds.
+    getTodos.mockReturnValueOnce(new Promise((r) => (answer = r)));
+    const second = renderHook(() => useTodos(), { wrapper });
+    act(() => first.result.current.add({ text: 'Two' }));
+    await act(async () => answer([{ id: 'a', text: 'One', done: false }]));
+    expect(second.result.current.todos.map((t) => t.text)).toEqual(['One', 'Two']);
+    expect(first.result.current.todos.map((t) => t.text)).toEqual(['One', 'Two']);
   });
 });
