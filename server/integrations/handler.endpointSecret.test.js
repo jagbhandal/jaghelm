@@ -20,6 +20,7 @@ const { initSecrets, setSecret } = await import('../secrets.js');
 const { initRegistry } = await import('./registry.js');
 const { fetchIntegration, testIntegration } = await import('./handler.js');
 const { resolveIntegrationConfig } = await import('./lib/config.js');
+const { originOf } = await import('./lib/origin.js');
 const { hideUrlCredential } = await import('./lib/http.js');
 
 initSecrets();
@@ -68,10 +69,13 @@ function custom(extra) {
   };
 }
 
-/** Store `value` under the name a Settings save uses, and return its reference. */
-function stored(key, field, value) {
+/**
+ * Store `value` under the name a Settings save uses, for the origin of `url`
+ * (the upstream's by default, #556), and return its reference.
+ */
+function stored(key, field, value, url = up.url) {
   const name = `integration_${key}_${field}`;
-  assert.equal(setSecret(name, value), true, 'the secrets store took the value');
+  assert.equal(setSecret(name, value, { origins: [originOf(url)] }), true, 'the secrets store took the value');
   return `$secret:${name}`;
 }
 
@@ -166,7 +170,7 @@ test('a resolved {token} still refuses a redirect to another origin', async () =
   try {
     const value = `tok-${hex()}`;
     const { key, yaml } = custom({ url: from.url, endpoint: '/api/stats?key={token}' });
-    yaml.token = stored(key, 'token', value);
+    yaml.token = stored(key, 'token', value, from.url);
 
     const result = await fetchIntegration(key, yaml);
 

@@ -164,7 +164,8 @@ test('a plain URL saves and tests as before, a query or an @ in the path include
     'http://adguard2.example.test/u@x',
   ]) {
     stored();
-    const body = { type: 'adguard', url, username: 'admin', editingKey: 'adguard' };
+    // Another address: the password is typed again for it (#556).
+    const body = { type: 'adguard', url, username: 'admin', password: 'typed-pw', editingKey: 'adguard' }; // pragma: allowlist secret
     const tested = await post('test', body);
     assert.equal(tested.status, 200, url);
     assert.equal(tested.body.ok, true, tested.body.error);
