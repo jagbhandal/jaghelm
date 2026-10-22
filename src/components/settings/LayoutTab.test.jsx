@@ -18,7 +18,7 @@ describe('Settings → Layout', () => {
   // #300: the board has no service cards; the Overview's Services section
   // lists the services, so the cards' options would change nothing.
   it('has no Service Cards options: the board draws no service card', () => {
-    renderTab({ showDockerStats: true, cardLayout: 'grid', statusStyle: 'dot' });
+    renderTab({ cardLayout: 'grid', statusStyle: 'dot' });
     expect(screen.queryByText('Service Cards')).toBeNull();
     for (const name of ['Card Layout', 'Status Style', 'Service Columns per Row'])
       expect(screen.queryByRole('group', { name })).toBeNull();

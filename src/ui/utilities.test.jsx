@@ -7,6 +7,8 @@ import {
   Pipeline,
   QuickLaunch,
   UtilitiesRail,
+  WeatherClock,
+  WebSearch,
   shortAgo,
 } from '@ui/utilities';
 
@@ -264,5 +266,113 @@ describe('UtilitiesRail and LaunchLayout', () => {
         .map((el) => el.dataset.slot)
         .filter((s) => ['quick-launch', 'pipeline', 'checklist'].includes(s))
     ).toEqual(['quick-launch', 'pipeline', 'checklist']);
+  });
+});
+
+// #307: weather and the clock in the rail and on the Launch page, and the web
+// search on the Launch page.
+describe('WeatherClock', () => {
+  const WEATHER = { temperature: '48°F', condition: 'Overcast', code: 3, place: 'Toronto' };
+  const TIME = new Date(NOW).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const DAY = new Date(NOW).toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+
+  it('is a panel named Weather and time: the reading and its place, then the time and day', () => {
+    render(<WeatherClock weather={WEATHER} now={NOW} />);
+    const panel = screen.getByRole('region', { name: 'Weather and time' });
+    expect(panel).toHaveAttribute('data-slot', 'weather-clock');
+    const weather = panel.querySelector('[data-slot="weather"]');
+    expect(weather).toHaveTextContent('48°F · Overcast');
+    expect(within(weather).getByText('Toronto')).toHaveClass('text-text-3');
+    // The condition's icon is drawn for it, and hidden: the words say it.
+    expect(weather.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    const time = within(panel).getByText(TIME);
+    expect(time.tagName).toBe('TIME');
+    expect(time).toHaveAttribute('dateTime', new Date(NOW).toISOString());
+    expect(within(panel).getByText(DAY)).toHaveClass('text-text-3');
+    // Weather first, the clock at the row's end, as the mock has it.
+    expect(panel.querySelector('[data-slot="clock"]')).toHaveClass('ml-auto');
+  });
+
+  it('draws only what it is given, named by it, and nothing with neither', () => {
+    const { rerender, container } = render(<WeatherClock now={NOW} />);
+    expect(screen.getByRole('region', { name: 'Time' })).toHaveTextContent(TIME);
+    expect(document.querySelector('[data-slot="weather"]')).toBeNull();
+    rerender(<WeatherClock weather={WEATHER} />);
+    expect(screen.getByRole('region', { name: 'Weather' })).toHaveTextContent('48°F');
+    expect(document.querySelector('[data-slot="clock"]')).toBeNull();
+    rerender(<WeatherClock />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('leaves the condition out when the code has no words, with a thermometer for its icon', () => {
+    render(<WeatherClock weather={{ temperature: '-3°C', condition: null, code: 42 }} />);
+    const weather = document.querySelector('[data-slot="weather"]');
+    expect(weather).toHaveTextContent(/^-3°C$/);
+    expect(weather.querySelector('svg')).toHaveClass('lucide-thermometer');
+  });
+
+  it('while the first reading is on its way, a placeholder; when it failed, says so', () => {
+    const { rerender } = render(<WeatherClock weather={{ loading: true, place: 'Toronto' }} />);
+    const panel = screen.getByRole('region', { name: 'Weather' });
+    expect(panel).toHaveAttribute('aria-busy', 'true');
+    expect(within(panel).getByText('Loading the weather')).toHaveClass('sr-only');
+    rerender(<WeatherClock weather={{ failed: true, place: 'Toronto' }} />);
+    expect(panel).not.toHaveAttribute('aria-busy');
+    expect(panel).toHaveTextContent('No weather reading');
+    expect(panel).toHaveTextContent('Toronto');
+  });
+});
+
+describe('WebSearch', () => {
+  it('is a search landmark with a field named for its engine and a Search button', () => {
+    render(<WebSearch engine="DuckDuckGo" onSearch={vi.fn()} />);
+    const form = screen.getByRole('search', { name: 'Web search' });
+    expect(form).toHaveAttribute('data-slot', 'web-search');
+    const field = within(form).getByRole('searchbox', { name: 'Search the web with DuckDuckGo' });
+    expect(field).toHaveAttribute('placeholder', 'Search DuckDuckGo');
+    expect(field).toHaveAttribute('data-slot', 'input');
+    expect(within(form).getByRole('button', { name: 'Search' })).toHaveAttribute('type', 'submit');
+  });
+
+  it('hands over the words, trimmed, and clears the field; empty words search nothing', async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn();
+    render(<WebSearch engine="Google" onSearch={onSearch} />);
+    const field = screen.getByRole('searchbox');
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+    await user.type(field, '   {Enter}');
+    expect(onSearch).not.toHaveBeenCalled();
+    await user.clear(field);
+    await user.type(field, '  zfs scrub schedule {Enter}');
+    expect(onSearch).toHaveBeenCalledExactlyOnceWith('zfs scrub schedule');
+    expect(field).toHaveValue('');
+  });
+});
+
+describe('LaunchLayout with the extras (#307)', () => {
+  it('puts weather and the clock, then the search, across the top, before Quick Launch', () => {
+    render(
+      <LaunchLayout
+        extras={<WeatherClock now={NOW} />}
+        search={<WebSearch engine="Google" onSearch={vi.fn()} />}
+        quickLaunch={<QuickLaunch groups={GROUPS} />}
+      />
+    );
+    const top = document.querySelector('[data-slot="launch-top"]');
+    expect(top).toHaveClass('@2xl:col-span-2', 'flex-wrap');
+    expect(
+      [...document.querySelectorAll('[data-slot]')]
+        .map((el) => el.dataset.slot)
+        .filter((s) => ['weather-clock', 'web-search', 'quick-launch'].includes(s))
+    ).toEqual(['weather-clock', 'web-search', 'quick-launch']);
+  });
+
+  it('draws no top row without either', () => {
+    render(<LaunchLayout quickLaunch={<QuickLaunch groups={GROUPS} />} />);
+    expect(document.querySelector('[data-slot="launch-top"]')).toBeNull();
   });
 });

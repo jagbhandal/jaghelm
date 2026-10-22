@@ -93,7 +93,7 @@ function flushServerSave() {
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: '🏠', desc: 'Title, logo, branding' },
-  { id: 'appearance', label: 'Appearance', icon: '🎨', desc: 'Theme, colors, background' },
+  { id: 'appearance', label: 'Appearance', icon: '🎨', desc: 'Theme, Overview sections, background' },
   { id: 'typography', label: 'Typography', icon: '🔤', desc: 'Fonts, sizes, readability' },
   { id: 'layout', label: 'Layout', icon: '📐', desc: 'Grid, refresh, links' },
   { id: 'sections', label: 'Sections', icon: '🧱', desc: 'UPS, Pipeline, Quick Launch, Todos' },
@@ -101,7 +101,7 @@ const SECTIONS = [
   { id: 'services', label: 'Services', icon: '📦', desc: 'Container overrides & monitors' },
   { id: 'integrations', label: 'Integrations', icon: '🔌', desc: 'App API connections' },
   { id: 'links', label: 'Links', icon: '🔗', desc: 'Quick Launch bookmarks', divider: true },
-  { id: 'widgets', label: 'Widgets', icon: '🧩', desc: 'Search, weather, features' },
+  { id: 'widgets', label: 'Widgets', icon: '🧩', desc: 'Search, weather, clock, features' },
   { id: 'tabs', label: 'Tabs', icon: '📑', desc: 'Embedded service tabs' },
   {
     id: 'security',

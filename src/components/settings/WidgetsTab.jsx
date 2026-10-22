@@ -15,6 +15,12 @@ function coordError(raw, min, max, label) {
   return null;
 }
 
+/**
+ * Settings → Widgets: the web search (the Launch page), the weather and the
+ * clock (the Overview's utilities rail from 1440px, and the Launch page), as
+ * #307 brought them back, and the scheduled jobs' panel. The Checklist's
+ * switch is Settings → Sections' (the old one here did nothing, #307).
+ */
 export default function WidgetsTab() {
   const { config, update } = useConfig();
 
@@ -55,7 +61,7 @@ export default function WidgetsTab() {
     <div className="settings-section">
       <Card title="Search">
         <Toggle
-          label="Show search bar in navigation"
+          label="Show the web search on the Launch page"
           checked={config.showSearch !== false}
           onChange={(v) => update('showSearch', v)}
         />
@@ -76,7 +82,7 @@ export default function WidgetsTab() {
 
       <Card title="Weather">
         <Toggle
-          label="Show weather in navigation"
+          label="Show the weather on the Overview and the Launch page"
           checked={config.showWeather !== false}
           onChange={(v) => update('showWeather', v)}
         />
@@ -123,12 +129,15 @@ export default function WidgetsTab() {
         </Field>
       </Card>
 
-      <Card title="Features">
+      <Card title="Clock">
         <Toggle
-          label="Show checklist panel on dashboard"
-          checked={config.showTodos !== false}
-          onChange={(v) => update('showTodos', v)}
+          label="Show the clock on the Overview and the Launch page"
+          checked={config.showClock !== false}
+          onChange={(v) => update('showClock', v)}
         />
+      </Card>
+
+      <Card title="Features">
         <Toggle
           label="Show scheduled jobs panel on dashboard"
           checked={config.showCronJobs !== false}

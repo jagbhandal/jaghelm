@@ -150,8 +150,10 @@ src/                        React 19 SPA (Vite 8)
                             Services section, its rows from the model, #300),
                             Utilities.jsx, utilities.js and LaunchPage.jsx (Quick Launch,
                             Pipeline and the Checklist: the Overview's rail from 1440px
-                            and the Launch page, #301), useMediaQuery.js (a width the
-                            markup changes at),
+                            and the Launch page, #301), extras.js (weather, the clock
+                            and the web search, #307), overviewSections.js (the
+                            Overview's show/hide switches, #307), useMediaQuery.js (a
+                            width the markup changes at),
                             statusFreshness.js (the one rule for a stale status: whether
                             the poll's status is current, and how each place draws one
                             that isn't), theme.js (dark, light or system, and the old
@@ -195,7 +197,8 @@ src/                        React 19 SPA (Vite 8)
                              bottom-tabs, app-bar), the Overview's sections (#299:
                              node-card, infrastructure-section; #300: services-section),
                              the utilities (#301: utilities, Quick Launch, Pipeline,
-                             the Checklist, the rail and the Launch page's layout),
+                             the Checklist, the rail and the Launch page's layout;
+                             #307: WeatherClock, WebSearch),
                              lib/status.js (the five states, their words,
                              the two looks, and why there is no signal),
                              lib/ago.js ("12 s ago", and the one clock every age on
@@ -217,8 +220,8 @@ gallery/                    the component gallery (development and CI only, docs
 e2e/                        the app shell's browser tests (shell.spec.mjs, overview.spec.mjs,
                             infrastructure.spec.mjs, services.spec.mjs, no-signal.spec.mjs,
                             phone-split.spec.mjs, login.spec.mjs, utilities.spec.mjs,
-                            reflow.spec.mjs, first-load.spec.mjs, what they share in app.mjs;
-                            see 8): the
+                            reflow.spec.mjs, first-load.spec.mjs, extras.spec.mjs, what
+                            they share in app.mjs; see 8): the
                             production build served
                             by `vite preview`, every /api request answered in the test; run
                             by playwright.e2e.config.mjs in the gallery's container
@@ -1540,8 +1543,8 @@ flowchart TD
   SH --> OL["/ : OverviewLayout<br/>(the utilities rail from 1440px)"]
   OL --> OS["OverviewStatus<br/>(the poll's status: ShellAttention,<br/>SubsystemStrip, the ?subsystem= filter)"]
   OL --> DV["DashboardView"]
-  OL --> UR["UtilitiesRail: Quick Launch,<br/>Pipeline, Checklist (utilities.js)"]
-  SH --> LP["/launch : LaunchPage<br/>(the same three panels)"]
+  OL --> UR["UtilitiesRail: weather and the clock,<br/>Quick Launch, Pipeline, Checklist<br/>(utilities.js, extras.js)"]
+  SH --> LP["/launch : LaunchPage<br/>(the same panels and the web search)"]
   DV --> OI["OverviewInfrastructure<br/>(the poll's status + the board's readings:<br/>InfrastructureSection, cards or table)"]
   DV --> OSV["OverviewServices<br/>(the poll's status + the board's latency and<br/>app metrics: ServicesSection, by node or group)"]
   SH --> AP["/alerts : AlertsPage<br/>(ShellAttention)"]
@@ -1847,6 +1850,29 @@ flowchart TD
   when the last view goes (a sign-out). From 1440px today's board leaves its
   own Quick Launch, Pipeline and Checklist panels out (`DashboardView`, the
   same `RAIL_WIDTH`), so each shows once; #306 removes them.
+- **Today's extras and the Overview's sections** (#307, spec §8 "Today's
+  extras keep a home"). The weather, the clock and the web search, which the
+  old header drew, are back (`src/shell/extras.js`, wired in `Utilities.jsx`):
+  weather and the clock are one card (`WeatherClock`) at the top of the
+  rail from 1440px and at the top of the Launch page at every width; the web
+  search (`WebSearch`) is on the Launch page beside them. They read
+  Settings → Widgets as before: the weather shows when it is on and a place
+  is set (`showWeather`, `weatherLat`, `weatherLon`, the city, `tempUnit`
+  over `/api/weather`'s Fahrenheit), the clock until `showClock` is false
+  (the old header always drew it), the search until `showSearch` is false;
+  the search sends the words to `searchEngine`'s results page in a new tab,
+  with no opener. A card shows only what is configured, and nothing with
+  neither; the rail is drawn when it has any panel. Settings → Appearance →
+  Overview sections has a show/hide switch for the subsystem strip,
+  Infrastructure, Services and the whole rail (`overviewSections` in the
+  display config, `sectionShown`), which the server holds, so a section
+  hidden on one device is hidden on the next load on another. The attention
+  panel's switch is on and locked: it shows only when something is wrong,
+  so it is never hidden, whatever the config says. With Infrastructure off
+  the node panels carry the nodes' anchors again; with the strip off a phone
+  draws the attention panel as one card. The Launch page keeps every
+  utility whatever the rail's switch says. Reordering waits for Edit layout
+  (Phase 5).
 - **No signal: a stale status** (#480, #495). The poll's status is stale
   when `reach` isn't `ok` once the first answer is in: a failed poll
   (`down`), or a 503 (`waiting`), which the server answers once its status
@@ -2003,8 +2029,9 @@ flowchart TD
   only while drawn and the browser tab shows: Pipeline `/api/gitea/activity`
   every third interval (90 s at 30 s), with the board's ETag, so the rail's
   read beside the board's is a 304; the Checklist reads `/api/todos` once when
-  it is drawn. Nothing fetches the weather while it has no
-  place on screen (#307 brings it back, in the Overview's side panel). The
+  it is drawn; the weather (#307) `/api/weather` when it is drawn (unless
+  the page read it in the last 10 minutes), then every 10 minutes, a failed
+  read again a minute later, and nothing while it is configured off. The
   Settings preview loads once when shown and refreshes only on its button.
 - **App tabs.** An `iframe` tab in the config is an app, opened at `/apps/<id>`.
   Its frame mounts on the first visit and stays mounted while another page is
@@ -2510,8 +2537,14 @@ All state is files under the data dir (no DB):
     under that key starts with no credential. A save whose write fails
     stores nothing (4.4).
 - **display config** -- title, theme, layout (`{lg,md,sm}` grid item arrays),
-  sections (per-panel visibility/order/colour), nav/search/weather flags,
-  links, tabs, fonts. Read copy-on-read; validated by Zod.
+  sections (per-panel visibility/order/colour), `overviewSections` (the
+  Overview's show/hide switches, #307), search/weather/clock flags
+  (`showSearch`, `showWeather`, `showClock`), links, tabs, fonts. Read
+  copy-on-read; validated by Zod (`overviewSections` only takes on or off).
+  The client drops two keys nothing reads (`dropDeadKeys`,
+  `src/shell/overviewSections.js`): `showTodos`, Widgets' old "Show
+  checklist panel", which nothing drawn ever read, and `showDockerStats`.
+  Nothing else changes; the server's copy loses them at the next save.
 - **secrets** -- AES-256-GCM blob, keyed by integration storage key.
 - **config version key** -- `config-version.key`: 32 random bytes (mode 0600)
   that `services.yaml`'s version is an HMAC with (#423, above). Made on first
@@ -2818,7 +2851,15 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   and deletes over plain HTTP (no `crypto.randomUUID` in the page), each
   change reaching the server, which a reload shows, on the Launch page and in
   the rail; axe, dark and light, on the whole Launch page and on the
-  Overview's shell, status and rail. Nothing hides (#302,
+  Overview's shell, status and rail. Today's extras (#307,
+  `e2e/extras.spec.mjs`): at 1440px weather and the clock at the top of the
+  rail when configured, and none (no `/api/weather` read) when not; at 1280
+  no rail, and the Launch page has them beside the web search, over Quick
+  Launch; the search opens the configured engine's results in a new tab
+  with no opener; a section switched off in Settings → Appearance stays off
+  after a reload in a second browser context (another device), against a
+  server that keeps the display config it is sent, and comes back when
+  switched on there; axe on the rail and the Launch page. Nothing hides (#302,
   `e2e/reflow.spec.mjs`): the Overview at 360, 390, 768, 1024, 1280, 1440,
   1920 and 2560px, healthy and incident, and on the incident with the
   model's longest subsystem details at each of them: the page no wider than

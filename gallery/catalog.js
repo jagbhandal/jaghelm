@@ -333,12 +333,12 @@ export const CATALOG = Object.freeze([
   s(
     'utilities-rail',
     'Utilities',
-    "The Overview's rail at 1440px: Quick Launch, Pipeline and the Checklist, one task overdue"
+    "The Overview's rail at 1440px: weather and the clock, Quick Launch, Pipeline and the Checklist, one task overdue"
   ),
   s(
     'launch-page',
     'Utilities',
-    'The Launch page: Quick Launch across the top, Pipeline and the Checklist under it'
+    'The Launch page: weather and the clock beside the web search, Quick Launch, then Pipeline and the Checklist'
   ),
   s(
     'utilities-empty',
@@ -346,6 +346,11 @@ export const CATALOG = Object.freeze([
     'Empty: no links yet (the Launch page), no recent commits, nothing on the list'
   ),
   s('utilities-failing', 'Utilities', "Failing: Gitea isn't answering, the checklist didn't load"),
+  s(
+    'utilities-weather',
+    'Utilities',
+    'WeatherClock (#307): the clock alone, a long condition in °F, the first reading on its way, no reading'
+  ),
 ]);
 
 /**

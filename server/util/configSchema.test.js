@@ -46,6 +46,18 @@ test('displayConfig: validates known fields but allows unknown ones through', ()
   assert.equal(ok.data.someNewToggle, true);
 });
 
+test('displayConfig: the Overview sections are switches, on or off (#307)', () => {
+  const ok = validateConfig(displayConfigSchema, {
+    overviewSections: { strip: false, rail: true },
+  });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.data.overviewSections, { strip: false, rail: true });
+  assert.equal(validateConfig(displayConfigSchema, { overviewSections: { rail: 'no' } }).ok, false);
+  assert.equal(validateConfig(displayConfigSchema, { overviewSections: { rail: 0 } }).ok, false);
+  assert.equal(validateConfig(displayConfigSchema, { overviewSections: 'rail' }).ok, false);
+  assert.equal(validateConfig(displayConfigSchema, {}).ok, true);
+});
+
 test('rejects a nested __proto__ key, not just top-level (recursive guard)', () => {
   // Built via JSON.parse (as express.json() does) so __proto__ is an OWN key — an
   // object literal's __proto__: would set the prototype instead, which isn't the vector.

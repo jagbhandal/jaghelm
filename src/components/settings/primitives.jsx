@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { iconImageSrc } from '../../utils/icon.jsx';
 
 /**
@@ -23,12 +23,32 @@ export function Card({ title, children }) {
 /**
  * Checkbox toggle with an associated label. `onChange` receives the new boolean
  * checked state (not the event), matching every call site's existing usage.
+ * `description`, a line under the label, is the box's description (not part
+ * of its name); `disabled` locks it as it is (#307: the Overview's attention
+ * panel, which can't be hidden).
  */
-export function Toggle({ label, checked, onChange }) {
+export function Toggle({ label, checked, onChange, description, disabled = false }) {
+  const id = useId();
   return (
-    <label className="settings-toggle">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span>{label}</span>
+    <label className="settings-toggle" style={disabled ? { cursor: 'default' } : undefined}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        aria-labelledby={description ? `${id}-label` : undefined}
+        aria-describedby={description ? `${id}-desc` : undefined}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      {description ? (
+        <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <span id={`${id}-label`}>{label}</span>
+          <span id={`${id}-desc`} className="settings-hint-block" style={{ marginTop: 2 }}>
+            {description}
+          </span>
+        </span>
+      ) : (
+        <span>{label}</span>
+      )}
     </label>
   );
 }
