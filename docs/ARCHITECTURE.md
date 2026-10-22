@@ -128,6 +128,9 @@ server/                     Express API (Node 26, ESM)
 src/                        React 19 SPA (Vite 8)
   main.jsx, App.jsx         providers (Config, Overlay) + ErrorBoundary + the shell and its
                             pages, by route (see 5, "Shell and routing")
+  lazyViews.js              the loaders of the views loaded on first use (Settings, the app
+                            frames, Alerts, the More sheet), every React.lazy() takes one;
+                            the client tests load them all up front (see 8)
   router/                   routes.js (the route table: paths, params, the routes hidden until
                             their page exists), useRoute.js (the History API router, and a
                             query parameter, useSearchParam)
@@ -2410,6 +2413,11 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   own model, never written by hand: the demo's boards as a client gets them
   (`demoBoard`), with a node's readings or the lines moved, among them the
   incident with the NAS at 94.6 % disk (`nasDiskIncident`).
+  A test file that imports the app loads every lazily loaded view
+  (`src/lazyViews.js`) before its tests run, and from then on each renders
+  at once, without suspending (`src/testing/setup.js`). So a test that opens
+  Settings, Alerts, an app or the More sheet never races its first import,
+  or React's held-back reveal of it, on a busy machine (#490).
 - **Cross-client status suite** (both of the above): seven named status fixtures
   (`server/testing/statusScenarios.js`) through the real push cycle
   (`server/status/crossClient.test.js`, in `test:ci`) and through the `src/ui`
@@ -2509,8 +2517,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   `ui-preflight.test.mjs`), and the design tokens' shape and contrast
   (`ui-tokens.test.mjs`, `ui-contrast.test.mjs`) and the chart colours
   (`chart-palette.test.mjs`), and the fonts and type scale
-  (`fonts.test.mjs`). Write new repo checks this way, not as shell
-  scripts: `npm test` only collects `*.test.{js,mjs,cjs}`.
+  (`fonts.test.mjs`), and every lazy view's loader in `src/lazyViews.js`,
+  the list the client tests load up front (`lazy-views.test.mjs`). Write new
+  repo checks this way, not as shell scripts: `npm test` only collects
+  `*.test.{js,mjs,cjs}`.
 
 `npm test` preloads `scripts/test-data-dir.mjs`, which gives every test process
 its own temp `JAGHELM_DATA_DIR`, so the suite never reads or writes the
