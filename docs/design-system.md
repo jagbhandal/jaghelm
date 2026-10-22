@@ -1063,24 +1063,36 @@ is in, not the window):
   showing `border-subtle`, in one 12px-round frame. A tile is `surface-1`, or
   its state's tint when it is a warning, critical or no signal; maintenance
   stays on `surface-1`, its wrench saying it (spec §6.1). A tile is a lamp and
-  an overline label, over the value (`title-sm`) and `sub` (12px `text-3`).
+  an overline label, over the value (`title-sm`, bold `text-1`) and `sub`
+  (12px `text-3`), the model's own two lines (#541): a short value ("31 /
+  32", "On battery") over the line that says what it counts ("up · 1 in
+  maintenance", "64 % charge"). The mock draws the value at 18/24; it maps
+  to `title-sm` (16/22), as the type table above has it.
   The tint is laid over the tile's `surface-1` (a one-colour gradient over the
   background colour), never over the frame's `border-subtle` that shows in the
   gaps: there the `text-3` label and line fell to 3.85:1 in light, which the
   gallery's axe check found (#289); over `surface-1` they keep the 4.5:1 the
   contrast check holds. Under the pointer a tile is `surface-2`, tinted or not.
   The label ends in an ellipsis when it doesn't fit, after using 4px of the
-  tile's padding; the value and `sub` wrap, and a word wider than its tile
-  (the model's "1 in maintenance" with six to a row, from 1024px) breaks onto
-  the next line rather than run under the tile beside it (#302). Six sit in a row from 672px, three from 320px and two below
-  that, where a tile is the Phone board's: a 14px value and no `sub`. A strip
+  tile's padding. The value and `sub` wrap only between words
+  (`overflow-wrap: normal`): no word or number is ever cut in two or ends in
+  an ellipsis, and every status fixture's value keeps to one line at 1024,
+  1280 and 1440px (`e2e/reflow.spec.mjs`). From 672px a tile is the wide one
+  above; six sit in a row from 720px, and from 672px in rows of three, since
+  a six-to-a-row tile narrower than that has no room for "On battery" on one
+  line (#541). Four and five sit in a row from 672px, three from 320px and
+  two below that, where a tile is the Phone board's: a 14px value and no
+  `sub`. A strip
   holds one to six tiles and never leaves an empty slot, which would show the
   frame's `border-subtle`: four sit two by two when narrow, and five as 3 + 2
   or 2 + 2 + 1, the last tile spanning the rest of its row. With `onSelect` the
   tiles are toggles, `surface-2` under the pointer, the selected one inside a
   1.5px accent edge. With a stale status (#480) the shell gives every tile
-  `unknown`, its word and count kept, and "Last known 3 min ago" as `sub`:
-  the steel tint and ring, never a level's colour.
+  `unknown`, its word and count kept, and its sub-line marked last known ("up
+  · last known 3 min ago", or "Last known 3 min ago" alone where the model
+  gives none): the steel tint and ring, never a level's colour. The Android
+  look's cell draws the same value over the same sub-line, in the app's
+  type: the value 14px bold, the sub-line 11px mono.
 - **AttentionPanel.** With issues, or in any state but ok and maintenance
   (which never make an issue, spec §6.1), the mock's attention panel: a 14px
   lamp beside the heading, at `headline` (24/30): the word in its colour, then
@@ -1095,7 +1107,7 @@ is in, not the window):
   quiet line too, before `meta`, since the board under it is filtered.
   Healthy stays quiet (rule 3): no green word. Maintenance doesn't break the quiet line (spec §6.1): its heading
   still says "All systems normal", its lamp is the wrench, and the strip's
-  tile under it says what is in maintenance ("1 in maintenance"). An empty
+  tile under it says what is in maintenance ("up · 1 in maintenance"). An empty
   board (`empty`, nothing set up, #449) is the quiet line with no lamp: its
   heading is `word`, or else the sentence in `counts`, the model's "Nothing
   monitored yet", said once. It never says "All systems normal", since nobody
