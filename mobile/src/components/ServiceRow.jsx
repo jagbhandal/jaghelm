@@ -3,25 +3,22 @@ import { getServiceIcon } from '@shared/hooks/useData.js';
 import { lastSeenLabel } from '@shared/util/relativeTime.js';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
-import { statusToShape, statusToSeverity } from '../data/derive.js';
 
 /**
- * One service row: StatusLamp (shape) + StatusWord (UP/DOWN/UNKNOWN) + base-aware
- * icon (NEVER a relative /api path) + name (DM Sans, ellipsis) + node tag (mono) +
- * ping (mono; omitted when null). The whole row is a button → onTap(service).
- * Breadcrumbs show "last seen X ago"; unmonitored services show an "unmonitored" tag.
- * Compact ≤ 48px; worst-first ordering is the caller's responsibility.
+ * One service row: StatusLamp + StatusWord + base-aware icon (NEVER a relative
+ * /api path) + name (DM Sans, ellipsis) + node tag (mono) + ping (mono;
+ * omitted when null). The lamp and word are the status model's for the
+ * service (#325; data/board.js serviceRowsOf gives `state` and `word`: "Up",
+ * "Down", "Pending", "Missing", "Maintenance", "No signal"). The whole row is
+ * a button → onTap(service). Breadcrumbs show "last seen X ago"; unmonitored
+ * services show an "unmonitored" tag. Compact ≤ 48px; worst-first ordering
+ * is the caller's responsibility.
  */
 export default function ServiceRow({ service, onTap }) {
   const icon = getServiceIcon(service.icon) || getServiceIcon(service.display_name);
   const isBreadcrumb = service.source === 'presence';
   const isUnmonitored = service.monitored === false && !isBreadcrumb;
-
-  const shape = statusToShape(service.status, service.source);
-  const severity = statusToSeverity(service.status, service.source);
-  // Strict status word: only up/down are named; everything else reads UNKNOWN
-  // (never a raw container state like RUNNING).
-  const word = service.status === 'up' ? 'UP' : service.status === 'down' ? 'DOWN' : 'UNKNOWN';
+  const { state, word } = service;
 
   return (
     <button
@@ -30,8 +27,8 @@ export default function ServiceRow({ service, onTap }) {
       onClick={() => onTap && onTap(service)}
       aria-label={`${service.display_name} on ${service.nodeName}`}
     >
-      <StatusLamp shape={shape} severity={severity} label={word} size={16} />
-      <StatusWord word={word} severity={severity} />
+      <StatusLamp state={state} label={word} size={16} />
+      <StatusWord word={word} state={state} />
       {icon && (
         <img
           role="img"

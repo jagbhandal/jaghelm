@@ -18,13 +18,15 @@
  * at the places it names. An exception that no longer happens fails too, so
  * deleting it is the whole change once it is settled.
  *
- * Not covered: the legacy derivations, src/utils/thresholds.js (deleted by
- * #306) and mobile/src/data/derive.js (deleted by #325 and #326). Android's
- * screens join this suite in #325, when they render the model.
+ * The app opens the issue a push is about: its route (routeFromData) is the
+ * model's entity id, which Incident detail finds the issue by (#325,
+ * mobile/src/nav/issueRoute.js issueFor). Android's screens are in the suite
+ * too, mobile/src/crossClient.test.jsx (`npm --prefix mobile test`).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { issueFor } from '../../mobile/src/nav/issueRoute.js';
 import { routeFromData } from '../../mobile/src/push/routeFromData.js';
 import { runPushCycle } from '../push/dispatch.js';
 import { alertStateKey } from '../push/differ.js';
@@ -86,27 +88,31 @@ function pageFor(issue) {
   }
 }
 
-/** The model's entity (or source issue) a push is about, from the FCM data the phone gets. */
+/**
+ * The model's entity (or source issue) a push is about, from the FCM data the
+ * phone gets, and the id the app routes it to: the entity's own, but a job's
+ * for a backup (the data doesn't say which; issueFor finds it either way).
+ */
 function subjectOf(data, status) {
   const { type, id, node } = data;
   const family = type.slice(0, type.indexOf('_'));
   switch (family) {
     case 'service':
-      return { id: `services/${id}`, route: `service:${id}` };
+      return { id: `services/${id}`, route: `services/${id}` };
     case 'host':
       return {
         id: `nodes/${node}`,
         reading: type.startsWith('host_threshold') ? id.slice(node.length + 1) : null,
-        route: null,
+        route: `nodes/${node}`,
       };
     case 'ups':
-      return { id: 'power/ups', route: 'ups:apcups' };
+      return { id: 'power/ups', route: 'power/ups' };
     case 'cron': {
       const backup = status.entities.some((e) => e.id === `backups/${id}`);
-      return { id: `${backup ? 'backups' : 'jobs'}/${id}`, route: `cron:${id}` };
+      return { id: `${backup ? 'backups' : 'jobs'}/${id}`, route: `jobs/${id}` };
     }
     case 'source':
-      return { id: `sources/${id}`, source: id, route: null };
+      return { id: `sources/${id}`, source: id, route: `sources/${id}` };
     default:
       return { id: `?${type}`, route: null };
   }
@@ -365,10 +371,12 @@ test('cross-client, push: what each fixture sends, and every FCM message the app
           event.severity === 'critical' ? 'high' : 'normal',
           where
         );
-        // The app opens the entity the push is about.
+        // The app opens the entity the push is about: its issue, found by the route.
         const routes = [];
         routeFromData(msg.data, { push: (_screen, params) => routes.push(params.id) });
-        assert.deepEqual(routes, [subjectOf(msg.data, run.status).route], where);
+        const subject = subjectOf(msg.data, run.status);
+        assert.deepEqual(routes, [subject.route], where);
+        assert.equal(issueFor(run.status, routes[0])?.id, subject.id, where);
       }
     }
   }

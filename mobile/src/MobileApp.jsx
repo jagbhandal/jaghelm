@@ -5,7 +5,8 @@ import { LAST_TAB_KEY } from './runtimeConfig.js';
 import { getPref, setPref } from './storage/prefsAdapter.js';
 import { useNavStack } from './nav/useNavStack.js';
 import { useDashboard } from './data/useDashboard.js';
-import { overallSeverity, flattenServices, worstCaution, pluralize } from './data/derive.js';
+import { annunciatorOf } from './data/board.js';
+import { useStatusFreshness } from '@shared/shell/statusFreshness.js';
 import Overview from './views/Overview.jsx';
 import Services from './views/Services.jsx';
 import Infra from './views/Infra.jsx';
@@ -25,31 +26,19 @@ const SCREENS = {
 };
 const ROOT = { overview: { screen: 'overview' }, services: { screen: 'services' }, infra: { screen: 'infra' }, alerts: { screen: 'alerts' } };
 
-/**
- * The pinned annunciator's mono status sentence (spec §7.1). Terse worst-of
- * phrasing with digits ("2 services down" / "All systems operational") — the
- * Overview hero (§7.2) carries the richer word-number headline. Error/loading
- * copy is owned by RefreshStatus; this only supplies the live-state sentence.
- * The caution precedence ladder + its wording live in derive.worstCaution so the
- * sentence and the hero headline format from one source.
- */
-function annunciatorSummary(severity, { servicesBody, ups, cron }) {
-  if (severity === 'critical') {
-    const n = flattenServices(servicesBody).filter((s) => s.status === 'down').length;
-    return `${n} ${pluralize(n, 'service')} down`;
-  }
-  if (severity === 'caution') {
-    const worst = worstCaution({ services: servicesBody, ups, cron });
-    return worst ? worst.headline : 'Degraded';
-  }
-  if (severity === 'healthy') return 'All systems operational';
-  return 'No signal';
-}
-
 export default function MobileApp() {
   const [active, setActive] = useState('overview');
   const nav = useNavStack(ROOT.overview);
-  const data = useDashboard();
+  const dashboard = useDashboard();
+  // Whether the status is current, by the web's one rule (#480): the poll's
+  // reach, or no answer for longer than two polls and the request timeout.
+  // Every screen draws a stale status's states as no signal.
+  const freshness = useStatusFreshness({
+    status: dashboard.status,
+    reach: dashboard.reach,
+    updated: dashboard.updated,
+  });
+  const data = { ...dashboard, freshness };
   // Keep a live ref so the single back listener always sees current nav/active.
   const navRef = useRef(nav); navRef.current = nav;
 
@@ -89,19 +78,16 @@ export default function MobileApp() {
 
   const Screen = SCREENS[nav.current.screen] || SCREENS[active];
 
-  // Worst-of severity for the pinned annunciator. Bug #4: a live fetch error
-  // means the (possibly stale) body can't be trusted, so thread
-  // `unreachable = data.error != null` into overallSeverity — a mid-session
-  // outage reads steel/unknown, never stale green.
-  const unreachable = data.error != null;
-  const severity = overallSeverity({ services: data.servicesBody, ups: data.ups, cron: data.cron, unreachable });
-  const summary = annunciatorSummary(severity, { servicesBody: data.servicesBody, ups: data.ups, cron: data.cron });
+  // The pinned annunciator: the status model's overall state and sentence;
+  // stale, no signal and why (a live fetch error is RefreshStatus's own
+  // "Can't reach JagHelm", Bug #4).
+  const said = annunciatorOf({ status: data.status, freshness });
 
   return (
     <div id="mobile-root">
       <RefreshStatus
-        severity={severity}
-        summary={summary}
+        state={said.state}
+        summary={said.sentence}
         lastUpdated={data.lastUpdated}
         intervalMs={data.intervalMs}
         error={data.error}

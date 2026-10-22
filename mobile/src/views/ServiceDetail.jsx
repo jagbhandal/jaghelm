@@ -3,20 +3,25 @@ import BackHeader from '../components/BackHeader.jsx';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import UptimeRing from '../components/UptimeRing.jsx';
-import { flattenServices, statusToShape, statusToSeverity } from '../data/derive.js';
+import { FRESH, serviceRowsOf } from '../data/board.js';
 import { lastSeenLabel } from '@shared/util/relativeTime.js';
 import { openTarget } from '../open.js';
 
 /**
- * ServiceDetail — full detail for one service within the current snapshot.
+ * ServiceDetail — full detail for one service within the current snapshot,
+ * its lamp, word and reason the status model's (#325).
  *
- * Honest numbers (§7.6): the server has no time-series and no "down since",
- * so this screen NEVER synthesizes a time. `ping` is LATENCY (header `{ping}ms`),
- * never reinterpreted as an age. The only "X ago" line shown is a presence
- * breadcrumb's real `lastSeenAt`; absent that, the line is omitted entirely.
+ * Honest numbers (§7.6): this screen NEVER synthesizes a time. `ping` is
+ * LATENCY (header `{ping}ms`), never reinterpreted as an age. The only "X ago"
+ * line shown is a presence breadcrumb's real `lastSeenAt`; absent that, the
+ * line is omitted entirely.
  */
 export default function ServiceDetail({ data, nav, params }) {
-  const svc = flattenServices(data.servicesBody).find((s) => s.uid === params.uid);
+  const svc = serviceRowsOf({
+    status: data.status,
+    servicesBody: data.servicesBody,
+    freshness: data.freshness ?? FRESH,
+  }).find((s) => s.uid === params.uid);
   if (!svc) {
     return (
       <section className="mobile-view" aria-label="Service detail">
@@ -26,20 +31,17 @@ export default function ServiceDetail({ data, nav, params }) {
     );
   }
 
-  const isDown = svc.status === 'down';
-  const isUp = svc.status === 'up';
+  // The model's own state, not the one drawn: a stale status keeps its words.
+  const healthy = svc.modelState === 'ok';
   const isBreadcrumb = svc.source === 'presence';
-  const word = (svc.status ?? 'unknown').toUpperCase();
-  const shape = statusToShape(svc.status, svc.source);
-  const severity = statusToSeverity(svc.status, svc.source);
 
   return (
     <section className="mobile-view" aria-label="Service detail">
       <BackHeader title={svc.display_name} onBack={nav.pop} />
 
       <div className="detail-head">
-        <StatusLamp shape={shape} severity={severity} label={word} size={18} />
-        <StatusWord word={word} severity={severity} />
+        <StatusLamp state={svc.state} label={svc.word} size={18} />
+        <StatusWord word={svc.word} state={svc.state} />
         <span className="detail-head__node">{svc.nodeName}</span>
         {svc.ping != null && svc.ping > 0 && (
           <span className="detail-head__ping">{svc.ping}ms</span>
@@ -55,14 +57,15 @@ export default function ServiceDetail({ data, nav, params }) {
         <p className="detail-lastseen">{lastSeenLabel(svc.lastSeenAt)}</p>
       )}
 
-      {/* DOWN — cause/where in DM Sans. Docker CPU/MEM is deliberately HIDDEN
-          (Bug #12: no "CPU 0% MEM 0 MB" for a stopped container). */}
-      {isDown && (
-        <p className="detail-cause">Service is down · {svc.nodeName}</p>
+      {/* Not healthy: the model's reason and where, in DM Sans. Docker CPU/MEM
+          is deliberately HIDDEN (Bug #12: no "CPU 0% MEM 0 MB" for a stopped
+          container). */}
+      {!healthy && svc.reason && (
+        <p className="detail-cause">{svc.reason} · {svc.nodeName}</p>
       )}
 
-      {/* Docker metrics render ONLY when the service is actually up. */}
-      {isUp && svc.docker && (
+      {/* Docker metrics render ONLY when the model has the service healthy. */}
+      {healthy && svc.docker && (
         <div className="detail-docker">
           {svc.docker.cpu != null && <span>CPU {svc.docker.cpu}%</span>}
           {svc.docker.memMB != null && <span>MEM {svc.docker.memMB} MB</span>}

@@ -3,9 +3,10 @@
  * word each one reads as when no other is given, and which look they draw.
  *
  * States are the server status model's: ok, warn, crit, unknown (no signal)
- * and maintenance. The Android app still names them by its own severities
- * (mobile/src/data/derive.js) until it moves onto that model (spec §9), so a
- * component takes either `state` or `severity`, and `toState` reads both.
+ * and maintenance. Both apps draw the model's states (the Android app since
+ * #325, spec §9); the Android look's class names still say them as its old
+ * severities (`toSeverity`: healthy, caution, critical, unknown), and a
+ * component takes either `state` or `severity`, `toState` reading both.
  *
  * Two looks, as a stopgap until Phase 4 (#326) rebuilds the Android screens
  * on src/ui/:
@@ -65,8 +66,8 @@ export const WORDS = Object.freeze({
   maintenance: 'Maintenance',
 });
 
-// The Android app's severities, and back. Maintenance has no Android severity:
-// the app never shows it before Phase 1 brings the status model.
+// The Android look's severities, and back. Maintenance keeps its own name:
+// the Android look had no severity for it before the status model (#325).
 const FROM_SEVERITY = { healthy: 'ok', caution: 'warn', critical: 'crit', unknown: 'unknown' };
 const TO_SEVERITY = {
   ok: 'healthy',

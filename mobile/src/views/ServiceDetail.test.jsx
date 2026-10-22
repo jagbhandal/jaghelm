@@ -5,16 +5,18 @@ const { openTarget } = vi.hoisted(() => ({ openTarget: vi.fn() }));
 vi.mock('../open.js', () => ({ openTarget }));
 vi.mock('@shared/hooks/useData.js', () => ({ getServiceIcon: () => null }));
 import ServiceDetail from './ServiceDetail.jsx';
+import { UPS_ONLINE, boardOf, inputs, missing, monitored, node } from '../testing/board.js';
 
-// One service, overridable; wrapped in the { nodes: { ... } } servicesBody shape.
-const svc = (over = {}) => ({
-  uid: 'vm-101:gitea', container: 'gitea', display_name: 'Gitea', icon: null,
-  status: 'down', ping: null, uptime24: 0.42, url: 'http://h/gitea',
-  docker: { cpu: 2, memMB: 120 }, ...over,
-});
-const dataWith = (...services) => ({
-  servicesBody: { nodes: { 'vm-101': { display_name: 'VM 101', metrics: {}, services } } },
-});
+// One service, overridable (Kuma's status, unless `source` says it's a presence
+// card); its node's /api/services and /api/status built by the model.
+const svc = (over = {}) => {
+  const { status = 'down', ...rest } = over;
+  const base = { display_name: 'Gitea', ping: null, uptime24: 0.42, url: 'http://h/gitea', docker: { cpu: 2, memMB: 120 }, ...rest };
+  const uid = rest.uid ?? 'vm-101:gitea';
+  return rest.source === 'presence' ? missing(uid, rest.lastSeenAt, base) : monitored(uid, status, base);
+};
+const dataWith = (...services) =>
+  boardOf(inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101', services }) }, ups: UPS_ONLINE }));
 
 describe('ServiceDetail', () => {
   beforeEach(() => openTarget.mockReset());
@@ -45,8 +47,8 @@ describe('ServiceDetail', () => {
     render(<ServiceDetail data={dataWith(svc({ status: 'down', docker: { cpu: 0, memMB: 0 } }))} nav={{ pop: vi.fn() }} params={{ uid: 'vm-101:gitea' }} />);
     expect(screen.queryByText(/CPU/)).toBeNull();
     expect(screen.queryByText(/MEM/)).toBeNull();
-    // ...but the cause/where line IS shown for a down service.
-    expect(screen.getByText('Service is down · VM 101')).toBeInTheDocument();
+    // ...but the model's reason and where ARE shown for a down service.
+    expect(screen.getByText('Kuma: down · VM 101')).toBeInTheDocument();
   });
 
   it('SHOWS the docker CPU/MEM block when the service is up', () => {

@@ -44,14 +44,30 @@ vi.mock('./views/NotificationSettings.jsx', () => ({
     <div>NOTIFICATION_SETTINGS<button onClick={nav.pop}>back</button></div>
   ),
 }));
-// Task 6: stub RefreshStatus to capture the severity/summary MobileApp computes.
+// Task 6: stub RefreshStatus to capture the state/summary MobileApp hands it.
 vi.mock('./components/RefreshStatus.jsx', () => ({
-  default: ({ severity, summary, foreground }) => (
-    <div data-testid="refresh-status" data-foreground={String(foreground)}>{severity}::{summary}</div>
+  default: ({ state, summary, foreground }) => (
+    <div data-testid="refresh-status" data-foreground={String(foreground)}>{state}::{summary}</div>
   ),
 }));
 
 import MobileApp from './MobileApp.jsx';
+import { UPS_ONLINE, inputs, monitored, node } from './testing/board.js';
+import { once } from '../../server/testing/statusFixtures.js';
+
+/** useDashboard's answer for one model cycle: the status, fresh, and its cards. */
+function dashboardOf(cycleInputs, extra = {}) {
+  return {
+    status: JSON.parse(JSON.stringify(once(cycleInputs))),
+    servicesBody: cycleInputs.services,
+    reach: 'ok',
+    updated: { get: () => Date.now(), subscribe: () => () => {}, builtAt: () => null, staleAfter: 72_000 },
+    loading: false, error: null, lastUpdated: Date.now(), intervalMs: 30000, refresh: vi.fn(),
+    ...extra,
+  };
+}
+const oneService = (status) =>
+  inputs({ nodes: { 'vm-101': node({}, { display_name: 'VM 101', services: [monitored('vm-101:a', status)] }) }, ups: UPS_ONLINE });
 
 let backHandler;
 beforeEach(() => {
@@ -59,7 +75,7 @@ beforeEach(() => {
   initPush.mockClear();
   getPref.mockResolvedValue(null);
   setPref.mockResolvedValue(undefined);
-  useDashboard.mockReturnValue({ servicesBody: { nodes: {} }, ups: {}, cron: [], history: {}, loading: false, error: null });
+  useDashboard.mockReturnValue({ status: null, servicesBody: { nodes: {} }, reach: 'loading', loading: false, error: null });
   addListener.mockImplementation((evt, cb) => { if (evt === 'backButton') backHandler = cb; return { remove() {} }; });
 });
 
@@ -118,39 +134,38 @@ describe('MobileApp shell — Task 9 screen dispatcher', () => {
   });
 });
 
-describe('MobileApp — Task 6 annunciator severity wiring', () => {
-  it('passes healthy severity + "All systems operational" when nothing is wrong', async () => {
-    useDashboard.mockReturnValue({
-      servicesBody: { nodes: { 'vm-101': { display_name: 'VM 101', services: [{ uid: 'vm-101:a', status: 'up' }] } } },
-      ups: { status: 1 }, cron: [], loading: false, error: null, lastUpdated: Date.now(), intervalMs: 30000, refresh: vi.fn(),
-    });
+describe('MobileApp — the annunciator on the status model (#325)', () => {
+  it('passes the model\'s ok state and its sentence when nothing is wrong', async () => {
+    useDashboard.mockReturnValue(dashboardOf(oneService('up')));
     await act(async () => { render(<MobileApp />); });
-    expect(screen.getByTestId('refresh-status').textContent).toBe('healthy::All systems operational');
+    expect(screen.getByTestId('refresh-status').textContent).toBe('ok::1 service up · 1 node healthy');
   });
 
-  it('passes critical severity + the worst-of down sentence', async () => {
-    useDashboard.mockReturnValue({
-      servicesBody: { nodes: { 'vm-101': { display_name: 'VM 101', services: [{ uid: 'vm-101:a', status: 'down' }] } } },
-      ups: { status: 1 }, cron: [], loading: false, error: null, lastUpdated: Date.now(), intervalMs: 30000, refresh: vi.fn(),
-    });
+  it('passes the model\'s crit state and its sentence', async () => {
+    useDashboard.mockReturnValue(dashboardOf(oneService('down')));
     await act(async () => { render(<MobileApp />); });
-    expect(screen.getByTestId('refresh-status').textContent).toBe('critical::1 service down');
+    expect(screen.getByTestId('refresh-status').textContent).toBe('crit::1 service down');
   });
 
-  it('threads unreachable from data.error → unknown severity even with stale data (Bug #4)', async () => {
-    useDashboard.mockReturnValue({
-      servicesBody: { nodes: { 'vm-101': { display_name: 'VM 101', services: [{ uid: 'vm-101:a', status: 'up' }] } } },
-      ups: { status: 1 }, cron: [], loading: false, error: new Error('fetch failed'), lastUpdated: Date.now(), intervalMs: 30000, refresh: vi.fn(),
-    });
+  it('a status the server can\'t refresh is no signal, never its last state (Bug #4, #480)', async () => {
+    useDashboard.mockReturnValue(dashboardOf(oneService('down'), { reach: 'down', error: new Error('fetch failed') }));
     await act(async () => { render(<MobileApp />); });
-    expect(screen.getByTestId('refresh-status').textContent.startsWith('unknown::')).toBe(true);
+    expect(screen.getByTestId('refresh-status').textContent).toBe("unknown::Can't reach JagHelm");
+  });
+
+  it('no answer for longer than two polls is no signal too, though the last poll said ok (#480)', async () => {
+    const old = Date.now() - 5 * 60_000;
+    useDashboard.mockReturnValue(
+      dashboardOf(oneService('up'), {
+        updated: { get: () => old, subscribe: () => () => {}, builtAt: () => null, staleAfter: 72_000 },
+      })
+    );
+    await act(async () => { render(<MobileApp />); });
+    expect(screen.getByTestId('refresh-status').textContent).toBe("unknown::JagHelm's status is out of date");
   });
 
   it('hands the status bar the foreground flag, so its countdown pauses in the background', async () => {
-    useDashboard.mockReturnValue({
-      servicesBody: { nodes: {} }, ups: {}, cron: [], loading: false, error: null,
-      lastUpdated: Date.now(), intervalMs: 30000, refresh: vi.fn(), foreground: false,
-    });
+    useDashboard.mockReturnValue(dashboardOf(oneService('up'), { foreground: false }));
     await act(async () => { render(<MobileApp />); });
     expect(screen.getByTestId('refresh-status').dataset.foreground).toBe('false');
   });
