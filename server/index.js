@@ -206,8 +206,10 @@ const corsOrigins = corsOriginEnv
 // useData.js's If-None-Match 304 caching). Additive + inert: with CORS_ORIGIN
 // unset (origin:false), no Access-Control-* headers are emitted, so the desktop
 // same-origin response is byte-for-byte unchanged. (Native HTTP — the mobile
-// default — bypasses CORS entirely and needs none of this.)
-app.use(cors({ origin: corsOrigins, exposedHeaders: ['ETag'] }));
+// default — bypasses CORS entirely and needs none of this.) Date too (#499):
+// the status's age is the server's Date less its Last-Modified, by the
+// server's own clock.
+app.use(cors({ origin: corsOrigins, exposedHeaders: ['ETag', 'Date'] }));
 
 // gzip responses. The big win is /api/history — it changes every cycle (so it
 // rarely 304s) and is the largest repeatedly-fetched JSON; numeric JSON gzips ~80-90%.

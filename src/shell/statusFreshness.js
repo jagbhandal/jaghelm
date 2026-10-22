@@ -135,8 +135,9 @@ const never = () => false;
 /**
  * When the status in `updated` was built, for its age (#499): the server's
  * build time, or, from a server that doesn't send one, when the answer came.
+ * The header's "Updated 12 s ago" reads it too, so it says the same age.
  */
-function builtOf(updated) {
+export function statusBuiltAt(updated) {
   return updated.builtAt?.() ?? updated.get();
 }
 
@@ -198,7 +199,7 @@ export function useStatusFreshness({ status, reach, updated }) {
   const source = stale ? updated : null;
   const built = useSyncExternalStore(
     source?.subscribe ?? idle,
-    source ? () => builtOf(source) : nothing
+    source ? () => statusBuiltAt(source) : nothing
   );
   const ageText = useAgo(stale && status ? built : null);
   return useMemo(() => {

@@ -20,8 +20,8 @@ const STATUS = {
 let requests;
 let answer; // (headers) => Response-like
 
-function respond(body, { status = 200, etag = '"v1"', modified = null } = {}) {
-  const headers = { etag, 'last-modified': modified };
+function respond(body, { status = 200, etag = '"v1"', modified = null, date = null } = {}) {
+  const headers = { etag, 'last-modified': modified, date };
   return {
     ok: status >= 200 && status < 300,
     status,
@@ -209,7 +209,21 @@ describe('useStatus', () => {
     expect(result.current.updated.builtAt()).toBeNull();
   });
 
-  it('a build time after the answer (a server clock ahead of this one) is the answer time', async () => {
+  // The age is the server's own difference, its Date less its Last-Modified,
+  // taken back from the answer's time: neither clock's skew enters it.
+  it.each([
+    ['ahead of', 90_000],
+    ['behind', -90_000],
+  ])('a server clock %s this one: the build time by its own Date', async (_, skew) => {
+    const t0 = new Date('2026-10-22T09:00:00Z').getTime();
+    vi.setSystemTime(t0);
+    const http = (ms) => new Date(ms).toUTCString();
+    answer = () => respond(STATUS, { modified: http(t0 + skew - 25_000), date: http(t0 + skew) });
+    const { result } = await mount();
+    expect(result.current.updated.builtAt()).toBe(t0 - 25_000);
+  });
+
+  it('a build time after the answer, and no Date to correct it: the answer time', async () => {
     const t0 = new Date('2026-10-22T09:00:00Z').getTime();
     vi.setSystemTime(t0);
     answer = () => respond(STATUS, { modified: new Date(t0 + 90_000).toUTCString() });

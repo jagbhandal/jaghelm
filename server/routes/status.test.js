@@ -253,3 +253,18 @@ test('/api/status: past its TTL, a 503 vouches for no build time', async () => {
   assert.equal(r.status, 503);
   assert.equal(r.headers['last-modified'], undefined);
 });
+
+test('/api/status: If-Modified-Since alone never gets a 304: the ETag is the only validator', async () => {
+  const built = Math.floor(Date.now() / 1000) * 1000 - 20_000;
+  cycleAt(built);
+  const later = new Date(built + 3_600_000).toUTCString();
+  const r = await request(app)
+    .get('/api/status')
+    .set('x-auth-token', token)
+    .set('If-Modified-Since', later);
+  assert.equal(r.status, 200, 'a date the status was built before is no reason for a 304');
+  assert.equal(r.body.overall.state, 'ok');
+  // With the ETag it is a 304, whatever the date says.
+  const both = await getStatus(r.headers.etag).set('If-Modified-Since', later);
+  assert.equal(both.status, 304);
+});

@@ -5,9 +5,9 @@ import { getApiBase } from '../api/baseUrl.js';
 // exactly the URLs it accepts.
 import { canonicalIconUrl } from '../../server/icon-sources.js';
 
-// url → { etag, body, modified, seq }: the last 200 whose body parsed, the ETag
-// and the Last-Modified it came with (null when it had none), and the request's
-// place in send order. Written in one step, after the parse, so the ETag sent
+// url → { etag, body, modified, date, seq }: the last 200 whose body parsed,
+// the ETag, Last-Modified and Date it came with (null when it had none), and
+// the request's place in send order. Written in one step, after the parse, so the ETag sent
 // as If-None-Match always describes the body a 304 hands back.
 const held = new Map();
 // Send order: each fetchJson call takes the next number. When requests for one
@@ -59,18 +59,19 @@ async function fetchJson(url, skipEtag = false) {
   return (await fetchAnswer(url, skipEtag)).body;
 }
 
-/** A response's Last-Modified, in ms since the epoch, or null without one it can read. */
-function lastModifiedOf(r) {
-  const at = Date.parse(r.headers.get('Last-Modified') ?? '');
+/** A response's date header `name`, in ms since the epoch, or null without one it can read. */
+function dateOf(r, name) {
+  const at = Date.parse(r.headers.get(name) ?? '');
   return Number.isFinite(at) ? at : null;
 }
 
 /**
- * fetchJson's answer, `{ body, modified }`, with when the server says the
- * value was last modified: the Last-Modified of the 200, or of the 304 (which
- * may be later than the held body's: an equal value stored again), in ms since
- * the epoch, or null when it sends none. /api/status sends it as when the
- * status was built (#499).
+ * fetchJson's answer, `{ body, modified, date }`: the body, and by the
+ * server's clock when it says the value was last modified (Last-Modified)
+ * and when it answered (Date), from the 200, or the 304 (whose Last-Modified
+ * may be later than the held body's: an equal value stored again), in ms
+ * since the epoch, or null when it sends none. /api/status sends
+ * Last-Modified as when the status was built (#499).
  */
 async function fetchAnswer(url, skipEtag = false) {
   const seq = ++lastSent;
@@ -89,7 +90,8 @@ async function fetchAnswer(url, skipEtag = false) {
   if (r.status === 304) {
     return {
       body: held.has(url) ? held.get(url).body : NOT_MODIFIED_NO_BODY,
-      modified: lastModifiedOf(r),
+      modified: dateOf(r, 'Last-Modified'),
+      date: dateOf(r, 'Date'),
     };
   }
 
@@ -101,10 +103,11 @@ async function fetchAnswer(url, skipEtag = false) {
   const cur = held.get(url);
   // A request sent later already stored its pair: keep it and hand back its
   // body, so the caller doesn't step back to this older one.
-  if (cur && cur.seq > seq) return { body: cur.body, modified: cur.modified };
-  const modified = lastModifiedOf(r);
-  held.set(url, { etag: r.headers.get('ETag') || null, body, modified, seq });
-  return { body, modified };
+  if (cur && cur.seq > seq) return { body: cur.body, modified: cur.modified, date: cur.date };
+  const modified = dateOf(r, 'Last-Modified');
+  const date = dateOf(r, 'Date');
+  held.set(url, { etag: r.headers.get('ETag') || null, body, modified, date, seq });
+  return { body, modified, date };
 }
 
 /**
@@ -159,13 +162,14 @@ export async function getServices(skipEtag) {
  * state and sentence, and the ranked issues (docs/ARCHITECTURE.md §4.7). The
  * header polls it (useStatus, #296); a steady board answers 304.
  *
- * Returns `{ body, builtAt }`: the body as fetchJson returns it, and when the
- * server built the status (its Last-Modified, #499, ms since the epoch, on a
- * 200 or a 304), or null from a server that doesn't say.
+ * Returns `{ body, builtAt, sentAt }`: the body as fetchJson returns it, and,
+ * by the server's clock (ms since the epoch, from a 200 or a 304), when it
+ * built the status (Last-Modified, #499) and when it answered (Date); each
+ * null when the server doesn't say.
  */
 export async function getStatus(skipEtag) {
-  const { body, modified } = await fetchAnswer(`${getApiBase()}/status`, skipEtag);
-  return { body, builtAt: modified };
+  const { body, modified, date } = await fetchAnswer(`${getApiBase()}/status`, skipEtag);
+  return { body, builtAt: modified, sentAt: date };
 }
 
 // Dashboard display config (refresh cadence + layout flags). This is the SAME

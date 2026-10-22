@@ -114,7 +114,9 @@ function ifNoneMatchHits(header, etag) {
  * status keeps its ETag: the time is a header, never in the body. An HTTP date
  * counts whole seconds, so it is up to a second early, which an age shown in
  * seconds or minutes can bear. A value that isn't the cached one has no entry
- * time to vouch for it, and gets none.
+ * time to vouch for it, and gets none. The ETag stays the only validator: an
+ * If-Modified-Since is dropped from the request, so Express's freshness check
+ * (res.send) can't answer it alone with a 304 for a status built since.
  */
 export function jsonWithEtag(res, req, cacheKey, data, { lastModified = false } = {}) {
   let entry = cache.get(cacheKey);
@@ -123,7 +125,10 @@ export function jsonWithEtag(res, req, cacheKey, data, { lastModified = false } 
   const { body, etag } = entry;
 
   res.set('ETag', etag);
-  if (lastModified && entry.ts != null) res.set('Last-Modified', new Date(entry.ts).toUTCString());
+  if (lastModified && entry.ts != null) {
+    res.set('Last-Modified', new Date(entry.ts).toUTCString());
+    delete req.headers['if-modified-since'];
+  }
   if (ifNoneMatchHits(req.headers['if-none-match'], etag)) {
     return res.status(304).end();
   }

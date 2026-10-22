@@ -1128,10 +1128,13 @@ cycle, or once the loop has built none for that long, it answers 503. The
 200 and the 304 both say when the status served was built, as `Last-Modified`
 (#499): the cache entry's time, set as the loop stores each cycle's status
 (`jsonWithEtag`'s `lastModified`, `cache.js`). It moves every cycle while an
-equal status keeps its ETag, since it is a header, never in the body. An HTTP
-date counts whole seconds, so it reads up to a second early. A client counts
-the status's age from it, however long ago its own last answer came (5, "No
-signal: a stale status"); a 503 sends none. `Cache-Control: no-cache`, so a
+equal status keeps its ETag, since it is a header, never in the body, and the
+ETag stays the only validator: an `If-Modified-Since` alone never gets a 304.
+An HTTP date counts whole seconds, so it reads up to a second early. A client
+counts the status's age from it, however long ago its own last answer came,
+as the response's `Date` less it, by the server's clock (5, "No signal: a
+stale status"; CORS exposes `Date` beside `ETag`); a 503 sends none.
+`Cache-Control: no-cache`, so a
 browser never reuses an answer unasked on the strength of that date (a
 Last-Modified alone allows a heuristic tenth of its age). It sits beside `/api/services`, `/api/ups` and
 `/api/cron/status`, which keep their shape and meaning for Android apps already
@@ -1375,7 +1378,8 @@ flowchart TD
   lamp the steel ring. With nothing known, it says why: "Can't reach
   JagHelm", or, for a 503 before the first cycle (or an answer with no
   status), "Waiting for the first check". "Updated 12 s ago" is its own
-  component (`UpdatedAgo`, fed from `useStatus`'s `updated` store): its tick
+  component (`UpdatedAgo`, fed from `useStatus`'s `updated` store, by the
+  status's build time when the server sends one, #499): its tick
   each second and each poll's answer re-render it alone, never the header,
   which ticks only while it shows a stale status's age. The
   sidebar's Alerts entry carries the issue count, in the worst issue's colour,
@@ -1533,10 +1537,13 @@ flowchart TD
   `statusView.js`), with why: "Can't reach JagHelm", or "JagHelm's status is
   out of date" for a 503 after a status or an answer too old. The age counts
   from when the server built the status, not from the poll's last answer
-  (#499): `useStatus` keeps `/api/status`'s `Last-Modified` (on a 200 or a
-  304) beside the answer's time, as `updated.builtAt()`, no later than the
-  answer came, so a server clock ahead of the browser's can't make an age
-  that hasn't begun. After a 503 past the server's TTL the status is older
+  (#499): `useStatus` keeps the build time beside the answer's time, as
+  `updated.builtAt()`: the answer's time less the server's own age for the
+  status, its `Date` less its `Last-Modified` (on a 200 or a 304,
+  `builtAtOf`), so a server clock ahead of or behind the browser's can't
+  skew it. Without a `Date` it takes the `Last-Modified` as it is, no later
+  than the answer. The header's "Updated 12 s ago" reads the same time
+  (`statusBuiltAt`), so it and "last known" never disagree. After a 503 past the server's TTL the status is older
   than the last answer, and says so. From a server that sends no
   Last-Modified (an older one, or the demo), the age counts from the answer.
   Two times, two rules: stale goes by the answer's time (is the poll getting

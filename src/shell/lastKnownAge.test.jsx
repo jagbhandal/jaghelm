@@ -41,6 +41,7 @@ function Board() {
 const advance = (ms) => act(() => vi.advanceTimersByTimeAsync(ms));
 const headerLink = () =>
   within(screen.getByRole('banner')).getByRole('link', { name: /^(Critical|No signal)/ });
+const updatedLine = () => within(screen.getByRole('banner')).getByText(/^Updated /);
 const panelHeading = () =>
   within(screen.getByRole('region', { name: 'Needs attention' })).getByRole('heading', {
     level: 2,
@@ -72,15 +73,17 @@ describe('"last known" under No signal, header and panel (#499)', () => {
     // The next poll: the server's status is past its TTL.
     answer = expired;
     await advance(INTERVAL);
-    // 30 s since the answer, 55 s since the build: both say 55.
+    // 30 s since the answer, 55 s since the build: all three say 55.
     expect(headerLink()).toHaveAccessibleName(/^No signal: last known 55 s ago: Critical/);
     expect(panelHeading()).toHaveTextContent(/^No signal · last known 55 s ago: Critical/);
+    expect(updatedLine()).toHaveTextContent('Updated 55 s ago');
 
     // It counts on from there, on the one clock (a few ticks: a long run of
     // them is slow on a loaded machine).
     await advance(5_000);
     expect(headerLink()).toHaveAccessibleName(/^No signal: last known 1 min ago: Critical/);
     expect(panelHeading()).toHaveTextContent(/^No signal · last known 1 min ago: Critical/);
+    expect(updatedLine()).toHaveTextContent('Updated 1 min ago');
   });
 
   it('with no build time (an older server), counts from the last answer', async () => {
@@ -91,5 +94,6 @@ describe('"last known" under No signal, header and panel (#499)', () => {
     await advance(INTERVAL);
     expect(headerLink()).toHaveAccessibleName(/^No signal: last known 30 s ago: Critical/);
     expect(panelHeading()).toHaveTextContent(/^No signal · last known 30 s ago: Critical/);
+    expect(updatedLine()).toHaveTextContent('Updated 30 s ago');
   });
 });

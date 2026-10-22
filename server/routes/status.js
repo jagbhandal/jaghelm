@@ -15,8 +15,9 @@
  *
  * When the loop built the status it serves goes out as Last-Modified, on the
  * 200 and the 304 (#499), so a client can say how old a status is however
- * long ago its own last answer came. Being a header, it leaves the ETag one per
- * value. It is CORS-safelisted, so a cross-origin page reads it unexposed.
+ * long ago its own last answer came: its Date less this, by the server's own
+ * clock. Being a header, it leaves the ETag one per value, and the ETag the
+ * only validator: an If-Modified-Since alone never gets a 304.
  * `Cache-Control: no-cache`: a Last-Modified alone would let a browser reuse
  * the answer unasked for a tenth of its age; a status is always asked again.
  */
