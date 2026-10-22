@@ -3,6 +3,7 @@ import { render, screen, waitFor, within, fireEvent, act, cleanup } from '@testi
 import App from './App.jsx';
 import { SIDEBAR_PREF } from './shell/ShellChrome.jsx';
 import { FIRST_RUN, INCIDENT, HEALTHY } from './testing/statusFixtures.js';
+import { RAIL_WIDTH } from '@ui/app-shell';
 
 // The app shell (#296): the header, the grouped sidebar and the phone's tabs
 // around every page, the URL as the page, and every old view still reachable.
@@ -29,9 +30,9 @@ const GRAFANA = {
 };
 const KUMA = { id: 'kuma', label: 'Uptime Kuma', type: 'iframe', url: 'https://kuma.example/' };
 
-function stubServer({ tabs = [GRAFANA, KUMA], status = INCIDENT, serverTabs } = {}) {
+function stubServer({ tabs = [GRAFANA, KUMA], status = INCIDENT, serverTabs, config = {} } = {}) {
   server = { requests: [], status, statusDown: false, statusPending: false };
-  localStorage.setItem('jaghelm-config', JSON.stringify({ tabs }));
+  localStorage.setItem('jaghelm-config', JSON.stringify({ tabs, ...config }));
   vi.stubGlobal(
     'fetch',
     vi.fn((url) => {
@@ -154,11 +155,13 @@ describe('the sidebar', () => {
         .getAllByRole('link')
         .map((l) => l.getAttribute('href'))
     ).toEqual(['/apps/grafana', '/apps/kuma', '/settings/tabs']);
+    // Launch joins Tools before Settings (#301).
     expect(
       within(groups[2])
         .getAllByRole('link')
         .map((l) => l.getAttribute('href'))
-    ).toEqual(['/settings']);
+    ).toEqual(['/launch', '/settings']);
+    expect(within(groups[2]).getByRole('link', { name: 'Launch' })).toBeInTheDocument();
   });
 
   it('every entry navigates, and marks itself current', async () => {
@@ -171,6 +174,10 @@ describe('the sidebar', () => {
     fireEvent.click(entry('Grafana'));
     await current('Grafana');
     await waitFor(() => expect(frame(GRAFANA.url)).not.toBeNull());
+
+    fireEvent.click(entry('Launch'));
+    await current('Launch');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Launch' })).toBeInTheDocument();
 
     fireEvent.click(entry('Settings'));
     await current('Settings');
@@ -275,7 +282,7 @@ describe('the app bar', () => {
 });
 
 describe("the phone's tabs", () => {
-  it('Overview, Alerts and More; More holds the apps and Settings', async () => {
+  it('Overview, Alerts and More; More holds the apps, Launch and Settings', async () => {
     await renderApp();
     const tabs = within(tabsBar());
     expect(tabs.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
@@ -290,6 +297,16 @@ describe("the phone's tabs", () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'More' })).toBeNull());
     await waitFor(() => expect(frame(KUMA.url)).not.toBeNull());
     expect(window.location.pathname).toBe('/apps/kuma');
+    expect(tabs.getByRole('button', { name: 'More' })).toHaveAttribute('data-current', 'true');
+
+    fireEvent.click(tabs.getByRole('button', { name: 'More' }));
+    fireEvent.click(
+      within(await screen.findByRole('dialog', { name: 'More' })).getByRole('link', {
+        name: 'Launch',
+      })
+    );
+    expect(await screen.findByRole('heading', { level: 1, name: 'Launch' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/launch');
     expect(tabs.getByRole('button', { name: 'More' })).toHaveAttribute('data-current', 'true');
 
     fireEvent.click(tabs.getByRole('button', { name: 'More' }));
@@ -332,7 +349,7 @@ describe('the URL is the page', () => {
   });
 
   it('a page not built yet, or no page at all, lands on the Overview', async () => {
-    for (const path of ['/launch', '/services', '/infrastructure', '/nope']) {
+    for (const path of ['/services', '/infrastructure', '/nope']) {
       await renderApp(path);
       await waitFor(() => expect(window.location.pathname, path).toBe('/'));
       await current('Overview');
@@ -363,6 +380,14 @@ describe('the URL is the page', () => {
   it('names the browser tab after the page', async () => {
     await renderApp('/alerts');
     await waitFor(() => expect(document.title).toBe('Alerts — JagHelm'));
+  });
+
+  it('/launch opens the Launch page, no longer the Overview (#301)', async () => {
+    await renderApp('/launch');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Launch' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/launch');
+    await current('Launch');
+    await waitFor(() => expect(document.title).toBe('Launch — JagHelm'));
   });
 });
 
@@ -596,5 +621,109 @@ describe('the Alerts page', () => {
     );
     expect(within(banner()).queryByText('No signal')).toBeNull();
     expect(entry('Alerts')).toHaveAccessibleName('Alerts');
+  });
+});
+
+// The utilities (#301): Quick Launch, Pipeline and the Checklist. jsdom
+// applies no media query, so each test says whether the window is 1440px
+// wide (RAIL_WIDTH), as matchMedia would.
+describe('the utilities', () => {
+  const LINKS = { links: { personal: [{ name: 'Nextcloud', url: 'https://cloud.example/' }] } };
+  const rail = () => screen.queryByRole('region', { name: 'Utilities' });
+
+  function wide(on) {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+      matches: on && query === RAIL_WIDTH,
+      media: query,
+      onchange: null,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      dispatchEvent: () => false,
+    }));
+  }
+
+  it('from 1440px, the Overview has its rail: Quick Launch and the Checklist', async () => {
+    wide(true);
+    stubServer({ config: LINKS });
+    await renderApp();
+    const region = await screen.findByRole('region', { name: 'Utilities' });
+    expect(within(region).getByRole('region', { name: 'Quick Launch' })).toBeInTheDocument();
+    expect(within(region).getByRole('link', { name: 'Nextcloud' })).toHaveAttribute(
+      'href',
+      'https://cloud.example/'
+    );
+    expect(await within(region).findByRole('region', { name: 'Checklist' })).toBeInTheDocument();
+    // Gitea answered a list: it is set up, so Pipeline shows.
+    expect(await within(region).findByRole('region', { name: 'Pipeline' })).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="overview-layout"]')).toHaveClass('overview-split');
+  });
+
+  it('narrower, no rail at all: not hidden, not there', async () => {
+    wide(false);
+    stubServer({ config: LINKS });
+    await renderApp();
+    await screen.findByRole('region', { name: 'Needs attention' });
+    expect(rail()).toBeNull();
+    expect(document.querySelector('[data-slot="overview-layout"]')).not.toHaveClass(
+      'overview-split'
+    );
+  });
+
+  it('the rail is the Overview’s alone: no rail on another page', async () => {
+    wide(true);
+    await renderApp('/alerts');
+    await screen.findByRole('heading', { level: 1, name: 'Alerts' });
+    expect(rail()).toBeNull();
+  });
+
+  it('the rail keeps the switches in Settings → Sections; with all off, none', async () => {
+    wide(true);
+    const off = { visible: false };
+    stubServer({ config: { ...LINKS, sections: { quicklaunch: off, todos: off } } });
+    await renderApp();
+    const region = await screen.findByRole('region', { name: 'Utilities' });
+    expect(within(region).queryByRole('region', { name: 'Quick Launch' })).toBeNull();
+    expect(within(region).queryByRole('region', { name: 'Checklist' })).toBeNull();
+    expect(await within(region).findByRole('region', { name: 'Pipeline' })).toBeInTheDocument();
+    cleanup();
+
+    stubServer({ config: { ...LINKS, sections: { quicklaunch: off, todos: off, pipeline: off } } });
+    await renderApp();
+    await screen.findByRole('region', { name: 'Needs attention' });
+    expect(rail()).toBeNull();
+  });
+
+  it('the Launch page holds all three at any width, whatever the Overview’s switches say', async () => {
+    wide(false);
+    const off = { visible: false };
+    stubServer({
+      config: { ...LINKS, sections: { quicklaunch: off, pipeline: off, todos: off } },
+    });
+    await renderApp('/launch');
+    await screen.findByRole('heading', { level: 1, name: 'Launch' });
+    expect(screen.getByRole('region', { name: 'Quick Launch' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Pipeline' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Checklist' })).toBeInTheDocument();
+    expect(rail()).toBeNull();
+  });
+
+  it('with no links, the Launch page says where to add them', async () => {
+    await renderApp('/launch');
+    const panel = await screen.findByRole('region', { name: 'Quick Launch' });
+    expect(within(panel).getByText('No links yet')).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole('link', { name: 'Add links' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/settings/links'));
+  });
+
+  it('the command palette goes to Launch', async () => {
+    await renderApp();
+    fireEvent.click(within(banner()).getAllByRole('button', { name: /^Search or jump to/ })[0]);
+    const input = await screen.findByRole('combobox');
+    fireEvent.change(input, { target: { value: 'launch' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await current('Launch');
+    expect(window.location.pathname).toBe('/launch');
   });
 });

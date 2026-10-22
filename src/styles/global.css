@@ -93,6 +93,16 @@ html { scroll-padding-top: 64px; }
    16px margin (12px when the board is under 480px wide). It goes when the board
    is rebuilt (#298-#300). */
 .overview-status { padding: 24px calc(5% + 16px) 0; }
+/* The Overview beside its utilities rail (#301), from 1440px (RAIL_WIDTH; the
+   rail and this class are only there then): the page's 5% gutter moves out to
+   the split, so the board's cards keep HelmGrid's 16px inside it, and the rail
+   sits 24px from them, 16px in from the gutter, as the cards do. The rail's
+   widths are the mock's. It goes with today's board (#306). */
+.overview-split { display: flex; align-items: flex-start; padding: 0 5%; }
+.overview-split > .overview-main { flex: 999 1 640px; min-width: 0; }
+.overview-split .overview-status { padding-left: 16px; padding-right: 16px; }
+.overview-split .dashboard-content { padding-left: 0; padding-right: 0; }
+.overview-split > .overview-rail { flex: 1 1 300px; min-width: 280px; max-width: 340px; margin: 24px 16px 24px 8px; }
 
 /* Cards */
 .glass-card { background: var(--bg-card); backdrop-filter: blur(var(--glass-blur)); border: 1px solid var(--glass-border); border-radius: var(--card-radius); box-shadow: var(--shadow-card); transition: border-color 0.3s; position: relative; height: 100%; overflow: hidden; }

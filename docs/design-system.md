@@ -32,8 +32,9 @@ the sign-off amendments in §15).
   under [Components](#components), [Containers](#containers),
   [Status components](#status-components) and
   [Data components](#data-components), with their variants, sizes and keyboard
-  use; the shell (#296) and the Overview's sections (#299) are built on them
-  ([Shell](#shell), [Overview sections](#overview-sections)). No web screen uses them yet; the Android app's screens use the status
+  use; the shell (#296), the Overview's sections (#299) and the utilities
+  (#301) are built on them ([Shell](#shell), [Overview sections](#overview-sections),
+  [Utilities](#utilities)). No web screen uses them yet; the Android app's screens use the status
   components, in its own look.
 - **Gallery:** every state of every component above, in both themes and both
   densities and, where colour follows the accent, all three accents, on one
@@ -1380,7 +1381,7 @@ router, the config and the status poll ([ARCHITECTURE.md](ARCHITECTURE.md),
 | --- | --- | --- |
 | `AppShell` | `@ui/app-shell` | `switches` (the roots' theme, accent, density, typeface), `header`, `sidebar`, `tabs`, and the page as `children` |
 | `ShellPage` | `@ui/app-shell` | `title` (the page's h1), `description`, `actions`; a page of the new UI inside the shell |
-| `ShellSection` | `@ui/app-shell` | its `children`: a part of a page in the new UI beside today's views (the Overview's status and strip, #297, #298) |
+| `ShellSection` | `@ui/app-shell` | its `children`: a part of a page in the new UI beside today's views (the Overview's status and strip, #297, #298; the utilities rail, #301) |
 | `ShellApps` | `@ui/app-shell` | `label` (names the open app's region), `bar` (the open app's AppBar); holds the embedded apps' frames |
 | `AppHeader` | `@ui/app-header` | `name`, `logoUrl`, `status` (`{ reach, state, word, sentence, href, current, lastKnown }`), `updated` (an element, `UpdatedAgo`), `onOpenPalette`, `shortcut`, `onThemeChange` (the toggle, given `'light'` or `'dark'`), `settingsHref`, `settingsCurrent`, `onLogout`, `onNavigate` |
 | `UpdatedAgo` | `@ui/app-header` | `at` (ms since the epoch) |
@@ -1634,6 +1635,93 @@ From the mock's Main board, its Infrastructure section:
   grouping by tag, since services.yaml has no tags.
 - **Services on a phone keep their groups**, from the same components; the
   Phone board's list is flat.
+
+## Utilities
+
+Quick Launch, Pipeline and the Checklist (spec §8 item 5, #301), one file in
+`src/ui/` (`utilities.jsx`), built on Panel, EmptyState, Input, Button,
+IconButton, Checkbox, Skeleton and the sidebar's AppChip. Each is one
+component, drawn the same in the Overview's rail (from 1440px, `RAIL_WIDTH`
+in `@ui/app-shell`) and on the Launch page; `src/shell/` feeds both
+([ARCHITECTURE.md](ARCHITECTURE.md), "Utilities: the rail and the Launch
+page"). The [gallery](GALLERY.md) shows them in the rail, on the Launch page,
+empty and failing (group Utilities), and `e2e/utilities.spec.mjs` runs them
+in a browser.
+
+| Component | Import | Props |
+| --- | --- | --- |
+| `QuickLaunch` | `@ui/utilities` | `groups` (each `{ key, title, links }`, each link `{ id, name, href, monogram }`), `target` (`_blank`), `hint` ("in Ctrl K too"), `empty` (shown with no group) |
+| `Pipeline` | `@ui/utilities` | `items` (each `{ id, title, repo, sha, at }`, `at` in ms or null), `banner` (over the rows), `now` |
+| `Checklist` | `@ui/utilities` | `todos` (each `{ id, text, done, dueLabel, overdue }`; null while loading), `onAdd({ text, due })`, `onToggle(id)`, `onRemove(id)`, `banner` |
+| `UtilitiesRail` | `@ui/utilities` | the panels, as `children` |
+| `LaunchLayout` | `@ui/utilities` | `quickLaunch`, `pipeline`, `checklist` (elements; none, left out) |
+
+`shortAgo(ms)` (`@ui/utilities`) says an age as Pipeline does: "now", "12 m",
+"3 h", "4 d".
+
+### How the utilities look
+
+From the mock's Main board, its right-hand column:
+
+- **The panels.** Each is a Panel: its icon in the 28px accent chip (Lucide
+  `Rocket`, `GitBranch`, `ListChecks`), its title, and at the end of the
+  header Quick Launch's hint (12px mono `text-3`) or the Checklist's count
+  ("2 open", 12px `text-3`).
+- **QuickLaunch.** Each group an overline (`text-3`) over its links, 6px
+  apart; the links in columns at least 7.5rem wide (two in the rail), 10rem
+  once the group has 32rem of its own. A link is 13px medium `text-1` in a
+  subtle edge, 8px round, 6 by 8px of padding: the app's monogram in the
+  sidebar's 20px chip, then the name, cut with an ellipsis (the full name in
+  its tooltip and its accessible name). `row-hover` under the pointer.
+- **Pipeline.** A row per commit, 10px apart: the message in 13px semibold
+  `text-1` (two lines at most) over "repo · sha" in 12px `text-3`, the SHA in
+  mono, and the age at the end in 12px `text-3`. With none, "No recent
+  commits" (EmptyState sm).
+- **Checklist.** A form, wrapping as the room allows: the task (an Input,
+  "Add a task"), its due day (a date Input) and Add (secondary, `Plus`). Each
+  task a row: its Checkbox inside a label with its words, 13px `text-1`; a
+  done one struck through in `text-3`; its due day in 12px `text-3`, or once
+  it has passed, "Oct 18 · overdue" semibold in `warn-fg`; Delete, a ghost sm
+  IconButton (`X`). With none, "Nothing on the list". While loading, three
+  placeholder lines and no form.
+- **UtilitiesRail.** The panels in a column, 16px apart. The Overview gives
+  it the mock's widths (`flex: 1 1 300px`, 280 to 340px), 24px from its
+  sections.
+- **LaunchLayout.** Quick Launch across the top, Pipeline and the Checklist
+  under it, side by side from 672px of its own width, 24px apart.
+
+### Accessibility of the utilities
+
+- Each panel is a region named by its title (an `h2`); the rail a region
+  named "Utilities". A group of links is a list named by its overline (an
+  `h3`); each link is named by the app's name, its chip hidden from
+  assistive tech, and opens in the target Settings gives it, with no opener.
+- A commit's age is a `time` with its instant, read as "12 m ago".
+- Each task's box is named by its words (an enclosing label); Delete is
+  named "Delete “Patch the NAS”". The task and due fields are named "New
+  task" and "Due day (optional)". Overdue is said in words, never by colour
+  alone.
+- A failed read is a Banner (tone unknown) naming its cause: Pipeline's over
+  the last rows ("Gitea didn't answer JagHelm"), the Checklist's with Retry.
+
+### Where the utilities differ from the mock
+
+- **A region, not an `<aside>`.** The page is the shell's `<main>`, and a
+  complementary landmark inside it is nested in another (axe's
+  `landmark-complementary-is-top-level`).
+- **Pipeline has no lamp, no word and no branch.** `/api/gitea/activity`
+  carries commits on each repo's main branch (message, SHA, date, author),
+  not CI runs, merges or deploys, so a row is the commit's message over
+  "repo · sha", where the mock's is a lamp, "JagHelm · CI passed" and
+  "branch · sha".
+- **The monogram chip is the sidebar's** (20px, 12px extrabold), where the
+  mock's Quick Launch chip is 22px with 10px letters: 12px is the type
+  floor. The hint is 12px for the same reason (the mock's is 11px), and says
+  the platform's shortcut ("Ctrl K" off a Mac).
+- **The Checklist adds, dates and deletes.** The mock's checklist only ticks;
+  today's panel adds a task with an optional due day and deletes one, so
+  this one does too.
+- **No weather and clock card.** It joins the rail with #307.
 
 ## Changing a token
 

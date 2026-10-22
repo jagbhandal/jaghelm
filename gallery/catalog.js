@@ -311,6 +311,24 @@ export const CATALOG = Object.freeze([
     accent: true,
   }),
   s('app-bar', 'Shell', 'AppBar: over an open app, with Reload and Open in new tab'),
+
+  // The utilities (#301)
+  s(
+    'utilities-rail',
+    'Utilities',
+    "The Overview's rail at 1440px: Quick Launch, Pipeline and the Checklist, one task overdue"
+  ),
+  s(
+    'launch-page',
+    'Utilities',
+    'The Launch page: Quick Launch across the top, Pipeline and the Checklist under it'
+  ),
+  s(
+    'utilities-empty',
+    'Utilities',
+    'Empty: no links yet (the Launch page), no recent commits, nothing on the list'
+  ),
+  s('utilities-failing', 'Utilities', "Failing: Gitea isn't answering, the checklist didn't load"),
 ]);
 
 /**

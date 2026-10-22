@@ -71,17 +71,23 @@ describe('resolveRoute', () => {
   });
 
   it('lands a route whose page is not built yet on the Overview', () => {
-    for (const path of ['/launch', '/services', '/infrastructure']) {
+    for (const path of ['/services', '/infrastructure']) {
       expect(at(path), path).toEqual({ id: 'overview', params: {}, redirect: true });
     }
   });
 
+  it('opens the Launch page at /launch, no longer the Overview (#301)', () => {
+    expect(at('/launch')).toEqual({ id: 'launch', params: {}, redirect: false });
+    expect(at('/launch/')).toEqual({ id: 'launch', params: {}, redirect: false });
+    expect(ROUTES.find((r) => r.id === 'launch').title).toBe('Launch');
+  });
+
   it('knows the hidden routes, so a later card only unhides one', () => {
     const hidden = ROUTES.filter((r) => r.hidden).map((r) => r.id);
-    expect(hidden).toEqual(['launch', 'services', 'infrastructure']);
+    expect(hidden).toEqual(['services', 'infrastructure']);
     expect(NAV_HIDDEN).toEqual(new Set(hidden));
     // A hidden route still has its path, ready for its page.
-    expect(pathTo('launch')).toBe('/launch');
+    expect(pathTo('services')).toBe('/services');
   });
 
   it('a route table passed in is the one used', () => {

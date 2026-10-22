@@ -66,6 +66,7 @@ import { AppHeader, UpdatedAgo } from '@ui/app-header';
 import { SideNav, appMonogram } from '@ui/side-nav';
 import { BottomTabs } from '@ui/bottom-tabs';
 import { AppBar } from '@ui/app-bar';
+import { Checklist, LaunchLayout, Pipeline, QuickLaunch, UtilitiesRail } from '@ui/utilities';
 
 // ---------------------------------------------------------------- layout
 
@@ -1992,6 +1993,142 @@ function ChartColoursState() {
   );
 }
 
+// ---------------------------------------------------------------- utilities
+
+// The gallery's frozen clock (09:00 UTC), and times before it.
+const GALLERY_NOW = Date.UTC(2026, 9, 20, 9, 0, 0);
+const MIN = 60_000;
+const HOUR = 60 * MIN;
+
+const quickLink = (name) => ({ id: name, name, href: '#', monogram: appMonogram(name) });
+const LINK_GROUPS = [
+  {
+    key: 'daily',
+    title: 'Daily',
+    links: ['Nextcloud', 'Immich', 'Home Assistant', 'Vaultwarden'].map(quickLink),
+  },
+  {
+    key: 'admin',
+    title: 'Admin',
+    links: ['Arcane', 'Proxmox', 'Grafana', 'Gitea', 'Uptime Kuma', 'AdGuard Home'].map(quickLink),
+  },
+];
+const LINK_GROUPS_WIDE = [
+  ...LINK_GROUPS,
+  {
+    key: 'devops',
+    title: 'Dev & Monitoring',
+    links: ['Prometheus', 'Loki', 'Nginx Proxy Manager'].map(quickLink),
+  },
+];
+
+const PIPELINE_ROWS = [
+  ['Pin the reverse proxy image to 2.12', 'infrastructure', 'a41c9e2', 12 * MIN],
+  ['Merge pull request #880 from fix/access-log-245', 'homelab-infra', 'b81e0d2', HOUR],
+  ['Add Quick Launch links for the photo library', 'dashboard-config', 'c0f8a51', 3 * HOUR],
+  ['Retry the library scan on a timeout', 'media-scripts', 'e7a3310', 26 * HOUR],
+].map(([title, repo, sha, ago]) => ({ id: sha, title, repo, sha, at: GALLERY_NOW - ago }));
+
+const TODOS = [
+  {
+    id: 'a',
+    text: 'Rotate the B2 application key',
+    done: false,
+    dueLabel: 'Oct 18',
+    overdue: true,
+  },
+  { id: 'b', text: 'Replace the UPS battery', done: false, dueLabel: 'Mar 1', overdue: false },
+  { id: 'c', text: 'Review the Arcane vulnerability digest', done: true, dueLabel: null },
+];
+
+const HINT = 'in Ctrl K too';
+
+const RailChecklist = ({ todos = TODOS, banner }) => (
+  <Checklist todos={todos} banner={banner} onAdd={noop} onToggle={noop} onRemove={noop} />
+);
+
+function UtilitiesRailState() {
+  return (
+    <Stack width={300}>
+      <UtilitiesRail>
+        <QuickLaunch groups={LINK_GROUPS} hint={HINT} />
+        <Pipeline items={PIPELINE_ROWS} now={GALLERY_NOW} />
+        <RailChecklist />
+      </UtilitiesRail>
+    </Stack>
+  );
+}
+
+function LaunchPageState() {
+  return (
+    <Stack width={880}>
+      <LaunchLayout
+        quickLaunch={<QuickLaunch groups={LINK_GROUPS_WIDE} hint={HINT} />}
+        pipeline={<Pipeline items={PIPELINE_ROWS} now={GALLERY_NOW} />}
+        checklist={<RailChecklist />}
+      />
+    </Stack>
+  );
+}
+
+function UtilitiesEmptyState() {
+  return (
+    <Grid columns="repeat(2, 320px)">
+      <QuickLaunch
+        groups={[]}
+        hint={HINT}
+        empty={
+          <EmptyState
+            title="No links yet"
+            description="Add the apps you open most in Settings → Links."
+            action={
+              <a href="#links" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
+                Add links
+              </a>
+            }
+          />
+        }
+      />
+      <Stack>
+        <Pipeline items={[]} now={GALLERY_NOW} />
+        <RailChecklist todos={[]} />
+      </Stack>
+    </Grid>
+  );
+}
+
+function UtilitiesFailingState() {
+  return (
+    <Grid columns="repeat(2, 320px)">
+      <Pipeline
+        items={[]}
+        banner={
+          <Banner
+            tone="unknown"
+            title="Pipeline isn't updating"
+            cause="Gitea didn't answer JagHelm"
+          />
+        }
+      />
+      <RailChecklist
+        todos={null}
+        banner={
+          <Banner
+            tone="unknown"
+            title="Couldn't load the checklist"
+            cause="JagHelm didn't answer"
+            action={
+              <Button variant="secondary" size="sm">
+                Retry
+              </Button>
+            }
+          />
+        }
+      />
+    </Grid>
+  );
+}
+
 // ---------------------------------------------------------------- registry
 
 // ---------------------------------------------------------------- shell
@@ -2315,4 +2452,9 @@ export const RENDERS = Object.freeze({
   'side-nav-unload': () => <SideNavState open="arcane" />,
   'bottom-tabs': BottomTabsState,
   'app-bar': AppBarState,
+
+  'utilities-rail': UtilitiesRailState,
+  'launch-page': LaunchPageState,
+  'utilities-empty': UtilitiesEmptyState,
+  'utilities-failing': UtilitiesFailingState,
 });

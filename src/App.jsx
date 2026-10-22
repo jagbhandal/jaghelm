@@ -30,14 +30,16 @@ import { clearOverviewFilter, useOverviewFilter } from './shell/overviewFilter.j
 import { appsOf, navGroups } from './shell/nav.js';
 import { alertsBadge } from './shell/statusView.js';
 import { useStatusStale } from './shell/statusFreshness.js';
-import { loadAlertsPage, loadAppFrames, loadSettingsView } from './lazyViews.js';
+import { OverviewLayout } from './shell/Utilities.jsx';
+import { loadAlertsPage, loadAppFrames, loadLaunchPage, loadSettingsView } from './lazyViews.js';
 
-// Settings (13-tab tree), the app frames and the Alerts page aren't needed for
-// the default Overview render — code-split them so they don't weigh down the
-// initial bundle. Their loaders live in lazyViews.js.
+// Settings (13-tab tree), the app frames and the Alerts and Launch pages aren't
+// needed for the default Overview render — code-split them so they don't weigh
+// down the initial bundle. Their loaders live in lazyViews.js.
 const AppFrames = lazy(loadAppFrames);
 const SettingsView = lazy(loadSettingsView);
 const AlertsPage = lazy(loadAlertsPage);
+const LaunchPage = lazy(loadLaunchPage);
 import {
   apiFetch,
   setAuthToken as setApiAuthToken,
@@ -163,6 +165,7 @@ const OUT_OF_SIGHT = { visibility: 'hidden', height: 0, overflow: 'hidden' };
 const PAGES = [
   { id: 'overview', label: 'Overview', href: pathTo('overview') },
   { id: 'alerts', label: 'Alerts', href: pathTo('alerts') },
+  { id: 'launch', label: 'Launch', href: pathTo('launch') },
   { id: 'settings', label: 'Settings', href: pathTo('settings') },
 ];
 
@@ -352,30 +355,36 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
         >
           <div style={onOverview ? undefined : OUT_OF_SIGHT}>
             <h1 className="sr-only">Overview</h1>
-            {/* Its state is the poll's: nothing to keep while another page is open. */}
-            {onOverview && (
-              <OverviewStatus
+            {/* From 1440px, the utilities rail beside the sections (#301). */}
+            <OverviewLayout open={onOverview}>
+              {/* Its state is the poll's: nothing to keep while another page is open. */}
+              {onOverview && (
+                <OverviewStatus
+                  status={poll.status}
+                  reach={poll.reach}
+                  updated={poll.updated}
+                  filter={filter?.id ?? null}
+                />
+              )}
+              <DashboardView
+                tick={tick}
+                active={dashboardActive}
+                onOpenSettings={openSettings}
+                filter={filter}
+                onClearFilter={clearOverviewFilter}
                 status={poll.status}
                 reach={poll.reach}
                 updated={poll.updated}
-                filter={filter?.id ?? null}
               />
-            )}
-            <DashboardView
-              tick={tick}
-              active={dashboardActive}
-              onOpenSettings={openSettings}
-              filter={filter}
-              onClearFilter={clearOverviewFilter}
-              status={poll.status}
-              reach={poll.reach}
-              updated={poll.updated}
-            />
+            </OverviewLayout>
           </div>
           <Suspense fallback={lazyFallback}>
             {route.id === 'alerts' && (
               <AlertsPage status={poll.status} reach={poll.reach} updated={poll.updated} />
             )}
+          </Suspense>
+          <Suspense fallback={lazyFallback}>
+            {route.id === 'launch' && <LaunchPage />}
           </Suspense>
           <Suspense fallback={lazyFallback}>
             {route.id === 'settings' && (
