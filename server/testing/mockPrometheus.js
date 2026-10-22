@@ -308,7 +308,8 @@ const answer = (status, body) => ({
  * its active targets (#470): one per `up` series, its labels without the
  * name. Scraped (`scraped`, the default), each has a last scrape and is
  * healthy when its `up` is above 0; not scraped yet (a Prometheus that has
- * just started), each is "unknown", with Prometheus's zero time.
+ * just started), each is "unknown", with Prometheus's zero time. Each has the
+ * homelab's scrape interval, 30 s.
  */
 export function targetsOf(series, { scraped = true } = {}) {
   return series
@@ -322,6 +323,8 @@ export function targetsOf(series, { scraped = true } = {}) {
       lastScrape: scraped ? new Date(EVAL_TS * 1000).toISOString() : '0001-01-01T00:00:00Z',
       lastScrapeDuration: scraped ? 0.01 : 0,
       health: scraped ? (value > 0 ? 'up' : 'down') : 'unknown',
+      scrapeInterval: '30s',
+      scrapeTimeout: '10s',
     }));
 }
 

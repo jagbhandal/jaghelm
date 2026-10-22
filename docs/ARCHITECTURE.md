@@ -362,37 +362,78 @@ and no CPU, memory or disk reading, discovery reads Prometheus's target list
 (`GET /api/v1/targets?state=active`, `promTargets`), once for the cycle,
 through the same client as the queries; a node's targets are those with its
 `node` label. Prometheus writes an `up` sample on every scrape, 0 included, so
-a target with no `up` series is never the host's fault:
+a target with no `up` series is never the host's fault. Why a node's `up` is
+missing is decided in one place, `whyUpMissing` in `status/upMissing.js`
+(#476, #477): discovery marks the node as its verdict's row of `UP_MISSING`
+says and stamps it with the verdict (`whyNoUp`), the status model words the
+node from the same row (4.7), and push pages from the model, so the three
+can't disagree:
 
-- No `up` series and no target: left as it is, so with no metric either the
-  model judges it unreachable and push pages `host_unreachable` once.
-- No `up` series, and no target of the node scraped yet (`health` "unknown",
-  or no last scrape): unread, every part in `failedReads`, while Prometheus
-  counts as answering.
-- No `up` series, and a target of the node scraped: Prometheus scraped it and
-  stored nothing, as when a full disk fails its writes. `up` is asked again
-  for those nodes, since a first scrape that ended between the `up` query and
-  the targets read looks the same. A node with its `up` series by then is
-  unread for the cycle; for one still without, Prometheus counts as failed,
-  "Prometheus scraped <nodes> but stored no up series", and the node is
-  unread. That is one `source_down`, not a `host_unreachable` per node.
-- `up` 0 while a target of the node is not scraped yet, or has answered a
-  scrape since the query: unread for the cycle, while Prometheus counts as
-  answering. On a reboot Prometheus can scrape cAdvisor before it listens
-  while node-exporter is still unscraped, which makes the node's `up` 0. A
-  host really down has every target scraped and down within one scrape
-  interval, so this delays its page by at most that.
+In the last column, "failing" means the Prometheus source fails with the
+node's `problem` as its error while it still answers (`ok` stays true): only
+that node is held, nothing else Prometheus feeds (#476).
 
-If the targets read fails, a node with no `up` series is unread and
-Prometheus counts as failed, with the targets read's error; a node with `up` 0
-keeps it, as Prometheus's own answer. A cycle in which every node has `up` 1
-(or no `up` series but metrics) reads no targets, so a Prometheus proxy that
-allows only queries costs nothing until a node reads 0 or loses its `up`
-series. Prometheus counts as failed for the cycle when any node query fails,
-the targets read fails, or it stored no `up` series for a node it scraped.
-While Prometheus fails, or a node is unread because it hasn't been scraped, no
-presence breadcrumbs are drawn, since a container
-missing from the list may still be running. The status model makes what a failed source feeds unknown (4.7), and
+| Verdict | When | The node | Prometheus |
+|---|---|---|---|
+| `scraped-and-down` | `up` 0, every target of the node scraped and down, or none of its own, or the list unread | unreachable, pages `host_unreachable` | answering |
+| `no-target` | no `up` series, no target of its own, while the list names other nodes | unreachable, pages `host_unreachable` | answering |
+| `no-targets-at-all` | no `up` series, and the list names none of the nodes (#477) | unread | failing |
+| `not-scraped-yet` | a target of the node waiting for its first scrape, inside its wait | unread | answering |
+| `not-scraped-too-long` | a target waiting past its wait (#476) | unread | failing, naming the targets |
+| `answered-since` | `up` 0 and a target answered a scrape since the query | unread | answering |
+| `stored-nothing` | no `up` series though a target of the node was scraped | unread | failing |
+| `targets-unread` | no `up` series, and the targets read failed | unread | failing, with its error |
+
+- A target waits for its first scrape (`health` "unknown", or no last scrape)
+  for 3 of its own scrape intervals (`scrapeInterval` in the list; 1 m, the
+  Prometheus default, when it gives none). Its wait counts from its last scrape
+  when the list gives one, else from the first list that showed it waiting,
+  kept per target in `data/prometheus-target-waits.json` (`targetWaits.js`):
+  every waiting target of the nodes read is recorded whenever the list is
+  read, and a wait is kept through cycles that read no list (its node reading
+  `up` 1 from a healthy sibling target) and across a restart, so it neither
+  restarts nor sends a false recovery and a second page. A list that no longer
+  shows the target waiting forgets it. Before a wait old enough to make the
+  target overdue counts, Prometheus is asked when it started
+  (`GET /api/v1/status/runtimeinfo`, the later of `startTime` and
+  `lastConfigTime`): started after the wait began, its targets may be new, and
+  the wait starts again. When it can't say (a proxy, another backend), a gap
+  of more than 5 minutes (or the target's own wait) since the last sighting
+  starts it again. The homelab scrapes every 30 s, so a target never scraped is a problem 90 s
+  after the first cycle that saw it, and pages once on the cycle after (a
+  source's 2 failed cycles): "Prometheus hasn't scraped vm103:9100 (vm103) in
+  3 scrape intervals".
+- A target list that names none of the nodes JagHelm reads (empty, or only a
+  federation or remote-write backend's own targets) can't tell a host from a
+  series that never arrived, so a node with no `up` series there is
+  Prometheus failing, "Prometheus lists no target for any node, and has no up
+  series for <nodes>": one `source_down`, never a `host_unreachable` per node.
+  `up` 0 still pages the host. A list that names some of the nodes is read per
+  node: a node it doesn't name is `no-target`.
+- `stored-nothing`: a first scrape that ended between the `up` query and the
+  targets read looks the same, so `up` is asked again for those nodes. A node
+  with its `up` series by then is `answered-since`; for one still without,
+  Prometheus is failing for it, "Prometheus scraped <nodes> but stored no up
+  series", as when a full disk fails its writes. Should that query fail, the
+  node is unread with its error, as for any failed query.
+- `up` 0 while a target of the node is not scraped yet, or has answered since:
+  on a reboot Prometheus can scrape cAdvisor before it listens while
+  node-exporter is still unscraped, which makes the node's `up` 0. A host
+  really down has every target scraped and down within one scrape interval,
+  so this delays its page by at most that.
+
+A cycle in which every node has `up` 1 (or no `up` series but metrics) reads
+no targets, so a Prometheus proxy that allows only queries costs nothing until
+a node reads 0 or loses its `up` series. Prometheus counts as failed for the
+cycle when any node query fails (`ok` false: everything it feeds is held), and
+fails while answering when a node's verdict says so (only that node is held).
+While a query
+fails, or a node waits inside its first-scrape wait (`not-scraped-yet`,
+`answered-since`: it passes within a scrape or so), no presence breadcrumbs are
+drawn, since a container missing from the list may still be running. A node
+unread for a verdict that lasts (Prometheus failing for it) holds back only its
+own breadcrumbs, so a stuck target on one node doesn't hide a container gone
+from another (#476). The status model makes what a failed source feeds unknown (4.7), and
 only that: for a host, only the readings whose queries failed. Push holds an
 unknown at its last known state, so a metric query that keeps failing holds
 that reading's level on every host (and, for a host with no `up` series, its
@@ -839,8 +880,9 @@ token, a 401 each time.
   monitor went to. A `services.yaml` mapping to a monitor Kuma does not have
   (or a paused one), a `monitor_per_node` key that is no node, and a mapping of
   the wrong type each warn once per boot. Prometheus failing (any node query of the cycle,
-  the targets read a node with no `up` series needed, or no `up` series stored
-  for a node it scraped) and Kuma failing (no
+  or a node whose missing `up` is Prometheus's problem: the targets read
+  failed, no `up` series stored for a node it scraped, a target waiting too
+  long for its first scrape, no target for any node; 4.2) and Kuma failing (no
   monitors loaded: unreachable, non-2xx, or a status page with none) each warn
   once, with the error, and their recovery logs once at info with how long it
   was down; the failed cycles in between log at debug
@@ -1015,11 +1057,20 @@ error set (`runCycleRefreshes`, for Gitea). Two more come from elsewhere
   naming it, never crit. A node
   whose `up` read failed is unknown; one whose metric read failed has that
   condition unknown, so it is unknown unless a reading that was read is worse.
-  A node Prometheus has a target for but hasn't scraped yet (4.2, #470), or
-  whose `up` is 0 while one of its targets hasn't been scraped, is unknown
-  while Prometheus answers, with the reason "No data: not scraped by
-  Prometheus yet", and so are the containers it ran, kept from last cycle. A
-  node Prometheus scraped and stored no `up` series for is Prometheus failing.
+  A node discovery left unread for its missing `up` (4.2, #470) is unknown
+  with the reason of its verdict's row (`UP_MISSING` in `status/upMissing.js`,
+  kept beside the payload as `whyNoUp`), and so are the containers it ran,
+  kept from last cycle: "No data: not scraped by Prometheus yet" while a
+  target waits for its first scrape (or, with `up` 0, answered since); "No
+  data: still not scraped by Prometheus" once it has waited too long (#476);
+  "No data: no up series, and no target in Prometheus" where the list names no
+  node (#477); "No data: Prometheus stored no up series"; "No data:
+  Prometheus's target list unreadable". For the last four Prometheus fails
+  while it answers: its source is `failed`, with the problem as its error
+  (naming the targets, or the nodes), and its issue's word is "Failing", so
+  the sentence says "Prometheus failing", not "unreachable". Only those nodes
+  and what they ran are held; a node or service removed elsewhere goes as
+  usual (#476).
   What the failed source fed last cycle and no longer reports (the container
   list, the nodes, the UPS while Prometheus fails) is kept, as unknown, until
   it answers. Prometheus counts as failed when the services refresh says so or
@@ -1233,7 +1284,10 @@ sees where that changed:
   (#232's `upSeriesSeen`) lived in the process's memory, and a restart lost
   it. A Prometheus that scrapes and stores nothing (a full disk) is a failed
   source: one `source_down` after two cycles and one `source_recovered`, no
-  host push.
+  host push. So is a target that waits for its first scrape past 3 of its
+  scrape intervals (#476; its wait is in the data dir, so a restart sends no
+  false recovery and no second page), and a backend whose target list names
+  no node losing its `up` series (#477, federation or remote write).
 - A monitoring source (Prometheus, Kuma, NUT) the model lists as failed for two
   cycles in a row (about a minute) sends one `source_down`, and one
   `source_recovered` when it answers. The snapshot keeps each source as `ok`,
