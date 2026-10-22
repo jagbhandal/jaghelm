@@ -10,12 +10,21 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import yaml from 'js-yaml';
 
 const dir = mkdtempSync(join(tmpdir(), 'jh-config-'));
 process.env.JAGHELM_DATA_DIR = dir;
-const { saveConfig, getConfig, loadConfig, generateDefaultConfig } = await import('./config.js');
+const {
+  saveConfig,
+  getConfig,
+  loadConfig,
+  generateDefaultConfig,
+  readConfig,
+  writeConfig,
+  CONFIG_ABSENT,
+} = await import('./config.js');
 const { validateConfig, servicesConfigSchema } = await import('./util/configSchema.js');
 
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -254,4 +263,70 @@ test('a services.yaml generated before #265 passes save validation and saves', (
   const reloaded = yaml.load(readFileSync(servicesYaml, 'utf8'));
   assert.equal(reloaded.nodes.pi1.display_name, 'Renamed');
   for (const k of UNREAD) assert.deepEqual(reloaded[k], PRE_265_GENERATED[k], `${k} kept on disk`);
+});
+
+// #423: services.yaml's version is a SHA-256 of its bytes, and writeConfig is
+// the one writer: it writes only over the version its caller read.
+
+/** The version of what is on disk now. */
+const diskVersion = () =>
+  createHash('sha256').update(readFileSync(servicesYaml)).digest('base64url');
+
+test('readConfig answers the config with the version of the file it came from', () => {
+  assert.equal(saveConfig({ nodes: { a: { name: 'A' } }, services: {} }), true);
+  const { config, version } = readConfig();
+  assert.deepEqual(config, { nodes: { a: { name: 'A' } }, services: {} });
+  assert.equal(version, diskVersion());
+  config.nodes.a.name = 'MUTATED';
+  assert.equal(getConfig().nodes.a.name, 'A', 'a copy, as getConfig');
+});
+
+test('readConfig loads a hand edit the watcher has not, so config and version match the file', () => {
+  saveConfig({ nodes: { a: { name: 'A' } }, services: {} });
+  writeFileSync(servicesYaml, 'nodes:\n  a:\n    name: Edited\nservices: {}\n');
+  const { config, version } = readConfig();
+  assert.equal(config.nodes.a.name, 'Edited');
+  assert.equal(version, diskVersion());
+  assert.equal(getConfig().nodes.a.name, 'Edited');
+});
+
+test('readConfig of a file that does not parse keeps the last config, with the version of the file', () => {
+  saveConfig({ nodes: { a: { name: 'A' } }, services: {} });
+  writeFileSync(servicesYaml, 'nodes: [unclosed\n');
+  const { config, version } = readConfig();
+  assert.equal(config.nodes.a.name, 'A');
+  assert.equal(version, diskVersion());
+});
+
+test('writeConfig writes over the current version and answers the new one', () => {
+  saveConfig({ nodes: {}, services: {} });
+  const { version } = readConfig();
+  const saved = writeConfig({ nodes: { b: { name: 'B' } }, services: {} }, version);
+  assert.equal(saved.ok, true);
+  assert.notEqual(saved.version, version);
+  assert.equal(saved.version, diskVersion());
+  assert.equal(readConfig().version, saved.version);
+  assert.equal(getConfig().nodes.b.name, 'B');
+});
+
+test('writeConfig over a version that is no longer the file writes nothing (conflict)', () => {
+  saveConfig({ nodes: {}, services: {} });
+  const { version } = readConfig();
+  // Another writer, or a hand edit, lands after the read.
+  writeFileSync(servicesYaml, 'nodes:\n  other: {}\nservices: {}\n');
+  const before = readFileSync(servicesYaml, 'utf8');
+  const saved = writeConfig({ nodes: { b: {} }, services: {} }, version);
+  assert.equal(saved.ok, false);
+  assert.equal(saved.conflict, true);
+  assert.equal(readFileSync(servicesYaml, 'utf8'), before);
+});
+
+test('with no services.yaml the version is CONFIG_ABSENT, and writeConfig creates the file over it', () => {
+  rmSync(servicesYaml, { force: true });
+  assert.equal(readConfig().version, CONFIG_ABSENT);
+  assert.equal(writeConfig({ nodes: {}, services: {} }, 'some-version').conflict, true);
+  assert.equal(existsSync(servicesYaml), false);
+  const saved = writeConfig({ nodes: { c: {} }, services: {} }, CONFIG_ABSENT);
+  assert.equal(saved.ok, true);
+  assert.equal(saved.version, diskVersion());
 });
