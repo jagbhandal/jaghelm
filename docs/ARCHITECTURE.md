@@ -211,6 +211,14 @@ src/                        React 19 SPA (Vite 8)
                              lib/field-context.js (how a Field labels its control),
                              lib/tone.jsx (a tone's icon), lib/name.js (an overlay's
                              required name)
+  phone/                     the phone screens, shared (#303; see 5.1, "The phone screens
+                             are shared"): views/ (Overview, Services, Infra, Alerts and the
+                             service, node and incident details), components/ (the rows,
+                             cards, bars and headers they draw), data/ (board.js, what each
+                             screen shows of the status model; derive.js and groupByDay.js,
+                             display helpers), nav/ (useNavStack.js, a tab's detail stack;
+                             issueRoute.js, where an issue row leads), platform.js (what a
+                             screen needs of the app drawing it); the Android app draws them
 
 gallery/                    the component gallery (development and CI only, docs/GALLERY.md):
                             catalog.js (every state), states.jsx (what each draws),
@@ -1395,7 +1403,7 @@ before, and the app no longer reads `/api/cron/status`. A 404 from
 keeps `status`, `reach` and the answer's clock as `useStatus` does, and
 `MobileApp` feeds them to the web's rule for a stale status
 (`useStatusFreshness`, 5, "No signal: a stale status"). What each screen
-shows comes from `mobile/src/data/board.js`, through the web's own helpers
+shows comes from `src/phone/data/board.js`, through the web's own helpers
 (`headlineOf`, `subsystemCells`, `whereOf` and `lastKnownLine` in
 `src/shell/statusView.js`, `drawnState`, and `infrastructureNodes` in
 `src/shell/infrastructureView.js`): the status bar's lamp and sentence, the
@@ -1409,7 +1417,7 @@ counts ("4 / 5 services up · 1 down", or "No services") and bars, each bar
 coloured by its condition and printed by `shownReading`, and a service's 24 h
 uptime ring in its state's colour. `derive.js` keeps display helpers only,
 and `mobile/src/data/noSeverity.test.js` fails on a line or a severity of the
-app's own anywhere in `mobile/src/`.
+app's own anywhere in `mobile/src/` or in the screens it draws from `src/phone/`.
 
 **In demo mode** the demo guard answers `/api/status` (#437) with the model
 built from the payloads the demo serves (`demoStatus` in `demoFixtures.js`):
@@ -1533,7 +1541,7 @@ sees where that changed:
   issue for it (#325): the app maps the data to the entity's id
   (`mobile/src/push/fcmIdToIncidentId.js`: `services/<id>`, `nodes/<node>`,
   `power/ups`, `jobs/<id>`, `sources/<id>`), and Incident detail finds the
-  issue by it (`issueFor` in `mobile/src/nav/issueRoute.js`, which finds a
+  issue by it (`issueFor` in `src/phone/nav/issueRoute.js`, which finds a
   job the model files as a backup by its job id too); one that is no issue
   any more shows the push's own fields.
 - A backup pages as the job did: `cron_failed`, `cron_overdue` and
@@ -2310,6 +2318,35 @@ stack sits beside today's CSS and must not restyle it.
   look out: the APK carries neither tailwind-merge, Lucide nor the web look's code, bar
   the lamp marks its own lamp borrows
   ([design-system.md](design-system.md#two-looks)).
+- **The phone screens are shared** (#303, spec §8 "Phone width"): the
+  Android app's screens (Overview, Services, Infra, Alerts, and the service,
+  node and incident details), the components they draw and the logic they
+  need (`board.js`, `derive.js`, `groupByDay.js`, `useNavStack.js`,
+  `issueRoute.js`) are in `src/phone/`, so the web below 768px can draw them
+  too. `mobile/` keeps what is the phone's own: native HTTP, storage, push,
+  sign-in and boot, `Root.jsx`, the shell (`MobileApp.jsx`, its status bar
+  `RefreshStatus.jsx` and its tab bar), the data loop (`useDashboard`,
+  `pollScheduler`), Login, ConnectionScreen, NotificationSettings, fonts and
+  stylesheets. A screen imports no platform. It gets the app's poll, its
+  navigation stack and the entry's params as props (`data`, `nav`,
+  `params`), and the rest from the `PhonePlatform` around it
+  (`src/phone/platform.js`): today only `openTarget`, what Open does. The
+  Android app's is `mobile/src/open.js` (http and https only, in a new
+  window, which the WebView hands to the phone's browser), given in
+  `MobileApp.jsx`; a screen drawn outside a `PhonePlatform` throws. Alerts'
+  gear opens Notification settings, an Android screen, by name through
+  `nav`. `scripts/phone-imports.test.mjs` fails on an import in `src/phone/`
+  of a Capacitor plugin, of `mobile/`, or of `@shared/` (mobile's alias for
+  `src/`, which the web's build doesn't have: files there import relatively,
+  and `@ui/` as both apps do). The screens draw the Android look only:
+  today's markup, with the class names `MobileApp.css` styles in the Android
+  build's `legacy` layer. The web doesn't import them yet, so its bundle is
+  unchanged; when it does, its look goes beside the Android one under
+  `__ANDROID_LOOK__`, as in the status components, and `src/ui/tailwind.css`
+  needs an `@source` line for `src/phone/` (below, "Only `src/ui/` is
+  scanned"). Their tests stay in `mobile/src/`, in the Android build's Vitest
+  (the Android look, its fixtures); `mobile/src/testing/render.js` draws a
+  screen inside the Android app's `PhonePlatform`.
 - **Cascade layers.** The order is `legacy, properties, theme, base, components,
   utilities`, declared at the top of every entry stylesheet. Each app's
   `styles/legacy.css` imports today's stylesheets into `legacy`, the lowest layer
@@ -3068,7 +3105,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   height it had last time until that source answers, then takes its own
   once. All eight leave screenshots in
   `test-results/e2e/shots/`.
-- **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
+- **Mobile** (`npm run test:mobile`, Vitest): the Android app's views (the
+  shared phone screens in `src/phone/`, in the Android look), login,
   push routing, on-device storage, and the shared `src/ui/` components through
   the Android build's `@ui` alias. Its screen tests draw statuses the
   server's own model builds (`mobile/src/testing/board.js`), never status
@@ -3120,7 +3158,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   (`fonts.test.mjs`), and every lazy view's loader in `src/lazyViews.js`,
   the list the client tests load up front, and the floating layer's one
   loader (`lazy-views.test.mjs`), and the first load's arithmetic
-  (`first-load.test.mjs`). Write new
+  (`first-load.test.mjs`), and the phone screens' freedom from any platform
+  (`phone-imports.test.mjs`). Write new
   repo checks this way, not as shell scripts: `npm test` only collects
   `*.test.{js,mjs,cjs}`.
 
