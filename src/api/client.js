@@ -100,6 +100,44 @@ function reportExpired(sent) {
   }
 }
 
+/** How long a sign-out waits for the server to revoke the session (#507). */
+export const SIGN_OUT_TIMEOUT_MS = 5000;
+
+/**
+ * Revoke a session on the server: POST /api/auth/logout with `token` (default:
+ * the in-memory one; nothing is sent without one). Both apps call it on the
+ * user's sign-out, then clear the session locally whatever happened, so it never
+ * rejects and gives up after SIGN_OUT_TIMEOUT_MS: a network error, a hang or a
+ * 5xx can't keep anyone signed in. The answer is not read. It goes through
+ * window.fetch, not apiFetch, so the token is the one passed and a 401 (a
+ * server older than the route, with a dead token) is not an expired session.
+ * The 401 self-heal doesn't call it: that session is already dead.
+ */
+export async function revokeSession(token = authToken) {
+  if (!token) return;
+  const controller = new AbortController();
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve();
+    }, SIGN_OUT_TIMEOUT_MS);
+  });
+  const request = (async () => {
+    try {
+      await window.fetch(`${getApiBase()}/auth/logout`, {
+        method: 'POST',
+        headers: { 'x-auth-token': token },
+        signal: controller.signal,
+      });
+    } catch {
+      // Offline, refused or aborted: the caller signs out locally all the same.
+    }
+  })();
+  await Promise.race([request, deadline]);
+  clearTimeout(timer);
+}
+
 /**
  * fetch wrapper for /api calls. If `url` starts with the configured API base
  * (getApiBase()), is not the login route, and a token is set, `x-auth-token` is

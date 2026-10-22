@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import MobileApp from './MobileApp.jsx';
 import Login from './Login.jsx';
 import { secureStore } from '@shared/storage/index.js';
-import { setAuthExpiredHandler } from '@shared/api/client.js';
+import { revokeSession, setAuthExpiredHandler } from '@shared/api/client.js';
 import { setAuthHandlers } from './auth/authState.js';
 import { clearSessionToken, forgetServer } from './auth/forgetServer.js';
 import { BASE_URL_KEY } from './runtimeConfig.js';
@@ -14,7 +14,9 @@ import { BASE_URL_KEY } from './runtimeConfig.js';
  *   URL + token         → the app
  * Registers the 401 self-heal hook (token expired/revoked → drop to re-auth) and
  * the user-initiated session controls (logout / forget-device) the settings
- * screen calls. Only a session token is ever cleared/persisted — never a password.
+ * screen calls. Both of those end the session, so they ask the server to revoke
+ * it first (#507); the self-heal doesn't, as its session is already dead. Only a
+ * session token is ever cleared/persisted — never a password.
  */
 export default function App({ initial }) {
   const [hasUrl, setHasUrl] = useState(initial.hasUrl);
@@ -23,7 +25,7 @@ export default function App({ initial }) {
 
   useEffect(() => {
     // Kill the session token and drop to re-auth — reached from a server-driven
-    // 401 and from a user-initiated logout (same operation, one definition).
+    // 401 and, once the server has revoked it, from a user-initiated logout.
     // The storage steps and their order live in auth/forgetServer.js, shared
     // with the connection screen's Change server.
     const clearSession = async () => {
@@ -32,9 +34,16 @@ export default function App({ initial }) {
     };
 
     setAuthExpiredHandler(clearSession);
+    // The server revokes the session, so a copy of the token stops working too;
+    // then the phone forgets it whatever the server did (revokeSession never
+    // rejects and gives up after 5 s).
     setAuthHandlers({
-      logout: clearSession,
+      logout: async () => {
+        await revokeSession();
+        await clearSession();
+      },
       forgetDevice: async () => {
+        await revokeSession();
         await forgetServer({ onTokenCleared: () => setHasToken(false) });
         setHasUrl(false);
       },

@@ -44,6 +44,8 @@ import {
   initAuthToken,
   setReadOnlyServer,
   setAuthExpiredHandler,
+  getAuthToken,
+  revokeSession,
 } from './api/client.js';
 import { secureStore } from './storage/index.js';
 
@@ -106,26 +108,36 @@ export default function App() {
     setAuthed(true);
   };
 
-  const handleLogout = useCallback(() => {
+  // Forget the session in this tab. An expired session (below) ends here: the
+  // server already dropped it, so there's nothing to revoke.
+  const clearSession = useCallback(() => {
     secureStore.removeItem('jaghelm-token'); // web: localStorage; mobile: Keystore
     setApiAuthToken(''); // Clear apiFetch's in-memory token
     setAuthToken('');
     setAuthed(false);
   }, []);
 
+  // The Log out button (#507): the server revokes the session, so a copy of the
+  // token stops working too, then this tab forgets it whatever the server did.
+  // revokeSession never rejects and gives up after 5 s.
+  const handleLogout = useCallback(async () => {
+    await revokeSession(getAuthToken());
+    clearSession();
+  }, [clearSession]);
+
   // An expired session (#492). apiFetch passes the token the 401 came with. If
   // storage holds another, a tab signed in since: take its session and carry
-  // on. Otherwise sign out like the button: the sign-in screen replaces AppMain
-  // and every poll stops with it. A 401 means the server wants a password now,
-  // even if it had none when this tab loaded.
+  // on. Otherwise sign out like the button, without asking the server: the
+  // sign-in screen replaces AppMain and every poll stops with it. A 401 means
+  // the server wants a password now, even if it had none when this tab loaded.
   const handleExpired = useCallback(
     async (sent) => {
       const stored = await secureStore.getItem('jaghelm-token');
       if (stored && stored !== sent) return setApiAuthToken(stored);
-      handleLogout();
+      clearSession();
       setAuthRequired(true);
     },
-    [handleLogout]
+    [clearSession]
   );
   useEffect(() => {
     setAuthExpiredHandler(handleExpired);
