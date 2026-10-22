@@ -29,7 +29,7 @@ A complete walkthrough for setting up JagHelm to monitor your homelab infrastruc
 - 5 minutes for a basic setup, 30 minutes for the full experience
 
 **Optional (but recommended):**
-- [Uptime Kuma](https://github.com/louislam/uptime-kuma) — adds health monitoring, ping latency, and uptime tracking to each service card
+- [Uptime Kuma](https://github.com/louislam/uptime-kuma) — adds health monitoring and ping latency to each service on the Overview
 - A UPS with NUT (Network UPS Tools) — for power monitoring on the dashboard
 
 **JagHelm gets its data from Prometheus.** If you don't already have Prometheus running, this guide will help you set it up. If you already have Prometheus with node_exporter and cAdvisor, skip to [Step 3: Deploy JagHelm](#4-step-3-deploy-jaghelm).
@@ -302,7 +302,7 @@ You should see a panel for each node showing CPU, RAM, disk, and uptime metrics,
 
 ## 6. Step 5: Add Uptime Kuma (Optional)
 
-Uptime Kuma adds health status (up/down), ping latency, and 24-hour uptime percentage to each service card. Without it, JagHelm still works — cards just show container stats without health monitoring.
+Uptime Kuma adds health status (up/down) and ping latency to each service in the Overview's Services section. Without it, JagHelm still works: the section lists each running container, without health monitoring.
 
 If you don't already have Uptime Kuma:
 
@@ -390,7 +390,7 @@ Restart Prometheus, and the UPS panel will appear in JagHelm automatically. JagH
 
 ## 8. Step 7: Configure Integrations
 
-JagHelm can pull data from your self-hosted apps and display it on service cards. For example, AdGuard Home shows queries blocked, NPM shows proxy hosts count, Gitea shows recent commits.
+JagHelm can pull data from your self-hosted apps and show it beside each service on the Overview. For example, AdGuard Home's DNS queries, NPM's proxy hosts, Gitea's recent commits.
 
 **From the Settings UI:**
 
@@ -401,7 +401,7 @@ JagHelm can pull data from your self-hosted apps and display it on service cards
 5. Click **Test** to verify the connection works
 6. Click **Save** — credentials are encrypted with AES-256-GCM and stored securely
 
-The integration data will appear on the matching service card in the dashboard as Tier 3 metrics.
+The integration's first number appears beside the matching service in the Overview's Services section, while the service is up.
 
 ---
 
@@ -441,8 +441,8 @@ Settings > Appearance — choose from 10 developer-inspired themes (6 dark, 4 li
 ### Adjust the grid
 Settings > Layout > Grid Columns — slide from 6 (compact, fewer wider panels) to 24 (fine grid, more panel placement options).
 
-### Customize service cards
-Settings > Layout > Service Cards — toggle Docker metrics (CPU/MEM/RX/TX) and app integration data on or off. Choose between dot, badge, or minimal status indicators.
+### Group your services
+The Overview's Services section groups services by node. Once you add a custom group in Settings > Sections, a Node / Group switch over the list groups them by your groups instead; JagHelm remembers the choice in this browser.
 
 ### Rename nodes and services
 Settings > Nodes — change display names, subtitles, icons, and colors for each node.

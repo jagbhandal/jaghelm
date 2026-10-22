@@ -11,7 +11,7 @@
  *   power         the UPS panel
  *   jobs, backups Scheduled Jobs, where the board lists backups as jobs
  *   integrations  nothing: the board has no section of its own for them (an
- *                 integration's numbers show on its service's card)
+ *                 integration's numbers show on its service's row)
  *
  * A subsystem the board doesn't know keeps nothing. Pipeline, Checklist and
  * Quick Launch belong to no subsystem, so every filter leaves them out.

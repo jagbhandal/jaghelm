@@ -598,7 +598,7 @@ const NOTES = {
     title: `No section on the board for ${name}`,
     description:
       id === 'integrations'
-        ? "Today's board has none for them yet: an integration's numbers show on its service's card."
+        ? "Today's board has none for them yet: an integration's numbers show on its service's row."
         : "Today's board has none for it yet.",
   }),
 };

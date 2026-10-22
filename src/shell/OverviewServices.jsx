@@ -23,7 +23,7 @@
  * nodes hidden in Settings), nothing. When /api/services or the integrations
  * stop answering, a Banner says the numbers are old, with Retry, over the
  * last ones it had. It sits on today's board under Infrastructure, lined up
- * with it (`margin`), in a root of its own.
+ * with it (`margin`), 24px under it, in a root of its own.
  */
 import { memo, useMemo } from 'react';
 import { Banner } from '@ui/banner';
@@ -102,7 +102,8 @@ export const OverviewServices = memo(function OverviewServices({
 
   if (!loading && rows.length === 0) return null;
   return (
-    <div data-slot="overview-services" style={{ margin: `0 ${margin}px` }}>
+    // 24px under the section above, as the mock spaces its sections.
+    <div data-slot="overview-services" style={{ margin: `24px ${margin}px 0` }}>
       <ShellSection>
         <ServicesSection
           groups={groups}

@@ -20,11 +20,11 @@ A small made-up homelab, laid out the way a new install lays out its own:
 
 - **Three nodes** (a Raspberry Pi edge box, an app server VM and a NAS): in
   the Infrastructure section, as cards or a table, their CPU, memory, disk and
-  temperature meters, uptime and an hour of CPU; on the board below, side by
-  side, their services with Docker stats and Uptime Kuma ping and uptime.
+  temperature meters, uptime and an hour of CPU; under it, the Services
+  section, their services grouped by node, each with its Uptime Kuma latency.
 - **One service down** (its health check failing while its container runs), so
-  the header reads "Service Disruption" and its card is red, as a live board
-  shows an outage.
+  the header reads "Critical" and its row in the Services section is red, as a
+  live board shows an outage.
 - The **UPS**, **Pipeline** (recent commits), **Scheduled Jobs** (one failed
   backup) and **Checklist** panels, and **Quick Launch** links.
 
