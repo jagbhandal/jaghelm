@@ -7,4 +7,8 @@
   systems normal". The last issues, counts and node readings stay on screen,
   grey, so a short outage doesn't blank the page; every age counts on
   together, and the colours come back with the next answer. The Alerts page
-  follows the same rule.
+  follows the same rule. A status that has gone unanswered for too long
+  counts as out of date too, so a tab opened again after hours, or a laptop
+  woken from sleep, shows grey at once rather than hours-old colours until
+  the next answer. Screen readers hear "No signal" once, not every second
+  of the age, and a grey lamp is read as "No signal", not as its last word.

@@ -177,4 +177,20 @@ describe('InfrastructureSection', () => {
     const first = within(section()).getAllByRole('article')[0];
     expect(banner.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+
+  // #480: a stale status keeps each node's word, drawn as no signal.
+  it('table view, no signal beside a last known word: the lamp is named No signal', () => {
+    const stale = NODES.map((n) => ({ ...n, state: 'unknown' }));
+    render(<InfrastructureSection nodes={stale} view="table" onViewChange={() => {}} />);
+    const table = within(section()).getByRole('table', { name: 'Nodes' });
+    const rows = within(table).getAllByRole('row').slice(1);
+    for (const [row, word] of [
+      [rows[0], 'Healthy'],
+      [rows[1], 'Warning'],
+    ]) {
+      expect(within(row).getByRole('img', { name: 'No signal' })).toBeInTheDocument();
+      expect(within(row).queryByRole('img', { name: word })).toBeNull();
+      expect(row).toHaveTextContent(word);
+    }
+  });
 });

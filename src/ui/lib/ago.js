@@ -22,7 +22,10 @@ export function agoText(ms) {
  * One clock for every age on screen (#480): it ticks each second while
  * anything shows an age, and stops when nothing does. Every age reads the
  * same moment, so two ages of the same time (the header's and the attention
- * panel's) never read a second apart, whenever each was drawn.
+ * panel's) never read a second apart, whenever each was drawn. A tab shown
+ * again ticks at once, before anything the same event re-renders (on the
+ * window, in the capture phase): its ticks were held back while it was
+ * hidden, and an age read then would be as old as the tab's last tick.
  */
 const clock = (() => {
   let now = Date.now();
@@ -32,12 +35,16 @@ const clock = (() => {
     now = Date.now();
     for (const listener of [...listeners]) listener();
   };
+  const shown = () => {
+    if (!document.hidden) tick();
+  };
   return {
     get: () => now,
     subscribe(listener) {
       if (listeners.size === 0) {
         now = Date.now();
         timer = setInterval(tick, 1000);
+        window.addEventListener('visibilitychange', shown, true);
       }
       listeners.add(listener);
       return () => {
@@ -45,6 +52,7 @@ const clock = (() => {
         if (listeners.size === 0) {
           clearInterval(timer);
           timer = null;
+          window.removeEventListener('visibilitychange', shown, true);
         }
       };
     },

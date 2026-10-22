@@ -5,7 +5,7 @@
  * and what a stale status last said (#480).
  */
 import { EMPTY, EMPTY_SENTENCE, WORDS, toState } from '../ui/lib/status.js';
-import { drawnState, isStale, lastKnownCaption } from './statusFreshness.js';
+import { drawnState, lastKnownCaption } from './statusFreshness.js';
 
 /** The noun before an issue's node, by the entity's kind (docs/ARCHITECTURE.md §4.7). */
 const KIND = Object.freeze({
@@ -65,11 +65,11 @@ export function countsText(issues = []) {
 
 /**
  * The Alerts entry's badge: how many issues, in the worst one's colour (the
- * list is ranked, worst first), or null with none, or while there is no
- * signal (the count would be stale).
+ * list is ranked, worst first), or null with none, or while the status is
+ * `stale` (useStatusStale: the count would be old).
  */
-export function alertsBadge(status, reach) {
-  const issues = isStale(reach) ? [] : (status?.issues ?? []);
+export function alertsBadge(status, stale) {
+  const issues = stale ? [] : (status?.issues ?? []);
   if (issues.length === 0) return null;
   return {
     count: issues.length,

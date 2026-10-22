@@ -3,17 +3,22 @@ import { act, render, renderHook, screen } from '@testing-library/react';
 import { useAgo } from '@ui/app-header';
 import { drawnState, isStale, useStatusFreshness } from './statusFreshness.js';
 import { headlineOf, lastKnownLine, subsystemCells } from './statusView.js';
+import { staleAfterMs } from '../hooks/useStatus.js';
 import { FIRST_RUN, HEALTHY, INCIDENT } from '../testing/statusFixtures.js';
 
 // The one rule for a stale status (#480, #495): when the poll's status isn't
-// current (a failed poll, or a 503 once the server's status is past its TTL),
-// nothing is drawn in a level colour from it, and each place says how old it
-// is, by the same clock.
+// current (a failed poll, a 503 once the server's status is past its TTL, or
+// no answer for longer than the poll allows), nothing is drawn in a level
+// colour from it, and each place says how old it is, by the same clock.
 
-function store(at) {
+// The poll's store at the default 30 s interval: stale 72 s after its answer.
+const STALE_AFTER = staleAfterMs(30_000);
+
+function store(at, staleAfter = STALE_AFTER) {
   let value = at;
   const listeners = new Set();
   return {
+    staleAfter,
     get: () => value,
     set(v) {
       value = v;
@@ -35,7 +40,29 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  delete document.hidden;
 });
+
+function setHidden(hidden) {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+}
+
+/** The hook on `props`, keeping what each of its renders returned. */
+function renderFreshness(props) {
+  const seen = [];
+  const view = renderHook(
+    (p) => {
+      const fresh = useStatusFreshness(p);
+      seen.push(fresh);
+      return fresh;
+    },
+    { initialProps: props }
+  );
+  return { ...view, seen };
+}
 
 describe('isStale', () => {
   it('is any reach but ok, and not the first load', () => {
@@ -65,20 +92,28 @@ describe('headlineOf', () => {
 });
 
 describe('useStatusFreshness', () => {
-  it('fresh: not stale, no age, no clock running', () => {
+  it('fresh: not stale, no age, no clock: one timer, to the boundary, for every place', () => {
     const updated = store(NOW);
-    const { result } = renderHook(() =>
-      useStatusFreshness({ status: INCIDENT, reach: 'ok', updated })
-    );
+    const { result, seen } = renderFreshness({ status: INCIDENT, reach: 'ok', updated });
+    renderHook(() => useStatusFreshness({ status: INCIDENT, reach: 'ok', updated }));
     expect(result.current).toMatchObject({ stale: false, ageText: null, lastKnown: null });
-    expect(vi.getTimerCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => {
+      vi.advanceTimersByTime(STALE_AFTER - 1);
+    });
+    expect(seen).toHaveLength(1);
   });
 
-  it('before the first answer: not stale either (a placeholder, not No signal)', () => {
+  it('before the first answer: not stale either (a placeholder, not No signal), however long', () => {
     const { result } = renderHook(() =>
       useStatusFreshness({ status: null, reach: 'loading', updated: store(null) })
     );
     expect(result.current.stale).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(3 * 3_600_000);
+    });
+    expect(result.current.stale).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('stale: "last known <age>", counting on from the last answer, and why', () => {
@@ -119,15 +154,7 @@ describe('useStatusFreshness', () => {
 
   it('back to fresh: everything at once, in the render that brings the answer', () => {
     const updated = store(NOW);
-    const seen = [];
-    const { rerender } = renderHook(
-      (props) => {
-        const fresh = useStatusFreshness(props);
-        seen.push(fresh);
-        return fresh;
-      },
-      { initialProps: { status: INCIDENT, reach: 'down', updated } }
-    );
+    const { rerender, seen } = renderFreshness({ status: INCIDENT, reach: 'down', updated });
     act(() => {
       vi.advanceTimersByTime(5_000);
     });
@@ -135,7 +162,104 @@ describe('useStatusFreshness', () => {
     rerender({ status: INCIDENT, reach: 'ok', updated });
     expect(seen).toHaveLength(1);
     expect(seen[0]).toMatchObject({ stale: false, ageText: null, lastKnown: null, note: null });
-    expect(vi.getTimerCount()).toBe(0);
+    // No clock left running: nothing renders until the boundary.
+    act(() => {
+      vi.advanceTimersByTime(STALE_AFTER - 5_000 - 1);
+    });
+    expect(seen).toHaveLength(1);
+  });
+});
+
+describe('stale by its age: no answer for longer than the poll allows (#480)', () => {
+  it('the threshold: two polls and the request timeout, 72 s at the default 30 s', () => {
+    expect(STALE_AFTER).toBe(72_000);
+    expect(staleAfterMs(120_000)).toBe(252_000);
+  });
+
+  it('the boundary: one ms before it, fresh; at it, stale, and out of date', () => {
+    const { result } = renderFreshness({ status: HEALTHY, reach: 'ok', updated: store(NOW) });
+    act(() => {
+      vi.advanceTimersByTime(STALE_AFTER - 1);
+    });
+    expect(result.current.stale).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(result.current).toMatchObject({
+      stale: true,
+      lastKnown: 'last known 1 min ago',
+      note: 'No signal · last known 1 min ago',
+      cause: "JagHelm's status is out of date",
+      reach: 'expired',
+    });
+  });
+
+  it('each answer moves the boundary', () => {
+    const updated = store(NOW);
+    const { result } = renderFreshness({ status: HEALTHY, reach: 'ok', updated });
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+      updated.set(Date.now());
+    });
+    act(() => {
+      vi.advanceTimersByTime(STALE_AFTER - 1);
+    });
+    expect(result.current.stale).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(result.current.stale).toBe(true);
+  });
+
+  it('a tab shown again hours later: stale in its first render, before any answer', () => {
+    const updated = store(NOW);
+    const { seen } = renderFreshness({ status: INCIDENT, reach: 'ok', updated });
+    setHidden(true);
+    // Three hours, and no timer run: a hidden tab's are held back, a sleeping
+    // laptop's stopped. The poll asked nothing, so its reach is still 'ok'.
+    vi.setSystemTime(NOW + 3 * 3_600_000);
+    seen.length = 0;
+    setHidden(false);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0].stale).toBe(true);
+    expect(seen.every((fresh) => fresh.stale)).toBe(true);
+    expect(seen.at(-1)).toMatchObject({
+      lastKnown: 'last known 3 h ago',
+      cause: "JagHelm's status is out of date",
+    });
+  });
+
+  it('a tab shown again: an age already on screen reads the time at once, not its last tick', () => {
+    const updated = store(NOW);
+    const { result } = renderFreshness({ status: INCIDENT, reach: 'down', updated });
+    expect(result.current.lastKnown).toBe('last known just now');
+    setHidden(true);
+    vi.setSystemTime(NOW + 3 * 3_600_000);
+    setHidden(false);
+    expect(result.current.lastKnown).toBe('last known 3 h ago');
+  });
+
+  it('an answer brings it back in one render', () => {
+    const updated = store(NOW);
+    const { seen } = renderFreshness({ status: INCIDENT, reach: 'ok', updated });
+    act(() => {
+      vi.advanceTimersByTime(STALE_AFTER + 30_000);
+    });
+    expect(seen.at(-1)).toMatchObject({ stale: true, lastKnown: 'last known 1 min ago' });
+    seen.length = 0;
+    act(() => {
+      updated.set(Date.now());
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ stale: false, ageText: null, lastKnown: null, note: null });
+  });
+
+  it('a failed poll says so, however old the status', () => {
+    const { result } = renderFreshness({ status: INCIDENT, reach: 'down', updated: store(NOW) });
+    act(() => {
+      vi.advanceTimersByTime(STALE_AFTER);
+    });
+    expect(result.current).toMatchObject({ cause: "Can't reach JagHelm", reach: 'down' });
   });
 });
 

@@ -23,6 +23,9 @@ let lastSent = 0;
  */
 export const NOT_MODIFIED_NO_BODY = Object.freeze({ __jaghelm304NoBody: true });
 
+/** How long a read may take before it is given up as failed. */
+export const REQUEST_TIMEOUT_MS = 12_000;
+
 /**
  * Fetch JSON with ETag support.
  *
@@ -62,7 +65,7 @@ async function fetchJson(url, skipEtag = false) {
 
   const r = await apiFetch(url, {
     headers,
-    signal: AbortSignal.timeout(12000),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     ...(skipEtag && { cache: 'reload' }),
   });
 
@@ -209,7 +212,7 @@ export async function deleteCronJob(node, job) {
 
 export async function getWeather(lat, lon) {
   const r = await apiFetch(`${getApiBase()}/weather?lat=${lat}&lon=${lon}`, {
-    signal: AbortSignal.timeout(12000),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
@@ -217,7 +220,9 @@ export async function getWeather(lat, lon) {
 
 export async function getTodos() {
   if (isReadOnlyServer() && localTodos) return localTodos;
-  const r = await apiFetch(`${getApiBase()}/todos`, { signal: AbortSignal.timeout(12000) });
+  const r = await apiFetch(`${getApiBase()}/todos`, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }

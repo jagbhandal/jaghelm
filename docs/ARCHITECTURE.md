@@ -1324,9 +1324,12 @@ flowchart TD
   no signal"); healthy reads "All systems normal" in text-1, never green. An
   empty board (nothing set up, #449) reads the model's "Nothing monitored yet"
   in text-1, with no lamp, and the Alerts page and the Overview show the same
-  quiet line. The whole of it links to Alerts, inside a polite live region. When the server
-  can't be reached the header says steel "No signal", as the Android app
-  does. The last status is kept, but never drawn as current (#480, "No
+  quiet line. The whole of it links to Alerts. Beside it, a polite live
+  region (screen readers only) announces a change of state, never a tick of
+  an age: the link's words while there is a signal, else "No signal" and why
+  ("No signal: Can't reach JagHelm"), never the ticking "last known" line.
+  When the server can't be reached the header says steel "No signal", as
+  the Android app does. The last status is kept, but never drawn as current (#480, "No
   signal: a stale status", below): the header says what it last knew and how
   long ago, "No signal · last known 3 min ago: Critical · 2 critical", the
   lamp the steel ring. With nothing known, it says why: "Can't reach
@@ -1335,7 +1338,8 @@ flowchart TD
   component (`UpdatedAgo`, fed from `useStatus`'s `updated` store): its tick
   each second and each poll's answer re-render it alone, never the header,
   which ticks only while it shows a stale status's age. The
-  sidebar's Alerts entry carries the issue count, in the worst issue's colour.
+  sidebar's Alerts entry carries the issue count, in the worst issue's colour,
+  and none while the status is stale (`useStatusStale`).
   This replaced the dashboard's health dot, read off `/api/services`.
 - **The Overview's status** (#297, spec §8 item 1). The top of the Overview
   says whether anything is wrong, what and where, before today's board
@@ -1466,7 +1470,16 @@ flowchart TD
 - **No signal: a stale status** (#480, #495). The poll's status is stale
   when `reach` isn't `ok` once the first answer is in: a failed poll
   (`down`), or a 503 (`waiting`), which the server answers once its status
-  is past the cache's TTL (`/api/status`, 4.7). `useStatus` keeps the last
+  is past the cache's TTL (`/api/status`, 4.7); or when its last answer is
+  older than `updated.staleAfter`, two poll intervals and the request
+  timeout (`staleAfterMs` in `useStatus.js`, from the interval and
+  `REQUEST_TIMEOUT_MS` in `useData.js`: 72 s at the default 30 s, 252 s at
+  120 s). That second rule is for a hidden tab or a sleeping laptop, which
+  ask nothing and leave `reach` at `ok`: the first render after the tab is
+  shown again is grey, before the poll's answer comes. While fresh, one
+  timer, shared by every place, waits for that boundary, re-armed on each
+  answer, and a `visibilitychange` to visible checks at once; no clock
+  ticks. `useStatus` keeps the last
   status, and one hook decides what a page does with it,
   `useStatusFreshness` (`src/shell/statusFreshness.js`): the header
   (`ShellHeader`), the attention panel (`ShellAttention`, on the Overview and
@@ -1478,9 +1491,14 @@ flowchart TD
   each place says how old it is ("No signal · last known 3 min ago"; the
   header and the panel the same sentence, `lastKnownLine` in
   `statusView.js`), with why: "Can't reach JagHelm", or "JagHelm's status is
-  out of date" for a 503 after a status. Every age on screen ticks on one
-  clock (`useAgo`, `src/ui/lib/ago.js`), so the header and the panel never
-  read a second apart, and the hook runs no clock while the status is fresh.
+  out of date" for a 503 after a status or an answer too old. Every age on
+  screen ticks on one clock (`useAgo`, `src/ui/lib/ago.js`), so the header
+  and the panel never read a second apart; it ticks at once as the tab is
+  shown again, and the hook runs no clock while the status is fresh. The
+  header's live region says "No signal" and why, never the moving age. A
+  lamp drawn as no signal beside a last known word ("Healthy", "Down") is
+  named "No signal", not by that word (`lampName`, `src/ui/lib/status.js`),
+  and a tile's or a row's name says it before the word.
   The answer that brings a status back restores every colour in its render.
   Today's board below the Infrastructure section draws `/api/services`, not
   the status model, so it keeps its own colours and its own stale notes
@@ -2098,9 +2116,12 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   Forward; `src/shell/ShellHeader.test.jsx`: each state of the header, and a
   render count proving the "updated" tick re-renders nothing else), the rule
   for a stale status (`src/shell/statusFreshness.test.jsx`: the hook, its
-  words and its one clock; `src/demo.render.test.jsx`, "No signal": no level
+  words, its one clock, and the age boundary, to the ms and after a tab
+  shown hours later; `src/demo.render.test.jsx`, "No signal": no level
   colour in the header, the panel, the strip or the Infrastructure section,
-  one age everywhere, and every colour back with the next answer), the status
+  no lamp named by a level word, one age everywhere, a tab shown hours
+  later grey before its answer, and every colour back with the next
+  answer), the status
   poll's request budget (`src/App.polling.test.jsx`), the loaded-app cap
   (`src/hooks/useAppFrames.test.jsx`), the Infrastructure section's nodes
   against the model's fixtures (`src/shell/infrastructureView.test.jsx`) and

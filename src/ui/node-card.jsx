@@ -5,6 +5,8 @@
  * §5.2); under it the host in mono and the node's subtitle, in 12px text-3.
  * At the right its state: the lamp alone when healthy (named by the word, so
  * healthy stays quiet), else the word in its state's colour beside the lamp.
+ * A lamp drawn as no signal beside another word (a stale status's last known
+ * "Healthy", #480) is named "No signal" (lampName), never by that word.
  *
  * Then a MetricMeter per reading, two to a row: violet below its line, a
  * status colour only at or over it, each given its lines and the server's
@@ -28,7 +30,7 @@ import { Sparkline } from './sparkline.jsx';
 import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
-import { WORDS, toState } from './lib/status.js';
+import { WORDS, lampName, toState } from './lib/status.js';
 
 // The reason line in its state's word colour, as the mock's.
 const said = {
@@ -70,6 +72,8 @@ function NodeCard({
   const id = useId();
   const s = toState(state);
   const spoken = word || WORDS[s];
+  // A stale card keeps its last word ("Healthy"); its lamp is named by what it draws.
+  const named = lampName(s, spoken);
   const quiet = s === 'ok';
   return (
     <article
@@ -98,7 +102,7 @@ function NodeCard({
         </div>
         <span data-slot="node-state" className="flex shrink-0 items-center gap-1.5 pt-0.5">
           {!quiet && <StatusWord state={s} word={spoken} className="text-caption" />}
-          <StatusLamp state={s} label={spoken} decorative={!quiet} />
+          <StatusLamp state={s} label={named} decorative={!quiet && named === spoken} />
         </span>
       </div>
       {readings.length > 0 && (

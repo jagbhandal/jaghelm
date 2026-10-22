@@ -16,11 +16,16 @@
  *              the steel ring and "No signal", the same word and colour as
  *              the Android app, then `lastKnown` when the shell has a last
  *              status ("last known 3 min ago: All systems normal", #480),
- *              else why ("Can't reach JagHelm"). Nothing from the last
- *              status is drawn in its colour.
+ *              else why ("Can't reach JagHelm"; NO_SIGNAL's keys: 'down',
+ *              'waiting', 'expired'). Nothing from the last status is drawn
+ *              in its colour.
  *              `reach` 'loading', before the first answer, is a placeholder,
- *              neither a state nor no signal. A live region, so a change is
- *              announced.
+ *              neither a state nor no signal.
+ *              Beside the link, a live region (sr-only) announces a change
+ *              of state, never a tick of an age: the link's words while
+ *              there is a signal ("Critical: 1 service down"), else "No
+ *              signal" and why ("No signal: Can't reach JagHelm"), without
+ *              `lastKnown`, whose age moves each second.
  *   updated    "Updated 12 s ago" (UpdatedAgo): its own component with its own
  *              clock, so its tick each second re-renders nothing else. From
  *              640px.
@@ -94,20 +99,30 @@ function UpdatedAgo({ at, className, ...props }) {
   );
 }
 
+/**
+ * The header's live region: what it says is announced when it changes. One
+ * element for the placeholder and the status, so the first status after the
+ * placeholder is announced as a change.
+ */
+function Announce({ busy, children }) {
+  return (
+    <span role="status" aria-busy={busy || undefined} className="sr-only">
+      {children}
+    </span>
+  );
+}
+
 function HeaderStatus({ status = {}, onNavigate }) {
   const { reach = 'ok', state, word, sentence, href = '/alerts', current, lastKnown } = status;
   if (reach === 'loading') {
     // Before the first answer: no state to show yet, and not "No signal" either.
     return (
-      <div
-        role="status"
-        aria-busy="true"
-        data-slot="header-status"
-        className="flex min-w-0 flex-1 items-center gap-2.5"
-      >
-        <Skeleton className="size-3.5 rounded-full" />
-        <Skeleton className="h-3 w-40 max-w-full" />
-        <span className="sr-only">Checking status</span>
+      <div data-slot="header-status" className="flex min-w-0 flex-1 items-center gap-2.5">
+        <Skeleton key="lamp" className="size-3.5 rounded-full" />
+        <Skeleton key="line" className="h-3 w-40 max-w-full" />
+        <Announce key="announce" busy>
+          Checking status
+        </Announce>
       </div>
     );
   }
@@ -118,16 +133,18 @@ function HeaderStatus({ status = {}, onNavigate }) {
   const said = !signal
     ? WORDS.unknown
     : word || (empty ? sentence || EMPTY_SENTENCE : quiet ? 'All systems normal' : WORDS[s]);
+  // Without a signal, why: what the live region says, and the line when
+  // nothing is known.
+  const why = !signal ? NO_SIGNAL[reach] || NO_SIGNAL.down : null;
   // An empty board's sentence is its whole line, said once. Without a signal,
   // what was last known, or else why.
-  const says = !signal
-    ? lastKnown || NO_SIGNAL[reach] || NO_SIGNAL.down
-    : sentence !== said
-      ? sentence
-      : null;
+  const says = !signal ? lastKnown || why : sentence !== said ? sentence : null;
+  // Never the last known line: its age moves each second.
+  const announced = !signal ? `${said}: ${why}` : says ? `${said}: ${says}` : said;
   return (
-    <div role="status" data-slot="header-status" className="flex min-w-0 flex-1">
+    <div data-slot="header-status" className="flex min-w-0 flex-1">
       <a
+        key="link"
         href={href}
         aria-current={current ? 'page' : undefined}
         onClick={onNavigate ? (e) => onNavigate(e, href) : undefined}
@@ -149,6 +166,7 @@ function HeaderStatus({ status = {}, onNavigate }) {
           </>
         )}
       </a>
+      <Announce key="announce">{announced}</Announce>
     </div>
   );
 }

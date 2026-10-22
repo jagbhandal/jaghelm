@@ -77,13 +77,13 @@ describe('statusView', () => {
     expect(countsText([])).toBe('');
   });
 
-  it("badges Alerts with the count, in the worst issue's state, only with a signal", () => {
+  it("badges Alerts with the count, in the worst issue's state, only while the status is fresh", () => {
     const status = { issues: [{ state: 'warn' }, { state: 'unknown' }] };
-    expect(alertsBadge(status, 'ok')).toEqual({ count: 2, state: 'warn', label: '2 issues' });
-    expect(alertsBadge({ issues: [{ state: 'crit' }] }, 'ok').label).toBe('1 issue');
-    expect(alertsBadge(status, 'down')).toBeNull();
-    expect(alertsBadge({ issues: [] }, 'ok')).toBeNull();
-    expect(alertsBadge(null, 'loading')).toBeNull();
+    expect(alertsBadge(status, false)).toEqual({ count: 2, state: 'warn', label: '2 issues' });
+    expect(alertsBadge({ issues: [{ state: 'crit' }] }, false).label).toBe('1 issue');
+    expect(alertsBadge(status, true)).toBeNull();
+    expect(alertsBadge({ issues: [] }, false)).toBeNull();
+    expect(alertsBadge(null, false)).toBeNull();
   });
 });
 

@@ -25,7 +25,7 @@ import { THEMES, WIDTHS, openApp, statusHues } from './app.mjs';
 import { nasDiskIncident } from '../src/testing/statusFixtures.js';
 
 const header = (page) => page.getByRole('banner');
-const headerLink = (page) => header(page).getByRole('status').getByRole('link');
+const headerLink = (page) => header(page).locator('[data-slot="header-status"] a');
 const statusArea = (page) => page.locator('[data-slot="overview-status"]');
 const panel = (page) => statusArea(page).getByRole('region', { name: 'Needs attention' });
 const section = (page) => page.locator('[data-slot="infrastructure-section"]');

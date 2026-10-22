@@ -5,7 +5,9 @@
  * tick re-renders none of them, and the status poll's "updated" clock
  * re-renders only ShellUpdated. Without a signal, the header says what was
  * last known and how long ago, by the one rule for a stale status
- * (statusFreshness.js, #480); only then does its age tick the header.
+ * (statusFreshness.js, #480); only then does its age tick the header. A
+ * status stale by its age (no answer for too long, the poll's reach still
+ * 'ok') reaches AppHeader as 'expired', so it says No signal too.
  */
 import { Suspense, lazy, memo, useMemo, useState, useSyncExternalStore } from 'react';
 import { AppHeader, UpdatedAgo } from '@ui/app-header';
@@ -48,7 +50,7 @@ export const ShellHeader = memo(function ShellHeader({
   const freshness = useStatusFreshness({ status, reach, updated });
   const said = useMemo(
     () => ({
-      reach,
+      reach: freshness.reach ?? reach,
       state: drawnState(status?.overall?.state, freshness),
       sentence: status?.overall?.sentence,
       lastKnown: lastKnownLine(freshness, status) ?? undefined,

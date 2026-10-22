@@ -92,7 +92,7 @@ async function renderDemo(scenario, edit, { path = '/', ready = 'Network Edge', 
 
 // The header's status link (#296): the lamp's state, and what it says.
 const headerStatus = () =>
-  within(within(screen.getByRole('banner')).getByRole('status')).getByRole('link');
+  screen.getByRole('banner').querySelector('[data-slot="header-status"] a[href="/alerts"]');
 
 /** The demo's own /api/status in `scenario`: the model's status of its board (#437). */
 const demoStatus = (scenario) =>
@@ -121,7 +121,21 @@ afterEach(() => {
   // The app marked the server read-only and may have kept changes: start afresh.
   setReadOnlyServer(false);
   forgetLocalChanges();
+  delete document.hidden;
+  delete document.visibilityState;
 });
+
+/** Hide or show the browser tab, as the Page Visibility API says it. */
+function setHidden(hidden) {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    get: () => (hidden ? 'hidden' : 'visible'),
+  });
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+}
 
 describe('the demo, rendered', () => {
   it('shows populated nodes with their services, side by side at the top', async () => {
@@ -758,7 +772,8 @@ describe("the demo's Infrastructure section", () => {
 // Infrastructure section. Each keeps what it last knew and says how old it
 // is, by one clock; the next answer brings every colour back at once.
 describe('No signal: a stale status never looks current', () => {
-  const header = () => within(screen.getByRole('banner')).getByRole('status');
+  // The header's status: its link, and the live region that announces it.
+  const header = () => screen.getByRole('banner').querySelector('[data-slot="header-status"]');
   const area = () => document.querySelector('[data-slot="overview-status"]');
   const attention = () => within(area()).getByRole('region', { name: 'Needs attention' });
   const strip = () => within(area()).getByRole('region', { name: 'Subsystems' });
@@ -864,8 +879,53 @@ describe('No signal: a stale status never looks current', () => {
       expect(disk.querySelector('[data-slot="meter-fill"]')).toHaveClass('bg-unknown-solid');
       for (const m of section().querySelectorAll('[data-slot="metric-meter"]'))
         expect(m).toHaveAttribute('data-state', 'unknown');
+
+      // No lamp is named by a level word: each is named for what it draws, or
+      // is decorative beside the words "No signal".
+      for (const place of places())
+        for (const lamp of place.querySelectorAll('[data-slot="status-lamp"]')) {
+          if (lamp.getAttribute('aria-hidden') === 'true')
+            expect(lamp.parentElement).toHaveTextContent(/No signal/);
+          else expect(lamp).toHaveAccessibleName('No signal');
+        }
+      // A tile or a row says it before its last word.
+      for (const t of within(strip()).getAllByRole('button'))
+        expect(t).toHaveAccessibleName(/^[^,]+, No signal, /);
+      for (const row of rows)
+        expect(within(row).getByRole('link')).toHaveAccessibleName(/^[^,]+, No signal, /);
     });
   }
+
+  // #480 review: a hidden tab or a sleeping laptop asks nothing, so the poll's
+  // reach is still 'ok' when the tab is shown again, hours on.
+  it('a tab shown again hours later: no level colour in its first render, before any answer; the answer brings them back', async () => {
+    await renderNasIncident();
+    expect(places().flatMap(levels).join('\n')).toMatch(/crit/);
+    const alerts = () => screen.getAllByRole('link', { name: /^Alerts\b/ });
+    expect(alerts().some((a) => /issues?$/.test(a.getAttribute('aria-label') ?? ''))).toBe(true);
+    setHidden(true);
+    // Three hours, and no timer run, as a laptop asleep.
+    vi.setSystemTime(Date.now() + 3 * 3_600_000);
+    const asked = requests.filter((r) => r === 'GET /api/status').length;
+    setHidden(false);
+    // Asked at once, not yet answered: grey, saying how old.
+    expect(requests.filter((r) => r === 'GET /api/status').length).toBe(asked + 1);
+    for (const place of places()) expect(levels(place), place.dataset.slot).toEqual([]);
+    expect(within(header()).getByRole('link')).toHaveAccessibleName(
+      'No signal: last known 3 h ago: Critical · 2 critical, 1 warning'
+    );
+    expect(within(attention()).getByText("JagHelm's status is out of date")).toBeInTheDocument();
+    expect(nas()).toHaveAttribute('data-state', 'unknown');
+    // No Alerts badge, with an old count in an old colour, either.
+    for (const a of alerts()) expect(a).not.toHaveAccessibleName(/issue/);
+
+    // The answer: every colour back, together.
+    await advance(0);
+    expect(within(header()).getByRole('link')).toHaveAttribute('data-state', 'crit');
+    expect(attention()).toHaveAttribute('data-state', 'crit');
+    expect(nas()).toHaveAttribute('data-state', 'warn');
+    expect(screen.queryByText(/last known/i)).toBeNull();
+  });
 
   it('the age keeps moving, and every place reads the same one', async () => {
     await renderNasIncident();
@@ -892,6 +952,10 @@ describe('No signal: a stale status never looks current', () => {
     }
     // The header's own "Updated" says the same age.
     expect(within(screen.getByRole('banner')).getByText('Updated 4 min ago')).toBeInTheDocument();
+    // Its live region said No signal once, and none of the ages since.
+    expect(within(header()).getByRole('status')).toHaveTextContent(
+      "No signal: Can't reach JagHelm"
+    );
   });
 
   it('back to fresh: every colour returns with the answer that brings it', async () => {

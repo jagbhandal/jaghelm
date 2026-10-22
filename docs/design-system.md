@@ -1089,6 +1089,13 @@ draws the Android lamp; nothing there uses it.
   A subsystem tile prints no word, so its lamp keeps the name. The wrench's
   inner viewport is hidden, so it is one image. A test checks that the five
   states draw five different shapes, each with a name.
+- **A lamp is named by what it draws.** Under a stale status (#480) a row, a
+  tile, a node card or a table row keeps its last known word ("Down",
+  "Healthy") beside the steel ring; the lamp is then named "No signal"
+  (`lampName`, `lib/status.js`), never by that word, and is not decorative,
+  and a row's or a tile's name says it before the word ("Services, No
+  signal, Down, 30 / 32 up"). A lamp beside the word "No signal" stays
+  decorative.
 - **Rows.** A row that opens something is a button (`onOpen`) or a link
   (`href`), named "title, word, where" and described by its reason and age; an
   abbreviated word is spelled out ("UNKN" is said as "unknown"). A row with
@@ -1378,7 +1385,8 @@ From the mock's Main and Phone boards:
   systems normal" nor "No signal". No signal is the steel ring and "No
   signal" in `unknown-fg`, then, in `text-2`, what was last known when the
   shell has a status (`lastKnown`: "last known 3 min ago: All systems
-  normal", #480), else why ("Can't reach JagHelm"). Before the first answer a
+  normal", #480), else why, by `reach` (`down`: "Can't reach JagHelm";
+  `waiting`; `expired`: "JagHelm's status is out of date"). Before the first answer a
   14px skeleton disc and a 160px bar stand in. "Updated 12 s ago" in
   `caption` `text-3`, from 640px. From 1024px the search button is the mock's:
   `surface-1` in a subtle edge, `text-3`, the shortcut in a mono `kbd`, 240px
@@ -1422,7 +1430,12 @@ From the mock's Main and Phone boards:
 - **Names.** A nav entry's name is its label, then its count and whether it is
   loaded ("Alerts, 4 issues", "Grafana, still loaded"); collapsed, the same
   name shows as a tooltip. The header's status is one link, "Critical: 1
-  service down · …", in a polite live region, so a change is announced. The
+  service down · …". Beside it, a polite live region (`sr-only`) announces a
+  change of state, never a tick of an age: the link's words while there is a
+  signal, else "No signal" and why ("No signal: Can't reach JagHelm"),
+  without the "last known 3 min ago" line, whose age moves each second
+  (#480). It is the same element from the placeholder ("Checking status") to
+  the first status, so that is announced as a change. The
   open page's entry and link are `aria-current="page"`. Reload is named
   "Reload <app>"; "Open in new tab" opens with `rel="noopener noreferrer"`,
   so the app gets no handle on JagHelm. More is a button with
@@ -1515,7 +1528,8 @@ From the mock's Main board, its Infrastructure section:
 
 - The section is a region named by its heading; the toggle a radio group,
   "Node view"; each card an article named by the node's name, its lamp named
-  by the word when healthy (decorative beside the word otherwise), each meter
+  by the word when healthy (decorative beside the word otherwise; "No
+  signal" beside a stale status's last known word, #480), each meter
   a `meter` ("94%, warning above 90%"), its Sparkline an image named "CPU,
   last hour" that Tab reaches. The table's row header is the node's name; a
   coloured reading adds its state for screen readers (", warning").

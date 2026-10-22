@@ -99,3 +99,18 @@ const SPOKEN = { UNKN: 'unknown' };
 export function spoken(word) {
   return SPOKEN[word] ?? word;
 }
+
+/**
+ * What a lamp is named: what it draws. A lamp drawn as no signal is "No
+ * signal" beside any word but one for no signal ("No signal", or "UNKN" as
+ * the Android app says it): under a stale status (#480) the word is what was
+ * last known ("Healthy", "Down"), and the lamp is what is known now. Any
+ * other lamp is its word, or its state's. Where the word beside a lamp says
+ * the same, the lamp is decorative; where it doesn't, the lamp is named, and
+ * a row's or a tile's name says it before the word.
+ */
+export function lampName(state, word) {
+  const s = toState(state);
+  const noSignal = !word || word === WORDS.unknown || spoken(word) === 'unknown';
+  return s === 'unknown' && !noSignal ? WORDS.unknown : word || WORDS[s];
+}

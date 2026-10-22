@@ -28,7 +28,7 @@ import { THEMES, WIDTHS, axeFindings, demo, openApp } from './app.mjs';
 /** The demo's status in its incident scenario: what the header must say. */
 const INCIDENT = demo('/api/status').body;
 
-const headerStatus = (page) => page.getByRole('banner').getByRole('status').getByRole('link');
+const headerStatus = (page) => page.getByRole('banner').locator('[data-slot="header-status"] a');
 const sidebar = (page) => page.getByRole('navigation', { name: 'Main' });
 const phoneTabs = (page) => page.getByRole('navigation', { name: 'Tabs' });
 
