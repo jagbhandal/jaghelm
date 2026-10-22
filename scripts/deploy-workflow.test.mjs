@@ -4,7 +4,9 @@
 //   #207  the deploy delivers this commit's compose.yaml to vm-103, verifies it
 //         there, and a rollback restores the image AND the compose.yaml together;
 //   #356  a deploy whose image never arrives fails and changes nothing (no
-//         fallback to :latest), and a green deploy means this commit is live.
+//         fallback to :latest), a green deploy means this commit is live, a
+//         run whose commit is no longer main's head changes nothing, and a
+//         rollback never undoes a later deploy.
 // The step scripts are taken from the workflow itself and run against stubs (ssh
 // runs the remote command locally; docker, curl and sleep are fakes), so these
 // tests exercise the real deploy code, not a copy of it. runJob runs the whole
@@ -83,7 +85,12 @@ case "$*" in
     # The registry: misses FAKE_MANIFEST_MISSES polls, then has the image.
     n=$(cat "$FAKE_MANIFEST_COUNT" 2>/dev/null || echo 0); echo $((n + 1)) > "$FAKE_MANIFEST_COUNT"
     [ "$n" -ge "\${FAKE_MANIFEST_MISSES:-0}" ] || exit 1 ;;
-  "inspect --format {{.Image}} jaghelm") [ -n "\${FAKE_PREV_IMAGE:-}" ] || exit 1; echo "$FAKE_PREV_IMAGE" ;;
+  "inspect --format {{.Image}} jaghelm")
+    # The running container's image: the previous one unless a test says another
+    # deploy has replaced it since (FAKE_RUNNING_FILE).
+    if [ -s "$FAKE_RUNNING_FILE" ]; then cat "$FAKE_RUNNING_FILE"; exit 0; fi
+    [ -n "\${FAKE_PREV_IMAGE:-}" ] || exit 1; echo "$FAKE_PREV_IMAGE" ;;
+  "image inspect --format {{.Id}} "*) echo "\${FAKE_THIS_IMAGE:-sha256:this}" ;;
   "pull "*) exit "\${FAKE_PULL_RC:-0}" ;;
   "compose config -q") exit "\${FAKE_CONFIG_RC:-0}" ;;
   "compose config --images") printf '%s\\n' "\${FAKE_IMAGES:-${LATEST}}" ;;
@@ -96,15 +103,19 @@ esac
 exit 0
 `;
 // curl: answers the health endpoint (revision FAKE_REVISION, else this commit's);
-// otherwise records argv and the -K config read from stdin, then "downloads"
-// FAKE_COMPOSE_SRC to the -o path.
+// otherwise appends argv and the -K config read from stdin to their logs, then
+// answers Gitea's branch API (main's head: FAKE_MAIN_HEAD, else this commit) or
+// "downloads" FAKE_COMPOSE_SRC to the -o path.
 const FAKE_CURL = `#!/bin/sh
 case "$*" in *"/api/health"*)
   printf '{"status":"ok","version":"3.0.0","revision":"%s"}\\n' "\${FAKE_REVISION-${SHA.slice(0, 7)}}"; exit 0 ;;
 esac
-echo "$*" > "$FAKE_CURL_ARGV"
-cat > "$FAKE_CURL_CONFIG"
+echo "$*" >> "$FAKE_CURL_ARGV"
+cat >> "$FAKE_CURL_CONFIG"
 [ "\${FAKE_CURL_RC:-0}" = 0 ] || exit "$FAKE_CURL_RC"
+case "$*" in *"/branches/main"*)
+  printf '{"name":"main","commit":{"id":"%s","message":"m"}}\\n' "\${FAKE_MAIN_HEAD:-${SHA}}"; exit 0 ;;
+esac
 out=; prev=
 for a in "$@"; do [ "$prev" = -o ] && out=$a; prev=$a; done
 cp "$FAKE_COMPOSE_SRC" "$out"
@@ -161,6 +172,7 @@ function sandbox() {
       FAKE_CURL_CONFIG: f('curl.config'),
       FAKE_COMPOSE_SRC: f('compose.src'),
       FAKE_MANIFEST_COUNT: f('manifest.count'),
+      FAKE_RUNNING_FILE: f('running.image'),
       // The job sets 360; with sleep stubbed out, 0 makes a miss time out at once.
       IMAGE_WAIT_SECONDS: '0',
     },
@@ -340,6 +352,7 @@ test('stage: fetches compose.yaml at the commit, delivers it, records both hashe
     sb.read('curl.argv').trim().split(' ').pop(),
     `http://gitea.example.test/api/v1/repos/owner/JagHelm/raw/compose.yaml?ref=${SHA}`
   );
+  assert.match(sb.read('curl.argv'), /http:\/\/gitea\.example\.test\/api\/v1\/repos\/owner\/JagHelm\/branches\/main/);
   assert.doesNotMatch(sb.read('curl.argv'), /tok-not-on-argv/);
   assert.match(sb.read('curl.config'), /Authorization: token tok-not-on-argv/);
 
@@ -618,7 +631,7 @@ test('rollback: restores the previous compose.yaml, then the previous image, the
   const r = runStep(sb, ROLLBACK());
   assert.equal(r.status, 0, out(r));
   assert.equal(readFileSync(sb.stackFile('compose.yaml'), 'utf8'), OLD_COMPOSE);
-  const calls = dockerCalls(sb).slice(before);
+  const calls = dockerCalls(sb).slice(before).filter((c) => !/^(image )?inspect /.test(c));
   assert.deepEqual(calls, [
     `tag sha256:previous ${LATEST}|${sha256(OLD_COMPOSE)}`,
     `compose up -d --force-recreate|${sha256(OLD_COMPOSE)}`,
@@ -718,5 +731,60 @@ for (const [label, revision] of [
     assert.notEqual(r.status, 0, out(r));
     assert.match(out(r), /::error::.*not this commit \(abcdef0\)/);
     assert.doesNotMatch(out(r), /verified healthy/);
+  });
+}
+
+// A later commit on main deploys this one too; deploying this one now (a late
+// re-run, an overlapping run) would put an older build over a newer one.
+test('job: a run whose commit is no longer main head exits green as superseded, changing nothing', (t) => {
+  const sb = stagedSandbox(t);
+  const job = runJob(sb, { FAKE_MAIN_HEAD: 'f'.repeat(40) });
+  assert.equal(job.failed, false, job.log);
+  assert.match(job.log, /Superseded by fffffff/);
+  assert.doesNotMatch(job.log, /::error::|verified healthy/);
+  assert.equal(sb.read('ssh.log'), '', 'nothing reached vm-103');
+  assert.deepEqual(verbs(sb).filter((v) => !v.startsWith('manifest inspect ')), []);
+  assert.equal(LIVE(sb), OLD_COMPOSE);
+  assert.ok(!job.ran.includes(ROLLBACK().name));
+});
+
+test('stage: fails before vm-103 is touched when main head cannot be read', (t) => {
+  const sb = stagedSandbox(t);
+  const r = runStep(sb, STAGE(), stageEnv({ FAKE_MAIN_HEAD: 'not-a-sha' }));
+  assert.notEqual(r.status, 0);
+  assert.match(out(r), /::error::.*main/);
+  assert.equal(sb.read('ssh.log'), '');
+  assert.equal(githubEnv(sb).ROLLBACK_ARMED, undefined);
+});
+
+// Two overlapping runs: the older one fails its gate after the newer one went
+// green. Its rollback must not put back the image from before both.
+test('rollback: leaves vm-103 alone when a later deploy has replaced this one', (t) => {
+  const { sb, switched } = stagedAndSwitched(t);
+  assert.equal(switched.status, 0, out(switched));
+  writeFileSync(path.join(sb.dir, 'running.image'), 'sha256:newer\n');
+  writeFileSync(sb.stackFile('compose.yaml'), 'services: {} # the newer run\n');
+  const gate = runStep(sb, VERIFY(), { FAKE_REVISION: 'fffffff' });
+  assert.notEqual(gate.status, 0);
+  const before = dockerCalls(sb).length;
+  const r = runStep(sb, ROLLBACK());
+  assert.equal(r.status, 0, out(r));
+  assert.match(out(r), /later deploy.*nothing restored/i);
+  assert.ok(!dockerCalls(sb).slice(before).some((c) => /^(tag|compose)/.test(c)), dockerCalls(sb).join('\n'));
+  assert.equal(LIVE(sb), 'services: {} # the newer run\n');
+});
+
+for (const [label, running] of [
+  ["this run's image", 'sha256:this'],
+  ['no container at all', null],
+]) {
+  test(`rollback: acts when vm-103 runs ${label}`, (t) => {
+    const { sb } = stagedAndSwitched(t);
+    if (running) writeFileSync(path.join(sb.dir, 'running.image'), `${running}\n`);
+    const before = dockerCalls(sb).length;
+    const r = runStep(sb, ROLLBACK(), running ? {} : { FAKE_PREV_IMAGE: '' });
+    assert.equal(r.status, 0, out(r));
+    assert.equal(LIVE(sb), OLD_COMPOSE);
+    assert.ok(dockerCalls(sb).slice(before).some((c) => c.startsWith(`tag sha256:previous ${LATEST}|`)));
   });
 }

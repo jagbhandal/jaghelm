@@ -47,6 +47,7 @@ It's a scrypt hash (not reversible), but rotate anyway:
   external edit keeps the last-good in memory and logs a path-level error.
 - Roll back the running image to the immutable tag: `ghcr.io/jagbhandal/jaghelm:sha-<short>`
   (or `@sha256:<digest>`) — see the deploy notes in `compose.yaml`.
+- A red deploy, its recovery and JagHelm's own manual rollback: [RELEASING.md](../RELEASING.md#production-deploys).
 - `/api/health` returns 503 when the refresh loop is wedged (stale); the Docker
   HEALTHCHECK + deploy verify gate use it.
 - A phone push "JagHelm status check failing" means the status model throws on

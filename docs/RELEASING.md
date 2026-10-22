@@ -42,11 +42,19 @@ deploys `:latest` instead.
   1. Open the build from the link in the error line, then re-run it, or fix the
      build and merge the fix (the fix's own deploy then ships both).
   2. Once the build has pushed `:sha-<short>`, re-run the failed deploy on
-     Gitea.
-- **Red at a later step** (the pull, `compose.yaml`, or the health gate,
-  including a `revision` that is not this commit) means vm-103 was rolled back
-  to the image and `compose.yaml` it had before. The step's `::error::` line
-  says why.
+     Gitea, but only if no later commit has merged since: otherwise the later
+     commit's deploy ships this one (re-run that one if it is red too).
+- **Red at the stage step** (the pull, or `compose.yaml` refused) also changed
+  nothing on vm-103: a failed pull happens before anything is delivered, and a
+  refused `compose.yaml` is put back before the container is touched.
+- **Red at the switch or the health gate** (including a `revision` that is not
+  this commit) means vm-103 was rolled back to the image and `compose.yaml` it
+  had before, unless a later deploy has replaced it since; then the rollback
+  leaves it alone. The step's `::error::` line says why.
+- **Green with `Superseded by <sha>`** means main had already moved on when the
+  run checked, so it changed nothing; the later commit's deploy ships this one.
+  Re-running an old deploy is therefore safe: it never puts an older build over
+  a newer one.
 
 **Manual rollback to a known commit.** Never automatic. On vm-103, with
 `<short>` the first seven characters of a commit whose image you trust:
@@ -55,8 +63,10 @@ deploys `:latest` instead.
 cd /opt/stacks/jaghelm && docker pull ghcr.io/jagbhandal/jaghelm:sha-<short> && docker tag ghcr.io/jagbhandal/jaghelm:sha-<short> ghcr.io/jagbhandal/jaghelm:latest && docker compose up -d --force-recreate
 ```
 
-It keeps the host's current `compose.yaml`. `/api/health` then reports
-`<short>` as `revision`, until the next merge deploys over it.
+It keeps the host's current `compose.yaml`; when rolling back across a
+`compose.yaml` change, first copy that commit's `compose.yaml` into
+`/opt/stacks/jaghelm` too. `/api/health` then reports `<short>` as `revision`,
+until the next merge deploys over it.
 
 ## Changelog entries during development
 

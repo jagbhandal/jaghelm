@@ -2208,8 +2208,10 @@ flowchart LR
   also requires `/api/health`'s `revision` to be this commit, so a green deploy
   means the commit is live; any
   failure after the host was changed rolls back the previous image **and** the
-  previous `compose.yaml` together. What a red deploy means, how to recover and
-  the manual rollback: [RELEASING.md](RELEASING.md#production-deploys). The deploy owns `compose.yaml` on the host:
+  previous `compose.yaml` together, unless a later deploy has replaced it
+  since. A run whose commit is no longer main's head changes nothing and ends
+  green as superseded. What a red deploy means, how to recover and the manual
+  rollback: [RELEASING.md](RELEASING.md#production-deploys). The deploy owns `compose.yaml` on the host:
   host-specific additions (a secrets mount, host networking) go in
   `compose.override.yaml`, which Compose merges and the deploy never touches.
   Before the container is touched, the deploy refuses a merged config that
