@@ -1,16 +1,61 @@
-import React, { useState } from 'react';
+import { useRef, useState } from 'react';
+import { LoginScreen } from '@ui/login-form';
 import { apiFetch } from '../api/client.js';
+import { THEMES } from './settings/themes.js';
+
+/**
+ * The sign-in page (#305): LoginScreen (src/ui/login-form.jsx) wired to
+ * POST /api/auth/login. The token goes to onLogin, which stores it (App.jsx).
+ *
+ * A refused sign-in (401) is one error on the password field, whichever of
+ * the two was wrong: the server says no more, so the page can't leak which
+ * usernames exist. Any other refusal (too many attempts) says the server's
+ * reason, and no answer at all says so, as the form's alert.
+ */
+const REJECTED = 'Wrong username or password.';
+const NO_ANSWER = "JagHelm didn't answer. Check the connection and try again.";
+const NONE = Object.freeze({});
+
+/** The theme the page draws in: the stored theme's, as the shell picks it (App.jsx). */
+function loginTheme(stored) {
+  return THEMES.find((t) => t.id === stored)?.light ? 'light' : 'dark';
+}
+
+function storedTheme() {
+  try {
+    return localStorage.getItem('jaghelm-theme');
+  } catch {
+    return null;
+  }
+}
+
+/** The instance's name, as the header shows it: the stock 'JAGHELM' reads as the product's. */
+function instanceName(title) {
+  const t = typeof title === 'string' ? title.trim() : '';
+  return t && t !== 'JAGHELM' ? t : 'JagHelm';
+}
 
 export default function LoginPage({ onLogin, config }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState(NONE);
+  const [busy, setBusy] = useState(false);
+  const [theme] = useState(() => loginTheme(storedTheme()));
+  // Set before the first await, so a second submit in the same tick sends nothing.
+  const sending = useRef(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  const submit = async () => {
+    if (sending.current) return;
+    const missing = {};
+    if (!username.trim()) missing.username = 'Enter your username.';
+    if (!password) missing.password = 'Enter your password.'; // pragma: allowlist secret
+    if (missing.username || missing.password) {
+      setErrors(missing);
+      return;
+    }
+    sending.current = true;
+    setBusy(true);
+    let next;
     try {
       const r = await apiFetch('/api/auth/login', {
         method: 'POST',
@@ -18,28 +63,34 @@ export default function LoginPage({ onLogin, config }) {
         body: JSON.stringify({ username, password }),
       });
       const data = await r.json();
-      if (r.ok && data.token) { onLogin(data.token); }
-      // Collapse auth-rejection to a single constant so backend-specific
-      // error strings (e.g. "user not found" vs "bad password") don't leak
-      // username-enumeration signal to the client.
-      else { setError('Invalid credentials'); }
-    } catch { setError('Login failed — try again'); }
-    setLoading(false);
+      if (r.ok && data.token) {
+        onLogin(data.token);
+        return;
+      }
+      if (r.ok || r.status === 401) next = { password: REJECTED };
+      else if (typeof data?.error === 'string' && data.error) next = { form: data.error };
+      else next = { form: `JagHelm refused the sign-in (HTTP ${r.status}). Try again.` };
+    } catch {
+      next = { form: NO_ANSWER };
+    }
+    sending.current = false;
+    setBusy(false);
+    setErrors(next);
   };
 
   return (
-    <div className="login-page">
-      <form onSubmit={handleSubmit} className="login-card">
-        <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <img src={config?.logoUrl || '/logo-login.svg'} alt="" style={{ height: 156, marginBottom: 16 }} />
-        </div>
-        <div className="login-title">{config?.title || 'JAGHELM'}</div>
-        <div className="login-sub" style={{ fontSize: 16, color: 'var(--text-secondary)', marginBottom: 32 }}>{config?.subtitle || 'Infrastructure Dashboard'}</div>
-        {error && <div className="login-error">{error}</div>}
-        <input className="login-input" type="text" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} autoFocus />
-        <input className="login-input" type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />
-        <button className="login-btn" type="submit" disabled={loading}>{loading ? 'Signing in...' : 'Sign In'}</button>
-      </form>
-    </div>
+    <LoginScreen
+      theme={theme}
+      name={instanceName(config?.title)}
+      logoUrl={config?.logoUrl || undefined}
+      username={username}
+      password={password}
+      onUsernameChange={setUsername}
+      onPasswordChange={setPassword}
+      errors={errors}
+      busy={busy}
+      onSubmit={submit}
+      autoFocus
+    />
   );
 }

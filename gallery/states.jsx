@@ -65,6 +65,7 @@ import { AppHeader, UpdatedAgo } from '@ui/app-header';
 import { SideNav, appMonogram } from '@ui/side-nav';
 import { BottomTabs } from '@ui/bottom-tabs';
 import { AppBar } from '@ui/app-bar';
+import { LoginForm } from '@ui/login-form';
 
 // ---------------------------------------------------------------- layout
 
@@ -2039,6 +2040,26 @@ function AppBarState() {
   );
 }
 
+// A typed password, drawn as dots.
+const TYPED = 'eight-ch'; // pragma: allowlist secret
+const REJECTED = 'Wrong username or password.';
+
+function LoginState({ busy = false }) {
+  return busy ? <LoginForm username="admin" password={TYPED} busy /> : <LoginForm />;
+}
+
+function LoginErrorState({ form = false }) {
+  return form ? (
+    <LoginForm
+      username="admin"
+      password={TYPED}
+      errors={{ form: "JagHelm didn't answer. Check the connection and try again." }}
+    />
+  ) : (
+    <LoginForm username="admin" password={TYPED} errors={{ password: REJECTED }} />
+  );
+}
+
 export const RENDERS = Object.freeze({
   button: ButtonState,
   'button-disabled': ButtonDisabledState,
@@ -2147,4 +2168,9 @@ export const RENDERS = Object.freeze({
   'side-nav-unload': () => <SideNavState open="arcane" />,
   'bottom-tabs': BottomTabsState,
   'app-bar': AppBarState,
+
+  login: () => <LoginState />,
+  'login-busy': () => <LoginState busy />,
+  'login-error': () => <LoginErrorState />,
+  'login-no-answer': () => <LoginErrorState form />,
 });
