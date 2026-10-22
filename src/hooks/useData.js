@@ -5,10 +5,10 @@ import { getApiBase } from '../api/baseUrl.js';
 // exactly the URLs it accepts.
 import { canonicalIconUrl } from '../../server/icon-sources.js';
 
-// url → { etag, body, seq }: the last 200 whose body parsed, the ETag it came
-// with (null when it had none), and the request's place in send order. Written
-// in one step, after the parse, so the ETag sent as If-None-Match always
-// describes the body a 304 hands back.
+// url → { etag, body, modified, seq }: the last 200 whose body parsed, the ETag
+// and the Last-Modified it came with (null when it had none), and the request's
+// place in send order. Written in one step, after the parse, so the ETag sent
+// as If-None-Match always describes the body a 304 hands back.
 const held = new Map();
 // Send order: each fetchJson call takes the next number. When requests for one
 // URL overlap, the pair from the one sent last is kept, whichever body finishes
@@ -56,6 +56,23 @@ export const REQUEST_TIMEOUT_MS = 12_000;
  * job reappearing for up to max-age).
  */
 async function fetchJson(url, skipEtag = false) {
+  return (await fetchAnswer(url, skipEtag)).body;
+}
+
+/** A response's Last-Modified, in ms since the epoch, or null without one it can read. */
+function lastModifiedOf(r) {
+  const at = Date.parse(r.headers.get('Last-Modified') ?? '');
+  return Number.isFinite(at) ? at : null;
+}
+
+/**
+ * fetchJson's answer, `{ body, modified }`, with when the server says the
+ * value was last modified: the Last-Modified of the 200, or of the 304 (which
+ * may be later than the held body's: an equal value stored again), in ms since
+ * the epoch, or null when it sends none. /api/status sends it as when the
+ * status was built (#499).
+ */
+async function fetchAnswer(url, skipEtag = false) {
   const seq = ++lastSent;
   const headers = {};
   const storedEtag = held.get(url)?.etag;
@@ -70,7 +87,10 @@ async function fetchJson(url, skipEtag = false) {
   });
 
   if (r.status === 304) {
-    return held.has(url) ? held.get(url).body : NOT_MODIFIED_NO_BODY;
+    return {
+      body: held.has(url) ? held.get(url).body : NOT_MODIFIED_NO_BODY,
+      modified: lastModifiedOf(r),
+    };
   }
 
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -81,9 +101,10 @@ async function fetchJson(url, skipEtag = false) {
   const cur = held.get(url);
   // A request sent later already stored its pair: keep it and hand back its
   // body, so the caller doesn't step back to this older one.
-  if (cur && cur.seq > seq) return cur.body;
-  held.set(url, { etag: r.headers.get('ETag') || null, body, seq });
-  return body;
+  if (cur && cur.seq > seq) return { body: cur.body, modified: cur.modified };
+  const modified = lastModifiedOf(r);
+  held.set(url, { etag: r.headers.get('ETag') || null, body, modified, seq });
+  return { body, modified };
 }
 
 /**
@@ -137,9 +158,14 @@ export async function getServices(skipEtag) {
  * The status model (#292): every entity's state, the subsystems, the overall
  * state and sentence, and the ranked issues (docs/ARCHITECTURE.md §4.7). The
  * header polls it (useStatus, #296); a steady board answers 304.
+ *
+ * Returns `{ body, builtAt }`: the body as fetchJson returns it, and when the
+ * server built the status (its Last-Modified, #499, ms since the epoch, on a
+ * 200 or a 304), or null from a server that doesn't say.
  */
 export async function getStatus(skipEtag) {
-  return fetchJson(`${getApiBase()}/status`, skipEtag);
+  const { body, modified } = await fetchAnswer(`${getApiBase()}/status`, skipEtag);
+  return { body, builtAt: modified };
 }
 
 // Dashboard display config (refresh cadence + layout flags). This is the SAME
