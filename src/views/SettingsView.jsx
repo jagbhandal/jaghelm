@@ -91,17 +91,30 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
   const [monitorNames, setMonitorNames] = useState([]);
   const [serverSaving, setServerSaving] = useState(false);
   const serverSaveTimer = useRef(null);
+  // The stored config the screen's config descends from (#423): its version,
+  // the read's ETag, which each save sends back as If-Match and a save's
+  // answer moves on. Each read starts a new one. A refused save marks its own
+  // dead, so the edits made on the screen it came from are never sent.
+  const serverBase = useRef({ version: null, dead: false });
+  // Saves go out one at a time, so each sends the version the one before it
+  // answered.
+  const serverSaves = useRef(Promise.resolve());
 
   // Fetch server config on mount and when switching to relevant tabs
   const fetchServerData = useCallback(() => {
     Promise.all([
-      apiFetch('/api/services/config').then((r) => (r.ok ? r.json() : null)),
+      apiFetch('/api/services/config').then((r) =>
+        r.ok ? r.json().then((cfg) => ({ cfg, version: r.headers.get('ETag') })) : null
+      ),
       apiFetch('/api/services').then((r) => (r.ok ? r.json() : null)),
       apiFetch('/api/services/monitors').then((r) => (r.ok ? r.json() : null)),
     ])
-      .then(([cfg, svc, mon]) => {
+      .then(([read, svc, mon]) => {
         if (isReadOnlyServer() && localServerConfig) setServerConfig(localServerConfig);
-        else if (cfg) setServerConfig(cfg);
+        else if (read?.cfg) {
+          serverBase.current = { version: read.version, dead: false };
+          setServerConfig(read.cfg);
+        }
         if (svc) setLiveServices(svc);
         if (Array.isArray(mon)) setMonitorNames(mon);
       })
@@ -114,10 +127,14 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
     }
   }, [activeSection, fetchServerData]);
 
-  // Save server config with debounce. A save the server refuses (a stale
-  // credential marker is a 409, #413) or that fails is never silent: the
-  // server's reason is shown, and the stored config is read again so the
-  // screen matches what is saved.
+  // Save server config with debounce. Each save sends the version its
+  // config was read at (If-Match, #423). A save the server refuses or that
+  // fails is never silent, and the stored config is read again so the screen
+  // matches what is saved; the edits made on the old screen are dropped. A
+  // save over a version that is no longer the file's (another tab, an
+  // integration save or a hand edit changed it since) says so; any other
+  // refusal (a stale credential marker is a 409 too, #413) shows the
+  // server's reason.
   const saveServerConfig = useCallback(
     (newConfig) => {
       setServerConfig(newConfig);
@@ -125,23 +142,40 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
         localServerConfig = newConfig;
         return;
       }
-      setServerSaving(true);
-      if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
-      serverSaveTimer.current = setTimeout(() => {
-        apiFetch('/api/services/config', {
+      const base = serverBase.current;
+      const post = () => {
+        if (base.dead) return undefined;
+        const headers = { 'Content-Type': 'application/json' };
+        if (base.version) headers['If-Match'] = base.version;
+        return apiFetch('/api/services/config', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify(newConfig),
         })
           .then(async (r) => {
-            if (r.ok) return;
+            if (r.ok) {
+              base.version = r.headers.get('ETag');
+              return;
+            }
             const data = await r.json().catch(() => ({}));
-            throw new Error(data?.error || `HTTP ${r.status}`);
+            const err = new Error(data?.error || `HTTP ${r.status}`);
+            err.stale = r.status === 409 && data?.stale === true;
+            throw err;
           })
           .catch((err) => {
-            toast(`Not saved: ${err.message}`, 'error');
+            base.dead = true;
+            toast(
+              err.stale ? 'Settings changed elsewhere; reloaded' : `Not saved: ${err.message}`,
+              'error'
+            );
             fetchServerData();
-          })
+          });
+      };
+      setServerSaving(true);
+      if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
+      serverSaveTimer.current = setTimeout(() => {
+        serverSaves.current = serverSaves.current
+          .then(post)
           .finally(() => setServerSaving(false));
       }, 1500);
     },

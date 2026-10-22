@@ -53,6 +53,7 @@ function holdPosts(size) {
 }
 
 const app = express();
+app.disable('etag'); // as index.js: no ETag but the routes' own
 app.use(express.json({ limit: '1mb' }));
 app.use((req, res, next) => (gate && req.method === 'POST' ? gate.arrive(next) : next()));
 app.use('/api/services', servicesRoutes);
