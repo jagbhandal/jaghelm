@@ -2328,9 +2328,10 @@ flowchart LR
   GH -.->|"event-driven dispatch (opt-in, ADR 0005)"| DEP
   PR -->|"push trigger (fallback)"| DEP["Gitea deploy.yml (self-hosted)"]
   subgraph DEP2["deploy.yml"]
-    KEY["pin vm-103 host key<br/>(VM103_HOST_KEY)"] --> STAGE["stage: pull :sha-short<br/>+ deliver and verify compose.yaml"]
+    KEY["pin vm-103 host key<br/>(VM103_HOST_KEY)"] --> WAIT["wait for :sha-short<br/>(never appears: fail, vm-103 untouched)"]
+    WAIT --> STAGE["stage: pull :sha-short<br/>+ deliver and verify compose.yaml"]
     STAGE --> SWITCH["retag :latest + recreate"]
-    SWITCH --> GATE["health gate<br/>(Docker health + /api/health)"]
+    SWITCH --> GATE["health gate<br/>(Docker health + /api/health<br/>+ revision = this commit)"]
     GATE -->|"fail"| RB["auto-rollback to prev image<br/>+ prev compose.yaml"]
     GATE -->|"pass"| LIVE["live on prod"]
   end
@@ -2363,23 +2364,30 @@ flowchart LR
   self-hosted Gitea runner, labelled `vm103` (no other workflow may use that
   label), and reaches the host over SSH that verifies a
   **pinned host key** (the `VM103_HOST_KEY` repository variable; without it the
-  deploy fails before any SSH). It pulls and **pins this commit's
-  `:sha-<short>`** image and **delivers this commit's `compose.yaml`** to the
+  deploy fails before any SSH). It waits up to 6 minutes for this commit's
+  `:sha-<short>` image; if it never appears, the deploy **fails without
+  touching vm-103** (there is no fallback to `:latest`). It pulls and **pins
+  this commit's `:sha-<short>`** image and **delivers this commit's
+  `compose.yaml`** to the
   stack directory: written as `compose.yaml.new`, checked by sha256 on the host,
   the old copy kept as `compose.yaml.prev`, renamed into place and validated with
   `docker compose config` before the container is recreated, so compose changes
   reach production with the release. The log records the repo and host hashes
-  and a diff of the host copy. It then recreates behind a **health gate**; any
+  and a diff of the host copy. It then recreates behind a **health gate**, which
+  also requires `/api/health`'s `revision` to be this commit, so a green deploy
+  means the commit is live; any
   failure after the host was changed rolls back the previous image **and** the
-  previous `compose.yaml` together. The deploy owns `compose.yaml` on the host:
+  previous `compose.yaml` together, unless a later deploy has replaced it
+  since. A run whose commit is no longer main's head changes nothing and ends
+  green as superseded. What a red deploy means, how to recover and the manual
+  rollback: [RELEASING.md](RELEASING.md#production-deploys). The deploy owns `compose.yaml` on the host:
   host-specific additions (a secrets mount, host networking) go in
   `compose.override.yaml`, which Compose merges and the deploy never touches.
   Before the container is touched, the deploy refuses a merged config that
   drops host networking or a mount the running container has (such a drop can
   deploy "healthy" while push quietly stops), unless a hand-made
   `compose.accept-drops` file in the stack directory accepts it for one deploy;
-  and it refuses a `compose.yaml` change when the commit's own image was not
-  available.
+  and it fails if vm-103 cannot pull the commit's image.
   Configuration (Gitea repository settings, Actions):
 
   | Kind | Name | Use |
