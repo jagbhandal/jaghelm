@@ -72,6 +72,8 @@ const LIVE = {
  * as another tab or a hand edit would, which makes a new version.
  * `holdNextPost` keeps the next post unanswered until its release is called,
  * and `holdNextRead` the next read, which answers as the config is then.
+ * `hangNextPost` never answers the next post: it fails only when its signal
+ * aborts. `requests` lists each config, services and monitors request.
  */
 function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true } = {}) {
   const posts = [];
@@ -81,6 +83,8 @@ function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true }
   let version = 1;
   let held = null;
   let heldRead = null;
+  let hang = false;
+  const requests = [];
   // Why services.yaml can't be read now (it doesn't parse), and whether reads
   // fail for another reason.
   let broken = null;
@@ -109,6 +113,9 @@ function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true }
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url, opts = {}) => {
+      if (String(url).startsWith('/api/services')) {
+        requests.push({ url, method: opts.method ?? 'GET', signal: opts.signal });
+      }
       if (url === '/api/services/config' && opts.method === 'POST') {
         const body = {
           config: JSON.parse(opts.body),
@@ -120,6 +127,12 @@ function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true }
           const { promise } = held;
           held = null;
           await promise;
+        }
+        if (hang) {
+          hang = false;
+          await new Promise((_, reject) =>
+            opts.signal?.addEventListener('abort', () => reject(opts.signal.reason))
+          );
         }
         return broken ? unparseable() : answer(body);
       }
@@ -157,6 +170,10 @@ function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true }
       held = { promise, release };
       return release;
     },
+    hangNextPost() {
+      hang = true;
+    },
+    requests,
     holdNextRead() {
       let release;
       const promise = new Promise((resolve) => (release = resolve));
@@ -179,12 +196,13 @@ function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true }
   };
 }
 
-function Harness() {
+/** The app around Settings; `open={false}` leaves Settings for another page. */
+function Harness({ open = true }) {
   const [config, setConfig] = useState({ title: 'JAGHELM', tabs: [], sections: {}, links: {} });
   return (
     <OverlayProvider>
       <ConfigProvider config={config} setConfig={setConfig}>
-        <SettingsView theme="dark" setTheme={() => {}} />
+        {open && <SettingsView theme="dark" setTheme={() => {}} />}
       </ConfigProvider>
     </OverlayProvider>
   );
@@ -589,5 +607,123 @@ describe('Settings keeps one config version across its tabs (#501)', () => {
     ).toBeInTheDocument();
     expect(server.posts).toHaveLength(1);
     expect(server.merged).toEqual([]);
+  });
+});
+
+describe('Settings saves outlive the view, a silent server and the tab (#501)', () => {
+  const nodeCard = async (title) =>
+    (await screen.findByText(title)).closest('div[style*="border-left"]');
+  const toggleNode = async (title) => {
+    const card = await nodeCard(title);
+    editAndFlush(() => fireEvent.click(within(card).getByRole('checkbox')));
+    await act(async () => {});
+  };
+  const openNodes = () => {
+    const view = render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
+    return view;
+  };
+
+  it('an edit, leaving Settings before its save goes out, then an edit on coming back: both are saved', async () => {
+    const server = stubServer();
+    const { rerender } = openNodes();
+    const card = await nodeCard('Gateway');
+    const release = server.holdNextPost();
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(within(card).getByRole('checkbox'));
+      rerender(<Harness open={false} />);
+    } finally {
+      vi.useRealTimers();
+    }
+    // Leaving Settings sends the save at once.
+    await act(async () => {});
+    expect(server.posts).toHaveLength(1);
+    rerender(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
+    await act(async () => {});
+    // The new view's read waits for the save.
+    expect(server.reads()).toBe(1);
+    await act(async () => release());
+    await waitFor(() => expect(server.reads()).toBe(2));
+    await toggleNode('NAS');
+    await waitFor(() => expect(server.merged).toHaveLength(2));
+    expect(server.sentVersions).toEqual(['"v1"', '"v2"']);
+    const both = onDiskWith('pi1', { visible: false });
+    both.nodes.nas.visible = false;
+    expect(server.merged.at(-1)).toEqual(both);
+    expect(screen.queryByText('Settings changed elsewhere; reloaded')).not.toBeInTheDocument();
+  });
+
+  it('a save the server never answers gives up after 15 s, says so, and the config is read again before the next save', async () => {
+    const timeouts = [];
+    const controllers = new Map();
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      timeouts.push(ms);
+      const controller = new AbortController();
+      controllers.set(controller.signal, controller);
+      return controller.signal;
+    });
+    const server = stubServer();
+    openNodes();
+    await nodeCard('Gateway');
+    server.hangNextPost();
+    await toggleNode('Gateway');
+    expect(server.posts).toHaveLength(1);
+
+    // 15 s pass with no answer.
+    const post = server.requests.find((r) => r.method === 'POST');
+    act(() =>
+      controllers.get(post.signal).abort(new DOMException('signal timed out', 'TimeoutError'))
+    );
+    expect(
+      await screen.findByText("Not saved: the server didn't answer in 15 s")
+    ).toBeInTheDocument();
+    await waitFor(() => expect(server.reads()).toBe(2));
+    await waitFor(async () =>
+      expect(within(await nodeCard('Gateway')).getByRole('checkbox')).toBeChecked()
+    );
+    await toggleNode('Gateway');
+    await waitFor(() => expect(server.merged).toHaveLength(1));
+    expect(server.sentVersions).toEqual(['"v1"', '"v1"']);
+    // Every save and read carried the one timeout.
+    expect(server.requests.length).toBeGreaterThan(6);
+    for (const r of server.requests) expect(r.signal).toBeInstanceOf(AbortSignal);
+    expect(new Set(timeouts)).toEqual(new Set([15_000]));
+  });
+
+  it('closing the tab asks first while a save is waiting or on its way, and not after', async () => {
+    const server = stubServer();
+    const added = vi.spyOn(window, 'addEventListener');
+    const removed = vi.spyOn(window, 'removeEventListener');
+    const unloadCalls = (spy) => spy.mock.calls.filter(([type]) => type === 'beforeunload');
+    const closingAsks = () => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    openNodes();
+    const card = await nodeCard('Gateway');
+    expect(closingAsks()).toBe(false);
+    const release = server.holdNextPost();
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(within(card).getByRole('checkbox'));
+      expect(closingAsks()).toBe(true);
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    await act(async () => {});
+    expect(server.posts).toHaveLength(1);
+    expect(closingAsks()).toBe(true);
+    await act(async () => release());
+    await waitFor(() => expect(server.merged).toHaveLength(1));
+    await waitFor(() => expect(closingAsks()).toBe(false));
+    expect(unloadCalls(added)).toHaveLength(1);
+    expect(unloadCalls(removed)).toHaveLength(1);
+    expect(unloadCalls(removed)[0][1]).toBe(unloadCalls(added)[0][1]);
   });
 });
