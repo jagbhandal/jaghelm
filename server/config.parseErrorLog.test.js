@@ -148,7 +148,8 @@ async function assertRoutesRefuse(t, want) {
 
 /** The config module's warn and error lines name the reason and position; no line quotes the file. */
 function assertLogged(lines, want, level) {
-  for (const { text } of lines) assert.ok(!text.includes(SECRET), `a log line quotes the file: ${text}`);
+  for (const { text } of lines)
+    assert.ok(!text.includes(SECRET), `a log line quotes the file: ${text}`);
   const failed = lines.filter((l) => l.obj.module === 'config' && l.obj.level === level);
   assert.ok(failed.length > 0, `no ${level} from config in ${lines.map((l) => l.text).join('')}`);
   for (const { obj } of failed) {
@@ -168,7 +169,8 @@ test('at boot, with nothing to keep: the error line and every answer name the li
     assert.deepEqual(loadConfig(), {});
   });
   assertLogged(lines, want, 'error');
-  assert.match(lines.find((l) => l.obj.module === 'config').obj.msg, /starting with an empty board/);
+  const failed = lines.find((l) => l.obj.module === 'config' && l.obj.level === 'error');
+  assert.match(failed.obj.msg, /starting with an empty board/);
 
   const answered = await captureLogs(() => assertRoutesRefuse(t, want));
   for (const { text } of answered) assert.ok(!text.includes(SECRET), text);

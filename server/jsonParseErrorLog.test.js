@@ -67,7 +67,8 @@ async function captureLogs(fn) {
 
 /** One line from `module` says `msg` with the reason and position; no line quotes the file. */
 function assertLogged(lines, module, msg, parseError) {
-  for (const { text } of lines) assert.ok(!text.includes(QUOTED), `a log line quotes the file: ${text}`);
+  for (const { text } of lines)
+    assert.ok(!text.includes(QUOTED), `a log line quotes the file: ${text}`);
   const line = lines.find((l) => l.obj.module === module && l.obj.msg === msg);
   assert.ok(line, `no "${msg}" from ${module} in ${lines.map((l) => l.text).join('')}`);
   assert.deepEqual(line.obj.parseError, parseError);

@@ -115,7 +115,8 @@ server/                     Express API (Node 26, ESM)
                             lines as the screens draw them, which the web imports too
   util/                     logger, ssrf, redact, rateLimiter, atomicWrite,
                             configSchema (zod), configMask (the config read's
-                            credential markers, see 6), dataDir, asyncHandler, dedupe
+                            credential markers, see 6), dataDir, asyncHandler, dedupe,
+                            parseError (a parse error's reason and position, see 4.6)
   testing/                  test-only helpers: a mock Prometheus that evaluates JagHelm's
                             PromQL over homelab-shaped series, the pre-#234 node reader, the
                             status model's input builders (statusFixtures.js), the
@@ -807,9 +808,15 @@ integration connection-test endpoint.
   refuses a `PROMETHEUS_URL` or `KUMA_URL` with `user:pass@` and names the full
   URL in its error, which every failing cycle logs (#409). Redaction is by
   text, not by field name: a header map or an `apiKey` field would be written
-  as it is (no line logs one). A log call never throws: a circular reference is
-  written as `"[Circular]"`, a BigInt as a string, and a line that still can't
-  be written keeps its module and message with a `logError` saying why. The
+  as it is (no line logs one). So a parser's error is not logged or answered
+  as it is (#504): js-yaml's message shows the lines around the bad one and
+  V8's JSON error quotes the text near it, credentials and all. The reads of
+  services.yaml, secrets.json and auth.json and `GET /api/display-config` log
+  only the reason and the position (`util/parseError.js`), and a reason loses
+  any text of the file it quotes (an unquoted value read as a YAML alias or
+  tag). A log call never throws: a circular reference is written as
+  `"[Circular]"`, a BigInt as a string, and a line that still can't be
+  written keeps its module and message with a `logError` saying why. The
   running server writes to stdout/stderr only through the logger.
   `LOG_LEVEL` (`debug|info|warn|error|silent`, default `info`) filters it.
   Success lines every refresh cycle would repeat are debug, while a refresh
@@ -1898,7 +1905,8 @@ All state is files under the data dir (no DB):
     purpose is a real config and empties the board.
   - **Nothing writes over a file that doesn't parse** (#423). The config
     kept for the board is not the file's, so `readConfig()` answers no config
-    for it, only why (`services.yaml doesn't parse (line N)`, `is empty` or
+    for it, only why (`services.yaml doesn't parse (<reason> at line N,
+    column C)`, `is empty` or
     `isn't a mapping`, never a quote of the file, which can hold
     credentials). `GET /api/services/config` and every writer (the config
     save, the integration save, toggle and delete) answer that as a 503

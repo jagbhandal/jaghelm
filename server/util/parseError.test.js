@@ -54,10 +54,7 @@ test('a YAML error is its reason and 1-based line and column, never the snippet 
   const got = yamlParseError(err);
   assert.deepEqual(got, { reason: 'bad indentation of a mapping entry', line: 4, column: 4 });
   assert.ok(!JSON.stringify(got).includes(SECRET));
-  assert.equal(
-    describeParseError(got),
-    'bad indentation of a mapping entry at line 4, column 4'
-  );
+  assert.equal(describeParseError(got), 'bad indentation of a mapping entry at line 4, column 4');
 });
 
 test('a YAML reason that quotes the file loses the quoted text', async (t) => {
@@ -101,7 +98,11 @@ test('a YAML reason with no text of the file is kept as it is', () => {
 test('anything else thrown while parsing YAML is "not valid YAML", with no position', () => {
   const plain = new Error(`boom ${SECRET}`);
   assert.deepEqual(yamlParseError(plain), { reason: 'not valid YAML', line: null, column: null });
-  assert.deepEqual(yamlParseError(undefined), { reason: 'not valid YAML', line: null, column: null });
+  assert.deepEqual(yamlParseError(undefined), {
+    reason: 'not valid YAML',
+    line: null,
+    column: null,
+  });
   // A reason but a mark that is no position.
   assert.deepEqual(yamlParseError({ reason: 'x', mark: {} }), {
     reason: 'x',
