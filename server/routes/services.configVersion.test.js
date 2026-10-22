@@ -5,7 +5,8 @@
  * sends. A tab left open from before a change posted its old copy, which
  * has no entry for what was added since, so the save deleted it. Now
  * GET /api/services/config answers with the file's version as a strong ETag
- * (a SHA-256 of services.yaml's bytes), and the POST must carry it back in
+ * (an HMAC-SHA256 of services.yaml's bytes with a per-install key), and the
+ * POST must carry it back in
  * If-Match: none is a 428, an old one a 409, and nothing is written either
  * way. A save answers with the new version, so the tab can save again.
  *
@@ -17,7 +18,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import express from 'express';
@@ -67,9 +68,10 @@ const write = (body, version) => {
 };
 
 const fileText = () => readFileSync(CONFIG_PATH, 'utf8');
-/** The file's version as the server computes it: a SHA-256 of its bytes. */
+const KEY_PATH = join(process.env.JAGHELM_DATA_DIR, 'config-version.key');
+/** The file's version as the server computes it: an HMAC-SHA256 of its bytes. */
 const fileVersion = () =>
-  `"${createHash('sha256').update(readFileSync(CONFIG_PATH)).digest('base64url')}"`;
+  `"${createHmac('sha256', readFileSync(KEY_PATH)).update(readFileSync(CONFIG_PATH)).digest('base64url')}"`;
 /** Put `text` on disk and load it, as the config watcher does after a hand edit. */
 function handEdit(text) {
   writeFileSync(CONFIG_PATH, text);
@@ -108,6 +110,35 @@ test('GET /config answers with the file version as a strong, quoted ETag', async
   // The same file is the same version after a restart (a fresh load).
   loadConfig();
   assert.equal((await read()).headers.etag, r.headers.etag);
+});
+
+test('the key behind the version is in no answer and no log line', async (t) => {
+  handEdit(START);
+  const lines = [];
+  for (const stream of [process.stdout, process.stderr]) {
+    t.mock.method(stream, 'write', (chunk) => {
+      lines.push(String(chunk));
+      return true;
+    });
+  }
+  let answers;
+  try {
+    const r = await read();
+    const saved = await write(withVisible(r.body, 'pi1', false), r.headers.etag);
+    const stale = await write(r.body, r.headers.etag);
+    answers = [r, saved, stale];
+  } finally {
+    t.mock.restoreAll();
+  }
+  assert.deepEqual(
+    answers.map((a) => a.status),
+    [200, 200, 409]
+  );
+  const key = readFileSync(KEY_PATH);
+  const seen = [...answers.map((a) => JSON.stringify(a.headers) + a.text), ...lines].join('\n');
+  for (const form of [key.toString('hex'), key.toString('base64'), key.toString('base64url')]) {
+    assert.ok(!seen.includes(form), 'the key was answered or logged');
+  }
 });
 
 test('a credential changed by hand is a new version, though the read answers the same', async () => {

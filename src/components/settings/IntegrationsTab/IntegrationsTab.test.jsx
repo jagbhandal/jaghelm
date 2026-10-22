@@ -39,9 +39,10 @@ const PRESETS = [
 
 /**
  * A server with the fixture entries. `saveReply(body)` may answer a save
- * itself, as `{ status, body }`; otherwise every save succeeds.
+ * itself, as `{ status, body }`; otherwise every save succeeds. `configReply()`
+ * may answer the config read the same way.
  */
-function stubServer({ saveReply } = {}) {
+function stubServer({ saveReply, configReply } = {}) {
   const writes = [];
   vi.stubGlobal(
     'fetch',
@@ -51,6 +52,8 @@ function stubServer({ saveReply } = {}) {
       if (body) writes.push({ method, url, body });
       if (url === '/api/integrations/presets') return Response.json(PRESETS);
       if (url === '/api/services/config') {
+        const reply = configReply?.();
+        if (reply) return Response.json(reply.body, { status: reply.status });
         return Response.json(
           maskCredentials({
             integrations: {
@@ -301,5 +304,36 @@ describe('IntegrationsTab shows a refused key beside the Instance Name field (#4
       { method: 'POST', url: '/api/integrations/save', body: CUSTOM_BUILDER.add },
     ]);
     expect(screen.queryByLabelText('Instance Name')).toBeNull();
+  });
+});
+
+describe('IntegrationsTab when services.yaml cannot be read (#423)', () => {
+  const BROKEN =
+    "services.yaml doesn't parse (line 4): fix it by hand; JagHelm won't save over it";
+
+  it('says why instead of an empty list, and lists the integrations once it is fixed', async () => {
+    let broken = true;
+    stubServer({
+      configReply: () =>
+        broken ? { status: 503, body: { error: BROKEN, code: 'config_unparseable' } } : null,
+    });
+    renderTab();
+    expect(await screen.findByText(BROKEN)).toBeInTheDocument();
+    expect(screen.queryByText('No integrations configured yet')).not.toBeInTheDocument();
+    expect(screen.queryByText('AdGuard Home (primary)')).not.toBeInTheDocument();
+
+    broken = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('AdGuard Home (primary)')).toBeInTheDocument();
+    expect(screen.queryByText(BROKEN)).not.toBeInTheDocument();
+  });
+
+  it('a config read that fails another way says so too, not an empty list', async () => {
+    stubServer({ configReply: () => ({ status: 500, body: { error: 'Internal server error' } }) });
+    renderTab();
+    expect(
+      await screen.findByText("Couldn't read the config: Internal server error")
+    ).toBeInTheDocument();
+    expect(screen.queryByText('No integrations configured yet')).not.toBeInTheDocument();
   });
 });

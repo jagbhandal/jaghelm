@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import yaml from 'js-yaml';
 
@@ -265,12 +265,15 @@ test('a services.yaml generated before #265 passes save validation and saves', (
   for (const k of UNREAD) assert.deepEqual(reloaded[k], PRE_265_GENERATED[k], `${k} kept on disk`);
 });
 
-// #423: services.yaml's version is a SHA-256 of its bytes, and writeConfig is
-// the one writer: it writes only over the version its caller read.
+// #423: services.yaml's version is an HMAC-SHA256 of its bytes (keyed per
+// install, config.versionKey.test.js), and writeConfig is the one writer: it
+// writes only over the version its caller read.
 
 /** The version of what is on disk now. */
 const diskVersion = () =>
-  createHash('sha256').update(readFileSync(servicesYaml)).digest('base64url');
+  createHmac('sha256', readFileSync(join(dir, 'config-version.key')))
+    .update(readFileSync(servicesYaml))
+    .digest('base64url');
 
 test('readConfig answers the config with the version of the file it came from', () => {
   assert.equal(saveConfig({ nodes: { a: { name: 'A' } }, services: {} }), true);
@@ -290,12 +293,23 @@ test('readConfig loads a hand edit the watcher has not, so config and version ma
   assert.equal(getConfig().nodes.a.name, 'Edited');
 });
 
-test('readConfig of a file that does not parse keeps the last config, with the version of the file', () => {
+test('readConfig of a file that does not parse answers no config, but why, with the version of the file', () => {
   saveConfig({ nodes: { a: { name: 'A' } }, services: {} });
   writeFileSync(servicesYaml, 'nodes: [unclosed\n');
-  const { config, version } = readConfig();
-  assert.equal(config.nodes.a.name, 'A');
+  const { config, version, unusable } = readConfig();
+  // The last good config is not this file's, so it never goes with its version.
+  assert.equal(config, null);
+  assert.equal(
+    unusable,
+    "services.yaml doesn't parse (line 2): fix it by hand; JagHelm won't save over it"
+  );
   assert.equal(version, diskVersion());
+  // The board keeps it (#463).
+  assert.equal(getConfig().nodes.a.name, 'A');
+  // And nothing writes over the file, not even the first-boot writer.
+  assert.equal(saveConfig({ nodes: {}, services: {} }), false);
+  assert.equal(readFileSync(servicesYaml, 'utf8'), 'nodes: [unclosed\n');
+  rmSync(servicesYaml);
 });
 
 test('writeConfig writes over the current version and answers the new one', () => {

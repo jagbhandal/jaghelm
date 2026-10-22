@@ -79,6 +79,12 @@ function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true }
   let reads = 0;
   let version = 1;
   let held = null;
+  // Why services.yaml can't be read now (it doesn't parse), and whether reads
+  // fail for another reason.
+  let broken = null;
+  let readsFail = false;
+  const unparseable = () =>
+    Response.json({ error: broken, code: 'config_unparseable' }, { status: 503 });
   const tag = () => `"v${version}"`;
   const answer = (body) => {
     if (body.ifMatch == null) {
@@ -113,10 +119,14 @@ function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true }
           held = null;
           await promise;
         }
-        return answer(body);
+        return broken ? unparseable() : answer(body);
       }
       if (url === '/api/services/config') {
         reads += 1;
+        if (broken) return unparseable();
+        if (readsFail) {
+          return Response.json({ error: 'Internal server error' }, { status: 500 });
+        }
         const headers = etagOnRead(reads) ? { ETag: tag() } : {};
         return Response.json(maskCredentials(disk), { headers });
       }
@@ -139,6 +149,19 @@ function stubServer(disk = structuredClone(ON_DISK), { etagOnRead = () => true }
       const promise = new Promise((resolve) => (release = resolve));
       held = { promise, release };
       return release;
+    },
+    /** A hand edit that leaves services.yaml unparseable, for `why`. */
+    breakFile(why) {
+      broken = why;
+      version += 1;
+    },
+    /** The file fixed by hand. */
+    fixFile() {
+      broken = null;
+      version += 1;
+    },
+    failReads(on) {
+      readsFail = on;
     },
   };
 }
@@ -221,7 +244,8 @@ describe('Settings Nodes and Services tabs post the stored-credential markers ba
     const nodeCard = async () =>
       (await screen.findByText('Gateway')).closest('div[style*="border-left"]');
     const card = await nodeCard();
-    // Another tab removes npm's password after this one read the config.
+    // npm's password goes, under the same version: the stub's way to have the
+    // server refuse a marker for a reason other than the version.
     delete disk.integrations.npm.password;
     editAndFlush(() => fireEvent.click(within(card).getByRole('checkbox')));
     expect(within(card).getByRole('checkbox')).not.toBeChecked();
@@ -321,9 +345,13 @@ describe('Settings saves the config only over the version it read (#423)', () =>
     expect(await screen.findByText('Settings changed elsewhere; reloaded')).toBeInTheDocument();
     await waitFor(() => expect(server.reads()).toBe(2));
     await nodeCard('Disks');
-    // The second edit, made on the screen the 409 replaced, is never sent.
+    // The second edit, made on the screen the 409 replaced, is never sent,
+    // and Settings says so rather than dropping it without a word.
     expect(server.posts).toHaveLength(1);
     expect(server.merged).toEqual([]);
+    expect(
+      await screen.findByText('Not saved: an earlier change on this screen was refused')
+    ).toBeInTheDocument();
   });
 
   it('a save without a version (428) reloads too, and the next save sends the version read', async () => {
@@ -339,5 +367,90 @@ describe('Settings saves the config only over the version it read (#423)', () =>
     await toggleNode('Gateway');
     expect(server.sentVersions).toEqual([null, '"v1"']);
     expect(server.merged).toEqual([onDiskWith('pi1', { visible: false })]);
+  });
+});
+
+describe('Settings when services.yaml cannot be read (#423)', () => {
+  const BROKEN =
+    "services.yaml doesn't parse (line 4): fix it by hand; JagHelm won't save over it";
+  const nodeCard = async (title) =>
+    (await screen.findByText(title)).closest('div[style*="border-left"]');
+  const toggleNode = async (title) => {
+    const card = await nodeCard(title);
+    editAndFlush(() => fireEvent.click(within(card).getByRole('checkbox')));
+    await act(async () => {});
+  };
+  const openNodes = () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: /Nodes/ }));
+  };
+
+  it('the Nodes and Services tabs say why instead of showing a config, and show it once fixed', async () => {
+    const server = stubServer();
+    server.breakFile(BROKEN);
+    openNodes();
+    expect(await screen.findByText(BROKEN)).toBeInTheDocument();
+    expect(screen.queryByText('Gateway')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Services/ }));
+    await waitFor(() => expect(server.reads()).toBe(2));
+    expect(await screen.findByText(BROKEN)).toBeInTheDocument();
+    expect(screen.queryByText('NAS')).not.toBeInTheDocument();
+
+    server.fixFile();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('NAS')).toBeInTheDocument();
+    expect(screen.queryByText(BROKEN)).not.toBeInTheDocument();
+  });
+
+  it("a save refused for it shows the server's message, reads nothing again and doesn't show the edit as saved", async () => {
+    const server = stubServer();
+    openNodes();
+    await nodeCard('Gateway');
+    server.breakFile(BROKEN);
+    await toggleNode('Gateway');
+
+    expect(await screen.findByText(`Not saved: ${BROKEN}`)).toBeInTheDocument();
+    expect(screen.queryByText('Settings changed elsewhere; reloaded')).not.toBeInTheDocument();
+    // The tab says why in place of the edited config.
+    expect(await screen.findByText(BROKEN)).toBeInTheDocument();
+    expect(screen.queryByText('Gateway')).not.toBeInTheDocument();
+    // No reload, so no loop: still the one read and the one post.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(server.reads()).toBe(1);
+    expect(server.posts).toHaveLength(1);
+
+    // Fixed by hand: Try again reads it, and the next save is sent over it.
+    server.fixFile();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await toggleNode('Gateway');
+    expect(server.sentVersions).toEqual(['"v1"', '"v3"']);
+    expect(server.merged).toEqual([onDiskWith('pi1', { visible: false })]);
+  });
+
+  it("when the read after a refused save fails, the tab says so instead of showing the edit as saved", async () => {
+    const server = stubServer();
+    openNodes();
+    await nodeCard('Gateway');
+    server.changeElsewhere((disk) => (disk.nodes.pi1.display_name = 'Edge'));
+    server.failReads(true);
+    await toggleNode('Gateway');
+
+    expect(await screen.findByText('Settings changed elsewhere; reloaded')).toBeInTheDocument();
+    expect(
+      await screen.findByText("Couldn't read the config: Internal server error")
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Gateway')).not.toBeInTheDocument();
+    expect(server.reads()).toBe(2);
+
+    server.failReads(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await toggleNode('Edge');
+    expect(server.sentVersions).toEqual(['"v1"', '"v2"']);
+    expect(server.merged.at(-1).nodes.pi1).toEqual({
+      ...ON_DISK.nodes.pi1,
+      display_name: 'Edge',
+      visible: false,
+    });
   });
 });
