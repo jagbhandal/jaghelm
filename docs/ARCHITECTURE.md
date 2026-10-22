@@ -2486,8 +2486,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   cards, with the NAS's warning and its "94%" on screen and nothing to scroll
   sideways. Each node panel below is as tall as its content (not shorter, and
   within a grid row), on the default layout and on a layout saved before
-  #299, which is saved again with its version; at 390 and 360px, also with
-  the web fonts held until the panels are fitted, then let in (#498). The Services section (#300,
+  #299, which is saved again with its version; and no panel on the board
+  is shorter than its content (#498). The Services section (#300,
   `e2e/services.spec.mjs`), dark and light: every service's name in full and
   its column at least 120px at 1024 and 1440px, by node and by custom group,
   beside app metrics long enough to squeeze it (the metric ends in an

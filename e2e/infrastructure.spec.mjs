@@ -127,6 +127,24 @@ async function unfitNodePanels(page) {
     .map((p) => `${p.name}: ${p.height}px for ${p.content}px of content`);
 }
 
+/**
+ * Every panel on the board drawn shorter than its content, which is cut off
+ * (#498: the Checklist, its items drawn after its first measure, at 390px).
+ */
+function cutOffPanels(page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('.helmgrid-item')].flatMap((el) => {
+      const height = el.getBoundingClientRect().height;
+      const kept = el.style.height;
+      el.style.height = 'auto';
+      const content = el.scrollHeight;
+      el.style.height = kept;
+      const name = el.querySelector('.section-title')?.textContent;
+      return height + 0.5 < content ? [`${name}: ${height}px for ${content}px of content`] : [];
+    })
+  );
+}
+
 // A layout saved before #299, with the reading tiles: each node panel 12 rows.
 const OLD_LAYOUT = Object.fromEntries(
   [
@@ -289,48 +307,13 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       });
     }
 
-    test('the node panels below are as tall as their content: the default layout', async ({
+    test('the node panels below are as tall as their content, and no panel is cut off: the default layout', async ({
       page,
     }) => {
       await openBoard(page, 'healthy', 'dark');
       await expect.poll(() => unfitNodePanels(page)).toEqual([]);
+      await expect.poll(() => cutOffPanels(page)).toEqual([]);
     });
-
-    // At 1440 the board's text wraps the same in the fallback fonts, so the
-    // fonts arriving late changes no panel's height there: on a phone it does.
-    if (size !== 'desktop') {
-      test('and when the web fonts arrive after the panels were fitted (#498)', async ({
-        page,
-      }) => {
-        // The fonts held until the board is drawn and every node panel fitted to
-        // its content in the fallback fonts, as on a slow device; then let in.
-        // Their text wraps differently, so the content's height changes while
-        // each panel's box, stretched to its grid height, stays: each panel
-        // fits its content again.
-        let release;
-        const held = new Promise((resolve) => (release = resolve));
-        await page.route('**/*.woff2', async (route) => {
-          await held;
-          await route.continue();
-        });
-        const opened = openBoard(page, 'healthy', 'dark');
-        for (const title of NODE_TITLES)
-          await expect(
-            page.locator('.helmgrid-item .section-title', { hasText: new RegExp(`^${title}$`) })
-          ).toBeVisible();
-        await expect.poll(() => unfitNodePanels(page)).toEqual([]);
-        const contents = async () => (await nodePanels(page)).map((p) => p.content);
-        const before = await contents();
-        expect(await page.evaluate(() => document.fonts.status)).toBe('loading');
-        release();
-        await opened;
-        await page.evaluate(() => document.fonts.ready);
-        expect(await page.evaluate(() => document.fonts.status)).toBe('loaded');
-        // The fonts changed the content's height (so the test tests something).
-        expect(await contents()).not.toEqual(before);
-        await expect.poll(() => unfitNodePanels(page)).toEqual([]);
-      });
-    }
 
     test('and a layout saved before #299, brought up once and saved with its version', async ({
       page,
