@@ -1,29 +1,36 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../../../api/client.js';
 import { useToast } from '../../../context/OverlayContext.jsx';
+import { readServerConfig } from '../readServerConfig.js';
 
 /**
  * useIntegrationsData — fetches presets, configured integrations, and the flat
  * container list used by the target dropdown. Exposes a refetch() for callers
  * that mutate the configured set (save / delete / toggle).
+ *
+ * `configError` says why the configured set couldn't be read (a services.yaml
+ * that doesn't parse names its line, #423): the tab shows it instead of an
+ * empty list, which would look like no integration is configured.
  */
 export function useIntegrationsData() {
   const toast = useToast();
   const [presets, setPresets] = useState([]);
   const [configured, setConfigured] = useState({});
+  const [configError, setConfigError] = useState(null);
   const [allContainers, setAllContainers] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const refetch = useCallback(async () => {
     setLoading(true);
     try {
-      const [presetsRes, configRes, servicesRes] = await Promise.all([
+      const [presetsRes, read, servicesRes] = await Promise.all([
         apiFetch('/api/integrations/presets').then(r => r.ok ? r.json() : []),
-        apiFetch('/api/services/config').then(r => r.ok ? r.json() : {}),
+        readServerConfig(),
         apiFetch('/api/services').then(r => r.ok ? r.json() : {}),
       ]);
       setPresets(presetsRes);
-      setConfigured(configRes?.integrations || {});
+      setConfigError(read.error ?? null);
+      setConfigured(read.error ? {} : read.config?.integrations || {});
 
       // Build flat list of containers with UIDs for the target dropdown
       const containers = [];
@@ -48,5 +55,5 @@ export function useIntegrationsData() {
 
   useEffect(() => { refetch(); }, [refetch]);
 
-  return { presets, configured, allContainers, loading, refetch };
+  return { presets, configured, configError, allContainers, loading, refetch };
 }
