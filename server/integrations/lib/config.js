@@ -31,11 +31,24 @@ export function keyedSecretName(key, field) {
   return `integration_${key}_${field}`;
 }
 
+/**
+ * What the refresh loop hands the handler for the entry stored under `key`:
+ * the type it fetches as (the entry's preset, else the key: a custom
+ * integration) and the entry with its storage key. The connection test hands
+ * over a form merged into the entry the same way (#427), so the two build the
+ * same request.
+ * @param {string} key
+ * @param {object} entry
+ */
+export function integrationInput(key, entry) {
+  return { type: entry.preset || key, yamlConfig: { ...entry, _storageKey: key } };
+}
+
 /** Resolve $secret:key_name references to decrypted values. */
-function resolveSecretRef(value) {
+function resolveSecretRef(value, read = getSecret) {
   if (!value || typeof value !== 'string') return value;
   if (value.startsWith('$secret:')) {
-    return getSecret(value.slice(8)) || null;
+    return read(value.slice(8)) || null;
   }
   return value;
 }
@@ -45,8 +58,17 @@ function resolveSecretRef(value) {
  * Merges: preset defaults < services.yaml config < .env overrides.
  *
  * For custom integrations (no preset), yamlConfig IS the full config.
+ *
+ * `secrets`, from the connection test (#427): a secret name it holds reads as
+ * its value there (null: none), in place of the store's, so a password typed
+ * into the form resolves as it will once the save has stored it.
+ *
+ * @param {string} type
+ * @param {any} yamlConfig
+ * @param {{ secrets?: Map<string, string | null> }} [opts]
  */
-export function resolveIntegrationConfig(type, yamlConfig) {
+export function resolveIntegrationConfig(type, yamlConfig, { secrets } = {}) {
+  const read = secrets ? (name) => (secrets.has(name) ? secrets.get(name) : getSecret(name)) : getSecret;
   const preset = getPresetFull(type);
 
   // A preset flagged `unsupported` must never be fetched or polled, even if a
@@ -67,22 +89,22 @@ export function resolveIntegrationConfig(type, yamlConfig) {
 
   if (preset?.envKeys) {
     if (preset.envKeys.url) {
-      resolved.url = resolveCredential(preset.envKeys.url, keyedSecretName(secretKey, 'url')) || config.url;
+      resolved.url = resolveCredential(preset.envKeys.url, keyedSecretName(secretKey, 'url'), read) || config.url;
     }
     if (preset.envKeys.username) {
-      resolved._username = resolveCredential(preset.envKeys.username, keyedSecretName(secretKey, 'username')) || resolveSecretRef(config.username);
+      resolved._username = resolveCredential(preset.envKeys.username, keyedSecretName(secretKey, 'username'), read) || resolveSecretRef(config.username, read);
     }
     if (preset.envKeys.password) {
-      resolved._password = resolveCredential(preset.envKeys.password, keyedSecretName(secretKey, 'password')) || resolveSecretRef(config.password);
+      resolved._password = resolveCredential(preset.envKeys.password, keyedSecretName(secretKey, 'password'), read) || resolveSecretRef(config.password, read);
     }
     if (preset.envKeys.token) {
-      resolved._token = resolveCredential(preset.envKeys.token, keyedSecretName(secretKey, 'token')) || resolveSecretRef(config.token);
+      resolved._token = resolveCredential(preset.envKeys.token, keyedSecretName(secretKey, 'token'), read) || resolveSecretRef(config.token, read);
     }
   } else {
     // Custom integration — resolve $secret: refs in credentials
-    resolved._username = resolveSecretRef(config.username);
-    resolved._password = resolveSecretRef(config.password);
-    resolved._token = resolveSecretRef(config.token);
+    resolved._username = resolveSecretRef(config.username, read);
+    resolved._password = resolveSecretRef(config.password, read);
+    resolved._token = resolveSecretRef(config.token, read);
   }
 
   return resolved;

@@ -42,7 +42,8 @@ const uniqueKey = (type) => `${type}_${hex()}`;
 
 /**
  * A preset's two request paths, each returning { ok, error }: the connection
- * test, and a poll (fetchIntegration reports only an error).
+ * test, and a poll (fetchIntegration reports only an error). Since #427 the
+ * test makes the poll's requests, without a cached session.
  */
 const PATHS = {
   test: (type, url) => testIntegration(type, { url, ...CREDS }),
@@ -220,12 +221,10 @@ for (const p of sessionPresets) {
       const o = await twoOrigins(status);
       try {
         const tested = await testIntegration(p.type, { url: o.fromUrl, ...CREDS });
+        // The test reports a failed login as the refresh does (#427): "All
+        // session auth methods failed", or a preset's oauth2Instructions.
         assert.equal(tested.ok, false);
-        // A preset with oauth2Instructions reports every failed login as a
-        // possible 2FA problem, so only the others show the refusal itself.
-        if (!p.oauth2Instructions) {
-          assert.match(tested.error, /refusing to re-send a request body to another origin/);
-        }
+        assert.ok(o.state.from >= 1, 'the login was not sent');
         assert.equal(o.state.to, 0, 'the other origin received the login');
       } finally { o.close(); }
     });
@@ -247,9 +246,10 @@ for (const p of sessionPresets) {
       try {
         const tested = await testIntegration(p.type, { url: `http://127.0.0.1:${srv.address().port}`, ...CREDS });
         assert.equal(tested.ok, true, tested.error);
-        assert.equal(logins.length, 1);
-        assert.equal(logins[0][0], 'POST');
-        assert.ok(logins[0][2].includes(CREDS.password), 'the login body was not re-sent');
+        // Then the data read, as a refresh makes it (#427).
+        const posts = logins.filter(([method]) => method === 'POST');
+        assert.equal(posts.length, 1);
+        assert.ok(posts[0][2].includes(CREDS.password), 'the login body was not re-sent');
       } finally { srv.close(); }
     });
   }

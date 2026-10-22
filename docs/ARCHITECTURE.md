@@ -279,7 +279,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/metrics` | public | Prometheus exposition |
 | `/api/services` | token | discovered nodes + services (background-refreshed, ETag); `services.yaml` for Settings, without its credentials, and its save over the version read (`/config`, ETag and If-Match, see 6) |
 | `/api/status` | token | the status model (4.7), built once a background cycle (ETag, and its build time as Last-Modified; 503 before the first cycle) |
-| `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6) |
+| `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6); the connection test (`/test`, see 4.3) |
 | `/api/display-config` | token | the display config blob |
 | `/api/embed-check/:tabId` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs") |
 | `/api/secrets` | token + **auth-required** | encrypted credential store (fail-closed) |
@@ -758,8 +758,46 @@ Key properties:
   in `services.yaml` for anything else, since a custom integration's form has
   no password or username. A session preset fills in its endpoint before it
   logs in, so no login is sent for a read that can't be made. The connection
-  test resolves nothing: a `$secret:` typed as a query-auth key is refused
-  with an error saying to type the token itself.
+  test resolves a typed token as its save would store it, so a `$secret:`
+  typed as a query-auth key is refused the same way, and sends nothing.
+- **An integration's URL carries no credential** (#422). A user name or
+  password before the host (`https://user:pass@host`) or a key in the query
+  (`SECRET_PARAMS` in `util/redact.js`: `key`, `apikey`, `token` and the
+  rest) never worked: fetch refuses userinfo, and the endpoint is appended
+  after the URL, so the query never reaches the API as one.
+  `urlCredential` (`util/redact.js`) tells such a URL, and
+  `lib/urlCredential.js` words the error, which names the form field the
+  credential goes in for the preset's auth mode (Username and Password, API
+  Key, API Token) and never the value. The Settings save and the connection
+  test refuse one (400 `{ error, field: "url" }`, before anything is read or
+  stored), and the form shows it beside the URL field and focuses it. One
+  already in `services.yaml` (written by hand or before this) is never
+  requested: `fetchIntegration` answers its refresh with an error that says
+  where to move the credential, and the config read masks the URL (see 6),
+  so the form shows it empty with a note to enter it without the credential.
+- **The connection test is a refresh of the unsaved form** (#427).
+  `POST /api/integrations/test` takes what the save takes and merges it into
+  the stored entry by the save's own merge (`mergeForm` in
+  `routes/integrations.js`), refusing what the save would refuse (a URL with
+  a credential, an edit whose entry is gone, a taken key). The merged entry
+  goes to the handler as the refresh loop hands it an entry
+  (`integrationInput` in `lib/config.js`: the entry's preset, else its key),
+  and through `resolveIntegrationConfig` and `fetchIntegration`, so a custom
+  integration is tested at its stored endpoint, with its extra endpoints,
+  auth mode and fields, and the test makes exactly the requests the next
+  refresh would. Credentials resolve as the save would leave the secret
+  store: the merge lists what the save would store, move and drop, and the
+  test resolves through that overlay (`resolveIntegrationConfig`'s
+  `secrets`), so a typed password wins over the stored one as it will once
+  saved, a blank one is the stored one, and a moved or dropped keyed secret
+  reads as it will. Nothing is written: not `services.yaml`, not
+  `secrets.json`, not the backoff state; a session preset logs in afresh and
+  keeps no token, so a cached token can't pass a wrong password and an
+  unsaved password's token can't serve the refresh. The answer is
+  `{ ok: true }` or `{ ok: false, error }` with the error the refresh would
+  show, never the fields read. A preset's `testEndpoint` is no longer
+  requested. A custom integration with no endpoint (the form has no field
+  for one) is answered without a request.
 - **Request bodies stay on their origin.** A `307` or `308` keeps the method
   and body, so a session login is re-sent, but only to the same origin or
   through the same-host upgrade; a request with a body redirected to another
@@ -2439,15 +2477,17 @@ All state is files under the data dir (no DB):
     `profile_id`). Never masked: a map's own keys (an integration, node,
     service or `monitor_per_node` named `secret` is a name), `key` anywhere
     else (in `fields` and `extraEndpoints` it names a field), and what the
-    integration form shows and saves back on an entry (url, username, target,
-    instance, enabled, preset and every preset's URL parameters, such as
+    integration form shows and saves back on an entry (a url with no
+    credential, username, target, instance, enabled, preset and every
+    preset's URL parameters, such as
     Cloudflare's `account_id`): a marker there would be posted back through
     the form and written. One that is null or empty is sent as it is, so the
     marker always means a value is stored. `authHeader` names a header and is
     sent; its value is the `token`. No preset declares any other field secret.
-    Not masked: the URL, which the form shows and saves; a key or password
-    written into it by hand still reaches Settings (refused at the form in a
-    later change).
+    The URL is masked only when it carries a credential (a user name or
+    password before the host, or a key in its query, #422), whole; the form
+    then shows it empty and says to enter it without the credential, and a
+    whole-config save of the read puts the stored URL back in its place.
   - **`POST /api/services/config` replaces the file, keeping what is stored.**
     The Nodes and Services tabs read the config, change it and post all of it
     back, markers included. Each marker is replaced by the value stored in its
@@ -2524,7 +2564,8 @@ All state is files under the data dir (no DB):
     config, and the Android app doesn't either.
   - **An integration's save in Settings merges** (`POST /api/integrations/save`,
     #402). The form's values go into the stored entry, and only what the form
-    owns changes: the URL (required), the username and target (sent empty to
+    owns changes: the URL (required; one that carries a credential is a 400,
+    see 4.3), the username and target (sent empty to
     remove them), the preset's URL params (allow-listed; empty removes), and a
     typed password or token (text only, else 400), stored under the
     integration's keyed secret name, `integration_<key>_password|token`

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isStoredMarker } from './constants.js';
 
 /**
  * useConfigForm — owns the config-form state (URL, credentials, instance name,
@@ -7,9 +8,14 @@ import { useState } from 'react';
  *
  * Passwords/tokens are never prefilled — the populate helper always blanks them
  * and the server treats blank as "keep existing".
+ *
+ * A stored URL that carries a credential is read as { "$stored": true } (#422):
+ * the URL starts empty and `urlStored` is true, so the form says to enter it
+ * without the credential.
  */
 export function useConfigForm() {
   const [url, setUrl] = useState('');
+  const [urlStored, setUrlStored] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [token, setToken] = useState('');
@@ -21,7 +27,9 @@ export function useConfigForm() {
   const [target, setTarget] = useState('');
 
   const populate = (preset, existingConfig) => {
-    setUrl(existingConfig?.url || '');
+    const storedUrl = existingConfig?.url;
+    setUrl(typeof storedUrl === 'string' ? storedUrl : '');
+    setUrlStored(isStoredMarker(storedUrl));
     // `??`, not `||`: a stored value that is set but falsy (0) is shown and
     // sent back as it is, so an unchanged save keeps it (#402).
     setUsername(existingConfig?.username ?? '');
@@ -40,7 +48,7 @@ export function useConfigForm() {
   };
 
   return {
-    url, setUrl,
+    url, setUrl, urlStored,
     username, setUsername,
     password, setPassword,
     token, setToken,

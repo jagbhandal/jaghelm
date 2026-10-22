@@ -3,7 +3,7 @@
  *
  *   GET    /api/integrations           → all configured integrations' data
  *   GET    /api/integrations/presets   → built-in preset gallery
- *   POST   /api/integrations/test      → connection test before save
+ *   POST   /api/integrations/test      → test the form as a save would store it, as a refresh fetches
  *   POST   /api/integrations/save      → encrypt creds + merge the form into config
  *   PATCH  /api/integrations/:key      → enable or disable, { enabled } only
  *   DELETE /api/integrations/:type     → remove a configured integration and its secrets
@@ -41,6 +41,7 @@ import {
   copySecret,
   deleteSecret,
   deleteSecrets,
+  getSecret,
   hasSecret,
   listSecretKeys,
   restoreSecrets,
@@ -49,7 +50,12 @@ import {
 } from '../secrets.js';
 import { getPreset, listPresets } from '../integrations/registry.js';
 import { testIntegration } from '../integrations/handler.js';
-import { KEYED_SECRET_FIELDS, keyedSecretName } from '../integrations/lib/config.js';
+import {
+  KEYED_SECRET_FIELDS,
+  integrationInput,
+  keyedSecretName,
+} from '../integrations/lib/config.js';
+import { formUrlCredentialError } from '../integrations/lib/urlCredential.js';
 import {
   dropUnusedIntegrationSecrets,
   unusedIntegrationSecrets,
@@ -109,36 +115,6 @@ router.get(
   )
 );
 
-// ── Test connection (creds in body, not stored) ──────────────────────────
-
-router.post(
-  '/test',
-  asyncHandler(async (req, res) => {
-    const ip = req.ip || 'unknown';
-    if (!testLimiter(ip)) {
-      log.warn({ ip }, 'integration test rate-limited');
-      return apiError(res, 429, 'Too many connection tests — slow down.');
-    }
-
-    const { type, url, username, password, token, params } = req.body || {};
-    if (!url) return res.status(400).json({ ok: false, error: 'URL is required' });
-
-    const cleanUrl = normalizeUrl(url);
-    // Audit the probe target (host only, never the credentials in the body).
-    let host = cleanUrl;
-    try {
-      host = new URL(cleanUrl).host;
-    } catch {
-      /* keep the raw string if it doesn't parse */
-    }
-
-    const testConfig = { url: cleanUrl, username, password, token, ...allowedParams(type, params) };
-    const result = await testIntegration(type || '_custom', testConfig);
-    log.info({ ip, type: type || '_custom', host, ok: !!result.ok }, 'integration connection test');
-    res.json(result);
-  })
-);
-
 // ── Save (encrypts secrets into secrets.json, config into services.yaml) ──
 //
 // A save merges the form into the integration's stored entry (#402). It used
@@ -146,7 +122,10 @@ router.post(
 // lost: a custom integration's endpoint, auth, header and fields, a credential
 // under a secret name Settings doesn't derive, and any key written by hand.
 // Now only what the form owns changes:
-//   - url, always sent and required (normalized);
+//   - url, always sent and required (normalized); one that carries a
+//     credential, a user name or password before the host or a secret query
+//     parameter, is refused (400, field 'url', #422): it never worked, and it
+//     went back to the browser in the config;
 //   - username and target, when sent: an empty one is removed;
 //   - the preset's URL params, when sent (allow-listed): an empty one is removed;
 //   - password and token, only when typed (text only): blank keeps what is
@@ -238,26 +217,195 @@ function setOwned(entry, key, value) {
   else if (!isBlank(entry[key])) delete entry[key];
 }
 
-router.post('/save', (req, res) => {
-  const body = req.body || {};
-  const { type, instance, url, password, token, enabled, editingKey, fields: customFields } = body;
-
+/**
+ * Why the form `body` can't be saved or tested, checked before anything is
+ * read: `{ status, error, field? }`, or null. `field` names the form field the
+ * error belongs beside: 'url' for a URL that carries a credential (#422),
+ * whose message says where the credential goes and never quotes it.
+ */
+function formRefusal(body) {
+  const { type, instance, url, password, token } = body;
   const cleanUrl = normalizeUrl(typeof url === 'string' ? url : '');
-  if (!type || !cleanUrl) return apiError(res, 400, 'type and url are required');
+  if (!type || !cleanUrl) return { status: 400, error: 'type and url are required' };
   if (!SAFE_ID.test(type) || (instance && !SAFE_ID.test(instance))) {
-    return apiError(res, 400, 'Invalid type or instance (letters, digits, _ - only; max 64)');
+    return { status: 400, error: 'Invalid type or instance (letters, digits, _ - only; max 64)' };
   }
   // A credential is text. Anything else used to reach setSecret, whose error
   // (with the value in it) was then logged.
   for (const value of [password, token]) {
     if (value !== undefined && value !== null && typeof value !== 'string') {
-      return apiError(res, 400, 'password and token must be text');
+      return { status: 400, error: 'password and token must be text' };
     }
   }
-  const unsupported = getPreset(type)?.unsupported;
-  if (unsupported) {
-    return apiError(res, 400, `Integration unavailable: ${unsupported}`);
+  const preset = getPreset(type);
+  if (preset?.unsupported) {
+    return { status: 400, error: `Integration unavailable: ${preset.unsupported}` };
   }
+  const inUrl = formUrlCredentialError(cleanUrl, preset);
+  if (inUrl) return { status: 400, error: inUrl, field: 'url' };
+  return null;
+}
+
+/** A refusal's body: its error, and the field it belongs beside when it has one. */
+const refusalBody = ({ error, field }) => (field ? { error, field } : { error });
+
+/**
+ * The form `body` merged into the stored entry it is for, as the save stores
+ * it and the connection test tests it (#427): the merge rules above, in one
+ * place. Changes nothing: `config` and the secret store are only read.
+ *
+ * Returns `{ refused }` (a 409, as formRefusal's) or the merge:
+ *   - storageKey, the key the entry is stored under; baseKey and base, the
+ *     stored entry it merges into (null for a new one); moving, when the
+ *     instance name moves it;
+ *   - entry, the merged entry, with a `$secret:` reference for each typed
+ *     credential (to the name `secretOps` stores it under);
+ *   - secretOps, what the save does to the secret store, in order:
+ *     `{ drop: names }` (what an older delete left under a new entry's key,
+ *     #415), `{ set: name, value }` (a typed password or token), and
+ *     `{ copy: from, to }` (a moved keyed secret; `to` is removed when `from`
+ *     holds none);
+ *   - leftBehind, the old keyed names a move leaves, dropped once it is
+ *     written unless another entry uses one.
+ */
+function mergeForm(config, body) {
+  const { type, instance, url, password, token, enabled, editingKey, fields: customFields } = body;
+  const cleanUrl = normalizeUrl(url);
+  const integrations = config.integrations || {};
+
+  // The entry this save is for: the one being edited, else the one already
+  // under the key this save derives (the gallery adding it again, or an
+  // older web app's toggle, which sent the key as the type).
+  const derivedKey = instance ? `${type}_${instance}` : type;
+  const editing = isSent(editingKey);
+  let baseKey = null;
+  let base = null;
+  if (editing) {
+    base = storedEntry(integrations, editingKey);
+    // Removed (or replaced) since the form was opened, in another tab or by
+    // a hand edit: merging into whatever is under the derived key would
+    // overwrite a different integration.
+    if (!base) {
+      return {
+        refused: {
+          status: 409,
+          error: `Integration '${editingKey}' is no longer configured; reload Settings and try again`,
+        },
+      };
+    }
+    baseKey = editingKey;
+  } else if ((base = storedEntry(integrations, derivedKey))) {
+    baseKey = derivedKey;
+  }
+
+  let storageKey = derivedKey;
+  let instanceOwned = !!instance;
+  if (editing) {
+    // The key changes only when the instance name does.
+    instanceOwned = formInstance(base.instance) !== (instance || '');
+    if (!instanceOwned) storageKey = editingKey;
+  } else if (base) {
+    instanceOwned = !!instance && formInstance(base.instance) !== instance;
+  }
+  const moving = !!base && storageKey !== baseKey;
+
+  // A rename onto a key another integration holds used to delete this entry
+  // and write over that one, its secrets too (#414); an add from the form
+  // (`create`) onto a taken key merged into that integration. Both are
+  // refused before any secret is stored, so nothing changes.
+  const creating = !editing && body.create === true;
+  const holder = moving || creating ? storedEntry(integrations, storageKey) : null;
+  if (holder) {
+    return {
+      refused: { status: 409, error: takenKeyError(storageKey, holder, type), field: 'instance' },
+    };
+  }
+
+  const secretOps = [];
+  // A new entry starts with no credential (#415): what a delete before
+  // #415 left under its key, and no other entry uses, goes first.
+  if (!base) secretOps.push({ drop: unusedIntegrationSecrets(config, listSecretKeys(), storageKey) });
+  const typed = { password, token };
+  for (const field of ['password', 'token']) {
+    if (typed[field]) secretOps.push({ set: keyedSecretName(storageKey, field), value: typed[field] });
+  }
+
+  // A new entry keeps the shape and key order a save has always written.
+  const entry = base ? { ...base } : { url: cleanUrl, enabled: enabled !== false };
+  entry.url = cleanUrl;
+  if (!editing && typeof enabled === 'boolean' && (entry.enabled !== false) !== enabled) {
+    entry.enabled = enabled;
+  }
+  if (!base && getPreset(type)) entry.preset = type;
+  if (instanceOwned) setOwned(entry, 'instance', instance);
+  if (Object.hasOwn(body, 'target')) setOwned(entry, 'target', body.target);
+  if (Object.hasOwn(body, 'username')) setOwned(entry, 'username', body.username);
+  for (const field of ['password', 'token']) {
+    if (typed[field]) entry[field] = `$secret:${keyedSecretName(storageKey, field)}`;
+  }
+
+  // URL params (e.g. account_id for Cloudflare presets) — allow-listed to the
+  // preset's declared urlParams; unknown keys are dropped (no config injection).
+  for (const [k, v] of Object.entries(allowedParams(type, body.params))) setOwned(entry, k, v);
+
+  // Custom fields (only for non-preset integrations)
+  if (customFields) entry.fields = customFields;
+
+  // A move takes the entry's keyed secrets with it. What the old key held is
+  // copied to the new key (still encrypted), replacing anything left there,
+  // and a `$secret:` reference to the old name now names the new one. When
+  // the old key held nothing, whatever is left under the new key is removed,
+  // so it can't stand in for the entry's own credential. The old names are
+  // removed once the move is written; until then the entry still uses them.
+  const leftBehind = [];
+  if (moving) {
+    for (const field of KEYED_SECRET_FIELDS) {
+      const from = keyedSecretName(baseKey, field);
+      const to = keyedSecretName(storageKey, field);
+      if (!typed[field]) secretOps.push({ copy: from, to });
+      if (hasSecret(from)) leftBehind.push(from);
+      if ((field === 'password' || field === 'token') && entry[field] === `$secret:${from}`) {
+        entry[field] = `$secret:${to}`;
+      }
+    }
+  }
+
+  return { storageKey, baseKey, base, moving, entry, secretOps, leftBehind };
+}
+
+/**
+ * Store a merge's secretOps. setSecret returns false when the secrets manager
+ * is uninitialized (no DASH_SECRET); so does this, at the first it can't store.
+ */
+function storeSecrets(secretOps) {
+  for (const op of secretOps) {
+    if (op.drop) deleteSecrets(op.drop);
+    else if (op.set) {
+      if (!setSecret(op.set, op.value)) return false;
+    } else if (!copySecret(op.copy, op.to)) deleteSecret(op.to);
+  }
+  return true;
+}
+
+/**
+ * What a merge's secretOps would leave under each name they touch, for the
+ * connection test to resolve with: a typed credential as typed, a moved one
+ * as its old name holds it, and a removed one as none (null).
+ */
+function secretsAfter(secretOps) {
+  const after = new Map();
+  for (const op of secretOps) {
+    if (op.drop) for (const name of op.drop) after.set(name, null);
+    else if (op.set) after.set(op.set, op.value);
+    else after.set(op.to, getSecret(op.copy));
+  }
+  return after;
+}
+
+router.post('/save', (req, res) => {
+  const body = req.body || {};
+  const refused = formRefusal(body);
+  if (refused) return res.status(refused.status).json(refusalBody(refused));
 
   // The secret store as it was before this save stored anything, put back
   // unless services.yaml ends up written or needs no write (#502).
@@ -271,110 +419,20 @@ router.post('/save', (req, res) => {
     if (!config.integrations) config.integrations = {};
     const { integrations } = config;
 
-    // The entry this save is for: the one being edited, else the one already
-    // under the key this save derives (the gallery adding it again, or an
-    // older web app's toggle, which sent the key as the type).
-    const derivedKey = instance ? `${type}_${instance}` : type;
-    const editing = isSent(editingKey);
-    let baseKey = null;
-    let base = null;
-    if (editing) {
-      base = storedEntry(integrations, editingKey);
-      // Removed (or replaced) since the form was opened, in another tab or by
-      // a hand edit: merging into whatever is under the derived key would
-      // overwrite a different integration.
-      if (!base) {
-        return apiError(
-          res,
-          409,
-          `Integration '${editingKey}' is no longer configured; reload Settings and try again`
-        );
-      }
-      baseKey = editingKey;
-    } else if ((base = storedEntry(integrations, derivedKey))) {
-      baseKey = derivedKey;
-    }
-
-    let storageKey = derivedKey;
-    let instanceOwned = !!instance;
-    if (editing) {
-      // The key changes only when the instance name does.
-      instanceOwned = formInstance(base.instance) !== (instance || '');
-      if (!instanceOwned) storageKey = editingKey;
-    } else if (base) {
-      instanceOwned = !!instance && formInstance(base.instance) !== instance;
-    }
-    const moving = !!base && storageKey !== baseKey;
-
-    // A rename onto a key another integration holds used to delete this entry
-    // and write over that one, its secrets too (#414); an add from the form
-    // (`create`) onto a taken key merged into that integration. Both are
-    // refused before any secret is stored, so nothing changes.
-    const creating = !editing && body.create === true;
-    const holder = moving || creating ? storedEntry(integrations, storageKey) : null;
-    if (holder) {
-      return res
-        .status(409)
-        .json({ error: takenKeyError(storageKey, holder, type), field: 'instance' });
-    }
+    const merged = mergeForm(config, body);
+    if (merged.refused) return res.status(merged.refused.status).json(refusalBody(merged.refused));
+    const { storageKey, baseKey, base, moving, entry, secretOps, leftBehind } = merged;
 
     // From here on, anything short of `committed` puts this back (finally).
     before = snapshotSecrets();
 
-    // A new entry starts with no credential (#415): what a delete before
-    // #415 left under its key, and no other entry uses, goes first.
-    if (!base) deleteSecrets(unusedIntegrationSecrets(config, listSecretKeys(), storageKey));
-
-    // setSecret returns false when the secrets manager is uninitialized (no
-    // DASH_SECRET). Writing entry.password="$secret:…" anyway would persist a
-    // config pointing at a credential that was never stored — the integration
-    // silently has no credential and fails later with no save-time error. Surface
-    // it as a 500 now, matching the standalone secrets route.
-    const typed = { password, token };
-    for (const field of ['password', 'token']) {
-      if (typed[field] && !setSecret(keyedSecretName(storageKey, field), typed[field])) {
-        return apiError(res, 500, 'Secrets manager not initialized (DASH_SECRET missing?)');
-      }
-    }
-
-    // A new entry keeps the shape and key order a save has always written.
-    const entry = base ? { ...base } : { url: cleanUrl, enabled: enabled !== false };
-    entry.url = cleanUrl;
-    if (!editing && typeof enabled === 'boolean' && (entry.enabled !== false) !== enabled) {
-      entry.enabled = enabled;
-    }
-    if (!base && getPreset(type)) entry.preset = type;
-    if (instanceOwned) setOwned(entry, 'instance', instance);
-    if (Object.hasOwn(body, 'target')) setOwned(entry, 'target', body.target);
-    if (Object.hasOwn(body, 'username')) setOwned(entry, 'username', body.username);
-    for (const field of ['password', 'token']) {
-      if (typed[field]) entry[field] = `$secret:${keyedSecretName(storageKey, field)}`;
-    }
-
-    // URL params (e.g. account_id for Cloudflare presets) — allow-listed to the
-    // preset's declared urlParams; unknown keys are dropped (no config injection).
-    for (const [k, v] of Object.entries(allowedParams(type, body.params))) setOwned(entry, k, v);
-
-    // Custom fields (only for non-preset integrations)
-    if (customFields) entry.fields = customFields;
-
-    // A move takes the entry's keyed secrets with it. What the old key held is
-    // copied to the new key (still encrypted), replacing anything left there,
-    // and a `$secret:` reference to the old name now names the new one. When
-    // the old key held nothing, whatever is left under the new key is removed,
-    // so it can't stand in for the entry's own credential. The old names are
-    // removed once the move is written; until then the entry still uses them.
-    const leftBehind = [];
-    if (moving) {
-      for (const field of KEYED_SECRET_FIELDS) {
-        const from = keyedSecretName(baseKey, field);
-        const to = keyedSecretName(storageKey, field);
-        if (!typed[field] && !copySecret(from, to)) deleteSecret(to);
-        if (hasSecret(from)) leftBehind.push(from);
-        if ((field === 'password' || field === 'token') && entry[field] === `$secret:${from}`) {
-          entry[field] = `$secret:${to}`;
-        }
-      }
+    // Writing entry.password="$secret:…" with no secret stored would persist
+    // a config pointing at a credential that was never stored — the
+    // integration silently has no credential and fails later with no
+    // save-time error. Surface it as a 500 now, matching the standalone
+    // secrets route.
+    if (!storeSecrets(secretOps)) {
+      return apiError(res, 500, 'Secrets manager not initialized (DASH_SECRET missing?)');
     }
 
     const unchanged = base && !moving && isDeepStrictEqual(entry, base);
@@ -399,6 +457,58 @@ router.post('/save', (req, res) => {
     if (before && !committed) restoreSecrets(before);
   }
 });
+
+// ── Test connection (#427) ───────────────────────────────────────────────
+//
+// The Test button sends what Save sends, and tests what Save would store: the
+// form merged into the stored entry by the same merge (mergeForm), handed to
+// the handler as the refresh loop hands an entry (integrationInput), then
+// resolved and fetched as a refresh does (testIntegration). A typed password
+// or token resolves as it will once stored; a blank one, the stored one. So a
+// custom integration is tested at its stored endpoint, and a test checks
+// exactly what the next refresh will do. Nothing is written: not
+// services.yaml, not secrets.json, not a session token or backoff state. The
+// same refusals as a save, before anything is fetched: a URL that carries a
+// credential (#422), an edit whose entry is gone, a key another integration
+// holds.
+
+router.post(
+  '/test',
+  asyncHandler(async (req, res) => {
+    const ip = req.ip || 'unknown';
+    if (!testLimiter(ip)) {
+      log.warn({ ip }, 'integration test rate-limited');
+      return apiError(res, 429, 'Too many connection tests — slow down.');
+    }
+
+    // A web app before #427 sent no type for a custom integration.
+    const body = { ...(req.body || {}) };
+    if (!body.type) body.type = '_custom';
+    const refused = formRefusal(body);
+    if (refused) return res.status(refused.status).json({ ok: false, ...refusalBody(refused) });
+
+    const read = readConfig();
+    if (read.unusable) return configUnusable(res, read.unusable, read.code);
+    const merged = mergeForm(read.config || {}, body);
+    if (merged.refused) {
+      return res.status(merged.refused.status).json({ ok: false, ...refusalBody(merged.refused) });
+    }
+
+    const { type, yamlConfig } = integrationInput(merged.storageKey, merged.entry);
+    // Audit the probe target (host only, never the credentials in the body).
+    let host = yamlConfig.url;
+    try {
+      host = new URL(yamlConfig.url).host;
+    } catch {
+      /* keep the raw string if it doesn't parse */
+    }
+    const result = await testIntegration(type, yamlConfig, {
+      secrets: secretsAfter(merged.secretOps),
+    });
+    log.info({ ip, type, host, ok: !!result.ok }, 'integration connection test');
+    res.json(result);
+  })
+);
 
 // ── Enable / disable ─────────────────────────────────────────────────────
 //
