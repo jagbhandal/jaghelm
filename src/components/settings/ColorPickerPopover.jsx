@@ -5,7 +5,7 @@ import { HexColorPicker } from 'react-colorful';
  * ColorPickerPopover — the hex color editor used by every settings tab.
  *
  * Every tab that lets the user pick a color (NodesTab border, SectionsTab
- * section/group/background, AppearanceTab accent) had rebuilt the same trio
+ * section/group/background) had rebuilt the same trio
  * inline: a <HexColorPicker>, a mono hex <input>, and Apply/Cancel buttons —
  * each copy wiring up its own colorTarget/colorValue/openColor/applyColor
  * state. Extracting it means the picker, the live hex field, and the
@@ -20,8 +20,11 @@ import { HexColorPicker } from 'react-colorful';
  *   onApply  — (color) => void, called with the committed hex on Apply
  *   onCancel — () => void, called on Cancel
  */
+/** A colour not yet picked: violet, the accent (#304), as a hex the picker reads. */
+export const DEFAULT_COLOR = '#7f22fe';
+
 export default function ColorPickerPopover({ value, onApply, onCancel }) {
-  const [color, setColor] = useState(value || '#6366f1');
+  const [color, setColor] = useState(value || DEFAULT_COLOR);
 
   return (
     <>

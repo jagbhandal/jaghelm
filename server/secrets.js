@@ -6,7 +6,7 @@
  */
 
 import crypto from 'crypto';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { atomicWriteFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
@@ -107,18 +107,39 @@ function loadSecrets() {
   }
 }
 
-function persistSecrets() {
+/** Write `store` to secrets.json. A write that fails is logged and thrown. */
+function persistSecrets(store) {
   try {
     // Atomic + 0600: a crash mid-write can't truncate the encrypted store, and
     // the file is never group/world-readable.
-    atomicWriteFileSync(SECRETS_PATH, JSON.stringify(secrets, null, 2), { mode: 0o600 });
+    atomicWriteFileSync(SECRETS_PATH, JSON.stringify(store, null, 2), { mode: 0o600 });
   } catch (err) {
     log.error({ err }, 'Failed to save secrets.json');
+    throw err;
   }
 }
 
 /**
- * Encrypt a plaintext value and store it.
+ * Make `change` to a copy of the store and, when it answers something truthy
+ * (it changed something), write the copy; the store becomes the copy only
+ * once secrets.json holds it. A write that fails throws and leaves the store
+ * as it was (#502): a secret is never held only in memory, to vanish at the
+ * next restart, while its caller reports it stored. Returns what `change`
+ * answers.
+ */
+function changeStore(change) {
+  const next = { ...secrets };
+  const result = change(next);
+  if (result) {
+    persistSecrets(next);
+    secrets = next;
+  }
+  return result;
+}
+
+/**
+ * Encrypt a plaintext value and store it. False when there is no key
+ * (DASH_SECRET); throws when secrets.json can't be written (changeStore).
  */
 export function setSecret(name, plaintext) {
   const key = getKey();
@@ -130,13 +151,11 @@ export function setSecret(name, plaintext) {
   encrypted += cipher.final('hex');
   const tag = cipher.getAuthTag().toString('hex');
 
-  secrets[name] = {
-    iv: iv.toString('hex'),
-    data: encrypted,
-    tag,
-  };
-  persistSecrets();
-  return true;
+  const stored = { iv: iv.toString('hex'), data: encrypted, tag };
+  return changeStore((next) => {
+    next[name] = stored;
+    return true;
+  });
 }
 
 /**
@@ -166,26 +185,89 @@ export function getSecret(name) {
 }
 
 /**
- * Delete a secret.
+ * Delete a secret. Throws when secrets.json can't be written (changeStore).
  */
 export function deleteSecret(name) {
-  if (!(name in secrets)) return false;
-  delete secrets[name];
-  persistSecrets();
-  return true;
+  return deleteSecrets([name]) > 0;
+}
+
+/**
+ * Delete each of `names` that is stored, with one write of secrets.json.
+ * Returns how many were deleted. Throws when secrets.json can't be written,
+ * and then deletes none (changeStore).
+ */
+export function deleteSecrets(names) {
+  return changeStore((next) => {
+    let deleted = 0;
+    for (const name of names) {
+      if (!Object.hasOwn(next, name)) continue;
+      delete next[name];
+      deleted++;
+    }
+    return deleted;
+  });
 }
 
 /**
  * Copy the secret stored under `from` to `to`, replacing what `to` held. The
  * stored value is copied as it is, still encrypted, so no plaintext is handled
  * and it works without DASH_SECRET. Returns false, and changes nothing, when
- * there is no secret under `from`.
+ * there is no secret under `from`. Throws when secrets.json can't be written
+ * (changeStore).
  */
 export function copySecret(from, to) {
   if (!Object.hasOwn(secrets, from)) return false;
-  secrets[to] = { ...secrets[from] };
-  persistSecrets();
-  return true;
+  return changeStore((next) => {
+    next[to] = { ...next[from] };
+    return true;
+  });
+}
+
+/** secrets.json's bytes, null when there is none, undefined when it can't be read. */
+function storeFileBytes() {
+  try {
+    return readFileSync(SECRETS_PATH);
+  } catch (err) {
+    return err.code === 'ENOENT' ? null : undefined;
+  }
+}
+
+/**
+ * The store as it is now, for restoreSecrets to put back (#502): every name
+ * with its stored value, still encrypted, and secrets.json's bytes. Taken
+ * before a change that is undone if what it goes with fails, such as an
+ * integration's save whose services.yaml write is refused.
+ */
+export function snapshotSecrets() {
+  return { secrets: { ...secrets }, file: storeFileBytes() };
+}
+
+/**
+ * Put the store back as `snapshot` found it: the same names, in the same
+ * order, with the same values, and secrets.json byte-for-byte as it was (or
+ * gone again, when there was none). The file is written only when it changed
+ * since, so a change whose own write failed (a full disk) needs no write to
+ * undo. When it couldn't be read at the snapshot, it is written from the
+ * restored store. Never throws: a write that fails is logged.
+ */
+export function restoreSecrets(snapshot) {
+  secrets = { ...snapshot.secrets };
+  if (snapshot.file === undefined) {
+    try {
+      persistSecrets(secrets);
+    } catch {
+      /* logged by persistSecrets */
+    }
+    return;
+  }
+  const now = storeFileBytes();
+  if (snapshot.file === null ? now === null : now && now.equals(snapshot.file)) return;
+  try {
+    if (snapshot.file === null) unlinkSync(SECRETS_PATH);
+    else atomicWriteFileSync(SECRETS_PATH, snapshot.file, { mode: 0o600 });
+  } catch (err) {
+    log.error({ err }, 'Failed to restore secrets.json');
+  }
 }
 
 /**

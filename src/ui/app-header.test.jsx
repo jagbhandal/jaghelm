@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { AppHeader, UpdatedAgo, agoText } from '@ui/app-header';
+import { UiRoot } from '@ui/root';
 
 // The header's states (incident, healthy, no signal) are tested where the
 // shell feeds them, src/shell/ShellHeader.test.jsx; these are its parts.
@@ -67,6 +68,50 @@ describe('AppHeader', () => {
     rerender(<AppHeader status={{ state: 'ok' }} onLogout={onLogout} />);
     await user.click(within(banner()).getByRole('button', { name: 'Log out' }));
     expect(onLogout).toHaveBeenCalledOnce();
+  });
+
+  it('offers the theme toggle only when given onThemeChange', () => {
+    render(<AppHeader status={{ state: 'ok' }} />);
+    expect(within(banner()).queryByRole('button', { name: /^Switch to/ })).toBeNull();
+  });
+
+  it('toggles to the other theme: light from dark (a sun), dark from light (a moon)', async () => {
+    const user = userEvent.setup();
+    const onThemeChange = vi.fn();
+    const { unmount } = render(
+      <UiRoot>
+        <AppHeader status={{ state: 'ok' }} onThemeChange={onThemeChange} />
+      </UiRoot>
+    );
+    const toLight = within(banner()).getByRole('button', { name: 'Switch to light theme' });
+    expect(toLight.querySelector('.lucide-sun')).toBeInTheDocument();
+    await user.click(toLight);
+    expect(onThemeChange).toHaveBeenLastCalledWith('light');
+    unmount();
+
+    render(
+      <UiRoot theme="light">
+        <AppHeader status={{ state: 'ok' }} onThemeChange={onThemeChange} />
+      </UiRoot>
+    );
+    const toDark = within(banner()).getByRole('button', { name: 'Switch to dark theme' });
+    expect(toDark.querySelector('.lucide-moon')).toBeInTheDocument();
+    await user.click(toDark);
+    expect(onThemeChange).toHaveBeenLastCalledWith('dark');
+  });
+
+  it('puts the toggle between the search and Settings, as the mock does', () => {
+    render(
+      <AppHeader status={{ state: 'ok' }} onOpenPalette={() => {}} onThemeChange={() => {}} />
+    );
+    const order = [
+      ...within(banner()).getAllByRole('button', { name: /^Search or jump to/ }),
+      within(banner()).getByRole('button', { name: 'Switch to light theme' }),
+      within(banner()).getByRole('link', { name: 'Settings' }),
+    ];
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i])).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    }
   });
 
   it('hands the links to onNavigate', async () => {

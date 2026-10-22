@@ -523,7 +523,6 @@ export function demoDisplayConfig() {
     title: 'JagHelm',
     subtitle: 'Live Demo',
     theme: 'dark',
-    accentColor: '#6366f1',
     showSearch: true,
     showWeather: false,
     showDots: true,

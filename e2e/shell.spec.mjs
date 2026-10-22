@@ -10,6 +10,9 @@
  *    dashboard, Settings (and its Tabs section, "Add app"), each embedded app,
  *    under its app bar (Reload, Open in new tab).
  *  - Back, Forward and a reload keep the page.
+ *  - The theme (#304): the header's toggle switches it and a reload keeps it,
+ *    an old theme saved before #304 opens as its new one, and System follows
+ *    the device as it changes.
  *  - No page scrolls sideways.
  *  - axe finds nothing on the shell, at both widths, dark and light: the whole
  *    Alerts page (a page of the new UI), and the shell's chrome and the
@@ -109,6 +112,52 @@ test.describe('the header', () => {
     server.down = false;
     await page.clock.runFor(30_000);
     await expect(headerStatus(page)).toHaveAttribute('data-state', 'crit');
+  });
+});
+
+test.describe('the theme (#304)', () => {
+  test.use({ viewport: WIDTHS.desktop });
+
+  const html = (page) => page.locator('html');
+  const headerRoot = (page) => page.locator('.jh-ui:has(> header)');
+
+  test("the header's toggle switches it, and a reload keeps it", async ({ page }) => {
+    await openApp(page, '/', { theme: null });
+    await expect(html(page)).toHaveAttribute('data-theme', 'dark');
+    await expect(headerRoot(page)).not.toHaveAttribute('data-theme');
+    const banner = page.getByRole('banner');
+    await banner.getByRole('button', { name: 'Switch to light theme' }).click();
+    await expect(html(page)).toHaveAttribute('data-theme', 'light');
+    await expect(headerRoot(page)).toHaveAttribute('data-theme', 'light');
+    await page.reload();
+    await expect(html(page)).toHaveAttribute('data-theme', 'light');
+    await banner.getByRole('button', { name: 'Switch to dark theme' }).click();
+    await expect(html(page)).toHaveAttribute('data-theme', 'dark');
+    await page.reload();
+    await expect(banner.getByRole('button', { name: 'Switch to light theme' })).toBeVisible();
+    await expect(html(page)).toHaveAttribute('data-theme', 'dark');
+  });
+
+  test('an old theme saved before #304 opens as its new one', async ({ page }) => {
+    await openApp(page, '/', { theme: 'solarized-light' });
+    await expect(html(page)).toHaveAttribute('data-theme', 'light');
+    expect(await page.evaluate(() => localStorage.getItem('jaghelm-theme'))).toBe('light');
+  });
+
+  test('System, picked in Settings → Appearance, follows the device as it changes', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: 'light' });
+    await openApp(page, '/settings/appearance', { theme: 'dark' });
+    await expect(html(page)).toHaveAttribute('data-theme', 'dark');
+    await page.getByRole('radio', { name: 'System' }).click();
+    await expect(html(page)).toHaveAttribute('data-theme', 'light');
+    await expect(headerRoot(page)).toHaveAttribute('data-theme', 'light');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await expect(html(page)).toHaveAttribute('data-theme', 'dark');
+    await expect(headerRoot(page)).not.toHaveAttribute('data-theme');
+    await page.emulateMedia({ colorScheme: 'light' });
+    await expect(html(page)).toHaveAttribute('data-theme', 'light');
   });
 });
 

@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useConfig } from '../context/ConfigContext.jsx';
-import { THEMES } from './settings/themes.js';
+import { THEMES } from '../shell/theme.js';
 import { safeUrl } from '../utils/safeUrl.js';
 
 /**
- * ⌘K command palette — jump to a page or an app, pick a theme, open a link,
- * or log out.
+ * ⌘K command palette — jump to a page or an app, pick a theme (Dark, Light
+ * or System, #304), open a link, or log out.
  *
  * Combobox/listbox pattern: focus stays in the input, ArrowUp/Down move a
  * highlighted index (aria-activedescendant), Enter runs it. Escape / backdrop
@@ -53,7 +53,7 @@ export default function CommandPalette({
       cmds.push({
         id: `theme:${th.id}`,
         group: 'Theme',
-        label: th.name,
+        label: th.label,
         hint: theme === th.id ? 'current' : undefined,
         run: () => setTheme(th.id),
       });

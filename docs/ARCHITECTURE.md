@@ -88,7 +88,8 @@ server/                     Express API (Node 26, ESM)
   icon-sources.js           the icon repositories it may fetch from; the web client imports it too
   config.js                 services.yaml: load, hot-reload watch, copy-on-read, its version,
                             and the one atomic writer, over the version read (see 6)
-  secrets.js                AES-256-GCM secret store (per-install KDF salt)
+  secrets.js                AES-256-GCM secret store (per-install KDF salt), and the
+                            snapshot a failed integration save is undone to (see 4.4)
   cron-store.js             cron history (bounded)
   errors.js                 apiError + global JSON error handler
   version.js                single source of version (reads package.json)
@@ -149,7 +150,8 @@ src/                        React 19 SPA (Vite 8)
                             Services section, its rows from the model, #300),
                             statusFreshness.js (the one rule for a stale status: whether
                             the poll's status is current, and how each place draws one
-                            that isn't)
+                            that isn't), theme.js (dark, light or system, and the old
+                            themes' migration; see 5, "Design system")
   api/client.js             apiFetch -- explicit auth-injecting fetch wrapper
   context/                  ConfigContext (config + update via setIn), OverlayContext (toast/confirm)
   hooks/useData.js          fetchJson (304-aware), weather, search engines
@@ -165,7 +167,8 @@ src/                        React 19 SPA (Vite 8)
   views/SettingsView.jsx     13-tab settings shell + collapsible live preview
   views/AppFrames.jsx,       app tabs as they look today: the host keeping visited frames, and
   views/IframeView.jsx       one frame with its loading, slow and blocked notices
-  styles/global.css          today's themes (10) + their tokens + component styles
+  styles/global.css          today's two themes (dark, light) on the new tokens' values +
+                             component styles
   styles/fonts.css           today's fonts, self-hosted: the files Google Fonts served (see 5.1)
   styles/legacy.css          imports global.css and fonts.css into the `legacy` cascade layer
   fonts/                     every woff2 the web app ships (latin subsets; latin-ext too for the
@@ -830,7 +833,22 @@ Key properties:
   schema (`util/configSchema.js`) on read, so a malformed file fails loudly.
 - **Secrets** (`secrets.js`) are AES-256-GCM encrypted with a **per-install
   random KDF salt** (`data/.secrets-salt`, legacy-static-salt fallback). All
-  credential stores write `0600`.
+  credential stores write `0600`. A change `secrets.json` can't take throws
+  and leaves the store as it was, so a secret is never held only in memory.
+  An integration's secrets (the `integration_*` names a Settings save
+  writes) live and die with its entry in `services.yaml`, which is the
+  record (#415, #502). A save stores what it needs before writing the file;
+  when that write fails or is refused, or a secret can't be written, the
+  store goes back to its snapshot from before the save (`snapshotSecrets` /
+  `restoreSecrets`), so `secrets.json` ends byte-for-byte as it was. A save
+  that creates an entry first clears what an older delete left under its
+  key. A delete, or a rename's old names, drops the secrets no remaining
+  entry uses once the file is written. A secret is in use while an entry's
+  key makes it that entry's keyed secret, or a `$secret:` reference anywhere
+  in the config names it (`integrations/unusedSecrets.js`); other names are
+  the user's. At boot one log line counts the unused integration secrets,
+  never naming them, and nothing is deleted: a hand edit (an entry commented
+  out, a typo, a rename) makes a secret look unused that is still wanted.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
   secrets/auth/config/cron and the icon cache never split across locations.
 
@@ -1433,8 +1451,8 @@ flowchart TD
   `.jh-ui` root; the page area, `<main>`, is not one, so today's views inside it
   keep their look, and a page of the new UI (Alerts) brings its own root
   (`ShellPage`), as does a part of a page beside today's views (the Overview's
-  status, `ShellSection`). The chrome is dark, or light under one of today's light
-  themes, until #304 gives the new UI its own theme switch. The URL is the page: `src/router` is a small router on the
+  status, `ShellSection`). The chrome draws the theme shown (#304, "Design
+  system" below). The URL is the page: `src/router` is a small router on the
   History API (no dependency) over one route table (`routes.js`): `/`
   Overview, `/alerts`, `/apps/:id`, `/settings/:section?`, and `/launch`,
   `/services` and `/infrastructure`, which are in the table but hidden until
@@ -1447,7 +1465,7 @@ flowchart TD
   Forward and a reload all land where the URL says. Each page names the
   browser tab ("Alerts — JagHelm"). The command palette (⌘K or Ctrl K, or the
   header's search button) lists the pages in the nav, "Open <app>" for each
-  app, the themes and the links.
+  app, the three themes and the links.
 - **Status in the header** (#296, #275). `useStatus` polls `/api/status`
   (4.7) once a refresh interval with the last ETag, so a steady board costs a
   304, and asks nothing while the browser tab is hidden; on return it asks at
@@ -1858,9 +1876,25 @@ flowchart TD
     host; the demo has no saved app tab, so it answers that it has none), or
     before the URL is saved, the frame
     shows whatever the browser puts in it.
-- **Design system.** 10 themes (`themes.js` + `[data-theme]` token blocks),
-  generic `--space-*` / `--text-*` scales plus semantic `--fs-*` card tokens,
-  and a global `:focus-visible` ring + reduced-motion handling.
+- **Design system.** Two themes, dark and light, plus system, which follows
+  the device (#304, spec §2): `src/shell/theme.js`'s `useTheme`, held by `App`
+  so the login screen has it too. It puts the theme shown on `<html>` as
+  `data-theme`, where `global.css` reads it (`:root` dark, `:root[data-theme=
+  "light"]` light, both on the token values: graphite, violet the one accent),
+  and the shell gives it to its `.jh-ui` roots. The header's toggle switches
+  dark and light; Settings → Appearance and the command palette offer all
+  three. The choice is kept per browser (`prefs`, `jaghelm-theme`). **Settings
+  migration:** a saved value is read through `migrateTheme` once: each of the
+  ten old themes becomes dark or light by what it drew (One Dark Pro, Dracula,
+  Night Owl, GitHub Dark, Catppuccin Mocha and Material Ocean dark; GitHub
+  Light, Catppuccin Latte, Solarized Light and Atom One Light light), and the
+  new value is saved back; a value it doesn't know becomes system; nothing
+  saved is dark. A display config's `theme` (seeding a browser with none
+  saved) goes through the same mapping. The accent is violet: the config's
+  old free `accentColor` is no longer read (`useThemeVars` sets no accent),
+  and Fuchsia and Cyan come with #321. Also generic `--space-*` / `--text-*`
+  scales plus semantic `--fs-*` card tokens, and a global `:focus-visible`
+  ring + reduced-motion handling.
 - **PWA.** `public/sw.js` precaches the app shell **and** the hashed first-paint
   bundles (the precache list, the build's full `dist/assets` list + version are
   injected at build by `scripts/inject-sw-precache.mjs`); immutable `/assets/`
@@ -2193,8 +2227,18 @@ All state is files under the data dir (no DB):
     and the edits made on the screen it replaces are dropped, not sent: one
     that would have gone out from it says "Not saved: an earlier change on
     this screen was refused". A read that fails shows why in place of the
-    tab, never the old or edited config. The integration form doesn't post
-    the config, and the Android app doesn't either.
+    tab, never the old or edited config. The version and the save queue
+    are the app's, not a tab's or a Settings view's (#501): switching tabs
+    or leaving Settings sends the pending save at once, and reads go out in
+    the same queue as saves, so a read never answers a version a save has
+    already replaced. A read that answers after an edit it didn't see
+    leaves the screen and its version alone; a change made elsewhere then
+    refuses that edit's save (409). A save or read with no answer in 15 s
+    fails (`AbortSignal.timeout`), so a hung one can't hold up the queue; a
+    timed-out save may have landed, so the config is read again before the
+    next save. While a save is waiting or on its way, closing the browser
+    tab asks first (`beforeunload`). The integration form doesn't post the
+    config, and the Android app doesn't either.
   - **An integration's save in Settings merges** (`POST /api/integrations/save`,
     #402). The form's values go into the stored entry, and only what the form
     owns changes: the URL (required), the username and target (sent empty to
@@ -2222,7 +2266,8 @@ All state is files under the data dir (no DB):
     key's name, replacing anything left there; one the old key doesn't have is
     removed under the new key too, since a preset resolves those names ahead
     of the entry's `$secret:` reference. A reference to an old name is pointed
-    at the new one, and the old names are removed once the move is written.
+    at the new one, and the old names are removed once the move is written,
+    unless another entry still uses one (4.4).
   - **A taken key is refused** (#414). A save never lands on a key another
     integration holds: a rename onto one, or a new integration from the form
     (which sends `create: true`) under one, is refused with a 409
@@ -2239,6 +2284,10 @@ All state is files under the data dir (no DB):
     `{ "enabled": true|false }` and nothing else) sets `enabled` alone, writes
     nothing when the entry is already in that state, and asks for a retry when
     it enables.
+  - **Delete** (`DELETE /api/integrations/:key`, the entry found by its own
+    key) removes the entry and then its secrets (4.4), so a new integration
+    under that key starts with no credential. A save whose write fails
+    stores nothing (4.4).
 - **display config** -- title, theme, layout (`{lg,md,sm}` grid item arrays),
   sections (per-panel visibility/order/colour), nav/search/weather flags,
   links, tabs, fonts. Read copy-on-read; validated by Zod.
@@ -2305,9 +2354,10 @@ flowchart LR
   GH -.->|"event-driven dispatch (opt-in, ADR 0005)"| DEP
   PR -->|"push trigger (fallback)"| DEP["Gitea deploy.yml (self-hosted)"]
   subgraph DEP2["deploy.yml"]
-    KEY["pin vm-103 host key<br/>(VM103_HOST_KEY)"] --> STAGE["stage: pull :sha-short<br/>+ deliver and verify compose.yaml"]
+    KEY["pin vm-103 host key<br/>(VM103_HOST_KEY)"] --> WAIT["wait for :sha-short<br/>(never appears: fail, vm-103 untouched)"]
+    WAIT --> STAGE["stage: pull :sha-short<br/>+ deliver and verify compose.yaml"]
     STAGE --> SWITCH["retag :latest + recreate"]
-    SWITCH --> GATE["health gate<br/>(Docker health + /api/health)"]
+    SWITCH --> GATE["health gate<br/>(Docker health + /api/health<br/>+ revision = this commit)"]
     GATE -->|"fail"| RB["auto-rollback to prev image<br/>+ prev compose.yaml"]
     GATE -->|"pass"| LIVE["live on prod"]
   end
@@ -2340,23 +2390,30 @@ flowchart LR
   self-hosted Gitea runner, labelled `vm103` (no other workflow may use that
   label), and reaches the host over SSH that verifies a
   **pinned host key** (the `VM103_HOST_KEY` repository variable; without it the
-  deploy fails before any SSH). It pulls and **pins this commit's
-  `:sha-<short>`** image and **delivers this commit's `compose.yaml`** to the
+  deploy fails before any SSH). It waits up to 6 minutes for this commit's
+  `:sha-<short>` image; if it never appears, the deploy **fails without
+  touching vm-103** (there is no fallback to `:latest`). It pulls and **pins
+  this commit's `:sha-<short>`** image and **delivers this commit's
+  `compose.yaml`** to the
   stack directory: written as `compose.yaml.new`, checked by sha256 on the host,
   the old copy kept as `compose.yaml.prev`, renamed into place and validated with
   `docker compose config` before the container is recreated, so compose changes
   reach production with the release. The log records the repo and host hashes
-  and a diff of the host copy. It then recreates behind a **health gate**; any
+  and a diff of the host copy. It then recreates behind a **health gate**, which
+  also requires `/api/health`'s `revision` to be this commit, so a green deploy
+  means the commit is live; any
   failure after the host was changed rolls back the previous image **and** the
-  previous `compose.yaml` together. The deploy owns `compose.yaml` on the host:
+  previous `compose.yaml` together, unless a later deploy has replaced it
+  since. A run whose commit is no longer main's head changes nothing and ends
+  green as superseded. What a red deploy means, how to recover and the manual
+  rollback: [RELEASING.md](RELEASING.md#production-deploys). The deploy owns `compose.yaml` on the host:
   host-specific additions (a secrets mount, host networking) go in
   `compose.override.yaml`, which Compose merges and the deploy never touches.
   Before the container is touched, the deploy refuses a merged config that
   drops host networking or a mount the running container has (such a drop can
   deploy "healthy" while push quietly stops), unless a hand-made
   `compose.accept-drops` file in the stack directory accepts it for one deploy;
-  and it refuses a `compose.yaml` change when the commit's own image was not
-  available.
+  and it fails if vm-103 cannot pull the commit's image.
   Configuration (Gitea repository settings, Actions):
 
   | Kind | Name | Use |
@@ -2461,10 +2518,11 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   its 10px lamps, the line's and the strip's (every colour each element
   draws, read in OKLCH); and an
   issue row, clicked or by Enter, brings its entity's place on the board into
-  view, clear of the header, and focuses it, while a Ctrl-click opens a tab at
-  its anchor and leaves the page where it was (Chromium in the container now
-  and then drops a Ctrl-click's tab, so that test tries up to three times,
-  checking the page acted on none). The subsystem strip (#298): on
+  view, clear of the header, and focuses it; it is a link to its place's
+  anchor, and a click dispatched with Ctrl, Meta, Shift, Alt or the middle
+  button is neither cancelled nor moves focus or the scroll, while a plain one
+  through the same dispatch does (#515: no real new tab, which tested
+  Chromium, not JagHelm). The subsystem strip (#298): on
   screen under the status without scrolling (on a phone, under the panel's
   header, #484), a tile per subsystem the model
   has anything in, nothing in a tile cut off and no sideways scroll (at 360px
