@@ -33,6 +33,15 @@ import { cn } from './lib/utils.js';
 
 const ShellSwitches = createContext({});
 
+/**
+ * The phone's width as a media query: below 48rem, Tailwind's `md`, where
+ * AppShell swaps the sidebar for the bottom tabs (its `md:` and `max-md:`
+ * classes). The one value for a part that must change its markup there, not
+ * only its look: the Overview's split (#484). e2e/phone-split.spec.mjs holds
+ * the two in step at 767 and 768px.
+ */
+const PHONE_WIDTH = '(width < 48rem)';
+
 function AppShell({ switches = {}, header, sidebar, tabs, className, children, ...props }) {
   return (
     <ShellSwitches.Provider value={switches}>
@@ -131,4 +140,4 @@ function ShellApps({ label, bar, className, children, ...props }) {
   );
 }
 
-export { AppShell, ShellPage, ShellSection, ShellApps };
+export { AppShell, ShellPage, ShellSection, ShellApps, PHONE_WIDTH };

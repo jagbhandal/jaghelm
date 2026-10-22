@@ -20,7 +20,8 @@
  *             `split`, between its header and its rows
  *   split     the panel in two parts with `between` between them, as the
  *             Phone board orders it (status card, strip, issue list): the
- *             Overview below 768px (#484)
+ *             Overview below 768px (#484). The rows get the board's label,
+ *             "Needs attention · 6", a heading a level under the panel's
  *
  * The `ui` look is the mock's. With issues, or any state but ok and
  * maintenance (which never make an issue, spec §6.1), it is the attention
@@ -40,7 +41,10 @@
  * `split` (#484) changes the frame, nothing else: one region, its header
  * (lamp, heading, sentence, action) in one card, then `between`, then a card
  * with the rows, headed by "Showing … only" when filtered, so the page reads
- * and takes the focus in that order (header, strip, rows). With no rows and
+ * and takes the focus in that order (header, strip, rows). Over that card, the
+ * Phone board's label, "Needs attention · 6" (the rows it lists; no count
+ * when the subsystem shown has none), a heading a level under the panel's, so
+ * heading navigation reaches the rows after the strip. With no rows and
  * nothing filtered there is no second card. The quiet line has no rows to
  * split: `between` follows it either way. Unsplit, the panel is one card, as
  * the desktop draws it, and `between` follows it.
@@ -239,6 +243,9 @@ function UiAttentionPanel({
   const card = 'rounded-xl border border-border bg-surface-1';
 
   if (split) {
+    // A level under the panel's heading: h3 under the Overview's h2.
+    const level = /^h[1-5]$/.test(titleAs) ? Number(titleAs[1]) + 1 : 6;
+    const RowsTitle = `h${level}`;
     return (
       <section
         data-slot="attention-panel"
@@ -253,8 +260,13 @@ function UiAttentionPanel({
         </div>
         {between}
         {rows && (
-          <div data-slot="attention-panel-rows" className={cn('overflow-hidden', card)}>
-            {rows}
+          <div className="flex flex-col gap-2">
+            <RowsTitle className="text-overline text-text-3 uppercase">
+              Needs attention{issues.length > 0 && ` · ${issues.length}`}
+            </RowsTitle>
+            <div data-slot="attention-panel-rows" className={cn('overflow-hidden', card)}>
+              {rows}
+            </div>
           </div>
         )}
       </section>

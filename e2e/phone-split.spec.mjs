@@ -94,6 +94,14 @@ for (const [width, viewport] of Object.entries(PHONES)) {
 
       const head = await header(page).boundingBox();
       expect(bottom(head), 'the heading’s card above the strip').toBeLessThanOrEqual(box.y);
+      // The rows' own heading, the Phone board's label, between the strip and them.
+      const label = panel(page).getByRole('heading', { level: 3 });
+      await expect(label).toHaveText(/^Needs attention · 6$/i);
+      const l = await label.boundingBox();
+      expect(l.y, 'the rows’ heading under the strip').toBeGreaterThanOrEqual(bottom(box));
+      expect(bottom(l), 'the rows’ heading over the rows').toBeLessThanOrEqual(
+        (await rows(page).first().boundingBox()).y
+      );
       const all = await rows(page).all();
       expect(all).toHaveLength(6);
       for (const [i, row] of all.entries()) {
@@ -198,12 +206,40 @@ for (const [name, viewport] of Object.entries(WIDER)) {
       await openSix(page);
       await expect(panel(page)).not.toHaveAttribute('data-layout', 'split');
       await expect(header(page)).toHaveCount(0);
+      await expect(panel(page).getByRole('heading', { level: 3 })).toHaveCount(0);
       await expect(panel(page).locator('[data-slot="issue-row"]')).toHaveCount(6);
       await expect(panel(page).getByRole('region', { name: 'Subsystems' })).toHaveCount(0);
       const box = await panel(page).boundingBox();
       expect((await strip(page).boundingBox()).y, 'the strip under the panel').toBeGreaterThan(
         bottom(box)
       );
+    });
+  });
+}
+
+// The split reads the shell's own breakpoint (PHONE_WIDTH, @ui/app-shell),
+// so it flips with the bottom tabs, at the same pixel.
+const tabs = (page) => page.locator('[data-slot="bottom-tabs"]');
+for (const [width, phone] of [
+  [767, true],
+  [768, false],
+]) {
+  test.describe(`at ${width} × 900`, () => {
+    test.use({ viewport: { width, height: 900 } });
+
+    test(`${phone ? 'the bottom tabs and the split' : 'neither the bottom tabs nor the split'}, together`, async ({
+      page,
+    }) => {
+      await openSix(page);
+      if (phone) {
+        await expect(tabs(page)).toBeVisible();
+        await expect(page.locator('[data-slot="side-nav"]')).toBeHidden();
+        await expect(panel(page)).toHaveAttribute('data-layout', 'split');
+      } else {
+        await expect(tabs(page)).toBeHidden();
+        await expect(page.locator('[data-slot="side-nav"]')).toBeVisible();
+        await expect(panel(page)).not.toHaveAttribute('data-layout', 'split');
+      }
     });
   });
 }

@@ -8,7 +8,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { OverviewStatus, PHONE_WIDTH } from './OverviewStatus.jsx';
+import { PHONE_WIDTH } from '@ui/app-shell';
+import { OverviewStatus } from './OverviewStatus.jsx';
+import { usePlaces } from './entityAnchors.js';
 import { HEALTHY, INCIDENT, sixIssueIncident } from '../testing/statusFixtures.js';
 
 const NOW = new Date('2026-10-20T09:00:00Z').getTime();
@@ -49,8 +51,19 @@ const strip = () => screen.getByRole('region', { name: 'Subsystems' });
 const rowsOf = (el) => el.querySelectorAll('[data-slot="issue-row"]');
 const before = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
-function renderStatus(status) {
-  return render(<OverviewStatus status={status} reach="ok" updated={store(NOW)} />);
+/** The board's places for `issues`, drawn, so their rows are links (entityAnchors.js). */
+function Places({ issues }) {
+  usePlaces(issues.map((i) => (i.kind === 'backup' ? `jobs/${i.node}:${i.name}` : i.id)));
+  return null;
+}
+
+function renderStatus(status, { places = false } = {}) {
+  return render(
+    <>
+      {places && <Places issues={status.issues} />}
+      <OverviewStatus status={status} reach="ok" updated={store(NOW)} />
+    </>
+  );
 }
 
 describe('the Overview’s status at phone width (#484)', () => {
@@ -63,7 +76,7 @@ describe('the Overview’s status at phone width (#484)', () => {
     vi.restoreAllMocks();
   });
 
-  it('is the shell’s breakpoint: below 48rem, as md switches the tabs and the sidebar', () => {
+  it('is the shell’s own breakpoint (AppShell’s PHONE_WIDTH): below 48rem, Tailwind’s md', () => {
     expect(PHONE_WIDTH).toBe('(width < 48rem)');
   });
 
@@ -109,14 +122,13 @@ describe('the Overview’s status at phone width (#484)', () => {
   it('below 768px, takes the focus: All alerts, each tile, then each row', async () => {
     windowWidth(true);
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    const status = sixIssueIncident({ now: NOW }).status;
-    renderStatus(status);
+    renderStatus(sixIssueIncident({ now: NOW }).status, { places: true });
+    // The board draws every row's place, so each row is a link.
+    const rows = within(panel()).getAllByRole('link', { name: /, (Down|Failed),/ });
+    expect(rows).toHaveLength(6);
     const tiles = within(strip()).getAllByRole('button');
     expect(tiles.length).toBeGreaterThan(1);
-    // No board here, so the rows open nothing: plain content, never focused.
-    // The order up to them is the point: All alerts, then every tile.
-    const order = [screen.getByRole('link', { name: /All alerts/ }), ...tiles];
-    for (const el of order) {
+    for (const el of [screen.getByRole('link', { name: /All alerts/ }), ...tiles, ...rows]) {
       await user.tab();
       expect(el).toHaveFocus();
     }

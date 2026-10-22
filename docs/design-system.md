@@ -1052,10 +1052,12 @@ is in, not the window):
   list) the panel is two cards with `between` 24px from each: the header
   (lamp, heading, subline, action) in one, the rows in the other, headed by
   "Showing … only" and Clear when filtered, the list's top edge then the
-  card's own. The region itself draws no frame. With no rows and no filter
+  card's own. Over the rows' card, 8px above it, the Phone board's label,
+  "Needs attention · 6", an overline in `text-3` (no count when the
+  subsystem shown has none). The region itself draws no frame. With no rows and no filter
   there is no second card, and the quiet line, having no rows, keeps
   `between` right under it either way. The split changes the frame only:
-  the same header, rows, colours and stale rule.
+  the same header, rows, colours and stale rule, plus that label.
 
 ### Two looks
 
@@ -1115,9 +1117,11 @@ draws the Android lamp; nothing there uses it.
   described by `sub`. The strip is a region named "Subsystems"; the panel is
   one named "Needs attention", or "Status" when quiet, and its heading is the
   page's `h1` unless `titleAs` says otherwise. Split (#484), it is still one
-  region with one heading, `between` inside it after the header, so the DOM
-  order is the order on screen: the focus goes header, `between`, rows.
-  Unsplit, `between` follows the region, outside it.
+  region, `between` inside it after the header, so the DOM order is the
+  order on screen: the focus goes header, `between`, rows. The rows' label
+  is a heading a level under the panel's (an h3 under the Overview's h2),
+  so heading navigation reaches them. Unsplit, `between` follows the region,
+  outside it.
 - **Focus.** Rows and tiles draw the base style's focus ring inset, clear of
   their neighbours.
 
@@ -1376,7 +1380,9 @@ From the mock's Main and Phone boards:
 - **AppShell.** The header runs the full width at the top, sticky (`z-header`).
   From 768px the sidebar sits under it, sticky, the window's height, scrolling
   on its own; below 768px the bottom tabs are fixed to the bottom edge, and the
-  page keeps 64px clear above them. Each piece of chrome is a `UiRoot`; the
+  page keeps 64px clear above them. That width is `PHONE_WIDTH` (`@ui/app-shell`,
+  `(width < 48rem)`, Tailwind's `md`), the one value for a part that changes
+  its markup there, such as the Overview's split (#484). Each piece of chrome is a `UiRoot`; the
   page, `<main>`, is not, so today's views inside it keep their look
   ([ARCHITECTURE.md](ARCHITECTURE.md), "UI stack"). A `ShellPage` is its own
   root: the page gutter (16, 24, 32px by width), at most 1024px wide, its

@@ -256,9 +256,24 @@ describe('AttentionPanel split around `between` (#484)', () => {
     expect(panel).not.toHaveClass('bg-surface-1');
     // The list is the top of its card: no second edge under the card's own.
     expect(within(rows).getByRole('list')).not.toHaveClass('border-t');
-    // One heading, one region named "Needs attention".
-    expect(screen.getAllByRole('heading')).toHaveLength(1);
+    // One region named "Needs attention"; the rows have the Phone board's
+    // label, a heading a level under the panel's, so heading navigation
+    // finds them after the strip.
     expect(screen.getAllByRole('region', { name: 'Needs attention' })).toHaveLength(1);
+    const label = within(panel).getByRole('heading', { level: 3 });
+    expect(label).toHaveTextContent('Needs attention · 3');
+    expect(label).toHaveClass('text-overline', 'text-text-3', 'uppercase');
+    expect(order(strip, label)).toBe(-1);
+    expect(order(label, rows)).toBe(-1);
+    expect(screen.getAllByRole('heading').map((h) => h.tagName)).toEqual(['H2', 'H3']);
+  });
+
+  it('labels the rows a level under the panel’s heading, counting what it lists', () => {
+    const { rerender } = render(<AttentionPanel {...incident} issues={ISSUES} split />);
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Needs attention · 3');
+    // Filtered to a subsystem with nothing, the label has no count: the note says so.
+    rerender(<AttentionPanel {...incident} issues={[]} filter="Jobs" split />);
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/^Needs attention$/);
   });
 
   it('takes the focus header, then `between`, then the rows', async () => {
@@ -296,6 +311,8 @@ describe('AttentionPanel split around `between` (#484)', () => {
     expect(panel).toHaveClass('overflow-hidden', 'rounded-xl', 'border', 'bg-surface-1');
     expect(panel.querySelector('[data-slot="attention-panel-header"]')).toBeNull();
     expect(panel.querySelector('[data-slot="attention-panel-rows"]')).toBeNull();
+    // The rows' label is the phone's alone: one heading, as before.
+    expect(screen.getAllByRole('heading')).toHaveLength(1);
     const strip = screen.getByRole('region', { name: 'Subsystems' });
     expect(panel.contains(strip)).toBe(false);
     expect(panel.nextElementSibling).toBe(strip);

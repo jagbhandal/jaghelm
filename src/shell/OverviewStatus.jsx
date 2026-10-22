@@ -22,7 +22,8 @@
  * `between`, drawn by the panel (AttentionPanel `split`), so one panel with
  * one heading takes the focus header, tiles, rows; from 768px the panel is
  * one card again with the strip under it. The width is the window's, read
- * with matchMedia, and a resize across it moves the strip.
+ * with matchMedia on the shell's own PHONE_WIDTH (@ui/app-shell), and a
+ * resize across it moves the strip.
  *
  * It is the new UI over today's board, which later cards rebuild (#298–#300):
  * a root of its own (ShellSection) inside a wrapper that lines it up with the
@@ -31,7 +32,7 @@
  * a place coming onto the board or leaving it, only its links.
  */
 import { memo, useMemo, useSyncExternalStore } from 'react';
-import { ShellSection } from '@ui/app-shell';
+import { PHONE_WIDTH, ShellSection } from '@ui/app-shell';
 import { buttonVariants } from '@ui/button';
 import { SubsystemStrip } from '@ui/subsystem-strip';
 import { cn } from '@ui/lib/utils';
@@ -48,9 +49,6 @@ const ALERTS = pathTo('alerts');
 // ghost button. Through cn, as Button does, so the accent text wins over the
 // ghost's text-2.
 const LINK = cn(buttonVariants({ variant: 'ghost', size: 'sm', tone: 'accent' }));
-
-/** The phone's width: below `md` (48rem), where the shell switches to the bottom tabs. */
-export const PHONE_WIDTH = '(width < 48rem)';
 
 const phoneQuery = () =>
   typeof window !== 'undefined' && typeof window.matchMedia === 'function'

@@ -1454,18 +1454,19 @@ flowchart TD
   under it ("Last known 3 min ago", from 672px; and to a screen reader, as
   its description), its lamp the steel ring (#480).
 - **The Overview on a phone** (#484, spec §8 "Phone width"). Below 768px
-  (`PHONE_WIDTH`, `(width < 48rem)`, the shell's own `md`, where the bottom
-  tabs replace the sidebar) the top of the Overview is the Phone board's
+  (`PHONE_WIDTH` in `@ui/app-shell`, `(width < 48rem)`: the shell's own
+  `md`, where the bottom tabs replace the sidebar, one value for both) the top of the Overview is the Phone board's
   order: the status card, the strip, then the issue list. So a real
   incident's rows (six at 360px) can't push the strip below the fold. The
   strip is the attention panel's `between` and the panel draws it
-  (AttentionPanel `split`), so there is one panel, one region ("Needs
-  attention") and one heading, and the page reads and takes the focus
-  header, tiles, rows, as it looks. The split is the frame alone: the
-  header (lamp, heading, sentence, "All alerts") in one card, the strip
-  24px under it, then a card with the rows, headed by "Showing Nodes only"
-  and Clear when filtered (or "Nothing in Nodes needs attention"); with no
-  rows and no filter, no second card. Under No signal both parts follow the
+  (AttentionPanel `split`), so there is one panel and one region ("Needs
+  attention"), and the page reads and takes the focus header, tiles, rows,
+  as it looks. The split is the frame, plus one label: the header (lamp,
+  heading, sentence, "All alerts") in one card, the strip 24px under it,
+  then the Phone board's "Needs attention · 6" (an h3, so heading
+  navigation reaches the rows after the strip) over a card with the rows,
+  headed by "Showing Nodes only" and Clear when filtered (or "Nothing in
+  Nodes needs attention"); with no rows and no filter, no second card. Under No signal both parts follow the
   rule for a stale status, as one panel does. The quiet line has no rows to
   split, so the strip stays right under it. From 768px it is one panel with
   the strip under it, as before. OverviewStatus reads the width with
@@ -2322,11 +2323,12 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   390 × 844 on the demo's incident with four more services down
   (`sixIssueIncident`, `src/testing/statusFixtures.js`, through the model):
   six issues, the strip fully on screen at scroll 0, under the panel's
-  header, every issue row under it; the focus from "All alerts" through
+  header, the rows' heading and every issue row under it; the focus from "All alerts" through
   each tile to each row, and back with Shift+Tab; axe, dark and light; under
   No signal the split stays steel (the colour probe, every lamp the ring)
-  with the strip still between; and at 800 (a tablet) and 1440px one panel,
-  its rows in it, the strip under it. All five leave screenshots in
+  with the strip still between; at 800 (a tablet) and 1440px one panel,
+  its rows in it, the strip under it; and at 767 and 768px the split flips
+  with the bottom tabs, at the same pixel. All five leave screenshots in
   `test-results/e2e/shots/`.
 - **Mobile** (`npm run test:mobile`, Vitest): the Android app's views, login,
   push routing, on-device storage, and the shared `src/ui/` components through
