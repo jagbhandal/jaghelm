@@ -831,6 +831,7 @@ test('#476: a node whose targets Prometheus never scrapes: no signal, then one s
       'and what it ran'
     );
     assert.deepEqual(presenceCards(), ['pi:adguard'], "pi's stopped container is drawn; vm103's are held back");
+    for (const node of ['pi', 'nas']) assert.equal(entity(p, `nodes/${node}`).state, 'ok', `${node}: read as usual`);
     assert.deepEqual(p.sent, [], 'its first failed cycle');
 
     at(5);
