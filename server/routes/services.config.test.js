@@ -32,8 +32,19 @@ const CONFIG_PATH = join(process.env.JAGHELM_DATA_DIR, 'services.yaml');
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use('/api/services', servicesRoutes);
-const read = () => request(app).get('/api/services/config');
-const write = (body) => request(app).post('/api/services/config').send(body);
+// Each write sends the version the last read or save answered, as Settings
+// does (#423).
+let lastVersion = '';
+const read = async () => {
+  const r = await request(app).get('/api/services/config');
+  lastVersion = r.headers.etag;
+  return r;
+};
+const write = async (body, version = lastVersion) => {
+  const r = await request(app).post('/api/services/config').set('If-Match', version).send(body);
+  if (r.status === 200) lastVersion = r.headers.etag;
+  return r;
+};
 
 const STORED = Object.freeze({ $stored: true });
 const fileText = () => readFileSync(CONFIG_PATH, 'utf8');
@@ -333,11 +344,14 @@ test('POST never answers or logs a credential, whether it saves or refuses', asy
     misplaced.integrations.npm.url = STORED;
     out.push(await write(misplaced));
     out.push(await write({ ...cfg, services: [1, 2, 3] }));
+    // #423: a save over an old version, and one with none.
+    out.push(await write(cfg, '"an-old-version"'));
+    out.push(await request(app).post('/api/services/config').send(cfg));
     return out;
   });
   assert.deepEqual(
     answers.map((r) => r.status),
-    [200, 200, 409, 400, 400]
+    [200, 200, 409, 400, 400, 409, 428]
   );
   for (const r of answers) assertNoCredential(r.text, `the ${r.status} answer`);
   assertNoCredential(logs, 'the log');

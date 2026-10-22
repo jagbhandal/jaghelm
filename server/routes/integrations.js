@@ -14,20 +14,27 @@
  *
  * There is no GET /:type: it returned one integration's data with the whole
  * upstream response and had no caller (#254). The dashboard reads GET /.
+ *
+ * Each write reads services.yaml with readConfig and writes it with
+ * writeConfig over the version it read, in the same synchronous handler
+ * (#423): it starts from the file as it is, and changes the version a
+ * Settings tab must send to save the whole config. While the file doesn't
+ * parse, each is refused (503 `config_unparseable`) before it changes
+ * anything, a stored credential included; writeConfig refuses it too.
  */
 
 import { isDeepStrictEqual } from 'node:util';
 
 import { Router } from 'express';
 
-import { getConfig, saveConfig } from '../config.js';
+import { readConfig, writeConfig } from '../config.js';
 import { copySecret, deleteSecret, hasSecret, setSecret } from '../secrets.js';
 import { getPreset, listPresets } from '../integrations/registry.js';
 import { testIntegration } from '../integrations/handler.js';
 import { KEYED_SECRET_FIELDS, keyedSecretName } from '../integrations/lib/config.js';
 import { refreshIntegrations, retryIntegrationNow } from '../refresh.js';
 import { respondWarmCached } from '../cache.js';
-import { apiError } from '../errors.js';
+import { apiError, configUnparseable } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { createRateLimiter } from '../util/rateLimiter.js';
 import { createLogger } from '../util/logger.js';
@@ -139,6 +146,23 @@ router.post(
 // nothing writes nothing, so services.yaml stays byte-for-byte as it was
 // (every write re-serialises the whole file); it still asks for a retry.
 
+/**
+ * Write `config` over `version`, the one this handler read. A refusal is
+ * answered here: false means the response is sent. services.yaml changing
+ * between this handler's read and write would take a writer outside this
+ * process (a hand edit in the same instant).
+ */
+function written(res, config, version) {
+  const saved = writeConfig(config, version);
+  if (saved.ok) return true;
+  if (saved.conflict) apiError(res, 409, 'services.yaml changed while saving; try again');
+  else if (saved.unusable) configUnparseable(res, saved.unusable);
+  // A write failure (or a reentrant save) is a 500, not a reported success,
+  // matching services.js POST /config.
+  else apiError(res, 500, 'Failed to persist config');
+  return false;
+}
+
 /** True for a value the form sends for an empty field. */
 const isBlank = (v) => v === undefined || v === null || v === '';
 
@@ -208,7 +232,10 @@ router.post('/save', (req, res) => {
   }
 
   try {
-    const config = getConfig() || {};
+    const read = readConfig();
+    // Before any credential is stored: a refused save changes nothing.
+    if (read.unusable) return configUnparseable(res, read.unusable);
+    const config = read.config || {};
     if (!config.integrations) config.integrations = {};
     const { integrations } = config;
 
@@ -316,9 +343,7 @@ router.post('/save', (req, res) => {
       // A changed instance name moves the entry: drop it under its old key.
       if (moving) delete integrations[baseKey];
       integrations[storageKey] = entry;
-      // saveConfig returns false on a write failure (or a reentrant save) — surface
-      // that as a 500 instead of reporting success, matching services.js POST /config.
-      if (!saveConfig(config)) return apiError(res, 500, 'Failed to persist config');
+      if (!written(res, config, read.version)) return;
       for (const name of leftBehind) deleteSecret(name);
     }
     // A save is the way to say "try again": the next refresh attempts it even
@@ -352,14 +377,16 @@ router.patch('/:key', (req, res) => {
   }
   const { enabled } = body;
 
-  const config = getConfig() || {};
+  const { config: read, version, unusable } = readConfig();
+  if (unusable) return configUnparseable(res, unusable);
+  const config = read || {};
   const integrations = config.integrations || {};
   const entry = storedEntry(integrations, key);
   if (!entry) return apiError(res, 404, `Integration '${key}' not configured`);
 
   if ((entry.enabled !== false) !== enabled) {
     entry.enabled = enabled;
-    if (!saveConfig(config)) return apiError(res, 500, 'Failed to persist config');
+    if (!written(res, config, version)) return;
   }
   // Enabling is a way to say "try again", as a save is.
   if (enabled) retryIntegrationNow(key);
@@ -370,15 +397,15 @@ router.patch('/:key', (req, res) => {
 
 router.delete('/:type', (req, res) => {
   const { type } = req.params;
-  const config = getConfig() || {};
+  const { config: read, version, unusable } = readConfig();
+  if (unusable) return configUnparseable(res, unusable);
+  const config = read || {};
   if (!config.integrations?.[type]) {
     return apiError(res, 404, `Integration '${type}' not configured`);
   }
 
   delete config.integrations[type];
-  // saveConfig returns false on a write failure (or a reentrant save) — surface
-  // that as a 500 instead of reporting success, matching services.js POST /config.
-  if (!saveConfig(config)) return apiError(res, 500, 'Failed to persist config');
+  if (!written(res, config, version)) return;
   res.json({ ok: true });
 });
 
