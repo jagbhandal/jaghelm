@@ -31,6 +31,21 @@ function store(at, staleAfter = STALE_AFTER) {
   };
 }
 
+/** The poll's store from a server that says when it built the status (#499). */
+function builtStore(at, built) {
+  const base = store(at);
+  let builtValue = built;
+  return {
+    ...base,
+    builtAt: () => builtValue,
+    /** An answer: when it came, and when the status it carried was built. */
+    answer(v, b) {
+      builtValue = b;
+      base.set(v);
+    },
+  };
+}
+
 const NOW = new Date('2026-10-20T09:00:00Z').getTime();
 
 beforeEach(() => {
@@ -260,6 +275,65 @@ describe('stale by its age: no answer for longer than the poll allows (#480)', (
       vi.advanceTimersByTime(STALE_AFTER);
     });
     expect(result.current).toMatchObject({ cause: "Can't reach JagHelm", reach: 'down' });
+  });
+});
+
+// #499: two times, two rules. Stale goes by when the last answer came (is the
+// poll getting answers?); the age it shows goes by when the server built the
+// status (how old is what it shows?), when the server says.
+describe('the age counts from when the status was built (#499)', () => {
+  it('after a TTL 503: "last known" from the build time, older than the last answer', () => {
+    // The last good answer came at NOW, carrying a status built 40 s before.
+    const updated = builtStore(NOW, NOW - 40_000);
+    const { result } = renderFreshness({ status: HEALTHY, reach: 'waiting', updated });
+    expect(result.current).toMatchObject({
+      stale: true,
+      ageText: '40 s ago',
+      lastKnown: 'last known 40 s ago',
+      cause: "JagHelm's status is out of date",
+    });
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(result.current.note).toBe('No signal · last known 1 min ago');
+  });
+
+  it('with no build time (an older server): from the answer, as before', () => {
+    const updated = builtStore(NOW, null);
+    const { result } = renderFreshness({ status: HEALTHY, reach: 'waiting', updated });
+    expect(result.current.lastKnown).toBe('last known just now');
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(result.current.lastKnown).toBe('last known 30 s ago');
+  });
+
+  it('stale by age still goes by the answer: the boundary is the answer plus staleAfter, whatever the build time', () => {
+    // An answer just in, carrying a status built longer ago than staleAfter
+    // (a long refresh interval): the poll is getting answers, so it is fresh.
+    const updated = builtStore(NOW, NOW - 100_000);
+    const { result } = renderFreshness({ status: HEALTHY, reach: 'ok', updated });
+    expect(result.current.stale).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(STALE_AFTER - 1);
+    });
+    expect(result.current.stale).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    // 72 s since the answer, 172 s since the build.
+    expect(result.current).toMatchObject({ stale: true, lastKnown: 'last known 2 min ago' });
+  });
+
+  it('a new answer brings its own build time: the age moves with it', () => {
+    const updated = builtStore(NOW, NOW - 10_000);
+    const { result } = renderFreshness({ status: INCIDENT, reach: 'down', updated });
+    expect(result.current.lastKnown).toBe('last known 10 s ago');
+    act(() => {
+      vi.advanceTimersByTime(20_000);
+      updated.answer(Date.now(), Date.now() - 5_000);
+    });
+    expect(result.current.lastKnown).toBe('last known 5 s ago');
   });
 });
 

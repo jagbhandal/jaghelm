@@ -16,7 +16,7 @@ import { SideNav } from '@ui/side-nav';
 import { followLink } from '../router/useRoute.js';
 import { prefs } from '../storage/index.js';
 import { phoneTabs } from './nav.js';
-import { drawnState, useStatusFreshness } from './statusFreshness.js';
+import { drawnState, statusBuiltAt, useStatusFreshness } from './statusFreshness.js';
 import { lastKnownLine } from './statusView.js';
 
 const MoreSheet = lazy(() => import('./MoreSheet.jsx'));
@@ -30,9 +30,13 @@ function shortcutLabel() {
   return /mac|iphone|ipad/i.test(platform ?? '') ? '⌘K' : 'Ctrl K';
 }
 
-/** "Updated 12 s ago", from the poll's store: the one part of the header an answer re-renders. */
+/**
+ * "Updated 12 s ago", from the poll's store: the one part of the header an
+ * answer re-renders. The status's age, by the same time as "last known"
+ * (statusBuiltAt, #499): when the server built it, else when it came.
+ */
 function ShellUpdated({ store }) {
-  const at = useSyncExternalStore(store.subscribe, store.get);
+  const at = useSyncExternalStore(store.subscribe, () => statusBuiltAt(store));
   return <UpdatedAgo at={at} />;
 }
 
