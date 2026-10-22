@@ -900,7 +900,9 @@ it signs the browser out (that tab follows on its next 401). The 401 path
 above doesn't send it (that session is already dead), nor does a tab that
 learns of another tab's sign-out from its 401. The Android app sends it on Log out and
 Forget this device, not on its 401 path, and not on the connection screen's
-Change server, which shows only when the server can't be reached. A server
+Change server, which shows only when the server can't be reached. Just before
+it, those two send `DELETE /api/push/register`, so the phone stops getting
+pushes, and delete the phone's FCM token (#531, see docs/mobile/DESIGN.md). A server
 older than the route answers 404 (or 401), which changes nothing: the client
 signs out locally as before.
 

@@ -16,7 +16,8 @@
  */
 import { PushNotifications } from '@capacitor/push-notifications';
 import { App } from '@capacitor/app';
-import { setPref } from '../storage/prefsAdapter.js';
+import { SIGN_OUT_TIMEOUT_MS } from '@shared/api/client.js';
+import { getPref, setPref } from '../storage/prefsAdapter.js';
 import { PUSH_PERM_KEY, PUSH_TOKEN_KEY } from '../runtimeConfig.js';
 import { registerToken, deleteToken } from './pushPrefsApi.js';
 import { routeFromData } from './routeFromData.js';
@@ -24,6 +25,21 @@ import { routeFromUrl } from './routeFromUrl.js';
 import { isPushConfigured } from './pushConfig.js';
 
 const CHANNEL_ID = 'jaghelm-incidents';
+
+// The appUrlOpen listener initPush added. PushNotifications.removeAllListeners()
+// doesn't reach @capacitor/app's listeners, so this one is removed by its handle.
+let appUrlOpenHandle = null;
+
+/** Remove every listener initPush added: the four plugin ones and appUrlOpen. */
+async function removePushListeners() {
+  const handle = appUrlOpenHandle;
+  appUrlOpenHandle = null;
+  try {
+    await PushNotifications.removeAllListeners();
+  } finally {
+    if (handle) await handle.remove();
+  }
+}
 
 export async function initPush({ nav }) {
   // HARD GATE: register() needs Firebase (google-services.json). Without it, it
@@ -56,6 +72,10 @@ export async function initPush({ nav }) {
       visibility: 1,
     });
 
+    // A sign-in after a sign-out in the same run mounts MobileApp again: drop
+    // what an earlier call added, so the listeners don't stack (#531).
+    await removePushListeners();
+
     // Listeners BEFORE register() — 'registration' may fire immediately.
     await PushNotifications.addListener('registration', (token) => onRegistration(token));
     await PushNotifications.addListener('registrationError', (err) => {
@@ -71,7 +91,7 @@ export async function initPush({ nav }) {
 
     // Deep-link path B: the jaghelm://incident/<id> custom URL scheme (DESIGN line
     // 307 — the primary OSS-build deep-link path). Same nav, same reconciler.
-    await App.addListener('appUrlOpen', (event) => {
+    appUrlOpenHandle = await App.addListener('appUrlOpen', (event) => {
       routeFromUrl(event && event.url, nav);
     });
 
@@ -96,9 +116,10 @@ async function onRegistration(token) {
 }
 
 /**
- * Teardown for logout / explicit push-disable: remove plugin listeners, hard-
- * remove the registration server-side (DELETE /push/register — token in body),
- * and clear the locally-cached FCM token. Uses setPref('', ) NOT removeItem,
+ * Teardown for the explicit push-disable (Turn off push on this device; sign-out
+ * has its own, unregisterPush below): remove plugin listeners, hard-remove the
+ * registration server-side (DELETE /push/register — token in body), and clear
+ * the locally-cached FCM token. Uses setPref('', ) NOT removeItem,
  * which (on the Keystore adapter) throws on a missing key (M3a) — Preferences is
  * throw-free regardless, and push state never lives in the Keystore.
  *
@@ -115,4 +136,53 @@ export async function disablePush(token) {
     }
   }
   await setPref(PUSH_TOKEN_KEY, '');
+}
+
+/** The FCM token the 'registration' handler stored, or '' (none, or the read failed). */
+export async function cachedPushToken() {
+  try {
+    return (await getPref(PUSH_TOKEN_KEY)) || '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Sign-out's push teardown (#531), for Log out and Forget this device, which
+ * call it before revoking the session: DELETE /push/register needs a live one.
+ * The DELETE is sent within the call (apiFetch takes the session token as it
+ * sends). Push is then torn down on the phone without waiting for the answer:
+ * the listeners go (appUrlOpen too), PushNotifications.unregister() deletes
+ * the FCM token, so the phone shows no more pushes even if the DELETE is lost
+ * and the server's next send to the old token fails and prunes it, and the
+ * cached token is cleared. The next sign-in registers a new token (initPush). Never rejects;
+ * stops waiting for the DELETE after SIGN_OUT_TIMEOUT_MS. A build without push
+ * touches nothing (the plugin would crash it, see pushConfig.js).
+ */
+export async function unregisterPush(token) {
+  if (!isPushConfigured()) return;
+  let deleted;
+  if (token) {
+    let timer;
+    deleted = Promise.race([
+      deleteToken(token).catch((e) => console.warn('[push] backend delete failed:', e && e.message)),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, SIGN_OUT_TIMEOUT_MS);
+      }),
+    ]).finally(() => clearTimeout(timer));
+  }
+  // Each step on its own, so one that fails doesn't skip the others.
+  const steps = [
+    () => removePushListeners(),
+    () => PushNotifications.unregister(),
+    () => setPref(PUSH_TOKEN_KEY, ''),
+  ];
+  for (const step of steps) {
+    try {
+      await step();
+    } catch (e) {
+      console.warn('[push] sign-out teardown step failed:', e && e.message);
+    }
+  }
+  await deleted;
 }

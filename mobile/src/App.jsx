@@ -5,6 +5,7 @@ import { secureStore } from '@shared/storage/index.js';
 import { revokeSession, setAuthExpiredHandler } from '@shared/api/client.js';
 import { setAuthHandlers } from './auth/authState.js';
 import { clearSessionToken, forgetServer } from './auth/forgetServer.js';
+import { cachedPushToken, unregisterPush } from './push/registerPush.js';
 import { BASE_URL_KEY } from './runtimeConfig.js';
 
 /**
@@ -14,9 +15,10 @@ import { BASE_URL_KEY } from './runtimeConfig.js';
  *   URL + token         → the app
  * Registers the 401 self-heal hook (token expired/revoked → drop to re-auth) and
  * the user-initiated session controls (logout / forget-device) the settings
- * screen calls. Both of those end the session, so they ask the server to revoke
- * it first (#507); the self-heal doesn't, as its session is already dead. Only a
- * session token is ever cleared/persisted — never a password.
+ * screen calls. Both of those end the session, so they unregister push (#531)
+ * and ask the server to revoke the session (#507) first; the self-heal does
+ * neither, as its session is already dead. Only a session token is ever
+ * cleared/persisted — never a password.
  */
 export default function App({ initial }) {
   const [hasUrl, setHasUrl] = useState(initial.hasUrl);
@@ -34,23 +36,27 @@ export default function App({ initial }) {
     };
 
     setAuthExpiredHandler(clearSession);
-    // The server revokes the session, so a copy of the token stops working too.
-    // revokeSession sends its request at once, with the token apiFetch holds;
-    // the phone then forgets the token without waiting for the answer, so
-    // closing the app while the server is slow can't leave it in the Keystore
-    // (revokeSession never rejects and gives up after 5 s).
+    // Push is unregistered first (#531): DELETE /push/register needs the live
+    // session, so it goes out before the revoke. The server then revokes the
+    // session, so a copy of the token stops working too (#507). Both requests
+    // go out at once with the token apiFetch holds; the phone then forgets the
+    // token without waiting for either answer, so closing the app while the
+    // server is slow can't leave it in the Keystore (neither call rejects, and
+    // each gives up after 5 s). Only the cached push token is read first, from
+    // the phone's own storage.
+    const signOut = async (clearLocally) => {
+      const unregistered = unregisterPush(await cachedPushToken());
+      const revoked = revokeSession();
+      await clearLocally();
+      await Promise.all([unregistered, revoked]);
+    };
     setAuthHandlers({
-      logout: async () => {
-        const revoked = revokeSession();
-        await clearSession();
-        await revoked;
-      },
-      forgetDevice: async () => {
-        const revoked = revokeSession();
-        await forgetServer({ onTokenCleared: () => setHasToken(false) });
-        setHasUrl(false);
-        await revoked;
-      },
+      logout: () => signOut(clearSession),
+      forgetDevice: () =>
+        signOut(async () => {
+          await forgetServer({ onTokenCleared: () => setHasToken(false) });
+          setHasUrl(false);
+        }),
     });
 
     return () => setAuthExpiredHandler(null);
