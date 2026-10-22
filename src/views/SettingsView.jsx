@@ -27,7 +27,7 @@ const SECTIONS = [
   { id: 'general', label: 'General', icon: '🏠', desc: 'Title, logo, branding' },
   { id: 'appearance', label: 'Appearance', icon: '🎨', desc: 'Theme, colors, background' },
   { id: 'typography', label: 'Typography', icon: '🔤', desc: 'Fonts, sizes, readability' },
-  { id: 'layout', label: 'Layout', icon: '📐', desc: 'Grid, refresh, card style' },
+  { id: 'layout', label: 'Layout', icon: '📐', desc: 'Grid, refresh, links' },
   { id: 'sections', label: 'Sections', icon: '🧱', desc: 'UPS, Pipeline, Quick Launch, Todos' },
   { id: 'nodes', label: 'Nodes', icon: '🖥', desc: 'Manage infrastructure nodes', divider: true },
   { id: 'services', label: 'Services', icon: '📦', desc: 'Container overrides & monitors' },

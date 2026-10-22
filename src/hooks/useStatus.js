@@ -19,7 +19,11 @@
  *            re-renders. Its `staleAfter` is how old that answer may get
  *            before the status it brought is stale (staleAfterMs, #480): a
  *            hidden tab or a sleeping laptop asks nothing, while `reach`
- *            stays 'ok'.
+ *            stays 'ok'. Its `builtAt()` is when the server built the status
+ *            that answer carried, on this browser's clock (#499, builtAtOf),
+ *            or null from a server that doesn't say; set with the answer's
+ *            time, before the store tells anyone. A failed poll or a 503
+ *            leaves both as they were.
  *
  * @param {{ intervalMs: number, enabled?: boolean }} options
  */
@@ -34,6 +38,20 @@ import { usePageVisible } from './usePageVisible.js';
  */
 export function staleAfterMs(intervalMs) {
   return 2 * intervalMs + REQUEST_TIMEOUT_MS;
+}
+
+/**
+ * When the status an answer carried was built, on this browser's clock
+ * (#499), from the server's `builtAt` (Last-Modified) and `sentAt` (Date),
+ * both by its clock, and the answer's time `at`: the answer's time less the
+ * server's own age for it, so a server clock ahead or behind can't skew it.
+ * Without a Date, the Last-Modified as it is, no later than the answer;
+ * without that, null. Both headers count whole seconds.
+ */
+export function builtAtOf({ builtAt, sentAt }, at) {
+  if (builtAt == null) return null;
+  if (sentAt != null) return at - Math.max(0, sentAt - builtAt);
+  return Math.min(builtAt, at);
 }
 
 /** Whether `body` is the status model's shape: what the header reads, at least. */
@@ -68,14 +86,16 @@ export function useStatus({ intervalMs, enabled = true }) {
   const [status, setStatus] = useState(null);
   const [reach, setReach] = useState('loading');
   const [answered] = useState(() => createStore(null));
+  const [built] = useState(() => createStore(null));
   // The store the caller reads: the same one until the interval changes.
   const updated = useMemo(
     () => ({
       get: answered.get,
       subscribe: answered.subscribe,
+      builtAt: built.get,
       staleAfter: staleAfterMs(intervalMs),
     }),
-    [answered, intervalMs]
+    [answered, built, intervalMs]
   );
   // What the caller last rendered, so an unchanged answer sets no state at all:
   // even an equal setState can run the caller once more.
@@ -107,15 +127,19 @@ export function useStatus({ intervalMs, enabled = true }) {
       if (inflight.current) return;
       inflight.current = true;
       try {
-        const body = await getStatus();
+        const answer = await getStatus();
+        const { body } = answer;
+        const at = Date.now();
+        // Set first: the answer's listeners read it.
+        built.set(builtAtOf(answer, at));
         if (body === NOT_MODIFIED_NO_BODY) {
           // Unchanged, and nothing held to show: the next answer brings it.
-          answered.set(Date.now());
+          answered.set(at);
           return;
         }
         if (isStatus(body)) show({ status: body, reach: 'ok' });
         else show({ status: null, reach: 'waiting' });
-        answered.set(Date.now());
+        answered.set(at);
       } catch (err) {
         const reachNow = /HTTP 503/.test(String(err?.message)) ? 'waiting' : 'down';
         show({ status: shown.current.status, reach: reachNow });
@@ -126,7 +150,7 @@ export function useStatus({ intervalMs, enabled = true }) {
     if (starting) poll();
     const id = setInterval(poll, intervalMs);
     return () => clearInterval(id);
-  }, [on, intervalMs, answered]);
+  }, [on, intervalMs, answered, built]);
 
   return { status, reach, updated };
 }

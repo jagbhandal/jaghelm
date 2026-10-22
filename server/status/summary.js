@@ -107,7 +107,8 @@ const PHRASE = { Warning: 'in warning', 'Login refused': 'with a refused login' 
 const noun = (kind, n) => (NOUNS[kind] ?? ['item', 'items'])[n === 1 ? 0 : 1];
 
 function phrase(issue, n) {
-  if (issue.kind === 'source') return `${issue.name} unreachable`;
+  // A source that answers but fails for part of what it feeds (#476) is failing, not unreachable.
+  if (issue.kind === 'source') return `${issue.name} ${issue.word === 'Failing' ? 'failing' : 'unreachable'}`;
   if (issue.kind === 'ups') return `UPS ${issue.word.toLowerCase()}`;
   return `${n} ${noun(issue.kind, n)} ${PHRASE[issue.word] ?? issue.word.toLowerCase()}`;
 }
@@ -118,7 +119,8 @@ function phrase(issue, n) {
  * - With nothing on the board (EMPTY, or unknown): "Nothing monitored yet".
  * - With warnings or worse: each kind of problem with its count, in issue
  *   order ("2 services down · UPS on battery"), a failed source by name
- *   ("Prometheus unreachable"), then "N no signal".
+ *   ("Prometheus unreachable", or "Prometheus failing" when it answers but
+ *   fails for a node), then "N no signal".
  * - Otherwise, with entities in no signal: the quiet line breaks
  *   ("31 up · 1 no signal").
  * - Otherwise the quiet line ("All 32 services up · 6 nodes healthy").

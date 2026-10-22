@@ -17,6 +17,7 @@ import { join } from 'path';
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { DATA_DIR } from '../util/dataDir.js';
 import { createLogger } from '../util/logger.js';
+import { jsonFileErrorFields } from '../util/parseError.js';
 
 const log = createLogger('auth');
 
@@ -56,7 +57,8 @@ function loadAuthOverride() {
       return data.passwordHash || null;
     }
   } catch (err) {
-    log.warn({ err }, 'Failed to load auth override');
+    // A parse error as its reason and position: V8's message quotes the file (#504).
+    log.warn(jsonFileErrorFields(err), 'Failed to load auth override');
   }
   return null;
 }

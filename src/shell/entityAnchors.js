@@ -5,7 +5,8 @@
  * anchor of the entity it draws, by the status model's id (docs/ARCHITECTURE.md
  * §4.7):
  *
- *   services/<node>:<container>   a service card (DraggableServiceCard)
+ *   services/<node>:<container>   a service's row in the Services section
+ *                                 (OverviewServices, #300)
  *   nodes/<key>                   a node's card in the Infrastructure section
  *                                 (OverviewInfrastructure, #299), or its row
  *                                 in the table; its NodePanel while a filter
@@ -14,16 +15,16 @@
  *   jobs/<node>:<job>             a job's row in Scheduled Jobs (CronJobs)
  *
  * An issue's row leads to the first of its places the board draws: a service
- * to its card, else its node's card (a pending monitor has no card of its
- * own); a backup to its job's row, since the board lists backups as jobs.
+ * to its row, else its node's card (while the Services section is hidden); a
+ * backup to its job's row, since the board lists backups as jobs.
  * Integrations, Arcane agents and monitoring sources have no place of their
  * own on the board, so their rows lead nowhere and are plain content.
  *
  * Whether the board draws a place is the board's own say: each place, as it
  * mounts, puts its anchor on a list (usePlace, usePlaces) and takes it off as
  * it unmounts, so the rows follow every rule that hides one (a section
- * switched off, the UPS panel with no UPS, Scheduled Jobs off, a collapsed
- * card, a service moved into a group) without restating any. A row whose
+ * switched off, the UPS panel with no UPS, Scheduled Jobs off, a section a
+ * filter hides) without restating any. A row whose
  * places are all off the board is plain content too (#279): no link, no
  * chevron, nothing on Enter.
  */

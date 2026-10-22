@@ -187,6 +187,21 @@ export const CATALOG = Object.freeze([
     'Status',
     'AttentionPanel: a stale status, no signal, what it last knew and its issues in steel'
   ),
+  s(
+    'attention-panel-phone',
+    'Status',
+    'AttentionPanel: below 768px, split around the strip, an incident with six issues'
+  ),
+  s(
+    'attention-panel-phone-quiet',
+    'Status',
+    'AttentionPanel: below 768px, the quiet line with the strip under it'
+  ),
+  s(
+    'attention-panel-phone-no-signal',
+    'Status',
+    'AttentionPanel: below 768px, split around the strip, a stale status in steel'
+  ),
 
   // Data components (#288) and chart colours (#386)
   s(
@@ -243,6 +258,31 @@ export const CATALOG = Object.freeze([
     'infrastructure-no-signal',
     'Overview',
     'InfrastructureSection: the incident with a stale status, every node and meter no signal'
+  ),
+  // The Services section (#300)
+  s('services', 'Overview', 'ServicesSection: by node, healthy and muted, no custom group yet', {
+    accent: true,
+  }),
+  s(
+    'services-incident',
+    'Overview',
+    'ServicesSection: a service down, one pending, one with no signal, one in maintenance',
+    { accent: true }
+  ),
+  s(
+    'services-grouped',
+    'Overview',
+    'ServicesSection: by custom group, the node beside each name, a long name'
+  ),
+  s(
+    'services-no-signal',
+    'Overview',
+    'ServicesSection: the incident with a stale status, every row no signal'
+  ),
+  s(
+    'services-narrow',
+    'Overview',
+    'ServicesSection: a phone\'s width, the name over "metric · latency"'
   ),
 
   // Shell (#296)

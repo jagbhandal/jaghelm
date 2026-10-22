@@ -61,6 +61,7 @@ import { EntityRow } from '@ui/entity-row';
 import { FactList } from '@ui/fact-list';
 import { Table } from '@ui/table';
 import { InfrastructureSection } from '@ui/infrastructure-section';
+import { ServicesSection } from '@ui/services-section';
 import { AppHeader, UpdatedAgo } from '@ui/app-header';
 import { SideNav, appMonogram } from '@ui/side-nav';
 import { BottomTabs } from '@ui/bottom-tabs';
@@ -499,6 +500,109 @@ const NODES_NO_SIGNAL = NODES_INCIDENT.map((n) => ({
   state: 'unknown',
   readings: n.readings.map((r) => ({ ...r, state: r.state == null ? null : 'unknown' })),
 }));
+
+// The Services section's groups (#300), as servicesView.js gives them.
+const svc = (node, name, state, word, detail, meta, extra = {}) => ({
+  id: `services/${node}:${name.toLowerCase().replace(/\W+/g, '-')}`,
+  anchor: `entity-services/${node}:${name.toLowerCase().replace(/\W+/g, '-')}`,
+  name,
+  where: null,
+  state,
+  word,
+  detail,
+  meta,
+  muted: state === 'ok',
+  ...extra,
+});
+const SERVICES_HEALTHY = [
+  {
+    key: 'node:edge',
+    title: 'Network Edge',
+    host: 'edge',
+    count: '3 / 3 up',
+    rows: [
+      svc('edge', 'AdGuard Home', 'ok', 'Up', '41,203 queries', '12 ms'),
+      svc('edge', 'Nginx Proxy Manager', 'ok', 'Up', '31 proxy hosts', '18 ms'),
+      svc('edge', 'WireGuard', 'ok', 'Running', null, '—'),
+    ],
+  },
+  {
+    key: 'node:apps',
+    title: 'App Server',
+    host: 'apps',
+    count: '4 / 4 up',
+    rows: [
+      svc('apps', 'Gitea', 'ok', 'Up', null, '41 ms'),
+      svc('apps', 'Jellyfin', 'ok', 'Up', 'Version 10.9.1', '64 ms'),
+      svc('apps', 'Nextcloud', 'ok', 'Up', '18,204 files', '142 ms'),
+      svc('apps', 'Vaultwarden', 'ok', 'Up', null, '22 ms'),
+    ],
+  },
+];
+const SERVICES_INCIDENT = [
+  {
+    key: 'node:apps',
+    title: 'App Server',
+    host: 'apps',
+    count: '2 / 5 up',
+    rows: [
+      svc('apps', 'Jellyfin', 'crit', 'Down', 'Kuma: down', '—'),
+      svc('apps', 'Paperless', 'warn', 'Pending', 'Kuma: pending (retrying its check)', '—'),
+      svc('apps', 'Wiki.js', 'unknown', 'No signal', 'Kuma: no status', '—'),
+      svc('apps', 'Gitea', 'ok', 'Up', null, '41 ms'),
+      svc('apps', 'Nextcloud', 'ok', 'Up', '18,204 files', '142 ms'),
+    ],
+  },
+  {
+    key: 'node:storage',
+    title: 'Storage',
+    host: 'storage',
+    count: '1 / 2 up',
+    rows: [
+      svc('storage', 'Backrest', 'maintenance', 'Maintenance', 'Kuma: in maintenance', '—'),
+      svc('storage', 'Syncthing', 'ok', 'Up', null, '27 ms'),
+    ],
+  },
+];
+const SERVICES_GROUPED = [
+  {
+    key: 'group:media',
+    title: 'Media',
+    host: null,
+    count: '1 / 2 up',
+    rows: [
+      svc('apps', 'Jellyfin', 'crit', 'Down', 'Kuma: down', '—', { where: 'App Server' }),
+      svc('storage', 'PhotoPrism', 'ok', 'Up', '24,499 photos', '118 ms', { where: 'Storage' }),
+    ],
+  },
+  {
+    key: 'group:none',
+    title: 'Not in a group',
+    host: null,
+    count: '2 / 2 up',
+    rows: [
+      svc('edge', 'AdGuard Home', 'ok', 'Up', '41,203 queries', '12 ms', { where: 'Network Edge' }),
+      svc(
+        'apps',
+        'Paperless-ngx document archive and OCR pipeline',
+        'ok',
+        'Up',
+        '9,812 documents',
+        '96 ms',
+        { where: 'App Server' }
+      ),
+    ],
+  },
+];
+// #480: the incident with a stale status, every row no signal, its words kept.
+const SERVICES_NO_SIGNAL = SERVICES_INCIDENT.map((g) => ({
+  ...g,
+  rows: g.rows.map((r) => ({ ...r, state: 'unknown' })),
+}));
+const GROUPINGS = [
+  { value: 'node', label: 'Node' },
+  { value: 'group', label: 'Group' },
+];
 
 // ---------------------------------------------------------------- controls
 
@@ -1445,6 +1549,95 @@ function AttentionPanelNoSignalState() {
   );
 }
 
+// #484: below 768px the Overview draws the panel in two parts with the strip
+// between them, as the Phone board orders it (status card, strip, issue
+// list), at a phone's 390px; a quiet board keeps the strip under its line.
+const SIX_ISSUES = [
+  ...ISSUES.slice(0, 3),
+  {
+    id: 'b2',
+    state: 'warn',
+    word: 'Overdue',
+    title: 'NAS → B2 backup',
+    where: 'Backup · jagnas',
+    reason: 'Last success 27 h ago',
+    age: '3 h',
+    onOpen: noop,
+  },
+  {
+    id: 'nas',
+    state: 'warn',
+    word: 'Warning',
+    title: 'JagNAS disk',
+    where: 'Node · jagnas',
+    reason: '92 % (warning above 90 %)',
+    age: '3 h',
+    onOpen: noop,
+  },
+  ISSUES[3],
+];
+
+const HEALTHY_CELLS = [
+  ['services', 'Services', '32 / 32 up'],
+  ['nodes', 'Nodes', '6 / 6 up'],
+  ['power', 'Power', 'On mains'],
+  ['jobs', 'Jobs', '14 / 14 on time'],
+  ['backups', 'Backups', '3 / 3 OK'],
+  ['integrations', 'Integrations', '12 / 12 answering'],
+].map(([key, label, value]) => ({ key, label, state: 'ok', value }));
+
+function AttentionPanelPhoneState() {
+  return (
+    <Stack width={390}>
+      <AttentionPanel
+        state="crit"
+        counts="2 critical, 3 warnings, 1 no signal"
+        subline={INCIDENT.subline}
+        action={ALL_ALERTS}
+        issues={SIX_ISSUES}
+        between={<SubsystemStrip cells={CELLS} onSelect={noop} />}
+        split
+      />
+    </Stack>
+  );
+}
+
+// The quiet line has no rows to split: the strip follows it, 24px down, as
+// the Overview's ShellSection stacks them.
+function AttentionPanelPhoneQuietState() {
+  return (
+    <Stack width={390} gap={24}>
+      <AttentionPanel
+        state="ok"
+        counts="All 32 services up · 6 nodes healthy"
+        between={<SubsystemStrip cells={HEALTHY_CELLS} onSelect={noop} />}
+        split
+      />
+    </Stack>
+  );
+}
+
+function AttentionPanelPhoneNoSignalState() {
+  return (
+    <Stack width={390}>
+      <AttentionPanel
+        state="unknown"
+        counts="last known 3 min ago: Critical · 2 critical, 3 warnings, 1 no signal"
+        subline="Can't reach JagHelm"
+        action={ALL_ALERTS}
+        issues={stale(SIX_ISSUES)}
+        between={
+          <SubsystemStrip
+            cells={stale(CELLS).map((c) => ({ ...c, sub: LAST_KNOWN }))}
+            onSelect={noop}
+          />
+        }
+        split
+      />
+    </Stack>
+  );
+}
+
 // ---------------------------------------------------------------- data
 
 function MetricMeterState() {
@@ -1698,6 +1891,29 @@ function InfrastructureState({ nodes, count, view = 'cards', width = 900 }) {
   return (
     <Stack width={width}>
       <InfrastructureSection nodes={nodes} count={count} view={view} onViewChange={noop} />
+    </Stack>
+  );
+}
+
+// No custom group yet: Group disabled, and where to add one (#300).
+const NO_GROUPS = [GROUPINGS[0], { ...GROUPINGS[1], disabled: true }];
+const NO_GROUPS_HINT = (
+  <>
+    No custom groups yet: <a href="/settings/sections">add one in Settings → Sections</a>
+  </>
+);
+
+function ServicesState({ groups, count, grouping = 'node', groupless = false, width = 900 }) {
+  return (
+    <Stack width={width}>
+      <ServicesSection
+        groups={groups}
+        count={count}
+        grouping={grouping}
+        groupings={groupless ? NO_GROUPS : GROUPINGS}
+        groupingHint={groupless ? NO_GROUPS_HINT : undefined}
+        onGroupingChange={noop}
+      />
     </Stack>
   );
 }
@@ -2005,6 +2221,9 @@ export const RENDERS = Object.freeze({
   'attention-panel-narrow': AttentionPanelNarrowState,
   'subsystem-strip-no-signal': SubsystemStripNoSignalState,
   'attention-panel-no-signal': AttentionPanelNoSignalState,
+  'attention-panel-phone': AttentionPanelPhoneState,
+  'attention-panel-phone-quiet': AttentionPanelPhoneQuietState,
+  'attention-panel-phone-no-signal': AttentionPanelPhoneNoSignalState,
 
   'metric-meter': MetricMeterState,
   sparkline: SparklineState,
@@ -2044,6 +2263,31 @@ export const RENDERS = Object.freeze({
     <InfrastructureState
       nodes={NODES_NO_SIGNAL}
       count="4 nodes · No signal · last known 3 min ago"
+    />
+  ),
+  services: () => (
+    <ServicesState groups={SERVICES_HEALTHY} count="7 monitored · all up" groupless />
+  ),
+  'services-incident': () => (
+    <ServicesState
+      groups={SERVICES_INCIDENT}
+      count="7 monitored · 1 down · 1 pending · 1 no signal · 1 in maintenance"
+    />
+  ),
+  'services-grouped': () => (
+    <ServicesState groups={SERVICES_GROUPED} count="4 monitored · 1 down" grouping="group" />
+  ),
+  'services-no-signal': () => (
+    <ServicesState
+      groups={SERVICES_NO_SIGNAL}
+      count="7 monitored · No signal · last known 3 min ago"
+    />
+  ),
+  'services-narrow': () => (
+    <ServicesState
+      groups={SERVICES_INCIDENT.slice(0, 1)}
+      count="5 monitored · 1 down · 1 pending · 1 no signal"
+      width={328}
     />
   ),
 

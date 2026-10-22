@@ -11,11 +11,16 @@
  * and authority of an absolute-form request (GET http://user:pass@host/x), which
  * Node accepts and Express routes on its path, are dropped too.
  *
- * Level: 5xx at error, 4xx and slow requests at info, the rest at debug, so the
- * default LOG_LEVEL=info shows what went wrong without one line per poll. The
- * scrape and probe endpoints (Prometheus, the Docker HEALTHCHECK and the deploy
- * gate hit them on a timer) are logged only when they fail: a wedged refresh
- * loop turns /api/health into a 503, and that must still leave a line.
+ * Level (#492, accessLevel): the default LOG_LEVEL=info shows what matters, not
+ * every dashboard poll. 5xx at error. At info: every 4xx (a 401 or 403 included,
+ * so a signed-out tab or an unauthenticated poller still shows), every request
+ * of SLOW_REQUEST_MS or more, and every request that can change something: any
+ * method but GET, HEAD and OPTIONS, which covers config saves, cron reports and
+ * sign-ins. A fast successful read (a poll's 200 or 304) is debug, so
+ * LOG_LEVEL=debug shows every request. The scrape and probe endpoints
+ * (Prometheus, the Docker HEALTHCHECK and the deploy gate hit them on a timer)
+ * are logged only when they fail: a wedged refresh loop turns /api/health into
+ * a 503, and that must still leave a line.
  */
 import { createLogger } from './util/logger.js';
 
@@ -35,10 +40,21 @@ function requestPath(req) {
   return url.split(/[?#]/, 1)[0] || '/';
 }
 
-/** Log level for a finished request. */
-export function accessLogLevel(status, ms, slowMs = SLOW_REQUEST_MS) {
+// Methods that only read. Express answers HEAD with the GET route, and OPTIONS
+// is the CORS preflight a cross-origin poll sends first; any other method can
+// change something.
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * The level a finished request logs at, or null for no line (a healthy probe).
+ * See "Level" above.
+ */
+export function accessLevel(req, res, ms, slowMs = SLOW_REQUEST_MS) {
+  const status = res.statusCode;
   if (status >= 500) return 'error';
+  if (PROBE_PATHS.has(requestPath(req))) return null;
   if (status >= 400 || ms >= slowMs) return 'info';
+  if (!READ_METHODS.has(req.method)) return 'info';
   return 'debug';
 }
 
@@ -50,11 +66,11 @@ export function createAccessLog({
   return function accessLog(req, res, next) {
     const start = process.hrtime.bigint();
     res.on('finish', () => {
-      const path = requestPath(req);
-      if (PROBE_PATHS.has(path) && res.statusCode < 500) return;
       const ms = Math.round(Number(process.hrtime.bigint() - start) / 1e6);
-      const fields = { method: req.method, path, status: res.statusCode, ms };
-      logger[accessLogLevel(res.statusCode, ms, slowMs)](fields, 'request');
+      const level = accessLevel(req, res, ms, slowMs);
+      if (!level) return;
+      const fields = { method: req.method, path: requestPath(req), status: res.statusCode, ms };
+      logger[level](fields, 'request');
     });
     next();
   };

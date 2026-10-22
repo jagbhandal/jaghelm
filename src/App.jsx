@@ -30,18 +30,20 @@ import { clearOverviewFilter, useOverviewFilter } from './shell/overviewFilter.j
 import { appsOf, navGroups } from './shell/nav.js';
 import { alertsBadge } from './shell/statusView.js';
 import { useStatusStale } from './shell/statusFreshness.js';
+import { loadAlertsPage, loadAppFrames, loadSettingsView } from './lazyViews.js';
 
 // Settings (13-tab tree), the app frames and the Alerts page aren't needed for
 // the default Overview render — code-split them so they don't weigh down the
-// initial bundle.
-const AppFrames = lazy(() => import('./views/AppFrames'));
-const SettingsView = lazy(() => import('./views/SettingsView'));
-const AlertsPage = lazy(() => import('./shell/AlertsPage.jsx'));
+// initial bundle. Their loaders live in lazyViews.js.
+const AppFrames = lazy(loadAppFrames);
+const SettingsView = lazy(loadSettingsView);
+const AlertsPage = lazy(loadAlertsPage);
 import {
   apiFetch,
   setAuthToken as setApiAuthToken,
   initAuthToken,
   setReadOnlyServer,
+  setAuthExpiredHandler,
 } from './api/client.js';
 import { secureStore } from './storage/index.js';
 
@@ -109,12 +111,31 @@ export default function App() {
     setAuthed(true);
   };
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     secureStore.removeItem('jaghelm-token'); // web: localStorage; mobile: Keystore
     setApiAuthToken(''); // Clear apiFetch's in-memory token
     setAuthToken('');
     setAuthed(false);
-  };
+  }, []);
+
+  // An expired session (#492). apiFetch passes the token the 401 came with. If
+  // storage holds another, a tab signed in since: take its session and carry
+  // on. Otherwise sign out like the button: the sign-in screen replaces AppMain
+  // and every poll stops with it. A 401 means the server wants a password now,
+  // even if it had none when this tab loaded.
+  const handleExpired = useCallback(
+    async (sent) => {
+      const stored = await secureStore.getItem('jaghelm-token');
+      if (stored && stored !== sent) return setApiAuthToken(stored);
+      handleLogout();
+      setAuthRequired(true);
+    },
+    [handleLogout]
+  );
+  useEffect(() => {
+    setAuthExpiredHandler(handleExpired);
+    return () => setAuthExpiredHandler(null);
+  }, [handleExpired]);
 
   // Show login if auth required and not authenticated
   if (authRequired === null) return null; // Loading

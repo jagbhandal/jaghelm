@@ -69,12 +69,13 @@ const BROKEN = [
 ].join('\n');
 
 /** The refusal every route answers while the file doesn't parse. */
-function assertRefused(r, line = 4) {
+function assertRefused(r) {
   assert.equal(r.status, 503, r.text);
   assert.equal(r.body.code, 'config_unparseable');
   assert.equal(
     r.body.error,
-    `services.yaml doesn't parse (line ${line}): fix it by hand; JagHelm won't save over it`
+    "services.yaml doesn't parse (bad indentation of a mapping entry at line 4, column 4): " +
+      "fix it by hand; JagHelm won't save over it"
   );
   assert.equal(r.headers.etag, undefined, 'a refusal carries no version');
   assert.ok(!r.text.includes('hunter2'), 'the answer quotes the file');

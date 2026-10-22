@@ -9,7 +9,7 @@
  * Auth is frozen at module load, so DASH_PASS and the data dir are set before
  * importing the app (as cron.test.js does).
  */
-import { test, after } from 'node:test';
+import { test, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -203,4 +203,68 @@ test('/api/status: the lines keep the ETag steady cycle to cycle, and a new line
   } finally {
     rmSync(configPath, { force: true });
   }
+});
+
+// ── When the status was built (#499) ─────────────────────────────────────
+
+/** One cycle as the loop runs it at `clock`: the status built, and cached, then. */
+function cycleAt(clock, board) {
+  const now = mock.method(Date, 'now', () => clock);
+  try {
+    return cycle(board, clock);
+  } finally {
+    now.mock.restore();
+  }
+}
+
+test('/api/status: says when the status was built (Last-Modified) on the 200 and the 304, and the ETag holds across steady cycles', async () => {
+  // Whole seconds: an HTTP date has no milliseconds.
+  const built = Math.floor(Date.now() / 1000) * 1000 - 20_000;
+  cycleAt(built);
+  const first = await getStatus();
+  assert.equal(first.status, 200);
+  assert.equal(first.headers['last-modified'], new Date(built).toUTCString());
+  assert.equal(
+    first.headers['cache-control'],
+    'no-cache',
+    'never reused unasked on the strength of that date'
+  );
+
+  // The next cycle builds the same status 10 s later: the same ETag, a later build time.
+  cycleAt(built + 10_000);
+  const again = await getStatus(first.headers.etag);
+  assert.equal(again.status, 304, 'the same status, the same ETag');
+  assert.equal(again.headers.etag, first.headers.etag);
+  assert.equal(Date.parse(again.headers['last-modified']), built + 10_000);
+  assert.equal(again.headers['cache-control'], 'no-cache');
+  const full = await getStatus();
+  assert.equal(full.status, 200);
+  assert.equal(full.headers.etag, first.headers.etag, 'the time is a header, never in the body');
+  assert.equal(Date.parse(full.headers['last-modified']), built + 10_000);
+
+  // A cycle 750 ms into a second: the date says the second it began.
+  cycleAt(built + 15_750);
+  assert.equal(Date.parse((await getStatus()).headers['last-modified']), built + 15_000);
+});
+
+test('/api/status: past its TTL, a 503 vouches for no build time', async () => {
+  cycleAt(Date.now() - 10 * 60_000);
+  const r = await getStatus();
+  assert.equal(r.status, 503);
+  assert.equal(r.headers['last-modified'], undefined);
+});
+
+test('/api/status: If-Modified-Since alone never gets a 304: the ETag is the only validator', async () => {
+  const built = Math.floor(Date.now() / 1000) * 1000 - 20_000;
+  cycleAt(built);
+  const later = new Date(built + 3_600_000).toUTCString();
+  const r = await request(app)
+    .get('/api/status')
+    .set('x-auth-token', token)
+    .set('If-Modified-Since', later);
+  assert.equal(r.status, 200, 'a date the status was built before is no reason for a 304');
+  assert.equal(r.body.overall.state, 'ok');
+  // With the ETag it is a 304, whatever the date says.
+  const both = await getStatus(r.headers.etag).set('If-Modified-Since', later);
+  assert.equal(both.status, 304);
 });

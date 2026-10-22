@@ -11,6 +11,7 @@ import { join } from 'path';
 import { atomicWriteFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { createLogger } from './util/logger.js';
+import { jsonFileErrorFields } from './util/parseError.js';
 
 const log = createLogger('secrets');
 
@@ -100,7 +101,8 @@ function loadSecrets() {
       log.info({ count: Object.keys(secrets).length }, 'Loaded encrypted secrets');
     }
   } catch (err) {
-    log.error({ err }, 'Failed to load secrets.json');
+    // A parse error as its reason and position: V8's message quotes the file (#504).
+    log.error(jsonFileErrorFields(err), 'Failed to load secrets.json');
     secrets = {};
   }
 }
