@@ -35,6 +35,14 @@ const VIEWPORTS = {
 const section = (page) => page.locator('[data-slot="services-section"]');
 const rowOf = (page, id) => section(page).locator(`[data-entity="${id}"]`);
 const MEDIA = { id: 'media', title: 'Media', containers: ['apps:jellyfin', 'photoprism'] };
+// Integrations whose headline metric runs long, beside the demo's longest
+// name and others: the detail gives way, never the name.
+const LONG = 'across the edge, the gateways and both sites, with redirects and streams';
+const INTEGRATIONS = {
+  npm: { _preset: 'npm', Hosts: `31 proxy hosts ${LONG}` },
+  adguard: { _preset: 'adguard', Status: `Filtering ${LONG}` },
+  nextcloud: { _preset: 'nextcloud', Storage: `1.2 TB ${LONG}` },
+};
 
 /** The demo's service names, longest first: its longest is the one to measure. */
 const NAMES = demo('/api/status')
@@ -42,8 +50,8 @@ const NAMES = demo('/api/status')
   .map((e) => e.name)
   .sort((a, b) => b.length - a.length);
 
-async function openBoard(page, scenario, theme, { config } = {}) {
-  await openApp(page, '/', { scenario, theme, config });
+async function openBoard(page, scenario, theme, { config, answers } = {}) {
+  await openApp(page, '/', { scenario, theme, config, answers });
   await expect(section(page).locator('[data-slot="entity-row"]').first()).toBeVisible();
   await expect(page.locator('.section-title', { hasText: 'Network Edge' })).toBeVisible();
 }
@@ -102,8 +110,15 @@ for (const size of ['wide', 'desktop']) {
             ([k, v]) => localStorage.setItem(k, v),
             [GROUPING_PREF, 'group']
           );
-        await openBoard(page, 'incident', 'dark', { config: { customGroups: [MEDIA] } });
+        await openBoard(page, 'incident', 'dark', {
+          config: { customGroups: [MEDIA] },
+          answers: { '/api/integrations': INTEGRATIONS },
+        });
         await expect(section(page)).toHaveAttribute('data-grouping', grouping);
+        const detail = rowOf(page, 'services/edge:nginx-proxy-manager').locator(
+          '[data-slot="entity-detail"]'
+        );
+        await expect(detail).toContainText('31 proxy hosts across');
         if (grouping === 'group')
           await expect(section(page).locator('[data-slot="entity-where"]').first()).toBeVisible();
         const all = await names(page);
@@ -114,6 +129,8 @@ for (const size of ['wide', 'desktop']) {
         }
         const longest = all.find((n) => n.text === NAMES[0]);
         expect(longest.column).toBeGreaterThanOrEqual(120);
+        // The long metric gave way instead: it ends in an ellipsis.
+        expect(await detail.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
         expect(await clipping(page)).toEqual([]);
       });
     }
@@ -126,7 +143,7 @@ for (const size of ['phone', 'narrow']) {
     test.use({ viewport });
 
     test('a list: every name in full, nothing cut off, no sideways scroll', async ({ page }) => {
-      await openBoard(page, 'incident', 'dark');
+      await openBoard(page, 'incident', 'dark', { answers: { '/api/integrations': INTEGRATIONS } });
       // The Phone board's row: the name over its detail.
       const main = rowOf(page, 'services/apps:jellyfin').locator('[data-slot="entity-main"]');
       expect(await main.evaluate((el) => getComputedStyle(el).flexDirection)).toBe('column');
