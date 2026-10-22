@@ -351,12 +351,19 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
   const found = {};
   // Prometheus: set up when the services payload carries its flag (nodes are
   // configured). The UPS is read through it too.
+  // Answering, it can still fail for a node (its verdict on a missing `up`,
+  // #476): failed, naming why, while only that node is held.
   if (isObject(services?.sources) || prevSources.prometheus) {
     const failed = !ok.prometheus || !ok.ups;
+    const problem = typeof internal.prometheusProblem === 'string' ? internal.prometheusProblem : null;
     const error = !ok.prometheus
       ? sourceErrors.prometheus || (services ? null : 'No data from the refresh')
       : 'The UPS query failed';
-    found.prometheus = failed ? { state: 'failed', error } : { state: 'ok' };
+    found.prometheus = failed
+      ? { state: 'failed', error }
+      : problem
+        ? { state: 'failed', error: problem, answering: true }
+        : { state: 'ok' };
   }
   if (kumaConfigured || has((e) => e.kind === 'service')) {
     found.kuma = ok.kuma
@@ -399,7 +406,7 @@ export function buildStatus({ inputs, thresholds, memory = null, now }) {
       subsystem: 'sources',
       name: SOURCE_NAMES[name],
       state: 'warn',
-      word: 'Failed',
+      word: found[name].answering ? 'Failing' : 'Failed',
       reason: sources[name].error || 'No answer this cycle',
       since: sources[name].since,
     })

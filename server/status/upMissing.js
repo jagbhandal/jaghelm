@@ -37,8 +37,9 @@ export const WHY = Object.freeze({
  * What each verdict means:
  * - `unread`: the node is No signal, every read in its `failedReads`; false
  *   leaves it as `up` says (unreachable: push pages host_unreachable).
- * - `failing`: Prometheus counts as failed this cycle (one source_down after
- *   2 cycles, never a page per host).
+ * - `failing`: the Prometheus source fails, with the node's problem as its
+ *   error, while it answers: only the node is held, nothing else Prometheus
+ *   feeds (one source_down after 2 cycles, never a page per host).
  * - `passing`: it ends by itself within about a scrape interval, so presence
  *   breadcrumbs wait for every node meanwhile; a lasting one holds back only
  *   the node's own (refresh.js).

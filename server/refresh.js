@@ -722,18 +722,32 @@ function monitorStatus(m, nowMs) {
  * monitored uid carries (#395), are for the push snapshot only, so they are
  * kept beside the payload, not in the served JSON. So are the status model's
  * (#290): `kumaStatusOf`, `kumaWithoutCard`, `backedBy` and `whyNoUp` (see
- * assembleServices) and `sourceErrors`, why Prometheus or Kuma failed.
+ * assembleServices) and `sourceErrors`, why Prometheus or Kuma failed; and
+ * `prometheusProblem`, what Prometheus fails at while it answers (a node's
+ * verdict on its missing `up`, #476), or null.
  *
  * @param {ReturnType<typeof assembleServices>} assembled
- * @param {{ prometheusOk: boolean, kumaOk: boolean, prometheusError?: string|null, kumaError?: string|null }} outcome
+ * @param {{ prometheusOk: boolean, kumaOk: boolean, prometheusError?: string|null, prometheusProblem?: string|null, kumaError?: string|null }} outcome
  */
-export function servicesCacheEntry(assembled, { prometheusOk, kumaOk, prometheusError = null, kumaError = null }) {
+export function servicesCacheEntry(
+  assembled,
+  { prometheusOk, kumaOk, prometheusError = null, prometheusProblem = null, kumaError = null }
+) {
   const { nodes, overallHealth, upWithoutCard, monitorOf, kumaStatusOf, kumaWithoutCard, backedBy, whyNoUp = {} } = assembled;
   const sources = { prometheus: { ok: prometheusOk }, kuma: { ok: kumaOk } };
   const sourceErrors = { prometheus: prometheusError, kuma: kumaOk ? null : kumaError };
   return {
     payload: { nodes, overallHealth, sources },
-    internal: { upWithoutCard, monitorOf, kumaStatusOf, kumaWithoutCard, backedBy, whyNoUp, sourceErrors },
+    internal: {
+      upWithoutCard,
+      monitorOf,
+      kumaStatusOf,
+      kumaWithoutCard,
+      backedBy,
+      whyNoUp,
+      sourceErrors,
+      prometheusProblem: prometheusOk ? prometheusProblem : null,
+    },
   };
 }
 
@@ -827,14 +841,16 @@ async function _refreshServices() {
     const monitors = kuma.monitors;
 
     // Prometheus failed this cycle if any query did: every node's `ok` is then
-    // false, with the same `failedReads` naming what the failed queries feed.
-    // So did the targets read, when a node with no `up` series needed it, and
-    // so does a node whose verdict on its missing `up` is Prometheus failing
-    // (status/upMissing.js: stored nothing, a target unscraped too long, no
-    // target for any node): only those nodes' `ok` is false then
-    // (discovery.js, #470, #476, #477).
+    // false, with the same `failedReads` naming what the failed queries feed
+    // (or only those nodes', for the `up` asked again of a few: discovery.js).
+    // A node whose verdict on its missing `up` is Prometheus failing for it
+    // (status/upMissing.js: a target unscraped too long, stored nothing, no
+    // target for any node, the targets read failed) carries a `problem`
+    // instead: Prometheus answered, so only that node is held, while the
+    // source's health names the problem (#476, #477).
     const nodeResults = [];
     const promErrors = [];
+    let prometheusProblem = null;
     if (nodesOutcome.ok) {
       for (const entry of visibleNodes) {
         const nodeData = nodesOutcome.byLabel.get(promLabelOf(entry));
@@ -842,13 +858,15 @@ async function _refreshServices() {
       }
       const failed = [...nodesOutcome.byLabel.values()].find((nodeData) => nodeData.ok === false);
       if (failed) promErrors.push(failed.error);
+      const troubled = nodeResults.find(([, , nodeData]) => typeof nodeData?.problem === 'string');
+      if (troubled) prometheusProblem = troubled[2].problem;
     } else {
       const msg = nodesOutcome.err?.message || String(nodesOutcome.err);
       log.warn({ err: msg }, 'node refresh failed');
       promErrors.push(msg);
     }
     const prometheusOk = promErrors.length === 0;
-    reportPrometheus({ ok: prometheusOk, error: promErrors[0] });
+    reportPrometheus({ ok: prometheusOk && !prometheusProblem, error: promErrors[0] ?? prometheusProblem });
     // A container missing from the list may still be running when a query
     // failed, or on a node Prometheus hasn't scraped yet (#470): no
     // breadcrumbs then. That passes within a scrape or so. A node unread for a
@@ -887,6 +905,7 @@ async function _refreshServices() {
       prometheusOk,
       kumaOk: kuma.ok,
       prometheusError: promErrors[0] ?? null,
+      prometheusProblem,
       kumaError: kuma.error ?? null,
     });
     setCache('services', result, internal);

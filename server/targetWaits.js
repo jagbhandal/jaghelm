@@ -1,19 +1,17 @@
 /**
  * When each Prometheus scrape target JagHelm found waiting for its first scrape
  * began waiting (#476), for the targets whose list entry can't say
- * (status/upMissing.js listedWaitSince): counted from the first cycle that saw
- * it so. Persisted to data/prometheus-target-waits.json, so a restart doesn't
- * start the count again: a stuck target's source_down isn't followed by a
- * false recovery and a second page each time JagHelm restarts.
+ * (status/upMissing.js listedWaitSince): counted from the first list that
+ * showed it so. Persisted to data/prometheus-target-waits.json, so a restart
+ * doesn't start the count again: a stuck target's source_down isn't followed
+ * by a false recovery and a second page each time JagHelm restarts.
  *
- * A wait continues across a gap between two sightings of up to WAIT_GAP_MS
- * (or the target's own limit, when longer): a restart. A longer gap (JagHelm
- * was off a while, as when the host reboots and Prometheus restarts with it)
- * starts it again, so a target new since then isn't taken for a stuck one.
- *
- * Keyed by the target's scrape pool and URL. Discovery keeps only the targets
- * still waiting (retain), and empties it on a cycle that had no node to check.
- * A sighting is written when it starts a wait, and otherwise at most once a
+ * Keyed by the target (its scrape pool and URL), not its node: a wait is kept
+ * through cycles that read no target list (every node has `up` 1, say from a
+ * healthy sibling target) and is forgotten only when a list no longer shows
+ * the target waiting (retain). Discovery decides whether a wait still holds
+ * (Prometheus may have restarted since it began); this only keeps it. A
+ * sighting is written when it starts a wait, and otherwise at most once a
  * SEEN_STEP_MS, so a target that keeps waiting doesn't write every cycle.
  */
 import { join } from 'path';
@@ -22,7 +20,10 @@ import { DATA_DIR } from './util/dataDir.js';
 
 const DEFAULT_PATH = join(DATA_DIR, 'prometheus-target-waits.json');
 
-/** The longest gap between two sightings of a waiting target that continues its wait. */
+/**
+ * When Prometheus can't say when it started: the longest gap between two
+ * sightings of a waiting target that continues its wait (discovery.js).
+ */
 export const WAIT_GAP_MS = 5 * 60_000;
 
 /** How far a sighting moves on before it is written. */
@@ -45,23 +46,21 @@ export function targetKey(t) {
 export function createTargetWaits({ path = DEFAULT_PATH, write } = {}) {
   const core = createPresenceStore({ path, sanitize: sanitizeWait, write });
   return {
-    /**
-     * Record a sighting of the waiting target `key` at `at`, and return when
-     * its wait began: kept from the last sighting when that was at most
-     * `gapMs` (default WAIT_GAP_MS) ago, else `at`.
-     */
-    sighted(key, at, gapMs = WAIT_GAP_MS) {
-      const rec = core.get(key);
-      if (rec && at - rec.seen <= gapMs) {
-        if (at - rec.seen >= SEEN_STEP_MS) {
-          core.set(key, { since: rec.since, seen: at });
-          core.markDirty();
-        }
-        return rec.since;
-      }
+    /** The wait of target `key`: { since, seen } (its start, its last written sighting), or undefined. */
+    get(key) {
+      return core.get(key);
+    },
+    /** Start target `key`'s wait at `at`. */
+    begin(key, at) {
       core.set(key, { since: at, seen: at });
       core.markDirty();
-      return at;
+    },
+    /** A sighting of target `key` at `at`, still waiting: written once it moves SEEN_STEP_MS on. */
+    touch(key, at) {
+      const rec = core.get(key);
+      if (!rec || at - rec.seen < SEEN_STEP_MS) return;
+      core.set(key, { since: rec.since, seen: at });
+      core.markDirty();
     },
     /** Forget every target but those in `keys` (a Set). */
     retain(keys) {

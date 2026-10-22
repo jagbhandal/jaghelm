@@ -57,7 +57,7 @@ const world = {
   kuma: 'ok', // 'ok' | 'http500' | 'refused'
   up: { vm103: 1, pi: 1, nas: 1 },
   radarr: 'down', // Kuma's status for radarr
-  nasPing: 'up', // Kuma's status for "NAS (Ping)", a monitor no container has (#390)
+  nasPing: 'up', // Kuma's status for "NAS (Ping)", a monitor no container has (#390); 'removed' takes it out of Kuma
   ups: 1, // nut_status: 1 online, 2 on battery
   rejects: null, // (query) => true for a query Prometheus answers with HTTP 400
   // #470: nodes Prometheus has no series and no target for (a host gone from it).
@@ -76,6 +76,9 @@ const world = {
 };
 // How many times Prometheus's target list was read (#470).
 let targetReads = 0;
+// #476: when Prometheus started, as /api/v1/status/runtimeinfo says: a day
+// before any test's clock.
+const PROM_STARTED = new Date(EVAL * 1000 - 86_400_000).toISOString();
 
 function reset() {
   Object.assign(world, {
@@ -194,8 +197,9 @@ function kumaAnswer() {
   if (world.kuma === 'http500') return json(500, {});
   if (world.kuma === 'refused') throw new TypeError('fetch failed');
   const statusOf = { gitea: 1, radarr: world.radarr === 'up' ? 1 : 0, nasPing: world.nasPing === 'up' ? 1 : 0 };
+  const monitorList = [{ id: 1, name: 'gitea' }, { id: 2, name: 'radarr' }, { id: 3, name: 'NAS (Ping)' }];
   return json(200, {
-    publicGroupList: [{ monitorList: [{ id: 1, name: 'gitea' }, { id: 2, name: 'radarr' }, { id: 3, name: 'NAS (Ping)' }] }],
+    publicGroupList: [{ monitorList: monitorList.filter((m) => m.id !== 3 || world.nasPing !== 'removed') }],
     heartbeatList: {
       1: [{ status: statusOf.gitea, ping: 5 }],
       2: [{ status: statusOf.radarr, ping: 0 }],
@@ -209,6 +213,9 @@ const realFetch = globalThis.fetch;
 globalThis.fetch = async (url) => {
   const u = String(url);
   if (u.startsWith(`${PROM}/api/v1/targets`)) return targetsAnswer();
+  if (u.startsWith(`${PROM}/api/v1/status/runtimeinfo`)) {
+    return json(200, { status: 'success', data: { startTime: PROM_STARTED, lastConfigTime: PROM_STARTED } });
+  }
   if (u.startsWith(PROM)) return promAnswer(decodeURIComponent(u));
   if (u.startsWith(KUMA)) return kumaAnswer();
   throw new Error(`unexpected fetch ${u}`);
@@ -651,7 +658,7 @@ test('#470: the targets read failing pages no node, and the Prometheus source he
     world.targets = 'http403';
     const sent = await perCycle(p, 3);
     const services = getCached('services');
-    assert.equal(services.sources.prometheus.ok, false);
+    assert.equal(services.sources.prometheus.ok, true, 'it answered queries: only the unread nodes are held');
     assert.deepEqual(p.status.sources.prometheus.state, 'failed');
     assert.equal(p.status.sources.prometheus.error, 'Prometheus answered HTTP 403 to the targets read');
     for (const node of ['vm103', 'pi', 'nas']) {
@@ -708,7 +715,7 @@ test('#470: Prometheus scraping but storing nothing (a full disk failing its wri
     world.prometheus = 'empty';
     const sent = await perCycle(p, 3);
     const services = getCached('services');
-    assert.equal(services.sources.prometheus.ok, false, 'Prometheus scraped them: its up series should be there');
+    assert.equal(services.sources.prometheus.ok, true, 'it answers: the problem is held per node (#476)');
     assert.equal(p.status.sources.prometheus.state, 'failed');
     assert.equal(p.status.sources.prometheus.error, 'Prometheus scraped vm103, pi, nas but stored no up series');
     for (const node of ['vm103', 'pi', 'nas']) {
@@ -818,7 +825,7 @@ test('#476: a node whose targets Prometheus never scrapes: no signal, then one s
     at(4);
     await p.cycle();
     const named = "Prometheus hasn't scraped vm103:9100 (vm103), vm103:8080 (vm103) in 3 scrape intervals";
-    assert.equal(getCached('services').sources.prometheus.ok, false);
+    assert.equal(getCached('services').sources.prometheus.ok, true, 'Prometheus answers: only vm103 is held');
     assert.deepEqual([p.status.sources.prometheus.state, p.status.sources.prometheus.error], ['failed', named]);
     assert.deepEqual(
       [entity(p, 'nodes/vm103').state, entity(p, 'nodes/vm103').word, entity(p, 'nodes/vm103').reason],
@@ -866,6 +873,58 @@ test('#476: a node whose targets Prometheus never scrapes: no signal, then one s
     clockBack();
     before.done();
     if (p !== before) p.done();
+  }
+});
+
+test('#476: a target stuck for hours holds back only its own node: Prometheus still answers, a service and a node removed elsewhere go, and the headline says Prometheus is failing, not unreachable', async () => {
+  reset();
+  world.radarr = 'up';
+  const base = realNow() + 5 * 3_600_000;
+  const at = (k) => {
+    Date.now = () => base + k * 30_000;
+  };
+  const p = pipeline();
+  try {
+    at(0);
+    await p.boot();
+    world.stuck = ['pi'];
+    for (let k = 1; k <= 5; k += 1) {
+      at(k);
+      await p.cycle();
+    }
+    assert.deepEqual(p.sent, ['source_down prometheus'], "pi's targets, 3 intervals on: one push");
+
+    // Hours later, still stuck: NAS (Ping) leaves Kuma, and the NAS leaves services.yaml.
+    world.nasPing = 'removed';
+    saveConfig({ nodes: { vm103: { display_name: 'VM 103' }, pi: { display_name: 'Pi' } }, services: {} });
+    for (const k of [480, 481]) {
+      at(k);
+      await p.cycle();
+    }
+    const named = "Prometheus hasn't scraped pi:9100 (pi), pi:8080 (pi) in 3 scrape intervals";
+    assert.equal(getCached('services').sources.prometheus.ok, true, 'Prometheus answers: only pi is unread');
+    assert.deepEqual([p.status.sources.prometheus.state, p.status.sources.prometheus.error], ['failed', named]);
+    assert.doesNotMatch(p.status.overall.sentence, /unreachable/);
+    assert.match(p.status.overall.sentence, /^Prometheus failing/);
+    assert.deepEqual(
+      [entity(p, 'nodes/pi').state, entity(p, 'nodes/pi').reason],
+      ['unknown', 'No data: still not scraped by Prometheus'],
+      'its node is held'
+    );
+    assert.equal(entity(p, 'nodes/nas'), undefined, 'a node removed from services.yaml is gone from the model');
+    assert.equal(entity(p, `services/${NAS_PING}`), undefined, 'and a monitor removed from Kuma');
+    const snap = p.snapshot.prev();
+    assert.equal(Object.hasOwn(snap.hosts, 'nas'), false, 'and from the push snapshot');
+    assert.equal(Object.hasOwn(snap.services, NAS_PING), false);
+    assert.equal(snap.hosts.vm103.reachable, true);
+    assert.deepEqual(p.sent, ['source_down prometheus'], 'nothing more is sent');
+  } finally {
+    saveConfig({
+      nodes: { vm103: { display_name: 'VM 103' }, pi: { display_name: 'Pi' }, nas: { display_name: 'NAS' } },
+      services: {},
+    });
+    clockBack();
+    p.done();
   }
 });
 

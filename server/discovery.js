@@ -117,6 +117,25 @@ export async function promTargets() {
 }
 
 /**
+ * When Prometheus last started its targets afresh (#476), from
+ * `GET /api/v1/status/runtimeinfo`: the later of its start and its last
+ * config load, in ms, or null when it can't say (the read failed, a backend
+ * without the endpoint). A target can't have waited for its first scrape
+ * since before then.
+ */
+export async function promStartedAt() {
+  if (!promUrl) return null;
+  try {
+    const data = await promGet('/api/v1/status/runtimeinfo', 'runtime info read');
+    const times = [data?.data?.startTime, data?.data?.lastConfigTime].map((t) => Date.parse(t)).filter((t) => t > 0);
+    return times.length > 0 ? Math.max(...times) : null;
+  } catch (err) {
+    log.debug({ err: err.message }, 'Prometheus runtime info read failed');
+    return null;
+  }
+}
+
+/**
  * One GET of Prometheus's HTTP API at `path`, the one client every read goes
  * through: the parsed JSON body. Rejects with a PromQueryError when there is
  * none: the request failed or timed out, Prometheus answered non-2xx, or the
@@ -510,21 +529,23 @@ export const NODE_QUERIES = 13;
  * - Unread (every part in `failedReads`), `ok` unchanged: a target of the node
  *   waiting for its first scrape for less than WAIT_INTERVALS of its scrape
  *   intervals, or (`up` 0) one that answered a scrape since the query.
- * - Unread with `ok` false and an `error`, as Prometheus is failing:
- *   - a target waiting longer than that (#476), the error naming every such
+ * - Unread with a `problem`, Prometheus failing for that node while it
+ *   answers (`ok` unchanged, so only the node is held, #476):
+ *   - a target waiting longer than that (#476), the problem naming every such
  *     target. Its wait is counted from its last scrape when the list gives one,
- *     else from the first cycle that saw it waiting (targetWaits.js, kept in
- *     the data dir across a restart);
+ *     else from the first list that showed it waiting, kept per target in the
+ *     data dir across cycles and restarts (waitsOf, targetWaits.js);
  *   - no `up` series, and the list names none of the nodes asked for (#477:
  *     a federation or remote-write backend has no target per node);
  *   - no `up` series though a target of the node was scraped: Prometheus
  *     stored nothing (a full disk failing its writes). `up` is asked again for
  *     those nodes, as a scrape that ended between the `up` query and the
  *     targets read looks the same: a node with an `up` series by then is
- *     unread for the call (answered since), `ok` unchanged;
+ *     unread for the call (answered since). Should that query fail, the node
+ *     is unread with `ok` false and its error, as for any failed query;
  *   - no `up` series, and the targets read failed, with its error.
  * A node with `up` 1 is never touched, and a call where every node has `up` 1,
- * or no `up` series but metrics, reads no targets (and forgets every wait).
+ * or no `up` series but metrics, reads no targets.
  */
 export async function getNodesData(nodeLabels) {
   const labels = [...new Set(nodeLabels)];
@@ -608,15 +629,10 @@ function hasUsage(metrics) {
  */
 async function checkTargets(out) {
   if (!promUrl) return;
-  const waits = targetWaits ?? (targetWaits = createTargetWaits());
   const checked = [...out].filter(
     ([, d]) => d.reachable === false || (d.reachable === null && !hasUsage(d.metrics))
   );
-  if (checked.length === 0) {
-    waits.retain(new Set());
-    waits.save();
-    return;
-  }
+  if (checked.length === 0) return;
   let targets = null;
   let readError = null;
   try {
@@ -629,19 +645,7 @@ async function checkTargets(out) {
   const asked = new Set(out.keys());
   const namesNodes = (targets ?? []).some((t) => asked.has(t?.labels?.node));
   const targetsOf = (label) => (targets === null ? null : targets.filter((t) => t?.labels?.node === label));
-
-  // When each waiting target of a checked node began waiting: its last scrape
-  // when the list gives one, else the first cycle that saw it waiting.
-  const since = new Map();
-  for (const [label] of checked) {
-    for (const t of targetsOf(label) ?? []) {
-      if (!notScrapedYet(t)) continue;
-      const key = targetKey(t);
-      since.set(key, listedWaitSince(t) ?? waits.sighted(key, now, Math.max(WAIT_GAP_MS, waitLimitMs(t))));
-    }
-  }
-  if (targets !== null) waits.retain(new Set(since.keys()));
-  waits.save();
+  const since = targets === null ? new Map() : await waitsOf(targets, asked, new Set(checked.map(([l]) => l)), now);
 
   const verdicts = checked.map(([label, d]) => {
     const { why, overdue } = whyUpMissing({
@@ -669,6 +673,45 @@ async function checkTargets(out) {
 }
 
 /**
+ * When each waiting target of the nodes `asked` began waiting (#476), by its
+ * key: its last scrape when the list gives one, else its wait in targetWaits,
+ * which records every waiting target of those nodes, checked or not, so a
+ * wait survives the cycles its node reads `up` 1 from another target, and
+ * forgets the others. A wait old enough to make a checked node's target
+ * overdue is confirmed first: Prometheus must have run since before it began
+ * (promStartedAt), or the target may be new and its wait starts again. When
+ * Prometheus can't say, a gap of more than WAIT_GAP_MS (or the target's own
+ * limit) since its last sighting starts it again.
+ */
+async function waitsOf(targets, asked, checkedLabels, now) {
+  const waits = targetWaits ?? (targetWaits = createTargetWaits());
+  const waiting = targets.filter((t) => asked.has(t?.labels?.node) && notScrapedYet(t));
+  let started; // promStartedAt(), read once, when needed
+  const since = new Map();
+  for (const t of waiting) {
+    const key = targetKey(t);
+    if (since.has(key)) continue;
+    const listed = listedWaitSince(t);
+    if (listed !== null) {
+      since.set(key, listed);
+      continue;
+    }
+    const rec = waits.get(key);
+    let holds = !!rec;
+    if (rec && checkedLabels.has(t.labels.node) && now - rec.since >= waitLimitMs(t)) {
+      if (started === undefined) started = await promStartedAt();
+      holds = started !== null ? started <= rec.since : now - rec.seen <= Math.max(WAIT_GAP_MS, waitLimitMs(t));
+    }
+    if (holds) waits.touch(key, now);
+    else waits.begin(key, now);
+    since.set(key, holds ? rec.since : now);
+  }
+  waits.retain(new Set(since.keys()));
+  waits.save();
+  return since;
+}
+
+/**
  * Nodes with no `up` series and a target Prometheus has scraped (checkTargets),
  * asked for `up` again: those still with none stored nothing (`ok` false); the
  * others answered since. Should the query fail, each is unread with its error.
@@ -691,24 +734,22 @@ async function checkStored(out, nodes) {
 
 /**
  * Give node `label` (its result `d`) its verdict `why`, as `whyNoUp`, and mark
- * it as UP_MISSING's row says: unread, and failed with `error` when Prometheus
- * is failing.
+ * it as UP_MISSING's row says: unread, with the `problem` Prometheus has with
+ * it when the row is failing. `ok` stays as the queries left it: Prometheus
+ * answered, and only this node is held (#476).
  */
-function mark(out, label, d, why, error = null) {
+function mark(out, label, d, why, problem = null) {
   const { unread: isUnread, failing } = UP_MISSING[why];
   if (!isUnread) out.set(label, { ...d, whyNoUp: why });
-  else unread(out, label, d, failing ? error : null, why);
+  else out.set(label, { ...d, failedReads: [...NODE_READS], whyNoUp: why, ...(failing ? { problem } : {}) });
 }
 
 /**
- * Mark node `label` (its result `d`) unread: every part in `failedReads`. With
- * an `error`, Prometheus failed it: `ok` false, and the first error kept.
- * `why` is its verdict, when it has one.
+ * Mark node `label` (its result `d`) unread, as a query for it failed: every
+ * part in `failedReads`, `ok` false, and the first error kept.
  */
-function unread(out, label, d, error = null, why = undefined) {
-  const failure = error ? { ok: false, error: d.error ?? error } : {};
-  const verdict = why ? { whyNoUp: why } : {};
-  out.set(label, { ...d, ...failure, failedReads: [...NODE_READS], ...verdict });
+function unread(out, label, d, error) {
+  out.set(label, { ...d, ok: false, error: d.error ?? error, failedReads: [...NODE_READS] });
 }
 
 function formatUptime(s) {
