@@ -14,11 +14,17 @@ vi.mock('@shared/api/client.js', async (importOriginal) => {
   return { ...actualClient, setAuthExpiredHandler, setAuthToken };
 });
 
-const { getItem, removeItem } = vi.hoisted(() => ({
-  getItem: vi.fn().mockResolvedValue('http://vm-101:3099/api'),
+const { getItem, setItem, removeItem } = vi.hoisted(() => ({
+  getItem: vi.fn(),
+  setItem: vi.fn().mockResolvedValue(undefined),
   removeItem: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('@shared/storage/index.js', () => ({ secureStore: { getItem, removeItem } }));
+vi.mock('@shared/storage/index.js', () => ({ secureStore: { getItem, setItem, removeItem } }));
+// The pending cleanup's record (#539) has its own tests (auth/pendingCleanup.test.jsx).
+const PENDING = 'jaghelm-pending-cleanup';
+vi.mock('@capacitor/network', () => ({
+  Network: { getStatus: vi.fn(async () => ({ connected: true })), addListener: vi.fn() },
+}));
 
 const { setPref, getPref } = vi.hoisted(() => ({
   setPref: vi.fn().mockResolvedValue(undefined),
@@ -54,9 +60,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   order = [];
   actualClient.setAuthToken('phone-tok'); // signed in: the token apiFetch holds
-  getItem.mockResolvedValue('http://vm-101:3099/api');
+  getItem.mockImplementation(async (k) => (k === 'jaghelm-base-url' ? 'http://vm-101:3099/api' : null));
+  setItem.mockResolvedValue(undefined);
   removeItem.mockImplementation(async (k) => {
-    order.push(`remove ${k}`);
+    if (k !== PENDING) order.push(`remove ${k}`);
   });
   setPref.mockResolvedValue(undefined);
   getPref.mockImplementation(async (k) => (k === 'jaghelm-push-token' ? 'fcm-tok' : null));

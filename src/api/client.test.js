@@ -144,3 +144,39 @@ test('a request that hangs is aborted and given up on after SIGN_OUT_TIMEOUT_MS'
   assert.equal(settled, true);
   assert.equal(signal.aborted, true, 'the request is aborted at the deadline');
 });
+
+// An Android sign-out keeps what it couldn't finish and retries it later
+// (#539), so the revoke says whether it reached the server, and the retry sends
+// it to the server that session belongs to.
+test('answers true once the server answered below 500, false otherwise', async () => {
+  for (const [reply, reached] of [
+    [() => answer(204), true],
+    [() => answer(401), true], // a dead token: nothing left to revoke
+    [() => answer(404), true], // a server older than the route: it never will
+    [() => answer(500), false],
+    [() => answer(502), false],
+    [() => Promise.reject(new TypeError('Failed to fetch')), false],
+  ]) {
+    stubFetch(reply);
+    assert.equal(await revokeSession('tok'), reached);
+  }
+  assert.equal(await revokeSession(''), true, 'no token: nothing to revoke');
+});
+
+test('a request that hangs past the deadline answers false', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  stubFetch(() => new Promise(() => {}));
+  const done = revokeSession('tok');
+  await Promise.resolve();
+  t.mock.timers.tick(SIGN_OUT_TIMEOUT_MS);
+  assert.equal(await done, false);
+});
+
+test('base sends it to that server, not the current API base', async () => {
+  setApiBase('http://vm-101:3099/api');
+  const calls = stubFetch(() => answer(204));
+  await revokeSession('old-tok', { base: 'http://old-host:3099/api' });
+  assert.equal(calls[0][0], 'http://old-host:3099/api/auth/logout');
+  assert.deepEqual(calls[0][1].headers, { 'x-auth-token': 'old-tok' });
+  setApiBase('/api');
+});

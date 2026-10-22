@@ -48,7 +48,9 @@ walk(join(root, 'docs'));
 for (const f of mdFiles) {
   if (!existsSync(f)) continue;
   // Markdown links and images, plus HTML <img src> (the README's screenshots).
-  for (const m of readFileSync(f, 'utf8').matchAll(/\]\(([^)]+)\)|<img\b[^>]*\bsrc="([^"]+)"/g)) {
+  // Fenced code is skipped: `request(app)[method](path)` there is not a link.
+  const text = readFileSync(f, 'utf8').replace(/^ {0,3}(`{3,}|~{3,})[\s\S]*?^ {0,3}\1/gm, '');
+  for (const m of text.matchAll(/\]\(([^)]+)\)|<img\b[^>]*\bsrc="([^"]+)"/g)) {
     const link = (m[1] ?? m[2]).split('#')[0].trim();
     if (!link || /^(https?:|mailto:|#|\/)/.test(link)) continue;
     if (!existsSync(resolve(dirname(f), link))) {

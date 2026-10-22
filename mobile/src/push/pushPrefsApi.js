@@ -86,3 +86,20 @@ export async function deleteToken(token) {
     }),
   );
 }
+
+/**
+ * The same DELETE, sent to `base` with the session `session` instead of the
+ * ones apiFetch holds: a sign-out finishing later (#539) uses the session it
+ * ended, on that session's server. window.fetch, not apiFetch, so that old
+ * token goes to that server only and its 401 is not the live session expiring.
+ * Resolves the Response (the caller reads its status); rejects on a network
+ * error or an abort.
+ */
+export function deleteTokenAs({ base, session, token, signal }) {
+  return window.fetch(`${base}/push/register`, {
+    method: 'DELETE',
+    headers: { ...JSON_HEADERS, 'x-auth-token': session },
+    body: JSON.stringify({ token }),
+    signal,
+  });
+}

@@ -297,6 +297,8 @@
   background: transparent; color: var(--red); border: 1px solid var(--border-color);
   border-radius: var(--card-radius-sm); font-size: var(--text-base); cursor: pointer;
 }
+/* #539: its way back, "turn on push on this device": the same button, not destructive. */
+.notif-turnon { color: var(--accent); }
 
 /* Phase 5: push-event detail (host events / since-resolved ids rendered from
    the deep-link fallback params when no derived incident matches). */

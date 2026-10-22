@@ -10,12 +10,16 @@ export const THEME_KEY = 'jaghelm-theme'; // non-secret → Preferences
 export const LAST_TAB_KEY = 'jaghelm-last-tab'; // non-secret → Preferences
 export const URL_PRESENT_KEY = 'jaghelm-base-url-present'; // non-secret breadcrumb → Preferences
 export const REMEMBER_KEY = 'jaghelm-remember'; // non-secret UI choice → Preferences ('true'|'false')
+// What a sign-out or Turn off push couldn't finish, with the old session token
+// it needs to finish it (#539): a secret, so Keystore, next to the token.
+export const PENDING_CLEANUP_KEY = 'jaghelm-pending-cleanup';
 
 // Non-secret push state -> @capacitor/preferences (throw-free; NEVER Keystore,
 // which would hit the M3a removeItem-throws-on-missing defect). The FCM device
 // token is non-secret device state; permission/prefs are UI state.
 export const PUSH_TOKEN_KEY = 'jaghelm-push-token'; // FCM device token (for GET/PUT prefs)
 export const PUSH_PERM_KEY = 'jaghelm-push-perm'; // 'granted'|'denied'|'prompt' breadcrumb
+export const PUSH_WANTED_KEY = 'jaghelm-push-wanted'; // the user's push choice: 'false' = turned off; unset = on (#539)
 
 /** Validate + canonicalize a backend URL to `<origin><path>/api`. Throws on bad input. */
 export function normalizeBaseUrl(input) {
