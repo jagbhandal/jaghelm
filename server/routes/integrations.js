@@ -20,7 +20,8 @@
  * (#423): it starts from the file as it is, and changes the version a
  * Settings tab must send to save the whole config. While the file doesn't
  * parse, each is refused (503 `config_unparseable`) before it changes
- * anything, a stored credential included; writeConfig refuses it too.
+ * anything, a stored credential included; writeConfig refuses it too. So
+ * while it is there but can't be read (503 `config_unreadable`, #536).
  *
  * services.yaml is the record of which secrets an integration has (#502,
  * #415): a save stores what it needs before the file is written, and puts the
@@ -55,7 +56,7 @@ import {
 } from '../integrations/unusedSecrets.js';
 import { refreshIntegrations, retryIntegrationNow } from '../refresh.js';
 import { respondWarmCached } from '../cache.js';
-import { apiError, configUnparseable } from '../errors.js';
+import { apiError, configUnusable } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { createRateLimiter } from '../util/rateLimiter.js';
 import { createLogger } from '../util/logger.js';
@@ -183,7 +184,7 @@ function written(res, config, version) {
   const saved = writeConfig(config, version);
   if (saved.ok) return true;
   if (saved.conflict) apiError(res, 409, 'services.yaml changed while saving; try again');
-  else if (saved.unusable) configUnparseable(res, saved.unusable);
+  else if (saved.unusable) configUnusable(res, saved.unusable, saved.code);
   // A write failure (or a reentrant save) is a 500, not a reported success,
   // matching services.js POST /config.
   else apiError(res, 500, 'Failed to persist config');
@@ -265,7 +266,7 @@ router.post('/save', (req, res) => {
   try {
     const read = readConfig();
     // Before any credential is stored: a refused save changes nothing.
-    if (read.unusable) return configUnparseable(res, read.unusable);
+    if (read.unusable) return configUnusable(res, read.unusable, read.code);
     const config = read.config || {};
     if (!config.integrations) config.integrations = {};
     const { integrations } = config;
@@ -420,8 +421,8 @@ router.patch('/:key', (req, res) => {
   }
   const { enabled } = body;
 
-  const { config: read, version, unusable } = readConfig();
-  if (unusable) return configUnparseable(res, unusable);
+  const { config: read, version, unusable, code } = readConfig();
+  if (unusable) return configUnusable(res, unusable, code);
   const config = read || {};
   const integrations = config.integrations || {};
   const entry = storedEntry(integrations, key);
@@ -448,8 +449,8 @@ router.patch('/:key', (req, res) => {
 
 router.delete('/:type', (req, res) => {
   const { type } = req.params;
-  const { config: read, version, unusable } = readConfig();
-  if (unusable) return configUnparseable(res, unusable);
+  const { config: read, version, unusable, code } = readConfig();
+  if (unusable) return configUnusable(res, unusable, code);
   const config = read || {};
   if (!storedEntry(config.integrations || {}, type)) {
     return apiError(res, 404, `Integration '${type}' not configured`);

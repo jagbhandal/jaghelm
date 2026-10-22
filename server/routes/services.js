@@ -29,6 +29,9 @@
  * While services.yaml doesn't parse (or is empty, or not a mapping), the read
  * and the write are both a 503 `config_unparseable` saying so, with no
  * version: the last good config the board keeps is not this file's (#423).
+ * While it is there but can't be read (permissions, a directory, a disk
+ * error), both are a 503 `config_unreadable` the same way (#536): a save
+ * never writes over a file JagHelm couldn't read.
  */
 
 import { isDeepStrictEqual } from 'node:util';
@@ -40,7 +43,7 @@ import { getPresetFull, listPresets } from '../integrations/registry.js';
 import { getMonitorNames } from '../monitors.js';
 import { refreshServices } from '../refresh.js';
 import { respondWarmCached } from '../cache.js';
-import { apiError, configUnparseable } from '../errors.js';
+import { apiError, configUnusable } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { validateConfig, servicesConfigSchema } from '../util/configSchema.js';
 import { maskCredentials, restoreCredentials } from '../util/configMask.js';
@@ -95,8 +98,8 @@ function staleSave(res) {
 }
 
 router.get('/config', (req, res) => {
-  const { config, version, unusable } = readConfig();
-  if (unusable) return configUnparseable(res, unusable);
+  const { config, version, unusable, code } = readConfig();
+  if (unusable) return configUnusable(res, unusable, code);
   res.set('ETag', etagOf(version));
   res.json(maskCredentials(config || {}, configMaskOptions()));
 });
@@ -112,8 +115,8 @@ router.post('/config', (req, res) => {
   if (!ifMatch) {
     return apiError(res, 428, 'The save named no config version (If-Match); reload Settings');
   }
-  const { config: current, version, unusable } = readConfig();
-  if (unusable) return configUnparseable(res, unusable);
+  const { config: current, version, unusable, code } = readConfig();
+  if (unusable) return configUnusable(res, unusable, code);
   if (!ifMatchHits(ifMatch, version)) return staleSave(res);
 
   // Each marker becomes the credential stored in its place. One where nothing
@@ -132,7 +135,7 @@ router.post('/config', (req, res) => {
 
   const saved = writeConfig(restored.config, version);
   if (!saved.ok && saved.conflict) return staleSave(res);
-  if (!saved.ok && saved.unusable) return configUnparseable(res, saved.unusable);
+  if (!saved.ok && saved.unusable) return configUnusable(res, saved.unusable, saved.code);
   // A write failure (or a reentrant save) is a 500, not a misleading
   // HTTP 200 { ok: false }.
   if (!saved.ok) return apiError(res, 500, 'Failed to persist config');

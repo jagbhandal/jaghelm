@@ -23,18 +23,25 @@ export function apiError(res, status, publicMessage, err = null) {
   return res.status(status).json({ error: publicMessage });
 }
 
-/** The `code` of a refusal because services.yaml is no usable config (#423). */
+/** The `code` of a refusal because services.yaml doesn't parse, or is empty or not a mapping (#423). */
 export const CONFIG_UNPARSEABLE = 'config_unparseable';
+
+/** The `code` of a refusal because services.yaml is there but can't be read (#536). */
+export const CONFIG_UNREADABLE = 'config_unreadable';
 
 /**
  * Answer that services.yaml can't be read or written until it is fixed by
- * hand: 503 `{ error, code: 'config_unparseable' }`, `error` the reason
- * config.js gives (it names the line, never the file's content). Not a 409:
- * Settings reloads on a 409, and reading again can't help until the file is
- * fixed.
+ * hand: 503 `{ error, code }`, `error` the reason config.js gives (it names
+ * the line or the read error's code, never the file's content or its path)
+ * and `code` its refusal's, `config_unparseable` or `config_unreadable`. Not
+ * a 409: Settings reloads on a 409, and reading again can't help until the
+ * file is fixed.
+ * @param {any} res
+ * @param {string} reason
+ * @param {string} code
  */
-export function configUnparseable(res, reason) {
-  return res.status(503).json({ error: reason, code: CONFIG_UNPARSEABLE });
+export function configUnusable(res, reason, code) {
+  return res.status(503).json({ error: reason, code });
 }
 
 /**

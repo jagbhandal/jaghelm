@@ -65,6 +65,12 @@ It's a scrypt hash (not reversible), but rotate anyway:
   good config, or none after a restart, and saves nothing over the file.
   `/api/health` has `config: { state: "unparseable", line }` (still 200). Fix
   the line by hand; the next reload sends "JagHelm config fixed".
+  "services.yaml can't be read (permission denied)" (`config: { state:
+  "unreadable", code }`) is the same for a file JagHelm can't read: fix its
+  owner or mode (the container runs as non-root), or replace a directory of
+  that name with the file. It is read again every 30 s: no restart needed.
+  Deleting a broken file clears the warning; after a broken boot that leaves
+  an empty board, and a restart runs first-boot discovery.
 
 ## Prevention checklist
 

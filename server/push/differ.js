@@ -531,11 +531,12 @@ const STATUS_CHECK_TEXT = {
  * the id and node of its source events. Its down push has the model's name and
  * reason ("JagHelm config · services.yaml doesn't parse (line 4)") under a
  * title of its own; its recovery's words are fixed (the model lists no config
- * source once the file loads).
+ * source once the file loads), and true of each way it ends: fixed by hand,
+ * readable again, or deleted (#536).
  */
 export const CONFIG_SOURCE = 'config';
 const CONFIG_TITLE = { source_down: 'JagHelm config broken', source_recovered: 'JagHelm config fixed' };
-const CONFIG_RECOVERED = 'services.yaml loads again';
+const CONFIG_RECOVERED = 'services.yaml is no longer broken';
 
 /**
  * A monitoring source that is down (failed for two cycles in a row,
