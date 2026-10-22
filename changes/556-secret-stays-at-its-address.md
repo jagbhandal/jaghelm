@@ -15,3 +15,8 @@
   addresses of the integrations that use it; one no integration uses is
   bound to none. Credentials in `.env`, or typed into `services.yaml` by
   hand, go wherever the URL points, as before.
+- Every request an integration makes now stays on its URL's host and port.
+  An endpoint in `services.yaml` that leads onto another host is not
+  requested, and its card says so. A login session is kept per
+  integration, so another integration on the same address no longer reads
+  with its token.

@@ -8,8 +8,8 @@
  * lib/ map: http.js (safeFetch), extract.js (JSON path DSL + URL templating),
  * format.js (formatValue+computeField), auth.js (buildAuthHeaders), session.js
  * (session token cache+login), config.js (cred resolution + config merging),
- * origin.js (a stored credential goes only to the origin it was entered for,
- * #556).
+ * origin.js (every request stays on its URL's origin, and a stored credential
+ * goes only to the origins it was entered for, #556).
  */
 
 import { getPresetFull } from './registry.js';
@@ -21,7 +21,7 @@ import { buildAuthHeaders } from './lib/auth.js';
 import { fetchWithSession } from './lib/session.js';
 import { resolveIntegrationConfig } from './lib/config.js';
 import { storedUrlCredentialError } from './lib/urlCredential.js';
-import { assertCredentialOrigin } from './lib/origin.js';
+import { assertRequestOrigin } from './lib/origin.js';
 import { assertSafeUrl } from '../util/ssrf.js';
 import { redactError } from '../util/redact.js';
 import { createLogger } from '../util/logger.js';
@@ -125,8 +125,8 @@ export async function fetchIntegration(type, yamlConfig, resolved, { sessionCach
 
       const headers = buildAuthHeaders(config);
       const urlCarriesCredential = credentialInUrl || endpoint.credentialInUrl;
-      // A stored credential goes only where it was entered (#556).
-      assertCredentialOrigin(config, url);
+      // On its URL's origin, and a stored credential only where it was entered (#556).
+      assertRequestOrigin(config, url);
       const res = await safeFetch(url, { headers }, skipTls, { credentialInUrl: urlCarriesCredential, shownUrl });
       if (!res.ok) {
         const err = new Error(`HTTP ${res.status} ${res.statusText || ''}`.trim());
@@ -147,7 +147,7 @@ export async function fetchIntegration(type, yamlConfig, resolved, { sessionCach
       const extraResults = await Promise.allSettled(
         extraEps.map(async (ep) => {
           const { path, shownPath, credentialInUrl } = resolveEndpoint(ep.endpoint, config);
-          assertCredentialOrigin(config, `${baseUrl}${path}`);
+          assertRequestOrigin(config, `${baseUrl}${path}`);
           const epRes = await safeFetch(`${baseUrl}${path}`, { headers }, skipTls,
             { credentialInUrl, shownUrl: `${baseUrl}${shownPath}` });
           if (!epRes.ok) {

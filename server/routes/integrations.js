@@ -59,6 +59,7 @@ import {
   keyedSecretName,
 } from '../integrations/lib/config.js';
 import { formUrlCredentialError } from '../integrations/lib/urlCredential.js';
+import { movedCredential, movedCredentialError } from '../integrations/movedCredential.js';
 import { looksLikeSecretRef } from '../integrations/lib/extract.js';
 import {
   dropUnusedIntegrationSecrets,
@@ -145,9 +146,10 @@ router.get(
 // stored in that field of this entry (see mergeForm).
 // A stored credential goes only to the address it was entered for (#556): a
 // typed password or token is stored for the origin of the entry's URL (the
-// value it already held, typed again, adds that origin), and one left blank
-// while the URL moves to another origin is refused (400, naming the field:
-// re-enter it for the new address).
+// value it already held, typed again, adds that origin), and a stored
+// credential the save keeps (a password or token left blank, a header or
+// anything else written by hand) while the URL moves to another origin is
+// refused (400, naming it; integrations/movedCredential.js).
 // `enabled` is set by a save that creates the entry, or one without an
 // `editingKey` (an older web app's toggle sent those). An edit leaves it to the
 // toggle route, so a form left open can't undo a toggle made since. An edit
@@ -440,38 +442,17 @@ function mergeForm(config, body) {
   // A stored credential goes only to the origin it was entered for (#556).
   // The URL as a refresh resolves it, so a `.env` URL, which the form can't
   // move, moves nothing.
-  const origin = entryOrigin(storageKey, entry, { secrets: secretsAfter(secretOps) });
-  if (base && entryOrigin(baseKey, base) !== origin) {
-    const kept = movedCredential(base, baseKey, entry, typed);
-    if (kept) {
-      const label = fieldLabel(type, kept);
-      return {
-        refused: {
-          status: 400,
-          error: `The stored ${label} was entered for the old address; re-enter the ${label} for the new address`,
-          field: kept,
-        },
-      };
-    }
+  const after = secretsAfter(secretOps);
+  const moved =
+    base && movedCredential({ beforeKey: baseKey, before: base, afterKey: storageKey, after: entry, typed, secrets: after });
+  if (moved) {
+    const refused = { status: 400, error: movedCredentialError(moved) };
+    return { refused: moved.field ? { ...refused, field: moved.field } : refused };
   }
+  const origin = entryOrigin(storageKey, entry, { secrets: after });
   for (const op of secretOps) if (op.set) op.origins = originsOnEntry(op.set, op.value, origin);
 
   return { storageKey, baseKey, base, moving, entry, secretOps, leftBehind };
-}
-
-/**
- * The first form field whose stored credential the merged `entry` keeps from
- * `base` (stored under `baseKey`) without its being typed: a password or
- * token the form shows masked (blank keeps it: a keyed secret, a `$secret:`
- * reference or a value typed into services.yaml by hand), or a username that
- * is a reference. Null when there is none.
- */
-function movedCredential(base, baseKey, entry, typed) {
-  for (const field of ['password', 'token']) {
-    if (typed[field]) continue;
-    if (!isBlank(base[field]) || hasSecret(keyedSecretName(baseKey, field))) return field;
-  }
-  return looksLikeSecretRef(entry.username) ? 'username' : null;
 }
 
 /**

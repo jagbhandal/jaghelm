@@ -49,14 +49,20 @@ export default function ConfigView({
     testStatus && typeof testStatus === 'object' && !testStatus.ok ? testStatus.error : null;
   // A refusal of a Save or a Test shows beside the field it names, when the
   // form has it: a key taken by another integration is the instance name's
-  // to fix (#414), and a credential in the URL the URL's (#422).
+  // to fix (#414), a credential in the URL the URL's (#422), and a password
+  // or token to type again for a new address (#556), or one that names a
+  // stored secret (#427), the password's or the token's.
   const besideField = (status) =>
-    status?.field === 'url' || (status?.field === 'instance' && isPreset);
+    status?.field === 'url' ||
+    (status?.field === 'instance' && isPreset) ||
+    ((status?.field === 'password' || status?.field === 'token') && neededFields.includes(status.field));
   const errorBeside = (field) =>
     (saveError && saveStatus.field === field && besideField(saveStatus) ? saveError : null) ||
     (testError && testStatus.field === field && besideField(testStatus) ? testError : null);
   const instanceError = errorBeside('instance');
   const urlRefusal = errorBeside('url');
+  const passwordError = errorBeside('password');
+  const tokenError = errorBeside('token');
   // A stored URL that carries a credential is never shown (#422).
   const urlError =
     urlRefusal ||
@@ -74,10 +80,14 @@ export default function ConfigView({
   // message, before anything can observe the message without it.
   const instanceRef = useRef(null);
   const urlRef = useRef(null);
+  const passwordRef = useRef(null);
+  const tokenRef = useRef(null);
   useLayoutEffect(() => {
     if (instanceError) instanceRef.current?.focus();
     else if (urlRefusal) urlRef.current?.focus();
-  }, [saveStatus, testStatus, instanceError, urlRefusal]);
+    else if (passwordError) passwordRef.current?.focus();
+    else if (tokenError) tokenRef.current?.focus();
+  }, [saveStatus, testStatus, instanceError, urlRefusal, passwordError, tokenError]);
 
   return (
     <div>
@@ -175,12 +185,16 @@ export default function ConfigView({
 
         {/* Password (if needed) */}
         {neededFields.includes('password') && (
-          <FieldGroup label={authType === 'oauth2' ? 'Client Secret' : 'Password'} hint={isEditing ? 'Leave blank to keep existing' : undefined}>
+          <FieldGroup label={authType === 'oauth2' ? 'Client Secret' : 'Password'} hint={isEditing ? 'Leave blank to keep existing' : undefined} error={passwordError}>
             <input
+              ref={passwordRef}
               className="settings-input"
               type="password"
               value={form.password}
-              onChange={e => form.setPassword(e.target.value)}
+              onChange={e => {
+                form.setPassword(e.target.value);
+                clearRefusal('password');
+              }}
               placeholder={isEditing ? '••••••••' : authType === 'oauth2' ? 'OAuth2 Client Secret' : 'Enter password'} // pragma: allowlist secret
               autoComplete="new-password"
             />
@@ -192,12 +206,17 @@ export default function ConfigView({
           <FieldGroup
             label={authType === 'query' ? 'API Key' : authType === 'header' ? `API Key (${selectedPreset?.authHeader || 'X-API-Key'})` : 'API Token'}
             hint={isEditing ? 'Leave blank to keep existing' : undefined}
+            error={tokenError}
           >
             <input
+              ref={tokenRef}
               className="settings-input mono"
               type="password"
               value={form.token}
-              onChange={e => form.setToken(e.target.value)}
+              onChange={e => {
+                form.setToken(e.target.value);
+                clearRefusal('token');
+              }}
               placeholder={isEditing ? '••••••••' : 'Enter API key or token'}
               autoComplete="new-password"
             />

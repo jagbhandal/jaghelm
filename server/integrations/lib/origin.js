@@ -1,23 +1,29 @@
 // @ts-check
 /**
- * A stored credential goes only to the address it was entered for (#556).
+ * Where an integration's requests may go (#556). Two walls, both checked by
+ * assertRequestOrigin before every request an integration makes: the data
+ * read, each extra endpoint, each session login and the read after it, a
+ * cached session token's read (handler.js, session.js).
  *
- * Each secret in the store carries the origins it may be sent to
- * (secrets.js). resolveIntegrationConfig (config.js) puts the origins every
- * stored credential it resolved allows on the config it answers, as
- * `_credentialOrigins`; a credential from `.env` or typed into services.yaml
- * by hand adds none. Every request an integration makes with such a config
- * checks its own URL here first (assertCredentialOrigin): the data read, each
- * extra endpoint, and each session login and the read after it
- * (handler.js, session.js), after the preset's defaults, the `.env`
- * overrides and the endpoint are joined in. A URL on any other origin is not
- * requested. A redirect off the request's origin carries no credential
- * (util/safeFetchCore.js), so a hop never takes one where this check didn't
- * look.
+ * 1. Every request stays on the origin of the integration's own URL (as
+ *    resolved: the preset's default, `.env`, the keyed `url` secret), with or
+ *    without a credential on it. The request URL is the URL with the
+ *    endpoint appended, so an endpoint (or a name an upstream answer fills
+ *    in, Proxmox's node) can't lead onto another host: `.collector.example`
+ *    appended to `http://npm.lan` is `http://npm.lan.collector.example`. One
+ *    that leads elsewhere is not requested. No preset needs a second origin.
+ * 2. A stored credential goes only to the origins it was entered for. Each
+ *    secret in the store carries them (secrets.js); resolveIntegrationConfig
+ *    (config.js) puts the origins every stored credential it resolved allows
+ *    on the config, as `_credentialOrigins`; a credential from `.env` or
+ *    typed into services.yaml by hand adds none.
  *
- * The check runs at the request, not at the forms, so it holds whatever put
- * the URL or the reference there: the integration form, the whole-config
- * save, a hand edit, or a `$secret:` naming another entry's secret.
+ * A redirect off the request's origin carries no credential
+ * (util/safeFetchCore.js), so a hop never takes one where this didn't look.
+ * Both run at the request, not at the forms, so they hold whatever put the
+ * URL, the endpoint or the reference there: the integration form, the
+ * whole-config save, a hand edit, or a `$secret:` naming another entry's
+ * secret.
  */
 
 /**
@@ -68,6 +74,35 @@ export class CredentialOriginError extends Error {
 export function allowedOrigins(stored) {
   if (stored.length === 0) return null;
   return stored.reduce((acc, origins) => acc.filter((o) => origins.includes(o)));
+}
+
+/** What an integration whose request would leave its URL's origin says. */
+export const OFF_ORIGIN_ERROR =
+  "Its endpoint leads away from its URL, onto another host or port, so it is not requested; " +
+  "check the endpoint in its entry in services.yaml";
+
+/** A request whose URL is not on the origin of the integration's own URL. */
+export class OffOriginError extends Error {
+  constructor() {
+    super(OFF_ORIGIN_ERROR);
+    this.name = 'OffOriginError';
+  }
+}
+
+/**
+ * Throw unless `url`, about to be requested for the integration `config`, is
+ * on the origin of `config.url` (OffOriginError) and, when the config
+ * carries a stored credential, on an origin it was entered for
+ * (CredentialOriginError). A URL that doesn't parse is never requested: the
+ * fetch refuses it, and its error says why.
+ * @param {{ url?: string, _credentialOrigins?: string[] | null }} config
+ * @param {string} url
+ */
+export function assertRequestOrigin(config, url) {
+  if (!URL.canParse(String(url))) return;
+  const origin = originOf(url);
+  if (origin === null || origin !== originOf(config?.url)) throw new OffOriginError();
+  assertCredentialOrigin(config, url);
 }
 
 /**

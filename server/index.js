@@ -314,6 +314,10 @@ async function startSubsystems() {
 
   // Load services.yaml or auto-generate one from discovery on first boot
   let config = loadConfig();
+  // Secrets stored before #556 go only to the entries that use them, bound
+  // now; while services.yaml is missing or broken, at its first good load
+  // from disk (never to the default one discovery writes next).
+  bindSecretsAtBoot();
   if (!config) {
     log.info('first boot — running node discovery');
     const nodeLabels = await discoverNodes();
@@ -325,10 +329,6 @@ async function startSubsystems() {
     // interrupted between its two writes): counted in the log, never deleted.
     reportUnusedIntegrationSecrets();
   }
-  // Secrets stored before #556 go only to the entries that use them now, or,
-  // while services.yaml can't be used, to those of its first good load.
-  bindSecretsAtBoot();
-
   startConfigWatcher();
   startBackgroundRefresh();
   startArcane();

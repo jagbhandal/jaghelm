@@ -2,7 +2,7 @@ import { safeFetch, isAuthRejection, readJson } from './http.js';
 import { extractValue, resolveEndpoint } from './extract.js';
 import { createLogger } from '../../util/logger.js';
 import { redactSecrets } from '../../util/redact.js';
-import { assertCredentialOrigin } from './origin.js';
+import { assertRequestOrigin, originOf } from './origin.js';
 
 const log = createLogger('integrations');
 
@@ -42,8 +42,10 @@ function buildLoginBody(session, config) {
   return { body, contentType };
 }
 
-// Session-auth token cache — key: baseUrl + loginEndpoint, value:
-// { token, header, prefix, expires }. Evicted on TTL expiry or server rejection
+// Session-auth token cache — key: the entry's storage key, its URL's origin
+// and the login endpoint (sessionCacheKey), value: { token, header, prefix,
+// expires }. Per entry (#556): keyed by URL alone, another entry on the same
+// URL, with no credential of its own, read with this one's token. Evicted on TTL expiry or server rejection
 // (re-auth on either). Capped at SESSION_CACHE_MAX with LRU eviction (Map keeps
 // insertion order; access bumps to the tail): without the cap, a caller that
 // varies the key (e.g. rotating loginEndpoint paths) could grow it unbounded.
@@ -76,6 +78,11 @@ const SESSION_TOKEN_TTL_DEFAULT = 3_600_000;
 // Exported only for tests.
 export const __test = { sessionTokenCache, cacheGet, cacheSet, SESSION_CACHE_MAX };
 
+/** The cache key of `config`'s session token for the login `sess` (#556). */
+function sessionCacheKey(config, sess) {
+  return JSON.stringify([config._storageKey ?? null, originOf(config.url), sess.loginEndpoint]);
+}
+
 /**
  * Run a fetch using session-based auth.
  *
@@ -104,13 +111,14 @@ export async function fetchWithSession(config, { cache = true } = {}) {
     { key: 'primary', session },
     ...(fallbackSession ? [{ key: fallbackKey, session: fallbackSession }] : []),
   ];
-  // A stored credential goes only where it was entered (#556): every login
-  // and the read after it, checked before any is sent. The read carries the
-  // token the login answers, which stands for the credential.
+  // Every login and the read after it stay on the URL's origin, and a stored
+  // credential goes only where it was entered (#556), checked before any is
+  // sent. The read carries the token the login answers, which stands for the
+  // credential.
   for (const { session: sess } of sessionConfigs) {
-    assertCredentialOrigin(config, `${baseUrl}${sess.loginEndpoint}`);
+    assertRequestOrigin(config, `${baseUrl}${sess.loginEndpoint}`);
   }
-  assertCredentialOrigin(config, `${baseUrl}${endpoint.path}`);
+  assertRequestOrigin(config, `${baseUrl}${endpoint.path}`);
 
   // Logins the upstream refused with a 401 or 403 (#239). Only when every
   // method's login was refused is the failure a rejected login, which the
@@ -122,7 +130,7 @@ export async function fetchWithSession(config, { cache = true } = {}) {
   let lastFailure = '';
 
   for (const { key, session: sess } of sessionConfigs) {
-    const cacheKey = `${baseUrl}:${sess.loginEndpoint}`;
+    const cacheKey = sessionCacheKey(config, sess);
     const cached = cache ? cacheGet(cacheKey) : undefined;
 
     // Try cached token first

@@ -27,10 +27,11 @@
  * version as its ETag, so the tab can save again without reading.
  *
  * A stored credential goes only to the address it was entered for (#556): a
- * write that keeps a credential's marker on an integration entry whose URL it
- * moves to another origin is refused (400, naming the place), whether the
- * credential is in the secret store or typed into services.yaml by hand. It
- * is entered again in the integration's form, for the new address.
+ * write that keeps a stored credential (its marker, or its value sent again)
+ * on an integration entry whose URL it moves to another origin is refused
+ * (400, naming the place), whether the credential is in the secret store or
+ * typed into services.yaml by hand; the integration form refuses the same
+ * (integrations/movedCredential.js). It is entered again for the new address.
  *
  * While services.yaml doesn't parse (or is empty, or not a mapping), the read
  * and the write are both a 503 `config_unparseable` saying so, with no
@@ -45,32 +46,25 @@ import { isDeepStrictEqual } from 'node:util';
 import { Router } from 'express';
 
 import { readConfig, writeConfig } from '../config.js';
-import { getPresetFull, listPresets } from '../integrations/registry.js';
-import { entryOrigin } from '../integrations/lib/config.js';
+import {
+  configMaskOptions,
+  movedCredential,
+  movedCredentialError,
+} from '../integrations/movedCredential.js';
 import { getMonitorNames } from '../monitors.js';
 import { refreshServices } from '../refresh.js';
+import { settleSecretsNamedBy } from '../integrations/secretBinding.js';
 import { respondWarmCached } from '../cache.js';
 import { apiError, configUnusable } from '../errors.js';
 import { asyncHandler } from '../util/asyncHandler.js';
 import { etagOf, ifMatchHits, refuseStale, versionNamed } from '../util/fileVersion.js';
 import { validateConfig, servicesConfigSchema } from '../util/configSchema.js';
-import { isStoredMarker, maskCredentials, restoreCredentials } from '../util/configMask.js';
+import { maskCredentials, restoreCredentials } from '../util/configMask.js';
 
 const router = Router();
 
-/**
- * What the masking needs to know about the presets: each entry's preset (its
- * endpoints' placeholders are masked on the entry), as the refresh loop picks
- * it, and every URL parameter a preset's form shows and saves (never masked).
- * Exported for the tests.
- */
-export function configMaskOptions() {
-  return {
-    presetOf: (/** @type {string} */ key, /** @type {any} */ entry) =>
-      getPresetFull(entry?.preset || key),
-    urlParamKeys: listPresets().flatMap((p) => (p.urlParams || []).map((u) => u.key)),
-  };
-}
+// What the masking needs to know about the presets (integrations/movedCredential.js).
+export { configMaskOptions };
 
 router.get(
   '/',
@@ -86,46 +80,23 @@ router.get(
 const isMap = (/** @type {unknown} */ v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /**
- * The place of the first marker in `value` (the path from the config's root,
- * starting at `at`), or null when it holds none.
- * @param {unknown} value
- * @param {Array<string|number>} at
- * @returns {Array<string|number> | null}
- */
-function firstMarker(value, at) {
-  if (isStoredMarker(value)) return at;
-  if (!value || typeof value !== 'object') return null;
-  for (const [k, v] of Object.entries(value)) {
-    const found = firstMarker(v, [...at, Array.isArray(value) ? Number(k) : k]);
-    if (found) return found;
-  }
-  return null;
-}
-
-/**
  * Why a write is refused for keeping a stored credential on an integration
  * entry it moves to another origin (#556), or null: the first entry of
- * `posted` (with its markers) that keeps a marker while its URL, resolved as
- * a refresh resolves it, is on another origin in `restored` than in
- * `current`. The message names the place, never a value or an origin.
- * @param {any} posted
+ * `restored` (the posted config with each marker replaced) that keeps one of
+ * `current`'s credentials while its URL leaves the origin it had
+ * (integrations/movedCredential.js). It names the place, never a value or an
+ * origin.
  * @param {any} restored
  * @param {any} current
  */
-function movedCredentialRefusal(posted, restored, current) {
-  const entries = posted?.integrations;
+function movedCredentialRefusal(restored, current) {
+  const entries = restored?.integrations;
   if (!isMap(entries) || !isMap(current?.integrations)) return null;
-  for (const [key, entry] of Object.entries(entries)) {
+  for (const [key, after] of Object.entries(entries)) {
     const before = current.integrations[key];
-    if (!Object.hasOwn(current.integrations, key) || !isMap(before) || !isMap(entry)) continue;
-    const path = firstMarker(entry, ['integrations', key]);
-    if (!path) continue;
-    if (entryOrigin(key, restored.integrations[key]) === entryOrigin(key, before)) continue;
-    const name = [...path].reverse().find((p) => typeof p === 'string');
-    return (
-      `The stored credential at ${path.join('.')} was entered for the old address; ` +
-      `re-enter the ${name} for the new address`
-    );
+    if (!Object.hasOwn(current.integrations, key) || !isMap(before) || !isMap(after)) continue;
+    const moved = movedCredential({ beforeKey: key, before, afterKey: key, after });
+    if (moved) return movedCredentialError(moved, `integrations.${key}`);
   }
   return null;
 }
@@ -167,7 +138,7 @@ router.post('/config', (req, res) => {
   // marker is never written and no credential moves to another place.
   const restored = restoreCredentials(v.data, current || {}, configMaskOptions());
   if (!restored.ok) return apiError(res, restored.status, restored.error);
-  const moved = movedCredentialRefusal(v.data, restored.config, current);
+  const moved = movedCredentialRefusal(restored.config, current);
   if (moved) return apiError(res, 400, moved);
 
   // A save that changes nothing writes nothing, so services.yaml stays
@@ -176,6 +147,14 @@ router.post('/config', (req, res) => {
   if (current && isDeepStrictEqual(restored.config, current)) {
     res.set('ETag', etagOf(version));
     return res.json({ ok: true });
+  }
+
+  // A secret from before #556 still waiting to be bound (services.yaml was
+  // missing at boot) is never bound by what this save names.
+  try {
+    settleSecretsNamedBy(restored.config);
+  } catch {
+    return apiError(res, 500, 'Failed to persist config');
   }
 
   const saved = writeConfig(restored.config, version);
