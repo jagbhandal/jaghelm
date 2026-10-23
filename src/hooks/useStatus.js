@@ -17,28 +17,28 @@
  *            (`get`, `subscribe`): each answer moves it, a 304 too, without
  *            re-rendering the caller, so only what shows it (UpdatedAgo)
  *            re-renders. Its `staleAfter` is how old that answer may get
- *            before the status it brought is stale (staleAfterMs, #480): a
- *            hidden tab or a sleeping laptop asks nothing, while `reach`
- *            stays 'ok'. Its `builtAt()` is when the server built the status
- *            that answer carried, on this browser's clock (#499, builtAtOf),
- *            or null from a server that doesn't say; set with the answer's
- *            time, before the store tells anyone. A failed poll or a 503
- *            leaves both as they were.
+ *            before the status it brought is stale (staleAfterMs, the one
+ *            rule, #480, #559): a hidden tab or a sleeping laptop asks
+ *            nothing, while `reach` stays 'ok'. Its `builtAt()` is when the
+ *            server built the status that answer carried, on this browser's
+ *            clock (#499, builtAtOf), or null from a server that doesn't
+ *            say; set with the answer's time, before the store tells anyone.
+ *            A failed poll or a 503 leaves both as they were.
  *
  * @param {{ intervalMs: number, enabled?: boolean }} options
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getStatus, NOT_MODIFIED_NO_BODY, REQUEST_TIMEOUT_MS } from './useData.js';
+import { staleAfterMs } from '../shell/freshness.js';
+import { getStatus, NOT_MODIFIED_NO_BODY } from './useData.js';
 import { usePageVisible } from './usePageVisible.js';
 
 /**
  * How old the last answer may get before the status it brought is stale
- * (#480): two polls missed, and the next one's request run to its timeout.
- * 72 s at the default 30 s interval.
+ * (#480): the client's one rule (src/shell/freshness.js, #559), which the
+ * Overview's sections' notes follow too. Here for Android, which builds its
+ * poll's store as this one does.
  */
-export function staleAfterMs(intervalMs) {
-  return 2 * intervalMs + REQUEST_TIMEOUT_MS;
-}
+export { staleAfterMs };
 
 /**
  * When the status an answer carried was built, on this browser's clock

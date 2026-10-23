@@ -1038,13 +1038,18 @@ describe('No signal: a stale status never looks current', () => {
     expect(nas()).toHaveAttribute('data-state', 'unknown');
     // No Alerts badge, with an old count in an old colour, either.
     for (const a of alerts()) expect(a).not.toHaveAccessibleName(/issue/);
+    // The section's own readings are as old, and it says so with the header,
+    // by the same rule on the same clock (#559).
+    expect(within(section()).getByText("Node readings aren't updating")).toBeInTheDocument();
+    expect(within(section()).getByText('Updated 3h ago')).toBeInTheDocument();
 
-    // The answer: every colour back, together.
+    // The answers: every colour back, and the note gone, together.
     await advance(0);
     expect(within(header()).getByRole('link')).toHaveAttribute('data-state', 'crit');
     expect(attention()).toHaveAttribute('data-state', 'crit');
     expect(nas()).toHaveAttribute('data-state', 'warn');
     expect(screen.queryByText(/last known/i)).toBeNull();
+    expect(screen.queryByText("Node readings aren't updating")).toBeNull();
   });
 
   it('the age keeps moving, and every place reads the same one', async () => {
