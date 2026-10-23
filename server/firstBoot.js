@@ -50,8 +50,10 @@ const reasonOf = (err) => err?.message || String(err);
 /**
  * Save the default config with `nodes`, only where there is no file, and say
  * so once (`found` begins the line). A file that got there first stands and
- * is loaded now. A write that fails (writeConfig logged why) leaves JagHelm
- * on the nodes in memory, and the next save writes the file.
+ * is loaded now. A write that fails (writeConfig logged why: a services.yaml
+ * that is a symlink to nothing, an unwritable data dir) leaves JagHelm on the
+ * nodes in memory, and the next save writes the file. Either way there is a
+ * config in memory after it, so the boot never runs on none.
  */
 function saveDiscovered(nodes, found) {
   const cfg = generateDefaultConfig(nodes);
@@ -60,6 +62,7 @@ function saveDiscovered(nodes, found) {
     log.info({ nodes }, `${found}, saved services.yaml with them`);
   } else if (saved.conflict) {
     readConfig();
+    if (!getConfig()) useUnsavedConfig(cfg); // gone again before the read
     log.info(`${found}, but services.yaml was written meanwhile; it stays as it is`);
   } else {
     useUnsavedConfig(cfg);

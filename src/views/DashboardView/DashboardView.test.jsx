@@ -173,6 +173,28 @@ describe('DashboardView on a fresh install', () => {
     expect(screen.queryByTestId('grid')).not.toBeInTheDocument();
   });
 
+  // #566: while the first boot waits for Prometheus to have nodes, they come
+  // by themselves, and a save in Settings would end the wait: no push there.
+  it('while the first boot waits for nodes, says they appear on their own, with no way to Settings', () => {
+    renderBoard(freshConfig(), boardData({ serviceData: { nodes: {}, discovery: 'waiting' } }));
+
+    expect(screen.getByText('Waiting for your first node')).toBeInTheDocument();
+    expect(
+      screen.getByText(/appear here on their own as soon as Prometheus scrapes a host/)
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Connect your first node')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open Settings' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/in Settings/)).not.toBeInTheDocument();
+  });
+
+  it('with nothing discovering, never says a node can be added in Settings (#566)', () => {
+    renderBoard(freshConfig(), boardData());
+
+    expect(screen.getByText('Connect your first node')).toBeInTheDocument();
+    expect(screen.getByText(/list its node in services\.yaml/)).toBeInTheDocument();
+    expect(screen.queryByText(/node in Settings/)).not.toBeInTheDocument();
+  });
+
   it('shows the loading skeleton, not ghost node panels, while /api/services is in flight', () => {
     renderBoard(freshConfig(), boardData({ servicesLoaded: false }));
 

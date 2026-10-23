@@ -5,5 +5,6 @@
   the nodes as soon as there are some, with no restart or hand edit. A
   `services.yaml` that is already there, or that you save in Settings
   meanwhile, is yours and is never rediscovered over. `/api/health` says
-  `discovering` while it waits, and Settings → Nodes says whether the nodes
-  will come by themselves.
+  `discovering` while it waits, and the board's empty state ("Waiting for
+  your first node") and Settings → Nodes say the nodes will come by
+  themselves.

@@ -2246,7 +2246,10 @@ flowchart TD
   it stays. A panel not on show (switched off in
   Settings, or a source not known to be set up) is not added to a layout, so
   it holds no empty slot. A fresh install with no node shows the "Connect your
-  first node" empty state, and the demo (`DEMO_MODE`) gets the same default
+  first node" empty state; while the first boot waits for nodes
+  (`discovery: 'waiting'`, 6, #566) it is "Waiting for your first node",
+  which says they appear on their own and offers no way to Settings, where
+  a save would end the wait. The demo (`DEMO_MODE`) gets the same default
   from its own nodes. The UPS and Pipeline panels show only when the server
   says their source is set up (`configuredPanels.js`). `/api/ups` carries `configured`:
   true when Prometheus has the UPS's readings or saw its `nut_ups_info` series
@@ -2865,7 +2868,11 @@ All state is files under the data dir (no DB):
     is none, atomically (`createExclusiveFileSync`: a temp file linked into
     place, which fails when a file is there), so a file put there from
     outside the process after the check is never replaced: that write is a
-    conflict too (#566). The first boot's save is one. `saveConfig` writes
+    conflict too (#566). A path that refuses the link yet reads as no file
+    (a symlink to a file that doesn't exist) is an error, not a conflict: one
+    error log line naming the symlink, and a 500 from Settings' save, never a
+    409 that a reload can't settle. The first boot's save is one; when it
+    fails, JagHelm runs on the nodes it found, in memory. `saveConfig` writes
     through `writeConfig` over whatever is there, for tests.
   - **A save keeps the file's comments and layout** (#416). `writeConfig`
     parses the bytes it is about to replace with the `yaml` package (pinned,

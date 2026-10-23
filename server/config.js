@@ -28,7 +28,7 @@
  * file is written whole, as before (savedText).
  */
 
-import { statSync } from 'fs';
+import { lstatSync, statSync } from 'fs';
 import { join } from 'path';
 import { isDeepStrictEqual } from 'util';
 import yaml from 'js-yaml';
@@ -695,8 +695,15 @@ export function writeConfig(newConfig, ifVersion) {
       // (#566): a temp file linked into place, which fails when a file got
       // there from outside the process after the read above (a hand edit,
       // the first boot's discovery racing a user's file). That file stands.
+      const now = readDisk();
+      if (now.version === CONFIG_ABSENT) {
+        // Something is at the path, yet it reads as no file: a symlink to a
+        // file that doesn't exist. No conflict a read again could settle.
+        log.error(createRefused());
+        return { ok: false };
+      }
       log.warn('services.yaml was created since it was read; not saving over it');
-      return { ok: false, conflict: true, version: readDisk().version };
+      return { ok: false, conflict: true, version: now.version };
     }
     if (why) {
       log.warn(
@@ -721,6 +728,23 @@ export function writeConfig(newConfig, ifVersion) {
   } finally {
     saveInProgress = false;
   }
+}
+
+/**
+ * Why services.yaml can't be created where a read finds no file (#566): the
+ * path holds a symlink to a file that doesn't exist, as a rule. Its name
+ * only, never its path or the link's target.
+ */
+function createRefused() {
+  let link = false;
+  try {
+    link = lstatSync(CONFIG_PATH).isSymbolicLink();
+  } catch {
+    // gone again: said as below
+  }
+  return link
+    ? "services.yaml is a symlink to a file that doesn't exist, so it can't be created; not saving (fix or remove the link on the host)"
+    : "services.yaml can't be created, though no file reads there; not saving";
 }
 
 /**

@@ -400,6 +400,64 @@ test('a refused PROMETHEUS_URL: one line, no wait; neither health nor Settings s
   await assert.rejects(discoverNodes(), { message: problem });
 });
 
+test('services.yaml a dangling symlink: a write is an error, not a conflict; the first boot runs on the nodes it found', async () => {
+  const target = join(DATA, 'gone', 'services.yaml');
+  const dangle = () => {
+    fs.rmSync(CONFIG_PATH, { force: true });
+    fs.symlinkSync(target, CONFIG_PATH);
+  };
+  try {
+    // At boot: it reads as no file, so this is a first boot; the link
+    // refuses the save, and the nodes found stay in memory.
+    dangle();
+    initDiscovery(PROM);
+    prometheus('nodes');
+    assert.equal(loadConfig(), null);
+    let cfg;
+    const lines = await captureLogs(async () => {
+      cfg = await firstBoot();
+    });
+    assert.deepEqual(nodesOf(cfg), FOUND, 'never null: the boot logs its nodes from it');
+    assert.deepEqual(nodesOf(getConfig()), FOUND);
+    assert.equal(waitingForNodes(), false);
+    assert.deepEqual(firstBootLines(lines).slice(1), [
+      'first boot: discovered nodes; running on them, services.yaml not saved (the next save writes it)',
+    ]);
+    assert.ok(
+      lines.some((l) => l.level === 'error' && /symlink to a file that doesn't exist/.test(l.msg)),
+      JSON.stringify(lines.map((l) => l.msg))
+    );
+    assert.ok(!lines.some((l) => /meanwhile/.test(l.msg)), 'no file was written meanwhile');
+    assert.ok(fs.lstatSync(CONFIG_PATH).isSymbolicLink(), 'the link is left as it is');
+    assert.equal(fs.existsSync(target), false);
+
+    // The same once the wait is on: Prometheus has nodes later.
+    dangle();
+    prometheus('down');
+    assert.equal(loadConfig(), null);
+    await firstBoot();
+    assert.equal(waitingForNodes(), true, 'a link to nothing reads as no file');
+    prometheus('nodes');
+    await refreshServices();
+    assert.deepEqual(servedNodes(), FOUND, 'on the board all the same');
+    assert.equal(waitingForNodes(), false);
+
+    // writeConfig and a Settings save: an error (500), never a 409 to retry forever.
+    const saved = writeConfig({ nodes: {} }, CONFIG_ABSENT);
+    assert.deepEqual(saved, { ok: false });
+    const read = await request(app).get('/api/services/config');
+    assert.equal(read.headers.etag, `"${CONFIG_ABSENT}"`);
+    const post = await request(app)
+      .post('/api/services/config')
+      .set('If-Match', read.headers.etag)
+      .send({ ...read.body, services: { web: { display_name: 'Web' } } });
+    assert.equal(post.status, 500, JSON.stringify(post.body));
+    assert.ok(fs.lstatSync(CONFIG_PATH).isSymbolicLink());
+  } finally {
+    fs.rmSync(CONFIG_PATH, { force: true });
+  }
+});
+
 test('discovery rejects when Prometheus is down and answers [] when it has no nodes', async () => {
   initDiscovery(PROM);
   prometheus('down');

@@ -349,7 +349,7 @@ async function boot() {
     // The port bound, which PORT=0 leaves to the OS.
     const port = server.address()?.port ?? PORT;
     log.info({ version: VERSION, node: process.version, host: HOST, port }, 'listening');
-    log.info({ nodes: Object.keys(config.nodes || {}) }, 'active nodes');
+    log.info({ nodes: Object.keys(config?.nodes || {}) }, 'active nodes');
     if (demo) logDemoBanner(port);
     // The demo is open by design: its guard refuses every write and serves no config.
     else if (!authEnabled()) {
