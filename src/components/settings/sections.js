@@ -26,11 +26,11 @@ export const SETTINGS_SECTIONS = Object.freeze(
       desc: "Each monitoring source's live health: Prometheus, Uptime Kuma, NUT, Gitea, cron reporters.",
       // A source's name is what it is found by.
       settings: [
-        part('Prometheus', 'prometheus', ''),
-        part('Uptime Kuma', 'kuma', ''),
-        part('NUT (UPS)', 'nut', ''),
-        part('Gitea', 'gitea', ''),
-        part('Cron reporters', 'cron-reporters', ''),
+        part('Prometheus', 'prometheus'),
+        part('Uptime Kuma', 'kuma'),
+        part('NUT (UPS)', 'nut'),
+        part('Gitea', 'gitea'),
+        part('Cron reporters', 'cron-reporters'),
       ],
     },
     {
