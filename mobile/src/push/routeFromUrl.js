@@ -1,6 +1,7 @@
 /**
  * Pure parser for the custom-scheme deep link (DESIGN line 307):
- *   jaghelm://incident/<fcmId>?type=<t>&node=<n>&severity=<s>
+ *   jaghelm://incident/<fcmId>?type=<t>&node=<n>&severity=<s>[&entity=<id>]
+ * (`entity`, the status model's id, #309, as a push's data carries it).
  * This is the PRIMARY OSS-build deep-link path (verified https App Links need a
  * per-self-hoster assetlinks.json). It reassembles the FCM `data` shape and
  * delegates to routeFromData so the SAME id-reconciler + fallback logic runs as
@@ -28,13 +29,13 @@ export function routeFromUrl(url, nav) {
     id = idRaw;
   }
   const params = new URLSearchParams(qIdx === -1 ? '' : rest.slice(qIdx + 1));
-  routeFromData(
-    {
-      type: params.get('type') || undefined,
-      id,
-      node: params.get('node') || undefined,
-      severity: params.get('severity') || undefined,
-    },
-    nav,
-  );
+  const data = {
+    type: params.get('type') || undefined,
+    id,
+    node: params.get('node') || undefined,
+    severity: params.get('severity') || undefined,
+  };
+  const entity = params.get('entity');
+  if (entity) data.entity = entity;
+  routeFromData(data, nav);
 }

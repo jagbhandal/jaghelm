@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -184,6 +184,25 @@ describe('EntityRow', () => {
       'href',
       '/services/npm'
     );
+  });
+
+  it("a link's onOpen opens it in the page on a plain click; a modified or middle click is the browser's (#309)", () => {
+    const onOpen = vi.fn();
+    render(<EntityRow {...NPM} href="/?entity=services/edge:npm" onOpen={onOpen} />);
+    const row = screen.getByRole('link', { name: 'Nginx Proxy Manager, Up' });
+    for (const init of [
+      { ctrlKey: true },
+      { metaKey: true },
+      { shiftKey: true },
+      { altKey: true },
+      { button: 1 },
+    ]) {
+      expect(fireEvent.click(row, init), JSON.stringify(init)).toBe(true);
+    }
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(fireEvent.click(row), 'a plain click is the page’s').toBe(false);
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(onOpen).toHaveBeenCalledWith();
   });
 
   it('is plain content with nothing to open: no button, the lamp named, no chevron', () => {

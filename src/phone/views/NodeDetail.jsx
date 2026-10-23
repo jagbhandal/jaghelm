@@ -7,6 +7,7 @@ import {
   DetailUnreachable,
 } from '../components/DetailParts.jsx';
 import { detailLoading, sinceLine } from '../data/detail.js';
+import { AndroidLoading } from '../components/AndroidLoading.jsx';
 import UsageBar from '../components/UsageBar.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import { MetricMeter } from '@ui/metric-meter';
@@ -24,7 +25,8 @@ import { useStatusAt } from '../../shell/statusFreshness.js';
  * card has room for three bars and swaps TEMP for DISK when the disk is over
  * a line (data/board.js); this screen shows all four, so the temperature
  * behind an amber lamp is never hidden (#273).
- * A node the model doesn't have → "This node is no longer reported."
+ * A node the model doesn't have → "This node is no longer reported." (the
+ * web look: "no longer monitored", as the web's drawer says it, #309).
  *
  * The web look (#303), the Phone board's sheet: Back and "Node" over its
  * name and where it is, the status box (the model's word, its reason when it
@@ -56,7 +58,7 @@ function WebNodeDetail({ data, nav, params }) {
         <BackHeader kind="Node" onBack={nav.pop} />
         <div className="flex flex-col gap-4 p-4">
           <DetailTitle title="Node" />
-          <p className="text-text-2">This node is no longer reported.</p>
+          <p className="text-text-2">This node is no longer monitored.</p>
         </div>
       </>
     );
@@ -122,6 +124,7 @@ function WebNodeDetail({ data, nav, params }) {
 }
 
 function AndroidNodeDetail({ data, nav, params }) {
+  if (detailLoading(data)) return <AndroidLoading label="Node detail" title="Node" nav={nav} />;
   const freshness = data.freshness ?? FRESH;
   const node = data.status
     ? nodeCardsOf({ status: data.status, servicesBody: data.servicesBody, freshness }).find(

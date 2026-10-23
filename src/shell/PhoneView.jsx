@@ -21,25 +21,27 @@
  *  - the platform (src/phone/platform.js): Open goes where the web's links
  *    go, a new tab or this one, as Settings → Layout says (`linkTarget`).
  */
-import { useMemo } from 'react';
+import { Suspense, lazy, useMemo } from 'react';
 import Overview from '../phone/views/Overview.jsx';
 import Services from '../phone/views/Services.jsx';
 import Infra from '../phone/views/Infra.jsx';
 import Alerts from '../phone/views/Alerts.jsx';
-import ServiceDetail from '../phone/views/ServiceDetail.jsx';
-import NodeDetail from '../phone/views/NodeDetail.jsx';
-import IncidentDetail from '../phone/views/IncidentDetail.jsx';
 import { PhonePlatform } from '../phone/platform.js';
 import { PhonePage, PhoneSheet } from '../phone/components/PhoneSheet.jsx';
 import { useDashboardData } from '../views/DashboardView/useDashboardData.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import { usePhoneNav } from './phoneNav.js';
 import { openTarget, phoneData } from './phoneData.js';
+import { loadPhoneDetail } from '../lazyViews.js';
 
 /** The tabs' screens, by route. */
 const TABS = { overview: Overview, services: Services, infrastructure: Infra, alerts: Alerts };
-/** The details a screen pushes, by the name it pushes. */
-const DETAILS = { serviceDetail: ServiceDetail, node: NodeDetail, incident: IncidentDetail };
+/**
+ * The details a screen pushes, by the name it pushes (PhoneDetail.jsx): a
+ * chunk of their own, loaded with the first one opened (#309).
+ */
+const DETAILS = new Set(['serviceDetail', 'node', 'incident']);
+const PhoneDetail = lazy(loadPhoneDetail);
 /** What the screens read beside the status: the cards (the model has the UPS's readings, #549). */
 const SOURCES = ['services'];
 
@@ -75,12 +77,13 @@ export default function PhoneView({
       <PhonePage>
         <Tab data={data} nav={nav} params={{}} />
         {nav.details.map((entry, i) => {
-          const Detail = DETAILS[entry.screen];
-          if (!Detail) return null;
+          if (!DETAILS.has(entry.screen)) return null;
           return (
             // A detail keeps its place on the stack: the one under it stays drawn.
             <PhoneSheet key={i} index={i} onClose={nav.pop}>
-              <Detail data={data} nav={nav} params={entry.params} />
+              <Suspense fallback={null}>
+                <PhoneDetail screen={entry.screen} data={data} nav={nav} params={entry.params} />
+              </Suspense>
             </PhoneSheet>
           );
         })}

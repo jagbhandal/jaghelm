@@ -67,7 +67,8 @@ exports[`Arcane pushes are unchanged in content: every type, as the phone receiv
       "type": "arcane_agent_offline",
       "id": "arcane:vm-101:agent",
       "node": "vm-101",
-      "severity": "warning"
+      "severity": "warning",
+      "entity": "integrations/arcane:vm-101"
     },
     "android": {
       "priority": "normal",
@@ -86,7 +87,8 @@ exports[`Arcane pushes are unchanged in content: every type, as the phone receiv
       "type": "arcane_agent_recovered",
       "id": "arcane:vm-101:agent",
       "node": "vm-101",
-      "severity": "info"
+      "severity": "info",
+      "entity": "integrations/arcane:vm-101"
     },
     "android": {
       "priority": "normal",

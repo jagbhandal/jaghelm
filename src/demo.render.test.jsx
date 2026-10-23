@@ -76,6 +76,12 @@ async function advance(ms) {
   });
 }
 
+/** The drawer named `name` (#309), once its chunk and the floating layer have answered. */
+async function drawer(name) {
+  await advance(50);
+  return screen.getByRole('dialog', { name });
+}
+
 /**
  * Render the app and let it load, then wait out the settings save debounce
  * (2 s). The render, every answer and the timers all run inside act(), so each
@@ -198,12 +204,12 @@ describe('the demo, rendered', () => {
       `Critical: ${demoStatus('incident').overall.sentence}`
     );
     expect(headerStatus()).toHaveAttribute('data-state', 'crit');
-    // One service is down, as the model says: Jellyfin's row, red, its lamp "Down".
+    // One service is down, as the model says: Jellyfin's row, red, named "Down".
     const notUp = serviceRowEls().filter((r) => r.dataset.state !== 'ok');
     expect(notUp).toHaveLength(1);
     expect(notUp[0]).toHaveAttribute('data-state', 'crit');
     expect(within(notUp[0]).getByText('Jellyfin')).toBeInTheDocument();
-    expect(within(notUp[0]).getByRole('img', { name: 'Down' })).toBeInTheDocument();
+    expect(notUp[0]).toHaveAccessibleName('Jellyfin, Down');
   });
 
   it('is green in the healthy scenario', async () => {
@@ -298,22 +304,23 @@ describe("the demo's Overview status", () => {
     expect(panel('Scheduled Jobs')).toContainElement(place('jobs/storage:nightly-backup'));
   });
 
-  it('incident: a click on a row moves to its entity on the board', async () => {
+  // #309: a row opens its entity's detail, over the Overview, at its URL.
+  it('incident: a click on a row opens its entity’s detail over the Overview', async () => {
     await renderDemo('incident');
     const [jellyfin] = rowLinks();
     expect(jellyfin).toHaveAccessibleName('Jellyfin, Down, Service · apps');
-    const card = place('services/apps:jellyfin');
-    const scroll = vi.spyOn(card, 'scrollIntoView');
+    expect(jellyfin).toHaveAttribute('href', '/?entity=services/apps:jellyfin');
 
     await act(async () => {
       fireEvent.click(jellyfin);
     });
-    expect(document.activeElement).toBe(card);
-    expect(scroll).toHaveBeenCalledWith({ block: 'start' });
-    expect(jellyfin).toHaveAttribute('href', `#${entityAnchor('services/apps:jellyfin')}`);
+    expect(window.location.pathname + window.location.search).toBe(
+      '/?entity=services/apps:jellyfin'
+    );
+    expect(await drawer('Jellyfin')).toBeInTheDocument();
   });
 
-  it('incident: Enter on a row moves there too; a backup leads to its job’s row', async () => {
+  it('incident: Enter on a row opens it too; a backup opens its backup', async () => {
     await renderDemo('incident');
     // user-event waits on a real timer between keys (Testing Library's async
     // wrapper knows only Jest's fake clock), so the keyboard runs on real ones.
@@ -323,23 +330,22 @@ describe("the demo's Overview status", () => {
     expect(backup).toHaveAccessibleName('nightly-backup, Failed, Backup · storage');
     backup.focus();
     await user.keyboard('{Enter}');
-    expect(document.activeElement).toBe(place('jobs/storage:nightly-backup'));
+    expect(window.location.search).toBe('?entity=backups/storage:nightly-backup');
+    expect(await screen.findByRole('dialog', { name: 'nightly-backup' })).toBeInTheDocument();
   });
 
   it('a click with a modifier key is the browser’s: the page stays where it is', async () => {
     await renderDemo('incident');
     const [jellyfin] = rowLinks();
-    const card = place('services/apps:jellyfin');
-    const scroll = vi.spyOn(card, 'scrollIntoView');
     for (const modifier of ['ctrlKey', 'metaKey', 'shiftKey']) {
       fireEvent.click(jellyfin, { [modifier]: true });
     }
-    expect(scroll).not.toHaveBeenCalled();
-    expect(document.activeElement).not.toBe(card);
+    expect(window.location.search).toBe('');
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  // #279: a row whose place the board doesn't draw opens nothing, so it is plain.
-  it('with Scheduled Jobs off, the backup’s row is plain content, and Enter does nothing', async () => {
+  // #309: every row opens its entity, whatever the board below draws.
+  it('with Scheduled Jobs off, the backup’s row still opens its backup', async () => {
     await renderDemo('incident', {
       '/api/display-config': (config) => ({ ...config, showCronJobs: false }),
     });
@@ -348,26 +354,10 @@ describe("the demo's Overview status", () => {
     const rows = within(screen.getByRole('region', { name: 'Needs attention' })).getAllByRole(
       'listitem'
     );
-    const backup = rows[1].querySelector('[data-slot="issue-row"]');
-    expect(backup).toHaveTextContent('nightly-backup');
-    expect(backup.tagName).toBe('DIV');
-    expect(within(rows[1]).queryByRole('link')).toBeNull();
-    expect(backup).not.toHaveClass('cursor-pointer');
-    // Jellyfin's card is still drawn: its row is still a link.
-    expect(within(rows[0]).getByRole('link')).toHaveAttribute(
+    expect(within(rows[1]).getByRole('link')).toHaveAttribute(
       'href',
-      `#${entityAnchor('services/apps:jellyfin')}`
+      '/?entity=backups/storage:nightly-backup'
     );
-
-    // Not in the tab order, and Enter or a click on it moves nothing.
-    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView');
-    backup.focus();
-    expect(document.activeElement).not.toBe(backup);
-    fireEvent.keyDown(backup, { key: 'Enter' });
-    fireEvent.click(backup);
-    expect(scroll).not.toHaveBeenCalled();
-    expect(window.location.hash).toBe('');
-    scroll.mockRestore();
   });
 
   it("healthy: the quiet line, with the model's sentence", async () => {
@@ -468,10 +458,10 @@ describe("the demo's subsystem strip", () => {
     await renderDemo('incident');
     await click(tile('Services'));
     expect(rows().map((r) => r.textContent)).toEqual([expect.stringContaining('Jellyfin')]);
-    // Its row in the Services section is drawn, so its issue row leads there.
+    // Its issue row opens it over the filtered Overview, the filter kept (#309).
     expect(within(rows()[0]).getByRole('link')).toHaveAttribute(
       'href',
-      `#${entityAnchor('services/apps:jellyfin')}`
+      '/?subsystem=services&entity=services/apps:jellyfin'
     );
     expect(servicesSection()).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Infrastructure' })).toBeNull();
@@ -709,7 +699,7 @@ describe("the demo's Infrastructure section", () => {
     });
   }
 
-  it('the incident: the NAS at 94.6 % disk reads as a warning, 94, and its row leads to its card', async () => {
+  it('the incident: the NAS at 94.6 % disk reads as a warning, 94, and its row opens it', async () => {
     const board = nasDiskIncident({ now: Date.now() });
     await renderDemo('incident', {
       '/api/status': () => board.status,
@@ -727,9 +717,14 @@ describe("the demo's Infrastructure section", () => {
     const row = within(screen.getByRole('region', { name: 'Needs attention' })).getByRole('link', {
       name: /^Storage, Warning/,
     });
-    expect(row).toHaveAttribute('href', `#${entityAnchor('nodes/storage')}`);
+    expect(row).toHaveAttribute('href', '/?entity=nodes/storage');
+    // The card opens it too (#309).
+    expect(within(nas).getByRole('link', { name: 'Storage' })).toHaveAttribute(
+      'href',
+      '/?entity=nodes/storage'
+    );
     await click(row);
-    expect(document.activeElement).toBe(nas);
+    expect(await drawer('Storage')).toBeInTheDocument();
   });
 
   it('Nodes: the section stays, with the node panels; another filter hides it, and the panel takes the anchor', async () => {
@@ -829,7 +824,9 @@ describe("the demo's Services section", () => {
         const e = entities.find((x) => x.id === row.dataset.entity);
         expect(row, e.id).toHaveAttribute('data-state', e.state);
         expect(row.id).toBe(entityAnchor(e.id));
-        expect(within(row).getByRole('img', { name: e.word })).toBeInTheDocument();
+        // A link to the service (#309), named by its word.
+        expect(row).toHaveAccessibleName(`${e.name}, ${e.word}`);
+        expect(row).toHaveAttribute('href', `/?entity=${e.id}`);
         // Healthy rows are muted; a failing one is not.
         if (e.state === 'ok') expect(row).toHaveAttribute('data-muted', '');
         else expect(row).not.toHaveAttribute('data-muted');
@@ -852,20 +849,15 @@ describe("the demo's Services section", () => {
     });
   }
 
-  it("the incident: Jellyfin's issue row brings its row into view, and focuses it", async () => {
+  it("the incident: Jellyfin's row, worst first in its group, opens its detail (#309)", async () => {
     await renderDemo('incident');
     const row = place('services/apps:jellyfin');
     expect(row).toHaveAttribute('data-state', 'crit');
     // The worst first in its group.
     expect(within(serviceGroup('App Server')).getAllByRole('listitem')[0]).toContainElement(row);
-    const link = within(screen.getByRole('region', { name: 'Needs attention' })).getByRole('link', {
-      name: /^Jellyfin, Down/,
-    });
-    expect(link).toHaveAttribute('href', `#${entityAnchor('services/apps:jellyfin')}`);
-    const scroll = vi.spyOn(row, 'scrollIntoView');
-    await click(link);
-    expect(document.activeElement).toBe(row);
-    expect(scroll).toHaveBeenCalledWith({ block: 'start' });
+    await click(row);
+    expect(window.location.search).toBe('?entity=services/apps:jellyfin');
+    expect(await drawer('Jellyfin')).toBeInTheDocument();
   });
 
   it('without a custom group: Group is offered but disabled, with a link to where groups are set', async () => {
@@ -1062,12 +1054,15 @@ describe('No signal: a stale status never looks current', () => {
       ).toHaveClass('text-unknown-fg');
 
       // No lamp is named by a level word: each is named for what it draws, or
-      // is decorative beside the words "No signal".
+      // is decorative beside the words "No signal" (in them, or in the name of
+      // the link it is in).
       for (const place of places())
         for (const lamp of place.querySelectorAll('[data-slot="status-lamp"]')) {
-          if (lamp.getAttribute('aria-hidden') === 'true')
-            expect(lamp.parentElement).toHaveTextContent(/No signal/);
-          else expect(lamp).toHaveAccessibleName('No signal');
+          if (lamp.getAttribute('aria-hidden') === 'true') {
+            const link = lamp.closest('a[aria-label]');
+            if (link) expect(link).toHaveAccessibleName(/No signal/);
+            else expect(lamp.parentElement).toHaveTextContent(/No signal/);
+          } else expect(lamp).toHaveAccessibleName('No signal');
         }
       // A tile or a row says it before its last word.
       for (const t of within(strip()).getAllByRole('button'))

@@ -22,7 +22,7 @@
  *    lamp, a sheet's title the same, the Alerts tab's count 10px at 800 in
  *    an 18 × 16 pill.
  *  - A reload with a sheet open, the cards slow: "Loading…" in the sheet
- *    until they come, then the service; never "no longer reported".
+ *    until they come, then the service; never "no longer monitored".
  *  - Healthy: every lamp ok, nothing red or amber, no green word.
  *  - No signal: nothing red, amber or green outside the lamps, every lamp
  *    the steel ring, what was last known kept; and with the server out of
@@ -363,7 +363,7 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       expect([boxLamp.width, boxLamp.height]).toEqual([16, 16]);
     });
 
-    test('a reload with a sheet open and the cards slow: "Loading…" until they come, never "no longer reported"', async ({
+    test('a reload with a sheet open and the cards slow: "Loading…" until they come, never "no longer monitored"', async ({
       page,
     }) => {
       await openPhone(page);
@@ -385,12 +385,12 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       await expect(waiting).toContainText('Service');
       // The status has answered by now: still waiting for the cards.
       await expect(header(page)).toHaveCount(1);
-      await expect(page.getByText(/no longer reported/)).toHaveCount(0);
+      await expect(page.getByText(/no longer (reported|monitored)/i)).toHaveCount(0);
       await page.screenshot({ path: `${shots()}/phone-detail-loading-${width}.png` });
       answer();
       const detail = page.getByRole('dialog', { name: 'Jellyfin' });
       await expect(detail).toContainText('Kuma: down');
-      await expect(page.getByText(/no longer reported/)).toHaveCount(0);
+      await expect(page.getByText(/no longer (reported|monitored)/i)).toHaveCount(0);
       // Back still closes it, onto the Overview.
       await page.goBack();
       await expect(sheet(page)).toHaveCount(0);

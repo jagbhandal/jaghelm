@@ -8,10 +8,11 @@
  * argument: the caller knows where it leads), named "title, word, where" and
  * described by its reason and age; a row with nothing to open is plain
  * content, so it neither looks nor announces as tappable (#279). A link may
- * have an `onOpen` too, for what the page does beside following it (the
- * Overview's moves to the place it names, #297): a plain click or Enter
- * calls it, and a click with a modifier key or the middle button is the
- * browser's alone (a new tab or window), so it never moves this one.
+ * have an `onOpen` too, when the page opens it itself (an entity's URL, #309,
+ * opens its detail over the page): a plain click or Enter calls it instead
+ * of loading the link, and a click with a modifier key or the middle button
+ * is the browser's alone (the link in a new tab or window), so it never
+ * moves this one.
  *
  * The `ui` look is the mock's row, at either of its own widths:
  *
@@ -36,6 +37,7 @@ import { ChevronRight } from 'lucide-react';
 import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { cn } from './lib/utils.js';
+import { openHere } from './lib/link.js';
 import { WORDS, lampName, spoken, toSeverity, toState } from './lib/status.js';
 
 const word = {
@@ -45,9 +47,6 @@ const word = {
   unknown: 'text-unknown-fg',
   maintenance: 'text-maintenance-fg',
 };
-
-/** A click the page may act on: the main button, no modifier key. */
-const plain = (e) => e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey);
 
 /**
  * The name of a row that opens something: "title, word, where", with the
@@ -110,7 +109,7 @@ function UiIssueRow({ issue: it, onOpen, href, className, ...props }) {
     Tag === 'button'
       ? { type: 'button', onClick: () => onOpen() }
       : Tag === 'a'
-        ? { href, onClick: onOpen ? (e) => plain(e) && onOpen() : undefined }
+        ? { href, onClick: onOpen ? (e) => openHere(e, onOpen) : undefined }
         : {};
 
   return (

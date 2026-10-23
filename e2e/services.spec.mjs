@@ -12,7 +12,7 @@
  *  - the grouping, by node or by custom group, kept in this browser across a
  *    reload;
  *  - the subsystem strip's Services cell brings the section alone into view,
- *    and Jellyfin's issue row brings its row into view and focuses it;
+ *    and Jellyfin's issue row, and its row, open its detail drawer (#309);
  *  - axe finds nothing.
  *
  * Its no-signal probe (every row steel, dark and light) is in
@@ -258,7 +258,7 @@ test.describe('Services, grouped and filtered', () => {
   });
 
   for (const size of ['wide', 'tablet']) {
-    test(`at ${VIEWPORTS[size].width}: Jellyfin's issue row brings its row into view, and focuses it`, async ({
+    test(`at ${VIEWPORTS[size].width}: Jellyfin's issue row and its row in the section open its detail drawer (#309)`, async ({
       page,
     }) => {
       await page.setViewportSize(VIEWPORTS[size]);
@@ -266,15 +266,21 @@ test.describe('Services, grouped and filtered', () => {
       const link = page
         .getByRole('region', { name: 'Needs attention' })
         .getByRole('link', { name: /^Jellyfin, Down/ });
-      await expect(link).toHaveAttribute('href', '#entity-services/apps:jellyfin');
+      await expect(link).toHaveAttribute('href', '/?entity=services/apps:jellyfin');
       await link.click();
+      const drawer = page.getByRole('dialog', { name: 'Jellyfin' });
+      await expect(drawer).toBeVisible();
+      await expect(drawer.locator('[data-slot="detail-status"]')).toContainText('Kuma: down');
+      await page.keyboard.press('Escape');
+      await expect(drawer).toHaveCount(0);
+      await expect(link).toBeFocused();
       const row = rowOf(page, 'services/apps:jellyfin');
+      await expect(row).toHaveAttribute('href', '/?entity=services/apps:jellyfin');
+      await row.click();
+      await expect(drawer).toBeVisible();
+      await page.goBack();
+      await expect(drawer).toHaveCount(0);
       await expect(row).toBeFocused();
-      await expect(row).toBeInViewport();
-      const header = await page.locator('[data-slot="app-header"]').boundingBox();
-      expect((await row.boundingBox()).y, 'clear of the header').toBeGreaterThanOrEqual(
-        header.y + header.height
-      );
     });
   }
 });

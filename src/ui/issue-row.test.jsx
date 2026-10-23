@@ -73,9 +73,9 @@ describe('IssueRow', () => {
     expect(row).toHaveAttribute('href', '/services/immich');
   });
 
-  it("a link's onOpen runs on a plain click; a modified or middle click is the browser's", () => {
+  it("a link's onOpen opens it in the page on a plain click; a modified or middle click is the browser's", () => {
     const onOpen = vi.fn();
-    render(<IssueRow issue={immich} href="#entity-immich" onOpen={onOpen} />);
+    render(<IssueRow issue={immich} href="/?entity=services/vm-103:immich" onOpen={onOpen} />);
     const row = screen.getByRole('link');
     const modified = {
       Ctrl: { ctrlKey: true },
@@ -89,7 +89,8 @@ describe('IssueRow', () => {
       expect(fireEvent.click(row, init), `${name}: not cancelled`).toBe(true);
       expect(onOpen, `${name}: not the page's`).not.toHaveBeenCalled();
     }
-    expect(fireEvent.click(row), 'a plain click still follows the link').toBe(true);
+    // The page opens it itself (#309): the browser doesn't load the link.
+    expect(fireEvent.click(row), 'a plain click is the page’s').toBe(false);
     expect(onOpen).toHaveBeenCalledOnce();
     expect(onOpen).toHaveBeenCalledWith();
   });

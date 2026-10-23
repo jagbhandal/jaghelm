@@ -25,9 +25,12 @@ import { alertsBadge } from './shell/statusView.js';
 import { useStatusStale } from './shell/statusFreshness.js';
 import { OverviewLayout } from './shell/Utilities.jsx';
 import { dropDeadKeys, sectionShown } from './shell/overviewSections.js';
+import { useEntityParam } from './shell/entityNav.js';
+import { entityFor } from './phone/nav/entityRoute.js';
 import {
   loadAlertsPage,
   loadAppFrames,
+  loadEntityDrawer,
   loadLaunchPage,
   loadPhoneView,
   loadSettingsView,
@@ -42,6 +45,8 @@ const AlertsPage = lazy(loadAlertsPage);
 const LaunchPage = lazy(loadLaunchPage);
 // Below 768px the shared phone screens (#303), a chunk only a phone loads.
 const PhoneView = lazy(loadPhoneView);
+// From 768px, the detail drawer of the entity the URL names (#309).
+const EntityDrawer = lazy(loadEntityDrawer);
 import {
   apiFetch,
   setAuthToken as setApiAuthToken,
@@ -210,6 +215,9 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   // The URL is the page (src/router, #296): a deep link, Back and Forward, a
   // reload and a chunk reload after a deploy all land where it says.
   const { route, params } = useRoute({ phone });
+  // The entity open over the page (#309): its id in the URL's `?entity=`. From
+  // 768px the drawer draws it; below, the phone screens' sheet.
+  const entityId = useEntityParam();
   const [tick, setTick] = useState(0);
   // Start with localStorage for instant render; the server fetch overrides it.
   // `migrate` upgrades the legacy `jagnet-config` key to the current one.
@@ -346,15 +354,21 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
     []
   );
 
-  // Each page names the browser tab, so history entries tell apart.
+  // Each page names the browser tab, so history entries tell apart; an open
+  // entity, by its name.
   const name = instanceName(config.title);
-  const pageTitle = route.id === 'app' ? openApp?.label : route.title;
+  const entityName = entityId ? entityFor(poll.status, entityId)?.name : null;
+  const pageTitle = entityName || (route.id === 'app' ? openApp?.label : route.title);
   useEffect(() => {
     document.title = pageTitle ? `${pageTitle} — ${name}` : name;
   }, [pageTitle, name]);
 
   // The new UI's roots draw the theme shown: system's is the device's.
   const switches = useMemo(() => ({ theme: shown }), [shown]);
+
+  // The drawer's chunk loads with the first entity opened from 768px.
+  const [entityDrawerUsed, setEntityDrawerUsed] = useState(false);
+  if (!entityDrawerUsed && entityId && !phone) setEntityDrawerUsed(true);
 
   const lazyFallback = (
     <div
@@ -446,6 +460,18 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
             )}
           </Suspense>
           <Suspense fallback={lazyFallback}>{route.id === 'launch' && <LaunchPage />}</Suspense>
+          {/* From 768px, the entity the URL names, over the page (#309): loaded on
+              the first one, then kept, so it closes as it opened. */}
+          {entityDrawerUsed && (
+            <Suspense fallback={null}>
+              <EntityDrawer
+                id={phone ? null : entityId}
+                status={poll.status}
+                reach={poll.reach}
+                updated={poll.updated}
+              />
+            </Suspense>
+          )}
           <Suspense fallback={lazyFallback}>
             {route.id === 'settings' && (
               <SettingsView

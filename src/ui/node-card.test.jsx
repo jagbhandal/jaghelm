@@ -1,5 +1,5 @@
-import { render, screen, within } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 import { NodeCard } from '@ui/node-card';
 
 const READINGS = [
@@ -128,6 +128,27 @@ describe('NodeCard', () => {
     expect(card).toHaveTextContent('Up 12d 3h');
     const chart = within(card).getByRole('img', { name: 'CPU, last hour' });
     expect(chart).toHaveAccessibleDescription(/Latest 24%/);
+  });
+
+  it('with an href, its name is a link to the node; with onOpen too, a plain click opens it in the page (#309)', () => {
+    const onOpen = vi.fn();
+    render(
+      <NodeCard
+        name="Storage"
+        state="warn"
+        word="Warning"
+        href="/?entity=nodes/storage"
+        onOpen={onOpen}
+      />
+    );
+    const card = screen.getByRole('article', { name: 'Storage' });
+    const link = within(card).getByRole('link', { name: 'Storage' });
+    expect(link).toHaveAttribute('href', '/?entity=nodes/storage');
+    expect(fireEvent.click(link, { ctrlKey: true }), 'a new tab is the browser’s').toBe(true);
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(fireEvent.click(link)).toBe(false);
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(within(card).queryByRole('button')).toBeNull();
   });
 
   it('passes an id and data to its root, for a page to link to it', () => {

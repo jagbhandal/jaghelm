@@ -24,10 +24,13 @@
  *    stands for when it is wide enough again.
  *
  * Each node is `{ id, anchor, name, host, subtitle, colour, state, word,
- * reason, readings, services, uptime, trend }` (NodeCard's props, `services`
- * the hosted services in words); each reading as NodeCard's, plus `shown`,
- * its printed value. `anchor` is the element id a page links to
- * (the card, or the node's name in the table). While `loading`, three
+ * reason, readings, services, uptime, trend, href?, onOpen? }` (NodeCard's
+ * props, `services` the hosted services in words); each reading as
+ * NodeCard's, plus `shown`, its printed value. `anchor` is the element id a
+ * page links to (the card, or the node's name in the table). With an `href`
+ * (and `onOpen`, lib/link.js) the node opens: from its card's name, as
+ * NodeCard's, and from its name in the table, a link (the Overview's, the
+ * node's detail, #309). While `loading`, three
  * placeholder cards stand in, and the section says it is loading.
  */
 import { useId, useLayoutEffect, useRef, useState } from 'react';
@@ -39,6 +42,7 @@ import { StatusLamp } from './status-lamp.jsx';
 import { StatusWord } from './status-word.jsx';
 import { Table } from './table.jsx';
 import { cn } from './lib/utils.js';
+import { openHere } from './lib/link.js';
 import { WORDS, lampName, toState } from './lib/status.js';
 
 /** The table's least width: narrower, the section draws cards. */
@@ -104,15 +108,31 @@ const COLUMNS = [
   {
     key: 'name',
     header: 'Node',
-    cell: (node) => (
-      <span id={node.anchor} className="inline-flex items-center gap-2">
-        <NodeSwatch colour={node.colour} />
-        {node.name}
-        {node.host && (
-          <span className="font-mono text-caption font-normal text-text-3">{node.host}</span>
-        )}
-      </span>
-    ),
+    cell: (node) => {
+      const name = (
+        <>
+          <NodeSwatch colour={node.colour} />
+          {node.name}
+          {node.host && (
+            <span className="font-mono text-caption font-normal text-text-3">{node.host}</span>
+          )}
+        </>
+      );
+      return node.href ? (
+        <a
+          id={node.anchor}
+          href={node.href}
+          onClick={node.onOpen ? (e) => openHere(e, node.onOpen) : undefined}
+          className="inline-flex items-center gap-2 rounded-xs hover:underline"
+        >
+          {name}
+        </a>
+      ) : (
+        <span id={node.anchor} className="inline-flex items-center gap-2">
+          {name}
+        </span>
+      );
+    },
   },
   { key: 'subtitle', header: 'Role', className: 'text-text-2' },
   readingColumn('cpu', 'CPU'),
@@ -225,6 +245,8 @@ function InfrastructureSection({
                 services={node.services}
                 uptime={node.uptime}
                 trend={node.trend}
+                href={node.href}
+                onOpen={node.onOpen}
               />
             </li>
           ))}

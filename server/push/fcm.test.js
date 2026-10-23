@@ -130,7 +130,13 @@ test('buildMessage: critical event => exact shape, android.priority high', () =>
   assert.deepEqual(msg, {
     token: 'tok-123',
     notification: { title: 'Service down: web', body: 'web on vm-101 is down' },
-    data: { type: 'service_down', id: 'web', node: 'vm-101', severity: 'critical' },
+    data: {
+      type: 'service_down',
+      id: 'web',
+      node: 'vm-101',
+      severity: 'critical',
+      entity: 'services/web',
+    },
     android: {
       priority: 'high',
       notification: { channelId: 'jaghelm-incidents' },
@@ -156,8 +162,8 @@ test('buildMessage is PURE: same input => byte-identical output, no input mutati
   const a = buildMessage('t', frozen);
   const b = buildMessage('t', frozen);
   assert.equal(JSON.stringify(a), JSON.stringify(b));
-  // data carries ONLY the four contract keys — not prev/next/title/body.
-  assert.deepEqual(Object.keys(a.data).sort(), ['id', 'node', 'severity', 'type']);
+  // data carries ONLY the contract keys (androidPayload.js) — not prev/next/title/body.
+  assert.deepEqual(Object.keys(a.data).sort(), ['entity', 'id', 'node', 'severity', 'type']);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

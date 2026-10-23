@@ -133,6 +133,28 @@ describe('InfrastructureSection', () => {
     expect(within(section()).queryAllByRole('article')).toEqual([]);
   });
 
+  it('a node with an href opens from its card and from its row in the table (#309)', async () => {
+    const opened = [];
+    const linked = NODES.map((n) => ({
+      ...n,
+      href: `/?entity=${n.id}`,
+      onOpen: () => opened.push(n.id),
+    }));
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <InfrastructureSection nodes={linked} view="cards" onViewChange={() => {}} />
+    );
+    const card = within(section()).getByRole('article', { name: 'Storage' });
+    await user.click(within(card).getByRole('link', { name: 'Storage' }));
+    rerender(<InfrastructureSection nodes={linked} view="table" onViewChange={() => {}} />);
+    const table = within(section()).getByRole('table', { name: 'Nodes' });
+    const row = within(table).getAllByRole('row')[1];
+    const link = within(row).getByRole('link', { name: /^App Server/ });
+    expect(link).toHaveAttribute('href', '/?entity=nodes/apps');
+    await user.click(link);
+    expect(opened).toEqual(['nodes/storage', 'nodes/apps']);
+  });
+
   it('narrower than the table (a phone): the cards, with every state and reading in view, and no toggle', () => {
     const at = (width) =>
       vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
