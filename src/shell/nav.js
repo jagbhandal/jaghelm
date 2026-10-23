@@ -5,9 +5,9 @@
  *
  *   Monitor  Overview, Services, Infrastructure (#313, the mock's order),
  *            Alerts (with the issue count)
- *   Apps     one entry per embedded app (Settings → Tabs), its dot while it is
- *            loaded and not open, Unload on it; then "Add app", to Settings'
- *            Tabs section, until Settings → Apps & links (#362)
+ *   Apps     one entry per embedded app (Settings → Apps & links), its dot
+ *            while it is loaded and not open, Unload on it; then "Add app",
+ *            to Settings → Apps & links (#317; #362 rebuilds it)
  *   Tools    Launch (Quick Launch, Pipeline, the Checklist, #301), Settings
  *
  * Phones get the spec's five tabs (§7, #303): Overview, Services,
@@ -31,8 +31,8 @@ import { pathTo } from '../router/routes.js';
 
 const icon = (Icon) => h(Icon, { 'aria-hidden': 'true' });
 
-/** Where "Add app" goes: Settings' Tabs section, today's editor of embedded apps. */
-export const ADD_APP_PATH = pathTo('settings', { section: 'tabs' });
+/** Where "Add app" goes: Settings → Apps & links (#317), the editor of embedded apps. */
+export const ADD_APP_PATH = pathTo('settings', { section: 'apps' });
 
 /** The embedded apps: the config's `iframe` tabs. */
 export function appsOf(tabs) {

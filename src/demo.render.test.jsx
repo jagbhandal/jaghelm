@@ -808,10 +808,13 @@ describe("the demo's Services section", () => {
     await renderDemo('incident');
     expect(within(grouping()).getByRole('radio', { name: 'Node' })).toBeChecked();
     expect(within(grouping()).getByRole('radio', { name: 'Group' })).toBeDisabled();
-    const link = within(servicesSection()).getByRole('link', { name: /Settings → Sections/ });
-    expect(link).toHaveAttribute('href', '/settings/sections');
+    const link = within(servicesSection()).getByRole('link', {
+      name: /Settings → Nodes & Services/,
+    });
+    expect(link).toHaveAttribute('href', '/settings/nodes#custom-groups');
     await click(link);
-    expect(window.location.pathname).toBe('/settings/sections');
+    expect(window.location.pathname).toBe('/settings/nodes');
+    expect(window.location.hash).toBe('#custom-groups');
   });
 
   it('by custom group: the choice kept in this browser, the node beside each name', async () => {

@@ -73,8 +73,8 @@ In demo mode a guard owns the entire `/api` surface (`server/demo.js`):
 
 The web app learns it is the demo from `/api/auth/check` and sends it no
 save. What a visitor changes is kept in that browser for the visit, with no
-"couldn't save" error: Settings → General, Appearance and
-Links; ticking, adding or removing a checklist item; removing a scheduled job;
+"couldn't save" error: Settings → Appearance and Apps & links;
+ticking, adding or removing a checklist item; removing a scheduled job;
 editing a node or service in Settings; a new logo or background. A reload
 brings back the demo's own board.
 Integrations and the password are held by the server alone, so there is

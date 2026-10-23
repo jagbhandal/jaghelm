@@ -10,7 +10,7 @@ import { useMemo } from 'react';
 import { Banner } from '@ui/banner';
 import { Button } from '@ui/button';
 import { followLink } from '../router/useRoute.js';
-import { pathTo } from '../router/routes.js';
+import { settingsHref } from '../components/settings/sections.js';
 import { useEntityLink } from './entityNav.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import { groupingsFor, serviceRows, useServicesGrouping } from './servicesView.js';
@@ -44,13 +44,14 @@ function staleBanner(health, onRetry) {
 
 const NO_GROUPS = [];
 
-// Where custom groups are made: the hint beside a disabled Group.
-const SECTIONS = pathTo('settings', { section: 'sections' });
+// Where custom groups are made: the hint beside a disabled Group, a link to
+// Settings → Nodes & Services at its custom groups (#317).
+const CUSTOM_GROUPS = settingsHref('nodes', 'custom-groups');
 const noGroupsHint = (
   <>
     No custom groups yet:{' '}
-    <a href={SECTIONS} onClick={(e) => followLink(e, SECTIONS)}>
-      add one in Settings → Sections
+    <a href={CUSTOM_GROUPS} onClick={(e) => followLink(e, CUSTOM_GROUPS)}>
+      add one in Settings → Nodes & Services
     </a>
   </>
 );

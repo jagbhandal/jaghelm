@@ -1,4 +1,6 @@
-import React, { useId } from 'react';
+import React, { createContext, useContext, useId } from 'react';
+import { ShellSection } from '@ui/app-shell';
+import { Button } from '@ui/button';
 import { iconImageSrc } from '../../utils/icon.jsx';
 
 /**
@@ -7,16 +9,66 @@ import { iconImageSrc } from '../../utils/icon.jsx';
  * Presentational only — `value`/`onChange` over the existing `.settings-*` classes.
  */
 
+// The level of the next heading down (#317): a section's page is the h1, its
+// cards and groups h2, a card inside a group h3.
+const HeadingLevel = createContext(2);
+
 /**
  * Section card: an optional title heading over its children.
- * `title` may be any node (most callers pass a string).
+ * `title` may be any node (most callers pass a string). The heading is the
+ * level under the one around it: an h2 on a section's page, an h3 in a Group.
+ * `id` is its anchor on a section's page (sections.js `settings`), where a
+ * link to `#<id>` opens it.
  */
-export function Card({ title, children }) {
+export function Card({ title, id, children }) {
+  const Heading = `h${useContext(HeadingLevel)}`;
   return (
-    <div className="settings-card">
-      {title && <h3 className="settings-card-title">{title}</h3>}
+    <div className="settings-card" id={id}>
+      {title && <Heading className="settings-card-title">{title}</Heading>}
       {children}
     </div>
+  );
+}
+
+/**
+ * A titled part of a section's page (#317) that brings its own cards, such
+ * as a tab Settings had before (Nodes, Quick Launch links): its title as a
+ * heading at a card's level (`description` under it), and its children a
+ * level down, so the cards inside it are its subheadings. Named by its title;
+ * `id` is its anchor, as a Card's.
+ */
+export function Group({ title, description, id: anchor, children }) {
+  const id = useId();
+  const level = useContext(HeadingLevel);
+  const Heading = `h${level}`;
+  return (
+    <section aria-labelledby={id} id={anchor} className="settings-section settings-anchor">
+      <div>
+        <Heading id={id} className="settings-group-title">
+          {title}
+        </Heading>
+        {description && (
+          <p className="settings-hint-block" style={{ marginTop: 2 }}>
+            {description}
+          </p>
+        )}
+      </div>
+      <HeadingLevel.Provider value={level + 1}>{children}</HeadingLevel.Provider>
+    </section>
+  );
+}
+
+/**
+ * The design system's Button (`@ui/button`, its props) in today's Settings
+ * markup (#276, #317): in a root of its own (the shell's theme), which draws
+ * no box (`display: contents`), so the button sits in the row as the old one
+ * did and the legacy markup around it is left alone.
+ */
+export function UiButton(props) {
+  return (
+    <ShellSection style={{ display: 'contents' }}>
+      <Button {...props} />
+    </ShellSection>
   );
 }
 

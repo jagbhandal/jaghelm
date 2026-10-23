@@ -3,8 +3,8 @@
  * shortcuts). JagHelm keeps no address for a service, Grafana or Uptime
  * Kuma (services.yaml has none, and the monitoring sources' URLs are the
  * server's, not for a browser), so a link is one the user already has: an
- * embedded app (Settings → Tabs), which opens inside JagHelm, or a Quick
- * Launch link (Settings → Links), which opens as the others do.
+ * embedded app (Settings → Apps & links), which opens inside JagHelm, or a
+ * Quick Launch link (the same section's), which opens as the others do.
  *
  * A link is found by its name alone, matched exactly (letter case and spaces
  * aside), never by its icon: "Proxmox Backup Server" with Proxmox's icon is
@@ -29,6 +29,8 @@
  * node), else the first of the others, as the mock's "Open in Grafana".
  */
 import { pathTo } from '../../router/routes.js';
+import { settingsHref } from '../../components/settings/sections.js';
+import { SETTINGS_LINKS } from './settingsLinks.js';
 import { safeUrl } from '../../utils/safeUrl.js';
 import { appsOf } from '../nav.js';
 
@@ -93,16 +95,6 @@ function sharedName(status, entity, container) {
   });
 }
 
-// Where each kind is set up, in Settings: the section, and the link's words.
-const SETTINGS = Object.freeze({
-  node: ['nodes', 'Node settings'],
-  service: ['services', 'Service settings'],
-  container: ['services', 'Service settings'],
-  integration: ['integrations', 'Integration settings'],
-  agent: ['integrations', 'Integration settings'],
-  ups: ['sections', 'UPS settings'],
-});
-
 const GRAFANA = ['node', 'service', 'container', 'ups'];
 
 /**
@@ -163,12 +155,12 @@ export function entityLinks({
               : first.label,
       }
     : null;
-  const [section, words] = SETTINGS[kind] ?? [];
+  const [words, section, part] = SETTINGS_LINKS[kind] ?? [];
   return {
     primary,
     links: rest,
     settings: section
-      ? { key: 'settings', label: words, href: pathTo('settings', { section }), app: true }
+      ? { key: 'settings', label: words, href: settingsHref(section, part), app: true }
       : null,
   };
 }

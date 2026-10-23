@@ -481,6 +481,26 @@ export const CATALOG = Object.freeze([
     'WeatherClock (#307): the clock alone, a long condition in °F, the first reading on its way, no reading'
   ),
 
+  // Settings (#317)
+  s(
+    'settings-index',
+    'Settings',
+    'SettingsIndex: the search, then a card per section (its icon in the accent chip, its name and line), and that changes apply at once',
+    { accent: true }
+  ),
+  s(
+    'settings-index-search',
+    'Settings',
+    'SettingsIndex: a search, "link": the section it finds, and its settings that matched',
+    { accent: true }
+  ),
+  s(
+    'settings-section',
+    'Settings',
+    "SettingsSectionPage: the breadcrumb, the section's name and line, the list of sections beside it, the open one marked",
+    { accent: true }
+  ),
+
   // The command palette (#315)
   s(
     'command-palette',

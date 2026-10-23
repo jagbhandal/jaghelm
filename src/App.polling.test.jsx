@@ -222,7 +222,7 @@ describe('dashboard polling — paused when nobody is looking', () => {
     await renderApp();
     take();
     fireEvent.click(entry('Settings'));
-    await vi.waitFor(() => screen.getByRole('navigation', { name: 'Settings sections' }));
+    await vi.waitFor(() => screen.getByRole('heading', { level: 1, name: 'Settings' }));
     await advance(5 * TICK_MS);
     const away = take();
     expect(board(away)).toEqual([]);

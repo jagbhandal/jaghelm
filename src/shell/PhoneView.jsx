@@ -29,7 +29,7 @@
  *    dialog named by its title: Escape, its Back and the browser's Back
  *    close it, and focus returns to the row that opened it.
  *  - the platform (src/phone/platform.js): Open goes where the web's links
- *    go, a new tab or this one, as Settings → Layout says (`linkTarget`).
+ *    go, a new tab or this one, as Settings → Apps & links says (`linkTarget`).
  */
 import { Suspense, lazy, useEffect, useMemo } from 'react';
 import Overview from '../phone/views/Overview.jsx';

@@ -2,8 +2,9 @@
  * Today's extras (#307, spec §8 "Today's extras keep a home"): the weather and
  * the clock, which the old header drew and the new shell (#296) had dropped,
  * and the web search, which moves to the Launch page. No new setting or data
- * but one: they read Settings → Widgets as before (`showWeather`, the place
- * and city, `tempUnit`; `showSearch` and `searchEngine`) and /api/weather, and
+ * but one: they read what Widgets had, as before (`showWeather`, the place
+ * and city, `tempUnit`: Settings → Appearance since #317; `showSearch` and
+ * `searchEngine`: Settings → Apps & links) and /api/weather, and
  * the clock gets a switch (`showClock`, on until switched off, as the old
  * header always drew it).
  *
@@ -25,7 +26,7 @@ export const WEATHER_REFRESH_MS = 10 * 60_000;
 /** How soon a failed read is tried again. */
 export const WEATHER_RETRY_MS = 60_000;
 
-// A coordinate as Settings → Widgets saves it (a string), within ±limit.
+// A coordinate as Settings → Appearance saves it (a string), within ±limit.
 function coordinate(raw, limit) {
   if (raw == null || String(raw).trim() === '') return null;
   const n = Number(raw);
@@ -34,7 +35,7 @@ function coordinate(raw, limit) {
 
 /**
  * The weather's place, "lat,lon", or null when there is no weather to show:
- * switched off in Settings → Widgets, or no place set (as the old header).
+ * switched off in Settings → Appearance, or no place set (as the old header).
  */
 export function weatherPlace(config) {
   if (!config || config.showWeather === false) return null;
@@ -43,13 +44,13 @@ export function weatherPlace(config) {
   return lat == null || lon == null ? null : `${lat},${lon}`;
 }
 
-/** Whether the clock is shown: until Settings → Widgets switches it off. */
+/** Whether the clock is shown: until Settings → Appearance switches it off. */
 export const clockShown = (config) => config?.showClock !== false;
 
 /** Whether there is weather or a clock to show: the rail and the Launch page draw a panel. */
 export const extrasShown = (config) => weatherPlace(config) != null || clockShown(config);
 
-/** Whether the Launch page has the web search: until Settings → Widgets switches it off. */
+/** Whether the Launch page has the web search: until Settings → Apps & links switches it off. */
 export const searchShown = (config) => config?.showSearch !== false;
 
 /**
@@ -185,7 +186,7 @@ export function useClock(active = true) {
   return now;
 }
 
-/** The search engine Settings → Widgets names, or Google. */
+/** The search engine Settings → Apps & links names, or Google. */
 export function searchEngine(config) {
   return SEARCH_ENGINES.find((s) => s.id === config?.searchEngine) ?? SEARCH_ENGINES[0];
 }

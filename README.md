@@ -200,7 +200,7 @@ Open `http://your-host:3099`. On first boot JagHelm discovers the nodes Promethe
  
 ## Configuration
  
-Most things are configurable from the Settings UI (sidebar nav, 13 sections). For people who prefer files, everything is on disk too, in `data/` (or the directory `JAGHELM_DATA_DIR` names). Set `JAGHELM_DATA_DIR` like any other variable: in Docker, `environment:` or `env_file`; running `npm start`, the `.env` in its working directory, which it reads before anything else, or the process environment, which wins over `.env`.
+Most things are configurable from the Settings UI: an index of five sections (Nodes & Services, Integrations, Apps & links, Appearance and System), each a card saying what it holds, with a search that finds a setting by name ("font" finds Appearance, and opens it at its fonts), or by the name of a tab Settings had before ("widgets", "security"). The command palette finds them the same way. For people who prefer files, everything is on disk too, in `data/` (or the directory `JAGHELM_DATA_DIR` names). Set `JAGHELM_DATA_DIR` like any other variable: in Docker, `environment:` or `env_file`; running `npm start`, the `.env` in its working directory, which it reads before anything else, or the process environment, which wins over `.env`.
  
 ```
 data/
@@ -306,7 +306,7 @@ Saving an integration in Settings changes only what its form shows: the URL, use
  
 ### Embedded apps
  
-Add your existing monitoring tools as embedded apps — Grafana, Uptime Kuma, Portainer, Proxmox, anything web-accessible. Each has its own entry in the sidebar's Apps group (under More on a phone), its own address, and an "Open" command in the command palette, and opens inside JagHelm under the status header rather than in a new browser tab. Configurable per app from Settings. An app you have opened stays loaded when you switch away, so it is where you left it when you come back; a dot marks it, and Unload frees it. At most five stay loaded at once, the least recently used unloading first. A bar over the open app shows its address, with Reload (that app only) and "Open in new tab". An app that is slow to start says so, with a Retry; one whose server refuses to be shown inside another site says that instead, with "Open in new tab" and how to allow embedding.
+Add your existing monitoring tools as embedded apps — Grafana, Uptime Kuma, Portainer, Proxmox, anything web-accessible. Each has its own entry in the sidebar's Apps group (under More on a phone), its own address, and an "Open" command in the command palette, and opens inside JagHelm under the status header rather than in a new browser tab. Configurable per app from Settings → Apps & links. An app you have opened stays loaded when you switch away, so it is where you left it when you come back; a dot marks it, and Unload frees it. At most five stay loaded at once, the least recently used unloading first. A bar over the open app shows its address, with Reload (that app only) and "Open in new tab". An app that is slow to start says so, with a Retry; one whose server refuses to be shown inside another site says that instead, with "Open in new tab" and how to allow embedding.
  
 ### The Overview
  
@@ -328,7 +328,7 @@ If you run [NUT](https://networkupstools.org/) with the Prometheus exporter, Jag
  
 ### UI configuration with file escape hatch
  
-Settings UI handles the day-to-day work — themes, Overview sections, integration setup, password change, links, tabs. For the things you'd rather automate or template, everything lives in YAML/JSON on disk.
+Settings UI handles the day-to-day work: Nodes & Services (names, monitors, custom groups), Integrations, Apps & links (embedded apps, Quick Launch links, the web search), Appearance (theme, font, branding, Overview sections, weather and clock) and System (password, backup, data refresh). An old Settings address, such as a bookmark of `/settings/links`, opens the section that holds it now, at the part that does. For the things you'd rather automate or template, everything lives in YAML/JSON on disk.
  
 ## Android app
 
@@ -429,5 +429,5 @@ of Outfit, DM Sans and JetBrains Mono in [`mobile/src/fonts/`](mobile/src/fonts/
 in [`mobile/src/fonts/licences/`](mobile/src/fonts/licences/). They are Manrope,
 Plus Jakarta Sans, Montserrat and JetBrains Mono for the redesign, and Inter,
 Fira Code, Nunito, Source Code Pro, Rajdhani, Roboto and Roboto Mono for
-Settings' Typography presets. All are served by JagHelm itself; nothing is fetched from Google Fonts.
+Settings → Appearance's font presets. All are served by JagHelm itself; nothing is fetched from Google Fonts.
  

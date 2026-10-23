@@ -39,7 +39,7 @@ import {
   loadSettingsView,
 } from './lazyViews.js';
 
-// Settings (13-tab tree), the app frames and the Alerts and Launch pages aren't
+// Settings (its index and sections), the app frames and the Alerts and Launch pages aren't
 // needed for the default Overview render — code-split them so they don't weigh
 // down the initial bundle. Their loaders live in lazyViews.js.
 const AppFrames = lazy(loadAppFrames);

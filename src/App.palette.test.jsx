@@ -146,10 +146,10 @@ describe('the command palette opens what it finds (#315)', () => {
   it('a Settings section opens at its address', async () => {
     const user = userEvent.setup();
     await renderAt('/');
-    await search(user, 'bookmarks');
-    await user.click(result(/^Links, Settings, Quick Launch bookmarks$/));
-    expect(url()).toBe('/settings/links');
-    expect(await screen.findByRole('navigation', { name: 'Settings sections' })).toBeTruthy();
+    await search(user, 'apps & links');
+    await user.click(result(/^Apps & links, Settings, Embedded apps/));
+    expect(url()).toBe('/settings/apps');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Apps & links' })).toBeTruthy();
   });
 
   it('a page opens at its address', async () => {
@@ -198,7 +198,7 @@ describe('the command palette opens what it finds (#315)', () => {
     expect(screen.queryByRole('combobox')).toBeNull();
   });
 
-  it('a Quick Launch link follows Settings → Layout’s "Same Tab"', async () => {
+  it('a Quick Launch link follows Settings → Apps & links’ "Same Tab"', async () => {
     localStorage.setItem(
       'jaghelm-config',
       JSON.stringify({ tabs: [GRAFANA], links: LINKS, linkTarget: '_self' })
@@ -224,17 +224,23 @@ describe('the command palette opens what it finds (#315)', () => {
     await renderAt('/');
     const field = await search(user, '');
     const names = screen.getAllByRole('option').map((o) => o.getAttribute('aria-label'));
-    expect(names.some((n) => /^(Dark|Light|System)\b/.test(n))).toBe(false);
+    // Settings → System is a section, not the theme.
+    expect(names.some((n) => /^(Dark|Light)\b/.test(n) || /^System, (?!Settings)/.test(n))).toBe(
+      false
+    );
+    // "dark" and "light" find where themes are chosen, Settings → Appearance, and no theme.
     for (const word of ['dark', 'light']) {
       await user.clear(field);
       await user.type(field, word);
-      expect(screen.queryAllByRole('option')).toEqual([]);
+      expect(screen.getAllByRole('option').map((o) => o.getAttribute('href'))).toEqual([
+        '/settings/appearance',
+      ]);
     }
     await user.clear(field);
     await user.type(field, 'theme');
     // Only where themes are chosen: Settings → Appearance.
     expect(screen.getAllByRole('option').map((o) => o.getAttribute('aria-label'))).toEqual([
-      'Appearance, Settings, Theme, Overview sections, background',
+      'Appearance, Settings, Theme, font, branding, Overview sections, weather and clock.',
     ]);
   });
 });

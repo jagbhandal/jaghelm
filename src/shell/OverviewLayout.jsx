@@ -4,7 +4,7 @@
  * its top, then Quick Launch, Pipeline and the Checklist (OverviewRail.jsx).
  * Narrower, the rail isn't rendered at all (not hidden by CSS), so nothing is
  * drawn twice or polled off screen. The rail keeps the board's switches
- * (Settings → Sections: a panel switched off stays off) and draws a panel
+ * (Settings → Appearance, Utilities: a panel switched off stays off) and draws a panel
  * only when its source is set up: no links, no Quick Launch; no Gitea, no
  * Pipeline; no place, no weather. Settings → Appearance → Overview sections
  * can switch the whole rail off (`rail`, overviewSections.js). The Launch

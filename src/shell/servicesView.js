@@ -22,7 +22,7 @@
  * signal drops.
  *
  * Grouped by node (services.yaml's order, as /api/services lists the nodes)
- * or by the custom groups of Settings → Sections (display-config's
+ * or by the custom groups of Settings → Nodes & Services (display-config's
  * `customGroups`), with the services in none of them last. services.yaml has
  * no tags, so there is no grouping by tag. Within a group, the worst first,
  * then by name. The choice is kept per browser (useServicesGrouping).

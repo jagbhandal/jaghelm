@@ -8,13 +8,15 @@
  *                  (#309), one group per subsystem in the model's order
  *                  (Services, Nodes, Power, Jobs, Backups, Integrations); the
  *                  nav's pages; the embedded apps; Settings' sections; the
- *                  Quick Launch links (Settings → Links); then Log out
+ *                  Quick Launch links (Settings → Apps & links); then Log out
  *   paletteSearch  the groups again, each with only the rows a query
  *                  matches, best first, the groups by their best row, and
  *                  none left empty
  *
  * Each row is what the palette draws and what it opens: `{ id, label, kind,
- * where, detail, state, word, href, onOpen, target }`. An entity or an issue
+ * where, detail, state, word, href, onOpen, target }`, and `terms`, words it
+ * is found by and doesn't draw (a Settings section's parts, the tabs they
+ * came from and other words for them, sections.js; #317). An entity or an issue
  * opens with the rows' own helper (entityNav.js `useEntityLink`), its URL
  * over the page under the palette; a page, an app or a Settings section with
  * `navigate`; a Quick Launch link is a link with Quick Launch's target, as the
@@ -53,9 +55,9 @@ const hostOf = (href) => href.replace(/^(https?:\/\/|mailto:)/, '').replace(/\/$
  * @param {boolean} [options.stale] the status is out of date (statusFreshness.js): every lamp is drawn as no signal, as the rows elsewhere are
  * @param {Array<{ id: string, label: string, href: string }>} [options.pages] the nav's pages
  * @param {Array<{ id: string, label: string, href: string }>} [options.apps] the embedded apps
- * @param {Array<{ id: string, label: string, desc?: string, disabled?: boolean }>} [options.sections] Settings' sections
+ * @param {Array<{ id: string, label: string, desc?: string, disabled?: boolean, settings?: Array<{ name: string, words?: string }> }>} [options.sections] Settings' sections
  * @param {object} [options.links] the config's Quick Launch links, by group
- * @param {string} [options.linkTarget] where a Quick Launch link opens (Settings → Layout)
+ * @param {string} [options.linkTarget] where a Quick Launch link opens (Settings → Apps & links)
  * @param {(id: string) => { href: string, onOpen: () => void }} options.entityLink an entity's link, as its rows have it
  * @param {(href: string) => void} options.navigate opens a page of this app
  * @param {(() => void) | null} [options.onLogout] Log out, when there is a sign-in
@@ -144,6 +146,7 @@ export function paletteIndex({
         label: s.label,
         kind: 'Settings',
         detail: s.desc,
+        terms: (s.settings ?? []).map((p) => `${p.name} ${p.words ?? ''}`).join(' '),
         ...inApp(pathTo('settings', { section: s.id })),
       }))
   );
@@ -179,12 +182,12 @@ const startsAWord = (text, word) =>
 /**
  * Whether `row`, in the group headed `heading`, matches each of `words` (lower
  * case): anywhere in its name, and only at the start of a word in its kind,
- * where, detail, word or heading, so "ups" finds the UPS, not the Backups
- * heading or "custom groups".
+ * where, detail, word, terms or heading, so "ups" finds the UPS, not the
+ * Backups heading or "custom groups".
  */
 function matches(row, heading, words) {
   const name = row.label.toLowerCase();
-  const rest = [row.kind, row.where, row.detail, row.word, heading]
+  const rest = [row.kind, row.where, row.detail, row.word, row.terms, heading]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
@@ -210,8 +213,8 @@ function rank(label, query) {
  * word that does, then those that hold it, each in the group's order. The
  * groups follow their best row, a name or any word of it starting with the
  * query counting alike, so a name that does is never under rows that only
- * hold it ("gr": Grafana before Typography), and a failing nightly-backup
- * stays over Settings › Backup ("backup"); groups that tie keep their order,
+ * hold it ("gr": Grafana before Settings' Integrations), and a failing
+ * nightly-backup stays over Settings › System ("backup"); groups that tie keep their order,
  * the issues first. A group with no match is left out. An empty query
  * matches everything, as it is.
  *

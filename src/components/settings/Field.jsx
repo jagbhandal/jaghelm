@@ -1,4 +1,4 @@
-import React, { useId, isValidElement, cloneElement } from 'react';
+import React, { Children, useId, isValidElement, cloneElement } from 'react';
 
 /**
  * Field — shared label + control wrapper for the settings tabs.
@@ -8,11 +8,12 @@ import React, { useId, isValidElement, cloneElement } from 'react';
  * tech announces the label (WCAG 1.3.1 / 3.3.2). One change here propagates to
  * every tab that delegates to this component.
  *
- * The id is auto-injected into the child ONLY when the child is a single bare
- * form control (input/select/textarea) without its own id. Composite children
- * (button groups, checkboxes that carry their own <label>, hint blocks) are
- * left untouched — the visible <label> still groups them, but we never attach
- * htmlFor to a non-labelable element.
+ * The id is auto-injected into the control ONLY when the child is a single bare
+ * form control (input/select/textarea) without its own id, or the only bare
+ * form control among several children (a slider over its range labels, #317).
+ * Composite children (button groups, checkboxes that carry their own <label>,
+ * hint blocks) are left untouched — the visible <label> still groups them,
+ * but we never attach htmlFor to a non-labelable element.
  *
  * Optional `error` prop: when truthy, the wrapped control is marked
  * aria-invalid="true" and aria-describedby is pointed at a role="alert" error
@@ -33,30 +34,36 @@ export default function Field({ label, children, hint, error, layout = 'field' }
   const errorId = `${id}-error`;
   const hasError = error != null && error !== false && error !== '';
 
-  // Is the child a single bare form control we can safely augment with a11y
-  // attributes (id / aria-invalid / aria-describedby)?
-  const isBareControl =
-    isValidElement(children) &&
-    typeof children.type === 'string' &&
-    LABELABLE.has(children.type);
+  // The field's control: the child when it is a single bare form control, or
+  // the one bare form control among several children (a slider over its
+  // range labels, #317), which we can safely augment with a11y attributes
+  // (id / aria-invalid / aria-describedby). None, or more than one: none.
+  const isBare = (el) =>
+    isValidElement(el) && typeof el.type === 'string' && LABELABLE.has(el.type);
+  const kids = Children.toArray(children);
+  const bare = kids.filter(isBare);
+  const target = bare.length === 1 ? bare[0] : null;
 
   let control = children;
-  if (isBareControl) {
+  if (target) {
     const extra = {};
-    // Auto-inject id only when the child doesn't already have one.
-    if (children.props.id == null) extra.id = id;
+    // Auto-inject id only when the control doesn't already have one.
+    if (target.props.id == null) extra.id = id;
     // Error wiring works whether or not we injected the id above.
     if (hasError) {
       extra['aria-invalid'] = 'true';
       // Preserve any caller-provided aria-describedby alongside the error id.
-      extra['aria-describedby'] = [children.props['aria-describedby'], errorId]
+      extra['aria-describedby'] = [target.props['aria-describedby'], errorId]
         .filter(Boolean)
         .join(' ');
     }
-    if (Object.keys(extra).length > 0) control = cloneElement(children, extra);
+    if (Object.keys(extra).length > 0) {
+      const augmented = cloneElement(target, extra);
+      control = kids.length === 1 ? augmented : kids.map((k) => (k === target ? augmented : k));
+    }
   }
   // Only point htmlFor at a control that carries a usable id.
-  const htmlFor = isBareControl ? children.props.id ?? id : undefined;
+  const htmlFor = target ? target.props.id ?? id : undefined;
 
   const errorEl = hasError ? (
     <span

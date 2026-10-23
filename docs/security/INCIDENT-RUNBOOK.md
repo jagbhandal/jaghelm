@@ -27,7 +27,7 @@ compromised and rotate.
 ## 2. The admin password / `data/auth.json` was exposed
 
 It's a scrypt hash (not reversible), but rotate anyway:
-- Change the password in Settings → Security (or set a new `DASH_PASS` and restart).
+- Change the password in Settings → System (or set a new `DASH_PASS` and restart).
 - Changing the password invalidates all other sessions (`deleteAllSessionsExcept`).
 - A session token that leaked on its own (a HAR file, a proxy log, a screenshot):
   log out where it was used. The server revokes that session (#507); the

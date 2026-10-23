@@ -40,7 +40,7 @@ const NO_SLOTS = Object.freeze({});
 /**
  * @param {{ view: any, slots?: Record<string, (view: any) => import('react').ReactNode>,
  *   target?: string, onOpen?: (href: string) => void }} props
- *   `target`: where a link out opens (Settings → Layout); `onOpen`: opens a link inside JagHelm
+ *   `target`: where a link out opens (Settings → Apps & links); `onOpen`: opens a link inside JagHelm
  */
 export function EntityDetail({ view, slots = NO_SLOTS, target, onOpen }) {
   switch (view.status) {

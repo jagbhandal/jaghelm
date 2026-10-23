@@ -26,9 +26,9 @@ const FONT_PRESETS = [
 ];
 
 /**
- * Settings → Typography: the font preset Settings draws in, until #321
- * brings the typeface and one text size. The per-element font sizes sized the
- * old board's panels and went with it (#306).
+ * Settings → Appearance's font (Typography's before #317): the font preset
+ * Settings draws in, until #321 brings the typeface and one text size. The
+ * per-element font sizes sized the old board's panels and went with it (#306).
  */
 export default function TypographyTab() {
   const { config, update } = useConfig();
@@ -36,7 +36,7 @@ export default function TypographyTab() {
 
   return (
     <div className="settings-section">
-      <Card title="Font Family">
+      <Card title="Font Family" id="font">
         <p className="settings-desc">
           Choose a font pairing for the dashboard. Each preset includes display, body, and monospace
           fonts.

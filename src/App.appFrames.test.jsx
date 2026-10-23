@@ -86,7 +86,7 @@ describe('app tabs stay loaded between switches', () => {
     await waitFor(() => expect(frame('https://grafana.example/')).not.toBeNull());
     const grafana = frame('https://grafana.example/');
     await open('Settings');
-    await screen.findByRole('navigation', { name: 'Settings sections' });
+    await screen.findByRole('heading', { level: 1, name: 'Settings' });
     expect(grafana.isConnected).toBe(true);
     await open('Grafana');
     expect(frame('https://grafana.example/')).toBe(grafana);

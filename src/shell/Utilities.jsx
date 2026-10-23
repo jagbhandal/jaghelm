@@ -20,12 +20,13 @@ import { Checklist, Pipeline, QuickLaunch, WeatherClock, WebSearch } from '@ui/u
 import { cn } from '@ui/lib/utils';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { followLink } from '../router/useRoute.js';
-import { pathTo } from '../router/routes.js';
+import { settingsHref } from '../components/settings/sections.js';
 import { shortcutLabel } from './shortcut.js';
 import { useTodos } from './utilities.js';
 import { clockShown, searchEngine, useClock, useWeather, webSearchUrl } from './extras.js';
 
-const LINKS_SETTINGS = pathTo('settings', { section: 'links' });
+// Where links are added: Settings → Apps & links, at its Quick Launch links (#317).
+const LINKS_SETTINGS = settingsHref('apps', 'quick-launch-links');
 const ADD_LINKS = cn(buttonVariants({ variant: 'secondary', size: 'sm' }));
 
 /**
@@ -37,7 +38,7 @@ export function QuickLaunchPanel({ groups, target, withEmpty = false }) {
   const empty = withEmpty ? (
     <EmptyState
       title="No links yet"
-      description="Add the apps you open most in Settings → Links."
+      description="Add the apps you open most in Settings → Apps & links."
       action={
         <a
           href={LINKS_SETTINGS}
@@ -89,7 +90,7 @@ export function ChecklistPanel() {
 }
 
 /**
- * Weather and the clock (#307), each as Settings → Widgets says: the weather
+ * Weather and the clock (#307), each as Settings → Appearance says: the weather
  * read while it is drawn (useWeather; on the Overview, on the App's `tick`),
  * the clock on the minute.
  */
@@ -102,7 +103,7 @@ export function WeatherClockPanel({ tick = null }) {
 }
 
 /**
- * The web search (#307): the words go to Settings → Widgets' engine, in a new
+ * The web search (#307): the words go to Settings → Apps & links' engine, in a new
  * tab, as the old header's box sent them, with no opener.
  */
 export function WebSearchPanel() {

@@ -5,7 +5,7 @@ import SettingsView from './SettingsView';
 import { ConfigProvider } from '../context/ConfigContext.jsx';
 import { OverlayProvider } from '../context/OverlayContext.jsx';
 
-// The `update(path, value)` deep-setter that the General tab drives now lives in
+// The `update(path, value)` deep-setter the sections drive lives in
 // ConfigContext (computed once from the stable setConfig, immutable via setIn),
 // not inside SettingsView. These tests pin the OBSERVABLE contract of `update`,
 // driven through the real UI:
@@ -13,9 +13,9 @@ import { OverlayProvider } from '../context/OverlayContext.jsx';
 //   2. the previous config object is NOT mutated (immutability) — the property
 //      that setIn preserves.
 // We wrap SettingsView in a ConfigProvider seeded with the Harness's captured
-// setConfig, then render the General tab (simplest field-driven tab) which reads
-// `update` from context. The Nodes and Services tabs fetch the server's
-// config, so we stub fetch to inert responses.
+// setConfig, open Settings → Appearance (the branding's title field and the
+// Overview sections' switches) from the index, and drive its controls.
+// Nodes & Services fetches the server's config, so fetch answers inertly.
 
 function inertFetch() {
   return Promise.resolve({
@@ -30,7 +30,7 @@ function inertFetch() {
 // config reference React commits, and exposes the previous reference so the test
 // can assert it was never mutated by `update`. The captured setConfig is handed
 // to ConfigProvider, which derives the `update` deep-setter the tabs consume.
-function Harness({ initialConfig, onConfigs }) {
+function Harness({ initialConfig, onConfigs, section = 'appearance' }) {
   const [config, setConfigState] = useState(initialConfig);
   const refs = useRef([]);
   const setConfig = (updater) => {
@@ -46,7 +46,7 @@ function Harness({ initialConfig, onConfigs }) {
   return (
     <OverlayProvider>
       <ConfigProvider config={config} setConfig={setConfig}>
-        <SettingsView theme="dark" setTheme={() => {}} />
+        <SettingsView theme="dark" setTheme={() => {}} section={section} />
       </ConfigProvider>
     </OverlayProvider>
   );
@@ -69,7 +69,7 @@ const makeConfig = (overrides = {}) => ({
   tabs: [],
   sections: {},
   links: {},
-  welcomeMessage: { enabled: false, text: 'hi', fontSize: 20 },
+  overviewSections: { strip: false, jobs: true },
   ...overrides,
 });
 
@@ -114,46 +114,39 @@ describe('SettingsView update() contract (guards the setIn swap)', () => {
   });
 
   it('deep-sets a nested path without mutating the previous nested object', async () => {
-    const initial = makeConfig({
-      welcomeMessage: { enabled: false, text: 'original', fontSize: 20 },
-    });
+    const initial = makeConfig();
     let captured = [];
     render(<Harness initialConfig={initial} onConfigs={(r) => (captured = r)} />);
     await flushAsync();
 
-    // The "Message Text" field maps to update('welcomeMessage.text', ...).
-    fireEvent.change(screen.getByPlaceholderText('Welcome to JagHelm'), {
-      target: { value: 'updated text' },
-    });
+    // The Services switch maps to update('overviewSections.services', false).
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Services' }));
     await flushAsync();
 
     const { prev, next } = captured[captured.length - 1];
-    expect(next.welcomeMessage.text).toBe('updated text');
+    expect(next.overviewSections.services).toBe(false);
     // Sibling keys on the nested object are preserved.
-    expect(next.welcomeMessage.enabled).toBe(false);
-    expect(next.welcomeMessage.fontSize).toBe(20);
+    expect(next.overviewSections.strip).toBe(false);
+    expect(next.overviewSections.jobs).toBe(true);
     // The PREVIOUS nested object must not have been mutated in place.
-    expect(prev.welcomeMessage.text).toBe('original');
-    expect(prev.welcomeMessage).not.toBe(next.welcomeMessage);
+    expect(prev.overviewSections).toEqual({ strip: false, jobs: true });
+    expect(prev.overviewSections).not.toBe(next.overviewSections);
   });
 
   it('toggling a nested boolean sets only that leaf', async () => {
-    const initial = makeConfig({
-      welcomeMessage: { enabled: false, text: 'hi', fontSize: 20 },
-    });
+    const initial = makeConfig();
     let captured = [];
     render(<Harness initialConfig={initial} onConfigs={(r) => (captured = r)} />);
     await flushAsync();
 
-    // The "Enabled" checkbox maps to update('welcomeMessage.enabled', true).
-    const enabledCheckbox = screen.getByRole('checkbox', { name: /enabled/i });
-    fireEvent.click(enabledCheckbox);
+    // The Checklist switch maps to update('sections.todos.visible', false).
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Checklist' }));
     await flushAsync();
 
     const { prev, next } = captured[captured.length - 1];
-    expect(next.welcomeMessage.enabled).toBe(true);
-    expect(prev.welcomeMessage.enabled).toBe(false);
-    expect(next.welcomeMessage.text).toBe('hi');
+    expect(next.sections.todos.visible).toBe(false);
+    expect(prev.sections).toEqual({});
+    expect(next.overviewSections).toBe(prev.overviewSections);
   });
 });
 
@@ -164,11 +157,18 @@ describe('SettingsView without the live preview', () => {
     vi.stubGlobal('fetch', vi.fn(inertFetch));
   });
 
-  it('offers no preview, and the form takes the whole width', async () => {
-    render(<Harness initialConfig={makeConfig()} onConfigs={() => {}} />);
-    await flushAsync();
-    expect(screen.queryByRole('button', { name: /preview/i })).toBeNull();
-    expect(screen.queryByText('LIVE PREVIEW')).toBeNull();
-    expect(document.querySelector('.settings-main')).toHaveStyle({ flex: '1' });
+  it('offers no preview on any section, nor the old frame that held one', async () => {
+    for (const section of [undefined, 'nodes', 'integrations', 'apps', 'appearance', 'system']) {
+      const view = render(
+        <Harness initialConfig={makeConfig()} onConfigs={() => {}} section={section} />
+      );
+      await flushAsync();
+      expect(screen.queryByRole('button', { name: /preview/i })).toBeNull();
+      expect(screen.queryByText(/LIVE PREVIEW/i)).toBeNull();
+      expect(
+        document.querySelector('.settings-main, .settings-page, .settings-preview')
+      ).toBeNull();
+      view.unmount();
+    }
   });
 });
