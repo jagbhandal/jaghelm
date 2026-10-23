@@ -30,3 +30,7 @@ export const loadPhoneJobs = () => import('./shell/PhoneJobs.jsx');
 // The Overview's utilities rail (#532): only a window from 1440px draws it,
 // so a phone's first load doesn't carry the utilities' components.
 export const loadOverviewRail = () => import('./shell/OverviewRail.jsx');
+// The command palette's index (#611): its rows, the search over them and
+// Settings' search terms. The palette's trigger and shell stay in the first
+// load; this loads when ⌘K first opens, or once the browser is idle.
+export const loadCommandPaletteIndex = () => import('./components/CommandPaletteIndex.js');

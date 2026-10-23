@@ -3,11 +3,11 @@ import { ShellPage } from '@ui/app-shell';
 import { SettingsIndex, SettingsNav, SettingsSectionPage } from '@ui/settings';
 import {
   MOVED_ANCHORS,
-  SETTINGS_SECTIONS,
   isSettingsAnchor,
   settingsHref,
   settingsSectionFor,
 } from '../components/settings/sections.js';
+import { SEARCHABLE_SECTIONS } from '../components/settings/sectionTerms.js';
 import { SECTION_VIEWS } from '../components/settings/sections/index.js';
 import { searchSettings } from '../components/settings/settingsSearch.js';
 import { followLink } from '../router/useRoute.js';
@@ -100,7 +100,7 @@ export default function SettingsView({
 
   const sections = useMemo(
     () =>
-      SETTINGS_SECTIONS.map((s) => ({
+      SEARCHABLE_SECTIONS.map((s) => ({
         ...s,
         description: s.desc,
         icon: SECTION_VIEWS[s.id].icon,

@@ -13,6 +13,7 @@ import {
   FACES,
   LOGO,
   PHONE_CHUNK,
+  PALETTE_IDLE_CHUNK,
   PHONE_IDLE_CHUNK,
   builtAsset,
   DESKTOP_CHUNKS,
@@ -226,6 +227,28 @@ test("a phone's details (#309): fetched once the browser is idle after the first
     formatReport(report),
     /\n {2}After the first screen, once the browser is idle \(in no total\):\n {2}script \/assets\/PhoneDetail\.js +\d+\.\d kB\n {2}script \/assets\/detail-parts\.js +\d+\.\d kB$/
   );
+});
+
+test("the palette's index (#611): fetched once the browser is idle at either width, listed apart, in no total", () => {
+  const build = fakeBuild();
+  const files = {
+    '/assets/CommandPaletteIndex-QQQQQQQQ.js':
+      'import{a}from"./index-AAAAAAAA.js";import{t}from"./sectionTerms-TTTTTTTT.js";',
+    '/assets/sectionTerms-TTTTTTTT.js': '',
+  };
+  const withPalette = {
+    ...build,
+    assets: [...build.assets, 'CommandPaletteIndex-QQQQQQQQ.js', 'sectionTerms-TTTTTTTT.js'],
+    read: (url) => (files[url] ? Buffer.from(files[url]) : build.read(url)),
+  };
+  assert.equal(PALETTE_IDLE_CHUNK, 'CommandPaletteIndex.js');
+  const desktop = firstLoad(withPalette);
+  assert.deepEqual(
+    desktop.idle.map((i) => i.url),
+    ['/assets/CommandPaletteIndex-QQQQQQQQ.js', '/assets/sectionTerms-TTTTTTTT.js']
+  );
+  assert.ok(!desktop.items.some((i) => /CommandPaletteIndex|sectionTerms/.test(i.url)));
+  assert.equal(desktop.code.total, firstLoad(build).code.total);
 });
 
 test("the faces counted are the default sans's and the mono's latin files, the only faces shipped beside the presets' (#306)", () => {

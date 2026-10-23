@@ -2327,7 +2327,7 @@ what it lists and what each row opens is the shell's
 
 | Component | Import | Props |
 | --- | --- | --- |
-| `CommandPalette` | `@ui/command-palette` | `open`, `onClose`, `query` and `onQueryChange(words)`, `groups` (each `{ id, heading, rows }`, each row `{ id, label, kind, where, detail, state, word, href, onOpen, target }`), `label` ("Search or jump to"), `placeholder` |
+| `CommandPalette` | `@ui/command-palette` | `open`, `onClose`, `query` and `onQueryChange(words)`, `groups` (each `{ id, heading, rows }`, each row `{ id, label, kind, where, detail, state, word, href, onOpen, target }`), `loading` (the list says "Loading…" while there are no rows, #611), `error` (it says that instead), `label` ("Search or jump to"), `placeholder` |
 
 `rowName(row)` (`@ui/command-palette`) is what a row is named.
 
