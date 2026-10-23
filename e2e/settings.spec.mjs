@@ -13,6 +13,8 @@
  *  - axe finds nothing on the index (the new UI throughout) or on a
  *    section's head and list of sections; a section's content is today's
  *    Settings markup until its card rebuilds it (#318–#323).
+ *  - Sources (#318): "prometheus" opens it at its row, which says what the
+ *    demo's status says of it; axe finds nothing on it (the new UI).
  */
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
@@ -35,7 +37,7 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
     test('the index, its search, a section and an old address', async ({ page }) => {
       await openApp(page, '/settings');
       await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
-      await expect(cards(page)).toHaveCount(5);
+      await expect(cards(page)).toHaveCount(6);
       await noSideScroll(page);
 
       await search(page).fill('font');
@@ -75,10 +77,34 @@ for (const [name, viewport] of Object.entries(WIDTHS)) {
       await expect(page.getByRole('heading', { name: 'Custom groups' })).toBeInViewport();
     });
 
+    // #318: a source's name finds Sources and opens it at its row, which
+    // says what the board's status says of it.
+    test('Sources: found by a source’s name, opened at its row', async ({ page }) => {
+      await openApp(page, '/settings');
+      await search(page).fill('prometheus');
+      const sources = page.getByRole('link', { name: 'Sources' });
+      await expect(sources).toContainText('Matches: Prometheus');
+      await sources.click();
+      await expect(page).toHaveURL(/\/settings\/sources#prometheus$/);
+      await expect(page.getByRole('heading', { name: 'Prometheus' })).toBeInViewport();
+      await expect(page.locator('#prometheus')).toContainText('Answering');
+      await expect(page.locator('#cron-reporters')).toContainText('Reporting');
+      await noSideScroll(page);
+    });
+
     for (const theme of Object.keys(THEMES)) {
+      test(`axe: Sources, ${theme}`, async ({ page }) => {
+        await openApp(page, '/settings/sources', { theme });
+        await expect(page.locator('#prometheus')).toContainText('Answering');
+        const section = new AxeBuilder({ page }).include(
+          '[data-slot="settings-section-page"] [data-slot="shell-section"]'
+        );
+        expect(await axeFindings(section), 'Sources').toEqual([]);
+      });
+
       test(`axe: the index and a section's frame, ${theme}`, async ({ page }) => {
         await openApp(page, '/settings', { theme });
-        await expect(cards(page)).toHaveCount(5);
+        await expect(cards(page)).toHaveCount(6);
         expect(await axeFindings(new AxeBuilder({ page })), 'the index').toEqual([]);
 
         await page.goto('/settings/system');

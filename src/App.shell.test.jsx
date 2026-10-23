@@ -367,6 +367,19 @@ describe('the URL is the page', () => {
     await waitFor(() => expect(window.location.pathname).toBe('/settings'));
   });
 
+  // #318: Settings → Sources reads the header's poll, so it moves with the board.
+  it('Settings → Sources draws each source from the header’s poll: no second /api/status', async () => {
+    await renderApp('/settings/sources');
+    const prometheus = await screen.findByRole('heading', { name: 'Prometheus' });
+    await waitFor(() =>
+      expect(document.getElementById('prometheus')).toHaveTextContent('Answering')
+    );
+    expect(prometheus).toBeInTheDocument();
+    expect(document.getElementById('gitea')).toHaveTextContent('Not set up');
+    expect(server.requests.filter((r) => r === '/api/status')).toHaveLength(1);
+    await current('Settings');
+  });
+
   it('opens an app at its URL', async () => {
     await renderApp('/apps/grafana');
     await current('Grafana');

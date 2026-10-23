@@ -2300,9 +2300,9 @@ flowchart TD
   sections, a card each (its lucide icon, its name and a one-line
   description; `SettingsIndex` in `src/ui/settings.jsx`) under a search of
   what they hold; `/settings/<section>` opens one. The sections are
-  `src/components/settings/sections.js`'s list: Nodes & Services,
+  `src/components/settings/sections.js`'s list: Sources, Nodes & Services,
   Integrations, Apps & links, Appearance and System, in the spec's order
-  (Sources and Notifications join with their cards, #318 and #320). Each
+  (Notifications joins with its card, #320). Each
   lists its parts, `{ name, anchor, words }`: the part's heading on the page,
   its id there, and what it holds (its controls' names, the tab it came from
   before #317 and other words for them). The search (`settingsSearch.js`)
@@ -2338,6 +2338,20 @@ flowchart TD
   (`serverConfig.js`, see 6, "Settings sends the version"), and its custom
   groups list the services it read. The live preview is gone (#306): a
   change applies to the board as it is made.
+  **Sources** (#318) draws the header's status poll (`useStatus`, which
+  `App` hands `SettingsView` and it the section: no request of its own), so
+  it moves with the board and greys with it (`useStatusFreshness`, the one
+  stale rule, #480). `sections/sourcesView.js` makes its rows from the model
+  alone: Prometheus, Kuma, NUT and Gitea as `sources` says them, `ok`
+  ("Answering") or `failed` with its error as served, the word of its
+  `sources/<name>` issue when it has one ("Failing", "Off"), and `since`;
+  one `sources` doesn't list is "Not set up", naming the variable to set.
+  The cron reporters' row counts the jobs' and backups' entities, the newest
+  `lastRun`, and those `warn` or `crit` by their word ("1 failed · 1
+  overdue"), and links to the Jobs section (`/?subsystem=jobs`; on a phone
+  the Infrastructure tab). Each row names its `.env` variable, never a URL:
+  the model serves no address (`SourceList`, `src/ui/source-list.jsx`).
+  Addresses aren't edited in Settings.
 - **Entity URLs** (#309, spec §7, §8). Every entity the status model has
   (a service or container, a node, the UPS, a job, a backup, an integration,
   an Arcane agent, a failed source) has an address: its model id (4.7, stable
