@@ -91,9 +91,11 @@ simply empty and the dashboard still gives you:
 - Service **status** via Uptime Kuma (also optional).
 - Themes, the drag-resize grid, todos, and embedded service tabs.
 
-On first boot with no Prometheus reachable, node discovery just returns an empty
-set and you land on the **"Connect your first node"** empty state — add links and
-integrations from Settings and you have a working dashboard. Point
-`PROMETHEUS_URL` at a Prometheus later and the live metrics light up — depth you
-opt into, not a prerequisite. `GET /api/readyz` reports whether the optional
+On first boot with no Prometheus reachable, node discovery finds no node, saves
+nothing, and you land on the **"Waiting for your first node"** empty state:
+JagHelm asks again every refresh, so once a Prometheus answers at `PROMETHEUS_URL`
+and has scraped a host, the live metrics light up with no further step — depth
+you opt into, not a prerequisite. Links from Settings work meanwhile. An
+integration saved in Settings writes `services.yaml`, and from then on its nodes
+are yours: discovery doesn't run again, and a node goes into the file by hand. `GET /api/readyz` reports whether the optional
 backends are currently reachable.

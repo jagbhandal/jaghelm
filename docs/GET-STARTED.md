@@ -287,13 +287,19 @@ Open `http://your-server:3099` in a browser.
 **On first load, JagHelm will:**
 
 1. Connect to Prometheus and discover all nodes with a `node` label
-2. Auto-generate a `data/services.yaml` config with your discovered nodes
+2. Auto-generate a `data/services.yaml` config with your discovered nodes. If
+   Prometheus isn't reachable yet, or hasn't scraped a node yet, it saves
+   nothing and asks again every refresh: the nodes appear on their own once
+   Prometheus has them
 3. Query cAdvisor for containers on each node
 4. Display everything in the dashboard
 
 You should see a panel for each node showing CPU, RAM, disk, and uptime metrics, plus a card for each Docker container.
 
 **If panels are empty or show "Loading...":**
+- "Waiting for your first node" means discovery is still asking Prometheus.
+  Save nothing in Settings → Integrations until the nodes appear: a save
+  writes `data/services.yaml`, and discovery doesn't run once that file exists
 - Check that Prometheus is reachable from the JagHelm container
 - Verify Prometheus targets are "UP" at `http://your-prometheus:9090/targets`
 - Check JagHelm logs: `docker logs jaghelm`

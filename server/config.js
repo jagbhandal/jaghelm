@@ -1,7 +1,8 @@
 /**
  * JagHelm Config Manager
  * Loads/saves/watches data/services.yaml with hot-reload on file change.
- * Generates a default config from discovery results on first boot.
+ * Generates a default config from discovery results on first boot, which
+ * firstBoot.js saves once discovery has found a node (#566).
  *
  * services.yaml has a version (#423): an HMAC-SHA256 of its bytes on disk,
  * keyed per install (util/fileVersion.js, which display-config.json's version
@@ -9,7 +10,10 @@
  * hand or by JagHelm. readConfig() answers the config with the version of the
  * file it came from, and writeConfig() is the one writer: it writes only over
  * the version its caller read, checked against the file in the same
- * synchronous step, and never over a file that doesn't parse.
+ * synchronous step, and never over a file that doesn't parse. A write where
+ * its caller read no file (CONFIG_ABSENT) creates the file only if there
+ * still is none (#566), atomically, so a file put there from outside the
+ * process meanwhile always stands.
  *
  * A services.yaml that is there but can't be read (#536: EACCES, EISDIR,
  * EIO…) is a config failure like one that doesn't parse: the board says so,
@@ -24,13 +28,13 @@
  * file is written whole, as before (savedText).
  */
 
-import { statSync } from 'fs';
+import { lstatSync, statSync } from 'fs';
 import { join } from 'path';
 import { isDeepStrictEqual } from 'util';
 import yaml from 'js-yaml';
 import { isCollection, isMap, isNode, isScalar, parseDocument, Scalar, visit } from 'yaml';
 
-import { atomicWriteFileSync } from './util/atomicWrite.js';
+import { atomicWriteFileSync, createExclusiveFileSync } from './util/atomicWrite.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { CONFIG_UNPARSEABLE, CONFIG_UNREADABLE } from './errors.js';
 import {
@@ -186,8 +190,9 @@ function warnUnreadKeys(cfg) {
 }
 
 /**
- * Load config from disk. Returns null only when no file exists (the caller runs
- * discovery and saves a new one); every other outcome returns a config.
+ * Load config from disk. Returns null only when no file exists (at boot, the
+ * first boot: firstBoot.js runs discovery, #566); every other outcome returns
+ * a config.
  *
  * A file that can't be used (unparseable, empty, comments only, or not a
  * mapping) is a failed read, not an empty board (#463): an editor's
@@ -281,8 +286,8 @@ function markUnreadable(err) {
  * services.yaml is gone while it was broken or unreadable (#536): a file
  * that isn't there is broken no more, and means what a missing file means
  * while JagHelm runs: the config in memory stays, a read answers it as
- * CONFIG_ABSENT, and the next save writes a new file. Discovery runs only at
- * boot, as when a good file is deleted.
+ * CONFIG_ABSENT, and the next save writes a new file. Discovery runs only for
+ * a boot with no file (firstBoot.js), as when a good file is deleted.
  */
 function forgetProblem() {
   seenVersion = CONFIG_ABSENT;
@@ -681,9 +686,25 @@ export function writeConfig(newConfig, ifVersion) {
     const { text, why } = parsed
       ? savedText(disk.bytes, parsed.config, newConfig)
       : { text: wholeText(newConfig), why: undefined };
-    // Atomic write: temp file → fsync → rename. A reader can never observe a
-    // half-written services.yaml, even if the process crashes mid-write.
-    atomicWriteFileSync(CONFIG_PATH, text);
+    if (parsed) {
+      // Atomic write: temp file → fsync → rename. A reader can never observe a
+      // half-written services.yaml, even if the process crashes mid-write.
+      atomicWriteFileSync(CONFIG_PATH, text);
+    } else if (!createExclusiveFileSync(CONFIG_PATH, Buffer.from(text, 'utf8'))) {
+      // No file was read, so one is created only where there still is none
+      // (#566): a temp file linked into place, which fails when a file got
+      // there from outside the process after the read above (a hand edit,
+      // the first boot's discovery racing a user's file). That file stands.
+      const now = readDisk();
+      if (now.version === CONFIG_ABSENT) {
+        // Something is at the path, yet it reads as no file: a symlink to a
+        // file that doesn't exist. No conflict a read again could settle.
+        log.error(createRefused());
+        return { ok: false };
+      }
+      log.warn('services.yaml was created since it was read; not saving over it');
+      return { ok: false, conflict: true, version: now.version };
+    }
     if (why) {
       log.warn(
         { reason: why },
@@ -710,11 +731,28 @@ export function writeConfig(newConfig, ifVersion) {
 }
 
 /**
+ * Why services.yaml can't be created where a read finds no file (#566): the
+ * path holds a symlink to a file that doesn't exist, as a rule. Its name
+ * only, never its path or the link's target.
+ */
+function createRefused() {
+  let link = false;
+  try {
+    link = lstatSync(CONFIG_PATH).isSymbolicLink();
+  } catch {
+    // gone again: said as below
+  }
+  return link
+    ? "services.yaml is a symlink to a file that doesn't exist, so it can't be created; not saving (fix or remove the link on the host)"
+    : "services.yaml can't be created, though no file reads there; not saving";
+}
+
+/**
  * Write `newConfig` over whatever services.yaml holds now, through
- * writeConfig, so never over a file that doesn't parse. For first boot,
- * which writes the file discovery generated before the server listens, and
- * for tests. A route reads with readConfig and writes with writeConfig over
- * the version it read. Returns true when written.
+ * writeConfig, so never over a file that doesn't parse. For tests: a route
+ * reads with readConfig and writes with writeConfig over the version it
+ * read, and the first boot writes over CONFIG_ABSENT, so only where there is
+ * no file (firstBoot.js, #566). Returns true when written.
  */
 export function saveConfig(newConfig) {
   return writeConfig(newConfig, readDisk().version).ok;
@@ -736,8 +774,18 @@ export function getConfig() {
 }
 
 /**
+ * Run on `newConfig` without writing it: the first boot's default while
+ * discovery waits for a node and there is no services.yaml yet (#566,
+ * firstBoot.js). Nothing else changes: a read answers it with CONFIG_ABSENT,
+ * as for any missing file, and the first save writes a file.
+ */
+export function useUnsavedConfig(newConfig) {
+  config = structuredClone(newConfig);
+}
+
+/**
  * Merge discovery results into a default config for first boot.
- * Called when no services.yaml exists.
+ * Called when no services.yaml exists (firstBoot.js).
  *
  * Each discovered node is named by its own Prometheus label: no label maps to a
  * built-in name, so a fresh install never shows someone else's node names

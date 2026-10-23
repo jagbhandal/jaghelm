@@ -508,7 +508,7 @@ export default function DashboardView({
           {skeletonElements}
         </div>
       ) : isEmpty ? (
-        <DashboardEmptyState onOpenSettings={onOpenSettings} />
+        <DashboardEmptyState onOpenSettings={onOpenSettings} discovery={serviceData.discovery} />
       ) : keptKey === '' ? (
         // Nodes and Services have their section above: no note for them.
         sectionAbove ? null : (
@@ -668,10 +668,16 @@ function BoardFilterEmpty({ filter, reason, onClear, margin }) {
 }
 
 /**
- * First-run empty state shown when no nodes are discovered. Guides the user to
- * Settings to connect their first node instead of staring at an empty grid.
+ * First-run empty state shown when no nodes are discovered, instead of an
+ * empty grid. `discovery` is /api/services' (#566): 'waiting' while the first
+ * boot, with no services.yaml yet, asks Prometheus for nodes each refresh.
+ * They then come by themselves, and a save in Settings would end the wait
+ * (Settings can't add a node), so it says so and offers no way there.
+ * Otherwise nothing discovers: a node goes into services.yaml, and Settings
+ * shows nodes that are hidden.
  */
-function DashboardEmptyState({ onOpenSettings }) {
+function DashboardEmptyState({ onOpenSettings, discovery }) {
+  const waiting = discovery === 'waiting';
   return (
     <div
       className="glass-card"
@@ -698,7 +704,7 @@ function DashboardEmptyState({ onOpenSettings }) {
           margin: 0,
         }}
       >
-        Connect your first node
+        {waiting ? 'Waiting for your first node' : 'Connect your first node'}
       </h2>
       <p
         style={{
@@ -710,10 +716,11 @@ function DashboardEmptyState({ onOpenSettings }) {
           lineHeight: 1.6,
         }}
       >
-        No infrastructure nodes have reported in yet. Add a Prometheus target or a node in Settings,
-        and live metrics will start streaming onto your dashboard here.
+        {waiting
+          ? 'JagHelm asks Prometheus for nodes every refresh. They appear here on their own as soon as Prometheus scrapes a host, with live metrics streaming onto your dashboard.'
+          : 'No infrastructure nodes have reported in yet. Add a Prometheus target and list its node in services.yaml, and live metrics will start streaming onto your dashboard here.'}
       </p>
-      {onOpenSettings && (
+      {onOpenSettings && !waiting && (
         <button
           type="button"
           className="settings-btn-primary"

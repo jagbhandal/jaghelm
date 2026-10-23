@@ -13,8 +13,12 @@ import ColorPickerPopover, { DEFAULT_COLOR } from './ColorPickerPopover.jsx';
  * - Visibility toggle
  * - Auto-discover toggle
  * - Hide list (containers to exclude from this node)
+ *
+ * `discovery` is the live services payload's (#566): 'waiting' while the
+ * first boot, with no services.yaml yet, asks Prometheus for nodes each
+ * refresh. It picks the words shown with no nodes (NoNodes).
  */
-export default function NodesTab({ serverConfig, onSave, saving }) {
+export default function NodesTab({ serverConfig, onSave, saving, discovery }) {
   const nodes = serverConfig?.nodes || {};
   const [editNode, setEditNode] = useState(null);
   const [colorPicking, setColorPicking] = useState(null);
@@ -196,11 +200,24 @@ export default function NodesTab({ serverConfig, onSave, saving }) {
         </div>
       ))}
 
-      {Object.keys(nodes).length === 0 && (
-        <div className="settings-loading" style={{ justifyContent: 'center', fontSize: 13 }}>
-          No nodes discovered yet. Make sure Prometheus is configured and reachable.
-        </div>
-      )}
+      {Object.keys(nodes).length === 0 && <NoNodes discovery={discovery} />}
+    </div>
+  );
+}
+
+/**
+ * What Nodes says with no nodes, true either way (#566). While the first
+ * boot waits, the nodes come by themselves once Prometheus has some.
+ * Otherwise nothing is discovering: services.yaml is there (a save in
+ * Settings, a hand edit), so its nodes are the user's, or the first boot
+ * couldn't ask (PROMETHEUS_URL refused), which only a fix and a restart mend.
+ */
+function NoNodes({ discovery }) {
+  return (
+    <div className="settings-loading" style={{ justifyContent: 'center', fontSize: 13 }}>
+      {discovery === 'waiting'
+        ? 'No nodes yet. JagHelm asks Prometheus again every refresh and adds them as soon as it has some: make sure Prometheus is reachable and scraping your hosts.'
+        : 'No nodes. JagHelm discovers them from Prometheus only when it starts with no services.yaml: add them to services.yaml by hand, or, if PROMETHEUS_URL is wrong, fix it and restart.'}
     </div>
   );
 }
