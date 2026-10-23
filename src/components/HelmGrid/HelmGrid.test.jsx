@@ -211,3 +211,65 @@ describe('HelmGrid wider: the height a panel last measured', () => {
     expect(box(container, 'left').height).toBe(`${3 * (ROW + 16) - 16}px`);
   });
 });
+
+// A panel placed on the grid, or drawn at a new width, takes its content's
+// height in the frame that draws it, with no frame in between (#561): the
+// first frame of a phone turned tablet drew every panel at its saved rows,
+// and a narrower window each at the height of its wider content, cutting it.
+describe('HelmGrid: the first frame at a new width has each panel at its content', () => {
+  // No frame comes; each panel's content is `natural[id]` px tall.
+  const content = (natural) => {
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function () {
+      const id = this.querySelector?.('.section-title')?.textContent;
+      return natural[id] ?? 0;
+    });
+  };
+  const box = (container, id) => items(container).find((el) => title(el) === id).style;
+
+  it("from the page's flow to the grid (a phone turned tablet)", () => {
+    atWidth(500);
+    content({ left: 420, right: 220, under: 300 });
+    const { container, rerender } = render(<Board fixed />);
+    expect(container.querySelector('.helmgrid')).toHaveClass('helmgrid-flow');
+
+    rerender(<Board />);
+    expect(container.querySelector('.helmgrid')).not.toHaveClass('helmgrid-flow');
+    expect(box(container, 'left').height).toBe(`${rowsPx(420)}px`);
+    expect(box(container, 'right').height).toBe(`${rowsPx(220)}px`);
+    expect(box(container, 'under').height).toBe(`${rowsPx(300)}px`);
+  });
+
+  it('the window made narrower, its text wrapping to more lines', () => {
+    const observers = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb) {
+          this.cb = cb;
+          observers.push(this);
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    );
+    const width = atWidth(1440);
+    const natural = { left: 420, right: 220, under: 300 };
+    content(natural);
+    const { container } = render(<Board />);
+    expect(box(container, 'left').height).toBe(`${rowsPx(420)}px`);
+    const wide = box(container, 'left').width;
+
+    width.mockReturnValue(1280);
+    Object.assign(natural, { left: 560, right: 300, under: 380 });
+    act(() => {
+      for (const o of observers) o.cb([], o);
+    });
+    expect(box(container, 'left').width).not.toBe(wide);
+    expect(box(container, 'left').height).toBe(`${rowsPx(560)}px`);
+    expect(box(container, 'right').height).toBe(`${rowsPx(300)}px`);
+    expect(box(container, 'under').height).toBe(`${rowsPx(380)}px`);
+  });
+});
