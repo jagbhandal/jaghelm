@@ -14,6 +14,8 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import express from 'express';
+import request from 'supertest';
 
 const EXAMPLE = 'paste-your-random-secret-here'; // docs/GET-STARTED.md // pragma: allowlist secret
 const DIR = process.env.JAGHELM_DATA_DIR;
@@ -42,6 +44,13 @@ const BEFORE = readFileSync(SECRETS_PATH);
 process.env.DASH_SECRET = EXAMPLE;
 const secrets = await import('./secrets.js');
 const { resolveIntegrationConfig } = await import('./integrations/lib/config.js');
+const { integrationRoutes } = await import('./routes/integrations.js');
+const { secretsRoutes } = await import('./routes/secrets.js');
+
+const app = express();
+app.use(express.json());
+app.use('/api/integrations', integrationRoutes);
+app.use('/api/secrets', secretsRoutes);
 
 /** Every line the logger writes while `fn` runs; anything else passes through. */
 function captureLogs(fn) {
@@ -87,12 +96,31 @@ test('at boot the key is refused, and the log line says what to do with the cred
   assert.ok(!JSON.stringify(lines).includes(EXAMPLE), 'the example itself is never logged');
 });
 
-test('while it is refused, nothing is read, stored or lost', () => {
-  captureLogs(() => {
+test('while it is refused, nothing is read, stored or lost, and the refusal is not logged again', () => {
+  const lines = captureLogs(() => {
     assert.equal(secrets.getSecret('integration_npm_password'), null);
+    assert.equal(secrets.getSecret('integration_npm_username'), null);
     assert.equal(secrets.setSecret('integration_npm_password', 'typed-again'), false);
   });
+  assert.deepEqual(lines, [], 'logged once, at boot');
   assert.ok(secrets.hasSecret('integration_npm_password'));
+  assert.deepEqual(readFileSync(SECRETS_PATH), BEFORE, 'secrets.json is untouched');
+});
+
+test('a credential entered in Settings meanwhile is refused with what to do; nothing is stored', async () => {
+  const saved = await request(app)
+    .post('/api/integrations/save')
+    .send({ type: 'custom', url: 'http://npm.lan:81', password: 'typed-again' }); // pragma: allowlist secret
+  const put = await request(app).put('/api/secrets/my_token').send({ value: 'typed-again' });
+  for (const r of [saved, put]) {
+    assert.equal(r.status, 500);
+    assert.equal(r.body.error, secrets.NO_KEY_ERROR);
+  }
+  assert.equal(
+    secrets.NO_KEY_ERROR,
+    'DASH_SECRET is missing or an example value, so no credential can be stored: generate one with ' +
+      '`openssl rand -hex 32`, set it as DASH_SECRET in .env and restart JagHelm'
+  );
   assert.deepEqual(readFileSync(SECRETS_PATH), BEFORE, 'secrets.json is untouched');
 });
 

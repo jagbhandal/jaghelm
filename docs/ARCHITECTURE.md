@@ -1000,14 +1000,18 @@ Key properties:
 - **Secrets** (`secrets.js`) are AES-256-GCM encrypted with a **per-install
   random KDF salt** (`data/.secrets-salt`, legacy-static-salt fallback). A
   `DASH_SECRET` that is an example the docs print, or a generic placeholder
-  (`util/exampleSecrets.js`, any case, spaces around ignored; the session
-  stamp refuses the same list, 4.5), is no key: the store reads and stores
-  nothing, as with none, and an error line (with how many `secrets.json`
-  holds) says to generate a real one, restart, and enter again any
-  credential stored under the example: it stays in `secrets.json` as it is
-  and won't decrypt under the new key (#576).
-  `util/exampleSecrets.test.js` reads every `DASH_SECRET` the docs print and
-  fails when one isn't in the list. All credential stores write `0600`. A change `secrets.json` can't take throws
+  (`util/exampleSecrets.js`, any case, spaces or one pair of quotes around
+  ignored; the session stamp refuses the same list, 4.5), is no key: the
+  store reads and stores nothing, as with none. One error line (with how
+  many `secrets.json` holds), logged once rather than at every read as a
+  missing one's warning is, says to generate a real one, restart, and enter
+  again any credential stored under the example: it stays in `secrets.json`
+  as it is and won't decrypt under the new key (#576). A save of a
+  credential meanwhile answers 500 with the same steps (`NO_KEY_ERROR`).
+  `util/exampleSecrets.test.js` reads every `DASH_SECRET` the docs git
+  tracks print (an `.env` line, a YAML key or block, the default of a
+  compose interpolation) and fails, naming the file and line, when one
+  isn't in the list. All credential stores write `0600`. A change `secrets.json` can't take throws
   and leaves the store as it was, so a secret is never held only in memory.
   An integration's secrets (the `integration_*` names a Settings save
   writes) live and die with its entry in `services.yaml`, which is the

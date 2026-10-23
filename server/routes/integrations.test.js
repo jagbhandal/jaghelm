@@ -20,6 +20,7 @@ delete process.env.DASH_SECRET;
 const { initRegistry } = await import('../integrations/registry.js');
 await initRegistry(); // load presets (app does this at startup) so getPreset works
 const { allowedParams, integrationRoutes } = await import('./integrations.js');
+const { NO_KEY_ERROR } = await import('../secrets.js');
 
 // Mount the router standalone (auth-free) to exercise the /save + /delete
 // persistence-return checks against the real config/secrets modules.
@@ -58,6 +59,7 @@ test('POST /save → 500 when a password is supplied but the secrets manager is 
     .post('/api/integrations/save')
     .send({ type: 'custom', url: 'http://example.test', password: 'hunter2' });
   assert.equal(r.status, 500, 'unstored credential must fail at save time, not later');
+  assert.equal(r.body.error, NO_KEY_ERROR, 'says DASH_SECRET is missing or an example, and what to do (#576)');
 });
 
 test('POST /save → 500 when a token is supplied but the secrets manager is disabled', async () => {

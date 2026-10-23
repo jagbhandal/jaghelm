@@ -28,8 +28,8 @@ const { getCached } = await import('./cache.js');
 const { integrationRoutes } = await import('./routes/integrations.js');
 const { PARKED_HINT } = await import('./integrations/backoff.js');
 
-// A stored secret that fails to decrypt: each read of it logs an error, as every
-// secret read does while DASH_SECRET is unset, so its log lines count the reads.
+// A stored secret that fails to decrypt: each read of it logs an error, so its
+// log lines count the reads.
 writeFileSync(
   join(process.env.JAGHELM_DATA_DIR, 'secrets.json'),
   JSON.stringify({ corrupt_pw: { iv: '00'.repeat(12), data: '00', tag: '00'.repeat(16) } })

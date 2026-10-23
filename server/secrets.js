@@ -34,6 +34,17 @@ const LEGACY_SALT = 'jaghelm-secrets-v1';
 
 // Derive a 256-bit key from DASH_SECRET using PBKDF2
 let derivedKey = null;
+// The DASH_SECRET getKey last refused ('' for none), so a refusal is logged
+// once, not at every secret read (#576); undefined until one is.
+let refusedSecret;
+
+/**
+ * What a route answers when a credential can't be stored for want of a key:
+ * no DASH_SECRET, or an example (#576).
+ */
+export const NO_KEY_ERROR =
+  'DASH_SECRET is missing or an example value, so no credential can be stored: generate one with ' +
+  '`openssl rand -hex 32`, set it as DASH_SECRET in .env and restart JagHelm';
 
 /**
  * Resolve the PBKDF2 salt for this install.
@@ -78,15 +89,17 @@ function getSalt() {
 
 function getKey() {
   if (derivedKey) return derivedKey;
-  const secret = process.env.DASH_SECRET;
+  const secret = process.env.DASH_SECRET || '';
   if (!secret) {
-    log.warn('DASH_SECRET not set — secrets manager disabled. Credentials will only resolve from .env.');
+    if (firstRefusal(secret)) {
+      log.warn('DASH_SECRET not set — secrets manager disabled. Credentials will only resolve from .env.');
+    }
     return null;
   }
   // An example the docs print, or a generic placeholder (#576): a key anyone
   // can read is no better than none. Treat as unset.
   if (isExampleSecret(secret)) {
-    logExampleRefused();
+    if (firstRefusal(secret)) logExampleRefused();
     return null;
   }
   if (secret.length < 16) {
@@ -94,6 +107,13 @@ function getKey() {
   }
   derivedKey = crypto.pbkdf2Sync(secret, getSalt(), 100000, 32, 'sha256');
   return derivedKey;
+}
+
+/** Whether getKey refuses `secret` for the first time in a row, so it logs why. */
+function firstRefusal(secret) {
+  if (refusedSecret === secret) return false;
+  refusedSecret = secret;
+  return true;
 }
 
 /**
