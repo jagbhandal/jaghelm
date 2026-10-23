@@ -162,20 +162,24 @@ docker logs jaghelm 2>&1 | grep -i push
 The key is only tried against Google on the first send. If that fails, each send logs
 `fcm send failed` with a `code`:
 
-- `app/invalid-credential` → Google refused the key (revoked, or the server's clock is off by
-  minutes); the line before it, `fcm access token request failed`, gives Google's reason.
+- `app/invalid-credential` → Google answered but gave no access token: it refused the key
+  (revoked, or the server's clock is off by minutes). The line before it,
+  `fcm access token request failed`, gives the HTTP status and Google's reason.
 - `messaging/mismatched-credential` → the key is from another Firebase project than the APK.
-- `app/network-error` / `app/network-timeout` → the server can't reach `oauth2.googleapis.com`
-  or `fcm.googleapis.com`.
+- `app/network-error` / `app/network-timeout` → the server can't reach Google. When it is
+  `oauth2.googleapis.com` it can't reach, `fcm access token request failed` comes first, with
+  `status` 0 and the error in `reason`; otherwise it is `fcm.googleapis.com`.
 
 You can also hit the status route from an authenticated session:
 `GET /api/push/status` → `{"enabled":true}`.
 
 **Client** — open the app → **Notification Settings**. The "unavailable / not registered"
 message should be gone and a token should register. Then prove the whole chain end-to-end: take a
-monitored service down (or wait for a real `up→down` transition) and confirm a notification lands
-on the phone within a refresh cycle (~30s). The server logs `push cycle dispatched` with `sent`
-of at least 1, and no `fcm send failed`.
+monitored service down (or wait for a real `up→down` transition), wait until the board shows it
+down, and the notification should land on the phone with it (the board and push come from the
+same refresh). The server logs `push cycle dispatched` with `sent` of at least 1. If nothing
+arrives, `docker logs jaghelm 2>&1 | grep -E 'fcm send failed|fcm access token request failed'`
+says why (above).
 
 ---
 

@@ -709,8 +709,8 @@ flowchart TD
 `server/arcane/` adds a second, independent loop when `ARCANE_URL` and `ARCANE_API_KEY` are
 set (never in demo mode): `startArcane()` runs from `boot()` and polls the Arcane manager
 every `ARCANE_POLL_SECONDS` (default 300) plus a release check every
-`ARCANE_RELEASE_CHECK_HOURS` (default 6). With FCM credentials configured, the first poll and
-release check wait up to 30 s for push to be ready. It diffs against persisted state and emits
+`ARCANE_RELEASE_CHECK_HOURS` (default 6). Push is ready before the first poll and release
+check run (#235). It diffs against persisted state and emits
 push events through `dispatchEvents`, and records Arcane's scheduler-started update and prune
 runs, and its image watcher's checks, into the cron store. On its own weekly timer it also
 reads Arcane's stored vulnerability scan results for the environments in
@@ -1450,7 +1450,7 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
     (`buildHosts`), never working one out for itself, and drops a reading on
     the cycle the model stops holding it. At boot the model is seeded with the
     starts the file keeps (`heldSinceOf`). So a cycle push sits out (a
-    dispatch that throws, the FCM boot race) can't put the two out of step,
+    dispatch that throws) can't put the two out of step,
     and a restart doesn't start the 24 h again. A snapshot written before
     #469 has no start: its holds start on the first cycle that reads them.
   - **A reading whose read failed is frozen, never timed**: one whose
@@ -1759,7 +1759,8 @@ sees where that changed:
   no redirect. It keeps what firebase-admin did, pinned by what it was
   captured sending and throwing (`push/fixtures/fcm-wire-golden.json`): each
   message's exact body, the error codes `fcm.js` prunes a token on, and the
-  retries of a 503 or a dropped connection. The key, the JWT and the access
+  retries of a 503 or a dropped or stalled connection. Push is enabled as
+  `initPush()` returns, so nothing at boot waits for it. The key, the JWT and the access
   token are never logged or quoted in an error (docs/mobile/DESIGN.md, "FCM
   HTTP v1 send").
 
