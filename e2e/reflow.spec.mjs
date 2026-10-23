@@ -213,11 +213,13 @@ function hidden(page, names) {
         const cs = getComputedStyle(at);
         if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
         const frame = at.getBoundingClientRect();
+        // A box that scrolls up and down (a sheet) doesn't cut what lies past
+        // its fold: that is scrolled to (#602). Sideways it still must not.
+        const scrollsY = cs.overflowY === 'auto' || cs.overflowY === 'scroll';
         if (
           box.left < frame.left - 0.5 ||
           box.right > frame.right + 0.5 ||
-          box.top < frame.top - 0.5 ||
-          box.bottom > frame.bottom + 0.5
+          (!scrollsY && (box.top < frame.top - 0.5 || box.bottom > frame.bottom + 0.5))
         ) {
           out.push(`"${name}" is cut by ${where(at)}`);
           break;
