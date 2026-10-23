@@ -27,7 +27,9 @@
  *
  * Axes: values on the left at `domain` (`[lo, hi]`, 0–100 for a percentage),
  * or fitted to the readings (`'auto'`, a temperature) or from 0 (`'zero'`, a
- * magnitude: memory, the CPU of containers), with a hairline at each tick; times
+ * magnitude: memory, the CPU of containers), with a hairline at each tick, a
+ * step coarse enough that `formatValue` prints no two ticks the same (#602:
+ * whole °C at half-degree ticks would read "47, 47, 48"); times
  * under the plot on the local clock (`formatTick`): every `tickEvery` ms, or
  * every second, third… of those, evenly, as the plot's width allows, each
  * centred on its tick. In a ChartGroup the charts share one time axis: the
@@ -37,7 +39,10 @@
  *
  * The crosshair: the pointer's nearest time gets a hairline, a ringed dot on
  * each line, and a tooltip listing every series' value there (the value
- * strong, its name after it). The keyboard reaches it too: the plot is an
+ * strong, its name after it). By touch (#602) a finger down on the plot shows
+ * it at the finger, a sideways drag moves it, and lifting the finger hides
+ * it; an up-and-down drag still scrolls the page, and the focus a tap leaves
+ * on the plot opens nothing. The keyboard reaches it too: the plot is an
  * image named by `label` and described by each series' latest, lowest and
  * highest, so nothing lives only in the tooltip; focus starts at the latest
  * point, the arrows, Home and End move, Escape hides it, and a polite live
@@ -186,6 +191,8 @@ function Chart({
   const [focused, setFocused] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [said, setSaid] = useState('');
+  // A finger (or a pen) is on the plot, or was last: its tap's focus opens nothing.
+  const touched = useRef(false);
 
   if (!hasText(label)) {
     const message = 'Chart needs a `label`: it has no name';
@@ -213,11 +220,16 @@ function Chart({
   const readings = lines.flatMap((l) => l.data.map((p) => p.value).filter((v) => v != null));
   const drawable = state === 'ready' && readings.length > 0 && times.length > 1;
 
+  // Its ticks never print the same label twice (#602): formatValue's labels pick the step.
   const axis = useMemo(() => {
     if (!drawable) return null;
-    if (Array.isArray(domain)) return valueAxis(domain[0], domain[1], { count: 2 });
-    return valueAxis(Math.min(...readings), Math.max(...readings), { zero: domain === 'zero' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- readings derive from lines
+    const format = formatValue;
+    if (Array.isArray(domain)) return valueAxis(domain[0], domain[1], { count: 2, format });
+    return valueAxis(Math.min(...readings), Math.max(...readings), {
+      zero: domain === 'zero',
+      format,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- readings derive from lines; the formatter is the caller's
   }, [drawable, domain, lines]);
 
   useLayoutEffect(() => {
@@ -313,6 +325,19 @@ function Chart({
   const onPointerLeave = () => {
     setHovering(false);
     if (!focused) setActive(null);
+  };
+  // Touch (#602): down shows the finger's time, a drag follows it (the plot
+  // keeps the finger past its edges), and up or a scroll taking over hides it.
+  const onPointerDown = (e) => {
+    touched.current = e.pointerType !== 'mouse';
+    if (!touched.current) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    onPointerMove(e);
+  };
+  const onPointerUp = (e) => {
+    if (e.pointerType === 'mouse') return;
+    setHovering(false);
+    setActive(null);
   };
 
   const KEYS = {
@@ -458,16 +483,20 @@ function Chart({
           onKeyDown={onKeyDown}
           onFocus={() => {
             setFocused(true);
-            if (active == null) move(last);
+            if (active == null && !touched.current) move(last);
           }}
           onBlur={() => {
+            touched.current = false;
             setFocused(false);
             setDismissed(false);
             if (!hovering) setActive(null);
           }}
+          onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
           onPointerLeave={onPointerLeave}
-          className="relative min-w-0 rounded-sm"
+          className="relative min-w-0 touch-pan-y rounded-sm"
           style={{ height }}
         >
           <svg

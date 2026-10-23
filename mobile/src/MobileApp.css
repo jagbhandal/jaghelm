@@ -235,6 +235,9 @@
 /* Detail screens — honest-numbers helpers + demoted Open (Tasks 7.6/7.8). */
 #mobile-root .detail-lastseen { font-family: var(--mono); font-size: var(--text-xs); color: var(--text-muted); margin: var(--space-1) 0 var(--space-2); }
 #mobile-root .detail-status { font-family: var(--mono); font-size: var(--text-sm); color: var(--text-secondary); margin: var(--space-2) 0 var(--space-3); }
+/* #602: a node's or a container's history, the web drawer's charts in a root of
+   the new UI (components/DetailHistory.jsx), spaced as the blocks around it. */
+.detail-history { margin-bottom: var(--space-4); }
 /* Bug #9: secondary ghost Open — card-inner bg + border, NOT the loud indigo fill. */
 #mobile-root .open-btn--ghost { background: var(--card-inner); color: var(--text-secondary); border: 1px solid var(--border); cursor: pointer; }
 

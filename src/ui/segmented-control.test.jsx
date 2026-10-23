@@ -39,6 +39,19 @@ describe('SegmentedControl', () => {
     expect(on.className).not.toMatch(NO_RING);
   });
 
+  it('size="touch" (#602): each segment a 44px target for a thumb, the look otherwise the same', () => {
+    render(
+      <SegmentedControl aria-label="Range" options={DENSITY} defaultValue="compact" size="touch" />
+    );
+    const group = screen.getByRole('radiogroup', { name: 'Range' });
+    expect(group).toHaveAttribute('data-size', 'touch');
+    expect(group).toHaveClass('bg-surface-3', 'p-0.5', 'gap-0.5');
+    for (const segment of screen.getAllByRole('radio')) {
+      expect(segment).toHaveClass('h-11', 'min-w-11', 'px-3.5', 'text-body-sm');
+      expect(segment).not.toHaveClass('h-segment');
+    }
+  });
+
   it('enters at the chosen segment with Tab; the arrow keys move and choose', async () => {
     const user = userEvent.setup();
     const onValueChange = vi.fn();

@@ -43,6 +43,11 @@ import IncidentDetail from './IncidentDetail.jsx';
  * read, it says so. The Android look waits too (a push tapped as the app
  * starts, #309), then says "no longer reported".
  *
+ * `charts` (#602): the history of a service Docker runs, the drawer's CPU
+ * and Memory charts (1 h / 24 h / 7 d), as its screen gives them (the web's
+ * PhoneDetail.jsx, the Android app's DetailHistory.jsx): on the web under
+ * the status box, as the drawer draws them; on Android above Open.
+ *
  * Opened by a tapped push (#309, its `type` in the params) for a service the
  * cards don't have (a monitor with no card, #390, or one removed since), it
  * is Incident detail: the model's issue for it, else the push's own event.
@@ -59,7 +64,7 @@ function PushedElsewhere({ data, nav, params }) {
   );
 }
 
-function WebServiceDetail({ data, nav, params }) {
+function WebServiceDetail({ data, nav, params, charts = null }) {
   const { openTarget } = usePhonePlatform();
   const at = useStatusAt(data.updated);
   if (detailLoading(data)) return <DetailLoading kind="Service" onBack={nav.pop} />;
@@ -121,6 +126,7 @@ function WebServiceDetail({ data, nav, params }) {
           reason={healthy ? null : svc.reason}
           since={sinceLine(serviceEntity(data.status, svc.uid)?.since, at, freshness)}
         />
+        {charts}
         <DetailFacts facts={facts} lastKnown={extras?.lastKnown} />
         <DetailSections sections={extras?.sections} muted={Boolean(extras?.lastKnown)} />
         <DetailUnread unread={extras?.unread} />
@@ -138,7 +144,7 @@ function WebServiceDetail({ data, nav, params }) {
   );
 }
 
-function AndroidServiceDetail({ data, nav, params }) {
+function AndroidServiceDetail({ data, nav, params, charts = null }) {
   const { openTarget } = usePhonePlatform();
   if (detailLoading(data))
     return <AndroidLoading label="Service detail" title="Service" nav={nav} />;
@@ -200,6 +206,8 @@ function AndroidServiceDetail({ data, nav, params }) {
           {svc.docker.memMB != null && <span>MEM {svc.docker.memMB} MB</span>}
         </div>
       )}
+
+      {charts && <div className="detail-history">{charts}</div>}
 
       {/* Open demoted to a secondary ghost button (Bug #9) — navigation to this
           screen is the primary affordance, not a loud indigo fill. */}

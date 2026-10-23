@@ -2382,8 +2382,8 @@ flowchart TD
   `ChartGroup`: they share a time axis (the same plot left edge and width),
   and their time ticks are one even stride on the local clock. A series
   Prometheus didn't answer says so, and why, in place of its line; a read
-  that failed says the history couldn't be read. The phone's sheet draws no
-  charts yet. The parts are `src/ui/entity-detail.jsx`
+  that failed says the history couldn't be read. The phone's sheet draws the
+  same charts (#602, "The phone screens on the web" in 5). The parts are `src/ui/entity-detail.jsx`
   (docs/design-system.md). Reads per status tick while open: none of what
   the page already reads (the detail takes the page's answer to the same
   address, `lastAnswer` in `useData.js`, when one came since its own read and
@@ -2903,7 +2903,9 @@ flowchart TD
   (`/api/gitea/activity`, from 1440px) on ticks 2, 5, 8 …, and the rail's
   weather (`/api/weather`) on ticks 3, 6, 9 … once its 10 minutes are up,
   never two. One exception: an open node or container drawer's history
-  read, at most once a minute on a status answer (#311). The
+  read, at most once a minute on a status answer (#311), and the same read
+  of a node's or a container's sheet on a phone, the web's or the Android
+  app's (#602), never of a sheet another covers. The
   old board's `/api/ups` and `/api/cron/status` went with it: the model
   carries the UPS and the jobs. CI holds it (`src/App.polling.test.jsx`,
   over 45 ticks with the weather on, and `e2e/budgets.spec.mjs` on the built
@@ -3242,6 +3244,23 @@ stack sits beside today's CSS and must not restyle it.
   shows (#310, "The detail drawer's content" in 5): `PhoneDetail.jsx` gives
   the screen its entity's extras (`data.extras`) from the reads the sheet on
   top makes; the Android app gives none, so its look is unchanged.
+  A node's sheet and a container's also draw the drawer's history charts
+  (#602), as the screen's `charts`, for the drawer's target
+  (`entityDetail.js` `chartTarget`): `HistoryCharts` at `size="touch"`
+  (the range switch's segments 44px targets), under the status box on the
+  web, as in the drawer; on Android (`mobile/src/components/DetailHistory.jsx`,
+  `mobile/src/data/historyTarget.js`, in a `UiRoot`, as the Android look has
+  no root of the new UI) under the bars, or above Open. One chart a row on
+  one time axis, the same legend, end labels and failure states as the
+  drawer; by touch a finger shows the crosshair, a sideways drag moves it,
+  lifting hides it. A sheet another covers reads none (`paused`) until it is
+  on top again. An Android app can talk to a server from before #311, whose
+  `/api/history` is the ring buffer's (number lists keyed `<node>:cpu`,
+  `:mem` and `:disk`, or `{}` before its first sample): its first such
+  answer marks that server old for the session (`useHistory.js`, by API
+  base), so no sheet draws charts, says an error or asks it again until a
+  reload. An answer of neither shape is a failed read ("Not an answer of
+  /api/history"), asked again as one.
   `PhonePlatform`'s `openTarget`
   on the web opens a service's address (`safeUrl`: http, https, mailto) as
   the web's links open, a new tab or this one (Settings → Layout,
@@ -3953,7 +3972,9 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   keyboard and states, and its geometry, #311;
   `src/shell/detail/HistoryCharts.test.jsx`: a node's and a container's
   charts from the demo's /api/history, one request each, the range switch,
-  reads paced by the step, Prometheus failing and a failed read, #311;
+  reads paced by the step, Prometheus failing and a failed read, #311; no
+  axis printing two equal labels (a sweep over °C, % and MB or GB, and as
+  drawn), an older server, an answer of neither shape, a covered sheet, #602;
   `server/promHistory.test.js`, `server/routes/history.test.js` and
   `history.auth.test.js`: the 400s and 404s (an unseen container among
   them, with no query and no cache entry), the queries, the cache within a
@@ -3961,6 +3982,15 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   once, the 401, #311;
   `e2e/history.spec.mjs`: the drawer's charts for a node and a container on
   the demo, the range switch, the crosshair, the node cards' line, axe, #311;
+  and at 390px a node's and a container's sheet, one chart a row on one
+  time axis, the 44px switch, the crosshair by touch, axe, #602;
+  `src/shell/PhoneDetail.history.test.jsx`: the web sheet's charts under the
+  status box, one request, none for a covered sheet or an entity with
+  nothing to chart; `mobile/src/components/DetailHistory.test.jsx` and
+  `mobile/src/MobileApp.history.test.jsx`: the Android sheet's target and
+  charts, and a server older than #311: no charts, no error, asked once a
+  session; `mobile/visual/android.spec.mjs`: the same on the APK's build,
+  #602;
   `src/App.jobs.test.jsx`: the Jobs section after Infrastructure from the
   status alone, its filter and switch, a row opening its drawer, Remove
   asking first, calling the old panel's endpoint, the row gone and focus on
@@ -4150,8 +4180,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   in a title or an accessible name and 64px of it drawn (#303: the header's
   sentence squeezed to a few letters on a phone passed before), and no text
   spilling out of its box;
-  every service's and node's name whole and in the window; a failure names
-  the element and the width. Every status fixture's strip, and a six-tile
+  every service's and node's name whole and in the window (past a sheet's
+  fold counts as whole when scrolling it shows the name whole, #602; the
+  sweep's own test plants that, an overflow-x strip and a hiding box); a
+  failure names the element and the width. Every status fixture's strip, and a six-tile
   one with "Low battery", at 1024, 1280, 1440 and 1460px (past the page's
   split), in each of the three typefaces (#541): each tile's value and
   sub-line the model's, whole (no word cut, `overflow-wrap: normal`, nothing

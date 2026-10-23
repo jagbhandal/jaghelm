@@ -16,6 +16,10 @@
  * label and line name setting the columns for all, so every plot starts at
  * the same x and is as wide, and the same range draws the same ticks.
  *
+ * `size="touch"` (#602), for a phone's sheet (390px, one chart a row as
+ * everywhere): the range switch's segments are 44px targets
+ * (SegmentedControl's touch size); the charts are the drawer's.
+ *
  * Its own module, apart from entity-detail.jsx, so the Chart rides only in
  * the chunk of the detail that draws it.
  */
@@ -34,6 +38,7 @@ function DetailCharts({
   tickEvery,
   formatTick,
   formatTime,
+  size = 'md',
   className,
   ...props
 }) {
@@ -52,6 +57,7 @@ function DetailCharts({
         </h3>
         <SegmentedControl
           aria-label="Range"
+          size={size}
           options={ranges.map(({ value, label }) => ({ value, label }))}
           value={range}
           onValueChange={(value) => onRangeChange?.(value)}

@@ -156,6 +156,34 @@ describe('Chart', () => {
     expect(q('[data-slot="chart-tooltip"]')).toBeNull();
   });
 
+  it('touch (#602): a finger down shows the nearest time, a drag follows it, lifting hides it', () => {
+    render(<Chart label="CPU by node" series={six(3)} formatValue={pct} />);
+    const plot = q('[data-slot="chart-plot"]');
+    // A sideways drag is the chart's; an up-and-down one still scrolls the sheet.
+    expect(plot).toHaveClass('touch-pan-y');
+    vi.spyOn(plot, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 112));
+    const tip = () => q('[data-slot="chart-tooltip"]');
+    fireEvent.pointerDown(plot, { clientX: 105, pointerType: 'touch', pointerId: 7 });
+    expect(tip().textContent.startsWith('08:15')).toBe(true);
+    expect(qa('[data-slot="chart-dot"]')).toHaveLength(3);
+    fireEvent.pointerMove(plot, { clientX: 300, pointerType: 'touch', pointerId: 7 });
+    expect(tip().textContent.startsWith('08:45')).toBe(true);
+    fireEvent.pointerUp(plot, { clientX: 300, pointerType: 'touch', pointerId: 7 });
+    expect(tip()).toBeNull();
+    expect(q('[data-slot="chart-crosshair"]')).toBeNull();
+    // The tap focuses the plot after the finger lifts: that opens nothing.
+    fireEvent.focus(plot);
+    expect(tip()).toBeNull();
+    // A scroll that takes the finger over cancels it: hidden too.
+    fireEvent.pointerDown(plot, { clientX: 5, pointerType: 'touch', pointerId: 8 });
+    expect(tip().textContent.startsWith('08:00')).toBe(true);
+    fireEvent.pointerCancel(plot, { pointerType: 'touch', pointerId: 8 });
+    expect(tip()).toBeNull();
+    // The keyboard still reaches it once the finger is gone.
+    fireEvent.keyDown(plot, { key: 'End' });
+    expect(tip().textContent.startsWith('09:00')).toBe(true);
+  });
+
   it('Prometheus failing says so, never an empty line; no reading says that; loading holds the space', () => {
     const { rerender } = render(
       <Chart label="CPU" series={[]} state="failed" detail="Prometheus didn't answer" />
