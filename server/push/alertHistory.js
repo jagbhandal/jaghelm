@@ -46,6 +46,7 @@
  * leaves the file at its next write, and past HISTORY_CAP the oldest go first.
  */
 import { createLogger } from '../util/logger.js';
+import { SUBSYSTEMS } from '../status/summary.js';
 import { entityOf } from './androidPayload.js';
 
 const defaultLog = createLogger('alert-history');
@@ -67,6 +68,14 @@ export const EVENTS_PAGE_DEFAULT = 50;
 export const EVENTS_PAGE_MAX = 200;
 
 export const SEVERITIES = Object.freeze(['critical', 'warning', 'info']);
+
+/**
+ * The kinds of entity an event can be about (#314): the first part of the
+ * model's id (`services/…`, `nodes/…`, `power/ups`), which is its subsystem's
+ * id, or `sources` for a failed monitoring source. The Alerts pages filter by
+ * one or several.
+ */
+export const ENTITY_KINDS = Object.freeze([...SUBSYSTEMS.map((s) => s.id), 'sources']);
 const SEVERITY_SET = new Set(SEVERITIES);
 export const PUSH_STATES = Object.freeze(['off', 'queued', 'sent', 'suppressed', 'unsent', 'dropped']);
 const PUSH_STATE_SET = new Set(PUSH_STATES);
@@ -93,6 +102,13 @@ export function pushOutcome(tally, end) {
   if (end === 'pending') return { state: 'queued', phones: 0, suppressed };
   if (end === 'dropped') return { state: 'dropped', phones: 0, suppressed };
   return { state: suppressed > 0 ? 'suppressed' : 'unsent', phones: 0, suppressed };
+}
+
+/** Whether record `r` has `needle` (lower case) in its title, words, reason or entity's id. */
+function mentions(r, needle) {
+  return [r.title, r.body, r.reason, r.entity].some(
+    (v) => typeof v === 'string' && v.toLowerCase().includes(needle)
+  );
 }
 
 /** A record as the file holds it, or null for anything that isn't one. */
@@ -272,22 +288,35 @@ export function createAlertHistory({
 
     /**
      * One page, newest first: the events older than `before` (an id, as a
-     * number; null for the newest), of the entities and severities asked
-     * (null: any), at most `limit`. `next` is the id to pass as `before` for
-     * the page after, or null when there is none. The page is a copy. A new
-     * event gets a higher id, so it never moves a page a client is reading.
+     * number; null for the newest), of the entities, kinds of entity (#314:
+     * the first part of the id, ENTITY_KINDS) and severities asked (null:
+     * any), and with `text` (#314, null: any) in the title, the words, the
+     * reason or the entity's id, in any case; at most `limit`. `next` is the
+     * id to pass as `before` for the page after, or null when there is none.
+     * The page is a copy. A new event gets a higher id, so it never moves a
+     * page a client is reading.
      *
-     * @param {{ before?: number | null, limit?: number, entities?: Set<string> | null, severities?: Set<string> | null }} [query]
+     * @param {{ before?: number | null, limit?: number, entities?: Set<string> | null, kinds?: Set<string> | null, severities?: Set<string> | null, text?: string | null }} [query]
      * @returns {{ events: object[], next: string | null }}
      */
-    page({ before = null, limit = EVENTS_PAGE_DEFAULT, entities = null, severities = null } = {}) {
+    page({
+      before = null,
+      limit = EVENTS_PAGE_DEFAULT,
+      entities = null,
+      kinds = null,
+      severities = null,
+      text = null,
+    } = {}) {
       prune();
+      const needle = text === null ? null : text.toLowerCase();
       const events = [];
       for (let i = records.length - 1; i >= 0; i -= 1) {
         const r = records[i];
         if (before !== null && Number(r.id) >= before) continue;
         if (entities && !entities.has(r.entity)) continue;
+        if (kinds && !(r.entity !== null && kinds.has(r.entity.split('/')[0]))) continue;
         if (severities && !severities.has(r.severity)) continue;
+        if (needle !== null && !mentions(r, needle)) continue;
         if (events.length === limit) return { events, next: events[events.length - 1].id };
         events.push(structuredClone(r));
       }

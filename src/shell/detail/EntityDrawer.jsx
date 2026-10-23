@@ -60,6 +60,8 @@ function heading(view) {
   switch (view.status) {
     case 'found':
       return { eyebrow: view.eyebrow, title: view.title, description: view.where ?? undefined };
+    case 'resolved':
+      return { title: 'Incident' };
     case 'gone':
       return { title: 'No longer monitored' };
     case 'loading':

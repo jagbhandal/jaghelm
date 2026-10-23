@@ -1,123 +1,272 @@
 import React, { useMemo } from 'react';
+import { AlertHistory } from '@ui/alert-history';
 import { Banner } from '@ui/banner';
 import { IssueRow } from '@ui/issue-row';
+import { Select } from '@ui/select';
 import { EMPTY, WORDS } from '@ui/lib/status.js';
-import { groupByDay, formatDayLabel, dateToDayKey } from '../data/groupByDay.js';
+import FilterChips from '../components/FilterChips.jsx';
+import SearchBar from '../components/SearchBar.jsx';
 import StatusBanner from '../components/StatusBanner.jsx';
 import { FRESH, issueRowsOf } from '../data/board.js';
+import { entityRoute } from '../nav/entityRoute.js';
 import { issueRows } from '../../shell/statusView.js';
 import { lastKnownCaption } from '../../shell/statusFreshness.js';
+import {
+  useSearchDraft,
+  useStateAlertFilters,
+  useUrlAlertFilters,
+} from '../../shell/alertsFilter.js';
+import { useAlertHistory } from '../../shell/useAlertHistory.js';
+import {
+  KIND_OPTIONS,
+  SEVERITY_OPTIONS,
+  filterSummary,
+  historyView,
+  issueMatches,
+} from '../../shell/alertsView.js';
 
 /**
- * Alerts: the status model's issues (#325), worst first, are pinned at top in
- * alarm-red as the active incidents, shown as compact rows: the name, where it
- * is ("Service · vm103") and the model's reason (Bug #8).
+ * Alerts (#314): what is wrong now, and what happened, from the same code on
+ * the web below 768px and in the Android app.
  *
- * While the status is stale (#480), as on the web's Alerts page, the rows stay
- * as last known, but none is active: each is drawn steel (no signal), under a
- * "Last known 3 min ago" heading, and the page says "No signal · <why>" above
- * them ("JagHelm's status is out of date"; a fetch error's own banner says it
- * when the cards can't be read either). Bug #4: stale data never reads as live.
+ *  - Active: the status model's issues (#325), worst first, as compact rows:
+ *    the name, where it is ("Service · vm103") and the model's reason (Bug
+ *    #8). While the status is stale (#480), as on the web's Alerts page, the
+ *    rows stay as last known, but none is active: each is drawn steel (no
+ *    signal), under a "Last known 3 min ago" heading, and the page says "No
+ *    signal · <why>" above them. Bug #4: stale data never reads as live.
+ *  - History: the alert history (/api/events, #267), newest first, by day:
+ *    each event's time, entity, change, reason, and what the phones got
+ *    (src/shell/useAlertHistory.js, alertsView.js). Every event, whether or
+ *    not push is set up. An event is not an issue: one that opened an active
+ *    issue is listed in both. A failed read says so, never "nothing
+ *    happened". A server from before /api/events (the Android app can talk
+ *    to one) has no history: one line says History needs a newer server, and
+ *    Active is all there is; no error.
  *
- * History de-dup (Bug #3): history renders ONLY incidents whose id is NOT
- * active. Every issue the model has now IS active, so the history section is
- * empty by design → shows "No earlier alerts this session."
+ * One set of filters over both: severity, kind of entity and a search
+ * (alertsView.js). The web keeps them in the page's address (Back undoes
+ * one, a link opens the tab filtered); the Android app, which has none, in
+ * the screen. Active filters the status in hand; History asks the server.
  *
- * Day-grouping stays wired for the future persisted-history feed (Phase 5+).
- * When that feed lands, pass real persisted incidents (filtered to non-active)
- * into historyIncidents and stamp them with their real event timestamps.
+ * Each row opens its detail (`nav.push`); a history row the detail its
+ * entity's kind opens (entityRoute.js: a service's, a node's, else the
+ * incident's), where one the model no longer has says so.
  *
- * Gear → NotificationSettings: always enabled + indigo (Bug #13 partial).
- * READ-ONLY: the only action is nav.push.
- *
- * The web look (#303): the page's title; the same lines, as a Banner (no
- * signal and why) or the quiet card; the issues as the shared issue rows
- * under "Active" (or "Last known 3 min ago"), each opening its detail; and
- * History. No gear: Notification settings are the Android app's own, and
- * the web's Settings has no Notifications section yet (spec §7).
+ * The web look (#303): the page's title, the severity chips, the search with
+ * the kind beside it as a Select, the issues as the shared issue rows under
+ * "Active" (or "Last known 3 min ago"), and History as the shared
+ * AlertHistory. No gear: Notification settings are the
+ * Android app's own. The Android look keeps its own rows and classes (no
+ * redesign before #326): History's events are its alert rows, under its day
+ * headings; its gear opens Notification settings.
  */
 export default function Alerts(props) {
   if (__ANDROID_LOOK__) return <AndroidAlerts {...props} />;
   return <WebAlerts {...props} />;
 }
 
-function WebAlerts({ data, nav }) {
-  const { loading, error, servicesBody, status } = data;
+const SEVERITY_CHIPS = [{ id: 'all', label: 'All' }, ...SEVERITY_OPTIONS];
+const KIND_CHIPS = [{ id: 'all', label: 'Everything' }, ...KIND_OPTIONS];
+const chipOf = (value) => value ?? 'all';
+const valueOf = (chip) => (chip === 'all' ? null : chip);
+
+/**
+ * What both looks show from the data and the filters: the active rows the
+ * filters leave (each opening its detail), the words for none, and History's
+ * days.
+ */
+function useAlertsView({ data, nav, filters, history, now }) {
+  const { status } = data;
   const freshness = data.freshness ?? FRESH;
-  const stale = freshness.stale;
+  const summary = filterSummary(filters);
   const rows = useMemo(() => {
-    const opens = issueRowsOf({ status, freshness });
-    return issueRows(status).map((row, i) => ({
-      ...row,
-      state: opens[i].state,
-      onOpen: () => nav.push('incident', { id: row.id }),
-    }));
-  }, [status, freshness, nav]);
+    const drawn = issueRowsOf({ status, freshness });
+    const issues = status?.issues ?? [];
+    return issueRows(status)
+      .map((row, i) => ({
+        ...row,
+        incident: drawn[i],
+        state: drawn[i].state,
+        onOpen: () => nav.push('incident', { id: row.id }),
+      }))
+      .filter((_, i) => issueMatches(issues[i], filters));
+  }, [status, freshness, nav, filters]);
+  const days = useMemo(
+    () =>
+      historyView(history.events, status, now ?? Date.now(), (id) => ({
+        onOpen: () => {
+          // The detail each kind opens, as everywhere (a service's, a node's, else the incident's).
+          const route = entityRoute(id) ?? { screen: 'incident', params: { id } };
+          nav.push(route.screen, route.params);
+        },
+      })),
+    [history.events, status, now, nav]
+  );
+  const issues = status?.issues?.length ?? 0;
+  return {
+    freshness,
+    rows,
+    days,
+    // Some issues, none left by the filters.
+    noMatch: summary && issues > 0 && rows.length === 0 ? `No active ${summary}` : null,
+    empty: summary
+      ? `No ${summary} in the last 30 days.`
+      : 'No alerts in the last 30 days. Every change is recorded here, whether or not push is set up.',
+  };
+}
+
+/**
+ * The Android look's filters: its search bar and two chip rows, each one
+ * row that scrolls sideways (`.filter-chips`), as its Services screen has.
+ */
+function AndroidAlertFilters({ filters, onFilters }) {
+  const [text, setText] = useSearchDraft(filters.q, (q, options) =>
+    onFilters({ ...filters, q }, options)
+  );
+  return (
+    <>
+      <SearchBar value={text} onChange={setText} placeholder="Search alerts" />
+      <FilterChips
+        label="Severity"
+        chips={SEVERITY_CHIPS}
+        active={chipOf(filters.severity)}
+        onChange={(chip) => onFilters({ ...filters, severity: valueOf(chip) })}
+      />
+      <FilterChips
+        label="Kind"
+        chips={KIND_CHIPS}
+        active={chipOf(filters.kind)}
+        onChange={(chip) => onFilters({ ...filters, kind: valueOf(chip) })}
+      />
+    </>
+  );
+}
+
+const KIND_ITEMS = KIND_CHIPS.map((c) => ({ value: c.id, label: c.label }));
+
+/**
+ * The web look's filters, two lines at 390px: the severity chips, then the
+ * search with the kind as a Select beside it (eight kinds as chips wrapped
+ * to three more lines).
+ */
+function WebAlertFilters({ filters, onFilters }) {
+  const [text, setText] = useSearchDraft(filters.q, (q, options) =>
+    onFilters({ ...filters, q }, options)
+  );
+  return (
+    <>
+      <FilterChips
+        label="Severity"
+        chips={SEVERITY_CHIPS}
+        active={chipOf(filters.severity)}
+        onChange={(chip) => onFilters({ ...filters, severity: valueOf(chip) })}
+      />
+      <div data-slot="alert-search" className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <SearchBar value={text} onChange={setText} placeholder="Search alerts" />
+        </div>
+        <Select
+          aria-label="Kind"
+          items={KIND_ITEMS}
+          value={chipOf(filters.kind)}
+          onValueChange={(v) => onFilters({ ...filters, kind: valueOf(v) })}
+          className="h-11 w-36 shrink-0 text-body"
+        />
+      </div>
+    </>
+  );
+}
+
+function WebAlerts({ data, nav }) {
+  const [filters, setFilters] = useUrlAlertFilters();
+  const history = useAlertHistory(filters, { updated: data.updated });
+  return (
+    <WebAlertsView
+      data={data}
+      nav={nav}
+      filters={filters}
+      onFilters={setFilters}
+      history={history}
+    />
+  );
+}
+
+/**
+ * The web look from what it is given (the gallery draws it): the screen's
+ * `data` and `nav`, the filters and what changes them, History
+ * (useAlertHistory's) and `now`, the clock its days are told by.
+ */
+export function WebAlertsView({ data, nav, filters, onFilters, history, now }) {
+  const { loading, error, servicesBody, status } = data;
+  const { freshness, rows, days, noMatch, empty } = useAlertsView({
+    data,
+    nav,
+    filters,
+    history,
+    now,
+  });
+  const stale = freshness.stale;
   const heading = 'text-overline text-text-3 uppercase';
+  const quiet = !loading && !error && !stale && status && (status.issues ?? []).length === 0;
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-title">Alerts</h1>
       <StatusBanner loading={loading} error={error} hasData={!!servicesBody} />
-      {!loading && !error && !stale && status && rows.length === 0 && (
-        <p className="rounded-xl border border-border bg-surface-1 px-panel py-3.5 text-text-2">
-          {status.overall.state === EMPTY
-            ? status.overall.sentence
-            : 'All clear — nothing is on fire.'}
-        </p>
-      )}
+      <WebAlertFilters filters={filters} onFilters={onFilters} />
       {stale && !error && <Banner tone="unknown" title={WORDS.unknown} cause={freshness.cause} />}
-      {rows.length > 0 && (
-        <>
-          <section aria-label={stale ? 'Last known' : 'Active'} className="flex flex-col gap-2">
-            <h2 className={heading}>
-              {stale ? (lastKnownCaption(freshness) ?? 'Last known') : 'Active'}
-            </h2>
-            <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface-1">
-              {rows.map((row) => (
-                <li key={row.id}>
-                  <IssueRow issue={row} onOpen={row.onOpen} />
-                </li>
-              ))}
-            </ul>
-          </section>
-          <section aria-label="History" className="flex flex-col gap-2">
-            <h2 className={heading}>History</h2>
-            <p className="text-body-sm text-text-3">No earlier alerts this session.</p>
-          </section>
-        </>
-      )}
+      <section aria-label={stale ? 'Last known' : 'Active'} className="flex flex-col gap-2">
+        <h2 className={heading}>
+          {stale ? (lastKnownCaption(freshness) ?? 'Last known') : 'Active'}
+        </h2>
+        {quiet && (
+          <p className="rounded-xl border border-border bg-surface-1 px-panel py-3.5 text-text-2">
+            {status.overall.state === EMPTY
+              ? status.overall.sentence
+              : 'All clear — nothing is on fire.'}
+          </p>
+        )}
+        {noMatch && (
+          <p className="rounded-xl border border-border bg-surface-1 px-panel py-3.5 text-text-2">
+            {noMatch}
+          </p>
+        )}
+        {rows.length > 0 && (
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface-1">
+            {rows.map((row) => (
+              <li key={row.id}>
+                <IssueRow issue={row} onOpen={row.onOpen} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <AlertHistory
+        heading="overline"
+        state={history.state}
+        days={days}
+        failed={history.failed}
+        onRetry={history.retry}
+        onMore={history.more ?? undefined}
+        loadingMore={history.loadingMore}
+        empty={empty}
+      />
     </div>
   );
 }
 
 function AndroidAlerts({ data, nav }) {
+  const [filters, setFilters] = useStateAlertFilters();
+  const history = useAlertHistory(filters, { updated: data.updated });
   const { loading, error, servicesBody, status } = data;
-  const freshness = data.freshness ?? FRESH;
+  const { freshness, rows, days, noMatch, empty } = useAlertsView({
+    data,
+    nav,
+    filters,
+    history,
+  });
   const stale = freshness.stale;
-
-  const incidents = useMemo(() => issueRowsOf({ status, freshness }), [status, freshness]);
-
-  // The set of active incident ids — history filters these OUT (de-dup, Bug #3).
-  const activeIds = useMemo(() => new Set(incidents.map((i) => i.id)), [incidents]);
-
-  // History: only incidents NOT in the active set.
-  // In snapshot-only mode all derived incidents are active → historyIncidents is always [].
-  // When a real persisted-history feed lands (Phase 5+), non-active incidents live here.
-  const historyIncidents = useMemo(
-    () => incidents.filter((i) => !activeIds.has(i.id)),
-    [incidents, activeIds]
-  );
-
-  const now = new Date();
-  const todayKey = dateToDayKey(now);
-
-  // Day-grouping stays wired for the future feed; currently always produces [].
-  const groups = useMemo(() => {
-    if (historyIncidents.length === 0) return [];
-    const dated = historyIncidents.map((i) => ({ ...i, _at: now }));
-    return groupByDay(dated, (i) => i._at);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyIncidents]);
+  const quiet = !loading && !error && !stale && status && (status.issues ?? []).length === 0;
 
   return (
     <section className="mobile-view" aria-label="Alerts">
@@ -136,9 +285,11 @@ function AndroidAlerts({ data, nav }) {
 
       <StatusBanner loading={loading} error={error} hasData={!!servicesBody} />
 
+      <AndroidAlertFilters filters={filters} onFilters={setFilters} />
+
       {/* Quiet: all clear. An empty board (#449) has nothing checked, so it
           says the model's "Nothing monitored yet" instead, never all clear. */}
-      {!loading && !error && !stale && status && incidents.length === 0 && (
+      {quiet && (
         <p className="alerts-clear">
           {status.overall.state === EMPTY
             ? status.overall.sentence
@@ -153,52 +304,103 @@ function AndroidAlerts({ data, nav }) {
       {/* Fresh, the issues are "Active", in red. Stale, the same rows as last
           known, steel and never "Active" (Bug #4: a mid-session outage must
           never render stale data as live). */}
-      {incidents.length > 0 && (
-        <>
-          {stale ? (
-            <h2 className="alerts-section">{lastKnownCaption(freshness) ?? 'Last known'}</h2>
-          ) : (
-            <h2 className="alerts-section alerts-section--active">Active</h2>
-          )}
-          {incidents.map((inc) => (
-            <button
-              key={inc.id}
-              type="button"
-              data-state={inc.state}
-              className={stale ? 'alert-row alert-row--stale' : 'alert-row alert-row--active'}
-              onClick={() => nav.push('incident', { id: inc.id })}
-              aria-label={`${inc.title}, ${inc.readout} (${stale ? 'last known' : 'active'})`}
-            >
-              <span className="alert-row__title">{inc.title}</span>
-              <span className="alert-row__node">{inc.readout}</span>
-              {/* The model's reason, on every row (Bug #8). */}
-              <span className="alert-row__cause">{inc.cause}</span>
-            </button>
-          ))}
+      {(rows.length > 0 || noMatch) &&
+        (stale ? (
+          <h2 className="alerts-section">{lastKnownCaption(freshness) ?? 'Last known'}</h2>
+        ) : (
+          <h2 className="alerts-section alerts-section--active">Active</h2>
+        ))}
+      {noMatch && <p className="alerts-history-empty">{noMatch}</p>}
+      {rows.map(({ incident: inc }) => (
+        <button
+          key={inc.id}
+          type="button"
+          data-state={inc.state}
+          className={stale ? 'alert-row alert-row--stale' : 'alert-row alert-row--active'}
+          onClick={() => nav.push('incident', { id: inc.id })}
+          aria-label={`${inc.title}, ${inc.readout} (${stale ? 'last known' : 'active'})`}
+        >
+          <span className="alert-row__title">{inc.title}</span>
+          <span className="alert-row__node">{inc.readout}</span>
+          {/* The model's reason, on every row (Bug #8). */}
+          <span className="alert-row__cause">{inc.cause}</span>
+        </button>
+      ))}
 
-          {/* History — empty-by-design in snapshot mode (§13 decision #3) */}
-          <h2 className="alerts-section">History</h2>
-          {groups.length === 0 ? (
-            <p className="alerts-history-empty">No earlier alerts this session.</p>
-          ) : (
-            groups.map((g) => (
-              <div key={g.day}>
-                <h2 className="alerts-section">{formatDayLabel(g.day, todayKey)}</h2>
-                {g.items.map((inc) => (
+      {/* History (#314): /api/events, by day, in the app's alert rows. */}
+      <h2 className="alerts-section">History</h2>
+      {history.state === 'loading' && <p className="alerts-history-empty">Loading the history…</p>}
+      {history.state === 'old' && (
+        <p className="alerts-history-empty">History needs a newer JagHelm server.</p>
+      )}
+      {history.state === 'error' && (
+        <p className="alerts-history-empty">
+          {"Couldn't load the history. Nothing here doesn't mean nothing happened. "}
+          <button type="button" className="chip" onClick={history.retry}>
+            Retry
+          </button>
+        </p>
+      )}
+      {history.state === 'ok' && (
+        <>
+          {history.failed && (
+            <p className="alerts-history-empty">
+              {"Couldn't refresh the history. This is what it last said. "}
+              <button type="button" className="chip" onClick={history.retry}>
+                Retry
+              </button>
+            </p>
+          )}
+          {days.length === 0 && <p className="alerts-history-empty">{empty}</p>}
+          {days.map((day) => (
+            <div key={day.day}>
+              <h3 className="alerts-section">{day.label}</h3>
+              {day.rows.map((row) => {
+                const where = [row.where, row.gone && 'No longer monitored']
+                  .filter(Boolean)
+                  .join(' · ');
+                const title = [row.name, row.change].filter(Boolean).join(' · ');
+                const content = (
+                  <>
+                    <span className="alert-row__title">{title}</span>
+                    <span className="alert-row__node">
+                      {[where, row.time, row.delivery].filter(Boolean).join(' · ')}
+                    </span>
+                    {row.reason && <span className="alert-row__cause">{row.reason}</span>}
+                  </>
+                );
+                // An event of no entity (the status check's, an Arcane notice) opens nothing.
+                if (!row.onOpen) {
+                  return (
+                    <div key={row.id} data-state={row.state} className="alert-row">
+                      {content}
+                    </div>
+                  );
+                }
+                return (
                   <button
-                    key={`h-${inc.id}`}
+                    key={row.id}
                     type="button"
+                    data-state={row.state}
                     className="alert-row"
-                    onClick={() => nav.push('incident', { id: inc.id })}
-                    aria-label={`${inc.title}, ${inc.readout}: ${inc.cause}`}
+                    onClick={row.onOpen}
+                    aria-label={[row.name, row.change, where, row.time].filter(Boolean).join(', ')}
                   >
-                    <span className="alert-row__title">{inc.title}</span>
-                    <span className="alert-row__node">{inc.readout}</span>
-                    <span className="alert-row__cause">{inc.cause}</span>
+                    {content}
                   </button>
-                ))}
-              </div>
-            ))
+                );
+              })}
+            </div>
+          ))}
+          {history.more && (
+            <button
+              type="button"
+              className="chip"
+              onClick={history.more}
+              disabled={history.loadingMore}
+            >
+              {history.loadingMore ? 'Loading older…' : 'Show older'}
+            </button>
           )}
         </>
       )}

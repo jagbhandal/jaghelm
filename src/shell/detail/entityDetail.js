@@ -8,6 +8,11 @@
  *
  *   { status: 'loading' }       before the poll's first answer
  *   { status: 'unreachable' }   no status to read, and why (`cause`)
+ *   { status: 'resolved' }      a failed monitoring source (`sources/…`)
+ *                               the model no longer lists: it lists one
+ *                               only while it fails, so it answers again
+ *                               (#314: the Alerts page's History opens
+ *                               one), as the phone's incident sheet says
  *   { status: 'gone', id }      the model has nothing by that id: it was
  *                               removed or renamed, or the link is old.
  *                               `id` is the URL's, which anyone can write:
@@ -95,7 +100,11 @@ export function entityDetail({
     return { status: 'unreachable', cause: freshness?.cause };
   }
   const entity = entityFor(status, id);
-  if (!entity) return { status: 'gone', id: capped(id) };
+  if (!entity) {
+    // A failed source is in the model only while it fails.
+    if (typeof id === 'string' && id.startsWith('sources/')) return { status: 'resolved' };
+    return { status: 'gone', id: capped(id) };
+  }
   const services = read.services?.body ?? null;
   const extras = entityExtras({ status, entity, read, freshness, at });
   return {

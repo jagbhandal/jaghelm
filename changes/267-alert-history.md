@@ -6,7 +6,7 @@
   went to your phones (to how many), was turned off in their settings, or
   wasn't sent. It survives restarts and updates. `GET /api/events` serves it,
   newest first, a page at a time, filtered by what it is about or by severity;
-  the web and Android Alerts pages will show it in a later release.
+  the web and Android Alerts pages show it.
 
 ### Changed
 - Without phone notifications set up, JagHelm now writes

@@ -8,6 +8,8 @@ import { cn } from '@ui/lib/utils';
  *   chips    Array<{ id, label, count? }> — count shown after the label when provided.
  *   active   string — id of the currently active chip.
  *   onChange (id) => void — called when a chip is clicked.
+ *   label    string — the group's name ("Filters" by default): a screen with
+ *            two groups of chips names each (Alerts' "Severity" and "Kind").
  *
  * Bug #11 fixes applied here:
  *   - Each chip has a min-width so "All" stays a pill, never a lone circle.
@@ -25,9 +27,9 @@ export default function FilterChips(props) {
   return <WebFilterChips {...props} />;
 }
 
-function AndroidFilterChips({ chips, active, onChange }) {
+function AndroidFilterChips({ chips, active, onChange, label = 'Filters' }) {
   return (
-    <div className="filter-chips" role="group" aria-label="Filters">
+    <div className="filter-chips" role="group" aria-label={label}>
       {chips.map((c) => (
         <button
           key={c.id}
@@ -51,9 +53,9 @@ function AndroidFilterChips({ chips, active, onChange }) {
   );
 }
 
-function WebFilterChips({ chips, active, onChange }) {
+function WebFilterChips({ chips, active, onChange, label = 'Filters' }) {
   return (
-    <div role="group" aria-label="Filters" className="flex flex-wrap gap-2">
+    <div role="group" aria-label={label} className="flex flex-wrap gap-2">
       {chips.map((c) => {
         const on = active === c.id;
         return (
