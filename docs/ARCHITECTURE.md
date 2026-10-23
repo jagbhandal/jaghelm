@@ -1876,7 +1876,9 @@ flowchart TD
   panel's `between` and the panel draws it (AttentionPanel `split`, #484), so
   there is one panel and one region, and the page reads and takes the focus
   header, rows, as it looks. The split is the frame, plus one label: the
-  header (lamp, heading, sentence, "Updated 12 s ago") in one card, the strip
+  header in one card, the Phone board's status card (a 16px lamp and the
+  status word alone at 22/28, 800, `title-lg`; the model's sentence under it;
+  "Updated 12 s ago"), the strip
   under it, then the Phone board's "Needs attention · 6" (an h3, so heading
   navigation reaches the rows after the strip) over a card with the rows;
   with no rows, no second card. Quiet, the header card is the Phone board's
@@ -2476,7 +2478,14 @@ stack sits beside today's CSS and must not restyle it.
   modal `<dialog>` (`showModal`, so the header, the tabs and the page are
   inert under it), named by the screen's title (`SheetContext`), Escape asking
   the stack to close it. A detail opened from a detail stacks over it, and
-  focus returns to the row that opened each. `PhonePlatform`'s `openTarget`
+  focus returns to the row that opened each. A sheet's title is `title-lg`,
+  as the status word, and its status box gives the word, the reason and how
+  long it has been so ("for 4 min · since 08:38", the model's `since` against
+  the status's time; none while stale). A sheet drawn before its sources
+  have answered (a reload with it open, or Forward to it) says "Loading…"
+  until the status and the cards are in; only then is a thing they don't
+  have "no longer reported", and with nothing to read it says why ("No
+  signal", or the cards' read failing). `PhonePlatform`'s `openTarget`
   on the web opens a service's address (`safeUrl`: http, https, mailto) as
   the web's links open, a new tab or this one (Settings → Layout,
   `linkTarget`). The header's status sentence is for screen readers only below
@@ -3205,7 +3214,13 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   tap, opens its detail as a full-screen modal sheet named by its title, the
   browser's Back closes it with focus back on the row, Forward opens it
   again, Escape and the sheet's Back close it, and a service opened from a
-  node's sheet stacks over it; under No signal no red, amber or green in the
+  node's sheet stacks over it; the mock's type (the status word and a
+  sheet's title 22/28 at 800 by a 16px lamp, the Alerts count 10px at 800 in
+  an 18 × 16 pill); a reload with a sheet open and /api/services held back
+  says "Loading…" until the cards come, never "no longer reported"; healthy,
+  every lamp ok and nothing red or amber; with the server out of reach or
+  answering 503 from the start, "No signal" and why, every lamp the ring;
+  under No signal no red, amber or green in the
   screen or the header, every lamp the ring, the lists' counts last known;
   axe on each screen and detail, dark and light; and at 767 and 768px the
   phone screens and the desktop Overview flip  with the bottom tabs, at the same pixel. The utilities (#301,
@@ -3232,7 +3247,9 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   saved once more, both sections stay hidden on both); axe on the rail and
   the Launch page. Nothing hides (#302,
   `e2e/reflow.spec.mjs`): the Overview at 360, 390, 768, 1024, 1280, 1440,
-  1920 and 2560px (below 768px the phone screens' lists, #303), healthy and
+  1920 and 2560px (below 768px the phone screens' lists, #303, and on the
+  incident at 360, 390, 480, 600 and 767px the tab bar and a service's, a
+  node's and an alert's sheet), healthy and
   incident, and on the incident with the
   model's longest subsystem sub-lines at each of them: the page no wider than
   its window; no element clipping its content (overflowing on an axis it
@@ -3255,11 +3272,9 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   shifts its layout by 0.1 or less (CLS, by a `layout-shift`
   PerformanceObserver, shifts after input left out; it was 0.50, the status
   arriving over sections already drawn, #243); from 768px up to 2560px and
-  back with motion on, narrower panels at 1600 and 1100px and the board
-  drawn anew on coming back from 390px included, every frame the board
-  paints has every panel as tall as its content (#561); at 1600px a tick
-  that changes
-  nothing measures no panel, and with a source 4 s slow a panel keeps the
+  back with motion on, narrower panels at 1600 and 1100px included, every
+  frame the board paints has every panel as tall as its content (#561); at
+  1600px a tick that changes nothing measures no panel, and with a source 4 s slow a panel keeps the
   height it had last time until that source answers, then takes its own
   once. All eight leave screenshots in
   `test-results/e2e/shots/`.

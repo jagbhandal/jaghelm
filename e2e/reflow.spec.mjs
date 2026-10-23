@@ -13,7 +13,9 @@
  *    box; and every service's and node's name is whole and inside the
  *    window. A failure names the element, the width and the scenario. Then
  *    the same at every width on the incident with the model's longest
- *    subsystem sub-lines, six tiles of them.
+ *    subsystem sub-lines, six tiles of them; and at a phone's widths (360,
+ *    390, 480, 600 and 767px) the tab bar, and a service's, a node's and an
+ *    alert's sheet open over the Overview (#303).
  *  - Each status fixture's strip at 1024, 1280, 1440 and 1460px, in each
  *    typeface (#541): every tile's value and sub-line the model's, whole (no
  *    word cut, nothing clipped or ending in an ellipsis), the value on one
@@ -27,11 +29,10 @@
  *    CLS does), is 0.1 or less. (Today's board isn't drawn below 768px any
  *    more, #303, so its one-column flow on a phone has no frames to check.)
  *    From 768px up to 2560px and back with motion on (#561), narrower panels
- *    and the board drawn anew on coming back from a phone's width included,
- *    every frame it paints has every panel as tall as its content. At 1600px
- *    a tick that changes nothing measures no panel, and a panel keeps its
- *    last height until the slowest source has answered, then takes its own
- *    once.
+ *    at 1600 and 1100px included, every frame it paints has every panel as
+ *    tall as its content. At 1600px a tick that changes nothing measures no
+ *    panel, and a panel keeps its last height until the slowest source has
+ *    answered, then takes its own once.
  *
  * Full-page screenshots of the sweep, for the PR, in test-results/e2e/shots/.
  *
@@ -257,6 +258,48 @@ for (const scenario of SCENARIOS) {
       expect(found, `at ${width}px, ${scenario}:\n  ${found.join('\n  ')}`).toEqual([]);
     });
   }
+}
+
+// A phone's widths, 360 to 767px (#303): the tab bar under the Overview, and
+// each kind of sheet over it (a service, a node, an alert), held to the same
+// checks: no sideways scroll, nothing clipped, every name whole.
+const PHONE_SWEEP = [360, 390, 480, 600, 767];
+const phoneSection = (page, name) =>
+  page
+    .locator(PHONE)
+    .getByRole('region', { name, exact: true })
+    .filter({ has: page.locator('ul') });
+
+for (const width of PHONE_SWEEP) {
+  test(`incident at ${width}px, the tab bar and each sheet: no sideways scroll, nothing clipped (#303)`, async ({
+    page,
+  }) => {
+    const { nodes, services } = namesOf('incident');
+    await page.setViewportSize({ width, height: heightAt(width) });
+    await openOverview(page, 'incident');
+    await expect(page.locator('[data-slot="bottom-tabs"]')).toBeVisible();
+    const found = (await hidden(page, [...nodes, ...services])).map((f) => `Overview: ${f}`);
+    const dir = join(test.info().project.outputDir, 'shots');
+    mkdirSync(dir, { recursive: true });
+    for (const [kind, row] of [
+      ['service', phoneSection(page, 'Services').getByRole('button', { name: 'Jellyfin, Down' })],
+      ['node', phoneSection(page, 'Infrastructure').getByRole('button', { name: /^Storage,/ })],
+      [
+        'alert',
+        page.locator(`${PHONE} [data-slot="issue-row"]`).filter({ hasText: 'nightly-backup' }),
+      ],
+    ]) {
+      await row.click();
+      await expect(page.locator('[data-slot="phone-sheet"]')).toBeVisible();
+      await expect(page.locator('[data-slot="detail-status"]')).toBeVisible();
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r))));
+      found.push(...(await hidden(page, [])).map((f) => `${kind}'s sheet: ${f}`));
+      await page.screenshot({ path: `${dir}/reflow-phone-${kind}-sheet-${width}.png` });
+      await page.goBack();
+      await expect(page.locator('[data-slot="phone-sheet"]')).toHaveCount(0);
+    }
+    expect(found, `at ${width}px:\n  ${found.join('\n  ')}`).toEqual([]);
+  });
 }
 
 // The model's longest subsystem sub-lines (tileOf, server/status/summary.js,
@@ -678,13 +721,12 @@ const frames = (page, n) =>
 // the height its content took when wider, cutting it off. With motion on, as
 // most people have it: a panel that animated its width was measured at its
 // old width, and cut as it narrowed; it now takes its new width at once.
-// Below 768px the phone's screens are drawn, not the board (#303): back at
-// 768px from a phone's width, the board is placed on the grid anew, and every
-// frame of it has every panel whole from its first.
+// Below 768px the phone's screens are drawn, not the board (#303), so the
+// sweep starts and ends at 768px, where the board is on the grid.
 test.describe('with motion on', () => {
   test.use({ reducedMotion: 'no-preference' });
 
-  test("from 768 to 2560px and back, and to a phone's width and back, every frame today's board paints has every panel whole (#561)", async ({
+  test("from 768 to 2560px and back, every frame today's board paints has every panel whole (#561)", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 768, height: heightAt(768) });
@@ -696,14 +738,11 @@ test.describe('with motion on', () => {
     // Down by way of 1600 and 1100px: from 1920 to 1600 and from 1280 to
     // 1100px the board stays at md, its panels narrower, and the UPS's and the
     // Checklist's content taller.
-    const widths = [
-      1024, 1280, 1440, 1920, 2560, 1920, 1600, 1440, 1280, 1100, 1024, 768, 390, 768,
-    ];
+    const widths = [1024, 1280, 1440, 1920, 2560, 1920, 1600, 1440, 1280, 1100, 1024, 768];
     for (const width of widths) {
       await page.setViewportSize({ width, height: heightAt(width) });
-      // At 768px the grid drawn, below it the phone's screens, before going on.
+      // At 768px the grid drawn before going on.
       if (width === 768) await expect(page.locator('.helmgrid:not(.helmgrid-flow)')).toBeVisible();
-      else if (width < 768) await expect(page.locator(PHONE)).toBeVisible();
       // Past any animation (150 ms) and the measures after it.
       await frames(page, 15);
     }
@@ -712,10 +751,6 @@ test.describe('with motion on', () => {
       all.some((f) => f.width === 768 && f.flow === false),
       'a frame of the grid at 768px'
     ).toBe(true);
-    expect(
-      all.filter((f) => f.width < 768 && f.flow !== null).length,
-      'frames of the board below 768px'
-    ).toBe(0);
     const cut = all.filter((f) => f.cut.length);
     expect(
       cut.map((f) => `${f.width}px${f.flow ? ', in the flow' : ''}: ${f.cut.join(', ')}`),

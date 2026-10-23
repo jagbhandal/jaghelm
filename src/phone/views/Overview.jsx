@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useSyncExternalStore } from 'react';
+import React, { useId, useMemo } from 'react';
 // The status components are the shared library's (src/ui/), in the Android
 // app's own look until Phase 4 (#326; src/ui/lib/status.js).
 import { AttentionPanel } from '@ui/attention-panel';
@@ -12,8 +12,8 @@ import StatusBanner from '../components/StatusBanner.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import { FRESH, cellsOf, heroOf, issueRowsOf, nodeCardsOf, serviceRowsOf } from '../data/board.js';
 import { issueRoute } from '../nav/issueRoute.js';
-import { countsText, issueRows, lastKnownLine } from '../../shell/statusView.js';
-import { lastKnownCaption, statusBuiltAt } from '../../shell/statusFreshness.js';
+import { issueRows, lastKnownLine } from '../../shell/statusView.js';
+import { lastKnownCaption, useStatusAt } from '../../shell/statusFreshness.js';
 
 /**
  * The Overview, drawn from the status model (#325; data/board.js): the status
@@ -26,25 +26,18 @@ import { lastKnownCaption, statusBuiltAt } from '../../shell/statusFreshness.js'
  * as no signal, and the card says "No signal", why and what it last knew.
  *
  * The web look (#303) is the Phone board's Overview, from the shared parts:
- * the attention panel split around the strip (the status card, its word and
- * counts, the model's sentence and "Updated 12 s ago"; the strip; "Needs
- * attention · 5" over the issue rows, each opening its detail), then the
- * Services and Infrastructure as lists, worst first, each row opening its
- * service or node. The words are the ones the Android look draws (the
- * cross-client suite holds both to the model). A stale status is drawn as
- * the Android card orders it: "No signal", why, and what it last knew.
+ * the attention panel split around the strip (the status card, its word
+ * alone, as the mock's, the model's sentence and "Updated 12 s ago"; the
+ * strip; "Needs attention · 5" over the issue rows, each opening its
+ * detail), then the Services and Infrastructure as lists, worst first, each
+ * row opening its service or node. The words are the ones the Android look
+ * draws, which puts the issues' counts after the word too (the cross-client
+ * suites hold both to the model). A stale status is drawn as the Android
+ * card orders it: "No signal", why, and what it last knew.
  */
 export default function Overview(props) {
   if (__ANDROID_LOOK__) return <AndroidOverview {...props} />;
   return <WebOverview {...props} />;
-}
-
-const NO_CLOCK = { subscribe: () => () => {}, get: () => null };
-
-/** The time of the status shown (when the server built it, else when it came), or null. */
-function useStatusAt(updated) {
-  const store = updated ?? NO_CLOCK;
-  return useSyncExternalStore(store.subscribe, () => (updated ? statusBuiltAt(updated) : null));
 }
 
 /** A list section of the phone's Overview: an overline heading, a count, and a card of rows. */
@@ -106,11 +99,11 @@ function WebOverview({ data, nav }) {
     ? freshness.stale
       ? // As the Android card orders it: "No signal", why, then what it last knew.
         { state: 'unknown', subline: freshness.cause, meta: lastKnownLine(freshness, status) }
-      : {
-          state: status.overall.state,
-          counts: quiet ? status.overall.sentence : countsText(status.issues),
-          subline: quiet ? undefined : status.overall.sentence,
-        }
+      : quiet
+        ? // The healthy card: "All systems normal" over the model's sentence.
+          { state: status.overall.state, counts: status.overall.sentence }
+        : // The Phone board's card: the word alone, the model's sentence under it.
+          { state: status.overall.state, subline: status.overall.sentence }
     : null;
   const strip = cells.length > 0 && <SubsystemStrip cells={cells} />;
   const updatedAgo = at != null && !freshness.stale ? <UpdatedAgo at={at} /> : undefined;

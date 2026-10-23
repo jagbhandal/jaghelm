@@ -14,8 +14,15 @@
  *    named by its title. The browser's Back closes it and focus is back on
  *    the row; Escape and the sheet's own Back do the same; Forward opens it
  *    again; a detail opened from a detail stacks over it.
+ *  - The mock's type: the status word alone, 22/28 at 800 beside a 16px
+ *    lamp, a sheet's title the same, the Alerts tab's count 10px at 800 in
+ *    an 18 × 16 pill.
+ *  - A reload with a sheet open, the cards slow: "Loading…" in the sheet
+ *    until they come, then the service; never "no longer reported".
+ *  - Healthy: every lamp ok, nothing red or amber, no green word.
  *  - No signal: nothing red, amber or green outside the lamps, every lamp
- *    the steel ring, what was last known kept.
+ *    the steel ring, what was last known kept; and with the server out of
+ *    reach or answering 503 from the start, "No signal" and why.
  *  - axe on each screen and each detail, dark and light.
  *  - At 767px the phone screens and the tabs, at 768px neither.
  *  - Screenshots, for the PR, in test-results/e2e/shots/.
@@ -24,7 +31,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { axeFindings, demo, openApp, statusHues } from './app.mjs';
+import { axeFindings, demo, openApp, reply, statusHues } from './app.mjs';
 import { sixIssueIncident } from '../src/testing/statusFixtures.js';
 
 const PHONES = {
@@ -116,9 +123,8 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       await expect(page.locator('.helmgrid')).toHaveCount(0);
       await expect(page.locator('[data-slot="overview-status"]')).toHaveCount(0);
       const status = demo('/api/status').body;
-      await expect(header(page).getByRole('heading', { level: 2 })).toHaveText(
-        /^Critical · 2 critical$/
-      );
+      // The word alone, as the Phone board's card says it.
+      await expect(header(page).getByRole('heading', { level: 2 })).toHaveText(/^Critical$/);
       await expect(header(page)).toContainText(status.overall.sentence);
       await expect(header(page)).toContainText(/Updated \d+ s ago/);
       const label = panel(page).getByRole('heading', { level: 3 });
@@ -222,6 +228,133 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       await expect(sheet(page)).toHaveCount(0);
       await expect(node).toBeFocused();
     });
+
+    test("the mock's type: the status word 22/28 at 800 by a 16px lamp, a sheet's title the same, the tab count 10px", async ({
+      page,
+    }) => {
+      await openPhone(page);
+      const type = (locator) =>
+        locator.evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return [cs.fontSize, cs.lineHeight, cs.fontWeight, cs.letterSpacing];
+        });
+      const heading = header(page).getByRole('heading', { level: 2 });
+      expect(await type(heading)).toEqual(['22px', '28px', '800', '-0.33px']);
+      expect(await type(heading.locator('[data-slot="status-word"]'))).toEqual([
+        '22px',
+        '28px',
+        '800',
+        '-0.33px',
+      ]);
+      const lamp = await header(page).locator('[data-slot="status-lamp"]').boundingBox();
+      expect([lamp.width, lamp.height]).toEqual([16, 16]);
+      const badge = tabs(page).locator('[data-slot="tab-badge"]');
+      await expect(badge).toHaveText('2');
+      expect(await type(badge)).toEqual(['10px', '16px', '800', 'normal']);
+      const pill = await badge.boundingBox();
+      expect(pill.height).toBe(16);
+      expect(pill.width).toBeGreaterThanOrEqual(18);
+      await section(page, 'Services').getByRole('button', { name: 'Jellyfin, Down' }).click();
+      const title = page.getByRole('dialog', { name: 'Jellyfin' }).getByRole('heading', {
+        level: 2,
+      });
+      expect(await type(title)).toEqual(['22px', '28px', '800', '-0.33px']);
+      const boxLamp = await page
+        .locator('[data-slot="detail-status"] [data-slot="status-lamp"]')
+        .boundingBox();
+      expect([boxLamp.width, boxLamp.height]).toEqual([16, 16]);
+    });
+
+    test('a reload with a sheet open and the cards slow: "Loading…" until they come, never "no longer reported"', async ({
+      page,
+    }) => {
+      await openPhone(page);
+      await section(page, 'Services').getByRole('button', { name: 'Jellyfin, Down' }).click();
+      await expect(page.getByRole('dialog', { name: 'Jellyfin' })).toBeVisible();
+      let answer;
+      const held = new Promise((resolve) => (answer = resolve));
+      await page.route(
+        (url) => url.pathname === '/api/services',
+        async (route) => {
+          await held;
+          await route.fallback();
+        }
+      );
+      await page.reload();
+      const waiting = page.getByRole('dialog', { name: 'Loading…' });
+      await expect(waiting).toBeVisible();
+      await expect(waiting.locator('[aria-busy="true"]')).toBeVisible();
+      await expect(waiting).toContainText('Service');
+      // The status has answered by now: still waiting for the cards.
+      await expect(header(page)).toHaveCount(1);
+      await expect(page.getByText(/no longer reported/)).toHaveCount(0);
+      await page.screenshot({ path: `${shots()}/phone-detail-loading-${width}.png` });
+      answer();
+      const detail = page.getByRole('dialog', { name: 'Jellyfin' });
+      await expect(detail).toContainText('Kuma: down');
+      await expect(page.getByText(/no longer reported/)).toHaveCount(0);
+      // Back still closes it, onto the Overview.
+      await page.goBack();
+      await expect(sheet(page)).toHaveCount(0);
+    });
+
+    test('healthy: every lamp ok, nothing red or amber, no green word', async ({ page }) => {
+      await openPhone(page, '/', { scenario: 'healthy' });
+      await expect(panel(page)).toHaveAttribute('data-state', 'ok');
+      await expect(header(page).getByRole('heading', { level: 2 })).toHaveText(
+        'All systems normal'
+      );
+      await expect(header(page)).toContainText(
+        demo('/api/status', { scenario: 'healthy' }).body.overall.sentence
+      );
+      const { found, unread, lamps } = await statusHues(view(page));
+      expect(unread).toEqual([]);
+      expect(lamps.length).toBeGreaterThan(6);
+      expect(lamps.filter((l) => l.state !== 'ok')).toEqual([]);
+      // Quiet (spec rule 3): the lamps say ok; no word or tint in red, amber or green.
+      expect(found).toEqual([]);
+      expect((await statusHues(tabs(page))).found).toEqual([]);
+    });
+
+    for (const [why, options, cause] of [
+      ['out of reach', { down: true }, "Can't reach JagHelm"],
+      [
+        'answering 503',
+        {
+          answers: {
+            '/api/status': () => reply(503, { error: 'Status not yet available' }),
+          },
+        },
+        'Waiting for the first check',
+      ],
+    ]) {
+      test(`the server ${why} from the start: No signal and why, nothing red, amber or green`, async ({
+        page,
+      }) => {
+        await openApp(page, '/', options);
+        await expect(view(page)).toBeVisible();
+        const banner = view(page).locator('[data-slot="banner"]').first();
+        await expect(banner).toContainText('No signal');
+        await expect(banner).toContainText(cause);
+        const overview = await statusHues(view(page));
+        expect(overview.found, 'red, amber or green on the Overview').toEqual([]);
+        expect(overview.lamps.filter((l) => l.state !== 'unknown')).toEqual([]);
+        // The cards have come: each service no signal, its sheet too, never
+        // a state nobody judged.
+        await tabs(page).getByRole('link', { name: 'Services' }).click();
+        const rows = view(page).locator('[data-slot="entity-row"]');
+        await expect(rows.first()).toBeVisible();
+        const list = await statusHues(view(page));
+        expect(list.found, 'red, amber or green on Services').toEqual([]);
+        expect(list.lamps.length).toBeGreaterThan(6);
+        expect(list.lamps.filter((l) => l.state !== 'unknown')).toEqual([]);
+        await rows.first().click();
+        await expect(page.locator('[data-slot="detail-status"]')).toHaveAttribute(
+          'data-state',
+          'unknown'
+        );
+      });
+    }
 
     test('No signal: every lamp the steel ring, nothing red, amber or green, the words last known', async ({
       page,

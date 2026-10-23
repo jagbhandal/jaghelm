@@ -1613,11 +1613,11 @@ const HEALTHY_CELLS = [
 function AttentionPanelPhoneState() {
   return (
     <Stack width={390}>
+      {/* The word alone, as the phone's Overview gives it (#303). */}
       <AttentionPanel
         state="crit"
-        counts="2 critical, 3 warnings, 1 no signal"
         subline={INCIDENT.subline}
-        action={ALL_ALERTS}
+        meta="Updated 12 s ago"
         issues={SIX_ISSUES}
         between={<SubsystemStrip cells={CELLS} onSelect={noop} />}
         split
@@ -1644,11 +1644,11 @@ function AttentionPanelPhoneQuietState() {
 function AttentionPanelPhoneNoSignalState() {
   return (
     <Stack width={390}>
+      {/* As the phone's Overview orders it: "No signal", why, what it last knew. */}
       <AttentionPanel
         state="unknown"
-        counts="last known 3 min ago: Critical · 2 critical, 3 warnings, 1 no signal"
         subline="Can't reach JagHelm"
-        action={ALL_ALERTS}
+        meta="last known 3 min ago: Critical · 2 critical, 3 warnings, 1 no signal"
         issues={stale(SIX_ISSUES)}
         between={<SubsystemStrip cells={stale(CELLS)} onSelect={noop} />}
         split

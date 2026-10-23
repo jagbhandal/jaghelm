@@ -1,12 +1,19 @@
 import React, { useId } from 'react';
 import BackHeader from '../components/BackHeader.jsx';
-import { DetailStatus, DetailTitle } from '../components/DetailParts.jsx';
+import {
+  DetailLoading,
+  DetailStatus,
+  DetailTitle,
+  DetailUnreachable,
+} from '../components/DetailParts.jsx';
+import { detailLoading, sinceLine } from '../data/detail.js';
 import UsageBar from '../components/UsageBar.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import { MetricMeter } from '@ui/metric-meter';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import { FRESH, colourOf, nodeCardsOf, serviceRowsOf } from '../data/board.js';
+import { useStatusAt } from '../../shell/statusFreshness.js';
 
 /**
  * NodeDetail — the node as the status model has it (#325): its lamp and word,
@@ -21,9 +28,11 @@ import { FRESH, colourOf, nodeCardsOf, serviceRowsOf } from '../data/board.js';
  *
  * The web look (#303), the Phone board's sheet: Back and "Node" over its
  * name and where it is, the status box (the model's word, its reason when it
- * isn't healthy, the hosted services), a meter for every reading the model
- * judged, two to a row, as the node's card draws them, then its services as
- * the shared rows, each opening the service over this sheet.
+ * isn't healthy, how long it has been so, the hosted services), a meter for
+ * every reading the model judged, two to a row, as the node's card draws
+ * them, then its services as the shared rows, each opening the service over
+ * this sheet. Drawn before the status and the cards have answered, it waits
+ * for them; with no status to read, it says why.
  */
 export default function NodeDetail(props) {
   if (__ANDROID_LOOK__) return <AndroidNodeDetail {...props} />;
@@ -32,12 +41,15 @@ export default function NodeDetail(props) {
 
 function WebNodeDetail({ data, nav, params }) {
   const listId = useId();
+  const at = useStatusAt(data.updated);
+  if (detailLoading(data)) return <DetailLoading kind="Node" onBack={nav.pop} />;
+  if (!data.status) return <DetailUnreachable kind="Node" onBack={nav.pop} data={data} />;
   const freshness = data.freshness ?? FRESH;
-  const node = data.status
-    ? nodeCardsOf({ status: data.status, servicesBody: data.servicesBody, freshness }).find(
-        (n) => n.key === params.nodeKey
-      )
-    : null;
+  const node = nodeCardsOf({
+    status: data.status,
+    servicesBody: data.servicesBody,
+    freshness,
+  }).find((n) => n.key === params.nodeKey);
   if (!node) {
     return (
       <>
@@ -65,6 +77,11 @@ function WebNodeDetail({ data, nav, params }) {
           state={node.state}
           word={node.word}
           reason={node.reason}
+          since={sinceLine(
+            data.status.entities.find((e) => e.id === node.id)?.since,
+            at,
+            freshness
+          )}
           note={node.services}
         />
         {node.readings.length > 0 && (

@@ -356,6 +356,7 @@ and, where listed, weight and tracking (a weight utility overrides it):
 
 | Step | Size / line | Weight | Use |
 | --- | --- | --- | --- |
+| `badge` | 10/16 | 800 | the phone tab bar's count (#303) |
 | `overline` | 11/16, 0.07em | 700 | uppercase labels; text-3 or stronger |
 | `caption` | 12/16 | | timestamps, hints |
 | `body-sm` | 13/18 | | rows, controls |
@@ -363,13 +364,15 @@ and, where listed, weight and tracking (a weight utility overrides it):
 | `title-xs` | 15/20 | 700 | panel and card titles, node names, the healthy overview's line |
 | `title-sm` | 16/22 | 700 | entity names |
 | `title` | 20/26 | 700 | section titles, drawer titles |
+| `title-lg` | 22/28, -0.015em | 800 | the phone's status word and sheet titles (#303) |
 | `headline` | 24/30, -0.015em | 700 | the overview's status sentence |
 | `display` | 28/32, -0.02em | 800 | page titles |
 | `metric` | 24/28 | 700 | values |
 | `metric-lg` | 32/36 | 700 | headline values |
 
-Nothing is smaller than 12px except the 11px uppercase overline. The Large text
-size (#321) is a setting on the root, not a step.
+Nothing is smaller than 12px except the 11px uppercase overline and the phone
+tab bar's 10px count, a number in a solid pill. The Large text size (#321) is a
+setting on the root, not a step.
 
 **Sizes the mock draws off the scale** map onto it (#284). The mock uses 15px
 titles in two dozen places, so they got a step (`title-xs`); the others are
@@ -377,7 +380,7 @@ one-offs:
 
 | Mock | Where | Step |
 | --- | --- | --- |
-| 10px, 800 | app chip initials (20 and 22px chips), the phone tab bar's count badge | `overline` (11/16), `font-extrabold` |
+| 10px, 800 | app chip initials (20 and 22px chips) | `overline` (11/16), `font-extrabold` |
 | 10.5px | overline labels on meters, palette result kinds, the phone's subsystem labels | `overline` |
 | 14/18, 700 | the phone's subsystem values | `body` (14/20), `font-bold` |
 | 15px, 700 | panel and card titles in Settings, node names, the healthy overview's line, the header's status word | `title-xs` |
@@ -386,7 +389,6 @@ one-offs:
 | 17px, 800 | the phone header's wordmark | `title-sm` (16/22), `font-extrabold` |
 | 18/24, 700 | subsystem strip values | `title-sm` (16/22) |
 | 18/24, 700 | the "won't open inside JagHelm" dialog's title | `title` (20/26) |
-| 22/28, 800 | the phone's status word | `headline` (24/30), as on desktop |
 | 22/28, 800 | the phone drawer's title | `title` (20/26), as the desktop drawer's |
 | 26/30, 700 | the typeface picker's "Aa" samples | `headline` (24/30) |
 | 26/32, 700 | the settings map's page title | `display` (28/32) |
@@ -1129,8 +1131,10 @@ is in, not the window):
   "Needs attention · 6", an overline in `text-3` (no count when the
   subsystem shown has none). The region itself draws no frame. With no rows and no filter
   there is no second card, and the quiet line, having no rows, keeps
-  `between` right under it either way. The split changes the frame only:
-  the same header, rows, colours and stale rule, plus that label.
+  `between` right under it either way. The split changes the frame and the
+  header's type: the header card is the Phone board's status card, 16px in,
+  a 16px lamp 10px from the heading at `title-lg` (22/28, 800), the word at
+  800; the same rows, colours and stale rule, plus that label.
 
 ### Two looks
 
@@ -1730,8 +1734,8 @@ and `e2e/phone.spec.mjs` runs them in a browser.
 From the mock's Phone board, in a 16px gutter 12px under the header:
 
 - **Overview.** The status card is the AttentionPanel split around the strip:
-  a card with the 14px lamp, the word and the issues' counts in
-  `text-headline`, the model's sentence in `text-2` and "Updated 12 s ago" in
+  a card with the 16px lamp and the word alone in `title-lg` (22/28, 800),
+  the model's sentence in `text-2` and "Updated 12 s ago" in
   `caption` `text-3`; healthy, the same card says "All systems normal" with
   the sentence under it (an empty board, its sentence alone, no lamp). Then
   the SubsystemStrip, three tiles to a row, then "Needs attention · 5" in
@@ -1753,11 +1757,16 @@ From the mock's Phone board, in a 16px gutter 12px under the header:
 - **A detail** is the Phone board's sheet, over everything: a 56px bar with a
   44px Back (`ChevronLeft`) and the kind ("Service", "Node", "Backup") in
   `overline` `text-3`, staying at the top as the sheet scrolls; the title in
-  `text-headline` and where it is in 13px `text-3`; the status box (the
-  lamp, the word in its `fg` at 800, the reason in `text-2`, a caption in
-  `text-3`) on `surface-1`, tinted as a tile is when not healthy; a FactList;
+  `title-lg` and where it is in 13px `text-3`; the status box (the 16px
+  lamp, the word in its `fg` at 800, the reason in `text-2`, how long it has
+  been so in `caption` `text-3`, "for 4 min · since 08:38", then any
+  caption) on `surface-1`, tinted as a tile is when not healthy; a FactList;
   a node's meters two to a row and its services as rows; Open as a 48px
-  primary Button the full width.
+  primary Button the full width. Opened before its sources have answered (a
+  reload with it open), the sheet's title is "Loading…" in `text-3` over
+  Skeletons where the box and facts go.
+- **The tab bar's count** is `badge` (10px, 800) in an 18 × 16 pill, the
+  state's solid with its on-solid figure.
 
 ### Accessibility of the phone screens
 
@@ -1776,9 +1785,6 @@ From the mock's Phone board, in a 16px gutter 12px under the header:
 
 ### Where the phone screens differ from the mock
 
-- **The status card's heading carries the counts** ("Critical · 2 critical, 1
-  warning"), as the Android card's does and the desktop's panel does; the
-  mock's says the word alone.
 - **No heartbeats on the rows or the detail**: /api/services carries no
   heartbeat history yet (§8's ring is a later card), so a row's right is
   empty and the detail has no strip. No headline integration metric either:
@@ -1787,8 +1793,12 @@ From the mock's Phone board, in a 16px gutter 12px under the header:
   grouped by custom group do; the mock's phone list doesn't.
 - **No demo switch and no theme toggle in the screen**: the header has the
   toggle; the demo's scenario is the server's.
-- **Details have no "since" line** beyond what the Android screens say
-  ("Active — where"): the model's `since` is shown as the rows' age only.
+- **The status card's word stands alone on the web**; the Android card's
+  heading still carries the counts ("Critical · 2 critical"), as before, and
+  the stale line ("last known 3 min ago: Critical · 2 critical") is the
+  header's, the same words in both.
+- **A sheet's "since" line** says "for 3 d" alone past a day, with no clock,
+  and says nothing while the status is stale.
 
 ## Sign-in
 

@@ -77,7 +77,8 @@ describe('the web on a phone (#303)', () => {
   it('draws the phone screens, not the desktop Overview or today’s board, reading only the cards and the UPS', async () => {
     await renderApp();
     const status = await screen.findByRole('region', { name: 'Needs attention' });
-    expect(within(status).getByRole('heading', { level: 2 })).toHaveTextContent(/^Critical · /);
+    // The word alone, as the Phone board's card says it.
+    expect(within(status).getByRole('heading', { level: 2 })).toHaveTextContent(/^Critical$/);
     await list('Services');
     await list('Infrastructure');
     expect(document.querySelector('[data-slot="overview-status"]')).toBeNull();

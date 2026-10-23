@@ -1,6 +1,12 @@
 import React from 'react';
 import BackHeader from '../components/BackHeader.jsx';
-import { DetailStatus, DetailTitle } from '../components/DetailParts.jsx';
+import {
+  DetailLoading,
+  DetailStatus,
+  DetailTitle,
+  DetailUnreachable,
+} from '../components/DetailParts.jsx';
+import { detailLoading, sinceLine } from '../data/detail.js';
 import { Button } from '@ui/button';
 import { FactList } from '@ui/fact-list';
 import { StatusLamp } from '@ui/status-lamp';
@@ -10,6 +16,7 @@ import { flattenServices, formatClock, uptimePct } from '../data/derive.js';
 import { FRESH, issueRowsOf, upsReadingsOf } from '../data/board.js';
 import { issueFor } from '../nav/issueRoute.js';
 import { usePhonePlatform } from '../platform.js';
+import { useStatusAt } from '../../shell/statusFreshness.js';
 
 /**
  * IncidentDetail — full detail for one of the status model's issues (#325),
@@ -53,9 +60,11 @@ function pushSeverityLamp(severity) {
  * it is ("Backup", the first word of where it is) over its name and where it
  * is, the status box (the model's word and reason, and "Active — where"),
  * the UPS's readings or the service's 24 h uptime, and Open for a service
- * with an address. A tapped
- * push's event that the status no longer has: its event, severity and time,
- * as the Android look says them.
+ * with an address, and how long it has been so (the model's `since`). A
+ * tapped push's event that the status no longer has: its event, severity and
+ * time, as the Android look says them. Drawn before the status and the cards
+ * have answered, it waits for them; with no status to read, it says why,
+ * never "resolved".
  */
 export default function IncidentDetail(props) {
   if (__ANDROID_LOOK__) return <AndroidIncidentDetail {...props} />;
@@ -64,6 +73,8 @@ export default function IncidentDetail(props) {
 
 function WebIncidentDetail({ data, nav, params }) {
   const { openTarget } = usePhonePlatform();
+  const at = useStatusAt(data.updated);
+  if (detailLoading(data)) return <DetailLoading kind="Alert" onBack={nav.pop} />;
   const found = issueFor(data.status, params.id);
   const incident = found
     ? issueRowsOf({ status: { issues: [found] }, freshness: data.freshness ?? FRESH })[0]
@@ -98,6 +109,7 @@ function WebIncidentDetail({ data, nav, params }) {
         </>
       );
     }
+    if (!data.status) return <DetailUnreachable kind="Alert" onBack={nav.pop} data={data} />;
     return (
       <>
         <BackHeader kind="Alert" onBack={nav.pop} />
@@ -127,6 +139,7 @@ function WebIncidentDetail({ data, nav, params }) {
           state={incident.state}
           word={incident.word}
           reason={incident.cause}
+          since={sinceLine(found.since, at, data.freshness)}
           note={`Active — ${incident.readout}`}
         />
         <FactList facts={facts} />

@@ -17,6 +17,8 @@ import IncidentDetail from './views/IncidentDetail.jsx';
 import StatusBanner from './components/StatusBanner.jsx';
 import { PhonePlatform } from './platform.js';
 import { SheetContext } from './sheet.js';
+import { sinceLine } from './data/detail.js';
+import { formatClock } from './data/derive.js';
 import { runScenario } from '../../server/testing/statusScenarios.js';
 
 const NOW = Date.parse('2026-10-19T12:00:00Z');
@@ -178,6 +180,131 @@ describe("the phone screens' web look", () => {
     expect(screen.getByText('vm103')).toBeInTheDocument();
     expect(document.querySelector('[data-slot="detail-status"]')).toHaveTextContent('CRITICAL');
     expect(screen.getByText(/Host unreachable · \d\d:\d\d/)).toBeInTheDocument();
+  });
+
+  it('Overview: the status card is the word alone, 22/28 at 800 with a 16px lamp, the sentence under it', () => {
+    expect(STATUS.overall.state).toBe('crit');
+    draw(Overview);
+    const header = document.querySelector('[data-slot="attention-panel-header"]');
+    const heading = within(header).getByRole('heading', { level: 2 });
+    expect(heading).toHaveTextContent(/^Critical$/);
+    expect(heading).toHaveClass('text-title-lg');
+    expect(header.querySelector('[data-slot="status-lamp"]')).toHaveAttribute('width', '16');
+    expect(header).toHaveTextContent(STATUS.overall.sentence);
+  });
+
+  it("a detail's title is 22/28 at 800, and its status box's lamp 16px", () => {
+    draw(ServiceDetail, { params: { uid: 'apps:jellyfin' } });
+    expect(screen.getByRole('heading', { level: 2, name: 'Jellyfin' })).toHaveClass(
+      'text-title-lg'
+    );
+    const box = document.querySelector('[data-slot="detail-status"]');
+    expect(box.querySelector('[data-slot="status-lamp"]')).toHaveAttribute('width', '16');
+  });
+
+  it("the status box says how long it has been so: the model's since, against the status's time", () => {
+    const since = STATUS.entities.find((e) => e.id === 'services/apps:jellyfin').since;
+    const updated = { subscribe: () => () => {}, get: () => since + 4 * 60_000 };
+    const line = () => document.querySelector('[data-slot="detail-since"]');
+    const { unmount } = draw(ServiceDetail, {
+      data: { ...DATA, updated },
+      params: { uid: 'apps:jellyfin' },
+    });
+    expect(line()).toHaveTextContent(`for 4 min · since ${formatClock(since)}`);
+    unmount();
+    // Stale, the state drawn is no signal, not the one it dates: none.
+    const stale = { stale: true, cause: "Can't reach JagHelm" };
+    draw(NodeDetail, {
+      data: { ...DATA, updated, freshness: stale },
+      params: { nodeKey: 'storage' },
+    }).unmount();
+    expect(line()).toBeNull();
+    // No status time, none: never a made-up age.
+    draw(IncidentDetail, { params: { id: 'backups/storage:nightly-backup' } }).unmount();
+    expect(line()).toBeNull();
+    const backup = STATUS.issues.find((i) => i.id === 'backups/storage:nightly-backup').since;
+    draw(IncidentDetail, {
+      data: { ...DATA, updated: { ...updated, get: () => backup + 3 * 3_600_000 } },
+      params: { id: 'backups/storage:nightly-backup' },
+    });
+    expect(line()).toHaveTextContent(`for 3 h · since ${formatClock(backup)}`);
+    // Past a day, how long alone.
+    expect(sinceLine(0, 3 * 86_400_000 + 1, { stale: false })).toBe('for 3 d');
+    expect(sinceLine(undefined, 1000, { stale: false })).toBeNull();
+  });
+
+  describe('a detail drawn before its sources answered (a reload with the sheet open)', () => {
+    const WAITING = { ...DATA, status: null, reach: 'loading', servicesBody: null, loading: true };
+    for (const [Screen, params, kind, gone, missing] of [
+      [ServiceDetail, { uid: 'apps:jellyfin' }, 'Service', 'Jellyfin', /no longer reported/],
+      [NodeDetail, { nodeKey: 'storage' }, 'Node', 'Storage', /no longer reported/],
+      [
+        IncidentDetail,
+        { id: 'backups/storage:nightly-backup' },
+        'Alert',
+        'nightly-backup',
+        /has resolved/,
+      ],
+    ]) {
+      it(`${kind}: "Loading…" until the status and the cards are in, then the thing; gone only once they said so`, () => {
+        const sheet = { titleId: 'sheet-0-title' };
+        const open = (data, p = params) => draw(Screen, { data, params: p, sheet });
+        const said = () => document.body.textContent;
+        let view = open(WAITING);
+        expect(screen.getByRole('heading', { level: 2, name: 'Loading…' })).toHaveAttribute(
+          'id',
+          'sheet-0-title'
+        );
+        expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
+        expect(screen.getByText(kind)).toBeInTheDocument();
+        expect(said()).not.toMatch(missing);
+        view.unmount();
+        // The status in, the cards still on their way: still waiting.
+        view = open({ ...WAITING, status: STATUS, reach: 'ok' });
+        expect(screen.getByRole('heading', { level: 2, name: 'Loading…' })).toBeInTheDocument();
+        view.unmount();
+        // The cards in, the status still on its way: still waiting.
+        view = open({ ...WAITING, servicesBody: SERVICES, loading: false });
+        expect(screen.getByRole('heading', { level: 2, name: 'Loading…' })).toBeInTheDocument();
+        view.unmount();
+        // Both in: the thing.
+        view = open(DATA);
+        expect(screen.getByRole('heading', { level: 2, name: gone })).toBeInTheDocument();
+        expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+        view.unmount();
+        // They answered without it: gone.
+        const none = { uid: 'apps:nope', nodeKey: 'nope', id: 'nope' };
+        open(DATA, none);
+        expect(said()).toMatch(missing);
+      });
+    }
+
+    it("a service's with no cards to read says the read failed, never that it's gone", () => {
+      draw(ServiceDetail, {
+        data: { ...DATA, servicesBody: null, loading: false, error: 'HTTP 502' },
+        params: { uid: 'apps:jellyfin' },
+      });
+      expect(screen.getByRole('alert')).toHaveTextContent("Couldn't reach JagHelm");
+      expect(document.body.textContent).not.toMatch(/no longer reported/);
+    });
+
+    it("a node's or an alert's with no status to read: No signal and why", () => {
+      const down = {
+        ...DATA,
+        status: null,
+        reach: 'down',
+        freshness: { stale: true, cause: "Can't reach JagHelm" },
+      };
+      for (const [Screen, params] of [
+        [NodeDetail, { nodeKey: 'storage' }],
+        [IncidentDetail, { id: 'backups/storage:nightly-backup' }],
+      ]) {
+        const { unmount } = draw(Screen, { data: down, params });
+        expect(document.body).toHaveTextContent("No signalCan't reach JagHelm");
+        expect(document.body.textContent).not.toMatch(/no longer reported|has resolved/);
+        unmount();
+      }
+    });
   });
 
   it('StatusBanner: a placeholder while loading, then a Banner when the read fails', () => {

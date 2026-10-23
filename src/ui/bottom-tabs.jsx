@@ -17,8 +17,9 @@
 import { cn } from './lib/utils.js';
 import { toState } from './lib/status.js';
 
-// The count on a tab: the state's solid with its on-solid figure, as the
-// mock's phone draws it, so it reads over the open tab's pill.
+// The count on a tab: the state's solid with its on-solid figure, 10px and
+// 800 in an 18 × 16 pill, as the mock's phone draws it, so it reads over the
+// open tab's pill.
 const badgeSolid = {
   ok: 'bg-ok-solid text-ok-on-solid',
   warn: 'bg-warn-solid text-warn-on-solid',
@@ -44,7 +45,7 @@ function TabCell({ tab, onNavigate }) {
           <span
             data-slot="tab-badge"
             className={cn(
-              'absolute -top-1 left-7 inline-flex h-4 min-w-4.5 items-center justify-center rounded-full px-1 text-caption font-extrabold',
+              'absolute -top-1 left-7 inline-flex h-4 min-w-4.5 items-center justify-center rounded-full px-1.25 text-badge',
               badgeSolid[toState(badge.state)]
             )}
           >

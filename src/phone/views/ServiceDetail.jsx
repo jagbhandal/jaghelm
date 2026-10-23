@@ -1,15 +1,22 @@
 import React from 'react';
 import BackHeader from '../components/BackHeader.jsx';
-import { DetailStatus, DetailTitle } from '../components/DetailParts.jsx';
+import {
+  DetailLoading,
+  DetailStatus,
+  DetailTitle,
+  DetailUnreachable,
+} from '../components/DetailParts.jsx';
+import { detailLoading, sinceLine } from '../data/detail.js';
 import { Button } from '@ui/button';
 import { FactList } from '@ui/fact-list';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import UptimeRing from '../components/UptimeRing.jsx';
-import { FRESH, serviceRowsOf } from '../data/board.js';
+import { FRESH, serviceEntity, serviceRowsOf } from '../data/board.js';
 import { uptimePct } from '../data/derive.js';
 import { lastSeenLabel } from '../../util/relativeTime.js';
 import { usePhonePlatform } from '../platform.js';
+import { useStatusAt } from '../../shell/statusFreshness.js';
 
 /**
  * ServiceDetail — full detail for one service within the current snapshot,
@@ -21,10 +28,13 @@ import { usePhonePlatform } from '../platform.js';
  * line is omitted entirely.
  *
  * The web look (#303), the Phone board's sheet: Back and "Service" over its
- * name and node, the status box (the model's word and, unless it is up, its
- * reason), the facts the Android look shows (latency, the 24 h uptime, the
- * breadcrumb's last seen, the CPU and memory Docker reads while up, the
- * node), and Open as the primary button.
+ * name and node, the status box (the model's word, unless it is up its
+ * reason, and how long it has been so, from the model's `since`), the facts
+ * the Android look shows (latency, the 24 h uptime, the breadcrumb's last
+ * seen, the CPU and memory Docker reads while up, the node), and Open as the
+ * primary button. Drawn before the status and the cards have answered (a
+ * reload with the sheet open), it waits for them; a service they don't have
+ * is "no longer reported", and with no cards to read, it says so.
  */
 export default function ServiceDetail(props) {
   if (__ANDROID_LOOK__) return <AndroidServiceDetail {...props} />;
@@ -33,10 +43,14 @@ export default function ServiceDetail(props) {
 
 function WebServiceDetail({ data, nav, params }) {
   const { openTarget } = usePhonePlatform();
+  const at = useStatusAt(data.updated);
+  if (detailLoading(data)) return <DetailLoading kind="Service" onBack={nav.pop} />;
+  if (!data.servicesBody) return <DetailUnreachable kind="Service" onBack={nav.pop} data={data} />;
+  const freshness = data.freshness ?? FRESH;
   const svc = serviceRowsOf({
     status: data.status,
     servicesBody: data.servicesBody,
-    freshness: data.freshness ?? FRESH,
+    freshness,
   }).find((s) => s.uid === params.uid);
   if (!svc) {
     return (
@@ -75,7 +89,12 @@ function WebServiceDetail({ data, nav, params }) {
       <BackHeader kind="Service" onBack={nav.pop} />
       <div className="flex flex-col gap-4 p-4">
         <DetailTitle title={svc.display_name} where={svc.nodeName} />
-        <DetailStatus state={svc.state} word={svc.word} reason={healthy ? null : svc.reason} />
+        <DetailStatus
+          state={svc.state}
+          word={svc.word}
+          reason={healthy ? null : svc.reason}
+          since={sinceLine(serviceEntity(data.status, svc.uid)?.since, at, freshness)}
+        />
         <FactList facts={facts} />
         {svc.url && (
           <Button

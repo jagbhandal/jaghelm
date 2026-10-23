@@ -6,16 +6,21 @@
  */
 import { useSyncExternalStore } from 'react';
 
-/** How long ago `ms` was, as the header says it: "just now", "12 s", "3 min", "2 h", "4 d". */
-export function agoText(ms) {
+/** How long `ms` is, as the shell says an age: "12 s", "3 min", "2 h", "4 d". */
+export function durationText(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
-  if (s < 5) return 'just now';
-  if (s < 60) return `${s} s ago`;
+  if (s < 60) return `${s} s`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m} min ago`;
+  if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} h ago`;
-  return `${Math.floor(h / 24)} d ago`;
+  if (h < 24) return `${h} h`;
+  return `${Math.floor(h / 24)} d`;
+}
+
+/** How long ago `ms` was, as the header says it: "just now", "12 s ago", "3 min ago", "2 h ago", "4 d ago". */
+export function agoText(ms) {
+  if (!(ms >= 5000)) return 'just now';
+  return `${durationText(ms)} ago`;
 }
 
 /**

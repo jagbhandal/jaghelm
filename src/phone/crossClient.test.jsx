@@ -10,10 +10,12 @@
  * checked against the model, as mobile/src/crossClient.test.jsx checks the
  * same screens in the Android look, item for item:
  *
- *  - the status card: the model's word for the board's state and the issues'
- *    counts ("Critical · 1 critical"), or "All systems normal", or an empty
- *    board's sentence alone; the sentence under it; stale, "No signal", why,
- *    and what it last knew;
+ *  - the status card: the model's word for the board's state, alone, as the
+ *    Phone board's card says it (the Android look puts the issues' counts
+ *    after it, "Critical · 1 critical", which its own suite,
+ *    mobile/src/crossClient.test.jsx, holds), or "All systems normal", or an
+ *    empty board's sentence alone; the sentence under it; stale, "No signal",
+ *    why, and what it last knew;
  *  - the strip: a tile per subsystem that has anything, its state, its worst
  *    entity's word, the model's value and sub-line (a phone's tile leaves the
  *    sub-line, and a stale tile its word, to a screen reader);
@@ -36,7 +38,7 @@ import Infra from './views/Infra.jsx';
 import { PhonePlatform } from './platform.js';
 import { phoneData } from '../shell/phoneData.js';
 import { useStatusFreshness } from '../shell/statusFreshness.js';
-import { countsText, whereOf } from '../shell/statusView.js';
+import { whereOf } from '../shell/statusView.js';
 import { runScenario, STATUS_SCENARIOS } from '../../server/testing/statusScenarios.js';
 import { readingLines, shownReading } from '../../server/status/readings.js';
 import { judgeNode, judgeService } from '../../server/status/rules.js';
@@ -179,12 +181,8 @@ function overviewDisagreements(root, { status }, { stale, cause }) {
     if (lines.includes(sentence)) say('card', 'sentence', 'said once', sentence);
   } else {
     if (stateOf(panel) !== state) say('card', 'state', state, stateOf(panel));
-    const counts = countsText(issues);
-    const want = quiet
-      ? QUIET_HEADING
-      : counts
-        ? `${MODEL_WORD[state]} · ${counts}`
-        : MODEL_WORD[state];
+    // The word alone; the counts are the Android card's (its own suite's).
+    const want = quiet ? QUIET_HEADING : MODEL_WORD[state];
     if (heading !== want) say('card', 'headline', want, heading);
     if (!lines.includes(sentence)) say('card', 'sentence', sentence, lines.join(' | '));
   }

@@ -40,7 +40,7 @@
  * `word`, or else the sentence it is given in `counts` (the model's "Nothing
  * monitored yet"), said once. Never "All systems normal": nobody checked.
  *
- * `split` (#484) changes the frame, nothing else: one region, its header
+ * `split` (#484) changes the frame and the header's type: one region, its header
  * (lamp, heading, sentence, action, `meta`) in one card, then `between`,
  * then a card with the rows, headed by "Showing … only" when filtered, so the
  * page reads and takes the focus in that order (header, strip, rows). Over
@@ -52,6 +52,9 @@
  * "All systems normal" (an empty board's sentence, without a lamp), the
  * model's sentence under it, then `between`. Unsplit, the panel is one card,
  * as the desktop draws it, and `between` follows it; quiet, it is the line.
+ * Split, the header is the Phone board's status card: 16px in, a 16px lamp,
+ * the heading 22/28 at 800 (`title-lg`); the phone's Overview gives it the
+ * word alone, the sentence under it, as the mock's.
  *
  * The `android` look, a stopgap until #326, is the Android app's
  * SystemStatusCard (lib/status.js): the "System status" label, `headline`
@@ -193,16 +196,24 @@ function UiAttentionPanel({
   // Quiet (split only), the healthy card's heading and the sentence under it.
   const quietSaid = word || (empty ? counts || EMPTY_SENTENCE : 'All systems normal');
   const line = quiet ? (counts && counts !== quietSaid ? counts : null) : subline;
+  // Split, the Phone board's status card: 16px in, a 16px lamp 10px from
+  // the word, 22/28 at 800 (title-lg), as its sheets' titles (#303).
+  const heading = split ? 'text-title-lg' : 'text-headline';
   const header = (
-    <div className="flex flex-wrap items-start justify-between gap-4 px-panel pt-panel pb-4">
+    <div
+      className={cn(
+        'flex flex-wrap items-start justify-between gap-4',
+        split ? 'p-4' : 'px-panel pt-panel pb-4'
+      )}
+    >
       <div className="flex min-w-0 flex-col gap-1.5">
-        <div className="flex items-center gap-3">
-          {!empty && <StatusLamp state={s} size="lg" decorative />}
+        <div className={cn('flex items-center', split ? 'gap-2.5' : 'gap-3')}>
+          {!empty && <StatusLamp state={s} size={split ? 16 : 'lg'} decorative />}
           {quiet ? (
-            <Title className="text-headline">{quietSaid}</Title>
+            <Title className={heading}>{quietSaid}</Title>
           ) : (
-            <Title className="text-headline">
-              <StatusWord state={s} word={word} />
+            <Title className={heading}>
+              <StatusWord state={s} word={word} className={split ? 'font-extrabold' : undefined} />
               {counts && <span className="font-semibold text-text-2"> · {counts}</span>}
             </Title>
           )}
