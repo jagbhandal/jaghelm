@@ -3,7 +3,14 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import CommandPalette from './CommandPalette';
 import { ConfigProvider } from '../context/ConfigContext.jsx';
-import { THEMES } from '../shell/theme.js';
+import { scenarioStatus } from '../../server/testing/statusScenarios.js';
+
+// The palette wired (#315): what it finds from the status, the config and the
+// pages, and what each kind of row does with it. src/App.palette.test.jsx
+// opens each kind from the app itself; src/ui/command-palette.test.jsx checks
+// the look and the keys.
+
+const STATUS = scenarioStatus('every-state', { now: 1_782_345_600_000 });
 
 const renderPalette = (props = {}, config = {}) => {
   const handlers = {
@@ -15,9 +22,8 @@ const renderPalette = (props = {}, config = {}) => {
       { id: 'settings', label: 'Settings', href: '/settings' },
     ],
     apps: [{ id: 'media', label: 'Media', href: '/apps/media' }],
+    status: STATUS,
     onNavigate: vi.fn(),
-    theme: 'dark',
-    setTheme: vi.fn(),
     onLogout: vi.fn(),
     ...props,
   };
@@ -29,42 +35,50 @@ const renderPalette = (props = {}, config = {}) => {
   return handlers;
 };
 
+const headings = () =>
+  screen
+    .getAllByRole('group')
+    .map((g) => document.getElementById(g.getAttribute('aria-labelledby')).textContent);
+
 describe('CommandPalette', () => {
   it('renders nothing when closed', () => {
     const { container } = render(
       <ConfigProvider config={{ links: {} }} setConfig={vi.fn()}>
-        <CommandPalette
-          open={false}
-          onClose={() => {}}
-          onNavigate={() => {}}
-          theme="dark"
-          setTheme={() => {}}
-        />
+        <CommandPalette open={false} onClose={() => {}} onNavigate={() => {}} />
       </ConfigProvider>
     );
-    expect(container.querySelector('.cmdk')).toBeNull();
+    expect(container).toBeEmptyDOMElement();
   });
 
-  it('opens as a combobox listing the pages, "Open <app>" for each app, and themes', () => {
-    renderPalette();
-    expect(screen.getByRole('combobox')).toBeInTheDocument();
-    const list = screen.getByRole('listbox');
-    expect(within(list).getByText('Overview')).toBeInTheDocument();
-    expect(within(list).getByText('Alerts')).toBeInTheDocument();
-    expect(within(list).getByText('Settings')).toBeInTheDocument();
-    expect(within(list).getByText('Open Media')).toBeInTheDocument();
-    for (const t of THEMES) expect(within(list).getByText(t.label)).toBeInTheDocument();
-  });
-
-  it('offers the three themes, Dark, Light and System, marking the current one', () => {
-    renderPalette({ theme: 'system' });
-    const list = screen.getByRole('listbox');
-    const themes = THEMES.map((t) => within(list).getByText(t.label).closest('[role="option"]'));
-    expect(themes.map((o) => o.textContent)).toEqual([
-      'ThemeDark',
-      'ThemeLight',
-      'ThemeSystemcurrent',
+  it('lists the issues first, then the entities, pages, apps, Settings, Quick Launch and Log out', () => {
+    renderPalette({}, { links: { apps: [{ name: 'Grafana', url: 'https://grafana.lan' }] } });
+    expect(headings()).toEqual([
+      'Issues',
+      'Services',
+      'Nodes',
+      'Power',
+      'Jobs',
+      'Backups',
+      'Integrations',
+      'Pages',
+      'Apps',
+      'Settings',
+      'Quick Launch',
+      'Actions',
     ]);
+    expect(screen.getAllByRole('option')[0]).toHaveAccessibleName(
+      /^Network Edge, Issue, Unreachable/
+    );
+  });
+
+  it('has no themes: the header and Settings → Appearance switch them', async () => {
+    const user = userEvent.setup();
+    renderPalette();
+    const labels = screen.getAllByRole('option').map((o) => o.textContent);
+    expect(labels.some((l) => /^(Dark|Light|System)/.test(l))).toBe(false);
+    await user.type(screen.getByRole('combobox'), 'system');
+    expect(screen.queryAllByRole('option')).toEqual([]);
+    expect(screen.getByRole('status')).toHaveTextContent('Nothing matches “system”.');
   });
 
   it('a page command opens its route', async () => {
@@ -73,9 +87,10 @@ describe('CommandPalette', () => {
     await user.type(screen.getByRole('combobox'), 'alerts');
     await user.keyboard('{Enter}');
     expect(h.onNavigate).toHaveBeenCalledWith('/alerts');
+    expect(h.onClose).toHaveBeenCalled();
   });
 
-  it('filters the list as you type', async () => {
+  it('filters the list as you type, starting each time from an empty query', async () => {
     const user = userEvent.setup();
     renderPalette();
     await user.type(screen.getByRole('combobox'), 'media');
@@ -84,46 +99,63 @@ describe('CommandPalette', () => {
     expect(opts[0]).toHaveTextContent('Open Media');
   });
 
-  it('runs the active command on Enter and closes', async () => {
+  it('an app opens inside JagHelm', async () => {
     const user = userEvent.setup();
     const h = renderPalette();
     await user.type(screen.getByRole('combobox'), 'media');
     await user.keyboard('{Enter}');
     expect(h.onNavigate).toHaveBeenCalledWith('/apps/media');
-    expect(h.onClose).toHaveBeenCalled();
   });
 
-  it('Arrow keys move the active option (aria-activedescendant)', async () => {
+  it('a Settings section opens at /settings/<section>', async () => {
     const user = userEvent.setup();
+    const h = renderPalette();
+    await user.type(screen.getByRole('combobox'), 'typography');
+    expect(screen.getByRole('option', { name: 'Typography, Settings, Fonts' })).toHaveAttribute(
+      'href',
+      '/settings/typography'
+    );
+    await user.keyboard('{Enter}');
+    expect(h.onNavigate).toHaveBeenCalledWith('/settings/typography');
+  });
+
+  it('an entity is a link to its detail over the page under the palette', () => {
+    window.history.replaceState(null, '', '/alerts');
     renderPalette();
-    const combo = screen.getByRole('combobox');
-    await user.click(combo);
-    expect(combo).toHaveAttribute('aria-activedescendant', 'cmdk-opt-0');
-    await user.keyboard('{ArrowDown}');
-    expect(combo).toHaveAttribute('aria-activedescendant', 'cmdk-opt-1');
-    expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true');
+    const services = screen.getAllByRole('group')[1];
+    expect(within(services).getByRole('option', { name: /^Grafana, Service/ })).toHaveAttribute(
+      'href',
+      '/alerts?entity=services/apps:grafana'
+    );
   });
 
-  it('runs a theme command on click', async () => {
-    const user = userEvent.setup();
-    const target = THEMES[2];
-    const h = renderPalette();
-    await user.click(screen.getByText(target.label));
-    expect(h.setTheme).toHaveBeenCalledWith(target.id);
-    expect(h.onClose).toHaveBeenCalled();
+  it('lists the Quick Launch links with their group and host, opening where Settings → Layout says', () => {
+    renderPalette(
+      {},
+      {
+        links: { devops: [{ name: 'Grafana', url: 'https://grafana.lan' }] },
+        linkTarget: '_self',
+      }
+    );
+    const link = screen.getByRole('option', {
+      name: 'Open Grafana, Link, Dev & Monitoring, grafana.lan',
+    });
+    expect(link).toHaveAttribute('href', 'https://grafana.lan');
+    expect(link).toHaveAttribute('target', '_self');
   });
 
-  it('closes on Escape', async () => {
-    const user = userEvent.setup();
-    const h = renderPalette();
-    await user.click(screen.getByRole('combobox'));
-    await user.keyboard('{Escape}');
-    expect(h.onClose).toHaveBeenCalled();
+  it('a stale status draws its lamps as no signal', () => {
+    renderPalette({ stale: true });
+    const lamps = screen.getByRole('listbox').querySelectorAll('[data-slot="status-lamp"]');
+    expect(lamps.length).toBeGreaterThan(0);
+    expect([...lamps].every((l) => l.getAttribute('data-state') === 'unknown')).toBe(true);
+    expect(screen.getAllByRole('option')[0]).toHaveAccessibleName(
+      /^Network Edge, Issue, No signal/
+    );
   });
 
-  it('lists configured links with a host hint', () => {
-    renderPalette({}, { links: { apps: [{ name: 'Grafana', url: 'https://grafana.lan' }] } });
-    expect(screen.getByText('Grafana')).toBeInTheDocument();
-    expect(screen.getByText('grafana.lan')).toBeInTheDocument();
+  it('draws in the shell’s theme', () => {
+    renderPalette({ switches: { theme: 'light' } });
+    expect(screen.getByRole('dialog').closest('.jh-ui')).toHaveAttribute('data-theme', 'light');
   });
 });

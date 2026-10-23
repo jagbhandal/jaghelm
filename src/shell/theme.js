@@ -23,7 +23,7 @@ export const THEME_PREF = 'jaghelm-theme';
 /** The theme with nothing saved. */
 export const DEFAULT_THEME = 'dark';
 
-/** The choices, in the order Settings → Appearance and the command palette list them. */
+/** The choices, in the order Settings → Appearance lists them. */
 export const THEMES = Object.freeze([
   Object.freeze({ id: 'dark', label: 'Dark', description: 'Graphite with a violet accent' }),
   Object.freeze({ id: 'light', label: 'Light', description: 'For bright rooms' }),

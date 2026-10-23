@@ -9,7 +9,7 @@
  * holds the classes src/ui/ uses (scripts/gallery-build.test.mjs checks the
  * few named here). Data is fixed, times included, so every render is the same.
  */
-import { createElement, useEffect } from 'react';
+import { createElement, useEffect, useState } from 'react';
 import {
   Activity,
   Bell,
@@ -77,6 +77,7 @@ import { SideNav, appMonogram } from '@ui/side-nav';
 import { BottomTabs } from '@ui/bottom-tabs';
 import { AppBar } from '@ui/app-bar';
 import { LoginForm } from '@ui/login-form';
+import { CommandPalette } from '@ui/command-palette';
 import {
   Checklist,
   LaunchLayout,
@@ -2473,6 +2474,192 @@ function UtilitiesEmptyState() {
   );
 }
 
+// The command palette (#315): a row in each of its groups, as
+// src/shell/paletteIndex.js builds them; the list scrolls past the first few.
+const entityRow = (id, label, kind, where, state, word) => ({
+  id: `entity:${id}`,
+  label,
+  kind,
+  where,
+  detail: word,
+  state,
+  word,
+  href: `/?entity=${id}`,
+  onOpen: () => {},
+});
+const PALETTE_GROUPS = [
+  {
+    id: 'issues',
+    heading: 'Issues',
+    rows: [
+      {
+        id: 'issue:services/vm-103:immich',
+        label: 'Immich',
+        kind: 'Issue',
+        where: 'Service · vm-103',
+        detail: 'Kuma: HTTP 502 from photos.jagbhandal.com',
+        state: 'crit',
+        word: 'Down',
+        href: '/?entity=services/vm-103:immich',
+        onOpen: () => {},
+      },
+      {
+        id: 'issue:power/ups',
+        label: 'CyberPower CP1500',
+        kind: 'Issue',
+        where: 'Power',
+        detail: 'On battery (64 % charge)',
+        state: 'crit',
+        word: 'On battery',
+        href: '/?entity=power/ups',
+        onOpen: () => {},
+      },
+    ],
+  },
+  {
+    id: 'entities:services',
+    heading: 'Services',
+    rows: [
+      entityRow('services/vm-103:immich', 'Immich', 'Service', 'vm-103', 'crit', 'Down'),
+      entityRow('services/vm-103:grafana', 'Grafana', 'Service', 'vm-103', 'ok', 'Up'),
+    ],
+  },
+  {
+    id: 'entities:nodes',
+    heading: 'Nodes',
+    rows: [entityRow('nodes/pve', 'Proxmox', 'Node', 'pve', 'warn', 'Warning')],
+  },
+  {
+    id: 'entities:power',
+    heading: 'Power',
+    rows: [entityRow('power/ups', 'CyberPower CP1500', 'UPS', undefined, 'crit', 'On battery')],
+  },
+  {
+    id: 'entities:jobs',
+    heading: 'Jobs',
+    rows: [entityRow('jobs/vm-103:db-dump', 'db-dump', 'Job', 'vm-103', 'ok', 'OK')],
+  },
+  {
+    id: 'entities:backups',
+    heading: 'Backups',
+    rows: [
+      entityRow(
+        'backups/pve:proxmox-backup',
+        'proxmox-backup',
+        'Backup',
+        'pve',
+        'maintenance',
+        'Maintenance'
+      ),
+    ],
+  },
+  {
+    id: 'entities:integrations',
+    heading: 'Integrations',
+    rows: [
+      entityRow(
+        'integrations/jellyfin',
+        'jellyfin',
+        'Integration',
+        undefined,
+        'unknown',
+        'No signal'
+      ),
+    ],
+  },
+  {
+    id: 'pages',
+    heading: 'Pages',
+    rows: [{ id: 'page:alerts', label: 'Alerts', kind: 'Page', href: '/alerts', onOpen: () => {} }],
+  },
+  {
+    id: 'apps',
+    heading: 'Apps',
+    rows: [
+      {
+        id: 'app:grafana',
+        label: 'Open Grafana',
+        kind: 'App',
+        detail: 'Opens inside JagHelm',
+        href: '/apps/grafana',
+        onOpen: () => {},
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    heading: 'Settings',
+    rows: [
+      {
+        id: 'settings:links',
+        label: 'Links',
+        kind: 'Settings',
+        detail: 'Quick Launch bookmarks',
+        href: '/settings/links',
+        onOpen: () => {},
+      },
+    ],
+  },
+  {
+    id: 'links',
+    heading: 'Quick Launch',
+    rows: [
+      {
+        id: 'link:personal:0',
+        label: 'Open Nextcloud',
+        kind: 'Link',
+        where: 'Personal',
+        detail: 'cloud.jagbhandal.com',
+        href: 'https://cloud.jagbhandal.com/',
+        target: '_blank',
+      },
+    ],
+  },
+  {
+    id: 'actions',
+    heading: 'Actions',
+    rows: [{ id: 'action:logout', label: 'Log out', kind: 'Action', onOpen: () => {} }],
+  },
+];
+
+function CommandPaletteState({ query: start = '', groups = PALETTE_GROUPS }) {
+  const [query, setQuery] = useState(start);
+  return (
+    <CommandPalette
+      open
+      onClose={() => {}}
+      query={query}
+      onQueryChange={setQuery}
+      groups={groups}
+    />
+  );
+}
+
+/** A search, "gra", as paletteSearch leaves the groups: names that start with it first. */
+const PALETTE_SEARCH = [
+  {
+    id: 'entities:services',
+    heading: 'Services',
+    rows: [entityRow('services/vm-103:grafana', 'Grafana', 'Service', 'vm-103', 'ok', 'Up')],
+  },
+  { id: 'apps', heading: 'Apps', rows: PALETTE_GROUPS.find((g) => g.id === 'apps').rows },
+  {
+    id: 'links',
+    heading: 'Quick Launch',
+    rows: [
+      {
+        id: 'link:devops:0',
+        label: 'Open Grafana',
+        kind: 'Link',
+        where: 'Dev & Monitoring',
+        detail: 'grafana.jagbhandal.com',
+        href: 'https://grafana.jagbhandal.com/',
+        target: '_blank',
+      },
+    ],
+  },
+];
+
 // Each card is a landmark, named by what it holds, so the two weather-only
 // ones are told apart here (axe's landmark-unique); the app draws one.
 function UtilitiesWeatherState() {
@@ -2958,4 +3145,7 @@ export const RENDERS = Object.freeze({
   'utilities-empty': UtilitiesEmptyState,
   'utilities-failing': UtilitiesFailingState,
   'utilities-weather': UtilitiesWeatherState,
+
+  'command-palette': () => <CommandPaletteState />,
+  'command-palette-search': () => <CommandPaletteState query="gra" groups={PALETTE_SEARCH} />,
 });
