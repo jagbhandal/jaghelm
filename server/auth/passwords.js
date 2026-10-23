@@ -138,6 +138,85 @@ export function checkPassword(password) {
   return password === AUTH_PASS_ENV;
 }
 
+/** The credential in force, as one string: the user and the stored hash, or the user and DASH_PASS. */
+function currentCredential() {
+  return `${AUTH_USER}\0${storedPasswordHash || AUTH_PASS_ENV}`;
+}
+
+/** The last scrypt stamp made or matched, and the credential it is for. */
+let stampCache = { credential: '', stamp: '' };
+
+// DASH_SECRET values that are no key: the examples in env.example, README and
+// GET-STARTED, and the placeholders secrets.js refuses. Under a key everyone
+// knows, the HMAC stamp would be a fast hash to test passwords against.
+const EXAMPLE_SECRETS = new Set([
+  'your-random-secret-here',
+  'replace-with-output-of-openssl-rand-hex-32',
+  'paste-your-random-secret-here',
+  'replace_me',
+  'changeme',
+  'change-me',
+  'secret',
+  'password',
+]);
+const STAMP_KEY_LABEL = 'jaghelm sessions.json credential stamp v1';
+let stampKeyCache = { secret: '', key: Buffer.alloc(0) };
+
+/**
+ * The stamp's HMAC key: derived from DASH_SECRET (HKDF, its own label) for
+ * this alone, never the secrets key. Null when DASH_SECRET is unset, an
+ * example, or shorter than 16 characters.
+ * @returns {Buffer | null}
+ */
+function stampKey() {
+  const secret = process.env.DASH_SECRET || '';
+  if (secret.length < 16 || EXAMPLE_SECRETS.has(secret.toLowerCase())) return null;
+  if (stampKeyCache.secret !== secret) {
+    stampKeyCache = { secret, key: Buffer.from(crypto.hkdfSync('sha256', secret, '', STAMP_KEY_LABEL, 32)) };
+  }
+  return stampKeyCache.key;
+}
+
+/**
+ * A stamp of the credential in force (#250). sessions.json carries it, so a
+ * restart after the password or user changed outside Settings (DASH_PASS or
+ * DASH_USER in .env, auth.json edited or removed) starts with no sessions, as
+ * every restart did before sessions were kept. It adds no password verifier
+ * at rest weaker than what is already there:
+ *   - a password set in Settings: SHA-256 of the user and auth.json's hash.
+ *     Without auth.json it tests no guess; with it, auth.json is the target.
+ *   - DASH_PASS with a usable DASH_SECRET: HMAC-SHA256 of the user and
+ *     password under stampKey(). Useless without DASH_SECRET, which lives in
+ *     .env, not in data/. Rotating DASH_SECRET signs everyone out.
+ *   - DASH_PASS alone: scrypt, as slow to guess from as auth.json's hash.
+ */
+export function credentialStamp() {
+  const credential = currentCredential();
+  if (storedPasswordHash) {
+    return `sha256:${crypto.createHash('sha256').update(credential).digest('hex')}`;
+  }
+  const key = stampKey();
+  if (key) return `hmac-sha256:${crypto.createHmac('sha256', key).update(credential).digest('hex')}`;
+  if (stampCache.credential !== credential) {
+    stampCache = { credential, stamp: hashPassword(credential) };
+  }
+  return stampCache.stamp;
+}
+
+/** Whether `stamp` (from sessions.json) was made from the credential in force. */
+export function matchesCredentialStamp(stamp) {
+  if (typeof stamp !== 'string') return false;
+  if (storedPasswordHash || stampKey()) {
+    return safeBufEqual(Buffer.from(stamp), Buffer.from(credentialStamp()));
+  }
+  if (!stamp.startsWith('scrypt:')) return false;
+  const credential = currentCredential();
+  if (stampCache.credential === credential && stampCache.stamp === stamp) return true;
+  if (!verifyPassword(credential, stamp)) return false;
+  stampCache = { credential, stamp };
+  return true;
+}
+
 /**
  * Replace the stored password with a new scrypt hash and persist it.
  * Caller is responsible for clearing existing sessions.

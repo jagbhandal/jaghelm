@@ -16,9 +16,9 @@ as a Docker image to a homelab.
 - **Live data over static links.** The point of difference vs Homepage/Dashy is
   that panels show *current* numbers (CPU, RAM, queue depth, block-rate) fetched
   server-side, not just bookmarks.
-- **Single instance, in-memory, file-backed.** Sessions live in a `Map`, the
-  refresh loop runs in-process, and all user state is a handful of files under a
-  data dir. Simple to run; deliberately not horizontally scalable
+- **Single instance, in-memory, file-backed.** Sessions live in a `Map` kept
+  in a file of token hashes so they survive a restart, the refresh loop runs
+  in-process, and all user state is a handful of files under a data dir. Simple to run; deliberately not horizontally scalable
   ([ADR 0002](adr/0002-in-memory-single-instance.md)).
 - **Server does the talking.** The browser only ever calls JagHelm's own API; the
   server fans out to Prometheus, cAdvisor, Uptime Kuma, a NUT exporter, and the
@@ -106,7 +106,8 @@ server/                     Express API (Node 26, ESM)
                             decorateStatuses, the status model); incident and healthy scenarios
   embedCheck.js             reads an app tab's X-Frame-Options / CSP frame-ancestors and says
                             whether the browser will frame it (see 5, "App tabs")
-  auth/                     scrypt passwords, in-memory sessions, login rate limit, middleware
+  auth/                     scrypt passwords, sessions (token hashes on disk), login rate limit,
+                            middleware
   routes/                   one router per resource (see 4.1)
   arcane/                   Arcane poller: read-only API client, state derivation, push builders,
                             persisted state, dry-run module (see 4.2), and the agents the
@@ -1050,17 +1051,40 @@ Key properties:
   `urlCredential` (`arcane/config.js`): the integration is off, with one
   warning, and nothing is requested.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
-  secrets/auth/config/cron and the icon cache never split across locations.
+  secrets/auth/sessions/config/cron and the icon cache never split across
+  locations.
 
 ### 4.5 Auth & rate limiting
 
-scrypt password hashing (`auth/passwords.js`), in-memory sessions
+scrypt password hashing (`auth/passwords.js`), sessions that survive a restart
 (`auth/sessions.js`), and a brute-force **login rate limiter** (`auth/rateLimit.js`).
 A reusable `util/rateLimiter.js` additionally throttles the abuse-prone
 integration connection-test endpoint.
 
-A session ends 24 h after sign-in or when the server restarts, and every
-protected request after that gets a 401. `apiFetch` (`src/api/client.js`)
+Sessions (#250, ADR 0002) are kept in memory and in `sessions.json` in the
+data dir (atomic, `0600`), keyed by the SHA-256 of each token, never the token;
+a lookup hashes the presented token. A session ends after 30 days without use
+(`SESSION_IDLE_MS`; every request it authenticates is a use) and 90 days after
+sign-in in any case (`SESSION_MAX_AGE_MS`). A sign-in, a sign-out and a
+password change are written before the route answers; a use is written once it
+is an hour past the one on disk, so a crash loses at most an hour of the idle
+window. At most 50 sessions are kept (`MAX_SESSIONS`): a sign-in past that ends
+the least recently used. The file is read on first use. One that can't be read
+is no sessions and one warning that never quotes it; a write that fails is
+logged and the sessions in memory carry on, except that a sign-out or password
+change whose write fails removes the file, so a restart can't bring a revoked
+session back. If the file can be neither written nor removed, `POST
+/api/auth/logout` answers 503 (`revocationSaved()`): the session has ended in
+memory, the client sends the sign-out again, and each retry writes again. The
+file carries a stamp of the user and password (`credentialStamp()`,
+`auth/passwords.js`): SHA-256 of `auth.json`'s hash when a password was set in
+Settings, else an HMAC under a key derived from `DASH_SECRET`, else scrypt. A
+restart after `DASH_PASS`, `DASH_USER`, `auth.json` or `DASH_SECRET` changed
+starts with no sessions. A sign-in with a user name or password that isn't a
+string is refused with 400.
+
+Once a session has ended, every protected request with its token gets a 401.
+`apiFetch` (`src/api/client.js`)
 hands a 401 from any `/api` call outside `/api/auth/` to the shell's
 auth-expired handler, with the token the request was sent with (none counts
 too: a tab loaded while the server had no password). It does so once per
@@ -1075,11 +1099,12 @@ the polls again (#492). Before, an open web tab kept polling with the dead
 token, a 401 each time.
 
 Signing out ends the session on the server too (#507). `POST /api/auth/logout`
-deletes the presented token's session from the in-memory store, and only that
-one: the token gets a 401 on every protected route from then on, and the
+deletes the presented token's session from the store and from
+`sessions.json` before it answers, and only that one: the token gets a 401 on every protected route from then on, and the
 user's other sessions (another browser, the phone) keep working. Deletion is
 the revocation; there is no deny list (ADR 0002). It answers 204 for any
-token, unknown, expired, already revoked or none, so a second sign-out or
+token, unknown, expired, already revoked or none (503 only while a sign-out
+can't be saved, above), so a second sign-out or
 another tab never meets a 401 and the answer says nothing about a token. A
 real sign-out logs `signed out` at info with the user, never the token. Both
 apps send it through `revokeSession()` (`src/api/client.js`) and clear the
@@ -3579,7 +3604,7 @@ change; `doc-counts.test.mjs` fails on one.
 | ADR | Decision |
 |-----|----------|
 | [0001](adr/0001-atomic-file-writes.md) | Atomic temp->fsync->rename writes for all user state |
-| [0002](adr/0002-in-memory-single-instance.md) | Single-instance, in-memory state (no DB) |
+| [0002](adr/0002-in-memory-single-instance.md) | Single-instance, in-memory state (no DB); sessions alone are also kept on disk, as token hashes (#250) |
 | [0003](adr/0003-scoped-tls-bypass.md) | Per-request, opt-in TLS-verify bypass for self-signed infra |
 | [0004](adr/0004-config-copy-on-read.md) | Config is copy-on-read + synchronous atomic writes |
 | [0005](adr/0005-event-driven-deploy.md) | Event-driven build->deploy trigger (superseded by 0007, never enabled) |
