@@ -10,6 +10,13 @@
   service or node opens its panel, as on the Overview.
 - The Infrastructure page lists each Proxmox node's virtual machines and
   storage pools under the nodes, as the node's panel does.
+- The Overview's Services section ends with "Show all 12 services", which
+  opens the Services page.
+
+### Changed
+- On a phone, the Services search also finds a service by its node or its
+  container, as the Services page does, and ignores spaces before or after
+  what you type.
 
 ### Fixed
 - Turning a phone or resizing a window past 768px on Services or

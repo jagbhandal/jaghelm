@@ -186,7 +186,29 @@ describe('the sidebar and the palette (#313)', () => {
   });
 });
 
+describe("the Overview's Services section (#313)", () => {
+  it('ends with "Show all N services", which opens the Services page', async () => {
+    await renderAt('/');
+    const link = await screen.findByRole('link', { name: `Show all ${SERVICE_COUNT} services` });
+    expect(link).toHaveAttribute('href', '/services');
+    await userEvent.setup().click(link);
+    expect(url()).toBe('/services');
+    const region = await section('Services');
+    await waitFor(() => expect(rows(region)).toHaveLength(SERVICE_COUNT));
+    // The page lists them all already: no link to itself.
+    expect(within(region).queryByRole('link', { name: /^Show all/ })).toBeNull();
+  });
+});
+
 describe('the Services page (#313)', () => {
+  it('a state it has no filter for is none: every service, All states, nothing to clear', async () => {
+    const region = await servicesPage('/services?state=down');
+    expect(rows(region)).toHaveLength(SERVICE_COUNT);
+    expect(filters().getByRole('combobox', { name: 'State' })).toHaveTextContent('All states');
+    expect(filters().queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    expect(within(region).getByText(`${SERVICE_COUNT} monitored · 1 down`)).toBeInTheDocument();
+  });
+
   it('every service, by node, each row opening its detail over the page; State and Node filters, and no Tag filter without tags', async () => {
     const region = await servicesPage();
     expect(screen.getByRole('heading', { level: 1, name: 'Services' })).toBeInTheDocument();
@@ -368,6 +390,14 @@ describe('the Infrastructure page (#313)', () => {
     expect(screen.queryByRole('region', { name: 'Virtual machines and storage' })).toBeNull();
   });
 
+  it('maintenance, which no node can be in, is no filter: every node, All states, nothing to clear', async () => {
+    const region = await infrastructurePage('/infrastructure?state=maintenance');
+    expect(cards(region)).toEqual(['nodes/edge', 'nodes/apps', 'nodes/storage']);
+    expect(filters().getByRole('combobox', { name: 'State' })).toHaveTextContent('All states');
+    expect(filters().queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    expect(within(region).getByText('3 nodes · 1 warning')).toBeInTheDocument();
+  });
+
   it('no Proxmox, no list', async () => {
     await infrastructurePage();
     expect(screen.queryByRole('region', { name: 'Virtual machines and storage' })).toBeNull();
@@ -421,6 +451,43 @@ describe('the 768px crossing (#313, #567 review)', () => {
     await waitFor(() =>
       expect(rows(region).sort()).toEqual(['Backrest', 'Photoprism', 'Syncthing'])
     );
+  });
+
+  it('the same search lists the same services at 1440 and at 767', async () => {
+    const region = await servicesPage('/services?q=storage');
+    const wide = rows(region).sort();
+    expect(wide).toEqual(['Backrest', 'Photoprism', 'Syncthing']);
+    resizeTo({ phone: true });
+    const view = await waitFor(() => {
+      const el = document.querySelector('[data-slot="phone-view"]');
+      expect(el).not.toBeNull();
+      return within(el);
+    });
+    const names = () =>
+      view
+        .queryAllByRole('button', { name: /, / })
+        .map((b) => b.getAttribute('aria-label') ?? b.textContent)
+        .map((n) => n.split(',')[0].trim());
+    await waitFor(() => expect(names().sort()).toEqual(wide));
+    // A space typed after it changes nothing.
+    const box = view.getByRole('searchbox', { name: 'Search services' });
+    await userEvent.setup().type(box, ' ');
+    expect(names().sort()).toEqual(wide);
+  });
+
+  it('a node the phone list has no chip for is All', async () => {
+    window.history.replaceState(null, '', '/services?node=nowhere');
+    media.phone = true;
+    render(<App />);
+    const view = await waitFor(() => {
+      const el = document.querySelector('[data-slot="phone-view"]');
+      expect(el).not.toBeNull();
+      return within(el);
+    });
+    expect(
+      await view.findByRole('button', { name: `All ${SERVICE_COUNT}`, pressed: true })
+    ).toBeInTheDocument();
+    expect(view.getAllByRole('button', { name: /^Jellyfin, / })).toHaveLength(1);
   });
 
   it('/infrastructure keeps its path and filters both ways', async () => {

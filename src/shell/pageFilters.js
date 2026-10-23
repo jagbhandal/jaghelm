@@ -5,7 +5,7 @@
  * pages' chunks carry it, never the first load.
  */
 import { heldUids } from './customGroups.js';
-import { searchMatches, stateMatches } from './listFilters.js';
+import { searchMatches, stateMatches } from './filterQuery.js';
 
 /**
  * The custom groups' titles by service uid (customGroups.js: by uid, or a bare

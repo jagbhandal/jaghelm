@@ -25,15 +25,26 @@
  * lined up with them (`margin`), 24px under them, in a root of its own.
  *
  * The Services page (#313, ServicesPage.jsx) draws the same section from the
- * same parts (useServicesSection), every service, with its filters.
+ * same parts (useServicesSection), every service, with its filters; the
+ * panel's last line here, "Show all 12 services →", opens it.
  */
 import { memo, useMemo } from 'react';
 import { ShellSection } from '@ui/app-shell';
 import { ServicesSection } from '@ui/services-section';
+import { navigate } from '../router/useRoute.js';
+import { pathTo } from '../router/routes.js';
 import { serviceGroups, servicesCount } from './servicesView.js';
 import { useServicesSection } from './useServicesSection.jsx';
 
 const NO_GROUPS = [];
+
+// The Services page (#313), every service with its filters: the panel's last line.
+const SERVICES_PAGE = pathTo('services');
+const showAllOf = (n) => ({
+  href: SERVICES_PAGE,
+  label: `Show all ${n} ${n === 1 ? 'service' : 'services'}`,
+  onOpen: () => navigate(SERVICES_PAGE),
+});
 
 export const OverviewServices = memo(function OverviewServices({
   status,
@@ -66,6 +77,8 @@ export const OverviewServices = memo(function OverviewServices({
     [rows, grouping, services, customGroups]
   );
 
+  const showAll = useMemo(() => showAllOf(rows.length), [rows.length]);
+
   if (!loading && rows.length === 0) return null;
   return (
     // 24px under the section above, as the mock spaces its sections.
@@ -78,6 +91,7 @@ export const OverviewServices = memo(function OverviewServices({
           groupings={groupings}
           onGroupingChange={setGrouping}
           groupingHint={groupingHint}
+          showAll={showAll}
           loading={loading}
           banner={banner}
         />

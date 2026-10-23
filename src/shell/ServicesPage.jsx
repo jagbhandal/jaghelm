@@ -27,6 +27,7 @@ import { EmptyState } from '@ui/empty-state';
 import { ListFilters } from '@ui/list-filters';
 import { Panel } from '@ui/panel';
 import { ServicesSection } from '@ui/services-section';
+import { ServicesTable } from '@ui/services-table';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { SERVICE_FILTERS, hasListFilters, useListFilters, useSearchDraft } from './listFilters.js';
 import { filterServiceRows, serviceFilterOptions } from './pageFilters.js';
@@ -117,8 +118,8 @@ export default function ServicesPage({ status, reach, updated, tick, active, ref
 
   const toolbar = (
     <ListFilters
-      search={{ value: text, onChange: setText, label: 'Search services' }}
       filters={[
+        { kind: 'search', id: 'q', label: 'Search services', value: text, onValueChange: setText },
         {
           id: 'state',
           label: 'State',
@@ -186,6 +187,7 @@ export default function ServicesPage({ status, reach, updated, tick, active, ref
         groupingHint={groupingHint}
         view={view}
         onViewChange={setView}
+        table={<ServicesTable groups={groups} grouping={grouping} />}
         loading={loading}
         banner={banner}
         toolbar={toolbar}

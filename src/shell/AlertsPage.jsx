@@ -27,7 +27,8 @@ import { AlertFilters } from '@ui/alert-filters';
 import { AlertHistory } from '@ui/alert-history';
 import { ShellAttention } from './ShellAttention.jsx';
 import { useEntityLink } from './entityNav.js';
-import { useSearchDraft, useUrlAlertFilters } from './alertsFilter.js';
+import { useUrlAlertFilters } from './alertsFilter.js';
+import { useSearchDraft } from './listFilters.js';
 import { useAlertHistory } from './useAlertHistory.js';
 import {
   KIND_OPTIONS,

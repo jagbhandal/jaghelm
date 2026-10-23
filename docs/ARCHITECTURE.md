@@ -155,7 +155,8 @@ src/                        React 19 SPA (Vite 8)
                             More sheet, fed from the route, the config and the status poll),
                             nav.js (the nav as data), AlertsPage.jsx (Active and History,
                             #314; alertsView.js, its filters and rows; alertsFilter.js,
-                            the filters in the address; useAlertHistory.js, /api/events),
+                            the filters in the address, on listFilters.js's hook;
+                            useAlertHistory.js, /api/events),
                             OverviewStatus.jsx (the
                             Overview's top from 768px: its status and subsystem strip),
                             PhoneView.jsx, phoneData.js and phoneNav.js (below 768px the
@@ -195,9 +196,12 @@ src/                        React 19 SPA (Vite 8)
                             Infrastructure pages, each its own chunk, #313: the
                             Overview's sections, from what both share,
                             useServicesSection.jsx and useInfrastructureSection.jsx,
-                            with filters in the address, listFilters.js, and what
-                            they keep, pageFilters.js, out of the first load; a
-                            Proxmox node's lists, proxmoxNodes.js), usePref.js (a choice kept
+                            with filters in the address, listFilters.js (the one
+                            URL-filters hook and search draft, the Alerts pages'
+                            too) over filterQuery.js (pure: the query and what a
+                            search or state keeps), and what they keep,
+                            pageFilters.js, out of the first load; a Proxmox
+                            node's lists, proxmoxNodes.js), usePref.js (a choice kept
                             per browser that every reader of it follows),
                             OverviewJobs.jsx, PhoneJobs.jsx, jobsView.js and
                             removedJobs.js (the Overview's Jobs section and the phone's
@@ -2429,7 +2433,10 @@ flowchart TD
   "Sending", "Push not set up", "Not sent: off in phone settings", "Not
   sent"), as `AlertHistory` rows (`src/ui/alert-history.jsx`). Push off still
   records every event (#267), so History works without push. One set of
-  filters over both, in the address (`alertsFilter.js`):
+  filters over both, in the address (`alertsFilter.js`, on the list pages'
+  one hook, `listFilters.js` `useUrlFilters`, #313: a replaced entry keeps
+  what it held, and an open entity's id stays as written; the controls are
+  `ListFilters` configured, `AlertFilters`):
   `?severity=critical|warning|info`, `?kind=` an entity kind and `?q=` a
   search, so Back undoes a change (the search is one entry however long it is
   typed: it commits 300 ms after the last key and refines the entry it
@@ -2733,9 +2740,11 @@ flowchart TD
   opening its detail over the page, the freshness, the grouping or the cards
   / table choice, the loading and the stale-numbers Banner), so a row, a card
   and a table row have one source. Over them a row of filters (`ListFilters`,
-  `src/ui/list-filters.jsx`): a search and a Select each, and "Clear filters"
-  while any is set. The filters are the page's address (`listFilters.js`:
-  `?q=`, `?state=`, `?node=`, `?tag=`, `?role=`), so Back undoes a change
+  `src/ui/list-filters.jsx`, the Alerts page's too): a search and a Select
+  each, and "Clear filters" while any is set. The filters are the page's
+  address (`listFilters.js`, one hook and one search draft for every list
+  page, the Alerts pages included, over the pure `filterQuery.js`: `?q=`,
+  `?state=`, `?node=`, `?tag=`, `?role=`), so Back undoes a change
   (each is a history entry; a search goes in once typing stops, refined in
   the same entry), a reload keeps them, a link opens the page filtered, and
   an entity opened over the page keeps them under it. What each keeps is
@@ -2750,10 +2759,12 @@ flowchart TD
   `?tag=` is ignored); the Overview's Node / Group grouping (one choice for
   both, `usePref.js`: every reader of a key follows a change in another, so
   the Overview, out of sight, comes back with it), and List or Table (kept
-  per browser, `jaghelm-services-view`): the table has the same rows in the
-  groups' order (service, node, the custom group while grouped by one,
-  container, detail, latency, state), needs 720px, and below it the list
-  stands in. Infrastructure: State (no maintenance: a node has none) and
+  per browser, `jaghelm-services-view`): the table (`ServicesTable`,
+  `src/ui/services-table.jsx`, a module only the page's chunk carries) has
+  the same rows in the groups' order (service, node, the custom group while
+  grouped by one, container, detail, latency, state), needs 720px, and below
+  it the list stands in. The Overview's Services section ends with "Show all
+  12 services →", to the page. Infrastructure: State (no maintenance: a node has none) and
   Role (services.yaml's subtitle, while any node has one); cards or table,
   one choice with the Overview's; and under the nodes, each Proxmox node's
   virtual machines and storage pools, as its detail builds them
@@ -2766,8 +2777,12 @@ flowchart TD
   phone's tabs: `PhoneView.jsx` gives the Services tab its search and node
   chip from the address (`q`, `node`; a chip pressed there clears the wide
   page's `state` and `tag`, which its chips can't show, and until then they
-  wait in the address), so crossing 768px keeps both; the Android app gives
-  none, and its screen keeps its own. The Infrastructure tab has no filters.
+  wait in the address; a node the list doesn't have is All), so crossing
+  768px keeps both; the Android app gives none, and its screen keeps its
+  own. The phone's search, in both looks, is the page's (`searchMatches`:
+  each word, trimmed, in a service's name, its node's key or name, or its
+  container), so one `?q=` lists the same services at 767 and 1440px. The
+  Infrastructure tab has no filters.
 - **Custom groups** (#517, `src/shell/customGroups.js`). Settings →
   Sections makes them; the Services section groups by them. A group is
   `{ id, title, containers }` in the display config's `customGroups`, and

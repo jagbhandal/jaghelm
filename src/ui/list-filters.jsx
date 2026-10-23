@@ -1,23 +1,71 @@
 /*
- * ListFilters (#313): a list page's filters in one row that wraps, under the
- * section's heading (the Services and Infrastructure pages): the search (an
- * Input, filling the row, at least 192px), then a Select for each of
- * `filters` (State, Node, Role, Tag), 176px each, and "Clear filters" (a
- * ghost accent Button) while any is set. Each control is named (`label`),
- * the search by its placeholder's words.
+ * ListFilters (#313): a list page's filters in one row that wraps, under its
+ * heading, 12px apart: the controls of `filters`, in their order, then "Clear
+ * filters" (a ghost accent Button, Lucide `X`) while any is set. The
+ * Services and Infrastructure pages draw it, and so does the Alerts page,
+ * through AlertFilters (alert-filters.jsx), one configuration of it (#314).
  *
- * It holds nothing: `search` is `{ value, onChange(text), label }`, each of
- * `filters` `{ id, label, value, items, onValueChange(value) }` (its items
- * `[{ value, label }]`, the first for "every one"), and `onClear` clears
- * them all (none, no button).
+ * Each of `filters` is a control, by its `kind`:
+ *
+ *   search     an Input filling the row (at least 192px), named by its
+ *              `label`, which is its placeholder too
+ *   select     a Select, 176px unless its `className` says otherwise (the
+ *              default)
+ *   segmented  a SegmentedControl, every option in view (two to four)
+ *
+ * It holds nothing: each is `{ kind, id, label, value, onValueChange, items?,
+ * className? }`, `value` the chosen value (the search's text), `items` the
+ * options `[{ value, label }]`, the first for "every one", and
+ * `onValueChange` what a change calls (the search with its text; the others
+ * as Base UI calls them, with the value first). `onClear` clears them all
+ * (none, no button). The row is a group named "Filters".
  */
 import { X } from 'lucide-react';
 import { Button } from './button.jsx';
 import { Input } from './input.jsx';
+import { SegmentedControl } from './segmented-control.jsx';
 import { Select } from './select.jsx';
 import { cn } from './lib/utils.js';
 
-function ListFilters({ search, filters = [], onClear, className, ...props }) {
+function Control({ kind = 'select', id, label, value, items, onValueChange, className }) {
+  if (kind === 'search') {
+    return (
+      <Input
+        type="search"
+        data-filter={id}
+        aria-label={label}
+        placeholder={label}
+        value={value}
+        onChange={(e) => onValueChange(e.target.value)}
+        className={cn('w-auto min-w-48 flex-1', className)}
+      />
+    );
+  }
+  if (kind === 'segmented') {
+    return (
+      <SegmentedControl
+        data-filter={id}
+        aria-label={label}
+        options={items}
+        value={value}
+        onValueChange={onValueChange}
+        className={className}
+      />
+    );
+  }
+  return (
+    <Select
+      data-filter={id}
+      aria-label={label}
+      items={items}
+      value={value}
+      onValueChange={onValueChange}
+      className={cn('w-44', className)}
+    />
+  );
+}
+
+function ListFilters({ filters = [], onClear, className, ...props }) {
   return (
     <div
       data-slot="list-filters"
@@ -26,26 +74,8 @@ function ListFilters({ search, filters = [], onClear, className, ...props }) {
       className={cn('flex flex-wrap items-center gap-3', className)}
       {...props}
     >
-      {search && (
-        <Input
-          type="search"
-          aria-label={search.label}
-          placeholder={search.label}
-          value={search.value}
-          onChange={(e) => search.onChange(e.target.value)}
-          className="w-auto min-w-48 flex-1"
-        />
-      )}
       {filters.map((f) => (
-        <Select
-          key={f.id}
-          data-filter={f.id}
-          aria-label={f.label}
-          items={f.items}
-          value={f.value}
-          onValueChange={(value) => f.onValueChange(value)}
-          className="w-44"
-        />
+        <Control key={f.id} {...f} />
       ))}
       {onClear && (
         <Button variant="ghost" tone="accent" onClick={onClear}>

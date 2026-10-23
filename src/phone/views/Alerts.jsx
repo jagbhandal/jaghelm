@@ -11,11 +11,8 @@ import { FRESH, issueRowsOf } from '../data/board.js';
 import { entityRoute } from '../nav/entityRoute.js';
 import { issueRows } from '../../shell/statusView.js';
 import { lastKnownCaption } from '../../shell/statusFreshness.js';
-import {
-  useSearchDraft,
-  useStateAlertFilters,
-  useUrlAlertFilters,
-} from '../../shell/alertsFilter.js';
+import { useStateAlertFilters, useUrlAlertFilters } from '../../shell/alertsFilter.js';
+import { useSearchDraft } from '../../shell/listFilters.js';
 import { useAlertHistory } from '../../shell/useAlertHistory.js';
 import {
   KIND_OPTIONS,

@@ -74,6 +74,7 @@ import { Table } from '@ui/table';
 import { InfrastructureSection } from '@ui/infrastructure-section';
 import { ServicesSection } from '@ui/services-section';
 import { ListFilters } from '@ui/list-filters';
+import { ServicesTable } from '@ui/services-table';
 import { JobsSection } from '@ui/jobs-section';
 import { AppHeader, PhoneHeader, UpdatedAgo } from '@ui/app-header';
 import { SideNav, appMonogram } from '@ui/side-nav';
@@ -2418,6 +2419,12 @@ const NO_GROUPS_HINT = (
   </>
 );
 
+// The Overview's last line, to the Services page (#313).
+const showAllOf = (groups) => {
+  const n = groups.reduce((sum, g) => sum + g.rows.length, 0);
+  return { href: '/services', label: `Show all ${n} services` };
+};
+
 function ServicesState({ groups, count, grouping = 'node', groupless = false, width = 900 }) {
   return (
     <Stack width={width}>
@@ -2428,6 +2435,7 @@ function ServicesState({ groups, count, grouping = 'node', groupless = false, wi
         groupings={groupless ? NO_GROUPS : GROUPINGS}
         groupingHint={groupless ? NO_GROUPS_HINT : undefined}
         onGroupingChange={noop}
+        showAll={showAllOf(groups)}
       />
     </Stack>
   );
@@ -2459,8 +2467,8 @@ const PAGE_ROLE_ITEMS = [
 function Filters({ search = '', label = 'Search services', state = 'all', second, clear }) {
   return (
     <ListFilters
-      search={{ value: search, onChange: noop, label }}
       filters={[
+        { kind: 'search', id: 'q', label, value: search, onValueChange: noop },
         { id: 'state', label: 'State', value: state, items: PAGE_STATE_ITEMS, onValueChange: noop },
         second,
       ].filter(Boolean)}
@@ -2510,6 +2518,7 @@ function ServicesPageState({ groups, count, view = 'list', filters, empty }) {
         onGroupingChange={noop}
         view={view}
         onViewChange={noop}
+        table={<ServicesTable groups={groups} grouping="node" />}
         toolbar={filters}
         empty={empty}
       />
@@ -2578,6 +2587,7 @@ function OverviewColumnState({ width }) {
         grouping="node"
         groupings={GROUPINGS}
         onGroupingChange={noop}
+        showAll={showAllOf(SERVICES_INCIDENT)}
       />
     </Stack>
   );

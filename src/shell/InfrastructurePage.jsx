@@ -139,8 +139,8 @@ export default function InfrastructurePage({
     roleItems.push({ value: wanted.role, label: wanted.role });
   const toolbar = (
     <ListFilters
-      search={{ value: text, onChange: setText, label: 'Search nodes' }}
       filters={[
+        { kind: 'search', id: 'q', label: 'Search nodes', value: text, onValueChange: setText },
         {
           id: 'state',
           label: 'State',
