@@ -15,7 +15,7 @@ import {
   PHONE_CHUNK,
   PHONE_IDLE_CHUNK,
   builtAsset,
-  DESKTOP_CHUNK,
+  DESKTOP_CHUNKS,
   firstLoad,
   formatReport,
   htmlPulls,
@@ -333,12 +333,15 @@ test('the script exits 1 on a build over budget, naming what is over, and 0 on o
   assert.match(fonts.stderr, /fonts at 1440px, fonts at 390px/);
 });
 
-test("a desktop's first load (#578): the Jobs section's chunk and what only it imports; a phone's never", () => {
+test("a desktop's first load (#578, #532): the Jobs section's and the rail's chunks and what only they import; a phone's never", () => {
   const build = fakeBuild();
   const files = {
     '/assets/OverviewJobs-OOOOOOOO.js':
       'import{a}from"./index-AAAAAAAA.js";import{j}from"./jobs-section-KKKKKKKK.js";',
     '/assets/jobs-section-KKKKKKKK.js': 'import{a}from"./index-AAAAAAAA.js";',
+    '/assets/OverviewRail-RRRRRRRR.js':
+      'import{a}from"./index-AAAAAAAA.js";import{u}from"./Utilities-UUUUUUUU.js";',
+    '/assets/Utilities-UUUUUUUU.js': 'import{j}from"./jobs-section-KKKKKKKK.js";',
     '/assets/PhoneView-PPPPPPPP.js': 'import{a}from"./index-AAAAAAAA.js";',
   };
   const both = {
@@ -347,11 +350,13 @@ test("a desktop's first load (#578): the Jobs section's chunk and what only it i
       ...build.assets,
       'OverviewJobs-OOOOOOOO.js',
       'jobs-section-KKKKKKKK.js',
+      'OverviewRail-RRRRRRRR.js',
+      'Utilities-UUUUUUUU.js',
       'PhoneView-PPPPPPPP.js',
     ],
     read: (url) => (files[url] ? Buffer.from(files[url]) : build.read(url)),
   };
-  assert.equal(DESKTOP_CHUNK, 'OverviewJobs.js');
+  assert.deepEqual(DESKTOP_CHUNKS, ['OverviewJobs.js', 'OverviewRail.js']);
   const scripts = (report) => report.items.filter((i) => i.kind === 'script').map((i) => i.url);
   assert.deepEqual(scripts(firstLoad(both)), [
     '/assets/index-AAAAAAAA.js',
@@ -359,11 +364,16 @@ test("a desktop's first load (#578): the Jobs section's chunk and what only it i
     '/register-sw.js',
     '/assets/OverviewJobs-OOOOOOOO.js',
     '/assets/jobs-section-KKKKKKKK.js',
+    // A script both import is counted once.
+    '/assets/OverviewRail-RRRRRRRR.js',
+    '/assets/Utilities-UUUUUUUU.js',
   ]);
   assert.ok(
-    !scripts(firstLoad(both, { phone: true })).some((u) => /OverviewJobs|jobs-section/.test(u))
+    !scripts(firstLoad(both, { phone: true })).some((u) =>
+      /OverviewJobs|jobs-section|OverviewRail|Utilities/.test(u)
+    )
   );
-  // A build without it counts what it has.
+  // A build without them counts what it has.
   assert.deepEqual(scripts(firstLoad(build)), [
     '/assets/index-AAAAAAAA.js',
     '/assets/vendor-react-BBBBBBBB.js',

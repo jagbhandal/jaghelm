@@ -293,42 +293,66 @@ export function demoUps() {
 
 // ── Gitea ────────────────────────────────────────────────────────────────
 
-// [repo, [age ms, sha, message, author]...], newest commit first.
+// [repo, [age ms, sha, message, author, branch, CI word]...], newest commit
+// first. A repo whose rows have no word has no Actions: no lamp (#532).
 const REPOS = [
   [
     'infrastructure',
     [
-      [42 * MINUTE, 'a41c9e2', 'Pin the reverse proxy image to 2.12', 'alex'],
-      [5 * HOUR, '9be03f1', 'Move the media stack to its own network', 'alex'],
-      [2 * DAY, '17d4c08', 'Add the nightly backup check', 'sam'],
+      [4 * MINUTE, '3f7e2a0', 'Raise the backup job timeout', 'sam', 'main', 'Running'],
+      [42 * MINUTE, 'a41c9e2', 'Pin the reverse proxy image to 2.12', 'alex', 'main', 'Passed'],
+      [
+        5 * HOUR,
+        '9be03f1',
+        'Move the media stack to its own network',
+        'alex',
+        'media-network',
+        'Failed',
+      ],
+      [2 * DAY, '17d4c08', 'Add the nightly backup check', 'sam', 'main', 'Passed'],
     ],
   ],
   [
     'dashboard-config',
     [
-      [3 * HOUR, 'c0f8a51', 'Add Quick Launch links for the photo library', 'sam'],
-      [3 * DAY, '5e2b7d9', 'Group the media services', 'sam'],
+      [
+        3 * HOUR,
+        'c0f8a51',
+        'Add Quick Launch links for the photo library',
+        'sam',
+        'main',
+        'Passed',
+      ],
+      [3 * DAY, '5e2b7d9', 'Group the media services', 'sam', 'main', 'Passed'],
     ],
   ],
   [
     'media-scripts',
     [
-      [26 * HOUR, 'e7a3310', 'Retry the library scan on a timeout', 'alex'],
-      [6 * DAY, '0c9d4f6', 'Log the transcode queue length', 'alex'],
+      [26 * HOUR, 'e7a3310', 'Retry the library scan on a timeout', 'alex', 'main', null],
+      [6 * DAY, '0c9d4f6', 'Log the transcode queue length', 'alex', 'main', null],
     ],
   ],
 ];
 
-/** /api/gitea/activity: recent commits per repo, newest first, as refresh.js shapes them. */
+// Each CI word's state, as the status rules judge it (judgeCiRuns).
+const CI_STATES = { Passed: 'ok', Failed: 'crit', Running: 'unknown' };
+
+/**
+ * /api/gitea/activity: recent commits per repo, newest first, each with its
+ * branch and CI result, as gitea.js shapes them.
+ */
 export function demoGiteaActivity({ now = Date.now() } = {}) {
   return REPOS.map(([repo, commits]) => ({
     repo,
     fullName: `demo/${repo}`,
-    commits: commits.map(([age, sha, message, author]) => ({
+    commits: commits.map(([age, sha, message, author, ref, word]) => ({
       sha,
       message,
       date: new Date(now - age).toISOString(),
       author,
+      ref,
+      ci: word ? { state: CI_STATES[word], word } : null,
     })),
   }));
 }

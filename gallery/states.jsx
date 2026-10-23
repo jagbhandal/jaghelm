@@ -2370,12 +2370,34 @@ const LINK_GROUPS_WIDE = [
   },
 ];
 
+// Each row's CI result (#532): passed, failed on a branch, running, and a
+// repo without Actions (no lamp).
+const CI = {
+  ok: { state: 'ok', word: 'Passed' },
+  crit: { state: 'crit', word: 'Failed' },
+  unknown: { state: 'unknown', word: 'Running' },
+};
 const PIPELINE_ROWS = [
-  ['Pin the reverse proxy image to 2.12', 'infrastructure', 'a41c9e2', 12 * MIN],
-  ['Merge pull request #880 from fix/access-log-245', 'homelab-infra', 'b81e0d2', HOUR],
-  ['Add Quick Launch links for the photo library', 'dashboard-config', 'c0f8a51', 3 * HOUR],
-  ['Retry the library scan on a timeout', 'media-scripts', 'e7a3310', 26 * HOUR],
-].map(([title, repo, sha, ago]) => ({ id: sha, title, repo, sha, at: GALLERY_NOW - ago }));
+  ['Pin the reverse proxy image to 2.12', 'infrastructure', 'main', 'a41c9e2', 12 * MIN, 'ok'],
+  ['Log every request', 'homelab-infra', 'fix/access-log-245', 'b81e0d2', HOUR, 'crit'],
+  [
+    'Add Quick Launch links for the photo library',
+    'dashboard-config',
+    'main',
+    'c0f8a51',
+    3 * HOUR,
+    'unknown',
+  ],
+  ['Retry the library scan on a timeout', 'media-scripts', 'main', 'e7a3310', 26 * HOUR, null],
+].map(([title, repo, ref, sha, ago, ci]) => ({
+  id: sha,
+  title,
+  repo,
+  ref,
+  sha,
+  ci: ci ? CI[ci] : null,
+  at: GALLERY_NOW - ago,
+}));
 
 const TODOS = [
   {

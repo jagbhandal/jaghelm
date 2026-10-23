@@ -76,8 +76,9 @@ server/                     Express API (Node 26, ESM)
   env.js                    the environment schema: every variable, its type, default and
                             old name; the one reader of process.env, checked at boot (see 4.4)
   refresh.js                background refresh loop (start/stop)
-  gitea.js                  the Pipeline panel's source: each repo's commits on its default
-                            branch, polled every 5 minutes (see 4.2)
+  gitea.js                  the Pipeline panel's source: each repo's latest push runs (their
+                            CI result, branch and sha) or, without Actions, its commits on
+                            its default branch, polled every 5 minutes (see 4.2)
   cache.js                  bounded in-memory cache (evicts least recently written, ETags)
   discovery.js              Prometheus/cAdvisor -> nodes + services, one query per reading
                             across all nodes (see 4.2) (ignores containers labelled as Arcane
@@ -186,7 +187,9 @@ src/                        React 19 SPA (Vite 8)
                             drawn as soon as it is in, with no Suspense),
                             Utilities.jsx, utilities.js and LaunchPage.jsx (Quick Launch,
                             Pipeline and the Checklist: the Overview's rail from 1440px
-                            and the Launch page, #301), extras.js (weather, the clock
+                            and the Launch page, #301), OverviewLayout.jsx and
+                            OverviewRail.jsx (the Overview's frame, and its rail, a chunk
+                            of its own, #532), extras.js (weather, the clock
                             and the web search, #307), overviewSections.js (the
                             Overview's show/hide switches, #307), customGroups.js (the
                             custom groups, by service uid, #517), useMediaQuery.js (a
@@ -380,10 +383,30 @@ there are several). No name is built in.
 
 Gitea is not read every cycle (`gitea.js`, #249): a poll every 5 minutes
 (`GITEA_POLL_MS`, Jag's decision on #249) is one `repos/search` request and one
-commits request per repo (`fetchRepoCommits`), on the branch `repos/search`
-gives as the repo's `default_branch` (none given: Gitea's own default), so
-the request count per poll is what it was and a repo whose default branch
-isn't `main` shows. Between polls the cycle gets the last poll's result with
+request per repo (`fetchRepoPipeline`), however many rows it gives (#532). A
+repo with Actions (`has_actions` in `repos/search`) is read through its latest
+push runs (`/actions/runs?event=push&limit=10`): a row per commit and branch
+they ran on, the run's title, branch and short SHA, and the commit's CI result
+from the newest run of each workflow on it, judged by the status rules' one
+table (`judgeCiRuns` in `server/status/rules.js`, ADR 0006): failed is `crit`
+"Failed"; running, waiting or queued the no-signal ring ("Running",
+"Waiting", "Queued"); passed `ok` "Passed"; cancelled or skipped `unknown`,
+saying which. A full page of 10 runs leaves out the commit its oldest run
+is on (unless it is the only one): its other workflows may be on the next
+page, and four workflows a push (ilaaj-nanoclaw) would otherwise read as
+passed on the two the page holds. A repo with Actions off is read through
+its commits (`fetchRepoCommits`, without diff stats, files or signature
+checks: `stat=false&verification=false&files=false`, a third smaller and
+about three times as fast) on the branch `repos/search` gives as its
+`default_branch` (none given: Gitea's own default), with no CI result: no
+lamp, never a failure. So is a repo whose runs answer has no run (Actions on
+but no workflow, or no Actions API, a 404): that poll costs it a second
+request, and for the next hour (`NO_RUNS_RECHECK_MS`) it is read through its
+commits alone, so the steady state is one request per repo; an hour rather
+than until a restart, so a repo given its first workflow shows its lamps
+within the hour. Gitea answers both without an ETag, so nothing is asked
+conditionally. Pipeline is information, not monitoring: a failed run is no
+entity, issue or push. Between polls the cycle gets the last poll's result with
 no request; one poll runs at a time. A failed poll is tried again after 30 s
 (`GITEA_RETRY_MS`), then twice as long each time up to 5 minutes, and until
 one answers the cycle has a Gitea error (the Gitea source failed). The list is
@@ -2458,7 +2481,7 @@ flowchart TD
   phone's first load doesn't carry it: `OverviewBoard` asks for it as it mounts,
   beside the status poll, and draws nothing under the status until it is in
   when the model has a job, so it never moves Services as it comes (the
-  desktop's first load counts it, `scripts/first-load.mjs` DESKTOP_CHUNK).
+  desktop's first load counts it, `scripts/first-load.mjs` DESKTOP_CHUNKS).
   Below 768px the same list is under the nodes on Infrastructure
   (`PhoneJobs.jsx`, its own chunk, asked for with that tab, the last thing on
   it; `PhoneView.jsx` gives it to the tab as `after`, and the Android app
@@ -2502,12 +2525,16 @@ flowchart TD
 - **Utilities: the rail and the Launch page** (#301, spec §8 item 5). Quick
   Launch, Pipeline and the Checklist are one component each in `src/ui`
   (`utilities.jsx`), fed by `src/shell/utilities.js` and wired in
-  `src/shell/Utilities.jsx`, and drawn in two places. The Launch page
+  `src/shell/Utilities.jsx`, and drawn in two places, each a chunk of its own,
+  so a phone's first load carries none of them (#532). The Launch page
   (`/launch`, `LaunchPage.jsx`, its own chunk) holds all three at every width:
   Quick Launch across the top, Pipeline and the Checklist side by side from
   672px of page. From 1440px (`RAIL_WIDTH` in `@ui/app-shell`, `(width >=
-  90rem)`, beside `PHONE_WIDTH`) the Overview's frame (`OverviewLayout`)
-  draws the same panels in a rail beside its sections, the mock's widths
+  90rem)`, beside `PHONE_WIDTH`) the Overview's frame (`OverviewLayout.jsx`)
+  draws the same panels in a rail beside its sections (`OverviewRail.jsx`,
+  `loadOverviewRail`: its column is laid out at once and the panels drawn in
+  it once the chunk is in, so the sections never move; the desktop's first
+  load counts it), the mock's widths
   (`flex: 1 1 300px`, 280 to 340px). Narrower, the rail is not rendered at
   all, so nothing is drawn twice or polled off screen; the sections keep their
   place in the tree either way (only the wrapper's class changes), so crossing
@@ -2519,7 +2546,9 @@ flowchart TD
   `links`, every group with a link in the config's order (the old board drew
   only the first three), a link opening in Settings → Layout's target, one the
   browser can't open (`safeUrl`) left out; Pipeline is `/api/gitea/activity`,
-  the newest six commits across the repos (message, repo, short SHA, age), no
+  the newest six commits across the repos, each the mock's row (#532): the
+  CI result's lamp and "repo · CI Passed" (with no CI result, "repo ·
+  message"), over "branch · sha", the age, and the message in its tooltip; no
   panel when Gitea isn't set up (`giteaConfigured`, `utilities.js`),
   and a Banner over the last rows when the read fails; the Checklist is
   `/api/todos` (`useTodos`): each add, tick and delete saves the whole list
@@ -2852,8 +2881,8 @@ stack sits beside today's CSS and must not restyle it.
   at 390px; and, apart
   and in no total, what a phone fetches once the browser is idle after that,
   the detail screens' chunk (#309, `PHONE_IDLE_CHUNK`). A desktop's first
-  screen counts the Jobs section's chunk and what it imports
-  (`DESKTOP_CHUNK`, #578), which a phone's never loads.
+  screen counts the Jobs section's and the utilities rail's chunks and what
+  they import (`DESKTOP_CHUNKS`, #578, #532), which a phone's never loads.
 - **The Android app's status components are the shared ones** (#287): its
   StatusLamp, StatusWord, IssueRow, SubsystemStrip and SystemStatusCard moved
   from `mobile/src/components/` into `src/ui/` (SystemStatusCard became

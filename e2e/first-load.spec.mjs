@@ -90,7 +90,7 @@ test('the first screen fetches what scripts/first-load.mjs counts, and the float
   expect(
     [...fetched].sort(),
     'the first screen fetches what scripts/first-load.mjs counts: update its list (FACES, ' +
-      'LOGO, DESKTOP_CHUNK) when the first screen draws something else'
+      'LOGO, DESKTOP_CHUNKS) when the first screen draws something else'
   ).toEqual(counted());
   expect([...fetched].some((path) => LAYER.test(path))).toBe(false);
 

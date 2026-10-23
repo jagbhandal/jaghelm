@@ -27,7 +27,8 @@ A small made-up homelab, laid out the way a new install lays out its own:
   live board shows an outage.
 - The **UPS** in the Power section (on mains, 100 % charge), and from 1440px
   wide the utilities rail's **Quick Launch** links, **Pipeline** (recent
-  commits) and **Checklist** (all three on the Launch page at any width).
+  commits with their CI results: one running, one failed on a branch, a repo
+  without CI) and **Checklist** (all three on the Launch page at any width).
 - The **Jobs** section (#578): four jobs, one a failed backup, whose runs fall on their schedules,
   which the demo's reporters keep in UTC and say so ("daily at 02:00 (UTC)");
   run times are shown in your browser's time zone.

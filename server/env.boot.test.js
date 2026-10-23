@@ -134,7 +134,7 @@ test("today's names: the server starts and reads its sources as before, one depr
   assert.ok(!out.includes(GITEA_TOKEN), 'the token is never logged');
   // Gitea polled under the old names: the token in the header, the repo's default branch.
   assert.ok(seen.some(([u, auth]) => u === '/api/v1/repos/search?limit=20' && auth === `token ${GITEA_TOKEN}`), JSON.stringify(seen));
-  assert.ok(seen.some(([u]) => u === '/api/v1/repos/o/r/commits?limit=5&sha=trunk'), JSON.stringify(seen));
+  assert.ok(seen.some(([u]) => u === '/api/v1/repos/o/r/commits?limit=5&sha=trunk&stat=false&verification=false&files=false'), JSON.stringify(seen));
   assert.ok(seen.some(([u]) => u.startsWith('/api/v1/query')), 'Prometheus read');
   assert.ok(!lines.some((l) => l.level === 'error'), out);
 });
