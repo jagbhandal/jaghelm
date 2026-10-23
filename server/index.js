@@ -25,6 +25,10 @@
  *   server/integrations/ — preset gallery + fetch handler
  */
 
+// First, before any module reads the environment (env.js, at import): the .env
+// in the working directory, for `npm start` (#249). A variable already set in
+// the process wins; under Docker, compose's env_file sets them all.
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
@@ -32,8 +36,6 @@ import helmet from 'helmet';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
-import dotenv from 'dotenv';
-dotenv.config();
 
 // Subsystem initializers + persistent state
 import { loadConfig, startConfigWatcher, stopConfigWatcher } from './config.js';

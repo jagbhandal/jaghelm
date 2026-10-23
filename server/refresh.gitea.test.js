@@ -517,11 +517,11 @@ test('Gitea is polled every 5 minutes, not every cycle: between polls nothing is
   assert.equal(calls.length, 4, 'the next poll, at 5 minutes');
 });
 
-test('a failed poll is a cycle error and a 502 until the next poll, with no request between (#249)', async (t) => {
-  t.mock.timers.enable({ apis: ['Date'], now: 2_000_000 });
+test('a failed poll keeps the last list, its age in Last-Modified, and is retried after 30 s, then twice as long each time up to 5 minutes (#249)', async (t) => {
+  const T0 = 2_000_000_000_000;
+  t.mock.timers.enable({ apis: ['Date'], now: T0 });
   giteaWith([['a', 'main']]);
-  await refreshGitea();
-  assert.ok(Array.isArray(getCached('gitea')));
+  const good = await refreshGitea();
   const app = express();
   app.use('/api', infrastructureRoutes);
 
@@ -531,17 +531,78 @@ test('a failed poll is a cycle error and a 502 until the next poll, with no requ
   let res;
   await captureLogs(async () => {
     assert.equal(await refreshGitea(), null);
-    t.mock.timers.tick(60_000);
     errors = await runCycleRefreshes([['gitea', refreshGitea]]);
     res = await request(app).get('/api/gitea/activity');
   });
-  assert.deepEqual(errors, ['gitea'], 'still failed: the status model keeps Gitea failed');
-  assert.equal(res.status, 502, 'the old list is not served as if Gitea answered');
-  assert.equal(calls.length, 1, 'one request: the failed poll');
+  assert.deepEqual(errors, ['gitea'], 'failed: the status model has Gitea failed');
+  assert.equal(res.status, 200, 'the last list is still served');
+  assert.deepEqual(res.body, good);
+  assert.equal(res.headers['last-modified'], new Date(T0).toUTCString(), 'its age: when Gitea last answered');
+  assert.equal(calls.length, 1);
 
-  t.mock.timers.tick(GITEA_POLL_MS);
+  // Retried after 30 s, 60 s, 120 s, 240 s, then every 5 minutes; nothing between.
+  await captureLogs(async () => {
+    for (const wait of [30_000, 60_000, 120_000, 240_000, GITEA_POLL_MS, GITEA_POLL_MS]) {
+      const before = calls.length;
+      t.mock.timers.tick(wait - 1);
+      await refreshGitea();
+      assert.equal(calls.length, before, `nothing before ${wait} ms`);
+      t.mock.timers.tick(1);
+      await refreshGitea();
+      assert.equal(calls.length, before + 1, `a retry at ${wait} ms`);
+    }
+  });
+});
+
+test('the last list is served for two polls after Gitea last answered, then the route answers 502 (#249)', async (t) => {
+  const T0 = 2_100_000_000_000;
+  t.mock.timers.enable({ apis: ['Date'], now: T0 });
   giteaWith([['a', 'main']]);
-  assert.deepEqual(await runCycleRefreshes([['gitea', refreshGitea]]), [], 'recovered at the next poll');
+  await refreshGitea();
+  const app = express();
+  app.use('/api', infrastructureRoutes);
+  searchAnswers(503, '', 'text/plain');
+
+  await captureLogs(async () => {
+    t.mock.timers.tick(2 * GITEA_POLL_MS - 1);
+    await refreshGitea();
+    assert.equal((await request(app).get('/api/gitea/activity')).status, 200);
+    t.mock.timers.tick(1);
+    assert.equal((await request(app).get('/api/gitea/activity')).status, 502);
+  });
+});
+
+test('one poll at a time: calls while a poll runs share it (#249)', async () => {
+  const calls = giteaWith([['a', 'main'], ['b', 'main']]);
+  const [x, y, z] = await Promise.all([refreshGitea(), refreshGitea(), runCycleRefreshes([['gitea', refreshGitea]])]);
+  assert.equal(x, y);
+  assert.deepEqual(z, []);
+  assert.equal(calls.length, 3, 'repos/search and two commits requests, once');
+});
+
+test('a Gitea failure is logged when it starts and when it clears, not at every poll (#249)', async (t) => {
+  const T0 = 2_200_000_000_000;
+  t.mock.timers.enable({ apis: ['Date'], now: T0 });
+  searchAnswers(503, '', 'text/plain');
+  const lines = await captureLogs(async () => {
+    await refreshGitea();
+    for (const wait of [30_000, 60_000, 120_000]) {
+      t.mock.timers.tick(wait);
+      await refreshGitea();
+    }
+    giteaWith([['a', 'main']]);
+    t.mock.timers.tick(240_000);
+    await refreshGitea();
+    t.mock.timers.tick(GITEA_POLL_MS);
+    await refreshGitea();
+  });
+  assert.deepEqual(
+    asLogged(lines).filter((l) => l.level !== 'debug'),
+    [
+      { level: 'error', module: 'refresh', msg: 'Gitea refresh error: no repo list in the answer', status: 503 },
+      { level: 'info', module: 'refresh', msg: 'Gitea answers again', failedPolls: 4, downSec: 450 },
+    ]
+  );
 });
 
 test('the old names GITEA_URL and GITEA_TOKEN still work, for one release (#249)', async () => {

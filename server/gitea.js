@@ -6,17 +6,22 @@
  * every refresh cycle: a poll is one repos/search request and one commits
  * request per repo (fetchRepoCommits), on the branch repos/search names as the
  * repo's default. Between polls, refreshGitea answers the last poll's result
- * without a request, so a failed poll stays a cycle error (the status model's
- * Gitea source) until the next one. The cached payload lives two polls, so
- * /api/gitea/activity never polls Gitea itself between them; a failed poll
- * drops it, and the route answers 502 until a poll succeeds.
+ * without a request; one poll runs at a time.
+ *
+ * A failed poll is retried sooner: after GITEA_RETRY_MS (30 s), then twice as
+ * long each time, up to GITEA_POLL_MS. Until a poll answers, refreshGitea
+ * answers null, a cycle error (the status model's Gitea source failed), and
+ * the last list Gitea gave stays cached: /api/gitea/activity serves it with
+ * its age (Last-Modified, when Gitea last answered) for two polls after that
+ * answer, then 502. A failure is logged when it starts (the first failed
+ * poll's line) and when it clears, not at every poll.
  *
  * Without JAGHELM_GITEA_URL (or its old name, GITEA_URL, env.js) no Gitea is
  * set up: nothing is polled, and the payload says so. The token is
  * JAGHELM_GITEA_TOKEN (or GITEA_TOKEN).
  */
 
-import { deleteCached, setCache } from './cache.js';
+import { setCache } from './cache.js';
 import { envValue } from './env.js';
 import { safeFetch } from './httpClient.js';
 import { sourceUrl, sourceUrlSet } from './sourceUrls.js';
@@ -29,6 +34,9 @@ const log = createLogger('refresh');
 
 /** How often Gitea is polled (#249). */
 export const GITEA_POLL_MS = 5 * 60_000;
+
+/** The first retry after a failed poll; each next one waits twice as long, up to GITEA_POLL_MS. */
+export const GITEA_RETRY_MS = 30_000;
 
 // The repos one poll reads (one repos/search page), and the commits per repo.
 const REPO_LIMIT = 20;
@@ -43,15 +51,19 @@ export function giteaConfigured() {
   return sourceUrlSet('gitea');
 }
 
-// The last poll: when it started (null: none yet) and what it answered (null:
-// it failed).
-let polledAt = null;
+// When the next poll is due (null: at once), what the last one answered (null:
+// it failed), and the failed polls in a row, since when.
+let dueAt = null;
 let lastResult = null;
+let failedPolls = 0;
+let failingSince = null;
 
-/** Forget the last poll, so the next refresh polls (tests). */
+/** Forget the polls so far, so the next refresh polls (tests). */
 export function _resetGiteaPoll() {
-  polledAt = null;
+  dueAt = null;
   lastResult = null;
+  failedPolls = 0;
+  failingSince = null;
 }
 
 // The longest Gitea message the log keeps, in characters.
@@ -138,17 +150,17 @@ export async function fetchRepoCommits(url, repo, opts) {
 
 /**
  * Recent commits across the Gitea's repos (found with repos/search), polled
- * when due: at the first call, then once GITEA_POLL_MS has passed since the
- * last poll started. Otherwise the last poll's result, without a request.
- * `now` is the clock (tests).
+ * when due: at the first call, GITEA_POLL_MS after a poll that answered, and
+ * sooner after one that failed (see the top). Otherwise the last poll's
+ * result, without a request. `now` is the clock (tests).
  *
  * The payload is the repos with recent commits, newest first, or
  * GITEA_NOT_CONFIGURED when no Gitea URL is set, which polls nothing. null
- * (nothing cached) when the poll failed, so the route answers 502. A
- * repos/search answer without a repo list fails it too, with a log line giving
- * the status and what Gitea said (#399), and so does every repo's commits
- * request failing. Some of them failing leaves those repos out. Logged errors
- * are redacted (see giteaLogText).
+ * when the last poll failed: the last list stays cached for its two polls,
+ * then the route answers 502. A repos/search answer without a repo list fails
+ * a poll too, with a log line giving the status and what Gitea said (#399),
+ * and so does every repo's commits request failing. Some of them failing
+ * leaves those repos out. Logged errors are redacted (see giteaLogText).
  *
  * A Gitea URL with a user or password (#419) is refused: the panel is off as
  * without one, nothing is polled or logged (the boot warned it once), and the
@@ -164,15 +176,36 @@ async function giteaWhenDue(now) {
     setCache('gitea', GITEA_NOT_CONFIGURED);
     return GITEA_NOT_CONFIGURED;
   }
-  if (polledAt !== null && now - polledAt < GITEA_POLL_MS) return lastResult;
-  polledAt = now;
-  lastResult = await pollGitea(url, envValue('JAGHELM_GITEA_TOKEN'));
-  if (lastResult === null) deleteCached('gitea');
-  else setCache('gitea', lastResult, null, { ttlMs: 2 * GITEA_POLL_MS });
-  return lastResult;
+  if (dueAt !== null && now < dueAt) return lastResult;
+  const polled = await pollGitea(url, envValue('JAGHELM_GITEA_TOKEN'));
+  if (polled.ok) {
+    if (failedPolls > 0) {
+      log.info({ failedPolls, downSec: Math.round((now - failingSince) / 1000) }, 'Gitea answers again');
+    }
+    failedPolls = 0;
+    failingSince = null;
+    dueAt = now + GITEA_POLL_MS;
+    lastResult = polled.result;
+    setCache('gitea', lastResult, null, { ttlMs: 2 * GITEA_POLL_MS });
+    return lastResult;
+  }
+  // The first failed poll of a run logs why; the rest of the run at debug.
+  if (failedPolls === 0) {
+    failingSince = now;
+    log.error(polled.fields, polled.msg);
+  } else {
+    log.debug({ ...polled.fields, failedPolls: failedPolls + 1 }, polled.msg);
+  }
+  failedPolls += 1;
+  dueAt = now + Math.min(GITEA_RETRY_MS * 2 ** (failedPolls - 1), GITEA_POLL_MS);
+  lastResult = null;
+  return null;
 }
 
-/** One poll: the payload, or null when it failed (logged here). */
+/**
+ * One poll: `{ ok: true, result }`, or `{ ok: false, fields, msg }`, the line
+ * that says why it failed (giteaWhenDue logs it).
+ */
 async function pollGitea(url, token) {
   try {
     // Header, not ?token= — Gitea logs full request URLs, which would leak it.
@@ -182,11 +215,11 @@ async function pollGitea(url, token) {
     const reposData = await giteaBody(reposRes);
     const list = giteaRepoList(reposData);
     if (!list) {
-      log.error(
-        { status: reposRes.status, message: giteaErrorMessage(reposData, token) },
-        'Gitea refresh error: no repo list in the answer'
-      );
-      return null;
+      return {
+        ok: false,
+        fields: { status: reposRes.status, message: giteaErrorMessage(reposData, token) },
+        msg: 'Gitea refresh error: no repo list in the answer',
+      };
     }
     const repos = list
       .filter((r) => !r.fork && !r.mirror && !r.archived)
@@ -196,7 +229,7 @@ async function pollGitea(url, token) {
         defaultBranch: typeof r.default_branch === 'string' && r.default_branch ? r.default_branch : null,
       }));
 
-    if (repos.length === 0) return [];
+    if (repos.length === 0) return { ok: true, result: [] };
 
     const repoCommits = await Promise.allSettled(repos.map((repo) => fetchRepoCommits(url, repo, opts)));
 
@@ -204,14 +237,14 @@ async function pollGitea(url, token) {
     // failing, an empty list would read as a Gitea with no recent commits.
     const failed = repoCommits.filter((r) => r.status === 'rejected');
     if (failed.length === repos.length) {
-      log.error(
-        { repos: repos.length, err: giteaErrorText(failed[0].reason, token) },
-        'Gitea refresh error: every commits request failed'
-      );
-      return null;
+      return {
+        ok: false,
+        fields: { repos: repos.length, err: giteaErrorText(failed[0].reason, token) },
+        msg: 'Gitea refresh error: every commits request failed',
+      };
     }
 
-    return repoCommits
+    const result = repoCommits
       .filter((r) => r.status === 'fulfilled' && r.value.commits.length > 0)
       .map((r) => r.value)
       .sort((a, b) => {
@@ -219,8 +252,8 @@ async function pollGitea(url, token) {
         const bDate = b.commits[0]?.date || '';
         return new Date(bDate) - new Date(aDate);
       });
+    return { ok: true, result };
   } catch (err) {
-    log.error({ err: giteaErrorText(err, token) }, 'Gitea refresh error');
-    return null;
+    return { ok: false, fields: { err: giteaErrorText(err, token) }, msg: 'Gitea refresh error' };
   }
 }

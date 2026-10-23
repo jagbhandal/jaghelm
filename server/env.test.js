@@ -130,24 +130,76 @@ const VALUES = {
   JAGHELM_GITEA_TOKEN: 'tok-new-9a8b7c', // pragma: allowlist secret
   NPM_PASS: 'npm-pass-3c4d', // pragma: allowlist secret
   JAGHELM_NPM_PASS: 'npm-pass-3c4d', // pragma: allowlist secret
+  ARCANE_IMAGE_CHECK_HOURS: 'six-hours-q',
   PORT: 'port-http-x',
-  LOG_LEVEL: 'loud-level-y',
+  JAGHELM_BLOCK_PRIVATE_NETWORKS: 'yes-strict-z',
+  JAGHELM_MONITOR_STALE_MS: 'ten-minutes-y',
 };
 
-test('the boot report: one warning per old name, the conflict saying which is used, one error per invalid value, no value anywhere', () => {
+test('the boot report: one warning per old name, the conflict saying which is used, one line per invalid value, no value anywhere', () => {
   const { lines, logger } = recorder();
   const ok = reportEnv(logger, VALUES);
 
-  assert.equal(ok, false, 'an invalid value stops the start');
+  assert.equal(ok, false, 'a bad PORT or JAGHELM_BLOCK_PRIVATE_NETWORKS stops the start');
+  const refuse = "JagHelm won't start until it is fixed";
   assert.deepEqual(lines, [
     ['warn', { variable: 'GITEA_URL', use: 'JAGHELM_GITEA_URL' }, 'GITEA_URL is deprecated: rename it to JAGHELM_GITEA_URL. The next release reads only JAGHELM_GITEA_URL'],
     ['warn', { variable: 'GITEA_TOKEN', use: 'JAGHELM_GITEA_TOKEN' }, 'GITEA_TOKEN and JAGHELM_GITEA_TOKEN are both set and differ: using JAGHELM_GITEA_TOKEN. Remove GITEA_TOKEN, which is deprecated'],
     ['warn', { variable: 'NPM_PASS', use: 'JAGHELM_NPM_PASS' }, 'NPM_PASS is deprecated: rename it to JAGHELM_NPM_PASS. The next release reads only JAGHELM_NPM_PASS'],
-    ['error', { variable: 'PORT' }, "PORT must be a port number from 0 to 65535: JagHelm won't start until it is fixed"],
-    ['error', { variable: 'LOG_LEVEL' }, "LOG_LEVEL must be one of debug, info, warn, error, silent: JagHelm won't start until it is fixed"],
+    ['warn', { variable: 'ARCANE_IMAGE_CHECK_HOURS' }, 'ARCANE_IMAGE_CHECK_HOURS must be a whole number: using the default, 6'],
+    ['error', { variable: 'PORT' }, `PORT must be a port number from 0 to 65535: ${refuse}`],
+    ['error', { variable: 'JAGHELM_BLOCK_PRIVATE_NETWORKS' }, `JAGHELM_BLOCK_PRIVATE_NETWORKS must be true or false: ${refuse}`],
+    ['warn', { variable: 'JAGHELM_MONITOR_STALE_MS' }, 'JAGHELM_MONITOR_STALE_MS must be a number above 0: using the default, 600000'],
   ]);
   const text = JSON.stringify(lines);
   for (const value of Object.values(VALUES)) assert.ok(!text.includes(value), `${value} in ${text}`);
+});
+
+test('only PORT and JAGHELM_BLOCK_PRIVATE_NETWORKS refuse the start: no port to listen on, or a strict guard asked for and not given', () => {
+  assert.deepEqual(
+    ENV_SCHEMA.filter((d) => d.refuse).map((d) => d.name).sort(),
+    ['JAGHELM_BLOCK_PRIVATE_NETWORKS', 'PORT']
+  );
+  for (const raw of [{ PORT: 'http' }, { JAGHELM_BLOCK_PRIVATE_NETWORKS: 'yes' }, { JAGHELM_BLOCK_PRIVATE_NETWORKS: '1' }]) {
+    const { lines, logger } = recorder();
+    assert.equal(reportEnv(logger, raw), false, JSON.stringify(raw));
+    assert.deepEqual(lines.map(([level]) => level), ['error'], JSON.stringify(raw));
+  }
+});
+
+test('a value the old code let through starts, with one warning naming the variable, on the safe default', () => {
+  const tolerated = {
+    LOG_LEVEL: 'trace',
+    CSP_REPORT_ONLY: '0',
+    ARCANE_RELEASE_CHECK_HOURS: '6h',
+    ARCANE_POLL_SECONDS: '5m',
+    DEMO_MODE: '1',
+    JAGHELM_ALLOW_OPEN_SECRETS: 'yes',
+    DEMO_SCENARIO: 'chaos',
+    JAGHELM_ICON_CACHE_MAX_MB: '-1',
+    JAGHELM_PRESENCE_TTL_MS: '1d',
+  };
+  const { lines, logger } = recorder();
+  assert.equal(reportEnv(logger, tolerated), true, 'it starts');
+  assert.deepEqual(
+    lines.map(([level, fields]) => [level, fields.variable]),
+    Object.keys(tolerated)
+      .sort((a, b) => ENV_SCHEMA.findIndex((d) => d.name === a) - ENV_SCHEMA.findIndex((d) => d.name === b))
+      .map((name) => ['warn', name])
+  );
+  for (const [, , msg] of lines) assert.match(msg, /: using the default, /);
+  // The safe side: CSP enforced, the secrets API closed, no demo, info logs.
+  assert.equal(envValue('CSP_REPORT_ONLY', tolerated), false);
+  assert.equal(envValue('JAGHELM_ALLOW_OPEN_SECRETS', tolerated), false);
+  assert.equal(envValue('DEMO_MODE', tolerated), false);
+  assert.equal(envValue('LOG_LEVEL', tolerated), 'info');
+  assert.equal(envValue('ARCANE_RELEASE_CHECK_HOURS', tolerated), 6);
+  assert.equal(envValue('JAGHELM_ICON_CACHE_MAX_MB', tolerated), 50);
+
+  // Once per process: a second report says nothing more.
+  const again = recorder();
+  assert.equal(reportEnv(again.logger, tolerated), true);
+  assert.deepEqual(again.lines, []);
 });
 
 test('the boot report warns for an old name once per process, however often it runs', () => {

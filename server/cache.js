@@ -64,14 +64,6 @@ export function setCache(key, data, internal = null, { ttlMs = CACHE_TTL_MS } = 
   boundedSet(cache, key, { data, internal, ts: Date.now(), ttlMs, body: null, etag: null });
 }
 
-/**
- * Drop the value cached under `key`, so its route refreshes (or fails) rather
- * than serve it: the Gitea poll drops its last list when a poll fails (#249).
- */
-export function deleteCached(key) {
-  cache.delete(key);
-}
-
 /** Fill in `entry.body` (the JSON as a Buffer) and its strong `entry.etag`. */
 function serialize(entry) {
   entry.body = Buffer.from(JSON.stringify(entry.data));
@@ -159,13 +151,16 @@ export function jsonWithEtag(res, req, cacheKey, data, { lastModified = false } 
  *   payload or a falsy value if data isn't available yet.
  * @param {(res: import('express').Response) => *} opts.fallback  invoked when
  *   neither the cache nor the refresh produced data.
+ * @param {boolean} [opts.lastModified]  send the cached value's time as
+ *   Last-Modified (jsonWithEtag): its age, for a source not read every cycle
+ *   (Gitea, #249).
  */
-export async function respondWarmCached(req, res, { key, refresh, fallback }) {
+export async function respondWarmCached(req, res, { key, refresh, fallback, lastModified = false }) {
   const cached = getCached(key);
-  if (cached) return jsonWithEtag(res, req, key, cached);
+  if (cached) return jsonWithEtag(res, req, key, cached, { lastModified });
 
   const data = await refresh();
-  if (data) return jsonWithEtag(res, req, key, data);
+  if (data) return jsonWithEtag(res, req, key, data, { lastModified });
 
   return fallback(res);
 }

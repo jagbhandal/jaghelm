@@ -5,14 +5,20 @@
  *   GITEA_TOKEN, DASH_*, TRUST_PROXY) starts and reads Prometheus and Gitea
  *   as before, with one deprecation warning for each old name (GITEA_URL,
  *   GITEA_TOKEN) and no value in the log.
- * - A value that doesn't fit its variable stops the start: one error line
- *   names the variable, never the value, and nothing listens.
+ * - A value the old code let through (LOG_LEVEL=trace, CSP_REPORT_ONLY=0,
+ *   ARCANE_RELEASE_CHECK_HOURS=6h) starts: one warning names each variable,
+ *   never its value, and its default is used, the safe side (the CSP
+ *   enforced).
+ * - A bad PORT or JAGHELM_BLOCK_PRIVATE_NETWORKS stops the start: one error
+ *   line names each, never the value, and nothing listens.
+ * - `npm start` reads the .env in its working directory before any module
+ *   reads the environment, so LOG_LEVEL and JAGHELM_DATA_DIR there count.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,11 +34,13 @@ let dirs = 0;
 
 /**
  * Start the server with `vars` over a clean environment (PATH and HOME, none
- * of the runner's own variables), until `done(lines)` (asked as it writes and
- * every 50 ms) or it exits; stop it. Returns its output, its JSON lines and
- * the code it exited with on its own (null: it was still running).
+ * of the runner's own variables; a var given as undefined is left out), in
+ * `cwd`, until `done(lines)` (asked as it writes and every 50 ms) or it exits;
+ * stop it. `ready(port)` runs before it is stopped, when it listens. Returns
+ * its output, its JSON lines and the code it exited with on its own (null: it
+ * was still running).
  */
-async function boot(vars, done) {
+async function boot(vars, done, { cwd = root, ready } = {}) {
   const env = {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
@@ -42,7 +50,8 @@ async function boot(vars, done) {
     DASH_SECRET,
     ...vars,
   };
-  const child = spawn(process.execPath, [serverEntry], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  for (const [k, value] of Object.entries(env)) if (value === undefined) delete env[k];
+  const child = spawn(process.execPath, [serverEntry], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   const lines = () =>
     out
@@ -72,6 +81,8 @@ async function boot(vars, done) {
   });
   const running = code === null && child.exitCode === null;
   waiting = false;
+  const port = lines().find((l) => l.msg === 'listening')?.port;
+  if (running && port && ready) await ready(port);
   if (running) {
     child.kill('SIGTERM');
     const killer = setTimeout(() => child.kill('SIGKILL'), 10_000);
@@ -128,9 +139,43 @@ test("today's names: the server starts and reads its sources as before, one depr
   assert.ok(!lines.some((l) => l.level === 'error'), out);
 });
 
-test('an invalid value stops the start: one line names the variable, never its value, and nothing listens', async () => {
+test('a value the old code let through starts: one warning per variable, never its value, and the safe default (the CSP enforced)', async () => {
+  let csp;
   const { out, lines, code } = await boot(
-    { PROMETHEUS_URL: 'http://127.0.0.1:1', KUMA_URL: 'http://127.0.0.1:1', JAGHELM_ICON_CACHE_MAX_MB: 'lots-of-megs', CSP_REPORT_ONLY: 'maybe-later' },
+    {
+      PROMETHEUS_URL: 'http://127.0.0.1:1',
+      KUMA_URL: 'http://127.0.0.1:1',
+      LOG_LEVEL: 'trace',
+      CSP_REPORT_ONLY: '0',
+      ARCANE_RELEASE_CHECK_HOURS: '6h',
+    },
+    (ls) => ls.some((l) => l.msg === 'listening'),
+    {
+      ready: async (port) => {
+        const r = await fetch(`http://127.0.0.1:${port}/api/health`);
+        csp = [r.headers.get('content-security-policy'), r.headers.get('content-security-policy-report-only')];
+      },
+    }
+  );
+
+  assert.equal(code, null, `it started:\n${out}`);
+  assert.deepEqual(
+    lines.filter((l) => l.variable).map((l) => [l.level, l.variable, l.msg]),
+    [
+      ['warn', 'ARCANE_RELEASE_CHECK_HOURS', 'ARCANE_RELEASE_CHECK_HOURS must be a whole number: using the default, 6'],
+      ['warn', 'LOG_LEVEL', 'LOG_LEVEL must be one of debug, info, warn, error, silent: using the default, info'],
+      ['warn', 'CSP_REPORT_ONLY', 'CSP_REPORT_ONLY must be true or false: using the default, false'],
+    ],
+    out
+  );
+  for (const value of ['trace', '6h']) assert.ok(!out.includes(value), `${value} in:\n${out}`);
+  assert.ok(csp[0]?.includes("script-src 'self'"), `the CSP is enforced: ${csp}`);
+  assert.equal(csp[1], null, 'not report-only');
+});
+
+test('a bad PORT or JAGHELM_BLOCK_PRIVATE_NETWORKS stops the start: one line each names the variable, never its value, and nothing listens', async () => {
+  const { out, lines, code } = await boot(
+    { PROMETHEUS_URL: 'http://127.0.0.1:1', KUMA_URL: 'http://127.0.0.1:1', PORT: 'port-http-x', JAGHELM_BLOCK_PRIVATE_NETWORKS: 'yes-strict' },
     () => false
   );
 
@@ -138,11 +183,30 @@ test('an invalid value stops the start: one line names the variable, never its v
   assert.deepEqual(
     lines.filter((l) => l.level === 'error').map((l) => [l.variable, l.msg]),
     [
-      ['JAGHELM_ICON_CACHE_MAX_MB', "JAGHELM_ICON_CACHE_MAX_MB must be a number above 0: JagHelm won't start until it is fixed"],
-      ['CSP_REPORT_ONLY', "CSP_REPORT_ONLY must be true or false: JagHelm won't start until it is fixed"],
+      ['PORT', "PORT must be a port number from 0 to 65535: JagHelm won't start until it is fixed"],
+      ['JAGHELM_BLOCK_PRIVATE_NETWORKS', "JAGHELM_BLOCK_PRIVATE_NETWORKS must be true or false: JagHelm won't start until it is fixed"],
     ],
     out
   );
-  for (const value of ['lots-of-megs', 'maybe-later']) assert.ok(!out.includes(value), `${value} in:\n${out}`);
+  for (const value of ['port-http-x', 'yes-strict']) assert.ok(!out.includes(value), `${value} in:\n${out}`);
   assert.ok(!lines.some((l) => l.msg === 'listening'), out);
+});
+
+test('npm start reads its .env before any module reads the environment: LOG_LEVEL and JAGHELM_DATA_DIR there count', async () => {
+  const dir = join(root, 'dotenv');
+  mkdirSync(dir);
+  const dataDir = join(dir, 'state-from-dotenv');
+  writeFileSync(
+    join(dir, '.env'),
+    `LOG_LEVEL=debug\nJAGHELM_DATA_DIR=${dataDir}\nPROMETHEUS_URL=http://127.0.0.1:1\nKUMA_URL=http://127.0.0.1:1\n`
+  );
+  const { out, lines, code } = await boot(
+    { JAGHELM_DATA_DIR: undefined },
+    (ls) => ls.some((l) => l.msg === 'listening'),
+    { cwd: dir }
+  );
+
+  assert.equal(code, null, out);
+  assert.ok(lines.some((l) => l.level === 'debug'), `LOG_LEVEL=debug from .env: a debug line\n${out}`);
+  assert.ok(existsSync(dataDir), `JAGHELM_DATA_DIR from .env is the data dir\n${out}`);
 });

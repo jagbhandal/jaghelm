@@ -1,16 +1,20 @@
-### Breaking changes
-- **JagHelm checks its environment at start, and doesn't start on a value
-  that doesn't fit its variable** (a `PORT` that isn't a port number,
-  `LOG_LEVEL=verbose`, `CSP_REPORT_ONLY=yes`, a negative
-  `JAGHELM_ICON_CACHE_MAX_MB`). Such a value used to be ignored without a
-  word. The log names the variable and what it must be, never the value: fix
-  it in `.env` and start again. An empty `NAME=` line still counts as unset.
 ### Added
 - `JAGHELM_UPS_NAME` picks the UPS the UPS panel shows, by its name in NUT.
 ### Changed
+- JagHelm checks its environment at start. A value that doesn't fit its
+  variable (`LOG_LEVEL=trace`, `CSP_REPORT_ONLY=0`,
+  `ARCANE_RELEASE_CHECK_HOURS=6h`) used to be ignored or misread without a
+  word: now the log warns once, naming the variable and the default used
+  instead, never the value. Only a `PORT` that isn't a port number, or a
+  `JAGHELM_BLOCK_PRIVATE_NETWORKS` that isn't true or false, stops the start,
+  with a line naming it: fix it in `.env` and start again.
 - The Pipeline panel reads Gitea every 5 minutes instead of at every refresh,
-  about a tenth of the requests. A failed read shows until the next one.
+  about a tenth of the requests. A failed read is tried again after 30
+  seconds, then less often, and the panel keeps the last commits meanwhile,
+  for up to 10 minutes after Gitea last answered.
 - `env.example` now lists every variable JagHelm reads.
+- `npm start` reads `.env` before anything else, so `LOG_LEVEL` and
+  `JAGHELM_DATA_DIR` there now count. Docker installs are unchanged.
 ### Deprecated
 - The unprefixed names of the integration and Gitea variables (`GITEA_URL`,
   `GITEA_TOKEN`, `NPM_URL`, `SONARR_API_KEY` and the rest) still work in this

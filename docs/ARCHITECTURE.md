@@ -358,10 +358,15 @@ commits request per repo (`fetchRepoCommits`), on the branch `repos/search`
 gives as the repo's `default_branch` (none given: Gitea's own default), so
 the request count per poll is what it was and a repo whose default branch
 isn't `main` shows. Between polls the cycle gets the last poll's result with
-no request, so a failed poll stays a cycle error, and the Gitea source failed,
-until the next. The list is cached for two polls, so `/api/gitea/activity`
-never polls between them; a failed poll drops it, and the route answers 502
-until a poll succeeds. With no Gitea URL set, nothing is ever polled. The queries: `up` (max by node), CPU, memory (MemTotal, MemAvailable
+no request; one poll runs at a time. A failed poll is tried again after 30 s
+(`GITEA_RETRY_MS`), then twice as long each time up to 5 minutes, and until
+one answers the cycle has a Gitea error (the Gitea source failed). The list is
+cached for two polls after Gitea last answered, so `/api/gitea/activity`
+never polls between them and keeps serving the last list through a failure,
+its age in `Last-Modified` (when Gitea answered); past that the route answers
+502. A failure is logged when it starts (the first failed poll's line) and
+when it clears ("Gitea answers again", with the failed polls and how long),
+the polls between at debug. With no Gitea URL set, nothing is ever polled. The queries: `up` (max by node), CPU, memory (MemTotal, MemAvailable
 and MemFree in one selector), uptime, temperature, disk (size and free in one
 selector), and the containers' last-seen, CPU, memory, RX and TX rates, and RX
 and TX counters (the four network ones per interface). What they read:
@@ -1094,9 +1099,15 @@ Key properties:
   for the value, parsed, or the default when unset, and an empty `NAME=`
   counts as unset. A name the schema lacks throws, so a reader can't drift
   from it. The boot checks the whole environment once (`reportEnv`, first
-  thing in `boot()`): a value that doesn't fit its type stops the start with
-  one error line per variable, naming it and what it must be, never the
-  value, and the process exits 1. Names: the integration presets' variables
+  thing in `boot()`): a value that doesn't fit its type is warned once,
+  naming the variable, what it must be and the default used instead, never
+  the value, and the defaults are the safe side (the CSP enforced, the
+  secrets API closed, no demo). Only the variables marked `refuse` stop the
+  start, with an error line and exit 1: `PORT` (nothing to listen on) and
+  `JAGHELM_BLOCK_PRIVATE_NETWORKS` (a strict SSRF guard asked for would not
+  be given). `index.js` imports `dotenv/config` first, so the `.env` in the
+  working directory (`npm start`) is loaded before any module reads the
+  environment; a variable the process already has wins. Names: the integration presets' variables
   and the Pipeline panel's Gitea pair take the `JAGHELM_` prefix the docs
   promised (`JAGHELM_SONARR_URL`, `JAGHELM_GITEA_TOKEN`), so another service's
   variable in a shared env file can't be picked up; the server's own settings

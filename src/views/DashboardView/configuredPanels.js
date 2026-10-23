@@ -12,8 +12,9 @@ import { useMemo, useState } from 'react';
  *     Prometheus failed. A body without the field (demo data) counts as a UPS
  *     when it carries a reading.
  *   - Pipeline: `/api/gitea/activity` answers `{ configured: false }` when
- *     GITEA_URL is not set. A list is a Gitea that answered, and the endpoint's
- *     502 a Gitea that is set up and failing.
+ *     JAGHELM_GITEA_URL is not set (nor its old name, GITEA_URL, still read).
+ *     A list is a Gitea that answered (the last one it gave, while a poll
+ *     fails), and the endpoint's 502 a Gitea that is set up and failing.
  *
  * Each source's answer is true, false or null (not known: no answer yet, or a
  * failure that says nothing about it). True shows the panel. False hides it,

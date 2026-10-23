@@ -8,7 +8,7 @@
  *                               model (warm-cached via refresh loop)
  *   GET /api/gitea/activity   → recent commits, or { configured: false } without
  *                               JAGHELM_GITEA_URL (polled every 5 minutes,
- *                               gitea.js)
+ *                               gitea.js; Last-Modified: when Gitea answered)
  *   GET /api/history          → sparkline series (ETag, not cached)
  */
 
@@ -35,11 +35,14 @@ router.get('/ups', asyncHandler((req, res) =>
 
 // ── Gitea recent commits (warm-cached) ───────────────────────────────────
 
+// Last-Modified is when Gitea last answered: the list's age, which a failed
+// poll leaves growing (gitea.js, #249).
 router.get('/gitea/activity', asyncHandler((req, res) =>
   respondWarmCached(req, res, {
     key: 'gitea',
     refresh: refreshGitea,
     fallback: (r) => apiError(r, 502, 'Gitea data not yet available'),
+    lastModified: true,
   })
 ));
 

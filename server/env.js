@@ -6,11 +6,15 @@
  * variable by name (envValue), and gets the value checked and parsed, or the
  * default. A name the schema doesn't have is a bug, and throws.
  *
- * The boot checks the whole environment once (reportEnv, from index.js): a
- * value that doesn't fit its type stops the start, with one line naming the
- * variable and what it must be. No line ever carries a value, as most of them
- * are addresses, keys or passwords. An empty variable counts as unset, as
- * `X=` lines in a copied env.example are.
+ * The boot checks the whole environment once (reportEnv, from index.js). A
+ * value that doesn't fit its type is warned once, naming the variable, what it
+ * must be and the default used instead, which is the safe side (the CSP
+ * enforced, the secrets API closed, no demo). Only a bad PORT or
+ * JAGHELM_BLOCK_PRIVATE_NETWORKS stops the start (`refuse`): there is no port
+ * to listen on, or a strict SSRF guard was asked for and would not be given.
+ * No line ever carries a value, as most of them are addresses, keys or
+ * passwords. An empty variable counts as unset, as `X=` lines in a copied
+ * env.example are.
  *
  * Names: the integration presets' variables and the Pipeline panel's Gitea
  * pair take the `JAGHELM_` prefix the docs promise (`JAGHELM_SONARR_URL`,
@@ -42,8 +46,9 @@ import { z } from 'zod';
  * @property {string} name  the variable's name
  * @property {Kind} kind
  * @property {readonly string[]} legacy  older names it still answers to, for one release
- * @property {unknown} fallback  the value when it is unset (or, before the boot refuses it, invalid)
+ * @property {unknown} fallback  the value when it is unset or doesn't fit its type
  * @property {readonly string[]} [values]  an `enum`'s values
+ * @property {boolean} [refuse]  a value that doesn't fit stops the start (else it is warned, and the default used)
  * @property {boolean} [image]  set by the image, not by an install: not in env.example
  */
 
@@ -113,10 +118,10 @@ export const DEFAULT_BIND_HOST = '0.0.0.0';
 /**
  * @param {string} name
  * @param {Kind} kind
- * @param {{ legacy?: string[], fallback?: unknown, values?: readonly string[], image?: boolean }} [opts]
+ * @param {{ legacy?: string[], fallback?: unknown, values?: readonly string[], refuse?: boolean, image?: boolean }} [opts]
  * @returns {EnvVar}
  */
-function v(name, kind, { legacy = [], fallback, values, image } = {}) {
+function v(name, kind, { legacy = [], fallback, values, refuse, image } = {}) {
   const unset = kind === 'list' ? [] : kind === 'bool' ? false : '';
   return Object.freeze({
     name,
@@ -124,6 +129,7 @@ function v(name, kind, { legacy = [], fallback, values, image } = {}) {
     legacy: Object.freeze(legacy),
     fallback: fallback === undefined ? unset : fallback,
     ...(values && { values }),
+    ...(refuse && { refuse }),
     ...(image && { image }),
   });
 }
@@ -165,7 +171,7 @@ export const ENV_SCHEMA = Object.freeze([
   v('NODE_EXTRA_CA_CERTS', 'text'),
   // Secrets and sign-in.
   v('DASH_SECRET', 'secret'),
-  v('PORT', 'port', { fallback: 3099 }),
+  v('PORT', 'port', { fallback: 3099, refuse: true }),
   v('JAGHELM_HOST', 'text', { fallback: DEFAULT_BIND_HOST }),
   v('DASH_USER', 'text', { fallback: 'admin' }),
   v('DASH_PASS', 'secret'),
@@ -183,7 +189,7 @@ export const ENV_SCHEMA = Object.freeze([
   // HTTP.
   v('TRUST_PROXY', 'list'),
   v('CORS_ORIGIN', 'list'),
-  v('JAGHELM_BLOCK_PRIVATE_NETWORKS', 'bool'),
+  v('JAGHELM_BLOCK_PRIVATE_NETWORKS', 'bool', { refuse: true }),
   v('CSP_REPORT_ONLY', 'bool'),
   v('CSP_CONNECT_EXTRA', 'list'),
   // How long things count as present or fresh.
@@ -309,18 +315,21 @@ export function envFrom(name, raw) {
 
 /**
  * The whole environment checked: `problems`, one per variable whose value
- * doesn't fit its type ({ variable, message }), and `notices`, one per old
+ * doesn't fit its type ({ variable, message, refuse, fallback }: whether it
+ * stops the start, and the default used instead), and `notices`, one per old
  * name that is set ({ variable, use, message }). Neither carries a value.
  * @param {RawEnv} [raw]
  */
 export function checkEnv(raw = process.env) {
-  /** @type {{ variable: string, message: string }[]} */
+  /** @type {{ variable: string, message: string, refuse: boolean, fallback: unknown }[]} */
   const problems = [];
   /** @type {{ variable: string, use: string, message: string }[]} */
   const notices = [];
   for (const d of ENV_SCHEMA) {
     const { from, problem } = readEnv(d.name, raw);
-    if (problem && from) problems.push({ variable: from, message: problem });
+    if (problem && from) {
+      problems.push({ variable: from, message: problem, refuse: Boolean(d.refuse), fallback: d.fallback });
+    }
     for (const old of d.legacy) {
       const text = raw[old];
       if (text === undefined || text === '') continue;
@@ -338,27 +347,38 @@ export function checkEnv(raw = process.env) {
   return { problems, notices };
 }
 
-// The old names already warned about, so a second report doesn't repeat one.
-const warned = new Set();
+// The old names and the invalid variables already warned about, so a second
+// report doesn't repeat one.
+const warnedOld = new Set();
+const warnedInvalid = new Set();
 
 /**
  * The boot's check of the environment (index.js): one warning per old name
- * set (once per process), and one error line per invalid variable. Returns
- * whether the server can start: false when a value is invalid.
+ * set and one per variable whose value doesn't fit (the default is used),
+ * once per process each, and an error line per invalid variable that refuses
+ * (PORT, JAGHELM_BLOCK_PRIVATE_NETWORKS). Returns whether the server can
+ * start: false when one of those is invalid.
  * @param {{ warn: (fields: object, msg: string) => void, error: (fields: object, msg: string) => void }} logger
  * @param {RawEnv} [raw]
  */
 export function reportEnv(logger, raw = process.env) {
   const { problems, notices } = checkEnv(raw);
   for (const { variable, use, message } of notices) {
-    if (warned.has(variable)) continue;
-    warned.add(variable);
+    if (warnedOld.has(variable)) continue;
+    warnedOld.add(variable);
     logger.warn({ variable, use }, message);
   }
-  for (const { variable, message } of problems) {
-    logger.error({ variable }, `${message}: JagHelm won't start until it is fixed`);
+  let refused = false;
+  for (const { variable, message, refuse, fallback } of problems) {
+    if (refuse) {
+      refused = true;
+      logger.error({ variable }, `${message}: JagHelm won't start until it is fixed`);
+    } else if (!warnedInvalid.has(variable)) {
+      warnedInvalid.add(variable);
+      logger.warn({ variable }, `${message}: using the default, ${fallback}`);
+    }
   }
-  return problems.length === 0;
+  return !refused;
 }
 
 /**

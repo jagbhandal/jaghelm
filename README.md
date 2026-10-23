@@ -195,7 +195,7 @@ Open `http://your-host:3099`. On first boot JagHelm discovers the nodes Promethe
  
 ## Configuration
  
-Most things are configurable from the Settings UI (sidebar nav, 13 sections). For people who prefer files, everything is on disk too, in `data/` (or the directory `JAGHELM_DATA_DIR` names). Set `JAGHELM_DATA_DIR` in the process environment: in Docker, `environment:` or `env_file` both work; running `node server/index.js` directly, use systemd `Environment=` or the shell, not the `.env` the server loads itself, which it reads too late for this setting.
+Most things are configurable from the Settings UI (sidebar nav, 13 sections). For people who prefer files, everything is on disk too, in `data/` (or the directory `JAGHELM_DATA_DIR` names). Set `JAGHELM_DATA_DIR` like any other variable: in Docker, `environment:` or `env_file`; running `npm start`, the `.env` in its working directory, which it reads before anything else, or the process environment, which wins over `.env`.
  
 ```
 data/
@@ -217,7 +217,7 @@ A sign-in survives restarts and updates. It ends after 30 days without use, and 
  
 ### Environment variables
  
-The `.env` example above covers the required + commonly used vars. JagHelm checks the whole environment once at start: a value that doesn't fit its variable (a `PORT` that isn't a number, `LOG_LEVEL=loud`, `CSP_REPORT_ONLY=yes`) stops the start, with one log line naming the variable, never its value. An empty `NAME=` line counts as unset.
+The `.env` example above covers the required + commonly used vars. JagHelm checks the whole environment once at start: a value that doesn't fit its variable (`LOG_LEVEL=loud`, `CSP_REPORT_ONLY=yes`) is warned once in the log, naming the variable and the default used instead, never its value. The defaults are the safe side (the CSP enforced, the secrets API closed, no demo). Only a `PORT` that isn't a port number or a `JAGHELM_BLOCK_PRIVATE_NETWORKS` that isn't true or false stops the start. An empty `NAME=` line counts as unset.
 
 There's also a power-user escape hatch — every preset integration can be configured via env vars instead of the UI ([`env.example`](env.example) lists each preset's):
  
@@ -231,7 +231,7 @@ JAGHELM_ADGUARD_PASS=secret
 JAGHELM_NPM_URL=http://192.168.x.x:81
 ```
 
-The Pipeline panel (recent Gitea commits, on each repo's default branch, read every 5 minutes) reads `JAGHELM_GITEA_URL` and `JAGHELM_GITEA_TOKEN`, which the Gitea preset reads too. With `JAGHELM_GITEA_URL` unset, JagHelm polls no Gitea and the dashboard has no Pipeline panel.
+The Pipeline panel (recent Gitea commits, on each repo's default branch, read every 5 minutes; a failed read is tried again after 30 seconds, then less often, and the panel keeps the last commits for up to 10 minutes after Gitea last answered) reads `JAGHELM_GITEA_URL` and `JAGHELM_GITEA_TOKEN`, which the Gitea preset reads too. With `JAGHELM_GITEA_URL` unset, JagHelm polls no Gitea and the dashboard has no Pipeline panel.
 
 ```env
 JAGHELM_GITEA_URL=http://192.168.x.x:3000
