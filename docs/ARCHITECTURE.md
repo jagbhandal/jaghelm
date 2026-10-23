@@ -159,7 +159,8 @@ src/                        React 19 SPA (Vite 8)
                             Pipeline and the Checklist: the Overview's rail from 1440px
                             and the Launch page, #301), extras.js (weather, the clock
                             and the web search, #307), overviewSections.js (the
-                            Overview's show/hide switches, #307), useMediaQuery.js (a
+                            Overview's show/hide switches, #307), customGroups.js (the
+                            custom groups, by service uid, #517), useMediaQuery.js (a
                             width the markup changes at),
                             statusFreshness.js (the one rule for a stale status: whether
                             the poll's status is current, and how each place draws one
@@ -2043,7 +2044,8 @@ flowchart TD
   board's service cards: the node panels draw none, the custom groups are its
   grouping rather than panels of their own (a saved layout's `group-` slots
   are dropped), and no card is dragged between panels any more, so a custom
-  group's services are chosen in Settings → Sections. It reads the header's
+  group's services are chosen in Settings → Sections (see "Custom groups"
+  below). It reads the header's
   poll for the model, and the board's own `/api/services` (the latency, Kuma's
   last response time) and `/api/integrations` (one headline metric, matched
   by `useAppDataMatching` and keyed by the service's uid, so a container of
@@ -2060,8 +2062,8 @@ flowchart TD
   Grouped by node (services.yaml's order, the node's key beside its name, "7
   / 8 up") or, once Settings has a custom group, by custom group (until then
   Group is disabled, with a link to Settings → Sections; Settings'
-  order, a container named by uid or by name, the rest under "Not in a
-  group", each row with its node beside the name); within a group the worst
+  order, the rest under "Not in a group", each row with its node beside the
+  name); within a group the worst
   first, then by name. services.yaml has no tags, so there is no grouping by
   tag. The choice is kept per browser (`prefs`,
   `jaghelm-services-grouping`), by node by default. The heading counts what
@@ -2080,6 +2082,39 @@ flowchart TD
   and numbers kept, and the count says "12 monitored · No signal · last known
   3 min ago". Kuma's heartbeat strip isn't drawn: the server keeps no
   per-monitor history yet (#312).
+- **Custom groups** (#517, `src/shell/customGroups.js`). Settings →
+  Sections makes them; the Services section groups by them. A group is
+  `{ id, title, containers }` in the display config's `customGroups`, and
+  `containers` holds service uids (`pi-1:adguard-home`), the model's key: so
+  `adguard-home` on two Pis is two services, and a Kuma monitor with no
+  container (`pi-1:Home Assistant`) can be grouped too. Settings lists every
+  service of `/api/status` (with `/api/services`' cards the model lacks), by
+  name and node; a service is in one group. The key keeps its old name, so a
+  tab still on an older build reads the groups. An entry that is no
+  service's uid is a bare container name, as Settings saved before #517: it
+  holds every service of that name, as it always did. Settings writes the
+  groups back as uids at its next change of one (`migrateGroups`): a name as
+  the uids it holds then, a name that holds none dropped, an entry on a node
+  the server knows kept while no service has it. That needs the whole list
+  (`complete`: the status, `/api/services` and services.yaml read, Prometheus
+  and Kuma up, no node unread, unreachable or hidden): until then a name is
+  kept beside the uids it holds, an entry that holds nothing is kept, and a
+  service a name holds can't be taken out, so no save loses a service it
+  can't see. With the services not read, a change keeps the entries as they
+  are. Other saves leave a name as it is. A group has no icon, colour or
+  hidden flag any more: the icon and colour drew nothing since #295, and a
+  hidden group could hide a down service (the Overview's show/hide is
+  Settings → Appearance's, #307). `useConfigPersistence` reads every copy
+  without them and the old board's `sections['group-<id>']`
+  (`dropDeadGroupKeys`), so dropping them is never an edit of the device's
+  own: a load alone sends nothing, a rebase can't undo another device's
+  group edit, and the next save goes without them. The server stores either
+  shape as it is and warns about neither. A tab still on the old build reads
+  uids in its Services section (#300); its Settings shows a uid as it is,
+  and a click there saves a bare name, which holds the service on every
+  node.
+  Settings → Sections' titles and icons for the old board's sections (UPS,
+  Pipeline, Quick Launch, the Checklist) go with that board (#306).
 - **Utilities: the rail and the Launch page** (#301, spec §8 item 5). Quick
   Launch, Pipeline and the Checklist are one component each in `src/ui`
   (`utilities.jsx`), fed by `src/shell/utilities.js` and wired in
@@ -3035,6 +3070,8 @@ All state is files under the data dir (no DB):
   `src/shell/overviewSections.js`): `showTodos`, Widgets' old "Show
   checklist panel", which nothing drawn ever read, and `showDockerStats`.
   Nothing else changes; the server's copy loses them at the next save.
+  `customGroups` holds service uids; a group's old icon, colour and hidden
+  are read as absent and go at the next save (#517, "Custom groups").
   - **A save needs the version it read** (#547), by `services.yaml`'s
     mechanism (`util/fileVersion.js`, #423): a device open from before
     another's save used to post its whole old copy, so a section hidden on
