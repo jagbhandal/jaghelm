@@ -61,6 +61,7 @@ import { Sparkline } from '@ui/sparkline';
 import { UptimeBar } from '@ui/uptime-bar';
 import { EntityRow } from '@ui/entity-row';
 import { FactList } from '@ui/fact-list';
+import { DetailLinks, DetailMeters, DetailSections, DetailUnread } from '@ui/entity-detail';
 import { Table } from '@ui/table';
 import { InfrastructureSection } from '@ui/infrastructure-section';
 import { ServicesSection } from '@ui/services-section';
@@ -1886,6 +1887,169 @@ function FactListLongState() {
   );
 }
 
+// The detail's parts (#310), as src/shell/detail/entityExtras.js builds them:
+// a Proxmox node, and a service with a container and an integration.
+const DETAIL_NODE_METERS = [
+  { key: 'cpu', label: 'CPU', value: 23.8, unit: '%', max: 100, state: 'ok', warn: 90, band: 5 },
+  { key: 'mem', label: 'Memory', value: 62.2, unit: '%', max: 100, state: 'ok', warn: 90, band: 5 },
+  { key: 'disk', label: 'Disk', value: 60.6, unit: '%', max: 100, state: 'ok', ...LINES.disk },
+  {
+    key: 'temp',
+    label: 'Temp',
+    value: 51,
+    unit: '°C',
+    max: 100,
+    state: 'ok',
+    warn: 75,
+    crit: 85,
+    band: 5,
+  },
+];
+const DETAIL_NODE_SECTIONS = [
+  {
+    key: 'vms',
+    kind: 'vms',
+    title: 'Virtual machines',
+    aside: '2 / 3 running',
+    vms: [
+      {
+        key: '103',
+        name: 'docker-brain',
+        status: 'Running',
+        running: true,
+        detail: '8 vCPU · 21.4 / 32.0 GB · ID 103',
+      },
+      {
+        key: '101',
+        name: 'staging',
+        status: 'Running',
+        running: true,
+        detail: '4 vCPU · 3.1 / 8.0 GB · ID 101',
+      },
+      { key: '110', name: 'win11', status: 'Stopped', running: false, detail: '4 vCPU · ID 110' },
+    ],
+  },
+  {
+    key: 'pools',
+    kind: 'meters',
+    title: 'Storage pools',
+    meters: [
+      {
+        key: 'pool:local',
+        label: 'local',
+        value: 12.8,
+        unit: '%',
+        max: 100,
+        state: 'ok',
+        ...LINES.disk,
+        caption: '12.0 / 94.0 GB · dir',
+      },
+      {
+        key: 'pool:local-lvm',
+        label: 'local-lvm',
+        value: 94.6,
+        unit: '%',
+        max: 100,
+        state: 'warn',
+        ...LINES.disk,
+        caption: '851.2 / 900.0 GB · lvmthin',
+      },
+    ],
+  },
+  {
+    key: 'backup',
+    kind: 'facts',
+    title: 'Last backup',
+    facts: [
+      { key: 'when', label: 'When', value: '3 h ago' },
+      { key: 'result', label: 'Result', value: 'OK' },
+      { key: 'vms', label: 'Backed up', value: '2 VMs' },
+    ],
+  },
+];
+const DETAIL_SERVICE_SECTIONS = [
+  {
+    key: 'container',
+    kind: 'facts',
+    title: 'Container',
+    aside: 'jellyfin',
+    facts: [
+      { key: 'cpu', label: 'CPU', value: '11.8 %' },
+      { key: 'memory', label: 'Memory', value: '1.3 GB' },
+      { key: 'rx', label: 'RX', value: '1.1 MB/s' },
+      { key: 'tx', label: 'TX', value: '6.2 MB/s' },
+    ],
+  },
+  {
+    key: 'integration',
+    kind: 'facts',
+    title: 'From jellyfin',
+    facts: [
+      { key: 'Movies', label: 'Movies', value: '1,204' },
+      { key: 'Shows', label: 'Shows', value: '87' },
+    ],
+    note: 'Its last read failed: HTTP 502',
+  },
+];
+
+/** The detail's title, an h2 as the drawer's and the sheet's, over its sections' h3s. */
+function DetailTitle({ children }) {
+  return (
+    <h2 style={{ fontSize: 20, lineHeight: '26px', fontWeight: 700, color: 'var(--jh-text-1)' }}>
+      {children}
+    </h2>
+  );
+}
+
+function EntityDetailNodeState() {
+  return (
+    <Stack width={420} gap={20}>
+      <DetailTitle>App Server</DetailTitle>
+      <DetailMeters meters={DETAIL_NODE_METERS} />
+      <FactList
+        facts={[
+          { key: 'uptime', label: 'Uptime', value: '12d 3h' },
+          { key: 'memory', label: 'Memory', value: '9.7 / 15.6 GB' },
+          { key: 'disk', label: 'Disk', value: '148.6 / 245.1 GB' },
+        ]}
+      />
+      <DetailSections sections={DETAIL_NODE_SECTIONS} />
+      <DetailLinks
+        primary={{ key: 'proxmox', label: 'Open Proxmox', href: '#proxmox', app: false }}
+        links={[{ key: 'grafana', label: 'Grafana', href: '#grafana', app: true }]}
+        settings={{ key: 'settings', label: 'Node settings', href: '#settings', app: true }}
+      />
+    </Stack>
+  );
+}
+
+function EntityDetailServiceState() {
+  return (
+    <Stack width={420} gap={20}>
+      <DetailTitle>Jellyfin</DetailTitle>
+      <FactList
+        facts={[
+          { key: 'latency', label: 'Latency', value: '64 ms' },
+          { key: 'uptime', label: 'Uptime · 24 h', value: '99.9 %' },
+          { key: 'node', label: 'Node', value: 'App Server' },
+        ]}
+      />
+      <DetailSections sections={DETAIL_SERVICE_SECTIONS} />
+      <DetailUnread
+        unread={[{ key: 'integrations', what: "the integrations' stats", error: 'HTTP 502' }]}
+      />
+      <DetailLinks
+        primary={{ key: 'open', label: 'Open Jellyfin', href: '#jellyfin', app: true }}
+        links={[
+          { key: 'kuma', label: 'Uptime Kuma', href: '#kuma', app: true },
+          { key: 'grafana', label: 'Grafana', href: '#grafana', app: false },
+        ]}
+        settings={{ key: 'settings', label: 'Service settings', href: '#settings', app: true }}
+      />
+    </Stack>
+  );
+}
+
 function TableState() {
   return (
     <Table caption="Nodes" columns={NODE_COLUMNS} rows={NODES} onRowOpen={noop} minWidth={720} />
@@ -2526,6 +2690,8 @@ export const RENDERS = Object.freeze({
   'entity-row-narrow': () => <EntityRowState width={390} />,
   'fact-list': FactListState,
   'fact-list-long': FactListLongState,
+  'entity-detail-node': EntityDetailNodeState,
+  'entity-detail-service': EntityDetailServiceState,
   table: TableState,
   'table-empty': TableEmptyState,
   'table-scroll': TableScrollState,

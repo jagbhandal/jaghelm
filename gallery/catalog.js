@@ -227,6 +227,17 @@ export const CATALOG = Object.freeze([
   s('entity-row-narrow', 'Data', 'EntityRow: below 672px, the newest 12 beats'),
   s('fact-list', 'Data', "FactList: the drawer's and the phone's"),
   s('fact-list-long', 'Data', 'FactList: values with no break in them, a URL, a SHA and a host'),
+  s(
+    'entity-detail-node',
+    'Data',
+    "The detail's parts: a Proxmox node's meters, machines, pools on the disk rule, last backup and links",
+    { accent: true }
+  ),
+  s(
+    'entity-detail-service',
+    'Data',
+    "The detail's parts: a service's container and integration stats, a read that failed, its links"
+  ),
   s('table', 'Data', 'Table: rows that open, numbers, a status cell'),
   s('table-empty', 'Data', 'Table: no rows'),
   s('table-scroll', 'Data', 'Table: wider than its frame, scrolling inside it'),

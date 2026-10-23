@@ -10,6 +10,7 @@ import { detailLoading, sinceLine } from '../data/detail.js';
 import { AndroidLoading } from '../components/AndroidLoading.jsx';
 import { Button } from '@ui/button';
 import { FactList } from '@ui/fact-list';
+import { DetailSections, DetailUnread } from '@ui/entity-detail';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import UptimeRing from '../components/UptimeRing.jsx';
@@ -68,9 +69,12 @@ function pushSeverityLamp(severity) {
  * push's event that the status no longer has: its event, severity and
  * time, as the Android look says them. An id the model has nothing by (it
  * was removed or renamed, or the link is old): "No longer monitored"; a
- * failed source that answers again: resolved. Drawn before the status and
- * the cards have answered, it waits for them; with no status to read, it
- * says why, never "resolved".
+ * failed source that answers again: resolved. On the web, the facts and
+ * sections the desktop's drawer shows (#310, `data.extras`,
+ * src/shell/PhoneDetail.jsx): the UPS's charge, runtime, load and model, an
+ * integration's stats, a job's node. Drawn before the status and the cards
+ * have answered, it waits for them; with no status to read, it says why,
+ * never "resolved".
  */
 export default function IncidentDetail(props) {
   if (__ANDROID_LOOK__) return <AndroidIncidentDetail {...props} />;
@@ -140,14 +144,17 @@ function WebIncidentDetail({ data, nav, params }) {
   }
 
   const kind = incident.readout.split(' · ')[0] || 'Alert';
-  const facts = [
-    readings && { key: 'ups', label: 'UPS', value: readings },
-    card?.uptime24 != null && {
-      key: 'uptime',
-      label: 'Uptime · 24 h',
-      value: `${uptimePct(card.uptime24)} %`,
-    },
-  ].filter(Boolean);
+  const extras = data.extras ?? null;
+  const facts =
+    extras?.facts ??
+    [
+      readings && { key: 'ups', label: 'UPS', value: readings },
+      card?.uptime24 != null && {
+        key: 'uptime',
+        label: 'Uptime · 24 h',
+        value: `${uptimePct(card.uptime24)} %`,
+      },
+    ].filter(Boolean);
   return (
     <>
       <BackHeader kind={kind} onBack={nav.pop} />
@@ -161,6 +168,8 @@ function WebIncidentDetail({ data, nav, params }) {
           note={issue ? `Active — ${incident.readout}` : undefined}
         />
         <FactList facts={facts} />
+        <DetailSections sections={extras?.sections} />
+        <DetailUnread unread={extras?.unread} />
         {card?.url && (
           <Button
             variant="primary"
