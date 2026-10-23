@@ -1,6 +1,6 @@
 /**
  * Arcane dry run (the logic behind scripts/arcane-poll-once.js).
- * Runs the real poller twice over throwaway temp stores; sends no push.
+ * Runs the real poller twice over throwaway in-memory state; queues and sends no push.
  * With --vuln-digest, runs the weekly vulnerability digest instead (vulnDigestOnce.js).
  * With --record <dir>, writes responses projected to the fields the client
  * reads, anonymized (one anonymizer for the whole recording, so a container keeps
@@ -9,8 +9,7 @@
  * environment. The API key is never printed. Returns an exit code (0 clean, 1 a
  * pass reported read errors, 2 bad usage); never calls process.exit.
  */
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
+import { mkdirSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { readArcaneConfig } from './config.js';
 import { createArcaneClient } from './client.js';
@@ -92,20 +91,19 @@ export async function runPollOnce({
     appVersion: () => real.appVersion(),
   };
 
-  const dir = mkdtempSync(join(tmpdir(), 'arcane-poll-once-'));
-  const stateStore = createArcaneStateStore({ path: join(dir, 'arcane-state.json') });
-  const heldBackStore = createHeldBackStore({ path: join(dir, 'arcane-held-back.json') });
+  const stateStore = createArcaneStateStore();
+  const heldBackStore = createHeldBackStore();
   const runs = [];
   const poller = createArcanePoller({
     client,
     stateStore,
     heldBackStore,
     recordRun: (r) => runs.push(r),
-    dispatch: async (events) => {
-      for (const e of events) out('  would push:', JSON.stringify(e));
+    notices: {
+      commit(events) {
+        for (const e of events) out('  would push:', JSON.stringify(e));
+      },
     },
-    pushStore: null,
-    fcm: null,
     checkOnlyEnvs: cfg.checkOnlyEnvs,
     checkEverySeconds: cfg.checkEverySeconds,
     logger: { debug() {}, info() {}, warn: (...a) => err(JSON.stringify(a[1] ?? a[0])), error: (...a) => err(JSON.stringify(a[1] ?? a[0])) },
@@ -123,65 +121,61 @@ export async function runPollOnce({
       return [];
     }
   };
-  try {
-    for (const pass of [1, 2]) {
-      out(`--- pass ${pass}${pass === 1 ? ' (baseline)' : ''} ---`);
-      const { events, errors } = await poller.pollOnce();
-      if (errors.length > 0) readErrors = true;
-      out(JSON.stringify({ events, errors, cronRuns: runs.splice(0) }, null, 2));
-      const envs = await listEnvs();
-      const health = {};
-      const held = {};
-      for (const e of envs) {
-        const key = envKey(e);
-        if (!key) continue;
-        health[key] = envHealth(e);
-        held[key] = heldBackStore.getNode(key);
-      }
-      out(JSON.stringify({ health, heldBack: held }, null, 2));
+  for (const pass of [1, 2]) {
+    out(`--- pass ${pass}${pass === 1 ? ' (baseline)' : ''} ---`);
+    const { events, errors } = await poller.pollOnce();
+    if (errors.length > 0) readErrors = true;
+    out(JSON.stringify({ events, errors, cronRuns: runs.splice(0) }, null, 2));
+    const envs = await listEnvs();
+    const health = {};
+    const held = {};
+    for (const e of envs) {
+      const key = envKey(e);
+      if (!key) continue;
+      health[key] = envHealth(e);
+      held[key] = heldBackStore.getNode(key);
     }
-    if (recordDir) {
-      // History and job runs are fetched here too, independent of the poller's own gates.
-      const envs = await listEnvs();
-      for (const e of envs) {
-        if (envHealth(e) !== 'up' || !envKey(e)) continue;
-        try {
-          await client.updaterHistory(e.id);
-        } catch (e2) {
-          err(`updater-history not recorded for ${envKey(e)}: ${e2?.message}`);
-        }
-        try {
-          await client.listActivities(e.id, 'job_run', 50);
-        } catch (e2) {
-          err(`activities-job_run not recorded for ${envKey(e)}: ${e2?.message}`);
-        }
+    out(JSON.stringify({ health, heldBack: held }, null, 2));
+  }
+  if (recordDir) {
+    // History and job runs are fetched here too, independent of the poller's own gates.
+    const envs = await listEnvs();
+    for (const e of envs) {
+      if (envHealth(e) !== 'up' || !envKey(e)) continue;
+      try {
+        await client.updaterHistory(e.id);
+      } catch (e2) {
+        err(`updater-history not recorded for ${envKey(e)}: ${e2?.message}`);
       }
       try {
-        single.set('app-version.json', { kind: 'app-version', body: await client.appVersion() });
+        await client.listActivities(e.id, 'job_run', 50);
       } catch (e2) {
-        err(`app-version not recorded: ${e2?.message}`);
+        err(`activities-job_run not recorded for ${envKey(e)}: ${e2?.message}`);
       }
-      mkdirSync(recordDir, { recursive: true });
-      const files = [];
-      const anon = createAnonymizer();
-      const write = (name, kind, body) => {
-        const projected = projectFixture(kind, body, anon);
-        writeFileSync(join(recordDir, name), JSON.stringify(projected, null, 2) + '\n');
-        files.push(name);
-      };
-      for (const [name, { kind, body }] of single) write(name, kind, body);
-      for (const [name, { kind, byKey }] of candidates) {
-        const keys = [...byKey.keys()].sort();
-        const hasRows = (b) => (Array.isArray(b) ? b : b?.data)?.length > 0;
-        const pick = keys.find((k) => hasRows(byKey.get(k))) ?? keys[0];
-        if (pick !== undefined) write(name, kind, byKey.get(pick));
-      }
-      out(`recorded: ${files.sort().join(', ')} -> ${recordDir}`);
     }
-    return readErrors ? 1 : 0;
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      single.set('app-version.json', { kind: 'app-version', body: await client.appVersion() });
+    } catch (e2) {
+      err(`app-version not recorded: ${e2?.message}`);
+    }
+    mkdirSync(recordDir, { recursive: true });
+    const files = [];
+    const anon = createAnonymizer();
+    const write = (name, kind, body) => {
+      const projected = projectFixture(kind, body, anon);
+      writeFileSync(join(recordDir, name), JSON.stringify(projected, null, 2) + '\n');
+      files.push(name);
+    };
+    for (const [name, { kind, body }] of single) write(name, kind, body);
+    for (const [name, { kind, byKey }] of candidates) {
+      const keys = [...byKey.keys()].sort();
+      const hasRows = (b) => (Array.isArray(b) ? b : b?.data)?.length > 0;
+      const pick = keys.find((k) => hasRows(byKey.get(k))) ?? keys[0];
+      if (pick !== undefined) write(name, kind, byKey.get(pick));
+    }
+    out(`recorded: ${files.sort().join(', ')} -> ${recordDir}`);
   }
+  return readErrors ? 1 : 0;
 }
 
 /**

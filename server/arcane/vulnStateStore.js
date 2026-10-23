@@ -1,30 +1,36 @@
 /**
- * Persisted state of the weekly vulnerability digest (arcane-vuln-state.json).
+ * The weekly vulnerability digest's state.
  *
  * Per environment: the critical/high finding keys seen at the last digest, the KEV
  * count then, the images then stale or failed (so only a newly stale or failed one
  * pushes), and when it ran. Plus the time of the last digest run, so a restart can
- * tell whether it missed a weekly slot. A separate file from arcane-state.json, so the
- * poller's frequent small writes never rewrite the (larger) key sets.
+ * tell whether it missed a weekly slot.
  *
- * Same idiom as stateStore: a Map (environment names are untrusted), a tolerant load()
- * that never throws, bounded contents, and atomicWriteFileSync only when something
- * actually changed. Persisted shape:
+ * Held in memory. Since #581 the digest's notices persist it (arcane/notices.js):
+ * `toFile()` goes into push-snapshot.json in the same write that queues the run's
+ * pushes, and `initial` is what that file holds (or the arcane-vuln-state.json
+ * of an older JagHelm, as notices.js picks). The file is rewritten with every push
+ * and history change, so the key sets ride along: compact (below), about 42 KB for
+ * a few thousand findings; the digest itself changes them weekly.
+ *
+ * Same idiom as stateStore: a Map (environment names are untrusted), a tolerant load
+ * that never throws, bounded contents, and a `revision()` that moves only when
+ * something actually changed. Shape:
  *   { lastRunMs, order,
- *     envs: { [name]: { kev, atMs, stale, failed, keys: [[repo, id, pkg, sev], ...] } } }
- * `keys` is sorted; sev is 'C' or 'H'. `stale` and `failed` are sorted image names. `order` is true insertion order (JSON object key
- * order puts integer-like names first).
+ *     envs: { [name]: { kev, atMs, stale, failed, keys: { [repo]: 'hhhhhhhhhhS hhhhhhhhhhS …' } } } }
+ * `keys` holds each repository's findings as space-separated tokens, sorted: the
+ * finding's findingHash (vulnDerive.js: 10 characters of its id and package) and its
+ * severity, 'C' or 'H' (#581 review: about 12 bytes a finding, against ~60 for the
+ * whole id and package; 3462 findings in ~42 KB). Entries in memory are
+ * { repo, hash, sev }, keyed as vulnDerive keys a finding. The shape the file and the
+ * first #581 snapshots had, a list of [repo, id, pkg, sev], is read and hashed, so no
+ * finding reads as new after the upgrade. `stale` and `failed` are sorted image names.
+ * `order` is true insertion order (JSON object key order puts integer-like names first).
  */
-import { readFileSync, existsSync, mkdirSync } from 'fs';
-import { dirname, join } from 'path';
-import { atomicWriteFileSync } from '../util/atomicWrite.js';
-import { DATA_DIR } from '../util/dataDir.js';
 import { createLogger } from '../util/logger.js';
-import { findingKey } from './vulnDerive.js';
+import { findingHash, hashKey, isFindingHash } from './vulnDerive.js';
 
 const log = createLogger('arcane-vuln-state');
-
-const DEFAULT_PATH = join(DATA_DIR, 'arcane-vuln-state.json');
 
 const MAX_ENVS = 50;
 // Critical/high keys per environment. A larger set is refused, never truncated (a cut key
@@ -39,16 +45,30 @@ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const isMs = (v) => Number.isInteger(v) && v >= 0;
 const cmpStr = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
-/** One key entry from [repo, id, pkg, sev] or { repo, id, pkg, sev }, or null. */
+/**
+ * One key entry, { repo, hash, sev }, or null. From [repo, id, pkg, sev] (the old
+ * shape), { repo, id, pkg, sev } (a current finding) or { repo, hash, sev } (one kept).
+ */
 function sanitizeEntry(x) {
   const [repo, id, pkg, sev] = Array.isArray(x) ? x : isObj(x) ? [x.repo, x.id, x.pkg, x.sev] : [];
-  if (!isStr(repo) || !isStr(id) || !isStr(pkg) || !SEVERITIES.has(sev)) return null;
-  return {
-    repo: repo.slice(0, MAX_FIELD),
-    id: id.slice(0, MAX_FIELD),
-    pkg: pkg.slice(0, MAX_FIELD),
-    sev,
-  };
+  if (!isStr(repo) || !SEVERITIES.has(sev)) return null;
+  let hash = isObj(x) && isFindingHash(x.hash) ? x.hash : null;
+  if (hash === null) {
+    if (!isStr(id) || !isStr(pkg)) return null;
+    hash = findingHash(id.slice(0, MAX_FIELD), pkg.slice(0, MAX_FIELD));
+  }
+  return { repo: repo.slice(0, MAX_FIELD), hash, sev };
+}
+
+/** The entries of the compact shape, { [repo]: 'hhhhhhhhhhS …' }; a token that isn't one is dropped. */
+function* compactEntries(byRepo) {
+  for (const repo of Object.keys(byRepo)) {
+    if (typeof byRepo[repo] !== 'string') continue;
+    for (const token of byRepo[repo].split(' ')) {
+      const hash = token.slice(0, -1);
+      if (isFindingHash(hash)) yield { repo, hash, sev: token.slice(-1) };
+    }
+  }
 }
 
 /** Entries to a sorted key Map; a repeated key keeps the worse severity. Not bounded. */
@@ -57,11 +77,23 @@ function sanitizeKeys(list) {
   for (const x of list) {
     const e = sanitizeEntry(x);
     if (!e) continue;
-    const key = findingKey(e.repo, e.id, e.pkg);
+    const key = hashKey(e.repo, e.hash);
     const prev = out.get(key);
     if (!prev || (prev.sev === 'H' && e.sev === 'C')) out.set(key, e);
   }
   return new Map([...out].sort(([a], [b]) => cmpStr(a, b)));
+}
+
+/** The compact shape of a key Map: each repository's tokens, sorted, joined by spaces. */
+function compactKeys(keys) {
+  const byRepo = new Map();
+  for (const { repo, hash, sev } of keys.values()) {
+    if (!byRepo.has(repo)) byRepo.set(repo, []);
+    byRepo.get(repo).push(`${hash}${sev}`);
+  }
+  const repos = [...byRepo.keys()].sort(cmpStr);
+  // fromEntries defines own properties, so a '__proto__' repository stays a plain key.
+  return Object.fromEntries(repos.map((repo) => [repo, byRepo.get(repo).sort(cmpStr).join(' ')]));
 }
 
 /** Image names: unique non-empty strings, capped in length, sorted, at most MAX_NAMES. */
@@ -73,7 +105,7 @@ function sanitizeNames(list) {
 
 function sanitizeEnv(raw) {
   const r = isObj(raw) ? raw : {};
-  let keys = sanitizeKeys(Array.isArray(r.keys) ? r.keys : []);
+  let keys = sanitizeKeys(Array.isArray(r.keys) ? r.keys : isObj(r.keys) ? compactEntries(r.keys) : []);
   if (keys.size > MAX_KEYS) {
     // Only a hand-edited file gets here: setEnv refuses a larger set.
     log.warn(
@@ -108,14 +140,17 @@ const copyEnv = (rec) => ({
   keys: new Map([...rec.keys].map(([k, e]) => [k, { ...e }])),
 });
 
-export function createVulnStateStore({ path = DEFAULT_PATH } = {}) {
+/**
+ * @param {object} [opts]
+ * @param {unknown} [opts.initial]  the state as toFile() gave it (anything else starts empty)
+ */
+export function createVulnStateStore({ initial } = {}) {
   const envs = new Map();
   let lastRunMs = null;
+  let revision = 0;
 
-  function load() {
+  function load(parsed) {
     try {
-      if (!existsSync(path)) return;
-      const parsed = JSON.parse(readFileSync(path, 'utf8'));
       if (!isObj(parsed)) return;
       const raw = isObj(parsed.envs) ? parsed.envs : {};
       const rawKeys = Object.keys(raw);
@@ -136,31 +171,27 @@ export function createVulnStateStore({ path = DEFAULT_PATH } = {}) {
       lastRunMs = null;
     }
   }
-  load();
+  load(initial);
 
-  function save() {
-    try {
-      const dir = dirname(path);
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      const out = [...envs].map(([name, rec]) => [
-        name,
-        {
-          kev: rec.kev,
-          atMs: rec.atMs,
-          stale: rec.stale,
-          failed: rec.failed,
-          keys: [...rec.keys.values()].map((e) => [e.repo, e.id, e.pkg, e.sev]),
-        },
-      ]);
-      // fromEntries defines own properties, so a '__proto__' name stays a plain key.
-      // Compact: thousands of keys would be a line each when indented.
-      atomicWriteFileSync(
-        path,
-        JSON.stringify({ lastRunMs, envs: Object.fromEntries(out), order: [...envs.keys()] })
-      );
-    } catch (err) {
-      log.error({ err }, 'Failed to save Arcane vulnerability digest state');
-    }
+  /** A change to persist with the run's notices. */
+  function changed() {
+    revision += 1;
+  }
+
+  /** The state as the file holds it (the shape arcane-vuln-state.json had); copies. */
+  function toFile() {
+    const out = [...envs].map(([name, rec]) => [
+      name,
+      {
+        kev: rec.kev,
+        atMs: rec.atMs,
+        stale: [...rec.stale],
+        failed: [...rec.failed],
+        keys: compactKeys(rec.keys),
+      },
+    ]);
+    // fromEntries defines own properties, so a '__proto__' name stays a plain key.
+    return { lastRunMs, envs: Object.fromEntries(out), order: [...envs.keys()] };
   }
 
   /** Whether the environment has had its silent baseline. */
@@ -176,15 +207,15 @@ export function createVulnStateStore({ path = DEFAULT_PATH } = {}) {
     return [...envs.keys()];
   }
 
-  /** The environment's last digest ({ keys: Map, kev, atMs, stale, failed }, a copy), or null. */
+  /** The environment's last digest ({ keys: Map of key -> { repo, hash, sev }, kev, atMs, stale, failed }, a copy), or null. */
   function getEnv(name) {
     const rec = envs.get(name);
     return rec ? copyEnv(rec) : null;
   }
 
   /**
-   * Record a digest (or the baseline): keys (a Map of key -> { repo, id, pkg, sev }, or
-   * a list of entries), the KEV count (null when unknown), the stale and failed image
+   * Record a digest (or the baseline): keys (a Map of key -> { repo, id, pkg, sev } or
+   * { repo, hash, sev }, or a list of entries), the KEV count (null when unknown), the stale and failed image
    * names, and the time. Evicts the oldest-inserted environment beyond MAX_ENVS, never
    * the one being written. Returns false, writing nothing, for invalid input or more
    * than MAX_KEYS keys.
@@ -214,7 +245,7 @@ export function createVulnStateStore({ path = DEFAULT_PATH } = {}) {
       if (envs.size <= MAX_ENVS) break;
       if (k !== name) envs.delete(k);
     }
-    save();
+    changed();
     return true;
   }
 
@@ -225,8 +256,19 @@ export function createVulnStateStore({ path = DEFAULT_PATH } = {}) {
   function setLastRun(ms) {
     if (!isMs(ms) || ms === lastRunMs) return;
     lastRunMs = ms;
-    save();
+    changed();
   }
 
-  return { isKnown, knownCount, knownNames, getEnv, setEnv, getLastRun, setLastRun };
+  return {
+    isKnown,
+    knownCount,
+    knownNames,
+    getEnv,
+    setEnv,
+    getLastRun,
+    setLastRun,
+    toFile,
+    /** How many changes it has had: the same number, nothing to write. */
+    revision: () => revision,
+  };
 }

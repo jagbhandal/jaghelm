@@ -311,10 +311,15 @@ test('#267: an unreadable file starts with no history and no snapshot, one warn 
 
     // One warn: what was lost, counted, never quoted (#504).
     assert.equal(lines.length, 1);
-    assert.equal(lines[0].msg, 'unreadable push snapshot moved aside: starting with no snapshot, outbox or history');
+    assert.equal(
+      lines[0].msg,
+      'unreadable push snapshot moved aside: starting with no snapshot, outbox, history or Arcane state; ' +
+        'Arcane starts from silent baselines, so what changed since its last write is not pushed, ' +
+        'and an Arcane release or offline agent already pushed may be pushed again'
+    );
     assert.deepEqual(
       { ...lines[0].fields, parseError: undefined },
-      { parseError: undefined, movedTo: aside[0], bytes: Buffer.byteLength(broken), queued: 2, events: 3 }
+      { parseError: undefined, movedTo: aside[0], bytes: Buffer.byteLength(broken), queued: 2, events: 3, producers: 0 }
     );
     assert.equal(typeof lines[0].fields.parseError.reason, 'string');
     assert.doesNotMatch(JSON.stringify(lines), /Hunter2/);

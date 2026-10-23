@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -594,6 +594,100 @@ test('#579: a file an older JagHelm wrote (no outbox) is read as before; one wit
     await resumed.cycle(board('a'));
     await resumed.sender.idle();
     assert.deepEqual(fcm.sent, ['p service_down n1:a']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── #581: producers other than the refresh loop (the Arcane poller, the digest) ──
+
+const offline = { type: 'arcane_agent_offline', id: 'arcane:pi-2:agent', node: 'pi-2', title: 'Arcane · pi-2', body: 'Agent disconnected', severity: 'warning' };
+const back = { ...offline, type: 'arcane_agent_recovered', body: 'Agent reconnected', severity: 'info' };
+const update = { type: 'arcane_update', id: 'arcane:vm-103:update', node: 'vm-103', title: 'Updates · vm-103', body: '1 updated: gitea', severity: 'info' };
+
+test("#581: notify writes a producer's state with its events recorded and queued, in one write; the next process reads it back", async () => {
+  const { dir, path } = tmp();
+  let writes = 0;
+  const write = (file, data) => {
+    writes += 1;
+    atomicWriteFileSync(file, data);
+  };
+  const fcm = heldFcm();
+  const p = pushHalf(path, { fcm, write });
+  try {
+    await p.cycle(board());
+    writes = 0;
+    const state = { seen: ['run-1'] };
+    p.snapshot.notify('arcane', state, [update]);
+    state.seen.push('run-2'); // the producer's later changes stay out of the file until its next notify
+    assert.equal(writes, 1);
+    const file = onDisk(path);
+    assert.deepEqual(file.producers, { arcane: { seen: ['run-1'], savedAt: T0 } }, 'with when it was written (#581 review)');
+    assert.deepEqual(file.outbox.map((e) => e.event), [update]);
+    assert.deepEqual(file.history.events.map((e) => [e.type, e.push.state]), [['arcane_update', 'queued']]);
+    assert.equal(file.services['n1:a'], 'up', "push's snapshot as it was");
+
+    // The refresh loop's own writes keep it.
+    await p.cycle(board('a'));
+    assert.deepEqual(onDisk(path).producers, { arcane: { seen: ['run-1'], savedAt: T0 } });
+    const next = createPushSnapshot({ path, logger: silent });
+    assert.deepEqual(next.producerState('arcane'), { savedAt: T0, state: { seen: ['run-1'] } });
+    assert.equal(next.producerState('arcane-vulns'), undefined);
+    assert.equal(next.unreadable(), false);
+    assert.deepEqual(next.prev(), board('a'), 'not a snapshot field');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#581: a producer's agent offline and its recovery, both unsent, leave the outbox together; push off records them off and queues nothing", () => {
+  const { dir, path } = tmp();
+  try {
+    const on = createPushSnapshot({ path, logger: silent, now: () => T0 });
+    on.notify('arcane', { n: 1 }, [offline]);
+    on.notify('arcane', { n: 2 }, [update]);
+    on.notify('arcane', { n: 3 }, [back]);
+    assert.deepEqual(pending(on), ['arcane_update arcane:vm-103:update']);
+    assert.deepEqual(
+      on.events().events.map((e) => [e.type, e.push.state]),
+      [
+        ['arcane_agent_recovered', 'dropped'],
+        ['arcane_update', 'queued'],
+        ['arcane_agent_offline', 'dropped'],
+      ]
+    );
+
+    const off = createPushSnapshot({ path: join(dir, 'off.json'), logger: silent, now: () => T0 });
+    off.notify('arcane', { n: 1 }, [offline], { push: false });
+    assert.deepEqual(off.outbox(), []);
+    assert.deepEqual(off.events().events.map((e) => [e.type, e.push.state]), [['arcane_agent_offline', 'off']]);
+    assert.deepEqual(onDisk(join(dir, 'off.json')).producers, { arcane: { n: 1, savedAt: T0 } });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('#581: a file that does not parse is unreadable(): what it held, producers too, is gone, and the warning says what Arcane may miss or repeat, quoting nothing', () => {
+  const { dir, path } = tmp();
+  try {
+    const log = recording();
+    writeFileSync(path, '{"producers":{"arcane":{"savedAt":1,"state":{"envs":{"vm-hunter2":{"known":true}}}},"arcane-vulns":{"savedAt":2,"vulns":{');
+    const s = createPushSnapshot({ path, logger: log, now: () => T0 });
+    assert.equal(s.unreadable(), true);
+    assert.equal(s.producerState('arcane'), undefined);
+    const [warn] = log.lines.filter((l) => l.level === 'warn');
+    assert.match(warn.msg, /Arcane state; Arcane starts from silent baselines, so what changed since its last write is not pushed, and an Arcane release or offline agent already pushed may be pushed again$/);
+    assert.equal(warn.fields.producers, 2);
+    assert.doesNotMatch(JSON.stringify(log.lines), /hunter2/);
+    assert.equal(createPushSnapshot({ path: join(dir, 'none.json'), logger: silent }).unreadable(), false, 'no file is not unreadable');
+
+    // One that can't be read at all (here a directory): the same.
+    const dirLog = recording();
+    const notAFile = join(dir, 'a-directory.json');
+    mkdirSync(notAFile);
+    const d = createPushSnapshot({ path: notAFile, logger: dirLog, now: () => T0 });
+    assert.equal(d.unreadable(), true);
+    assert.match(dirLog.lines[0].msg, /^unreadable push snapshot, starting with no previous state, outbox, history or Arcane state; Arcane starts from silent baselines/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -104,7 +104,8 @@ separate Arcane toggle. Recovery messages also respect the "also notify on recov
 
 - **First sight is silent.** The first time JagHelm sees an environment up with every read
   succeeding, it stores the held-back set and marks existing finished activities as seen. No
-  push, no scheduled-job run. This is also what happens after the state files are deleted.
+  push, no scheduled-job run. This is also what happens after JagHelm's state is lost (a
+  `push-snapshot.json` that can't be read, which also holds the Arcane state since #581).
 - **Update run.** Each finished `auto_update` activity pushes once, with the containers
   updated and failed (title `Updates · <env>`, for example `2 updated: a, b · 1 failed: c`).
   A run that updated nothing and failed nothing pushes nothing. Arcane's update history has
@@ -118,9 +119,9 @@ separate Arcane toggle. Recovery messages also respect the "also notify on recov
   while its latest image stays the same pushes nothing: adding or removing the
   `com.getarcaneapp.arcane.updater=false` label, editing Arcane's exclusion list, or adding
   or removing an environment in `ARCANE_CHECK_ONLY_ENVS`. JagHelm keeps each environment's
-  pending updates (container to latest image, any tier) in `arcane-state.json` to tell the
-  two apart. A state file from a pre-release build has no pending map, so for its first poll a
-  newly held-back container is announced as before; the map is then recorded silently.
+  pending updates (container to latest image, any tier) in its state to tell the two apart.
+  A state file from a pre-release build has no pending map, so for its first poll a newly
+  held-back container is announced as before; the map is then recorded silently.
 - **Agent offline.** `Agent disconnected; Arcane cannot manage <env>` (title
   `Arcane · <env>`) pushes after 2 consecutive polls that report the environment down,
   counted from first sight and independent of the silent data baseline. One push per outage.
@@ -148,9 +149,17 @@ separate Arcane toggle. Recovery messages also respect the "also notify on recov
 Push bodies list at most 10 names, each capped at 64 characters; the rest are summarised as
 `+N more` (for example `12 updates held back: a, b, c, d, e, f, g, h, i, j +2 more`).
 
-State advances before the push is sent, so a push outage never replays old events later. At
-startup push (FCM) is ready before the first poll and the first release check run, so events
-found right after a restart are sent.
+Pushes go through JagHelm's push outbox, as its own alerts do (#581): each poll (and each
+release check, and each digest) ends with one write of `data/push-snapshot.json` that holds
+the Arcane state (what has been notified) and queues the poll's pushes, and records them in
+the alert history (`GET /api/events`). The poll never waits for Google: the outbox sends them
+in order, retries what Google fails and keeps them across a restart. A restart or a crash
+loses no push and never queues the same news twice. With push off (no FCM credentials) the
+pushes are only recorded and the state still moves, so turning push on later replays nothing.
+An agent's "disconnected" and its "reconnected", both still waiting to be sent, are dropped
+together. Older JagHelm versions kept the state in `arcane-state.json`,
+`arcane-held-back.json` and `arcane-vuln-state.json`; the first start after the upgrade reads
+them once and leaves them in place (for a rollback), so nothing is announced again.
 
 ## 6. Scheduled-job history
 
@@ -174,7 +183,7 @@ counts as manual.
 
 A finished run always pushes on the poll that first sees it. If its job run has not finished
 yet (Arcane can hold a job run queued or retrying), only the cron decision waits: the run is
-kept in `arcane-state.json` and checked again on each poll. It is recorded once its job run
+kept in the Arcane state and checked again on each poll. It is recorded once its job run
 finishes as `scheduled` or `recovery`, and dropped if that turns out `manual`. A run still
 waiting after 30 minutes, or pushed out by more than 50 waiting runs in one environment,
 counts as manual (no cron run, one log line). A failed job-run read leaves the waiting runs
@@ -297,7 +306,8 @@ as pending. JagHelm's own deploys go through the pin, health-gate and rollback w
 ## 9. Dry run before enabling
 
 `scripts/arcane-poll-once.js` runs the real poller twice against the live manager over
-throwaway temp stores. It sends no push and never touches JagHelm's data directory. Pass 1
+throwaway in-memory state. It queues and sends no push and never touches JagHelm's data
+directory. Pass 1
 is the silent baseline; pass 2 shows what would push. Run it from a checkout of this
 repository under Node 26 (the image leaves the dry run out, so it can't run in the container),
 after `npm ci --omit=dev` there: the server code it runs needs the runtime dependencies (a
@@ -316,7 +326,7 @@ errors (listed under `errors`); 2 means a missing `ARCANE_URL` / `ARCANE_API_KEY
 argument, or an unexpected failure (its message is printed, without a stack trace).
 
 `--vuln-digest` runs the weekly vulnerability digest (§7) instead of the poller, for the
-environments in `ARCANE_VULN_DIGEST_ENVS`, also twice over a throwaway state file and
+environments in `ARCANE_VULN_DIGEST_ENVS`, also twice over throwaway in-memory state and
 without sending anything:
 
 ```bash
@@ -352,20 +362,34 @@ never record over them.
 
 ## 10. Files JagHelm keeps
 
-In the data volume: `arcane-state.json` (which environments are baselined, agent down
-counters, recent activity ids, recent image check ids, each environment's pending updates,
-runs waiting on their job run, last notified release) and `arcane-held-back.json` (held-back containers per
-environment). Deleting both makes the next poll a fresh silent baseline. Deleting only
-`arcane-held-back.json` is silent too while each container's latest image is unchanged: the
-pending updates in `arcane-state.json` show the backlog is not news, so the set is rebuilt
-quietly and only a newer image pushes. Only a state file from a pre-release build (no pending
-updates in it) would announce every held-back container again.
+In the data volume, in `push-snapshot.json` under `producers` (since #581: the file that
+also holds JagHelm's push outbox and alert history, written with each poll's pushes, see §5):
+`arcane`, the poller's state (which environments are baselined, agent down counters, recent
+activity ids, recent image check ids, each environment's pending updates, runs waiting on
+their job run, last notified release, and the held-back containers per environment), and
+`arcane-vulns`, the vulnerability digest's (§7: per environment, the critical and high
+findings, each kept as its image repository and a 10-character hash of its id and package,
+the KEV count and the stale and failed images of the last digest, plus when the last digest
+ran), each with `savedAt`, when the file last took it. Removing `producers.arcane` (with JagHelm stopped, and the older files
+below if they are still there) makes the next poll a fresh silent baseline; removing
+`producers.arcane-vulns` (and `arcane-vuln-state.json`) makes the next digest a silent
+baseline again, taken at the next start. Emptying only the held-back sets
+(`producers.arcane.heldBack`) is silent too while each container's latest image is
+unchanged: the pending updates show the backlog is not news, so the set is rebuilt quietly
+and only a newer image pushes. Only a state from a pre-release build (no pending updates in
+it) would announce every held-back container again. Deleting the whole file loses the push
+outbox and the alert history as well.
 
-The vulnerability digest (§7) keeps `arcane-vuln-state.json`: per environment, the critical
-and high findings, the KEV count and the stale and failed images of the last digest, plus
-when the last digest ran.
-Deleting it (with JagHelm stopped) makes the next digest a silent baseline again, taken at
-the next start.
+Older JagHelm versions kept the same state in `arcane-state.json`, `arcane-held-back.json`
+and `arcane-vuln-state.json`. The first start of this version reads them into
+`push-snapshot.json`; they stay for a rollback to the older version (which reads them as of
+the upgrade, so it may announce again what happened since). After that they are read again
+only when written after `savedAt`, which is what a rollback does: the older version keeps
+notifying into them, so rolling forward again announces nothing it already did. Delete them
+once you won't roll back. If `push-snapshot.json` is unreadable at a start, it is moved
+aside and the old files are not read in its place: each producer starts with a silent
+baseline, and the log says what that means (Arcane changes since its last write are not
+pushed; a release or offline agent already pushed may be pushed again).
 
 ## 11. Cutover from Watchtower, and rollback
 
@@ -382,5 +406,5 @@ the next start.
    again the only source of update pushes. The `arcane-check` job then stops reporting and
    goes overdue after about 7.5 hours, `arcane-update` and `arcane-prune` after about 30
    hours, and `arcane-vuln-digest` after about 8.75 days; delete them from the
-   scheduled-jobs dashboard if the rollback lasts. To start again later from a silent baseline, delete the
-   Arcane state files (§10) before setting `ARCANE_URL` again.
+   scheduled-jobs dashboard if the rollback lasts. To start again later from a silent baseline, remove the
+   Arcane state (§10) before setting `ARCANE_URL` again.

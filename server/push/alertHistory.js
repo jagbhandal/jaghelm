@@ -1,8 +1,9 @@
 /**
- * The alert history (#267): every event the push differ makes, whether or not
- * push is set up, kept 30 days and served newest first by GET /api/events
- * (routes/events.js). Before it, the server worked out each change and kept
- * none: nothing said what happened while nobody was looking.
+ * The alert history (#267): every event the push differ makes, and since #581
+ * every notice of the Arcane poller and the weekly vulnerability digest,
+ * whether or not push is set up, kept 30 days and served newest first by
+ * GET /api/events (routes/events.js). Before it, the server worked out each
+ * change and kept none: nothing said what happened while nobody was looking.
  *
  * It lives in memory and in the push snapshot file, under `history`, written
  * in the one atomic write that advances the snapshots and queues the cycle's
@@ -23,8 +24,10 @@
  *   severity  critical | warning | info
  *   entity    the status model's id of what it is about, the one #309's URLs
  *             and a push's tap open (push/androidPayload.js entityOf); null for
- *             the status check's own event
- *   title, body, reason   the push's words: the model's name and reason
+ *             the status check's own event, and for an Arcane update, release
+ *             or digest (an agent's is integrations/arcane:<env>)
+ *   title, body, reason   the push's words: the model's name and reason (null
+ *             for an Arcane notice, which has none)
  *   node, key the event's node and its key within its type (a push's `id`)
  *   push      what push did with it, { state, phones, suppressed }:
  *               off        push wasn't set up (no FCM credentials)
@@ -185,11 +188,12 @@ export function createAlertHistory({
     },
 
     /**
-     * Record a cycle's events, in their order, each `state` ('off' with push
-     * not set up, else 'queued'). Returns their ids.
+     * Record a cycle's events, or a producer's notices, in their order, each
+     * `state` ('off' with push not set up, else 'queued', or 'unsent' until a
+     * page of push's takes it). Returns their ids.
      *
-     * @param {Array<object>} events  from diffSnapshots
-     * @param {'off' | 'queued'} state
+     * @param {Array<object>} events  from diffSnapshots, or a producer's (#581)
+     * @param {'off' | 'queued' | 'unsent'} state
      * @returns {string[]}
      */
     record(events, state) {

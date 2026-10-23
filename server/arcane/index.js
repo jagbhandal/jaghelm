@@ -1,20 +1,17 @@
 /**
  * Arcane wiring: builds the poller and the weekly vulnerability digest from env +
- * stores and starts them. Only boot() calls startArcane(); importing this module
- * starts nothing.
+ * their state and starts them. Only boot() calls startArcane(); importing this
+ * module starts nothing. Their notices go through the push outbox (#581): `push`
+ * is the refresh loop's push snapshot and sender (refresh.js), which hold their
+ * state with the outbox and the alert history (arcane/notices.js).
  */
-import { join } from 'path';
 import { readArcaneConfig } from './config.js';
 import { createArcaneClient } from './client.js';
-import { createArcaneStateStore } from './stateStore.js';
 import { createArcanePoller } from './poller.js';
-import { createVulnStateStore } from './vulnStateStore.js';
 import { createVulnDigest } from './vulnDigest.js';
 import { setArcaneAgentsSource } from './agents.js';
-import { createHeldBackStore } from '../watchtower/heldBackStore.js';
+import { openDigestState, openPollerState } from './notices.js';
 import { recordRun } from '../cron-store.js';
-import { dispatchEvents } from '../push/dispatch.js';
-import { getPushStore } from '../push/store.js';
 import * as fcmModule from '../push/fcm.js';
 import { isDemoMode } from '../demo.js';
 import { DATA_DIR } from '../util/dataDir.js';
@@ -27,8 +24,20 @@ const DIGEST_TIMEOUT_MS = 30_000;
 let poller = null;
 let digest = null;
 
-// `env`: the process's environment (env.js) unless a test passes its own.
-export function startArcane({ env, demo = isDemoMode(), deps = {} } = {}) {
+/**
+ * `env`: the process's environment (env.js) unless a test passes its own.
+ * `push`: `{ snapshot, sender }`, the push snapshot and its sender (refresh.js
+ * pushSnapshot, pushSender); `isPushEnabled` and `dir` (the data directory,
+ * where the state files of a JagHelm before #581 are) only a test replaces.
+ */
+export function startArcane({
+  env,
+  demo = isDemoMode(),
+  push,
+  isPushEnabled = fcmModule.isPushEnabled,
+  dir = DATA_DIR,
+  deps = {},
+} = {}) {
   stopArcane();
   const log = deps.logger || defaultLog;
   const makePoller = deps.createPoller || createArcanePoller;
@@ -45,14 +54,11 @@ export function startArcane({ env, demo = isDemoMode(), deps = {} } = {}) {
   if (cfg.cleartext) {
     log.warn('ARCANE_URL is cleartext http://; the API key travels unencrypted');
   }
+  const outbox = { snapshot: push.snapshot, sender: push.sender, isPushEnabled, dir, logger: log };
   poller = makePoller({
     client: createArcaneClient({ baseUrl: cfg.url, apiKey: cfg.apiKey }),
-    stateStore: createArcaneStateStore({ path: join(DATA_DIR, 'arcane-state.json') }),
-    heldBackStore: createHeldBackStore({ path: join(DATA_DIR, 'arcane-held-back.json') }),
+    ...openPollerState(outbox),
     recordRun,
-    dispatch: dispatchEvents,
-    pushStore: getPushStore(),
-    fcm: fcmModule,
     checkOnlyEnvs: cfg.checkOnlyEnvs,
     checkEverySeconds: cfg.checkEverySeconds,
     logger: log,
@@ -67,11 +73,8 @@ export function startArcane({ env, demo = isDemoMode(), deps = {} } = {}) {
       apiKey: cfg.apiKey,
       timeoutMs: DIGEST_TIMEOUT_MS,
     }),
-    stateStore: createVulnStateStore({ path: join(DATA_DIR, 'arcane-vuln-state.json') }),
+    ...openDigestState(outbox),
     recordRun,
-    dispatch: dispatchEvents,
-    pushStore: getPushStore(),
-    fcm: fcmModule,
     logger: log,
     envs: cfg.vulnDigestEnvs,
     day: cfg.vulnDay,

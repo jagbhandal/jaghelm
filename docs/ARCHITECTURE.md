@@ -116,8 +116,9 @@ server/                     Express API (Node 26, ESM)
                             middleware
   routes/                   one router per resource (see 4.1)
   arcane/                   Arcane poller: read-only API client, state derivation, push builders,
-                            persisted state, dry-run module (see 4.2), and the agents the
-                            status model reads from it (agents.js, see 4.7)
+                            its state and the commit that writes it with its pushes into the
+                            push outbox (notices.js), dry-run module (see 4.2), and the agents
+                            the status model reads from it (agents.js, see 4.7)
   integrations/             the integration engine (presets + handler + lib, see 4.3)
   status/                   the status model: every entity's state, reason and since, the
                             subsystems, the overall sentence and the ranked issues, the
@@ -783,12 +784,17 @@ flowchart TD
 set (never in demo mode): `startArcane()` runs from `boot()` and polls the Arcane manager
 every `ARCANE_POLL_SECONDS` (default 300) plus a release check every
 `ARCANE_RELEASE_CHECK_HOURS` (default 6). Push is ready before the first poll and release
-check run (#235). It diffs against persisted state and emits
-push events through `dispatchEvents`, and records Arcane's scheduler-started update and prune
-runs, and its image watcher's checks, into the cron store. On its own weekly timer it also
-reads Arcane's stored vulnerability scan results for the environments in
+check run (#235). It diffs against persisted state and records Arcane's scheduler-started
+update and prune runs, and its image watcher's checks, into the cron store. On its own weekly
+timer it also reads Arcane's stored vulnerability scan results for the environments in
 `ARCANE_VULN_DIGEST_ENVS` and pushes a digest per environment when something is new
-(`arcane_vulns`), recording each digest as the `arcane-vuln-digest` cron job. Its `arcane_*` push types map to the `watchtower` preference category (labelled Updates
+(`arcane_vulns`), recording each digest as the `arcane-vuln-digest` cron job. Both hand
+their pushes to the push outbox and the alert history, as the refresh loop does (#581,
+`arcane/notices.js`; 4.7 "Push", Sending): each poll or digest run ends with one atomic
+write of `push-snapshot.json` that holds its state (what it has already notified, under
+`producers`) and records and queues its pushes, so a crash on either side of it neither
+loses a push nor finds it twice, and neither loop waits on Google. Cron runs are recorded after that
+write. One poll or release check runs at a time. Its `arcane_*` push types map to the `watchtower` preference category (labelled Updates
 in the app). Those pushes are events, not states (spec §6.2): only an agent is a status model
 entity (4.7). The poller keeps each environment's agent health from the last environment list
 it read (`agents()`), and `arcane/agents.js` hands it to the model, which makes no Arcane
@@ -1167,8 +1173,8 @@ Key properties:
   variable by the name it is set under, so it matches the user's file.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
   secrets/auth/sessions/config/cron, the push snapshot (`push-snapshot.json`,
-  with the outbox and the alert history, 4.7 "Push") and the icon cache never
-  split across locations.
+  with the outbox, the alert history and Arcane's state, 4.7 "Push") and the
+  icon cache never split across locations.
 
 ### 4.5 Auth & rate limiting
 
@@ -1922,8 +1928,8 @@ sees where that changed:
   as before: the Arcane poller pages for its agents itself
   (`arcane_agent_offline` after 2 polls down, `arcane_agent_recovered`), so an
   agent outage is one push. Arcane's updates, held-back updates, releases and
-  digests are pushes only, never model issues. The alert history (#267, below)
-  records the differ's events only, not the Arcane poller's.
+  digests are pushes only, never model issues. Since #581 they go through the
+  same outbox and alert history as the differ's events (Sending, History).
 - Delivery (#235): `push/fcm.js` sends each event to each phone through
   `push/fcmHttp.js`, a small FCM HTTP v1 client in place of firebase-admin
   (201 of the server's 290 production packages). It signs a JWT with the
@@ -1969,8 +1975,47 @@ sees where that changed:
   (its page went out). `/api/health` shows the outbox (4.6). Shutdown needs
   nothing more: the outbox is on disk with each change
   (docs/mobile/DESIGN.md, "The cycle never waits on Google").
+- The outbox's other producers (#581): the Arcane poller and the weekly
+  vulnerability digest (4.2). Before, each awaited its own sends: with Google
+  out of reach its loop stalled, and a send that failed lost the notice. Now
+  each run ends with `notify(name, state, events)` (`push/dispatch.js`), one
+  atomic write that puts the producer's state in `push-snapshot.json` under
+  `producers` (`arcane`: the poller's environments, agents, seen runs and
+  held-back sets; `arcane-vulns`: the digest's finding keys, KEV counts and
+  last run), records its events in the history and queues them, then wakes
+  the sender. Same order, retries, bound and per-phone rules as a cycle's. A
+  crash before the write leaves the producer's last state, so it finds the
+  same news again and queues it once; one after it leaves the pushes queued
+  with the state that made them. The state is copied in at each write, so
+  the refresh loop's writes in between carry the last committed state, never
+  a poll's half. An agent's offline and its recovery, both unsent, leave the
+  outbox together (`arcane_agent_recovered` ends the episode); updates,
+  held-back updates, releases and digests never collapse. With push off the
+  events are recorded `off`, nothing is queued, and the state moves all the
+  same, so turning push on later sends nothing old (as before #581). The
+  state used to be in `arcane-state.json`, `arcane-held-back.json` and
+  `arcane-vuln-state.json`: the first start with #581 reads them once, writes
+  what they held under `producers` and leaves them in place, for a rollback
+  (an older JagHelm reads its own files and takes `producers` for a snapshot
+  field no diff reads). Each producer's entry carries `savedAt`, when the file
+  took its state. An older JagHelm run after a rollback leaves `producers` as
+  they were and keeps notifying into its own files, so at the next start an
+  old file written after `savedAt` is read in place of the snapshot's copy,
+  and nothing it notified is announced again (`arcane/notices.js`). Not after
+  a `push-snapshot.json` that doesn't parse: what was lost may be newer than
+  the old files, so each producer starts fresh, a silent baseline, and the
+  warning says so (Arcane's changes since its last write are not pushed; a
+  release or offline agent already pushed may be pushed again). The digest
+  keeps each finding as its repository (which carries an uncertain
+  repository's findings forward) and a 10-character hash of its id and
+  package, grouped by repository (`arcane/vulnStateStore.js`): vm-103's 3462
+  findings take about 42 KB, not about 205 KB, at most about 240 KB at the
+  20 000-key cap, carried by every write of the file. The old shape is read
+  and hashed, so no finding reads as new.
 - History (#267): every change is recorded (`push/alertHistory.js`), with
-  push set up or not, against a baseline of its own. Two baselines: the
+  push set up or not, against a baseline of its own; since #581 every Arcane
+  notice too, in the write that queues it (`entity` null but for an agent's,
+  `reason` null). Two baselines: the
   history's moves every cycle; push's moves only while push is on, as before
   #267, so a cycle with push off never changes what a phone is sent later (a
   page queued before push went off is not sent stale over its recovery, and
@@ -2002,10 +2047,11 @@ sees where that changed:
   keeps the newest), about 400 KB at most, so the file is still small to
   rewrite with each page. A file that doesn't parse is moved aside first
   (`push-snapshot.json.corrupt-<time>`, 0600, the newest only), so no write
-  destroys what is left of it, and JagHelm starts with no snapshot, outbox or
-  history, with one warn line: the parse error's reason and position, the
-  file's size and how many queued pushes and events it held, never its text
-  (#504). A record that can't be read is dropped with one warn line counting
+  destroys what is left of it, and JagHelm starts with no snapshot, outbox,
+  history or Arcane state, with one warn line: the parse error's reason and
+  position, the file's size and how many queued pushes, events and producers'
+  states it held, never its text (#504), and what the lost Arcane state means
+  (#581). A record that can't be read is dropped with one warn line counting
   them. `GET /api/events` (`routes/events.js`) serves it, newest
   first: `{ events, next }`, `limit` (50, at most 200), `before` (an id: the
   last page's `next`, so new events never move a page being read), `entity`
@@ -3506,12 +3552,16 @@ All state is files under the data dir (no DB):
   stops the boot (a key made up for one run would change every version at
   the next restart). Losing it costs one refused save per open screen: a new
   key is made and every version changes once.
-- **Arcane state** -- `arcane-state.json` (baselined environments, agent down counters,
-  seen activity ids, each environment's pending updates, runs waiting on their job run,
-  last notified release),
-  `arcane-held-back.json` (held-back containers per environment) and
-  `arcane-vuln-state.json` (each environment's critical/high finding keys, KEV count and
-  stale or failed images at the last vulnerability digest, and when it last ran); atomic writes, tolerant load.
+- **Arcane state** -- in `push-snapshot.json` under `producers` since #581, written with
+  the pushes it notified (4.7 "Push"): `arcane` (`state`: baselined environments, agent
+  down counters, seen activity ids, each environment's pending updates, runs waiting on
+  their job run, last notified release; `heldBack`: held-back containers per environment)
+  and `arcane-vulns` (`vulns`: each environment's critical/high findings, as repository and
+  a short hash of id and package, KEV count and stale or failed images at the last
+  vulnerability digest, and when it last ran), each with `savedAt`; tolerant load. The
+  `arcane-state.json`, `arcane-held-back.json` and `arcane-vuln-state.json` of an older
+  JagHelm are read at the first start with #581, and again only when written after
+  `savedAt` (a rollback ran meanwhile); left in place.
 - **cron history**, **todos**, **auth** (password hash + salt) -- small files,
   atomic writes.
 - **icon index** -- `icon-index.json`: the SVG names of the two icon repositories

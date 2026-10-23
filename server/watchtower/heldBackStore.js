@@ -7,28 +7,23 @@
  * up — which is what stops a daily monitor-only run from re-pinging the same
  * backlog forever (the known Watchtower footgun, containrrr/watchtower#1962).
  *
- * Mirrors tokenStore's persistence idiom: a tolerant JSON load() that never
- * throws on a missing/corrupt file, a null-prototype map (node and container
- * names are untrusted and used as object keys), and atomicWriteFileSync on every
- * mutation. Persisted shape: { [node]: Array<{ name, current, latest }> }.
+ * A tolerant load that never throws, and a null-prototype map (node and
+ * container names are untrusted and used as object keys). Shape:
+ * { [node]: Array<{ name, current, latest }> }.
  *
- * State is PERSISTED, not in-memory, on purpose: a JagHelm restart must not
- * re-announce the standing backlog as if it were newly held back.
+ * State is PERSISTED, not only in memory, on purpose: a JagHelm restart must
+ * not re-announce the standing backlog as if it were newly held back. The
+ * Arcane poller, its one user, persists it with its notices since #581
+ * (arcane/notices.js): `toFile()` goes into push-snapshot.json in the write
+ * that queues the poll's pushes, `initial` is what that file holds (or the
+ * arcane-held-back.json of an older JagHelm, as notices.js picks), and `revision()` counts
+ * the changes.
  */
-import { readFileSync, existsSync, mkdirSync } from 'fs';
-import { dirname, join } from 'path';
-import { atomicWriteFileSync } from '../util/atomicWrite.js';
-import { DATA_DIR } from '../util/dataDir.js';
-import { createLogger } from '../util/logger.js';
-
-const log = createLogger('held-back');
-
-const DEFAULT_PATH = join(DATA_DIR, 'held-back.json');
 
 // Defense-in-depth against a flood from a node (or a leaked secret): bound both
 // the per-field length and the number of retained node keys, so a crafted body
-// can't grow data/held-back.json (and its synchronous rewrite cost) without
-// bound. Generous for a homelab — real use is a handful of nodes, few stale each.
+// can't grow the stored sets (and the rewrite cost of the file they go into)
+// without bound. Generous for a homelab — real use is a handful of nodes, few stale each.
 const MAX_FIELD = 256; // matches the node-name slice in routes/watchtower.js
 const MAX_NODES = 100;
 
@@ -42,12 +37,16 @@ function sanitize(entry) {
   };
 }
 
-export function createHeldBackStore({ path = DEFAULT_PATH } = {}) {
-  /** Tolerant load: missing/corrupt => null-proto map; non-array values dropped. */
-  function load() {
+/**
+ * @param {object} [opts]
+ * @param {unknown} [opts.initial]  the sets as toFile() gave them (anything else starts empty)
+ */
+export function createHeldBackStore({ initial } = {}) {
+  let revision = 0;
+
+  /** Tolerant load: anything but an object => an empty null-proto map; non-array values dropped. */
+  function load(parsed) {
     try {
-      if (!existsSync(path)) return Object.create(null);
-      const parsed = JSON.parse(readFileSync(path, 'utf8'));
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         const safe = Object.create(null);
         for (const k of Object.keys(parsed)) {
@@ -61,17 +60,7 @@ export function createHeldBackStore({ path = DEFAULT_PATH } = {}) {
     }
   }
 
-  function save(data) {
-    try {
-      const dir = dirname(path);
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      atomicWriteFileSync(path, JSON.stringify(data, null, 2));
-    } catch (err) {
-      log.error({ err }, 'Failed to save held-back state');
-    }
-  }
-
-  let store = load();
+  const store = load(initial);
 
   /**
    * Replace `node`'s held-back set with `staleList` and return the transitions.
@@ -118,7 +107,7 @@ export function createHeldBackStore({ path = DEFAULT_PATH } = {}) {
           keys = Object.keys(store);
         }
       }
-      save(store);
+      revision += 1;
     }
     return { newlyHeldBack, cleared, current };
   }
@@ -128,14 +117,11 @@ export function createHeldBackStore({ path = DEFAULT_PATH } = {}) {
     return Object.prototype.hasOwnProperty.call(store, node) ? store[node].slice() : [];
   }
 
-  return { diffAndSet, getNode };
-}
+  /** Every node's set, as the file holds it (the shape arcane-held-back.json had); copies. */
+  function toFile() {
+    // fromEntries defines own properties, so a '__proto__' node stays a plain key.
+    return Object.fromEntries(Object.keys(store).map((node) => [node, store[node].map((e) => ({ ...e }))]));
+  }
 
-// Process-wide singleton: Arcane's poller is the writer; a single
-// instance keeps the in-memory map authoritative between polls without a
-// reload-from-disk per request.
-let singleton = null;
-export function getHeldBackStore() {
-  if (!singleton) singleton = createHeldBackStore({});
-  return singleton;
+  return { diffAndSet, getNode, toFile, revision: () => revision };
 }
