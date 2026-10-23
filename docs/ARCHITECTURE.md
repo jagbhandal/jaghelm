@@ -2395,12 +2395,17 @@ stack sits beside today's CSS and must not restyle it.
   (`src/phone/platform.js`): today only `openTarget`, what Open does. The
   Android app's is `mobile/src/open.js` (http and https only, in a new
   window, which the WebView hands to the phone's browser), given in
-  `MobileApp.jsx`; a screen drawn outside a `PhonePlatform` throws. Alerts'
-  gear opens Notification settings, an Android screen, by name through
-  `nav`. `scripts/phone-imports.test.mjs` fails on an import in `src/phone/`
-  of a Capacitor plugin, of `mobile/`, or of `@shared/` (mobile's alias for
-  `src/`, which the web's build doesn't have: files there import relatively,
-  and `@ui/` as both apps do). The screens draw the Android look only:
+  `MobileApp.jsx`. A screen drawn outside a `PhonePlatform` throws, and so
+  does a `PhonePlatform` whose value has no `openTarget` function, as it
+  mounts. Alerts' gear opens Notification settings, an Android screen, by
+  name through `nav`. `scripts/phone-imports.test.mjs` fails on an import in
+  `src/phone/` (`import`, `export … from`, `import()` or
+  `import.meta.glob()`) of a Capacitor plugin (`@capacitor*/`,
+  `@capawesome*/`, `@capgo/`, `capacitor-`, `cordova-plugin-`), of
+  `mobile/`, or of `@shared/` (mobile's alias for `src/`, which the web's
+  build doesn't have: files there import relatively, and `@ui/` as both
+  apps do), and on a glob that is root-relative (each app's build reads it
+  from its own root) or not written out. The screens draw the Android look only:
   today's markup, with the class names `MobileApp.css` styles in the Android
   build's `legacy` layer. The web doesn't import them yet, so its bundle is
   unchanged; when it does, its look goes beside the Android one under

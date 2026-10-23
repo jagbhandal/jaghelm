@@ -81,6 +81,31 @@ test('.gitignore never ignores a changelog fragment, whatever its name', () => {
   }
 });
 
+// The two source folders named data/ are negated past the `data/` rule (#303).
+// Only the folders are: a secret or a build in them is still ignored, and the
+// code in them is not.
+test('.gitignore keeps secrets out of the source data/ folders and their code in', () => {
+  for (const dir of ['src/phone/data', 'mobile/src/data']) {
+    // 0: ignored, 1: not (anything else is git failing, which fails both checks).
+    const status = (f) => git('check-ignore', '-q', '--no-index', `${dir}/${f}`).status;
+    for (const f of [
+      '.env',
+      '.env.local',
+      'id_rsa',
+      'test.pem',
+      'google-services.json',
+      'node_modules/x.js',
+      'test-results/x.png',
+      'uploads/x',
+    ]) {
+      assert.equal(status(f), 0, `${dir}/${f} is NOT ignored`);
+    }
+    for (const f of ['board.js', 'new.js', 'new.test.js']) {
+      assert.equal(status(f), 1, `${dir}/${f} IS ignored`);
+    }
+  }
+});
+
 test('secret templates exist, are tracked, and the scanner passes the FCM template', () => {
   for (const f of TEMPLATES) {
     assert.ok(existsSync(path.join(ROOT, f)), `${f} missing on disk`);
