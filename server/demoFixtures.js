@@ -26,6 +26,7 @@
 
 import { assembleServices, servicesCacheEntry, thresholdsOf } from './refresh.js';
 import { decorateStatuses } from './cron-overdue.js';
+import { BEATS_KEPT, createBeatStore } from './kumaBeats.js';
 import { generateDefaultConfig } from './config.js';
 import { createStatusTracker, readStatusInputs } from './status/index.js';
 import { resolveBackupJobs } from './status/backupJobs.js';
@@ -194,9 +195,47 @@ const MONITORS = [
 ];
 const DOWN_IN_INCIDENT = new Set(['Jellyfin']);
 
+// The heartbeat strips (#312): every monitor's last BEATS_KEPT checks, one
+// every 30 s up to its last beat 20 s ago, as Kuma's status page lists them.
+// Each run of checks that weren't up: [monitor, scenario (or both), from,
+// to, Kuma's status], counted back from the newest check (0). Jellyfin's
+// outage is the incident's: down for 16 minutes after a check pending, so
+// since before the board's warm-up (DEMO_WARM_UP_MS), when the model saw it
+// down first. In the incident too, Nextcloud was down for a minute ten
+// minutes ago and PhotoPrism had a check pending. Backrest's maintenance
+// window stays quiet, so the healthy board's strips light nothing up.
+const BEAT_EVERY = 30_000;
+const LAST_BEAT_AGO = 20_000;
+const KUMA_DOWN = 0;
+const KUMA_PENDING = 2;
+const KUMA_MAINTENANCE = 3;
+const NOT_UP = [
+  ['Jellyfin', 'incident', 0, 31, KUMA_DOWN],
+  ['Jellyfin', 'incident', 32, 32, KUMA_PENDING],
+  ['Nextcloud', 'incident', 20, 21, KUMA_DOWN],
+  ['Nextcloud', 'incident', 22, 22, KUMA_PENDING],
+  ['PhotoPrism', 'incident', 33, 33, KUMA_PENDING],
+  ['Backrest', null, 36, 41, KUMA_MAINTENANCE],
+];
+
+/** A monitor's beats, oldest first, in kumaBeats()' shape. */
+function demoBeats(id, name, ping, scenario, now) {
+  return Array.from({ length: BEATS_KEPT }, (_, k) => {
+    const back = BEATS_KEPT - 1 - k;
+    const run = NOT_UP.find(
+      ([n, only, from, to]) => n === name && (only == null || only === scenario) && back >= from && back <= to
+    );
+    const s = run ? run[4] : 1;
+    // A response time that wobbles a little from check to check, the same every time.
+    const p = s === 1 ? Math.max(1, ping + ((back * 7 + id * 3) % 9) - 4) : null;
+    return { t: now - LAST_BEAT_AGO - back * BEAT_EVERY, s, p };
+  });
+}
+
 /**
- * The monitors, in the shape monitors.js fetchMonitors() gives them (checked
- * against it by server/demoFixtures.test.js).
+ * The monitors, in the shape monitors.js fetchMonitors() gives them on its
+ * status page path, Kuma's beats included (checked against it by
+ * server/demoFixtures.test.js).
  */
 export function demoMonitors(scenario, now) {
   const out = {};
@@ -210,7 +249,8 @@ export function demoMonitors(scenario, now) {
       ping: down ? 0 : ping,
       uptime24: down ? 0.9612 : uptime24,
       active: true,
-      lastBeatAt: now - 20_000,
+      lastBeatAt: now - LAST_BEAT_AGO,
+      beats: demoBeats(id, name, ping, scenario, now),
     };
   }
   return out;
@@ -235,16 +275,21 @@ function demoServicesEntry(scenario, now) {
     nodeCfg,
     readings[key],
   ]);
+  const monitors = demoMonitors(scenario, now);
   const assembled = assembleServices({
     nodeResults,
-    monitors: demoMonitors(scenario, now),
+    monitors,
     config,
     lastSeenNodeOf: () => null,
     lastSeenContainerOf: () => null,
     containerRegistry: null,
     now: () => now,
   });
-  return servicesCacheEntry(assembled, { prometheusOk: true, kumaOk: true });
+  // Each service's strip, as the live refresh keeps them (kumaBeats.js).
+  const beatStore = createBeatStore();
+  beatStore.record({ ok: true, monitors, now });
+  const beats = beatStore.encodedFor(assembled.monitorOf, { ok: true });
+  return servicesCacheEntry(assembled, { prometheusOk: true, kumaOk: true, beats });
 }
 
 /** /api/services, assembled by the live server's assembleServices(). */

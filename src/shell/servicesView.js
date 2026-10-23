@@ -9,7 +9,11 @@
  *    last response time) and one headline integration metric ("24,499
  *    photos"), and only on a row the model says is up. A row that isn't says
  *    the model's reason instead, and no latency: an old number is never drawn
- *    beside a failure.
+ *    beside a failure;
+ *  - a service with a Kuma monitor carries its heartbeat strip (#312,
+ *    /api/services' `beats`, server/kumaBeats.js), whatever its state: the
+ *    checks are Kuma's, each with its time, not a judgement. A container
+ *    with no monitor has none.
  *
  * With a stale status (`freshness`, statusFreshness.js, #480, #495), nothing
  * is drawn in a level colour from it: every row is drawn as no signal, keeping
@@ -22,12 +26,15 @@
  * `customGroups`), with the services in none of them last. services.yaml has
  * no tags, so there is no grouping by tag. Within a group, the worst first,
  * then by name. The choice is kept per browser (useServicesGrouping).
+ *
+ * The Services page (#313) lists the same rows, narrowed by its filters
+ * (pageFilters.js), as the same groups or as a table (useServicesView).
  */
-import { useCallback, useState } from 'react';
-import { prefs } from '../storage/index.js';
+import { decodeBeats } from '../../server/kumaBeats.js';
 import { heldUids } from './customGroups.js';
 import { entityAnchor } from './entityAnchors.js';
 import { drawnState } from './statusFreshness.js';
+import { usePref } from './usePref.js';
 
 // The model's levels, worst first, as a row is ranked in its group.
 const RANK = { crit: 0, warn: 1, unknown: 2, maintenance: 3, ok: 4 };
@@ -74,12 +81,26 @@ function cardsOf(services) {
   return out;
 }
 
+/** The entity's tags (#519: Kuma's monitor tags, once the model serves them), or none. */
+const tagsOf = (entity) =>
+  Array.isArray(entity.tags)
+    ? [
+        ...new Set(
+          entity.tags.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim())
+        ),
+      ]
+    : [];
+
 /**
  * Each service the model has, as its row: `{ id, anchor, uid, container,
- * name, node, nodeName, level, state, word, detail, meta, muted }`. `level` is
- * the model's state, `state` the one drawn (no signal while stale); `detail`
- * the headline metric when up, else the model's reason; `meta` the latency
- * when up, else a dash. A service on a node hidden in Settings
+ * containerName, name, node, nodeName, level, state, word, detail, meta,
+ * muted, tags, beats, stale }`.
+ * `level` is the model's state, `state` the one drawn (no signal while
+ * stale); `detail` the headline metric when up, else the model's reason;
+ * `meta` the latency when up, else a dash; `tags` the entity's (none until
+ * #519); `beats` a monitored service's checks, oldest first (#312: Kuma's
+ * own, or one a cycle; UptimeBar's), else null; `stale` whether the status
+ * is (the strip then draws no level colour). A service on a node hidden in Settings
  * (`sections[key].visible === false`) is left out, as the node is.
  *
  * `appData` is each service's integration fields, by uid (useAppDataMatching).
@@ -108,6 +129,9 @@ export function serviceRows({
         anchor: entityAnchor(e.id),
         uid,
         container,
+        // The same, as the Services table reads it: src/ui can't name a field
+        // `container`, which Tailwind's scan would ship as a utility (#424).
+        containerName: container,
         name: e.name,
         node: e.node ?? null,
         nodeName: services?.nodes?.[e.node]?.display_name || e.node || null,
@@ -117,6 +141,9 @@ export function serviceRows({
         detail: up ? headlineMetric(appData?.[uid]) : e.reason || null,
         meta: (up && latencyOf(card)) || '—',
         muted: up,
+        tags: tagsOf(e),
+        beats: e.kind === 'service' ? decodeBeats(services?.beats?.[uid]) : null,
+        stale: Boolean(freshness?.stale),
       };
     });
 }
@@ -203,10 +230,11 @@ function phrase(level, word, n) {
  * The section's count, the mock's: "12 monitored · all up", "12 monitored · 1
  * down · 1 no signal", each failing kind by its word, worst first; with a
  * stale status, how old it is instead: "12 monitored · No signal · last known
- * 3 min ago".
+ * 3 min ago". With `of`, the rows are what a filter left of that many: "3 of
+ * 12 monitored · 1 down", and "0 of 12 monitored" when it left none.
  */
-export function servicesCount(rows, freshness = null) {
-  const first = `${rows.length} monitored`;
+export function servicesCount(rows, freshness = null, { of = null } = {}) {
+  const first = of == null ? `${rows.length} monitored` : `${rows.length} of ${of} monitored`;
   if (freshness?.stale) return [first, freshness.note].filter(Boolean).join(' · ');
   const counts = new Map();
   for (const r of [...rows].sort(byRank)) {
@@ -215,23 +243,28 @@ export function servicesCount(rows, freshness = null) {
     counts.set(key, { level: r.level, word: r.word, n: (counts.get(key)?.n ?? 0) + 1 });
   }
   const parts = [...counts.values()].map(({ level, word, n }) => phrase(level, word, n));
+  // A filter that left nothing says nothing is up or down.
+  if (rows.length === 0 && of != null) return first;
   return [first, ...(parts.length ? parts : ['all up'])].join(' · ');
 }
 
 /** Where the section's grouping is kept, per browser (`prefs`). */
 export const GROUPING_PREF = 'jaghelm-services-grouping';
-const VALUES = GROUPINGS.map((g) => g.value);
+const VALUES = Object.freeze(GROUPINGS.map((g) => g.value));
 
-/** The section's grouping, `node` or `group`, and what changes it: kept per browser. */
+/**
+ * The section's grouping, `node` or `group`, and what changes it: kept per
+ * browser, one choice for the Overview and the Services page (usePref).
+ */
 export function useServicesGrouping() {
-  const [grouping, setGrouping] = useState(() => {
-    const stored = prefs.get(GROUPING_PREF);
-    return VALUES.includes(stored) ? stored : 'node';
-  });
-  const choose = useCallback((next) => {
-    if (!VALUES.includes(next)) return;
-    setGrouping(next);
-    prefs.set(GROUPING_PREF, next);
-  }, []);
-  return [grouping, choose];
+  return usePref(GROUPING_PREF, VALUES, 'node');
+}
+
+/** Where the Services page's list / table choice is kept, per browser. */
+export const SERVICES_VIEW_PREF = 'jaghelm-services-view';
+const SERVICE_VIEWS = Object.freeze(['list', 'table']);
+
+/** The Services page's view, `list` or `table`, and what changes it: kept per browser. */
+export function useServicesView() {
+  return usePref(SERVICES_VIEW_PREF, SERVICE_VIEWS, 'list');
 }

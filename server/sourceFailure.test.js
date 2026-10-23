@@ -1055,8 +1055,15 @@ test('a monitor no container has: its up entry is in the push snapshot, not in t
     app.use('/api/services', servicesRoutes);
     const r = await request(app).get('/api/services');
     assert.equal(r.status, 200);
-    assert.deepEqual(Object.keys(r.body).sort(), ['nodes', 'overallHealth', 'sources']);
-    assert.equal(r.text.includes('NAS (Ping)'), false, 'up, the monitor is nowhere in the payload');
+    assert.deepEqual(Object.keys(r.body).sort(), ['beats', 'nodes', 'overallHealth', 'sources']);
+    const { beats, ...board } = r.body;
+    assert.equal(
+      JSON.stringify(board).includes('NAS (Ping)'),
+      false,
+      'up, the monitor draws no card: it is nowhere on the board'
+    );
+    // Only its heartbeat strip (#312) names it: the model's row for it draws one.
+    assert.ok(beats[NAS_PING], 'its strip, by its uid');
   } finally {
     p.done();
   }

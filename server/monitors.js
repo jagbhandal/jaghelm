@@ -9,6 +9,7 @@ import { failureDetail, failureSentence, readFailure } from './failureWords.js';
 import { safeFetch } from './httpClient.js';
 import { envValue } from './env.js';
 import { kumaStatusFromValue, parseKumaMetrics, statusFromValue } from './kumaMetrics.js';
+import { kumaBeats, parseBeatTime } from './kumaBeats.js';
 
 const log = createLogger('monitors');
 
@@ -42,14 +43,9 @@ const STALE_CEILING_MS = 5 * 60 * 1000;
 // (JAGHELM_MONITOR_STALE_MS: env.js).
 const MONITOR_STALE_MS = envValue('JAGHELM_MONITOR_STALE_MS');
 
-// Kuma status-page heartbeat times are UTC, formatted "YYYY-MM-DD HH:mm:ss.SSS"
-// (no zone suffix). Parse as UTC → epoch ms, or null if missing/unparseable.
-export function parseBeatTime(t) {
-  if (!t || typeof t !== 'string') return null;
-  const iso = t.includes('T') ? t : t.replace(' ', 'T');
-  const ms = Date.parse(iso.endsWith('Z') ? iso : `${iso}Z`);
-  return Number.isFinite(ms) ? ms : null;
-}
+// Kuma status-page heartbeat times are UTC, without a zone: kumaBeats.js
+// parses them, for a monitor's latest beat here and for its strip (#312).
+export { parseBeatTime };
 
 function staleOrEmpty() {
   if (cachedMonitors && Date.now() - cacheTime < STALE_CEILING_MS) return cachedMonitors;
@@ -129,6 +125,10 @@ async function fetchFromMetrics() {
  * the fallback when no API key is set. Two calls:
  *   1. /api/status-page/default → monitor names + IDs from publicGroupList
  *   2. /api/status-page/heartbeat/default → heartbeat status, ping, uptime
+ * Each monitor also carries Kuma's own recent beats, the newest 50
+ * (`beats`, kumaBeats.js), for its heartbeat strip (#312), or null when the
+ * heartbeats weren't read this time (the store then keeps the last it had);
+ * the /metrics path has none, and the refresh samples one a cycle instead.
  * Returns the monitor map. Throws when no monitors could be loaded: the request
  * failed, Kuma answered non-2xx (the error carries its `status`), or the
  * status page lists no monitors (marked `empty`), so failureWords.js can say
@@ -152,8 +152,10 @@ async function fetchFromStatusPage() {
   // Fetch heartbeat data (separate endpoint in newer Kuma versions)
   let heartbeatList = pageData.heartbeatList || {};
   let uptimeList = pageData.uptimeList || {};
+  // Whether Kuma's heartbeats were read (#312): a strip is replaced only then.
+  let beatsRead = Object.keys(heartbeatList).length > 0;
 
-  if (Object.keys(heartbeatList).length === 0) {
+  if (!beatsRead) {
     try {
       const hbR = await safeFetch(`${kumaUrl}/api/status-page/heartbeat/default`, {
         trusted: true,
@@ -163,6 +165,7 @@ async function fetchFromStatusPage() {
         const hbData = await hbR.json();
         heartbeatList = hbData.heartbeatList || {};
         uptimeList = hbData.uptimeList || {};
+        beatsRead = true;
       }
     } catch (err) {
       log.warn({ err }, 'Heartbeat endpoint unavailable');
@@ -185,6 +188,7 @@ async function fetchFromStatusPage() {
       uptime24: uptimeList[`${id}_24`] || 0,
       active: pub.active !== false,
       lastBeatAt: parseBeatTime(latest?.time),
+      beats: beatsRead ? kumaBeats(beats) : null,
     };
   }
   return monitors;

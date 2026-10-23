@@ -216,3 +216,24 @@ describe('InfrastructureSection', () => {
     }
   });
 });
+
+// The Infrastructure page's parts (#313): the filters' row, and what stands
+// in when they leave no node.
+describe('InfrastructureSection on the Infrastructure page', () => {
+  it("the filters' row under the heading; the empty state in place of the nodes when there are none", () => {
+    const { rerender } = render(
+      <InfrastructureSection
+        nodes={[]}
+        toolbar={<div data-testid="filters" />}
+        empty={<p>No nodes match these filters</p>}
+      />
+    );
+    const section = screen.getByRole('region', { name: 'Infrastructure' });
+    expect(within(section).getByTestId('filters')).toBeInTheDocument();
+    expect(within(section).getByText('No nodes match these filters')).toBeInTheDocument();
+    expect(within(section).queryByRole('list')).toBeNull();
+    // On the Overview (no `empty`), an empty grid, as before.
+    rerender(<InfrastructureSection nodes={[]} />);
+    expect(within(section).queryByText('No nodes match these filters')).toBeNull();
+  });
+});

@@ -4,6 +4,7 @@ import { lastSeenLabel } from '../../util/relativeTime.js';
 import { EntityRow } from '@ui/entity-row';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
+import { UptimeBar } from '@ui/uptime-bar';
 
 /**
  * One service row: StatusLamp + StatusWord + base-aware icon (NEVER a relative
@@ -19,8 +20,9 @@ import { StatusWord } from '@ui/status-word';
  * lamp, the name and its node over one line, and nothing judged here. The
  * line is the model's reason when the service isn't up, else "last seen 3m
  * ago" for a breadcrumb, or "Unmonitored", and the latency after it ("138
- * ms", a dash without one). The row opens the service; healthy rows are
- * muted, so a failing one stands out.
+ * ms", a dash without one), and a monitored service's heartbeat strip
+ * (#312: UptimeBar; EntityRow shows its newest 12 at a phone's width). The
+ * row opens the service; healthy rows are muted, so a failing one stands out.
  */
 export default function ServiceRow(props) {
   if (__ANDROID_LOOK__) return <AndroidServiceRow {...props} />;
@@ -48,6 +50,11 @@ function WebServiceRow({ service, onTap }) {
       where={service.nodeName}
       detail={detail}
       meta={latency}
+      trailing={
+        service.beats ? (
+          <UptimeBar beats={service.beats} count={30} stale={service.stale} />
+        ) : undefined
+      }
       muted
       onOpen={onTap ? () => onTap(service) : undefined}
     />

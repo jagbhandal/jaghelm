@@ -11,7 +11,8 @@
  *               §6.1, coloured by the model's level for each pool) and its
  *               last backup                     /api/services, /api/integrations
  *   service,    its latency and 24 h uptime (while it is up, as its row),
- *   container   when it was last seen, its node; the container's CPU,
+ *   container   when it was last seen, its node; a service's heartbeat strip
+ *               (#312, `beats`: Kuma's checks, none for a container); the container's CPU,
  *               memory and network rates while it runs; the stats of the
  *               integration that matches it (the Services rows' matching,
  *               #300)                           /api/services, /api/integrations
@@ -33,6 +34,7 @@
  * (`lastKnown`), and no runtime: it counts down.
  */
 import { readingLines, shownReading } from '../../../server/status/readings.js';
+import { decodeBeats } from '../../../server/kumaBeats.js';
 import { agoText } from '@ui/lib/ago.js';
 import { lastSeenLabel } from '../../util/relativeTime.js';
 import { FRESH, upsReadingsOf } from '../../phone/data/board.js';
@@ -306,7 +308,9 @@ function serviceExtras({ entity, services, integrations, now }) {
     const key = integrationClaims(integrations, services)[uid];
     if (key) sections.push(statsSection(key, integrations[key]));
   }
-  return { meters: [], facts, sections, card, nodeName };
+  // Kuma's checks (#312), a service's only: a container has no monitor.
+  const beats = kuma ? decodeBeats(services?.beats?.[uid]) : null;
+  return { meters: [], facts, sections, card, nodeName, beats };
 }
 
 /** An integration's stats: its display fields, and why its last read failed. */
@@ -404,6 +408,8 @@ function integrationExtras({ entity, integrations }) {
  *             `note`), `meters` (meters, each with a `caption`), `vms` (a
  *             Proxmox node's machines) or `note` (one line)
  *   note      a node's hosted services, for its status box
+ *   beats     a service's heartbeat strip (#312, UptimeBar's checks), or
+ *             null: a container, or a monitor /api/services has no beats for
  *   unread    the reads that failed: `{ key, what, error }`
  *   lastKnown with a stale status, "Last known 3 min ago": the facts and
  *             sections are drawn greyed, as last known (#480)

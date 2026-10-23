@@ -17,12 +17,15 @@
  * focus goes to the row after it in the Jobs section (or the one before),
  * the removed row having left. A node or a container adds its history
  * charts (#311, HistoryCharts.jsx: 1 h, 24 h or 7 d from Prometheus), which
- * ride in this chunk. Its own chunk (lazyViews.js),
+ * ride in this chunk. A service with a Kuma monitor adds its heartbeat strip
+ * (#312, DetailHeartbeats: its last 50 checks, from the /api/services read).
+ * Its own chunk (lazyViews.js),
  * loaded when an entity is first opened; App keeps it mounted after, so it
  * can close as it opened.
  */
 import { useMemo, useState } from 'react';
 import { Drawer } from '@ui/drawer';
+import { DetailHeartbeats } from '@ui/entity-detail';
 import { ShellSection } from '@ui/app-shell';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { navigate } from '../../router/useRoute.js';
@@ -87,10 +90,11 @@ export default function EntityDrawer({ id, status, reach, updated, intervalMs })
     () => entityDetail({ status, reach, id: shown, freshness, at, read, config }),
     [status, reach, shown, freshness, at, read, config]
   );
-  // A node's or a container's history (#311), and a job's Remove while it
-  // is the one open (not while it closes).
+  // A service's heartbeats (#312), a node's or a container's history (#311),
+  // and a job's Remove while it is the one open (not while it closes).
   const slots = useMemo(
     () => ({
+      heartbeats: (v) => <DetailHeartbeats beats={v.beats} stale={Boolean(v.lastKnown)} />,
       chart: (v) => (v.chart ? <HistoryCharts target={v.chart} updated={updated} /> : null),
       ...(isJob(entity) && {
         runs: () => <JobRemove entity={entity} onRemoved={closeRemoved} />,
