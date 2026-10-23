@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
 import { PHONE_WIDTH } from '@ui/app-shell';
 import { runScenario } from '../server/testing/statusScenarios.js';
+import { forgetAnswers } from './hooks/useData.js';
 
 // Entity URLs (#309, spec §7, §8): every entity the status model has opens at
 // its URL, `?entity=<id>` over the page it is opened from. From 768px the URL
@@ -353,6 +354,7 @@ describe('what a detail shows, from the reads it makes while open (#310)', () =>
     vi.mocked(fetch).mock.calls.filter(([u]) => String(u).split('?')[0] === path).length;
 
   beforeEach(() => {
+    forgetAnswers();
     const answer = vi.mocked(fetch).getMockImplementation();
     vi.mocked(fetch).mockImplementation((u, init) => {
       const path = String(u).split('?')[0];
@@ -387,6 +389,19 @@ describe('what a detail shows, from the reads it makes while open (#310)', () =>
     expect(within(panel).getByRole('region', { name: 'Last backup' })).toHaveTextContent('3 h ago');
     expect(asked('/api/integrations')).toBe(1);
     expect(asked('/api/ups')).toBe(0);
+  });
+
+  it('from 768px, over the Overview: the drawer takes what the board just read, asking nothing more', async () => {
+    windowOf({ phone: false });
+    await renderAt('/');
+    await waitFor(() => expect(asked('/api/integrations')).toBeGreaterThan(0));
+    const before = { integrations: asked('/api/integrations'), services: asked('/api/services') };
+    window.history.pushState(null, '', '/?entity=nodes/apps');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    const panel = await drawer('App Server');
+    await within(panel).findByRole('region', { name: 'Virtual machines' });
+    expect(asked('/api/integrations')).toBe(before.integrations);
+    expect(asked('/api/services')).toBe(before.services);
   });
 
   it('from 768px: the UPS’s drawer has its charge, runtime, load and model', async () => {

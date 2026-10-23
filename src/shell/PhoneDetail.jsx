@@ -31,12 +31,12 @@ export const DETAIL_SCREENS = Object.freeze(Object.keys(DETAILS));
 
 const NONE = Object.freeze([]);
 
-export default function PhoneDetail({ screen, data, nav, params, top = true }) {
+export default function PhoneDetail({ screen, data, nav, params, top = true, intervalMs }) {
   const Detail = DETAILS[screen];
   const entity = entityFor(data.status, entityOfRoute({ screen, params }));
   const wanted =
     Detail && top ? sourcesFor(entity, data.status).filter((s) => s !== 'services') : NONE;
-  const read = useDetailSources(wanted, data.updated);
+  const read = useDetailSources(wanted, data.updated, { intervalMs });
   const at = useStatusAt(data.updated);
   const shown = useMemo(() => {
     if (!entity) return data;

@@ -10,7 +10,8 @@
  * What it shows is EntityDetail's (#310): the model's word and reason, and
  * what the entity's kind adds from the reads it makes while open
  * (useDetailSources: as it opens, then on each answer of the header's status
- * poll; none while closed), with links to the user's own apps and links
+ * poll, taking the page's answer where the page reads the same; none while
+ * closed), with links to the user's own apps and links
  * (Settings → Tabs and Links) and to Settings. Its own chunk (lazyViews.js),
  * loaded when an entity is first opened; App keeps it mounted after, so it
  * can close as it opened.
@@ -54,7 +55,7 @@ function heading(view) {
   }
 }
 
-export default function EntityDrawer({ id, status, reach, updated }) {
+export default function EntityDrawer({ id, status, reach, updated, intervalMs }) {
   // The last entity stays drawn while the drawer closes.
   const [shown, setShown] = useState(id);
   if (id && id !== shown) setShown(id);
@@ -63,7 +64,7 @@ export default function EntityDrawer({ id, status, reach, updated }) {
   const { config } = useConfig();
   // Only while it is open: a closed drawer reads nothing.
   const wanted = id ? sourcesFor(entityFor(status, id), status) : NONE;
-  const read = useDetailSources(wanted, updated);
+  const read = useDetailSources(wanted, updated, { intervalMs });
   const view = useMemo(
     () => entityDetail({ status, reach, id: shown, freshness, at, read, config }),
     [status, reach, shown, freshness, at, read, config]

@@ -1263,11 +1263,12 @@ until Phase 4 (#326).
 | `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`) |
 | `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
 | `EntityRow` | `@ui/entity-row` | `state`, `word`, `name`, `where` (a node's name, after the name), `detail`, `meta`, `trailing`, `muted` (quiets a healthy row); `onOpen` or `href`, or both, as IssueRow's |
-| `FactList` | `@ui/fact-list` | `facts` (`[{ key, label, value }]`) |
+| `FactList` | `@ui/fact-list` | `facts` (`[{ key, label, value }]`); `muted` (values in `text-2`: last known) |
 | `DetailSection` | `@ui/entity-detail` | `title` (its overline heading, which names it), `aside` (a short note at its end) |
 | `DetailMeters` | `@ui/entity-detail` | `meters` (MetricMeter's props each, with a `key` and an optional `caption`) |
 | `DetailVms` | `@ui/entity-detail` | `vms` (`[{ key, name, status, running, detail }]`) |
-| `DetailSections` | `@ui/entity-detail` | `sections` (`[{ key, kind, title, aside, … }]`: `facts` and a `note`, `meters`, or `vms`, by `kind`) |
+| `DetailFacts` | `@ui/entity-detail` | `facts`; `lastKnown` (with a stale status, "Last known 3 min ago": the facts greyed, that line under them) |
+| `DetailSections` | `@ui/entity-detail` | `sections` (`[{ key, kind, title, aside, … }]`: `facts` and a `note`, `meters`, or `vms`, by `kind`); `muted` (their facts greyed) |
 | `DetailUnread` | `@ui/entity-detail` | `unread` (`[{ key, what, error }]`: the reads that failed) |
 | `DetailLinks` | `@ui/entity-detail` | `primary`, `links`, `settings` (each `{ key, label, href, app }`), `target` (where a link out opens), `onOpen` (opens an `app` link in the page) |
 | `Table` | `@ui/table` | `caption` (or `aria-label`, or `aria-labelledby`), `columns` (`[{ key, header, numeric, cell, className }]`), `rows`, `rowKey` (`id`), `onRowOpen`, `empty`, `minWidth` |
@@ -1354,7 +1355,9 @@ Chart colours board:
   and the phone's sheet (web look) draw under the status box, the mock's
   drawer order: a node's meters (`DetailMeters`, two to a row, as the
   phone's Node detail; a pool's caption, "851.2 / 900.0 GB · lvmthin", in
-  12px `text-3` under its meter), the facts, then `DetailSections`, each
+  12px `text-3` under its meter), the facts (`DetailFacts`: with a stale
+  status their values in `text-2` and "Last known 3 min ago" under them in
+  12px `text-3`, #480), then `DetailSections`, each
   under an overline heading in `text-3` with a short `aside` at its end
   ("2 / 3 running"), 8px under it, sections 20px apart as the drawer's body
   sets them. A Proxmox node's machines (`DetailVms`) are a framed list on

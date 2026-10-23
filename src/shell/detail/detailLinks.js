@@ -3,14 +3,25 @@
  * shortcuts). JagHelm keeps no address for a service, Grafana or Uptime
  * Kuma (services.yaml has none, and the monitoring sources' URLs are the
  * server's, not for a browser), so a link is one the user already has: an
- * embedded app (Settings → Tabs), which opens inside JagHelm, else a Quick
- * Launch link (Settings → Links), which opens as the others do. Each is
- * found by its name, or a link's icon, and a thing with none has no link.
+ * embedded app (Settings → Tabs), which opens inside JagHelm, or a Quick
+ * Launch link (Settings → Links), which opens as the others do.
  *
- *   Open <name>   a service's own app or link, by its name or its container's
- *   Proxmox       a Proxmox node's, when the node has a Proxmox integration
- *   Grafana       for a node, a service, a container and the UPS
- *   Uptime Kuma   for a service Kuma watches
+ * A link is found by its name alone, matched exactly (letter case and spaces
+ * aside), never by its icon: "Proxmox Backup Server" with Proxmox's icon is
+ * not Proxmox, nor "Grafana Staging" Grafana. Every app and link of a name is
+ * collected: two that reach different addresses give no link at all, since
+ * either could be the wrong one (an app and a Quick Launch link to the same
+ * address are one, and the app wins: it opens inside JagHelm). What is one
+ * per node names its node, else it has no link:
+ *
+ *   Open <name>   a service's own: its name or its container's ("Immich");
+ *                 when a service of that name runs on another node too
+ *                 (cAdvisor on every node), the name with its node's
+ *                 ("cAdvisor pi-1", "cAdvisor (Gateway)")
+ *   Proxmox       a Proxmox node's: "Proxmox pve", "Proxmox (Hypervisor)",
+ *                 by its key or its name, or a node named "Proxmox…" by that
+ *   Grafana       "Grafana": for a node, a service, a container and the UPS
+ *   Uptime Kuma   "Uptime Kuma" or "Kuma": for a service Kuma watches
  *   Settings      where the thing is set up ("Node settings"): its node, its
  *                 service, its integration or the UPS's section
  *
@@ -21,20 +32,23 @@ import { pathTo } from '../../router/routes.js';
 import { safeUrl } from '../../utils/safeUrl.js';
 import { appsOf } from '../nav.js';
 
-/** A name as it is compared: lower case, letters and digits only. */
-const squash = (text) =>
+/** A name as it is compared: lower case, its spaces trimmed and single. */
+const nameKey = (text) =>
   String(text ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
 
-/** The user's apps and Quick Launch links, each `{ name, icon, href, app }`. */
+/**
+ * The user's apps and Quick Launch links, each `{ name, href, app, reaches }`:
+ * `reaches` the address it opens, an app's own URL (its `href` is its page in
+ * JagHelm).
+ */
 function linksOf(config) {
-  const apps = appsOf(config?.tabs).map((a) => ({
-    name: String(a.label || a.id),
-    icon: String(a.icon ?? ''),
-    href: pathTo('app', { id: String(a.id) }),
-    app: true,
-  }));
+  const apps = appsOf(config?.tabs).map((a) => {
+    const href = pathTo('app', { id: String(a.id) });
+    return { name: String(a.label || a.id), href, app: true, reaches: safeUrl(a.url) || href };
+  });
   const groups = config?.links;
   const quick =
     groups && typeof groups === 'object' && !Array.isArray(groups)
@@ -42,7 +56,7 @@ function linksOf(config) {
           (Array.isArray(list) ? list : []).flatMap((link) => {
             const href = safeUrl(link?.url);
             if (!href || !link?.name) return [];
-            return [{ name: String(link.name), icon: String(link.icon ?? ''), href, app: false }];
+            return [{ name: String(link.name), href, app: false, reaches: href }];
           })
         )
       : [];
@@ -50,13 +64,33 @@ function linksOf(config) {
 }
 
 /**
- * The first app, else Quick Launch link, whose name is one of `names`
- * (squashed, so "Uptime Kuma" is "uptimekuma") or whose icon is one of `icons`.
+ * The one app or link named one of `names`, or null: none by those names, or
+ * several that reach different addresses. Of an app and a link to the same
+ * address, the app.
  */
-function find(all, names, icons = []) {
-  const want = new Set(names.map(squash).filter(Boolean));
-  const icon = new Set(icons);
-  return all.find((l) => want.has(squash(l.name)) || icon.has(l.icon)) ?? null;
+function named(all, names) {
+  const want = new Set(names.filter(Boolean).map(nameKey).filter(Boolean));
+  const found = all.filter((l) => want.has(nameKey(l.name)));
+  if (found.length === 0) return null;
+  if (new Set(found.map((l) => l.reaches)).size > 1) return null;
+  return found.find((l) => l.app) ?? found[0];
+}
+
+/** The names a per-node thing goes by with its node's: "cAdvisor pi-1", "cAdvisor (Gateway)". */
+const withNode = (names, nodes) =>
+  names
+    .filter(Boolean)
+    .flatMap((n) => nodes.filter(Boolean).flatMap((node) => [`${n} ${node}`, `${n} (${node})`]));
+
+/** Whether another node runs a service of the same name or container as `entity`. */
+function sharedName(status, entity, container) {
+  const mine = new Set([nameKey(entity.name), nameKey(container)].filter(Boolean));
+  return (status?.entities ?? []).some((e) => {
+    if ((e.kind !== 'service' && e.kind !== 'container') || e.id === entity.id) return false;
+    if (e.node === entity.node) return false;
+    const theirs = e.id.slice(e.id.indexOf(':') + 1);
+    return mine.has(nameKey(e.name)) || mine.has(nameKey(theirs));
+  });
 }
 
 // Where each kind is set up, in Settings: the section, and the link's words.
@@ -73,35 +107,44 @@ const GRAFANA = ['node', 'service', 'container', 'ups'];
 
 /**
  * The links of `entity` (the model's): `{ primary, links, settings }`, each a
- * `{ key, label, href, app }` or null; `links` a list. `card` is its
- * /api/services card (a service's), `proxmox` whether the node has a Proxmox
- * integration, `config` the display config (its apps and links).
+ * `{ key, label, href, app }` or null; `links` a list. `status` is the model
+ * (whether a service's name runs on another node too), `card` its
+ * /api/services card and `nodeName` its node's name (a service's), `proxmox`
+ * whether the node has a Proxmox integration, `config` the display config
+ * (its apps and links).
  */
-export function entityLinks({ entity, card = null, proxmox = false, config = null }) {
+export function entityLinks({
+  entity,
+  status = null,
+  card = null,
+  nodeName = null,
+  proxmox = false,
+  config = null,
+}) {
   const none = { primary: null, links: [], settings: null };
   if (!entity) return none;
   const all = linksOf(config);
   const kind = entity.kind;
   const as = (key, label, link) => link && { key, label, href: link.href, app: link.app };
 
-  const own =
-    kind === 'service' || kind === 'container'
-      ? as('open', `Open ${entity.name}`, find(all, [entity.name, card?.container]))
-      : null;
-  const pve =
-    kind === 'node' && proxmox
-      ? as('proxmox', 'Proxmox', find(all, ['Proxmox', 'Proxmox VE'], ['proxmox']))
-      : null;
-  const grafana = GRAFANA.includes(kind)
-    ? as('grafana', 'Grafana', find(all, ['Grafana'], ['grafana']))
-    : null;
+  let own = null;
+  if (kind === 'service' || kind === 'container') {
+    const names = [entity.name, card?.container];
+    const per = sharedName(status, entity, card?.container)
+      ? withNode(names, [entity.node, nodeName])
+      : names;
+    own = as('open', `Open ${entity.name}`, named(all, per));
+  }
+  let pve = null;
+  if (kind === 'node' && proxmox) {
+    const names = withNode(['Proxmox'], [entity.node, entity.name]);
+    if (/^proxmox\b/i.test(String(entity.name ?? '').trim())) names.push(entity.name);
+    pve = as('proxmox', 'Proxmox', named(all, names));
+  }
+  const grafana = GRAFANA.includes(kind) ? as('grafana', 'Grafana', named(all, ['Grafana'])) : null;
   const kuma =
     kind === 'service' && card?.monitored !== false
-      ? as(
-          'kuma',
-          'Uptime Kuma',
-          find(all, ['Uptime Kuma', 'Kuma'], ['uptime-kuma', 'uptimekuma', 'kuma'])
-        )
+      ? as('kuma', 'Uptime Kuma', named(all, ['Uptime Kuma', 'Kuma']))
       : null;
 
   const found = [own, pve, grafana, kuma].filter(Boolean);

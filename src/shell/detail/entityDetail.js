@@ -17,7 +17,7 @@
  *                               `where`, `state` (no signal while stale),
  *                               `word`, `reason`, `since`, `note` (a node's
  *                               hosted services), `meters`, `facts`,
- *                               `sections`, `unread`, `links`
+ *                               `sections`, `unread`, `lastKnown`, `links`
  */
 import { entityFor } from '../../phone/nav/entityRoute.js';
 import { FRESH } from '../../phone/data/board.js';
@@ -95,6 +95,14 @@ export function entityDetail({
     facts: extras.facts,
     sections: extras.sections,
     unread: extras.unread,
-    links: entityLinks({ entity, card: extras.card, proxmox: extras.proxmox, config }),
+    lastKnown: extras.lastKnown,
+    links: entityLinks({
+      entity,
+      status,
+      card: extras.card,
+      nodeName: extras.nodeName,
+      proxmox: extras.proxmox,
+      config,
+    }),
   };
 }

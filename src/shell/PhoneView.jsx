@@ -104,6 +104,7 @@ export default function PhoneView({
                   nav={nav}
                   params={entry.params}
                   top={i === nav.details.length - 1}
+                  intervalMs={refreshIntervalMs}
                 />
               </Suspense>
             </PhoneSheet>

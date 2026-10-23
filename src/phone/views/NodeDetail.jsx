@@ -11,8 +11,7 @@ import { AndroidLoading } from '../components/AndroidLoading.jsx';
 import UsageBar from '../components/UsageBar.jsx';
 import ServiceRow from '../components/ServiceRow.jsx';
 import { MetricMeter } from '@ui/metric-meter';
-import { FactList } from '@ui/fact-list';
-import { DetailSections, DetailUnread } from '@ui/entity-detail';
+import { DetailFacts, DetailSections, DetailUnread } from '@ui/entity-detail';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import { FRESH, colourOf, nodeCardsOf, serviceRowsOf } from '../data/board.js';
@@ -121,8 +120,8 @@ function WebNodeDetail({ data, nav, params }) {
             ))}
           </div>
         )}
-        <FactList facts={data.extras?.facts} />
-        <DetailSections sections={data.extras?.sections} />
+        <DetailFacts facts={data.extras?.facts} lastKnown={data.extras?.lastKnown} />
+        <DetailSections sections={data.extras?.sections} muted={Boolean(data.extras?.lastKnown)} />
         <DetailUnread unread={data.extras?.unread} />
         {services.length > 0 && (
           <section aria-labelledby={listId} className="flex flex-col gap-2">

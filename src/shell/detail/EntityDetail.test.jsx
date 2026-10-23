@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render, within } from '@testing-library/react';
 import { EntityDetail } from './EntityDetail.jsx';
 import { entityDetail } from './entityDetail.js';
-import { memoryText, rateText, sourcesFor } from './entityExtras.js';
+import { entityExtras, memoryText, rateText, sourcesFor } from './entityExtras.js';
 import { demoStatusCycle } from '../../../server/demoFixtures.js';
 import { createStatusTracker, readStatusInputs } from '../../../server/status/index.js';
 
@@ -89,7 +89,7 @@ const CONFIG = {
   ],
   links: {
     media: [{ name: 'Jellyfin', url: 'https://jellyfin.example.com', icon: 'jellyfin' }],
-    admin: [{ name: 'Proxmox', url: 'https://pve.example.com:8006', icon: 'proxmox' }],
+    admin: [{ name: 'Proxmox apps', url: 'https://pve.example.com:8006', icon: 'proxmox' }],
   },
 };
 
@@ -122,8 +122,8 @@ function board({ integrations = {}, ups = null, change = null } = {}) {
 
 function drawn(id, { status, read }, extra = {}) {
   const view = entityDetail({ status, reach: 'ok', id, at: NOW, read, config: CONFIG, ...extra });
-  const { container } = render(<EntityDetail view={view} />);
-  return { view, root: within(container), container };
+  const { container, unmount } = render(<EntityDetail view={view} />);
+  return { view, root: within(container), container, unmount };
 }
 
 /** A FactList's value for `label`, in the section named `section` or anywhere. */
@@ -190,6 +190,20 @@ describe('a node (#310)', () => {
       'https://pve.example.com:8006'
     );
     expect(root.getByRole('link', { name: 'Grafana' })).toHaveAttribute('href', '/apps/grafana');
+  });
+
+  it('a backup still running says so, never "Failed"', () => {
+    for (const status of [undefined, '', 'running']) {
+      const running = {
+        ...PROXMOX,
+        _lastBackup: { time: NOW - 5 * 60_000, ok: false, status, vmCount: 1 },
+      };
+      const { root, unmount } = drawn('nodes/apps', board({ integrations: { proxmox: running } }));
+      expect(factIn(root, 'Result', 'Last backup')).toBe('Running');
+      expect(factIn(root, 'Backed up', 'Last backup')).toBe('1 VM so far');
+      expect(root.queryByText('Failed')).toBeNull();
+      unmount();
+    }
   });
 
   it('a failed Proxmox read says so, and a failed backup gives Proxmox’s own words', () => {
@@ -305,6 +319,36 @@ describe('the UPS (#310)', () => {
     expect(factIn(root, 'Runtime')).toBe('41 min at this load');
     expect(factIn(root, 'Load')).toBe('18 %');
     expect(factIn(root, 'Model')).toBe('Example UPS 1500VA');
+  });
+
+  it('with no freshness given, it reads the status as fresh', () => {
+    const { status, read } = board({ ups: ON_BATTERY });
+    const entity = status.entities.find((e) => e.id === 'power/ups');
+    const extras = entityExtras({ status, entity, read, at: NOW });
+    expect(extras.facts.map((f) => f.value)).toEqual([
+      '64 %',
+      '22 min left',
+      '31 %',
+      'Example UPS 1500VA',
+    ]);
+    expect(entityExtras({ status, entity, read, freshness: null }).facts).toHaveLength(4);
+  });
+
+  it('with the status stale, its readings are greyed as last known, and no runtime is drawn', () => {
+    const { root, container } = drawn('power/ups', board({ ups: ON_BATTERY }), {
+      freshness: { stale: true, cause: "Can't reach JagHelm", lastKnown: 'last known 3 min ago' },
+    });
+    const facts = container.querySelector('[data-slot="fact-list"]');
+    expect(facts).toHaveAttribute('data-muted');
+    expect(container.querySelector('[data-slot="detail-facts"]')).toHaveTextContent(
+      'Last known 3 min ago'
+    );
+    expect(factIn(root, 'Load')).toBe('31 %');
+    expect(root.queryByText('Runtime')).toBeNull();
+    expect(container.querySelector('[data-slot="detail-status"]')).toHaveAttribute(
+      'data-state',
+      'unknown'
+    );
   });
 
   it('a failed read keeps what it had and says it isn’t updating', () => {

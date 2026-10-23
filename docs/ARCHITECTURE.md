@@ -1935,21 +1935,32 @@ flowchart TD
   The UPS: its charge (the model's), runtime (the model's minutes left on
   battery; on mains `/api/ups`'s, at this load), load and model. An
   integration: its fields, or why its last read failed. A job or a backup:
-  its node; its runs and Remove are the Jobs card's (#578). A read that
-  fails keeps what it had, under a Banner saying so. Links
-  (`detailLinks.js`): JagHelm keeps no address for a service, Grafana or
-  Kuma, so they are the user's own apps (opened inside JagHelm) or Quick
-  Launch links, found by name or icon: Open <service>, Proxmox, Grafana,
-  Uptime Kuma; then where the thing is set up in Settings. `EntityDetail.jsx`
+  its node; its runs and Remove are the Jobs card's (#578). A Proxmox backup
+  still running (no status yet) says "Running", never "Failed". A read that
+  fails keeps what it had, under a Banner saying so; with a stale status the
+  facts are greyed as last known ("Last known 3 min ago", #480) and the UPS
+  has no runtime. Links (`detailLinks.js`): JagHelm keeps no address for a
+  service, Grafana or Kuma, so they are the user's own apps (opened inside
+  JagHelm) or Quick Launch links, found by their exact name, never an icon:
+  Open <service>, Proxmox, Grafana, Uptime Kuma; then where the thing is set
+  up in Settings. Every app and link of a name is collected, and two reaching
+  different addresses give no link; what is one per node names its node
+  ("Proxmox pve2", "cAdvisor (Storage)" for a service on several nodes),
+  else it has none. `EntityDetail.jsx`
   leaves slots for #312 (heartbeats), #311 (charts) and #578 (runs), drawn
   where they go when given. The parts are `src/ui/entity-detail.jsx`
-  (docs/design-system.md). Reads per status tick while open: a node, a
-  service or a container 2 (`/api/services`, and `/api/integrations` when the
-  model has an integration), the UPS 1 (`/api/ups`), an integration 1, any
-  other kind 0; the phone's sheet has `/api/services` already, so it asks
-  only the other, and only the sheet on top asks. The UPS's detail is now
-  the web's one reader of `/api/ups`, which Phase 4 removes (spec §6.3):
-  its load and runtime on mains should move into the model first.
+  (docs/design-system.md). Reads per status tick while open: none of what
+  the page already reads (the detail takes the page's answer to the same
+  address, `lastAnswer` in `useData.js`, when one came since its own read and
+  within an interval and a half), else a node, a service or a container 2
+  (`/api/services`, and `/api/integrations` when the model has an
+  integration), the UPS 1 (`/api/ups`), an integration 1, any other kind 0.
+  Over today's Overview, which reads all three each tick, a detail adds
+  none. The phone's sheet has `/api/services` already, so it asks only the
+  other, and only the sheet on top asks. Once #306 removes today's board, the
+  UPS's detail is the web's one reader of `/api/ups`, which Phase 4 removes
+  (spec §6.3): its load and runtime on mains should move into the model
+  first.
 - **Status in the header** (#296, #275). `useStatus` polls `/api/status`
   (4.7) once a refresh interval with the last ETag, so a steady board costs a
   304, and asks nothing while the browser tab is hidden; on return it asks at
@@ -2440,8 +2451,9 @@ flowchart TD
   per tick. The header's `/api/status` is one more per tick, on every page
   (paused only while the browser tab is hidden), so the Overview makes five
   until the old board's sources go with it (#306 enforces spec §4's four).
-  An open detail adds its own reads on the status tick (up to 2, "The detail
-  drawer's content" above), and none while closed. A
+  An open detail adds none of these (it takes the board's answers), its own
+  reads only where the page doesn't read them ("The detail drawer's
+  content" above), and none while closed. A
   panel shows its "updated ... ago" stale note after 2 missed polls of its own
   source (`pollPeriodMs` in `useDashboardData`): 1 minute for a live source and
   3 minutes for a slow one at 30 s. It is judged at the hook's `healthNow`,
@@ -3437,7 +3449,10 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   drawer's and the sheet's, #310; `src/shell/detail/EntityDetail.test.jsx`:
   each kind's facts, sections and links from fixtures the model judges, #310;
   `src/shell/detail/useDetailSources.test.jsx`: the reads as it opens, on
-  each status answer while open, none closed, a failed read kept;
+  each status answer while open, the page's answer taken, none closed, a
+  failed read kept, one in flight dropped when it closes;
+  `src/shell/detail/detailLinks.test.jsx`: links by exact name, an ambiguous
+  name none, one per node named for its node;
   `src/shell/ShellHeader.test.jsx`: each state of the header, and a
   render count proving the "updated" tick re-renders nothing else), the rule
   for a stale status (`src/shell/statusFreshness.test.jsx`: the hook, its

@@ -10,7 +10,7 @@ import { detailLoading, sinceLine } from '../data/detail.js';
 import { AndroidLoading } from '../components/AndroidLoading.jsx';
 import { Button } from '@ui/button';
 import { FactList } from '@ui/fact-list';
-import { DetailSections, DetailUnread } from '@ui/entity-detail';
+import { DetailFacts, DetailSections, DetailUnread } from '@ui/entity-detail';
 import { StatusLamp } from '@ui/status-lamp';
 import { StatusWord } from '@ui/status-word';
 import UptimeRing from '../components/UptimeRing.jsx';
@@ -167,8 +167,8 @@ function WebIncidentDetail({ data, nav, params }) {
           since={sinceLine(found.since, at, data.freshness)}
           note={issue ? `Active — ${incident.readout}` : undefined}
         />
-        <FactList facts={facts} />
-        <DetailSections sections={extras?.sections} />
+        <DetailFacts facts={facts} lastKnown={extras?.lastKnown} />
+        <DetailSections sections={extras?.sections} muted={Boolean(extras?.lastKnown)} />
         <DetailUnread unread={extras?.unread} />
         {card?.url && (
           <Button

@@ -475,6 +475,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
                 status={poll.status}
                 reach={poll.reach}
                 updated={poll.updated}
+                intervalMs={intervalMs}
               />
             </Suspense>
           )}

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useDetailSources } from './useDetailSources.js';
+import { forgetAnswers, getUPSStatus } from '../../hooks/useData.js';
 
 // The detail's reads (#310): as it opens, again on each answer of the status
 // poll while open, and none while closed. Each answer is a tick of the
@@ -34,6 +35,7 @@ const asked = (path) =>
 
 let ups;
 beforeEach(() => {
+  forgetAnswers();
   localStorage.setItem('jaghelm-token', 'tok');
   ups = { status: 1, charge: 100, load: 18 };
   vi.stubGlobal(
@@ -112,5 +114,76 @@ describe('useDetailSources (#310)', () => {
     act(() => updated.tick());
     await waitFor(() => expect(result.current.ups.error).toBeNull());
     expect(result.current.ups.body.charge).toBe(99);
+  });
+
+  it('reuses what the page read of the same address since its own read, and reads itself once the page stops', async () => {
+    const updated = clock();
+    // The page (today's board) reads /api/ups on its own tick.
+    await getUPSStatus();
+    expect(asked('/api/ups')).toBe(1);
+    const { result } = renderHook(() => useDetailSources(['ups'], updated, { intervalMs: 30_000 }));
+    await waitFor(() => expect(result.current.ups?.body).toEqual(ups));
+    expect(asked('/api/ups')).toBe(1);
+
+    // The page reads again; the status's next answer takes that, asking nothing.
+    vi.setSystemTime(Date.now() + 30_000);
+    ups = { ...ups, load: 25 };
+    await getUPSStatus();
+    act(() => updated.tick());
+    await waitFor(() => expect(result.current.ups.body.load).toBe(25));
+    expect(asked('/api/ups')).toBe(2);
+
+    // The page stops (another page is open): past an interval and a half, the detail reads.
+    vi.setSystemTime(Date.now() + 50_000);
+    act(() => updated.tick());
+    await waitFor(() => expect(asked('/api/ups')).toBe(3));
+    // Its own answer is never taken for the page's: the next tick reads again.
+    vi.setSystemTime(Date.now() + 30_000);
+    act(() => updated.tick());
+    await waitFor(() => expect(asked('/api/ups')).toBe(4));
+  });
+
+  describe('closed while a read is on its way', () => {
+    let release;
+    beforeEach(() => {
+      vi.mocked(fetch).mockImplementation(
+        () => new Promise((resolve) => (release = () => resolve(respondNow({ status: 2 }))))
+      );
+    });
+    const respondNow = (body) => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: () => Promise.resolve(body),
+    });
+
+    it('closed: the late answer changes nothing, and nothing listens to the status', async () => {
+      const updated = clock();
+      const { result, rerender } = renderHook(({ wanted }) => useDetailSources(wanted, updated), {
+        initialProps: { wanted: ['ups'] },
+      });
+      expect(asked('/api/ups')).toBe(1);
+      rerender({ wanted: [] });
+      expect(updated.listening()).toBe(0);
+      await act(async () => {
+        release();
+        await Promise.resolve();
+      });
+      expect(result.current.ups).toBeUndefined();
+    });
+
+    it('unmounted: the late answer sets no state and logs nothing', async () => {
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const updated = clock();
+      const { unmount } = renderHook(() => useDetailSources(['ups'], updated));
+      unmount();
+      expect(updated.listening()).toBe(0);
+      await act(async () => {
+        release();
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(errors).not.toHaveBeenCalled();
+      errors.mockRestore();
+    });
   });
 });

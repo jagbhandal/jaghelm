@@ -21,8 +21,13 @@
  */
 import { Banner } from '@ui/banner';
 import { EmptyState } from '@ui/empty-state';
-import { FactList } from '@ui/fact-list';
-import { DetailLinks, DetailMeters, DetailSections, DetailUnread } from '@ui/entity-detail';
+import {
+  DetailFacts,
+  DetailLinks,
+  DetailMeters,
+  DetailSections,
+  DetailUnread,
+} from '@ui/entity-detail';
 import { Skeleton } from '@ui/skeleton';
 import { DetailStatus } from '../../phone/components/DetailParts.jsx';
 
@@ -74,8 +79,8 @@ export function EntityDetail({ view, slots = NO_SLOTS, target, onOpen }) {
           {slots.heartbeats?.(view)}
           {slots.chart?.(view)}
           <DetailMeters meters={view.meters} />
-          <FactList facts={view.facts} />
-          <DetailSections sections={view.sections} />
+          <DetailFacts facts={view.facts} lastKnown={view.lastKnown} />
+          <DetailSections sections={view.sections} muted={Boolean(view.lastKnown)} />
           {slots.runs?.(view)}
           <DetailUnread unread={view.unread} />
           <DetailLinks {...view.links} target={target} onOpen={onOpen} />

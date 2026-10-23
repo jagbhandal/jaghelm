@@ -26,12 +26,13 @@
  * while the detail is open; /api/integrations only when the model has an
  * integration at all. A read that failed keeps what it last had, and says so
  * (`unread`). With a stale status, every meter is drawn as no signal
- * (drawnState), as the Overview draws them.
+ * (drawnState), as the Overview draws them, the facts greyed as last known
+ * (`lastKnown`), and no runtime: it counts down.
  */
 import { readingLines, shownReading } from '../../../server/status/readings.js';
 import { agoText } from '@ui/lib/ago.js';
 import { lastSeenLabel } from '../../util/relativeTime.js';
-import { upsReadingsOf } from '../../phone/data/board.js';
+import { FRESH, upsReadingsOf } from '../../phone/data/board.js';
 import { uptimePct } from '../../phone/data/derive.js';
 import { appEntryOf, integrationClaims } from '../../views/DashboardView/useAppDataMatching.js';
 import { infrastructureNodes } from '../infrastructureView.js';
@@ -164,16 +165,23 @@ function poolMeter(pool, entity, thresholds, freshness) {
   };
 }
 
-/** The last vzdump batch: when (on the status's clock), its result and how many VMs. */
+/**
+ * The last vzdump batch: when it started (on the status's clock), its result
+ * and how many VMs. Proxmox gives a task its status once it ends: one with
+ * none (or "running") is still running, never failed.
+ */
 function backupFacts(backup, at) {
   if (!isObject(backup)) return [];
   const time = num(backup.time);
   const when = time != null && at != null ? agoText(Math.max(0, at - time)) : backup.ago;
   const count = num(backup.vmCount) ?? 0;
+  const status = String(backup.status ?? '').trim();
+  const running = !backup.ok && (status === '' || /^running$/i.test(status));
+  const vms = count === 1 ? '1 VM' : count > 0 ? `${count} VMs` : null;
   return [
     fact('when', 'When', when),
-    fact('result', 'Result', backup.ok ? 'OK' : String(backup.status || 'Failed')),
-    fact('vms', 'Backed up', count === 1 ? '1 VM' : count > 0 ? `${count} VMs` : 'No VMs'),
+    fact('result', 'Result', backup.ok ? 'OK' : running ? 'Running' : status),
+    fact('vms', 'Backed up', running ? vms && `${vms} so far` : (vms ?? 'No VMs')),
   ].filter(Boolean);
 }
 
@@ -293,7 +301,7 @@ function serviceExtras({ entity, services, integrations, now }) {
     const key = integrationClaims(integrations, services)[uid];
     if (key) sections.push(statsSection(key, integrations[key]));
   }
-  return { meters: [], facts, sections, card };
+  return { meters: [], facts, sections, card, nodeName };
 }
 
 /** An integration's stats: its display fields, and why its last read failed. */
@@ -319,7 +327,7 @@ function upsExtras({ status, entity, ups, freshness }) {
   const read = isObject(ups) && ups.ok !== false ? ups : null;
   const charge = entity.metric?.name === 'charge' ? num(entity.metric.value) : num(read?.charge);
   // On battery, the model's runtime left (#549); on mains, the NUT reading at this load.
-  const left = upsReadingsOf({ status, freshness });
+  const left = upsReadingsOf({ status, freshness: freshness ?? FRESH });
   const seconds = num(read?.runtime);
   const runtime =
     left ??
@@ -354,6 +362,8 @@ function integrationExtras({ entity, integrations }) {
  *             Proxmox node's machines) or `note` (one line)
  *   note      a node's hosted services, for its status box
  *   unread    the reads that failed: `{ key, what, error }`
+ *   lastKnown with a stale status, "Last known 3 min ago": the facts and
+ *             sections are drawn greyed, as last known (#480)
  *
  * `read` is useDetailSources' state: by source, `{ body, error }`.
  *
@@ -365,10 +375,11 @@ export function entityExtras({
   entity,
   read = {},
   services = read.services?.body ?? null,
-  freshness = null,
+  freshness: given = FRESH,
   at = null,
   now = at,
 }) {
+  const freshness = given ?? FRESH;
   const integrations = read.integrations?.body ?? null;
   const ups = read.ups?.body ?? null;
   const args = { status, entity, services, integrations, ups, freshness, at, now };
@@ -394,5 +405,9 @@ export function entityExtras({
     const error = read[key]?.error;
     return error ? [{ key, what: SOURCE_WORDS[key], error }] : [];
   });
-  return { ...out, unread };
+  // A stale status (#480): what its reads add is drawn as last known, greyed.
+  const lastKnown = freshness.stale ? capital(freshness.lastKnown || 'last known') : null;
+  return { ...out, unread, lastKnown };
 }
+
+const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);

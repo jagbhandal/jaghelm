@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import {
+  DetailFacts,
   DetailLinks,
   DetailMeters,
   DetailSection,
@@ -81,6 +82,26 @@ describe('DetailSections', () => {
       </DetailSection>
     );
     expect(screen.getByRole('region', { name: 'Container' })).toHaveTextContent('ContainerCPU');
+  });
+});
+
+describe('DetailFacts', () => {
+  const FACTS = [{ key: 'load', label: 'Load', value: '31 %' }];
+
+  it('the facts as they are, while the status is fresh', () => {
+    const { container } = render(<DetailFacts facts={FACTS} />);
+    expect(container.querySelector('[data-slot="fact-list"]')).not.toHaveAttribute('data-muted');
+    expect(container.querySelector('[data-slot="detail-facts"]')).toBeNull();
+  });
+
+  it('greyed as last known, saying how old, while it is stale', () => {
+    const { container } = render(<DetailFacts facts={FACTS} lastKnown="Last known 3 min ago" />);
+    const list = container.querySelector('[data-slot="fact-list"]');
+    expect(list).toHaveAttribute('data-muted');
+    expect(list.querySelector('dd')).toHaveClass('text-text-2');
+    expect(container.querySelector('[data-slot="detail-facts"]')).toHaveTextContent(
+      'Last known 3 min ago'
+    );
   });
 });
 

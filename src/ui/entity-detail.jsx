@@ -15,8 +15,12 @@
  *    and what Proxmox says it is doing at the end, in words and never in a
  *    status colour: the status model judges no VM (spec §6), so a stopped VM
  *    is only quieter text.
+ *  - DetailFacts: the facts (a FactList); with a stale status (`lastKnown`,
+ *    "Last known 3 min ago") greyed, that line under them in 12px text-3,
+ *    as the rest of a stale entity is drawn (#480).
  *  - DetailSections: a list of sections as the screens build them, each
- *    drawn by its `kind` (facts, meters, vms, or a note).
+ *    drawn by its `kind` (facts, meters, vms, or a note); `muted` greys
+ *    their facts, as DetailFacts'.
  *  - DetailUnread: a Banner (no signal's tone) when a read the detail makes
  *    failed: what it couldn't read and why, and that it tries again; what
  *    it read before stays drawn.
@@ -110,12 +114,23 @@ function DetailVms({ vms = [], className, ...props }) {
   );
 }
 
-function DetailSections({ sections = [] }) {
+function DetailFacts({ facts = [], lastKnown = null }) {
+  if (!facts.length) return null;
+  if (!lastKnown) return <FactList facts={facts} />;
+  return (
+    <div data-slot="detail-facts" className="flex flex-col gap-2">
+      <FactList facts={facts} muted />
+      <span className="text-caption text-text-3">{lastKnown}</span>
+    </div>
+  );
+}
+
+function DetailSections({ sections = [], muted = false }) {
   return sections.map((s) => (
     <DetailSection key={s.key} data-section={s.key} title={s.title} aside={s.aside}>
       {s.kind === 'vms' && <DetailVms vms={s.vms} />}
       {s.kind === 'meters' && <DetailMeters meters={s.meters} />}
-      {s.facts?.length > 0 && <FactList facts={s.facts} />}
+      {s.facts?.length > 0 && <FactList facts={s.facts} muted={muted} />}
       {s.note && <p className="text-body-sm text-text-2">{s.note}</p>}
     </DetailSection>
   ));
@@ -213,4 +228,12 @@ function DetailLinks({
   );
 }
 
-export { DetailLinks, DetailMeters, DetailSection, DetailSections, DetailUnread, DetailVms };
+export {
+  DetailFacts,
+  DetailLinks,
+  DetailMeters,
+  DetailSection,
+  DetailSections,
+  DetailUnread,
+  DetailVms,
+};
