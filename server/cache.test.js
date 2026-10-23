@@ -12,7 +12,7 @@ import crypto from 'node:crypto';
 import express from 'express';
 import request from 'supertest';
 
-import { getCached, jsonWithEtag, setCache, respondWarmCached } from './cache.js';
+import { getCached, ifNoneMatchHits, jsonWithEtag, setCache, respondWarmCached } from './cache.js';
 
 afterEach(() => mock.restoreAll());
 
@@ -307,4 +307,14 @@ test('without lastModified (every other route), no Last-Modified; nor for a valu
   const other = await request(app).get('/x');
   assert.equal(other.status, 200);
   assert.equal(other.headers['last-modified'], undefined, 'no entry time to vouch for it');
+});
+
+// If-None-Match compares weakly (RFC 9110 §13.1.2): a W/ on either side is ignored.
+test('an If-None-Match tag matches with or without W/, on either side', () => {
+  const tag = '"abc"';
+  for (const etag of [tag, `W/${tag}`]) {
+    for (const header of [`W/${tag}`, tag, `"x", W/${tag}`, `"x", ${tag}`])
+      assert.equal(ifNoneMatchHits(header, etag), true, `${header} / ${etag}`);
+    assert.equal(ifNoneMatchHits('W/"abd"', etag), false);
+  }
 });

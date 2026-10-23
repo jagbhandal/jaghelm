@@ -362,7 +362,8 @@ an unchanged poll returns `304`.
 Each cached value is serialized and hashed once, on its first request, and kept
 with it, so later requests (`200` or `304`) only send what is already in memory
 until the next refresh replaces the value.
-`If-None-Match` is matched per RFC 9110: weak comparison, a list of tags, or `*`.
+`If-None-Match` is matched per RFC 9110: weak comparison (a `W/` ignored on
+either side), a list of tags, or `*`.
 Two reads served outside the cache have their own reuse rules: `/api/history`
 (the sparkline series, which changes every cycle) carries an ETag of its
 response, and `/api/cron/status` (whose `seconds_since_report` changes every
@@ -1468,7 +1469,8 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   issues: [entity, …],              // ranked, see below
   subsystems: [{ id, name, state, counts: { total, ok, warn, crit, unknown, maintenance }, detail, value, sub }],
   entities: [{ id, kind, subsystem, name, node?, state, word, reason, metric?, conditions?, heldSince?,
-               runtimeMinutes?, schedule?, everySeconds?, lastRun?, overdue?, since }],
+               runtimeMinutes?, runtimeOnMainsMinutes?, load?, model?,       // the UPS's
+               schedule?, everySeconds?, lastRun?, overdue?, since }],
   sources: { prometheus: { state: 'ok' | 'failed', error?, since }, kuma, nut, gitea, config },
   thresholds: { cpu: { warn, cycles }, mem: { warn }, disk: { warn, crit },   // the lines it judged by
                 temp: { warn, crit }, hysteresis: { fraction, celsius }, pending: { cycles } },
@@ -1519,11 +1521,25 @@ its problem: `sourceUrlProblems`, #419), and the cycle's error set
   mains as on battery (#541). The UPS's `runtimeMinutes` (#549) is the
   runtime NUT says is left on battery, in whole minutes, rounded as the
   Android app has always shown it ("8 min left"), from the same read; it is
-  null on mains (there the runtime drifts with the load, and carried it would
-  move a steady board's ETag), with no runtime reading, and with no signal, so
-  no screen draws a runtime the cycle's read didn't give. Every UPS entity
+  null on mains, with no runtime reading, and with no signal, so no screen
+  draws a runtime the cycle's read didn't give; it counts down, so on battery
+  it moves the status, and its ETag, about once a minute. Every UPS entity
   has the key, so a client tells "no reading now" from a server older than
-  #549, whose UPS has none. A job's and a backup's entity (#578) carries what
+  #549, whose UPS has none. From the same read the UPS carries (#586)
+  `runtimeOnMainsMinutes`, on mains the runtime NUT gives at this load (whole
+  minutes, rounded the same way), `load` in % on mains as on battery (rounded
+  down, as a meter shows a reading), and `model`, NUT's name for its model
+  while the UPS query answers; each is null without one, never 0, and with no
+  signal neither reading is given, as the charge isn't. The detail drawer and
+  the phone's UPS sheet draw them from the status, so the web never reads
+  `/api/ups`. Load and the runtime on mains drift with the load on a steady
+  board, so the model samples and holds them (`holdUpsReadings` in
+  `model.js`): it serves them as last read, and reads them afresh only when 5
+  minutes (`UPS_HOLD_MS`) have passed since, when any other field of the UPS's
+  entity changes (state, charge, runtime left, model), or when either goes to
+  or from null. A steady board then keeps one status, and one ETag, between
+  reads, and a reading served is at most 5 minutes old, plus a cycle and a
+  poll. After a restart the first read is fresh. A job's and a backup's entity (#578) carries what
   its last run reported, so the Overview's Jobs section and the phone's list
   draw every job from the status alone: `schedule` in words
   (`status/schedule.js`: the reporter's words as sent; a common cron
@@ -1731,9 +1747,12 @@ so the screens' meters draw the same lines.
 
 **`GET /api/status`** (`routes/status.js`, token auth like every `/api/*`
 read) serves the status the loop cached this cycle under `status`, with the
-cache's ETag (4.2: computed once per value). Reasons hold no times and the
-lines change only with the config, so a steady board serves the same bytes
-every cycle and a poll with the last ETag gets a 304 (`server/routes/status.test.js`). The status stays fresh for two refresh intervals (at least the cache's 2
+cache's ETag (4.2: computed once per value). Reasons hold no times, the lines
+change only with the config, and the UPS's drifting readings are held for 5
+minutes (above, #586), so a steady board serves the same bytes from cycle to
+cycle and a poll with the last ETag gets a 304 (`server/routes/status.test.js`,
+`status.upsHold.test.js`); every 5 minutes at most, a new load or runtime on
+mains is a 200. The status stays fresh for two refresh intervals (at least the cache's 2
 minutes), so a long interval leaves no gap between cycles. Before the first
 cycle, or once the loop has built none for that long, it answers 503. The
 200 and the 304 both say when the status served was built, as `Last-Modified`
@@ -1759,7 +1778,9 @@ here.
 poll scheduler asks `/api/status` and `/api/services` (the cards' names,
 links and readings), each with its ETag: two requests, and the app no longer
 reads `/api/cron/status` or `/api/ups`, since the model carries the UPS's
-charge (#541) and its runtime on battery (#549). Only a server older than
+charge (#541) and its runtime on battery (#549). Nor does the web: its UPS
+detail draws the model's load, model and runtime on mains (#586). Only a
+server older than
 #549, whose UPS entity has no `runtimeMinutes` key (`needsUpsRead` in
 `board.js`, read off the status the round brought, so finding out costs no
 request), is asked `/api/ups` too, after its status lands, for that runtime
@@ -2226,8 +2247,9 @@ flowchart TD
   service's only), a breadcrumb's last seen, its node, Docker's CPU, memory
   and RX/TX rates while it runs (the rate fields, spec §6.3), and the stats
   of the integration the Services rows match to it (`integrationClaims`).
-  The UPS: its charge (the model's), runtime (the model's minutes left on
-  battery; on mains `/api/ups`'s, at this load), load and model. An
+  The UPS, all the model's (#586): its charge, runtime (the minutes left on
+  battery; on mains, at this load), load and model, a reading it has none
+  of left out. An
   integration: its fields, or why its last read failed. A job or a backup
   (#578): its node under its name, its schedule in words and its last report
   (the model's), then "Last runs": the overdue line while the model says it
@@ -2254,17 +2276,18 @@ flowchart TD
   address, `lastAnswer` in `useData.js`, when one came since its own read and
   within an interval and a half), else a node, a service or a container 2
   (`/api/services`, and `/api/integrations` when the model has an
-  integration), the UPS 1 (`/api/ups`), an integration 1, any other kind 0.
+  integration), an integration 1, any other kind 0 (the UPS too, #586).
   A job's runs are read as its detail opens and again only when the model's
   `lastRun` says it reported since, never per tick and never from the page's
   answer, past the HTTP cache the route allows (a minute). Over the
   Overview, which reads `/api/services` and `/api/integrations` each tick
   (`OverviewBoard`), a node's or a service's detail adds none. The phone's
   sheet has `/api/services` already, so it asks only the other, and only the
-  sheet on top asks. Since the old board's UPS panel went (#306), the UPS's
-  detail is the web's one reader of `/api/ups`, a request a tick while it is
-  open, which Phase 4 removes (spec §6.3): its load and runtime on mains
-  should move into the model first.
+  sheet on top asks. Nothing on the web reads `/api/ups` (#586): the UPS's
+  detail draws the model's load, model and runtime on mains, which the
+  model holds for up to 5 minutes between reads (4.7), so they are at most
+  that old, plus a cycle and a poll. The endpoint stays for the Android
+  app's old-server fallback until Phase 4 removes it (spec §6.3).
 - **Status in the header** (#296, #275). `useStatus` polls `/api/status`
   (4.7) once a refresh interval with the last ETag, so a steady board costs a
   304, and asks nothing while the browser tab is hidden; on return it asks at
@@ -2996,8 +3019,9 @@ stack sits beside today's CSS and must not restyle it.
   clock), judged fresh or stale by the one rule (`useStatusFreshness`), and
   the cards, read by `useDashboardData` with `only: ['services']` (a tick
   costs that and the status, nothing more; the model carries the
-  UPS's runtime, #549, and the web's own server always does, so its phone
-  needs no `/api/ups`),
+  UPS's runtime, #549, and its load, model and runtime on mains, #586, and
+  the web's own server always does, so neither its phone screens nor the
+  UPS's sheet need `/api/ups`),
   on the tick the Overview's interval runs while a phone tab is on screen.
   The screens judge nothing: they draw the model through `board.js`, as on
   Android, and the cross-client suite holds the web's words to the model

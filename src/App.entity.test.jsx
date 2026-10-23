@@ -404,14 +404,18 @@ describe('what a detail shows, from the reads it makes while open (#310)', () =>
     expect(asked('/api/services')).toBe(before.services);
   });
 
-  it('from 768px: the UPS’s drawer has its charge, runtime, load and model', async () => {
+  // The model carries the UPS's load and model (#586): /api/ups, answering
+  // another load here, is never asked.
+  it('from 768px: the UPS’s drawer has its charge, runtime, load and model, from the status alone', async () => {
     windowOf({ phone: false });
     await renderAt('/alerts?entity=power/ups');
     const panel = await drawer('Example UPS 1500VA');
-    await within(panel).findByText('31 %');
+    await within(panel).findByText('18 %');
     expect(within(panel).getByText('22 min left')).toBeInTheDocument();
     expect(within(panel).getByText('64 %')).toBeInTheDocument();
-    expect(asked('/api/ups')).toBe(1);
+    expect(within(panel).getByText('Example UPS 1500VA', { selector: 'dd' })).toBeInTheDocument();
+    expect(within(panel).queryByText('31 %')).toBeNull();
+    expect(asked('/api/ups')).toBe(0);
   });
 
   it('below 768px: the node’s sheet has its machines and pools, the UPS’s its load and model', async () => {
@@ -429,8 +433,9 @@ describe('what a detail shows, from the reads it makes while open (#310)', () =>
     window.history.pushState(null, '', '/?entity=power/ups');
     window.dispatchEvent(new PopStateEvent('popstate'));
     sheet = await screen.findByRole('dialog', { name: 'Example UPS 1500VA' });
-    await within(sheet).findByText('31 %');
+    await within(sheet).findByText('18 %');
     expect(within(sheet).getByText('Example UPS 1500VA', { selector: 'dd' })).toBeInTheDocument();
     expect(within(sheet).getByText('22 min left')).toBeInTheDocument();
+    expect(asked('/api/ups')).toBe(0);
   });
 });

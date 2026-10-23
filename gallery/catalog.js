@@ -382,6 +382,11 @@ export const CATALOG = Object.freeze([
     'Phone',
     "A detail's sheet: Back and its kind, the service down, its facts and Open"
   ),
+  s(
+    'phone-ups-detail',
+    'Phone',
+    "The UPS's sheet on battery: its charge, runtime left, load and model, all from the status"
+  ),
 
   // Sign-in (#305)
   s('login', 'Sign-in', 'LoginForm: the brand, the labelled fields and Sign in'),
