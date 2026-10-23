@@ -133,8 +133,9 @@ const FILE = [
 ].join('\n');
 
 function fixtureFile() {
-  setSecret('statuspage_key', STATUSPAGE_KEY);
-  setSecret('integration_adguard_primary_password', ADGUARD_PASSWORD);
+  // Each for the address it was entered for (#556).
+  setSecret('statuspage_key', STATUSPAGE_KEY, { origins: ['http://status.example.test:80'] });
+  setSecret('integration_adguard_primary_password', ADGUARD_PASSWORD, { origins: ['http://adguard.example.test:3000'] });
   handWritten(FILE);
 }
 
@@ -157,8 +158,9 @@ test('testing a custom integration requests <url><endpoint>, never undefined', a
   assert.ok(!made.some((r) => r.url.includes('undefined')));
 
   // A URL changed in the form and not saved: its endpoint is the stored one.
+  // The stored key goes only where it was entered (#556): it is typed again.
   const moved = await recorded(() =>
-    testForm({ ...STATUSPAGE.saveUnchanged, url: 'status2.example.test' })
+    testForm({ ...STATUSPAGE.saveUnchanged, url: 'status2.example.test', token: STATUSPAGE_KEY })
   );
   assert.deepEqual(moved.result.body, { ok: true });
   assert.deepEqual(
@@ -169,8 +171,8 @@ test('testing a custom integration requests <url><endpoint>, never undefined', a
 
 test('the test and the refresh build the same request for the same config', async () => {
   // Every auth path: header (custom), basic (preset), query (preset), session (preset).
-  setSecret('integration_sabnzbd_token', 'sab-key'); // pragma: allowlist secret
-  setSecret('integration_npm_password', 'npm-pw'); // pragma: allowlist secret
+  setSecret('integration_sabnzbd_token', 'sab-key', { origins: ['http://sab.example.test:8080'] }); // pragma: allowlist secret
+  setSecret('integration_npm_password', 'npm-pw', { origins: ['http://npm.example.test:80'] }); // pragma: allowlist secret
   upstreams['sab.example.test'] = async () => json({ queue: { noofslots_total: 2 } });
   upstreams['npm.example.test'] = async (u, init) =>
     init.method === 'POST' ? json({ token: `tok-${Math.random()}` }) : json([]);
@@ -309,7 +311,7 @@ test('a session login is made afresh for a test, and its token is not kept', asy
     logins.push(secret);
     return secret === accepted ? json({ token: `tok-${secret}` }) : json({ error: 'no' }, 401);
   };
-  setSecret('integration_npm2_password', accepted); // pragma: allowlist secret
+  setSecret('integration_npm2_password', accepted, { origins: ['http://npm2.example.test:80'] }); // pragma: allowlist secret
   handWritten(
     [
       'integrations:',
@@ -379,7 +381,8 @@ test('a reply that is not JSON says so, and never quotes it, in the test and on 
   const BODY = `<!DOCTYPE html><html>internal-page-${Math.random().toString(36).slice(2)}`;
   upstreams['html.example.test'] = async () =>
     new Response(BODY, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
-  const form = { ...STATUSPAGE.saveUnchanged, url: 'http://html.example.test' };
+  // Moved to another address, so the key is typed again (#556).
+  const form = { ...STATUSPAGE.saveUnchanged, url: 'http://html.example.test', token: STATUSPAGE_KEY };
   const said = 'The reply is not JSON (text/html)';
 
   const tested = await testForm(form);

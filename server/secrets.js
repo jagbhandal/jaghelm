@@ -3,6 +3,16 @@
  * Encrypts/decrypts credentials with AES-256-GCM using DASH_SECRET from .env.
  * Stores encrypted values in data/secrets.json.
  * Falls back to .env variables when no encrypted secret exists.
+ *
+ * Each secret carries the origins it may be sent to (#556): `origins`, a list
+ * of `scheme://host:port` (integrations/lib/origin.js), stored in clear next
+ * to its encrypted value (`{ iv, data, tag, origins }`). A secret goes only
+ * to a request whose own URL has one of them (integrations/lib/config.js and
+ * the requests in integrations/): with none it goes nowhere. One stored
+ * before #556 has no `origins` until the boot binds it to the entries that
+ * use it (integrations/secretBinding.js); until then it goes nowhere too.
+ * The origins never leave the store: no route answers them and nothing logs
+ * them.
  */
 
 import crypto from 'crypto';
@@ -137,11 +147,20 @@ function changeStore(change) {
   return result;
 }
 
+/** `origins` as stored: text, each once, in order. */
+function originList(origins) {
+  return [...new Set((Array.isArray(origins) ? origins : []).filter((o) => typeof o === 'string' && o))];
+}
+
 /**
- * Encrypt a plaintext value and store it. False when there is no key
- * (DASH_SECRET); throws when secrets.json can't be written (changeStore).
+ * Encrypt a plaintext value and store it, with the origins it may be sent to
+ * (#556; none: it goes nowhere). False when there is no key (DASH_SECRET);
+ * throws when secrets.json can't be written (changeStore).
+ * @param {string} name
+ * @param {string} plaintext
+ * @param {{ origins?: string[] }} [opts]
  */
-export function setSecret(name, plaintext) {
+export function setSecret(name, plaintext, { origins = [] } = {}) {
   const key = getKey();
   if (!key) return false;
 
@@ -151,7 +170,7 @@ export function setSecret(name, plaintext) {
   encrypted += cipher.final('hex');
   const tag = cipher.getAuthTag().toString('hex');
 
-  const stored = { iv: iv.toString('hex'), data: encrypted, tag };
+  const stored = { iv: iv.toString('hex'), data: encrypted, tag, origins: originList(origins) };
   return changeStore((next) => {
     next[name] = stored;
     return true;
@@ -185,6 +204,62 @@ export function getSecret(name) {
 }
 
 /**
+ * The origins `name` may be sent to (#556), a copy: none ([]) for one stored
+ * before #556 and not bound yet; null when there is no such secret.
+ * @param {string} name
+ * @returns {string[] | null}
+ */
+export function getSecretOrigins(name) {
+  if (!Object.hasOwn(secrets, name)) return null;
+  return originList(secrets[name].origins);
+}
+
+/**
+ * The origins `name` has once `value` is entered for `origin` (#556): the
+ * value it already holds, entered again, adds the origin to those it has (a
+ * password two entries share, entered for the second); any other value has
+ * only that origin, so a value the store held is never sent where it wasn't
+ * entered. A null origin (an address that has none) adds nothing. Compares in
+ * constant time; changes nothing.
+ * @param {string} name
+ * @param {string} value
+ * @param {string | null} origin
+ */
+export function originsOnEntry(name, value, origin) {
+  const own = origin ? [origin] : [];
+  const stored = getSecret(name);
+  if (stored === null) return own;
+  const a = Buffer.from(stored, 'utf8');
+  const b = Buffer.from(String(value), 'utf8');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return own;
+  return originList([...(getSecretOrigins(name) || []), ...own]);
+}
+
+/** The secrets stored before #556 and not bound to any origin yet. */
+export function unboundSecretNames() {
+  return Object.keys(secrets).filter((name) => !Array.isArray(secrets[name].origins));
+}
+
+/**
+ * Bind each unbound secret named in `byName` to its origins, in one write of
+ * secrets.json. A secret already bound (even to none) is left as it is, and a
+ * name not stored is skipped. Returns how many were bound. Throws when
+ * secrets.json can't be written, and then binds none (changeStore).
+ * @param {Record<string, string[]>} byName
+ */
+export function bindSecretOrigins(byName) {
+  return changeStore((next) => {
+    let bound = 0;
+    for (const [name, origins] of Object.entries(byName)) {
+      if (!Object.hasOwn(next, name) || Array.isArray(next[name].origins)) continue;
+      next[name] = { ...next[name], origins: originList(origins) };
+      bound++;
+    }
+    return bound;
+  });
+}
+
+/**
  * Delete a secret. Throws when secrets.json can't be written (changeStore).
  */
 export function deleteSecret(name) {
@@ -210,8 +285,8 @@ export function deleteSecrets(names) {
 
 /**
  * Copy the secret stored under `from` to `to`, replacing what `to` held. The
- * stored value is copied as it is, still encrypted, so no plaintext is handled
- * and it works without DASH_SECRET. Returns false, and changes nothing, when
+ * stored value is copied as it is, still encrypted, with its origins, so no
+ * plaintext is handled and it works without DASH_SECRET. Returns false, and changes nothing, when
  * there is no secret under `from`. Throws when secrets.json can't be written
  * (changeStore).
  */
@@ -219,6 +294,7 @@ export function copySecret(from, to) {
   if (!Object.hasOwn(secrets, from)) return false;
   return changeStore((next) => {
     next[to] = { ...next[from] };
+    if (Array.isArray(next[from].origins)) next[to].origins = [...next[from].origins];
     return true;
   });
 }

@@ -26,6 +26,9 @@ data/
 id_rsa
 id_ed25519
 *credential*
+# ...never a changelog fragment, whatever its card's words (#556)
+!/changes/*.md
+!/mobile/changes/*.md
 *-secret.json
 *service-account*.json
 .secrets/

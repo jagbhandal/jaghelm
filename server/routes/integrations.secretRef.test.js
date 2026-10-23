@@ -93,9 +93,10 @@ const FILE = [
   '',
 ].join('\n');
 function stored() {
-  setSecret('statuspage_key', SP_SECRET);
-  setSecret('integration_adguard_primary_password', AG_SECRET);
-  setSecret('adguard_user', USER_SECRET);
+  // Each for the address it was entered for (#556).
+  setSecret('statuspage_key', SP_SECRET, { origins: ['http://status.example.test:80'] });
+  setSecret('integration_adguard_primary_password', AG_SECRET, { origins: ['http://adguard.example.test:3000'] });
+  setSecret('adguard_user', USER_SECRET, { origins: ['http://adguard.example.test:3000'] });
   writeFileSync(CONFIG_PATH, FILE);
   loadConfig();
 }

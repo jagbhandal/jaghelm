@@ -253,7 +253,7 @@ test('a save in Settings retries an integration written by hand too, and leaves 
   let keyWanted = 'new';
   upstreams['hand.example.test'] = async (u, init) =>
     new Headers(init.headers).get('x-api-key') === keyWanted ? json({ up: 'yes' }) : json({}, 401);
-  setSecret('hand_key', 'old');
+  setSecret('hand_key', 'old', { origins: ['http://hand.example.test:80'] });
   const path = join(process.env.JAGHELM_DATA_DIR, 'services.yaml');
   const text = [
     '# Written by hand.',
@@ -385,7 +385,7 @@ test('a session login refused twice (403) waits too; a save in Settings retries 
   assert.equal(loginsSent.length, 6);
 
   // Only the stored secret changes (services.yaml still names the same one).
-  setSecret('integration_npm_password', 'new');
+  setSecret('integration_npm_password', 'new', { origins: ['http://npm.example.test:80'] });
   r = await cycle(1);
   assert.equal(loginsSent.length, 7);
   assert.equal(r.result.npm._status.state, 'ok');
@@ -429,7 +429,7 @@ test('a save in Settings while the integration is being fetched is not lost', as
 
   // The password is stored, and the entry has none, as when a save left the
   // field blank: so the save during the login leaves services.yaml as it was.
-  setSecret('integration_npm_two_password', 'wrong');
+  setSecret('integration_npm_two_password', 'wrong', { origins: ['http://npm2.example.test:80'] });
   saveConfig({ integrations: {} });
   assert.equal((await save(two)).status, 200);
   const entry = getConfig().integrations.npm_two;

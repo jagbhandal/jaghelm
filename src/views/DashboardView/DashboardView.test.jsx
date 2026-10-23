@@ -30,6 +30,20 @@ vi.mock('../../components/HelmGrid', () => ({
   ),
 }));
 
+// NodePanel as it is, its renders counted: a healthy tick renders none (#545).
+const nodePanelRenders = vi.hoisted(() => ({ count: 0 }));
+vi.mock('./NodePanel', async (importOriginal) => {
+  const { createElement } = await import('react');
+  const real = await importOriginal();
+  return {
+    ...real,
+    default: (props) => {
+      nodePanelRenders.count += 1;
+      return createElement(real.default, props);
+    },
+  };
+});
+
 // TodoCard loads /api/todos and needs the toast context; neither is under test.
 vi.mock('../../components/TodoCard', () => ({
   default: () => <div>Checklist panel</div>,
@@ -58,6 +72,7 @@ function boardData(overrides = {}) {
       cron: source(),
       integrations: source(),
     },
+    healthNow: Date.now(),
     overallHealth: 'up',
     retry: vi.fn(),
     ...overrides,
@@ -624,5 +639,48 @@ describe('DashboardView before the first status (#243)', () => {
     useDashboardData.mockReturnValue(boardData());
     renderAt('loading');
     expect(useDashboardData).toHaveBeenCalled();
+  });
+});
+
+describe('DashboardView stale notes (#545)', () => {
+  // The hook reads each source's last answer at `healthNow`; judged at the
+  // later wall clock instead, a source that answered on time reads stale.
+  it("judges each source at the hook's healthNow, the clock its answers were read on", () => {
+    const healthNow = Date.now() - 3000;
+    const data = boardData({
+      serviceData: { nodes: { pve1: node('Proxmox') } },
+      ups: UPS_ONLINE,
+      healthNow,
+      // 2 polls before healthNow at a 2 s interval: due, not missed.
+      sources: sourcesWith({ ups: source({ lastSuccessMs: healthNow - 4000 }) }),
+    });
+    const { rerenderWith } = renderBoard(freshConfig({ refreshInterval: 2 }), data);
+    expect(within(panel('UPS Power')).queryByText(/updated/)).not.toBeInTheDocument();
+
+    // One more second of silence at the hook's clock: 2 polls missed.
+    rerenderWith({
+      ...data,
+      sources: sourcesWith({ ups: source({ lastSuccessMs: healthNow - 5000 }) }),
+    });
+    expect(within(panel('UPS Power')).getByText('updated 5s ago')).toBeInTheDocument();
+  });
+
+  it('a healthy tick, the clock a step on, renders no node panel again (#252)', () => {
+    const KEYS = ['services', 'ups', 'commits', 'cron', 'integrations'];
+    const answeredAt = (at) =>
+      sourcesWith(Object.fromEntries(KEYS.map((k) => [k, source({ lastSuccessMs: at })])));
+    const healthNow = Date.now();
+    const data = boardData({
+      serviceData: { nodes: { pve1: node('Proxmox'), pve2: node('Backup') } },
+      healthNow,
+      sources: answeredAt(healthNow - 1000),
+    });
+    const { rerenderWith } = renderBoard(freshConfig({ refreshInterval: 2 }), data);
+    const drawn = nodePanelRenders.count;
+    expect(drawn).toBeGreaterThan(0);
+
+    // The next step: the hook's sources rebuilt, every source answered again.
+    rerenderWith({ ...data, healthNow: healthNow + 1000, sources: answeredAt(healthNow) });
+    expect(nodePanelRenders.count).toBe(drawn);
   });
 });

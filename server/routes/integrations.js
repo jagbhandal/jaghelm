@@ -42,8 +42,10 @@ import {
   deleteSecret,
   deleteSecrets,
   getSecret,
+  getSecretOrigins,
   hasSecret,
   listSecretKeys,
+  originsOnEntry,
   restoreSecrets,
   setSecret,
   snapshotSecrets,
@@ -52,10 +54,12 @@ import { getPreset, listPresets } from '../integrations/registry.js';
 import { testIntegration } from '../integrations/handler.js';
 import {
   KEYED_SECRET_FIELDS,
+  entryOrigin,
   integrationInput,
   keyedSecretName,
 } from '../integrations/lib/config.js';
 import { formUrlCredentialError } from '../integrations/lib/urlCredential.js';
+import { movedCredential, movedCredentialError } from '../integrations/movedCredential.js';
 import { looksLikeSecretRef } from '../integrations/lib/extract.js';
 import {
   dropUnusedIntegrationSecrets,
@@ -140,6 +144,12 @@ router.get(
 // No value the form sends may name a stored secret: one that is a `$secret:`
 // reference is refused (400, naming the field) unless it is the value already
 // stored in that field of this entry (see mergeForm).
+// A stored credential goes only to the address it was entered for (#556): a
+// typed password or token is stored for the origin of the entry's URL (the
+// value it already held, typed again, adds that origin), and a stored
+// credential the save keeps (a password or token left blank, a header or
+// anything else written by hand) while the URL moves to another origin is
+// refused (400, naming it; integrations/movedCredential.js).
 // `enabled` is set by a save that creates the entry, or one without an
 // `editingKey` (an older web app's toggle sent those). An edit leaves it to the
 // toggle route, so a form left open can't undo a toggle made since. An edit
@@ -291,7 +301,8 @@ const refusalBody = ({ error, field }) => (field ? { error, field } : { error })
  * place. Changes nothing: `config` and the secret store are only read.
  *
  * Returns `{ refused }` (a 409, or a 400 for a value that names a stored
- * secret, as formRefusal's) or the merge:
+ * secret, as formRefusal's, or for a stored credential the URL moves away
+ * from, #556) or the merge:
  *   - storageKey, the key the entry is stored under; baseKey and base, the
  *     stored entry it merges into (null for a new one); moving, when the
  *     instance name moves it;
@@ -299,7 +310,8 @@ const refusalBody = ({ error, field }) => (field ? { error, field } : { error })
  *     credential (to the name `secretOps` stores it under);
  *   - secretOps, what the save does to the secret store, in order:
  *     `{ drop: names }` (what an older delete left under a new entry's key,
- *     #415), `{ set: name, value }` (a typed password or token), and
+ *     #415), `{ set: name, value, origins }` (a typed password or token, for
+ *     the origins it goes to, #556), and
  *     `{ copy: from, to }` (a moved keyed secret; `to` is removed when `from`
  *     holds none);
  *   - leftBehind, the old keyed names a move leaves, dropped once it is
@@ -427,6 +439,19 @@ function mergeForm(config, body) {
     }
   }
 
+  // A stored credential goes only to the origin it was entered for (#556).
+  // The URL as a refresh resolves it, so a `.env` URL, which the form can't
+  // move, moves nothing.
+  const after = secretsAfter(secretOps);
+  const moved =
+    base && movedCredential({ beforeKey: baseKey, before: base, afterKey: storageKey, after: entry, typed, secrets: after });
+  if (moved) {
+    const refused = { status: 400, error: movedCredentialError(moved) };
+    return { refused: moved.field ? { ...refused, field: moved.field } : refused };
+  }
+  const origin = entryOrigin(storageKey, entry, { secrets: after });
+  for (const op of secretOps) if (op.set) op.origins = originsOnEntry(op.set, op.value, origin);
+
   return { storageKey, baseKey, base, moving, entry, secretOps, leftBehind };
 }
 
@@ -438,7 +463,7 @@ function storeSecrets(secretOps) {
   for (const op of secretOps) {
     if (op.drop) deleteSecrets(op.drop);
     else if (op.set) {
-      if (!setSecret(op.set, op.value)) return false;
+      if (!setSecret(op.set, op.value, { origins: op.origins })) return false;
     } else if (!copySecret(op.copy, op.to)) deleteSecret(op.to);
   }
   return true;
@@ -446,15 +471,21 @@ function storeSecrets(secretOps) {
 
 /**
  * What a merge's secretOps would leave under each name they touch, for the
- * connection test to resolve with: a typed credential as typed, a moved one
- * as its old name holds it, and a removed one as none (null).
+ * connection test to resolve with: a typed credential as typed, for the
+ * origins the save stores it for, a moved one as its old name holds it, and a
+ * removed one as none (null).
  */
 function secretsAfter(secretOps) {
   const after = new Map();
   for (const op of secretOps) {
     if (op.drop) for (const name of op.drop) after.set(name, null);
-    else if (op.set) after.set(op.set, op.value);
-    else after.set(op.to, getSecret(op.copy));
+    else if (op.set) after.set(op.set, { value: op.value, origins: op.origins || [] });
+    else {
+      after.set(
+        op.to,
+        hasSecret(op.copy) ? { value: getSecret(op.copy), origins: getSecretOrigins(op.copy) || [] } : null
+      );
+    }
   }
   return after;
 }

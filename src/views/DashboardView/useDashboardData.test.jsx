@@ -368,3 +368,136 @@ describe("useDashboardData — stale threshold follows each source's poll period
     expect(staleAt('services', 60_000, 121_000)).toBe(true);
   });
 });
+
+// A source that answers every poll never reads stale (#545). The banners are
+// judged at `healthNow`, on the clock `sources` read the last answers on. When
+// the answers were read on a separate 15 s clock, at a 2 s interval a source
+// that answered 2 s ago could read "updated 4s ago" until the next 15 s step.
+describe('useDashboardData — no stale note on a source that answers every poll (#545)', () => {
+  const INTERVAL = 2000;
+  const KEYS = ['services', 'ups', 'commits', 'cron', 'integrations'];
+  // A whole number of 15 s steps after the epoch, so `offset` is the phase.
+  const BASE = 15_000 * 66_666_667;
+
+  beforeEach(() => {
+    if (!AbortSignal.timeout) {
+      AbortSignal.timeout = () => new AbortController().signal;
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) =>
+        Promise.resolve(jsonResponse(String(url) === '/api/services' ? { nodes: {} } : {}))
+      )
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const settle = () => act(async () => {});
+  const notesOf = ({ sources, healthNow }) =>
+    KEYS.map((key) => [
+      key,
+      sourceBanner(sources[key], key, pollPeriodMs(key, INTERVAL), healthNow).staleNote,
+    ]).filter(([, note]) => note !== null);
+
+  it('at a 2 s interval, wherever the clock falls against the load', async () => {
+    // Only Date is faked, so fetch promises and act() still run normally.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const seen = [];
+    // Every phase a quarter second apart, over the old 15 s clock.
+    for (let offset = 0; offset < 15_000; offset += 250) {
+      const T0 = BASE + offset;
+      vi.setSystemTime(T0);
+      const { result, rerender, unmount } = renderHook(
+        ({ tick }) => useDashboardData(0, { tick, active: true, refreshIntervalMs: INTERVAL }),
+        { initialProps: { tick: 0 } }
+      );
+      await settle();
+      for (let tick = 1; tick <= 8; tick++) {
+        vi.setSystemTime(T0 + tick * INTERVAL);
+        rerender({ tick }); // the tick's render, before its answers
+        for (const [key, note] of notesOf(result.current))
+          seen.push(`+${offset} ms, tick ${tick}: ${key} ${note}`);
+        await settle(); // its answers
+        for (const [key, note] of notesOf(result.current))
+          seen.push(`+${offset} ms, tick ${tick} answered: ${key} ${note}`);
+      }
+      unmount();
+    }
+    expect(seen).toEqual([]);
+  });
+
+  it('still notes a source that stops answering, once 2 of its polls have gone by', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const T0 = BASE + 300;
+    vi.setSystemTime(T0);
+    const { result, rerender } = renderHook(
+      ({ tick }) => useDashboardData(0, { tick, active: true, refreshIntervalMs: INTERVAL }),
+      { initialProps: { tick: 0 } }
+    );
+    await settle();
+    // /api/ups stops answering from here: each poll fails.
+    fetch.mockImplementation((url) =>
+      String(url) === '/api/ups'
+        ? Promise.reject(new Error('down'))
+        : Promise.resolve(jsonResponse(String(url) === '/api/services' ? { nodes: {} } : {}))
+    );
+    const upsNote = () =>
+      sourceBanner(result.current.sources.ups, 'ups', INTERVAL, result.current.healthNow).staleNote;
+    for (let tick = 1; tick <= 2; tick++) {
+      vi.setSystemTime(T0 + tick * INTERVAL);
+      rerender({ tick });
+      await settle();
+      expect(upsNote(), `tick ${tick}`).toBeNull();
+    }
+    vi.setSystemTime(T0 + 3 * INTERVAL);
+    rerender({ tick: 3 });
+    await settle();
+    // 5.7 s silent at the step's start: 3 polls due, 2 missed.
+    expect(upsNote()).toBe('updated 5s ago');
+  });
+
+  it('clears a stale note the moment its source answers again, a 304 too; a healthy 304 tick draws nothing', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // 200 with an ETag at load, then 304 to every request that sends it back.
+    fetch.mockImplementation((url, opts) =>
+      Promise.resolve(
+        opts?.headers?.['If-None-Match']
+          ? jsonResponse(null, { status: 304 })
+          : jsonResponse(String(url) === '/api/services' ? { nodes: {} } : {}, { etag: 'W/"1"' })
+      )
+    );
+    const T0 = BASE;
+    vi.setSystemTime(T0);
+    let renders = 0;
+    const { result, rerender } = renderHook(
+      ({ tick }) => {
+        renders += 1;
+        return useDashboardData(0, { tick, active: true, refreshIntervalMs: INTERVAL });
+      },
+      { initialProps: { tick: 0 } }
+    );
+    await settle();
+    const note = () =>
+      sourceBanner(result.current.sources.services, 'services', INTERVAL, result.current.healthNow)
+        .staleNote;
+
+    // A healthy tick whose answers are all 304s: its own render, nothing more.
+    vi.setSystemTime(T0 + INTERVAL);
+    rerender({ tick: 1 });
+    const afterTick = renders;
+    await settle();
+    expect(renders).toBe(afterTick);
+    expect(note()).toBeNull();
+
+    // The laptop slept 5 minutes: no visibilitychange, the board still active.
+    vi.setSystemTime(T0 + INTERVAL + 5 * 60_000);
+    rerender({ tick: 2 }); // the tick's render, before its answers
+    expect(note()).toBe('updated 5m ago');
+    await settle(); // its answers: 304s, no new data
+    expect(note()).toBeNull();
+  });
+});

@@ -361,6 +361,43 @@ describe('IntegrationsTab tests what it would save (#427)', () => {
 
 // #422: a URL that carries a credential is refused beside the Base URL field,
 // and one already stored is read masked and never shown.
+describe('IntegrationsTab and a credential to re-enter for a new address (#556)', () => {
+  const cases = [
+    { row: 'AdGuard Home (primary)', label: 'Password', field: 'password' },
+    { row: 'statuspage', label: 'API Token', field: 'token' },
+  ];
+  for (const { row, label, field } of cases) {
+    for (const button of [/Save Integration/, /Test Connection/]) {
+      it(`a refused ${button.source.split(' ')[0]} for the ${field} shows beside it, focused, until it is typed`, async () => {
+        const refused = {
+          status: 400,
+          body: {
+            error: `The stored ${field} was entered for the old address; re-enter the ${field} for the new address`,
+            field,
+          },
+        };
+        stubServer({ saveReply: () => refused, testReply: () => ({ ...refused, body: { ok: false, ...refused.body } }) });
+        renderTab();
+        fireEvent.click(within(await rowFor(row)).getByRole('button', { name: 'Edit' }));
+        fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: 'http://elsewhere.example.test' } });
+        fireEvent.click(screen.getByRole('button', { name: button }));
+
+        const input = screen.getByLabelText(label);
+        const alert = await screen.findByRole('alert');
+        expect(alert.textContent).toBe(refused.body.error);
+        expect(alert.parentElement).toBe(input.parentElement);
+        expect(input.getAttribute('aria-invalid')).toBe('true');
+        expect(document.activeElement).toBe(input);
+        expect(screen.getAllByRole('alert')).toHaveLength(1);
+        expect(screen.queryByText(/Save error:|Connection failed:/)).toBeNull();
+
+        fireEvent.change(input, { target: { value: 'typed-again' } }); // pragma: allowlist secret
+        expect(screen.queryByRole('alert')).toBeNull();
+      });
+    }
+  }
+});
+
 describe('IntegrationsTab and a credential in the URL (#422)', () => {
   for (const button of [/Save Integration/, /Test Connection/]) {
     it(`a refused ${button.source.split(' ')[0]} shows the message beside Base URL, focused, until the URL is edited`, async () => {
