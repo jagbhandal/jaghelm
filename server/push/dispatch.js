@@ -1,9 +1,9 @@
 /**
  * Push dispatch: the pure pref-filter (shouldDeliver/categoryOf), the
- * fan-out the Arcane poller awaits (dispatchEvents), the prev-snapshot memory
- * and the outbox (createPushSnapshot) and the per-cycle orchestrator
- * (runPushCycle), which queues the refresh loop's events for the sender
- * (push/outbox.js, #579) and never sends itself.
+ * fan-out the Arcane poller awaits (dispatchEvents), the prev-snapshot memory,
+ * the outbox and the alert history (createPushSnapshot) and the per-cycle
+ * orchestrator (runPushCycle), which records the refresh loop's events (#267),
+ * queues them for the sender (push/outbox.js, #579) and never sends itself.
  *
  * shouldDeliver + categoryOf are PURE and clock-free (determinism law).
  * dispatchEvents, createPushSnapshot and runPushCycle own the I/O (fcm.send,
@@ -13,6 +13,8 @@ import { existsSync, readFileSync } from 'fs';
 
 import { atomicWriteFileSync } from '../util/atomicWrite.js';
 import { createLogger } from '../util/logger.js';
+import { jsonFileErrorFields } from '../util/parseError.js';
+import { createAlertHistory, HISTORY_CAP, HISTORY_MAX_AGE_MS, pushOutcome } from './alertHistory.js';
 import { alertStateKey, CONFIG_SOURCE, diffSnapshots, RECOVERY_TYPES, STATUS_CHECK } from './differ.js';
 
 const defaultLog = createLogger('push-dispatch');
@@ -186,27 +188,32 @@ const episodeOf = (event) => {
 const opensEpisode = (event) => !PAGED_STATES.has(event.prev);
 
 /**
- * The previous cycle's snapshot, which the next cycle diffs against, and the
- * outbox: the events diffed but not yet sent to every phone (#579). Both live
- * in memory; the file at `path` is for restarts: read on first use, so a
- * restart diffs against the last persisted state (no re-alert, no missed
- * change) and sends what was still queued. The snapshot holds states and
- * levels, not readings (#292), so a steady board costs no write, and the status
- * model is seeded with the file's levels at boot (#361), so a restart keeps
- * every episode.
+ * The previous cycle's snapshot, which the next cycle diffs against, the
+ * outbox: the events diffed but not yet sent to every phone (#579), and the
+ * alert history: every event diffed, for 30 days (#267, push/alertHistory.js).
+ * All live in memory; the file at `path` is for restarts: read on first use,
+ * so a restart diffs against the last persisted state (no re-alert, no missed
+ * change), sends what was still queued and serves the history. The snapshot
+ * holds states and levels, not readings (#292), so a steady board costs no
+ * write, and the status model is seeded with the file's levels at boot (#361),
+ * so a restart keeps every episode.
  *
- * One file, one atomic write: the snapshot's fields, and `outbox`, the events
- * in order, while any are queued (with none the file is as it was before #579,
- * and an older JagHelm reads it as its own). Each queued event keeps when it
- * was queued (`queuedAt`, for /api/health) and whether a phone has taken it
- * (`sent`). `advance(snap, events)` moves the snapshot and queues its events
- * in that one write, before anything is sent. So a crash before the write
- * leaves the last snapshot, and the restart diffs the change again and pages
- * once; a crash after it leaves the events queued and the snapshot moved, so
- * the restart sends them and diffs nothing again. Two files could not do that:
+ * One file, one atomic write: the snapshot's fields; `outbox`, the events in
+ * order, while any are queued; and `history` once an event was ever recorded
+ * (with neither the file is as it was before #579, and an older JagHelm reads
+ * it as its own). Each queued event keeps when it was queued (`queuedAt`, for
+ * /api/health), whether a phone has taken it (`sent`) and its record's id
+ * (`historyId`). `advance(snap, events, { push })` moves the snapshot, records
+ * its events and, with push set up, queues them, in that one write, before
+ * anything is sent. So a crash before the write leaves the last snapshot, and
+ * the restart diffs the change again, records it and pages once; a crash after
+ * it leaves the events recorded and queued and the snapshot moved, so the
+ * restart sends them and diffs nothing again. Two files could not do that:
  * whichever was written first, a crash between them would drop the events or
- * send them twice. The file is rewritten when the alert state (alertStateKey)
- * or the outbox changes: a page queued, taken, sent or dropped.
+ * send or record them twice. The file is rewritten when the alert state
+ * (alertStateKey), the history or the outbox changes: an event recorded, a
+ * page queued, taken, sent or dropped (and what push did with it noted in its
+ * record in the same write).
  *
  * A recovery whose episode no phone has seen (its pages all still queued and
  * none taken, or dropped untaken) takes those pages with it: neither is sent.
@@ -232,7 +239,9 @@ const opensEpisode = (event) => !PAGED_STATES.has(event.prev);
  * @param {Function} [opts.write]    atomic writer (injected in tests)
  * @param {Function} [opts.upgrade]  (snapshot) => snapshot, applied to what the file holds
  * @param {number}   [opts.cap]      the most events the outbox holds
- * @param {() => number} [opts.now]  the clock that stamps `queuedAt`
+ * @param {() => number} [opts.now]  the clock that stamps `queuedAt` and each record's `at`
+ * @param {number}   [opts.historyCap]       the most events the history keeps (HISTORY_CAP)
+ * @param {number}   [opts.historyMaxAgeMs]  how long it keeps one (HISTORY_MAX_AGE_MS)
  * @param {object}   [opts.logger]
  */
 export function createPushSnapshot({
@@ -241,14 +250,18 @@ export function createPushSnapshot({
   upgrade = (snap) => snap,
   cap = OUTBOX_CAP,
   now = () => Date.now(),
+  historyCap = HISTORY_CAP,
+  historyMaxAgeMs = HISTORY_MAX_AGE_MS,
   logger = defaultLog,
 }) {
+  const history = createAlertHistory({ now, cap: historyCap, maxAgeMs: historyMaxAgeMs, logger });
   let loaded = false;
   let prev = null; // the last cycle's snapshot (null: none yet)
   /**
    * The outbox, oldest first. `done`: the phones done with it (the sender's,
-   * in memory); `sending` while a send of it is in flight.
-   * @type {Array<{event: object, queuedAt: number, sent: boolean, done: Set<string>, sending?: boolean}>}
+   * in memory); `sending` while a send of it is in flight; `historyId` its
+   * record in the history; `tally` the sender's count of what each phone did.
+   * @type {Array<{event: object, queuedAt: number, sent: boolean, done: Set<string>, sending?: boolean, historyId?: string, tally?: {sent: number, suppressed: number}}>}
    */
   const queue = [];
   // Episodes whose opening page the cap dropped before any phone took it: their
@@ -262,8 +275,9 @@ export function createPushSnapshot({
     try {
       return JSON.parse(readFileSync(path, 'utf8'));
     } catch (err) {
-      // Corrupt/partial snapshot => no previous state rather than a crash.
-      logger.warn({ err }, 'unreadable push snapshot, starting with no previous state');
+      // Corrupt/partial snapshot => no previous state rather than a crash. The
+      // reason and position only: the file holds the history's words (#504).
+      logger.warn(jsonFileErrorFields(err), 'unreadable push snapshot, starting with no previous state');
       return null;
     }
   }
@@ -274,14 +288,21 @@ export function createPushSnapshot({
     const file = read();
     if (file === null) return;
     let snap = file;
-    if (isObject(file) && Object.hasOwn(file, 'outbox')) {
-      const { outbox, ...rest } = file;
+    if (isObject(file) && (Object.hasOwn(file, 'outbox') || Object.hasOwn(file, 'history'))) {
+      const { outbox, history: recorded, ...rest } = file;
       snap = rest;
+      history.load(recorded);
       if (Array.isArray(outbox)) {
         for (const item of outbox) {
           if (!isObject(item) || !isEvent(item.event)) continue;
           const queuedAt = Number.isFinite(item.queuedAt) ? item.queuedAt : now();
-          queue.push({ event: item.event, queuedAt, sent: item.sent === true, done: new Set() });
+          queue.push({
+            event: item.event,
+            queuedAt,
+            sent: item.sent === true,
+            done: new Set(),
+            ...(typeof item.historyId === 'string' ? { historyId: item.historyId } : {}),
+          });
         }
         trim();
       }
@@ -290,18 +311,22 @@ export function createPushSnapshot({
     filedKey = alertStateKey(prev);
   }
 
-  /** Queue `events` behind the outbox, collapsing and dropping as above. */
-  function enqueue(events) {
+  /** Queue `events` (their records `ids`) behind the outbox, collapsing and dropping as above. */
+  function enqueue(events, ids) {
     const queuedAt = now();
-    for (const event of events) {
+    events.forEach((event, i) => {
+      const historyId = ids[i];
       const episode = episodeOf(event);
       if (episode !== null && isRecovery(event)) {
-        if (collapse(episode, event)) continue;
+        if (collapse(episode, event)) {
+          history.settle(historyId, pushOutcome(undefined, 'dropped'));
+          return;
+        }
       } else if (episode !== null && opensEpisode(event)) {
         droppedUnseen.delete(episode); // a new episode
       }
-      queue.push({ event, queuedAt, sent: false, done: new Set() });
-    }
+      queue.push({ event, queuedAt, sent: false, done: new Set(), historyId });
+    });
     trim();
   }
 
@@ -318,7 +343,10 @@ export function createPushSnapshot({
     const pages = queue.slice(from).filter((e) => episodeOf(e.event) === episode);
     if (pages.length === 0 ? !unseen : pages.some((e) => e.sent || e.sending)) return false;
     if (pages.length > 0 && !unseen && !opensEpisode(pages[0].event)) return false;
-    for (const e of pages) queue.splice(queue.indexOf(e), 1);
+    for (const e of pages) {
+      queue.splice(queue.indexOf(e), 1);
+      history.settle(e.historyId, pushOutcome(undefined, 'dropped'));
+    }
     logger.info(
       { dropped: [...pages.map((e) => named(e.event)), named(recovery)] },
       'push page and its recovery both unsent: neither is sent'
@@ -338,6 +366,7 @@ export function createPushSnapshot({
       }
       queue.splice(i, 1);
       dropped.push(named(e.event));
+      history.settle(e.historyId, pushOutcome(e.tally, 'dropped'));
       over -= 1;
       const episode = episodeOf(e.event);
       if (episode !== null && !e.sent && opensEpisode(e.event)) droppedUnseen.add(episode);
@@ -353,8 +382,14 @@ export function createPushSnapshot({
       queuedAt: e.queuedAt,
       event: e.event,
       ...(e.sent ? { sent: true } : {}),
+      ...(e.historyId ? { historyId: e.historyId } : {}),
     }));
-    const file = outbox.length > 0 ? { ...snap, outbox } : snap;
+    const recorded = history.toFile();
+    const file = {
+      ...snap,
+      ...(outbox.length > 0 ? { outbox } : {}),
+      ...(recorded ? { history: recorded } : {}),
+    };
     try {
       write(path, JSON.stringify(file));
       filedKey = alertStateKey(snap);
@@ -372,17 +407,27 @@ export function createPushSnapshot({
       return prev;
     },
     /**
-     * Make `snap` the next cycle's prev and queue `events` behind the outbox,
-     * in one write when the file is behind.
+     * Make `snap` the next cycle's prev, record `events` in the history and,
+     * with `push` (FCM set up), queue them behind the outbox, in one write when
+     * the file is behind. With push off each is recorded as `off`.
      */
-    advance(snap, events = []) {
+    advance(snap, events = [], { push = true } = {}) {
       load();
       prev = snap;
       if (events.length > 0) {
-        enqueue(events);
+        const ids = history.record(events, push ? 'queued' : 'off');
+        if (push) enqueue(events, ids);
         behind = true;
       }
       if (behind || filedKey === null || filedKey !== alertStateKey(snap)) persist();
+    },
+    /**
+     * One page of the alert history, newest first (alertHistory.js page):
+     * GET /api/events.
+     */
+    events(query) {
+      load();
+      return history.page(query);
     },
     /** The queued events, oldest first. */
     outbox() {
@@ -408,15 +453,17 @@ export function createPushSnapshot({
       load();
       return queue.length > 0 ? Math.min(...queue.map((e) => e.queuedAt)) : null;
     },
-    /** Take `entry` off the outbox: done with by every phone. */
+    /** Take `entry` off the outbox: done with by every phone. Its record says what they did. */
     complete(entry) {
       const i = queue.indexOf(entry);
       if (i === -1) return;
       queue.splice(i, 1);
+      history.settle(entry.historyId, pushOutcome(entry.tally, 'done'));
       persist();
     },
-    /** Write the file now: a queued event's `sent` changed. */
+    /** Write the file now: a queued event's `sent` changed (its record: sent, so far to these phones). */
     save() {
+      for (const e of queue) if (e.sent) history.settle(e.historyId, pushOutcome(e.tally, 'pending'));
       persist();
     },
     /** Write the file if it is behind memory (shutdown). */
@@ -429,11 +476,13 @@ export function createPushSnapshot({
 
 /**
  * One push cycle: build the current snapshot, diff it against the previous
- * one, and advance to it with the resulting events queued in the outbox, in
- * one write (createPushSnapshot), then wake the sender (push/outbox.js), which
- * sends them in order. The cycle never waits on a send (#579): with Google
- * out of reach a send can take minutes, and the refresh loop, so /api/health
- * and the board, would wait with it. The next cycle diffs against the advanced
+ * one, and advance to it with the resulting events recorded in the history
+ * and queued in the outbox, in one write (createPushSnapshot), then wake the
+ * sender (push/outbox.js), which sends them in order. Push off (no FCM creds)
+ * diffs and records just the same (#267: the history is there without push),
+ * and queues nothing and wakes no sender. The cycle never waits on a send
+ * (#579): with Google out of reach a send can take minutes, and the refresh
+ * loop, so /api/health and the board, would wait with it. The next cycle diffs against the advanced
  * snapshot, so it never makes again what is queued. With no previous snapshot,
  * every entity is new to it (diffSnapshots, #448): each open problem pages
  * once, on this cycle, and the snapshot advanced to holds it from then on.
@@ -455,8 +504,8 @@ export function createPushSnapshot({
  * It runs inside the background refresh loop and must never break that loop.
  * A cycle that throws before it advances leaves prev and the outbox as they
  * were, so the next cycle diffs against them again instead of dropping the
- * alert. Graceful-disable: if push has no FCM creds it returns immediately and
- * does not even read or write the snapshot file, or wake the sender.
+ * alert. Graceful-disable: with no FCM creds nothing is queued or sent; the
+ * snapshot file holds the history (and the snapshot it is diffed from).
  *
  * @param {object} deps
  * @param {Function} deps.buildSnapshotFn  (prev) => Snapshot | null (injected; fakeable)
@@ -471,7 +520,7 @@ export function createPushSnapshot({
 export async function runPushCycle({ buildSnapshotFn, status = null, store, fcm, snapshot, sender, logger = defaultLog }) {
   try {
     store.pruneStale();
-    if (!fcm.isPushEnabled()) return;
+    const push = fcm.isPushEnabled();
 
     const prev = snapshot.prev();
     try {
@@ -484,13 +533,15 @@ export async function runPushCycle({ buildSnapshotFn, status = null, store, fcm,
       // With no prev (no file, or an unreadable one) every entity is new: what
       // is in trouble pages once, what is ok sends nothing (#448).
       const events = diffSnapshots(prev, snap, status);
-      snapshot.advance(snap, events);
-      if (events.length > 0) {
+      snapshot.advance(snap, events, { push });
+      if (events.length > 0 && push) {
         logger.info({ events: events.length, queued: snapshot.outbox().length }, 'push cycle queued');
+      } else if (events.length > 0) {
+        logger.debug({ events: events.length }, 'alert events recorded; push is off');
       }
     } finally {
       // Also when nothing was queued: a restart's outbox is sent from its first cycle.
-      sender.wake();
+      if (push) sender.wake();
     }
   } catch (err) {
     // Swallow EVERYTHING. This runs inside the refresh loop; it must never

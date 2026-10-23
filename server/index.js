@@ -48,7 +48,7 @@ import { initIconIndex } from './icons.js';
 import { initIconCache } from './icon-cache.js';
 import { DATA_DIR } from './util/dataDir.js';
 import { resolveBindHost } from './util/env.js';
-import { startBackgroundRefresh, stopBackgroundRefresh } from './refresh.js';
+import { pushSnapshot, startBackgroundRefresh, stopBackgroundRefresh } from './refresh.js';
 import * as fcmModule from './push/fcm.js';
 import { startArcane, stopArcane } from './arcane/index.js';
 
@@ -83,6 +83,7 @@ import { cronRoutes } from './routes/cron.js';
 import { systemRoutes } from './routes/system.js';
 import { createPushRoutes } from './routes/push.js';
 import { createEmbedCheckRoutes } from './routes/embedCheck.js';
+import { createEventsRoutes } from './routes/events.js';
 import { getPushStore } from './push/store.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -243,6 +244,8 @@ app.use('/api', systemRoutes); // /health + /readyz public; /weather authed insi
 
 app.use('/api/services', authMiddleware, servicesRoutes);
 app.use('/api/status', authMiddleware, statusRoutes);
+// The alert history (#267): what push's differ recorded, newest first.
+app.use('/api/events', authMiddleware, createEventsRoutes({ history: pushSnapshot }));
 app.use('/api/integrations', authMiddleware, integrationRoutes);
 // Standalone secrets API is fail-closed: refuses to serve (enumerate/overwrite/
 // delete credentials) until a password is set. Does not affect integration save.

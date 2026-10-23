@@ -66,6 +66,7 @@ export function pushPipeline({
       path: file,
       logger: silent,
       upgrade: (snap) => upgradeSnapshot(snap, thresholds),
+      now: () => now, // the pipeline's clock: what is queued and recorded when (#267)
     });
   let now = start;
   let pushUp = true;
@@ -113,8 +114,11 @@ export function pushPipeline({
      * One cycle. `thresholds` replaces the pipeline's for this cycle and the
      * next ones (a hand edit of display-config.json); `backupJobs` are the
      * cron jobs marked as backups and `arcaneAgents` the Arcane poller's
-     * agents (#291). `push: false` is a cycle push sits out (FCM not up yet,
-     * the boot race): the model moves on and the snapshot doesn't (#469).
+     * agents (#291). `push: false` is a cycle with push off (no FCM creds):
+     * the snapshot moves on and the history records its events, and nothing
+     * is queued or sent (#267). `sitOut` is a cycle whose push half failed
+     * before it advanced (its snapshot build threw): the model moves on and
+     * the snapshot doesn't (#469).
      * `failSend` is one whose sends Google fails: the snapshot moves on, and
      * its pushes wait in the outbox for the next cycle (#579). `modelThrows` is a
      * cycle whose status model threw (#440): there is no status, and the
@@ -128,6 +132,7 @@ export function pushPipeline({
         backupJobs = [],
         arcaneAgents = null,
         push = true,
+        sitOut = false,
         failSend = false,
         modelThrows = false,
       } = {}
@@ -148,7 +153,10 @@ export function pushPipeline({
       retry = null;
       waiting?.(); // a cycle later: the sender tries again
       await runPushCycle({
-        buildSnapshotFn: (prev) => cycleSnapshot(caches, prev, status),
+        buildSnapshotFn: (prev) => {
+          if (sitOut) throw new Error('the push half failed this cycle');
+          return cycleSnapshot(caches, prev, status);
+        },
         status,
         store: onePhone(),
         fcm,

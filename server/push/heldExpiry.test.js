@@ -316,9 +316,10 @@ test("#469: a read cycle push sat out: the snapshot takes the model's new start,
   try {
     const first = await heldAtWarn(p);
     nextCycleAt(p, first + 12 * HOUR);
-    // Read again (76 °C, still warn) on a cycle push sits out (FCM not up yet):
-    // the model ends the first hold; the snapshot never sees that cycle.
-    await cycle(p, temperature(76), { push: false });
+    // Read again (76 °C, still warn) on a cycle push sits out (its half failed
+    // before it advanced): the model ends the first hold; the snapshot never
+    // sees that cycle.
+    await cycle(p, temperature(76), { sitOut: true });
     assert.deepEqual(filed(p).heldSince, { temp: first });
     const second = p.now;
     await cycle(p, temperature(null));

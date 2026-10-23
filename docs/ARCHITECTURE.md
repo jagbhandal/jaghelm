@@ -310,6 +310,7 @@ Routers (each `server/routes/*.js`), mounted under `/api`:
 | `/metrics` | public | Prometheus exposition |
 | `/api/services` | token | discovered nodes + services (background-refreshed, ETag); `services.yaml` for Settings, without its credentials, and its save over the version read (`/config`, ETag and If-Match, see 6) |
 | `/api/status` | token | the status model (4.7), built once a background cycle (ETag, and its build time as Last-Modified; 503 before the first cycle) |
+| `/api/events` | token | the alert history (#267, 4.7 "Push"): every event push's differ made in the last 30 days, newest first, a page at a time (`limit`, at most 200; `before`, the last page's `next`), filtered by `entity` and `severity` |
 | `/api/integrations` | token | per-integration live data (background-refreshed, ETag); the Settings save and enable toggle (see 6); the connection test (`/test`, see 4.3) |
 | `/api/display-config` | token | the display config blob, and its save over the version read (ETag and If-Match, see 6) |
 | `/api/embed-check/:tabId` | token | whether a saved app tab's headers let the browser frame it (see 5, "App tabs") |
@@ -1068,8 +1069,9 @@ Key properties:
   `urlCredential` (`arcane/config.js`): the integration is off, with one
   warning, and nothing is requested.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
-  secrets/auth/sessions/config/cron and the icon cache never split across
-  locations.
+  secrets/auth/sessions/config/cron, the push snapshot (`push-snapshot.json`,
+  with the outbox and the alert history, 4.7 "Push") and the icon cache never
+  split across locations.
 
 ### 4.5 Auth & rate limiting
 
@@ -1299,9 +1301,11 @@ entity's `since`) and is never served. `createStatusTracker({ seed })`
 the process, so the loop seeds it, before its first build, with the level of
 each host reading that the push snapshot file holds (`memoryFromLevels`, push's
 `heldLevels`), and with when each held reading's hold began (`heldSinceOf`,
-#469, below), when push is set up (#361), for the nodes `services.yaml` still
-has. A reading inside its hysteresis band after a restart is still over its
-line: push sends neither a second alert nor a false "back to normal". The
+#469, below), for the nodes `services.yaml` still has (#361). Since #267 that
+is so with push off too: the cycle diffs and advances the file either way, for
+the alert history. A reading inside its hysteresis band after a restart is
+still over its line: push sends, and the history records, neither a second
+alert nor a false "back to normal". The
 snapshot is rewritten whenever a level changes, or a hold begins or ends, so
 the file is never behind the last push. A snapshot written before #292 holds readings, not levels: it is read
 as the levels they give (`upgradeSnapshot`; a reading at or over its line is at
@@ -1807,8 +1811,8 @@ sees where that changed:
   as before: the Arcane poller pages for its agents itself
   (`arcane_agent_offline` after 2 polls down, `arcane_agent_recovered`), so an
   agent outage is one push. Arcane's updates, held-back updates, releases and
-  digests are pushes only, never model issues; #267 records them in Alerts
-  history.
+  digests are pushes only, never model issues. The alert history (#267, below)
+  records the differ's events only, not the Arcane poller's.
 - Delivery (#235): `push/fcm.js` sends each event to each phone through
   `push/fcmHttp.js`, a small FCM HTTP v1 client in place of firebase-admin
   (201 of the server's 290 production packages). It signs a JWT with the
@@ -1853,6 +1857,34 @@ sees where that changed:
   (its page went out). `/api/health` shows the outbox (4.6). Shutdown needs
   nothing more: the outbox is on disk with each change
   (docs/mobile/DESIGN.md, "The cycle never waits on Google").
+- History (#267): every event the differ makes is recorded
+  (`push/alertHistory.js`), with push set up or not: with no FCM creds the
+  cycle still builds, diffs and advances the snapshot, and queues nothing and
+  wakes no sender. The record goes in the same atomic write that advances the
+  snapshot and queues the pushes, under `history` in `push-snapshot.json`
+  (written once an event was ever recorded; an older JagHelm ignores it). So
+  a crash before that write re-diffs the change and records it once, and one
+  after it diffs nothing again: no event lost or recorded twice, with nothing
+  to dedupe. Each record: `id` (a decimal string, one more than the last; the
+  file keeps the last, so none is given twice), `at`, `type`, `severity`,
+  `entity` (the model's id the push's tap and #309's URLs open, null for the
+  status check's own), `title`, `body`, `reason`, `node`, `key` (the push's
+  `id`) and `push: { state, phones, suppressed }`, state `off` (push not set
+  up), `queued`, `sent` (to `phones` phones), `suppressed` (no phone got it,
+  one's settings turned it off), `unsent` (no phone, or each send failed for
+  good) or `dropped` (the outbox let it go unsent: its problem cleared first,
+  or the outbox was full), noted in the write that changes the outbox. Kept
+  30 days (`HISTORY_MAX_AGE_MS`) and at most 1000 events (`HISTORY_CAP`: a
+  month of a homelab's alerts is tens to a few hundred; a flapping service
+  keeps the newest), about 400 KB at most, so the file is still small to
+  rewrite with each page. An unreadable file starts with no history (and no
+  snapshot) and one warn line with the parse error's reason and position
+  only (#504); a record that can't be read is dropped with one warn line
+  counting them. `GET /api/events` (`routes/events.js`) serves it, newest
+  first: `{ events, next }`, `limit` (50, at most 200), `before` (an id: the
+  last page's `next`, so new events never move a page being read), `entity`
+  (repeat for several) and `severity` (a comma list); anything else is a 400
+  saying which. The Alerts pages show it in a later card (#314).
 
 **The cross-client suite** (#293, spec §6's proof) holds the screens and push
 to the model: the same input can't give one answer on a screen and another in

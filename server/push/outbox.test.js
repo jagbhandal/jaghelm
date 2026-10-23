@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -211,7 +211,10 @@ test('#579: a send that hangs holds up no cycle: each diffs, queues its events b
       [['n1:a', 0], ['n1:b', 30_000], ['n1:a', 60_000], ['n1:c', 90_000]],
       'queued on disk with it, each with when it was queued'
     );
-    assert.deepEqual({ ...file, outbox: undefined }, { ...board('b', 'c'), outbox: undefined });
+    assert.deepEqual(
+      { ...file, outbox: undefined, history: undefined },
+      { ...board('b', 'c'), outbox: undefined, history: undefined }
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -403,7 +406,12 @@ test('#579: a restart with sends pending sends each once, in order, and the next
     await after.cycle(board('a', 'b'));
     await after.sender.idle();
     assert.deepEqual(fcm.sent, ['p service_down n1:a', 'p service_down n1:b']);
-    assert.deepEqual(onDisk(path), board('a', 'b'), 'sent: off the file');
+    assert.deepEqual({ ...onDisk(path), history: undefined }, { ...board('a', 'b'), history: undefined }, 'sent: off the file');
+    assert.deepEqual(
+      onDisk(path).history.events.map((e) => [e.key, e.push.state]),
+      [['n1:a', 'sent'], ['n1:b', 'sent']],
+      'recorded once each (#267)'
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -552,7 +560,7 @@ test('#579: the cap is 100 pushes, and a phone is given up on for an event after
   assert.equal(GIVE_UP_TRIES, 16);
 });
 
-test('#579: push off (no FCM creds): no file, no outbox, nothing sent', async () => {
+test('#579: push off (no FCM creds): no outbox, nothing sent; the file holds the snapshot and the history (#267)', async () => {
   const { dir, path } = tmp();
   const fcm = { ...answeringFcm(), isPushEnabled: () => false };
   const p = pushHalf(path, { fcm });
@@ -560,7 +568,8 @@ test('#579: push off (no FCM creds): no file, no outbox, nothing sent', async ()
     await p.cycle(board());
     await p.cycle(board('a'));
     await p.sender.idle();
-    assert.equal(existsSync(path), false);
+    assert.equal(onDisk(path).outbox, undefined);
+    assert.deepEqual(onDisk(path).history.events.map((e) => [e.key, e.push.state]), [['n1:a', 'off']]);
     assert.deepEqual(fcm.sent, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
