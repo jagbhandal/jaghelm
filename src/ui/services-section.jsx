@@ -38,9 +38,10 @@
  * after the grouping. The table (Table, its hidden caption "Services") has
  * the same rows in the groups' order: service (a link that opens it, as a
  * row does, carrying its anchor), node, the custom group while grouped by
- * one, container (mono `text-3`), the detail (`text-2` while up, else in its
- * state's word colour), latency and state (StateCell, as the Infrastructure
- * table's). Rows also carry `nodeName` and `container` for it. It needs
+ * one, its Docker name (mono `text-3`), the detail (`text-2` while up, else
+ * in its state's word colour), latency and state (StateCell, as the
+ * Infrastructure table's). Rows also carry `nodeName` and `containerName`
+ * for it. It needs
  * 720px, as Infrastructure's: in a narrower section the list stands in and
  * the toggle goes, the choice standing for when it fits again.
  */
@@ -114,11 +115,11 @@ function columnsFor(byGroup) {
         ]
       : []),
     {
-      key: 'container',
+      key: 'docker',
       header: 'Container',
       cell: (row) =>
-        row.container ? (
-          <span className="font-mono text-caption text-text-3">{row.container}</span>
+        row.containerName ? (
+          <span className="font-mono text-caption text-text-3">{row.containerName}</span>
         ) : (
           dash
         ),

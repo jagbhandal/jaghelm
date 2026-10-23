@@ -17,6 +17,13 @@
  *  - `after` (#578), under the Infrastructure tab's nodes: every scheduled
  *    job and backup (PhoneJobs.jsx, its own chunk, asked for when that tab
  *    draws). The Android app gives none: its look draws no list.
+ *  - `filters` (#313), on the Services tab: its search and node chip, kept
+ *    in the page's address as the wide Services page keeps them
+ *    (listFilters.js `q` and `node`), so a window crossing 768px keeps them
+ *    both ways; the search goes in once typing stops. A chip pressed here
+ *    also clears the wide page's state and tag filters, which the phone's
+ *    chips can't show; until then they wait in the address. The Android app
+ *    gives none: its screen keeps its own.
  *  - `nav`: the shared nav stack, a history entry per detail (phoneNav.js).
  *    Each detail is drawn over the tab as a full-screen sheet, a modal
  *    dialog named by its title: Escape, its Back and the browser's Back
@@ -35,12 +42,35 @@ import { DetailLoading } from '../phone/components/DetailLoading.jsx';
 import { useDashboardData } from './useDashboardData.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import { usePhoneNav } from './phoneNav.js';
+import { SERVICE_FILTERS, useListFilters, useSearchDraft } from './listFilters.js';
 import { openTarget, phoneData } from './phoneData.js';
 import { loadPhoneDetail, loadPhoneJobs } from '../lazyViews.js';
 import { preloadPhoneDetail } from './preloadPhoneDetail.js';
 
+/**
+ * The Services tab with its search and node chip in the address (#313), so
+ * the wide Services page reads them as a window crosses 768px. Mounted only
+ * while the tab is open: a search still being typed as another tab opens
+ * goes nowhere.
+ */
+function ServicesTab(props) {
+  const [filters, setFilters] = useListFilters(SERVICE_FILTERS);
+  const [query, setQuery] = useSearchDraft(filters.q, (q, options) => setFilters({ q }, options));
+  const node = filters.node;
+  const listFilters = useMemo(
+    () => ({
+      query,
+      onQuery: setQuery,
+      node,
+      onNode: (key) => setFilters({ node: key, state: null, tag: null }),
+    }),
+    [query, setQuery, node, setFilters]
+  );
+  return <Services {...props} filters={listFilters} />;
+}
+
 /** The tabs' screens, by route. */
-const TABS = { overview: Overview, services: Services, infrastructure: Infra, alerts: Alerts };
+const TABS = { overview: Overview, services: ServicesTab, infrastructure: Infra, alerts: Alerts };
 /**
  * The details a screen pushes, by the name it pushes, and the kind each sheet
  * says while it loads (PhoneDetail.jsx): a chunk of their own (#309), asked

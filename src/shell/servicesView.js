@@ -82,12 +82,17 @@ function cardsOf(services) {
 /** The entity's tags (#519: Kuma's monitor tags, once the model serves them), or none. */
 const tagsOf = (entity) =>
   Array.isArray(entity.tags)
-    ? [...new Set(entity.tags.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim()))]
+    ? [
+        ...new Set(
+          entity.tags.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim())
+        ),
+      ]
     : [];
 
 /**
  * Each service the model has, as its row: `{ id, anchor, uid, container,
- * name, node, nodeName, level, state, word, detail, meta, muted, tags }`.
+ * containerName, name, node, nodeName, level, state, word, detail, meta,
+ * muted, tags }`.
  * `level` is the model's state, `state` the one drawn (no signal while
  * stale); `detail` the headline metric when up, else the model's reason;
  * `meta` the latency when up, else a dash; `tags` the entity's (none until
@@ -120,6 +125,9 @@ export function serviceRows({
         anchor: entityAnchor(e.id),
         uid,
         container,
+        // The same, as the Services table reads it: src/ui can't name a field
+        // `container`, which Tailwind's scan would ship as a utility (#424).
+        containerName: container,
         name: e.name,
         node: e.node ?? null,
         nodeName: services?.nodes?.[e.node]?.display_name || e.node || null,
@@ -217,7 +225,7 @@ function phrase(level, word, n) {
  * down · 1 no signal", each failing kind by its word, worst first; with a
  * stale status, how old it is instead: "12 monitored · No signal · last known
  * 3 min ago". With `of`, the rows are what a filter left of that many: "3 of
- * 12 monitored · 1 down".
+ * 12 monitored · 1 down", and "0 of 12 monitored" when it left none.
  */
 export function servicesCount(rows, freshness = null, { of = null } = {}) {
   const first = of == null ? `${rows.length} monitored` : `${rows.length} of ${of} monitored`;
@@ -229,6 +237,8 @@ export function servicesCount(rows, freshness = null, { of = null } = {}) {
     counts.set(key, { level: r.level, word: r.word, n: (counts.get(key)?.n ?? 0) + 1 });
   }
   const parts = [...counts.values()].map(({ level, word, n }) => phrase(level, word, n));
+  // A filter that left nothing says nothing is up or down.
+  if (rows.length === 0 && of != null) return first;
   return [first, ...(parts.length ? parts : ['all up'])].join(' · ');
 }
 
@@ -318,8 +328,6 @@ export function serviceFilterOptions(rows, services = null) {
     value: key,
     label: rows.find((r) => r.node === key)?.nodeName || key,
   }));
-  const tags = [...new Set(rows.flatMap((r) => r.tags ?? []))].sort((a, b) =>
-    a.localeCompare(b)
-  );
+  const tags = [...new Set(rows.flatMap((r) => r.tags ?? []))].sort((a, b) => a.localeCompare(b));
   return { nodes, tags };
 }

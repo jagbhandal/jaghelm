@@ -12,6 +12,12 @@ import { FRESH, serviceRowsOf } from '../data/board.js';
  * The web look (#303): the page's title, the search, the chips wrapping
  * under it, and the services as one list of the shared rows, each opening
  * the service. The same rows, chips and counts as the Android look.
+ *
+ * `filters` (the web's, #313): the search and the node chip kept in the
+ * page's address, as the wide Services page reads them, so a window
+ * crossing 768px keeps them: `{ query, onQuery(text), node, onNode(key |
+ * null) }`. Down stays the screen's own (the wide page has no such filter).
+ * Without it (the Android app, which has no address), the screen keeps both.
  */
 export default function Services(props) {
   if (__ANDROID_LOOK__) return <AndroidServices {...props} />;
@@ -19,9 +25,19 @@ export default function Services(props) {
 }
 
 /** The rows, the chips and what the search and the chip pressed leave: both looks'. */
-function useServiceList(data) {
-  const [chip, setChip] = useState('all');
-  const [query, setQuery] = useState('');
+function useServiceList(data, filters = null) {
+  const [ownChip, setOwnChip] = useState('all');
+  const [ownQuery, setOwnQuery] = useState('');
+  const query = filters ? (filters.query ?? '') : ownQuery;
+  const setQuery = filters ? filters.onQuery : setOwnQuery;
+  // A node in the address is its chip; otherwise All or Down, the screen's.
+  const chip = filters?.node || ownChip;
+  const setChip = (id) => {
+    if (!filters) return setOwnChip(id);
+    const node = id === 'all' || id === 'down' ? null : id;
+    setOwnChip(node ? 'all' : id);
+    filters.onNode(node);
+  };
   const { status, servicesBody } = data;
   const freshness = data.freshness ?? FRESH;
 
@@ -56,8 +72,8 @@ function useServiceList(data) {
   return { chip, setChip, query, setQuery, chips, shown };
 }
 
-function WebServices({ data, nav }) {
-  const { chip, setChip, query, setQuery, chips, shown } = useServiceList(data);
+function WebServices({ data, nav, filters = null }) {
+  const { chip, setChip, query, setQuery, chips, shown } = useServiceList(data, filters);
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-title">Services</h1>

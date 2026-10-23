@@ -192,3 +192,87 @@ describe('ServicesSection', () => {
     expect(within(section).queryByRole('list')).toBeNull();
   });
 });
+
+// The Services page's parts (#313): the list / table toggle, the table, the
+// filters' row and what stands in when they leave nothing.
+describe('ServicesSection on the Services page', () => {
+  const linked = GROUPS.map((g) => ({
+    ...g,
+    rows: g.rows.map((r) => ({
+      ...r,
+      nodeName: g.title,
+      containerName: r.id.split(':')[1],
+      href: `/services?entity=${r.id}`,
+      onOpen: vi.fn(),
+    })),
+  }));
+
+  it('no toggle on the Overview; on the page, "Service view": List or Table', async () => {
+    const { rerender } = render(<ServicesSection groups={GROUPS} />);
+    expect(screen.queryByRole('radiogroup', { name: 'Service view' })).toBeNull();
+    const onViewChange = vi.fn();
+    rerender(<ServicesSection groups={GROUPS} view="list" onViewChange={onViewChange} />);
+    const toggle = screen.getByRole('radiogroup', { name: 'Service view' });
+    expect(within(toggle).getByRole('radio', { name: 'List' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    await userEvent.setup().click(within(toggle).getByRole('radio', { name: 'Table' }));
+    expect(onViewChange).toHaveBeenCalledWith('table');
+  });
+
+  it("the table: a row per service in the groups' order, each opening it, its state the model's", async () => {
+    render(
+      <ServicesSection groups={linked} view="table" onViewChange={() => {}} grouping="node" />
+    );
+    const section = screen.getByRole('region', { name: 'Services' });
+    expect(section).toHaveAttribute('data-view', 'table');
+    const table = within(section).getByRole('table', { name: 'Services' });
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent)
+    ).toEqual(['Service', 'Node', 'Container', 'Detail', 'Latency', 'State']);
+    expect(
+      within(table)
+        .getAllByRole('rowheader')
+        .map((h) => h.textContent)
+    ).toEqual(['Jellyfin', 'Nextcloud', 'AdGuard Home']);
+    const jellyfin = within(table).getByRole('link', { name: 'Jellyfin' });
+    expect(jellyfin).toHaveAttribute('href', '/services?entity=services/apps:jellyfin');
+    expect(jellyfin).toHaveAttribute('id', 'entity-services/apps:jellyfin');
+    await userEvent.setup().click(jellyfin);
+    expect(linked[0].rows[0].onOpen).toHaveBeenCalled();
+    const first = within(table).getAllByRole('row')[1];
+    expect(within(first).getByText('Kuma: down')).toHaveClass('text-crit-fg');
+    expect(within(first).getByText('Down')).toBeInTheDocument();
+    expect(within(first).getByText('jellyfin')).toHaveClass('font-mono');
+    // A healthy row's detail is quiet.
+    expect(within(table).getAllByText('6 users')[0]).toHaveClass('text-text-2');
+    // No list beside it.
+    expect(within(section).queryAllByRole('list')).toEqual([]);
+  });
+
+  it('grouped by custom group, the table names each row its group', () => {
+    const grouped = [{ ...linked[0], key: 'group:media', title: 'Media' }];
+    render(
+      <ServicesSection groups={grouped} view="table" onViewChange={() => {}} grouping="group" />
+    );
+    const table = screen.getByRole('table', { name: 'Services' });
+    expect(within(table).getByRole('columnheader', { name: 'Group' })).toBeInTheDocument();
+    expect(within(table).getAllByText('Media')).toHaveLength(2);
+  });
+
+  it("the filters' row under the heading, and the empty state when no group has a row", () => {
+    const empty = <p>No services match these filters</p>;
+    const { rerender } = render(
+      <ServicesSection groups={GROUPS} toolbar={<div data-testid="filters" />} empty={empty} />
+    );
+    const section = screen.getByRole('region', { name: 'Services' });
+    expect(within(section).getByTestId('filters')).toBeInTheDocument();
+    expect(within(section).queryByText('No services match these filters')).toBeNull();
+    rerender(<ServicesSection groups={[]} toolbar={<div data-testid="filters" />} empty={empty} />);
+    expect(within(section).getByText('No services match these filters')).toBeInTheDocument();
+    expect(section.querySelector('[data-slot="services-list"]')).toBeNull();
+  });
+});

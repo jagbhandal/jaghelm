@@ -8,15 +8,19 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   GROUPING_PREF,
+  SERVICES_VIEW_PREF,
+  filterServiceRows,
   groupingsFor,
   headlineMetric,
+  serviceFilterOptions,
   serviceGroups,
   serviceRows,
   servicesCount,
   useServicesGrouping,
+  useServicesView,
 } from './servicesView.js';
 import { entityAnchor } from './entityAnchors.js';
-import { demoBoard, twoPis } from '../testing/statusFixtures.js';
+import { demoBoard, nasDiskIncident, twoPis } from '../testing/statusFixtures.js';
 import { runScenario } from '../../server/testing/statusScenarios.js';
 
 const NOW = Date.parse('2026-10-20T09:00:00Z');
@@ -341,5 +345,155 @@ describe('useServicesGrouping: the choice kept in this browser', () => {
     expect(result.current[0]).toBe('node');
     act(() => result.current[1]('group'));
     expect(result.current[0]).toBe('group');
+  });
+});
+
+// The Services page's filters (#313): what each keeps, read from the model.
+describe('filterServiceRows: the Services page filters the same rows', () => {
+  const board = () => nasDiskIncident();
+  const rowsOf = (status, services) => serviceRows({ status, services });
+  const names = (rows) => rows.map((r) => r.name).sort();
+
+  it('none: every row, in its order', () => {
+    const { status, services } = board();
+    const rows = rowsOf(status, services);
+    expect(filterServiceRows(rows, {})).toEqual(rows);
+    expect(filterServiceRows(rows, { q: '', state: null, node: null, tag: null })).toEqual(rows);
+  });
+
+  it("search: a service's name, its node's key or name, its container, its custom group", () => {
+    const { status, services } = board();
+    const rows = rowsOf(status, services);
+    expect(names(filterServiceRows(rows, { q: 'JELLY' }))).toEqual(['Jellyfin']);
+    // The node's key, and its name: every service on it.
+    const onEdge = rows
+      .filter((r) => r.node === 'edge')
+      .map((r) => r.name)
+      .sort();
+    expect(names(filterServiceRows(rows, { q: 'edge' }))).toEqual(onEdge);
+    expect(names(filterServiceRows(rows, { q: 'network edge' }))).toEqual(onEdge);
+    // The container, as /api/services names it.
+    const card = rows.find((r) => r.name === 'Paperless Ngx');
+    expect(names(filterServiceRows(rows, { q: card.container }))).toContain('Paperless Ngx');
+    // A custom group holding it, by uid.
+    const media = [{ id: 'media', title: 'Media shelf', containers: ['apps:jellyfin'] }];
+    expect(names(filterServiceRows(rows, { q: 'shelf' }, { customGroups: media }))).toEqual([
+      'Jellyfin',
+    ]);
+    // Every word somewhere: the name and the node.
+    expect(names(filterServiceRows(rows, { q: 'jelly server' }))).toEqual(['Jellyfin']);
+    expect(filterServiceRows(rows, { q: 'jelly storage' })).toEqual([]);
+  });
+
+  it("state: as drawn; problems are the model's issues", () => {
+    const { status, services } = board();
+    const rows = rowsOf(status, services);
+    expect(names(filterServiceRows(rows, { state: 'problems' }))).toEqual(['Jellyfin']);
+    expect(filterServiceRows(rows, { state: 'ok' })).toHaveLength(rows.length - 1);
+    expect(filterServiceRows(rows, { state: 'maintenance' })).toEqual([]);
+    expect(filterServiceRows(rows, { state: 'no-signal' })).toEqual([]);
+    // A stale status draws every row as no signal: each is listed as drawn.
+    const stale = serviceRows({ status, services, freshness: { stale: true } });
+    expect(filterServiceRows(stale, { state: 'no-signal' })).toHaveLength(rows.length);
+    expect(filterServiceRows(stale, { state: 'problems' })).toHaveLength(rows.length);
+    expect(filterServiceRows(stale, { state: 'ok' })).toEqual([]);
+  });
+
+  it("state: maintenance and no signal, from the model's own scenarios", () => {
+    for (const [name, filter, level] of [
+      ['every-state', 'maintenance', 'maintenance'],
+      ['source-down', 'no-signal', 'unknown'],
+    ]) {
+      const { status, services } = scenario(name);
+      const rows = rowsOf(status, services);
+      const want = rows.filter((r) => r.level === level).map((r) => r.id);
+      expect(want.length, filter).toBeGreaterThan(0);
+      expect(filterServiceRows(rows, { state: filter }).map((r) => r.id)).toEqual(want);
+    }
+    // Maintenance is no problem (the model's issues leave it out); pending is.
+    const { status, services } = scenario('every-state');
+    const problems = filterServiceRows(rowsOf(status, services), { state: 'problems' });
+    expect(problems.map((r) => r.level).sort()).toEqual(['warn', 'warn']);
+  });
+
+  it("node: its key's services only; with the search, both", () => {
+    const { status, services } = board();
+    const rows = rowsOf(status, services);
+    const apps = filterServiceRows(rows, { node: 'apps' });
+    expect(apps.length).toBeGreaterThan(0);
+    expect(apps.every((r) => r.node === 'apps')).toBe(true);
+    expect(names(filterServiceRows(rows, { node: 'apps', q: 'graf' }))).toEqual(['Grafana']);
+    expect(filterServiceRows(rows, { node: 'edge', q: 'graf' })).toEqual([]);
+    expect(filterServiceRows(rows, { node: 'nowhere' })).toEqual([]);
+  });
+
+  it('tag: no service has tags yet (#519), so no Tag filter is offered; once one does, it filters', () => {
+    const { status, services } = board();
+    const rows = rowsOf(status, services);
+    expect(rows.every((r) => r.tags.length === 0)).toBe(true);
+    expect(serviceFilterOptions(rows, services).tags).toEqual([]);
+    // Tags served on the entities, as #519 will.
+    const tagged = {
+      ...status,
+      entities: status.entities.map((e) =>
+        e.id === 'services/apps:jellyfin'
+          ? { ...e, tags: ['media', ' media ', 'public', 3] }
+          : e.id === 'services/storage:photoprism'
+            ? { ...e, tags: ['media'] }
+            : e
+      ),
+    };
+    const withTags = rowsOf(tagged, services);
+    expect(withTags.find((r) => r.name === 'Jellyfin').tags).toEqual(['media', 'public']);
+    expect(serviceFilterOptions(withTags, services).tags).toEqual(['media', 'public']);
+    expect(names(filterServiceRows(withTags, { tag: 'media' }))).toEqual([
+      'Jellyfin',
+      'Photoprism',
+    ]);
+    expect(names(filterServiceRows(withTags, { tag: 'public' }))).toEqual(['Jellyfin']);
+    expect(names(filterServiceRows(withTags, { q: 'public' }))).toEqual(['Jellyfin']);
+  });
+
+  it("the Node filter's options: services.yaml's order, by name", () => {
+    const { status, services } = board();
+    const rows = rowsOf(status, services);
+    expect(serviceFilterOptions(rows, services).nodes).toEqual(
+      Object.entries(services.nodes).map(([value, n]) => ({ value, label: n.display_name }))
+    );
+    // Before /api/services answers: the model's nodes, by their keys.
+    expect(serviceFilterOptions(rowsOf(status, null), null).nodes.map((n) => n.label)).toEqual([
+      ...new Set(rows.map((r) => r.node)),
+    ]);
+  });
+
+  it('the count says what a filter left of how many', () => {
+    const { status, services } = board();
+    const rows = rowsOf(status, services);
+    const shown = filterServiceRows(rows, { node: 'apps' });
+    expect(servicesCount(shown, null, { of: rows.length })).toBe(
+      `${shown.length} of ${rows.length} monitored · 1 down`
+    );
+    expect(servicesCount([], null, { of: rows.length })).toBe(`0 of ${rows.length} monitored`);
+  });
+});
+
+describe('useServicesView: list or table, kept in this browser', () => {
+  afterEach(() => localStorage.clear());
+
+  it('a list by default; a table is stored, and read back', () => {
+    const { result } = renderHook(() => useServicesView());
+    expect(result.current[0]).toBe('list');
+    act(() => result.current[1]('table'));
+    expect(localStorage.getItem(SERVICES_VIEW_PREF)).toBe('table');
+    expect(renderHook(() => useServicesView()).result.current[0]).toBe('table');
+    act(() => result.current[1]('cards'));
+    expect(result.current[0]).toBe('table');
+  });
+
+  it("the grouping is one choice for the Overview and the page: a change in one is the other's", () => {
+    const overview = renderHook(() => useServicesGrouping());
+    const page = renderHook(() => useServicesGrouping());
+    act(() => page.result.current[1]('group'));
+    expect(overview.result.current[0]).toBe('group');
   });
 });

@@ -68,18 +68,31 @@ export function hasListFilters(filters) {
   return Object.entries(filters).some(([, v]) => v != null && v !== '');
 }
 
+/** A raw `name=value` part's name, decoded (null when it can't be). */
+function nameOf(part) {
+  try {
+    return decodeURIComponent(part.split('=')[0].replace(/\+/g, ' '));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The query `search` with its filters of `keys` replaced by `filters` (""
- * when nothing is left): the other parameters stay, before them.
+ * when nothing is left): the other parameters stay before them, as they were
+ * written (an entity's id keeps its `/` and `:`, #309).
  */
 export function listFiltersSearch(filters, search, keys = ALL_KEYS) {
-  const params = new URLSearchParams(search);
-  for (const key of keys) params.delete(key);
+  const rest = String(search ?? '')
+    .replace(/^\?/, '')
+    .split('&')
+    .filter((part) => part && !keys.includes(nameOf(part)));
+  const mine = new URLSearchParams();
   for (const key of keys) {
     const value = clean(filters[key] ?? '');
-    if (value) params.set(key, value);
+    if (value) mine.set(key, value);
   }
-  const query = params.toString();
+  const query = [...rest, mine.toString()].filter(Boolean).join('&');
   return query ? `?${query}` : '';
 }
 

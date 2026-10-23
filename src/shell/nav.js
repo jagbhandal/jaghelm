@@ -1,10 +1,10 @@
 /**
  * The shell's navigation, as data (#296): the sidebar's groups and the phone's
  * tabs, from the open route, the embedded apps and the status. Only routes
- * whose page exists are listed (routes.js: Services and Infrastructure join in
- * Phase 2, #313).
+ * whose page exists are listed (routes.js).
  *
- *   Monitor  Overview, Alerts (with the issue count)
+ *   Monitor  Overview, Services, Infrastructure (#313, the mock's order),
+ *            Alerts (with the issue count)
  *   Apps     one entry per embedded app (Settings → Tabs), its dot while it is
  *            loaded and not open, Unload on it; then "Add app", to Settings'
  *            Tabs section, until Settings → Apps & links (#362)
@@ -12,8 +12,8 @@
  *
  * Phones get the spec's five tabs (§7, #303): Overview, Services,
  * Infrastructure, Alerts and More; More holds Apps and Tools. Below 768px the
- * first four are the shared phone screens (src/phone/), Services and
- * Infrastructure on routes of their own that only a phone has yet (routes.js).
+ * first four are the shared phone screens (src/phone/), at the same addresses
+ * as the wide pages.
  */
 import { createElement as h } from 'react';
 import {
@@ -71,6 +71,20 @@ export function navGroups({ routeId, appId = null, apps, loaded, onUnload, badge
           href: pathTo('overview'),
           icon: icon(LayoutDashboard),
           current: routeId === 'overview',
+        },
+        {
+          id: 'services',
+          label: 'Services',
+          href: pathTo('services'),
+          icon: icon(Activity),
+          current: routeId === 'services',
+        },
+        {
+          id: 'infrastructure',
+          label: 'Infrastructure',
+          href: pathTo('infrastructure'),
+          icon: icon(Server),
+          current: routeId === 'infrastructure',
         },
         {
           id: 'alerts',

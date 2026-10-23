@@ -22,7 +22,7 @@
  * stale status every node, meter and pool is no signal, as there. Its own
  * chunk (lazyViews.js).
  */
-import { useCallback, useId, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Boxes } from 'lucide-react';
 import { ShellPage } from '@ui/app-shell';
 import { Button } from '@ui/button';
@@ -32,12 +32,12 @@ import { InfrastructureSection } from '@ui/infrastructure-section';
 import { ListFilters } from '@ui/list-filters';
 import { Panel } from '@ui/panel';
 import { useConfig } from '../context/ConfigContext.jsx';
-import { entityExtras } from './detail/entityExtras.js';
-import { useInfrastructureSection } from './OverviewInfrastructure.jsx';
 import { NODE_FILTERS, hasListFilters, useListFilters, useSearchDraft } from './listFilters.js';
 import { filterNodes, infrastructureCount, roleOptions } from './infrastructureView.js';
 import { sourceBanner } from './sourceHealth.js';
+import { proxmoxOf } from './proxmoxNodes.js';
 import { useDashboardData } from './useDashboardData.js';
+import { useInfrastructureSection } from './useInfrastructureSection.jsx';
 
 const ALL = 'all';
 
@@ -50,63 +50,28 @@ export const NODE_STATES = Object.freeze([
 ]);
 const NODE_STATE_VALUES = new Set(NODE_STATES.map((s) => s.value));
 
-/** The Proxmox parts of a node's detail the page lists: its machines and its pools. */
-const PROXMOX_PARTS = new Set(['vms', 'pools']);
-
 /**
- * Each of `nodes` with a Proxmox integration, and the parts of its detail the
- * page lists (entityExtras.js, as the detail drawer builds them): `[{ node,
- * sections }]`, in the nodes' order.
+ * Each Proxmox node's machines and pools, under the nodes: one Panel, its
+ * parts the detail drawer's (DetailSections), each named by its node.
  */
-export function proxmoxOf({ status, nodes, services, integrations, stale }) {
-  if (!integrations || typeof integrations !== 'object') return [];
-  const read = { integrations: { body: integrations } };
-  return nodes.flatMap((node) => {
-    const entity = status?.entities?.find((e) => e.id === node.id);
-    if (!entity) return [];
-    const { sections } = entityExtras({ status, entity, read, services, freshness: { stale } });
-    const parts = sections.filter((s) => PROXMOX_PARTS.has(s.key));
-    return parts.length > 0 ? [{ node, sections: parts }] : [];
-  });
-}
-
-/** Each Proxmox node's machines and pools, a panel each, under the nodes. */
 function ProxmoxNodes({ list, stale }) {
-  const id = useId();
   if (list.length === 0) return null;
+  const sections = list.flatMap(({ node, sections: parts }) =>
+    parts.map((part) => ({
+      ...part,
+      key: `${node.id}:${part.key}`,
+      title: `${node.name} · ${part.title}`,
+    }))
+  );
   return (
-    <section
+    <Panel
       data-slot="proxmox-nodes"
-      aria-labelledby={`${id}-title`}
-      className="flex min-w-0 flex-col gap-3 text-text-1"
+      icon={<Boxes />}
+      title="Virtual machines and storage"
+      description="Each Proxmox node's, as its detail lists them"
     >
-      <div className="flex items-center gap-3">
-        <span
-          aria-hidden="true"
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-tint text-accent-text inset-ring inset-ring-accent-border [&_svg]:size-4 [&_svg]:stroke-[1.75]"
-        >
-          <Boxes />
-        </span>
-        <h2 id={`${id}-title`} className="text-title-sm">
-          Virtual machines and storage
-        </h2>
-      </div>
-      <ul className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3">
-        {list.map(({ node, sections }) => (
-          <li key={node.id} className="min-w-0">
-            <Panel
-              data-node={node.id}
-              title={node.name}
-              description={['Proxmox', node.host].filter(Boolean).join(' · ')}
-              titleAs="h3"
-              className="h-full"
-            >
-              <DetailSections sections={sections} muted={stale} />
-            </Panel>
-          </li>
-        ))}
-      </ul>
-    </section>
+      <DetailSections sections={sections} muted={stale} />
+    </Panel>
   );
 }
 
@@ -119,12 +84,9 @@ export default function InfrastructurePage({
   refreshIntervalMs,
 }) {
   const { config } = useConfig();
-  const { serviceData, integrationData, history, servicesLoaded, sources, healthNow, retry } =
+  const { serviceData, integrationData, history, servicesLoaded, sources, retry } =
     useDashboardData(0, { tick, active, refreshIntervalMs });
-  const health = useMemo(
-    () => sourceBanner(sources.services, 'services', refreshIntervalMs, healthNow),
-    [sources, refreshIntervalMs, healthNow]
-  );
+  const health = useMemo(() => sourceBanner(sources.services, 'services'), [sources]);
   const sections = useMemo(() => config.sections || {}, [config.sections]);
   const { nodes, freshness, view, setView, loading, banner } = useInfrastructureSection({
     status,
@@ -206,7 +168,7 @@ export default function InfrastructurePage({
       {nodes.length > 0 ? (
         <EmptyState
           title="No nodes match these filters"
-          description={`None of the ${nodes.length} nodes JagHelm watches is left by them.`}
+          description={`None of the ${nodes.length} nodes fits them all.`}
           action={
             <Button variant="secondary" size="sm" onClick={clear}>
               Clear filters

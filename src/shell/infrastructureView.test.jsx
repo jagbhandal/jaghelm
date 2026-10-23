@@ -6,9 +6,11 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  filterNodes,
   infrastructureCount,
   infrastructureNodes,
   READINGS,
+  roleOptions,
   servicesText,
 } from './infrastructureView.js';
 import { entityAnchor } from './entityAnchors.js';
@@ -286,5 +288,61 @@ describe('the Infrastructure section, from the model', () => {
   it('nothing before the first status, and nothing on a board with no nodes', () => {
     expect(infrastructureNodes({ status: null, services: null })).toEqual([]);
     expect(infrastructureNodes(scenario('first-run'))).toEqual([]);
+  });
+});
+
+// The Infrastructure page's filters (#313): what each keeps, read from the model.
+describe('filterNodes: the Infrastructure page filters the same nodes', () => {
+  const nodesOf = (opts) => {
+    const { status, services } = nasDiskIncident();
+    return infrastructureNodes({ status, services, ...opts });
+  };
+  const names = (nodes) => nodes.map((n) => n.name);
+
+  it('none: every node, in its order', () => {
+    const nodes = nodesOf();
+    expect(filterNodes(nodes, {})).toEqual(nodes);
+    expect(filterNodes(nodes, { q: '', state: null, role: null })).toEqual(nodes);
+  });
+
+  it("search: a node's name, its key, its role", () => {
+    const nodes = nodesOf();
+    expect(names(filterNodes(nodes, { q: 'network' }))).toEqual(['Network Edge']);
+    expect(names(filterNodes(nodes, { q: 'STORAGE' }))).toEqual(['Storage']);
+    expect(names(filterNodes(nodes, { q: 'apps' }))).toEqual(['App Server']);
+    expect(names(filterNodes(nodes, { q: 'proxmox' }))).toEqual(['App Server']);
+    expect(names(filterNodes(nodes, { q: 'raspberry edge' }))).toEqual(['Network Edge']);
+    expect(filterNodes(nodes, { q: 'raspberry nas' })).toEqual([]);
+  });
+
+  it("state: as drawn; problems are the model's issues", () => {
+    const nodes = nodesOf();
+    expect(names(filterNodes(nodes, { state: 'problems' }))).toEqual(['Storage']);
+    expect(names(filterNodes(nodes, { state: 'ok' }))).toEqual(['Network Edge', 'App Server']);
+    expect(filterNodes(nodes, { state: 'no-signal' })).toEqual([]);
+    // Stale: every node is drawn as no signal, and listed so.
+    const stale = nodesOf({ freshness: { stale: true } });
+    expect(filterNodes(stale, { state: 'no-signal' })).toHaveLength(3);
+    expect(filterNodes(stale, { state: 'ok' })).toEqual([]);
+  });
+
+  it("role: services.yaml's subtitle; the Role filter's options, each once", () => {
+    const nodes = nodesOf();
+    expect(names(filterNodes(nodes, { role: 'NAS' }))).toEqual(['Storage']);
+    expect(filterNodes(nodes, { role: 'Mainframe' })).toEqual([]);
+    expect(roleOptions(nodes)).toEqual(
+      nodes.map((n) => ({ value: n.subtitle, label: n.subtitle }))
+    );
+    expect(
+      roleOptions([...nodes, { ...nodes[0], id: 'x' }, { ...nodes[0], subtitle: null }])
+    ).toHaveLength(3);
+  });
+
+  it('the count says what a filter left of how many', () => {
+    const nodes = nodesOf();
+    const shown = filterNodes(nodes, { state: 'problems' });
+    expect(infrastructureCount(shown, null, { of: 3 })).toBe('1 of 3 nodes · 1 warning');
+    expect(infrastructureCount([], null, { of: 1 })).toBe('0 of 1 node');
+    expect(infrastructureCount(nodes)).toBe('3 nodes · 1 warning');
   });
 });

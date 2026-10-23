@@ -350,6 +350,29 @@ export const CATALOG = Object.freeze([
     'The Overview in a 1024px window: one column, the strip in one row, two cards a row'
   ),
 
+  // The Services and Infrastructure pages (#313): the Overview's sections, with their filters
+  s('list-filters', 'Pages', 'ListFilters: a search, State and Node chosen, Clear filters', {
+    accent: true,
+  }),
+  s(
+    'services-page',
+    'Pages',
+    'The Services page: filtered to Problems, the services it leaves, the List / Table toggle',
+    { accent: true }
+  ),
+  s('services-page-table', 'Pages', 'The Services page: the table, every service by node'),
+  s(
+    'services-page-empty',
+    'Pages',
+    'The Services page: filters that leave no service, and Clear filters'
+  ),
+  s(
+    'infrastructure-page',
+    'Pages',
+    'The Infrastructure page: filtered to Problems, the nodes it leaves, a Role filter',
+    { accent: true }
+  ),
+
   // Shell (#296)
   s(
     'app-header',

@@ -1729,8 +1729,9 @@ From the mock's Main and Phone boards:
 - **No account card at the sidebar's foot**, and no Launch entry yet (#301);
   Settings is in the Tools group rather than pinned to the bottom.
 - **Phone tabs: Overview, Services, Infrastructure, Alerts and More**, as the
-  mock's (#303); Services and Infrastructure are the phone screens' own pages
-  until the desktop has them (#313).
+  mock's (#303); the sidebar's Monitor group is the mock's too, Overview,
+  Services, Infrastructure and Alerts, each tab and entry at the same
+  address (#313).
 - **Labels are 12px, not 11px** (the type floor), and the phone's count is the
   mock's solid; the sidebar's is the mock's tint.
 - **JagHelm's shield, not the mock's wheel** (#530): the mock drew a wheel on
@@ -1744,14 +1745,17 @@ the components above; `src/shell/` feeds them the status model
 ([ARCHITECTURE.md](ARCHITECTURE.md), "The Infrastructure section", "The
 Services section", "The Jobs section"). The [gallery](GALLERY.md) shows each in its states (group
 Overview), and `e2e/infrastructure.spec.mjs` and `e2e/services.spec.mjs` run
-them in a browser.
+them in a browser. The Services and Infrastructure pages (#313) are the same
+two sections with a row of filters, `ListFilters` (gallery group Pages,
+`e2e/pages.spec.mjs`).
 
 | Component | Import | Props |
 | --- | --- | --- |
-| `InfrastructureSection` | `@ui/infrastructure-section` | `nodes` (each `{ id, anchor, name, host, subtitle, colour, state, word, reason, readings, services, uptime, trend }`), `count` ("3 nodes · 1 warning"), `view` (`cards` or `table`), `onViewChange` (none, no toggle), `loading`, `banner`, `title` (`Infrastructure`) |
+| `InfrastructureSection` | `@ui/infrastructure-section` | `nodes` (each `{ id, anchor, name, host, subtitle, colour, state, word, reason, readings, services, uptime, trend }`), `count` ("3 nodes · 1 warning"), `view` (`cards` or `table`), `onViewChange` (none, no toggle), `loading`, `banner`, `toolbar` (a page's filters, under the heading), `empty` (in place of the nodes when there are none), `title` (`Infrastructure`) |
 | `NodeCard` | `@ui/node-card` | `name`, `host`, `subtitle`, `colour` (the user's, a swatch), `state`, `word`, `reason`, `readings` (MetricMeter's props each, with `key`), `services` and `uptime` (the footer's lines), `trend` (`{ points, label, formatValue }`); `onOpen` (its name a button over the card) or `href` (a link; with `onOpen` too, as IssueRow's, #309) |
 | `NodeSwatch` | `@ui/node-card` | `colour` |
-| `ServicesSection` | `@ui/services-section` | `groups` (each `{ key, title, host, count, rows }`, each row `{ id, anchor, name, where, state, word, detail, meta, muted }`), `count` ("12 monitored · 1 down"), `grouping` (`node` or `group`), `groupings` (the control's options, `disabled` on one with nothing yet), `onGroupingChange` (none, no control), `groupingHint` (a caption under the control), `loading`, `banner`, `title` (`Services`) |
+| `ServicesSection` | `@ui/services-section` | `groups` (each `{ key, title, host, count, rows }`, each row `{ id, anchor, name, where, state, word, detail, meta, muted }`, and `nodeName` and `container` for the table), `count` ("12 monitored · 1 down"), `grouping` (`node` or `group`), `groupings` (the control's options, `disabled` on one with nothing yet), `onGroupingChange` (none, no control), `groupingHint` (a caption under the control), `view` (`list` or `table`), `onViewChange` (none, no toggle and no table: the Overview's), `loading`, `banner`, `toolbar` (a page's filters, under the heading), `empty` (in place of the panel when no group has a row), `title` (`Services`) |
+| `ListFilters` | `@ui/list-filters` | `search` (`{ value, onChange, label }`), `filters` (each `{ id, label, value, items, onValueChange }`, the first item "every one"), `onClear` (none, no Clear filters) |
 | `JobsSection` | `@ui/jobs-section` | `groups` (each `{ key, title, count, rows }`, each row `{ id, name, where, state, word, detail, meta, muted, href?, onOpen? }`), `count` ("7 scheduled · all OK"), `loading`, `banner`, `title` (`Jobs`) |
 | `JobsList` | `@ui/jobs-section` | `groups`: the section's panel of groups alone, for a page with its own heading (the phone's Infrastructure) |
 
@@ -1801,7 +1805,24 @@ From the mock's Main board, its Infrastructure section:
   one), the detail (the headline metric, or the model's reason) and the
   latency as the meta; healthy rows `muted`, a critical one tinted. Narrower
   than 672px, the rows are the Phone board's. While loading, four placeholder
-  rows and no count.
+  rows and no count. On the Services page (#313) a second SegmentedControl
+  after the grouping, "Service view" (List, Table, Lucide `List` and
+  `Rows3`), and the table: the Table component, its hidden caption
+  "Services", the rows in the groups' order: service (semibold, a link that
+  opens it), node in `text-2`, the custom group while grouped by one,
+  container in 12px mono `text-3`, the detail (`text-2` while up, else its
+  state's word colour, ending in an ellipsis past 288px, whole in its
+  title), latency, right-aligned, and state (the lamp and the word, as the
+  Infrastructure table's). It needs 720px, as Infrastructure's: narrower, the
+  list and no toggle.
+- **ListFilters** (#313). A page's filters in one row that wraps, under the
+  section's heading row and over its panel, 12px apart: the search, an
+  Input filling the row (at least 192px), its placeholder its name ("Search
+  services"); a Select for each filter, 176px, showing its choice ("All
+  states", "Problems"); and while any is set, "Clear filters", a ghost
+  accent Button with Lucide `X`. A filter that leaves nothing shows, in the
+  section's place for its rows, an EmptyState in a Panel ("No services match
+  these filters", how many there are, and Clear filters).
 - **JobsSection** (#578). The mock draws no jobs list, so it is drawn in
   its sections' style, the Services section's: the heading row with the
   icon (Lucide `CalendarClock`) in a 32px accent chip, "Jobs" and the count
@@ -1865,6 +1886,11 @@ From the mock's Main board, its Infrastructure section:
   coloured reading adds its state for screen readers (", warning").
 - A page links to a node by the card's `id` (or its name's in the table); the
   card takes focus when a link lands on it.
+- ListFilters is a group named "Filters": the search a searchbox named by
+  its placeholder's words, each Select a combobox named by its filter
+  ("State", "Node"). On the Services page the view is a radio group,
+  "Service view", and the table's row header is the service's name, a link
+  to its detail.
 - The Services section is a region named by its heading; the grouping a
   radio group, "Group services by"; each group a list named by its heading
   (an `h3`); each row a link that opens its detail (#309, #310), its lamp
@@ -1890,7 +1916,19 @@ From the mock's Main board, its Infrastructure section:
   services' counts), and its Role is services.yaml's `subtitle` for the node.
 - **Services: no heartbeat strip, no chevron, no filter box, no "Show all".**
   The server keeps no per-monitor history yet (#312), a row's detail is its
-  drawer (#310), and the Services page with its search is #313's.
+  drawer (#310), and the search is the Services page's (#313), a row of its
+  own under the heading with the other filters, where the mock's "Filter
+  services" box sits in the Overview section's heading row. The Overview
+  lists every service already, so it has no "Show all"; the sidebar has the
+  page.
+- **The pages have no mock of their own** (#313). Each is its Overview
+  section, every row, with ListFilters under the heading; the section's
+  heading is the page's (an `h1` for screen readers names the page, as the
+  Overview's does). Services' toggle reads List / Table, not Cards / Table:
+  the Overview's service row is a list row, and a card per service would be
+  a second look for it. The Infrastructure page's Proxmox lists are the
+  detail drawer's parts (DetailSections), a Panel per node, under a heading
+  row in the sections' style (Lucide `Boxes`).
 - **Services: healthy rows are muted**, their detail `text-2` where the
   mock's is `text-1` (spec §8: "Healthy rows are muted").
 - **Services: a segmented control** (Node, Group) where the mock has a

@@ -28,7 +28,6 @@ import { ListFilters } from '@ui/list-filters';
 import { Panel } from '@ui/panel';
 import { ServicesSection } from '@ui/services-section';
 import { useConfig } from '../context/ConfigContext.jsx';
-import { useServicesSection } from './OverviewServices.jsx';
 import { SERVICE_FILTERS, hasListFilters, useListFilters, useSearchDraft } from './listFilters.js';
 import {
   filterServiceRows,
@@ -40,6 +39,7 @@ import {
 import { sourceBanner } from './sourceHealth.js';
 import { useAppDataMatching } from './useAppDataMatching.js';
 import { useDashboardData } from './useDashboardData.js';
+import { useServicesSection } from './useServicesSection.jsx';
 
 /** What the page reads beside the status: the latencies, and the headline metrics. */
 const SOURCES = ['services', 'integrations'];
@@ -58,20 +58,25 @@ export const SERVICE_STATES = Object.freeze([
 /** A Select's options: "All …" first, then `options`, and `chosen` when they no longer have it. */
 function itemsOf(all, options, chosen) {
   const out = [{ value: ALL, label: all }, ...options];
-  if (chosen && !options.some((o) => o.value === chosen)) out.push({ value: chosen, label: chosen });
+  if (chosen && !options.some((o) => o.value === chosen))
+    out.push({ value: chosen, label: chosen });
   return out;
 }
 
 export default function ServicesPage({ status, reach, updated, tick, active, refreshIntervalMs }) {
   const { config } = useConfig();
-  const { serviceData, integrationData, servicesLoaded, sources, healthNow, retry } =
-    useDashboardData(0, { tick, active, refreshIntervalMs, only: SOURCES });
-  // The numbers' Banner: the latencies' source, else the metrics'.
+  const { serviceData, integrationData, servicesLoaded, sources, retry } = useDashboardData(0, {
+    tick,
+    active,
+    refreshIntervalMs,
+    only: SOURCES,
+  });
+  // The numbers' Banner, as the Overview's: the latencies' source, else the metrics'.
   const health = useMemo(() => {
-    const services = sourceBanner(sources.services, 'services', refreshIntervalMs, healthNow);
+    const services = sourceBanner(sources.services, 'services');
     if (services.message || services.staleNote) return services;
-    return sourceBanner(sources.integrations, 'integrations', refreshIntervalMs, healthNow);
-  }, [sources, refreshIntervalMs, healthNow]);
+    return sourceBanner(sources.integrations, 'integrations');
+  }, [sources]);
   const sections = useMemo(() => config.sections || {}, [config.sections]);
   const customGroups = useMemo(() => config.customGroups || NO_GROUPS, [config.customGroups]);
   const appData = useAppDataMatching(integrationData, serviceData);
@@ -158,7 +163,7 @@ export default function ServicesPage({ status, reach, updated, tick, active, ref
       {rows.length > 0 ? (
         <EmptyState
           title="No services match these filters"
-          description={`None of the ${rows.length} services JagHelm watches is left by them.`}
+          description={`None of the ${rows.length} services fits them all.`}
           action={
             <Button variant="secondary" size="sm" onClick={clear}>
               Clear filters

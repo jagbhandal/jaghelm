@@ -1,10 +1,10 @@
 /*
  * ListFilters (#313): a list page's filters in one row that wraps, under the
  * section's heading (the Services and Infrastructure pages): the search (an
- * Input, filling the row, at least 192px), then a Select for each filter
- * (State, Node, Role, Tag), 176px each, and "Clear filters" (a ghost accent
- * Button) while any is set. Each control is named (`label`), the search by
- * its placeholder's words.
+ * Input, filling the row, at least 192px), then a Select for each of
+ * `filters` (State, Node, Role, Tag), 176px each, and "Clear filters" (a
+ * ghost accent Button) while any is set. Each control is named (`label`),
+ * the search by its placeholder's words.
  *
  * It holds nothing: `search` is `{ value, onChange(text), label }`, each of
  * `filters` `{ id, label, value, items, onValueChange(value) }` (its items
