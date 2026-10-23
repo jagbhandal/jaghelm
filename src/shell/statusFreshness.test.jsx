@@ -226,6 +226,24 @@ describe('stale by its age: no answer for longer than the poll allows (#480)', (
     expect(result.current.stale).toBe(true);
   });
 
+  it('the first answer after none starts the boundary: stale staleAfter after it', () => {
+    const updated = store(null);
+    const { result } = renderFreshness({ status: HEALTHY, reach: 'ok', updated });
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+      updated.set(Date.now());
+    });
+    act(() => {
+      vi.advanceTimersByTime(STALE_AFTER - 1);
+    });
+    expect(result.current.stale).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(result.current.stale).toBe(true);
+  });
+
   it('a tab shown again hours later: stale in its first render, before any answer', () => {
     const updated = store(NOW);
     const { seen } = renderFreshness({ status: INCIDENT, reach: 'ok', updated });

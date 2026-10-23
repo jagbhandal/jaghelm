@@ -45,8 +45,8 @@ import {
 } from './servicesView.js';
 
 // The words for numbers that stopped coming, from the board's source health
-// (sourceHealth.js sourceBanner: `message` on a failed read, `staleNote` after
-// two missed polls).
+// (sourceHealth.js sourceBanner: `message` on a failed read, `staleNote` once
+// the last answer is stale, by the header's rule, freshness.js).
 function staleBanner(health, onRetry) {
   if (!health?.message && !health?.staleNote) return null;
   const age = health.staleNote?.replace(/^updated /, '');

@@ -33,12 +33,8 @@ vi.mock('./OverviewInfrastructure.jsx', counted('infrastructure', 'OverviewInfra
 vi.mock('./OverviewPower.jsx', counted('power', 'OverviewPower'));
 vi.mock('./OverviewServices.jsx', counted('services', 'OverviewServices'));
 
-const source = (overrides = {}) => ({
-  error: null,
-  lastSuccessMs: null,
-  watchedSinceMs: null,
-  ...overrides,
-});
+// What useDashboardData says of a source (it judges the note, #559).
+const source = (overrides = {}) => ({ error: null, staleNote: null, ...overrides });
 
 const NODES = {
   pve: { display_name: 'PVE', services: [], metrics: {} },
@@ -52,7 +48,6 @@ function boardData(overrides = {}) {
     history: {},
     servicesLoaded: true,
     sources: { services: source(), integrations: source() },
-    healthNow: Date.now(),
     retry: vi.fn(),
     ...overrides,
   };
@@ -209,8 +204,8 @@ describe('failures, announced once', () => {
     renderBoard({
       data: boardData({
         sources: {
-          services: source({ error: 'HTTP 502', lastSuccessMs: Date.now() }),
-          integrations: source({ error: 'HTTP 502', lastSuccessMs: Date.now() }),
+          services: source({ error: 'HTTP 502' }),
+          integrations: source({ error: 'HTTP 502' }),
         },
       }),
     });
@@ -225,7 +220,7 @@ describe('failures, announced once', () => {
       data: boardData({
         sources: {
           services: source(),
-          integrations: source({ error: 'HTTP 502', lastSuccessMs: Date.now() }),
+          integrations: source({ error: 'HTTP 502' }),
         },
       }),
     });
@@ -233,15 +228,32 @@ describe('failures, announced once', () => {
   });
 });
 
+describe('a stale note, as the hook says it (#559)', () => {
+  it('the sections draw it: the age, and that the readings stopped coming', () => {
+    renderBoard({
+      data: boardData({
+        sources: {
+          services: source({ staleNote: 'updated 5m ago' }),
+          integrations: source({ staleNote: 'updated 5m ago' }),
+        },
+      }),
+    });
+    const infra = screen.getByRole('region', { name: 'Infrastructure' });
+    expect(within(infra).getByText("Node readings aren't updating")).toBeInTheDocument();
+    expect(within(infra).getByText('Updated 5m ago')).toBeInTheDocument();
+    const services = screen.getByRole('region', { name: 'Services' });
+    expect(within(services).getByText('Updated 5m ago')).toBeInTheDocument();
+  });
+});
+
 // #252: all 61 service cards re-rendered on every refresh. A tick whose
 // answers are all 304s hands the board the same data (useData.js's
-// stable-identity contract), and the clock a step on: no section renders
-// again.
+// stable-identity contract): no section renders again.
 describe('a healthy tick that changes nothing (#252)', () => {
   it('renders no section again', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     try {
-      const data = boardData({ healthNow: 1_000_000_000_000 });
+      const data = boardData();
       const { rerenderWith } = renderBoard({ data });
       const first = { ...renders };
       expect(first.infrastructure).toBeGreaterThan(0);
@@ -249,7 +261,7 @@ describe('a healthy tick that changes nothing (#252)', () => {
       expect(first.services).toBeGreaterThan(0);
       for (let tick = 1; tick <= 3; tick++) {
         act(() => vi.setSystemTime(1_000_000_000_000 + tick * 15_000));
-        rerenderWith({ ...data, healthNow: 1_000_000_000_000 + tick * 15_000 }, { tick });
+        rerenderWith(data, { tick });
       }
       expect(renders).toEqual(first);
     } finally {

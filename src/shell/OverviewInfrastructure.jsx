@@ -41,7 +41,7 @@ import {
 
 // The words for readings that stopped coming, from /api/services' health
 // (sourceHealth.js sourceBanner: `message` on a failed read, `staleNote`
-// after two missed polls).
+// once the last answer is stale, by the header's rule, freshness.js).
 function staleBanner(health, onRetry) {
   if (!health?.message && !health?.staleNote) return null;
   const age = health.staleNote?.replace(/^updated /, '');

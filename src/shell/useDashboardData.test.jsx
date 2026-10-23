@@ -1,7 +1,7 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useDashboardData } from './useDashboardData.js';
-import { sourceBanner } from './sourceHealth.js';
+import { staleAfterMs } from './freshness.js';
 
 // The 304-stable-identity contract: a refresh tick that produces an all-304
 // /api/services response must return the SAME object reference as the prior 200,
@@ -111,8 +111,7 @@ describe('useDashboardData — per-source health + retry', () => {
     expect(Object.keys(result.current.sources)).toEqual(['services', 'integrations']);
     for (const key of ['services', 'integrations']) {
       expect(result.current.sources).toHaveProperty(key);
-      expect(result.current.sources[key]).toHaveProperty('error');
-      expect(result.current.sources[key]).toHaveProperty('lastSuccessMs');
+      expect(result.current.sources[key]).toEqual({ error: null, staleNote: null });
     }
   });
 
@@ -262,26 +261,26 @@ describe('useDashboardData — polling schedule', () => {
     expect(take()).toEqual([...SOURCE_PATHS].sort());
   });
 
-  it('shows no stale notes on the first render back after a long pause', async () => {
-    // Only Date is faked, so fetch promises and act() still run normally.
-    vi.useFakeTimers({ toFake: ['Date'] });
+  it('back from another page after a long while, the tab showing: no stale notes in its first render', async () => {
+    // The clock's timers run (they wake the hook at each boundary); fetch
+    // promises and act() still run as they do.
+    vi.useFakeTimers();
     try {
-      const T0 = 1_000_000_000_000;
-      vi.setSystemTime(T0);
+      vi.setSystemTime(1_000_000_000_000);
       const { result, rerender } = render();
       await settle();
+      // Another page: the board asks nothing, and the tab is showing.
       rerender({ refreshKey: 0, tick: 0, active: false });
       await settle();
 
-      // Five minutes away, far past every source's stale threshold.
-      vi.setSystemTime(T0 + 5 * 60_000);
+      // Five minutes away, far past every source's stale boundary.
+      act(() => {
+        vi.advanceTimersByTime(5 * 60_000);
+      });
       rerender({ refreshKey: 0, tick: 0, active: true });
       // The resume render itself, before its refresh lands.
-      const { sources } = result.current;
-      for (const key of ['services', 'integrations']) {
-        const { staleNote } = sourceBanner(sources[key], key, 30_000, Date.now());
-        expect(staleNote, key).toBeNull();
-      }
+      for (const key of ['services', 'integrations'])
+        expect(result.current.sources[key].staleNote, key).toBeNull();
       await settle();
     } finally {
       vi.useRealTimers();
@@ -289,32 +288,59 @@ describe('useDashboardData — polling schedule', () => {
   });
 });
 
-// The stale rule is "2 missed polls of that source": every source the
-// Overview reads polls each tick, so it goes stale after 2 refresh intervals.
-describe('useDashboardData — stale threshold follows the refresh interval', () => {
-  const NOW = 1_000_000_000_000;
-  const staleAt = (key, intervalMs, ageMs) =>
-    sourceBanner(
-      { error: null, lastSuccessMs: NOW - ageMs, watchedSinceMs: null },
-      key,
-      intervalMs,
-      NOW
-    ).staleNote !== null;
+// The rule is the header's (freshness.js, #559): two polls and the request
+// timeout. Every source the Overview reads polls each tick, so it goes stale
+// that long after its last answer: 72 s at the default 30 s interval.
+describe('useDashboardData — stale boundary follows the refresh interval', () => {
+  beforeEach(() => {
+    if (!AbortSignal.timeout) {
+      AbortSignal.timeout = () => new AbortController().signal;
+    }
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000_000_000);
+  });
 
-  it('goes stale after 1 minute at the default 30 s interval, 2 at 60 s', () => {
-    for (const key of ['services', 'integrations']) {
-      expect(staleAt(key, 30_000, 60_000), key).toBe(false);
-      expect(staleAt(key, 30_000, 61_000), key).toBe(true);
-      expect(staleAt(key, 60_000, 120_000), key).toBe(false);
-      expect(staleAt(key, 60_000, 121_000), key).toBe(true);
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('goes stale 72 s after its last answer at the default 30 s interval, 132 s at 60 s', async () => {
+    for (const intervalMs of [30_000, 60_000]) {
+      let answering = true;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url) =>
+          answering
+            ? Promise.resolve(jsonResponse(String(url) === '/api/services' ? { nodes: {} } : {}))
+            : new Promise(() => {})
+        )
+      );
+      const { result, unmount } = renderHook(() =>
+        useDashboardData(0, { tick: 0, active: true, refreshIntervalMs: intervalMs })
+      );
+      await act(async () => {});
+      answering = false;
+      const notes = () =>
+        ['services', 'integrations'].map((k) => result.current.sources[k].staleNote);
+      act(() => {
+        vi.advanceTimersByTime(staleAfterMs(intervalMs) - 1);
+      });
+      expect(notes(), `${intervalMs} ms`).toEqual([null, null]);
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      const said = intervalMs === 30_000 ? 'updated 1m ago' : 'updated 2m ago';
+      expect(notes(), `${intervalMs} ms`).toEqual([said, said]);
+      unmount();
     }
   });
 });
 
-// A source that answers every poll never reads stale (#545). The banners are
-// judged at `healthNow`, on the clock `sources` read the last answers on. When
-// the answers were read on a separate 15 s clock, at a 2 s interval a source
-// that answered 2 s ago could read "updated 4s ago" until the next 15 s step.
+// A source that answers every poll never reads stale (#545): each judgement
+// reads its last answer then, on the one clock. When the answers were read on
+// a separate 15 s clock, at a 2 s interval a source that answered 2 s ago
+// could read "updated 4s ago" until the next 15 s step.
 describe('useDashboardData — no stale note on a source that answers every poll (#545)', () => {
   const INTERVAL = 2000;
   const KEYS = ['services', 'integrations'];
@@ -331,6 +357,7 @@ describe('useDashboardData — no stale note on a source that answers every poll
         Promise.resolve(jsonResponse(String(url) === '/api/services' ? { nodes: {} } : {}))
       )
     );
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
@@ -339,27 +366,23 @@ describe('useDashboardData — no stale note on a source that answers every poll
   });
 
   const settle = () => act(async () => {});
-  const notesOf = ({ sources, healthNow }) =>
-    KEYS.map((key) => [
-      key,
-      sourceBanner(sources[key], key, INTERVAL, healthNow).staleNote,
-    ]).filter(([, note]) => note !== null);
+  const notesOf = ({ sources }) =>
+    KEYS.map((key) => [key, sources[key].staleNote]).filter(([, note]) => note !== null);
 
   it('at a 2 s interval, wherever the clock falls against the load', async () => {
-    // Only Date is faked, so fetch promises and act() still run normally.
-    vi.useFakeTimers({ toFake: ['Date'] });
     const seen = [];
     // Every phase a quarter second apart, over the old 15 s clock.
     for (let offset = 0; offset < 15_000; offset += 250) {
-      const T0 = BASE + offset;
-      vi.setSystemTime(T0);
+      vi.setSystemTime(BASE + offset);
       const { result, rerender, unmount } = renderHook(
         ({ tick }) => useDashboardData(0, { tick, active: true, refreshIntervalMs: INTERVAL }),
         { initialProps: { tick: 0 } }
       );
       await settle();
       for (let tick = 1; tick <= 8; tick++) {
-        vi.setSystemTime(T0 + tick * INTERVAL);
+        act(() => {
+          vi.advanceTimersByTime(INTERVAL);
+        });
         rerender({ tick }); // the tick's render, before its answers
         for (const [key, note] of notesOf(result.current))
           seen.push(`+${offset} ms, tick ${tick}: ${key} ${note}`);
@@ -372,10 +395,8 @@ describe('useDashboardData — no stale note on a source that answers every poll
     expect(seen).toEqual([]);
   });
 
-  it('still notes a source that stops answering, once 2 of its polls have gone by', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    const T0 = BASE + 300;
-    vi.setSystemTime(T0);
+  it('still notes a source that stops answering, once two of its polls and the request timeout have gone by', async () => {
+    vi.setSystemTime(BASE + 300);
     const { result, rerender } = renderHook(
       ({ tick }) => useDashboardData(0, { tick, active: true, refreshIntervalMs: INTERVAL }),
       { initialProps: { tick: 0 } }
@@ -387,28 +408,88 @@ describe('useDashboardData — no stale note on a source that answers every poll
         ? Promise.reject(new Error('down'))
         : Promise.resolve(jsonResponse(String(url) === '/api/services' ? { nodes: {} } : {}))
     );
-    const failingNote = () =>
-      sourceBanner(
-        result.current.sources.integrations,
-        'integrations',
-        INTERVAL,
-        result.current.healthNow
-      ).staleNote;
-    for (let tick = 1; tick <= 2; tick++) {
-      vi.setSystemTime(T0 + tick * INTERVAL);
+    const failingNote = () => result.current.sources.integrations.staleNote;
+    // 16 s at a 2 s interval: 7 polls failed, and the eighth's timeout.
+    const staleAfter = staleAfterMs(INTERVAL);
+    for (let tick = 1; tick < staleAfter / INTERVAL; tick++) {
+      act(() => {
+        vi.advanceTimersByTime(INTERVAL);
+      });
       rerender({ tick });
       await settle();
       expect(failingNote(), `tick ${tick}`).toBeNull();
+      expect(result.current.sources.integrations.error).toBe('down');
     }
-    vi.setSystemTime(T0 + 3 * INTERVAL);
-    rerender({ tick: 3 });
+    act(() => {
+      vi.advanceTimersByTime(INTERVAL);
+    });
+    // At the boundary, by the clock, not by the next tick.
+    expect(failingNote()).toBe('updated 16s ago');
+    expect(result.current.sources.services.staleNote).toBeNull();
+  });
+
+  it('out of sight it renders nothing as its notes would change; back, the right notes at once', async () => {
+    vi.setSystemTime(BASE);
+    let renders = 0;
+    const { result, rerender } = renderHook(
+      ({ tick, active }) => {
+        renders += 1;
+        return useDashboardData(0, { tick, active, refreshIntervalMs: INTERVAL });
+      },
+      { initialProps: { tick: 0, active: true } }
+    );
     await settle();
-    // 5.7 s silent at the step's start: 3 polls due, 2 missed.
-    expect(failingNote()).toBe('updated 5s ago');
+    // /api/integrations fails from its next poll on; /api/services answers.
+    fetch.mockImplementation((url) =>
+      String(url) === '/api/integrations'
+        ? Promise.reject(new Error('down'))
+        : Promise.resolve(jsonResponse(String(url) === '/api/services' ? { nodes: {} } : {}))
+    );
+    rerender({ tick: 1, active: true });
+    await settle();
+    expect(result.current.sources.integrations.error).toBe('down');
+
+    // Another page, the tab showing, for ten minutes: past both boundaries,
+    // and ten minutes of a note's age. Nothing renders.
+    rerender({ tick: 1, active: false });
+    const away = renders;
+    for (let s = 0; s < 600; s++) {
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+    }
+    expect(renders).toBe(away);
+
+    // Back, before its reads land: the failing source's real age at once;
+    // the answering one, its silence counted from the return, none.
+    rerender({ tick: 1, active: true });
+    expect(result.current.sources.integrations.staleNote).toBe('updated 10m ago');
+    expect(result.current.sources.services.staleNote).toBeNull();
+    // And its age moves on from there.
+    await settle();
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(result.current.sources.integrations.staleNote).toBe('updated 11m ago');
+  });
+
+  it('a note’s age moves on the one clock while it shows, with no tick', async () => {
+    vi.setSystemTime(BASE);
+    const { result } = renderHook(() =>
+      useDashboardData(0, { tick: 0, active: true, refreshIntervalMs: INTERVAL })
+    );
+    await settle();
+    act(() => {
+      vi.advanceTimersByTime(staleAfterMs(INTERVAL));
+    });
+    expect(result.current.sources.services.staleNote).toBe('updated 16s ago');
+    act(() => {
+      vi.advanceTimersByTime(50_000);
+    });
+    expect(result.current.sources.services.staleNote).toBe('updated 1m ago');
   });
 
   it('clears a stale note the moment its source answers again, a 304 too; a healthy 304 tick draws nothing', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
     // 200 with an ETag at load, then 304 to every request that sends it back.
     fetch.mockImplementation((url, opts) =>
       Promise.resolve(
@@ -428,20 +509,25 @@ describe('useDashboardData — no stale note on a source that answers every poll
       { initialProps: { tick: 0 } }
     );
     await settle();
-    const note = () =>
-      sourceBanner(result.current.sources.services, 'services', INTERVAL, result.current.healthNow)
-        .staleNote;
+    const note = () => result.current.sources.services.staleNote;
 
     // A healthy tick whose answers are all 304s: its own render, nothing more.
-    vi.setSystemTime(T0 + INTERVAL);
+    act(() => {
+      vi.advanceTimersByTime(INTERVAL);
+    });
     rerender({ tick: 1 });
     const afterTick = renders;
     await settle();
     expect(renders).toBe(afterTick);
     expect(note()).toBeNull();
 
-    // The laptop slept 5 minutes: no visibilitychange, the board still active.
+    // The laptop slept 5 minutes: no visibilitychange, the board still
+    // active. Waking, the timers held over fire.
     vi.setSystemTime(T0 + INTERVAL + 5 * 60_000);
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+    expect(note()).toBe('updated 5m ago');
     rerender({ tick: 2 }); // the tick's render, before its answers
     expect(note()).toBe('updated 5m ago');
     await settle(); // its answers: 304s, no new data
