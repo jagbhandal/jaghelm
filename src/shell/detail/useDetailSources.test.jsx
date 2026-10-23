@@ -121,7 +121,7 @@ describe('useDetailSources (#310)', () => {
 
   it('reuses what the page read of the same address since its own read, and reads itself once the page stops', async () => {
     const updated = clock();
-    // The page (today's board) reads /api/ups on its own tick.
+    // The page reads the address on its own tick (the old board read /api/ups).
     await getUPSStatus();
     expect(asked('/api/ups')).toBe(1);
     const { result } = renderHook(() => useDetailSources(['ups'], updated, { intervalMs: 30_000 }));

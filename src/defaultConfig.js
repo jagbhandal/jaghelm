@@ -20,11 +20,8 @@ export function defaultConfig() {
     showWeather: false,
     weatherCity: '',
     showClock: true,
-    showCronJobs: true,
     tabs: [],
     sections: {},
-    gridLayout: null,
-    gridColumns: 24,
     links: {},
   };
 }

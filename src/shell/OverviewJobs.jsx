@@ -19,9 +19,9 @@
  * every row is drawn as no signal, its words kept as last known; the count
  * says how old they are. While the first status is on its way, placeholder
  * rows; with no job in the model, nothing; with every one removed in this
- * tab, before the model drops them, a quiet line under the heading. It sits on today's board under
- * Infrastructure, lined up with it (`margin`), 24px under it, in a root of
- * its own.
+ * tab, before the model drops them, a quiet line under the heading. It sits
+ * under Infrastructure and Power (OverviewBoard.jsx), lined up with them
+ * (`margin`), 24px under them, in a root of its own.
  */
 import { memo, useMemo } from 'react';
 import { ShellSection } from '@ui/app-shell';

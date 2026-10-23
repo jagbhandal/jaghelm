@@ -64,6 +64,7 @@ describe('Settings → Appearance, Overview sections (#307)', () => {
         'Needs attention',
         'Subsystem strip',
         'Infrastructure',
+        'Power',
         'Jobs',
         'Services',
         'Utilities rail',
@@ -72,6 +73,7 @@ describe('Settings → Appearance, Overview sections (#307)', () => {
     for (const name of [
       'Subsystem strip',
       'Infrastructure',
+      'Power',
       'Jobs',
       'Services',
       'Utilities rail',

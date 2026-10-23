@@ -1,34 +1,37 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   getServices,
-  getUPSStatus,
-  getGiteaActivity,
-  getCronStatus,
   getAllIntegrations,
   getMetricHistory,
   NOT_MODIFIED_NO_BODY,
-} from '../../hooks/useData';
-import { sourceBanner } from './sourceHealth';
+} from '../hooks/useData.js';
+import { sourceBanner } from './sourceHealth.js';
+import { slowReadOf } from './tickBudget.js';
 
 /**
- * Owns all dashboard data state and the periodic-refresh wiring. Fetches are
- * independent (slow endpoints don't block fast ones); the first fetch after
- * mount skips ETags for a full payload, later refreshes use ETags.
+ * The Overview's data beside the header's status poll (#306: what the old
+ * board read for its panels went with it): /api/services (the nodes' readings
+ * and the services' latencies), /api/integrations (each service's headline
+ * metric) and /api/history (the node cards' hour of CPU). Fetches are
+ * independent (a slow endpoint doesn't hold up a fast one); the first fetch
+ * after mount skips ETags for a full payload, later refreshes use ETags.
  *
- * Refresh triggers: a `tick` change is a scheduled poll, which fetches the live
- * sources plus ONE slow source in turn (SLOW_SOURCES), so a tick costs four
- * requests rather than six. Every other refresh fetches all six: the mount load,
- * a `refreshKey` change (a manual refresh), retry(), and resuming. While
- * `active` is false (the board is off screen) nothing is fetched; when it turns
- * true again the board refreshes at once.
+ * Refresh triggers: a `tick` change is a scheduled poll, which reads
+ * /api/services and /api/integrations, and /api/history on one tick in three
+ * (tickBudget.js: the rail's Pipeline takes another, so no tick asks for both,
+ * and a tick costs a tab at most 4 requests with the status). Every other
+ * refresh reads all three: the mount load, a `refreshKey` change, retry(),
+ * and resuming. While `active` is false (the Overview is off screen, or the
+ * browser tab hidden) nothing is fetched; when it turns true again the
+ * sources are read at once.
  *
  * 304-stable-identity contract (see hooks/useData.js): a 304 returns the SAME
  * reference as the prior 200, so setState(sameRef) is bailed by Object.is and
- * an all-304 tick triggers zero re-renders. Per-source health preserves this:
- * `error` is state but setState fires only on a status FLIP, and `lastSuccessMs`
- * lives in a ref (no render) bumped on every success (200 or 304), save that a
- * source shown stale renders once when it answers again, to clear its note.
- * `sources` reads it on a clock of half the refresh interval
+ * an all-304 tick triggers zero re-renders (#252). Per-source health preserves
+ * this: `error` is state but setState fires only on a status FLIP, and
+ * `lastSuccessMs` lives in a ref (no render) bumped on every success (200 or
+ * 304), save that a source shown stale renders once when it answers again, to
+ * clear its note. `sources` reads it on a clock of half the refresh interval
  * (`refreshIntervalMs`), and `healthNow` is the time the banners judge
  * staleness at, on the same clock.
  *
@@ -39,41 +42,17 @@ import { sourceBanner } from './sourceHealth';
  * `only` reads just those sources (of SOURCE_KEYS, and 'history'), each on
  * every refresh, the rest never: the phone's screens (#303) draw the cards
  * alone beside the status (the model carries the UPS's readings, #549), so a
- * phone's tick costs one request, not four.
+ * phone's tick costs one request beside the status.
  */
 
-const SOURCE_KEYS = ['services', 'ups', 'commits', 'cron', 'integrations'];
-
-// Sources that change slowly (sparkline history, cron reports, Gitea commits):
-// a scheduled tick refreshes one of them, in this order, so each refreshes once
-// every SLOW_SOURCES.length ticks. Live sources (services, UPS, integrations)
-// refresh on every tick.
-const SLOW_SOURCES = ['history', 'cron', 'commits'];
-
-/**
- * The time between two scheduled polls of `key` at a given refresh interval.
- * Read off the same SLOW_SOURCES rotation the fetch effect below walks (one slow
- * source per tick), so the dashboard's stale threshold, which is a number of
- * missed polls of each source, moves with any change to the rotation.
- */
-export function pollPeriodMs(key, refreshIntervalMs) {
-  const everyTicks = SLOW_SOURCES.includes(key) ? SLOW_SOURCES.length : 1;
-  return refreshIntervalMs * everyTicks;
-}
+const SOURCE_KEYS = ['services', 'integrations'];
 
 export function useDashboardData(
   refreshKey,
   { tick, active = true, refreshIntervalMs = 30_000, only = null } = {}
 ) {
   const onlyKey = only ? only.join() : '';
-  const expectedRef = useRef(SOURCE_KEYS.length);
-  expectedRef.current = only
-    ? SOURCE_KEYS.filter((k) => only.includes(k)).length
-    : SOURCE_KEYS.length;
   const [serviceData, setServiceData] = useState({ nodes: {} });
-  const [ups, setUps] = useState(null);
-  const [commits, setCommits] = useState([]);
-  const [cronJobs, setCronJobs] = useState([]);
   const [integrationData, setIntegrationData] = useState({});
   // Metric history for the node-card sparklines. UNLIKE the sources above this
   // changes every server cycle (that's the trend), so it rarely 304s and its
@@ -114,18 +93,6 @@ export function useDashboardData(
     }, {})
   );
 
-  // Whether every source has answered, or failed, at least once since the
-  // board mounted: until then its content is still coming in, and HelmGrid
-  // keeps each panel at the height it last had (#302). Once true, it stays.
-  const [settled, setSettled] = useState(false);
-  const answeredRef = useRef(new Set());
-  const markAnswered = useCallback((source) => {
-    const answered = answeredRef.current;
-    if (answered.has(source)) return;
-    answered.add(source);
-    if (answered.size === expectedRef.current) setSettled(true);
-  }, []);
-
   // What the banners show now (`sources` at `healthNow`), and a counter that
   // rebuilds `sources` when a source shown stale answers again: a 304 sets no
   // state, so after a gap the tab never saw (a sleep, a stalled main thread)
@@ -134,39 +101,27 @@ export function useDashboardData(
   const shownRef = useRef(null);
   const [revived, setRevived] = useState(0);
 
-  const recordSuccess = useCallback(
-    (source) => {
-      markAnswered(source);
-      const shown = shownRef.current;
-      const wasStale =
-        shown != null &&
-        sourceBanner(
-          shown.sources[source],
-          source,
-          pollPeriodMs(source, shown.refreshIntervalMs),
-          shown.healthNow
-        ).staleNote !== null;
-      lastSuccessRef.current[source] = Date.now();
-      if (wasStale) setRevived((n) => n + 1);
-      if (errorRef.current[source] !== null) {
-        errorRef.current = { ...errorRef.current, [source]: null };
-        setSourceErrors(errorRef.current);
-      }
-    },
-    [markAnswered]
-  );
+  const recordSuccess = useCallback((source) => {
+    const shown = shownRef.current;
+    const wasStale =
+      shown != null &&
+      sourceBanner(shown.sources[source], source, shown.refreshIntervalMs, shown.healthNow)
+        .staleNote !== null;
+    lastSuccessRef.current[source] = Date.now();
+    if (wasStale) setRevived((n) => n + 1);
+    if (errorRef.current[source] !== null) {
+      errorRef.current = { ...errorRef.current, [source]: null };
+      setSourceErrors(errorRef.current);
+    }
+  }, []);
 
-  const recordError = useCallback(
-    (source, message) => {
-      markAnswered(source);
-      const msg = message || 'Fetch failed';
-      if (errorRef.current[source] !== msg) {
-        errorRef.current = { ...errorRef.current, [source]: msg };
-        setSourceErrors(errorRef.current);
-      }
-    },
-    [markAnswered]
-  );
+  const recordError = useCallback((source, message) => {
+    const msg = message || 'Fetch failed';
+    if (errorRef.current[source] !== msg) {
+      errorRef.current = { ...errorRef.current, [source]: msg };
+      setSourceErrors(errorRef.current);
+    }
+  }, []);
 
   const fetchServices = useCallback(
     async (skipEtag) => {
@@ -183,26 +138,6 @@ export function useDashboardData(
         console.warn('[dashboard] Services fetch failed:', err.message);
       } finally {
         setServicesLoaded(true);
-      }
-    },
-    [recordSuccess, recordError]
-  );
-
-  // The three section endpoints, fetched one at a time so a tick can take any one.
-  const fetchSection = useCallback(
-    async (source, skipEtag) => {
-      const { load, label, apply } = {
-        ups: { load: getUPSStatus, label: 'UPS', apply: setUps },
-        commits: { load: getGiteaActivity, label: 'Gitea', apply: (v) => setCommits(v || []) },
-        cron: { load: getCronStatus, label: 'Cron', apply: (v) => setCronJobs(v || []) },
-      }[source];
-      try {
-        const data = await load(skipEtag);
-        recordSuccess(source);
-        if (data !== null && data !== NOT_MODIFIED_NO_BODY) apply(data);
-      } catch (err) {
-        recordError(source, err?.message);
-        console.warn(`[dashboard] ${label} fetch failed:`, err?.message);
       }
     },
     [recordSuccess, recordError]
@@ -237,7 +172,6 @@ export function useDashboardData(
 
   const lastTickRef = useRef(tick);
   const pausedRef = useRef(false);
-  const slowTurnRef = useRef(0);
   useEffect(() => {
     if (!active) {
       pausedRef.current = true;
@@ -246,28 +180,21 @@ export function useDashboardData(
     // Skip ETags on the very first load (empty state needs a full body) OR when
     // a retry was explicitly requested (force a fresh fetch past any stale 304).
     const skip = !hasLoadedRef.current || forceFullRef.current;
-    // Only a scheduled tick takes the slow sources in turn; anything else
-    // (load, retry, manual refresh, resume) refreshes every source.
+    // Only a scheduled tick leaves /api/history out on two ticks in three
+    // (tickBudget.js); anything else (load, retry, manual refresh, resume)
+    // refreshes every source.
     const scheduled = !skip && !pausedRef.current && tick !== lastTickRef.current;
     hasLoadedRef.current = true;
     forceFullRef.current = false;
     pausedRef.current = false;
     lastTickRef.current = tick;
-    let slow = null;
-    if (scheduled && !onlyKey) {
-      slow = SLOW_SOURCES[slowTurnRef.current];
-      slowTurnRef.current = (slowTurnRef.current + 1) % SLOW_SOURCES.length;
-    }
+    const readHistory = !scheduled || onlyKey || slowReadOf(tick) === 'history';
     const wants = (key) => !onlyKey || onlyKey.split(',').includes(key);
     if (wants('services')) fetchServices(skip);
-    if (wants('ups')) fetchSection('ups', skip);
     if (wants('integrations')) fetchIntegrations(skip);
-    if ((!slow || slow === 'history') && wants('history')) fetchHistory(skip);
-    if ((!slow || slow === 'cron') && wants('cron')) fetchSection('cron', skip);
-    if ((!slow || slow === 'commits') && wants('commits')) fetchSection('commits', skip);
+    if (readHistory && wants('history')) fetchHistory(skip);
   }, [
     fetchServices,
-    fetchSection,
     fetchIntegrations,
     fetchHistory,
     active,
@@ -291,8 +218,8 @@ export function useDashboardData(
   // The staleness clock steps every half refresh interval (at least 1 s).
   // `sources` is rebuilt at most once a step (or on an error flip, or when a
   // stale source answers again: `revived`), so it keeps a STABLE identity
-  // across unrelated re-renders (e.g. a drag tick) and the downstream banner +
-  // panel memos hold; each rebuild reads the last answers then. `healthNow`,
+  // across unrelated re-renders and the downstream banner and section memos
+  // hold; each rebuild reads the last answers then. `healthNow`,
   // the step's start, is the `now` the banners are judged at: never later than
   // that read, so a source that answers every poll never reads stale. A
   // separate 15 s read let a source that answered 2 s ago read "updated 4s ago"
@@ -318,13 +245,9 @@ export function useDashboardData(
 
   return {
     serviceData,
-    ups,
-    commits,
-    cronJobs,
     integrationData,
     history,
     servicesLoaded,
-    settled,
     sources,
     healthNow,
     retry,

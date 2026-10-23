@@ -31,6 +31,9 @@
  * three placeholder rows stand in, and the section says it is loading.
  * `JobsList` is the same panel under a phone screen's heading (the phone's
  * Infrastructure tab), with no icon chip.
+ *
+ * The Overview's Power section (#306) is the same section with its own
+ * `title` and `icon` (Lucide `Zap`): the UPS's row in one group.
  */
 import { useId } from 'react';
 import { CalendarClock } from 'lucide-react';
@@ -145,6 +148,7 @@ function JobsSection({
   loading = false,
   banner,
   title = 'Jobs',
+  icon = <CalendarClock />,
   empty = EMPTY,
   className,
   ...props
@@ -163,7 +167,7 @@ function JobsSection({
           aria-hidden="true"
           className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-tint text-accent-text inset-ring inset-ring-accent-border [&_svg]:size-4 [&_svg]:stroke-[1.75]"
         >
-          <CalendarClock />
+          {icon}
         </span>
         <div className="flex min-w-min flex-1 flex-wrap items-baseline gap-x-3">
           <h2

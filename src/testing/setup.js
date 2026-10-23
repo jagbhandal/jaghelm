@@ -47,8 +47,9 @@ afterEach(() => {
 });
 
 // jsdom doesn't implement these browser APIs that some components touch
-// (NodeCard uses ResizeObserver for responsive columns; DashboardView reads
-// matchMedia for the mobile breakpoint). Provide inert stubs so render() works.
+// (the Infrastructure section measures its width with ResizeObserver; the
+// shell reads matchMedia for its breakpoints). Provide inert stubs so
+// render() works.
 if (!globalThis.ResizeObserver) {
   globalThis.ResizeObserver = class {
     observe() {}

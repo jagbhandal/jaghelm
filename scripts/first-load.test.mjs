@@ -2,14 +2,15 @@
 // browser check that it is the right list is e2e/first-load.spec.mjs.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import {
   BUDGETS,
   FACES,
-  LEGACY_FACES,
   LOGO,
   PHONE_CHUNK,
   PHONE_IDLE_CHUNK,
@@ -18,6 +19,7 @@ import {
   firstLoad,
   formatReport,
   htmlPulls,
+  overBudget,
   staticImports,
   transferSize,
 } from './first-load.mjs';
@@ -122,13 +124,12 @@ test("the first load: the page, its pulls, the first screen's faces and the logo
       'font /assets/x-DDDDDDDD.woff2',
       'font /assets/manrope-latin-wght-FFFFFFFF.woff2',
       'font /assets/jetbrains-mono-latin-wght-GGGGGGGG.woff2',
-      'font /assets/dm-sans-latin-wght-HHHHHHHH.woff2',
-      'font /assets/outfit-latin-wght-JJJJJJJJ.woff2',
       'image /logo.svg',
     ]
   );
-  // Never the floating layer, a latin-ext file or a face nobody draws.
-  for (const url of ['layer-', 'latin-ext', 'italic']) {
+  // Never the floating layer, a latin-ext file or a face nobody draws (the
+  // old board's DM Sans and Outfit among them, #306).
+  for (const url of ['layer-', 'latin-ext', 'italic', 'dm-sans', 'outfit']) {
     assert.ok(!report.items.some((i) => i.url.includes(url)), url);
   }
   // Two totals: the fonts, and everything else.
@@ -137,7 +138,7 @@ test("the first load: the page, its pulls, the first screen's faces and the logo
     total: sum((i) => i.kind !== 'font'),
     budget: BUDGETS.code,
   });
-  assert.deepEqual(report.fonts, { total: 5000, budget: BUDGETS.fonts });
+  assert.deepEqual(report.fonts, { total: 3000, budget: BUDGETS.fonts });
   assert.equal(report.items.find((i) => i.kind === 'font').bytes, 1000);
   assert.ok(report.items.find((i) => i.kind === 'script').bytes < 100, 'gzipped');
   // Spec §4 (Jag, 2026-10-22): 200 KB for the code, 60 KB for the faces.
@@ -155,7 +156,7 @@ test("a built script's static imports, by their /assets/ URL, each once; never a
   assert.deepEqual(staticImports('const a = 1;'), []);
 });
 
-test("a phone's first load (#303): the phone screens' chunk and what only it imports, none of the board's faces", () => {
+test("a phone's first load (#303): the phone screens' chunk and what only it imports", () => {
   const build = fakeBuild();
   const files = {
     '/assets/PhoneView-PPPPPPPP.js':
@@ -227,14 +228,18 @@ test("a phone's details (#309): fetched once the browser is idle after the first
   );
 });
 
-test("the faces counted are the default sans's and the mono's latin files, and today's board's", () => {
+test("the faces counted are the default sans's and the mono's latin files, the only faces shipped beside the presets' (#306)", () => {
   assert.deepEqual(FACES, [
     TYPEFACES.find((t) => t.id === DEFAULT_TYPEFACE).file,
     MONO_TYPEFACE.file,
   ]);
   assert.deepEqual(FACES, ['manrope-latin-wght.woff2', 'jetbrains-mono-latin-wght.woff2']);
-  for (const file of [...FACES, ...LEGACY_FACES]) {
+  for (const file of FACES) {
     assert.ok(existsSync(path.join(ROOT, 'src/fonts', file)), file);
+  }
+  // The old board's faces are gone, files and all.
+  for (const file of ['dm-sans-latin-wght.woff2', 'outfit-latin-wght.woff2']) {
+    assert.ok(!existsSync(path.join(ROOT, 'src/fonts', file)), file);
   }
   assert.ok(existsSync(path.join(ROOT, 'public', LOGO.slice(1))));
 });
@@ -268,11 +273,64 @@ test('the table: one line a file without its hash, a line a kind, each total aga
       '  fonts                                     24.8 kB  under its 60.0 kB budget by 35.2 kB',
     ].join('\n')
   );
-  // Over is said, not failed: the fonts are over until today's board goes (#306).
   assert.match(
     formatReport({ ...report, fonts: { total: 125500, budget: 60_000 } }),
     /\n {2}fonts +125\.5 kB {2}OVER its 60\.0 kB budget by 65\.5 kB$/
   );
+});
+
+test('over budget: overBudget names each total over its own budget, at the byte', () => {
+  const at = (code, fonts) => ({
+    code: { total: code, budget: 200_000 },
+    fonts: { total: fonts, budget: 60_000 },
+  });
+  assert.deepEqual(overBudget(at(200_000, 60_000)), []);
+  assert.deepEqual(overBudget(at(200_001, 60_000)), ['code']);
+  assert.deepEqual(overBudget(at(1, 60_001)), ['fonts']);
+  assert.deepEqual(overBudget(at(250_000, 125_500)), ['code', 'fonts']);
+});
+
+// The CI gate (#306): the script itself, on a build in a folder, exits 1
+// when a total is over its budget at either width, and 0 when both are in.
+test('the script exits 1 on a build over budget, naming what is over, and 0 on one within it', () => {
+  const run = (sizes) => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'first-load-'));
+    try {
+      mkdirSync(path.join(dir, 'assets'));
+      const html =
+        '<!doctype html><html><head><script type="module" src="/assets/index-AAAAAAAA.js"></script></head></html>';
+      writeFileSync(path.join(dir, 'index.html'), html);
+      // Random bytes: gzip can't shrink them, so the size sent is the size written.
+      const noise = (n) => Buffer.from(Array.from({ length: n }, () => (Math.random() * 256) | 0));
+      writeFileSync(path.join(dir, 'assets', 'index-AAAAAAAA.js'), noise(sizes.script));
+      writeFileSync(path.join(dir, 'assets', 'PhoneView-PPPPPPPP.js'), 'export{}');
+      for (const face of FACES) {
+        const name = face.replace(/\.woff2$/, '-FFFFFFFF.woff2');
+        writeFileSync(path.join(dir, 'assets', name), noise(sizes.font));
+      }
+      writeFileSync(path.join(dir, 'logo.svg'), '<svg/>');
+      return spawnSync(
+        process.execPath,
+        [path.join(ROOT, 'scripts/first-load.mjs'), '--dist', dir],
+        {
+          encoding: 'utf8',
+        }
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  const within = run({ script: 150_000, font: 25_000 });
+  assert.equal(within.status, 0, within.stderr);
+  const code = run({ script: 210_000, font: 25_000 });
+  assert.equal(code.status, 1);
+  assert.match(
+    code.stderr,
+    /Over the first-load budget \(spec §4\): code at 1440px, code at 390px/
+  );
+  const fonts = run({ script: 150_000, font: 31_000 });
+  assert.equal(fonts.status, 1);
+  assert.match(fonts.stderr, /fonts at 1440px, fonts at 390px/);
 });
 
 test("a desktop's first load (#578): the Jobs section's chunk and what only it imports; a phone's never", () => {

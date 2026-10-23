@@ -1,21 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import App from './App.jsx';
+import { RAIL_WIDTH } from '@ui/app-shell';
 import { HEALTHY, INCIDENT } from './testing/statusFixtures.js';
 
-// Request counter for the dashboard's polling (#237) and the header's status
-// poll (#296). A URL-aware fetch stub records every request path; fake timers
-// step the 30 s refresh tick, so each test can count what one tick (or a
-// stretch of hidden time) costs.
+// Request counter for the Overview's polling (#237), the header's status poll
+// (#296) and the request budget (#306, spec §4): at most 4 requests a tab
+// makes per 30 s tick, the rail's Pipeline counted, none while hidden. A
+// URL-aware fetch stub records every request path; fake timers step the 30 s
+// refresh tick, so each test can count what one tick (or a stretch of hidden
+// time) costs.
 
-const DASHBOARD_SOURCES = [
-  '/api/services',
-  '/api/ups',
-  '/api/integrations',
-  '/api/history',
-  '/api/cron/status',
-  '/api/gitea/activity',
-];
+// What the Overview reads beside the status (tickBudget.js); the old board's
+// /api/ups and /api/cron/status went with it (#306).
+const DASHBOARD_SOURCES = ['/api/services', '/api/integrations', '/api/history'];
+// The utilities rail's Pipeline, from 1440px (#301).
+const PIPELINE = '/api/gitea/activity';
 const TICK_MS = 30_000;
 
 let requests;
@@ -48,8 +48,7 @@ function stubServer() {
       if (path === '/api/auth/check') return respond({ authRequired: false, authenticated: true });
       if (path === '/api/services') return respond({ nodes, overallHealth: 'up' });
       if (path === '/api/status') return respond(status);
-      if (['/api/todos', '/api/gitea/activity', '/api/cron/status'].includes(path))
-        return respond([]);
+      if (['/api/todos', '/api/gitea/activity'].includes(path)) return respond([]);
       return respond({});
     })
   );
@@ -65,8 +64,9 @@ async function advance(ms) {
 // Requests made since the last call, emptying the log.
 const take = () => requests.splice(0);
 const count = (list, path) => list.filter((p) => p === path).length;
-// What the board asks for, leaving out the header's status poll.
-const board = (list) => list.filter((p) => p !== '/api/status');
+// What the board asks for, leaving out the header's status poll and the
+// rail's to-dos (read once, as the rail mounts).
+const board = (list) => list.filter((p) => p !== '/api/status' && p !== '/api/todos');
 const headerStatus = () =>
   within(screen.getByRole('banner')).getByRole('link', { name: /^(Critical|All systems)/ });
 const updatedLabel = () => within(screen.getByRole('banner')).getByText(/^Updated/);
@@ -95,6 +95,20 @@ async function renderApp() {
   await advance(1000);
 }
 
+/** A window from 1440px (the rail's width) or narrower. */
+function wide(on) {
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+    matches: on && query === RAIL_WIDTH,
+    media: query,
+    onchange: null,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent: () => false,
+  }));
+}
+
 beforeEach(() => {
   localStorage.clear();
   vi.useFakeTimers();
@@ -108,35 +122,49 @@ afterEach(() => {
 });
 
 describe('dashboard polling — request budget', () => {
-  it('loads each dashboard source once (services once, not three times), and the status once', async () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('loads each source once (services once, not three times), and the status once', async () => {
     await renderApp();
     const load = take();
     for (const path of [...DASHBOARD_SOURCES, '/api/status']) {
       expect(count(load, path), path).toBe(1);
     }
+    // What the old board read for its panels is never asked (#306).
+    for (const path of ['/api/ups', '/api/cron/status']) expect(count(load, path), path).toBe(0);
   });
 
-  it('the board makes at most 4 requests per 30 s tick, services once; the header adds one /api/status', async () => {
-    await renderApp();
-    take();
-    const ticks = [];
-    for (let i = 0; i < 6; i++) {
-      await advance(TICK_MS);
-      ticks.push(take());
-    }
-    for (const tick of ticks) {
-      expect(board(tick).length).toBeLessThanOrEqual(4);
-      expect(count(tick, '/api/services')).toBe(1);
-      expect(count(tick, '/api/status')).toBe(1);
-    }
-    // The slow sources still refresh, each in turn: twice in six ticks.
-    const all = ticks.flat();
-    for (const path of ['/api/history', '/api/cron/status', '/api/gitea/activity']) {
-      expect(count(all, path), path).toBe(2);
-    }
-  });
+  // Spec §4 (#306): at most 4 requests per 30 s tick per tab, the rail's
+  // Pipeline counted: the status, services and integrations every tick, and
+  // history or the Pipeline in turn, never both (tickBudget.js).
+  for (const [where, rail] of [
+    ['from 1440px, with the rail', true],
+    ['narrower, no rail', false],
+  ]) {
+    it(`${where}: at most 4 requests per 30 s tick, the status and services once each`, async () => {
+      wide(rail);
+      await renderApp();
+      take();
+      const ticks = [];
+      for (let i = 0; i < 6; i++) {
+        await advance(TICK_MS);
+        ticks.push(take());
+      }
+      for (const tick of ticks) {
+        expect(tick.length, tick.join(', ')).toBeLessThanOrEqual(4);
+        expect(count(tick, '/api/services')).toBe(1);
+        expect(count(tick, '/api/integrations')).toBe(1);
+        expect(count(tick, '/api/status')).toBe(1);
+        expect(count(tick, '/api/history') + count(tick, PIPELINE)).toBeLessThanOrEqual(1);
+      }
+      // The slow ones still refresh, each once in three ticks.
+      const all = ticks.flat();
+      expect(count(all, '/api/history')).toBe(2);
+      expect(count(all, PIPELINE)).toBe(rail ? 2 : 0);
+    });
+  }
 
-  it("updates the header from /api/status on every tick", async () => {
+  it('updates the header from /api/status on every tick', async () => {
     await renderApp();
     expect(headerStatus()).toHaveAccessibleName(`All systems normal: ${HEALTHY.overall.sentence}`);
     status = INCIDENT;
@@ -146,7 +174,10 @@ describe('dashboard polling — request budget', () => {
 });
 
 describe('dashboard polling — paused when nobody is looking', () => {
-  it('asks nothing at all while the browser tab is hidden, and refreshes at once on return', async () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('asks nothing at all while the browser tab is hidden, the rail’s Pipeline included, and refreshes at once on return', async () => {
+    wide(true);
     await renderApp();
     take();
     setHidden(true);
@@ -157,7 +188,7 @@ describe('dashboard polling — paused when nobody is looking', () => {
     setHidden(false);
     await advance(0);
     const back = take();
-    for (const path of [...DASHBOARD_SOURCES, '/api/status']) {
+    for (const path of [...DASHBOARD_SOURCES, '/api/status', PIPELINE]) {
       expect(count(back, path), path).toBe(1);
     }
     expect(headerStatus()).toHaveAccessibleName(`Critical: ${INCIDENT.overall.sentence}`);
@@ -190,19 +221,6 @@ describe('dashboard polling — paused when nobody is looking', () => {
     expect(updatedLabel()).toHaveTextContent('Updated just now');
   });
 
-  it('loads the Settings live preview once when shown, and never polls it', async () => {
-    await renderApp();
-    fireEvent.click(entry('Settings'));
-    await vi.waitFor(() => screen.getByRole('button', { name: /show preview/i }));
-    take();
-    fireEvent.click(screen.getByRole('button', { name: /show preview/i }));
-    await advance(0);
-    const shown = take();
-    for (const path of DASHBOARD_SOURCES) expect(count(shown, path), path).toBe(1);
-    await advance(5 * TICK_MS);
-    expect(board(take())).toEqual([]);
-  });
-
   it('the board asks nothing on an app and refreshes at once back on the Overview', async () => {
     localStorage.setItem(
       'jaghelm-config',
@@ -223,39 +241,5 @@ describe('dashboard polling — paused when nobody is looking', () => {
     await advance(0);
     const back = take();
     for (const path of DASHBOARD_SOURCES) expect(count(back, path), path).toBe(1);
-  });
-});
-
-describe('dashboard polling — stale notes', () => {
-  // The cron panel's error banner; the page-level live region repeats its text.
-  const cronBanner = () =>
-    [...document.querySelectorAll('.degraded-banner')].find((b) =>
-      /Job history unavailable/.test(b.textContent)
-    );
-  // One tick per act(), so React renders each tick (one act batches them all).
-  const ticks = async (n) => {
-    for (let i = 0; i < n; i++) await advance(TICK_MS);
-  };
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('flags the cron panel stale after 2 missed cron polls (3 minutes), not 1 minute', async () => {
-    // A node and a measurable width, so the grid (and its cron panel) renders.
-    nodes = { pve: { display_name: 'PVE', services: [] } };
-    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1280);
-    await renderApp(); // cron last succeeded at load
-    failing.add('/api/cron/status');
-
-    // ~2.5 minutes on: cron has failed twice (it polls every third tick), and is
-    // past a 1-minute threshold but inside its own 3-minute one.
-    await ticks(5);
-    expect(cronBanner()).toBeTruthy();
-    expect(cronBanner().querySelector('.degraded-banner-stale')).toBeNull();
-
-    // ~3.5 minutes on: past 2 cron poll periods.
-    await ticks(2);
-    expect(cronBanner()).toHaveTextContent('updated 3m ago');
   });
 });

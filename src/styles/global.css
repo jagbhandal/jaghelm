@@ -86,18 +86,16 @@ html { scroll-padding-top: 64px; }
 .dot-grid { position: fixed; inset: 0; z-index: 0; opacity: 0.12; pointer-events: none; background-image: radial-gradient(circle, var(--text-muted) 0.5px, transparent 0.5px); background-size: 40px 40px; }
 .app-container { position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; }
 
-
 .dashboard-content { padding: 24px 5%; max-width: 100%; margin: 0 auto; width: 100%; }
-/* The Overview's status (#297): the new UI's attention panel over today's board,
-   in line with the board's cards: .dashboard-content's padding, then HelmGrid's
-   16px margin (12px when the board is under 480px wide). It goes when the board
-   is rebuilt (#298-#300). */
+/* The Overview's status (#297): the attention panel and the strip over its
+   sections (OverviewBoard.jsx), in line with them: .dashboard-content's
+   padding, then the sections' 16px margin. */
 .overview-status { padding: 24px calc(5% + 16px) 0; }
 /* The Overview beside its utilities rail (#301), from 1440px (RAIL_WIDTH; the
    rail and this class are only there then): the page's 5% gutter moves out to
-   the split, so the board's cards keep HelmGrid's 16px inside it, and the rail
-   sits 24px from them, 16px in from the gutter, as the cards do. The rail's
-   widths are the mock's. It goes with today's board (#306). */
+   the split, so the sections keep their 16px margin inside it, and the rail
+   sits 24px from them, 16px in from the gutter, as the sections do. The
+   rail's widths are the mock's. */
 .overview-split { display: flex; align-items: flex-start; padding: 0 5%; }
 .overview-split > .overview-main { flex: 999 1 640px; min-width: 0; }
 .overview-split .overview-status { padding-left: 16px; padding-right: 16px; }
@@ -109,82 +107,10 @@ html { scroll-padding-top: 64px; }
 .glass-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--border-glow), transparent); pointer-events: none; z-index: 1; }
 .glass-card:hover { border-color: var(--border-glow); }
 .node-card { padding: 20px 24px; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
-.section-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
-.section-icon { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 19px; flex-shrink: 0; }
-.section-title { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-section-title); letter-spacing: -0.3px; cursor: default; color: var(--text-primary); }
-.section-subtitle { font-family: var(--font-mono); font-size: var(--fs-section-subtitle); color: var(--text-secondary); }
-
-/* Metrics */
-.node-metrics { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
-.metric-block { display: flex; flex-direction: column; gap: 3px; min-width: 85px; flex: 1; padding: 12px 14px; background: var(--bg-card-inner); border-radius: var(--card-radius-sm); border: 1px solid var(--border-color); }
-.metric-label { font-family: var(--font-mono); font-size: var(--fs-metric-label); color: var(--text-secondary); letter-spacing: 1px; text-transform: uppercase; }
-.metric-value { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-metric-value); color: var(--text-primary); letter-spacing: -0.5px; line-height: 1.2; }
-.metric-unit { font-size: var(--fs-metric-unit); font-weight: 500; color: var(--text-muted); margin-left: 2px; }
-.metric-bar { width: 100%; height: 4px; background: var(--border-color); border-radius: 2px; overflow: hidden; margin-top: var(--space-1); position: relative; }
-.metric-bar-fill { height: 100%; border-radius: 2px; transition: width 1s ease; }
-
-/* Service chips */
-.services-grid { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.service-chip { display: inline-flex; align-items: center; gap: var(--space-2); padding: 8px 14px; background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: 10px; font-size: var(--text-base); color: var(--text-primary); transition: all 0.2s; cursor: default; }
-.service-chip.up { border-color: var(--green-border); background: var(--green-bg); }
-.service-chip.down { border-color: var(--red-border); background: var(--red-bg); }
-.service-chip .uptime { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--green); font-weight: 500; }
-.status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.status-dot.up { background: var(--green); box-shadow: 0 0 6px var(--green); }
-.status-dot.down { background: var(--red); box-shadow: 0 0 6px var(--red); animation: pr 1.2s ease-in-out infinite; }
-.status-dot.unknown { background: var(--amber); box-shadow: 0 0 4px var(--amber); }
-@keyframes pr { 0%,100% { box-shadow: 0 0 6px var(--red); } 50% { box-shadow: 0 0 16px var(--red); } }
-
-/* UPS, Quick Launch, Commits */
-.ups-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
-.quick-launch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--space-4); }
-.quick-launch-group h4 { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: var(--space-2); }
-.quick-launch-link { display: inline-flex; align-items: center; gap: var(--space-2); padding: 7px 14px; background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); text-decoration: none; font-size: var(--text-md); transition: all 0.2s; white-space: nowrap; }
-.quick-launch-link:hover { border-color: var(--accent); background: var(--accent-glow); transform: translateY(-1px); }
-.commit-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--bg-card-inner); border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: var(--space-1); }
-.commit-sha { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--accent-light); background: var(--accent-glow); padding: 3px 7px; border-radius: 5px; }
-.commit-msg { font-size: var(--text-md); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.commit-time { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); }
 
 /* Iframe */
 .iframe-container { flex: 1; }
 .iframe-container iframe { width: 100%; height: calc(100vh - 60px); border: none; }
-
-/* ── HelmGrid ── */
-.helmgrid { position: relative; }
-.helmgrid-item { display: flex; flex-direction: column; transition: left 150ms ease, top 150ms ease; }
-.helmgrid-item > *:not(.helmgrid-resize-handle) { flex: 1; min-height: 0; }
-.helmgrid-item.helmgrid-dragging { z-index: 10; opacity: 0.85; box-shadow: 0 8px 40px rgba(0,0,0,0.4); transition: none; }
-.helmgrid-item.helmgrid-resizing { transition: none; }
-.helmgrid-resize-handle { position: absolute; width: 20px; height: 20px; z-index: 20; touch-action: none; background: transparent; border-radius: 4px; opacity: 0; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; }
-.helmgrid-resize-handle::after { content: '⤡'; font-size: var(--text-base); color: var(--text-muted); opacity: 0.6; }
-.helmgrid-item:hover .helmgrid-resize-handle { opacity: 1; }
-.helmgrid-item:hover .helmgrid-resize-handle:hover::after { color: var(--accent); opacity: 1; }
-.helmgrid-resize-handle-se { bottom: 2px; right: 2px; cursor: se-resize; }
-.helmgrid-resize-handle-sw { bottom: 2px; left: 2px; cursor: sw-resize; transform: scaleX(-1); }
-.helmgrid-placeholder { background: var(--accent-glow); border: 2px dashed var(--accent); border-radius: var(--card-radius); opacity: 0.3; pointer-events: none; z-index: 1; }
-
-/* Todo */
-.todo-input-row { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); }
-.todo-input { flex: 1; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--bg-card-inner); color: var(--text-primary); font-size: var(--text-base); font-family: var(--font-body); outline: none; }
-.todo-input:focus { border-color: var(--accent); }
-.todo-date { padding: 7px 10px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--bg-card-inner); color: var(--text-primary); font-size: var(--text-sm); font-family: var(--font-mono); outline: none; }
-.todo-add-btn { width: 38px; height: 38px; border-radius: 10px; border: none; background: var(--accent); color: #fff; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-.todo-list { display: flex; flex-direction: column; gap: var(--space-1); max-height: 220px; overflow-y: auto; }
-.todo-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-card-inner); border-radius: 10px; border: 1px solid var(--border-color); }
-.todo-item.done { opacity: 0.4; }
-.todo-item.done .todo-text { text-decoration: line-through; }
-.todo-item.overdue { border-color: var(--red-border); }
-.todo-check { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
-.todo-text { flex: 1; font-size: var(--text-base); }
-.todo-due { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); }
-.todo-due.overdue { color: var(--red); }
-.todo-remove { width: 24px; height: 24px; border-radius: 8px; border: none; background: transparent; color: var(--text-muted); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-.todo-remove:hover { background: var(--red-bg); color: var(--red); }
-
-/* Inline edit */
-.edit-inline { font-family: var(--font-display); font-weight: 700; font-size: 17px; background: var(--bg-card-inner); border: 1px solid var(--accent); border-radius: 8px; color: var(--text-primary); padding: 4px 10px; outline: none; width: 100%; }
-.edit-inline-sm { font-size: var(--text-sm); font-family: var(--font-mono); font-weight: 400; }
 
 /* ══════════════════════════════════════════════════════════════
    Settings — Full Page Layout
@@ -263,16 +189,9 @@ html { scroll-padding-top: 64px; }
 .settings-item-row:hover { border-color: var(--border-glow); }
 .settings-item-title { font-family: var(--font-display); font-weight: 600; font-size: var(--text-base); color: var(--text-primary); }
 .settings-item-subtitle { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); }
-.settings-item-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
 
 /* Settings — Visual elements */
 .settings-color-swatch { width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--border-color); flex-shrink: 0; cursor: pointer; }
-.settings-color-swatch-lg { width: 44px; height: 44px; border-radius: 12px; border: 2px solid var(--border-glow); cursor: pointer; transition: transform 0.15s; }
-.settings-icon-img { width: 22px; height: 22px; border-radius: 4px; object-fit: contain; }
-.settings-icon-img-sm { width: 18px; height: 18px; border-radius: 3px; object-fit: contain; }
-.settings-badge { display: inline-block; font-family: var(--font-mono); font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 500; }
-.settings-badge-status { font-family: var(--font-mono); font-size: var(--text-2xs); padding: 2px 8px; border-radius: 4px; }
-.settings-divider { height: 1px; background: var(--border-color); margin: 12px 0; }
 .settings-loading { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-8); color: var(--text-muted); }
 .settings-saving { font-family: var(--font-mono); font-size: var(--text-2xs); padding: 2px 8px; border-radius: 4px; background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
 
@@ -282,31 +201,14 @@ html { scroll-padding-top: 64px; }
 
 /* Settings — Integrations gallery */
 .settings-preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
-.settings-preset-card { padding: 14px; background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: 12px; cursor: pointer; transition: all 0.15s; text-align: center; }
-.settings-preset-card:hover { border-color: var(--accent); background: var(--accent-glow); }
 
 /* ══════════════════════════════════════════════════════════════
    Dashboard — Component utilities
    ══════════════════════════════════════════════════════════════ */
-.stat-label { font-family: var(--font-mono); font-size: var(--fs-service-stat-label); color: var(--text-secondary); letter-spacing: 1px; text-transform: uppercase; }
-.stat-value { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-service-stat-value); color: var(--text-primary); line-height: 1.2; }
-.stat-box { background: var(--bg-card-inner); border-radius: 6px; border: 1px solid var(--border-color); padding: 6px 8px; text-align: center; flex: 1; }
 .icon-img { width: 22px; height: 22px; border-radius: 4px; object-fit: contain; }
-.icon-img-sm { width: 18px; height: 18px; border-radius: 3px; object-fit: contain; flex-shrink: 0; }
-.icon-img-lg { width: 24px; height: 24px; border-radius: 4px; object-fit: contain; }
-.grab-handle { cursor: grab; }
 .text-mono { font-family: var(--font-mono); }
 .muted-text { color: var(--text-muted); }
-.secondary-text { color: var(--text-secondary); }
 .flex-1 { flex: 1; min-width: 0; }
-
-/* Proxmox VM cards in dashboard */
-.pve-vm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-2); }
-.pve-vm-card { background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 14px; }
-
-/* Dashboard — Loading placeholder */
-.node-placeholder { border-top: 2px solid var(--accent); opacity: 0.4; }
-.node-placeholder-text { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-muted); padding: var(--space-3); }
 
 @media (max-width: 768px) {
   .settings-page { flex-direction: column; }
@@ -315,7 +217,6 @@ html { scroll-padding-top: 64px; }
   .settings-sidebar-desc { display: none; }
   .settings-main-content { padding: var(--space-5); }
 }
-
 
 .skeleton { background: linear-gradient(90deg, var(--bg-card-inner) 25%, oklch(0.541 0.281 293.009 / 0.05) 50%, var(--bg-card-inner) 75%); background-size: 200% 100%; animation: sh 1.5s infinite; border-radius: 8px; }
 @keyframes sh { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
@@ -340,9 +241,8 @@ html { scroll-padding-top: 64px; }
   outline: none;
 }
 
-/* Honor OS "reduce motion": neutralize infinite/decorative animation and the
-   1s metric transitions (WCAG 2.3.3). A static down-state cue is preserved so
-   status meaning is never lost — the pulse just stops at its bright keyframe. */
+/* Honor OS "reduce motion": neutralize infinite/decorative animation and
+   transitions (WCAG 2.3.3). */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
@@ -350,8 +250,6 @@ html { scroll-padding-top: 64px; }
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
-  /* Keep the "down" dot visibly emphasized even though the pulse is stopped. */
-  .status-dot.down { box-shadow: 0 0 12px var(--red); }
   /* Skeleton shimmer would freeze mid-gradient; show a calm solid placeholder. */
   .skeleton { background: var(--bg-card-inner); }
 }
@@ -360,40 +258,14 @@ html { scroll-padding-top: 64px; }
 ::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 3px; }
 @media (max-width: 900px) { .dashboard-content { padding: 14px; } }
 @media (max-width: 900px) { .overview-status { padding: 14px 30px 0; } }
-@media (max-width: 479px) { .overview-status { padding: 14px 26px 0; } }
 @media (max-width: 480px) {
   .node-card { padding: 14px 16px; }
-  .section-header { gap: var(--space-2); margin-bottom: var(--space-3); }
-  .node-metrics { gap: 6px; margin-bottom: 10px; }
-  .metric-block { min-width: 70px; padding: 8px 10px; }
-  .ups-grid { gap: 6px; }
-  .helmgrid-resize-handle { display: none !important; }
 }
-
-.skeleton-card { min-height: 180px; border-radius: var(--card-radius); }
-
-/* ── Per-panel degraded / stale banner (appended) ──
-   Compact in-card notice shown when a data source errors or goes stale. Sits
-   between a panel's header and body; theme-aware via the red and amber tokens.
-   .is-error = upstream unreachable (louder, red); .is-stale = data aging (amber). */
-.degraded-banner { border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; font-family: var(--font-body); }
-.degraded-banner.is-error { background: var(--red-bg); border: 1px solid var(--red-border); border-left: 3px solid var(--red); }
-.degraded-banner.is-stale { background: var(--amber-bg); border: 1px solid var(--amber-border); border-left: 3px solid var(--amber); }
-.degraded-banner-row { display: flex; align-items: center; gap: var(--space-2); }
-.degraded-banner-icon { font-size: var(--text-base); line-height: 1; flex-shrink: 0; }
-.degraded-banner-text { flex: 1; min-width: 0; }
-.degraded-banner-message { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); line-height: 1.35; }
-.degraded-banner-stale { font-size: var(--text-xs); color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; }
-.degraded-banner-retry { flex-shrink: 0; padding: 4px 12px; font-size: var(--text-sm); }
 
 /* Shared settings empty-state (src/components/settings/primitives.jsx EmptyState) */
 .settings-empty-state { padding: var(--space-8); text-align: center; color: var(--text-muted); background: var(--bg-card-inner); border-radius: 16px; border: 1px dashed var(--border-color); }
 .settings-empty-state-icon { font-size: 28px; display: block; margin-bottom: var(--space-2); }
 .settings-empty-state-text { font-size: var(--text-md); margin: 0; }
-
-/* Keyboard move/resize handle (src/components/HelmGrid/GridItem.jsx): visually hidden until focused — mouse users drag the section header instead, so it adds no chrome. */
-.helmgrid-move-handle { position: absolute; top: 4px; right: 4px; width: 1px; height: 1px; padding: 0; margin: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); border: 0; background: transparent; color: var(--text-secondary); cursor: grab; z-index: 21; }
-.helmgrid-move-handle:focus { width: 26px; height: 26px; clip: auto; clip-path: none; display: flex; align-items: center; justify-content: center; background: var(--bg-card-inner); border: 1px solid var(--accent); border-radius: 6px; outline: 2px solid var(--accent); outline-offset: 1px; font-size: var(--text-md); line-height: 1; }
 
 /* ── Mobile layout pass (appended) ──────────────────────────────────────────
    The app is already broadly responsive (stacked grid, 44px hit areas). These
@@ -409,16 +281,6 @@ html { scroll-padding-top: 64px; }
   /* Two/three-up settings fields are too narrow on a phone — stack them. */
   .settings-grid-2, .settings-grid-3 { grid-template-columns: 1fr; }
 }
-
-/* "Why is this dashed?" integration doctor (src/components/ServiceCard.jsx).
-   A native <details> — collapsed, keyboard + SR accessible. The ⚠ glyph carries
-   the warning colour; the label stays in --text-secondary for contrast. */
-.svc-doctor { margin-top: 6px; }
-.svc-doctor-summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-secondary); padding: 2px 0; }
-.svc-doctor-summary::-webkit-details-marker { display: none; }
-.svc-doctor-summary:hover { color: var(--text-primary); }
-.svc-doctor-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-.svc-doctor-detail { font-family: var(--font-mono); font-size: var(--text-2xs); line-height: 1.4; color: var(--text-muted); margin-top: 4px; padding: 6px 8px; background: var(--amber-bg); border: 1px solid var(--amber-border); border-radius: 6px; word-break: break-word; }
 
 /* Command palette (⌘K) — src/components/CommandPalette.jsx */
 .cmdk-backdrop { position: fixed; inset: 0; z-index: 10001; display: flex; justify-content: center; align-items: flex-start; padding: 12vh 16px 16px; background: rgba(0,0,0,0.5); backdrop-filter: blur(2px); }

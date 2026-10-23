@@ -14,7 +14,6 @@ import BackupTab from '../components/settings/BackupTab';
 import IntegrationsTab from '../components/settings/IntegrationsTab';
 import ConfigReadError from '../components/settings/ConfigReadError';
 import { readServerConfig } from '../components/settings/readServerConfig.js';
-import DashboardView from './DashboardView';
 import { apiFetch, isReadOnlyServer } from '../api/client.js';
 import { useToast } from '../context/OverlayContext.jsx';
 
@@ -93,15 +92,20 @@ function flushServerSave() {
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: '🏠', desc: 'Title, logo, branding' },
-  { id: 'appearance', label: 'Appearance', icon: '🎨', desc: 'Theme, Overview sections, background' },
+  {
+    id: 'appearance',
+    label: 'Appearance',
+    icon: '🎨',
+    desc: 'Theme, Overview sections, background',
+  },
   { id: 'typography', label: 'Typography', icon: '🔤', desc: 'Fonts, sizes, readability' },
-  { id: 'layout', label: 'Layout', icon: '📐', desc: 'Grid, refresh, links' },
-  { id: 'sections', label: 'Sections', icon: '🧱', desc: 'UPS, Pipeline, Quick Launch, Todos' },
+  { id: 'layout', label: 'Layout', icon: '📐', desc: 'Refresh, links, units' },
+  { id: 'sections', label: 'Sections', icon: '🧱', desc: 'Utilities, custom groups' },
   { id: 'nodes', label: 'Nodes', icon: '🖥', desc: 'Manage infrastructure nodes', divider: true },
   { id: 'services', label: 'Services', icon: '📦', desc: 'Container overrides & monitors' },
   { id: 'integrations', label: 'Integrations', icon: '🔌', desc: 'App API connections' },
   { id: 'links', label: 'Links', icon: '🔗', desc: 'Quick Launch bookmarks', divider: true },
-  { id: 'widgets', label: 'Widgets', icon: '🧩', desc: 'Search, weather, clock, features' },
+  { id: 'widgets', label: 'Widgets', icon: '🧩', desc: 'Search, weather, clock' },
   { id: 'tabs', label: 'Tabs', icon: '📑', desc: 'Embedded service tabs' },
   {
     id: 'security',
@@ -124,19 +128,6 @@ const GROUP_LABELS = {
   security: 'SYSTEM',
 };
 
-// Viewport width at/above which the live preview is shown by default. Below it the
-// settings form would be too cramped next to the 50% preview, so it starts hidden.
-const PREVIEW_BREAKPOINT = '(min-width: 1100px)';
-
-// Whether the live preview should default to visible. Guards for no `window`
-// (SSR / tests without a DOM) and a missing `matchMedia` (older jsdom).
-function previewDefaultVisible() {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return false;
-  }
-  return window.matchMedia(PREVIEW_BREAKPOINT).matches;
-}
-
 /**
  * Settings. `section` opens one section, the route's (/settings/<section>,
  * #296): an unknown one opens General. `onSectionChange` hears each switch,
@@ -149,11 +140,6 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
   const routed = onSectionChange != null;
   const activeSection = routed ? (known(section) ? section : 'general') : ownSection;
   const setActiveSection = routed ? onSectionChange : setOwnSection;
-  const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
-  // Live preview visibility. Defaults to the viewport-derived value (hidden on
-  // ~laptop widths so the form gets full width) and, once the user toggles it,
-  // their explicit choice sticks for the rest of the session.
-  const [showPreview, setShowPreview] = useState(previewDefaultVisible);
 
   // ── Server-side config (services.yaml) for Nodes/Services ──
   const [serverConfig, setServerConfig] = useState(null);
@@ -370,14 +356,10 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
         </div>
       </nav>
 
-      {/* Settings content + Live Preview split */}
+      {/* Settings content. Changes apply to the Overview itself: the live
+          preview of the old board went with it (#306; spec §7, M10). */}
       <div style={{ display: 'flex', flex: 1, minWidth: 0, overflow: 'hidden' }}>
-        {/* Settings form — claims full width when the preview is hidden, so the
-            form isn't cramped on narrower (~laptop) viewports. */}
-        <div
-          className="settings-main"
-          style={showPreview ? { maxWidth: '50%', flex: '0 0 50%' } : { flex: 1, minWidth: 0 }}
-        >
+        <div className="settings-main" style={{ flex: 1, minWidth: 0 }}>
           <div
             className="settings-main-header"
             style={{
@@ -396,29 +378,6 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
                 {SECTIONS.find((s) => s.id === activeSection)?.desc}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowPreview((v) => !v)}
-              aria-pressed={showPreview}
-              title={
-                showPreview ? 'Hide the live dashboard preview' : 'Show the live dashboard preview'
-              }
-              style={{
-                flexShrink: 0,
-                background: 'none',
-                border: '1px solid var(--border-color)',
-                borderRadius: 6,
-                padding: '5px 10px',
-                cursor: 'pointer',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11,
-                letterSpacing: 0.5,
-                color: 'var(--text-secondary)',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {showPreview ? '⇥ Hide Preview' : '⇤ Show Preview'}
-            </button>
           </div>
           <div className="settings-main-content">
             {activeSection === 'general' && <GeneralTab />}
@@ -462,80 +421,6 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
             {activeSection === 'backup' && <BackupTab />}
           </div>
         </div>
-
-        {/* Live Preview Panel — toggled via the header button; hidden by default
-            on narrow viewports so the form can use the full width. */}
-        {showPreview && (
-          <div
-            style={{
-              flex: '0 0 50%',
-              maxWidth: '50%',
-              borderLeft: '1px solid var(--glass-border)',
-              overflow: 'hidden',
-              position: 'relative',
-              background: 'var(--bg-primary)',
-            }}
-          >
-            {/* Preview header bar */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 16px',
-                borderBottom: '1px solid var(--glass-border)',
-                background: 'var(--bg-secondary)',
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 11,
-                  color: 'var(--text-secondary)',
-                  letterSpacing: 0.5,
-                }}
-              >
-                LIVE PREVIEW
-              </span>
-              <button
-                onClick={() => setPreviewRefreshKey((k) => k + 1)}
-                style={{
-                  background: 'none',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 6,
-                  padding: '3px 8px',
-                  cursor: 'pointer',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                ↻ Refresh Data
-              </button>
-            </div>
-
-            {/* Scaled dashboard preview */}
-            <div
-              style={{
-                overflow: 'auto',
-                height: 'calc(100vh - 60px - 40px)',
-                position: 'relative',
-              }}
-            >
-              <div
-                style={{
-                  transform: 'scale(0.55)',
-                  transformOrigin: 'top left',
-                  width: '182%',
-                  minHeight: '182%',
-                  pointerEvents: 'none',
-                }}
-              >
-                <DashboardView refreshKey={previewRefreshKey} />
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

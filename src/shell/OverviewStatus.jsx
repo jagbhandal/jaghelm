@@ -10,8 +10,8 @@
  * the model has anything in, in its order, with its state, word and detail
  * ("11 / 12 up"), from the same poll (statusView.js subsystemCells). Each
  * tile is a toggle that filters the page to its subsystem (`filter`, the
- * URL's, overviewFilter.js): the panel's rows narrow to it, and the board
- * below to its panels (DashboardView). Pressing it again, or Clear, shows
+ * URL's, overviewFilter.js): the panel's rows narrow to it, and the sections
+ * below to its own (OverviewBoard). Pressing it again, or Clear, shows
  * everything. With a stale status, the tiles keep their counts, as last
  * known, but are drawn as no signal (statusFreshness.js, #480).
  *
@@ -23,10 +23,10 @@
  * #307: `strip` false); the panel can't. A filter in the URL still narrows
  * the page, the panel saying so with Clear.
  *
- * It is the new UI over today's board, which later cards rebuild (#298–#300):
- * a root of its own (ShellSection) inside a wrapper that lines it up with the
- * board's cards (`.overview-status`, global.css). Memoised on the poll, so the
- * board's tick doesn't re-render it; each answer re-renders only its ages.
+ * A root of its own (ShellSection) inside a wrapper that lines it up with the
+ * sections under it (`.overview-status`, global.css). Memoised on the poll,
+ * so the sections' tick doesn't re-render it; each answer re-renders only its
+ * ages.
  */
 import { memo, useMemo } from 'react';
 import { ShellSection } from '@ui/app-shell';

@@ -2,8 +2,8 @@
  * The web on a phone (#303, spec §8 "Phone width"): below 768px it draws the
  * phone screens the Android app draws, from the same code (src/phone/), in
  * the web's look, under the shell's header and above its tabs (Overview,
- * Services, Infrastructure, Alerts; More holds the rest). Today's board and
- * the desktop Overview aren't drawn on a phone. Its own chunk, loaded only
+ * Services, Infrastructure, Alerts; More holds the rest). The desktop
+ * Overview isn't drawn on a phone. Its own chunk, loaded only
  * below 768px (lazyViews.js), so a desktop's first load doesn't carry it.
  *
  * The screens get what the Android app gives them, from the web's own parts:
@@ -32,7 +32,7 @@ import Alerts from '../phone/views/Alerts.jsx';
 import { PhonePlatform } from '../phone/platform.js';
 import { PhonePage, PhoneSheet } from '../phone/components/PhoneSheet.jsx';
 import { DetailLoading } from '../phone/components/DetailLoading.jsx';
-import { useDashboardData } from '../views/DashboardView/useDashboardData.js';
+import { useDashboardData } from './useDashboardData.js';
 import { useStatusFreshness } from './statusFreshness.js';
 import { usePhoneNav } from './phoneNav.js';
 import { openTarget, phoneData } from './phoneData.js';

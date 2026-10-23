@@ -1,34 +1,25 @@
 /**
- * Source-health presentation helpers for the dashboard's per-panel degraded /
- * stale banners. Pure functions — no React, no state — so they're trivially
- * testable and safe to call at render time without touching the
- * 304-stable-identity contract.
+ * Source-health presentation helpers for the Overview's sections' banners
+ * ("these are the last readings it had"). Pure functions — no React, no
+ * state — so they're trivially testable and safe to call at render time
+ * without touching the 304-stable-identity contract.
  *
  * The `sources` shape comes from useDashboardData:
  *   sources[key] = { error: string | null, lastSuccessMs: number | null,
  *                    watchedSinceMs: number | null }
- * with keys: services, ups, commits, cron, integrations.
- *
- * Each panel maps to the source that feeds it (see SOURCE_FOR_PANEL below).
+ * with keys: services, integrations.
  */
 
-// Short, CAUSE-NAMING messages — each names the upstream that's unreachable so a
-// degraded panel tells the user WHAT to go check, not just "something's wrong".
+// Short, CAUSE-NAMING messages — each names the upstream that's unreachable,
+// so the screen tells the user WHAT to go check, not just "something's wrong".
+// The Overview announces them once, in one live region (OverviewBoard.jsx).
 export const SOURCE_MESSAGES = {
   services: 'Live metrics unavailable — Prometheus unreachable',
-  // The per-service up/down state on /api/services is sourced from Uptime Kuma
-  // server-side. Kept here so the same distinct wording is available wherever
-  // monitor health is surfaced.
-  monitors: 'Service status unavailable — Uptime Kuma unreachable',
-  ups: 'UPS telemetry unavailable — NUT unreachable',
-  commits: 'Pipeline activity unavailable — Gitea unreachable',
-  cron: 'Job history unavailable — cron reporter unreachable',
   integrations: 'App metrics unavailable — integrations endpoint unreachable',
 };
 
-// A panel is flagged "stale" once this many polls of ITS source have gone by
-// without a success. The poll period comes from useDashboardData's pollPeriodMs,
-// so a slow source (polled every third tick) goes stale on its own cadence.
+// A source is flagged "stale" once this many of its polls (one a refresh
+// interval) have gone by without a success.
 const STALE_POLLS = 2;
 
 /**
@@ -47,9 +38,9 @@ export function formatAgo(ms) {
 }
 
 /**
- * A healthy source's banner: one frozen object, so a board whose sources stay
- * healthy hands its panels the same banner every step, and their memos hold
- * (a new one each step re-rendered every node panel on every tick, #252).
+ * A healthy source's banner: one frozen object, so an Overview whose sources
+ * stay healthy hands its sections the same banner every step, and their memos
+ * hold (a new one each step re-rendered every panel on every tick, #252).
  */
 export const HEALTHY = Object.freeze({ message: null, staleNote: null });
 

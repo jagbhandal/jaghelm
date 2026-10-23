@@ -260,18 +260,25 @@ test('no page, stylesheet or script loads a font or stylesheet from another orig
   }
 });
 
-test("today's font presets are self-hosted, every one but System's", () => {
+test("today's font presets are self-hosted, every one but System's; the default's sans is the new UI's (#306)", () => {
   const declared = new Set(fontFaces(LEGACY_FONTS).map((f) => f.family));
+  const ui = new Set(fontFaces(UI_FONTS).map((f) => f.family));
   const wanted = new Set();
   for (const [preset, roles] of Object.entries(FONT_FAMILIES)) {
     if (preset === 'system') continue; // the device's own faces: nothing to load
     for (const stack of Object.values(roles)) wanted.add(stack.match(/^'([^']+)'/)[1]);
   }
-  assert.ok(wanted.has('Outfit') && wanted.has('Roboto Mono'));
+  assert.ok(wanted.has('Inter') && wanted.has('Roboto Mono'));
+  // The default draws in the new UI's default face (Outfit and DM Sans went
+  // with the old board), so Settings asks for no face of its own.
+  const sans = TYPEFACES.find((t) => t.id === DEFAULT_TYPEFACE).family;
+  assert.match(FONT_FAMILIES.default.display, new RegExp(`^'${sans}'`));
+  assert.match(FONT_FAMILIES.default.body, new RegExp(`^'${sans}'`));
+  assert.ok(!declared.has('Outfit') && !declared.has('DM Sans'));
   assert.deepEqual(
-    [...wanted].filter((f) => !declared.has(f)),
+    [...wanted].filter((f) => !declared.has(f) && !ui.has(f)),
     [],
-    `missing from ${LEGACY_FONTS}`
+    `missing from ${LEGACY_FONTS} and ${UI_FONTS}`
   );
   assert.deepEqual(
     [...declared].filter((f) => !wanted.has(f)),
@@ -325,17 +332,29 @@ test('every @font-face points at a file that draws the face it declares', () => 
   for (const f of texts) assert.match(read(f), /SIL Open Font License, Version 1\.1/, f);
 });
 
+// The Android app ships its own copies of today's faces (mobile/src/fonts/,
+// Outfit, DM Sans and JetBrains Mono): their licences sit beside them, since
+// the web's went with its copies (#306).
+test("the Android app's faces have their licences beside them", () => {
+  const dir = 'mobile/src/fonts';
+  const files = readdirSync(path.join(ROOT, dir)).filter((f) => f.endsWith('.woff2'));
+  const LICENCE = { dmsans: 'DMSans', outfit: 'Outfit', jetbrainsmono: 'JetBrainsMono' };
+  assert.ok(files.length > 0);
+  for (const f of files) {
+    const family = LICENCE[f.split('-')[0]];
+    assert.ok(family, `${dir}/${f}: which face?`);
+    const text = `${dir}/licences/${family}-OFL.txt`;
+    assert.ok(existsSync(path.join(ROOT, text)), `${dir}/${f}: no ${text}`);
+    assert.match(read(text), /SIL Open Font License, Version 1\.1/, text);
+  }
+});
+
 // Each vendored file's sha256, pinned to the file Google Fonts served for it on
 // 2026-10-19 (the URL above each; src/styles/fonts.css and src/ui/fonts.css give
 // the requests; the latin-ext files, #394, are from the same requests as their
 // latin files). A file that changes, by a swap or a re-fetch, fails here: check
 // the new file against its source and update the pin in the same change.
 const PINNED = Object.freeze({
-  // https://fonts.gstatic.com/s/dmsans/v17/rP2rp2ywxg089UriCZaSExd86J3t9jz86Mvy4qCRAL19DksVat_XDV30TGc.woff2
-  'dm-sans-latin-300-italic.woff2':
-    'bdd25fa33d0dfdeeb007471c64611df30cfe1879270db8c47e8159f24047e64b',
-  // https://fonts.gstatic.com/s/dmsans/v17/rP2Yp2ywxg089UriI5-g4vlH9VoD8Cmcqbu0-K4.woff2
-  'dm-sans-latin-wght.woff2': '9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543',
   // https://fonts.gstatic.com/s/firacode/v27/uU9NCBsR6Z2vfE9aq3bh3dSD.woff2
   'fira-code-latin-wght.woff2': '771bf4b79a97fc005d12866168bd39d868a9dd3d5903008fe8b796723c8a56f4',
   // https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2
@@ -358,8 +377,6 @@ const PINNED = Object.freeze({
   'montserrat-latin-wght.woff2': '06b16db7a969135d48d38c49183be7fb88d4452e2a3011957c7851941f4e4879',
   // https://fonts.gstatic.com/s/nunito/v32/XRXV3I6Li01BKofINeaB.woff2
   'nunito-latin-wght.woff2': 'ba344451eab25b217a165363b1982048a5e5830a0daf36577973955a04cac793',
-  // https://fonts.gstatic.com/s/outfit/v15/QGYvz_MVcBeNP4NJtEtq.woff2
-  'outfit-latin-wght.woff2': '6c18d579fd87c3776be068b762cbc83fde3acb543d49eabd3ade842eb987e887',
   // https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko40yyygA.woff2
   'plus-jakarta-sans-latin-ext-wght.woff2':
     '38e3b8fd8045048eb311d90170a4429ed2c8f405852dc3d91b5af8452758703f',

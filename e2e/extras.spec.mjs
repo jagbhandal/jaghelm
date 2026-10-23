@@ -40,7 +40,8 @@ const NOT_DEMO = { authenticated: true, authRequired: false, demo: false };
 const HHMM = /^\d{2}:\d{2}$/;
 
 const rail = (page) => page.getByRole('region', { name: 'Utilities' });
-const boardTitle = (page, title) => page.locator('.section-title', { hasText: title });
+// A node's card in the Infrastructure section, by its name: the Overview drawn.
+const boardTitle = (page, title) => page.locator('[data-slot="node-card"]', { hasText: title });
 
 /** The page at `path`, counting the weather reads. */
 async function openWith(page, path, config) {
@@ -237,7 +238,8 @@ test('a device open from before another hid a section saves its own switch witho
   await b.page.goto('/');
   await a.page.goto('/');
   for (const { page } of [a, b]) {
-    await expect(boardTitle(page, 'Network Edge')).toBeVisible();
+    // Both sections off: the Overview drawn is its Power section.
+    await expect(page.getByRole('region', { name: 'Power', exact: true })).toBeVisible();
     await expect(services(page)).toHaveCount(0);
     await expect(infrastructure(page)).toHaveCount(0);
   }

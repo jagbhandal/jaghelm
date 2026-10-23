@@ -4,8 +4,9 @@
  * to-dos).
  *
  *  - At 1440px the Overview has its rail beside its sections, the mock's
- *    widths, and today's board leaves its own three out; at 1280 there is no
- *    rail at all, the board has them, and the Launch page has all three. Crossing 1440 keeps today's board where it is (no remount).
+ *    widths, each panel once; at 1280 there is no rail at all, the Overview
+ *    draws none of the three, and the Launch page has all three. Crossing
+ *    1440 keeps the sections where they are (no remount).
  *  - No sideways scroll on the Overview or the Launch page at 1280, 1440 and
  *    2560, nor on the Launch page at 390.
  *  - The Checklist adds, ticks and deletes over plain HTTP (#236): the page
@@ -31,12 +32,13 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const PANELS = ['Quick Launch', 'Pipeline', 'Checklist'];
 
 const rail = (page) => page.getByRole('region', { name: 'Utilities' });
-const boardTitle = (page, title) => page.locator('.section-title', { hasText: title });
+const nodeCard = (page, name) =>
+  page.locator('[data-slot="infrastructure-section"]').getByRole('article', { name });
 
-/** The Overview, with today's board under its status loaded, so nothing moves. */
+/** The Overview, with the sections under its status loaded, so nothing moves. */
 async function openOverview(page, theme = 'dark') {
   await openApp(page, '/', { theme });
-  await expect(boardTitle(page, 'Network Edge')).toBeVisible();
+  await expect(nodeCard(page, 'Network Edge')).toBeVisible();
 }
 
 async function openLaunch(page, theme = 'dark') {
@@ -68,9 +70,9 @@ test.describe('at 1440px', () => {
     await expect(rail(page)).toBeVisible();
     expect(await panelNames(rail(page))).toEqual(PANELS);
     await expect(rail(page).getByRole('link', { name: 'Nextcloud' })).toBeVisible();
-    // The rail has them, so today's board leaves its own out: one of each.
-    for (const title of ['Quick Launch', 'Pipeline Activity', 'Checklist'])
-      await expect(boardTitle(page, title)).toHaveCount(0);
+    // One of each on the page: the rail's.
+    for (const name of PANELS)
+      await expect(page.getByRole('region', { name, exact: true })).toHaveCount(1);
     // Beside the sections: right of the status, its top level with the panel's.
     const status = await page.locator('[data-slot="overview-status"]').boundingBox();
     const box = await page.locator('.overview-rail').boundingBox();
@@ -82,13 +84,17 @@ test.describe('at 1440px', () => {
     await noSideScroll(page);
   });
 
-  test('narrowed to 1280 the rail goes, and today’s board stays where it was', async ({ page }) => {
+  test('narrowed to 1280 the rail goes, and the sections stay where they were', async ({
+    page,
+  }) => {
     await openOverview(page);
     await expect(rail(page)).toBeVisible();
-    const card = await boardTitle(page, 'Network Edge').elementHandle();
+    const card = await nodeCard(page, 'Network Edge').elementHandle();
     await page.setViewportSize(AT.narrow);
     await expect(rail(page)).toHaveCount(0);
-    expect(await card.evaluate((el) => el.isConnected), 'the board was not remounted').toBe(true);
+    expect(await card.evaluate((el) => el.isConnected), 'the sections were not remounted').toBe(
+      true
+    );
     await page.setViewportSize(AT.rail);
     await expect(rail(page)).toBeVisible();
     expect(await card.evaluate((el) => el.isConnected)).toBe(true);
@@ -117,8 +123,10 @@ test.describe('at 1280px', () => {
     await expect(page.getByRole('region', { name: 'Needs attention' })).toBeVisible();
     await expect(rail(page)).toHaveCount(0);
     await expect(page.locator('[data-slot="utilities-rail"]')).toHaveCount(0);
-    // Today's board keeps its own, below the rail's width.
-    await expect(boardTitle(page, 'Checklist')).toBeVisible();
+    // Nor the three anywhere on it: below the rail's width they are the
+    // Launch page's (#301; the old board drew them here, #306).
+    for (const name of PANELS)
+      await expect(page.getByRole('region', { name, exact: true })).toHaveCount(0);
     await noSideScroll(page);
   });
 

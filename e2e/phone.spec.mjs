@@ -124,8 +124,8 @@ for (const [width, viewport] of Object.entries(PHONES)) {
       page,
     }) => {
       await openPhone(page);
-      // Today's board and the desktop Overview aren't drawn on a phone.
-      await expect(page.locator('.helmgrid')).toHaveCount(0);
+      // The desktop Overview isn't drawn on a phone.
+      await expect(page.locator('[data-slot="overview-board"]')).toHaveCount(0);
       await expect(page.locator('[data-slot="overview-status"]')).toHaveCount(0);
       const status = demo('/api/status').body;
       // The word alone, as the Phone board's card says it.

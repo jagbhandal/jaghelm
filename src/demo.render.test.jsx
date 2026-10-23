@@ -3,8 +3,10 @@ import { render, screen, within, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
 import { entityAnchor } from './shell/entityAnchors.js';
+import { RAIL_WIDTH } from '@ui/app-shell';
 import { setReadOnlyServer } from './api/client.js';
 import { forgetLocalChanges } from './hooks/useData.js';
+import { forgetRemoved } from './shell/removedJobs.js';
 import { VIEW_PREF } from './shell/infrastructureView.js';
 import { GROUPING_PREF } from './shell/servicesView.js';
 import { nasDiskIncident } from './testing/statusFixtures.js';
@@ -12,10 +14,10 @@ import { nasDiskIncident } from './testing/statusFixtures.js';
 import { demoResponse } from '../server/demo.js';
 
 // The demo render test (#248): the whole web app, every /api request answered
-// by the demo server's guard, must show a populated board (nodes, the Services
-// section, Quick Launch, the UPS and Pipeline panels), a status that is not green while
-// a service is down, and save nothing (no write request, no "couldn't save"
-// toast) on load. What a visitor changes is kept in the browser for the visit,
+// by the demo server's guard, must show a populated Overview (the nodes, the
+// UPS, the jobs and the services, and from 1440px the rail's Quick Launch,
+// Pipeline and Checklist), a status that is not green while a service is down,
+// and save nothing (no write request, no "couldn't save" toast) on load. What a visitor changes is kept in the browser for the visit,
 // with no error and no request.
 
 let requests;
@@ -94,7 +96,7 @@ async function renderDemo(scenario, edit, { path = '/', ready = 'Network Edge', 
     render(<App />);
   });
   await advance(3000);
-  expect(legacy(ready)).toBeInTheDocument();
+  expect(screen.getAllByText(ready)[0]).toBeInTheDocument();
 }
 
 // The header's status link (#296): the lamp's state, and what it says.
@@ -104,14 +106,26 @@ const headerStatus = () =>
 /** The demo's own /api/status in `scenario`: the model's status of its board (#437). */
 const demoStatus = (scenario) =>
   demoResponse({ method: 'GET', path: '/api/status', query: {}, scenario }).body;
-// A panel of today's board, by its title. A node's name is also on its card in
-// the Infrastructure section (#299), so the title is the one in a panel.
-const legacy = (title) => {
-  const all = screen.getAllByText(title);
-  return all.find((el) => el.closest('.glass-card')) ?? all[0];
-};
-const panel = (title) => legacy(title).closest('.glass-card');
-const gridItem = (title) => legacy(title).closest('.helmgrid-item');
+// The Overview's sections under the strip (OverviewBoard.jsx, #306), as drawn,
+// in their order.
+const SECTIONS = ['Infrastructure', 'Power', 'Jobs', 'Services'];
+const sectionsDrawn = () =>
+  SECTIONS.filter((name) => screen.queryByRole('region', { name }) !== null);
+const region = (name) => screen.getByRole('region', { name });
+
+/** A window from 1440px: the Overview draws its utilities rail (#301). */
+function wide() {
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+    matches: query === RAIL_WIDTH,
+    media: query,
+    onchange: null,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent: () => false,
+  }));
+}
 // The Services section (#300), a group's list in it, and every row it draws.
 const servicesSection = () => screen.getByRole('region', { name: 'Services' });
 const serviceGroup = (title) => within(servicesSection()).getByRole('list', { name: title });
@@ -121,8 +135,6 @@ beforeEach(() => {
   localStorage.clear();
   statusAnswer = 'ok';
   vi.useFakeTimers();
-  // jsdom has no layout: give the grid a desktop width so it renders its panels.
-  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1440);
 });
 
 afterEach(() => {
@@ -132,6 +144,7 @@ afterEach(() => {
   // The app marked the server read-only and may have kept changes: start afresh.
   setReadOnlyServer(false);
   forgetLocalChanges();
+  forgetRemoved();
   delete document.hidden;
   delete document.visibilityState;
 });
@@ -149,50 +162,53 @@ function setHidden(hidden) {
 }
 
 describe('the demo, rendered', () => {
-  it('shows populated nodes, their services in the Services section, their panels side by side at the top', async () => {
+  it('shows the nodes, the UPS, the jobs and the services, each in its section, in order (#306)', async () => {
     await renderDemo('incident');
 
+    expect(sectionsDrawn()).toEqual(SECTIONS);
+    const [infra, power, jobs, services] = SECTIONS.map(region);
+    for (const [a, b] of [
+      [infra, power],
+      [power, jobs],
+      [jobs, services],
+    ])
+      expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     for (const name of ['Network Edge', 'App Server', 'Storage']) {
-      expect(legacy(name)).toBeInTheDocument();
+      expect(within(infra).getByRole('article', { name })).toBeInTheDocument();
     }
     // The services are the Services section's (#300), each under its node.
     expect(within(serviceGroup('App Server')).getByText('Nextcloud')).toBeInTheDocument();
     expect(within(serviceGroup('Network Edge')).getByText('Adguard Home')).toBeInTheDocument();
     expect(within(serviceGroup('Storage')).getByText('Syncthing')).toBeInTheDocument();
-    // The node panels draw none.
-    expect(within(panel('App Server')).queryByText('Nextcloud')).toBeNull();
+    // The UPS on mains has its row, and opens its detail (#306).
+    const ups = within(power).getByRole('link', { name: 'Example UPS 1500VA, On mains' });
+    expect(ups).toHaveAttribute('href', '/?entity=power/ups');
+    expect(ups).toHaveTextContent('100 % charge');
+    expect(within(power).getByText('On mains')).toBeInTheDocument();
+    // The jobs and backups, the failed backup among them.
+    expect(within(jobs).getByRole('link', { name: /^nightly-backup, Failed/ })).toBeInTheDocument();
+    // No old board: no grid, no first-run note.
+    expect(document.querySelector('.helmgrid, .glass-card')).toBeNull();
     expect(screen.queryByText('Connect your first node')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Loading /)).not.toBeInTheDocument();
-
-    // No saved layout: the board lays itself out, the three nodes in one row on top.
-    const tops = ['Network Edge', 'App Server', 'Storage'].map((n) => gridItem(n).style.top);
-    const lefts = ['Network Edge', 'App Server', 'Storage'].map((n) =>
-      parseFloat(gridItem(n).style.left)
-    );
-    expect(new Set(tops).size).toBe(1);
-    expect(lefts[0]).toBeLessThan(lefts[1]);
-    expect(lefts[1]).toBeLessThan(lefts[2]);
-    for (const title of ['UPS Power', 'Pipeline Activity', 'Quick Launch']) {
-      expect(parseFloat(gridItem(title).style.top)).toBeGreaterThan(parseFloat(tops[0]));
-    }
+    expect(screen.queryByText('Waiting for your first node')).not.toBeInTheDocument();
   });
 
-  it('shows the Quick Launch links, and the UPS, Pipeline and Scheduled Jobs panels with their data', async () => {
+  it('from 1440px: the rail’s Quick Launch links, Pipeline and Checklist, with their data', async () => {
+    wide();
     await renderDemo('incident');
-
-    const quickLaunch = panel('Quick Launch');
+    const rail = region('Utilities');
+    const quickLaunch = within(rail).getByRole('region', { name: 'Quick Launch' });
     expect(within(quickLaunch).getByRole('link', { name: 'Grafana' })).toHaveAttribute(
       'href',
       'https://grafana.example.com'
     );
     expect(within(quickLaunch).getAllByRole('link')).toHaveLength(9);
-
-    expect(within(panel('UPS Power')).getByText('Online')).toBeInTheDocument();
-    expect(within(panel('UPS Power')).getByText('Example UPS 1500VA')).toBeInTheDocument();
     expect(
-      within(panel('Pipeline Activity')).getByText('Pin the reverse proxy image to 2.12')
+      within(within(rail).getByRole('region', { name: 'Pipeline' })).getByText(
+        'Pin the reverse proxy image to 2.12'
+      )
     ).toBeInTheDocument();
-    expect(within(panel('Scheduled Jobs')).getByText('nightly-backup')).toBeInTheDocument();
+    expect(within(rail).getByRole('region', { name: 'Checklist' })).toBeInTheDocument();
   });
 
   it('is not green while a service is down', async () => {
@@ -243,9 +259,8 @@ describe('the demo, rendered', () => {
     }
   );
 
-  it('keeps a change in the browser with no error and no request: a checklist item, a scheduled job', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+  it('keeps a change in the browser with no error and no request: a checklist item, a removed job', async () => {
+    wide();
     await renderDemo('incident');
     const click = async (el) => {
       await act(async () => {
@@ -255,25 +270,30 @@ describe('the demo, rendered', () => {
       await advance(3000);
     };
 
-    // Tick a checklist item: it stays ticked.
-    const checklist = panel('Checklist');
-    expect(within(checklist).getByText('2 remaining')).toBeInTheDocument();
+    // Tick a checklist item in the rail: it stays ticked.
+    const checklist = () => within(region('Utilities')).getByRole('region', { name: 'Checklist' });
+    expect(within(checklist()).getByText('2 open')).toBeInTheDocument();
     const renew = () =>
-      within(panel('Checklist'))
-        .getByText('Renew the TLS certificate for the proxy')
-        .closest('.todo-item');
-    await click(within(renew()).getByRole('checkbox'));
-    expect(within(renew()).getByRole('checkbox')).toBeChecked();
-    expect(within(panel('Checklist')).getByText('1 remaining')).toBeInTheDocument();
+      within(checklist()).getByRole('checkbox', {
+        name: 'Renew the TLS certificate for the proxy',
+      });
+    await click(renew());
+    expect(renew()).toHaveAttribute('aria-checked', 'true');
+    expect(within(checklist()).getByText('1 open')).toBeInTheDocument();
 
-    // Remove the failed backup job: it stays gone after the board refetches.
-    const backupRow = within(panel('Scheduled Jobs')).getByText('nightly-backup').parentElement;
-    await click(within(backupRow).getByRole('button', { name: 'Remove' }));
-    expect(within(panel('Scheduled Jobs')).queryByText('nightly-backup')).not.toBeInTheDocument();
-    expect(within(panel('Scheduled Jobs')).getByText('scrub-check')).toBeInTheDocument();
+    // Remove the failed backup from its detail (#578): it stays gone.
+    await click(within(region('Jobs')).getByRole('link', { name: /^nightly-backup, Failed/ }));
+    const detail = await drawer('nightly-backup');
+    await click(within(detail).getByRole('button', { name: 'Remove…' }));
+    await click(
+      within(screen.getByRole('alertdialog', { name: 'Remove this backup?' })).getByRole('button', {
+        name: 'Remove',
+      })
+    );
+    expect(within(region('Jobs')).queryByText('nightly-backup')).not.toBeInTheDocument();
+    expect(within(region('Jobs')).getByText('scrub-check')).toBeInTheDocument();
 
     expect(screen.queryByText(/Couldn.t save/)).not.toBeInTheDocument();
-    expect(alert).not.toHaveBeenCalled();
     expect(requests.filter((r) => !r.startsWith('GET '))).toEqual([]);
   });
 });
@@ -287,21 +307,25 @@ describe("the demo's Overview status", () => {
       .getAllByRole('listitem')
       .map((row) => within(row).getByRole('link'));
 
-  it("each place on the board carries its entity's anchor", async () => {
+  it("each node and service carries its entity's anchor; the UPS and the jobs are rows that open them", async () => {
     await renderDemo('incident');
 
     expect(within(place('services/apps:jellyfin')).getByText('Jellyfin')).toBeInTheDocument();
     // A service's place is its row in the Services section (#300).
     expect(place('services/apps:jellyfin')).toHaveAttribute('data-slot', 'entity-row');
     expect(serviceGroup('App Server')).toContainElement(place('services/apps:jellyfin'));
-    // A node's place is its card in the Infrastructure section (#299); its
-    // panel below, with its Proxmox lists, carries no anchor.
+    // A node's place is its card in the Infrastructure section (#299).
     expect(place('nodes/apps')).toHaveAttribute('data-slot', 'node-card');
     expect(place('nodes/apps')).toHaveAccessibleName('App Server');
     expect(document.querySelectorAll(`[id="${entityAnchor('nodes/apps')}"]`)).toHaveLength(1);
-    expect(place('power/ups')).toBe(panel('UPS Power'));
-    expect(within(place('jobs/storage:nightly-backup')).getByText('nightly-backup')).toBeTruthy();
-    expect(panel('Scheduled Jobs')).toContainElement(place('jobs/storage:nightly-backup'));
+    // The UPS and the jobs have rows that open them (#306, #578).
+    expect(document.querySelector('[data-entity="power/ups"]')).toHaveAttribute(
+      'href',
+      '/?entity=power/ups'
+    );
+    expect(
+      document.querySelector('[data-entity="backups/storage:nightly-backup"]')
+    ).toHaveAttribute('href', '/?entity=backups/storage:nightly-backup');
   });
 
   // #309: a row opens its entity's detail, over the Overview, at its URL.
@@ -345,12 +369,11 @@ describe("the demo's Overview status", () => {
   });
 
   // #309: every row opens its entity, whatever the board below draws.
-  it('with Scheduled Jobs off, the backup’s row still opens its backup', async () => {
+  it('with the Jobs section off, the backup’s row still opens its backup', async () => {
     await renderDemo('incident', {
-      '/api/display-config': (config) => ({ ...config, showCronJobs: false }),
+      '/api/display-config': (config) => ({ ...config, overviewSections: { jobs: false } }),
     });
-    expect(screen.queryByText('Scheduled Jobs')).toBeNull();
-    expect(place('jobs/storage:nightly-backup')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Jobs' })).toBeNull();
     const rows = within(screen.getByRole('region', { name: 'Needs attention' })).getAllByRole(
       'listitem'
     );
@@ -383,11 +406,6 @@ describe("the demo's subsystem strip", () => {
       fireEvent.click(el);
     });
   };
-  // Today's panels, by their titles.
-  const NODES = ['Network Edge', 'App Server', 'Storage'];
-  const OTHERS = ['UPS Power', 'Pipeline Activity', 'Checklist', 'Scheduled Jobs', 'Quick Launch'];
-  const drawn = (titles) =>
-    titles.filter((t) => screen.queryAllByText(t).some((el) => el.closest('.glass-card')));
 
   /** The model's word for a subsystem: its worst entity's, the ranked issues first. */
   function modelWord(status, subsystem) {
@@ -428,7 +446,7 @@ describe("the demo's subsystem strip", () => {
     });
   }
 
-  it('Nodes, clicked: the rows and the board narrow to the nodes; clicked again, all is back', async () => {
+  it('Nodes, clicked: the rows and the sections narrow to the nodes; clicked again, all is back', async () => {
     await renderDemo('incident');
     const heading = within(attention()).getByRole('heading', { level: 2 }).textContent;
     expect(rows()).toHaveLength(2);
@@ -441,17 +459,15 @@ describe("the demo's subsystem strip", () => {
     expect(within(attention()).getByText('Showing Nodes only')).toBeInTheDocument();
     expect(rows()).toHaveLength(0);
     expect(within(attention()).getByText('Nothing in Nodes needs attention')).toBeInTheDocument();
-    // The board: the node cards alone.
-    expect(drawn(NODES)).toEqual(NODES);
-    expect(drawn(OTHERS)).toEqual([]);
+    // The sections: Infrastructure alone.
+    expect(sectionsDrawn()).toEqual(['Infrastructure']);
 
     await click(tile('Nodes'));
     expect(tile('Nodes')).toHaveAttribute('aria-pressed', 'false');
     expect(window.location.search).toBe('');
     expect(rows()).toHaveLength(2);
     expect(within(attention()).queryByText(/^Showing/)).toBeNull();
-    expect(drawn(NODES)).toEqual(NODES);
-    expect(drawn(OTHERS)).toEqual(OTHERS);
+    expect(sectionsDrawn()).toEqual(SECTIONS);
   });
 
   it('Services: its rows, and the Services section alone; one filter at a time; Clear', async () => {
@@ -463,24 +479,20 @@ describe("the demo's subsystem strip", () => {
       'href',
       '/?subsystem=services&entity=services/apps:jellyfin'
     );
-    expect(servicesSection()).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Infrastructure' })).toBeNull();
-    expect(drawn(NODES)).toEqual([]);
-    expect(drawn(OTHERS)).toEqual([]);
+    expect(sectionsDrawn()).toEqual(['Services']);
 
-    // Another tile moves the filter there.
+    // Another tile moves the filter there: Jobs, its Backups group alone.
     await click(tile('Backups'));
     expect(tile('Services')).toHaveAttribute('aria-pressed', 'false');
     expect(tile('Backups')).toHaveAttribute('aria-pressed', 'true');
     expect(rows().map((r) => r.textContent)).toEqual([expect.stringContaining('nightly-backup')]);
-    expect(drawn(NODES)).toEqual([]);
-    expect(drawn(OTHERS)).toEqual(['Scheduled Jobs']);
-    expect(screen.queryByRole('region', { name: 'Services' })).toBeNull();
+    expect(sectionsDrawn()).toEqual(['Jobs']);
+    expect(region('Jobs').querySelectorAll('[data-slot="jobs-group"]')).toHaveLength(1);
 
     await click(within(attention()).getByRole('button', { name: 'Clear' }));
     expect(window.location.search).toBe('');
     expect(rows()).toHaveLength(2);
-    expect(drawn(OTHERS)).toEqual(OTHERS);
+    expect(sectionsDrawn()).toEqual(SECTIONS);
   });
 
   it('by keyboard: Space on a tile filters, Enter on it again clears', async () => {
@@ -491,18 +503,18 @@ describe("the demo's subsystem strip", () => {
     await user.keyboard(' ');
     expect(tile('Power')).toHaveAttribute('aria-pressed', 'true');
     expect(window.location.search).toBe('?subsystem=power');
-    expect(drawn(OTHERS)).toEqual(['UPS Power']);
-    expect(drawn(NODES)).toEqual([]);
+    // The Power section alone (#306): the UPS's row.
+    expect(sectionsDrawn()).toEqual(['Power']);
     expect(document.activeElement).toBe(tile('Power'));
     await user.keyboard('{Enter}');
     expect(tile('Power')).toHaveAttribute('aria-pressed', 'false');
-    expect(drawn(OTHERS)).toEqual(OTHERS);
+    expect(sectionsDrawn()).toEqual(SECTIONS);
   });
 
   it('the filter is the URL: a link opens filtered, and Back and Forward follow it', async () => {
-    await renderDemo('incident', undefined, { path: '/?subsystem=jobs', ready: 'Scheduled Jobs' });
+    await renderDemo('incident', undefined, { path: '/?subsystem=jobs', ready: 'scrub-check' });
     expect(tile('Jobs')).toHaveAttribute('aria-pressed', 'true');
-    expect(drawn(NODES)).toEqual([]);
+    expect(sectionsDrawn()).toEqual(['Jobs']);
     expect(rows()).toHaveLength(0);
 
     await act(async () => {
@@ -510,26 +522,25 @@ describe("the demo's subsystem strip", () => {
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
     expect(tile('Jobs')).toHaveAttribute('aria-pressed', 'false');
-    expect(drawn(NODES)).toEqual(NODES);
+    expect(sectionsDrawn()).toEqual(SECTIONS);
 
     await act(async () => {
       window.history.replaceState(null, '', '/?subsystem=nodes');
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
     expect(tile('Nodes')).toHaveAttribute('aria-pressed', 'true');
-    expect(drawn(OTHERS)).toEqual([]);
+    expect(sectionsDrawn()).toEqual(['Infrastructure']);
   });
 
   it.each(['/?subsystem=integrations', '/?subsystem=bogus', '/?subsystem='])(
-    "a subsystem the strip doesn't show in the URL (%s): the whole board, and the URL drops it",
+    "a subsystem the strip doesn't show in the URL (%s): every section, and the URL drops it",
     async (path) => {
       window.history.replaceState(null, '', '/');
       const entries = window.history.length;
       await renderDemo('incident', undefined, { path });
       expect(within(strip()).queryByRole('button', { pressed: true })).toBeNull();
       expect(within(attention()).queryByText(/^Showing/)).toBeNull();
-      expect(drawn(NODES)).toEqual(NODES);
-      expect(drawn(OTHERS)).toEqual(OTHERS);
+      expect(sectionsDrawn()).toEqual(SECTIONS);
       // Replaced, not a new entry: Back doesn't return to it, and it can't
       // filter the page later, once that subsystem is set up.
       expect(window.location.pathname + window.location.search).toBe('/');
@@ -537,121 +548,61 @@ describe("the demo's subsystem strip", () => {
     }
   );
 
-  // Nothing of the subsystem is on the board. It is set up (the strip shows
-  // it), so the note never says it isn't: it says why.
-  const note = () => document.querySelector('[data-slot="board-filter-empty"]');
+  // Nothing of the subsystem is drawn: its section is switched off. It is set
+  // up (the strip shows it), so the note never says it isn't: it says why.
+  const note = () => document.querySelector('[data-slot="filter-empty"]');
   const NOT_SET_UP = /none yet|not set up|isn't set up/i;
 
-  it('a filter whose panel is switched off says so, and offers the whole board', async () => {
+  it('a filter whose section is switched off says so, and offers everything', async () => {
     await renderDemo(
       'incident',
-      { '/api/display-config': (config) => ({ ...config, showCronJobs: false }) },
+      { '/api/display-config': (config) => ({ ...config, overviewSections: { jobs: false } }) },
       { path: '/?subsystem=backups', ready: 'Showing Backups only' }
     );
-    expect(drawn(NODES)).toEqual([]);
-    expect(drawn(OTHERS)).toEqual([]);
+    expect(sectionsDrawn()).toEqual([]);
     expect(note()).toHaveTextContent(
-      'Scheduled Jobs is switched offSwitch it on in Settings to see Backups here.'
+      'The Jobs section is switched offSwitch it on in Settings → Appearance → Overview sections to see Backups here.'
     );
     expect(note()).not.toHaveTextContent(NOT_SET_UP);
-    await click(within(note()).getByRole('button', { name: 'Show the whole board' }));
+    await click(within(note()).getByRole('button', { name: 'Show everything' }));
     expect(window.location.search).toBe('');
-    expect(drawn(NODES)).toEqual(NODES);
+    expect(sectionsDrawn()).toEqual(['Infrastructure', 'Power', 'Services']);
     expect(note()).toBeNull();
   });
 
-  it("Power before /api/ups answers: a placeholder, never a note that it isn't set up", async () => {
-    await renderDemo('incident', undefined, {
-      path: '/?subsystem=power',
-      ready: 'Showing Power only',
-      hold: ['/api/ups'],
-    });
-    expect(tile('Power')).toHaveAttribute('aria-pressed', 'true');
-    expect(note()).toHaveAttribute('aria-busy', 'true');
-    expect(note()).toHaveTextContent(/^Loading the board$/);
-    expect(note()).not.toHaveTextContent(NOT_SET_UP);
-    expect(drawn(NODES)).toEqual([]);
-  });
+  // The Power section draws the status model's UPS (#549's readings): the
+  // Overview never asks /api/ups for it (#306), whatever that answers.
+  it.each(['hold', 'fail'])(
+    'Power: the UPS’s row from the status alone, with /api/ups answering never or 503 (%s)',
+    async (how) => {
+      await renderDemo('incident', undefined, {
+        path: '/?subsystem=power',
+        ready: 'Showing Power only',
+        [how]: ['/api/ups'],
+      });
+      expect(tile('Power')).toHaveAttribute('aria-pressed', 'true');
+      expect(sectionsDrawn()).toEqual(['Power']);
+      expect(
+        within(region('Power')).getByRole('link', { name: 'Example UPS 1500VA, On mains' })
+      ).toBeInTheDocument();
+      expect(note()).toBeNull();
+      expect(requests).not.toContain('GET /api/ups');
+    }
+  );
 
-  it('Power with /api/ups failing: no UPS reading, with what the status says, never "none yet"', async () => {
+  it('Services while /api/services is out: the section loading, no note', async () => {
     await renderDemo('incident', undefined, {
-      path: '/?subsystem=power',
-      ready: 'Showing Power only',
-      fail: ['/api/ups'],
+      path: '/?subsystem=services',
+      ready: 'Showing Services only',
+      hold: ['/api/services'],
     });
-    const power = demoStatus('incident').subsystems.find((s) => s.id === 'power');
-    expect(note()).toHaveTextContent(
-      `No UPS reading on the boardPower, as the status reads it: ${power.detail}.`
-    );
-    expect(note()).not.toHaveTextContent(NOT_SET_UP);
-    expect(note()).not.toHaveTextContent(/switched off/);
-    expect(
-      within(note()).getByRole('button', { name: 'Show the whole board' })
-    ).toBeInTheDocument();
-  });
-
-  it('Services with a saved layout while /api/services is out: the section loading, no panel, no note', async () => {
-    const lg = ['edge', 'apps', 'storage'].map((n, k) => ({
-      i: `node-${n}`,
-      x: k * 8,
-      y: 0,
-      w: 8,
-      h: 8,
-    }));
-    await renderDemo(
-      'incident',
-      { '/api/display-config': (config) => ({ ...config, gridLayout: { lg } }) },
-      { path: '/?subsystem=services', ready: 'Showing Services only', hold: ['/api/services'] }
-    );
     expect(servicesSection()).toHaveAttribute('aria-busy', 'true');
     expect(within(servicesSection()).getByText('The services are loading')).toBeTruthy();
-    expect(screen.queryByText('Loading edge…')).toBeNull();
     expect(note()).toBeNull();
-  });
-
-  // The custom groups are the Services section's grouping (#300), not panels:
-  // the board draws none, under any filter, from a saved layout too.
-  it('a custom group is no panel of its own, filtered or not, even in a saved layout', async () => {
-    const group = {
-      id: 'edge-apps',
-      title: 'Edge apps',
-      containers: ['edge:adguard-home', 'edge:nginx-proxy-manager', 'edge:wireguard'],
-    };
-    const lg = [
-      { i: 'group-edge-apps', x: 0, y: 0, w: 8, h: 8 },
-      { i: 'node-edge', x: 8, y: 0, w: 8, h: 8 },
-    ];
-    await renderDemo('incident', {
-      '/api/display-config': (config) => ({
-        ...config,
-        customGroups: [group],
-        gridLayout: { lg },
-      }),
-    });
-    expect(drawn(['Edge apps', ...NODES])).toEqual(NODES);
-    expect(screen.queryAllByRole('button', { name: /^Reposition (Edge apps|group-)/ })).toEqual([]);
-    await click(tile('Services'));
-    expect(drawn(['Edge apps', ...NODES])).toEqual([]);
-    await click(tile('Nodes'));
-    expect(drawn(['Edge apps', ...NODES])).toEqual(NODES);
-  });
-
-  // A drag or resize saves the layout it sees, so a filtered board can't be
-  // rearranged: it would save the board without the panels it hides.
-  it('a filtered board has no move handles, so its layout is never saved without the rest', async () => {
-    await renderDemo('incident');
-    const handles = () => screen.queryAllByRole('button', { name: /^Reposition / });
-    const all = handles().length;
-    expect(all).toBeGreaterThan(5);
-    await click(tile('Nodes'));
-    expect(handles()).toEqual([]);
-    expect(document.querySelectorAll('.helmgrid-resize-handle')).toHaveLength(0);
-    await click(tile('Nodes'));
-    expect(handles()).toHaveLength(all);
   });
 });
 
-// The Infrastructure section (#299, spec §8 item 3): above today's board, a
+// The Infrastructure section (#299, spec §8 item 3): first under the strip, a
 // card per node the model has, or a table; the node's state the model's, its
 // meters coloured only at or over the lines /api/status serves.
 describe("the demo's Infrastructure section", () => {
@@ -667,7 +618,7 @@ describe("the demo's Infrastructure section", () => {
   };
 
   for (const scenario of ['incident', 'healthy']) {
-    it(`${scenario}: a card per node the model has, in its state, above the board`, async () => {
+    it(`${scenario}: a card per node the model has, in its state, above the other sections`, async () => {
       await renderDemo(scenario);
       const status = demoStatus(scenario);
       const nodes = status.entities.filter((e) => e.kind === 'node');
@@ -691,11 +642,8 @@ describe("the demo's Infrastructure section", () => {
         expect(m).toHaveAttribute('data-state', 'ok');
         expect(m.querySelector('[data-slot="meter-fill"]')).toHaveClass('bg-meter');
       }
-      // Above today's board.
-      const board = document.querySelector('.helmgrid-item');
-      expect(
-        section().compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING
-      ).toBeTruthy();
+      // Above the other sections.
+      expect(sectionsDrawn()[0]).toBe('Infrastructure');
     });
   }
 
@@ -727,15 +675,14 @@ describe("the demo's Infrastructure section", () => {
     expect(await drawer('Storage')).toBeInTheDocument();
   });
 
-  it('Nodes: the section stays, with the node panels; another filter hides it, and the panel takes the anchor', async () => {
+  it('Nodes: the section stays; another filter hides it, and the node has no other place', async () => {
     await renderDemo('incident');
     await click(tile('Nodes'));
     expect(section()).toBeInTheDocument();
     expect(place('nodes/apps')).toBe(card('App Server'));
-    expect(panel('App Server')).toBeInTheDocument();
 
-    // Services: the section is the Nodes subsystem's, so it goes, and so do
-    // the node panels; each service's row is in the Services section (#300).
+    // Services: the section is the Nodes subsystem's, so it goes; each
+    // service's row is in the Services section (#300).
     await click(tile('Services'));
     expect(screen.queryByRole('region', { name: 'Infrastructure' })).toBeNull();
     expect(place('nodes/apps')).toBeNull();
@@ -833,15 +780,12 @@ describe("the demo's Services section", () => {
       }
       // A group per node, in services.yaml's order.
       expect(groupTitles()).toEqual(Object.values(services.body.nodes).map((n) => n.display_name));
-      // Below the Infrastructure section, above the board.
+      // The last section, under Infrastructure.
       const infra = screen.getByRole('region', { name: 'Infrastructure' });
       expect(
         infra.compareDocumentPosition(servicesSection()) & Node.DOCUMENT_POSITION_FOLLOWING
       ).toBeTruthy();
-      expect(
-        servicesSection().compareDocumentPosition(legacy('UPS Power')) &
-          Node.DOCUMENT_POSITION_FOLLOWING
-      ).toBeTruthy();
+      expect(sectionsDrawn().at(-1)).toBe('Services');
       const down = entities.filter((e) => e.state === 'crit').length;
       expect(within(servicesSection()).getByText(/^\d+ monitored/)).toHaveTextContent(
         `${rows.length} monitored · ${down ? `${down} down` : 'all up'}`

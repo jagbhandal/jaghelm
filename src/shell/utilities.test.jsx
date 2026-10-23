@@ -12,9 +12,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getGiteaActivity, getTodos, saveTodos } from '../hooks/useData.js';
 import { ConfigProvider } from '../context/ConfigContext.jsx';
 import { OverlayProvider } from '../context/OverlayContext.jsx';
-import { PIPELINE_ROWS, linkGroups, pipelineRows, usePipeline, useTodos } from './utilities.js';
+import {
+  PIPELINE_ROWS,
+  giteaConfigured,
+  linkGroups,
+  pipelineRows,
+  usePipeline,
+  useTodos,
+} from './utilities.js';
 import { ChecklistPanel } from './Utilities.jsx';
-import TodoCard from '../components/TodoCard.jsx';
 
 vi.mock('../hooks/useData.js', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -203,6 +209,57 @@ describe('usePipeline', () => {
     await act(async () => {});
     expect(getGiteaActivity).not.toHaveBeenCalled();
   });
+
+  // On the Overview the App's tick times it (#306, tickBudget.js): at once,
+  // then on ticks 2, 5, 8 …, never a tick that reads /api/history (1, 4, 7 …),
+  // so a tick stays within 4 requests; and no clock of its own.
+  it('on the App’s tick: at once, then on ticks 2, 5 … only, and no clock of its own', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { rerender } = renderHook(({ tick }) => usePipeline({ tick }), {
+      wrapper,
+      initialProps: { tick: 0 },
+    });
+    await waitFor(() => expect(getGiteaActivity).toHaveBeenCalledTimes(1));
+    // Its own clock would have asked again by now.
+    await act(() => vi.advanceTimersByTimeAsync(3 * 90_000));
+    expect(getGiteaActivity).toHaveBeenCalledTimes(1);
+    const asked = [];
+    for (let tick = 1; tick <= 6; tick++) {
+      const before = getGiteaActivity.mock.calls.length;
+      rerender({ tick });
+      await act(async () => {});
+      asked.push(getGiteaActivity.mock.calls.length > before);
+    }
+    expect(asked).toEqual([false, true, false, false, true, false]);
+    // The same tick twice (a render for another reason) asks nothing.
+    rerender({ tick: 6 });
+    await act(async () => {});
+    expect(getGiteaActivity).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('giteaConfigured (#272)', () => {
+  const source = (overrides = {}) => ({ error: null, lastSuccessMs: null, ...overrides });
+
+  it('is false when the server says no Gitea is set up', () => {
+    expect(giteaConfigured({ configured: false }, source({ lastSuccessMs: 1 }))).toBe(false);
+    // An answer kept from before still says so while a later poll fails.
+    expect(giteaConfigured({ configured: false }, source({ error: 'HTTP 502' }))).toBe(false);
+  });
+
+  it('is true for commits, an empty list once answered, or the 502 of a set-up Gitea failing', () => {
+    expect(giteaConfigured([{ repo: 'r', commits: [] }], source())).toBe(true);
+    expect(giteaConfigured([], source({ lastSuccessMs: 1_000 }))).toBe(true);
+    expect(giteaConfigured([], source({ error: 'HTTP 502' }))).toBe(true);
+  });
+
+  it('is not known before any answer, for other failures, or for a body that is not a list', () => {
+    expect(giteaConfigured([], source())).toBe(null);
+    expect(giteaConfigured([], source({ error: 'Failed to fetch' }))).toBe(null);
+    expect(giteaConfigured([], source({ error: 'HTTP 401' }))).toBe(null);
+    expect(giteaConfigured({}, source({ lastSuccessMs: 1_000 }))).toBe(null);
+    expect(giteaConfigured(null, source())).toBe(null);
+  });
 });
 
 describe('useTodos', () => {
@@ -310,10 +367,9 @@ describe('ChecklistPanel', () => {
   });
 });
 
-// The old board stays mounted, out of sight, on every other page, and the
-// endpoint replaces the whole list on each save: two views each holding their
-// own copy would save over each other's changes (#301's review). Every view
-// reads and saves the one list.
+// The endpoint replaces the whole list on each save: two views each holding
+// their own copy would save over each other's changes (#301's review). Every
+// view reads and saves the one list.
 describe('one list for every view', () => {
   function serveTodos(list) {
     const server = { list };
@@ -324,39 +380,39 @@ describe('one list for every view', () => {
     return server;
   }
 
-  it('a to-do added on the Launch page survives a tick in the old board’s card', async () => {
+  it('a to-do added in one view survives a tick in another', async () => {
     const user = userEvent.setup();
     const server = serveTodos([{ id: 'a', text: 'Patch the NAS', done: false, due: null }]);
     render(
       <>
-        <TodoCard config={{ sections: {} }} />
-        <ChecklistPanel />
+        <div data-testid="one">
+          <ChecklistPanel />
+        </div>
+        <div data-testid="two">
+          <ChecklistPanel />
+        </div>
       </>,
       { wrapper }
     );
-    const card = () => document.querySelector('.todo-list');
-    const panel = () => screen.getByRole('region', { name: 'Checklist' });
-    const cardBox = (text) =>
-      within(card()).getByText(text).closest('.todo-item').querySelector('input');
-    await within(panel()).findByRole('checkbox', { name: 'Patch the NAS' });
-    await waitFor(() => expect(within(card()).getByText('Patch the NAS')).toBeInTheDocument());
+    const one = () => screen.getByTestId('one');
+    const two = () => screen.getByTestId('two');
+    const box = (view, name) => within(view).getByRole('checkbox', { name });
+    await within(one()).findByRole('checkbox', { name: 'Patch the NAS' });
+    await within(two()).findByRole('checkbox', { name: 'Patch the NAS' });
 
-    // Tick in the old card, add on the Launch page, tick in the old card again.
-    fireEvent.click(cardBox('Patch the NAS'));
+    // Tick in one, add in the other, tick in the first again.
+    fireEvent.click(box(one(), 'Patch the NAS'));
     await waitFor(() => expect(server.list[0].done).toBe(true));
-    await user.type(within(panel()).getByRole('textbox', { name: 'New task' }), 'Renew the cert');
-    await user.click(within(panel()).getByRole('button', { name: 'Add' }));
+    await user.type(within(two()).getByRole('textbox', { name: 'New task' }), 'Renew the cert');
+    await user.click(within(two()).getByRole('button', { name: 'Add' }));
     await waitFor(() => expect(server.list).toHaveLength(2));
-    fireEvent.click(cardBox('Patch the NAS'));
+    fireEvent.click(box(one(), 'Patch the NAS'));
 
     await waitFor(() => expect(server.list[0].done).toBe(false));
     expect(server.list.map((t) => t.text)).toEqual(['Patch the NAS', 'Renew the cert']);
     // Both views show the one list.
-    expect(within(card()).getByText('Renew the cert')).toBeInTheDocument();
-    expect(within(panel()).getByRole('checkbox', { name: 'Patch the NAS' })).toHaveAttribute(
-      'aria-checked',
-      'false'
-    );
+    expect(box(one(), 'Renew the cert')).toBeInTheDocument();
+    expect(box(two(), 'Patch the NAS')).toHaveAttribute('aria-checked', 'false');
   });
 
   it('a read that lands after a change doesn’t put the old list back', async () => {

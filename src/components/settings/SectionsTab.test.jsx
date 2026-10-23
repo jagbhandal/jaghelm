@@ -219,3 +219,26 @@ describe('Settings → Sections, a group saved before #517', () => {
     expect(groups()[0].containers).toEqual(['adguard-home', 'pi-1:adguard-home']);
   });
 });
+
+// #306: the old board's panels had a title, subtitle, icon and colours here;
+// the new sections have none. What stays is the utilities' switches, which
+// the rail reads; the UPS's is the Power section's, in Appearance.
+describe('Settings → Sections, the utilities', () => {
+  it('has a switch for Quick Launch, Pipeline and the Checklist, and nothing else of the old panels', async () => {
+    const user = userEvent.setup();
+    render(<Harness config={{ sections: { pipeline: { visible: false } } }} />);
+    const utilities = screen.getByText('Utilities').closest('.settings-card');
+    const box = (name) => within(utilities).getByRole('checkbox', { name });
+    expect(within(utilities).getAllByRole('checkbox')).toEqual(
+      ['Quick Launch', 'Pipeline', 'Checklist'].map(box)
+    );
+    expect(box('Quick Launch')).toBeChecked();
+    expect(box('Pipeline')).not.toBeChecked();
+    for (const gone of [/UPS/, 'Title', 'Subtitle', 'Icon', /Background Opacity/])
+      expect(screen.queryByText(gone)).toBeNull();
+    await user.click(box('Pipeline'));
+    expect(window.__config.sections.pipeline).toEqual({ visible: true });
+    await user.click(box('Checklist'));
+    expect(window.__config.sections.todos).toEqual({ visible: false });
+  });
+});

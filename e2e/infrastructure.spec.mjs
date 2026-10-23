@@ -59,7 +59,7 @@ async function openBoard(page, board, theme, { view, config } = {}) {
   if (view) await page.addInitScript(([key, v]) => localStorage.setItem(key, v), [VIEW_PREF, view]);
   await openApp(page, '/', { scenario: board, theme, answers, config });
   await expect(section(page).getByRole('article').first()).toBeVisible();
-  await expect(page.locator('.section-title', { hasText: 'Network Edge' })).toBeVisible();
+  await expect(page.locator('[data-slot="node-card"]', { hasText: 'Network Edge' })).toBeVisible();
   return nas;
 }
 
@@ -91,62 +91,7 @@ function clipping(page) {
   });
 }
 
-/**
- * Each node panel of today's board (its service cards and Proxmox lists): how
- * tall it is drawn, and its content's own height, measured as HelmGrid
- * measures it (the item at its natural height).
- */
-// The demo's nodes, by the titles of their panels.
-const NODE_TITLES = ['Network Edge', 'App Server', 'Storage'];
-
-function nodePanels(page) {
-  return page.evaluate(
-    (titles) =>
-      [...document.querySelectorAll('.helmgrid-item')]
-        .filter((el) => titles.includes(el.querySelector('.section-title')?.textContent))
-        .map((el) => {
-          const height = el.getBoundingClientRect().height;
-          const kept = el.style.height;
-          el.style.height = 'auto';
-          const content = el.scrollHeight;
-          el.style.height = kept;
-          return { name: el.querySelector('.section-title')?.textContent, height, content };
-        }),
-    NODE_TITLES
-  );
-}
-
-/**
- * The node panels not as tall as their content: drawn shorter than it (the
- * content cut off), or taller by a grid row (52px) or more (blank space).
- */
-async function unfitNodePanels(page) {
-  const panels = await nodePanels(page);
-  expect(panels.map((p) => p.name).sort()).toEqual([...NODE_TITLES].sort());
-  return panels
-    .filter((p) => p.height < p.content || p.height - p.content >= 52)
-    .map((p) => `${p.name}: ${p.height}px for ${p.content}px of content`);
-}
-
-/**
- * Every panel on the board drawn shorter than its content, which is cut off
- * (#498: the Checklist, its items drawn after its first measure, at 390px).
- */
-function cutOffPanels(page) {
-  return page.evaluate(() =>
-    [...document.querySelectorAll('.helmgrid-item')].flatMap((el) => {
-      const height = el.getBoundingClientRect().height;
-      const kept = el.style.height;
-      el.style.height = 'auto';
-      const content = el.scrollHeight;
-      el.style.height = kept;
-      const name = el.querySelector('.section-title')?.textContent;
-      return height + 0.5 < content ? [`${name}: ${height}px for ${content}px of content`] : [];
-    })
-  );
-}
-
-// A layout saved before #299, with the reading tiles: each node panel 12 rows.
+// A layout the old grid board saved (#306 removed it): each node panel 12 rows.
 const OLD_LAYOUT = Object.fromEntries(
   [
     ['lg', 24],
@@ -306,26 +251,19 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       });
     }
 
-    test('the node panels below are as tall as their content, and no panel is cut off: the default layout', async ({
+    test('a layout the old board saved draws nothing, and this browser keeps none (#306)', async ({
       page,
     }) => {
-      await openBoard(page, 'healthy', 'dark');
-      await expect.poll(() => unfitNodePanels(page)).toEqual([]);
-      await expect.poll(() => cutOffPanels(page)).toEqual([]);
-    });
-
-    test('and a layout saved before #299, brought up once and saved with its version', async ({
-      page,
-    }) => {
-      await openBoard(page, 'healthy', 'dark', { config: { gridLayout: OLD_LAYOUT } });
-      await expect.poll(() => unfitNodePanels(page)).toEqual([]);
-      const saved = await page.evaluate(
-        () => JSON.parse(localStorage.getItem('jaghelm-config')).gridLayout
-      );
-      expect(saved.version).toBe(2);
-      for (const bp of ['lg', 'md'])
-        for (const item of saved[bp].filter((it) => it.i.startsWith('node-')))
-          expect(item.h, `${bp} ${item.i}`).toBe(3);
+      await openBoard(page, 'healthy', 'dark', {
+        config: { gridLayout: OLD_LAYOUT, gridColumns: 24 },
+      });
+      await expect(page.locator('.helmgrid, .glass-card')).toHaveCount(0);
+      await expect
+        .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('jaghelm-config'))))
+        .not.toHaveProperty('gridLayout');
+      const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('jaghelm-config')));
+      expect(kept).not.toHaveProperty('gridColumns');
+      expect(await clipping(page)).toEqual([]);
     });
 
     test("a node's issue row and its card open its detail drawer (#309)", async ({ page }) => {

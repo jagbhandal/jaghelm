@@ -66,7 +66,7 @@ const NAMES = demo('/api/status')
 async function openBoard(page, scenario, theme, { config, answers } = {}) {
   await openApp(page, '/', { scenario, theme, config, answers });
   await expect(section(page).locator('[data-slot="entity-row"]').first()).toBeVisible();
-  await expect(page.locator('.section-title', { hasText: 'Network Edge' })).toBeVisible();
+  await expect(page.locator('[data-slot="node-card"]', { hasText: 'Network Edge' })).toBeVisible();
 }
 
 /**
@@ -251,7 +251,9 @@ test.describe('Services, grouped and filtered', () => {
     await strip.getByRole('button', { name: /^Services,/ }).click();
     await expect(page).toHaveURL(/\?subsystem=services$/);
     await expect(page.locator('[data-slot="infrastructure-section"]')).toHaveCount(0);
-    await expect(page.locator('.section-title', { hasText: 'Network Edge' })).toHaveCount(0);
+    await expect(page.locator('[data-slot="node-card"]', { hasText: 'Network Edge' })).toHaveCount(
+      0
+    );
     await expect(section(page)).toBeInViewport();
     await strip.getByRole('button', { name: /^Nodes,/ }).click();
     await expect(section(page)).toHaveCount(0);

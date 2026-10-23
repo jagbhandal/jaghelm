@@ -10,7 +10,8 @@
  * No accent: there is one, violet, which the theme sets (src/styles/global.css,
  * src/ui/tokens.css; #304). A config's old `accentColor` is not read.
  *
- * Every preset's webfonts are self-hosted (src/styles/fonts.css, #244), so
+ * Every preset's webfonts are self-hosted (src/styles/fonts.css, #244; the
+ * default's sans in src/ui/fonts.css), so
  * picking a preset only points the --font-* variables at its families: the
  * browser downloads a family's file once text renders in it, and nothing
  * leaves the origin.
@@ -22,11 +23,14 @@
 import { useEffect } from 'react';
 
 // Each preset's families. src/styles/fonts.css self-hosts every one but the
-// System preset's; scripts/fonts.test.mjs checks it does.
+// System preset's and the default's sans, which is the new UI's default face
+// (src/ui/fonts.css, src/ui/typefaces.js): Outfit and DM Sans went with the old
+// board (#306), so Settings draws in the face the rest of the app does and no
+// screen asks for a face of its own. scripts/fonts.test.mjs checks it.
 export const FONT_FAMILIES = {
   default: {
-    display: "'Outfit', sans-serif",
-    body: "'DM Sans', sans-serif",
+    display: "'Manrope Variable', ui-sans-serif, system-ui, sans-serif",
+    body: "'Manrope Variable', ui-sans-serif, system-ui, sans-serif",
     mono: "'JetBrains Mono', monospace",
   },
   clean: {

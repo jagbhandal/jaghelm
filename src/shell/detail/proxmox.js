@@ -1,8 +1,8 @@
 /**
  * A node's Proxmox entry in /api/integrations (#310): the integration whose
  * VM list, storage pools and last backup belong to that node. The detail
- * drawer and the phone's Node detail show them (spec §8), and today's board
- * reads them through it too (NodePanel.jsx) until #306 removes it.
+ * drawer and the phone's Node detail show them (spec §8): their one place
+ * since the old board's node panels went (#306).
  *
  * It goes by the integration's own data, never a node's name:
  *   - the server stamps every entry with its preset (`_preset`, refresh.js),

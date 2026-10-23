@@ -95,10 +95,9 @@ describe('WidgetsTab switches (#307)', () => {
       screen.getByRole('checkbox', { name: 'Show the clock on the Overview and the Launch page' })
     ).toBeChecked();
     expect(screen.queryByRole('checkbox', { name: /checklist/i })).toBeNull();
-    // The scheduled jobs' switch works (the board reads it), so it stays.
-    expect(
-      screen.getByRole('checkbox', { name: 'Show scheduled jobs panel on dashboard' })
-    ).toBeChecked();
+    // The old board's scheduled jobs panel went with it (#306): the Jobs
+    // section's switch is in Appearance → Overview sections.
+    expect(screen.queryByRole('checkbox', { name: /scheduled jobs/i })).toBeNull();
   });
 
   it('switches the clock off and on', () => {

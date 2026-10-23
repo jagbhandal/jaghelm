@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import IconPicker from '../IconPicker';
 import Field from './Field';
-import { EmptyState, SettingsIcon } from './primitives.jsx';
-import ColorPickerPopover, { DEFAULT_COLOR } from './ColorPickerPopover.jsx';
+import { Card, EmptyState, Toggle } from './primitives.jsx';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { useConfirm } from '../../context/OverlayContext.jsx';
 import { apiFetch } from '../../api/client.js';
@@ -16,11 +14,14 @@ import {
 } from '../../shell/customGroups.js';
 
 /**
- * SectionsTab — Phase 2 Settings + Phase 3 Custom Groups
+ * SectionsTab — the utilities' switches and Custom Groups
  *
- * Manages display settings for static dashboard sections
- * (UPS, Pipeline, Quick Launch, Todos) that aren't driven by nodes.
- * Node sections are managed in the Nodes tab.
+ * A switch each for Quick Launch, Pipeline and the Checklist, which the
+ * Overview's utilities rail draws (#301; the Launch page always has them).
+ * The old board's panels had a title, subtitle, icon and colours of their
+ * own here; the new sections have none (#306, the Settings map in spec §15),
+ * and the UPS's switch is the Power section's, in Settings → Appearance →
+ * Overview sections, as the other sections' are.
  *
  * Also manages Custom Groups: the Overview's Services section can group by
  * them (#300). A group holds services by uid (#517, src/shell/customGroups.js),
@@ -34,11 +35,15 @@ import {
  * it holds can't be taken out until they can.
  */
 
-const STATIC_SECTIONS = [
-  { key: 'ups', defaultTitle: 'UPS Power', defaultIcon: '⚡' },
-  { key: 'pipeline', defaultTitle: 'Pipeline Activity', defaultIcon: '🔄' },
-  { key: 'quicklaunch', defaultTitle: 'Quick Launch', defaultIcon: '🚀' },
-  { key: 'todos', defaultTitle: 'Checklist', defaultIcon: '✅' },
+// The utilities' switches (`sections.<key>.visible`, the rail reads them).
+const UTILITIES = [
+  { key: 'quicklaunch', label: 'Quick Launch', description: 'Your links, by group' },
+  {
+    key: 'pipeline',
+    label: 'Pipeline',
+    description: 'The newest commits, when Gitea is set up (JAGHELM_GITEA_URL)',
+  },
+  { key: 'todos', label: 'Checklist', description: 'Your to-dos' },
 ];
 
 // A group's service chips: those it holds (click to remove), the rest (click to add).
@@ -70,10 +75,6 @@ export default function SectionsTab() {
   const { config, update } = useConfig();
   const confirm = useConfirm();
   const sections = config.sections || {};
-  const [colorTarget, setColorTarget] = useState(null);
-  // Seed color for the popover when a swatch is opened; the popover owns the
-  // live draft from there and reports the committed value back on Apply.
-  const [colorSeed, setColorSeed] = useState(DEFAULT_COLOR);
 
   // Custom groups state (a hand-edited entry that is no group is left out)
   const customGroups = Array.isArray(config.customGroups)
@@ -103,18 +104,6 @@ export default function SectionsTab() {
     };
   }, []);
   const services = choices?.services ?? [];
-
-  const openColor = (path, currentColor) => {
-    setColorTarget(path);
-    setColorSeed(currentColor || DEFAULT_COLOR);
-  };
-
-  const applyColor = (color) => {
-    if (colorTarget) {
-      update(colorTarget, color);
-      setColorTarget(null);
-    }
-  };
 
   // ── Custom Group helpers ──
   // Every write of the groups saves them as uids (migrateGroups), once the
@@ -162,112 +151,20 @@ export default function SectionsTab() {
 
   return (
     <div className="settings-section">
-      <p className="settings-desc" style={{ marginBottom: 16 }}>
-        Customize the appearance of dashboard sections. Node sections are managed in the Nodes tab.
-        The UPS and Pipeline sections show on the dashboard only when their source is set up: a UPS
-        from the NUT exporter, and Gitea with JAGHELM_GITEA_URL set (or the older GITEA_URL). Unchecking
-        one hides it either way.
-      </p>
-
-      {colorTarget && (
-        <div className="settings-card" style={{ borderColor: 'var(--accent)' }}>
-          <ColorPickerPopover
-            value={colorSeed}
-            onApply={applyColor}
-            onCancel={() => setColorTarget(null)}
-          />
-        </div>
-      )}
-
-      {STATIC_SECTIONS.map(({ key, defaultTitle, defaultIcon }) => {
-        const s = sections[key] || {};
-        return (
-          <div
+      <Card title="Utilities">
+        <p className="settings-hint-block" style={{ marginBottom: 8 }}>
+          Beside the Overview from 1440px wide. The Launch page always has them.
+        </p>
+        {UTILITIES.map(({ key, label, description }) => (
+          <Toggle
             key={key}
-            className="settings-card"
-            style={{ borderLeft: `3px solid ${s.borderColor || DEFAULT_COLOR}` }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-              <input
-                type="checkbox"
-                checked={s.visible !== false}
-                onChange={(e) => update(`sections.${key}.visible`, e.target.checked)}
-                className="settings-checkbox"
-              />
-              <span style={{ fontSize: 22 }}>
-                <SettingsIcon value={s.icon} fallback={defaultIcon} size={24} />
-              </span>
-              <span className="settings-item-title" style={{ fontSize: 15, flex: 1 }}>
-                {s.title || defaultTitle}
-              </span>
-              <div className="settings-row" style={{ gap: 6 }}>
-                <div
-                  title="Border color"
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 6,
-                    background: s.borderColor || DEFAULT_COLOR,
-                    cursor: 'pointer',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                  }}
-                  onClick={() => openColor(`sections.${key}.borderColor`, s.borderColor)}
-                />
-                <div
-                  title="Background color"
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 6,
-                    background: s.bgColor || 'transparent',
-                    cursor: 'pointer',
-                    border: '1px dashed rgba(255,255,255,0.2)',
-                  }}
-                  onClick={() => openColor(`sections.${key}.bgColor`, s.bgColor || '#1a1c3a')}
-                />
-              </div>
-            </div>
-
-            <div className="settings-stack" style={{ gap: 10 }}>
-              <Field label="Title">
-                <input
-                  className="settings-input"
-                  value={s.title || ''}
-                  onChange={(e) => update(`sections.${key}.title`, e.target.value)}
-                  placeholder={defaultTitle}
-                />
-              </Field>
-              <Field label="Subtitle">
-                <input
-                  className="settings-input"
-                  value={s.subtitle || ''}
-                  onChange={(e) => update(`sections.${key}.subtitle`, e.target.value)}
-                  placeholder="Optional subtitle"
-                />
-              </Field>
-              <Field label="Icon">
-                <IconPicker
-                  value={s.icon || ''}
-                  onChange={(url) => update(`sections.${key}.icon`, url)}
-                  onClear={() => update(`sections.${key}.icon`, '')}
-                />
-              </Field>
-              <div className="settings-row text-mono muted-text" style={{ fontSize: 11 }}>
-                <span>Background Opacity: {((s.bgOpacity ?? 0) * 100).toFixed(0)}%</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={s.bgOpacity ?? 0}
-                  onChange={(e) => update(`sections.${key}.bgOpacity`, parseFloat(e.target.value))}
-                  style={{ flex: 1, accentColor: s.borderColor || 'var(--accent)' }}
-                />
-              </div>
-            </div>
-          </div>
-        );
-      })}
+            label={label}
+            description={description}
+            checked={sections[key]?.visible !== false}
+            onChange={(v) => update(`sections.${key}.visible`, v)}
+          />
+        ))}
+      </Card>
 
       {/* Custom Groups */}
       <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border-color)' }}>

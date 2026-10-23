@@ -419,7 +419,7 @@ describe('the URL is the page', () => {
 });
 
 // The top of the Overview (#297): the status model, as the Alerts page draws
-// it, over today's board, from the header's own poll.
+// it, over the Overview's sections, from the header's own poll.
 describe('the Overview', () => {
   const overviewStatus = () => document.querySelector('[data-slot="overview-status"]');
 
@@ -876,7 +876,7 @@ describe("today's extras and the Overview's sections", () => {
     });
     await renderApp();
     await screen.findByRole('region', { name: 'Needs attention' });
-    // Today's board is drawn under the status, so the sections would be by now.
+    // The sections are drawn under the status, so they would be by now.
     await waitFor(() => expect(document.querySelector('.dashboard-content')).not.toBeNull());
     expect(screen.queryByRole('region', { name: 'Subsystems' })).toBeNull();
     expect(slot('overview-infrastructure')).toBeNull();
@@ -901,37 +901,40 @@ describe("today's extras and the Overview's sections", () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Subsystems' })).toBeNull());
   });
 
-  it('a saved showTodos (the old Widgets switch, never read) hides no Checklist, and the save drops it', async () => {
+  it('a saved showTodos (the old Widgets switch, never read) hides no Checklist; a load alone sends nothing', async () => {
     wide(true);
     stubServer({ config: LINKS, serverConfig: { ...LINKS, title: 'Lab', showTodos: false } });
     await renderApp();
     const region = await screen.findByRole('region', { name: 'Utilities' });
     expect(await within(region).findByRole('region', { name: 'Checklist' })).toBeInTheDocument();
-    // The server gets the config without the dead key, and no Checklist switch
-    // it didn't have. (Another test's debounced save may land here too: only
-    // this config is titled Lab.)
-    const mine = () => server.saves.filter((c) => c.title === 'Lab');
-    await waitFor(() => expect(mine().length).toBeGreaterThan(0), { timeout: 4000 });
-    for (const saved of mine()) {
-      expect(saved).not.toHaveProperty('showTodos');
-      expect(saved.sections?.todos).toBeUndefined();
-    }
+    // Every copy is read without the dead key (#306: dropDeadKeys in the
+    // persistence too), so dropping it is no edit: nothing is sent for it,
+    // and the next save made for something else goes without it. (Another
+    // test's debounced save may land here: only this config is titled Lab.)
+    await new Promise((r) => setTimeout(r, 2500));
+    expect(server.saves.filter((c) => c.title === 'Lab')).toEqual([]);
+    const stored = JSON.parse(localStorage.getItem('jaghelm-config'));
+    expect(stored).not.toHaveProperty('showTodos');
+    expect(stored.sections?.todos).toBeUndefined();
     expect(within(region).getByRole('region', { name: 'Checklist' })).toBeInTheDocument();
   });
 
-  it('drops it beside the board bringing an old layout up to its version, keeping an explicit visible', async () => {
+  it("drops it and the old board's layout and panels, keeping an explicit visible (#306)", async () => {
     stubServer({
       config: {
         showTodos: false,
-        sections: { todos: { visible: true } },
+        showCronJobs: false,
+        sections: { todos: { visible: true, title: 'Tasks' }, ups: { visible: false } },
         gridLayout: { lg: [], md: [], sm: [] },
+        gridColumns: 12,
       },
     });
     await renderApp();
     await screen.findByRole('region', { name: 'Needs attention' });
     const stored = () => JSON.parse(localStorage.getItem('jaghelm-config'));
     await waitFor(() => expect(stored()).not.toHaveProperty('showTodos'));
-    await waitFor(() => expect(stored().gridLayout.version).toBe(2));
-    expect(stored().sections.todos).toEqual({ visible: true });
+    for (const key of ['gridLayout', 'gridColumns', 'showCronJobs'])
+      expect(stored()).not.toHaveProperty(key);
+    expect(stored().sections).toEqual({ todos: { visible: true } });
   });
 });

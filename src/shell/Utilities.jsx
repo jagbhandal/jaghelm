@@ -9,20 +9,21 @@
  *                   the clock at its top, then the three. Narrower, the
  *                   rail isn't rendered at all (not hidden by CSS), so nothing
  *                   is drawn twice or polled off screen. The rail keeps the
- *                   board's switches (Settings → Sections: a panel switched
+ *                   panels' switches (Settings → Sections: a panel switched
  *                   off stays off) and draws a panel only when its source is
  *                   set up: no links, no Quick Launch; no Gitea, no Pipeline;
  *                   no place, no weather. Settings → Appearance → Overview
  *                   sections can switch the whole rail off (`rail`,
- *                   overviewSections.js).
+ *                   overviewSections.js). Its Pipeline reads on the App's
+ *                   refresh tick (`tick`, tickBudget.js).
  *   LaunchPage      /launch (LaunchPage.jsx): weather and the clock, the web
  *                   search, and the three, at every width: the one place a
  *                   phone or a narrow window finds them.
  *
  * The Overview's sections keep their place in the tree whether the rail shows
  * or not (the wrapper only changes its class), so crossing 1440px never
- * remounts today's board. The split's gutters are in global.css
- * (`.overview-split`), in line with the board's cards.
+ * remounts them. The split's gutters are in global.css (`.overview-split`),
+ * in line with the sections.
  */
 import { useMemo } from 'react';
 import { Banner } from '@ui/banner';
@@ -141,7 +142,7 @@ export function WebSearchPanel() {
   return <WebSearch engine={engine.name} onSearch={search} />;
 }
 
-/** Which panels the rail draws: the board's switches, and a source set up. */
+/** Which panels the rail draws: their switches, and a source set up. */
 function railPanels(config, groups, pipeline) {
   const on = (key) => config?.sections?.[key]?.visible !== false;
   return {
@@ -155,15 +156,17 @@ function railPanels(config, groups, pipeline) {
 /**
  * The Overview's frame: its sections (`children`), and from 1440px, while the
  * Overview is open (`open`) and its rail isn't switched off (Settings →
- * Appearance → Overview sections), the utilities rail beside them.
+ * Appearance → Overview sections), the utilities rail beside them. `tick` is
+ * the App's refresh tick, which times the rail's Pipeline.
  */
-export function OverviewLayout({ open, children }) {
+export function OverviewLayout({ open, tick = null, children }) {
   const wide = useMediaQuery(RAIL_WIDTH);
   const { config } = useConfig();
   const { groups, target } = useLinkGroups();
   const shown = open && wide && sectionShown(config, 'rail');
   const pipeline = usePipeline({
     active: shown && config?.sections?.pipeline?.visible !== false,
+    tick,
   });
   const panels = railPanels(config, groups, pipeline);
   const rail =

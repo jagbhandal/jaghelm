@@ -6,8 +6,8 @@ const FONT_PRESETS = [
   {
     id: 'default',
     name: 'Default',
-    desc: 'Outfit + DM Sans + JetBrains Mono',
-    sample: "'Outfit', sans-serif",
+    desc: 'Manrope + JetBrains Mono',
+    sample: "'Manrope Variable', sans-serif",
   },
   { id: 'clean', name: 'Clean', desc: 'Inter + Fira Code', sample: "'Inter', sans-serif" },
   {

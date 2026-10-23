@@ -136,14 +136,6 @@ export default function WidgetsTab() {
           onChange={(v) => update('showClock', v)}
         />
       </Card>
-
-      <Card title="Features">
-        <Toggle
-          label="Show scheduled jobs panel on dashboard"
-          checked={config.showCronJobs !== false}
-          onChange={(v) => update('showCronJobs', v)}
-        />
-      </Card>
     </div>
   );
 }

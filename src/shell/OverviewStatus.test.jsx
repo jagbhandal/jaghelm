@@ -9,7 +9,6 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PHONE_WIDTH } from '@ui/app-shell';
 import { OverviewStatus } from './OverviewStatus.jsx';
-import { usePlaces } from './entityAnchors.js';
 import { HEALTHY, sixIssueIncident } from '../testing/statusFixtures.js';
 
 const NOW = new Date('2026-10-20T09:00:00Z').getTime();
@@ -24,19 +23,8 @@ const strip = () => screen.getByRole('region', { name: 'Subsystems' });
 const rowsOf = (el) => el.querySelectorAll('[data-slot="issue-row"]');
 const before = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
-/** The board's places for `issues`, drawn, so their rows are links (entityAnchors.js). */
-function Places({ issues }) {
-  usePlaces(issues.map((i) => (i.kind === 'backup' ? `jobs/${i.node}:${i.name}` : i.id)));
-  return null;
-}
-
-function renderStatus(status, { places = false } = {}) {
-  return render(
-    <>
-      {places && <Places issues={status.issues} />}
-      <OverviewStatus status={status} reach="ok" updated={store(NOW)} />
-    </>
-  );
+function renderStatus(status) {
+  return render(<OverviewStatus status={status} reach="ok" updated={store(NOW)} />);
 }
 
 describe('the Overview’s status, from 768px (#484, #303)', () => {
@@ -63,7 +51,7 @@ describe('the Overview’s status, from 768px (#484, #303)', () => {
 
   it('takes the focus: All alerts, each row, then each tile', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    renderStatus(sixIssueIncident({ now: NOW }).status, { places: true });
+    renderStatus(sixIssueIncident({ now: NOW }).status);
     const rows = [...rowsOf(panel())];
     expect(rows).toHaveLength(6);
     const tiles = [...strip().querySelectorAll('button')];

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import LoginPage from './components/LoginPage';
 import CommandPalette from './components/CommandPalette';
-import DashboardView from './views/DashboardView';
+import OverviewBoard from './shell/OverviewBoard.jsx';
 import { useTheme } from './shell/theme.js';
 import { ConfigProvider } from './context/ConfigContext.jsx';
 import { OverlayProvider, useToast } from './context/OverlayContext.jsx';
@@ -190,8 +190,9 @@ export default function App() {
   );
 }
 
-// The Overview stays mounted on other pages, out of sight (it keeps its state),
-// so returning to it is instant.
+// The Overview stays mounted on other pages, out of sight (it keeps what it
+// last read), so returning to it is instant: its sections draw their last
+// readings at once, and nothing moves while the refresh comes in.
 const OUT_OF_SIGHT = { visibility: 'hidden', height: 0, overflow: 'hidden' };
 
 /** The pages the nav lists, as the command palette offers them (routes.js). */
@@ -251,10 +252,10 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   });
 
   // The keys an older JagHelm saved that nothing reads (#307: Widgets' dead
-  // "Show checklist panel"), dropped whichever way the config came: this
-  // browser's copy, the server's, or a Backup import. The next save sends the
-  // config without them. An updater, so a change another effect queued in the
-  // same commit (the board's layout brought up to its version) isn't lost.
+  // "Show checklist panel"; #306: the old board's layout and panels), dropped
+  // whichever way the config came: this browser's copy, the server's, or a
+  // Backup import. The next save sends the config without them. An updater,
+  // so a change another effect queued in the same commit isn't lost.
   useEffect(() => {
     if (dropDeadKeys(config) !== config) setConfig(dropDeadKeys);
   }, [config]);
@@ -268,9 +269,10 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
   // tab is hidden (useStatus). It replaced the dashboard's health dot.
   const poll = useStatus({ intervalMs });
 
-  // One tick = one DashboardView fetch round, only while the Overview is on
+  // One tick = one round of the Overview's reads (OverviewBoard, and the rail's
+  // Pipeline on its ticks: tickBudget.js), only while the Overview is on
   // screen: not in a hidden browser tab, and not on another page (the Overview
-  // stays mounted there, out of sight). DashboardView loads on mount and
+  // stays mounted there, out of sight). The board loads on mount and
   // refreshes at once when it becomes active. On a phone the tick is the
   // phone screens' instead, on any of the four tabs they draw.
   const doRefresh = useCallback(() => setTick((t) => t + 1), []);
@@ -436,7 +438,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
             <div style={onOverview ? undefined : OUT_OF_SIGHT}>
               <h1 className="sr-only">Overview</h1>
               {/* From 1440px, the utilities rail beside the sections (#301). */}
-              <OverviewLayout open={onOverview}>
+              <OverviewLayout open={onOverview} tick={tick}>
                 {/* Its state is the poll's: nothing to keep while another page is open. */}
                 {onOverview && (
                   <OverviewStatus
@@ -447,7 +449,7 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
                     showStrip={sectionShown(config, 'strip')}
                   />
                 )}
-                <DashboardView
+                <OverviewBoard
                   tick={tick}
                   active={dashboardActive}
                   onOpenSettings={openSettings}

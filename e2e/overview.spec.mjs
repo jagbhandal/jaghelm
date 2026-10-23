@@ -13,9 +13,10 @@
  *    edges, outline, shadows, SVG paint), read in OKLCH.
  *  - The subsystem strip (#298): on screen under the status without
  *    scrolling, a tile per subsystem the model has anything in, nothing in
- *    it cut off. A tile, clicked or by Space and Enter, filters
- *    the rows and the board to its subsystem and back, in the URL, so Back
- *    and Forward follow it; a filter whose panel is switched off says so.
+ *    it cut off. A tile, clicked or by Space and Enter, filters the rows and
+ *    the sections to its subsystem and back, in the URL, so Back and Forward
+ *    follow it; a filter whose section is switched off says so. Power keeps
+ *    the UPS's row, on mains too, which opens its detail (#306).
  *  - An issue row, clicked or by Enter, opens its entity's detail drawer
  *    over the Overview (#309), at its URL; Escape and Back close it, focus
  *    back on the row. It is a link to that URL, and a click with a modifier
@@ -43,12 +44,23 @@ const CONFIGURED = Object.fromEntries(
 const statusArea = (page) => page.locator('[data-slot="overview-status"]');
 const strip = (page) => statusArea(page).getByRole('region', { name: 'Subsystems' });
 const tile = (page, name) => strip(page).getByRole('button', { name: new RegExp(`^${name},`) });
-const panelTitle = (page, title) => page.locator('.section-title', { hasText: title });
+/** A section of the Overview under its status (OverviewBoard.jsx, #306), by its name. */
+const sectionOf = (page, name) =>
+  page.locator('[data-slot="overview-board"]').getByRole('region', { name, exact: true });
+const SECTIONS = ['Infrastructure', 'Power', 'Jobs', 'Services'];
+/** The sections drawn, by name, in their order. */
+async function sectionsDrawn(page) {
+  const out = [];
+  for (const name of SECTIONS) if ((await sectionOf(page, name).count()) > 0) out.push(name);
+  return out;
+}
 
-/** The Overview in `scenario`, with the board under its status loaded, so nothing moves. */
+/** The Overview in `scenario`, with the sections under its status loaded, so nothing moves. */
 async function openOverview(page, scenario, theme = 'dark') {
   await openApp(page, '/', { scenario, theme });
-  await expect(panelTitle(page, 'Network Edge')).toBeVisible();
+  await expect(
+    sectionOf(page, 'Infrastructure').getByRole('article', { name: 'Network Edge' })
+  ).toBeVisible();
   await expect(statusArea(page).getByRole('region').first()).toBeVisible();
   await expect(strip(page)).toBeVisible();
 }
@@ -303,7 +315,7 @@ for (const [name, viewport] of Object.entries(SIZES)) {
       });
     }
 
-    test('a tile filters the rows and the board to its subsystem, and back; Back and Forward follow', async ({
+    test('a tile filters the rows and the sections to its subsystem, and back; Back and Forward follow', async ({
       page,
     }) => {
       await openOverview(page, 'incident');
@@ -317,23 +329,22 @@ for (const [name, viewport] of Object.entries(SIZES)) {
       await expect(panel.getByText('Showing Nodes only')).toBeVisible();
       await expect(rows).toHaveCount(0);
       await expect(panel.getByText('Nothing in Nodes needs attention')).toBeVisible();
-      await expect(panelTitle(page, 'App Server')).toBeVisible();
-      for (const title of ['UPS Power', 'Scheduled Jobs', 'Quick Launch'])
-        await expect(panelTitle(page, title)).toHaveCount(0);
+      await expect(sectionOf(page, 'Infrastructure')).toBeVisible();
+      await expect.poll(() => sectionsDrawn(page)).toEqual(['Infrastructure']);
       expect(await page.evaluate(() => window.scrollY)).toBe(0);
 
       await tile(page, 'Nodes').click();
       await expect(page).toHaveURL(/\/$/);
       await expect(rows).toHaveCount(2);
-      await expect(panelTitle(page, 'Scheduled Jobs')).toBeVisible();
+      await expect.poll(() => sectionsDrawn(page)).toEqual(SECTIONS);
 
       // Back to the filter, and Forward out of it.
       await page.goBack();
       await expect(tile(page, 'Nodes')).toHaveAttribute('aria-pressed', 'true');
-      await expect(panelTitle(page, 'UPS Power')).toHaveCount(0);
+      await expect(sectionOf(page, 'Power')).toHaveCount(0);
       await page.goForward();
       await expect(tile(page, 'Nodes')).toHaveAttribute('aria-pressed', 'false');
-      await expect(panelTitle(page, 'UPS Power')).toBeVisible();
+      await expect(sectionOf(page, 'Power')).toBeVisible();
     });
 
     test('by keyboard: the focus shows, Space filters, Enter clears', async ({ page }) => {
@@ -355,8 +366,7 @@ for (const [name, viewport] of Object.entries(SIZES)) {
       await expect(page).toHaveURL(/\?subsystem=backups$/);
       const panel = statusArea(page).getByRole('region', { name: 'Needs attention' });
       await expect(panel.locator('[data-slot="issue-row"]')).toHaveText([/nightly-backup/]);
-      await expect(panelTitle(page, 'Scheduled Jobs')).toBeVisible();
-      await expect(panelTitle(page, 'App Server')).toHaveCount(0);
+      await expect.poll(() => sectionsDrawn(page)).toEqual(['Jobs']);
       expect(
         await axeFindings(new AxeBuilder({ page }).include('[data-slot="overview-status"]')),
         'the filtered status'
@@ -364,25 +374,53 @@ for (const [name, viewport] of Object.entries(SIZES)) {
 
       await page.keyboard.press('Enter');
       await expect(backups).toHaveAttribute('aria-pressed', 'false');
-      await expect(panelTitle(page, 'App Server')).toBeVisible();
+      await expect.poll(() => sectionsDrawn(page)).toEqual(SECTIONS);
     });
 
-    test('a filter whose panel is switched off says so, and offers the whole board', async ({
+    // #306: the UPS on mains has no issue row; its row in the Power section
+    // is its place on the Overview, and opens its detail.
+    test('Power: the UPS’s row on mains, which opens its detail with its readings', async ({
       page,
     }) => {
-      await openApp(page, '/?subsystem=jobs', { config: { showCronJobs: false } });
-      const note = page.locator('[data-slot="board-filter-empty"]');
-      await expect(note).toContainText('Scheduled Jobs is switched off');
-      await expect(note).toContainText('Switch it on in Settings to see Jobs here.');
-      await expect(tile(page, 'Jobs')).toHaveAttribute('aria-pressed', 'true');
-      await expect(panelTitle(page, 'App Server')).toHaveCount(0);
+      await openOverview(page, 'healthy');
+      await tile(page, 'Power').click();
+      await expect(page).toHaveURL(/\?subsystem=power$/);
+      await expect.poll(() => sectionsDrawn(page)).toEqual(['Power']);
+      const row = sectionOf(page, 'Power').getByRole('link', {
+        name: 'Example UPS 1500VA, On mains',
+      });
+      await expect(row).toContainText('100 % charge');
       expect(
-        await axeFindings(new AxeBuilder({ page }).include('[data-slot="board-filter-empty"]'))
+        await axeFindings(new AxeBuilder({ page }).include('[data-slot="overview-power"]'))
       ).toEqual([]);
-      await note.getByRole('button', { name: 'Show the whole board' }).click();
+      await row.click();
+      const drawer = page.getByRole('dialog', { name: 'Example UPS 1500VA' });
+      await expect(drawer).toBeVisible();
+      await expect(page).toHaveURL(/entity=power\/ups/);
+      for (const fact of ['Charge', 'Runtime', 'Load', 'Model'])
+        await expect(drawer.getByText(fact, { exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(row).toBeFocused();
+    });
+
+    test('a filter whose section is switched off says so, and offers everything', async ({
+      page,
+    }) => {
+      await openApp(page, '/?subsystem=jobs', { config: { overviewSections: { jobs: false } } });
+      const note = page.locator('[data-slot="filter-empty"]');
+      await expect(note).toContainText('The Jobs section is switched off');
+      await expect(note).toContainText(
+        'Switch it on in Settings → Appearance → Overview sections to see Jobs here.'
+      );
+      await expect(tile(page, 'Jobs')).toHaveAttribute('aria-pressed', 'true');
+      await expect.poll(() => sectionsDrawn(page)).toEqual([]);
+      expect(
+        await axeFindings(new AxeBuilder({ page }).include('[data-slot="filter-empty"]'))
+      ).toEqual([]);
+      await note.getByRole('button', { name: 'Show everything' }).click();
       await expect(page).toHaveURL(/\/$/);
       await expect(note).toHaveCount(0);
-      await expect(panelTitle(page, 'App Server')).toBeVisible();
+      await expect(sectionOf(page, 'Infrastructure')).toBeVisible();
     });
 
     for (const theme of ['dark', 'light']) {

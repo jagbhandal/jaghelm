@@ -58,7 +58,7 @@ async function openIncident(page, theme) {
   });
   await expect(panel(page)).toBeVisible();
   await expect(section(page).getByRole('article', { name: 'Storage' })).toBeVisible();
-  await expect(page.locator('.section-title', { hasText: 'Network Edge' })).toBeVisible();
+  await expect(page.locator('[data-slot="node-card"]', { hasText: 'Network Edge' })).toBeVisible();
   return server;
 }
 
