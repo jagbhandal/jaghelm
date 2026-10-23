@@ -108,6 +108,8 @@ test('a node label is matched literally, whatever characters it has', async () =
 // rate and network-mode fields, which the old implementation did not have.
 function withoutCorrected(nodeData) {
   const copy = structuredClone(nodeData);
+  // Since #605 the batch also keeps the failure's cause beside its error.
+  delete copy.failure;
   delete copy.metrics.temp;
   for (const c of copy.containers) {
     for (const f of ['memMB', 'rxMB', 'txMB', 'rxBytesPerSec', 'txBytesPerSec', 'networkMode']) delete c.docker[f];

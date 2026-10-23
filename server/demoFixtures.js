@@ -149,6 +149,7 @@ function nodeData({ metrics, containers }) {
   return {
     ok: true,
     error: null,
+    failure: null,
     failedReads: [],
     reachable: true,
     metrics: { ...metrics },

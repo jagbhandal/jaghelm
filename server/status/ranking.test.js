@@ -248,7 +248,8 @@ test('a board with anything on it, or only a failed source, is not empty', () =>
     noNodes({ prometheusOk: false, prometheusError: 'Prometheus query failed: fetch failed' })
   );
   assert.deepEqual(sourceOnly.overall, { state: 'warn', sentence: 'Prometheus unreachable' });
-  assert.equal(sourceOnly.issues[0].reason, 'Prometheus query failed: fetch failed');
+  // The failure's text in, its words out (#605).
+  assert.equal(sourceOnly.issues[0].reason, "Prometheus didn't answer");
   const oneNode = once(
     inputs({ nodes: { a: node() }, ups: { status: null, ok: true, configured: false } })
   );
@@ -282,10 +283,10 @@ test('overall sentence: a failed source is named', () => {
     })
   );
   assert.equal(s.overall.sentence, 'Kuma unreachable · 1 no signal');
-  assert.equal(s.issues[0].reason, 'Kuma status page answered HTTP 502');
+  assert.equal(s.issues[0].reason, 'Kuma answered with an error (HTTP 502)');
   assert.deepEqual(s.sources.kuma, {
     state: 'failed',
-    error: 'Kuma status page answered HTTP 502',
+    error: 'Kuma answered with an error (HTTP 502)',
     since: NOW,
   });
 });

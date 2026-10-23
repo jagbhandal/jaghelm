@@ -1425,8 +1425,10 @@ Chart colours board:
   lifting the finger hides it; the plot takes only sideways drags
   (`touch-pan-y`), so an up-and-down one still scrolls the page, and the
   focus a tap leaves opens nothing. "No data from Prometheus"
-  (and why, in 12px `text-3`: the server's fixed sentence, "Prometheus didn't
-  answer" or "Prometheus refused the query", never Prometheus's own words) or "No readings in this range", centred in
+  (and why, in 12px `text-3`: the server's sentence for the cause, the one a
+  failed Prometheus says everywhere, such as "Prometheus refused the
+  connection" or "Prometheus answered with an error (HTTP 503)", never
+  Prometheus's own words) or "No readings in this range", centred in
   `text-2` over the plot's baseline, never an empty line; a `surface-3`
   placeholder while loading; `busy` dims the plot to 60 %.
 - **DetailCharts** (#311). The detail's history, under its status box as the

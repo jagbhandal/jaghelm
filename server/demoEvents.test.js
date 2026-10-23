@@ -11,6 +11,8 @@ import { demoEvents } from './demoEvents.js';
 import { demoResponse } from './demo.js';
 import { demoStatus } from './demoFixtures.js';
 import { createAlertHistory } from './push/alertHistory.js';
+import { failureSentence } from './failureWords.js';
+import { RAW_DETAIL } from './testing/rawDetail.js';
 
 const NOW = Date.UTC(2026, 9, 23, 12, 0, 0);
 const ask = (query, scenario = 'incident') =>
@@ -111,4 +113,15 @@ test('#314: a demo query it cannot read is the live 400', () => {
 test('#314: the same clock, the same history', () => {
   assert.deepEqual(demoEvents({ now: NOW }), demoEvents({ now: NOW }));
   assert.deepEqual(ask({}), ask({}));
+});
+
+test("#605: the demo's Prometheus outage says why in the model's words, never a raw error", () => {
+  for (const scenario of ['incident', 'healthy']) {
+    const { events } = demoEvents({ scenario, now: NOW });
+    const down = events.find((e) => e.type === 'source_down');
+    const words = failureSentence('prometheus', { cause: 'refused' });
+    assert.equal(words, 'Prometheus refused the connection');
+    assert.deepEqual([down.body, down.reason], [`Prometheus · ${words}`, words], scenario);
+    assert.doesNotMatch(JSON.stringify(events), RAW_DETAIL, `${scenario}: no event carries a raw error`);
+  }
 });

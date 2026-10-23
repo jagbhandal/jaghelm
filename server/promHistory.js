@@ -37,15 +37,18 @@
  * else its key), as the refresh loop does, and were each run against a live
  * Prometheus 3 with node-exporter and cAdvisor series.
  *
- * A failed query goes out as one of three fixed sentences (FAILURES), never
- * Prometheus's own text or a fetch error's: those are logged here instead,
- * once when the failure starts or changes, and once when Prometheus answers
- * again, not on every read.
+ * A failed query goes out as a fixed sentence per cause, the one a failed
+ * Prometheus says everywhere (failureWords.js, #605: "Prometheus refused the
+ * connection", "Prometheus refused the query (HTTP 400)", "No Prometheus is
+ * set up"), never Prometheus's own text or a fetch error's: those are logged
+ * here instead, once when the failure starts or changes, and once when
+ * Prometheus answers again, not on every read.
  */
 import { getCached } from './cache.js';
 import { getConfig } from './config.js';
 import { containerRegistry } from './containerRegistry.js';
 import { nodeMatcher, promQueryRange, promString } from './discovery.js';
+import { failureDetail, failureSentence } from './failureWords.js';
 import { createLogger } from './util/logger.js';
 
 const log = createLogger('history');
@@ -116,20 +119,6 @@ export const FAILURE_TTL_MS = 10_000;
 /** Distinct (series, entity, range) entries kept; the oldest written goes first. */
 const MAX_ENTRIES = 200;
 const MAX_ENTITY = 200;
-
-/** What a failed series says, whatever Prometheus or the fetch said (logged instead). */
-export const FAILURES = Object.freeze({
-  unanswered: "Prometheus didn't answer",
-  refused: 'Prometheus refused the query',
-  unset: 'No Prometheus is set up',
-});
-
-/** A failed query's fixed sentence: refused (it answered 4xx or with an error), unset, else unanswered. */
-export function failureOf(err) {
-  if (err?.code === 'unset') return FAILURES.unset;
-  if (err?.refused === true || (err?.status >= 400 && err?.status < 500)) return FAILURES.refused;
-  return FAILURES.unanswered;
-}
 
 // eslint-disable-next-line no-control-regex -- refusing control characters is the point
 const CONTROL = /[\u0000-\u001f\u007f]/;
@@ -313,7 +302,8 @@ export function createHistoryCache({
 } = {}) {
   const entries = new Map(); // key -> { end, failedAt, data }
   const asking = new Map(); // key -> { end, promise }
-  // The failure being logged (its detail), so an outage logs once, not per read.
+  // The failure being logged (its words), so an outage logs once, not per read,
+  // and again only when its cause changes, however its raw detail varies.
   let failing = null;
 
   const keep = (key, entry) => {
@@ -359,10 +349,10 @@ export function createHistoryCache({
           return data;
         },
         (err) => {
-          const error = failureOf(err);
-          const detail = String(err?.message || err || 'failed');
-          if (detail !== failing) {
-            failing = detail;
+          const error = failureSentence('prometheus', err);
+          const detail = failureDetail(err);
+          if (error !== failing) {
+            failing = error;
             logger.warn(
               { source: 'prometheus', series: name, range: parsed.range, err: detail },
               'history query failed; its series say so until Prometheus answers'

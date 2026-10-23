@@ -47,6 +47,7 @@ test('readStatusInputs: the cached payloads, what is kept beside the services on
     arcaneAgents: null,
     kumaConfigured: true,
     giteaConfigured: false,
+    giteaFailure: null, // gitea.js's: no poll has failed (#605)
     refusedSources: {},
     cycleErrors: ['gitea'],
     configProblem: null,
