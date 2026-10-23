@@ -327,7 +327,7 @@ describe('the Services page (#313)', () => {
         name: 'Table',
       })
     );
-    const table = within(region).getByRole('table', { name: 'Services table' });
+    const table = within(region).getByRole('table', { name: 'Services' });
     expect(within(table).getAllByRole('rowheader')).toHaveLength(SERVICE_COUNT);
     expect(localStorage.getItem('jaghelm-services-view')).toBe('table');
     await choose(user, 'State', 'Problems');

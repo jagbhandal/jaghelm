@@ -31,7 +31,7 @@ const GROUPS = [
 describe('ServicesTable', () => {
   it("a row per service in the groups' order, each opening it, its state the model's", async () => {
     render(<ServicesTable groups={GROUPS} grouping="node" />);
-    const table = screen.getByRole('table', { name: 'Services table' });
+    const table = screen.getByRole('table', { name: 'Services' });
     expect(
       within(table)
         .getAllByRole('columnheader')
@@ -71,7 +71,7 @@ describe('ServicesTable', () => {
       },
     ];
     const { rerender } = render(<ServicesTable groups={groups} grouping="node" />);
-    const table = screen.getByRole('table', { name: 'Services table' });
+    const table = screen.getByRole('table', { name: 'Services' });
     const [, jellyfin, postgres] = within(table).getAllByRole('row');
     const strip = within(jellyfin).getByRole('img', {
       name: 'Heartbeats: 1 failure in the last 2 checks, including the latest',
@@ -93,7 +93,7 @@ describe('ServicesTable', () => {
         grouping="group"
       />
     );
-    const table = screen.getByRole('table', { name: 'Services table' });
+    const table = screen.getByRole('table', { name: 'Services' });
     expect(within(table).getByRole('columnheader', { name: 'Group' })).toBeInTheDocument();
     expect(within(table).getAllByText('Media')).toHaveLength(2);
   });

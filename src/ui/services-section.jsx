@@ -50,9 +50,9 @@
  * `onViewChange` and a `table` (ServicesTable, services-table.jsx, a module
  * of its own that only the page loads), a second SegmentedControl, "Service
  * view" (List, Table), after the grouping, and the table in the panel's
- * place. It needs 720px, as Infrastructure's: in a narrower section the
- * list stands in and the toggle goes, the choice standing for when it fits
- * again.
+ * place. It needs 800px (Infrastructure's 720 and the heartbeat strip's
+ * newest 12, #312): in a narrower section the list stands in and the toggle
+ * goes, the choice standing for when it fits again.
  */
 import { useId, useRef } from 'react';
 import { Activity, List, Rows3 } from 'lucide-react';
@@ -65,7 +65,7 @@ import { openHere } from './lib/link.js';
 import { useWidth } from './lib/width.js';
 
 /** The table's least width (services-table.jsx's): narrower, the section draws the list. */
-const TABLE_WIDTH = 720;
+const TABLE_WIDTH = 800;
 
 /** How many checks a row's strip shows: the mock's 30. */
 const ROW_BEATS = 30;
