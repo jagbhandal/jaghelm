@@ -929,7 +929,8 @@ is neutral and shows none.
 ### The floating layer
 
 The overlays' Base UI parts (Tooltip, Popover, Select, Dialog, Drawer,
-Confirm, and the Sparkline's readout) are one chunk,
+Confirm, the Sparkline's readout, and the UptimeBar's tooltip and keys,
+#312) are one chunk,
 [`src/ui/floating/`](../src/ui/floating/layer.js), which
 [`lib/floating.jsx`](../src/ui/lib/floating.jsx) loads once for all of them,
 on the page's first pointer or keyboard input, or at once when one is opened
@@ -1334,9 +1335,9 @@ until Phase 4 (#326).
 | `Chart` | `@ui/chart` | `label` (its name, required); `series` (`[{ key, name, points }]` in slot order, at most six, every series a point per time, `{ time, value }`, null for a gap); `domain` (`[0, 100]`, `auto` fitted to the readings, or `zero` from 0); `height` (the plot's, 112); `formatValue`; `tickEvery` (ms, 15 minutes), `formatTick`, `formatTime` (HH:MM); `state` (`ready`, `loading`, `failed`); `detail` (why it failed), `failedText` ("No data from Prometheus"); `busy` (the last lines dimmed while the next are read) |
 | `ChartGroup` | `@ui/chart` | charts and the rows between them (each `col-span-full`, a subgrid), on one time axis |
 | `DetailCharts` | `@ui/detail-charts` | `title` (`History`); `range`, `ranges` (`[{ value, label }]`), `onRangeChange`; `charts` (each the Chart's props with a `key`, a `title` and an optional `note`); `busy`; `tickEvery`, `formatTick`, `formatTime` (the range's); `size` (`md`, or `touch` on a phone's sheet: the range switch's, #602) |
-| `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, or a check `{ state, word, time, ping }`, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`); `focusable` (its checks by keyboard, #312); `stale` (no level colour) |
+| `UptimeBar` | `@ui/uptime-bar` | `beats` (a state or null per check, or a check `{ state, time, ping }` and an optional `word`, oldest first); `count`; `size` (`sm`, `md`, `lg`); `label` (`Heartbeats`); `focusable` (its checks by keyboard, #312); `stale` (no level colour); `fit` (narrower than its beats: the oldest go first, down to the newest 12) |
 | `beatSummary` | `@ui/uptime-bar` | `(beats)`: the strip in words, "2 failures in the last 30 checks" |
-| `beatCadence` | `@ui/uptime-bar` | `(beats)`: how often the checks come, "every 30 s", from their times |
+| `beatCadence` | `@ui/entity-detail` | `(beats)`: how often the checks come, "every 30 s", from their times |
 | `BeatSpace` | `@ui/uptime-bar` | `count`, `size`: a strip's room, empty and hidden, for a row with no monitor in a list with strips |
 | `EntityRow` | `@ui/entity-row` | `state`, `word`, `name`, `where` (a node's name, after the name), `detail`, `meta`, `trailing`, `muted` (quiets a healthy row); `onOpen` or `href`, or both, as IssueRow's |
 | `FactList` | `@ui/fact-list` | `facts` (`[{ key, label, value }]`); `muted` (values in `text-2`: last known) |
@@ -1449,9 +1450,16 @@ Chart colours board:
   in a list line up; a row with no monitor in such a list keeps a strip's
   room with `BeatSpace` (invisible, hidden from assistive tech), so its meta
   lines up too. A check from the server (#312) has a tooltip, the
-  Sparkline's readout: its word in bold, its time to the second and its
-  response time in `text-2` ("Down 14:32:10", "Up 14:32:40 138 ms"), above
-  the beat, which takes a 1px `text-3` outline while it is shown. With a
+  Sparkline's readout: its word in bold (Kuma's, from its state), its time
+  to the second and its response time in `text-2` ("Down 14:32:10", "Up
+  14:32:40 138 ms"), above the beat, which takes a 1px `text-3` outline
+  while it is shown. The tooltip and the keys are the floating layer's
+  (`floating/uptime-bar-tips.jsx`), asked for the first time a pointer (not
+  a finger) comes over a strip or one takes focus: the first screen draws
+  the static strip only, and the part, once in, adds nothing to its box.
+  `fit` (the Services table's cell) lays the beats newest first from the
+  right and wraps the oldest onto lines it doesn't show, so its column asks
+  for its 30 beats at most and its newest 12 at least. With a
   stale status (`stale`), a failing or pending check is `unknown-solid`, as
   a stale meter's fill: the strip keeps its shape and no level colour.
   `DetailHeartbeats` is the drawer's "Heartbeats · last 50" section (the
@@ -1892,16 +1900,16 @@ From the mock's Main board, its Infrastructure section:
   (#313) a second SegmentedControl after the grouping, "Service view" (List,
   Table, Lucide `List` and `Rows3`), and the table in the panel's place.
 - **ServicesTable** (#313). The Table component, its hidden caption
-  "Services table" (not "Services", the section's name: a table wider than
-  its frame makes the frame a region named as the table, #312), the rows in
-  the groups' order: service (semibold, a link that
+  "Services", the rows in the groups' order: service (semibold, a link that
   opens it), node in `text-2`, the custom group while grouped by one, the
   Docker name (`containerName`) in 12px mono `text-3`, the detail (`text-2`
   while up, else its state's word colour, ending in an ellipsis past 288px,
   whole in its title), latency, right-aligned, the heartbeat strip (#312, 30
-  checks, a dash with no monitor), and state (the lamp and the
-  word, as the Infrastructure table's). It needs 720px, as
-  Infrastructure's: in a narrower section, the list and no toggle.
+  checks, `fit`: narrowed before the table would scroll, losing its oldest
+  beats down to the newest 12; a dash with no monitor), and state (the lamp and the
+  word, as the Infrastructure table's). It needs 800px (Infrastructure's
+  720 and the strip's newest 12, #312): in a narrower section, the list and
+  no toggle.
 - **ListFilters** (#313). A page's filters in one row that wraps, under the
   section's heading row and over its panel, 12px apart, its controls in the
   order given: a search, an Input filling the row (at least 192px), its

@@ -864,7 +864,10 @@ with no request to Kuma of their own:
   restart starts it again).
 
 The store (`createBeatStore`, kept by `refresh.js`) holds only the monitors
-Kuma lists now, each at most `BEATS_KEPT` (50), whatever Kuma sends. A cycle
+Kuma lists now, each at most `BEATS_KEPT` (50), whatever Kuma sends. A
+status-page load whose heartbeat read fails (the page answering) gives each
+monitor `beats: null`, and its last beats are kept as they were, neither
+emptied nor sampled over. A cycle
 that can't read Kuma adds a beat with no data to every ring (the monitors a
 failed load hands back are Kuma's last answer, not new beats), and the next
 load with Kuma's beats replaces it with what Kuma saw. While Kuma is
@@ -2726,15 +2729,19 @@ flowchart TD
   `/api/services`' `beats`, 4.2) as the row's trailing figure: its last 30
   checks, newest on the right, empty slots on the left while it has fewer,
   each check's word, time and response time in a tooltip under the pointer
-  (never on touch; a strip inside a row is no tab stop). From 672px of the
+  (never on touch; a strip inside a row is no tab stop). The first screen
+  carries only the static strip: the tooltip and the drawer strip's keys
+  come with the floating layer, asked for the first time a pointer comes
+  over a strip or one takes focus, and add nothing to its box. From 672px of the
   row the strip takes what the name, detail and meta leave, up to its 178px,
   losing its oldest beats first; narrower, the newest 12. A container with
   no monitor draws no strip, but keeps a strip's room, empty and hidden
   (`BeatSpace`), while another row has one, so the rows line up. With a
   stale status, a failing or pending check is drawn in no signal's solid,
   never a level's colour. The Services page's table has the same strip in a
-  Heartbeats column (a dash with no monitor), and the phone's rows show it
-  too (the newest 12).
+  Heartbeats column (a dash with no monitor), which gives up its oldest
+  beats, down to the newest 12, before the table would scroll sideways
+  (`fit`); the phone's rows show it too (the newest 12).
 - **The Power section** (#306). Under Infrastructure (`OverviewBoard` draws
   it, lined up the same way), the UPS (`OverviewPower` in `src/shell`,
   drawing `JobsSection` from `src/ui` with its own title and Lucide `Zap`):
@@ -2823,8 +2830,9 @@ flowchart TD
   per browser, `jaghelm-services-view`): the table (`ServicesTable`,
   `src/ui/services-table.jsx`, a module only the page's chunk carries) has
   the same rows in the groups' order (service, node, the custom group while
-  grouped by one, container, detail, latency, state), needs 720px, and below
-  it the list stands in. The Overview's Services section ends with "Show all
+  grouped by one, container, detail, latency, heartbeats, state), is drawn
+  from 800px of section (720 and the strip's newest 12, #312), and below
+  that the list stands in. The Overview's Services section ends with "Show all
   12 services →", to the page. Infrastructure: State (no maintenance: a node has none) and
   Role (services.yaml's subtitle, while any node has one); cards or table,
   one choice with the Overview's; and under the nodes, each Proxmox node's
