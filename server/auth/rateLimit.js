@@ -1,79 +1,200 @@
 /**
- * Login rate limiter — defence in depth against credential brute force.
+ * Login rate limiter (#257): slows password guessing without a lock that
+ * anyone can trip for everyone.
  *
- * Three layers: per-IP sliding window, a global failure counter, and a jittered
- * floor delay on every failure. The global counter exists because an attacker
- * rotating source IPs (incl. a misconfigured proxy letting X-Forwarded-For be
- * spoofed) would slip past a per-IP limit alone; the jittered delay keeps the
- * 401 response time from being a fine-grained credential oracle.
+ * Three layers. The first two are checked before a password is looked at, and
+ * a refusal is a 429 with Retry-After that changes no state:
  *
- * Client identification (req.ip) is the caller's responsibility; behind a proxy
- * this needs `app.set('trust proxy', ...)` configured correctly — see KNOWN-ISSUES.
+ *  1. Per address. An address's first 5 failures in a row cost only the floor
+ *     delay; after the 5th it must wait 30 s, and each further failure doubles
+ *     the wait, up to 15 min. A sign-in from it clears it; its failures are
+ *     forgotten an hour after its last one. Failures from one address never
+ *     make another address wait (the old global lock did: #257).
+ *  2. The account. JagHelm has one account, and every attempt is a guess at it
+ *     whatever user name it carries (the name is half the secret), so this is
+ *     one token bucket rather than a map of names an attacker could fill or
+ *     probe: 10 attempts, one more every 30 s. It holds an attacker who rotates
+ *     addresses (many hosts, IPv6, or a proxy whose X-Forwarded-For can be
+ *     spoofed: why the old global counter existed) to at most 10 + 120 guesses
+ *     in any hour. One address can't empty it (5 free failures, then one per
+ *     30 s at most), so it only slows anyone once failures come from several
+ *     addresses, and then by at most 30 s. The last 16 addresses that signed in
+ *     skip it until their next failure, so an attacker who keeps it empty
+ *     can't keep the owner out from where he signs in (a spoofed one buys a
+ *     single guess).
+ *  3. A jittered floor delay on every failure, so a 401's timing isn't a
+ *     fine-grained credential oracle.
+ *
+ * Each attempt let through is counted as a failure when it starts, and
+ * succeeded() undoes that, so parallel requests can't all pass one check.
+ *
+ * Memory: the account is one record, known addresses at most 16. Address
+ * records are capped at 1000, oldest first, but a record is made only for an
+ * attempt the bucket let through, so no more than 10 + 120 + 16 = 146 are live
+ * (failed within the hour) and the cap only ever drops forgotten ones: a flood
+ * of fresh addresses can't push a waiting address out to reset its wait.
+ * createLoginLimiter refuses limits that would break that. A key is the
+ * client's IP; anything that isn't one shares the key `unknown`.
+ *
+ * The state is in memory, on a monotonic clock: a restart clears it (sessions
+ * survive one, #250). Client identification (req.ip) is the caller's; behind
+ * a proxy it needs TRUST_PROXY set (server/index.js, KNOWN-ISSUES).
  */
+import { isIP } from 'node:net';
+import { performance } from 'node:perf_hooks';
+
 import { createLogger } from '../util/logger.js';
 
-const log = createLogger('auth');
+const defaultLog = createLogger('auth');
 
-const MAX_ATTEMPTS = 5; // per-IP failures before lock
-const WINDOW_MS = 15 * 60 * 1000;
-const GLOBAL_MAX = 50; // total failures across all IPs before global lock
+export const LOGIN_LIMITS = Object.freeze({
+  freeFailures: 5, // failures in a row an address makes before it waits
+  firstWaitMs: 30_000, // its first wait, doubled at each further failure
+  maxWaitMs: 15 * 60_000, // the longest wait
+  forgetMs: 60 * 60_000, // an address's failures are forgotten this long after its last
+  accountBurst: 10, // the account bucket's size
+  accountIntervalMs: 30_000, // one attempt more in the bucket this often
+  knownMax: 16, // addresses that signed in, kept to skip the bucket
+  maxAddresses: 1000, // address records kept at most
+});
+
 const FAILURE_DELAY_MS = 400; // floor delay on a failed login
-const CLEANUP_INTERVAL_MS = 30 * 60 * 1000;
+const UNKNOWN = 'unknown';
 
-const attempts = new Map(); // key → { count, firstAttempt }
-let globalWindow = { count: 0, start: 0 };
-let globalLockLogged = false;
+/** The limiter's key for a client address: the IP, or `unknown` for anything else. */
+export function addressKey(ip) {
+  return typeof ip === 'string' && ip.length <= 64 && isIP(ip) ? ip.toLowerCase() : UNKNOWN;
+}
 
-// .unref() so this housekeeping timer never keeps the process alive on its own
-// (lets the process — and route tests that import the app — exit cleanly).
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, record] of attempts) {
-    if (now - record.firstAttempt > WINDOW_MS) attempts.delete(key);
+/** The wait after an address's `failures`th failure in a row. */
+function waitAfter(failures, limits) {
+  if (failures < limits.freeFailures) return 0;
+  const doublings = Math.min(failures - limits.freeFailures, 30);
+  return Math.min(limits.firstWaitMs * 2 ** doublings, limits.maxWaitMs);
+}
+
+function checkLimits(l) {
+  const live = l.accountBurst + Math.ceil(l.forgetMs / l.accountIntervalMs) + l.knownMax;
+  if (l.maxAddresses <= live) {
+    throw new Error(`login limits: maxAddresses must exceed the ${live} records that can be live`);
   }
-}, CLEANUP_INTERVAL_MS).unref();
-
-const inGlobalWindow = (now) => now - globalWindow.start <= WINDOW_MS;
-
-/**
- * Gate a login attempt for `key` (IP). Returns false once either the per-IP
- * bucket or the global counter is locked.
- */
-export function checkLoginRate(key) {
-  const now = Date.now();
-
-  // Global lock first — refuses everyone during a distributed brute force.
-  if (inGlobalWindow(now) && globalWindow.count >= GLOBAL_MAX) {
-    return false;
+  if (l.freeFailures >= l.accountBurst || l.firstWaitMs < l.accountIntervalMs) {
+    throw new Error('login limits: one address alone could empty the account bucket');
   }
-
-  const record = attempts.get(key);
-  if (!record || now - record.firstAttempt > WINDOW_MS) {
-    attempts.set(key, { count: 1, firstAttempt: now });
-    return true;
+  if (l.forgetMs <= l.maxWaitMs) {
+    throw new Error('login limits: forgetMs must outlast maxWaitMs');
   }
-  record.count++;
-  return record.count <= MAX_ATTEMPTS;
 }
 
 /**
- * Record a *failed* login (call on the 401 path). Feeds the global counter and
- * logs once when the global lock trips, so the operator sees a brute-force event.
+ * A login limiter. `attempt(ip)` → `{ ok: true, succeeded() }`, the attempt
+ * counted as a failure until succeeded() is called; or `{ ok: false,
+ * retryAfterMs, reason }`, reason `'address'` or `'account'`.
+ * `now` (ms, monotonic) and `log` are seams for tests.
  */
-export function registerLoginFailure() {
-  const now = Date.now();
-  if (!inGlobalWindow(now)) {
-    globalWindow = { count: 0, start: now };
-    globalLockLogged = false;
+export function createLoginLimiter({ now = () => performance.now(), log = defaultLog, ...overrides } = {}) {
+  const limits = { ...LOGIN_LIMITS, ...overrides };
+  checkLimits(limits);
+
+  /** key → { failures, last, until, warned }, oldest `last` first. */
+  const addresses = new Map();
+  /** key → time of its last sign-in, oldest first. */
+  const known = new Map();
+  let tokens = limits.accountBurst;
+  let refilledAt = now();
+  let accountWarned = false;
+
+  const forgotten = (record, t) => t - record.last > limits.forgetMs;
+
+  function refill(t) {
+    tokens = Math.min(limits.accountBurst, tokens + (t - refilledAt) / limits.accountIntervalMs);
+    refilledAt = t;
+    if (tokens >= limits.accountBurst) accountWarned = false;
   }
-  globalWindow.count++;
-  if (globalWindow.count >= GLOBAL_MAX && !globalLockLogged) {
-    globalLockLogged = true;
-    log.warn(
-      { failures: globalWindow.count, windowMs: WINDOW_MS },
-      'global login lock engaged — too many failed logins across all clients'
-    );
+
+  /** Store `record` as the newest, then drop forgotten records (and any over the cap) from the oldest end. */
+  function store(key, record, t) {
+    addresses.delete(key);
+    addresses.set(key, record);
+    for (const [oldKey, old] of addresses) {
+      if (!forgotten(old, t) && addresses.size <= limits.maxAddresses) break;
+      addresses.delete(oldKey);
+    }
   }
+
+  function attempt(ip) {
+    const t = now();
+    const key = addressKey(ip);
+    let record = addresses.get(key);
+    if (record && forgotten(record, t)) {
+      addresses.delete(key);
+      record = undefined;
+    }
+
+    if (record && record.until > t) {
+      if (!record.warned) {
+        record.warned = true;
+        log.warn(
+          { ip: key, failures: record.failures, waitMs: record.until - t },
+          'an address is waiting to sign in again after repeated failed sign-ins'
+        );
+      }
+      return { ok: false, retryAfterMs: record.until - t, reason: 'address' };
+    }
+
+    const skipsBucket = known.has(key);
+    if (!skipsBucket) {
+      refill(t);
+      if (tokens < 1) {
+        if (!accountWarned) {
+          accountWarned = true;
+          log.warn(
+            { retryAfterMs: Math.ceil((1 - tokens) * limits.accountIntervalMs) },
+            'sign-ins from new addresses are being slowed: failed sign-ins from many addresses'
+          );
+        }
+        return {
+          ok: false,
+          retryAfterMs: Math.ceil((1 - tokens) * limits.accountIntervalMs),
+          reason: 'account',
+        };
+      }
+      tokens -= 1;
+    }
+    known.delete(key); // until it signs in again
+
+    const failures = (record?.failures ?? 0) + 1;
+    store(key, { failures, last: t, until: t + waitAfter(failures, limits), warned: false }, t);
+
+    let settled = false;
+    return {
+      ok: true,
+      succeeded() {
+        if (settled) return;
+        settled = true;
+        addresses.delete(key);
+        if (!skipsBucket) {
+          refill(now());
+          tokens = Math.min(limits.accountBurst, tokens + 1);
+        }
+        if (key === UNKNOWN) return;
+        known.set(key, now());
+        if (known.size > limits.knownMax) known.delete(known.keys().next().value);
+      },
+    };
+  }
+
+  /** For tests: how many records are kept. */
+  const stats = () => ({ addresses: addresses.size, known: known.size });
+
+  return { attempt, stats };
+}
+
+let limiter = createLoginLimiter();
+
+/** Gate a login attempt from `ip` (see createLoginLimiter). */
+export function loginAttempt(ip) {
+  return limiter.attempt(ip);
 }
 
 /**
@@ -85,14 +206,7 @@ export function loginFailureDelay() {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Clear the per-IP bucket for `key` — call after a successful login. */
-export function resetLoginRate(key) {
-  attempts.delete(key);
-}
-
-// Test seam: reset all limiter state between cases.
-export function _resetAllLoginRate() {
-  attempts.clear();
-  globalWindow = { count: 0, start: 0 };
-  globalLockLogged = false;
+// Test seam: a fresh limiter (its options as createLoginLimiter's) between cases.
+export function _resetAllLoginRate(options) {
+  limiter = createLoginLimiter(options);
 }

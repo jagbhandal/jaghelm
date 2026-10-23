@@ -19,12 +19,7 @@ import {
   getSession,
   revocationSaved,
 } from './sessions.js';
-import {
-  checkLoginRate,
-  resetLoginRate,
-  registerLoginFailure,
-  loginFailureDelay,
-} from './rateLimit.js';
+import { loginAttempt, loginFailureDelay } from './rateLimit.js';
 import { apiError } from '../errors.js';
 import { recordAuthFailure } from '../metrics.js';
 import { createLogger } from '../util/logger.js';
@@ -43,15 +38,19 @@ router.post('/login', async (req, res) => {
     return res.json({ token: 'noauth', user: 'admin' });
   }
 
-  const ip = req.ip || req.connection?.remoteAddress || 'unknown';
-  if (!checkLoginRate(ip)) {
-    return apiError(res, 429, 'Too many login attempts. Try again in 15 minutes.');
-  }
-
   const { username, password } = req.body || {};
   // Strings only: the compare below coerces, so ["admin"] would pass as admin.
+  // Checked first: a request that can't be a guess doesn't count as one.
   if (typeof username !== 'string' || typeof password !== 'string') {
     return apiError(res, 400, 'Username and password are required');
+  }
+
+  // Per address and for the account, whatever the user name (rateLimit.js, #257).
+  const attempt = loginAttempt(req.ip ?? req.socket?.remoteAddress);
+  if (!attempt.ok) {
+    const seconds = Math.max(1, Math.ceil(attempt.retryAfterMs / 1000));
+    res.set('Retry-After', String(seconds));
+    return apiError(res, 429, `Too many login attempts. Try again in ${seconds} seconds.`);
   }
   // Verify both username and password before branching, so a username-mismatch
   // path can't be distinguished from a password-mismatch path by timing. Note
@@ -61,12 +60,12 @@ router.post('/login', async (req, res) => {
   const passOk = checkPassword(password);
 
   if (userOk && passOk) {
-    resetLoginRate(ip);
+    attempt.succeeded(); // clears this address; it may skip the account bucket next time
     const token = createSession(username);
     return res.json({ token, user: username });
   }
 
-  registerLoginFailure(); // feeds the global brute-force counter
+  // The attempt was counted as a failure when it was let through.
   recordAuthFailure(); // metric
   await loginFailureDelay(); // throttle + dull the timing oracle
   return apiError(res, 401, 'Invalid credentials');
