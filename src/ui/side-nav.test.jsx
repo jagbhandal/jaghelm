@@ -9,7 +9,12 @@ const groups = ({ onUnload = vi.fn(), current = 'grafana' } = {}) => [
     id: 'monitor',
     label: 'Monitor',
     items: [
-      { id: 'overview', label: 'Overview', href: '/', icon: <LayoutDashboard aria-hidden="true" /> },
+      {
+        id: 'overview',
+        label: 'Overview',
+        href: '/',
+        icon: <LayoutDashboard aria-hidden="true" />,
+      },
       {
         id: 'alerts',
         label: 'Alerts',
@@ -146,5 +151,35 @@ describe('NavGroups', () => {
     expect(screen.queryByRole('navigation')).toBeNull();
     expect(screen.getByRole('group', { name: 'Apps' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Grafana' })).toHaveAttribute('href', '/apps/grafana');
+  });
+});
+
+// #569: the phone's More sheet holds Log out, an action, not a page.
+describe('an entry with onClick and no href', () => {
+  it('is a button drawn as an entry, which runs it', async () => {
+    const user = userEvent.setup();
+    const onClick = vi.fn();
+    render(
+      <NavGroups
+        groups={[
+          {
+            id: 'tools',
+            label: 'Tools',
+            items: [
+              { id: 'settings', label: 'Settings', href: '/settings' },
+              { id: 'logout', label: 'Log out', onClick },
+            ],
+          },
+        ]}
+      />
+    );
+    const logout = screen.getByRole('button', { name: 'Log out' });
+    expect(logout).toHaveAttribute('type', 'button');
+    expect(logout).toHaveAttribute('data-slot', 'nav-item');
+    expect(logout).not.toHaveAttribute('href');
+    // Drawn as the links are.
+    expect(logout).toHaveClass(...screen.getByRole('link', { name: 'Settings' }).classList);
+    await user.click(logout);
+    expect(onClick).toHaveBeenCalledOnce();
   });
 });

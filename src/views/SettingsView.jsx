@@ -436,6 +436,7 @@ export default function SettingsView({ theme, setTheme, section, onSectionChange
                   serverConfig={serverConfig}
                   onSave={saveServerConfig}
                   saving={serverSaving}
+                  discovery={liveServices?.discovery}
                 />
               ) : (
                 <LoadingState />

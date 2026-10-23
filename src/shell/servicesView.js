@@ -25,6 +25,7 @@
  */
 import { useCallback, useState } from 'react';
 import { prefs } from '../storage/index.js';
+import { heldUids } from './customGroups.js';
 import { entityAnchor } from './entityAnchors.js';
 import { drawnState } from './statusFreshness.js';
 
@@ -156,9 +157,10 @@ const group = (key, title, host, rows, where = false) => {
  *          them), then any it has yet to list; titled by the node's name,
  *          its key beside it when that differs
  *   group  a group per custom group, in Settings' order, holding the services
- *          it names (by uid, or by container name as Settings saves them; a
- *          service in two is in the first), then "Not in a group"; a custom
- *          group with none of the services is left out
+ *          it names (customGroups.js: by uid, so a container on two nodes is
+ *          two services; a bare container name saved before #517 holds every
+ *          service of that name; a service in two is in the first), then "Not
+ *          in a group"; a custom group with none of the services is left out
  *
  * @param {Array<any>} rows  serviceRows'
  * @param {{ by?: string, services?: any, customGroups?: Array<any> }} opts
@@ -168,10 +170,8 @@ export function serviceGroups(rows, { by = 'node', services = null, customGroups
     const placed = new Set();
     const out = [];
     for (const g of customGroups) {
-      const names = new Set((g?.containers ?? []).map(String));
-      const members = rows.filter(
-        (r) => !placed.has(r.id) && (names.has(r.uid) || names.has(r.container))
-      );
+      const held = new Set(heldUids(g, rows));
+      const members = rows.filter((r) => !placed.has(r.id) && held.has(r.uid));
       for (const r of members) placed.add(r.id);
       if (members.length > 0)
         out.push(group(`group:${g.id}`, g.title || 'Group', null, members, true));

@@ -5,12 +5,12 @@ import { apiFetch, setAuthToken, setAuthExpiredHandler } from './api/client.js';
 import { secureStore } from './storage/index.js';
 import { HEALTHY } from './testing/statusFixtures.js';
 
-// An expired session (#492). Sessions last 24 h and die on a server restart;
-// a tab left open used to poll every source with the dead token for as long as
-// it stayed open, a 401 each time. The stub is a server with auth on: a
-// request whose x-auth-token is a live session gets data, any other gets 401.
-// Fake timers step the 30 s refresh tick, so each test counts the requests a
-// stretch of time costs.
+// An expired session (#492). A session ends after 30 days without use, 90 at
+// most, or when revoked (#250); a tab left open used to poll every source
+// with the dead token for as long as it stayed open, a 401 each time. The
+// stub is a server with auth on: a request whose x-auth-token is a live
+// session gets data, any other gets 401. Fake timers step the 30 s refresh
+// tick, so each test counts the requests a stretch of time costs.
 
 const TICK_MS = 30_000;
 

@@ -106,8 +106,9 @@ test('a true first run is empty: no nodes, Prometheus answers, nothing else set 
 });
 
 test('first boot with Prometheus unreachable is a failed source, never empty', async () => {
-  // A wrong PROMETHEUS_URL: discovery found no nodes, so services.yaml has
-  // none, and every query fails.
+  // A wrong PROMETHEUS_URL, with a services.yaml that has no nodes (the
+  // user's: a first boot saves none until discovery finds a node, #566), and
+  // every query fails.
   const { status } = await cycle({ prometheus: 'refused' });
   assert.deepEqual(getCached('services').sources, { prometheus: { ok: false } });
   assert.equal(getCached('ups').ok, false, 'the UPS read failed with it');

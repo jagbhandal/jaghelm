@@ -109,7 +109,7 @@ export default function SecurityTab() {
 
       <Card title="Session Info">
         <p className="settings-desc">
-          Sessions expire after 24 hours. Changing your password will invalidate all other active sessions.
+          You stay signed in across restarts and updates. A session ends after 30 days without use, and 90 days after sign-in at most. Changing your password signs out every other session.
         </p>
       </Card>
     </div>

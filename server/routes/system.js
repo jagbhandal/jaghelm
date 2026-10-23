@@ -10,8 +10,8 @@ import { Router } from 'express';
 
 import { authMiddleware } from '../auth/middleware.js';
 import { getCached, setCache } from '../cache.js';
-import { configHealth } from '../config.js';
 import { apiError } from '../errors.js';
+import { configHealthNow } from '../firstBoot.js';
 import { safeFetch } from '../httpClient.js';
 import { sourceUrl, sourceUrlHealth } from '../sourceUrls.js';
 import { asyncHandler } from '../util/asyncHandler.js';
@@ -28,7 +28,8 @@ router.get('/health', (req, res) => {
   // alone: the loop is alive, a restart can't mend the input, and the deploy
   // gate's "status":"ok" would roll a deploy back over it. So is a
   // services.yaml that doesn't parse (#505), in `config`: its state and line,
-  // never its text. So is a source URL refused for holding a user or password
+  // never its text, or `discovering` while the first boot waits for nodes
+  // with no file yet (#566). So is a source URL refused for holding a user or password
   // (#419), in `sourceUrls`: the variable and its problem, never the value.
   const refresh = getRefreshHealth();
   const healthy = refresh.state !== 'stale';
@@ -37,7 +38,7 @@ router.get('/health', (req, res) => {
     refresh: refresh.state,
     refreshAgeMs: refresh.ageMs,
     statusModel: getStatusModelHealth(),
-    config: configHealth(),
+    config: configHealthNow(),
     sourceUrls: sourceUrlHealth(),
     uptime: process.uptime(),
     version: VERSION,

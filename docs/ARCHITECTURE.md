@@ -16,9 +16,9 @@ as a Docker image to a homelab.
 - **Live data over static links.** The point of difference vs Homepage/Dashy is
   that panels show *current* numbers (CPU, RAM, queue depth, block-rate) fetched
   server-side, not just bookmarks.
-- **Single instance, in-memory, file-backed.** Sessions live in a `Map`, the
-  refresh loop runs in-process, and all user state is a handful of files under a
-  data dir. Simple to run; deliberately not horizontally scalable
+- **Single instance, in-memory, file-backed.** Sessions live in a `Map` kept
+  in a file of token hashes so they survive a restart, the refresh loop runs
+  in-process, and all user state is a handful of files under a data dir. Simple to run; deliberately not horizontally scalable
   ([ADR 0002](adr/0002-in-memory-single-instance.md)).
 - **Server does the talking.** The browser only ever calls JagHelm's own API; the
   server fans out to Prometheus, cAdvisor, Uptime Kuma, a NUT exporter, and the
@@ -89,6 +89,8 @@ server/                     Express API (Node 26, ESM)
   config.js                 services.yaml: load, hot-reload watch (and its 30 s retry while
                             broken), copy-on-read, its version, and the one atomic writer,
                             over the version read (see 6)
+  firstBoot.js              first boot with no services.yaml: discovery, and the refresh
+                            asking again until Prometheus has nodes, then one save (see 6)
   secrets.js                AES-256-GCM secret store (per-install KDF salt), the origins
                             each secret may go to (#556), and the snapshot a failed
                             integration save is undone to (see 4.4)
@@ -104,7 +106,8 @@ server/                     Express API (Node 26, ESM)
                             decorateStatuses, the status model); incident and healthy scenarios
   embedCheck.js             reads an app tab's X-Frame-Options / CSP frame-ancestors and says
                             whether the browser will frame it (see 5, "App tabs")
-  auth/                     scrypt passwords, in-memory sessions, login rate limit, middleware
+  auth/                     scrypt passwords, sessions (token hashes on disk), login rate limit,
+                            middleware
   routes/                   one router per resource (see 4.1)
   arcane/                   Arcane poller: read-only API client, state derivation, push builders,
                             persisted state, dry-run module (see 4.2), and the agents the
@@ -157,7 +160,8 @@ src/                        React 19 SPA (Vite 8)
                             Pipeline and the Checklist: the Overview's rail from 1440px
                             and the Launch page, #301), extras.js (weather, the clock
                             and the web search, #307), overviewSections.js (the
-                            Overview's show/hide switches, #307), useMediaQuery.js (a
+                            Overview's show/hide switches, #307), customGroups.js (the
+                            custom groups, by service uid, #517), useMediaQuery.js (a
                             width the markup changes at),
                             statusFreshness.js (the one rule for a stale status: whether
                             the poll's status is current, and how each place draws one
@@ -389,7 +393,10 @@ no monitors. The `/api/services` payload says which answered this cycle,
 services.yaml there is nothing to read, so the refresh asks Prometheus one
 probe query (`vector(1)`) and the payload carries only
 `sources: { prometheus: { ok } }` (`noNodesCacheEntry`, #449): a first run with
-a wrong `PROMETHEUS_URL` is a failed source, not an empty board. `/api/ups` carries its own
+a wrong `PROMETHEUS_URL` is a failed source, not an empty board. While the
+first boot waits for nodes (6, #566) its discovery query takes the probe's
+place, and the payload adds `discovery: 'waiting'`, which Settings → Nodes
+reads to say the nodes will come by themselves. `/api/ups` carries its own
 `ok` (and `configured: null`, since a failed query can't say whether there is a
 UPS). Each node also carries `reachable`, from Prometheus' `up` series for that
 node: true when any of its targets answered the last scrape, false when none
@@ -1037,23 +1044,47 @@ Key properties:
   problem names the variable and where the credential goes instead, never
   the value: the boot warns it once (`warnRefusedSourceUrls`), discovery and
   the Kuma reads fail every cycle with it and ask nothing, logging nothing
-  more; Gitea's panel is off as without a URL; the status model makes the
+  more; a first boot saves no `services.yaml` and doesn't wait for nodes,
+  with one line (6, #566); Gitea's panel is off as without a URL; the status model makes the
   source off (4.7); `/api/health` lists it (4.6), and `/api/readyz` reads it
   as not ready without asking. `ARCANE_URL` is refused by the same
   `urlCredential` (`arcane/config.js`): the integration is off, with one
   warning, and nothing is requested.
 - **Data dir** is single-sourced via `util/dataDir.js` (`JAGHELM_DATA_DIR`) so
-  secrets/auth/config/cron and the icon cache never split across locations.
+  secrets/auth/sessions/config/cron and the icon cache never split across
+  locations.
 
 ### 4.5 Auth & rate limiting
 
-scrypt password hashing (`auth/passwords.js`), in-memory sessions
+scrypt password hashing (`auth/passwords.js`), sessions that survive a restart
 (`auth/sessions.js`), and a brute-force **login rate limiter** (`auth/rateLimit.js`).
 A reusable `util/rateLimiter.js` additionally throttles the abuse-prone
 integration connection-test endpoint.
 
-A session ends 24 h after sign-in or when the server restarts, and every
-protected request after that gets a 401. `apiFetch` (`src/api/client.js`)
+Sessions (#250, ADR 0002) are kept in memory and in `sessions.json` in the
+data dir (atomic, `0600`), keyed by the SHA-256 of each token, never the token;
+a lookup hashes the presented token. A session ends after 30 days without use
+(`SESSION_IDLE_MS`; every request it authenticates is a use) and 90 days after
+sign-in in any case (`SESSION_MAX_AGE_MS`). A sign-in, a sign-out and a
+password change are written before the route answers; a use is written once it
+is an hour past the one on disk, so a crash loses at most an hour of the idle
+window. At most 50 sessions are kept (`MAX_SESSIONS`): a sign-in past that ends
+the least recently used. The file is read on first use. One that can't be read
+is no sessions and one warning that never quotes it; a write that fails is
+logged and the sessions in memory carry on, except that a sign-out or password
+change whose write fails removes the file, so a restart can't bring a revoked
+session back. If the file can be neither written nor removed, `POST
+/api/auth/logout` answers 503 (`revocationSaved()`): the session has ended in
+memory, the client sends the sign-out again, and each retry writes again. The
+file carries a stamp of the user and password (`credentialStamp()`,
+`auth/passwords.js`): SHA-256 of `auth.json`'s hash when a password was set in
+Settings, else an HMAC under a key derived from `DASH_SECRET`, else scrypt. A
+restart after `DASH_PASS`, `DASH_USER`, `auth.json` or `DASH_SECRET` changed
+starts with no sessions. A sign-in with a user name or password that isn't a
+string is refused with 400.
+
+Once a session has ended, every protected request with its token gets a 401.
+`apiFetch` (`src/api/client.js`)
 hands a 401 from any `/api` call outside `/api/auth/` to the shell's
 auth-expired handler, with the token the request was sent with (none counts
 too: a tab loaded while the server had no password). It does so once per
@@ -1068,11 +1099,12 @@ the polls again (#492). Before, an open web tab kept polling with the dead
 token, a 401 each time.
 
 Signing out ends the session on the server too (#507). `POST /api/auth/logout`
-deletes the presented token's session from the in-memory store, and only that
-one: the token gets a 401 on every protected route from then on, and the
+deletes the presented token's session from the store and from
+`sessions.json` before it answers, and only that one: the token gets a 401 on every protected route from then on, and the
 user's other sessions (another browser, the phone) keep working. Deletion is
 the revocation; there is no deny list (ADR 0002). It answers 204 for any
-token, unknown, expired, already revoked or none, so a second sign-out or
+token, unknown, expired, already revoked or none (503 only while a sign-out
+can't be saved, above), so a second sign-out or
 another tab never meets a 401 and the answer says nothing about a token. A
 real sign-out logs `signed out` at info with the user, never the token. Both
 apps send it through `revokeSession()` (`src/api/client.js`) and clear the
@@ -1175,11 +1207,15 @@ signs out locally as before.
   roll a deploy back over it. It is the process's memory, so after a restart
   it counts from that restart's first cycle (push keeps its own count in the
   snapshot, 4.7). Beside it, `config` (#505): `{ state: 'ok' }`,
+  `{ state: 'discovering' }` while the first boot waits for nodes with no
+  `services.yaml` yet (#566, 6; nothing is wrong with a file that isn't there
+  yet, and a refused `PROMETHEUS_URL` never waits, so it says `ok`),
   `{ state: 'unparseable', line }` while `services.yaml` is no usable config
   (`line` null for an empty file, one that isn't a mapping, or an error with
   no position), or `{ state: 'unreadable', code }` while it is there but
   can't be read (#536: `code` the read error's, `EACCES`, `EISDIR`, `EIO`…,
-  or null), as of the file's last read (`configHealth` in `config.js`).
+  or null), as of the file's last read (`configHealth` in `config.js`,
+  `configHealthNow` in `firstBoot.js`).
   Never its text or its path, and it doesn't change `status` either: a
   restart can't fix the file. And `sourceUrls` (#419): each source URL
   refused for holding a user or password (4.4), by source,
@@ -1795,7 +1831,7 @@ flowchart TD
   CP --> OP["OverlayProvider<br/>(toast + confirm)"]
   OP --> APP["App.jsx (useRoute: the page)"]
   APP --> SH["AppShell (src/ui)"]
-  SH --> HD["AppHeader<br/>(useStatus: /api/status)"]
+  SH --> HD["AppHeader, or PhoneHeader below 768px<br/>(useStatus: /api/status)"]
   SH --> SN["SideNav (≥ 768px) /<br/>BottomTabs + More sheet (< 768px)"]
   APP --> CPAL["CommandPalette<br/>(pages, apps, themes, links)"]
   SH --> OL["/ : OverviewLayout<br/>(the utilities rail from 1440px)"]
@@ -1818,11 +1854,13 @@ flowchart TD
 ```
 
 - **Shell and routing** (#296). Every page lives in `AppShell`
-  (`src/ui/app-shell.jsx`): the 48px header across the top, the grouped
+  (`src/ui/app-shell.jsx`): the 48px header across the top (below 768px the
+  Phone board's own, 56px, #569: "The phone screens on the web"), the grouped
   sidebar from 768px (Monitor: Overview and Alerts; Apps: one entry per
   embedded app, then "Add app"; Tools: Launch and Settings), and below 768px
   the bottom tabs (Overview, Services, Infrastructure, Alerts, More, whose
-  sheet holds the apps, Launch and Settings; #303). The
+  sheet holds the apps, Launch and Settings, and Log out when signing in is
+  asked for; #303, #569). The
   sidebar folds to icons; the choice is kept per browser (`prefs` in
   `src/storage`, which works without storage). Each piece of chrome is its own
   `.jh-ui` root; the page area, `<main>`, is not one, so today's views inside it
@@ -1872,6 +1910,9 @@ flowchart TD
   sidebar's Alerts entry carries the issue count, in the worst issue's colour,
   and none while the status is stale (`useStatusStale`).
   This replaced the dashboard's health dot, read off `/api/services`.
+  Below 768px the header draws no status (#569): the phone's Overview card
+  says it, and the header keeps only the live region, which announces a
+  change as the desktop header's does, on any tab.
 - **The Overview's status** (#297, spec §8 item 1). The top of the Overview
   says whether anything is wrong, what and where, before today's board
   (`OverviewStatus`, a `ShellSection` root). It reads the header's poll
@@ -2043,7 +2084,8 @@ flowchart TD
   board's service cards: the node panels draw none, the custom groups are its
   grouping rather than panels of their own (a saved layout's `group-` slots
   are dropped), and no card is dragged between panels any more, so a custom
-  group's services are chosen in Settings → Sections. It reads the header's
+  group's services are chosen in Settings → Sections (see "Custom groups"
+  below). It reads the header's
   poll for the model, and the board's own `/api/services` (the latency, Kuma's
   last response time) and `/api/integrations` (one headline metric, matched
   by `useAppDataMatching` and keyed by the service's uid, so a container of
@@ -2060,8 +2102,8 @@ flowchart TD
   Grouped by node (services.yaml's order, the node's key beside its name, "7
   / 8 up") or, once Settings has a custom group, by custom group (until then
   Group is disabled, with a link to Settings → Sections; Settings'
-  order, a container named by uid or by name, the rest under "Not in a
-  group", each row with its node beside the name); within a group the worst
+  order, the rest under "Not in a group", each row with its node beside the
+  name); within a group the worst
   first, then by name. services.yaml has no tags, so there is no grouping by
   tag. The choice is kept per browser (`prefs`,
   `jaghelm-services-grouping`), by node by default. The heading counts what
@@ -2080,6 +2122,39 @@ flowchart TD
   and numbers kept, and the count says "12 monitored · No signal · last known
   3 min ago". Kuma's heartbeat strip isn't drawn: the server keeps no
   per-monitor history yet (#312).
+- **Custom groups** (#517, `src/shell/customGroups.js`). Settings →
+  Sections makes them; the Services section groups by them. A group is
+  `{ id, title, containers }` in the display config's `customGroups`, and
+  `containers` holds service uids (`pi-1:adguard-home`), the model's key: so
+  `adguard-home` on two Pis is two services, and a Kuma monitor with no
+  container (`pi-1:Home Assistant`) can be grouped too. Settings lists every
+  service of `/api/status` (with `/api/services`' cards the model lacks), by
+  name and node; a service is in one group. The key keeps its old name, so a
+  tab still on an older build reads the groups. An entry that is no
+  service's uid is a bare container name, as Settings saved before #517: it
+  holds every service of that name, as it always did. Settings writes the
+  groups back as uids at its next change of one (`migrateGroups`): a name as
+  the uids it holds then, a name that holds none dropped, an entry on a node
+  the server knows kept while no service has it. That needs the whole list
+  (`complete`: the status, `/api/services` and services.yaml read, Prometheus
+  and Kuma up, no node unread, unreachable or hidden): until then a name is
+  kept beside the uids it holds, an entry that holds nothing is kept, and a
+  service a name holds can't be taken out, so no save loses a service it
+  can't see. With the services not read, a change keeps the entries as they
+  are. Other saves leave a name as it is. A group has no icon, colour or
+  hidden flag any more: the icon and colour drew nothing since #295, and a
+  hidden group could hide a down service (the Overview's show/hide is
+  Settings → Appearance's, #307). `useConfigPersistence` reads every copy
+  without them and the old board's `sections['group-<id>']`
+  (`dropDeadGroupKeys`), so dropping them is never an edit of the device's
+  own: a load alone sends nothing, a rebase can't undo another device's
+  group edit, and the next save goes without them. The server stores either
+  shape as it is and warns about neither. A tab still on the old build reads
+  uids in its Services section (#300); its Settings shows a uid as it is,
+  and a click there saves a bare name, which holds the service on every
+  node.
+  Settings → Sections' titles and icons for the old board's sections (UPS,
+  Pipeline, Quick Launch, the Checklist) go with that board (#306).
 - **Utilities: the rail and the Launch page** (#301, spec §8 item 5). Quick
   Launch, Pipeline and the Checklist are one component each in `src/ui`
   (`utilities.jsx`), fed by `src/shell/utilities.js` and wired in
@@ -2264,7 +2339,10 @@ flowchart TD
   it stays. A panel not on show (switched off in
   Settings, or a source not known to be set up) is not added to a layout, so
   it holds no empty slot. A fresh install with no node shows the "Connect your
-  first node" empty state, and the demo (`DEMO_MODE`) gets the same default
+  first node" empty state; while the first boot waits for nodes
+  (`discovery: 'waiting'`, 6, #566) it is "Waiting for your first node",
+  which says they appear on their own and offers no way to Settings, where
+  a save would end the wait. The demo (`DEMO_MODE`) gets the same default
   from its own nodes. The UPS and Pipeline panels show only when the server
   says their source is set up (`configuredPanels.js`). `/api/ups` carries `configured`:
   true when Prometheus has the UPS's readings or saw its `nut_ups_info` series
@@ -2578,8 +2656,15 @@ stack sits beside today's CSS and must not restyle it.
   signal", or the cards' read failing). `PhonePlatform`'s `openTarget`
   on the web opens a service's address (`safeUrl`: http, https, mailto) as
   the web's links open, a new tab or this one (Settings → Layout,
-  `linkTarget`). The header's status sentence is for screen readers only below
-  640px, the status card saying it in full.
+  `linkTarget`). Over the screens the header is the Phone board's own
+  (`PhoneHeader` in `@ui/app-header`, #569; `ShellHeader` draws it when
+  `App` says the window is a phone's): 56px, JagHelm's shield (or the
+  instance's logo) and its name, a link to the Overview, and the 44px theme
+  toggle. What the desktop header has besides moved: the status to the
+  Overview's card (the header keeps only its sr-only live region), Settings
+  and Log out to More, the search to the Services tab's own (the command
+  palette still opens with ⌘K or Ctrl K). An open app's frame fills the
+  window between its bar, under that header, and the tabs.
 - **Cascade layers.** The order is `legacy, properties, theme, base, components,
   utilities`, declared at the top of every entry stylesheet. Each app's
   `styles/legacy.css` imports today's stylesheets into `legacy`, the lowest layer
@@ -2717,8 +2802,8 @@ All state is files under the data dir (no DB):
     (an editor's truncate-then-write), keeps the previous config until the
     file changes again, with one warning. At boot, with nothing to keep, the
     board starts empty and the file is left as it is: only a missing file
-    runs first-boot discovery and writes a new one. `nodes: {}` written on
-    purpose is a real config and empties the board. Either way the board,
+    runs first-boot discovery (below). `nodes: {}` written on purpose is a
+    real config and empties the board. Either way the board,
     a push and `/api/health` say the file is broken (#505, 4.6, 4.7): the
     config is a failed source until the file loads.
   - **A file that is there but can't be read is a failed read too** (#536):
@@ -2739,7 +2824,31 @@ All state is files under the data dir (no DB):
     recovery push: a missing file then means what it means while JagHelm
     runs, the config in memory stays (empty after a broken boot), a read
     answers it as `CONFIG_ABSENT` and the next save writes a new file.
-    First-boot discovery runs only at boot, as when a good file is deleted.
+    First-boot discovery runs only for a boot with no file, as when a good
+    file is deleted.
+  - **First boot writes nothing until discovery finds a node** (#566,
+    `firstBoot.js`). With no `services.yaml` at boot, discovery asks
+    Prometheus for its node labels. Nodes found: the default config with
+    them is saved before the server listens, as before. None found, because
+    Prometheus doesn't answer (down, a typo) or hasn't scraped a node yet
+    (the #470 start order): nothing is saved, JagHelm runs on the default
+    config in memory, and the services refresh asks again each cycle (no
+    timer of its own) until there are nodes, then saves the default with
+    them, once, and reads them in the same cycle. One log line when the wait
+    starts, one when it ends. Before, the boot saved a file with no nodes,
+    and since the file was there discovery never ran again. Any file on disk
+    is the user's: one saved in Settings meanwhile (a save that changes
+    nothing writes nothing and doesn't end the wait), one put there by hand,
+    one that doesn't parse, ends the wait and is never discovered over. The
+    default is written over `CONFIG_ABSENT`, so only where there is no file
+    (One writer, below), and a file that lands while discovery asks stands.
+    While waiting, the config is no failed source: `configProblem()` is
+    null, the watcher and the retry see nothing, and `/api/health` has
+    `config: { state: 'discovering' }` (4.6). A refused `PROMETHEUS_URL`
+    (#419) can't be asked until it is fixed, which takes a restart: the boot
+    says so in one line, saves nothing and doesn't wait, so neither health
+    nor Settings says discovery is under way. The wait is the first boot's
+    only: a file deleted later is not discovered again.
   - **Nothing writes over a file that doesn't parse** (#423). The config
     kept for the board is not the file's, so `readConfig()` answers no config
     for it, only why (`services.yaml doesn't parse (<reason> at line N,
@@ -2856,9 +2965,17 @@ All state is files under the data dir (no DB):
     with the version its caller read and replaces it, with no `await` in
     between, so no other request can write after the check, and a write from
     outside the process (a hand edit in that instant) leaves it a conflict:
-    the integration routes answer that with a 409 to try again. `saveConfig`
-    writes through it over whatever is there, for first boot (before the
-    server listens) and tests.
+    the integration routes answer that with a 409 to try again. A write over
+    `CONFIG_ABSENT` (no file was read) creates the file only if there still
+    is none, atomically (`createExclusiveFileSync`: a temp file linked into
+    place, which fails when a file is there), so a file put there from
+    outside the process after the check is never replaced: that write is a
+    conflict too (#566). A path that refuses the link yet reads as no file
+    (a symlink to a file that doesn't exist) is an error, not a conflict: one
+    error log line naming the symlink, and a 500 from Settings' save, never a
+    409 that a reload can't settle. The first boot's save is one; when it
+    fails, JagHelm runs on the nodes it found, in memory. `saveConfig` writes
+    through `writeConfig` over whatever is there, for tests.
   - **A save keeps the file's comments and layout** (#416). `writeConfig`
     parses the bytes it is about to replace with the `yaml` package (pinned,
     server only), edits the difference between what the file holds and the
@@ -2993,6 +3110,8 @@ All state is files under the data dir (no DB):
   `src/shell/overviewSections.js`): `showTodos`, Widgets' old "Show
   checklist panel", which nothing drawn ever read, and `showDockerStats`.
   Nothing else changes; the server's copy loses them at the next save.
+  `customGroups` holds service uids; a group's old icon, colour and hidden
+  are read as absent and go at the next save (#517, "Custom groups").
   - **A save needs the version it read** (#547), by `services.yaml`'s
     mechanism (`util/fileVersion.js`, #423): a device open from before
     another's save used to post its whole old copy, so a section hidden on
@@ -3283,7 +3402,8 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   #303) and 1440px. They check
   the header's incident sentence and its steel "No signal" with the backend
   down (and back), that every nav entry (sidebar, phone tabs and More) opens
-  its page and every old view is reachable, the app bar (Reload makes a new
+  its page and every old view is reachable (on a phone an app's frame filling
+  the window between its bar and the tabs), the app bar (Reload makes a new
   frame; "Open in new tab" is `_blank` with `noopener noreferrer`), Back,
   Forward and a reload, no sideways scroll on any page, and axe with every default rule, dark and
   light, at both widths: the whole Alerts page, and the shell's chrome and
@@ -3341,7 +3461,12 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   still the Overview's at 1440px; the Overview in the Android app's order
   (the status card, the strip, "Needs attention · 2" and its rows, then
   Services and Infrastructure as lists), and with six issues
-  (`sixIssueIncident`) the strip on screen at scroll 0; a row, by Enter or a
+  (`sixIssueIncident`) the strip on screen at scroll 0; the header the Phone
+  board's (#569), dark and light: 56px, the 30px shield 16px in and the name,
+  one button, the 44px theme toggle, which switches the theme of the header
+  and the screens and keeps it, and no status word but the card's; with
+  signing in asked for, More's Log out, its label where the links' are,
+  signs out; a row, by Enter or a
   tap, opens its detail as a full-screen modal sheet named by its title, the
   browser's Back closes it with focus back on the row, Forward opens it
   again, Escape and the sheet's Back close it, and a service opened from a
@@ -3351,8 +3476,9 @@ Automated tests gate every PR to `main` (`check.yml`) and every build of `main`
   says "Loading…" until the cards come, never "no longer reported"; healthy,
   every lamp ok and nothing red or amber; with the server out of reach or
   answering 503 from the start, "No signal" and why, every lamp the ring;
-  under No signal no red, amber or green in the
-  screen or the header, every lamp the ring, the lists' counts last known;
+  under No signal no red, amber or green on the
+  screen, every lamp the ring, the header's live region saying "No signal"
+  and why, the lists' counts last known;
   axe on each screen and detail, dark and light; and at 767 and 768px the
   phone screens and the desktop Overview flip  with the bottom tabs, at the same pixel. The utilities (#301,
   `e2e/utilities.spec.mjs`), on the demo's links, commits and to-dos: at
@@ -3493,7 +3619,7 @@ change; `doc-counts.test.mjs` fails on one.
 | ADR | Decision |
 |-----|----------|
 | [0001](adr/0001-atomic-file-writes.md) | Atomic temp->fsync->rename writes for all user state |
-| [0002](adr/0002-in-memory-single-instance.md) | Single-instance, in-memory state (no DB) |
+| [0002](adr/0002-in-memory-single-instance.md) | Single-instance, in-memory state (no DB); sessions alone are also kept on disk, as token hashes (#250) |
 | [0003](adr/0003-scoped-tls-bypass.md) | Per-request, opt-in TLS-verify bypass for self-signed infra |
 | [0004](adr/0004-config-copy-on-read.md) | Config is copy-on-read + synchronous atomic writes |
 | [0005](adr/0005-event-driven-deploy.md) | Event-driven build->deploy trigger (superseded by 0007, never enabled) |

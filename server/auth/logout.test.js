@@ -1,9 +1,9 @@
 /**
  * Signing out revokes the session on the server (#507). POST /api/auth/logout
- * deletes the presented token's session from the store; sessions live in memory
- * (ADR 0002), so the deletion is the revocation. It answers 204 whatever the
- * token, so a second sign-out or a second tab never meets a 401, and the route
- * says nothing about whether a token was valid.
+ * deletes the presented token's session from the store, and the deletion is the
+ * revocation (sessions.restart.test.js: it holds across a restart). It answers
+ * 204 whatever the token, so a second sign-out or a second tab never meets a
+ * 401, and the route says nothing about whether a token was valid.
  *
  * The authenticated routes are read from the app's own router table, so a route
  * added later is covered without editing this file. Auth is frozen at module

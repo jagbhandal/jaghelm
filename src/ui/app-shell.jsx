@@ -25,7 +25,9 @@
  *   ShellApps  where the embedded apps are drawn (AppFrames): a region named
  *              by the open app, its `bar` (AppBar) on top, in a root of its
  *              own, and the frames filling the window under them (and above
- *              the bottom tabs on a phone).
+ *              the bottom tabs on a phone): under the 48px header and the
+ *              44px bar, or on a phone the 56px header (PhoneHeader, #569),
+ *              the bar and the 64px tabs.
  */
 import { createContext, useContext } from 'react';
 import { UiRoot } from './root.jsx';
@@ -137,7 +139,7 @@ function ShellApps({ label, bar, className, children, ...props }) {
       aria-label={label || undefined}
       data-slot="shell-apps"
       className={cn(
-        '[&_iframe]:h-[calc(100dvh-5.75rem)] max-md:[&_iframe]:h-[calc(100dvh-9.75rem-env(safe-area-inset-bottom))]',
+        '[&_iframe]:h-[calc(100dvh-5.75rem)] max-md:[&_iframe]:h-[calc(100dvh-10.25rem-env(safe-area-inset-bottom))]',
         className
       )}
       {...props}

@@ -287,13 +287,19 @@ Open `http://your-server:3099` in a browser.
 **On first load, JagHelm will:**
 
 1. Connect to Prometheus and discover all nodes with a `node` label
-2. Auto-generate a `data/services.yaml` config with your discovered nodes
+2. Auto-generate a `data/services.yaml` config with your discovered nodes. If
+   Prometheus isn't reachable yet, or hasn't scraped a node yet, it saves
+   nothing and asks again every refresh: the nodes appear on their own once
+   Prometheus has them
 3. Query cAdvisor for containers on each node
 4. Display everything in the dashboard
 
 You should see a panel for each node showing CPU, RAM, disk, and uptime metrics, plus a card for each Docker container.
 
 **If panels are empty or show "Loading...":**
+- "Waiting for your first node" means discovery is still asking Prometheus.
+  Save nothing in Settings → Integrations until the nodes appear: a save
+  writes `data/services.yaml`, and discovery doesn't run once that file exists
 - Check that Prometheus is reachable from the JagHelm container
 - Verify Prometheus targets are "UP" at `http://your-prometheus:9090/targets`
 - Check JagHelm logs: `docker logs jaghelm`
@@ -442,7 +448,7 @@ Settings > Appearance — choose from 10 developer-inspired themes (6 dark, 4 li
 Settings > Layout > Grid Columns — slide from 6 (compact, fewer wider panels) to 24 (fine grid, more panel placement options).
 
 ### Group your services
-The Overview's Services section groups services by node. Its Node / Group switch groups them by your custom groups instead (add one in Settings > Sections; until then Group is greyed out); JagHelm remembers the choice in this browser.
+The Overview's Services section groups services by node. Its Node / Group switch groups them by your custom groups instead (add one in Settings > Sections; until then Group is greyed out); JagHelm remembers the choice in this browser. A group lists each service by name and node, so the same container on two nodes (AdGuard Home on two Pis) is two services you group apart, and a Kuma monitor with no container can be grouped too.
 
 ### Rename nodes and services
 Settings > Nodes — change display names, subtitles, icons, and colors for each node.

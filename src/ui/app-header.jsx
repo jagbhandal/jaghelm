@@ -4,8 +4,7 @@
  *
  *   brand      the logo and the instance name, a link to the Overview:
  *              JagHelm's shield (public/logo.svg, the favicon's artwork, #530),
- *              or `logoUrl` when one is set, 28px square. Below 768px the name
- *              is for screen readers only.
+ *              or `logoUrl` when one is set, 28px square, and the name.
  *   status     the overall state from the status model: its lamp, its word
  *              and the model's sentence, which carries the counts ("2 services
  *              down · 1 no signal"), the whole of it a link to Alerts. Healthy
@@ -19,10 +18,7 @@
  *              status ("last known 3 min ago: All systems normal", #480),
  *              else why ("Can't reach JagHelm"; NO_SIGNAL's keys: 'down',
  *              'waiting', 'expired'). Nothing from the last status is drawn
- *              in its colour. Below 640px the sentence is for screen
- *              readers only (#303): a phone's status card says it in full,
- *              and squeezed beside the lamp and word it was an ellipsis.
- *              `reach` 'loading', before the first answer, is a placeholder,
+ *              in its colour. `reach` 'loading', before the first answer, is a placeholder,
  *              neither a state nor no signal.
  *              Beside the link, a live region (sr-only) announces a change
  *              of state, never a tick of an age: the link's words while
@@ -30,8 +26,7 @@
  *              signal" and why ("No signal: Can't reach JagHelm"), without
  *              `lastKnown`, whose age moves each second.
  *   updated    "Updated 12 s ago" (UpdatedAgo): its own component with its own
- *              clock, so its tick each second re-renders nothing else. From
- *              640px.
+ *              clock, so its tick each second re-renders nothing else.
  *   search     opens the command palette; from 1024px the mock's wide button
  *              with the shortcut, narrower an icon, leaving the sentence room.
  *   theme      with `onThemeChange`, the mock's toggle (#304): a sun in dark,
@@ -44,6 +39,9 @@
  *
  * `onNavigate(event, href)` handles a link's click (the router's followLink),
  * so a modified click still opens a new browser tab.
+ *
+ * The shell draws it from 768px; below, PhoneHeader (#569), the Phone
+ * board's header, the brand and the theme toggle only (see it below).
  */
 import { useContext } from 'react';
 import { LogOut, Moon, Search, SlidersHorizontal, Sun } from 'lucide-react';
@@ -98,20 +96,12 @@ function Announce({ busy, children }) {
   );
 }
 
-function HeaderStatus({ status = {}, onNavigate }) {
-  const { reach = 'ok', state, word, sentence, href = '/alerts', current, lastKnown } = status;
-  if (reach === 'loading') {
-    // Before the first answer: no state to show yet, and not "No signal" either.
-    return (
-      <div data-slot="header-status" className="flex min-w-0 flex-1 items-center gap-2.5">
-        <Skeleton key="lamp" className="size-3.5 rounded-full" />
-        <Skeleton key="line" className="h-3 w-40 max-w-full" />
-        <Announce key="announce" busy>
-          Checking status
-        </Announce>
-      </div>
-    );
-  }
+/**
+ * What the header says of `status` (AppHeader's prop): the state drawn (`s`),
+ * the word (`said`), the line after it (`says`) and what the live region
+ * announces (`announced`). Pure.
+ */
+function headerWords({ reach = 'ok', state, word, sentence, lastKnown } = {}) {
   const signal = reach === 'ok';
   const s = !signal ? 'unknown' : state === EMPTY ? EMPTY : toState(state);
   const empty = s === EMPTY;
@@ -127,6 +117,24 @@ function HeaderStatus({ status = {}, onNavigate }) {
   const says = !signal ? lastKnown || why : sentence !== said ? sentence : null;
   // Never the last known line: its age moves each second.
   const announced = !signal ? `${said}: ${why}` : says ? `${said}: ${says}` : said;
+  return { s, empty, quiet, said, says, announced };
+}
+
+function HeaderStatus({ status = {}, onNavigate }) {
+  const { reach = 'ok', href = '/alerts', current } = status;
+  if (reach === 'loading') {
+    // Before the first answer: no state to show yet, and not "No signal" either.
+    return (
+      <div data-slot="header-status" className="flex min-w-0 flex-1 items-center gap-2.5">
+        <Skeleton key="lamp" className="size-3.5 rounded-full" />
+        <Skeleton key="line" className="h-3 w-40 max-w-full" />
+        <Announce key="announce" busy>
+          Checking status
+        </Announce>
+      </div>
+    );
+  }
+  const { s, empty, quiet, said, says, announced } = headerWords(status);
   return (
     <div data-slot="header-status" className="flex min-w-0 flex-1">
       <a
@@ -146,7 +154,7 @@ function HeaderStatus({ status = {}, onNavigate }) {
         {says && (
           <>
             <span className="sr-only">:</span>{' '}
-            <span className="min-w-0 truncate text-text-2 group-hover/status:text-text-1 max-sm:sr-only">
+            <span className="min-w-0 truncate text-text-2 group-hover/status:text-text-1">
               {says}
             </span>
           </>
@@ -161,7 +169,7 @@ function HeaderStatus({ status = {}, onNavigate }) {
  * The theme toggle: to light from dark, to dark from light, by the theme of
  * the UiRoot it is drawn in (none: dark, the default).
  */
-function ThemeToggle({ onThemeChange }) {
+function ThemeToggle({ onThemeChange, className, iconClassName }) {
   const light = useContext(RootSwitchesContext)?.[SWITCHES.theme.attribute] === 'light';
   const label = light ? 'Switch to dark theme' : 'Switch to light theme';
   return (
@@ -169,11 +177,71 @@ function ThemeToggle({ onThemeChange }) {
       <IconButton
         label={label}
         onClick={() => onThemeChange(light ? 'dark' : 'light')}
-        className="shrink-0"
+        className={cn('shrink-0', className)}
       >
-        {light ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}
+        {light ? (
+          <Moon aria-hidden="true" className={iconClassName} />
+        ) : (
+          <Sun aria-hidden="true" className={iconClassName} />
+        )}
       </IconButton>
     </Tooltip>
+  );
+}
+
+/**
+ * The header below 768px (#569), the Phone board's own: 56px on `bg` over a
+ * subtle edge, 16px at the sides. JagHelm's shield (or `logoUrl`) at the
+ * mock's 30px and the name beside it, the wordmark, a link to the Overview;
+ * then the mock's 44px theme toggle. No status, search or Settings: the
+ * Overview's card says the status, the phone's Services tab has its search,
+ * and More holds Settings and Log out. The status is still announced, by the
+ * desktop header's live region (sr-only) and words, so a screen reader hears
+ * a change of state on any tab.
+ */
+function PhoneHeader({
+  name = 'JagHelm',
+  logoUrl,
+  homeHref = '/',
+  status = {},
+  onThemeChange,
+  onNavigate,
+  className,
+  ...props
+}) {
+  const loading = status.reach === 'loading';
+  return (
+    <header
+      data-slot="phone-header"
+      className={cn(
+        'flex h-14 items-center gap-2.5 border-b border-border bg-background px-4',
+        className
+      )}
+      {...props}
+    >
+      <a
+        href={homeHref}
+        onClick={onNavigate ? (e) => onNavigate(e, homeHref) : undefined}
+        className="mr-auto flex min-w-0 items-center gap-2.5 rounded-md"
+      >
+        <img
+          src={logoUrl || SHIELD}
+          alt=""
+          width={30}
+          height={30}
+          className={cn('size-7.5 shrink-0 object-contain', logoUrl && 'rounded-lg')}
+        />
+        <span className="min-w-0 truncate text-title-sm font-extrabold tracking-[-0.01em]">
+          {name}
+        </span>
+      </a>
+      <Announce busy={loading}>
+        {loading ? 'Checking status' : headerWords(status).announced}
+      </Announce>
+      {onThemeChange && (
+        <ThemeToggle onThemeChange={onThemeChange} className="size-11" iconClassName="size-5" />
+      )}
+    </header>
   );
 }
 
@@ -198,7 +266,7 @@ function AppHeader({
     <header
       data-slot="app-header"
       className={cn(
-        'flex h-12 items-center gap-3 border-b border-border bg-background px-4 md:gap-4 md:px-6',
+        'flex h-12 items-center gap-4 border-b border-border bg-background px-6',
         className
       )}
       {...props}
@@ -215,12 +283,10 @@ function AppHeader({
           height={28}
           className={cn('size-7 shrink-0 object-contain', logoUrl && 'rounded-lg')}
         />
-        <span className="max-w-48 truncate text-title-xs font-extrabold max-md:sr-only">
-          {name}
-        </span>
+        <span className="max-w-48 truncate text-title-xs font-extrabold">{name}</span>
       </a>
       <HeaderStatus status={status} onNavigate={onNavigate} />
-      {updated && <div className="hidden shrink-0 sm:block">{updated}</div>}
+      {updated && <div className="shrink-0">{updated}</div>}
       {onOpenPalette && (
         <>
           <button
@@ -274,4 +340,4 @@ function AppHeader({
   );
 }
 
-export { AppHeader, UpdatedAgo, NO_SIGNAL, agoText, useAgo };
+export { AppHeader, PhoneHeader, UpdatedAgo, NO_SIGNAL, agoText, useAgo };

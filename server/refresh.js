@@ -16,6 +16,7 @@ import { join } from 'path';
 
 import { configProblem, getConfig } from './config.js';
 import { getNodesData, promQuery, promUrlProblem } from './discovery.js';
+import { askAgain } from './firstBoot.js';
 import { UP_MISSING } from './status/upMissing.js';
 import { recordSamples } from './history.js';
 import {
@@ -783,11 +784,21 @@ const PROMETHEUS_PROBE = 'vector(1)';
  * unreachable", not that nothing is monitored. Kuma isn't read with no nodes,
  * so it has no flag.
  *
- * @param {{ prometheusOk: boolean, prometheusError?: string|null }} outcome
+ * While the first boot waits for nodes (firstBoot.js, #566), the answer is
+ * its discovery's, not the probe's, and the payload says so with
+ * `discovery: 'waiting'`, for Settings → Nodes: the nodes appear as soon as
+ * Prometheus has some. Absent otherwise.
+ *
+ * @param {{ prometheusOk: boolean, prometheusError?: string|null, waiting?: boolean }} outcome
  */
-export function noNodesCacheEntry({ prometheusOk, prometheusError = null }) {
+export function noNodesCacheEntry({ prometheusOk, prometheusError = null, waiting = false }) {
   return {
-    payload: { nodes: {}, overallHealth: 'unknown', sources: { prometheus: { ok: prometheusOk } } },
+    payload: {
+      nodes: {},
+      overallHealth: 'unknown',
+      sources: { prometheus: { ok: prometheusOk } },
+      ...(waiting ? { discovery: 'waiting' } : {}),
+    },
     internal: { sourceErrors: { prometheus: prometheusOk ? null : prometheusError } },
   };
 }
@@ -830,12 +841,17 @@ function placeMonitor(m, { nodes, nodeKeys, taken, owner, lastSeenNodeOf, lastSe
 
 async function _refreshServices() {
   try {
+    // While the first boot waits for nodes (#566), discovery asks Prometheus
+    // again, and saves services.yaml once it has some: this cycle reads them.
+    const asked = await askAgain();
     const config = getConfig();
     if (!config || !config.nodes || Object.keys(config.nodes).length === 0) {
-      const outcome = await promQuery(PROMETHEUS_PROBE).then(
-        () => ({ prometheusOk: true }),
-        (err) => ({ prometheusOk: false, prometheusError: err?.message || String(err) })
-      );
+      const outcome =
+        asked ??
+        (await promQuery(PROMETHEUS_PROBE).then(
+          () => ({ prometheusOk: true }),
+          (err) => ({ prometheusOk: false, prometheusError: err?.message || String(err) })
+        ));
       reportPrometheus({ ok: outcome.prometheusOk, error: outcome.prometheusError });
       const { payload, internal } = noNodesCacheEntry(outcome);
       setCache('services', payload, internal);

@@ -386,13 +386,14 @@ function AppMain({ authRequired, demo, onLogout, theme: { theme, shown, setTheme
               reach={poll.reach}
               updated={poll.updated}
               routeId={route.id}
+              phone={phone}
               onOpenPalette={openPalette}
               onThemeChange={setTheme}
               onLogout={logout}
             />
           }
           sidebar={<ShellSideNav groups={groups} />}
-          tabs={<ShellTabs groups={groups} routeId={route.id} badge={badge} />}
+          tabs={<ShellTabs groups={groups} routeId={route.id} badge={badge} onLogout={logout} />}
         >
           {/* Below 768px the phone screens, drawn only there (#303). */}
           {phone && (

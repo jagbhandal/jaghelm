@@ -7,7 +7,8 @@
  * are text-2, surface-2 under the pointer.
  *
  * An entry is `{ id, label, href, icon?, monogram?, current?, badge?,
- * loaded?, onUnload?, minor? }`:
+ * loaded?, onUnload?, minor? }`, or an action, `onClick` in place of `href`
+ * (the phone's More sheet's Log out, #569): a button drawn as the links are.
  *
  *   icon      a Lucide icon element, drawn 16px in currentColor
  *   monogram  an app's chip instead of an icon: two letters (appMonogram)
@@ -92,16 +93,23 @@ function AppChip({ text, current }) {
 }
 
 function NavItem({ item, collapsed, onNavigate }) {
-  const { label, href, icon, monogram, current, badge, loaded, onUnload, minor } = item;
+  const { label, href, icon, monogram, current, badge, loaded, onUnload, minor, onClick } = item;
   const linkRef = useRef(null);
   const name = entryName(item);
+  // An action (onClick, no href) is a button, drawn as the links are.
+  const action = href == null && onClick != null;
+  const Entry = action ? 'button' : 'a';
   const link = (
-    <a
+    <Entry
       ref={linkRef}
-      href={href}
+      {...(action
+        ? { type: 'button', onClick }
+        : {
+            href,
+            'aria-current': current ? 'page' : undefined,
+            onClick: onNavigate ? (e) => onNavigate(e, href) : undefined,
+          })}
       aria-label={name}
-      aria-current={current ? 'page' : undefined}
-      onClick={onNavigate ? (e) => onNavigate(e, href) : undefined}
       data-slot="nav-item"
       className={cn(
         'relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2.5 transition-colors [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:stroke-[1.75]',
@@ -109,7 +117,8 @@ function NavItem({ item, collapsed, onNavigate }) {
         current
           ? 'bg-accent-tint font-semibold text-text-1 [&_svg]:text-accent-text'
           : 'font-medium text-text-2 hover:bg-surface-2 hover:text-text-1',
-        collapsed && 'justify-center px-0'
+        collapsed && 'justify-center px-0',
+        action && 'cursor-pointer text-left'
       )}
     >
       {monogram != null ? <AppChip text={monogram} current={current} /> : icon}
@@ -127,7 +136,7 @@ function NavItem({ item, collapsed, onNavigate }) {
           )}
         />
       )}
-    </a>
+    </Entry>
   );
   return (
     <div className="group/item relative flex items-center">
@@ -213,7 +222,11 @@ function SideNav({
         <div className={cn('mt-auto flex', collapsed ? 'justify-center' : 'justify-end')}>
           <Tooltip content={toggle} side={collapsed ? 'right' : 'top'}>
             <IconButton label={toggle} onClick={() => onCollapsedChange(!collapsed)}>
-              {collapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
+              {collapsed ? (
+                <PanelLeftOpen aria-hidden="true" />
+              ) : (
+                <PanelLeftClose aria-hidden="true" />
+              )}
             </IconButton>
           </Tooltip>
         </div>

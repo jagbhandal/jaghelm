@@ -6,6 +6,14 @@ import ColorPickerPopover, { DEFAULT_COLOR } from './ColorPickerPopover.jsx';
 import { useConfig } from '../../context/ConfigContext.jsx';
 import { useConfirm } from '../../context/OverlayContext.jsx';
 import { apiFetch } from '../../api/client.js';
+import {
+  groupChoices,
+  groupEntries,
+  heldByName,
+  heldUids,
+  migrateGroups,
+  unmatchedEntries,
+} from '../../shell/customGroups.js';
 
 /**
  * SectionsTab — Phase 2 Settings + Phase 3 Custom Groups
@@ -14,8 +22,16 @@ import { apiFetch } from '../../api/client.js';
  * (UPS, Pipeline, Quick Launch, Todos) that aren't driven by nodes.
  * Node sections are managed in the Nodes tab.
  *
- * Also manages Custom Groups — user-created panels that pull containers
- * from any node into a custom arrangement (inspired by Homepage groups).
+ * Also manages Custom Groups: the Overview's Services section can group by
+ * them (#300). A group holds services by uid (#517, src/shell/customGroups.js),
+ * so the same container on two nodes is two services, and every service the
+ * status model has can be grouped, a Kuma monitor with no container too. A
+ * group has a title and its services, nothing else: no icon or colour (#295)
+ * and no hidden flag (the Overview's show/hide is Settings → Appearance's).
+ * A group saved before #517 (bare container names) shows each name as the
+ * services of that name, and is written back as uids at its next change here;
+ * while some node's services couldn't be read, a name is kept, and a service
+ * it holds can't be taken out until they can.
  */
 
 const STATIC_SECTIONS = [
@@ -24,6 +40,31 @@ const STATIC_SECTIONS = [
   { key: 'quicklaunch', defaultTitle: 'Quick Launch', defaultIcon: '🚀' },
   { key: 'todos', defaultTitle: 'Checklist', defaultIcon: '✅' },
 ];
+
+// A group's service chips: those it holds (click to remove), the rest (click to add).
+const CHIPS = { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, minHeight: 32 };
+const CHIP = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  padding: '4px 10px',
+  borderRadius: 6,
+  fontSize: 12,
+  fontFamily: 'var(--font-body)',
+  cursor: 'pointer',
+};
+const HELD = {
+  ...CHIP,
+  background: 'var(--accent-glow)',
+  color: 'var(--accent)',
+  border: '1px solid var(--accent)',
+};
+const FREE = {
+  ...CHIP,
+  background: 'var(--bg-card-inner)',
+  color: 'var(--text-secondary)',
+  border: '1px solid var(--border-color)',
+};
 
 export default function SectionsTab() {
   const { config, update } = useConfig();
@@ -34,30 +75,34 @@ export default function SectionsTab() {
   // live draft from there and reports the committed value back on Apply.
   const [colorSeed, setColorSeed] = useState(DEFAULT_COLOR);
 
-  // Custom groups state
-  const customGroups = config.customGroups || [];
+  // Custom groups state (a hand-edited entry that is no group is left out)
+  const customGroups = Array.isArray(config.customGroups)
+    ? config.customGroups.filter((g) => g && typeof g === 'object')
+    : [];
   const [editingGroup, setEditingGroup] = useState(null); // group id or null
-  const [allContainers, setAllContainers] = useState([]);
+  // The services a group can hold: undefined while /api/status and
+  // /api/services are on their way, then groupChoices' (null when neither
+  // answered).
+  const [choices, setChoices] = useState(undefined);
 
-  // Fetch all containers for the assignment UI
   useEffect(() => {
-    apiFetch('/api/services')
-      .then((r) => (r.ok ? r.json() : { nodes: {} }))
-      .then((data) => {
-        const containers = [];
-        for (const [nodeKey, node] of Object.entries(data.nodes || {})) {
-          for (const s of node.services || []) {
-            containers.push({
-              container: s.container,
-              name: s.display_name,
-              node: node.display_name || nodeKey,
-            });
-          }
-        }
-        setAllContainers(containers);
-      })
-      .catch(() => {});
+    let live = true;
+    const read = (path) =>
+      apiFetch(path)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+    // services.yaml says which nodes there are, hidden ones too: whether the
+    // list is every service (groupChoices' `complete`).
+    Promise.all([read('/api/status'), read('/api/services'), read('/api/services/config')]).then(
+      ([status, services, serverConfig]) => {
+        if (live) setChoices(groupChoices({ status, services, serverConfig }));
+      }
+    );
+    return () => {
+      live = false;
+    };
   }, []);
+  const services = choices?.services ?? [];
 
   const openColor = (path, currentColor) => {
     setColorTarget(path);
@@ -72,57 +117,48 @@ export default function SectionsTab() {
   };
 
   // ── Custom Group helpers ──
+  // Every write of the groups saves them as uids (migrateGroups), once the
+  // services are read; before, as they are.
+  const saveGroups = (next) => update('customGroups', migrateGroups(next, choices ?? null));
+
   const addGroup = () => {
     const id = `custom-${Date.now()}`;
-    const newGroup = {
-      id,
-      title: 'New Group',
-      icon: '📂',
-      borderColor: DEFAULT_COLOR,
-      containers: [],
-    };
-    update('customGroups', [...customGroups, newGroup]);
+    saveGroups([...customGroups, { id, title: 'New Group', containers: [] }]);
     setEditingGroup(id);
   };
 
-  const updateGroup = (groupId, field, value) => {
-    const updated = customGroups.map((g) => (g.id === groupId ? { ...g, [field]: value } : g));
-    update('customGroups', updated);
-  };
+  const updateGroup = (groupId, change) =>
+    saveGroups(
+      migrateGroups(customGroups, choices ?? null).map((g) =>
+        g.id === groupId ? { ...g, ...change(g) } : g
+      )
+    );
 
   const deleteGroup = async (groupId) => {
     const group = customGroups.find((g) => g.id === groupId);
     const ok = await confirm({
       title: `Delete the "${group?.title || 'custom'}" group?`,
-      body: 'This removes the custom group. The containers it held return to the available pool. This cannot be undone.',
+      body: 'This removes the custom group. Its services go back to the list. This cannot be undone.',
       confirmLabel: 'Delete Group',
       danger: true,
     });
     if (!ok) return;
-    update(
-      'customGroups',
-      customGroups.filter((g) => g.id !== groupId)
-    );
+    saveGroups(customGroups.filter((g) => g.id !== groupId));
     if (editingGroup === groupId) setEditingGroup(null);
   };
 
-  const toggleContainer = (groupId, containerName) => {
-    const group = customGroups.find((g) => g.id === groupId);
-    if (!group) return;
-    const has = group.containers.includes(containerName);
-    const updated = has
-      ? group.containers.filter((c) => c !== containerName)
-      : [...group.containers, containerName];
-    updateGroup(groupId, 'containers', updated);
-  };
+  // Add a service (by uid), or take an entry out (a uid, or a name no service has).
+  const addService = (groupId, uid) =>
+    updateGroup(groupId, (g) => ({
+      containers: groupEntries(g).includes(uid) ? groupEntries(g) : [...groupEntries(g), uid],
+    }));
+  const removeEntry = (groupId, entry) =>
+    updateGroup(groupId, (g) => ({ containers: groupEntries(g).filter((e) => e !== entry) }));
 
-  // Build set of containers already claimed by ANY custom group
-  const claimedSet = new Set();
-  for (const g of customGroups) {
-    for (const c of g.containers || []) {
-      claimedSet.add(c);
-    }
-  }
+  // The services some group already holds: a service is in one group.
+  const claimed = new Set(customGroups.flatMap((g) => heldUids(g, services)));
+  const byUid = new Map(services.map((s) => [s.uid, s]));
+  const label = (s) => `${s.name} (${s.nodeName || s.node})`;
 
   return (
     <div className="settings-section">
@@ -247,7 +283,8 @@ export default function SectionsTab() {
               Custom Groups
             </h3>
             <p className="settings-hint-block" style={{ margin: '4px 0 0' }}>
-              Create custom panels and assign containers from any node.
+              Group services from any node. The Overview&apos;s Services section can list them by
+              these groups.
             </p>
           </div>
           <button className="settings-btn-primary" onClick={addGroup}>
@@ -257,20 +294,23 @@ export default function SectionsTab() {
 
         {customGroups.length === 0 && (
           <EmptyState icon="📂">
-            No custom groups yet. Create one to organize containers your way.
+            No custom groups yet. Create one to group services your way.
           </EmptyState>
         )}
 
         {customGroups.map((group) => {
           const isEditing = editingGroup === group.id;
+          const title = group.title || 'Group';
+          const held = heldUids(group, services);
+          const unmatched = choices ? unmatchedEntries(group, services) : groupEntries(group);
+          // Held by a name that is kept while the list isn't whole (migrateGroups).
+          const pinned = new Set(choices && !choices.complete ? heldByName(group, services) : []);
           return (
-            <div
+            <section
               key={group.id}
+              aria-label={title}
               className="settings-card"
-              style={{
-                borderLeft: `3px solid ${group.borderColor || DEFAULT_COLOR}`,
-                marginBottom: 12,
-              }}
+              style={{ borderLeft: '3px solid var(--border-color)', marginBottom: 12 }}
             >
               {/* Group header */}
               <div
@@ -281,15 +321,14 @@ export default function SectionsTab() {
                   marginBottom: isEditing ? 14 : 0,
                 }}
               >
-                <span style={{ fontSize: 20 }}>
-                  <SettingsIcon value={group.icon} fallback="📂" size={22} />
-                </span>
                 <span className="settings-item-title" style={{ fontSize: 15, flex: 1 }}>
                   {group.title}
                 </span>
-                <span className="settings-item-subtitle">
-                  {(group.containers || []).length} services
-                </span>
+                {choices && (
+                  <span className="settings-item-subtitle">
+                    {held.length} {held.length === 1 ? 'service' : 'services'}
+                  </span>
+                )}
                 <button
                   className="settings-btn-sm"
                   onClick={() => setEditingGroup(isEditing ? null : group.id)}
@@ -299,6 +338,7 @@ export default function SectionsTab() {
                 </button>
                 <button
                   className="settings-btn-danger settings-btn-compact"
+                  aria-label={`Delete ${title}`}
                   onClick={() => deleteGroup(group.id)}
                 >
                   ✕
@@ -311,145 +351,105 @@ export default function SectionsTab() {
                   className="settings-stack"
                   style={{ gap: 12, paddingTop: 12, borderTop: '1px solid var(--border-color)' }}
                 >
-                  <div className="settings-row" style={{ gap: 12 }}>
-                    <div style={{ flex: 1 }}>
-                      <Field label="Group Title">
-                        <input
-                          className="settings-input"
-                          value={group.title || ''}
-                          onChange={(e) => updateGroup(group.id, 'title', e.target.value)}
-                          placeholder="Databases"
-                        />
-                      </Field>
-                    </div>
-                    <div>
-                      <Field label="Icon">
-                        <IconPicker
-                          compact
-                          value={group.icon || ''}
-                          onChange={(url) => updateGroup(group.id, 'icon', url)}
-                        />
-                      </Field>
-                    </div>
-                    <div>
-                      <Field label="Color">
-                        <div
-                          style={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 8,
-                            background: group.borderColor || DEFAULT_COLOR,
-                            cursor: 'pointer',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                          }}
-                          onClick={() => openColor(`__group_color_${group.id}`, group.borderColor)}
-                        />
-                      </Field>
-                    </div>
-                  </div>
+                  <Field label="Group Title">
+                    <input
+                      className="settings-input"
+                      value={group.title || ''}
+                      onChange={(e) => updateGroup(group.id, () => ({ title: e.target.value }))}
+                      placeholder="Databases"
+                    />
+                  </Field>
 
-                  {/* Color picker for group (reuse same color picker) */}
-                  {colorTarget === `__group_color_${group.id}` && (
-                    <div>
-                      <ColorPickerPopover
-                        value={colorSeed}
-                        onApply={(color) => {
-                          updateGroup(group.id, 'borderColor', color);
-                          setColorTarget(null);
-                        }}
-                        onCancel={() => setColorTarget(null)}
-                      />
-                    </div>
+                  {!choices && (
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      {choices === undefined
+                        ? 'Loading services…'
+                        : "Couldn't read the services: try again later"}
+                    </span>
                   )}
 
-                  {/* Container assignment */}
-                  <div>
-                    <span className="settings-item-subtitle" style={{ letterSpacing: 0.5 }}>
-                      Assigned Containers (click to remove)
+                  {pinned.size > 0 && (
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      Some nodes&apos; services couldn&apos;t all be read just now, so this group
+                      keeps the container names it was saved with. A service a name holds can be
+                      taken out once they can.
                     </span>
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: 6,
-                        marginTop: 6,
-                        minHeight: 32,
-                      }}
-                    >
-                      {(group.containers || []).length === 0 && (
-                        <span
-                          style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}
-                        >
-                          None assigned — pick from below
-                        </span>
-                      )}
-                      {(group.containers || []).map((c) => {
-                        const svc = allContainers.find((s) => s.container === c);
-                        return (
-                          <button
-                            key={c}
-                            onClick={() => toggleContainer(group.id, c)}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5,
-                              padding: '4px 10px',
-                              borderRadius: 6,
-                              fontSize: 12,
-                              fontFamily: 'var(--font-body)',
-                              cursor: 'pointer',
-                              background: 'var(--accent-glow)',
-                              color: 'var(--accent)',
-                              border: '1px solid var(--accent)',
-                            }}
-                          >
-                            {svc?.name || c}
-                            <span style={{ fontSize: 10, opacity: 0.7 }}>✕</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  )}
 
-                  <div>
-                    <span className="settings-item-subtitle" style={{ letterSpacing: 0.5 }}>
-                      Available Containers (click to add)
-                    </span>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                      {allContainers
-                        .filter((c) => !claimedSet.has(c.container))
-                        .map((c) => (
-                          <button
-                            key={c.container}
-                            onClick={() => toggleContainer(group.id, c.container)}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5,
-                              padding: '4px 10px',
-                              borderRadius: 6,
-                              fontSize: 12,
-                              fontFamily: 'var(--font-body)',
-                              cursor: 'pointer',
-                              background: 'var(--bg-card-inner)',
-                              color: 'var(--text-secondary)',
-                              border: '1px solid var(--border-color)',
-                            }}
-                          >
-                            {c.name}
-                            <span style={{ fontSize: 9, opacity: 0.5 }}>({c.node})</span>
-                          </button>
-                        ))}
-                      {allContainers.length === 0 && (
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                          Loading containers...
+                  {choices && (
+                    <>
+                      <div>
+                        <span className="settings-item-subtitle" style={{ letterSpacing: 0.5 }}>
+                          In this group (click to remove)
                         </span>
-                      )}
-                    </div>
-                  </div>
+                        <div role="group" aria-label={`In ${title}`} style={CHIPS}>
+                          {held.length === 0 && unmatched.length === 0 && (
+                            <span
+                              style={{
+                                fontSize: 12,
+                                color: 'var(--text-muted)',
+                                fontStyle: 'italic',
+                              }}
+                            >
+                              None yet: pick from below
+                            </span>
+                          )}
+                          {held.map((uid) => (
+                            <button
+                              key={uid}
+                              onClick={() => removeEntry(group.id, uid)}
+                              disabled={pinned.has(uid)}
+                              style={pinned.has(uid) ? { ...HELD, cursor: 'default' } : HELD}
+                            >
+                              {label(byUid.get(uid))}
+                              <span aria-hidden="true" style={{ fontSize: 10, opacity: 0.7 }}>
+                                ✕
+                              </span>
+                            </button>
+                          ))}
+                          {unmatched.map((entry) => (
+                            <button
+                              key={entry}
+                              onClick={() => removeEntry(group.id, entry)}
+                              style={{ ...HELD, opacity: 0.7 }}
+                            >
+                              {`${entry} (not found)`}
+                              <span aria-hidden="true" style={{ fontSize: 10, opacity: 0.7 }}>
+                                ✕
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="settings-item-subtitle" style={{ letterSpacing: 0.5 }}>
+                          Services (click to add)
+                        </span>
+                        <div role="group" aria-label="Services to add" style={CHIPS}>
+                          {services
+                            .filter((svc) => !claimed.has(svc.uid))
+                            .map((svc) => (
+                              <button
+                                key={svc.uid}
+                                onClick={() => addService(group.id, svc.uid)}
+                                style={FREE}
+                              >
+                                {label(svc)}
+                              </button>
+                            ))}
+                          {services.length === 0 && (
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                              No services yet
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
-            </div>
+            </section>
           );
         })}
       </div>

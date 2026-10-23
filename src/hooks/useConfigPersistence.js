@@ -34,6 +34,15 @@
  * still there at the next load: what differs from that copy is laid over the
  * server's copy then, and saved. The unload flush is only a head start.
  *
+ * Every copy is read without the keys an older build saved for a custom
+ * group that nothing reads (#517, dropDeadGroupKeys in
+ * src/shell/customGroups.js): the server's at load and at a rebase, the one
+ * kept in localStorage, and this device's own at a load or a rebase, and each
+ * save goes without them. Dropping one is never an edit of this device's: a
+ * load alone sends nothing, and a rebase can't lay a group list without them
+ * over another device's group edit. The server's copy loses them at the next
+ * save made for something else.
+ *
  * Refs that the old AppMain held (configLoadedFromServer / saveTimerRef /
  * pendingConfigRef / savePendingRef) are now internal to this hook.
  *
@@ -57,6 +66,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../api/client.js';
 import { rebaseConfig, sameConfig } from '../utils/rebaseConfig.js';
+import { dropDeadGroupKeys } from '../shell/customGroups.js';
 
 const DISPLAY_CONFIG_URL = '/api/display-config';
 /** Where this device's config is kept, and the copy it descends from. */
@@ -65,8 +75,11 @@ const BASE_KEY = 'jaghelm-config-base';
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-/** The config as JSON carries it (an undefined value is no setting). */
-const asJson = (config) => JSON.parse(JSON.stringify(config ?? {}));
+/**
+ * The config as JSON carries it (an undefined value is no setting), without a
+ * custom group's dead keys (see the top).
+ */
+const asJson = (config) => dropDeadGroupKeys(JSON.parse(JSON.stringify(config ?? {})));
 
 /** A refusal a fresh read can mend: another device saved first (409), or no version was sent (428). */
 const refusedAsStale = (r) => r.status === 409 || r.status === 428;
@@ -82,7 +95,9 @@ const refusedAsStale = (r) => r.status === 409 || r.status === 428;
 async function readAnswer(r, needVersion = true) {
   const version = r.headers.get('ETag');
   const body = await r.json().catch(() => undefined);
-  if (r.ok && isObject(body) && (version || !needVersion)) return { config: body, version };
+  if (r.ok && isObject(body) && (version || !needVersion)) {
+    return { config: dropDeadGroupKeys(body), version };
+  }
   const noCopy =
     (r.ok && body === null) || (r.status === 503 && body?.code === 'config_unparseable');
   if (version && noCopy) return { config: null, version };
@@ -113,7 +128,10 @@ function readStoredBase() {
     if (localStorage.getItem(CONFIG_KEY) == null) return null;
     const base = JSON.parse(localStorage.getItem(BASE_KEY) ?? 'null');
     if (!isObject(base) || !isObject(base.config)) return null;
-    return { config: base.config, version: typeof base.version === 'string' ? base.version : null };
+    return {
+      config: dropDeadGroupKeys(base.config),
+      version: typeof base.version === 'string' ? base.version : null,
+    };
   } catch {
     return null;
   }

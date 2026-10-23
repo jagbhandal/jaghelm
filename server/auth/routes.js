@@ -12,7 +12,13 @@ import { Router } from 'express';
 
 import { authMiddleware } from './middleware.js';
 import { authEnabled, checkPassword, getAuthUser, safeBufEqual, setPassword } from './passwords.js';
-import { createSession, deleteAllSessionsExcept, deleteSession, getSession } from './sessions.js';
+import {
+  createSession,
+  deleteAllSessionsExcept,
+  deleteSession,
+  getSession,
+  revocationSaved,
+} from './sessions.js';
 import {
   checkLoginRate,
   resetLoginRate,
@@ -43,12 +49,16 @@ router.post('/login', async (req, res) => {
   }
 
   const { username, password } = req.body || {};
+  // Strings only: the compare below coerces, so ["admin"] would pass as admin.
+  if (typeof username !== 'string' || typeof password !== 'string') {
+    return apiError(res, 400, 'Username and password are required');
+  }
   // Verify both username and password before branching, so a username-mismatch
   // path can't be distinguished from a password-mismatch path by timing. Note
   // that scrypt itself dominates the timing budget, so this matters more as a
   // hygiene measure than as a defence against remote timing attacks over WAN.
-  const userOk = constantTimeEqual(username || '', getAuthUser());
-  const passOk = checkPassword(password || '');
+  const userOk = constantTimeEqual(username, getAuthUser());
+  const passOk = checkPassword(password);
 
   if (userOk && passOk) {
     resetLoginRate(ip);
@@ -64,19 +74,25 @@ router.post('/login', async (req, res) => {
 
 /**
  * Sign out (#507): delete the presented token's session, and only that one.
- * Sessions live in memory (ADR 0002), so the deletion is the revocation: the
- * token gets a 401 on every protected route from now on. Idempotent and quiet:
+ * The deletion, written to sessions.json before the answer (#250), is the
+ * revocation: the token gets a 401 on every protected route from now on, also
+ * after a restart. A deletion the disk can't take (sessions.json can be neither
+ * written nor removed) answers 503, not success: a restart would bring the
+ * session back, so the client sends the sign-out again (Android keeps it,
+ * #539), and each one tries the write again. Otherwise idempotent and quiet:
  * an unknown, expired or already revoked token, or none, gets the same 204, so
  * a second sign-out or another tab never meets a 401 (which the clients read as
  * an expired session), and the answer tells nothing about a token. Only a real
  * sign-out logs, with the user and never the token.
  */
 router.post('/logout', (req, res) => {
+  if (!authEnabled()) return res.status(204).end();
   const token = req.headers['x-auth-token'];
-  const session = authEnabled() ? getSession(token) : null;
-  if (session) {
-    deleteSession(token);
-    log.info({ user: session.user }, 'signed out');
+  const session = getSession(token);
+  deleteSession(token); // also writes again a sign-out of this token the disk refused
+  if (session) log.info({ user: session.user }, 'signed out');
+  if (!revocationSaved(token)) {
+    return apiError(res, 503, 'Signed out, but the sign-out could not be saved. Try again.');
   }
   return res.status(204).end();
 });
@@ -109,6 +125,8 @@ router.post('/change-password', authMiddleware, (req, res) => {
 
   try {
     setPassword(newPassword);
+    // Even if sessions.json can't take this, it holds: its credential stamp is
+    // for the old password, so a restart starts with no sessions (#250).
     deleteAllSessionsExcept(req.headers['x-auth-token']);
     log.info('password changed');
     return res.json({ ok: true });
