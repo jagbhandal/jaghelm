@@ -47,7 +47,7 @@ const NO_GROUPS = [];
 const ALL = 'all';
 
 /** The State filter's options, "All states" first. */
-export const SERVICE_STATES = Object.freeze([
+const SERVICE_STATES = Object.freeze([
   { value: ALL, label: 'All states' },
   { value: 'problems', label: 'Problems' },
   { value: 'ok', label: 'Up' },
@@ -102,7 +102,7 @@ export default function ServicesPage({ status, reach, updated, tick, active, ref
   // No service has a tag yet (#519): no Tag filter, and a tag in the address is none.
   const tagged = options.tags.length > 0;
   const wanted = useMemo(
-    () => ({ ...filters, q: text, tag: tagged ? filters.tag : null }),
+    () => ({ ...filters, q: text.trim(), tag: tagged ? filters.tag : null }),
     [filters, text, tagged]
   );
   const shown = useMemo(

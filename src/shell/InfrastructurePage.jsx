@@ -42,7 +42,7 @@ import { useInfrastructureSection } from './useInfrastructureSection.jsx';
 const ALL = 'all';
 
 /** The State filter's options, "All states" first: a node is never in maintenance. */
-export const NODE_STATES = Object.freeze([
+const NODE_STATES = Object.freeze([
   { value: ALL, label: 'All states' },
   { value: 'problems', label: 'Problems' },
   { value: 'ok', label: 'Healthy' },
@@ -107,7 +107,7 @@ export default function InfrastructurePage({
   const roles = useMemo(() => roleOptions(nodes), [nodes]);
   const wanted = useMemo(
     () => ({
-      q: text,
+      q: text.trim(),
       // A state no node can be in (maintenance) is no filter here.
       state: NODE_STATE_VALUES.has(filters.state) ? filters.state : null,
       role: roles.length > 0 ? filters.role : null,
