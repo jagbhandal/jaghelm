@@ -118,6 +118,26 @@ export async function promQuery(query) {
 }
 
 /**
+ * Run a Prometheus range query (`/api/v1/query_range`, #311): the history
+ * charts' one read. `start` and `end` are in seconds since the epoch, `step`
+ * in seconds. Resolves to the matrix, each series `{ metric, values }`, empty
+ * when no series match. Rejects with a PromQueryError as promQuery() does,
+ * and also when no Prometheus is set up at all: a chart is never drawn from
+ * nothing as if Prometheus had answered.
+ */
+export async function promQueryRange(query, { start, end, step }) {
+  if (noPrometheus()) throw new PromQueryError('No Prometheus is set up (PROMETHEUS_URL)');
+  const params = new URLSearchParams({ query, start: String(start), end: String(end), step: String(step) });
+  const data = await promGet(`/api/v1/query_range?${params}`, 'query');
+  const result = data?.data?.result;
+  if (data?.status === 'error' || !Array.isArray(result)) {
+    throw new PromQueryError(`Prometheus returned no query result${data?.error ? `: ${data.error}` : ''}`);
+  }
+  if (Array.isArray(data.warnings)) logWarnings(data.warnings, query);
+  return result;
+}
+
+/**
  * Prometheus's active scrape targets (`GET /api/v1/targets?state=active`, #470),
  * as it lists them: each with its `labels` (after relabelling, the labels its
  * `up` series carries), `health` ("up", "down", or "unknown" before its first
@@ -252,7 +272,7 @@ export function promString(s) {
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** The matcher for series of any of `labels`: node=~"a|b|…" (anchored by Prometheus). */
-function nodeMatcher(labels) {
+export function nodeMatcher(labels) {
   return `node=~${promString(labels.map(escapeRegex).join('|'))}`;
 }
 

@@ -119,8 +119,8 @@ test("demo: the status's UPS carries the load, model and runtime on mains its /a
 test('demo: every panel source the board reads has its fixture (#248)', async () => {
   const cron = await request(app).get('/api/cron/status');
   assert.ok(cron.body.length > 0 && cron.body[0].jobs.length > 0, 'scheduled jobs');
-  const history = await request(app).get('/api/history');
-  assert.ok(Array.isArray(history.body['apps:cpu']), 'sparklines');
+  const history = await request(app).get('/api/history?series=node.cpu&range=1h');
+  assert.ok(history.body.series[0].lines.some((l) => l.entity === 'apps'), 'the node cards’ hour of CPU');
   const config = await request(app).get('/api/display-config');
   assert.ok(config.body.links.devops.length > 0, 'Quick Launch links');
   const todos = await request(app).get('/api/todos');

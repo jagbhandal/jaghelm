@@ -282,24 +282,74 @@ test('the demo Gitea payload is exactly what refreshGitea serves for those commi
 
 // ── The rest ─────────────────────────────────────────────────────────────
 
-test('the history has an hour of samples per node reading, keyed as history.js keys them', () => {
-  const history = demoHistory();
-  assert.deepEqual(
-    keys(history),
-    NODE_KEYS.flatMap((k) => [`${k}:cpu`, `${k}:mem`, `${k}:disk`]).sort()
-  );
+test("the history (#311): the live route's shape, each node's last hour ending on its meter's reading", () => {
+  const { status, body } = demoHistory({
+    query: { series: 'node.cpu,node.memory,node.disk,node.temperature', range: '1h' },
+    now: NOW,
+  });
+  assert.equal(status, 200);
   const board = demoServices({ now: NOW });
-  for (const [key, samples] of Object.entries(history)) {
-    assert.equal(samples.length, 60, key);
-    assert.ok(
-      samples.every((v) => Number.isFinite(v) && v >= 0 && v <= 100),
-      key
+  const field = {
+    'node.cpu': 'cpu',
+    'node.memory': 'memPercent',
+    'node.disk': 'diskPercent',
+    'node.temperature': 'temp',
+  };
+  for (const s of body.series) {
+    assert.deepEqual(
+      [s.ok, s.count, s.stepMs, s.startMs],
+      [true, 61, 60_000, NOW - 3_600_000],
+      s.series
     );
-    // The last sample is the reading the node panel shows.
-    const [node, metric] = key.split(':');
-    const field = { cpu: 'cpu', mem: 'memPercent', disk: 'diskPercent' }[metric];
-    assert.equal(samples.at(-1), Number(board.nodes[node].metrics[field]), key);
+    // Every node with the reading has a line; the one without a sensor has none.
+    const withReading = NODE_KEYS.filter((k) => board.nodes[k].metrics[field[s.series]] != null);
+    assert.deepEqual(
+      s.lines.map((l) => l.entity),
+      withReading,
+      s.series
+    );
+    for (const line of s.lines) {
+      assert.equal(line.values.length, 61);
+      assert.ok(
+        line.values.every((v) => Number.isFinite(v) && v >= 0),
+        `${s.series} ${line.entity}`
+      );
+      assert.equal(line.values.at(-1), Number(board.nodes[line.entity].metrics[field[s.series]]));
+    }
   }
+});
+
+test("the history's container lines, ranges and refusals are the live route's", () => {
+  const box = demoHistory({
+    query: { series: 'container.cpu,container.memory', entity: 'apps/jellyfin', range: '7d' },
+    now: NOW,
+  });
+  assert.equal(box.status, 200);
+  const [cpu, memory] = box.body.series;
+  assert.deepEqual([cpu.unit, cpu.count, memory.unit], ['%', 337, 'bytes']);
+  assert.ok(memory.lines[0].values.every((v) => Number.isInteger(v) && v > 100 * 1024 * 1024));
+  // Repeatable: the same answer for the same time.
+  assert.deepEqual(
+    demoHistory({
+      query: { series: 'container.cpu', entity: 'apps/jellyfin', range: '7d' },
+      now: NOW,
+    }).body.series[0],
+    cpu
+  );
+  assert.deepEqual(
+    demoHistory({
+      query: { series: 'container.cpu', entity: 'apps/nothing', range: '1h' },
+      now: NOW,
+    }).body.series[0].lines,
+    []
+  );
+  assert.equal(demoHistory({ query: { series: 'node.cpu', range: '2h' } }).status, 400);
+  assert.equal(demoHistory({ query: { series: 'node.load', range: '1h' } }).status, 400);
+  assert.equal(demoHistory({ query: { series: 'container.cpu', range: '1h' } }).status, 400);
+  assert.equal(
+    demoHistory({ query: { series: 'node.cpu', entity: 'pi9', range: '1h' } }).status,
+    404
+  );
 });
 
 test('scheduled jobs: the incident has the backup failed, the healthy run has none, nothing is overdue', () => {
